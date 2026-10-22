@@ -81,7 +81,8 @@
     {:else if list.length === 0}
       <p class="note caught-up">{t("unread.allCaughtUp")}</p>
     {:else}
-      <ul>
+      {#if list.length > 1}<p class="note order" id="unread-order">{t("unread.order")}</p>{/if}
+      <ul aria-describedby={list.length > 1 ? "unread-order" : undefined}>
         {#each list as path (path)}
           {@const where = split(path)}
           <li>
@@ -292,6 +293,10 @@
     padding: var(--sp-2) var(--sp-3);
     color: var(--muted);
     font-size: var(--fs-ui-sm);
+  }
+  /* the list's order, said once and quietly */
+  .order {
+    padding-bottom: 0;
   }
   .caught-up {
     color: var(--git-added-text);

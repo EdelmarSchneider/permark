@@ -4,6 +4,8 @@
   // (not while the pointer is over it or the focus inside). Nothing at all until the project calls for the feed.
   import { documents } from "../../core/doc/document.svelte";
   import { t, tn } from "../../core/i18n";
+  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
+  import { liveOff } from "../../core/shell/liveSignal.svelte";
   import { rightViews } from "../../core/shell/rightViews.svelte";
   import { followStore } from "./followLink.svelte";
   import { ACTIVE_MS, countText, feed, PANEL } from "./store.svelte";
@@ -16,6 +18,11 @@
   });
   const active = $derived(feed.lastAt > 0 && now - feed.lastAt < ACTIVE_MS);
   const follow = $derived(followStore());
+  /** Live updates off: the chip says it (one place; the core's own item steps aside while the chip is there). */
+  const off = $derived(liveOff.off);
+  $effect(() => {
+    return feed.called && off ? liveOff.claim() : undefined;
+  });
 
   const KINDS = {
     created: "toast.kind.created",
@@ -52,12 +59,18 @@
   <button
     type="button"
     class="chip"
+    class:off
     aria-pressed={rightViews.onScreen(PANEL)}
-    title={t("live.label")}
+    title={off ? `${t("status.liveOff")}. ${t("status.liveOffHint")}` : t("live.label")}
     onclick={() => feed.toggle()}
   >
-    <span class="dot" class:active aria-hidden="true"></span>
-    {feed.unseen > 0 ? t("live.chipCount", { n: countText(feed.unseen) }) : t("live.chip")}
+    {#if off}
+      <TriangleAlert size={13} aria-hidden="true" />
+      {t("status.liveOffShort")}
+    {:else}
+      <span class="dot" class:active aria-hidden="true"></span>
+      {feed.unseen > 0 ? t("live.chipCount", { n: countText(feed.unseen) }) : t("live.chip")}
+    {/if}
   </button>
 {/if}
 
@@ -104,6 +117,10 @@
     color: inherit;
     font: inherit;
     cursor: pointer;
+  }
+  .chip.off {
+    color: var(--git-modified-text);
+    white-space: nowrap;
   }
   .chip:hover,
   .chip[aria-pressed="true"] {

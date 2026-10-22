@@ -10,7 +10,7 @@ use ts_rs::TS;
 pub struct UnreadList {
     /// The first look at the disk is done (before it nothing is unread).
     pub ready: bool,
-    /// Sorted by path.
+    /// Newest change first (file time); the same time | none: by path.
     pub unread: Vec<String>,
 }
 

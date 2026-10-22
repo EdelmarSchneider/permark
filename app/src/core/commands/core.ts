@@ -227,6 +227,14 @@ const SPECS: readonly Spec[] = [
     run: () => documents.forward(),
   },
   {
+    // the trail menu of Back | Forward, by keyboard and in the palette
+    id: "trail.show",
+    label: "trail.show",
+    requires: READING,
+    when: () => documents.trail.canBack || documents.trail.canForward,
+    run: () => ui.openFinder("trail"),
+  },
+  {
     id: "doc.zoomIn",
     label: "cmd.zoomIn",
     keys: ["Mod+="],

@@ -6,6 +6,7 @@
 import { untrack } from "svelte";
 import type { Basis, DocumentView, Result, ReviewView } from "../../api";
 import type { Reason, Requirement } from "../../core/conditions/available";
+import { READ_MS, personScrolls } from "../../core/readRule";
 import { conditions } from "../../core/conditions/context.svelte";
 import { reasonKey } from "../../core/conditions/guidance";
 import { documents } from "../../core/doc/document.svelte";
@@ -34,8 +35,8 @@ function commitBlocked(): Reason | null {
   return availability.status === "unavailable" ? availability.reason : null;
 }
 
-/** The document in front is looked at (read) when it has been shown this long. */
-export const SEEN_MS = 1000;
+/** The document in front is looked at (read) when it has been shown this long, or sooner when the person scrolls it. */
+export const SEEN_MS = READ_MS;
 
 /** A quiet line that stays until the person dismisses it (the window's lasting notice); `onGone` hears how it went.
  *  Showing it returns a function that takes it back. */
@@ -171,11 +172,20 @@ export class ReviewStore {
         const { path, hash, kind } = this.#page.shown();
         if (kind !== "lines" || path === null || hash === null || !this.#front.value) return;
         if (this.#root() === null) return;
-        const timer = setTimeout(
-          () => void this.#client.call("review.seen", { path, hash }),
-          SEEN_MS,
-        );
-        return () => clearTimeout(timer);
+        let told = false;
+        const seen = (): void => {
+          if (told) return;
+          told = true;
+          void this.#client.call("review.seen", { path, hash });
+        };
+        const timer = setTimeout(seen, SEEN_MS);
+        const offScroll = personScrolls(() => {
+          if (this.#front.value) seen();
+        });
+        return () => {
+          clearTimeout(timer);
+          offScroll();
+        };
       });
       $effect(() => this.#front.start());
       return () => this.#reset();

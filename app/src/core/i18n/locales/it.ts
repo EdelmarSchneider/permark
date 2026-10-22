@@ -45,6 +45,10 @@ export default {
   // ---- status bar
   "status.version": "Versione {version}",
   "status.versionUnavailable": "Versione non disponibile",
+  "status.liveOff": "Aggiornamenti in tempo reale disattivati",
+  "status.liveOffShort": "Live: no",
+  "status.liveOffHint":
+    "Questa posizione non può segnalare le modifiche, quindi PerMark non può seguirle in tempo reale. Torna alla finestra per aggiornare.",
 
   // ---- notices
   "notice.stateRecovered":
@@ -633,6 +637,9 @@ export default {
   "finder.partial": "Indicizzazione in corso: i risultati potrebbero essere incompleti.",
   "finder.results.one": "{n} risultato",
   "finder.results.other": "{n} risultati",
+  "trail.show": "Vai a un luogo recente...",
+  "trail.filter": "Filtra i luoghi recenti...",
+  "trail.here": "Sei qui",
   "keymap.title": "Scorciatoie da tastiera",
   "keymap.search": "Cerca un comando",
   "keymap.press": "Premi i nuovi tasti…",
@@ -740,6 +747,7 @@ export default {
   "follow.back": "Indietro (Alt+←)",
   "follow.stop": "Interrompi",
   "unread.dot": "Non letto",
+  "unread.order": "Prima i più recenti",
   "unread.folderCount.one": "{n} non letto",
   "unread.folderCount.other": "{n} non letti",
   "unread.markAllRead": "Segna tutto come letto",

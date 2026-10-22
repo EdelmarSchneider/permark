@@ -5,12 +5,10 @@ import type { SinceVisit, UnreadList } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
 import { InFront, onScreen } from "../../core/inFront.svelte";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
+import { READ_MS, personScrolls } from "../../core/readRule";
 import type { TreeBadge } from "../../core/plugins/registry.svelte";
 import { t, tn } from "../../core/i18n";
 import { silence } from "../../core/silence/silence.svelte";
-
-/** A document counts as read when it has been open and in view this long (ms). */
-export const READ_MS = 1000;
 
 const MARKDOWN = /\.(md|markdown|mdown|mkd|mdx|mdc)$/i;
 
@@ -26,11 +24,17 @@ function ancestors(path: string): string[] {
   return out;
 }
 
-/** The unread document after `from` in path order (wrapping); `null`: none other than `from`. */
+/**
+ * The unread document after `from` in the list's order (newest change first), wrapping; the first one (the newest)
+ * when `from` is not in the list; `null`: none other than `from`.
+ */
 export function nextUnread(unread: readonly string[], from: string | null): string | null {
-  const others = unread.filter((p) => p !== from);
-  if (others.length === 0) return null;
-  return others.find((p) => from === null || p > from) ?? others[0] ?? null;
+  const at = from === null ? -1 : unread.indexOf(from);
+  for (let step = 1; step <= unread.length; step++) {
+    const path = unread[(at + step) % unread.length];
+    if (path !== undefined && path !== from) return path;
+  }
+  return null;
 }
 
 /** The document the window shows and the version of it (reactive). */
@@ -44,7 +48,7 @@ const shownDocument: ReadingPort = () => {
 
 export class UnreadStore {
   since = $state.raw<SinceVisit | null>(null);
-  /** What the backend says: every unread document, silenced ones included. */
+  /** What the backend says: every unread document, silenced ones included, newest change first. */
   #list = $state.raw<UnreadList>({ ready: false, unread: [] });
   /** The ones that call for attention: what the person silenced is left out (the backend still keeps it unread). */
   unread = $derived.by(() => this.#list.unread.filter((path) => !silence.isSilenced(path)));
@@ -129,6 +133,8 @@ export class UnreadStore {
         const timer = setTimeout(() => void this.markRead(path, hash), READ_MS);
         return () => clearTimeout(timer);
       });
+      // ...and sooner when the person scrolls it
+      $effect(() => personScrolls(() => this.#scrolled()));
       $effect(() => this.#front.start());
       return () => {
         offWake();
@@ -136,6 +142,13 @@ export class UnreadStore {
         this.since = null;
       };
     });
+  }
+
+  /** The person scrolled the document in view: read, as it is shown (only in front, like the moment). */
+  #scrolled(): void {
+    const { path, hash } = this.#shown();
+    if (path === null || hash === null) return;
+    if (this.#all.has(path) && this.#front.value) void this.markRead(path, hash);
   }
 
   #apply(list: UnreadList): void {

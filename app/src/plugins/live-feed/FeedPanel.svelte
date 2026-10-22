@@ -23,6 +23,7 @@
   import { t, tn } from "../../core/i18n";
   import { projects } from "../../core/projects/instance.svelte";
   import { middleCut, relativeTo } from "../../core/projects/model";
+  import LiveOffNote from "../../core/shell/LiveOffNote.svelte";
   import { closeView } from "../../core/shell/sides";
   import { followStore } from "./followLink.svelte";
   import { mineLabel, pathOf, type FeedShow } from "./mine";
@@ -189,6 +190,7 @@
       {t("live.docsOnly")}
     </label>
   </header>
+  <LiveOffNote />
   <ul>
     {#each feed.rows as row (row.key)}
       <li>

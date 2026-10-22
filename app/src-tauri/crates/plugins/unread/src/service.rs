@@ -568,7 +568,7 @@ impl UnreadService {
 
     #[must_use]
     pub fn list(&self) -> UnreadList {
-        list_of(&lock(&self.hub.tracker))
+        list_of(&self.hub.tracker, &self.hub.scope)
     }
 
     #[must_use]
@@ -656,10 +656,11 @@ impl UnreadService {
 
 impl permark_core::organizing::UnreadLookup for UnreadHub {
     fn unread(&self) -> permark_core::organizing::UnreadNow {
-        let list = list_of(&lock(&self.tracker));
+        // the agent gets them by path (stable, no file times read)
+        let tracker = lock(&self.tracker);
         permark_core::organizing::UnreadNow {
-            ready: list.ready,
-            paths: list.unread,
+            ready: tracker.looked(),
+            paths: tracker.unread(),
         }
     }
 
@@ -675,11 +676,34 @@ impl permark_core::organizing::UnreadLookup for UnreadHub {
     }
 }
 
-fn list_of(tracker: &Tracker) -> UnreadList {
+/// The unread list for the windows: newest change first (the time the file was last written).
+fn list_of(tracker: &Mutex<Tracker>, scope: &DocScope) -> UnreadList {
+    let (ready, paths) = {
+        let tracker = lock(tracker);
+        (tracker.looked(), tracker.unread())
+    };
+    // the disk is asked with the lock released
+    let timed = paths
+        .into_iter()
+        .map(|path| (modified_of(scope, &path), path))
+        .collect();
     UnreadList {
-        ready: tracker.looked(),
-        unread: tracker.unread(),
+        ready,
+        unread: newest_first(timed),
     }
+}
+
+/// When a document was last written; `None`: gone | unreadable.
+fn modified_of(scope: &DocScope, path: &str) -> Option<SystemTime> {
+    let (_, abs) = scope.resolve(path).ok()?;
+    std::fs::metadata(abs).and_then(|m| m.modified()).ok()
+}
+
+/// Newest first; the same time | none (last) by path.
+#[must_use]
+fn newest_first(mut timed: Vec<(Option<SystemTime>, String)>) -> Vec<String> {
+    timed.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    timed.into_iter().map(|(_, path)| path).collect()
 }
 
 /// The hash and bytes of a document on disk; `None`: gone, too large, unreadable.
@@ -755,7 +779,7 @@ impl Worker {
     }
 
     fn announce(&mut self) {
-        let list = list_of(&lock(&self.tracker));
+        let list = list_of(&self.tracker, &self.args.scope);
         if self.announced.as_ref() != Some(&list) {
             (self.args.announce)(&list);
             self.announced = Some(list);

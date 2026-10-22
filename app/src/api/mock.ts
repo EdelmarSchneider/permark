@@ -173,6 +173,8 @@ export type MockProbe = {
   imports: ImportProbe;
   /** Picture files read for a drop on an editor, by path. */
   pictures: string[];
+  /** The project's folder cannot report changes (live updates off) | can again; the context is told at once. */
+  liveOff(off: boolean): void;
   /** Drop to open: what was asked, paths that are gone (they fail), paths that are folders (else files, text by
    * name), and `fire` = a system drag event on the view. */
   drops: {
@@ -436,6 +438,10 @@ export function createMockApi(): Api & {
     convert: convert.probe,
     imports: importing.probe,
     pictures: [],
+    liveOff: (off) => {
+      liveOff = off;
+      emit("context-changed", { window: "main", context: context() });
+    },
     drops: {
       opened: [],
       missing: new Set(),
@@ -458,6 +464,7 @@ export function createMockApi(): Api & {
     },
   };
   let tree: TreeView | null = null;
+  let liveOff = false;
   /** The view's drop listeners (the system's drag events, fired by tests through `probe.drops.fire`). */
   const dropHandlers = new Set<(event: DropEvent) => void>();
 
@@ -517,8 +524,19 @@ export function createMockApi(): Api & {
     };
   }
 
+  /** A project follows its folder live (unless the probe says it cannot); a single file | the Notes never do. */
+  function liveUpdates(): Context["liveUpdates"] {
+    if (view.state !== "showing") return neutralContext().liveUpdates;
+    if (view.workspace.kind !== "project") return { status: "unavailable", reason: "noWatcher" };
+    return liveOff ? { status: "unavailable", reason: "watchFailed" } : { status: "available" };
+  }
+
   function context(): Context {
-    const base = shell.context({ ...neutralContext(), plugins: shell.pluginsOn(inProject()) });
+    const base = shell.context({
+      ...neutralContext(),
+      plugins: shell.pluginsOn(inProject()),
+      liveUpdates: liveUpdates(),
+    });
     if (view.state !== "showing") return base;
     const kinds = { project: "project", singleFile: "singleFile", notes: "notes" } as const;
     const agent = plugins.probe.agent.status();

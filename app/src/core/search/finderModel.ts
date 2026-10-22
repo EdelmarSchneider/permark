@@ -14,8 +14,8 @@ import type { CommandEntry } from "../commands/commands";
 import { fuzzyMatch } from "./fuzzy";
 import type { TagHit } from "./tags.svelte";
 
-export type Preset = "quick" | "everywhere" | "commands";
-export type Scope = "all" | "files" | "sections" | "tags" | "commands";
+export type Preset = "quick" | "everywhere" | "commands" | "trail";
+export type Scope = "all" | "files" | "sections" | "tags" | "commands" | "places";
 
 /** Rows each group of All lists; the rest is behind "Show all". */
 export const GROUP_LIMIT = { files: 5, folders: 3, sections: 5, tags: 5, commands: 3 } as const;
@@ -31,6 +31,8 @@ export function scopesFor(preset: Preset, singleFile: boolean, withTags = false)
       return ["files"];
     case "commands":
       return ["commands"];
+    case "trail":
+      return ["places"];
     case "everywhere":
       if (singleFile) return ["sections", "commands"];
       return withTags
@@ -107,12 +109,25 @@ export type CommandRow = {
 };
 /** A tag: choosing it narrows the search to the files that have it. */
 export type TagRow = { type: "tag"; key: string; name: string; count: number };
+/** A place of the window's trail (Back | Forward): choosing it goes there. */
+export type PlaceRow = {
+  type: "place";
+  key: string;
+  /** Its index in the trail (for the jump). */
+  index: number;
+  path: string;
+  anchor: string | null;
+  /** Where the person is now. */
+  current: boolean;
+  /** Matched characters of `path`. */
+  positions: readonly number[];
+};
 /** "Show all (n)": the rest of a group, in its own scope. */
 export type MoreRow = { type: "more"; key: string; scope: Scope; count: number };
-export type Row = FileRow | FolderRow | SectionRow | TagRow | CommandRow | MoreRow;
+export type Row = FileRow | FolderRow | SectionRow | TagRow | CommandRow | PlaceRow | MoreRow;
 
 export type GroupTitle =
-  "opened" | "changed" | "files" | "folders" | "sections" | "tags" | "commands";
+  "opened" | "changed" | "files" | "folders" | "sections" | "tags" | "commands" | "places";
 export type Group = { title: GroupTitle; rows: readonly Row[] };
 
 /** What the box has to show, besides the words. */
@@ -138,7 +153,12 @@ export type ViewInput = {
   tags?: readonly TagHit[];
   /** The window shows a single file: Sections come from the open document only. */
   singleFile: boolean;
+  /** The trail's places, newest first (the `trail` face). */
+  places?: readonly TrailPlace[];
 };
+
+/** A place of the trail as the window hands it. */
+export type TrailPlace = { index: number; path: string; anchor: string | null; current: boolean };
 
 export type EmptyState = "none" | "noMatch";
 
@@ -208,6 +228,33 @@ export function filterOutline(rows: readonly SectionRow[], query: string): Secti
     const found = fuzzyMatch(query, row.headingPath.at(-1) ?? "");
     if (found) ranked.push({ row, score: found.score });
   }
+  ranked.sort((a, b) => b.score - a.score);
+  return ranked.map((r) => r.row);
+}
+
+/** The trail's places matching the words (all, newest first, for an empty box; best first otherwise). */
+export function placeRows(places: readonly TrailPlace[], query: string): PlaceRow[] {
+  const row = (place: TrailPlace, positions: readonly number[]): PlaceRow => ({
+    type: "place",
+    key: `place:${place.index}`,
+    index: place.index,
+    path: place.path,
+    anchor: place.anchor,
+    current: place.current,
+    positions,
+  });
+  if (query.trim() === "") return places.map((place) => row(place, []));
+  const ranked: { row: PlaceRow; score: number }[] = [];
+  const words = query.trim();
+  for (const place of places) {
+    // by its path (the same path ranks the same: newest first); else by its heading
+    const inPath = fuzzyMatch(words, place.path);
+    const inHeading =
+      inPath === null && place.anchor !== null ? fuzzyMatch(words, place.anchor) : null;
+    if (inPath) ranked.push({ row: row(place, inPath.positions), score: inPath.score });
+    else if (inHeading) ranked.push({ row: row(place, []), score: inHeading.score });
+  }
+  // the same score keeps the newest first (a stable sort)
   ranked.sort((a, b) => b.score - a.score);
   return ranked.map((r) => r.row);
 }
@@ -296,6 +343,9 @@ export function buildView(input: ViewInput): View {
       break;
     case "commands":
       groups = nonEmpty([{ title: "commands", rows: commandRows(input) }]);
+      break;
+    case "places":
+      groups = nonEmpty([{ title: "places", rows: placeRows(input.places ?? [], input.query) }]);
       break;
     default:
       groups = input.scope satisfies never;

@@ -45,6 +45,10 @@ export default {
   // ---- status bar
   "status.version": "Version {version}",
   "status.versionUnavailable": "Version nicht verfügbar",
+  "status.liveOff": "Live-Aktualisierung aus",
+  "status.liveOffShort": "Live: aus",
+  "status.liveOffHint":
+    "Dieser Ort kann keine Änderungen melden, daher kann PerMark sie nicht live verfolgen. Wechsle zurück zum Fenster, um zu aktualisieren.",
 
   // ---- notices
   "notice.stateRecovered":
@@ -635,6 +639,9 @@ export default {
   "finder.partial": "Die Indizierung läuft noch: Ergebnisse können unvollständig sein.",
   "finder.results.one": "{n} Ergebnis",
   "finder.results.other": "{n} Ergebnisse",
+  "trail.show": "Zu einem zuletzt besuchten Ort gehen ...",
+  "trail.filter": "Zuletzt besuchte Orte filtern ...",
+  "trail.here": "Du bist hier",
   "keymap.title": "Tastenkürzel",
   "keymap.search": "Befehl suchen",
   "keymap.press": "Neue Tasten drücken …",
@@ -742,6 +749,7 @@ export default {
   "follow.back": "Zurück (Alt+←)",
   "follow.stop": "Beenden",
   "unread.dot": "Ungelesen",
+  "unread.order": "Neueste zuerst",
   "unread.folderCount.one": "{n} ungelesen",
   "unread.folderCount.other": "{n} ungelesen",
   "unread.markAllRead": "Alle als gelesen markieren",
