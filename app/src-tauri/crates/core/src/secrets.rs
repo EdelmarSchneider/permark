@@ -1,9 +1,11 @@
 //! Secret values in text that leaves the app (agent payloads, search): a key whose name ends in a secret word
-//! (`DB_PASSWORD`, `apiKey`, `GITHUB_TOKEN`) followed by `=` | `:` and a value that looks like a secret keeps the key
-//! and loses the value; so do the password of an address, known token formats wherever they are (`sk-…`, `ghp_…`,
-//! `AKIA…`, JWT) and the body of a private key block. Format-free on purpose: it covers config files, code, Markdown
-//! and selections alike; the config formats add structural masking of their own. Mirror: `src/core/config/secrets.ts`;
-//! both read `testdata/secrets/cases.json`.
+//! (`DB_PASSWORD`, `apiKey`, `GITHUB_TOKEN`) followed by `=` | `:` | `=>` and a value that may be a secret keeps the
+//! key and loses the value; so do the password of an address, known token formats wherever they are (`sk-…`, `ghp_…`,
+//! `AKIA…`, JWT) and the body of a private key block. Principle: in a slot named like a secret, mask when in doubt
+//! (a false mask on a secret name is cheap, a leak is not); names that only contain a secret word (`keys`, `keyJump`)
+//! are no slot. Format-free on purpose: it covers config files, code, Markdown and selections alike; the config
+//! formats add structural masking of their own. Mirror: `src/core/config/secrets.ts`; both read
+//! `testdata/secrets/cases.json` and `testdata/secrets/leaks.json`.
 
 use std::borrow::Cow;
 use std::ops::Range;
@@ -11,8 +13,8 @@ use std::ops::Range;
 /// What a masked value reads as.
 pub const HIDDEN: &str = "<hidden>";
 
-/// Last words of a key that name a secret (`DB_PASSWORD`, `clientSecret`, `GITHUB_TOKEN`, `basic_auth`).
-const SECRET_WORDS: &[&str] = &[
+/// Last words of a key that name a password-class secret (`DB_PASSWORD`, `clientSecret`, `credentials`).
+const STRONG_WORDS: &[&str] = &[
     "secret",
     "secrets",
     "password",
@@ -23,6 +25,10 @@ const SECRET_WORDS: &[&str] = &[
     "passphrase",
     "credential",
     "credentials",
+];
+
+/// Last words of a key that name a token-class secret (`GITHUB_TOKEN`, `basic_auth`, `apikey`).
+const NORMAL_WORDS: &[&str] = &[
     "token",
     "tokens",
     "auth",
@@ -34,10 +40,13 @@ const SECRET_WORDS: &[&str] = &[
     "privatekey",
 ];
 
-/// Ends of a run-together last word that name a secret (`dbpassword`, `apitoken`, `clientsecret`).
-const SECRET_ENDINGS: &[&str] = &["password", "passwd", "secret", "token", "tokens"];
+/// Ends of a run-together last word that name a password-class secret (`dbpassword`, `clientsecret`).
+const STRONG_ENDINGS: &[&str] = &["password", "passwd", "secret"];
 
-/// Words before `key` that make it a secret (`api_key`, `privateKey`, `SIGNING_KEY`).
+/// Ends of a run-together last word that name a token (`apitoken`); `maxtokens` is a count.
+const TOKEN_ENDINGS: &[&str] = &["token", "tokens"];
+
+/// Words before `key` that make it a token-class secret (`api_key`, `privateKey`, `SIGNING_KEY`).
 const KEY_QUALIFIERS: &[&str] = &[
     "api",
     "access",
@@ -91,7 +100,8 @@ const KEY_QUALIFIERS: &[&str] = &[
     "sas",
 ];
 
-/// Words before `KEY` in an env-style name (`STRIPE_KEY` is secret) that keep it ordinary (`PUBLIC_KEY`, `CACHE_KEY`).
+/// Words before `key` that keep it ordinary (`PUBLIC_KEY`, `cacheKey`, `i18nKey` (words `i n key`)); any other word
+/// makes a weak secret slot (`STRIPE_KEY`, `openai_key`, `tls.key`).
 const PLAIN_KEY_QUALIFIERS: &[&str] = &[
     "public",
     "pub",
@@ -110,6 +120,7 @@ const PLAIN_KEY_QUALIFIERS: &[&str] = &[
     "route",
     "event",
     "i18n",
+    "n",
     "translation",
     "locale",
     "lang",
@@ -135,9 +146,7 @@ const PLAIN_KEY_QUALIFIERS: &[&str] = &[
     "type",
     "name",
     "id",
-    "data",
     "list",
-    "hash",
     "local",
     "sub",
     "parent",
@@ -170,7 +179,8 @@ const COUNT_WORDS: &[&str] = &[
     "estimated",
 ];
 
-/// Words after a secret word that only say which one (`SECRET_KEY_BASE`, `DB_PASSWORD_PROD`, `password_hash`).
+/// Words after a secret word that only say which one (`SECRET_KEY_BASE`, `DB_PASSWORD_PROD`,
+/// `password_confirmation`).
 const TAIL_WORDS: &[&str] = &[
     "base",
     "value",
@@ -198,26 +208,20 @@ const TAIL_WORDS: &[&str] = &[
     "primary",
     "secondary",
     "backup",
+    "confirmation",
+    "confirm",
+    "repeat",
+    "again",
+    "retype",
+    "verify",
 ];
 
 /// Keys that hold a count when their value is a number (`tokens: 1200`, `"tokens": 3400`), and tokens when it is
 /// not (`tokens: [a, b]`); `api_tokens` is never one.
 const COUNT_KEYS: &[&str] = &["tokens", "ntokens"];
 
-/// Words of code that start an expression, not a value (`token = new Token()`), and bool | null words.
-const CODE_WORDS: &[&str] = &[
-    "new",
-    "await",
-    "this",
-    "self",
-    "function",
-    "async",
-    "typeof",
-    "require",
-    "import",
-    "lambda",
-    "yield",
-    "not",
+/// Bool | null words: a switch, never a secret.
+const BOOL_WORDS: &[&str] = &[
     "true",
     "false",
     "null",
@@ -230,11 +234,46 @@ const CODE_WORDS: &[&str] = &[
     "off",
 ];
 
+/// Words of code that start an expression, not a value (`token = new Token()`, `key = await load()`).
+const CODE_WORDS: &[&str] = &[
+    "new", "await", "this", "self", "function", "async", "typeof", "require", "import", "lambda",
+    "yield", "not",
+];
+
+/// First words of a line that declare a variable: the line is code.
+const DECLARATIONS: &[&str] = &[
+    "const",
+    "let",
+    "var",
+    "val",
+    "final",
+    "auto",
+    "my",
+    "local",
+    "static",
+    "private",
+    "public",
+    "protected",
+    "readonly",
+];
+
+/// Words of an `Authorization` header before the credential (`Bearer <token>`, `Basic <b64>`).
+const AUTH_SCHEMES: &[&str] = &[
+    "bearer",
+    "basic",
+    "token",
+    "digest",
+    "bot",
+    "negotiate",
+    "apikey",
+];
+
 /// Keys whose value names a variable (`- name: DB_PASSWORD`), and keys that then hold its value (`value: x`).
 const NAME_KEYS: &[&str] = &["name", "key", "env", "var", "variable"];
 const VALUE_KEYS: &[&str] = &["value", "val", "default"];
 
-/// Pieces of text that every secret this module finds contains (lowercase); text with none is passed over at once.
+/// Pieces of text that every secret this module finds by name or format contains (lowercase); text with none (and
+/// no line of a private key) is passed over at once.
 const HINTS: &[&str] = &[
     "key",
     "secret",
@@ -351,7 +390,7 @@ pub fn key_words(name: &str) -> Vec<String> {
         .collect()
 }
 
-/// The words of a key with the tail (`_prod`, `_base`, ...) set aside.
+/// The words of a key with the tail (`_prod`, `_base`, `_confirmation`, ...) set aside.
 fn head_words(name: &str) -> Vec<String> {
     let mut words = key_words(name);
     while words.len() > 1
@@ -364,44 +403,69 @@ fn head_words(name: &str) -> Vec<String> {
     words
 }
 
-/// Whether a key names a secret: its last word (after `_prod`, `_base`, ... are set aside) is a secret word
-/// (`DB_PASSWORD`, `clientSecret`, `authToken`, `basic_auth`), or it is `key` after a word that makes it one
-/// (`api_key`, `privateKey`; env-style `STRIPE_KEY`). `keys`, `keydown`, `keyJump`, `KeyW`, `monkey`, `tokenizer`,
-/// `max_tokens`, `token_count`, `authorName`, `secretName`, `PASSWORD_FILE` are not.
-#[must_use]
-pub fn is_secret_key(name: &str) -> bool {
+/// How a key names a secret.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum KeyClass {
+    /// `<word>_KEY`, `openai_key`, `tls.key`: secret when the value looks like one (not a slot name).
+    Weak,
+    /// Tokens, API keys, `auth`: secret unless the value is a number, code or a sentence.
+    Normal,
+    /// Passwords, secrets, credentials, passphrases: any value but a bool, a reference or code.
+    Strong,
+}
+
+fn key_class(name: &str) -> Option<KeyClass> {
     let words = head_words(name);
-    let Some(last) = words.last().map(String::as_str) else {
-        return false;
-    };
+    let last = words.last()?.as_str();
     let prev = words.len().checked_sub(2).map(|i| words[i].as_str());
     if last == "key" || last == "keys" {
-        let Some(prev) = prev else {
-            return false;
-        };
+        let prev = prev?;
         if KEY_QUALIFIERS.contains(&prev) {
-            return true;
+            return Some(KeyClass::Normal);
         }
-        return last == "key"
-            && !name.chars().any(char::is_lowercase)
-            && !PLAIN_KEY_QUALIFIERS.contains(&prev);
+        return (last == "key" && !PLAIN_KEY_QUALIFIERS.contains(&prev)).then_some(KeyClass::Weak);
     }
-    if prev.is_some_and(|p| SECRET_WORDS.contains(&format!("{p}{last}").as_str())) {
-        return true;
+    if let Some(p) = prev {
+        let joined = format!("{p}{last}");
+        if STRONG_WORDS.contains(&joined.as_str()) {
+            return Some(KeyClass::Strong);
+        }
+        if NORMAL_WORDS.contains(&joined.as_str()) {
+            return Some(KeyClass::Normal);
+        }
     }
     if last == "token" || last == "tokens" {
-        return !prev.is_some_and(|p| COUNT_WORDS.contains(&p));
+        return (!prev.is_some_and(|p| COUNT_WORDS.contains(&p))).then_some(KeyClass::Normal);
     }
-    if SECRET_WORDS.contains(&last) {
-        return true;
+    if STRONG_WORDS.contains(&last) {
+        return Some(KeyClass::Strong);
     }
-    for ending in SECRET_ENDINGS {
+    if NORMAL_WORDS.contains(&last) {
+        return Some(KeyClass::Normal);
+    }
+    if STRONG_ENDINGS
+        .iter()
+        .any(|e| last.len() > e.len() && last.ends_with(e))
+    {
+        return Some(KeyClass::Strong);
+    }
+    for ending in TOKEN_ENDINGS {
         if last.len() > ending.len() && last.ends_with(ending) {
             let head = &last[..last.len() - ending.len()];
-            return !(ending.starts_with("token") && COUNT_WORDS.contains(&head));
+            return (!COUNT_WORDS.contains(&head)).then_some(KeyClass::Normal);
         }
     }
-    false
+    None
+}
+
+/// Whether a key names a secret: its last word (after `_prod`, `_base`, `_confirmation`, ... are set aside) is a
+/// secret word (`DB_PASSWORD`, `clientSecret`, `authToken`, `basic_auth`), or it is `key` after a word that is not a
+/// plain one (`api_key`, `privateKey`, `STRIPE_KEY`, `openai_key`, `tls.key`). `keys`, `keydown`, `keyJump`, `KeyW`,
+/// `monkey`, `tokenizer`, `max_tokens`, `token_count`, `authorName`, `secretName`, `PASSWORD_FILE`, `cacheKey`,
+/// `PUBLIC_KEY` are not.
+#[must_use]
+pub fn is_secret_key(name: &str) -> bool {
+    key_class(name).is_some()
 }
 
 /// Whether the path of a config value names a secret (the key name is the signal there): a segment is a secret key,
@@ -429,17 +493,18 @@ pub fn has_token(text: &str) -> bool {
     text.lines().any(|line| !token_spans(line).is_empty())
 }
 
-/// Secret only as an env-style `<WORD>_KEY` (`STRIPE_KEY`): such a key may name a slot (`STORAGE_KEY = "app.theme"`).
-fn is_weak_key(name: &str) -> bool {
-    let words = head_words(name);
-    let n = words.len();
-    n > 0 && words[n - 1] == "key" && !(n > 1 && KEY_QUALIFIERS.contains(&words[n - 2].as_str()))
-}
-
-/// `${VAR}`, `$VAR`, `{{ secrets.NAME }}`: a pointer to a secret, not the secret.
+/// `${VAR}`, `${{ secrets.NAME }}`, `$VAR`, `{{ name }}`: a pointer to a secret, not the secret.
 fn is_reference(value: &str) -> bool {
     let t = value.trim();
-    t.starts_with('$') || (t.starts_with("{{") && t.ends_with("}}"))
+    if t.starts_with("${{") || t.starts_with("{{") {
+        return t.ends_with("}}");
+    }
+    if let Some(inner) = t.strip_prefix("${").and_then(|r| r.strip_suffix('}')) {
+        return !inner.contains('}');
+    }
+    t.strip_prefix('$').is_some_and(|name| {
+        !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+    })
 }
 
 /// Letters, digits and nothing else, lowercase: `API key` and `apiKey` read the same.
@@ -505,32 +570,57 @@ fn is_identifier(s: &str) -> bool {
         && chars.all(|c| c.is_alphanumeric() || matches!(c, '_' | '$'))
 }
 
-/// `process.env.TOKEN`, `this.key`, `options.auth`: where a value is, not the value (no digits: `pk.eyJ1.x9` is one).
+/// `process.env.API_KEY2`, `this.key`, `options.auth`: where a value is, not the value. Digits only in the last
+/// part (`pk.eyJ1Ijoi.x9` is a token).
 fn is_member(s: &str) -> bool {
-    let mut parts = 0;
-    for part in s.split('.') {
-        if part.is_empty() || !part.chars().all(is_ident_start) {
-            return false;
-        }
-        parts += 1;
-    }
-    parts > 1
+    let parts: Vec<&str> = s.split('.').collect();
+    parts.len() > 1
+        && parts.iter().all(|p| is_identifier(p))
+        && parts[..parts.len() - 1]
+            .iter()
+            .all(|p| !p.chars().any(char::is_numeric))
 }
 
-/// A variable named like a secret (`accessToken`, `API_KEY`, `newPassword`): two words or more, no digits. A single
-/// word (`mysecretpassword`) or one with digits (`abc123secret`) is a value.
-fn is_variable(value: &str) -> bool {
-    !value.chars().any(char::is_numeric) && key_words(value).len() > 1 && is_secret_key(value)
+/// `getPassword()`, `config.get('db'`, `os.environ["X"]`: a call | an index; the name before `(` | `[` has no digits
+/// (`Xy7(kL9!q` is a password).
+fn is_call(s: &str) -> bool {
+    s.find(['(', '[']).is_some_and(|i| {
+        let name = &s[..i];
+        i > 0 && name.split('.').all(is_identifier) && !name.chars().any(char::is_numeric)
+    })
 }
 
-/// Lowercase words joined by `.`, `-`, `_`, `:` or `/`: a name (`app.theme`, `user-cache`), not a secret.
+/// Lowercase words joined by `.`, `-`, `_`, `:` or `/`: a name (`app.theme`, `user-cache`, `app-theme-v2`), not a
+/// secret. A part longer than 3 that mixes in digits (`a1b2c3d4`, `3ax6xnjp29`) makes it a secret.
 fn is_slug(s: &str) -> bool {
     let sep = |c: char| matches!(c, '.' | '_' | ':' | '/' | '-');
-    let low = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit();
     s.starts_with(|c: char| c.is_ascii_lowercase())
         && s.contains(sep)
-        && s.split(sep)
-            .all(|part| !part.is_empty() && part.chars().all(low))
+        && s.split(sep).all(|part| {
+            !part.is_empty()
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+                && (part.len() <= 3 || !part.chars().any(|c| c.is_ascii_digit()))
+        })
+}
+
+/// 12+ characters of a token alphabet with letters and digits, not a slug (`0a1b2c3d4e5f`, `LS0tLS1CRUdJTi…`).
+fn looks_random(s: &str) -> bool {
+    s.len() >= 12
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+' | '/' | '='))
+        && s.chars().any(|c| c.is_ascii_digit())
+        && s.chars().any(|c| c.is_ascii_alphabetic())
+        && !is_slug(s)
+}
+
+/// `DB_PASSWORD`, `API_KEY`: a name written env-style.
+fn is_env_style(key: &str) -> bool {
+    key.starts_with(|c: char| c.is_ascii_uppercase() || c == '_')
+        && key
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
 }
 
 /// A YAML block scalar mark (`key: |`): the value is on the next lines.
@@ -542,39 +632,98 @@ fn is_block_mark(s: &str) -> bool {
     rest.is_empty() || (rest.len() == 1 && rest.chars().all(|c| c.is_ascii_digit()))
 }
 
-/// Whether the value of a secret key looks like a secret: not empty, hidden, a reference, a color, a sentence, the
-/// key's own name (`password: "Password"`), a slot name under an env-style key; unquoted, also not a bool | null |
-/// number, a block mark, a YAML tag (`!Ref`), an expression (`getToken()`, `new X`, `env["X"]`, `process.env.X`), a
-/// variable named like a secret (`token: accessToken`) or ending a statement (`token = t;`), or a word starting a
-/// sentence.
-fn looks_secret(key: &str, value: &str, quoted: bool, after: &str) -> bool {
-    if value.is_empty() || value == HIDDEN || is_reference(value) || is_color(value) {
-        return false;
+/// A variable named like a secret (`accessToken`, `API_KEY`, `newPassword`): two words or more, no digits. A single
+/// word (`mysecretpassword`) or one with digits (`abc123secret`) is a value.
+fn is_variable(value: &str) -> bool {
+    !value.chars().any(char::is_numeric) && key_words(value).len() > 1 && is_secret_key(value)
+}
+
+/// Whether the value sits in code: a separator | closing bracket follows (`{ password: newPassword, … }`; `;` only on
+/// a line with one `=`) or the line declares a variable (`const token = accessToken`).
+fn in_code(after: &str, line: &str) -> bool {
+    let after = after.trim_start();
+    // `;` ends a statement only on a line with one assignment (`Server=db;Password=x;` is a connection string)
+    if after.starts_with([',', ')', '}'])
+        || (after.starts_with(';') && line.matches('=').count() == 1)
+    {
+        return true;
     }
-    if flat(value) == flat(key) || (is_slug(value) && is_weak_key(key)) {
-        return false;
-    }
-    if quoted {
-        let words: Vec<&str> = value.split_whitespace().collect();
-        return !(words.len() > 1 && words.iter().all(|w| is_prose_word(w)));
-    }
-    if CODE_WORDS.contains(&value.to_lowercase().as_str())
-        || is_number(value)
-        || is_block_mark(value)
+    let mut words = line.split_whitespace();
+    let first = match words.next() {
+        Some("export") => words.next(),
+        other => other,
+    };
+    first.is_some_and(|w| DECLARATIONS.contains(&w))
+}
+
+/// Whether the value of a secret key may be a secret (see the module doc for the principle). Never: empty, hidden,
+/// a reference, a bool, a command (`$(…)`). Weak slots: only a value that is no slot name and (env-style key | looks
+/// random). Not strong: a number, a color. Env lines (`DB_PASSWORD=…`, dotenv): everything else. Quoted: not the
+/// key's own name (`password: "Password"`) nor a sentence (strong: only with an end mark | 4+ words; passphrase:
+/// never). Unquoted: not code (`new`, `getPassword()`, `os.environ["X"]`, `process.env.X`), a block mark, a YAML tag
+/// (`!Ref`), the key's own name (strong: only in code), a variable named like a secret in code, an identifier ending
+/// a lone statement (`token = t;`), or a word starting a sentence (`The password: must be long`).
+fn looks_secret(
+    class: KeyClass,
+    key: &str,
+    value: &str,
+    quoted: bool,
+    after: &str,
+    line: &str,
+) -> bool {
+    let lower = value.to_lowercase();
+    if value.is_empty()
+        || value == HIDDEN
+        || is_reference(value)
+        || BOOL_WORDS.contains(&lower.as_str())
     {
         return false;
     }
-    // `!Ref x`, `&anchor`, `*alias`: YAML tags and pointers
-    if value.contains(['(', '[', '"', '\''])
+    if !quoted && value.starts_with("$(") {
+        return false;
+    }
+    let strong = class == KeyClass::Strong;
+    if class == KeyClass::Weak && (is_slug(value) || !(is_env_style(key) || looks_random(value))) {
+        return false;
+    }
+    if !strong && (is_number(value) || is_color(value)) {
+        return false;
+    }
+    if quoted {
+        if flat(value) == flat(key) {
+            return false;
+        }
+        let words: Vec<&str> = value.split_whitespace().collect();
+        let sentence = words.len() > 1 && words.iter().all(|w| is_prose_word(w));
+        if !strong {
+            return !sentence;
+        }
+        if key_words(key).iter().any(|w| w.ends_with("passphrase")) {
+            return true;
+        }
+        let end_mark = value.trim_end().ends_with(['.', '!', '?', ':']);
+        return !(sentence && (end_mark || words.len() >= 4));
+    }
+    if CODE_WORDS.contains(&lower.as_str())
+        || is_block_mark(value)
         || value.starts_with(['!', '&', '*'])
+        || is_call(value)
         || is_member(value)
     {
         return false;
     }
-    if is_identifier(value) && (is_variable(value) || after.starts_with(';')) {
+    let code = in_code(after, line);
+    if flat(value) == flat(key) && (!strong || code) {
         return false;
     }
-    // a word followed by more words: a sentence (`The password: must be long`); `hunter2 is rotated` stays secret
+    if is_identifier(value) && !value.chars().any(char::is_numeric) {
+        if is_variable(value) && code {
+            return false;
+        }
+        if after.starts_with(';') && line.matches('=').count() == 1 {
+            return false;
+        }
+    }
     let mut rest = after.chars().skip_while(|c| matches!(c, ' ' | '\t'));
     !(value.chars().all(char::is_alphabetic)
         && after.starts_with([' ', '\t'])
@@ -587,6 +736,14 @@ fn is_random(body: &str) -> bool {
         && body.chars().any(|c| c.is_ascii_uppercase())
         && body.chars().any(|c| c.is_ascii_lowercase())
         && body.chars().any(|c| c.is_ascii_digit())
+}
+
+/// The rest of a Hugging Face token: 30+ letters | digits with upper and lower case (often no digit).
+fn is_random_letters(body: &str) -> bool {
+    body.len() >= 30
+        && body.chars().all(|c| c.is_ascii_alphanumeric())
+        && body.chars().any(|c| c.is_ascii_uppercase())
+        && body.chars().any(|c| c.is_ascii_lowercase())
 }
 
 fn is_token_char(c: char) -> bool {
@@ -604,7 +761,12 @@ fn token_at(s: &str) -> Option<usize> {
     for prefix in RANDOM_PREFIXES {
         if let Some(rest) = s.strip_prefix(prefix) {
             let body = run(rest, true);
-            return is_random(&rest[..body]).then_some(prefix.len() + body);
+            let random = if *prefix == "hf_" {
+                is_random_letters(&rest[..body])
+            } else {
+                is_random(&rest[..body])
+            };
+            return random.then_some(prefix.len() + body);
         }
     }
     let after_ok = |s: &str, end: usize| !s[end..].starts_with(is_token_char);
@@ -657,45 +819,108 @@ fn token_spans(line: &str) -> Vec<Range<usize>> {
     out
 }
 
+/// A line of a PEM body: exactly 64 base64 characters with upper, lower case and digits (a hex hash is not one).
+fn is_pem_line(content: &str) -> bool {
+    let t = content.trim();
+    t.len() == 64
+        && t.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/'))
+        && t.chars().any(|c| c.is_ascii_uppercase())
+        && t.chars().any(|c| c.is_ascii_lowercase())
+        && t.chars().any(|c| c.is_ascii_digit())
+}
+
+/// `-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----` (`marker` `BEGIN` | `END`) somewhere in the line.
+fn is_private_key_marker(line: &str, marker: &str) -> bool {
+    let open = format!("-----{marker} ");
+    line.match_indices(open.as_str()).any(|(at, m)| {
+        let rest = &line[at + m.len()..];
+        let label = rest
+            .find(|c: char| !(c.is_ascii_uppercase() || c.is_ascii_digit() || c == ' '))
+            .map_or(rest, |end| &rest[..end]);
+        (label.ends_with("PRIVATE KEY") || label.ends_with("PRIVATE KEY BLOCK"))
+            && rest[label.len()..].starts_with("-----")
+    })
+}
+
+/// Line numbers (0-based) of a private key body whose `BEGIN` line is not in the text (a part read from the middle
+/// of a key): the base64 lines | blank lines right above an `END … PRIVATE KEY` line that has no `BEGIN` before it.
+fn orphan_key_lines(text: &str) -> Vec<usize> {
+    let mut out = Vec::new();
+    if !text.contains("PRIVATE KEY") {
+        return out;
+    }
+    let lines: Vec<&str> = text.lines().collect();
+    let mut inside = false;
+    for (i, line) in lines.iter().enumerate() {
+        if inside {
+            inside = !line.trim_start_matches([' ', '\t']).starts_with("-----END");
+        } else if is_private_key_marker(line, "BEGIN") {
+            inside = true;
+        } else if is_private_key_marker(line, "END") {
+            for j in (0..i).rev() {
+                let t = lines[j].trim();
+                let base64 = t.len() >= 8
+                    && t.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '='));
+                if !(t.is_empty() || base64) {
+                    break;
+                }
+                if !t.is_empty() {
+                    out.push(j);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// `text` with every secret value replaced by [`HIDDEN`]; borrowed when nothing was hidden.
 #[must_use]
 pub fn mask_text(text: &str) -> Cow<'_, str> {
     let lower = text.to_lowercase();
-    if !HINTS.iter().any(|hint| lower.contains(hint)) {
+    if !HINTS.iter().any(|hint| lower.contains(hint)) && !text.lines().any(is_pem_line) {
         return Cow::Borrowed(text);
     }
+    let orphans = orphan_key_lines(text);
     let mut out = String::with_capacity(text.len());
     let mut changed = false;
     let mut named = false; // the line before named a secret variable (`- name: DB_PASSWORD`)
     let mut in_key = false; // inside the body of a private key block
     let mut rest = text;
+    let mut index = 0;
     while !rest.is_empty() {
         let line_end = rest.find('\n').map_or(rest.len(), |i| i + 1);
         let (line, tail) = rest.split_at(line_end);
         rest = tail;
+        let number = index;
+        index += 1;
         let content = line.strip_suffix('\n').unwrap_or(line);
         let content = content.strip_suffix('\r').unwrap_or(content);
-        if in_key {
+        let end = content
+            .trim_start_matches([' ', '\t'])
+            .starts_with("-----END");
+        let body = if in_key {
+            in_key = !end;
+            !end
+        } else {
+            orphans.contains(&number) || is_pem_line(content)
+        };
+        if body {
             named = false;
             let trimmed = content.trim();
-            if content
-                .trim_start_matches([' ', '\t'])
-                .starts_with("-----END")
-            {
-                in_key = false;
-            } else if !trimmed.is_empty() && trimmed != HIDDEN {
+            if !trimmed.is_empty() && trimmed != HIDDEN {
                 let lead = content.len() - content.trim_start().len();
                 out.push_str(&content[..lead]);
                 out.push_str(HIDDEN);
                 out.push_str(&line[content.len()..]);
                 changed = true;
-                continue;
+            } else {
+                out.push_str(line);
             }
-            out.push_str(line);
             continue;
         }
-        if content.contains("-----BEGIN ") && is_private_key_begin(content) && line.ends_with('\n')
-        {
+        if !end && is_private_key_marker(content, "BEGIN") && line.ends_with('\n') {
             in_key = true;
         }
         match mask_line(content, &mut named) {
@@ -712,17 +937,6 @@ pub fn mask_text(text: &str) -> Cow<'_, str> {
     } else {
         Cow::Borrowed(text)
     }
-}
-
-/// `-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----` somewhere in the line.
-fn is_private_key_begin(line: &str) -> bool {
-    line.match_indices("-----BEGIN ").any(|(at, m)| {
-        let rest = &line[at + m.len()..];
-        let label = rest
-            .find(|c: char| !(c.is_ascii_uppercase() || c.is_ascii_digit() || c == ' '))
-            .map_or(rest, |end| &rest[..end]);
-        label.ends_with("PRIVATE KEY") && rest[label.len()..].starts_with("-----")
-    })
 }
 
 /// Where the password of a `scheme://user:password@host` address sits in `text`: the first one.
@@ -785,44 +999,134 @@ fn is_ident(c: char) -> bool {
     c.is_alphanumeric() || matches!(c, '_' | '-' | '.')
 }
 
-/// The value that starts at char `cur` (as written: quoted, a list, or up to a space | separator | closing
-/// bracket): its bytes inside quotes | brackets, the char index after it, whether it is quoted.
-fn value_bounds(chars: &[(usize, char)], len: usize, cur: usize) -> (usize, usize, usize, bool) {
+/// A value found after a key: bytes `from..to` (inside quotes | brackets), the char index after it, quoted or not.
+struct Found {
+    from: usize,
+    to: usize,
+    next: usize,
+    quoted: bool,
+    list: bool,
+}
+
+/// The value that starts at char `cur`: quoted (also Python `b"…"`, `r'…'`), a list `[…]`, a reference `${…}` |
+/// `{{ … }}`, else up to whitespace, `,` | `;` (not in an env line: `literal`) or the quote `delim` the pair sits in;
+/// a closing bracket it did not open is left out (`{password: pwd}`).
+fn value_at(
+    chars: &[(usize, char)],
+    len: usize,
+    cur: usize,
+    delim: Option<char>,
+    literal: bool,
+) -> Found {
     let byte = |i: usize| chars.get(i).map_or(len, |(b, _)| *b);
-    let (value_start, first) = chars[cur];
-    if first == '[' {
-        let mut end = cur + 1;
-        while end < chars.len() && chars[end].1 != ']' {
-            end += 1;
-        }
-        (value_start + 1, byte(end), end + 1, false)
-    } else if matches!(first, '"' | '\'' | '`') {
-        let mut end = cur + 1;
-        while end < chars.len() && chars[end].1 != first {
+    let at = |i: usize| chars.get(i).map(|(_, c)| *c);
+    let quoted = |open: usize| {
+        let quote = chars[open].1;
+        let mut end = open + 1;
+        while end < chars.len() && chars[end].1 != quote {
             if chars[end].1 == '\\' {
                 end += 1;
             }
             end += 1;
         }
         let end = end.min(chars.len());
-        (value_start + first.len_utf8(), byte(end), end + 1, true)
-    } else {
-        let mut end = cur;
-        while end < chars.len()
-            && !chars[end].1.is_whitespace()
-            && !matches!(chars[end].1, ',' | ';' | ')' | ']' | '}')
-        {
+        Found {
+            from: chars[open].0 + 1,
+            to: byte(end),
+            next: end + 1,
+            quoted: true,
+            list: false,
+        }
+    };
+    let mut open = cur;
+    while open < cur + 2
+        && at(open).is_some_and(|c| matches!(c, 'b' | 'B' | 'r' | 'R' | 'u' | 'U' | 'f' | 'F'))
+    {
+        open += 1;
+    }
+    if open > cur && matches!(at(open), Some('"' | '\'')) {
+        return quoted(open);
+    }
+    let first = chars[cur].1;
+    if matches!(first, '"' | '\'' | '`') {
+        return quoted(cur);
+    }
+    if first == '[' {
+        let mut end = cur + 1;
+        while end < chars.len() && chars[end].1 != ']' {
             end += 1;
         }
-        (value_start, byte(end), end, false)
+        return Found {
+            from: chars[cur].0 + 1,
+            to: byte(end),
+            next: end + 1,
+            quoted: false,
+            list: true,
+        };
+    }
+    let template =
+        (first == '$' && at(cur + 1) == Some('{')) || (first == '{' && at(cur + 1) == Some('{'));
+    if template {
+        let double = at(cur + 1) == Some('{') && (first == '{' || at(cur + 2) == Some('{'));
+        let mut end = cur + 1;
+        while end < chars.len() {
+            if chars[end].1 == '}' && (!double || at(end + 1) == Some('}')) {
+                end += if double { 2 } else { 1 };
+                break;
+            }
+            end += 1;
+        }
+        let end = end.min(chars.len());
+        return Found {
+            from: chars[cur].0,
+            to: byte(end),
+            next: end,
+            quoted: false,
+            list: false,
+        };
+    }
+    let mut end = cur;
+    while end < chars.len() {
+        let c = chars[end].1;
+        if c.is_whitespace() || Some(c) == delim || (!literal && matches!(c, ',' | ';')) {
+            break;
+        }
+        end += 1;
+    }
+    if !literal {
+        // a closing bracket the value did not open belongs to the code around it
+        while end > cur {
+            let opener = match chars[end - 1].1 {
+                ')' => '(',
+                ']' => '[',
+                '}' => '{',
+                _ => break,
+            };
+            let closer = chars[end - 1].1;
+            let count = |ch: char| chars[cur..end].iter().filter(|(_, c)| *c == ch).count();
+            if count(closer) > count(opener) {
+                end -= 1;
+            } else {
+                break;
+            }
+        }
+    }
+    Found {
+        from: chars[cur].0,
+        to: byte(end),
+        next: end,
+        quoted: false,
+        list: false,
     }
 }
 
 /// `key <sep> value` pairs whose key is secret (or that are the `value` of a `name: <secret>` on this line or the
 /// one before; `named` carries that from line to line).
+#[allow(clippy::too_many_lines)]
 fn mask_pairs<'a>(line: &'a str, named: &mut bool) -> Cow<'a, str> {
     let chars: Vec<(usize, char)> = line.char_indices().collect();
     let byte = |i: usize| chars.get(i).map_or(line.len(), |(b, _)| *b);
+    let at = |i: usize| chars.get(i).map(|(_, c)| *c);
     let named_before = std::mem::take(named);
     let mut out = String::new();
     let mut copied = 0; // byte offset in `line` copied so far
@@ -839,74 +1143,133 @@ fn mask_pairs<'a>(line: &'a str, named: &mut bool) -> Cow<'a, str> {
             key_end_at += 1;
         }
         let key = &line[byte(pos)..byte(key_end_at)];
+        let before = pos.checked_sub(1).and_then(at);
+        if before == Some('/') && pos.checked_sub(2).and_then(at) == Some('/') {
+            // `scheme://user:password@host`: an address, its password is masked as one
+            pos = key_end_at;
+            continue;
+        }
         // optional closing quote of a quoted key, spaces, then the separator
         let mut cur = key_end_at;
-        if cur < chars.len() && matches!(chars[cur].1, '"' | '\'') {
+        let closed = at(cur).is_some_and(|c| matches!(c, '"' | '\''));
+        if closed {
+            cur += 1;
+            // an index assignment: `$config['db_password'] = …`, `os.environ["TOKEN"] = …`
+            if at(cur) == Some(']') {
+                cur += 1;
+            }
+        }
+        // a pair inside quotes (`-H "X-Api-Key: v"`): the value ends at that quote
+        let delim = before
+            .filter(|q| matches!(q, '"' | '\'' | '`') && !(closed && at(key_end_at) == Some(*q)));
+        while at(cur).is_some_and(|c| matches!(c, ' ' | '\t')) {
             cur += 1;
         }
-        while cur < chars.len() && matches!(chars[cur].1, ' ' | '\t') {
-            cur += 1;
-        }
-        let next_char = |i: usize| chars.get(i).map(|(_, c)| *c);
-        let separated = match next_char(cur) {
+        let sep = at(cur);
+        let arrow = sep == Some('=') && at(cur + 1) == Some('>');
+        let separated = match sep {
             // `::` is a path (Rust), `:=` is still an assignment
-            Some(':') => next_char(cur + 1) != Some(':'),
-            // `==`, `===` compare, `=>` is an arrow
-            Some('=') => !matches!(next_char(cur + 1), Some('=' | '>')),
+            Some(':') => at(cur + 1) != Some(':'),
+            // `==`, `===` compare; `=>` pairs a quoted key | a Ruby symbol (`'password' => 'x'`), else an arrow
+            Some('=') => at(cur + 1) != Some('=') && (!arrow || closed || before == Some(':')),
             _ => false,
         };
         if !separated {
             pos = key_end_at;
             continue;
         }
+        let env_line = sep == Some('=')
+            && !arrow
+            && cur == key_end_at
+            && is_env_style(key)
+            && matches!(line[..byte(pos)].trim(), "" | "export");
         cur += 1;
-        if chars[cur - 1].1 == ':' && next_char(cur) == Some('=') {
+        if (sep == Some(':') && at(cur) == Some('=')) || arrow {
             cur += 1;
         }
-        while cur < chars.len() && matches!(chars[cur].1, ' ' | '\t') {
+        while at(cur).is_some_and(|c| matches!(c, ' ' | '\t')) {
             cur += 1;
         }
-        let Some(&(_, first)) = chars.get(cur) else {
+        let Some(first) = at(cur) else {
             break;
         };
-        let (value_from, value_to, next, quoted) = value_bounds(&chars, line.len(), cur);
+        let mut found = value_at(&chars, line.len(), cur, delim, env_line);
         let lowered = key.to_lowercase();
-        let value_text = &line[value_from..value_to.max(value_from)];
-        if NAME_KEYS.contains(&lowered.as_str()) && is_secret_key(value_text) {
+        if NAME_KEYS.contains(&lowered.as_str())
+            && is_secret_key(&line[found.from..found.to.max(found.from)])
+        {
             *named = true;
         }
-        let key_secret = is_secret_key(key)
-            || (VALUE_KEYS.contains(&lowered.as_str()) && (named_before || *named));
-        if !key_secret {
+        let class = key_class(key).or_else(|| {
+            (VALUE_KEYS.contains(&lowered.as_str()) && (named_before || *named))
+                .then_some(KeyClass::Normal)
+        });
+        let Some(class) = class else {
             // only the key is used up: a value may hold a pair of its own (`x: password=abc`)
             pos = key_end_at;
             continue;
-        }
-        if first == '{' {
+        };
+        if first == '{' && at(cur + 1) != Some('{') {
             // a nested table: its own keys are looked at one by one
             pos = cur + 1;
             continue;
         }
-        let value_end = byte(next.min(chars.len()));
-        let after = &line[value_end..];
-        let template = first == '`' && value_text.contains("${");
-        let secret = if first == '[' {
-            !value_text.trim().is_empty() && value_text != HIDDEN
-        } else {
-            !template && looks_secret(key, value_text, quoted, after)
-        };
-        if value_to > value_from && secret && !is_count(key, value_text) {
-            out.push_str(&line[copied..value_from]);
-            out.push_str(HIDDEN);
-            copied = value_to;
+        // `Authorization: Bearer <token>`: the credential is the word after the scheme
+        let scheme = &line[found.from..found.to.max(found.from)];
+        if !found.quoted && AUTH_SCHEMES.contains(&scheme.to_lowercase().as_str()) {
+            let mut word = found.next;
+            while at(word).is_some_and(|c| matches!(c, ' ' | '\t')) {
+                word += 1;
+            }
+            if word > found.next && at(word).is_some_and(|c| Some(c) != delim && !c.is_whitespace())
+            {
+                found = value_at(&chars, line.len(), word, delim, true);
+            }
         }
-        pos = next.max(key_end_at);
+        let value = &line[found.from..found.to.max(found.from)];
+        let after = &line[byte(found.next.min(chars.len()))..];
+        let secret = if found.list {
+            !value.trim().is_empty() && value != HIDDEN
+        } else if first == '`' && value.contains("${") {
+            false
+        } else if env_line {
+            env_value_secret(class, key, value)
+        } else {
+            looks_secret(class, key, value, found.quoted, after, line)
+        };
+        if found.to > found.from && secret && !is_count(key, value) {
+            out.push_str(&line[copied..found.from]);
+            out.push_str(HIDDEN);
+            copied = found.to;
+        }
+        pos = found.next.max(key_end_at);
     }
     if copied == 0 {
         Cow::Borrowed(line)
     } else {
         out.push_str(&line[copied..]);
         Cow::Owned(out)
+    }
+}
+
+/// The value of an env line (`DB_PASSWORD=…`, dotenv | shell): literal to the end of its token; only a reference,
+/// a command (`$(…)`), a bool, a slot name under a weak key and (not strong) a number are no secret.
+fn env_value_secret(class: KeyClass, key: &str, value: &str) -> bool {
+    let lower = value.to_lowercase();
+    if value.is_empty()
+        || value == HIDDEN
+        || is_reference(value)
+        || value.starts_with("$(")
+        || BOOL_WORDS.contains(&lower.as_str())
+    {
+        return false;
+    }
+    match class {
+        KeyClass::Strong => true,
+        KeyClass::Normal => !is_number(value),
+        KeyClass::Weak => {
+            !is_number(value) && !is_slug(value) && (is_env_style(key) || looks_random(value))
+        }
     }
 }
 
@@ -999,6 +1362,8 @@ mod tests {
                 && is_slug("user-cache")
                 && !is_slug("hunter2")
                 && !is_slug("App.x")
+                && is_slug("app-theme-v2")
+                && !is_slug("a1b2c3d4-e5f6")
         );
     }
 
@@ -1040,5 +1405,28 @@ mod tests {
             let once = mask_text(text).into_owned();
             assert_eq!(mask_text(&once), once);
         }
+    }
+
+    /// Verifier proof: real secrets that must not survive (`testdata/secrets/leaks.json`).
+    #[test]
+    fn verifier_leaks_are_hidden() {
+        let doc: Value =
+            serde_json::from_str(include_str!("../../../../testdata/secrets/leaks.json"))
+                .unwrap_or(Value::Null);
+        let leaks = doc["leaks"].as_array().cloned().unwrap_or_default();
+        assert!(leaks.len() > 10, "the leaks file is read");
+        let through: Vec<String> = leaks
+            .iter()
+            .filter(|l| {
+                let (input, secret) = (l[1].as_str().unwrap_or(""), l[2].as_str().unwrap_or(""));
+                mask_text(input).contains(secret)
+            })
+            .map(|l| l[0].as_str().unwrap_or("").to_owned())
+            .collect();
+        assert!(
+            through.is_empty(),
+            "{} let through: {through:#?}",
+            through.len()
+        );
     }
 }

@@ -87,3 +87,17 @@ describe("secrets in a loose text", () => {
     expect(MASK).toBe("••••••");
   });
 });
+
+describe("verifier: real secrets the rule must not let through", () => {
+  const leaks = (
+    JSON.parse(readFileSync(join(process.cwd(), "testdata/secrets/leaks.json"), "utf8")) as {
+      leaks: [string, string, string][];
+    }
+  ).leaks;
+  it("hides every secret of testdata/secrets/leaks.json", () => {
+    const through = leaks
+      .filter(([, input, secret]) => hide(input).includes(secret))
+      .map(([label]) => label);
+    expect(through).toEqual([]);
+  });
+});

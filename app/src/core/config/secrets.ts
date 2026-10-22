@@ -1,8 +1,10 @@
 // Secrets on screen: what a hidden value looks like, and which values of a loose text (a code block, a code file) are
 // secret. Config files get their secret spans from the backend (the structure of the format); text without a format
-// uses the rule here, the mirror of `secrets::mask_text` (Rust): a key whose name ends in a secret word, followed by
-// `=` | `:` and a value that looks like a secret; the password of an address; known token formats wherever they are;
-// the body of a private key block. Both read the cases of `testdata/secrets/cases.json`.
+// uses the rule here, a line-by-line port of `secrets::mask_text` (Rust): a key whose name ends in a secret word,
+// followed by `=` | `:` | `=>` and a value that may be a secret; the password of an address; known token formats
+// wherever they are; the body of a private key. Principle: in a slot named like a secret, mask when in doubt; names
+// that only contain a secret word (`keys`, `keyJump`) are no slot. Both mirrors read `testdata/secrets/cases.json`
+// and `testdata/secrets/leaks.json`.
 
 /** What a hidden value shows. Fixed: the length of the value is not given away. */
 export const MASK = "••••••";
@@ -10,8 +12,8 @@ export const MASK = "••••••";
 /** What the backend writes for a hidden value; never hidden twice. */
 const HIDDEN = "<hidden>";
 
-/** Last words of a key that name a secret (`DB_PASSWORD`, `clientSecret`, `GITHUB_TOKEN`, `basic_auth`). */
-const SECRET_WORDS = new Set([
+/** Last words of a key that name a password-class secret (`DB_PASSWORD`, `clientSecret`, `credentials`). */
+const STRONG_WORDS = new Set([
   "secret",
   "secrets",
   "password",
@@ -22,6 +24,9 @@ const SECRET_WORDS = new Set([
   "passphrase",
   "credential",
   "credentials",
+]);
+/** Last words of a key that name a token-class secret (`GITHUB_TOKEN`, `basic_auth`, `apikey`). */
+const NORMAL_WORDS = new Set([
   "token",
   "tokens",
   "auth",
@@ -32,9 +37,11 @@ const SECRET_WORDS = new Set([
   "secretkey",
   "privatekey",
 ]);
-/** Ends of a run-together last word that name a secret (`dbpassword`, `apitoken`, `clientsecret`). */
-const SECRET_ENDINGS = ["password", "passwd", "secret", "token", "tokens"];
-/** Words before `key` that make it a secret (`api_key`, `privateKey`, `SIGNING_KEY`). */
+/** Ends of a run-together last word that name a password-class secret (`dbpassword`, `clientsecret`). */
+const STRONG_ENDINGS = ["password", "passwd", "secret"];
+/** Ends of a run-together last word that name a token (`apitoken`); `maxtokens` is a count. */
+const TOKEN_ENDINGS = ["token", "tokens"];
+/** Words before `key` that make it a token-class secret (`api_key`, `privateKey`, `SIGNING_KEY`). */
 const KEY_QUALIFIERS = new Set([
   "api",
   "access",
@@ -87,7 +94,10 @@ const KEY_QUALIFIERS = new Set([
   "kms",
   "sas",
 ]);
-/** Words before `KEY` in an env-style name (`STRIPE_KEY` is secret) that keep it ordinary (`PUBLIC_KEY`, `CACHE_KEY`). */
+/**
+ * Words before `key` that keep it ordinary (`PUBLIC_KEY`, `cacheKey`, `i18nKey` (words `i n key`)); any other word
+ * makes a weak secret slot (`STRIPE_KEY`, `openai_key`, `tls.key`).
+ */
 const PLAIN_KEY_QUALIFIERS = new Set([
   "public",
   "pub",
@@ -106,6 +116,7 @@ const PLAIN_KEY_QUALIFIERS = new Set([
   "route",
   "event",
   "i18n",
+  "n",
   "translation",
   "locale",
   "lang",
@@ -131,9 +142,7 @@ const PLAIN_KEY_QUALIFIERS = new Set([
   "type",
   "name",
   "id",
-  "data",
   "list",
-  "hash",
   "local",
   "sub",
   "parent",
@@ -164,7 +173,7 @@ const COUNT_WORDS = new Set([
   "remaining",
   "estimated",
 ]);
-/** Words after a secret word that only say which one (`SECRET_KEY_BASE`, `DB_PASSWORD_PROD`, `password_hash`). */
+/** Words after a secret word that only say which one (`SECRET_KEY_BASE`, `password_confirmation`). */
 const TAIL_WORDS = new Set([
   "base",
   "value",
@@ -192,9 +201,28 @@ const TAIL_WORDS = new Set([
   "primary",
   "secondary",
   "backup",
+  "confirmation",
+  "confirm",
+  "repeat",
+  "again",
+  "retype",
+  "verify",
 ]);
 /** Keys that hold a count when their value is a number (`tokens: 1200`); `api_tokens` is never one. */
 const COUNT_KEYS = ["tokens", "ntokens"];
+/** Bool | null words: a switch, never a secret. */
+const BOOL_WORDS = new Set([
+  "true",
+  "false",
+  "null",
+  "nil",
+  "none",
+  "undefined",
+  "yes",
+  "no",
+  "on",
+  "off",
+]);
 /** Words of code that start an expression, not a value (`token = new Token()`, `key = await load()`). */
 const CODE_WORDS = new Set([
   "new",
@@ -209,17 +237,28 @@ const CODE_WORDS = new Set([
   "lambda",
   "yield",
   "not",
-  "true",
-  "false",
-  "null",
-  "nil",
-  "none",
-  "undefined",
-  "yes",
-  "no",
-  "on",
-  "off",
 ]);
+/** First words of a line that declare a variable: the line is code. */
+const DECLARATIONS = new Set([
+  "const",
+  "let",
+  "var",
+  "val",
+  "final",
+  "auto",
+  "my",
+  "local",
+  "static",
+  "private",
+  "public",
+  "protected",
+  "readonly",
+]);
+/** Words of an `Authorization` header before the credential (`Bearer <token>`, `Basic <b64>`). */
+const AUTH_SCHEMES = new Set(["bearer", "basic", "token", "digest", "bot", "negotiate", "apikey"]);
+/** Keys whose value names a variable (`- name: DB_PASSWORD`), and keys that then hold its value (`value: x`). */
+const NAME_KEYS = new Set(["name", "key", "env", "var", "variable"]);
+const VALUE_KEYS = new Set(["value", "val", "default"]);
 
 type CharKind = "upper" | "lower" | "digit" | null;
 
@@ -263,6 +302,13 @@ export function keyWords(name: string): string[] {
   return out.map((w) => w.toLowerCase()).filter((w) => !/^\p{N}+$/u.test(w));
 }
 
+/** The words of a key with the tail (`_prod`, `_base`, `_confirmation`, ...) set aside. */
+function headWords(name: string): string[] {
+  const words = keyWords(name);
+  while (words.length > 1 && TAIL_WORDS.has(words[words.length - 1] ?? "")) words.pop();
+  return words;
+}
+
 /** A number under a count key (`tokens: 1200`): a size, not a secret. */
 export function isCount(key: string, value: string): boolean {
   const flat = key.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
@@ -271,39 +317,58 @@ export function isCount(key: string, value: string): boolean {
 }
 
 /**
- * Whether a key names a secret: its last word (after `_prod`, `_base`, ... are set aside) is a secret word
- * (`DB_PASSWORD`, `clientSecret`, `authToken`, `basic_auth`), or it is `key` after a word that makes it one
- * (`api_key`, `privateKey`; env-style `STRIPE_KEY`). `keys`, `keydown`, `keyJump`, `KeyW`, `monkey`, `tokenizer`,
- * `max_tokens`, `token_count`, `authorName`, `secretName`, `PASSWORD_FILE` are not.
+ * How a key names a secret. `weak`: `<word>_KEY`, `openai_key`, `tls.key` (secret when the value looks like one);
+ * `normal`: tokens, API keys, `auth`; `strong`: passwords, secrets, credentials, passphrases.
  */
-export function isSecretKey(name: string): boolean {
-  const words = keyWords(name);
-  while (words.length > 1 && TAIL_WORDS.has(words[words.length - 1] ?? "")) words.pop();
+type KeyClass = "weak" | "normal" | "strong";
+
+function keyClass(name: string): KeyClass | null {
+  const words = headWords(name);
   const last = words[words.length - 1];
   const prev = words[words.length - 2];
-  if (last === undefined) return false;
+  if (last === undefined) return null;
   if (last === "key" || last === "keys") {
-    if (prev === undefined) return false;
-    if (KEY_QUALIFIERS.has(prev)) return true;
-    return last === "key" && !/\p{Lowercase}/u.test(name) && !PLAIN_KEY_QUALIFIERS.has(prev);
+    if (prev === undefined) return null;
+    if (KEY_QUALIFIERS.has(prev)) return "normal";
+    return last === "key" && !PLAIN_KEY_QUALIFIERS.has(prev) ? "weak" : null;
   }
-  if (prev !== undefined && SECRET_WORDS.has(prev + last)) return true;
-  if (last === "token" || last === "tokens") return prev === undefined || !COUNT_WORDS.has(prev);
-  if (SECRET_WORDS.has(last)) return true;
-  for (const ending of SECRET_ENDINGS) {
+  if (prev !== undefined) {
+    if (STRONG_WORDS.has(prev + last)) return "strong";
+    if (NORMAL_WORDS.has(prev + last)) return "normal";
+  }
+  if (last === "token" || last === "tokens") {
+    return prev !== undefined && COUNT_WORDS.has(prev) ? null : "normal";
+  }
+  if (STRONG_WORDS.has(last)) return "strong";
+  if (NORMAL_WORDS.has(last)) return "normal";
+  if (STRONG_ENDINGS.some((e) => last.length > e.length && last.endsWith(e))) return "strong";
+  for (const ending of TOKEN_ENDINGS) {
     if (last.length > ending.length && last.endsWith(ending)) {
-      return !(ending.startsWith("token") && COUNT_WORDS.has(last.slice(0, -ending.length)));
+      return COUNT_WORDS.has(last.slice(0, -ending.length)) ? null : "normal";
     }
   }
-  return false;
+  return null;
+}
+
+/**
+ * Whether a key names a secret: its last word (after `_prod`, `_base`, `_confirmation`, ... are set aside) is a
+ * secret word (`DB_PASSWORD`, `clientSecret`, `authToken`, `basic_auth`), or it is `key` after a word that is not a
+ * plain one (`api_key`, `privateKey`, `STRIPE_KEY`, `openai_key`, `tls.key`). `keys`, `keydown`, `keyJump`, `KeyW`,
+ * `monkey`, `tokenizer`, `max_tokens`, `token_count`, `authorName`, `secretName`, `PASSWORD_FILE`, `cacheKey`,
+ * `PUBLIC_KEY` are not.
+ */
+export function isSecretKey(name: string): boolean {
+  return keyClass(name) !== null;
 }
 
 export type Span = { from: number; to: number };
 
-/** `${VAR}`, `$VAR`, `{{ secrets.NAME }}`: a pointer to a secret, not the secret. */
+/** `${VAR}`, `${{ secrets.NAME }}`, `$VAR`, `{{ name }}`: a pointer to a secret, not the secret. */
 function isReference(value: string): boolean {
   const t = value.trim();
-  return t.startsWith("$") || (t.startsWith("{{") && t.endsWith("}}"));
+  if (t.startsWith("${{") || t.startsWith("{{")) return t.endsWith("}}");
+  if (t.startsWith("${") && t.endsWith("}")) return !t.slice(2, -1).includes("}");
+  return /^\$[\p{L}\p{N}_]+$/u.test(t);
 }
 
 /** Letters, digits and nothing else, lowercase: `API key` and `apiKey` read the same. */
@@ -313,17 +378,55 @@ function flat(text: string): string {
 
 const NUMBER = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 const COLOR = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-/** Words with an end mark: a value made only of these, with a space, is a sentence (`Password is required.`). */
+/** A word of a sentence: letters (and apostrophes), maybe one end mark (`required.`). */
 const PROSE_WORD = /^[\p{L}'’]+[.,!?:;]?$/u;
-/** `process.env.TOKEN`, `this.key`, `options.auth`: where a value is, not the value. */
-const MEMBER = /^[\p{L}_$]+(\.[\p{L}_$]+)+$/u;
 const IDENT = /^[\p{L}_$][\p{L}\p{N}_$]*$/u;
+/** A YAML block scalar mark (`key: |`): the value is on the next lines. */
+const BLOCK_MARK = /^[|>][+-]?[0-9]?$/;
 
-/** Secret only as an env-style `<WORD>_KEY` (`STRIPE_KEY`): such a key may name a slot (`STORAGE_KEY = "app.theme"`). */
-function isWeakKey(key: string): boolean {
-  const words = keyWords(key);
-  while (words.length > 1 && TAIL_WORDS.has(words[words.length - 1] ?? "")) words.pop();
-  return words[words.length - 1] === "key" && !KEY_QUALIFIERS.has(words[words.length - 2] ?? "");
+/** `process.env.API_KEY2`, `this.key`: where a value is. Digits only in the last part (`pk.eyJ1Ijoi.x9` is a token). */
+function isMember(s: string): boolean {
+  const parts = s.split(".");
+  return (
+    parts.length > 1 &&
+    parts.every((p) => IDENT.test(p)) &&
+    parts.slice(0, -1).every((p) => !/\p{N}/u.test(p))
+  );
+}
+
+/** `getPassword()`, `config.get('db'`, `os.environ["X"]`: a call | an index; the name before has no digits. */
+function isCall(s: string): boolean {
+  const i = s.search(/[([]/);
+  if (i <= 0) return false;
+  const name = s.slice(0, i);
+  return name.split(".").every((p) => IDENT.test(p)) && !/\p{N}/u.test(name);
+}
+
+/**
+ * Lowercase words joined by `.`, `-`, `_`, `:` or `/`: a name (`app.theme`, `user-cache`, `app-theme-v2`), not a
+ * secret. A part longer than 3 that mixes in digits (`a1b2c3d4`, `3ax6xnjp29`) makes it a secret.
+ */
+function isSlug(s: string): boolean {
+  if (!/^[a-z]/.test(s) || !/[._:/-]/.test(s)) return false;
+  return s
+    .split(/[._:/-]/)
+    .every((part) => /^[a-z0-9]+$/.test(part) && (part.length <= 3 || !/[0-9]/.test(part)));
+}
+
+/** 12+ characters of a token alphabet with letters and digits, not a slug (`0a1b2c3d4e5f`, `LS0tLS1CRUdJTi…`). */
+function looksRandom(s: string): boolean {
+  return (
+    s.length >= 12 &&
+    /^[A-Za-z0-9_\-+/=]+$/.test(s) &&
+    /[0-9]/.test(s) &&
+    /[A-Za-z]/.test(s) &&
+    !isSlug(s)
+  );
+}
+
+/** `DB_PASSWORD`, `API_KEY`: a name written env-style. */
+function isEnvStyle(key: string): boolean {
+  return /^[A-Z_][A-Z0-9_]*$/.test(key);
 }
 
 /**
@@ -334,101 +437,246 @@ function isVariable(value: string): boolean {
   return !/\p{N}/u.test(value) && keyWords(value).length > 1 && isSecretKey(value);
 }
 
-/** Lowercase words joined by `.`, `-`, `_`, `:` or `/`: a name (`app.theme`, `user-cache`), not a secret. */
-const SLUG = /^[a-z][a-z0-9]*([._:/-][a-z0-9]+)+$/;
-/** A YAML block scalar mark (`key: |`): the value is on the next lines. */
-const BLOCK_MARK = /^[|>][+-]?[0-9]?$/;
+/** Whether the value sits in code: a separator | closing bracket follows, or the line declares a variable. */
+function inCode(after: string, line: string): boolean {
+  const rest = after.trimStart();
+  // `;` ends a statement only on a line with one assignment (`Server=db;Password=x;` is a connection string)
+  if (/^[,)}]/.test(rest) || (rest.startsWith(";") && line.split("=").length === 2)) return true;
+  const words = line.split(/\s+/).filter((w) => w !== "");
+  const first = words[0] === "export" ? words[1] : words[0];
+  return first !== undefined && DECLARATIONS.has(first);
+}
 
-/**
- * Whether the value of a secret key looks like a secret: not empty, hidden, a reference, a color, a sentence, the
- * key's own name (`password: "Password"`), a slot name under an env-style key; unquoted, also not a bool | null |
- * number, a block mark, a YAML tag (`!Ref`), an expression (`getToken()`, `new X`, `env["X"]`, `process.env.X`), a
- * variable named like a secret (`token: accessToken`) or ending a statement (`token = t;`), or a word starting a
- * sentence.
- */
-function looksSecret(key: string, value: string, quoted: boolean, after: string): boolean {
-  if (value === "" || value === HIDDEN || isReference(value) || COLOR.test(value)) return false;
-  if (flat(value) === flat(key) || (SLUG.test(value) && isWeakKey(key))) return false;
+/** Whether the value of a secret key may be a secret: the mirror of `looks_secret` (Rust), which says why. */
+function looksSecret(
+  cls: KeyClass,
+  key: string,
+  value: string,
+  quoted: boolean,
+  after: string,
+  line: string,
+): boolean {
+  const lower = value.toLowerCase();
+  if (value === "" || value === HIDDEN || isReference(value) || BOOL_WORDS.has(lower)) return false;
+  if (!quoted && value.startsWith("$(")) return false;
+  const strong = cls === "strong";
+  if (cls === "weak" && (isSlug(value) || !(isEnvStyle(key) || looksRandom(value)))) return false;
+  if (!strong && (NUMBER.test(value) || COLOR.test(value))) return false;
   if (quoted) {
-    const parts = value.split(/\s+/u).filter((p) => p !== "");
-    return !(parts.length > 1 && parts.every((p) => PROSE_WORD.test(p)));
+    if (flat(value) === flat(key)) return false;
+    const words = value.split(/\s+/u).filter((w) => w !== "");
+    const sentence = words.length > 1 && words.every((w) => PROSE_WORD.test(w));
+    if (!strong) return !sentence;
+    if (keyWords(key).some((w) => w.endsWith("passphrase"))) return true;
+    const endMark = /[.!?:]$/.test(value.trimEnd());
+    return !(sentence && (endMark || words.length >= 4));
   }
-  if (CODE_WORDS.has(value.toLowerCase()) || NUMBER.test(value) || BLOCK_MARK.test(value))
-    return false;
-  // `!Ref x`, `&anchor`, `*alias`: YAML tags and pointers
-  if (/[(["']/.test(value) || /^[!&*]/.test(value) || MEMBER.test(value)) return false;
-  if (IDENT.test(value) && (isVariable(value) || after.startsWith(";"))) return false;
+  if (CODE_WORDS.has(lower) || BLOCK_MARK.test(value) || /^[!&*]/.test(value)) return false;
+  if (isCall(value) || isMember(value)) return false;
+  const code = inCode(after, line);
+  if (flat(value) === flat(key) && (!strong || code)) return false;
+  if (IDENT.test(value) && !/\p{N}/u.test(value)) {
+    if (isVariable(value) && code) return false;
+    if (after.startsWith(";") && line.split("=").length === 2) return false;
+  }
   // a word followed by more words: a sentence (`The password: must be long`); `hunter2 is rotated` stays secret
   return !(/^\p{Alphabetic}+$/u.test(value) && /^[ \t]+[\p{L}\p{N}]/u.test(after));
 }
 
-// key, optional closing quote and spaces, the separator (`==`, `===`, `=>`, `::` are not one), spaces, the value
-const PAIR =
-  /(?<![\p{L}\p{N}_.-])([\p{L}\p{N}_.-]+)(["']?[ \t]*)(:=|=(?![=>])|:(?!:))([ \t]*)(\$?\{\{[^}\n]*\}\}|\$\{[^}\n]*\}|"(?:[^"\\\r\n]|\\.)*"?|'(?:[^'\\\r\n]|\\.)*'?|`(?:[^`\\\r\n]|\\.)*`?|\[[^\]\r\n]*\]?|[^\s,;)\]}]+)/gu;
-
-/** Keys whose value names a variable (`- name: DB_PASSWORD`), and keys that then hold its value (`value: x`). */
-const NAME_KEYS = new Set(["name", "key", "env", "var", "variable"]);
-const VALUE_KEYS = new Set(["value", "val", "default"]);
-
-/** The value of a quoted | unquoted token, quotes off. */
-function unquote(value: string): string {
-  return /^["'`]/.test(value)
-    ? value.slice(1, value.endsWith(value[0] ?? "") ? -1 : undefined)
-    : value;
+/** The value of an env line (`DB_PASSWORD=…`, dotenv | shell): the mirror of `env_value_secret` (Rust). */
+function envValueSecret(cls: KeyClass, key: string, value: string): boolean {
+  if (
+    value === "" ||
+    value === HIDDEN ||
+    isReference(value) ||
+    value.startsWith("$(") ||
+    BOOL_WORDS.has(value.toLowerCase())
+  ) {
+    return false;
+  }
+  if (cls === "strong") return true;
+  if (cls === "normal") return !NUMBER.test(value);
+  return !NUMBER.test(value) && !isSlug(value) && (isEnvStyle(key) || looksRandom(value));
 }
 
-/** Whether a quoted value has its closing quote (one not escaped by a backslash). */
-function isClosed(value: string): boolean {
-  if (value.length < 2 || !value.endsWith(value[0] ?? "")) return false;
-  let slashes = 0;
-  while (value[value.length - 2 - slashes] === "\\" && value.length - 2 - slashes > 0) slashes += 1;
-  return slashes % 2 === 0;
+/** One line as code points: `at(i)` the point, `off(i)` its UTF-16 offset (`line.length` past the end). */
+type Line = { points: string[]; offsets: number[]; text: string };
+
+function asLine(text: string): Line {
+  const points: string[] = [];
+  const offsets: number[] = [];
+  let at = 0;
+  for (const p of text) {
+    points.push(p);
+    offsets.push(at);
+    at += p.length;
+  }
+  return { points, offsets, text };
 }
 
-/** Spans of the values of secret keys: `key <sep> value` pairs, a key's own value or the `value` after its `name`. */
-function pairSpans(text: string): Span[] {
+const off = (l: Line, i: number): number => l.offsets[i] ?? l.text.length;
+const pt = (l: Line, i: number): string | undefined => l.points[i];
+const isIdentChar = (c: string | undefined): boolean =>
+  c !== undefined && /[\p{L}\p{N}_.-]/u.test(c);
+
+type Found = { from: number; to: number; next: number; quoted: boolean; list: boolean };
+
+/** The value that starts at point `cur`: the mirror of `value_at` (Rust). */
+function valueAt(l: Line, cur: number, delim: string | null, literal: boolean): Found {
+  const n = l.points.length;
+  const quotedAt = (open: number): Found => {
+    const quote = pt(l, open);
+    let end = open + 1;
+    while (end < n && pt(l, end) !== quote) {
+      if (pt(l, end) === "\\") end += 1;
+      end += 1;
+    }
+    end = Math.min(end, n);
+    return { from: off(l, open) + 1, to: off(l, end), next: end + 1, quoted: true, list: false };
+  };
+  let open = cur;
+  while (open < cur + 2 && /^[bBrRuUfF]$/.test(pt(l, open) ?? "")) open += 1;
+  if (open > cur && (pt(l, open) === '"' || pt(l, open) === "'")) return quotedAt(open);
+  const first = pt(l, cur) ?? "";
+  if (first === '"' || first === "'" || first === "`") return quotedAt(cur);
+  if (first === "[") {
+    let end = cur + 1;
+    while (end < n && pt(l, end) !== "]") end += 1;
+    return { from: off(l, cur) + 1, to: off(l, end), next: end + 1, quoted: false, list: true };
+  }
+  if ((first === "$" && pt(l, cur + 1) === "{") || (first === "{" && pt(l, cur + 1) === "{")) {
+    const double = pt(l, cur + 1) === "{" && (first === "{" || pt(l, cur + 2) === "{");
+    let end = cur + 1;
+    while (end < n) {
+      if (pt(l, end) === "}" && (!double || pt(l, end + 1) === "}")) {
+        end += double ? 2 : 1;
+        break;
+      }
+      end += 1;
+    }
+    end = Math.min(end, n);
+    return { from: off(l, cur), to: off(l, end), next: end, quoted: false, list: false };
+  }
+  let end = cur;
+  while (end < n) {
+    const c = pt(l, end) ?? "";
+    if (/\s/u.test(c) || c === delim || (!literal && (c === "," || c === ";"))) break;
+    end += 1;
+  }
+  if (!literal) {
+    // a closing bracket the value did not open belongs to the code around it
+    const pairs: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
+    while (end > cur) {
+      const closer = pt(l, end - 1) ?? "";
+      const opener = pairs[closer];
+      if (opener === undefined) break;
+      const part = l.points.slice(cur, end);
+      const count = (ch: string): number => part.filter((c) => c === ch).length;
+      if (count(closer) > count(opener)) end -= 1;
+      else break;
+    }
+  }
+  return { from: off(l, cur), to: off(l, end), next: end, quoted: false, list: false };
+}
+
+/** Spans (in the line) of the values of secret keys: the mirror of `mask_pairs` (Rust); `named` carries over. */
+function pairSpans(text: string, named: { value: boolean }): Span[] {
+  const l = asLine(text);
+  const n = l.points.length;
+  const namedBefore = named.value;
+  named.value = false;
   const found: Span[] = [];
-  let line = 0; // line of the last match
-  let counted = 0; // offset up to which `line` counts the line breaks
-  let named = -2; // line of the last `name: <secret key>`
-  PAIR.lastIndex = 0;
-  for (let match = PAIR.exec(text); match !== null; match = PAIR.exec(text)) {
-    const [whole, key, , , gap, value] = match;
-    if (key === undefined || value === undefined || gap === undefined) continue;
-    for (; counted < match.index; counted += 1) if (text[counted] === "\n") line += 1;
+  let pos = 0;
+  while (pos < n) {
+    if (!isIdentChar(pt(l, pos)) || (pos > 0 && isIdentChar(pt(l, pos - 1)))) {
+      pos += 1;
+      continue;
+    }
+    let keyEnd = pos;
+    while (keyEnd < n && isIdentChar(pt(l, keyEnd))) keyEnd += 1;
+    const key = text.slice(off(l, pos), off(l, keyEnd));
+    const before = pos > 0 ? pt(l, pos - 1) : undefined;
+    if (before === "/" && pos > 1 && pt(l, pos - 2) === "/") {
+      // `scheme://user:password@host`: an address, its password is masked as one
+      pos = keyEnd;
+      continue;
+    }
+    let cur = keyEnd;
+    const closed = pt(l, cur) === '"' || pt(l, cur) === "'";
+    if (closed) {
+      cur += 1;
+      // an index assignment: `$config['db_password'] = …`, `os.environ["TOKEN"] = …`
+      if (pt(l, cur) === "]") cur += 1;
+    }
+    const delim =
+      before !== undefined && /^["'`]$/.test(before) && !(closed && pt(l, keyEnd) === before)
+        ? before
+        : null;
+    while (pt(l, cur) === " " || pt(l, cur) === "\t") cur += 1;
+    const sep = pt(l, cur);
+    const arrow = sep === "=" && pt(l, cur + 1) === ">";
+    const separated =
+      sep === ":"
+        ? pt(l, cur + 1) !== ":"
+        : sep === "="
+          ? pt(l, cur + 1) !== "=" && (!arrow || closed || before === ":")
+          : false;
+    if (!separated) {
+      pos = keyEnd;
+      continue;
+    }
+    const envLine =
+      sep === "=" &&
+      !arrow &&
+      cur === keyEnd &&
+      isEnvStyle(key) &&
+      ["", "export"].includes(text.slice(0, off(l, pos)).trim());
+    cur += 1;
+    if ((sep === ":" && pt(l, cur) === "=") || arrow) cur += 1;
+    while (pt(l, cur) === " " || pt(l, cur) === "\t") cur += 1;
+    const first = pt(l, cur);
+    if (first === undefined) break;
+    let value = valueAt(l, cur, delim, envLine);
     const lowered = key.toLowerCase();
-    if (NAME_KEYS.has(lowered) && isSecretKey(unquote(value))) named = line;
-    const keySecret = isSecretKey(key) || (VALUE_KEYS.has(lowered) && line - named <= 1);
-    if (!keySecret) {
+    if (
+      NAME_KEYS.has(lowered) &&
+      isSecretKey(text.slice(value.from, Math.max(value.to, value.from)))
+    ) {
+      named.value = true;
+    }
+    const cls: KeyClass | null =
+      keyClass(key) ?? (VALUE_KEYS.has(lowered) && (namedBefore || named.value) ? "normal" : null);
+    if (cls === null) {
       // only the key is used up: a value may hold a pair of its own (`x: password=abc`)
-      PAIR.lastIndex = match.index + key.length;
+      pos = keyEnd;
       continue;
     }
-    const start = match.index + whole.length - value.length;
-    if (value.startsWith("{")) {
+    if (first === "{" && pt(l, cur + 1) !== "{") {
       // a nested table: its own keys are looked at one by one
-      PAIR.lastIndex = start + 1;
+      pos = cur + 1;
       continue;
     }
-    let from = start;
-    let to = start + value.length;
-    const quoted = /^["'`]/.test(value);
-    if (quoted) {
-      from += 1;
-      if (isClosed(value)) to -= 1;
-      if (value.startsWith("`") && value.includes("${")) continue;
-    } else if (value.startsWith("[")) {
-      from += 1;
-      if (value.endsWith("]")) to -= 1;
+    // `Authorization: Bearer <token>`: the credential is the word after the scheme
+    const scheme = text.slice(value.from, Math.max(value.to, value.from));
+    if (!value.quoted && AUTH_SCHEMES.has(scheme.toLowerCase())) {
+      let word = value.next;
+      while (pt(l, word) === " " || pt(l, word) === "\t") word += 1;
+      const c = pt(l, word);
+      if (word > value.next && c !== undefined && c !== delim && !/\s/u.test(c)) {
+        value = valueAt(l, word, delim, true);
+      }
     }
-    const inner = text.slice(from, to);
-    if (isCount(key, inner)) continue;
-    const lineEnd = text.indexOf("\n", start);
-    const after = text.slice(start + value.length, lineEnd < 0 ? text.length : lineEnd);
-    const list = value.startsWith("[");
-    if (list ? inner.trim() !== "" && inner !== HIDDEN : looksSecret(key, inner, quoted, after)) {
-      found.push({ from, to });
+    const inner = text.slice(value.from, Math.max(value.to, value.from));
+    const after = text.slice(off(l, Math.min(value.next, n)));
+    let secret: boolean;
+    if (value.list) secret = inner.trim() !== "" && inner !== HIDDEN;
+    else if (first === "`" && inner.includes("${")) secret = false;
+    else if (envLine) secret = envValueSecret(cls, key, inner);
+    else secret = looksSecret(cls, key, inner, value.quoted, after, text);
+    if (value.to > value.from && secret && !isCount(key, inner)) {
+      found.push({ from: value.from, to: value.to });
     }
+    pos = Math.max(value.next, keyEnd);
   }
   return found;
 }
@@ -441,27 +689,51 @@ const TOKEN =
   /(?<![\p{L}\p{N}_-])(?:(sk-|sk_live_|sk_test_|rk_live_|rk_test_|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|glpat-|hf_|npm_)([A-Za-z0-9_-]+)|(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{35}|xox[abprs]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})(?![A-Za-z0-9_-])/gu;
 
 /** The random part of a prefixed token: 20+ characters with upper, lower case and digits (a slug is not one). */
-function isRandom(body: string): boolean {
+function isRandom(prefix: string, body: string): boolean {
+  if (prefix === "hf_") {
+    // Hugging Face: 30+ letters | digits with upper and lower case, often no digit
+    return (
+      body.length >= 30 && /^[A-Za-z0-9]+$/.test(body) && /[A-Z]/.test(body) && /[a-z]/.test(body)
+    );
+  }
   return body.length >= 20 && /[A-Z]/.test(body) && /[a-z]/.test(body) && /[0-9]/.test(body);
 }
 
-/** Lines of a `-----BEGIN ... PRIVATE KEY-----` block: from the line after it to the `-----END` line (or the end). */
-const PRIVATE_KEY =
-  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[^\n]*\n([\s\S]*?)(?=^[ \t]*-----END|(?![\s\S]))/gm;
+/** A line of a PEM body: exactly 64 base64 characters with upper, lower case and digits (a hex hash is not one). */
+function isPemLine(line: string): boolean {
+  const t = line.trim();
+  return (
+    t.length === 64 &&
+    /^[A-Za-z0-9+/]+$/.test(t) &&
+    /[A-Z]/.test(t) &&
+    /[a-z]/.test(t) &&
+    /[0-9]/.test(t)
+  );
+}
 
-/** Spans of the body lines of private key blocks: each line from its first non-space character, `\r` left out. */
-function privateKeySpans(text: string): Span[] {
-  const out: Span[] = [];
-  for (const match of text.matchAll(PRIVATE_KEY)) {
-    const body = match[1] ?? "";
-    let at = match.index + match[0].length - body.length;
-    for (const line of body.split("\n")) {
-      const content = line.endsWith("\r") ? line.slice(0, -1) : line;
-      const lead = content.length - content.trimStart().length;
-      if (content.trim() !== "" && content.trim() !== HIDDEN) {
-        out.push({ from: at + lead, to: at + content.length });
+/** `-----BEGIN | END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----` in a line. */
+const BEGIN_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/;
+const END_KEY = /-----END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/;
+const END_LINE = /^[ \t]*-----END/;
+
+/** Lines (0-based) of private key bodies: inside BEGIN..END, a body above an END with no BEGIN (a part read from the middle of a key). */
+function keyBodyLines(lines: readonly string[]): Set<number> {
+  const out = new Set<number>();
+  if (!lines.some((line) => line.includes("PRIVATE KEY"))) return out;
+  let inside = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (inside) {
+      inside = !END_LINE.test(line);
+      if (inside && line.trim() !== "") out.add(i);
+    } else if (BEGIN_KEY.test(line)) {
+      inside = i + 1 < lines.length;
+    } else if (END_KEY.test(line)) {
+      for (let j = i - 1; j >= 0; j -= 1) {
+        const t = (lines[j] ?? "").trim();
+        if (!(t === "" || (t.length >= 8 && /^[A-Za-z0-9+/=]+$/.test(t)))) break;
+        if (t !== "") out.add(j);
       }
-      at += line.length + 1;
     }
   }
   return out;
@@ -473,20 +745,38 @@ const HINT =
 
 /** Spans (in `text`) of the secret values, in order, not overlapping. */
 export function findCodeSecrets(text: string): Span[] {
-  if (!HINT.test(text.toLowerCase())) return [];
-  const found = pairSpans(text);
-  for (const match of text.matchAll(ADDRESS)) {
-    const password = match[1];
-    if (password === undefined || password === HIDDEN) continue;
-    const from = match.index + match[0].length - 1 - password.length;
-    found.push({ from, to: from + password.length });
-  }
-  for (const match of text.matchAll(TOKEN)) {
-    const body = match[2];
-    if (body !== undefined && !isRandom(body)) continue;
-    found.push({ from: match.index, to: match.index + match[0].length });
-  }
-  if (text.includes("PRIVATE KEY-----")) found.push(...privateKeySpans(text));
+  const rawLines = text.split("\n");
+  const lines = rawLines.map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l));
+  if (!HINT.test(text.toLowerCase()) && !lines.some(isPemLine)) return [];
+  const bodies = keyBodyLines(lines);
+  const found: Span[] = [];
+  const named = { value: false };
+  let start = 0;
+  lines.forEach((line, i) => {
+    const base = start;
+    start += (rawLines[i] ?? "").length + 1;
+    if (bodies.has(i) || isPemLine(line)) {
+      named.value = false;
+      const t = line.trim();
+      if (t !== "" && t !== HIDDEN) {
+        found.push({ from: base + line.length - line.trimStart().length, to: base + line.length });
+      }
+      return;
+    }
+    for (const span of pairSpans(line, named))
+      found.push({ from: base + span.from, to: base + span.to });
+    for (const match of line.matchAll(ADDRESS)) {
+      const password = match[1];
+      if (password === undefined || password === HIDDEN) continue;
+      const from = base + match.index + match[0].length - 1 - password.length;
+      found.push({ from, to: from + password.length });
+    }
+    for (const match of line.matchAll(TOKEN)) {
+      const [, prefix, body] = match;
+      if (prefix !== undefined && body !== undefined && !isRandom(prefix, body)) continue;
+      found.push({ from: base + match.index, to: base + match.index + match[0].length });
+    }
+  });
   found.sort((a, b) => a.from - b.from || b.to - a.to);
   const out: Span[] = [];
   for (const span of found) {
@@ -498,19 +788,5 @@ export function findCodeSecrets(text: string): Span[] {
 
 /** Lines (0-based) inside private key blocks of a text held as lines (a viewer that masks line by line). */
 export function privateKeyLines(lines: readonly string[]): Set<number> {
-  const out = new Set<number>();
-  let inside = false;
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i] ?? "";
-    if (inside) {
-      if (/^[ \t]*-----END/.test(line)) inside = false;
-      else if (line.trim() !== "") out.add(i);
-    } else if (
-      line.includes("PRIVATE KEY-----") &&
-      /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(line)
-    ) {
-      inside = true;
-    }
-  }
-  return out;
+  return keyBodyLines(lines.map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l)));
 }
