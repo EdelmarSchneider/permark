@@ -11,7 +11,7 @@ use std::os::windows::io::AsRawHandle;
 use std::process::Child;
 use std::time::{Duration, Instant};
 
-use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
 };
@@ -50,12 +50,12 @@ impl Tree {
             joined
         });
         let tree = Self(job);
-        if resume(child.id()) {
-            Ok(tree)
-        } else {
-            let error = std::io::Error::last_os_error();
-            tree.kill(child);
-            Err(error)
+        match resume(child.id()) {
+            Ok(()) => Ok(tree),
+            Err(error) => {
+                tree.kill(child);
+                Err(error)
+            }
         }
     }
 
@@ -75,14 +75,19 @@ impl Tree {
     }
 }
 
-/// Resumes the threads of the suspended process `pid` (a new process: its main thread only). Whether one ran.
-fn resume(pid: u32) -> bool {
-    // SAFETY: a snapshot of the system's threads; INVALID_HANDLE_VALUE (-1) on failure, closed below.
+/// Resumes the threads of the suspended process `pid` (a new process: its main thread only).
+///
+/// # Errors
+/// No thread of it could be resumed: the OS error of the failing call, taken right after it.
+fn resume(pid: u32) -> std::io::Result<()> {
+    // SAFETY: a snapshot of the system's threads; INVALID_HANDLE_VALUE on failure, closed below.
     let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
-    if snapshot.is_null() || snapshot as isize == -1 {
-        return false;
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Err(std::io::Error::last_os_error());
     }
-    let mut resumed = false;
+    let mut result = Err(std::io::Error::other(
+        "no thread of the started git was found",
+    ));
     let mut entry = THREADENTRY32 {
         dwSize: u32::try_from(std::mem::size_of::<THREADENTRY32>()).unwrap_or(0),
         ..THREADENTRY32::default()
@@ -93,11 +98,22 @@ fn resume(pid: u32) -> bool {
         if entry.th32OwnerProcessID == pid {
             // SAFETY: opens the thread by id for resuming only; null on failure, closed below.
             let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
-            if !thread.is_null() {
+            let outcome = if thread.is_null() {
+                Err(std::io::Error::last_os_error())
+            } else {
                 // SAFETY: `thread` is open; ResumeThread returns the previous suspend count, u32::MAX on failure.
-                resumed |= unsafe { ResumeThread(thread) } != u32::MAX;
+                let resumed = unsafe { ResumeThread(thread) } != u32::MAX;
+                let outcome = if resumed {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::last_os_error())
+                };
                 // SAFETY: `thread` is ours, closed once.
                 unsafe { CloseHandle(thread) };
+                outcome
+            };
+            if result.is_err() {
+                result = outcome;
             }
         }
         // SAFETY: as Thread32First.
@@ -105,7 +121,7 @@ fn resume(pid: u32) -> bool {
     }
     // SAFETY: `snapshot` is ours, closed once.
     unsafe { CloseHandle(snapshot) };
-    resumed
+    result
 }
 
 /// Processes still in the job (0 when it cannot be read).
@@ -133,7 +149,8 @@ fn active(job: HANDLE) -> u32 {
 impl Drop for Tree {
     fn drop(&mut self) {
         if let Some(job) = self.0.take() {
-            // SAFETY: `job` is ours, closed once. No kill-on-close: a finished call leaves nothing to end.
+            // SAFETY: `job` is ours, closed once. No kill-on-close: a finished call keeps the 0.6.4 behavior (a
+            // helper that git left running on its own, if any, is not ended).
             unsafe { CloseHandle(job) };
         }
     }
