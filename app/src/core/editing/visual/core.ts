@@ -4,7 +4,8 @@
 // Added to the stock CommonMark + GFM schema: `pm_locked`, an atom holding a block the editor must not rewrite
 // (its source, drawn by the app). Left out: stock plugins that change a document by themselves (heading ids,
 // list renumbering, empty-line preservation). A no-break space is written as `&nbsp;`; link marks end at the
-// link's edge; the serializer writes the style below.
+// link's edge; the serializer writes the style below. Pictures are drawn by the app (`PictureHost`: a file next to
+// the document loads like in View); the node keeps its `src` as written.
 
 import {
   Editor,
@@ -23,6 +24,7 @@ import {
   codeBlockKeymap,
   commonmark,
   headingKeymap,
+  imageSchema,
   inlineCodeKeymap,
   linkSchema,
   orderedListKeymap,
@@ -84,6 +86,17 @@ const noHost: LockedHost = {
 };
 
 export const lockedHostCtx = $ctx<LockedHost, "pmLockedHost">(noHost, "pmLockedHost");
+
+/** How a picture of the document is drawn: loaded from a URL, a quiet chip (a web picture), or its description. */
+export type PictureView =
+  { kind: "load"; url: string } | { kind: "chip"; text: string; title: string } | { kind: "none" };
+
+/** What the picture node view needs from the app: where the picture written as `src` loads from. */
+export type PictureHost = { view(src: string, alt: string): PictureView };
+
+const plainPictures: PictureHost = { view: (src) => ({ kind: "load", url: src }) };
+
+export const pictureHostCtx = $ctx<PictureHost, "pmPictureHost">(plainPictures, "pmPictureHost");
 
 const textNode = $node("text", () => ({
   group: "inline",
@@ -176,6 +189,58 @@ const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
   };
 });
 
+/** A picture as the app draws it; the node (its `src` as written) stays as it is, so the Markdown does too. */
+function pictureDom(host: PictureHost, node: PMNode): HTMLElement {
+  const src = String(node.attrs.src ?? "");
+  const alt = String(node.attrs.alt ?? "");
+  const title = String(node.attrs.title ?? "");
+  const shown = host.view(src, alt);
+  switch (shown.kind) {
+    case "load": {
+      const img = document.createElement("img");
+      img.src = shown.url;
+      img.alt = alt;
+      if (title !== "") img.title = title;
+      img.decoding = "async";
+      return img;
+    }
+    case "chip": {
+      const chip = document.createElement("span");
+      chip.className = "remote-image";
+      chip.setAttribute("role", "img");
+      chip.setAttribute("aria-label", alt);
+      chip.title = shown.title;
+      chip.textContent = shown.text;
+      return chip;
+    }
+    case "none": {
+      const img = document.createElement("img");
+      img.alt = alt;
+      img.className = "pm-picture-missing";
+      return img;
+    }
+    default:
+      return shown satisfies never;
+  }
+}
+
+const pictureView = $view(imageSchema.node, (ctx): NodeViewConstructor => {
+  return (initial) => {
+    const host = ctx.get(pictureHostCtx.key);
+    const dom = pictureDom(host, initial);
+    return {
+      dom,
+      // another source | description can change the element (picture <-> chip): ProseMirror draws it again
+      update: (node) =>
+        node.type === initial.type &&
+        node.attrs.src === initial.attrs.src &&
+        node.attrs.alt === initial.attrs.alt &&
+        node.attrs.title === initial.attrs.title,
+      ignoreMutation: () => true,
+    };
+  };
+});
+
 /**
  * Stock plugins left out: they change a document by themselves, or are replaced. The Mod-Alt keymaps go too: AltGr
  * is Ctrl+Alt on Windows and types characters (`{` `[` `}` on many layouts); `keys.ts` binds them safely. Mod-e is
@@ -233,6 +298,7 @@ export type Core = {
 export type CoreOptions = {
   host: HTMLElement;
   locked?: LockedHost;
+  pictures?: PictureHost;
   /** Before the stock plugins (keys and pastes seen first). */
   first?: Parameters<Editor["use"]>[0][];
   /** After the stock plugins. */
@@ -261,13 +327,16 @@ export async function createCore(options: CoreOptions): Promise<Core> {
       // text typed at the edge of a link stays out of it
       ctx.update(linkSchema.key, (previous) => (c) => ({ ...previous(c), inclusive: false }));
       if (options.locked) ctx.set(lockedHostCtx.key, options.locked);
+      if (options.pictures) ctx.set(pictureHostCtx.key, options.pictures);
     })
     .use(lockedHostCtx)
+    .use(pictureHostCtx)
     .use(lockedNode)
     .use(lockedView)
     .use((options.first ?? []).flat())
     .use([...commonmark, ...gfm].filter((plugin) => !LEFT_OUT.has(plugin)))
     .use(textNode)
+    .use(pictureView)
     .use(history)
     .use(clipboard)
     .use($prose(() => gapCursor()))

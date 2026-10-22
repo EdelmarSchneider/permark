@@ -38,6 +38,28 @@
   ];
 
   let tableMenu = $state(false);
+  let tableHost: HTMLElement | undefined = $state();
+
+  // the open table menu takes Escape first (before "leave Edit") and closes on a press outside it
+  $effect(() => {
+    if (!tableMenu) return;
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape" || event.isComposing) return;
+      event.preventDefault();
+      event.stopPropagation();
+      tableMenu = false;
+      tableHost?.querySelector<HTMLElement>("button")?.focus();
+    };
+    const onPointer = (event: PointerEvent): void => {
+      if (!(event.target instanceof Node) || !tableHost?.contains(event.target)) tableMenu = false;
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("pointerdown", onPointer, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("pointerdown", onPointer, true);
+    };
+  });
 
   function onBlock(event: Event): void {
     const target = event.currentTarget;
@@ -178,7 +200,7 @@
     disabled={format.locked}
     onclick={() => run({ kind: "quote" })}><Quote size={15} /></button
   >
-  <div class="menu-host">
+  <div class="menu-host" bind:this={tableHost}>
     <button
       type="button"
       class="icon-btn"
@@ -196,8 +218,20 @@
         <button
           type="button"
           role="menuitem"
+          disabled={!format.table || format.tableHeader}
+          onclick={() => table({ kind: "addRowAbove" })}>{t("toolbar.tableAddRowAbove")}</button
+        >
+        <button
+          type="button"
+          role="menuitem"
           disabled={!format.table}
           onclick={() => table({ kind: "addRow" })}>{t("toolbar.tableAddRow")}</button
+        >
+        <button
+          type="button"
+          role="menuitem"
+          disabled={!format.table}
+          onclick={() => table({ kind: "addColumnLeft" })}>{t("toolbar.tableAddColumnLeft")}</button
         >
         <button
           type="button"

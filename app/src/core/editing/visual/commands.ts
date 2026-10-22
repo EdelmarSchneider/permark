@@ -19,7 +19,9 @@ import {
 } from "@milkdown/kit/preset/commonmark";
 import {
   addColAfterCommand,
+  addColBeforeCommand,
   addRowAfterCommand,
+  addRowBeforeCommand,
   insertTableCommand,
   toggleStrikethroughCommand,
 } from "@milkdown/kit/preset/gfm";
@@ -41,6 +43,8 @@ export type Format = {
   link: string | null;
   list: "bullet" | "ordered" | "task" | null;
   table: boolean;
+  /** The caret is in the header row of a table (no row can go above it). */
+  tableHeader: boolean;
   /** The selection is on a locked block: nothing to do there. */
   locked: boolean;
   /** Language of the code block the caret is in. */
@@ -96,6 +100,7 @@ export function formatOf(state: EditorState): Format {
     link: link ?? null,
     list,
     table: ancestor($from, "table") !== null,
+    tableHeader: ancestor($from, "table_header_row") !== null,
     locked: selected?.type.name === LOCKED,
     language: block === "code" ? String(parent.attrs.language ?? "") : null,
   };
@@ -109,7 +114,8 @@ export type Command =
   | { kind: "indent" | "outdent" }
   | { kind: "quote" | "rule" | "codeBlock" }
   | { kind: "language"; language: string }
-  | { kind: "table" | "addRow" | "addColumn" | "deleteRow" | "deleteColumn" | "deleteTable" }
+  | { kind: "table" | "addRow" | "addRowAbove" | "addColumn" | "addColumnLeft" }
+  | { kind: "deleteRow" | "deleteColumn" | "deleteTable" }
   | { kind: "image"; src: string; alt: string };
 
 function act<T>(core: Core, key: CmdKey<T>, payload?: T): boolean {
@@ -170,8 +176,14 @@ export function run(core: Core, command: Command): boolean {
       return act(core, insertTableCommand.key, { row: 3, col: 3 });
     case "addRow":
       return act(core, addRowAfterCommand.key);
+    case "addRowAbove":
+      // the header row stays first: a GFM table has no row above it
+      if (formatOf(view.state).tableHeader) return false;
+      return act(core, addRowBeforeCommand.key);
     case "addColumn":
       return act(core, addColAfterCommand.key);
+    case "addColumnLeft":
+      return act(core, addColBeforeCommand.key);
     case "deleteRow":
       return deleteRow(view.state, view.dispatch);
     case "deleteColumn":

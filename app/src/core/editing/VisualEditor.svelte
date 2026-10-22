@@ -13,11 +13,21 @@
   import { ui } from "../shell/ui.svelte";
   import EditorToolbar from "./EditorToolbar.svelte";
   import { frontMatterSyntax } from "../config/frontMatter";
-  import { pictureFiles, pictureLink } from "./pictures";
+  import { documents } from "../doc/document.svelte";
+  import { pictureFiles, pictureLink, pictureSource } from "./pictures";
   import { baseName, pictureType } from "../explorer/importModel";
   import { relativeLink } from "./source/complete";
   import type { Content, EditingSession } from "./session.svelte";
-  import type { Built, Command, Composed, Core, Format, LockReason, SlashState } from "./visual";
+  import type {
+    Built,
+    Command,
+    Composed,
+    Core,
+    Format,
+    LockReason,
+    PictureView,
+    SlashState,
+  } from "./visual";
 
   type Props = {
     session: EditingSession;
@@ -195,6 +205,27 @@
     };
   }
 
+  /** A picture of the document as View draws it: a file next to it loads, a web picture is a chip. */
+  function pictureView(src: string, alt: string): PictureView {
+    const source = pictureSource(content.path, src);
+    switch (source.kind) {
+      case "file":
+        return { kind: "load", url: documents.enhanceEnv.assetUrl(source.path) };
+      case "inline":
+        return { kind: "load", url: source.src };
+      case "web":
+        return {
+          kind: "chip",
+          text: alt === "" ? t("doc.remoteImageNoAlt") : alt,
+          title: t("doc.remoteImage", { url: source.url }),
+        };
+      case "none":
+        return { kind: "none" };
+      default:
+        return source satisfies never;
+    }
+  }
+
   function refresh(): void {
     if (core && mod) format = mod.formatOf(core.view.state);
   }
@@ -227,6 +258,7 @@
           edit: (node) => void session.switchTo("source", lineOf(node)),
           draw,
         },
+        pictures: { view: pictureView },
         first: loaded.appPlugins({
           core: () => core,
           changed: () => {
