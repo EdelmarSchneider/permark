@@ -176,15 +176,140 @@ fn a_project_renamed_twice_slowly_ends_where_it_landed() {
     wait("first move", || {
         state(&live.core.projects_view(), "inner/beta2") == Some(MemberState::Included)
     });
-    // the first move's own follow-up (rescan after the member set changed) settles first: a discover running without
-    // the second move's hint would see it as gone + new for a moment (the hint then re-attaches it; known limit)
-    std::thread::sleep(Duration::from_millis(500));
     fs::rename(
         live.root().join("inner/beta2"),
         live.root().join("inner/beta3"),
     )
     .unwrap();
     live.kept_at("inner/beta3");
+}
+
+/// Moves the project out of the opened folder (the watch sees only a removal) and waits until it is held.
+fn away_and_held(live: &Live) -> std::path::PathBuf {
+    let away = live.base.path().join("away");
+    fs::rename(live.root().join("inner/beta"), &away).unwrap();
+    wait("held", || live.core.projects().vanished_count() == 1);
+    let view = live.core.projects_view();
+    assert_eq!(
+        state(&view, "inner/beta"),
+        Some(MemberState::Included),
+        "{view:#?}"
+    );
+    assert_eq!(view.offered.count, 0);
+    away
+}
+
+fn news_of(live: &Live) -> Vec<ProjectEvent> {
+    live.news.lock().unwrap().clone()
+}
+
+/// `(gone, appeared)` rows told so far.
+fn told(live: &Live) -> (usize, usize) {
+    let news = news_of(live);
+    let count = |f: fn(&ProjectEvent) -> bool| news.iter().filter(|e| f(e)).count();
+    (
+        count(|e| matches!(e, ProjectEvent::Gone { .. })),
+        count(|e| matches!(e, ProjectEvent::Appeared { .. })),
+    )
+}
+
+/// A move whose halves come in two batches (the watch cannot pair them; macOS splits a rename so): the folder that
+/// comes during the window is the same folder on disk -> one `moved` row, no gone, no strip. The clock is stopped: the
+/// window cannot end by itself here.
+#[test]
+fn a_move_split_across_batches_keeps_the_project() {
+    let live = Live::open(|_| {});
+    live.core.projects().freeze_clock();
+    let away = away_and_held(&live);
+    assert!(news_of(&live).is_empty(), "nothing told while held");
+    fs::rename(&away, live.root().join("inner/beta3")).unwrap();
+    live.kept_at("inner/beta3");
+    assert_eq!(live.core.projects().vanished_count(), 0);
+}
+
+/// Gone for good: told once the window ends (the clock moved by hand), not before; a folder that came meanwhile (same
+/// name, another folder on disk) waited, then is offered, never silently paired.
+#[test]
+fn a_lookalike_during_the_window_waits_and_is_never_paired() {
+    let live = Live::open(|root| mkdirs(root, "x"));
+    live.core.projects().freeze_clock();
+    let _away = away_and_held(&live);
+    git(live.root(), "x/beta");
+    wait("waiting", || live.core.projects().waiting_count() == 1);
+    let view = live.core.projects_view();
+    assert_eq!(view.offered.count, 0, "no strip while waiting: {view:#?}");
+    assert_eq!(state(&view, "inner/beta"), Some(MemberState::Included));
+    assert!(news_of(&live).is_empty(), "{:?}", news_of(&live));
+    live.core.projects().advance(grace::GRACE);
+    wait("gone", || {
+        state(&live.core.projects_view(), "inner/beta") == Some(MemberState::Missing)
+    });
+    wait("offered", || live.core.projects_view().offered.count == 1);
+    assert!(
+        live.record().contains("path = \"inner/beta\""),
+        "never re-attached silently"
+    );
+    // rows go out after the map (the view may show the end state first)
+    wait("rows", || told(&live) == (1, 1));
+    // late batches have their chance to add a row
+    std::thread::sleep(Duration::from_millis(300));
+    let news = news_of(&live);
+    assert_eq!(told(&live), (1, 1), "{news:?}");
+    assert!(
+        !news.iter().any(|e| matches!(e, ProjectEvent::Moved { .. })),
+        "{news:?}"
+    );
+    assert_eq!(live.core.projects().waiting_count(), 0);
+}
+
+/// Back at the same place within the window (restored, checked out again): nothing told at all.
+#[test]
+fn a_project_back_in_place_within_the_window_tells_nothing() {
+    let live = Live::open(|_| {});
+    live.core.projects().freeze_clock();
+    let away = away_and_held(&live);
+    fs::rename(&away, live.root().join("inner/beta")).unwrap();
+    wait("back", || live.core.projects().vanished_count() == 0);
+    live.core.projects().advance(grace::GRACE * 2);
+    // late batches of the same moves have their chance to do harm
+    std::thread::sleep(Duration::from_millis(600));
+    let view = live.core.projects_view();
+    assert_eq!(state(&view, "inner/beta"), Some(MemberState::Included));
+    assert_eq!(view.offered.count, 0);
+    assert!(news_of(&live).is_empty(), "{:?}", news_of(&live));
+    assert!(live.record().contains("path = \"inner/beta\""));
+}
+
+/// Closing while a window runs: the wake-up goes with the worker, nothing stays held, the late folder changes nothing.
+#[test]
+fn closing_during_a_window_drops_it() {
+    let live = Live::open(|_| {});
+    let away = away_and_held(&live);
+    live.core.projects().stop();
+    assert_eq!(live.core.projects().vanished_count(), 0);
+    assert_eq!(live.core.projects().held_members(), 0);
+    fs::rename(&away, live.root().join("inner/beta3")).unwrap();
+    assert_eq!(live.core.projects().vanished_count(), 0);
+    assert!(live.record().contains("path = \"inner/beta\""));
+}
+
+/// The real clock: with no folder coming back, the window ends by itself (bounded) and the project is told gone.
+#[test]
+fn the_window_ends_by_itself() {
+    let live = Live::open(|_| {});
+    let start = Instant::now();
+    let _away = away_and_held(&live);
+    wait("gone", || {
+        state(&live.core.projects_view(), "inner/beta") == Some(MemberState::Missing)
+    });
+    assert!(
+        start.elapsed() >= grace::GRACE,
+        "not before the window ends"
+    );
+    assert_eq!(live.core.projects().vanished_count(), 0);
+    wait("gone row", || told(&live).0 == 1);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(told(&live), (1, 0), "{:?}", news_of(&live));
 }
 
 #[test]
