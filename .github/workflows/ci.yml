@@ -147,13 +147,17 @@ jobs:
         working-directory: .
         run: ./scripts/build-msix.ps1 -Build -OutDir "$env:RUNNER_TEMP\msix"
 
-  # The third-party notices every release ships (app/scripts/third-party-notices.mjs): made here too, so a dependency with
-  # a license nobody accepted (app/src-tauri/about.toml) or a package without a license fails the push that added it, not
-  # the release. The file is not kept.
+  # The third-party notices every release ships (app/scripts/third-party-notices.mjs): made here too, on the three systems
+  # the release jobs run on, so a dependency with a license nobody accepted (app/src-tauri/about.toml), a package without
+  # a license or a system where the tool fails stops the push that caused it, not the release. The file is not kept.
   notices:
-    name: Third-party notices (ubuntu-22.04)
-    runs-on: ubuntu-22.04
+    name: Third-party notices (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04, macos-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -175,6 +179,7 @@ jobs:
         run: npm ci
 
       - name: Get cargo-about
+        shell: bash
         run: bash scripts/get-cargo-about.sh
 
       - name: Make the notices
