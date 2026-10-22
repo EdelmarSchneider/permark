@@ -19,6 +19,10 @@ async function setup(patch: (mock: ReturnType<typeof createMockApi>) => Partial<
   const imports = new ImportFlow(api, {
     fail: (e) => notes.push(`fail ${e.kind}`),
     note: (text) => notes.push(text),
+    cancelNote: (text) => {
+      notes.push(text);
+      return () => notes.splice(notes.indexOf(text), 1);
+    },
     action: (text) => notes.push(text),
     project: () => "demo",
     view: () => "main",
@@ -167,8 +171,21 @@ describe("the question cannot be kept (the project left the view)", () => {
     s.away();
     s.imports.reset();
     expect(s.imports.state.status).toBe("idle");
-    expect(s.notes).toEqual(["The drop onto “docs” was cancelled. Nothing was added."]);
+    // why, and which project (the tab shows another one now)
+    expect(s.notes).toEqual([
+      "demo is no longer open in this tab, so the drop onto “docs” was cancelled. Nothing was added; you can drop the items again.",
+    ]);
     expect(s.mock.probe.imports.applied).toEqual([]);
+  });
+
+  it("a new drop takes the cancel notice back: it never stands beside the result of the next drop", async () => {
+    await s.drop.drop(["C:/out/a.md"], 40, 50);
+    s.imports.reset();
+    expect(s.notes).toHaveLength(1);
+    await s.drop.drop(["C:/out/a.md"], 40, 50);
+    expect(s.notes).toEqual([]);
+    await s.imports.confirm("copy");
+    expect(s.notes).toEqual(["Copied 1 item to “docs”."]);
   });
 
   it("no notice when no question was open", () => {

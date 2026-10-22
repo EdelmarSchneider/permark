@@ -20,6 +20,8 @@ import { closeOwnTab } from "../shell/closeWorkspace";
 import { projects } from "../projects/instance.svelte";
 import { askInitHere } from "../shell/initProject";
 import { rightAvailable } from "../shell/layout";
+import { defaultRightViews } from "../shell/rightViews";
+import { rightViews } from "../shell/rightViews.svelte";
 import { rightSide, toggleOutlinePanel, toggleRightPanel, toggleSidebar } from "../shell/sides";
 import { tabs } from "../shell/tabs.svelte";
 import { ui } from "../shell/ui.svelte";
@@ -182,6 +184,15 @@ const SPECS: readonly Spec[] = [
     requires: READING,
     when: () => rightAvailable(rightSide()),
     run: () => toggleRightPanel(),
+  },
+  {
+    id: "panel.resetLayout",
+    label: "panel.resetLayoutCommand",
+    requires: READING,
+    run: () => {
+      rightViews.arrange(defaultRightViews());
+      rightViews.status = t("panel.layoutReset");
+    },
   },
   {
     id: "file.new",

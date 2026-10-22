@@ -460,6 +460,7 @@ export interface Commands {
   };
   plugin_call: { args: { plugin: string; method: string; args: JsonValue }; result: JsonValue };
   project_init: { args: { path: string }; result: null };
+  folder_empty: { args: { path: string }; result: boolean };
   project_config_get: { args: Record<string, never>; result: ProjectSettings };
   project_config_set: { args: { change: ProjectSettingChange }; result: ProjectSettings };
   plugins_list: { args: Record<string, never>; result: PluginInfo[] };
@@ -1004,6 +1005,8 @@ export interface Api {
   defaultAppHandoff(): Promise<Result<null>>;
   /** Creates `.permark/` in a folder; a project open on it reloads its state at once. */
   projectInit(path: string): Promise<Result<null>>;
+  /** Whether a folder has nothing in it yet (one that cannot be read counts as not empty). */
+  folderEmpty(path: string): Promise<Result<boolean>>;
   /** The shared settings (`.permark/config.toml`) of this window's project. */
   projectConfigGet(): Promise<Result<ProjectSettings>>;
   projectConfigSet(change: ProjectSettingChange): Promise<Result<ProjectSettings>>;

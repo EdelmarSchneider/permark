@@ -68,54 +68,83 @@ export function keyWidth(
   }
 }
 
-/** What decides the right region: the plugin panel chosen (if any), the document's outline, the person's choices. */
+/** A right panel offered now: whether it is open, and whether it is the view its group shows (selected). */
+export type SidePanel = { readonly id: string; readonly open: boolean; readonly selected: boolean };
+
+/** What decides the right region: the document's outline, the panels plugins offer, the person's choices. */
 export type RightSide = {
-  /** The plugin panel chosen at the right (`null`: none). */
-  panel: string | null;
   /** The document shown has an outline. */
   hasOutline: boolean;
   /** The outline is on (`reading.outline`). */
   outlineOn: boolean;
+  /** The outline is the view its group shows (not a tab behind another). */
+  outlineSelected: boolean;
+  /** The right panels offered now, in column order. */
+  panels: readonly SidePanel[];
   /** The person hid the right panel. */
   hidden: boolean;
 };
 
 /** The right region has something it could show (a toggle there would change the screen). */
 export function rightAvailable(side: RightSide): boolean {
-  return side.panel !== null || side.hasOutline;
+  return side.hasOutline || side.panels.length > 0;
 }
 
-/** The right region is on screen: not hidden, with a plugin panel, else the outline when on. */
+/** Some view is present: the outline (when on), an open panel. */
+function anyPresent(side: RightSide): boolean {
+  return (side.hasOutline && side.outlineOn) || side.panels.some((p) => p.open);
+}
+
+/** The right region is on screen: not hidden, with a present view. */
 export function rightShown(side: RightSide): boolean {
-  return !side.hidden && (side.panel !== null || (side.hasOutline && side.outlineOn));
+  return !side.hidden && anyPresent(side);
 }
 
-/** The outline is what the right region shows now. */
+/** The outline is on screen now. */
 export function outlineShown(side: RightSide): boolean {
-  return rightShown(side) && side.panel === null && side.hasOutline && side.outlineOn;
+  return !side.hidden && side.hasOutline && side.outlineOn && side.outlineSelected;
 }
 
-/** The person's choices after a step; `closePanel`: the chosen plugin panel lets go (the outline shows instead). */
-export type RightChoice = { hidden: boolean; outlineOn: boolean; closePanel: boolean };
+/** The panel `id` is on screen now. */
+export function panelShown(side: RightSide, id: string): boolean {
+  const panel = side.panels.find((p) => p.id === id);
+  return !side.hidden && panel !== undefined && panel.open && panel.selected;
+}
 
-/** The right-panel toggle: shown -> hidden; not shown -> shown (with nothing on, the outline turns on); nothing it
- *  could show -> no change. */
+/**
+ * The person's choices after a step (absent = unchanged): the region hidden, the outline on, a panel opened | closed,
+ * the view selected in its group.
+ */
+export type RightChoice = {
+  hidden?: boolean;
+  outlineOn?: boolean;
+  open?: { id: string; open: boolean };
+  select?: string;
+};
+
+/** The right-panel toggle: shown -> hidden; hidden -> shown; nothing present -> the outline turns on (else the first
+ *  offered panel opens); nothing it could show -> no change. */
 export function toggleRight(side: RightSide): RightChoice {
-  if (rightShown(side)) return { hidden: true, outlineOn: side.outlineOn, closePanel: false };
-  if (!rightAvailable(side)) {
-    return { hidden: side.hidden, outlineOn: side.outlineOn, closePanel: false };
-  }
-  return {
-    hidden: false,
-    outlineOn: side.panel === null ? true : side.outlineOn,
-    closePanel: false,
-  };
+  if (rightShown(side)) return { hidden: true };
+  if (!rightAvailable(side)) return {};
+  if (anyPresent(side)) return { hidden: false };
+  if (side.hasOutline) return { hidden: false, outlineOn: true, select: "outline" };
+  const first = side.panels[0];
+  return first === undefined
+    ? {}
+    : { hidden: false, open: { id: first.id, open: true }, select: first.id };
 }
 
-/** The outline toggle = "show me the outline" unless it shows: it shows (a hidden right panel shows again, a chosen
- *  plugin panel lets go); shown -> off. */
+/** The outline toggle: on screen -> off; else on, selected in its group, the region shown. */
 export function toggleOutline(side: RightSide): RightChoice {
-  if (outlineShown(side)) return { hidden: false, outlineOn: false, closePanel: false };
-  // any panel choice lets go (also one whose plugin went: it would come back over the outline)
-  return { hidden: false, outlineOn: true, closePanel: true };
+  if (outlineShown(side)) return { outlineOn: false };
+  return { hidden: false, outlineOn: true, select: "outline" };
+}
+
+/** A panel's toggle: on screen -> closed; open but not on screen -> selected + shown (never closed); closed -> open. */
+export function togglePanel(side: RightSide, id: string): RightChoice {
+  if (panelShown(side, id)) return { open: { id, open: false } };
+  const panel = side.panels.find((p) => p.id === id);
+  if (panel?.open === true) return { hidden: false, select: id };
+  return { hidden: false, open: { id, open: true }, select: id };
 }

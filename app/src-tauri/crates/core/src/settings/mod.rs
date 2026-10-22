@@ -143,6 +143,101 @@ pub fn valid_combo(combo: &str) -> bool {
     combo.len() <= MAX_COMBO && combo.chars().all(|c| c.is_ascii_graphic())
 }
 
+/// The right column's arrangement (app-wide; `[right_views]`, `core.md` §settings): groups of view ids, each a
+/// share of the column height. Shape rules (duplicates, unknown ids, normalizing) are the frontend's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct RightViews {
+    pub v: u32,
+    pub groups: Vec<ViewGroup>,
+}
+
+/// One group of the right column: one view, or several shown as tabs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ViewGroup {
+    pub views: Vec<String>,
+    pub share: f64,
+}
+
+/// Most groups | views per group a written arrangement may hold.
+pub const MAX_VIEW_GROUPS: usize = 3;
+pub const MAX_GROUP_VIEWS: usize = 16;
+
+/// Write rule: <= 3 groups, <= 16 views each, view ids like command ids, shares finite 0..=1.
+#[must_use]
+pub fn valid_right_views(views: &RightViews) -> bool {
+    views.groups.len() <= MAX_VIEW_GROUPS
+        && views.groups.iter().all(|group| {
+            group.views.len() <= MAX_GROUP_VIEWS
+                && group.views.iter().all(|id| valid_command_id(id))
+                && group.share.is_finite()
+                && (0.0..=1.0).contains(&group.share)
+        })
+}
+
+/// `[right_views]` of a document, leniently: anything unreadable (wrong types, no `v`, a share that is no number)
+/// -> `None` (the frontend's default). Array of inline tables or `[[right_views.groups]]` both read.
+fn right_views_of(doc: &DocumentMut) -> Option<RightViews> {
+    let table = doc.get("right_views")?.as_table_like()?;
+    let v = u32::try_from(table.get("v")?.as_integer()?).ok()?;
+    let groups: Vec<&dyn toml_edit::TableLike> = match table.get("groups")? {
+        Item::Value(Value::Array(array)) => array
+            .iter()
+            .map(|value| {
+                value
+                    .as_inline_table()
+                    .map(|t| t as &dyn toml_edit::TableLike)
+            })
+            .collect::<Option<_>>()?,
+        Item::ArrayOfTables(array) => array
+            .iter()
+            .map(|t| t as &dyn toml_edit::TableLike)
+            .collect(),
+        _ => return None,
+    };
+    let groups = groups
+        .into_iter()
+        .map(|group| {
+            let views = group
+                .get("views")?
+                .as_array()?
+                .iter()
+                .map(|id| id.as_str().map(str::to_owned))
+                .collect::<Option<Vec<String>>>()?;
+            let share = group.get("share")?;
+            #[allow(clippy::cast_precision_loss)]
+            // a hand-written whole number of a fraction (0 | 1)
+            let share = share
+                .as_float()
+                .or_else(|| share.as_integer().map(|n| n as f64))?;
+            share.is_finite().then_some(ViewGroup { views, share })
+        })
+        .collect::<Option<Vec<ViewGroup>>>()?;
+    Some(RightViews { v, groups })
+}
+
+/// The `[right_views]` table of an arrangement: `v`, then `groups` as an array of inline tables.
+fn right_views_table(views: &RightViews) -> Table {
+    let mut table = Table::new();
+    table.insert("v", Item::Value(Value::from(i64::from(views.v))));
+    let groups: toml_edit::Array = views
+        .groups
+        .iter()
+        .map(|group| {
+            let mut inline = toml_edit::InlineTable::new();
+            inline.insert(
+                "views",
+                Value::Array(group.views.iter().map(String::as_str).collect()),
+            );
+            inline.insert("share", Value::from(group.share));
+            Value::InlineTable(inline)
+        })
+        .collect();
+    table.insert("groups", Item::Value(Value::Array(groups)));
+    table
+}
+
 /// A plugin's raw settings table (equality by its TOML text).
 #[derive(Debug, Clone, Default)]
 pub struct RawTable(pub Table);
@@ -180,6 +275,8 @@ pub struct AppSettings {
     pub tokenizers: Vec<String>,
     /// Explicit plugin switches (absent = manifest default).
     pub plugins: BTreeMap<PluginId, bool>,
+    /// The right column's arrangement (`[right_views]`); `None` = absent | unreadable = the frontend's default.
+    pub right_views: Option<RightViews>,
     /// Long lines wrap in the text viewer and the source editors (`wrap_lines`; absent = on).
     pub wrap_lines: bool,
     /// Raw `[plugins.<id>]` tables: each plugin owns its schema.
@@ -205,6 +302,7 @@ impl Default for AppSettings {
             keymap: BTreeMap::new(),
             tokenizers: Vec::new(),
             plugins: BTreeMap::new(),
+            right_views: None,
             wrap_lines: true,
             plugin_tables: BTreeMap::new(),
         }
@@ -212,7 +310,7 @@ impl Default for AppSettings {
 }
 
 /// One change of one key.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[serde(tag = "key", content = "value", rename_all = "camelCase")]
 #[ts(export)]
 pub enum SettingChange {
@@ -242,6 +340,8 @@ pub enum SettingChange {
         plugin: PluginId,
         enabled: Option<bool>,
     },
+    /// The right column's arrangement, written whole; `None` = back to the default (table removed).
+    RightViews(Option<RightViews>),
     WrapLines(bool),
 }
 
@@ -264,6 +364,7 @@ impl SettingChange {
             Self::Keymap { command, .. } => format!("keymap.{command}"),
             Self::Tokenizers(_) => "plugins.token-count.tokenizers".to_owned(),
             Self::PluginEnabled { plugin, .. } => format!("plugins.{plugin}.enabled"),
+            Self::RightViews(_) => "right_views".to_owned(),
             Self::WrapLines(_) => "wrap_lines".to_owned(),
         }
     }
@@ -324,6 +425,9 @@ impl SettingChange {
                 .map(|_| ())
                 .map_err(|problem| invalid(problem.code())),
             Self::Tokenizers(ids) if !valid_tokenizers(ids) => Err(invalid("tokenizers")),
+            Self::RightViews(Some(views)) if !valid_right_views(views) => {
+                Err(invalid("rightViews"))
+            }
             Self::Keymap { command, combo } => {
                 if !valid_command_id(command) {
                     Err(invalid("command"))
@@ -512,6 +616,7 @@ impl AppSettings {
                 .unwrap_or_default(),
             keymap,
             plugins,
+            right_views: right_views_of(doc),
             // a value that is not a boolean counts as not set
             wrap_lines: doc
                 .get("wrap_lines")
@@ -578,6 +683,24 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
         SettingChange::PluginEnabled { plugin, enabled } => {
             set_plugin_key(root, plugin, "enabled", enabled.map(Value::from));
         }
+        SettingChange::RightViews(views) => set_right_views(root, views.as_ref()),
+    }
+}
+
+/// Writes | removes `[right_views]` whole; an existing table keeps its place (and its header comment).
+fn set_right_views(root: &mut Table, views: Option<&RightViews>) {
+    let Some(views) = views else {
+        root.remove("right_views");
+        return;
+    };
+    let fresh = right_views_table(views);
+    if let Some(Item::Table(table)) = root.get_mut("right_views") {
+        table.clear();
+        for (key, item) in fresh {
+            table.insert(&key, item);
+        }
+    } else {
+        root.insert("right_views", Item::Table(fresh));
         SettingChange::WrapLines(on) => set_keeping_decor(root, "wrap_lines", (*on).into()),
     }
 }

@@ -101,7 +101,7 @@
     border: 0;
     border-radius: var(--radius-control);
     background: transparent;
-    color: var(--accent);
+    color: var(--accent-text);
     font: inherit;
     cursor: pointer;
   }

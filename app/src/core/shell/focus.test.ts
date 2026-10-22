@@ -99,6 +99,7 @@ describe("the command", () => {
       distribution: "direct",
       platform: "windows",
       plugins: [],
+      agentFiles: [],
     }) as never;
 
   it("is Mod+Alt+F, in the palette, and needs a project, a file or the Notes", () => {

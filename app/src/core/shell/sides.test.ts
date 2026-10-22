@@ -11,38 +11,40 @@ Object.defineProperty(window, "matchMedia", {
   value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
 });
 
+const { api } = await import("../../api");
 const { reading } = await import("../doc/reading.svelte");
 const { layout } = await import("./layout.svelte");
 const { ui } = await import("./ui.svelte");
-const { toggleOutlinePanel, toggleRightPanel } = await import("./sides");
+const { toggleOutlinePanel, togglePanel } = await import("./sides");
 const { resolveKey, isTypingTarget } = await import("../commands/dispatch");
 const { buildKeymap } = await import("../commands/keymap");
 
 afterEach(() => {
-  ui.right = null;
-  layout.setRightHidden(false);
-  layout.setSidebarHidden(false);
+  // a single file: nothing read, everything back to its start (views, hidden panels)
+  void layout.load(api, false);
   reading.setOutline(true);
   ui.resetFocus();
 });
 
-describe("outline toggle while the right panel is hidden and a plugin panel is chosen", () => {
-  it("shows the outline (spec shell.md: 'shows again with that content')", () => {
-    ui.right = "live-feed.panel";
+describe("the outline | a panel toggle while the right panel is hidden", () => {
+  it("the outline toggle shows the region again with the outline; an open panel stays open", () => {
+    layout.setOpen("live-feed.panel", true);
     reading.setOutline(false);
     layout.setRightHidden(true);
     toggleOutlinePanel();
     expect(layout.rightHidden).toBe(false);
     expect(reading.outline).toBe(true);
-    // App.svelte draws the plugin panel whenever ui.right !== null: the outline only shows if the panel let go
-    expect(ui.right, "the plugin panel would show instead of the outline").toBeNull();
+    expect(layout.views.open["live-feed.panel"]).toBe(true);
+    expect(layout.views.selected[0]).toBe("outline");
   });
 
-  it("a plugin panel toggle while hidden shows that panel (not the outline)", () => {
+  it("a panel toggle while hidden shows the region with that panel open (the outline choice stays)", () => {
+    reading.setOutline(false);
     layout.setRightHidden(true);
-    ui.toggleRight("live-feed.panel");
+    togglePanel("live-feed.panel");
     expect(layout.rightHidden).toBe(false);
-    expect(ui.right).toBe("live-feed.panel");
+    expect(layout.views.open["live-feed.panel"]).toBe(true);
+    expect(reading.outline).toBe(false);
   });
 });
 

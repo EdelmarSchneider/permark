@@ -1,7 +1,9 @@
 <script lang="ts">
   // The strip under the header: "Changed since you last read · 3 changes [Review]", and in review the tools of it:
   // previous | next, Keep all, Revert all, Undo, what to compare with, Done. The keyboard follows the review: opened
-  // from the bar it lands on the bar's first control; closed (Done, Esc) it goes back to the page.
+  // (from the bar, the palette, a key) it lands on the bar's first control; closed (Done, Esc) it goes back to the
+  // page when it had no place left.
+  import { tick } from "svelte";
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronUp from "@lucide/svelte/icons/chevron-up";
   import Undo2 from "@lucide/svelte/icons/undo-2";
@@ -27,10 +29,31 @@
     if (el) area = el.closest("section.area") ?? area;
     if (now === wasReviewing) return;
     wasReviewing = now;
-    if (!lost()) return;
+    // opened: the review's own controls, also when the palette gave the keyboard back to the file list meanwhile
     if (now) el?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
-    else area?.querySelector<HTMLElement>("[data-scroller]")?.focus({ preventScroll: true });
+    else if (lost())
+      area?.querySelector<HTMLElement>("[data-scroller]")?.focus({ preventScroll: true });
   });
+
+  /** "Compare with" is one radio group: one Tab stop (the choice), arrows move the choice like any radio group. */
+  let bases: HTMLElement | undefined = $state();
+  function onbasiskey(e: KeyboardEvent, at: number): void {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const step =
+      e.key === "ArrowRight" || e.key === "ArrowDown"
+        ? 1
+        : e.key === "ArrowLeft" || e.key === "ArrowUp"
+          ? -1
+          : 0;
+    if (step === 0) return;
+    e.preventDefault();
+    const to = (at + step + BASES.length) % BASES.length;
+    const next = BASES[to];
+    if (!next) return;
+    void review.setBasis(next.value);
+    // the keyboard moves with the arrow, also to a choice that cannot be had here (it says why)
+    void tick().then(() => bases?.querySelectorAll<HTMLElement>('[role="radio"]')[to]?.focus());
+  }
   const BASES: { value: Basis; label: "review.basis.read" | "review.basis.commit" }[] = [
     { value: "read", label: "review.basis.read" },
     { value: "commit", label: "review.basis.commit" },
@@ -67,18 +90,20 @@
       >
     {/if}
     <span class="spacer"></span>
-    <span class="segments" role="radiogroup" aria-label={t("review.basis.label")}>
-      {#each BASES as option (option.value)}
+    <span class="segments" role="radiogroup" aria-label={t("review.basis.label")} bind:this={bases}>
+      {#each BASES as option, at (option.value)}
         {@const why = option.value === "commit" ? commitWhy : null}
         <!-- unavailable: still focusable and says why (title, and a note when chosen), never a silent switch -->
         <button
           type="button"
           role="radio"
           aria-checked={review.basis === option.value}
+          tabindex={review.basis === option.value ? 0 : -1}
           aria-disabled={why !== null}
           title={why ?? undefined}
           class={["segment", review.basis === option.value && "is-on", why !== null && "is-off"]}
-          onclick={() => void review.setBasis(option.value)}>{t(option.label)}</button
+          onclick={() => void review.setBasis(option.value)}
+          onkeydown={(e) => onbasiskey(e, at)}>{t(option.label)}</button
         >
       {/each}
     </span>

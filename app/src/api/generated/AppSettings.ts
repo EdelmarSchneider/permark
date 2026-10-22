@@ -5,6 +5,7 @@ import type { LanguagePref } from "./LanguagePref";
 import type { LinkUpdate } from "./LinkUpdate";
 import type { OpenIn } from "./OpenIn";
 import type { PluginId } from "./PluginId";
+import type { RightViews } from "./RightViews";
 import type { StartIn } from "./StartIn";
 import type { ThemePref } from "./ThemePref";
 import type { Tone } from "./Tone";
@@ -45,6 +46,10 @@ tokenizers: Array<string>,
  * Explicit plugin switches (absent = manifest default).
  */
 plugins: { [key in PluginId]: boolean }, 
+/**
+ * The right column's arrangement (`[right_views]`); `None` = absent | unreadable = the frontend's default.
+ */
+rightViews: RightViews | null, 
 /**
  * Long lines wrap in the text viewer and the source editors (`wrap_lines`; absent = on).
  */

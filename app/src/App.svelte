@@ -4,8 +4,6 @@
   import { language, t } from "./core/i18n";
   import DocumentArea from "./core/doc/DocumentArea.svelte";
   import { documents } from "./core/doc/document.svelte";
-  import OutlinePanel from "./core/doc/OutlinePanel.svelte";
-  import { reading } from "./core/doc/reading.svelte";
   import { look } from "./core/look.svelte";
   import ExplorerSidebar from "./core/explorer/ExplorerSidebar.svelte";
   import ImportAsk from "./core/explorer/ImportAsk.svelte";
@@ -17,6 +15,8 @@
   import FocusExit from "./core/shell/FocusExit.svelte";
   import Frame from "./core/shell/Frame.svelte";
   import PanelToggle from "./core/shell/PanelToggle.svelte";
+  import RightColumn from "./core/shell/RightColumn.svelte";
+  import { rightViews } from "./core/shell/rightViews.svelte";
   import Notices from "./core/shell/Notices.svelte";
   import DefaultAppDialog from "./core/shell/DefaultAppDialog.svelte";
   import { defaultApp } from "./core/shell/defaultApp.svelte";
@@ -33,7 +33,7 @@
   import SearchPanel from "./core/search/SearchPanel.svelte";
   import SidebarTabs from "./core/search/SidebarTabs.svelte";
   import KeymapDialog from "./core/shell/KeymapDialog.svelte";
-  import { confirmInit } from "./core/shell/initProject";
+  import { answerInit } from "./core/shell/initProject";
   import { rightAvailable } from "./core/shell/layout";
   import { layout } from "./core/shell/layout.svelte";
   import { hasSidebar, rightSide } from "./core/shell/sides";
@@ -43,7 +43,7 @@
   import { contributions } from "./core/plugins/instance.svelte";
   import { windowTitle } from "./core/title";
   import StatusItems from "./core/shell/StatusItems.svelte";
-  import { activeRight, activeSidebar, leftPanels, rightPanels } from "./core/shell/panels.svelte";
+  import { activeSidebar, leftPanels } from "./core/shell/panels.svelte";
   import { windowStore as store } from "./core/window.svelte";
   import { projects } from "./core/projects/instance.svelte";
 
@@ -108,7 +108,6 @@
   );
   const notesOn = $derived(conditions.current.plugins.includes("notes"));
   const sidebarView = $derived(activeSidebar());
-  const rightPanel = $derived(activeRight());
 
   /** The outline of the document shown, when it has one and the panel is on. */
   const outline = $derived.by(() => {
@@ -123,6 +122,9 @@
       info = result.ok ? { status: "ready", info: result.value } : { status: "failed" };
     });
   });
+
+  // the right column's arrangement (app settings) and its views' defaults per project load
+  $effect(() => rightViews.start(api));
 
   // the core's commands and keys live in the registry while the window does; one key listener runs them
   $effect(() => installWindowKeys());
@@ -275,18 +277,7 @@
 {/snippet}
 
 {#snippet panel()}
-  {#if rightPanel !== null}
-    {#each rightPanels() as plugin (plugin.owner + plugin.id)}
-      {#if plugin.id === rightPanel}
-        {#await plugin.view() then loaded}
-          {@const PanelView = loaded.default}
-          <PanelView />
-        {/await}
-      {/if}
-    {/each}
-  {:else if outline}
-    <OutlinePanel items={outline} />
-  {/if}
+  <RightColumn {outline} />
 {/snippet}
 
 {#snippet main()}
@@ -336,7 +327,7 @@
     sidebar={shown?.workspace.kind === "project" || shown?.workspace.kind === "notes"
       ? sidebar
       : undefined}
-    panel={rightPanel !== null || (outline && reading.outline) ? panel : undefined}
+    panel={rightViews.drawn.length > 0 ? panel : undefined}
     focus={ui.focus === "on"}
     moving={ui.frameMoving}
     {main}
@@ -364,7 +355,8 @@
   <InitDialog
     name={asked.name}
     path={asked.path}
-    answer={(yes) => (yes ? void confirmInit(asked.path) : ui.closeInit())}
+    fresh={asked.opens}
+    answer={(yes) => answerInit(asked, yes)}
   />
 {/if}
 {#if ui.finder.status === "open"}
