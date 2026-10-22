@@ -1,6 +1,6 @@
 <script lang="ts">
   // The agent connection's row in the gear popover (project windows): its state in a word and the way to its settings
-  // section, one click from anywhere. Hidden until the state is known.
+  // section, one click from anywhere. Hidden until the state is known; a server that couldn't start says so.
   import { t } from "../../core/i18n";
   import { ui } from "../../core/shell/ui.svelte";
   import { AGENT_PAGE } from "./offer.svelte";
@@ -11,9 +11,11 @@
       ? null
       : !agent.enabled
         ? t("agent.popoverRow.off")
-        : agent.connected.length > 0
-          ? t("agent.popoverRow.connected")
-          : t("agent.popoverRow.on"),
+        : agent.status.server.state === "error"
+          ? t("agent.popoverRow.error")
+          : agent.connected.length > 0
+            ? t("agent.popoverRow.connected")
+            : t("agent.popoverRow.on"),
   );
 </script>
 

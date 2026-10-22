@@ -1149,7 +1149,7 @@ export default {
   "agent.title": "智能体连接",
   "agent.switch": "与智能体共享此项目",
   "agent.switchHint":
-    "你连接的智能体（Claude Code、Cursor 或任何 MCP 客户端）可以看到你正在查看的内容和变更，搜索和阅读本项目的文件，阅读你的评论和你共享的笔记，并向你展示某个位置。仅限本机。PerMark 识别出的密码和密钥会被隐藏，智能体从不通过 PerMark 编辑文件。这只涉及智能体从 PerMark 获得的内容：智能体仍可自行打开你电脑上的文件。",
+    "你连接的智能体（支持 MCP 的 AI 工具，例如 Claude Code 或 Cursor）可以看到你正在查看的内容和变更，搜索和阅读本项目的文件，阅读你的评论和你共享的笔记，并向你展示某个位置。仅限本机。PerMark 识别出的密码和密钥会被隐藏，智能体从不通过 PerMark 编辑文件。这只涉及智能体从 PerMark 获得的内容：智能体仍可自行打开你电脑上的文件。",
   "agent.groups": "智能体可以做什么",
   "agent.group.context": "查看你正在看的内容",
   "agent.group.changes": "查看变更",
@@ -1183,12 +1183,13 @@ export default {
   "agent.popoverRow.off": "关闭",
   "agent.popoverRow.on": "开启",
   "agent.popoverRow.connected": "开启 · 已连接",
+  "agent.popoverRow.error": "无法启动",
   "agent.setUp": "设置…",
   "agent.openSettings": "设置…",
   "agent.statusSettings": "智能体设置…",
   "agent.offer.label": "AI 智能体文件",
   "agent.offer.text":
-    "此文件夹包含 AI 智能体的文件（{name}）。要与你的智能体共享你正在阅读的内容吗？",
+    "此文件夹包含 AI 智能体的文件（{name}）。要与你的智能体共享你正在阅读的内容、项目文件和你的评论吗？",
   "agent.offer.decline": "不用了",
   "agent.cmd.settings": "智能体连接：打开设置",
   "agent.turnedOn": "共享已开启。请按下面的步骤连接你的智能体。",

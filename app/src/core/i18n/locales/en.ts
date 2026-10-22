@@ -1176,7 +1176,7 @@ const en = {
   "agent.title": "Agent connection",
   "agent.switch": "Share this project with agents",
   "agent.switchHint":
-    "An agent you connect (Claude Code, Cursor or any MCP client) can see what you're looking at and what changed, search and read this project's files, read your comments and the notes you share, and show you a place. Only on this computer. Passwords and keys that PerMark recognizes stay hidden, and agents never edit files through PerMark. This covers only what agents get from PerMark: an agent can still open files on your computer by itself.",
+    "An agent you connect (an AI tool that supports MCP, such as Claude Code or Cursor) can see what you're looking at and what changed, search and read this project's files, read your comments and the notes you share, and show you a place. Only on this computer. Passwords and keys that PerMark recognizes stay hidden, and agents never edit files through PerMark. This covers only what agents get from PerMark: an agent can still open files on your computer by itself.",
   "agent.groups": "What agents may do",
   "agent.group.context": "See what you're looking at",
   "agent.group.changes": "See what changed",
@@ -1210,12 +1210,13 @@ const en = {
   "agent.popoverRow.off": "Off",
   "agent.popoverRow.on": "On",
   "agent.popoverRow.connected": "On · connected",
+  "agent.popoverRow.error": "Couldn't start",
   "agent.setUp": "Set up…",
   "agent.openSettings": "Settings…",
   "agent.statusSettings": "Agent settings…",
   "agent.offer.label": "Files for AI agents",
   "agent.offer.text":
-    "This folder has files for AI agents ({name}). Share what you're reading with your agent?",
+    "This folder has files for AI agents ({name}). Share what you're reading, the project's files and your comments with your agent?",
   "agent.offer.decline": "No thanks",
   "agent.cmd.settings": "Agent connection: open settings",
   "agent.turnedOn": "Sharing is on. Connect your agent with the steps below.",

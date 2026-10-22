@@ -1,7 +1,7 @@
 <script lang="ts">
   // Quick settings under the header button: language, theme, light tone, the rows plugins put here (the agent
-  // connection's state + its way in), and the way to the keyboard map and to all the settings. Closes on Escape | a
-  // click outside.
+  // connection's state + its way in), and the way to the keyboard map and to all the settings. Focus moves in on open
+  // (first control) and Tab stays inside; Escape closes and puts focus back on the gear; a click outside closes.
   import Settings from "@lucide/svelte/icons/settings";
   import type { LanguagePref, ThemePref, Tone } from "../../api";
   import { conditions } from "../conditions/context.svelte";
@@ -41,10 +41,44 @@
       .sort((a, b) => a.order - b.order),
   );
 
-  // closes on Escape | click outside (imperative listeners, torn down on close)
+  const FOCUSABLE =
+    'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]';
+
+  function focusables(): HTMLElement[] {
+    // Tab stops only (a segment group's other options are reached with the arrows)
+    return panel
+      ? Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.tabIndex >= 0)
+      : [];
+  }
+
+  // focus enters the popover on its first control (Ctrl+, | Enter on the gear | a click)
+  $effect(() => {
+    focusables()[0]?.focus();
+  });
+
+  /** Tab | Shift+Tab cycle inside while it is open. */
+  function onkeydown(e: KeyboardEvent): void {
+    if (e.key !== "Tab") return;
+    const all = focusables();
+    const first = all[0];
+    const last = all[all.length - 1];
+    if (first === undefined || last === undefined) return;
+    const at = document.activeElement;
+    if (e.shiftKey && (at === first || !panel?.contains(at))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && (at === last || !panel?.contains(at))) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  // closes on Escape (focus back on the gear) | click outside (imperative listeners, torn down on close)
   $effect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") close();
+      if (e.key !== "Escape") return;
+      close();
+      document.querySelector<HTMLElement>("[data-settings-trigger]")?.focus();
     };
     const onPointer = (e: PointerEvent): void => {
       const target = e.target;
@@ -65,7 +99,15 @@
   });
 </script>
 
-<div class="popover" role="dialog" aria-label={t("settings.title")} bind:this={panel}>
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<div
+  class="popover"
+  role="dialog"
+  tabindex="-1"
+  aria-label={t("settings.title")}
+  bind:this={panel}
+  {onkeydown}
+>
   <div class="menu-label">{t("settings.title")}</div>
 
   <label class="row">

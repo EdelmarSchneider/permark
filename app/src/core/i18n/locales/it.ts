@@ -1208,7 +1208,7 @@ export default {
   "agent.title": "Connessione con gli agenti",
   "agent.switch": "Condividi questo progetto con gli agenti",
   "agent.switchHint":
-    "Un agente che colleghi (Claude Code, Cursor o qualsiasi client MCP) può vedere cosa stai guardando e cosa è cambiato, cercare e leggere i file di questo progetto, leggere i tuoi commenti e le note che condividi, e mostrarti un punto. Solo su questo computer. Le password e le chiavi che PerMark riconosce restano nascoste, e gli agenti non modificano mai file tramite PerMark. Questo vale solo per ciò che gli agenti ricevono da PerMark: un agente può comunque aprire da solo i file del tuo computer.",
+    "Un agente che colleghi (uno strumento di IA che supporta MCP, come Claude Code o Cursor) può vedere cosa stai guardando e cosa è cambiato, cercare e leggere i file di questo progetto, leggere i tuoi commenti e le note che condividi, e mostrarti un punto. Solo su questo computer. Le password e le chiavi che PerMark riconosce restano nascoste, e gli agenti non modificano mai file tramite PerMark. Questo vale solo per ciò che gli agenti ricevono da PerMark: un agente può comunque aprire da solo i file del tuo computer.",
   "agent.groups": "Cosa possono fare gli agenti",
   "agent.group.context": "Vedere cosa stai guardando",
   "agent.group.changes": "Vedere cosa è cambiato",
@@ -1242,12 +1242,13 @@ export default {
   "agent.popoverRow.off": "Disattivata",
   "agent.popoverRow.on": "Attiva",
   "agent.popoverRow.connected": "Attiva · collegato",
+  "agent.popoverRow.error": "Non è partita",
   "agent.setUp": "Configura…",
   "agent.openSettings": "Impostazioni…",
   "agent.statusSettings": "Impostazioni agenti…",
   "agent.offer.label": "File per agenti IA",
   "agent.offer.text":
-    "Questa cartella contiene file per agenti IA ({name}). Condividere con il tuo agente ciò che stai leggendo?",
+    "Questa cartella contiene file per agenti IA ({name}). Condividere con il tuo agente ciò che leggi, i file del progetto e i tuoi commenti?",
   "agent.offer.decline": "No, grazie",
   "agent.cmd.settings": "Connessione con gli agenti: apri impostazioni",
   "agent.turnedOn": "La condivisione è attiva. Collega il tuo agente con i passaggi qui sotto.",

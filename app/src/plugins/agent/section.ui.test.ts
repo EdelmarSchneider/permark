@@ -226,6 +226,46 @@ describe("the gear popover row", () => {
     expect(text(target)).toContain("On");
   });
 
+  it("takes focus on open, keeps Tab inside, reaches Set up… in 3 Tabs, Esc gives focus back to the gear", async () => {
+    await open();
+    const gear = document.createElement("button");
+    gear.setAttribute("data-settings-trigger", "");
+    document.body.append(gear);
+    const close = vi.fn();
+    component = mount(SettingsPopover, { target, props: { store, close } });
+    await until(() => text(target).includes("Set up…"), "row");
+    const panel = target.querySelector<HTMLElement>('[role="dialog"]')!;
+    const stops = Array.from(
+      panel.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]',
+      ),
+    ).filter((el) => el.tabIndex >= 0);
+    expect(document.activeElement).toBe(stops[0]);
+    expect(stops.indexOf(button("Set up…"))).toBeLessThanOrEqual(3);
+    // Tab on the last control wraps to the first; Shift+Tab on the first to the last
+    stops.at(-1)?.focus();
+    panel.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }),
+    );
+    expect(document.activeElement).toBe(stops[0]);
+    panel.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }),
+    );
+    expect(document.activeElement).toBe(stops.at(-1));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(close).toHaveBeenCalled();
+    expect(document.activeElement).toBe(gear);
+  });
+
+  it("says when the connection couldn't start, not 'On'", async () => {
+    await open();
+    await agent.setEnabled(true);
+    mock.probe.plugins.agent.fail("inUse");
+    component = mount(SettingsPopover, { target, props: { store, close: () => {} } });
+    await until(() => text(target).includes("Couldn't start"), "the failure");
+    expect(text(target)).not.toMatch(/AI agents\s*On/);
+  });
+
   it("is not there outside a project", async () => {
     await open();
     await mock.openPath(`${MOCK_FOLDER}/README.md`, "thisTab");

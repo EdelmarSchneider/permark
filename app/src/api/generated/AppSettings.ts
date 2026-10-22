@@ -49,4 +49,8 @@ plugins: { [key in PluginId]: boolean },
 /**
  * The right column's arrangement (`[right_views]`); `None` = absent | unreadable = the frontend's default.
  */
-rightViews: RightViews | null, };
+rightViews: RightViews | null, 
+/**
+ * Long lines wrap in the text viewer and the source editors (`wrap_lines`; absent = on).
+ */
+wrapLines: boolean, };

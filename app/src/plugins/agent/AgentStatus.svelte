@@ -74,6 +74,13 @@
     copied = true;
   }
 
+  // "Copied" goes back to "Copy setup command" after a moment
+  $effect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => (copied = false), 2000);
+    return () => clearTimeout(timer);
+  });
+
   // closes on Escape | a click outside
   $effect(() => {
     if (!agent.popover) return;

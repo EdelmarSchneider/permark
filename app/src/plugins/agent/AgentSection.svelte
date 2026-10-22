@@ -47,6 +47,9 @@
   );
   const initialized = $derived(conditions.current.permark === "initialized");
 
+  /** How long a Copy button says "Copied" (ms). */
+  const COPIED_MS = 2000;
+
   const MORE: { id: string; label: MessageKey; text: (program: string | null) => string }[] = [
     { id: "json", label: "agent.setup.json", text: mcpJson },
     { id: "hook", label: "agent.setup.hook", text: hookJson },
@@ -95,6 +98,13 @@
     await navigator.clipboard.writeText(text);
     copied = id;
   }
+
+  // "Copied" goes back to "Copy" after a moment, so the next copy confirms again
+  $effect(() => {
+    if (copied === null) return;
+    const timer = setTimeout(() => (copied = null), COPIED_MS);
+    return () => clearTimeout(timer);
+  });
 </script>
 
 {#if status !== null}

@@ -1211,7 +1211,7 @@ export default {
   "agent.title": "Agentenverbindung",
   "agent.switch": "Dieses Projekt mit Agenten teilen",
   "agent.switchHint":
-    "Ein verbundener Agent (Claude Code, Cursor oder ein anderer MCP-Client) sieht, was gerade angezeigt wird und was sich geändert hat, kann die Dateien dieses Projekts suchen und lesen, Kommentare und geteilte Notizen lesen und eine Stelle zeigen. Nur auf diesem Computer. Passwörter und Schlüssel, die PerMark erkennt, bleiben verborgen, und Agenten bearbeiten nie Dateien über PerMark. Das gilt nur für das, was Agenten von PerMark bekommen: Ein Agent kann Dateien auf diesem Computer weiterhin selbst öffnen.",
+    "Ein verbundener Agent (ein KI-Werkzeug mit MCP-Unterstützung, etwa Claude Code oder Cursor) sieht, was gerade angezeigt wird und was sich geändert hat, kann die Dateien dieses Projekts suchen und lesen, Kommentare und geteilte Notizen lesen und eine Stelle zeigen. Nur auf diesem Computer. Passwörter und Schlüssel, die PerMark erkennt, bleiben verborgen, und Agenten bearbeiten nie Dateien über PerMark. Das gilt nur für das, was Agenten von PerMark bekommen: Ein Agent kann Dateien auf diesem Computer weiterhin selbst öffnen.",
   "agent.groups": "Was Agenten dürfen",
   "agent.group.context": "Sehen, was angezeigt wird",
   "agent.group.changes": "Sehen, was sich geändert hat",
@@ -1245,12 +1245,13 @@ export default {
   "agent.popoverRow.off": "Aus",
   "agent.popoverRow.on": "An",
   "agent.popoverRow.connected": "An · verbunden",
+  "agent.popoverRow.error": "Start fehlgeschlagen",
   "agent.setUp": "Einrichten…",
   "agent.openSettings": "Einstellungen…",
   "agent.statusSettings": "Agenteneinstellungen…",
   "agent.offer.label": "Dateien für KI-Agenten",
   "agent.offer.text":
-    "Dieser Ordner enthält Dateien für KI-Agenten ({name}). Das Gelesene mit dem Agenten teilen?",
+    "Dieser Ordner enthält Dateien für KI-Agenten ({name}). Das Gelesene, die Projektdateien und Kommentare mit dem Agenten teilen?",
   "agent.offer.decline": "Nein danke",
   "agent.cmd.settings": "Agentenverbindung: Einstellungen öffnen",
   "agent.turnedOn": "Teilen ist an. Den Agenten mit den Schritten unten verbinden.",
