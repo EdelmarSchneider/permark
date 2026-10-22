@@ -401,6 +401,62 @@ fn the_pool_on_real_repositories_counts_caps_and_survives_a_deleted_repository()
     }
 }
 
+/// "Changes since: the last commit" (UX round 3, F1): a project whose files read the same against both baselines (no
+/// commit since the last visit) still hears the new choice, so its letters explain the right one; a file at the root
+/// is not in its list.
+#[test]
+fn a_new_baseline_is_announced_for_a_project_even_when_its_files_stay_the_same() {
+    let (_dir, root) = base();
+    let folder = root.join("repo 05");
+    let repo = Repository::init(&folder).unwrap();
+    write(&folder, "README.md", "a\n");
+    commit_all(&repo, "first");
+    write(&folder, "README.md", "a\nb\n");
+    write(&root, "guide.md", "root file\n");
+    for (name, ops) in backends() {
+        let kind = Arc::new(Mutex::new(BaselineKind::LastVisit));
+        let seen: Arc<Mutex<Vec<ProjectSnapshot>>> = Arc::default();
+        let mut env = real_env(Arc::clone(&ops));
+        let read = Arc::clone(&kind);
+        env.baseline = Arc::new(move || *lock_vec(&read));
+        let into = Arc::clone(&seen);
+        env.on_snapshot = Arc::new(move |s| lock_vec(&into).push(s.clone()));
+        let members = Members::new(env);
+        members.sync(&[member("u05", "repo 05", &folder)]);
+        members.interest("w", InterestLevel::Glance, &["u05".to_owned()]);
+        let last_kind = || {
+            lock_vec(&seen)
+                .last()
+                .and_then(|s| s.snapshot.as_ref())
+                .map(|s| s.baseline.kind)
+        };
+        wait_until("first list", || {
+            last_kind() == Some(BaselineKind::LastVisit)
+        });
+        let files: Vec<String> = lock_vec(&seen)
+            .last()
+            .and_then(|s| s.snapshot.as_ref())
+            .map(|s| s.files.iter().map(|f| f.path.clone()).collect())
+            .unwrap_or_default();
+        assert_eq!(files, vec!["repo 05/README.md".to_owned()], "{name}");
+        *lock_vec(&kind) = BaselineKind::Head;
+        members.baseline_changed();
+        wait_until("the new choice announced", || {
+            last_kind() == Some(BaselineKind::Head)
+        });
+        let after = members.snapshot("u05").unwrap();
+        assert_eq!(after.baseline.kind, BaselineKind::Head, "{name}");
+        assert_eq!(after.files.len(), 1, "{name}: same file, measured again");
+        // and back: announced again
+        *lock_vec(&kind) = BaselineKind::LastVisit;
+        members.baseline_changed();
+        wait_until("back to the last visit", || {
+            last_kind() == Some(BaselineKind::LastVisit)
+        });
+        drop(members);
+    }
+}
+
 // ---- the plugin in a project with an included project ------------------------------------------------------------
 
 fn env_for(base: &Path) -> CoreEnv {

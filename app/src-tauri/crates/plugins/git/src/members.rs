@@ -204,6 +204,8 @@ struct StatusFacts {
     changed: u32,
     truncated: bool,
     compared: Option<String>,
+    /// The baseline it was measured against: a new choice is announced even when the files stay the same.
+    kind: BaselineKind,
     backend: BackendKind,
     seq: u64,
 }
@@ -454,6 +456,7 @@ type Detail = (Option<(u32, u32)>, Option<(i64, String)>);
 struct Facts {
     status: crate::ops::RawStatus,
     compared: Option<String>,
+    kind: BaselineKind,
     state: RepoState,
     backend: BackendKind,
     detail: Option<Detail>,
@@ -952,6 +955,7 @@ fn run_job(env: &Env, job: Job) -> Answer {
             Facts {
                 status,
                 compared,
+                kind: job.kind,
                 state: repo_state(&job.location.git_dir),
                 backend: backend.kind(),
                 detail,
@@ -1000,6 +1004,7 @@ fn settle(st: &mut State, answer: Answer, now: Instant, env: &Env, out: &mut Out
                 s.head == facts.status.head
                     && s.truncated == facts.status.truncated
                     && s.compared == facts.compared
+                    && s.kind == facts.kind
             }) && before.as_deref() == Some(&files);
             let seq = if same {
                 slot.status.as_ref().map_or_else(next_seq, |s| s.seq)
@@ -1011,6 +1016,7 @@ fn settle(st: &mut State, answer: Answer, now: Instant, env: &Env, out: &mut Out
                 changed,
                 truncated: facts.status.truncated,
                 compared: facts.compared,
+                kind: facts.kind,
                 backend: facts.backend,
                 seq,
             });
