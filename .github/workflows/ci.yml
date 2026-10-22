@@ -146,3 +146,37 @@ jobs:
         shell: pwsh
         working-directory: .
         run: ./scripts/build-msix.ps1 -Build -OutDir "$env:RUNNER_TEMP\msix"
+
+  # The third-party notices every release ships (app/scripts/third-party-notices.mjs): made here too, so a dependency with
+  # a license nobody accepted (app/src-tauri/about.toml) or a package without a license fails the push that added it, not
+  # the release. The file is not kept.
+  notices:
+    name: Third-party notices (ubuntu-22.04)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # `cargo about` reads the dependency tree through cargo, which needs the toolchain app/rust-toolchain.toml pins.
+      - name: Install Rust (pinned)
+        working-directory: app
+        run: rustup toolchain install
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Get cargo-about
+        run: bash scripts/get-cargo-about.sh
+
+      - name: Make the notices
+        working-directory: app
+        run: npm run notices

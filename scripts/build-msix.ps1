@@ -146,6 +146,11 @@ Copy-Item $ExePath (Join-Path $Stage 'permark.exe')
 # Beside the program: the DLL finds the program from its own path, and the manifest names it by this name.
 Copy-Item $DllPath (Join-Path $Stage 'permark_shell.dll')
 Copy-Item (Join-Path $Assets '*.png') (Join-Path $Stage 'Assets')
+# The licenses of the third-party software inside (made at release time by app/scripts/third-party-notices.mjs; a
+# placeholder in a development checkout), opened from the app's About.
+$Notices = Join-Path $Tauri 'resources\THIRD-PARTY-NOTICES.md'
+if (-not (Test-Path $Notices)) { throw "$Notices was not found." }
+Copy-Item $Notices (Join-Path $Stage 'THIRD-PARTY-NOTICES.md')
 
 $manifest = Get-Content $Template -Raw -Encoding UTF8
 foreach ($token in '@VERSION@', '@DESCRIPTION@') {

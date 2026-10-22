@@ -198,6 +198,18 @@ jobs:
         working-directory: app
         run: npm ci
 
+      # The licenses of the third-party software inside, shipped in every installer (bundle.resources) and opened from
+      # the app's About. Fails the release when a crate's license is not accepted (app/src-tauri/about.toml).
+      - name: Get cargo-about
+        if: env.RUN_THIS == 'true'
+        shell: bash
+        run: bash scripts/get-cargo-about.sh
+
+      - name: Third-party notices
+        if: env.RUN_THIS == 'true'
+        working-directory: app
+        run: npm run notices
+
       # Builds, signs the updater artifacts and uploads installers + `.sig` files to the release (asset names as before:
       # tauri-action names them). `latest.json` is written by `publish`.
       - name: Build and upload the installers
@@ -316,6 +328,15 @@ jobs:
       - name: Install frontend dependencies
         working-directory: app
         run: npm ci
+
+      # The package carries the third-party licenses beside the program (scripts/build-msix.ps1 copies them).
+      - name: Get cargo-about
+        shell: bash
+        run: bash scripts/get-cargo-about.sh
+
+      - name: Third-party notices
+        working-directory: app
+        run: npm run notices
 
       # A release is tagged after its version is bumped, so the tag and the app's version are the same number.
       - name: Check that the tag is the app's version
