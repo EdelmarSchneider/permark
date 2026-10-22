@@ -9,7 +9,7 @@ use ts_rs::TS;
 
 use super::util::split_path;
 use crate::format::Editability;
-use crate::secrets::{is_count, is_secret_key, mask_text, url_password};
+use crate::secrets::{has_token, is_count, is_secret_key, is_secret_path, mask_text, url_password};
 
 /// Bytes of a text.
 pub type Span = Range<usize>;
@@ -272,7 +272,7 @@ impl Sheet {
         self.rows().map(|(_, r)| r).find(|r| r.path == path)
     }
 
-    /// Marks the secret values: a value under a secret key (any segment of its path) that is not a bool or empty;
+    /// Marks the secret values: a value under a secret key (`secrets::is_secret_path`) that is not a bool or empty;
     /// the `value` next to a `name: DB_PASSWORD`; the text of a `API_KEY=...` list item.
     pub fn finalize(&mut self) {
         for group in &mut self.groups {
@@ -280,10 +280,9 @@ impl Sheet {
                 matches!(r.key.as_str(), "name" | "key" | "env" | "var" | "variable")
                     && matches!(&r.value, RowValue::Scalar(s) if is_secret_key(&s.text))
             });
-            let group_secret = split_path(&group.path).iter().any(|s| is_secret_key(s));
+            let group_secret = is_secret_path(&split_path(&group.path));
             for row in &mut group.rows {
-                let key_secret =
-                    group_secret || split_path(&row.path).iter().any(|s| is_secret_key(s));
+                let key_secret = group_secret || is_secret_path(&split_path(&row.path));
                 let value_of_named =
                     named_secret && matches!(row.key.as_str(), "value" | "val" | "default");
                 match &mut row.value {
@@ -308,7 +307,7 @@ impl Sheet {
                         let columns: Vec<bool> = table
                             .fields
                             .iter()
-                            .map(|f| split_path(f).iter().any(|s| is_secret_key(s)))
+                            .map(|f| is_secret_path(&split_path(f)))
                             .collect();
                         for row in &mut table.rows {
                             for ((cell, column), field) in
@@ -499,7 +498,8 @@ fn mark(scalar: &mut Scalar, key_secret: bool) {
         && !matches!(scalar.kind, ScalarKind::Bool | ScalarKind::Null)
         && !scalar.text.is_empty()
         && !is_reference(&scalar.text)
-        || url_password(&scalar.text).is_some();
+        || url_password(&scalar.text).is_some()
+        || has_token(&scalar.text);
 }
 
 /// `${VAR}`, `$VAR`, `{{ secrets.NAME }}`: a pointer to a secret, not the secret.

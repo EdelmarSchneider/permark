@@ -13,5 +13,10 @@
     "id": "mouse-side-buttons",
     "bug": "The mouse side buttons (back, forward) did nothing; in 0.5 they went back and forward through the documents viewed, like Alt+Left and Alt+Right",
     "reason": "The probe has no side-button step: Playwright mouse buttons are left | middle | right only, and a synthetic event in the page is what the vitest cases already send. Covered by dispatch.test.ts (button 3 | 4 -> back | forward, 0-2 pass, one step per press, overlay | dialog pass) + DocumentArea.test.ts (reading view and Source editor); the real button = real-input check"
+  },
+  {
+    "id": "secret-false-positives",
+    "bug": "A game script (keys.left = true, keyJump, \"KeyW\") and its Markdown spec showed many masked values: every name containing key | token | auth counted as a secret",
+    "reason": "The probe flags layout, focus and dead controls, not the content of a value; whether a value is masked is a text rule. Covered by testdata/secrets/cases.json (the director's patterns from build/p1.js, SPEC.md and a second SPEC.md, plus true positives), read by both secrets.test.ts and crates/core/src/secrets.rs; TextView.test.ts and enhance.test.ts keep the mask widgets"
   }
 ]
