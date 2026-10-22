@@ -295,6 +295,8 @@ struct Inner {
     root_ignore: Vec<String>,
     /// Uids whose 0.6 state was copied (round 4; kept as read).
     migrated: Vec<String>,
+    /// Root commits of found repositories learned this session (path key -> commit; `None`: none to learn).
+    root_commits: HashMap<String, Option<String>>,
     other: serde_json::Map<String, serde_json::Value>,
 }
 
@@ -323,6 +325,11 @@ enum Msg {
 }
 
 type Listener = Arc<dyn Fn(&ProjectEvent) + Send + Sync>;
+type MapListener = Arc<dyn Fn(&Arc<ProjectMap>) + Send + Sync>;
+
+/// The root commit of the repository whose working tree is this folder (`None`: no repository, no commit, git
+/// unavailable). Given by the `git` plugin while it runs (`projects.md` §4.4 step 3); called off the UI thread.
+pub type RootCommitFn = Arc<dyn Fn(&Path) -> Option<String> + Send + Sync>;
 
 pub struct Projects {
     root: Root,
@@ -336,6 +343,10 @@ pub struct Projects {
     inner: Mutex<Inner>,
     map: RwLock<Arc<ProjectMap>>,
     listeners: Mutex<Vec<(u64, Listener)>>,
+    /// Told the new map after every change (members started | stopped | moved; the `git` plugin follows them).
+    map_listeners: Mutex<Vec<(u64, MapListener)>>,
+    /// Root commits of found repositories (re-attach by first commit), while the `git` plugin runs.
+    identity: Mutex<Option<(u64, RootCommitFn)>>,
     next: AtomicU64,
     tx: Mutex<Option<Sender<Msg>>>,
     worker: Mutex<Option<JoinHandle<()>>>,
@@ -364,6 +375,11 @@ impl Drop for ProjectsSubscription {
     fn drop(&mut self) {
         if let Some(owner) = self.owner.upgrade() {
             lock(&owner.listeners).retain(|(id, _)| *id != self.id);
+            lock(&owner.map_listeners).retain(|(id, _)| *id != self.id);
+            let mut identity = lock(&owner.identity);
+            if identity.as_ref().is_some_and(|(id, _)| *id == self.id) {
+                *identity = None;
+            }
         }
     }
 }
@@ -424,10 +440,13 @@ impl Projects {
                 ancestors: (Vec::new(), None),
                 root_ignore: root_ignore.to_vec(),
                 migrated: kept.migrated,
+                root_commits: HashMap::new(),
                 other: kept.other,
             }),
             map: RwLock::new(Arc::new(ProjectMap::default())),
             listeners: Mutex::new(Vec::new()),
+            map_listeners: Mutex::new(Vec::new()),
+            identity: Mutex::new(None),
             next: AtomicU64::new(0),
             tx: Mutex::new(None),
             worker: Mutex::new(None),
@@ -603,6 +622,140 @@ impl Projects {
             owner: Arc::downgrade(self),
             id,
         }
+    }
+
+    /// Hears the new map after every change until the subscription goes (the `git` plugin follows members with it).
+    #[must_use]
+    pub fn subscribe_map(
+        self: &Arc<Self>,
+        listener: impl Fn(&Arc<ProjectMap>) + Send + Sync + 'static,
+    ) -> ProjectsSubscription {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        lock(&self.map_listeners).push((id, Arc::new(listener)));
+        ProjectsSubscription {
+            owner: Arc::downgrade(self),
+            id,
+        }
+    }
+
+    /// Gives re-attach the root commits of found repositories (`projects.md` §4.4 step 3) until the lease goes. A
+    /// record entry with a known first commit that is not at its path is looked for again at once.
+    #[must_use]
+    pub fn provide_root_commits(self: &Arc<Self>, source: RootCommitFn) -> ProjectsSubscription {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        *lock(&self.identity) = Some((id, source));
+        let waiting = {
+            let inner = lock(&self.inner);
+            inner.ready
+                && inner.inputs.entries.iter().any(|e| {
+                    inner.inputs.presence.get(&e.uid) == Some(&Presence::Gone)
+                        && first_commit_of(&inner, &e.uid).is_some()
+                })
+        };
+        if waiting {
+            if let Some(tx) = lock(&self.tx).as_ref() {
+                let _ = tx.send(Msg::Batch(Hint {
+                    folders: true,
+                    ..Hint::default()
+                }));
+            }
+        }
+        ProjectsSubscription {
+            owner: Arc::downgrade(self),
+            id,
+        }
+    }
+
+    /// The state store of a project folder below the root (`projects.md` §9.1: the same files as when it is opened
+    /// alone). `None`: the folder is not there.
+    #[must_use]
+    pub fn store_of(&self, path: &VaultPath) -> Option<StateStore> {
+        let root = Root::open(&abs_of(self.root.path(), path)).ok()?;
+        Some(StateStore::for_project(&self.dirs, &root))
+    }
+
+    /// Writes the first commits the `git` plugin learned (`RecordOp::SetFirstCommit`, one record write for all;
+    /// `projects.md` D21): only for entries without one, only while the record reads. Others are skipped quietly.
+    ///
+    /// # Errors
+    /// `Conflict`, IO.
+    pub fn set_first_commits(&self, learned: &[(ProjectUid, String)]) -> Result<(), IpcError> {
+        if self.files_only || self.stopped.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        let mut inner = lock(&self.inner);
+        let RecordRead::Read(record) = &inner.record else {
+            return Ok(());
+        };
+        let mut ops: Vec<RecordOp> = Vec::new();
+        for (uid, oid) in learned {
+            let valid = (4..=64).contains(&oid.len()) && oid.bytes().all(|b| b.is_ascii_hexdigit());
+            let open = record
+                .entries
+                .iter()
+                .any(|e| &e.uid == uid && e.first_commit.is_none());
+            let twice = ops
+                .iter()
+                .any(|o| matches!(o, RecordOp::SetFirstCommit { uid: u, .. } if u == uid));
+            if valid && open && !twice {
+                ops.push(RecordOp::SetFirstCommit {
+                    uid: uid.clone(),
+                    oid: oid.to_ascii_lowercase(),
+                });
+            }
+        }
+        if ops.is_empty() {
+            return Ok(());
+        }
+        self.write_record(&ops, false)?;
+        inner.record = read_record(self.root.path());
+        inner.seq += 1;
+        self.rebuild_map(&inner);
+        drop(inner);
+        self.finish(&After {
+            changed: true,
+            ..After::default()
+        });
+        Ok(())
+    }
+
+    /// Root commits re-attach may need (`projects.md` §4.4 step 3), learned without holding the service: only while a
+    /// record entry with a first commit is not at its path, only for found git projects not listed, once per session
+    /// per folder.
+    fn learn_root_commits(&self, markers: &[crate::tree::Marker]) {
+        let Some(source) = lock(&self.identity).as_ref().map(|(_, f)| Arc::clone(f)) else {
+            return;
+        };
+        let need: Vec<(String, PathBuf)> = {
+            let inner = lock(&self.inner);
+            let marked: HashSet<String> = markers
+                .iter()
+                .map(|m| crate::paths::key_of(&m.path))
+                .collect();
+            let waiting = inner.inputs.entries.iter().any(|e| {
+                !marked.contains(&e.path.key()) && first_commit_of(&inner, &e.uid).is_some()
+            });
+            if !waiting {
+                return;
+            }
+            let listed: HashSet<String> =
+                inner.inputs.entries.iter().map(|e| e.path.key()).collect();
+            self.found_now(&inner, markers)
+                .iter()
+                .filter(|(k, f)| {
+                    f.marker.git() && !listed.contains(*k) && !inner.root_commits.contains_key(*k)
+                })
+                .map(|(k, f)| (k.clone(), abs_of(self.root.path(), &f.path)))
+                .collect()
+        };
+        let mut learned = Vec::new();
+        for (key, abs) in need {
+            if self.stopped.load(Ordering::Relaxed) {
+                break;
+            }
+            learned.push((key, source(&abs)));
+        }
+        lock(&self.inner).root_commits.extend(learned);
     }
 
     // ---- reading the disk --------------------------------------------------------------------------------------
@@ -867,6 +1020,7 @@ impl Projects {
         if self.stopped.load(Ordering::Relaxed) {
             return;
         }
+        self.learn_root_commits(markers);
         let mut after = After::default();
         {
             let mut inner = lock(&self.inner);
@@ -1010,12 +1164,34 @@ impl Projects {
                 .collect();
             if let [only] = by_card.as_slice() {
                 moves.push((entry.uid.clone(), only.path.clone(), false));
+                continue;
+            }
+            // 3. same first commit (root commit of the found repository) + same folder name, exactly one
+            let Some(first) = first_commit_of(inner, &entry.uid) else {
+                continue;
+            };
+            let name = crate::paths::fold(&folder_name(entry.path.as_str()));
+            let by_commit: Vec<&Found> = inner
+                .inputs
+                .found
+                .iter()
+                .filter(|(k, f)| {
+                    inner.inputs.entry_by_key(k).is_none()
+                        && f.marker.git()
+                        && crate::paths::fold(&folder_name(f.path.as_str())) == name
+                        && commit_matches(inner.root_commits.get(*k), &first)
+                })
+                .map(|(_, f)| f)
+                .collect();
+            if let [only] = by_commit.as_slice() {
+                moves.push((entry.uid.clone(), only.path.clone(), false));
             }
         }
         for (uid, path, moved) in moves {
             if self.files_only {
                 break;
             }
+            let from = inner.inputs.entry(&uid).map(|e| e.path.clone());
             let (next, effects) =
                 fsm::step(&inner.inputs, &Event::SetPath(uid.clone(), path.clone()));
             if effects.is_empty() {
@@ -1030,6 +1206,9 @@ impl Projects {
                 .collect();
             if self.write_record(&ops, false).is_ok() {
                 inner.inputs = next;
+                if let Some(from) = &from {
+                    self.follow_state(from, &path);
+                }
                 let name = Self::name_of(inner, &uid, path.as_str());
                 after.news.push(if moved {
                     ProjectEvent::Moved {
@@ -1047,7 +1226,8 @@ impl Projects {
                 after.changed = true;
             }
         }
-        // 4. exactly one missing entry named like exactly one offered project: ask
+        // 4. exactly one missing entry like exactly one offered project (same folder name, or renamed while closed: same
+        // first commit): ask
         inner.ask = None;
         let gone: Vec<&RecEntry> = inner
             .inputs
@@ -1059,19 +1239,26 @@ impl Projects {
         let states = inner.inputs.derive();
         for entry in &gone {
             let name = crate::paths::fold(&folder_name(entry.path.as_str()));
+            let first = first_commit_of(inner, &entry.uid);
             let same: Vec<&Found> = inner
                 .inputs
                 .found
                 .iter()
                 .filter(|(k, f)| {
                     states.get(*k) == Some(&Candidate::Offered)
-                        && crate::paths::fold(&folder_name(f.path.as_str())) == name
+                        && (crate::paths::fold(&folder_name(f.path.as_str())) == name
+                            || first.as_deref().is_some_and(|first| {
+                                commit_matches(inner.root_commits.get(*k), first)
+                            }))
                 })
                 .map(|(_, f)| f)
                 .collect();
             let others = gone
                 .iter()
-                .filter(|e| crate::paths::fold(&folder_name(e.path.as_str())) == name)
+                .filter(|e| {
+                    crate::paths::fold(&folder_name(e.path.as_str())) == name
+                        || (first.is_some() && first_commit_of(inner, &e.uid) == first)
+                })
                 .count();
             if let ([candidate], 1) = (same.as_slice(), others) {
                 if !inner
@@ -1118,6 +1305,12 @@ impl Projects {
                         short: dto.short,
                         agent_off: inner.inputs.agent_off.contains(uid),
                         agent: res.agent.clone(),
+                        first_commit: inner.record.record().and_then(|r| {
+                            r.entries
+                                .iter()
+                                .find(|e| &e.uid == uid)
+                                .and_then(|e| e.first_commit.clone())
+                        }),
                     });
                 }
                 Candidate::Missing { .. } | Candidate::Offered | Candidate::Declined => {
@@ -1150,6 +1343,16 @@ impl Projects {
                 root: self.root.path().display().to_string(),
                 seq,
             }));
+            let listeners: Vec<MapListener> = lock(&self.map_listeners)
+                .iter()
+                .map(|(_, l)| Arc::clone(l))
+                .collect();
+            if !listeners.is_empty() {
+                let map = self.snapshot();
+                for listener in &listeners {
+                    listener(&map);
+                }
+            }
         }
         if !after.news.is_empty() {
             let listeners: Vec<Listener> = lock(&self.listeners)
@@ -1221,6 +1424,11 @@ impl Projects {
             self.write_record(&ops, create)?;
             inner.record = read_record(self.root.path());
         }
+        if let Event::SetPath(uid, to) = event {
+            if let Some(from) = inner.inputs.entry(uid).map(|e| e.path.clone()) {
+                self.follow_state(&from, to);
+            }
+        }
         for op in &ops {
             if let RecordOp::Remove { uid } = op {
                 inner.removed.insert(uid.clone());
@@ -1242,6 +1450,19 @@ impl Projects {
         self.rebuild_map(inner);
         after.changed = true;
         Ok(after)
+    }
+
+    /// A member moved: its profile state folder follows its new `ProjectId` (`projects.md` §9.1; best effort: a
+    /// failure leaves the state under the old id, as before round 3).
+    fn follow_state(&self, from: &VaultPath, to: &VaultPath) {
+        if self.files_only || from.key() == to.key() {
+            return;
+        }
+        let _ = crate::state::move_profile_state(
+            &self.dirs,
+            &abs_of(self.root.path(), from),
+            &abs_of(self.root.path(), to),
+        );
     }
 
     /// The opened folder's own card (read on first use).
@@ -1843,6 +2064,28 @@ fn ancestor_rules(dirs: &AppDirs, root: &Path) -> Vec<AncestorRules> {
         }
     }
     found
+}
+
+/// The first commit the record keeps for an entry.
+fn first_commit_of(inner: &Inner, uid: &ProjectUid) -> Option<String> {
+    inner
+        .record
+        .record()?
+        .entries
+        .iter()
+        .find(|e| &e.uid == uid)?
+        .first_commit
+        .clone()
+}
+
+/// Whether a learned root commit (full id) is the record's first commit (full or abbreviated, any case).
+fn commit_matches(learned: Option<&Option<String>>, first: &str) -> bool {
+    learned.and_then(Option::as_deref).is_some_and(|full| {
+        first.len() >= 4
+            && full
+                .to_ascii_lowercase()
+                .starts_with(&first.to_ascii_lowercase())
+    })
 }
 
 /// The member set the ignore rules need, from the included members.
