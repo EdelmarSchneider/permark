@@ -68,6 +68,40 @@ fn tmp() -> (tempfile::TempDir, PathBuf) {
     (dir, root)
 }
 
+/// Runs a test body on its own thread: a hang fails the test after `limit` instead of holding the whole run (CI
+/// 39698724615 hung 40 min on Windows).
+fn bounded(limit: Duration, body: impl FnOnce() + Send + 'static) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let runner = std::thread::spawn(move || {
+        body();
+        let _ = tx.send(());
+    });
+    match rx.recv_timeout(limit) {
+        Ok(()) => runner.join().unwrap(),
+        // the body panicked: its message is the test's
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            std::panic::resume_unwind(runner.join().unwrap_err())
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => panic!("hung for over {limit:?}"),
+    }
+}
+
+/// A big tree (30 000 documents) so the walk + the index take a while.
+fn big_tree(root: &Path) {
+    for i in 0..300 {
+        for j in 0..100 {
+            let p = root.join(format!("bulk/d{i}/f{j}.md"));
+            if j == 0 {
+                std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            }
+            std::fs::write(p, "x").unwrap();
+        }
+    }
+}
+
+/// A test with a [`big_tree`]: written in ~30 s on a Windows CI runner; the rest takes seconds.
+const BIG_TREE_LIMIT: Duration = Duration::from_secs(150);
+
 /// Concept §2b: private-file rules combine along the chain, also when a governed project is opened alone.
 /// `R` lists `hubs/a` and `hubs/a/sub`; `hubs/a/.aiignore` = `notes/`. In R's tab `hubs/a/sub/notes/n.md` is hidden
 /// (a on the chain). Opened alone, `sub` should keep that rule.
@@ -178,19 +212,17 @@ fn off_member_with_deny_answers_not_found() {
 /// not-included project.
 #[test]
 fn not_included_project_never_readable_before_walk_ends() {
+    bounded(
+        BIG_TREE_LIMIT,
+        not_included_project_never_readable_before_walk_ends_body,
+    );
+}
+
+fn not_included_project_never_readable_before_walk_ends_body() {
     let (dir, root) = tmp();
     write(&root, "hubs/x/.git/HEAD", "ref: refs/heads/main\n");
     write(&root, "hubs/x/secret.md", "# secret\n");
-    // a big tree so the walk takes a while
-    for i in 0..300 {
-        for j in 0..100 {
-            let p = root.join(format!("bulk/d{i}/f{j}.md"));
-            if j == 0 {
-                std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-            }
-            std::fs::write(p, "x").unwrap();
-        }
-    }
+    big_tree(&root);
     let env = env(dir.path());
     share(&env, &root);
     let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
@@ -254,18 +286,14 @@ fn record_written_after_decline_keeps_project_out() {
 /// Files mode (`permark mcp`, app closed): the first call waits for the walk the same way.
 #[test]
 fn files_mode_first_call_never_reads_not_included_project() {
+    bounded(BIG_TREE_LIMIT, files_mode_first_call_body);
+}
+
+fn files_mode_first_call_body() {
     let (dir, root) = tmp();
     write(&root, "hubs/x/.git/HEAD", "ref: refs/heads/main\n");
     write(&root, "hubs/x/secret.md", "# secret\n");
-    for i in 0..300 {
-        for j in 0..100 {
-            let p = root.join(format!("bulk/d{i}/f{j}.md"));
-            if j == 0 {
-                std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-            }
-            std::fs::write(p, "x").unwrap();
-        }
-    }
+    big_tree(&root);
     let env = env(dir.path());
     share(&env, &root);
     let core = ProjectCore::from_files(
