@@ -76,6 +76,7 @@ function defaultSettings(): AppSettings {
     editor: "",
     keymap: {},
     plugins: {},
+    wrapLines: true,
   };
 }
 
@@ -136,6 +137,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       else plugins[change.value.plugin] = change.value.enabled;
       return { ...settings, plugins };
     }
+    case "wrapLines":
+      return { ...settings, wrapLines: change.value };
     default:
       return change satisfies never;
   }

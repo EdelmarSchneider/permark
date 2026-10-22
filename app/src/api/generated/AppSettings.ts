@@ -44,4 +44,8 @@ tokenizers: Array<string>,
 /**
  * Explicit plugin switches (absent = manifest default).
  */
-plugins: { [key in PluginId]: boolean }, };
+plugins: { [key in PluginId]: boolean }, 
+/**
+ * Long lines wrap in the text viewer and the source editors (`wrap_lines`; absent = on).
+ */
+wrapLines: boolean, };

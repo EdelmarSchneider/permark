@@ -10,6 +10,8 @@ import { editing } from "../editing/session.svelte";
 import { diagramPanel } from "../editing/diagramPanel.svelte";
 import { copyPathOf, newInTree, revealInTree } from "../explorer/current";
 import { t, type MessageKey } from "../i18n";
+import { apiErrorText } from "../errors";
+import { look } from "../look.svelte";
 import {
   CORE_OWNER,
   type ContributionInput,
@@ -24,6 +26,7 @@ import { tabs } from "../shell/tabs.svelte";
 import { ui } from "../shell/ui.svelte";
 import { conditions } from "../conditions/context.svelte";
 import { stepChange } from "./changes";
+import { isTypingTarget } from "./dispatch";
 import { windowStore as store } from "../window.svelte";
 import { NO_REQUIREMENT, type Requirement } from "../conditions/available";
 
@@ -51,6 +54,20 @@ type Spec = {
 const hasDocument = (): boolean => documents.path !== null;
 const readable = (): boolean => hasDocument() && !editingNow();
 const canEdit = (): boolean => (hasDocument() && editBlockedReason() === null) || editingNow();
+
+/** Long lines wrap | stop wrapping everywhere (the setting, saved at once); said in the notices (read out). */
+async function toggleWrap(): Promise<void> {
+  const on = !look.wrap;
+  // the views follow at once; `settings-changed` confirms
+  look.wrap = on;
+  const refused = await store.trySetting({ key: "wrapLines", value: on });
+  if (refused !== null) {
+    look.wrap = !on;
+    store.notifyNote(t("settings.notSaved", { message: apiErrorText(refused) }));
+    return;
+  }
+  store.notifyNote(t(on ? "wrap.on" : "wrap.off"));
+}
 
 function cycleWidth(): void {
   const at = WIDTHS.indexOf(reading.width);
@@ -245,6 +262,15 @@ const SPECS: readonly Spec[] = [
     keys: ["Mod+Alt+w"],
     requires: READING,
     run: cycleWidth,
+  },
+  {
+    id: "doc.wrapLines",
+    label: "cmd.wrapLines",
+    keys: ["Alt+z"],
+    requires: READING,
+    // macOS: Option+Z types a character (Ω, ż) where text goes; there the key stays text
+    when: () => !(conditions.current.platform === "mac" && isTypingTarget(document.activeElement)),
+    run: toggleWrap,
   },
   {
     id: "edit.diagramPanel",

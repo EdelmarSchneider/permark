@@ -85,13 +85,17 @@ export function append(held: Held, chunk: TextChunk): Held {
   };
 }
 
-/** Whether the next chunk is wanted: the lines in view (`first` + `visible`) are close to the end of what is held. */
-export function wantsMore(held: Held, first: number, visible: number): boolean {
-  return (
-    held.load.status === "idle" &&
-    held.next !== null &&
-    first + visible >= held.lines.length - FAR_LINES
-  );
+/**
+ * Whether the next chunk is wanted: the lines in view (`first` + `visible`) are close to the end of what is held.
+ * `total`: the rows held, when a row is not a line (wrapped lines).
+ */
+export function wantsMore(
+  held: Held,
+  first: number,
+  visible: number,
+  total: number = held.lines.length,
+): boolean {
+  return held.load.status === "idle" && held.next !== null && first + visible >= total - FAR_LINES;
 }
 
 /** The same with its load changed. */

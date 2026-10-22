@@ -666,6 +666,36 @@ fn open_in_values_of_0_6_0_map_on_read_and_the_file_changes_only_when_set() {
 }
 
 #[test]
+fn wrap_lines_is_on_unless_the_file_says_false() {
+    // a settings file of 0.6.1 (before the key existed): long lines wrap
+    let old = AppSettings::from_doc(&doc(include_str!(
+        "../../../../src/fixtures/settings-0.6.1.toml"
+    )));
+    assert!(old.wrap_lines);
+    assert!(AppSettings::from_doc(&doc("")).wrap_lines);
+    assert!(!AppSettings::from_doc(&doc("wrap_lines = false\n")).wrap_lines);
+    // a value that is not a boolean counts as not set
+    assert!(AppSettings::from_doc(&doc("wrap_lines = \"no\"\n")).wrap_lines);
+    assert!(AppSettings::from_doc(&doc("wrap_lines = 0\n")).wrap_lines);
+    assert_eq!(SettingChange::WrapLines(false).key(), "wrap_lines");
+}
+
+#[test]
+fn wrap_lines_change_rewrites_only_its_key() {
+    let text = "# mine\ntheme = \"dark\" # kept\n\n[plugins.git]\nenabled = false\n";
+    let off = applied(text, &SettingChange::WrapLines(false));
+    // one line more, every other line as it was
+    let rest: Vec<&str> = off.lines().filter(|l| *l != "wrap_lines = false").collect();
+    assert_eq!(rest, text.lines().collect::<Vec<_>>(), "{off}");
+    assert!(!AppSettings::from_doc(&doc(&off)).wrap_lines);
+    assert_eq!(AppSettings::from_doc(&doc(&off)).theme, ThemePref::Dark);
+    let written = "# mine\nwrap_lines = false # mine too\ntheme = \"dark\"\n";
+    let on = applied(written, &SettingChange::WrapLines(true));
+    assert_eq!(on, written.replace("false", "true"));
+    assert!(AppSettings::from_doc(&doc(&on)).wrap_lines);
+}
+
+#[test]
 fn keymap_entries_of_0_6_0_read_under_the_new_ids() {
     let text = "[keymap]\n\"app.closeWorkspace\" = \"Mod+Q\"\n\"workspace.next\" = \"Mod+Alt+N\"\n\"tab.next\" = \"Mod+J\"\n";
     let s = AppSettings::from_doc(&doc(text));

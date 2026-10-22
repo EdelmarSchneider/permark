@@ -14,6 +14,8 @@ const { default: TextView } = await import("./TextView.svelte");
 const { documents } = await import("../../core/doc/document.svelte");
 const { syncPlugins } = await import("../../core/plugins/instance.svelte");
 const { MASK } = await import("../../core/config/secrets");
+const { look } = await import("../../core/look.svelte");
+const { rowsOf } = await import("./wrapRows");
 
 let target: HTMLElement;
 let component: Record<string, unknown> | null = null;
@@ -60,12 +62,16 @@ beforeEach(() => {
   target = document.createElement("div");
   document.body.append(target);
   syncPlugins(["highlight", "text-view"]);
+  // the cases below that do not say otherwise are about long lines that do not wrap
+  look.wrap = false;
 });
 
 afterEach(async () => {
   if (component) await unmount(component);
   component = null;
   documents.lineGlow = null;
+  documents.lineRequest = null;
+  look.wrap = true;
   syncPlugins([]);
   vi.restoreAllMocks();
 });
@@ -288,5 +294,99 @@ describe("lines that changed on disk", () => {
     expect(glow).not.toBeNull();
     // 14 px of padding above the first line
     expect(parseFloat(glow?.style.top ?? "")).toBeCloseTo(14 + 21.6, 0);
+  });
+});
+
+describe("long lines that wrap (the setting)", () => {
+  beforeEach(() => {
+    look.wrap = true;
+  });
+
+  it("draws a smaller file one element per line, numbered in the page, no gutter", async () => {
+    show(viewOf("one\ntwo\n\nfour\n", null, "a.txt"));
+    await until(() => target.querySelectorAll(".code .ln").length === 4, "lines");
+    expect(target.querySelector(".text.wrap")).not.toBeNull();
+    expect(target.querySelector(".gutter")).toBeNull();
+    const texts = [...target.querySelectorAll(".code .ln")].map((l) => l.textContent);
+    // each line keeps its own line break: a copy gives the file's lines, nothing inserted
+    expect(texts).toEqual(["one\n", "two\n", "\n", "four\n"]);
+  });
+
+  it("draws the plain text the same way with the highlight plugin off, CRLF without its carriage return", async () => {
+    syncPlugins(["text-view"]);
+    show(viewOf("a\r\nb\r\n", null, "crlf.txt"));
+    const texts = [...target.querySelectorAll(".code .ln")].map((l) => l.textContent);
+    expect(texts).toEqual(["a\n", "b\n"]);
+    if (component) await unmount(component);
+    component = null;
+    show(viewOf("", null, "empty.txt"));
+    expect(target.querySelectorAll(".code .ln")).toHaveLength(1);
+  });
+
+  it("switches back to the gutter and one block of text when the setting goes off", async () => {
+    show(viewOf("one\ntwo\n", null, "a.txt"));
+    await until(() => target.querySelectorAll(".code .ln").length === 2, "lines");
+    look.wrap = false;
+    flushSync();
+    await until(() => target.querySelector(".gutter") !== null, "gutter");
+    expect(target.querySelector(".gutter")?.textContent).toBe("1\n2");
+    expect(target.querySelectorAll(".code .ln")).toHaveLength(0);
+    expect(target.querySelector(".text.wrap")).toBeNull();
+  });
+
+  it("counts the rows of a very long text, numbers each line once", () => {
+    vi.spyOn(api, "documentMore").mockImplementation(() => ok({ text: "", next: null }));
+    const long = Array.from({ length: 100 }, (_, i) => `${i}`.padEnd(200, "x")).join("\n") + "\n";
+    show(viewOf(long, { loaded: long.length, total: long.length * 2 }));
+    // no layout here: 80 characters a row, three rows a line
+    const rows = rowsOf(200, 80);
+    expect(rows).toBe(3);
+    const height = (target.querySelector(".virtual") as HTMLElement).style.height;
+    expect(parseFloat(height)).toBeCloseTo(100 * rows * 21.6, 0);
+    const numbers = [...target.querySelectorAll(".row .no")].map((n) => n.textContent);
+    expect(numbers.slice(0, 3)).toEqual(["1", "2", "3"]);
+    expect(target.querySelector(".row .line")?.textContent).toBe(`0${"x".repeat(199)}`);
+  });
+
+  it("draws only a few rows of a single line of 5 MB", () => {
+    const line = "0123456789".repeat(500_000);
+    show(viewOf(`${line}\n`, null, "one.log"));
+    const total = rowsOf(5_000_000, 80);
+    const height = (target.querySelector(".virtual") as HTMLElement).style.height;
+    expect(parseFloat(height)).toBeCloseTo(total * 21.6, 0);
+    const drawn = target.querySelectorAll(".row .line");
+    expect(drawn).toHaveLength(1);
+    const shown = drawn[0]?.textContent ?? "";
+    expect(shown.length).toBeGreaterThan(0);
+    expect(shown.length).toBeLessThan(10_000);
+    expect(line.startsWith(shown)).toBe(true);
+    expect(target.querySelector(".row .no")?.textContent).toBe("1");
+  });
+
+  it("places the glow and a line asked for by the rows above them", async () => {
+    const long = [
+      "x".repeat(200),
+      "short",
+      "y".repeat(200),
+      ...Array.from({ length: 30_000 }, () => "z"),
+    ];
+    show(viewOf(`${long.join("\n")}\n`, null, "log.txt"));
+    documents.lineGlow = { path: "log.txt", added: [{ first: 3, last: 3 }], removedAfter: [1] };
+    flushSync();
+    const glow = target.querySelector<HTMLElement>(".glow");
+    // three rows, then one
+    expect(parseFloat(glow?.style.top ?? "")).toBeCloseTo(4 * 21.6, 0);
+    expect(parseFloat(glow?.style.height ?? "")).toBeCloseTo(3 * 21.6, 0);
+    expect(parseFloat(target.querySelector<HTMLElement>(".gone")?.style.top ?? "")).toBeCloseTo(
+      3 * 21.6 - 2,
+      0,
+    );
+    documents.lineRequest = { path: "log.txt", line: 4, seq: 905 };
+    flushSync();
+    await until(() => target.querySelector(".located") !== null, "band");
+    expect(parseFloat(target.querySelector<HTMLElement>(".located")?.style.top ?? "")).toBeCloseTo(
+      7 * 21.6,
+      0,
+    );
   });
 });

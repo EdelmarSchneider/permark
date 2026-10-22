@@ -8,9 +8,10 @@
   import { t } from "../../core/i18n";
   import type { EmbedProps } from "../../core/plugins/props";
   import { highlightFence, type CodeOutcome } from "./highlighter";
+  import { lineSpans } from "./htmlLines";
   import "./tokens.css";
 
-  let { source, info }: EmbedProps = $props();
+  let { source, info, lines = false }: EmbedProps = $props();
 
   let outcome = $state.raw<CodeOutcome>({ html: null, label: null });
   let copied = $state(false);
@@ -51,6 +52,9 @@
     });
   });
 
+  /** One element per line when the viewer asks for it (the plain text too, before highlighting). */
+  const drawn = $derived(lines ? lineSpans(html ?? escape(source)) : html);
+
   function reveal(event: MouseEvent): void {
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -90,7 +94,7 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 <pre onclick={reveal}><code
-    >{#if html !== null}{@html html}{:else}{source}{/if}</code
+    >{#if drawn !== null}{@html drawn}{:else}{source}{/if}</code
   ></pre>
 <div class="corner">
   {#if outcome.label}

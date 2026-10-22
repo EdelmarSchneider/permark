@@ -83,6 +83,39 @@ describe("the core's commands", () => {
     expect(windowStore.notices.at(-1)).toMatchObject({ kind: "note", text: en["doc.noChange"] });
   });
 
+  it("switch long lines wrapping with Alt+Z: saved, said, and twice is back", async () => {
+    const keyOf = (id: string): string | undefined => shortcuts.find((s) => s.command === id)?.keys;
+    expect(keyOf("doc.wrapLines")).toBe("Alt+z");
+    const { api } = await import("../../api");
+    const { look } = await import("../look.svelte");
+    const { windowStore } = await import("../window.svelte");
+    const set = vi.spyOn(api, "settingsSet");
+    const wrap = commands.find((c) => c.id === "doc.wrapLines");
+    look.wrap = true;
+    await wrap?.run();
+    expect(look.wrap).toBe(false);
+    expect(set).toHaveBeenLastCalledWith({ key: "wrapLines", value: false });
+    expect(windowStore.notices.at(-1)).toMatchObject({ kind: "note", text: en["wrap.off"] });
+    await wrap?.run();
+    expect(look.wrap).toBe(true);
+    expect(set).toHaveBeenLastCalledWith({ key: "wrapLines", value: true });
+    expect(windowStore.notices.at(-1)).toMatchObject({ kind: "note", text: en["wrap.on"] });
+    // refused: the views go back, the person is told
+    set.mockResolvedValueOnce({
+      ok: false,
+      error: {
+        kind: "backend",
+        command: "settings_set",
+        error: { kind: "io", subject: "settings.toml", detail: null },
+      },
+    });
+    await wrap?.run();
+    expect(look.wrap).toBe(true);
+    const told = windowStore.notices.at(-1);
+    expect(told?.kind === "note" ? told.text : "").toMatch(/^Couldn't keep this setting/);
+    set.mockRestore();
+  });
+
   it("leave nothing behind when removed", () => {
     off();
     expect(registry.items).toEqual([]);

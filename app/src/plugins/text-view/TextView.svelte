@@ -3,7 +3,9 @@
   // file shows only the lines near the screen (plain), so it opens at once and never freezes the window; a file too
   // large to read whole shows its first part and asks for the rest as the reader comes to it. Lines that changed on
   // disk glow for a moment; a line asked for (a code reference) comes into view, tinted a moment. Secret values are
-  // masked until clicked.
+  // masked until clicked. Long lines wrap (the setting): a wrapped line goes on a little to the right, its number on
+  // its first row only; a very long file counts its rows without drawing them (wrapRows.ts) and draws only the rows
+  // near the screen, even of a single line of many megabytes. Switching wraps keeps the line at the top in place.
   import { tick, untrack } from "svelte";
   import { api } from "../../api";
   import { conditions } from "../../core/conditions/context.svelte";
@@ -24,8 +26,10 @@
     type Held,
   } from "../../core/doc/largeText";
   import { t } from "../../core/i18n";
+  import { look } from "../../core/look.svelte";
   import { contributions } from "../../core/plugins/instance.svelte";
   import type { ViewerProps } from "../../core/plugins/props";
+  import { MIN_COLS, piecesFor, rowStarts, rowsText, widthsOf, type Piece } from "./wrapRows";
 
   let { view }: ViewerProps = $props();
 
@@ -37,6 +41,12 @@
   const BUFFER = 40;
   /** The padding above the first line of the plain view. */
   const PAD = 14;
+  /** Wrapped: a line of at most this many rows is drawn whole; a longer one only by its rows near the screen. */
+  const WHOLE_ROWS = 200;
+  /** Room right of a wrapped row (pixels). */
+  const PAD_RIGHT = 16;
+  /** The text whose width gives the width of one character. */
+  const PROBE = "0000000000";
 
   const body = $derived(view.body.kind === "text" ? view.body : null);
   const partial = $derived(body?.partial ?? null);
@@ -50,19 +60,77 @@
   const virtual = $derived(
     partial !== null || count >= VIRTUAL_FROM || text.length > VIRTUAL_CHARS,
   );
+  const wrap = $derived(look.wrap);
   const numbers = $derived(
-    virtual ? "" : Array.from({ length: Math.max(count, 1) }, (_, i) => i + 1).join("\n"),
+    virtual || wrap ? "" : Array.from({ length: Math.max(count, 1) }, (_, i) => i + 1).join("\n"),
   );
+  const digits = $derived(String(Math.max(count, 1)).length);
   const code = $derived(
     contributions.visible("embed", conditions.current).find((e) => e.language === "@code"),
   );
 
   let host: HTMLElement | undefined = $state();
+  let codeBox: HTMLElement | undefined = $state();
+  /** First row drawn and how many (a row = a line, or a row of a wrapped line). */
   let top = $state(0);
   let visible = $state(60);
   let row = $state(ROW);
+  /** Characters in a wrapped row (measured; until then a usual width). */
+  let cols = $state(80);
+  /** Goes up when the wrapped lines of a smaller file may have moved (their marks are placed again). */
+  let layout = $state(0);
 
-  // the lines in view follow the pane that scrolls (the document area's)
+  // ---- rows of a very long text that wraps: counted, not drawn ----------------------------------------------------
+
+  /** The columns of each line, kept while chunks come (only a wrapping very long text needs them). */
+  let widthCache: { lines: readonly string[]; widths: Int32Array } | null = null;
+  const widths = $derived.by(() => {
+    if (!virtual || !wrap) return null;
+    const next = widthsOf(lines, widthCache);
+    widthCache = { lines, widths: next };
+    return next;
+  });
+  const starts = $derived(widths === null ? null : rowStarts(widths, cols));
+  const totalRows = $derived(starts === null ? count : (starts[count] ?? 0));
+
+  /** Rows above line `i` (0-based). */
+  function rowStart(i: number): number {
+    const at = Math.min(Math.max(i, 0), count);
+    return starts === null ? at : (starts[at] ?? 0);
+  }
+
+  /** What is drawn: pieces of lines (a whole line, or some rows of a very long one) and the row they start at. */
+  const drawn = $derived.by((): { top: number; pieces: Piece[] } => {
+    if (starts !== null) return piecesFor(starts, top, visible, WHOLE_ROWS);
+    const from = Math.min(top, count);
+    const to = Math.min(count, top + visible);
+    return {
+      top: from,
+      pieces: Array.from({ length: to - from }, (_, i) => ({ line: from + i, from: 0, to: 1 })),
+    };
+  });
+
+  /** A piece that is a whole line (its secrets masked) rather than some rows of a very long one. */
+  function whole(piece: Piece): boolean {
+    return (
+      starts === null ||
+      (piece.from === 0 && piece.to === rowStart(piece.line + 1) - rowStart(piece.line))
+    );
+  }
+
+  /** Some rows of a very long line, as plain text. */
+  function partOf(piece: Piece): string {
+    const raw = lines[piece.line] ?? "";
+    const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    return rowsText(line, piece.from, piece.to, cols);
+  }
+
+  /** A line of the plain view without its carriage return, with its line break (a copy keeps one per line). */
+  function plain(raw: string): string {
+    return `${raw.endsWith("\r") ? raw.slice(0, -1) : raw}\n`;
+  }
+
+  // the rows in view follow the pane that scrolls (the document area's)
   $effect(() => {
     const element = host;
     if (!element) return;
@@ -85,18 +153,164 @@
     };
   });
 
-  const shown = $derived(lines.slice(top, top + visible));
+  // a very long text that wraps: the characters a row holds follow the width of the pane
+  $effect(() => {
+    const element = host;
+    if (!element || !virtual || !wrap) return;
+    const measure = (): void => {
+      const probe = element.querySelector<HTMLElement>(".probe");
+      const char = (probe?.getBoundingClientRect().width ?? 0) / PROBE.length;
+      // no layout (a hidden tab): the count stays until there is one
+      if (!(char > 0)) return;
+      const number =
+        element.querySelector<HTMLElement>(".row .no")?.getBoundingClientRect().width ?? 0;
+      const room = element.clientWidth - number - PAD_RIGHT - 1;
+      cols = Math.max(MIN_COLS, Math.floor(room / char));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  });
+
+  // a smaller file that wraps: its rows move when the width changes, the marks over them follow
+  $effect(() => {
+    const element = codeBox;
+    if (!element || virtual || !wrap || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => (layout += 1));
+    observer.observe(element);
+    return () => observer.disconnect();
+  });
+
+  // ---- where a line is: the marks over it, a line asked for, the line kept at the top ----------------------------
+
+  /** Where lines `first` .. `last` (1-based) are, in pixels from the top of what draws them. */
+  function place(firstLine: number, lastLine: number): { top: number; height: number } {
+    if (virtual) {
+      const a = rowStart(firstLine - 1);
+      const b = rowStart(lastLine);
+      return { top: a * row, height: Math.max(1, b - a) * row };
+    }
+    if (wrap) {
+      void layout;
+      const box = drawnLines(firstLine, lastLine);
+      if (box !== null) return box;
+    }
+    return { top: PAD + (firstLine - 1) * row, height: (lastLine - firstLine + 1) * row };
+  }
+
+  /** Where wrapped lines of a smaller file are drawn (`null`: not drawn yet, or no layout). */
+  function drawnLines(firstLine: number, lastLine: number): { top: number; height: number } | null {
+    const box = codeBox;
+    if (!box) return null;
+    const all = box.querySelectorAll<HTMLElement>(".ln");
+    const a = all[firstLine - 1];
+    const b = all[Math.min(lastLine, all.length) - 1];
+    if (!a || !b) return null;
+    const from = a.getBoundingClientRect();
+    if (from.height === 0) return null;
+    return {
+      top: from.top - box.getBoundingClientRect().top,
+      height: b.getBoundingClientRect().bottom - from.top,
+    };
+  }
+
+  /** The edge under line `after` (1-based; 0 = above the first line). */
+  function below(after: number): number {
+    if (after <= 0) return place(1, 1).top;
+    const at = place(after, after);
+    return at.top + at.height;
+  }
+
+  /** What draws the lines (the marks are placed in it). */
+  function linesBox(): HTMLElement | null {
+    return (virtual ? host?.querySelector<HTMLElement>(".virtual") : codeBox) ?? null;
+  }
+
+  type Anchor = { line: number; delta: number };
+
+  /** The line at the top of the pane as drawn now, and how far into it the pane starts. */
+  function anchorNow(): Anchor | null {
+    const pane = host?.closest<HTMLElement>("[data-scroller]");
+    const drawnBox = linesBox();
+    if (!host || !pane || !drawnBox) return null;
+    const edge = pane.getBoundingClientRect().top;
+    const boxTop = drawnBox.getBoundingClientRect().top;
+    if (boxTop >= edge) return null;
+    const rows = drawnBox.querySelectorAll<HTMLElement>(".row[data-line]");
+    for (const element of rows) {
+      const rect = element.getBoundingClientRect();
+      if (rect.bottom <= edge || rect.height === 0) continue;
+      const line = Number(element.dataset.line);
+      const from = Number(element.dataset.from);
+      return { line, delta: edge - rect.top + from * row };
+    }
+    const spans = drawnBox.querySelectorAll<HTMLElement>(".ln");
+    if (spans.length > 0) {
+      // the first line whose bottom is under the edge
+      let lo = 0;
+      let hi = spans.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if ((spans[mid]?.getBoundingClientRect().bottom ?? 0) > edge) hi = mid;
+        else lo = mid + 1;
+      }
+      const rect = spans[lo]?.getBoundingClientRect();
+      if (rect && rect.height > 0) return { line: lo + 1, delta: edge - rect.top };
+    }
+    const y = edge - boxTop - (virtual ? 0 : PAD);
+    const line = Math.min(Math.max(1, Math.floor(y / row) + 1), Math.max(count, 1));
+    return { line, delta: Math.max(0, y - (line - 1) * row) };
+  }
+
+  /** Brings the anchored line back to the top of the pane. */
+  function restore(anchor: Anchor): void {
+    const pane = host?.closest<HTMLElement>("[data-scroller]");
+    const drawnBox = linesBox();
+    if (!pane || !drawnBox) return;
+    const at = place(anchor.line, anchor.line);
+    const into = Math.min(anchor.delta, Math.max(0, at.height - 1));
+    const y =
+      drawnBox.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+    pane.scrollTop = Math.max(0, y + at.top + into);
+  }
+
+  // wrapping switched | the rows got wider or narrower: the line at the top stays at the top
+  let shownAs: { wrap: boolean; cols: number } | null = null;
+  let anchor: Anchor | null = null;
+  $effect.pre(() => {
+    const now = { wrap, cols: virtual && wrap ? cols : 0 };
+    untrack(() => {
+      if (shownAs !== null && (now.wrap !== shownAs.wrap || now.cols !== shownAs.cols)) {
+        anchor = anchorNow();
+      }
+      shownAs = now;
+    });
+  });
+  $effect(() => {
+    void wrap;
+    void cols;
+    untrack(() => {
+      const kept = anchor;
+      anchor = null;
+      if (kept !== null) void tick().then(() => restore(kept));
+    });
+  });
 
   /** The request for a chunk on its way (one at a time). */
   let pending: Promise<void> | null = null;
 
-  /** Asks for the next chunk when the lines in view are close to the end of what is held. */
+  /** Asks for the next chunk when the rows in view are close to the end of what is held. */
   async function more(): Promise<void> {
     // lines of a version of the file that has gone are let go
     if (grown !== null && grown.owner !== view) grown = null;
     const mine = held;
     if (pending !== null || partial === null || mine.next === null) return;
-    if (!wantsMore(mine, top, visible)) return;
+    if (!wantsMore(mine, top, visible, totalRows)) return;
     // only a chunk that came goes on (a failed | superseded one waits for the person | the new version)
     if (await next(mine)) void more();
   }
@@ -140,7 +354,7 @@
     keys: new Set(),
   });
 
-  type Piece = { text: string; secret: string | null };
+  type Part = { text: string; secret: string | null };
 
   /** Lines (0-based) inside a private key block: masked whole (a line alone does not show it is one). */
   const keyBody = $derived(privateKeyLines(lines));
@@ -148,7 +362,7 @@
   const publicBody = $derived(publicKeyLines(lines));
 
   /** A line cut where its secret values are (a line of CRLF text loses its carriage return). */
-  function pieces(raw: string, no: number): Piece[] {
+  function pieces(raw: string, no: number): Part[] {
     const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
     const lead = line.length - line.trimStart().length;
     const spans = keyBody.has(no - 1)
@@ -158,7 +372,7 @@
         : findCodeSecrets(line);
     if (spans.length === 0) return [{ text: line, secret: null }];
     const open = shownSecrets.view === view ? shownSecrets.keys : new Set<string>();
-    const out: Piece[] = [];
+    const out: Part[] = [];
     let at = 0;
     for (const span of spans) {
       out.push({ text: line.slice(at, span.from), secret: null });
@@ -185,6 +399,8 @@
   /** A large text loads at most this many more parts to reach a line; the rest comes by scrolling. */
   const MAX_PARTS = 10;
   const LOCATE_MS = 1600;
+  /** The band covers the line, at most this many rows of it (a line of many rows: its start). */
+  const BAND_ROWS = 4;
   let located = $state.raw<{ line: number; seq: number } | null>(null);
   let handled = 0;
 
@@ -211,14 +427,10 @@
     if (at < line && held.next !== null) documents.notify(t("codeRef.lineFar", { line }));
     await tick();
     const pane = host?.closest<HTMLElement>("[data-scroller]");
+    const drawnBox = linesBox();
     if (host && pane) {
-      const pad = virtual ? 0 : PAD;
-      const y =
-        host.getBoundingClientRect().top -
-        pane.getBoundingClientRect().top +
-        pane.scrollTop +
-        pad +
-        (at - 1) * row;
+      const origin = (drawnBox ?? host).getBoundingClientRect().top;
+      const y = origin - pane.getBoundingClientRect().top + pane.scrollTop + place(at, at).top;
       pane.scrollTop = Math.max(0, y - pane.clientHeight / 3);
     }
     located = { line: at, seq };
@@ -228,26 +440,40 @@
   }
 </script>
 
-<div class="text" bind:this={host} data-language={body?.language ?? ""} style:--row={`${row}px`}>
+<div
+  class="text"
+  class:wrap
+  bind:this={host}
+  data-language={body?.language ?? ""}
+  style:--row={`${row}px`}
+  style:--cols={cols}
+  style:--digits={digits}
+>
   {#if virtual}
-    <div class="virtual" style:height={`${count * row}px`}>
-      <div class="slice" style:transform={`translateY(${top * row}px)`}>
-        {#each shown as line, at (top + at)}
-          <div class="row">
-            <span class="no">{top + at + 1}</span><span class="line"
-              >{#each pieces(line, top + at + 1) as piece, i (i)}{#if piece.secret !== null}<button
-                    type="button"
-                    class="secret"
-                    title={t("config.reveal")}
-                    aria-label={t("config.reveal")}
-                    onclick={() => reveal(piece.secret ?? "")}>{piece.text}</button
-                  >{:else}{piece.text}{/if}{/each}</span
+    <div class="virtual" style:height={`${totalRows * row}px`}>
+      {#if wrap}<span class="probe" aria-hidden="true">{PROBE}</span>{/if}
+      <div class="slice" style:transform={`translateY(${drawn.top * row}px)`}>
+        {#each drawn.pieces as piece (`${piece.line}:${piece.from}`)}
+          <div
+            class="row"
+            class:cont={piece.from > 0}
+            data-line={piece.line + 1}
+            data-from={piece.from}
+          >
+            <span class="no">{piece.from === 0 ? piece.line + 1 : ""}</span><span class="line"
+              >{#if whole(piece)}{#each pieces(lines[piece.line] ?? "", piece.line + 1) as part, i (i)}{#if part.secret !== null}<button
+                      type="button"
+                      class="secret"
+                      title={t("config.reveal")}
+                      aria-label={t("config.reveal")}
+                      onclick={() => reveal(part.secret ?? "")}>{part.text}</button
+                    >{:else}{part.text}{/if}{/each}{:else}{partOf(piece)}{/if}</span
             >
           </div>
         {/each}
       </div>
-      {@render glowing(0)}
-      {@render locating(0)}
+      {@render glowing()}
+      {@render locating()}
     </div>
     {#if partial !== null}
       <p class="note" role="status">
@@ -274,47 +500,51 @@
       <p class="note">{t("text.plainBecauseLong")}</p>
     {/if}
   {:else}
-    <pre class="gutter" aria-hidden="true">{numbers}</pre>
-    <div class="code">
+    {#if !wrap}<pre class="gutter" aria-hidden="true">{numbers}</pre>{/if}
+    <div class="code" bind:this={codeBox}>
       {#if code}
         {#await code.view() then loaded}
           {@const Code = loaded.default}
-          <Code source={text} info={body?.language ?? ""} display={false} />
+          <Code source={text} info={body?.language ?? ""} display={false} lines={wrap} />
         {/await}
+      {:else if wrap}
+        <pre><code
+            >{#each lines as line, i (i)}<span class="ln">{plain(line)}</span>{:else}<span
+                class="ln">{"\n"}</span
+              >{/each}</code
+          ></pre>
       {:else}
         <pre><code>{text}</code></pre>
       {/if}
-      {@render glowing(PAD)}
-      {@render locating(PAD)}
+      {@render glowing()}
+      {@render locating()}
     </div>
   {/if}
 </div>
 
-{#snippet locating(pad: number)}
+{#snippet locating()}
   {#if located !== null}
+    {@const at = place(located.line, located.line)}
     {#key located.seq}
       <div
         class="located"
         aria-hidden="true"
-        style:top={`${pad + (located.line - 1) * row}px`}
-        style:height={`${row}px`}
+        style:top={`${at.top}px`}
+        style:height={`${Math.min(at.height, BAND_ROWS * row)}px`}
       ></div>
     {/key}
   {/if}
 {/snippet}
 
-{#snippet glowing(pad: number)}
+{#snippet glowing()}
   {#if glow !== null}
     <div class="glows" aria-hidden="true">
       {#each glow.added as range (range.first)}
-        <div
-          class="glow"
-          style:top={`${pad + (range.first - 1) * row}px`}
-          style:height={`${(range.last - range.first + 1) * row}px`}
-        ></div>
+        {@const at = place(range.first, range.last)}
+        <div class="glow" style:top={`${at.top}px`} style:height={`${at.height}px`}></div>
       {/each}
       {#each glow.removedAfter as after (after)}
-        <div class="gone" style:top={`${pad + after * row - 2}px`}></div>
+        <div class="gone" style:top={`${below(after) - 2}px`}></div>
       {/each}
     </div>
   {/if}
@@ -330,6 +560,9 @@
     background: var(--surface);
     font: var(--fs-code) / 1.6 var(--font-code);
     overflow: hidden;
+  }
+  .text.wrap {
+    grid-template-columns: minmax(0, 1fr);
   }
   .gutter {
     margin: 0;
@@ -357,6 +590,40 @@
   .code :global(code) {
     font: inherit;
   }
+  /* wrapped: one element per line, its number drawn in the room at the left (the same place as the gutter) */
+  .wrap .code :global(pre) {
+    --gutter: calc(var(--digits) * 1ch);
+    padding-left: calc(14px + var(--gutter) + 10px + 1px + 16px);
+    overflow-x: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    counter-reset: ln;
+    background-image: linear-gradient(var(--border), var(--border));
+    background-repeat: no-repeat;
+    background-size: 1px 100%;
+    background-position: calc(14px + var(--gutter) + 10px) 0;
+  }
+  .wrap .code :global(.ln) {
+    display: block;
+    position: relative;
+    padding-left: 2ch;
+    text-indent: -2ch;
+    counter-increment: ln;
+  }
+  .wrap .code :global(.ln::before) {
+    content: counter(ln);
+    position: absolute;
+    top: 0;
+    left: calc(-27px - var(--gutter));
+    width: var(--gutter);
+    color: var(--faint);
+    text-align: right;
+    text-indent: 0;
+    white-space: nowrap;
+  }
+  .wrap .code :global(.secret) {
+    text-indent: 0;
+  }
   .virtual {
     grid-column: 1 / -1;
     position: relative;
@@ -379,6 +646,42 @@
     color: var(--faint);
     text-align: right;
     user-select: none;
+  }
+  /* wrapped rows: a row holds `--cols` characters, breaks after any one of them; its further rows start 2 to the right */
+  .wrap .virtual {
+    overflow-x: hidden;
+  }
+  .wrap .slice {
+    min-width: 0;
+  }
+  .wrap .row {
+    height: auto;
+    min-height: var(--row);
+  }
+  .wrap .line {
+    flex: none;
+    box-sizing: content-box;
+    width: calc((var(--cols) - 2) * 1ch + 1px);
+    padding-left: 2ch;
+    text-indent: -2ch;
+    white-space: break-spaces;
+    word-break: break-all;
+    line-break: anywhere;
+    overflow-wrap: anywhere;
+  }
+  .wrap .row.cont .line {
+    text-indent: 0;
+  }
+  .wrap .line .secret {
+    text-indent: 0;
+  }
+  .probe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    visibility: hidden;
+    white-space: pre;
+    pointer-events: none;
   }
   .secret {
     margin: 0;

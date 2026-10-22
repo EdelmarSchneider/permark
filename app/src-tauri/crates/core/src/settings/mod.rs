@@ -180,6 +180,8 @@ pub struct AppSettings {
     pub tokenizers: Vec<String>,
     /// Explicit plugin switches (absent = manifest default).
     pub plugins: BTreeMap<PluginId, bool>,
+    /// Long lines wrap in the text viewer and the source editors (`wrap_lines`; absent = on).
+    pub wrap_lines: bool,
     /// Raw `[plugins.<id>]` tables: each plugin owns its schema.
     #[serde(skip)]
     #[ts(skip)]
@@ -203,6 +205,7 @@ impl Default for AppSettings {
             keymap: BTreeMap::new(),
             tokenizers: Vec::new(),
             plugins: BTreeMap::new(),
+            wrap_lines: true,
             plugin_tables: BTreeMap::new(),
         }
     }
@@ -239,6 +242,7 @@ pub enum SettingChange {
         plugin: PluginId,
         enabled: Option<bool>,
     },
+    WrapLines(bool),
 }
 
 impl SettingChange {
@@ -260,6 +264,7 @@ impl SettingChange {
             Self::Keymap { command, .. } => format!("keymap.{command}"),
             Self::Tokenizers(_) => "plugins.token-count.tokenizers".to_owned(),
             Self::PluginEnabled { plugin, .. } => format!("plugins.{plugin}.enabled"),
+            Self::WrapLines(_) => "wrap_lines".to_owned(),
         }
     }
 }
@@ -507,6 +512,11 @@ impl AppSettings {
                 .unwrap_or_default(),
             keymap,
             plugins,
+            // a value that is not a boolean counts as not set
+            wrap_lines: doc
+                .get("wrap_lines")
+                .and_then(Item::as_bool)
+                .unwrap_or(true),
             plugin_tables,
         }
     }
@@ -568,6 +578,7 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
         SettingChange::PluginEnabled { plugin, enabled } => {
             set_plugin_key(root, plugin, "enabled", enabled.map(Value::from));
         }
+        SettingChange::WrapLines(on) => set_keeping_decor(root, "wrap_lines", (*on).into()),
     }
 }
 
