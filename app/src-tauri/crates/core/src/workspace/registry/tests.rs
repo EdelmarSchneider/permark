@@ -451,6 +451,7 @@ fn request_close_during_load_closes_without_a_prompt() {
 fn events_only_when_something_differs() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("CLAUDE.md"), "c").unwrap();
     f.sink.take();
     let (_, view) = tab(&f, "main", &project(dir.path())).unwrap();
     let names: Vec<String> = f.sink.take().iter().map(|e| e.name().to_owned()).collect();
@@ -471,6 +472,7 @@ fn events_only_when_something_differs() {
     let context = f.registry.context_of(&view).unwrap();
     assert_eq!(context.workspace, WorkspaceKind::Project);
     assert_eq!(context.permark, PermarkCondition::NotInitialized);
+    assert_eq!(context.agent_files, ["CLAUDE.md"]);
     assert!(context
         .plugins
         .contains(&crate::plugins::PluginId::of("unread")));
@@ -478,6 +480,10 @@ fn events_only_when_something_differs() {
     assert_eq!(
         f.registry.context_of(&welcome).unwrap().workspace,
         WorkspaceKind::Welcome
+    );
+    assert_eq!(
+        f.registry.context_of(&welcome).unwrap().agent_files,
+        Vec::<String>::new()
     );
 }
 

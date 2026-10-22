@@ -89,6 +89,7 @@ fn contexts() -> Vec<Context> {
                                     distribution,
                                     platform,
                                     plugins: BTreeSet::from([PluginId::of("git")]),
+                                    agent_files: Vec::new(),
                                 });
                             }
                         }

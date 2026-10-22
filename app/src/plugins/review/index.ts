@@ -5,12 +5,13 @@ import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { documents } from "../../core/doc/document.svelte";
 import { overlayShown } from "../../core/doc/escape";
 import { editing } from "../../core/editing/session.svelte";
-import type { MessageKey } from "../../core/i18n";
+import { t, type MessageKey } from "../../core/i18n";
 import { definePlugin } from "../../core/plugins/registry.svelte";
 import { ui } from "../../core/shell/ui.svelte";
 import { reviewBlocks } from "./blocks";
 import { closesReview } from "./keys";
 import { listen, startMarks } from "./marks";
+import { reviewSections } from "./sections.svelte";
 import { review } from "./store.svelte";
 import "./review.css";
 
@@ -50,6 +51,15 @@ export default definePlugin({
     window.addEventListener("keydown", onEscape);
     const removals = [
       () => window.removeEventListener("keydown", onEscape),
+      cx.contribute({
+        kind: "outlineMark",
+        id: "review.changed",
+        requires: NO_REQUIREMENT,
+        mark: (index) =>
+          reviewSections.changed.has(index)
+            ? { text: t("outline.changed"), title: t("outline.changedHint") }
+            : null,
+      }),
       cx.contribute({
         kind: "docBar",
         id: "review.bar",

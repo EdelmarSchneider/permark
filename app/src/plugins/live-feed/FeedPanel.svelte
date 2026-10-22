@@ -10,29 +10,42 @@
   import FolderGit2 from "@lucide/svelte/icons/folder-git-2";
   import Layers from "@lucide/svelte/icons/layers";
   import MessageSquare from "@lucide/svelte/icons/message-square";
+  import Radio from "@lucide/svelte/icons/radio";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import Save from "@lucide/svelte/icons/save";
   import Send from "@lucide/svelte/icons/send";
   import Tag from "@lucide/svelte/icons/tag";
+  import type { Snippet } from "svelte";
   import type { ActivityEntry, FeedItem, ProjectEvent } from "../../api";
+  import { keyHint } from "../../core/commands/hint";
   import { documents } from "../../core/doc/document.svelte";
   import { revealInTree } from "../../core/explorer/current";
   import { t, tn } from "../../core/i18n";
   import { projects } from "../../core/projects/instance.svelte";
   import { middleCut, relativeTo } from "../../core/projects/model";
-  import { ui } from "../../core/shell/ui.svelte";
+  import { closeView } from "../../core/shell/sides";
+  import { followStore } from "./followLink.svelte";
   import { mineLabel, pathOf, type FeedShow } from "./mine";
-  import { ACTIVE_MS, feed } from "./store.svelte";
+  import { feed, PANEL } from "./store.svelte";
   import { ago, split } from "./time";
 
+  type Props = {
+    /** The view options button of the right column (drawn with two views or more). */
+    viewMenu?: Snippet;
+  };
+  let { viewMenu }: Props = $props();
+
   let now = $state(Date.now());
-  // "3 min ago" and the idle | active dot stay true while the panel is open
+  // "3 min ago" and "Last change ..." stay true while the panel is open
   $effect(() => {
     const timer = setInterval(() => (now = Date.now()), 5000);
     return () => clearInterval(timer);
   });
 
-  const active = $derived(feed.lastAt > 0 && now - feed.lastAt < ACTIVE_MS);
+  const follow = $derived(followStore());
+  /** The newest row of the panel, outside change or the person's own action (the header line says it). */
+  const latest = $derived(Math.max(feed.lastAt, feed.mine.at(-1)?.at ?? 0));
+  const followHint = $derived(keyHint("follow.toggle"));
 
   function open(item: FeedItem): void {
     if (item.item === "entry" && !item.isDir && item.kind !== "removed") {
@@ -120,32 +133,46 @@
 </script>
 
 <section class="feed" aria-label={t("live.label")}>
-  <header>
-    <span
-      class="dot"
-      class:active
-      role="img"
-      aria-label={active ? t("live.active") : t("live.idle")}
-      title={active ? t("live.active") : t("live.idle")}
-    ></span>
-    <h2>{t("live.label")}</h2>
-    <span class="spacer"></span>
-    <button
-      type="button"
-      class="icon"
-      title={t("feed.clear")}
-      aria-label={t("feed.clear")}
-      onclick={() => void feed.clear()}
-    >
-      <RefreshCw size={14} />
-    </button>
-    <button
-      type="button"
-      class="icon close"
-      aria-label={t("feed.close")}
-      title={t("feed.close")}
-      onclick={() => ui.toggleRight("live-feed.panel")}>×</button
-    >
+  <header data-view-header>
+    <!-- the title and the buttons on one line at any width: the title gives way (ellipsis), the buttons never wrap -->
+    <div class="top">
+      <h2 title={t("live.label")}>{t("live.label")}</h2>
+      <span class="spacer"></span>
+      {#if follow !== null}
+        <button
+          type="button"
+          class="follow"
+          aria-pressed={follow.on}
+          title={followHint === null
+            ? t("follow.toggle")
+            : t("follow.buttonHint", { key: followHint })}
+          onclick={() => follow?.toggle()}
+        >
+          <Radio size={13} aria-hidden="true" />
+          {t("follow.button")}
+        </button>
+      {/if}
+      <button
+        type="button"
+        class="icon"
+        title={t("feed.clear")}
+        aria-label={t("feed.clear")}
+        onclick={() => void feed.clear()}
+      >
+        <RefreshCw size={14} />
+      </button>
+      {@render viewMenu?.()}
+      <button
+        type="button"
+        class="icon close"
+        aria-label={t("feed.close")}
+        title={t("feed.close")}
+        onclick={() => closeView(PANEL)}>×</button
+      >
+    </div>
+    <p class="last">
+      {latest > 0 ? t("live.last", { ago: ago(latest, now) }) : t("live.none")}
+    </p>
     <div class="show" role="radiogroup" aria-label={t("feed.show.label")}>
       {#each SHOWS as show (show.id)}
         <button
@@ -308,25 +335,64 @@
     padding: var(--sp-2) var(--sp-3);
     border-bottom: 1px solid var(--border);
   }
-  h2 {
+  .top {
+    display: flex;
+    flex-basis: 100%;
+    align-items: center;
+    gap: var(--sp-1);
+    min-width: 0;
+  }
+  .top > :global(*) {
+    flex: none;
+  }
+  /* same title style as the outline above it (one column, one look) */
+  .top > h2 {
+    flex: 0 1 auto;
+    min-width: 0;
     margin: 0;
-    white-space: nowrap;
-    font-size: var(--fs-ui);
+    overflow: hidden;
+    color: var(--muted);
+    font-size: var(--fs-ui-xs);
     font-weight: 600;
+    letter-spacing: 0.05em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
-  .spacer {
-    flex: 1;
+  .top > .spacer {
+    flex: 1 1 0;
   }
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--muted);
-    opacity: 0.5;
+  .follow {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding: 0 var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: var(--fs-ui-xs);
+    font-weight: 600;
+    cursor: pointer;
   }
-  .dot.active {
-    background: var(--accent);
-    opacity: 1;
+  .follow:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+  /* pressed = the look of the "Following" pill */
+  .follow[aria-pressed="true"] {
+    border-color: transparent;
+    background: var(--accent-soft);
+    /* the accent text, a touch toward --text: AA with margin in every light tone */
+    color: color-mix(in srgb, var(--accent-text) 85%, var(--text));
+  }
+  .last {
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--muted);
+    font-size: var(--fs-ui-xs);
   }
   .show {
     display: inline-flex;
@@ -448,11 +514,12 @@
   .handoff .icon-cell {
     color: var(--accent);
   }
+  /* the file name keeps room (at least 40 % of the row); the badges give way first (ellipsis) */
   .text {
     display: flex;
     flex-direction: column;
     flex: 1;
-    min-width: 0;
+    min-width: 40%;
   }
   .name,
   .folder {
@@ -465,7 +532,11 @@
     font-size: var(--fs-ui-xs);
   }
   .tag {
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     padding: 0 6px;
     border-radius: 999px;
     background: var(--surface-2);
