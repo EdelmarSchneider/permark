@@ -684,6 +684,7 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
             set_plugin_key(root, plugin, "enabled", enabled.map(Value::from));
         }
         SettingChange::RightViews(views) => set_right_views(root, views.as_ref()),
+        SettingChange::WrapLines(on) => set_keeping_decor(root, "wrap_lines", (*on).into()),
     }
 }
 
@@ -701,7 +702,6 @@ fn set_right_views(root: &mut Table, views: Option<&RightViews>) {
         }
     } else {
         root.insert("right_views", Item::Table(fresh));
-        SettingChange::WrapLines(on) => set_keeping_decor(root, "wrap_lines", (*on).into()),
     }
 }
 
