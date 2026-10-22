@@ -5,9 +5,21 @@
   import ChevronsDown from "@lucide/svelte/icons/chevrons-down";
   import { documents } from "../../core/doc/document.svelte";
   import { language, t, tn } from "../../core/i18n";
-  import { unread } from "./store.svelte";
+  import OnlyProject from "../../core/projects/OnlyProject.svelte";
+  import { nextUnread, unread } from "./store.svelte";
 
   const since = $derived(unread.since);
+  /** The documents listed: all | one project's (a count on its detail card led here). */
+  const list = $derived(unread.shown);
+  const prefix = $derived(unread.only === null ? null : `${unread.only.folder}/`);
+  const sinceItems = $derived(
+    since === null || prefix === null
+      ? (since?.items ?? [])
+      : since.items.filter((i) => i.path.startsWith(prefix)),
+  );
+
+  // one project's documents last while the tab shows: back later, it lists all again
+  $effect(() => () => unread.showOnly(null));
   const when = $derived(
     since && since.atMs > 0
       ? new Date(since.atMs).toLocaleString(language.locale, {
@@ -29,7 +41,7 @@
   }
 
   function goNext(): void {
-    const target = unread.next(documents.path);
+    const target = nextUnread(list, documents.path);
     if (target !== null) open(target);
   }
 </script>
@@ -37,14 +49,14 @@
 <section class="unread" aria-label={t("unread.title")}>
   <header>
     <h2>{t("unread.title")}</h2>
-    {#if unread.unread.length > 0}<span class="count">{unread.unread.length}</span>{/if}
+    {#if list.length > 0}<span class="count">{list.length}</span>{/if}
     <span class="spacer"></span>
     <button
       type="button"
       class="icon"
       title={t("unread.next")}
       aria-label={t("unread.next")}
-      disabled={unread.unread.length === 0}
+      disabled={list.length === 0}
       onclick={goNext}
     >
       <ChevronsDown size={15} />
@@ -54,20 +66,23 @@
       class="icon"
       title={t("unread.markAllRead")}
       aria-label={t("unread.markAllRead")}
-      disabled={unread.unread.length === 0}
-      onclick={() => void unread.markFolderRead("")}
+      disabled={list.length === 0}
+      onclick={() => void unread.markFolderRead(unread.only?.folder ?? "")}
     >
       <CheckCheck size={15} />
     </button>
   </header>
+  {#if unread.only !== null}
+    <OnlyProject name={unread.only.name} clear={() => unread.showOnly(null)} />
+  {/if}
   <div class="body">
     {#if !unread.ready}
       <p class="note">{t("since.loading")}</p>
-    {:else if unread.unread.length === 0}
+    {:else if list.length === 0}
       <p class="note caught-up">{t("unread.allCaughtUp")}</p>
     {:else}
       <ul>
-        {#each unread.unread as path (path)}
+        {#each list as path (path)}
           {@const where = split(path)}
           <li>
             <button type="button" class="row" title={path} onclick={() => open(path)}>
@@ -92,12 +107,12 @@
       <p class="note">{t("since.loading")}</p>
     {:else if since.first}
       <p class="note">{t("since.firstVisit")}</p>
-    {:else if since.items.length === 0}
+    {:else if sinceItems.length === 0}
       <p class="note">{t("since.nothing", { when })}</p>
     {:else}
       <p class="note">{t("since.baseline", { when })}</p>
       <ul>
-        {#each since.items as item (item.path)}
+        {#each sinceItems as item (item.path)}
           {@const where = split(item.path)}
           <li>
             <button
@@ -114,7 +129,7 @@
           </li>
         {/each}
       </ul>
-      {#if since.more > 0}<p class="note">{tn("since.more", since.more)}</p>{/if}
+      {#if since.more > 0 && prefix === null}<p class="note">{tn("since.more", since.more)}</p>{/if}
     {/if}
   </div>
 </section>

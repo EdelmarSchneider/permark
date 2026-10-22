@@ -13,8 +13,11 @@
     name: string;
     /** It is official now (focus goes where the caller wants it; the mark changed). */
     done?: () => void;
+    /** A row of many (Tags tab): the button says "Make official" (its name adds the tag); the question takes the row's
+     *  full width below. */
+    short?: boolean;
   };
-  let { kind, name, done }: Props = $props();
+  let { kind, name, done, short = false }: Props = $props();
 
   let asking = $state(false);
   let busy = $state(false);
@@ -61,6 +64,7 @@
 {#if asking}
   <div
     class="ask"
+    class:wide={short}
     role="group"
     aria-label={t(kind === "tag" ? "tags.promote" : "projects.category.promote", { root })}
   >
@@ -92,9 +96,12 @@
     class="btn btn--sm promote"
     bind:this={opener}
     disabled={blocked !== null}
-    title={blocked ?? undefined}
+    title={blocked ?? (short ? t("tags.promote", { root }) : undefined)}
+    aria-label={short ? t("tags.promoteRowNamed", { name }) : undefined}
     onclick={() => void ask()}
-    >{t(kind === "tag" ? "tags.promote" : "projects.category.promote", { root })}</button
+    >{short
+      ? t("tags.promoteRow")
+      : t(kind === "tag" ? "tags.promote" : "projects.category.promote", { root })}</button
   >
 {/if}
 
@@ -109,6 +116,9 @@
     border-radius: var(--radius-control);
     background: var(--surface-2);
     font-size: var(--fs-ui-sm);
+  }
+  .wide {
+    flex: 1 1 100%;
   }
   p {
     margin: 0;

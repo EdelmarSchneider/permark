@@ -74,6 +74,7 @@ export function vocabularyErrorText(error: ApiError): string {
     if (error.error.kind === "conflict") return t("projects.vocabulary.conflict");
     if (error.error.kind === "unavailable") return t("projects.vocabulary.unavailable");
   }
+
   return apiErrorText(error);
 }
 

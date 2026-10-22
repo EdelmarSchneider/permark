@@ -181,9 +181,25 @@ export class TagsStore {
     return tip === "" ? null : { text: "", tip };
   }
 
-  /** Every tag with its count, filtered by the box of the tags view. */
+  /** Every tag with its count, filtered by the box of the tags view. Where marks show, the official tags no file uses
+   *  yet are listed too (count 0): the view holds the whole official list (UX round 4 F9). */
   get listed() {
-    return filterCounts(this.overview?.tags ?? [], this.filter);
+    const overview = this.overview;
+    const counts = overview?.tags ?? [];
+    if (!overview?.marks) return filterCounts(counts, this.filter);
+    const known = new Set(counts.map((c) => c.name));
+    const unused = (projects.view?.vocabulary.tags ?? [])
+      .filter((e) => !known.has(e.name))
+      .map((e) => ({
+        name: e.name,
+        count: 0,
+        onlyInFiles: false,
+        status: "official" as const,
+        owner: null,
+      }));
+    // the backend lists by count, then name: the unused ones (count 0) come last
+    unused.sort((a, b) => a.name.localeCompare(b.name));
+    return filterCounts(unused.length === 0 ? counts : [...counts, ...unused], this.filter);
   }
 
   // ---- the tags view ------------------------------------------------------------------------------------------

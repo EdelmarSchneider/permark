@@ -186,7 +186,8 @@ describe("tag chips say official | local | unlisted", () => {
     show(TagsPanel);
     await until(() => target.querySelectorAll(".list .chip").length >= 200, "200 chips");
     for (const name of [names[0]!, names[1]!, names[199]!]) {
-      expect(chip(name)?.querySelector(".name")?.textContent).toBe(name);
+      // the visible name (the screen reader's rest follows it in the same box)
+      expect(chip(name)?.querySelector(".name")?.firstChild?.textContent).toBe(name);
       expect(statusOf(name)).toBe("unlisted");
     }
   });
@@ -383,7 +384,7 @@ describe("Settings > Projects inside: categories, official lists, Tags row", () 
     await settings();
     const hub = await expandRow("hub-b");
     expect(hub.textContent).toContain(
-      "Uses workspace-vocab's official tags; 1 of its own counts as local.",
+      "Official tags come from workspace-vocab. This project lists 1 tag of its own, shown as local.",
     );
   });
 
@@ -412,7 +413,10 @@ describe("Settings > Projects inside: categories, official lists, Tags row", () 
       () => mock.probe.projects.calls.includes("vocabulary_promote tag roadmap-items"),
       "sent",
     );
-    await until(() => block.textContent!.includes("roadmap-items"), "listed");
+    await until(
+      () => block.querySelector('[data-official="tag:roadmap-items"]') !== null,
+      "listed",
+    );
     expect(field.value).toBe("");
     expect(document.activeElement).toBe(field);
   });
@@ -453,7 +457,7 @@ describe("the detail card", () => {
       requires: NO_REQUIREMENT,
       kind: "projectCount",
       id: "test.count",
-      count: (row) => (row.path === "hub-b" ? "2 open comments" : null),
+      count: (row) => (row.path === "hub-b" ? { text: "2 open comments", open: () => {} } : null),
     });
     cleanups.push(remove);
     show(ProjectCard, {

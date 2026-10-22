@@ -66,7 +66,11 @@ export type ProjectsHost = {
 
 /** What Settings > Projects inside does when it shows: a row opened + focused (its first rule | its first action), or
  *  the problem of the list focused. `n` makes asks distinct. */
-export type SettingsAsk = { kind: "row"; key: string; n: number } | { kind: "problem"; n: number };
+export type SettingsAsk =
+  | { kind: "row"; key: string; n: number }
+  | { kind: "problem"; n: number }
+  /** The official lists (a tag's "Edit the official list…"): that name's look button, else the list's add field. */
+  | { kind: "vocabulary"; of: VocabularyKind; name: string | null; n: number };
 
 /** The detail card of a project node: where it hangs, how it was opened (hover: no focus move; menu: focus inside). */
 export type CardOpen = { path: string; from: "hover" | "menu"; anchor: DOMRect };
@@ -323,6 +327,14 @@ export class ProjectsStore {
     this.#host.openSettings();
   }
 
+  /** "Edit the official list…" (a tag's look, the Tags tab): Settings > Projects inside at the official lists, focus
+   *  on that name's look (`null`: on the list's add field). */
+  showVocabulary(of: VocabularyKind, name: string | null): void {
+    this.choosing = null;
+    this.ask = { kind: "vocabulary", of, name, n: ++this.#asks };
+    this.#host.openSettings();
+  }
+
   /** The broken list strip's "Show the problem": Settings > Projects inside, focus on the problem. */
   showProblem(): void {
     this.choosing = null;
@@ -475,6 +487,69 @@ export class ProjectsStore {
         root: this.rootName,
       }),
     );
+    return true;
+  }
+
+  /** Renames an official name (its look stays); files | cards using the old name keep it (unlisted now). Said politely;
+   *  a refusal is said. Returns whether it is renamed. */
+  async renameOfficial(kind: VocabularyKind, name: string, newName: string): Promise<boolean> {
+    // a name the list already has: never merged (said with that name)
+    const done = await this.#vocabulary(this.#api.vocabularyRename(kind, name, newName), (e) =>
+      e.kind === "backend" && e.error.kind === "exists"
+        ? t("projects.vocabulary.already", { name: newName })
+        : null,
+    );
+    if (done) {
+      this.announce(
+        t(
+          kind === "tag" ? "projects.vocabulary.renamedTag" : "projects.vocabulary.renamedCategory",
+          {
+            name,
+            to: newName,
+          },
+        ),
+      );
+    }
+    return done;
+  }
+
+  /** Takes an official name off the list; files | cards keep it (unlisted now). `quiet`: the caller says it (Undo of an
+   *  add). Returns whether it went. */
+  async removeOfficial(kind: VocabularyKind, name: string, quiet = false): Promise<boolean> {
+    const done = await this.#vocabulary(this.#api.vocabularyRemove(kind, name));
+    if (done && !quiet) {
+      this.announce(
+        t(
+          kind === "tag" ? "projects.vocabulary.removedTag" : "projects.vocabulary.removedCategory",
+          {
+            name,
+          },
+        ),
+      );
+    }
+    return done;
+  }
+
+  /** The look of an official name (applied as picked, as a tag's own look; the change shows, nothing is said). */
+  async setOfficialStyle(
+    kind: VocabularyKind,
+    name: string,
+    color: string | null,
+    icon: string | null,
+  ): Promise<boolean> {
+    return this.#vocabulary(this.#api.vocabularySetStyle(kind, name, color, icon));
+  }
+
+  async #vocabulary(
+    call: Promise<Result<null>>,
+    words: (error: ApiError) => string | null = () => null,
+  ): Promise<boolean> {
+    const result = await call;
+    if (!result.ok) {
+      this.#host.fail(words(result.error) ?? vocabularyErrorText(result.error));
+      return false;
+    }
+    await this.reload();
     return true;
   }
 

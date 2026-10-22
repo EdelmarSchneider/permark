@@ -5,10 +5,10 @@
   import Lock from "@lucide/svelte/icons/lock";
   import X from "@lucide/svelte/icons/x";
   import type { TagStatus } from "../../api";
-  import { t } from "../../core/i18n";
+  import { t, tn } from "../../core/i18n";
   import StatusMark from "../../core/projects/StatusMark.svelte";
-  import { TAG_ICONS } from "./icons";
-  import { isColor, isIcon } from "./model";
+  import { TAG_ICONS } from "../../core/looks/icons";
+  import { isColor, isIcon } from "../../core/looks/model";
 
   type Props = {
     name: string;
@@ -41,7 +41,27 @@
 
   const Icon = $derived(isIcon(icon) ? TAG_ICONS[icon] : null);
   const tint = $derived(isColor(color) ? `var(--tag-${color})` : "var(--muted)");
+  /** What a screen reader hears after the name, in the same box as the name (browsers put a space before each flex
+   *  item's text: ", Official" would be read with a stray space), so the button's name is one phrase: "spec, Official,
+   *  2 files". Visible: name, mark, count. */
+  const spokenRest = $derived(
+    [
+      ...(status !== null && statusWords !== "" ? [statusWords] : []),
+      ...(count !== undefined ? [tn("tags.countSr", count)] : []),
+    ]
+      .map((part) => `, ${part}`)
+      .join(""),
+  );
 </script>
+
+{#snippet said()}<span class="name"
+    >{name}{#if spokenRest !== ""}<span class="sr-only">{spokenRest}</span>{/if}</span
+  >{#if status !== null}<StatusMark
+      {status}
+      words={statusWords}
+      silent
+    />{/if}{#if count !== undefined}<span class="count" aria-hidden="true">{count}</span
+    >{/if}{/snippet}
 
 <span
   class="chip"
@@ -54,16 +74,12 @@
   {#if onclick}
     <button type="button" class="face" {onclick} {title}>
       {#if Icon}<Icon size={11} />{/if}
-      <span class="name">{name}</span>
-      {#if status !== null}<StatusMark {status} words={statusWords} />{/if}
-      {#if count !== undefined}<span class="count">{count}</span>{/if}
+      {@render said()}
     </button>
   {:else}
     <span class="face" {title}>
       {#if Icon}<Icon size={11} />{/if}
-      <span class="name">{name}</span>
-      {#if status !== null}<StatusMark {status} words={statusWords} />{/if}
-      {#if count !== undefined}<span class="count">{count}</span>{/if}
+      {@render said()}
     </span>
   {/if}
   {#if locked}

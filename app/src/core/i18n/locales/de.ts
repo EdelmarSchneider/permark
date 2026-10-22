@@ -2107,8 +2107,7 @@ export default {
   "projects.vocabulary.add": "Hinzufügen",
   "projects.vocabulary.typeName": "Zuerst einen Namen eingeben.",
   "projects.vocabulary.already": "„{name}“ ist bereits offiziell.",
-  "projects.vocabulary.editHint":
-    "Zum Umbenennen oder Entfernen eines Namens oder um Farbe und Symbol zu ändern, die Datei bearbeiten.",
+  "projects.vocabulary.editHint": "Die Liste lässt sich auch von Hand bearbeiten.",
   "projects.vocabulary.unreadable":
     "Die offizielle Liste in diesem Ordner kann nicht gelesen werden (Zeile {line}). PerMark ändert sie erst, wenn sie repariert ist.",
   "projects.vocabulary.newer":
@@ -2118,10 +2117,52 @@ export default {
   "projects.vocabulary.conflict":
     "Die offizielle Liste hat sich beim Speichern geändert. Bitte erneut versuchen.",
   "projects.rules.tags": "Tags",
+  "projects.rules.tagsInfoNone":
+    "Offizielle Tags kommen aus {root}. Dieses Projekt listet keine eigenen Tags.",
   "projects.rules.tagsInfo.one":
-    "Nutzt die offiziellen Tags von {root}; 1 eigenes zählt als lokal.",
+    "Offizielle Tags kommen aus {root}. Dieses Projekt listet 1 eigenes Tag, angezeigt als lokal.",
   "projects.rules.tagsInfo.other":
-    "Nutzt die offiziellen Tags von {root}; {n} eigene zählen als lokal.",
+    "Offizielle Tags kommen aus {root}. Dieses Projekt listet {n} eigene Tags, angezeigt als lokal.",
   "comments.projectCount.one": "1 offener Kommentar",
   "comments.projectCount.other": "{n} offene Kommentare",
+  // ---- projects round 4 UX fixes: marks legend, official list edits, project-only lists
+  "tags.countSr.one": "1 Datei",
+  "tags.countSr.other": "{n} Dateien",
+  "tags.promoteRow": "Offiziell machen",
+  "tags.promoteRowNamed": "Offiziell machen: {name}",
+  "tags.officialEdit": "Offizielle Liste bearbeiten …",
+  "tags.legend.label": "Bedeutung der Zeichen",
+  "tags.legend.local": "Lokal in einem Projekt",
+  "tags.legend.unlisted": "Nicht gelistet (nur in Dateien)",
+  "projects.category.offered":
+    "Offizielle Kategorien: {names}. Eine wählen oder eine eigene eingeben.",
+  "projects.only": "Nur {name} wird angezeigt",
+  "projects.showAll": "Alle anzeigen",
+  "projects.vocabulary.keep":
+    "Umbenennen oder Entfernen ändert nur diese Liste: Dateien und Projektkarten behalten ihre Namen, die dann als lokal oder nicht gelistet zählen.",
+  "projects.vocabulary.rename": "Umbenennen",
+  "projects.vocabulary.renameNamed": "Umbenennen: {name}",
+  "projects.vocabulary.newName": "Neuer Name für {name}",
+  "projects.vocabulary.save": "Speichern",
+  "projects.vocabulary.remove": "Entfernen",
+  "projects.vocabulary.removeNamed": "Entfernen: {name}",
+  "projects.vocabulary.look": "Farbe und Symbol",
+  "projects.vocabulary.lookNamed": "Farbe und Symbol von {name}",
+  "projects.vocabulary.done": "Fertig",
+  "projects.vocabulary.removeAskTag":
+    "„{name}“ aus den offiziellen Tags entfernen? Dateien behalten dieses Tag unverändert.",
+  "projects.vocabulary.removeAskCategory":
+    "„{name}“ aus den offiziellen Kategorien entfernen? Projekte behalten diese Kategorie unverändert.",
+  "projects.vocabulary.renamedTag":
+    "Offizielles Tag „{name}“ in „{to}“ umbenannt. Dateien behalten „{name}“ unverändert.",
+  "projects.vocabulary.renamedCategory":
+    "Offizielle Kategorie „{name}“ in „{to}“ umbenannt. Projekte behalten „{name}“ unverändert.",
+  "projects.vocabulary.removedTag":
+    "„{name}“ ist kein offizielles Tag mehr. Dateien behalten es unverändert.",
+  "projects.vocabulary.removedCategory":
+    "„{name}“ ist keine offizielle Kategorie mehr. Projekte behalten sie unverändert.",
+  "projects.vocabulary.added": "„{name}“ hinzugefügt.",
+  "projects.vocabulary.undone": "Rückgängig: „{name}“ ist nicht mehr offiziell.",
+  "projects.vocabulary.addAs":
+    "Wird als „{name}“ hinzugefügt (Kleinbuchstaben, Bindestriche statt Leerzeichen).",
 } satisfies Messages;

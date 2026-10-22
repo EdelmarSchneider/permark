@@ -48,8 +48,17 @@ export class CommentsStore {
   readonly #copy: (text: string) => Promise<boolean>;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #focusCount = 0;
-  groups = $derived(openByDocument(this.all));
-  done = $derived(doneComments(this.all));
+  /** The Comments tab shows one project's comments (its detail card's count led here); `null`: all. */
+  only = $state.raw<{ folder: string; name: string } | null>(null);
+  /** What the Comments tab lists: all | the project's (documents at | below its folder). */
+  shown = $derived.by(() => {
+    const only = this.only;
+    if (only === null) return this.all;
+    const prefix = `${only.folder}/`;
+    return this.all.filter((c) => c.path.startsWith(prefix));
+  });
+  groups = $derived(openByDocument(this.shown));
+  done = $derived(doneComments(this.shown));
   counts = $derived(openCounts(this.all));
   /** Open comments. */
   count = $derived(this.all.filter((c) => !c.done).length);
@@ -99,6 +108,7 @@ export class CommentsStore {
     this.ready = false;
     this.draft = null;
     this.focus = null;
+    this.only = null;
   }
 
   #cancel(): void {
@@ -145,6 +155,11 @@ export class CommentsStore {
     const prefix = `${folder}/`;
     const n = this.all.filter((c) => !c.done && c.path.startsWith(prefix)).length;
     return n === 0 ? null : tn("comments.projectCount", n);
+  }
+
+  /** The Comments tab lists only the comments of a project's folder (`null`: all again). */
+  showOnly(only: { folder: string; name: string } | null): void {
+    this.only = only;
   }
 
   // ---- writing ------------------------------------------------------------------------------------------------

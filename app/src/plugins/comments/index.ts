@@ -26,7 +26,18 @@ export default definePlugin({
         kind: "projectCount",
         id: "comments.projectCount",
         requires: NO_REQUIREMENT,
-        count: (row) => comments.projectCount(row.path),
+        count: (row) => {
+          const text = comments.projectCount(row.path);
+          return text === null
+            ? null
+            : {
+                text,
+                open: () => {
+                  comments.showOnly({ folder: row.path, name: row.name });
+                  ui.showSidebar(PANEL);
+                },
+              };
+        },
       }),
       cx.contribute({
         kind: "panel",

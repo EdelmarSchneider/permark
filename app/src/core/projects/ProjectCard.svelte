@@ -33,10 +33,13 @@
   const agentOn = $derived(conditions.current.agent.status !== "off");
   /** Blocks of plugins that know about projects (git: branch, changes, last commit). */
   const facts = $derived(contributions.visible("projectFacts", conditions.current));
-  /** Plugin words about the folder (unread count): their tooltips, which say it in full. A plugin with its own block
-   *  says its part there (git's changed files). */
+  /** Counts plugins keep about the project (unread, open comments), each a way to those items (their tab, this
+   *  project only). */
+  const counted = $derived(contributions.visible("projectCount", conditions.current));
+  /** Plugin words about the folder from tree badges: their tooltips, which say it in full. A plugin with its own block
+   *  (git's changed files) or its own count says its part there. */
   const said = $derived.by(() => {
-    const own = new Set(facts.map((f) => f.owner));
+    const own = new Set([...facts.map((f) => f.owner), ...counted.map((c) => c.owner)]);
     return contributions.visible("treeBadge", conditions.current).flatMap((b) => {
       if (own.has(b.owner)) return [];
       const badge = b.badge(row.path, true);
@@ -44,11 +47,20 @@
     });
   });
 
-  /** Counts plugins keep about the project (open comments), after the badge titles (unread). */
-  const counts = $derived([
-    ...said,
-    ...contributions.visible("projectCount", conditions.current).flatMap((c) => c.count(row) ?? []),
+  type Count = { id: string; text: string; open: (() => void) | null };
+  const counts = $derived<Count[]>([
+    ...said.map((text, n) => ({ id: `said-${n}`, text, open: null })),
+    ...counted.flatMap((c) => {
+      const count = c.count(row);
+      return count === null ? [] : [{ id: c.id, text: count.text, open: count.open }];
+    }),
   ]);
+
+  /** A count's link: the card goes (its tab takes the focus), then the plugin shows the items. */
+  function follow(open: () => void): void {
+    close(false);
+    open();
+  }
   /** An official category wears the official list's color (the tag palette). */
   const categoryTint = $derived.by(() => {
     if (row.category === null || row.categoryStatus !== "official") return null;
@@ -87,7 +99,7 @@
     if (!card) return;
     const el = card;
     place(el);
-    if (from === "menu") el.querySelector<HTMLElement>("button")?.focus();
+    if (from === "menu") el.querySelector<HTMLElement>(".buttons button")?.focus();
     // a plugin's block that loads later makes it taller: it is placed again (never over its row)
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => place(el));
@@ -157,7 +169,17 @@
     {#each facts as fact (fact.id)}
       {#await fact.card() then block}<block.default {row} />{/await}
     {/each}
-    {#if counts.length > 0}<p class="line">{counts.join(" · ")}</p>{/if}
+    {#if counts.length > 0}
+      <p class="line counts">
+        {#each counts as count, n (count.id)}{#if n > 0}<span aria-hidden="true">
+              ·
+            </span>{/if}{#if count.open !== null}{@const open = count.open}<button
+              type="button"
+              class="count-link"
+              onclick={() => follow(open)}>{count.text}</button
+            >{:else}<span>{count.text}</span>{/if}{/each}
+      </p>
+    {/if}
     {#if agentOn}
       <p class="line">
         {t(row.agent === "off" ? "projects.card.agentNot" : "projects.card.agentSees")}
@@ -246,6 +268,26 @@
   }
   .path {
     font-size: var(--fs-ui-xs);
+  }
+  .counts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 4px;
+  }
+  .count-link {
+    min-height: 24px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--accent-text);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  .count-link:hover {
+    color: var(--text);
   }
   .buttons {
     display: flex;

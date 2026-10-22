@@ -226,7 +226,8 @@
   // mode: the heading. After the page's own focus (it runs first).
   $effect(() => {
     const ask = projects.ask;
-    if (!section || !view || ask === null) return;
+    // the official lists take their own ask (VocabularySection)
+    if (!section || !view || ask === null || ask.kind === "vocabulary") return;
     projects.ask = null;
     if (ask.kind === "problem") {
       void tick().then(() => problem?.focus());

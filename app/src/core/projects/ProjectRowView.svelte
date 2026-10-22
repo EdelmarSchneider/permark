@@ -253,7 +253,9 @@
           <span class="rule-name">{t("projects.rules.tags")}</span>
           <div class="rule-control">
             <span class="info"
-              >{tn("projects.rules.tagsInfo", row.localTags, { root: rootName })}</span
+              >{row.localTags === 0
+                ? t("projects.rules.tagsInfoNone", { root: rootName })
+                : tn("projects.rules.tagsInfo", row.localTags, { root: rootName })}</span
             >
           </div>
         </div>

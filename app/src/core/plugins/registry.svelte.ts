@@ -17,6 +17,9 @@ import type {
 } from "./props";
 
 /** Lazily loaded UI piece (heavy views load when first needed). */
+/** A count on a project's detail card and the way to its items (`projectCount`). */
+export type ProjectCount = { text: string; open: () => void };
+
 export type LazyComponent<Props extends Record<string, unknown> = Record<string, never>> =
   () => Promise<{
     default: Component<Props>;
@@ -161,9 +164,11 @@ export type Contribution = Owned &
       }
     /**
      * A short count a plugin keeps about an included project, for the counts line of its detail card ("2 open
-     * comments"; joined with " · " after the folder's badge titles). Reads reactive state; `null` = nothing to say.
+     * comments"; joined with " · " after the folder's badge titles, which it replaces for its plugin). `open` shows
+     * those items (the plugin's tab, only that project's); the card closes first. Reads reactive state; `null` =
+     * nothing to say.
      */
-    | { kind: "projectCount"; id: string; count: (row: ProjectRow) => string | null }
+    | { kind: "projectCount"; id: string; count: (row: ProjectRow) => ProjectCount | null }
     /** An entry of the Explorer's context menu (a single row). */
     | {
         kind: "treeMenu";
