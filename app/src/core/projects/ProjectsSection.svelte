@@ -5,8 +5,10 @@
   // to another group (or goes) hands the focus to the next row of its group.
   import { tick, untrack } from "svelte";
   import type { ProjectRow } from "../../api";
+  import { conditions } from "../conditions/context.svelte";
   import { documents } from "../doc/document.svelte";
   import { t, tn, type MessageKey } from "../i18n";
+  import { contributions } from "../plugins/instance.svelte";
   import { ui } from "../shell/ui.svelte";
   import Card from "../shell/settings/Card.svelte";
   import { projects } from "./instance.svelte";
@@ -22,6 +24,58 @@
   let problem: HTMLElement | undefined = $state();
 
   const view = $derived(projects.view);
+  /** One sentence plugins add to the intro (git missing). */
+  const notes = $derived(
+    contributions.visible("projectFacts", conditions.current).flatMap((f) => f.note() ?? []),
+  );
+
+  // the included rows in view: plugins fetch their facts for those (git: changed files)
+  let inView = $state.raw<ReadonlySet<string>>(new Set());
+  const watched = new Map<Element, string>();
+  let observer: IntersectionObserver | null = null;
+
+  /** Called from the rows' effects: reading the set must not make them depend on it. */
+  function see(uid: string, on: boolean): void {
+    untrack(() => {
+      if (inView.has(uid) === on) return;
+      const next = new Set(inView);
+      if (on) next.add(uid);
+      else next.delete(uid);
+      inView = next;
+    });
+  }
+
+  /** A row's element followed while it exists (no observer, as in tests: always in view). */
+  function watch(el: HTMLElement, uid: string): () => void {
+    watched.set(el, uid);
+    if (observer === null) see(uid, true);
+    else observer.observe(el);
+    return () => {
+      watched.delete(el);
+      observer?.unobserve(el);
+      if (![...watched.values()].includes(uid)) see(uid, false);
+    };
+  }
+
+  $effect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const seen = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const uid = watched.get(entry.target);
+        if (uid !== undefined) see(uid, entry.isIntersecting);
+      }
+    });
+    observer = seen;
+    for (const el of watched.keys()) seen.observe(el);
+    return () => {
+      seen.disconnect();
+      if (observer === seen) observer = null;
+    };
+  });
+  $effect(() => {
+    projects.look("settings", "glance", [...inView]);
+  });
+  $effect(() => () => projects.look("settings", "glance", []));
   const choosing = $derived(projects.choosing !== null);
   const rootName = $derived(view?.rootCard.name ?? "");
   const byKey = $derived(new Map((view?.rows ?? []).map((r) => [r.key, r])));
@@ -213,6 +267,7 @@
         toggle={() => toggle(row)}
         include={(on) => include(row, on)}
         remove={() => remove(row)}
+        {watch}
       />
     {/each}
   </Card>
@@ -223,6 +278,7 @@
     <h3 class="choose-title" tabindex="-1" data-autofocus>{t("projects.choose.title")}</h3>
   {/if}
   <p class="intro">{t("projects.settings.intro", { root: rootName })}</p>
+  {#each notes as note (note)}<p class="quiet" data-projects-note>{note}</p>{/each}
 
   {#if problems.length > 0}
     <div class="error-card" role="alert" tabindex="-1" bind:this={problem}>

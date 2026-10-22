@@ -46,6 +46,28 @@ pub fn recycle(paths: &[PathBuf]) -> Result<(), String> {
     trash::delete_all(paths).map_err(|e| e.to_string())
 }
 
+/// Identity of a file | folder on its volume, `(volume, file)`: kept across a rename on the same volume (unix
+/// `st_dev` + `st_ino`; Windows volume serial + file index). A link is named itself, never followed. `None`: unknown
+/// (gone, refused, or no such notion here).
+#[must_use]
+pub fn file_identity(path: &Path) -> Option<(u64, u64)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let meta = std::fs::symlink_metadata(path).ok()?;
+        Some((meta.dev(), meta.ino()))
+    }
+    #[cfg(windows)]
+    {
+        win::file_identity(path).ok()
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = path;
+        None
+    }
+}
+
 /// Retry delays for transient Windows sharing | lock violations.
 pub const RETRY_DELAYS: [Duration; 3] = [
     Duration::from_millis(20),

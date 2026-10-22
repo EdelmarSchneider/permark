@@ -619,6 +619,38 @@ pub fn uninit_project(dirs: &AppDirs, root: &Root) -> Result<bool, StateError> {
     Ok(true)
 }
 
+/// A project folder moved from `from` to `to` (absolute; `from` may be gone): its profile state folder and its profile
+/// cache folder follow the new `ProjectId` (`projects.md` §9.1). Target missing -> renamed; target present -> what it
+/// lacks is copied in (the target wins), then the old folder is removed. Same id (case-only rename on a
+/// case-insensitive disk) | nothing kept under the old id -> nothing done. Returns whether anything moved.
+///
+/// # Errors
+/// IO failure (the old folder then stays where it is).
+pub fn move_profile_state(dirs: &AppDirs, from: &Path, to: &Path) -> Result<bool, StateError> {
+    let id =
+        |path: &Path| crate::fsx::hash(crate::paths::RootKey::of(path).as_str().as_bytes()).hex();
+    let (old_id, new_id) = (id(from), id(to));
+    if old_id == new_id {
+        return Ok(false);
+    }
+    let mut moved = false;
+    for base in [dirs.profile.join("projects"), dirs.cache.join("projects")] {
+        let old = base.join(&old_id);
+        if !private::is_real_folder(&old) {
+            continue;
+        }
+        let new = base.join(&new_id);
+        if std::fs::symlink_metadata(&new).is_err() {
+            std::fs::rename(&old, &new).map_err(|e| StateError::io(&old, e))?;
+        } else {
+            copy_missing(&old, &new, false).map_err(|e| StateError::io(&new, e))?;
+            std::fs::remove_dir_all(&old).map_err(|e| StateError::io(&old, e))?;
+        }
+        moved = true;
+    }
+    Ok(moved)
+}
+
 /// Whether a folder tree holds a link (symlink | junction) anywhere (the folder itself included).
 fn holds_link(dir: &Path) -> bool {
     match private::entry(dir) {

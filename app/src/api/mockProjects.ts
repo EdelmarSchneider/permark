@@ -8,6 +8,7 @@ import type {
   CardTarget,
   Events,
   FeedItem,
+  MoveAsk,
   ProjectEvent,
   ProjectPick,
   ProjectRow,
@@ -248,6 +249,8 @@ export type ProjectsProbe = {
   viewOf(root: string): ProjectsView | null;
   /** Every folder back to its fixture (tests sharing one mock). */
   reset(): void;
+  /** Asks "is this the missing one?" in the window's folder (a project moved | renamed while PerMark was closed). */
+  askMove(ask: MoveAsk): void;
 };
 
 type Deps = {
@@ -531,6 +534,7 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
       undos.clear();
       calls.length = 0;
     },
+    askMove: (ask) => commit({ ...current(), ask }),
   };
   return { handlers, probe };
 }

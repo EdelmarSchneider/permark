@@ -3,6 +3,9 @@
 
 pub mod card;
 pub mod fsm;
+#[cfg(test)]
+mod git_seam_tests;
+mod grace;
 pub mod map;
 pub mod record;
 #[cfg(test)]
@@ -15,7 +18,7 @@ pub use card::{CardChange, CardDto, CardField, CardPlace, CardWarning};
 pub use fsm::{AgentChoice, MissingReason, ProjectMarker, RootAnswer};
 pub use map::{AgentRules, AncestorRules, MemberInfo, Owner, ProjectMap};
 pub use record::{HiddenRule, RecordOp, RecordRead, RecordSkip, SkippedEntry};
-pub use service::{Projects, ProjectsSubscription, UndoPlan};
+pub use service::{Projects, ProjectsSubscription, RootCommitAsk, UndoPlan};
 pub use uid::ProjectUid;
 pub use view::{
     CardTarget, IncludeOutcome, LocateRefusal, MemberState, ProjectEvent, ProjectPick, ProjectRow,

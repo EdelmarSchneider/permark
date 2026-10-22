@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock, Weak};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -18,6 +18,7 @@ use super::fsm::{
     self, AgentChoice, Candidate, Event, Found, Inputs, Membership, MissingReason, Presence,
     ProjectMarker, RecEntry, RootAnswer, MEMBERSHIP_FILE,
 };
+use super::grace::{self, Came, FolderId, Left, Vanished};
 use super::map::{within, AgentRules, AncestorRules, MemberInfo, ProjectMap};
 use super::record::{self, HiddenRule, RecordOp, RecordRead, RecordSkip, SkippedEntry};
 use super::uid::ProjectUid;
@@ -124,6 +125,8 @@ struct MemberRes {
     /// Entries of its own (dormant) record.
     inner: Vec<(VaultPath, ProjectUid)>,
     has_record: bool,
+    /// Its folder on disk (a move split across watch batches pairs by it; `grace.rs`).
+    id: Option<FolderId>,
 }
 
 /// Reads what a member brings from its folder (cheap: a few small files).
@@ -164,6 +167,7 @@ fn load_member(dirs: &AppDirs, abs: &Path) -> MemberRes {
         },
         inner,
         has_record: !matches!(read, RecordRead::Absent),
+        id: FolderId::of(abs),
     }
 }
 
@@ -295,6 +299,15 @@ struct Inner {
     root_ignore: Vec<String>,
     /// Uids whose 0.6 state was copied (round 4; kept as read).
     migrated: Vec<String>,
+    /// Root commits of found repositories learned this session (path key -> commit; `None`: none to learn).
+    root_commits: HashMap<String, Option<String>>,
+    /// Path keys asked of the `git` plugin, answer not back yet (asked once per session while the lease lives).
+    asked: HashSet<String>,
+    /// Included entries whose folder vanished while open, held as here for a short window (`grace.rs`).
+    vanished: BTreeMap<ProjectUid, Vanished>,
+    /// New folders kept out of the found set while a window runs (tests look).
+    #[cfg_attr(not(test), allow(dead_code))]
+    waiting: usize,
     other: serde_json::Map<String, serde_json::Value>,
 }
 
@@ -319,10 +332,18 @@ struct Hint {
 enum Msg {
     Walk,
     Batch(Hint),
+    /// A grace window ended (`grace.rs`): look again.
+    Tick,
     Stop,
 }
 
 type Listener = Arc<dyn Fn(&ProjectEvent) + Send + Sync>;
+type MapListener = Arc<dyn Fn(&Arc<ProjectMap>) + Send + Sync>;
+
+/// Asks the `git` plugin for the root commits of found repositories (`(path key, folder)`; `projects.md` §4.4, §8).
+/// Must return at once: the plugin queues the lookups in its bounded pool and answers later through
+/// [`Projects::root_commits_learned`] (never before the first map, never on the projects worker).
+pub type RootCommitAsk = Arc<dyn Fn(Vec<(String, PathBuf)>) + Send + Sync>;
 
 pub struct Projects {
     root: Root,
@@ -336,6 +357,10 @@ pub struct Projects {
     inner: Mutex<Inner>,
     map: RwLock<Arc<ProjectMap>>,
     listeners: Mutex<Vec<(u64, Listener)>>,
+    /// Told the new map after every change (members started | stopped | moved; the `git` plugin follows them).
+    map_listeners: Mutex<Vec<(u64, MapListener)>>,
+    /// Root commits of found repositories (re-attach by first commit), while the `git` plugin runs.
+    identity: Mutex<Option<(u64, RootCommitAsk)>>,
     next: AtomicU64,
     tx: Mutex<Option<Sender<Msg>>>,
     worker: Mutex<Option<JoinHandle<()>>>,
@@ -344,6 +369,8 @@ pub struct Projects {
     stopped: Arc<AtomicBool>,
     /// Signalled when the map becomes ready | the core closes (agent calls wait on `inner`).
     ready_cv: Condvar,
+    /// `Some`: the time, moved by hand (tests); the worker then never ends a window on its own.
+    manual_now: Mutex<Option<Instant>>,
 }
 
 impl std::fmt::Debug for Projects {
@@ -364,6 +391,11 @@ impl Drop for ProjectsSubscription {
     fn drop(&mut self) {
         if let Some(owner) = self.owner.upgrade() {
             lock(&owner.listeners).retain(|(id, _)| *id != self.id);
+            lock(&owner.map_listeners).retain(|(id, _)| *id != self.id);
+            let mut identity = lock(&owner.identity);
+            if identity.as_ref().is_some_and(|(id, _)| *id == self.id) {
+                *identity = None;
+            }
         }
     }
 }
@@ -424,15 +456,22 @@ impl Projects {
                 ancestors: (Vec::new(), None),
                 root_ignore: root_ignore.to_vec(),
                 migrated: kept.migrated,
+                root_commits: HashMap::new(),
+                asked: HashSet::new(),
+                vanished: BTreeMap::new(),
+                waiting: 0,
                 other: kept.other,
             }),
             map: RwLock::new(Arc::new(ProjectMap::default())),
             listeners: Mutex::new(Vec::new()),
+            map_listeners: Mutex::new(Vec::new()),
+            identity: Mutex::new(None),
             next: AtomicU64::new(0),
             tx: Mutex::new(None),
             worker: Mutex::new(None),
             stopped: Arc::new(AtomicBool::new(false)),
             ready_cv: Condvar::new(),
+            manual_now: Mutex::new(None),
         });
         {
             let mut inner = lock(&projects.inner);
@@ -458,22 +497,34 @@ impl Projects {
         let stopped = Arc::clone(&self.stopped);
         let handle = std::thread::Builder::new()
             .name("permark-projects".to_owned())
-            .spawn(move || {
-                while let Ok(msg) = rx.recv() {
-                    if matches!(msg, Msg::Stop) {
-                        return;
-                    }
-                    let Some(markers) = wait_walk(&explorer, &stopped) else {
-                        return;
-                    };
-                    let Some(projects) = weak.upgrade() else {
-                        return;
-                    };
-                    match msg {
-                        Msg::Stop => return,
-                        Msg::Walk => projects.discover(&Hint::default(), true, &markers),
-                        Msg::Batch(hint) => projects.on_hint(&hint, &markers),
-                    }
+            .spawn(move || loop {
+                // a grace window running: wake at its end (no `Projects` held while waiting)
+                let wake = weak.upgrade().and_then(|p| p.next_window_end());
+                let msg = match wake {
+                    Some(after) => match rx.recv_timeout(after) {
+                        Ok(msg) => msg,
+                        Err(RecvTimeoutError::Timeout) => Msg::Tick,
+                        Err(RecvTimeoutError::Disconnected) => return,
+                    },
+                    None => match rx.recv() {
+                        Ok(msg) => msg,
+                        Err(_) => return,
+                    },
+                };
+                if matches!(msg, Msg::Stop) {
+                    return;
+                }
+                let Some(markers) = wait_walk(&explorer, &stopped) else {
+                    return;
+                };
+                let Some(projects) = weak.upgrade() else {
+                    return;
+                };
+                match msg {
+                    Msg::Stop => return,
+                    Msg::Walk => projects.discover(&Hint::default(), true, &markers),
+                    Msg::Batch(hint) => projects.on_hint(&hint, &markers),
+                    Msg::Tick => projects.discover(&Hint::default(), false, &markers),
                 }
             })
             .ok();
@@ -502,6 +553,55 @@ impl Projects {
         let mut inner = lock(&self.inner);
         inner.res.clear();
         inner.undo = None;
+        // the worker (and with it the window's wake-up) is gone: nothing stays held
+        inner.vanished.clear();
+        inner.waiting = 0;
+    }
+
+    fn now(&self) -> Instant {
+        lock(&self.manual_now).unwrap_or_else(Instant::now)
+    }
+
+    /// Time left until the first grace window ends (`None`: none running, or the time is moved by hand).
+    fn next_window_end(&self) -> Option<Duration> {
+        if lock(&self.manual_now).is_some() {
+            return None;
+        }
+        let now = Instant::now();
+        lock(&self.inner)
+            .vanished
+            .values()
+            .map(|v| v.until.saturating_duration_since(now))
+            .min()
+    }
+
+    /// Tests: the time stops here; only [`Projects::advance`] moves it.
+    #[cfg(test)]
+    pub(crate) fn freeze_clock(&self) {
+        *lock(&self.manual_now) = Some(Instant::now());
+    }
+
+    /// Tests: moves the stopped time by `by`, then lets the worker look again (a window may have ended).
+    #[cfg(test)]
+    pub(crate) fn advance(&self, by: Duration) {
+        if let Some(now) = lock(&self.manual_now).as_mut() {
+            *now += by;
+        }
+        if let Some(tx) = lock(&self.tx).as_ref() {
+            let _ = tx.send(Msg::Tick);
+        }
+    }
+
+    /// Tests: entries held as here while their folder is away.
+    #[cfg(test)]
+    pub(crate) fn vanished_count(&self) -> usize {
+        lock(&self.inner).vanished.len()
+    }
+
+    /// Tests: new folders waiting for a window to end.
+    #[cfg(test)]
+    pub(crate) fn waiting_count(&self) -> usize {
+        lock(&self.inner).waiting
     }
 
     /// Per-member resources held now (teardown tests).
@@ -605,6 +705,156 @@ impl Projects {
         }
     }
 
+    /// Hears the new map after every change until the subscription goes (the `git` plugin follows members with it).
+    #[must_use]
+    pub fn subscribe_map(
+        self: &Arc<Self>,
+        listener: impl Fn(&Arc<ProjectMap>) + Send + Sync + 'static,
+    ) -> ProjectsSubscription {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        lock(&self.map_listeners).push((id, Arc::new(listener)));
+        ProjectsSubscription {
+            owner: Arc::downgrade(self),
+            id,
+        }
+    }
+
+    /// Lets re-attach ask the root commits of found repositories (`projects.md` §4.4) until the lease goes. Asked only
+    /// once the first map is ready; the answers arrive later ([`Projects::root_commits_learned`]).
+    #[must_use]
+    pub fn provide_root_commits(self: &Arc<Self>, ask: RootCommitAsk) -> ProjectsSubscription {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        *lock(&self.identity) = Some((id, ask));
+        // a former lease's open questions died with it
+        lock(&self.inner).asked.clear();
+        self.ask_root_commits();
+        ProjectsSubscription {
+            owner: Arc::downgrade(self),
+            id,
+        }
+    }
+
+    /// Root commits the `git` plugin found (`(path key, commit)`; `None`: none). A move question they make possible
+    /// appears at once (`projects.md` §4.4, D31: never a silent re-attach).
+    pub fn root_commits_learned(&self, answers: &[(String, Option<String>)]) {
+        if answers.is_empty() || self.stopped.load(Ordering::Relaxed) {
+            return;
+        }
+        let useful = {
+            let mut inner = lock(&self.inner);
+            for (key, commit) in answers {
+                inner.asked.remove(key);
+                inner.root_commits.insert(key.clone(), commit.clone());
+            }
+            inner.ready && answers.iter().any(|(_, c)| c.is_some())
+        };
+        if useful {
+            if let Some(tx) = lock(&self.tx).as_ref() {
+                let _ = tx.send(Msg::Batch(Hint {
+                    folders: true,
+                    ..Hint::default()
+                }));
+            }
+        }
+    }
+
+    /// The state store of a project folder below the root (`projects.md` §9.1: the same files as when it is opened
+    /// alone). `None`: the folder is not there.
+    #[must_use]
+    pub fn store_of(&self, path: &VaultPath) -> Option<StateStore> {
+        let root = Root::open(&abs_of(self.root.path(), path)).ok()?;
+        Some(StateStore::for_project(&self.dirs, &root))
+    }
+
+    /// Writes the first commits the `git` plugin learned (`RecordOp::SetFirstCommit`, one record write for all;
+    /// `projects.md` D21): only for entries without one, only while the record reads. Others are skipped quietly.
+    ///
+    /// # Errors
+    /// `Conflict`, IO.
+    pub fn set_first_commits(&self, learned: &[(ProjectUid, String)]) -> Result<(), IpcError> {
+        if self.files_only || self.stopped.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        let mut inner = lock(&self.inner);
+        let RecordRead::Read(record) = &inner.record else {
+            return Ok(());
+        };
+        let mut ops: Vec<RecordOp> = Vec::new();
+        for (uid, oid) in learned {
+            let valid = (4..=64).contains(&oid.len()) && oid.bytes().all(|b| b.is_ascii_hexdigit());
+            let open = record
+                .entries
+                .iter()
+                .any(|e| &e.uid == uid && e.first_commit.is_none());
+            let twice = ops
+                .iter()
+                .any(|o| matches!(o, RecordOp::SetFirstCommit { uid: u, .. } if u == uid));
+            if valid && open && !twice {
+                ops.push(RecordOp::SetFirstCommit {
+                    uid: uid.clone(),
+                    oid: oid.to_ascii_lowercase(),
+                });
+            }
+        }
+        if ops.is_empty() {
+            return Ok(());
+        }
+        self.write_record(&ops, false)?;
+        inner.record = read_record(self.root.path());
+        inner.seq += 1;
+        self.rebuild_map(&inner);
+        drop(inner);
+        self.finish(&After {
+            changed: true,
+            ..After::default()
+        });
+        Ok(())
+    }
+
+    /// Asks the `git` plugin for the root commits a move question may need (`projects.md` §4.4): only after the first
+    /// map, only while a record entry with a first commit is not at its path, only for found git projects that are
+    /// offered (never listed, never refused), once per session per folder. Never waits for the answers.
+    fn ask_root_commits(&self) {
+        if self.stopped.load(Ordering::Relaxed) {
+            return;
+        }
+        let Some(ask) = lock(&self.identity).as_ref().map(|(_, f)| Arc::clone(f)) else {
+            return;
+        };
+        let need: Vec<(String, PathBuf)> = {
+            let mut inner = lock(&self.inner);
+            if !inner.ready {
+                return;
+            }
+            let waiting = inner.inputs.entries.iter().any(|e| {
+                inner.inputs.presence.get(&e.uid) == Some(&Presence::Gone)
+                    && !inner.inputs.refused(&e.path.key())
+                    && first_commit_of(&inner, &e.uid).is_some()
+            });
+            if !waiting {
+                return;
+            }
+            let states = inner.inputs.derive();
+            let need: Vec<(String, PathBuf)> = inner
+                .inputs
+                .found
+                .iter()
+                .filter(|(k, f)| {
+                    f.marker.git()
+                        && states.get(*k) == Some(&Candidate::Offered)
+                        && !inner.root_commits.contains_key(*k)
+                        && !inner.asked.contains(*k)
+                })
+                .map(|(k, f)| (k.clone(), abs_of(self.root.path(), &f.path)))
+                .collect();
+            inner.asked.extend(need.iter().map(|(k, _)| k.clone()));
+            need
+        };
+        if !need.is_empty() {
+            ask(need);
+        }
+    }
+
     // ---- reading the disk --------------------------------------------------------------------------------------
 
     /// Record entries -> machine entries (valid ones; disk reasons checked here).
@@ -655,8 +905,13 @@ impl Projects {
         let mut seen = HashMap::new();
         let all_out = inner.inputs.answer == RootAnswer::DeclinedAll;
         let declined: HashSet<String> = inner.inputs.declined.iter().cloned().collect();
+        // live only (never at open, never files-only): a folder gone while open is held as here for a moment
+        let live = inner.ready && !self.files_only;
+        let now = self.now();
+        let mut vanished = BTreeMap::new();
         for entry in &entries {
-            let state = if hard.hides(&entry.path) {
+            let refused = all_out || declined.contains(&entry.path.key());
+            let mut state = if hard.hides(&entry.path) {
                 Presence::Ignored
             } else if entry
                 .path
@@ -671,7 +926,14 @@ impl Projects {
                     None => Presence::Gone,
                 }
             };
-            let refused = all_out || declined.contains(&entry.path.key());
+            if state == Presence::Gone && live && !refused {
+                let id = inner.res.get(&entry.uid).and_then(|r| r.id);
+                let was = inner.inputs.presence.get(&entry.uid);
+                if let Some(v) = grace::hold(inner.vanished.get(&entry.uid), was, id, now) {
+                    state = Presence::Here(v.marker);
+                    vanished.insert(entry.uid.clone(), v);
+                }
+            }
             if matches!(state, Presence::Here(_)) && !refused {
                 let res = inner.res.entry(entry.uid.clone()).or_insert_with(|| {
                     load_member(&self.dirs, &abs_of(self.root.path(), &entry.path))
@@ -686,6 +948,7 @@ impl Projects {
             presence.insert(entry.uid.clone(), state);
         }
         inner.inputs.presence = presence;
+        inner.vanished = vanished;
         let here: HashSet<ProjectUid> = inner.inputs.included().into_iter().collect();
         inner.res.retain(|uid, _| here.contains(uid));
     }
@@ -871,11 +1134,12 @@ impl Projects {
         {
             let mut inner = lock(&self.inner);
             let old = inner.inputs.clone();
+            let old_ask = inner.ask.clone();
             let was_ready = inner.ready;
             let found = self.found_now(&inner, markers);
             inner.inputs.found = found;
             self.presence(&mut inner);
-            self.reattach(&mut inner, hint, &mut after);
+            self.reattach(&mut inner, hint, &old.found, &mut after);
             inner.ready = true;
             self.ready_cv.notify_all();
             if was_ready && !first {
@@ -887,13 +1151,15 @@ impl Projects {
                 inner.member_set = set;
                 after.rescan = true;
             }
-            after.changed |= first || !was_ready || inner.inputs != old;
+            after.changed |= first || !was_ready || inner.inputs != old || inner.ask != old_ask;
             if after.changed {
                 inner.seq += 1;
                 self.rebuild_map(&inner);
             }
         }
         self.finish(&after);
+        // after the map: the answers come back on the git pool and only add a question
+        self.ask_root_commits();
     }
 
     /// Changes rows between two inputs (found while open, gone, back).
@@ -958,64 +1224,141 @@ impl Projects {
             .unwrap_or_else(|| folder_name(path))
     }
 
-    /// Re-attach (`projects.md` §4.4): rename hints, card ids, then one question.
-    #[allow(clippy::too_many_lines)] // the steps of §4.4 in their order
-    fn reattach(&self, inner: &mut Inner, hint: &Hint, after: &mut After) {
-        let mut moves: Vec<(ProjectUid, VaultPath, bool)> = Vec::new();
+    /// Re-attach (`projects.md` §4.4, D31): silent only where the disk says it is the same folder (a rename the watch
+    /// saw live, the case of its name); anything found at open (card id, first commit, folder name) is a question to
+    /// the person, one candidate at a time (clones share card id + first commit). Refused folders are never a
+    /// candidate (D28).
+    /// A move the OS split across batches pairs by the folder's disk identity inside a grace window (`grace.rs`);
+    /// `before`: the found set before this pass.
+    fn reattach(
+        &self,
+        inner: &mut Inner,
+        hint: &Hint,
+        before: &BTreeMap<String, Found>,
+        after: &mut After,
+    ) {
+        let mut moves: Vec<(ProjectUid, VaultPath)> = Vec::new();
         // a folder renamed to another case of its name (case-insensitive disk): still here; the path follows the disk
         for entry in &inner.inputs.entries {
             if let Some(found) = inner.inputs.found.get(&entry.path.key()) {
                 if found.path != entry.path && !inner.inputs.refused(&entry.path.key()) {
-                    moves.push((entry.uid.clone(), found.path.clone(), true));
+                    moves.push((entry.uid.clone(), found.path.clone()));
                 }
             }
         }
-        let missing: Vec<RecEntry> = inner
-            .inputs
-            .entries
-            .iter()
-            .filter(|e| inner.inputs.presence.get(&e.uid) == Some(&Presence::Gone))
-            .filter(|e| !inner.inputs.refused(&e.path.key()))
-            .cloned()
-            .collect();
-        if missing.is_empty() && moves.is_empty() {
-            inner.ask = None;
-            return;
-        }
-        for entry in &missing {
-            // 1. a rename the watch paired covers it
+        // 1. a rename the watch paired covers it (live: the same folder)
+        for entry in &inner.inputs.entries {
+            let away = inner.inputs.presence.get(&entry.uid) == Some(&Presence::Gone)
+                || inner.vanished.contains_key(&entry.uid);
+            if !away || inner.inputs.refused(&entry.path.key()) {
+                continue;
+            }
             if let Some(path) = renamed_path(&entry.path, &hint.renames) {
                 if marker_at(&abs_of(self.root.path(), &path)).is_some() {
-                    moves.push((entry.uid.clone(), path, true));
-                    continue;
+                    moves.push((entry.uid.clone(), path));
                 }
             }
-            // 2. a found project's card carries its id
-            let offered: Vec<&Found> = inner
-                .inputs
-                .found
+        }
+        self.apply_moves(inner, moves, after);
+        // 2. inside a grace window: a folder that came is a held entry's own folder (the rest wait while one runs)
+        let (moves, waiting) = self.grace_pairs(inner, before);
+        self.apply_moves(inner, moves, after);
+        inner.waiting = 0;
+        if inner.vanished.is_empty() {
+            for f in waiting {
+                inner.inputs.found.insert(f.path.key(), f);
+            }
+        } else {
+            inner.waiting = waiting.len();
+        }
+        inner.ask = self.move_question(inner);
+    }
+
+    /// While a grace window runs: folders new since `before` (not listed) leave the found set (no row, no strip); one
+    /// that is a held entry's folder goes back as where that entry moved. Returns those moves + the folders waiting.
+    fn grace_pairs(
+        &self,
+        inner: &mut Inner,
+        before: &BTreeMap<String, Found>,
+    ) -> (Vec<(ProjectUid, VaultPath)>, Vec<Found>) {
+        if inner.vanished.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+        let listed: HashSet<String> = inner.inputs.entries.iter().map(|e| e.path.key()).collect();
+        let fresh: Vec<String> = inner
+            .inputs
+            .found
+            .keys()
+            .filter(|k| !before.contains_key(*k) && !listed.contains(*k))
+            .cloned()
+            .collect();
+        let waiting: Vec<Found> = fresh
+            .iter()
+            .filter_map(|k| inner.inputs.found.remove(k))
+            .collect();
+        if waiting.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+        let ids: Vec<Option<FolderId>> = waiting
+            .iter()
+            .map(|f| FolderId::of(&abs_of(self.root.path(), &f.path)))
+            .collect();
+        let firsts: Vec<Option<String>> = inner
+            .vanished
+            .keys()
+            .map(|uid| first_commit_of(inner, uid))
+            .collect();
+        let pairs = {
+            let left: Vec<Left<'_>> = inner
+                .vanished
                 .iter()
-                .filter(|(k, f)| {
-                    inner.inputs.entry_by_key(k).is_none()
-                        && matches!(f.marker, ProjectMarker::Permark | ProjectMarker::Both)
+                .zip(&firsts)
+                .filter_map(|((uid, v), first)| {
+                    Some(Left {
+                        uid,
+                        path: &inner.inputs.entry(uid)?.path,
+                        id: v.id,
+                        first_commit: first.as_deref(),
+                    })
                 })
-                .map(|(_, f)| f)
                 .collect();
-            let by_card: Vec<&&Found> = offered
+            let came: Vec<Came<'_>> = waiting
                 .iter()
-                .filter(|f| {
-                    card::file_of(&self.dirs, &abs_of(self.root.path(), &f.path))
-                        .is_some_and(|file| file.read().id.as_ref() == Some(&entry.uid))
+                .zip(&ids)
+                .map(|(f, id)| Came {
+                    path: &f.path,
+                    id: *id,
+                    root_commit: inner
+                        .root_commits
+                        .get(&f.path.key())
+                        .and_then(Option::as_deref),
                 })
                 .collect();
-            if let [only] = by_card.as_slice() {
-                moves.push((entry.uid.clone(), only.path.clone(), false));
+            grace::pair(&left, &came)
+        };
+        let mut waiting: Vec<Option<Found>> = waiting.into_iter().map(Some).collect();
+        let mut moves = Vec::new();
+        for (uid, i) in pairs {
+            if let Some(f) = waiting.get_mut(i).and_then(Option::take) {
+                moves.push((uid, f.path.clone()));
+                inner.inputs.found.insert(f.path.key(), f);
             }
         }
-        for (uid, path, moved) in moves {
+        (moves, waiting.into_iter().flatten().collect())
+    }
+
+    /// Re-attach moves (the entry follows its folder): record path, profile state, one `moved` row each.
+    fn apply_moves(
+        &self,
+        inner: &mut Inner,
+        moves: Vec<(ProjectUid, VaultPath)>,
+        after: &mut After,
+    ) {
+        for (uid, path) in moves {
             if self.files_only {
                 break;
             }
+            let from = inner.inputs.entry(&uid).map(|e| e.path.clone());
             let (next, effects) =
                 fsm::step(&inner.inputs, &Event::SetPath(uid.clone(), path.clone()));
             if effects.is_empty() {
@@ -1030,25 +1373,25 @@ impl Projects {
                 .collect();
             if self.write_record(&ops, false).is_ok() {
                 inner.inputs = next;
-                let name = Self::name_of(inner, &uid, path.as_str());
-                after.news.push(if moved {
-                    ProjectEvent::Moved {
-                        name,
-                        path: path.as_str().to_owned(),
-                    }
-                } else {
-                    ProjectEvent::Back {
-                        name,
-                        path: path.as_str().to_owned(),
-                    }
+                if let Some(from) = &from {
+                    self.follow_state(from, &path);
+                }
+                after.news.push(ProjectEvent::Moved {
+                    name: Self::name_of(inner, &uid, path.as_str()),
+                    path: path.as_str().to_owned(),
                 });
                 inner.record = read_record(self.root.path());
                 self.presence(inner);
                 after.changed = true;
             }
         }
-        // 4. exactly one missing entry named like exactly one offered project: ask
-        inner.ask = None;
+    }
+
+    /// The one move question now (`projects.md` §4.4 steps 2-4), if any: a missing entry (not refused) + one offered
+    /// project (found, not listed, not refused) that may be it. Strong signs first (card id; first commit + folder
+    /// name): asked one candidate at a time, the next after a No. Weak signs (folder name, or first commit alone):
+    /// only when exactly one entry + exactly one project match.
+    fn move_question(&self, inner: &Inner) -> Option<MoveAsk> {
         let gone: Vec<&RecEntry> = inner
             .inputs
             .entries
@@ -1056,38 +1399,84 @@ impl Projects {
             .filter(|e| inner.inputs.presence.get(&e.uid) == Some(&Presence::Gone))
             .filter(|e| !inner.inputs.refused(&e.path.key()))
             .collect();
+        if gone.is_empty() {
+            return None;
+        }
         let states = inner.inputs.derive();
+        let offered: Vec<&Found> = inner
+            .inputs
+            .found
+            .iter()
+            .filter(|(k, _)| states.get(*k) == Some(&Candidate::Offered))
+            .map(|(_, f)| f)
+            .collect();
+        if offered.is_empty() {
+            return None;
+        }
+        // card ids of the offered projects, read once per pass
+        let ids: HashMap<String, ProjectUid> = offered
+            .iter()
+            .filter(|f| matches!(f.marker, ProjectMarker::Permark | ProjectMarker::Both))
+            .filter_map(|f| {
+                let id = card::file_of(&self.dirs, &abs_of(self.root.path(), &f.path))?
+                    .read()
+                    .id?;
+                Some((f.path.key(), id))
+            })
+            .collect();
+        let open =
+            |uid: &ProjectUid, f: &Found| !inner.rejected.contains(&(uid.clone(), f.path.key()));
+        let named = |path: &str| crate::paths::fold(&folder_name(path));
+        let ask = |entry: &RecEntry, f: &Found| MoveAsk {
+            uid: entry.uid.clone(),
+            name: Self::name_of(inner, &entry.uid, entry.path.as_str()),
+            was: entry.path.as_str().to_owned(),
+            candidate: f.path.as_str().to_owned(),
+        };
+        // 2. card id, 3. first commit + folder name
         for entry in &gone {
-            let name = crate::paths::fold(&folder_name(entry.path.as_str()));
-            let same: Vec<&Found> = inner
-                .inputs
-                .found
+            let name = named(entry.path.as_str());
+            let first = first_commit_of(inner, &entry.uid);
+            let strong = |f: &&&Found| {
+                ids.get(&f.path.key()) == Some(&entry.uid)
+                    || (f.marker.git()
+                        && named(f.path.as_str()) == name
+                        && first.as_deref().is_some_and(|first| {
+                            commit_matches(inner.root_commits.get(&f.path.key()), first)
+                        }))
+            };
+            if let Some(f) = offered.iter().filter(strong).find(|f| open(&entry.uid, f)) {
+                return Some(ask(entry, f));
+            }
+        }
+        // 4. exactly one missing entry like exactly one offered project (same folder name, or renamed while closed:
+        // same first commit)
+        for entry in &gone {
+            let name = named(entry.path.as_str());
+            let first = first_commit_of(inner, &entry.uid);
+            let same: Vec<&&Found> = offered
                 .iter()
-                .filter(|(k, f)| {
-                    states.get(*k) == Some(&Candidate::Offered)
-                        && crate::paths::fold(&folder_name(f.path.as_str())) == name
+                .filter(|f| {
+                    named(f.path.as_str()) == name
+                        || first.as_deref().is_some_and(|first| {
+                            commit_matches(inner.root_commits.get(&f.path.key()), first)
+                        })
                 })
-                .map(|(_, f)| f)
                 .collect();
             let others = gone
                 .iter()
-                .filter(|e| crate::paths::fold(&folder_name(e.path.as_str())) == name)
+                .filter(|e| {
+                    named(e.path.as_str()) == name
+                        || (first.is_some() && first_commit_of(inner, &e.uid) == first)
+                })
                 .count();
             if let ([candidate], 1) = (same.as_slice(), others) {
-                if !inner
-                    .rejected
-                    .contains(&(entry.uid.clone(), candidate.path.key()))
-                {
-                    inner.ask = Some(MoveAsk {
-                        uid: entry.uid.clone(),
-                        name: Self::name_of(inner, &entry.uid, entry.path.as_str()),
-                        was: entry.path.as_str().to_owned(),
-                        candidate: candidate.path.as_str().to_owned(),
-                    });
-                    break;
+                if open(&entry.uid, candidate) {
+                    return Some(ask(entry, candidate));
                 }
             }
         }
+        None
     }
 
     // ---- publishing ------------------------------------------------------------------------------------------------
@@ -1118,6 +1507,12 @@ impl Projects {
                         short: dto.short,
                         agent_off: inner.inputs.agent_off.contains(uid),
                         agent: res.agent.clone(),
+                        first_commit: inner.record.record().and_then(|r| {
+                            r.entries
+                                .iter()
+                                .find(|e| &e.uid == uid)
+                                .and_then(|e| e.first_commit.clone())
+                        }),
                     });
                 }
                 Candidate::Missing { .. } | Candidate::Offered | Candidate::Declined => {
@@ -1150,6 +1545,16 @@ impl Projects {
                 root: self.root.path().display().to_string(),
                 seq,
             }));
+            let listeners: Vec<MapListener> = lock(&self.map_listeners)
+                .iter()
+                .map(|(_, l)| Arc::clone(l))
+                .collect();
+            if !listeners.is_empty() {
+                let map = self.snapshot();
+                for listener in &listeners {
+                    listener(&map);
+                }
+            }
         }
         if !after.news.is_empty() {
             let listeners: Vec<Listener> = lock(&self.listeners)
@@ -1221,6 +1626,11 @@ impl Projects {
             self.write_record(&ops, create)?;
             inner.record = read_record(self.root.path());
         }
+        if let Event::SetPath(uid, to) = event {
+            if let Some(from) = inner.inputs.entry(uid).map(|e| e.path.clone()) {
+                self.follow_state(&from, to);
+            }
+        }
         for op in &ops {
             if let RecordOp::Remove { uid } = op {
                 inner.removed.insert(uid.clone());
@@ -1242,6 +1652,19 @@ impl Projects {
         self.rebuild_map(inner);
         after.changed = true;
         Ok(after)
+    }
+
+    /// A member moved: its profile state folder follows its new `ProjectId` (`projects.md` §9.1; best effort: a
+    /// failure leaves the state under the old id, as before round 3).
+    fn follow_state(&self, from: &VaultPath, to: &VaultPath) {
+        if self.files_only || from.key() == to.key() {
+            return;
+        }
+        let _ = crate::state::move_profile_state(
+            &self.dirs,
+            &abs_of(self.root.path(), from),
+            &abs_of(self.root.path(), to),
+        );
     }
 
     /// The opened folder's own card (read on first use).
@@ -1557,11 +1980,30 @@ impl Projects {
         let path = VaultPath::parse(path)
             .map_err(|_| IpcError::new(ErrorKind::InvalidPath).subject(path.to_owned()))?;
         if same {
-            self.person(&Event::SetPath(uid.clone(), path))?;
+            let mut inner = lock(&self.inner);
+            let was_missing = inner.inputs.presence.get(uid) == Some(&Presence::Gone);
+            let mut after = self.apply_event(
+                &mut inner,
+                &Event::SetPath(uid.clone(), path.clone()),
+                false,
+            )?;
+            if after.changed {
+                inner.undo = None;
+                inner.ask = self.move_question(&inner);
+                if was_missing && inner.inputs.included().contains(uid) {
+                    after.news.push(ProjectEvent::Back {
+                        name: Self::name_of(&inner, uid, path.as_str()),
+                        path: path.as_str().to_owned(),
+                    });
+                }
+            }
+            drop(inner);
+            self.finish(&after);
         } else {
             let mut inner = lock(&self.inner);
             inner.rejected.insert((uid.clone(), path.key()));
-            inner.ask = None;
+            // the next candidate, if any (clones: one at a time)
+            inner.ask = self.move_question(&inner);
             inner.seq += 1;
             self.rebuild_map(&inner);
             drop(inner);
@@ -1843,6 +2285,28 @@ fn ancestor_rules(dirs: &AppDirs, root: &Path) -> Vec<AncestorRules> {
         }
     }
     found
+}
+
+/// The first commit the record keeps for an entry.
+fn first_commit_of(inner: &Inner, uid: &ProjectUid) -> Option<String> {
+    inner
+        .record
+        .record()?
+        .entries
+        .iter()
+        .find(|e| &e.uid == uid)?
+        .first_commit
+        .clone()
+}
+
+/// Whether a learned root commit (full id) is the record's first commit (full or abbreviated, any case).
+fn commit_matches(learned: Option<&Option<String>>, first: &str) -> bool {
+    learned.and_then(Option::as_deref).is_some_and(|full| {
+        first.len() >= 4
+            && full
+                .to_ascii_lowercase()
+                .starts_with(&first.to_ascii_lowercase())
+    })
 }
 
 /// The member set the ignore rules need, from the included members.

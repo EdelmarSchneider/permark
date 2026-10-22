@@ -67,6 +67,15 @@ type MockApi = {
     project: { add(path: string, text: string): void; files: Map<string, string> };
     drops: { fire(event: unknown): void };
     projects: { news(event: unknown): void };
+    plugins: {
+      gitMembers: {
+        unavailable(on: boolean): void;
+        hold(on: boolean): void;
+        shape(
+          fn: ((s: Record<string, unknown>, n: number) => Record<string, unknown>) | null,
+        ): void;
+      };
+    };
   };
 };
 
@@ -272,6 +281,40 @@ export async function seed(page: Page, use: SeedUse, args: Record<string, unknow
               path: typeof args["path"] === "string" ? args["path"] : "",
             };
       await withMock(page, (m, e) => m.mockApi.probe.projects.news(e), event);
+      break;
+    }
+    case "gitRepos": {
+      // the repositories of included projects (`probe.plugins.gitMembers`): `odd` = all dirty (5000), mid-rebase,
+      // detached, long and Unicode branch names; `missing` = no git; `checking` = every answer held; `normal` = back
+      const mode = str(args, "mode");
+      if (!["odd", "missing", "checking", "normal"].includes(mode))
+        throw new Error("seed gitRepos: mode odd | missing | checking | normal expected");
+      await withMock(
+        page,
+        (m, w) => {
+          const git = m.mockApi.probe.plugins.gitMembers;
+          git.unavailable(w === "missing");
+          git.hold(w === "checking");
+          git.shape(
+            w === "odd"
+              ? (s, n) => ({
+                  ...s,
+                  error: null,
+                  changed: 5000,
+                  state: n % 4 === 0 ? "rebasing" : "clean",
+                  detached: n % 4 === 0 || n % 4 === 3,
+                  branch:
+                    n % 4 === 1
+                      ? `feature/${"very-long-branch-name-".repeat(6)}end`
+                      : n % 4 === 2
+                        ? "功能/数据-ünïcödé ✨"
+                        : null,
+                })
+              : null,
+          );
+        },
+        mode,
+      );
       break;
     }
     case "tabShown": {

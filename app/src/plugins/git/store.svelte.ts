@@ -6,6 +6,7 @@ import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/cl
 import type { BadgeTone, TreeBadge } from "../../core/plugins/registry.svelte";
 import { t, tn } from "../../core/i18n";
 import { silence } from "../../core/silence/silence.svelte";
+import { members as windowMembers, type GitMembers } from "./members.svelte";
 
 export type GitState =
   | { status: "off" }
@@ -61,10 +62,17 @@ export class GitStore {
   #seq = 0;
   readonly #client: PluginClient;
   readonly #root: () => string | null;
+  /** The repositories of included projects (`null`: only the opened folder's, as in tests of the root alone). */
+  readonly members: GitMembers | null;
 
-  constructor(client: PluginClient = pluginClient, root: () => string | null = workspaceRoot) {
+  constructor(
+    client: PluginClient = pluginClient,
+    root: () => string | null = workspaceRoot,
+    members: GitMembers | null = null,
+  ) {
     this.#client = client;
     this.#root = root;
+    this.members = members;
   }
 
   get snapshot(): GitSnapshot | null {
@@ -149,8 +157,21 @@ export class GitStore {
     return this.#folders.get(folder) ?? 0;
   }
 
-  /** What the row of a path says: a letter on a file, a dot with the count on a folder. */
+  /** What the row of a path says: a letter on a file, a dot with the count on a folder. A path inside an included
+   *  project with its own repository: that repository says it (its list while a view looks at it). */
   badge(path: string, isDir: boolean): TreeBadge | null {
+    const repo = this.members?.ownerOf(path) ?? null;
+    if (repo !== null && this.members !== null) {
+      if (silence.isSilenced(path) || repo.error?.kind === "unavailable") return null;
+      if (isDir) {
+        const n = this.members.changedBelow(repo, path);
+        return n === 0 ? null : { text: "•", tone: "modified", title: tn("git.folderChanged", n) };
+      }
+      const found = this.members.fileOf(path);
+      if (!found) return null;
+      const { letter, tone } = LETTERS[found.file.letter];
+      return { text: letter, tone, title: this.explain(found.file, found.list.baseline.kind) };
+    }
     if (this.state.status !== "ready" || silence.isSilenced(path)) return null;
     if (isDir) {
       const n = this.#folders.get(path) ?? 0;
@@ -162,9 +183,8 @@ export class GitStore {
     return { text: letter, tone, title: this.explain(file) };
   }
 
-  /** The letter in plain words. */
-  explain(file: GitFile): string {
-    const baseline = this.snapshot?.baseline.kind ?? "head";
+  /** The letter in plain words (`baseline`: of the repository the file is in; else the opened folder's). */
+  explain(file: GitFile, baseline: BaselineKind = this.snapshot?.baseline.kind ?? "head"): string {
     const since = t(baseline === "lastVisit" ? "git.since.visit" : "git.since.commit");
     const text = t(`git.explain.${file.letter}`, { since });
     return file.letter === "renamed" && file.from ? `${text} (${file.from})` : text;
@@ -181,4 +201,4 @@ export class GitStore {
   }
 }
 
-export const git = new GitStore();
+export const git = new GitStore(pluginClient, workspaceRoot, windowMembers);

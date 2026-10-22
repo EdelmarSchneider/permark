@@ -423,7 +423,7 @@ fn record_edits_outside_apply_at_once_and_gone_projects_come_back() {
 }
 
 #[test]
-fn a_moved_project_is_reattached_by_its_card_id_or_asked() {
+fn a_moved_project_is_asked_by_its_card_id_or_its_name() {
     let base = tempfile::tempdir().unwrap();
     let dir = sample_root();
     let root = dir.path();
@@ -446,6 +446,20 @@ fn a_moved_project_is_reattached_by_its_card_id_or_asked() {
     let (env, _sink) = env(base.path());
     let core = ProjectCore::open(Root::open(root).unwrap(), &env);
     let view = ready(&core);
+    // found at open by its card id: asked (D31: clones carry the same card), nothing written before the answer
+    let ask = view.ask.clone().expect("card id question");
+    assert_eq!(
+        (ask.was.as_str(), ask.candidate.as_str()),
+        ("tools/b", "moved/b")
+    );
+    assert_eq!(state(&view, "moved/b"), Some(MemberState::Offered));
+    assert!(fs::read_to_string(root.join(".permark/projects.toml"))
+        .unwrap()
+        .contains("path = \"tools/b\""));
+    core.projects()
+        .answer_move(&ask.uid, &ask.candidate, true)
+        .unwrap();
+    let view = core.projects_view();
     assert_eq!(
         state(&view, "moved/b"),
         Some(MemberState::Included),
@@ -454,7 +468,7 @@ fn a_moved_project_is_reattached_by_its_card_id_or_asked() {
     assert!(fs::read_to_string(root.join(".permark/projects.toml"))
         .unwrap()
         .contains("path = \"moved/b\""));
-    // `old/notes-app` is missing and `x/notes-app` has its name: the person is asked
+    // `old/notes-app` is missing and `x/notes-app` has its name: the person is asked next
     let ask = view.ask.clone().expect("move question");
     assert_eq!(ask.was, "old/notes-app");
     assert_eq!(ask.candidate, "x/notes-app");
@@ -955,11 +969,17 @@ fn a_segment_turned_into_a_junction_later_makes_the_member_gone() {
     let core = ProjectCore::open(Root::open(root).unwrap(), &env);
     let view = ready(&core);
     assert_eq!(state(&view, "hubs/a"), Some(MemberState::Included));
-    fs::rename(root.join("hubs"), root.join("real-hubs")).unwrap();
-    if !junction(&root.join("hubs"), &root.join("real-hubs")) {
+    // the real folder leaves the opened folder (a rename inside it is a move the member follows: same folder on disk);
+    // held for the grace window (the clock stopped), then a junction takes its place before the window ends
+    core.projects().freeze_clock();
+    let real = base.path().join("real-hubs");
+    fs::rename(root.join("hubs"), &real).unwrap();
+    wait("held", || core.projects().vanished_count() == 1);
+    if !junction(&root.join("hubs"), &real) {
         eprintln!("junction could not be made here; skipped");
         return;
     }
+    core.projects().advance(grace::GRACE);
     wait("member gone through the junction", || {
         state(&core.projects_view(), "hubs/a") == Some(MemberState::Missing)
     });

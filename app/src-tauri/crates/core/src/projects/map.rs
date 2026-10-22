@@ -37,6 +37,8 @@ pub struct MemberInfo {
     /// The person switched the agent off for it (profile).
     pub agent_off: bool,
     pub agent: AgentRules,
+    /// The record's identity hint (root commit of its repository), when written.
+    pub first_commit: Option<String>,
 }
 
 /// An ancestor folder whose record lists the opened folder (opened alone, `projects.md` §5.2): its agent rules
@@ -193,6 +195,7 @@ mod tests {
             short: String::new(),
             agent_off: false,
             agent: AgentRules::default(),
+            first_commit: None,
         }
     }
 

@@ -41,6 +41,7 @@ describe("the following plugins", () => {
     expect(await kinds("git")).toEqual([
       "command",
       "docBar",
+      "projectFacts",
       "settingsSection",
       "statusItem",
       "treeBadge",

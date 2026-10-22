@@ -8,12 +8,14 @@
   import Crosshair from "@lucide/svelte/icons/crosshair";
   import FilePlus from "@lucide/svelte/icons/file-plus";
   import FolderPlus from "@lucide/svelte/icons/folder-plus";
+  import GitBranch from "@lucide/svelte/icons/git-branch";
   import ListFilter from "@lucide/svelte/icons/list-filter";
+  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import type { ProjectRow, TreeNode } from "../../api";
   import { conditions } from "../conditions/context.svelte";
   import { t, tn } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
-  import type { ContributionRegistry, TreeBadge } from "../plugins/registry.svelte";
+  import type { ContributionRegistry, ProjectFact, TreeBadge } from "../plugins/registry.svelte";
   import { projects } from "../projects/instance.svelte";
   import { aliasOf, hueOfMember } from "../projects/model";
   import ProjectStrip from "../projects/ProjectStrip.svelte";
@@ -61,6 +63,8 @@
   let handledScroll = 0;
 
   const badges = $derived(registry.visible("treeBadge", conditions.current));
+  /** What plugins know about included projects (git: the branch after the node's name). */
+  const facts = $derived(registry.visible("projectFacts", conditions.current));
   /** The project the detail card is about (gone with the project). */
   const cardRow = $derived(projects.card === null ? null : projects.memberAt(projects.card.path));
 
@@ -163,18 +167,44 @@
     return lines.length === 0 ? undefined : lines.join("\n");
   }
 
-  /** What a screen reader hears for a project node: folder name, "project" (+ its short name when that differs),
-   *  what plugins say (changed files, unread). */
-  function projectName(node: TreeNode, member: ProjectRow, said: readonly TreeBadge[]): string {
-    const alias = aliasOf(member);
-    const folder = nameOf(node.path);
+  /** The first fact a plugin gives for a project node (its branch | what its repository is doing). */
+  function factOf(member: ProjectRow): ProjectFact | null {
+    for (const contribution of facts) {
+      const fact = contribution.node(member);
+      if (fact !== null) return fact;
+    }
+    return null;
+  }
+
+  /** What a screen reader hears for a project node: the words it shows first (folder name, short name when that
+   *  differs, branch | state; WCAG 2.5.3), "project", what the fact adds ("branch develop", a problem), what plugins
+   *  say (changed files, unread). */
+  function projectName(
+    node: TreeNode,
+    member: ProjectRow,
+    fact: ProjectFact | null,
+    said: readonly TreeBadge[],
+  ): string {
+    const shown = [nameOf(node.path), aliasOf(member) ?? "", fact?.text ?? ""]
+      .filter((words) => words !== "")
+      .join(" ");
     return [
-      alias === null
-        ? t("projects.node.sr", { folder })
-        : t("projects.node.srNamed", { folder, short: alias }),
+      t("projects.node.sr", { folder: shown }),
+      ...(fact?.spoken === undefined ? [] : [fact.spoken]),
       ...said.flatMap((b) => (b.title === undefined || b.text === "" ? [] : [b.title])),
     ].join(", ");
   }
+
+  // the project nodes open on screen: plugins fetch their facts for these (git: the changed files inside)
+  $effect(() => {
+    const open = slice.flatMap((row) =>
+      row.type === "node" && row.expanded && row.node.kind.type === "dir"
+        ? (projects.memberAt(row.node.path)?.uid ?? [])
+        : [],
+    );
+    projects.look("explorer", "glance", open);
+  });
+  $effect(() => () => projects.look("explorer", "glance", []));
 
   // ---- the detail card of a project node ---------------------------------------------------------------------------
 
@@ -725,6 +755,7 @@
                 : projectIcon(member.marker)}
             {@const selected = store.selection.has(node.path)}
             {@const said = badgesOf(node)}
+            {@const fact = member === null ? null : factOf(member)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
               class={[
@@ -743,7 +774,7 @@
               aria-selected={selected}
               aria-level={row.depth + 1}
               aria-expanded={isDir ? row.expanded : undefined}
-              aria-label={member === null ? undefined : projectName(node, member, said)}
+              aria-label={member === null ? undefined : projectName(node, member, fact, said)}
               data-path={node.path}
               data-project={member === null ? undefined : ""}
               style:top="{top}px"
@@ -795,13 +826,36 @@
               {:else}
                 {@const alias = member === null ? null : aliasOf(member)}
                 {#if alias === null}
-                  <span class="name">{nameOf(node.path)}</span>
+                  <span class={["name", fact !== null && "with-fact"]}>{nameOf(node.path)}</span>
                 {:else}
                   <!-- the folder name first (what paths say); the project's short name after it, muted, cut first -->
-                  <span class="name named"
+                  <span class={["name named", fact !== null && "with-fact"]}
                     ><span class="folder">{nameOf(node.path)}</span><span class="alias"
                       >{alias}</span
                     ></span
+                  >
+                {/if}
+                {#if fact !== null}
+                  <!-- the branch | what the repository is doing: muted, cut before the name, gone in a narrow sidebar;
+                       a state chip is never cut (the name gives way); a problem: a warning mark first; a branch: a
+                       branch mark first (reads apart from the short name) -->
+                  <span
+                    class={[
+                      "fact",
+                      fact.chip && "chip",
+                      fact.warn && "warn",
+                      fact.branch && "marked",
+                    ]}
+                    title={fact.title ?? fact.text}
+                    aria-hidden="true"
+                    >{#if fact.warn}<TriangleAlert
+                        size={12}
+                        aria-hidden="true"
+                      />{:else if fact.branch}<GitBranch
+                        size={11}
+                        aria-hidden="true"
+                      />{/if}{#if fact.text !== ""}<span class="fact-text">{fact.text}</span
+                      >{/if}</span
                   >
                 {/if}
                 {#if node.kind.type === "dir" && node.kind.unlisted?.type === "large"}
@@ -821,7 +875,12 @@
       </div>
     </div>
     {#if projects.strip.kind !== "none"}
-      <ProjectStrip />
+      <ProjectStrip
+        focusNode={(path) => {
+          store.reveal(path);
+          list?.focus();
+        }}
+      />
     {:else if store.codeOffer.status === "offered" && !projects.askedThisOpen}
       <div class="code-offer" role="region" aria-label={t("explorer.code.label")}>
         <span>{tn("explorer.code.offer", store.codeOffer.hidden)}</span>
@@ -881,6 +940,7 @@
 <style>
   .explorer {
     position: relative;
+    container: explorer / inline-size;
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -1020,6 +1080,61 @@
     color: var(--muted);
     font-size: var(--fs-ui-sm);
     text-overflow: ellipsis;
+  }
+  /* a project node with a fact: the name keeps its width, the fact gives way first */
+  .name.with-fact {
+    flex: 1 1 auto;
+  }
+  .fact {
+    flex: 0 100000 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: var(--fs-ui-sm);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* a state: the status bar's chip tint, text in the text color (AA on every row tint); never cut, the name gives way */
+  .fact.chip {
+    flex: none;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--git-modified) 18%, transparent);
+    color: var(--text);
+    font-size: var(--fs-ui-xs);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  /* on the selection's tint, muted text is drawn a little darker (AA contrast) */
+  .row.is-selected .fact:not(.chip) {
+    color: color-mix(in srgb, var(--muted) 60%, var(--text));
+  }
+  .fact-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* git can't read the project: a warning mark, kept when the branch is cut; a branch: its mark, as the status bar's */
+  .fact.warn,
+  .fact.marked {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .fact.marked :global(svg) {
+    flex: none;
+  }
+  .fact.warn :global(svg) {
+    flex: none;
+    color: var(--git-modified-text);
+  }
+  @container explorer (max-width: 239px) {
+    .fact:not(.warn) {
+      display: none;
+    }
+    .fact.warn .fact-text {
+      display: none;
+    }
   }
   .tag {
     flex: none;

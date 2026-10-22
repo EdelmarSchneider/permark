@@ -30,8 +30,10 @@
     /** "Remove from list" (missing rows): the page removes and moves the focus. */
     remove: () => Promise<void>;
     rootName: string;
+    /** The page follows which included rows are in view (plugins fetch their facts for those); returns the stop. */
+    watch?: (el: HTMLElement, uid: string) => () => void;
   };
-  let { row, depth, mode, expanded, toggle, include, remove, rootName }: Props = $props();
+  let { row, depth, mode, expanded, toggle, include, remove, rootName, watch }: Props = $props();
 
   const id = $derived(`prow-${row.key.replace(/[^a-z0-9]/gi, "_")}`);
   const agentOn = $derived(conditions.current.agent.status !== "off");
@@ -42,13 +44,29 @@
   const checked = $derived(
     mode === "choose" ? (projects.choosing?.has(row.path) ?? false) : included,
   );
-  /** What plugins say about the folder (unread count, changed files), included projects only. */
+  /** What plugins know about included projects (git: branch · changed files). */
+  const facts = $derived(
+    included && mode === "normal" ? contributions.visible("projectFacts", conditions.current) : [],
+  );
+  const status = $derived(facts.flatMap((f) => f.row(row) ?? []));
+  const infos = $derived(expanded ? facts.flatMap((f) => f.info(row) ?? []) : []);
+  /** What plugins say about the folder (unread count), included projects only; a plugin with its own status says its
+   *  part there. */
   const said = $derived.by((): TreeBadge[] => {
     if (!included || mode === "choose") return [];
+    const own = new Set(facts.map((f) => f.owner));
     return contributions.visible("treeBadge", conditions.current).flatMap((b) => {
+      if (own.has(b.owner)) return [];
       const badge = b.badge(row.path, true);
       return badge === null || badge.text === "" ? [] : [badge];
     });
+  });
+
+  let box: HTMLElement | undefined = $state();
+  $effect(() => {
+    const uid = row.uid;
+    if (!box || !watch || uid === null || !included || mode !== "normal") return;
+    return watch(box, uid);
   });
 
   let refusal = $state<string | null>(null);
@@ -82,7 +100,13 @@
   }
 </script>
 
-<div class="prow" class:is-open={expanded} style:--depth={depth} data-project={row.path}>
+<div
+  class="prow"
+  class:is-open={expanded}
+  style:--depth={depth}
+  data-project={row.path}
+  bind:this={box}
+>
   <div class="head">
     {#if missing}
       <span class="box-space" aria-hidden="true"></span>
@@ -109,6 +133,12 @@
       </span>
     </div>
     <div class="status">
+      {#each status as fact, n (n)}
+        <span class={["fact", fact.chip && "chip"]} title={fact.title ?? fact.text}
+          >{fact.text}{#if fact.spoken !== undefined}<span class="sr-only">, {fact.spoken}</span
+            >{/if}</span
+        >
+      {/each}
       {#each said as badge, n (n)}
         <Badge {badge} />
       {/each}
@@ -214,6 +244,12 @@
           </div>
         </div>
       {/if}
+      {#each infos as info, n (n)}
+        <div class="rule">
+          <span class="rule-name">{info.label}</span>
+          <div class="rule-control"><span class="info">{info.text}</span></div>
+        </div>
+      {/each}
       <div class="rule card-rule">
         <span class="rule-name">{t("projects.card.title")}</span>
         <div class="rule-control">
@@ -291,6 +327,17 @@
   }
   .status:empty {
     display: none;
+  }
+  .fact {
+    max-width: 40ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .info {
+    padding-top: 4px;
+    font-size: var(--fs-ui-sm);
+    overflow-wrap: anywhere;
   }
   .actions {
     display: flex;

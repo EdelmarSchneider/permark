@@ -18,7 +18,7 @@ pub struct Linked {
     pub folder: PathBuf,
 }
 
-fn read_line(path: &Path) -> Option<String> {
+pub(crate) fn read_line(path: &Path) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
     let line = text.lines().next()?.trim();
     (!line.is_empty()).then(|| line.to_owned())
@@ -45,7 +45,7 @@ fn git_entry(dir: &Path) -> Option<(PathBuf, bool)> {
 }
 
 /// Where the objects and refs live: the git folder itself, or the one named by `commondir` (linked worktree).
-fn common_dir(git_dir: &Path) -> PathBuf {
+pub(crate) fn common_dir(git_dir: &Path) -> PathBuf {
     let found = match read_line(&git_dir.join("commondir")) {
         Some(relative) => {
             let relative = PathBuf::from(relative);

@@ -32,6 +32,34 @@ pub(super) fn move_replace_write_through(from: &Path, to: &Path) -> io::Result<(
     }
 }
 
+/// `(volume serial, file index)` of `path`; a link | junction is opened itself (`OPEN_REPARSE_POINT`). The handle
+/// (no access asked, every share mode) lives for this call only: never in the way of a rename.
+// Documented FFI: GetFileInformationByHandle has no stable std wrapper (`MetadataExt::file_index` is unstable). The
+// handle is owned by `file`, alive for the whole call; `info` is a plain out struct written by the call.
+#[allow(unsafe_code)]
+pub(super) fn file_identity(path: &Path) -> io::Result<(u64, u64)> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_FLAG_BACKUP_SEMANTICS,
+        FILE_FLAG_OPEN_REPARSE_POINT,
+    };
+    let file = std::fs::OpenOptions::new()
+        .access_mode(0)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(extended(path))?;
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: `file` keeps the handle open for the call; `info` is a live, writable struct of the expected type.
+    let ok = unsafe { GetFileInformationByHandle(file.as_raw_handle(), &raw mut info) };
+    if ok == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok((
+        u64::from(info.dwVolumeSerialNumber),
+        (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+    ))
+}
+
 fn wide(path: &Path) -> io::Result<Vec<u16>> {
     let mut units: Vec<u16> = path.as_os_str().encode_wide().collect();
     if units.contains(&0) {

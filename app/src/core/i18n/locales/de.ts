@@ -788,6 +788,15 @@ export default {
   "git.state.reverting": "REVERTING",
   "git.state.bisecting": "BISECTING",
   "git.state.busy": "GIT BESCHÄFTIGT",
+  "git.stateHint.merging": "In Git wurde ein Merge begonnen, der noch nicht abgeschlossen ist.",
+  "git.stateHint.rebasing": "In Git wurde ein Rebase begonnen, der noch nicht abgeschlossen ist.",
+  "git.stateHint.cherryPicking":
+    "In Git wurde ein Cherry-Pick begonnen, der noch nicht abgeschlossen ist.",
+  "git.stateHint.reverting": "In Git wurde ein Revert begonnen, der noch nicht abgeschlossen ist.",
+  "git.stateHint.bisecting":
+    "In Git wurde eine Suche nach dem Commit begonnen, der ein Problem verursacht hat (Bisect), und sie ist noch nicht abgeschlossen.",
+  "git.stateHint.busy":
+    "Git ist mitten in einer anderen Aufgabe, die noch nicht abgeschlossen ist.",
   "git.unavailableHint":
     "Das gewählte Git ist nicht verfügbar. Wähle in den Einstellungen ein anderes.",
   "git.errorOwnership": "Git vertraut dem Besitzer dieses Ordners nicht.",
@@ -1916,8 +1925,8 @@ export default {
   "projects.strip.include": "Aufnehmen",
   "projects.strip.choose": "Auswählen…",
   "projects.strip.decline": "Nein danke",
-  "projects.strip.isMoved": "Ist das {name}, früher unter {path}?",
-  "projects.strip.yesMoved": "Ja, verschoben",
+  "projects.strip.isMoved": "Ist {folder} das Projekt {name}, das unter {path} war?",
+  "projects.strip.yesMoved": "Ja, dasselbe Projekt",
   "projects.strip.noNew": "Nein, neu",
   "projects.included.one":
     "1 Projekt aufgenommen. Jederzeit änderbar unter Einstellungen > Projekte darin.",
@@ -1925,7 +1934,7 @@ export default {
     "{n} Projekte aufgenommen. Jederzeit änderbar unter Einstellungen > Projekte darin.",
   "projects.undoKept": "Der Ordner .permark bleibt: er wurde verändert.",
   "projects.settings.intro":
-    "Projekte sind Ordner in {root} mit eigener Git-Historie oder eigenen PerMark-Einstellungen. Aufgenommene Projekte werden von hier aus verfolgt: ihre Änderungen und ungelesenen Dokumente erscheinen in diesem Ordner.",
+    "Projekte sind Ordner in {root} mit eigener Git-Historie oder eigenen PerMark-Einstellungen. Aufgenommene Projekte werden von hier aus verfolgt: ihre Änderungen, ungelesenen Dokumente und Branches erscheinen in diesem Ordner.",
   "projects.settings.filter": "Projekte filtern",
   "projects.settings.includeShown": "Die aufgeführten Projekte aufnehmen",
   "projects.settings.leaveOutShown": "Die aufgeführten Projekte herausnehmen",
@@ -2023,9 +2032,9 @@ export default {
   "search.scope.thisProject": "Dieses Projekt ({short})",
   "search.scope.notInProject": "Das offene Dokument liegt in keinem Projekt.",
   "projects.strip.why.one":
-    "Aufnehmen, um seine Änderungen und ungelesenen Dokumente von hier aus zu verfolgen.",
+    "Aufnehmen, um seine Änderungen, ungelesenen Dokumente und seinen Branch von hier aus zu verfolgen.",
   "projects.strip.why.other":
-    "Aufnehmen, um ihre Änderungen und ungelesenen Dokumente von hier aus zu verfolgen.",
+    "Aufnehmen, um ihre Änderungen, ungelesenen Dokumente und Branches von hier aus zu verfolgen.",
   "projects.strip.newOne": "Neues Projekt: {path}.",
   "projects.strip.newFew": "Neue Projekte: {paths}.",
   "projects.strip.newIn": "{n} neue Projekte in {folder}.",
@@ -2041,7 +2050,32 @@ export default {
   "projects.announce.included": "{name} verschoben nach Aufgenommen.",
   "projects.announce.leftOut": "{name} verschoben nach Nicht aufgenommen.",
   "projects.announce.kept": "{name} ist wieder in der Liste.",
-  "projects.node.srNamed": "{folder}, Projekt {short}",
   "search.scope.noDocument":
     "Öffne ein Dokument in einem Projekt, um nur dieses Projekt zu durchsuchen.",
+  "projects.git.checking": "Git wird geprüft…",
+  "projects.git.unavailable": "Git ist nicht verfügbar",
+  "projects.row.changed": "{n} geändert",
+  "projects.row.clean": "keine Änderungen",
+  "projects.rules.git": "Git",
+  "projects.rules.gitRepo": "Eigenes Repository, Branch {branch}.",
+  "projects.rules.noGit": "Kein Git-Repository.",
+  "projects.node.srBranch": "Branch {branch}",
+  "projects.node.detached": "auf keinem Branch (bei {oid})",
+  "projects.card.toGet.other": "{n} zum Holen",
+  "projects.card.toGet.one": "1 zum Holen",
+  "projects.card.toSend.other": "{n} Änderungen zum Senden",
+  "projects.card.toSend.one": "1 Änderung zum Senden",
+  "projects.rules.gitDetached": "Eigenes Repository, auf keinem Branch (bei {oid}).",
+  "projects.strip.movedNew": "{folder} ist ein neues Projekt.",
+  "projects.strip.movedSame": "{name} ist wieder da, unter {folder}.",
+  "projects.card.branch": "Branch {branch}",
+  "projects.card.aheadBehind": "↑{a} ↓{b}",
+  "projects.card.changed.one": "1 geänderte Datei",
+  "projects.card.changed.other": "{n} geänderte Dateien",
+  "projects.card.lastCommit": "Letzter Commit {age}: „{subject}“",
+  "projects.card.gitMissing":
+    "Git ist nicht verfügbar, daher werden Branch und Änderungen nicht angezeigt.",
+  "projects.card.gitError": "Git kann dieses Projekt nicht lesen.",
+  "projects.card.noCommits": "Noch keine Commits",
+  "projects.status.prefix": "{short} ·",
 } satisfies Messages;

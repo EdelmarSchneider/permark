@@ -548,7 +548,8 @@ describe("UX review round 2: focus, words, places", () => {
     await until(() => hub?.querySelector(".alias") !== null, "alias shown");
     expect(hub?.querySelector(".folder")?.textContent).toBe("hub-b");
     expect(hub?.querySelector(".alias")?.textContent).toBe("PerMark");
-    expect(hub?.getAttribute("aria-label")).toBe("hub-b, project PerMark");
+    // the name starts with the words on screen (WCAG 2.5.3)
+    expect(hub?.getAttribute("aria-label")).toBe("hub-b PerMark, project");
   });
 
   it("one project: singular words, Include | No thanks, no Choose (F15)", async () => {
@@ -556,7 +557,7 @@ describe("UX review round 2: focus, words, places", () => {
     await explorer();
     const region = strip()!;
     expect(region.textContent).toContain(
-      "This folder holds 1 project: template-app. Include it to follow its changes and unread documents from here.",
+      "This folder holds 1 project: template-app. Include it to follow its changes, unread documents and branch from here.",
     );
     expect(["Include", "Choose…", "No thanks"].map((t) => button(t, region) !== undefined)).toEqual(
       [true, false, true],

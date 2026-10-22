@@ -1,25 +1,34 @@
 <script lang="ts">
   // The quiet question under the Explorer list (the code offer's place) about projects in this folder: the first
   // question, new projects (where they are), "is this the missing one?", or that the project list can't be read.
-  // Never a dialog, never announced; after an answer the focus goes back to the list.
+  // Never a dialog, never announced; after an answer the focus goes back to the list (the move question: to the node
+  // of the folder it was about).
   import { tick } from "svelte";
   import { language, t, tn } from "../i18n";
   import { projects } from "./instance.svelte";
   import { joinNames, newWhere, recordPlace } from "./model";
 
+  type Props = {
+    /** Shows and focuses the node of a folder in the list (the move question's folder after the answer). */
+    focusNode?: (path: string) => void;
+  };
+  let { focusNode }: Props = $props();
+
   const strip = $derived(projects.strip);
   let busy = $state(false);
 
-  async function answer(run: () => Promise<void> | void): Promise<void> {
+  async function answer(run: () => Promise<unknown>): Promise<void> {
     if (busy) return;
     busy = true;
+    let done: unknown;
     try {
-      await run();
+      done = await run();
     } finally {
       busy = false;
     }
     await tick();
-    document.querySelector<HTMLElement>('[role="tree"]')?.focus();
+    if (typeof done === "string" && focusNode) focusNode(done);
+    else document.querySelector<HTMLElement>('[role="tree"]')?.focus();
   }
 
   function found(count: number, names: readonly string[]): string {
@@ -58,7 +67,13 @@
         >
       </div>
     {:else if strip.kind === "move"}
-      <p>{t("projects.strip.isMoved", { name: strip.ask.name, path: strip.ask.was })}</p>
+      <p>
+        {t("projects.strip.isMoved", {
+          folder: strip.ask.candidate,
+          name: strip.ask.name,
+          path: strip.ask.was,
+        })}
+      </p>
       <div class="buttons">
         <button
           type="button"

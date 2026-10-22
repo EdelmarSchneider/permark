@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::{Arc, OnceLock, PoisonError, RwLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -129,6 +129,76 @@ impl Pending {
 struct Shared {
     snapshot: RwLock<Option<Arc<GitSnapshot>>>,
     repo: RwLock<Option<Repo>>,
+    /// Path keys of included projects with their own repository: the root status never lists their files
+    /// (`projects.md` §8).
+    excluded: RwLock<Vec<String>>,
+    /// The baseline in use (members measure against the same kind).
+    baseline: RwLock<Option<BaselineKind>>,
+}
+
+/// The backend of a project, chosen once (the installed git answers `--version`, or the built-in one) and shared by
+/// the root worker and the member pool: one `git --version` per plugin start.
+pub struct BackendCell {
+    choice: BackendChoice,
+    chosen: OnceLock<Option<Arc<dyn GitOps>>>,
+}
+
+impl BackendCell {
+    #[must_use]
+    pub fn new(choice: BackendChoice) -> Self {
+        Self {
+            choice,
+            chosen: OnceLock::new(),
+        }
+    }
+
+    /// A cell whose choice is made already (tests: `None` = no git).
+    #[cfg(test)]
+    pub(crate) fn decided(backend: Option<Arc<dyn GitOps>>) -> Self {
+        Self {
+            choice: BackendChoice::Pref(GitBackendPref::Builtin),
+            chosen: OnceLock::from(backend),
+        }
+    }
+
+    /// The backend (chosen at the first call; `None`: no git to ask).
+    #[must_use]
+    pub fn get(&self) -> Option<Arc<dyn GitOps>> {
+        self.chosen
+            .get_or_init(|| {
+                let system = || SystemGit::find().map(|s| Arc::new(s) as Arc<dyn GitOps>);
+                let builtin = || Arc::new(BuiltinGit) as Arc<dyn GitOps>;
+                match &self.choice {
+                    BackendChoice::Fixed(backend) => Some(Arc::clone(backend)),
+                    BackendChoice::Pref(GitBackendPref::Builtin) => Some(builtin()),
+                    BackendChoice::Pref(GitBackendPref::System) => system(),
+                    BackendChoice::Pref(GitBackendPref::Automatic) => {
+                        Some(system().unwrap_or_else(builtin))
+                    }
+                }
+            })
+            .clone()
+    }
+
+    /// Whether the choice was made and found no git (without choosing).
+    #[must_use]
+    pub fn unavailable(&self) -> bool {
+        matches!(self.chosen.get(), Some(None))
+    }
+}
+
+/// Whether the file `path` (project path) is at | below one of `excluded` (path keys).
+pub(crate) fn excluded_path(excluded: &[String], path: &str) -> bool {
+    if excluded.is_empty() || path.starts_with(WORKTREE_PREFIX) {
+        return false;
+    }
+    let key = permark_core::paths::key_of(path.trim_end_matches('/'));
+    excluded.iter().any(|e| {
+        key == *e
+            || key
+                .strip_prefix(e.as_str())
+                .is_some_and(|r| r.starts_with('/'))
+    })
 }
 
 /// A backend with the working trees it answers for.
@@ -140,7 +210,7 @@ struct Repo {
 
 /// What "since your last visit" is measured from, fixed at the first look of a session.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Session {
+pub(crate) enum Session {
     Unset,
     /// The commit stored at the last close (if the repository still has it), else HEAD at the first look.
     Commit(String),
@@ -163,10 +233,77 @@ pub struct ServiceArgs {
     pub announce: Announce,
     pub prefs: Option<StateFile<Prefs>>,
     pub visit: Option<StateFile<Visit>>,
+    /// Path keys of included projects with their own repository known at start: left out of the very first status
+    /// (`projects.md` §8; later changes: [`GitService::set_excluded`]).
+    pub excluded: Vec<String>,
+}
+
+/// "Since the last visit" of one repository: the commit stored at the last close, the session's start, HEAD now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Visiting {
+    pub stored: Option<String>,
+    pub session: Session,
+    pub last_head: Option<String>,
+}
+
+impl Visiting {
+    pub(crate) fn new(stored: Option<String>) -> Self {
+        Self {
+            stored,
+            session: Session::Unset,
+            last_head: None,
+        }
+    }
+}
+
+/// Status of `location` against `kind`, fixing the session's start at the first look (the stored visit when the
+/// repository still has it, else HEAD now). Returns the status + the commit compared with (`None`: HEAD).
+pub(crate) fn measured_status(
+    backend: &dyn GitOps,
+    location: &RepoLocation,
+    kind: BaselineKind,
+    visiting: &mut Visiting,
+) -> Result<(crate::ops::RawStatus, Option<String>), GitError> {
+    let measured_against = match (&visiting.session, kind) {
+        (Session::Commit(oid), BaselineKind::LastVisit)
+            if visiting.last_head.as_deref() != Some(oid.as_str()) =>
+        {
+            Some(oid.clone())
+        }
+        _ => None,
+    };
+    let mut compared = measured_against.clone();
+    let mut status = backend.status(
+        location,
+        &measured_against.map_or(Baseline::Head, Baseline::Commit),
+    )?;
+    if visiting.session == Session::Unset {
+        // first look: the stored visit if the repository still has it, else where HEAD is now
+        let start = visiting
+            .stored
+            .clone()
+            .filter(|oid| backend.commit_exists(location, oid))
+            .or_else(|| status.head.oid.clone());
+        visiting.session = start.clone().map_or(Session::Empty, Session::Commit);
+        if let Some(oid) = start {
+            if kind == BaselineKind::LastVisit && status.head.oid.as_deref() != Some(oid.as_str()) {
+                status = backend.status(location, &Baseline::Commit(oid.clone()))?;
+                compared = Some(oid);
+            }
+        }
+    }
+    visiting.last_head.clone_from(&status.head.oid);
+    Ok((status, compared))
+}
+
+/// The next number of an announced snapshot (one counter for every snapshot of the process, root and members).
+pub(crate) fn next_seq() -> u64 {
+    SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1
 }
 
 pub struct GitService {
     shared: Arc<Shared>,
+    backends: Arc<BackendCell>,
     tx: Sender<Msg>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
@@ -182,6 +319,16 @@ impl GitService {
     #[must_use]
     pub fn start(args: ServiceArgs) -> Self {
         let shared = Arc::new(Shared::default());
+        {
+            let mut keys = args.excluded.clone();
+            keys.sort();
+            keys.dedup();
+            *shared
+                .excluded
+                .write()
+                .unwrap_or_else(PoisonError::into_inner) = keys;
+        }
+        let backends = Arc::new(BackendCell::new(args.choice.clone()));
         let stop = Arc::new(AtomicBool::new(false));
         let (tx, rx) = mpsc::channel();
         let prefs = args
@@ -193,14 +340,17 @@ impl GitService {
             .visit
             .as_ref()
             .and_then(|file| file.load().into_value().head);
+        *shared
+            .baseline
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = Some(prefs.baseline);
         let worker = Worker {
             args,
             shared: Arc::clone(&shared),
+            backends: Arc::clone(&backends),
             stop: Arc::clone(&stop),
             baseline: prefs.baseline,
-            stored_visit,
-            session: Session::Unset,
-            last_head: None,
+            visiting: Visiting::new(stored_visit),
             looked: false,
             backend: None,
             main: None,
@@ -213,10 +363,46 @@ impl GitService {
             .ok();
         Self {
             shared,
+            backends,
             tx,
             stop,
             thread,
         }
+    }
+
+    /// The backend cell the member pool shares.
+    #[must_use]
+    pub fn backends(&self) -> Arc<BackendCell> {
+        Arc::clone(&self.backends)
+    }
+
+    /// The baseline in use now.
+    #[must_use]
+    pub fn baseline(&self) -> BaselineKind {
+        self.shared
+            .baseline
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .unwrap_or(BaselineKind::LastVisit)
+    }
+
+    /// Included projects with their own repository (path keys): their files leave the root status; a change of the
+    /// set looks at the root again.
+    pub fn set_excluded(&self, mut keys: Vec<String>) {
+        keys.sort();
+        keys.dedup();
+        {
+            let mut excluded = self
+                .shared
+                .excluded
+                .write()
+                .unwrap_or_else(PoisonError::into_inner);
+            if *excluded == keys {
+                return;
+            }
+            *excluded = keys;
+        }
+        self.trigger(Why::Focus);
     }
 
     /// The latest announced snapshot.
@@ -244,6 +430,12 @@ impl GitService {
 
     /// Changes what the letters are measured against (remembered).
     pub fn set_baseline(&self, kind: BaselineKind) {
+        // members read it at their next look: known at once
+        *self
+            .shared
+            .baseline
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = Some(kind);
         let _ = self.tx.send(Msg::Baseline(kind));
     }
 
@@ -316,11 +508,10 @@ static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 struct Worker {
     args: ServiceArgs,
     shared: Arc<Shared>,
+    backends: Arc<BackendCell>,
     stop: Arc<AtomicBool>,
     baseline: BaselineKind,
-    stored_visit: Option<String>,
-    session: Session,
-    last_head: Option<String>,
+    visiting: Visiting,
     /// A discovery has run (a folder found without a repository is not looked at again for plain file changes).
     looked: bool,
     backend: Option<Arc<dyn GitOps>>,
@@ -395,6 +586,11 @@ impl Worker {
             return;
         }
         self.baseline = kind;
+        *self
+            .shared
+            .baseline
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = Some(kind);
         if let Some(file) = &self.args.prefs {
             let _ = file.save(&Prefs { baseline: kind });
         }
@@ -402,23 +598,10 @@ impl Worker {
 
     /// The project closes: where HEAD is now is where the next visit starts.
     fn finish(&self) {
-        if let (Some(file), Some(head)) = (&self.args.visit, &self.last_head) {
+        if let (Some(file), Some(head)) = (&self.args.visit, &self.visiting.last_head) {
             let _ = file.save(&Visit {
                 head: Some(head.clone()),
             });
-        }
-    }
-
-    fn choose_backend(&self) -> Option<Arc<dyn GitOps>> {
-        let system = || SystemGit::find().map(|s| Arc::new(s) as Arc<dyn GitOps>);
-        let builtin = || Arc::new(BuiltinGit) as Arc<dyn GitOps>;
-        match &self.args.choice {
-            BackendChoice::Fixed(backend) => Some(Arc::clone(backend)),
-            BackendChoice::Pref(GitBackendPref::Builtin) => Some(builtin()),
-            BackendChoice::Pref(GitBackendPref::System) => system(),
-            BackendChoice::Pref(GitBackendPref::Automatic) => {
-                Some(system().unwrap_or_else(builtin))
-            }
         }
     }
 
@@ -441,7 +624,7 @@ impl Worker {
 
     fn refresh(&mut self, why: Why) {
         if self.backend.is_none() {
-            self.backend = self.choose_backend();
+            self.backend = self.backends.get();
         }
         let Some(backend) = self.backend.clone() else {
             self.args.facts.set_git(GitCondition::Unavailable);
@@ -504,39 +687,20 @@ impl Worker {
         backend: &Arc<dyn GitOps>,
         main: &RepoLocation,
     ) -> Result<GitSnapshot, GitError> {
-        let measured_against = match (&self.session, self.baseline) {
-            (Session::Commit(oid), BaselineKind::LastVisit)
-                if self.last_head.as_deref() != Some(oid.as_str()) =>
-            {
-                Some(oid.clone())
-            }
-            _ => None,
-        };
-        let mut compared = measured_against.clone();
-        let mut status = backend.status(
-            main,
-            &measured_against.map_or(Baseline::Head, Baseline::Commit),
-        )?;
-        if self.session == Session::Unset {
-            // first look: the stored visit if the repository still has it, else where HEAD is now
-            let start = self
-                .stored_visit
-                .clone()
-                .filter(|oid| backend.commit_exists(main, oid))
-                .or_else(|| status.head.oid.clone());
-            self.session = start.clone().map_or(Session::Empty, Session::Commit);
-            if let Some(oid) = start {
-                if self.baseline == BaselineKind::LastVisit
-                    && status.head.oid.as_deref() != Some(oid.as_str())
-                {
-                    status = backend.status(main, &Baseline::Commit(oid.clone()))?;
-                    compared = Some(oid);
-                }
-            }
-        }
-        self.last_head.clone_from(&status.head.oid);
-
-        let mut files: Vec<RawFile> = status.files;
+        let (status, compared) =
+            measured_status(backend.as_ref(), main, self.baseline, &mut self.visiting)?;
+        let excluded = self
+            .shared
+            .excluded
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        // included projects with their own repository: that repository owns their files
+        let mut files: Vec<RawFile> = status
+            .files
+            .into_iter()
+            .filter(|file| !excluded_path(&excluded, &file.path))
+            .collect();
         let mut truncated = status.truncated;
         let mut infos = Vec::new();
         for (name, location) in &self.worktree_locations {
@@ -595,7 +759,7 @@ impl Worker {
             if current.as_deref().is_some_and(|c| c.same_content(&next)) {
                 return;
             }
-            next.seq = SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1;
+            next.seq = next_seq();
             let arc = Arc::new(next);
             *current = Some(Arc::clone(&arc));
             drop(current);
@@ -611,7 +775,7 @@ impl Worker {
                 .repo
                 .write()
                 .unwrap_or_else(PoisonError::into_inner) = None;
-            self.last_head = None;
+            self.visiting.last_head = None;
             (self.args.announce)(None);
         }
     }

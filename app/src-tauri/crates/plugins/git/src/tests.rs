@@ -654,6 +654,7 @@ fn start_with(
         },
         prefs,
         visit,
+        excluded: Vec::new(),
     });
     Running {
         service,
@@ -804,6 +805,7 @@ fn a_missing_backend_is_unavailable_and_dropping_the_service_stops_it() {
         announce: Arc::new(|_| {}),
         prefs: None,
         visit: None,
+        excluded: Vec::new(),
     });
     if SystemGit::find().is_none() {
         wait_until("the verdict", || facts.git() == GitCondition::Unavailable);

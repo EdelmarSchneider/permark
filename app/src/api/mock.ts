@@ -230,6 +230,8 @@ export function createMockApi(): Api & {
   };
   const pluginListeners: { [E in PluginEventName]: Set<(payload: PluginEnvelope<E>) => void> } = {
     "git:snapshot": new Set(),
+    "git:repos": new Set(),
+    "git:projectSnapshot": new Set(),
     "live-feed:items": new Set(),
     "live-feed:activity": new Set(),
     "unread:changed": new Set(),
@@ -387,6 +389,8 @@ export function createMockApi(): Api & {
     organizing,
     notes,
     { ...distribution.handlers, ...tokens.handlers, ...convert.handlers },
+    // read when asked (the projects mock is made just below)
+    () => projects.probe.viewOf(rootNow()),
   );
   const importing = createMockImport(project, emit, () => refreshTree());
   const projects = createMockProjects({

@@ -317,6 +317,39 @@ fn a_failed_open_keeps_what_was_shown() {
     assert_eq!(ipc.kind, ErrorKind::Unsupported);
 }
 
+/// Teardown symmetry for per-view plugin state (`projects.md` §8, verifier S3): a view that lets go of a project
+/// (tab closed, another folder opened in it, window gone) is announced to the project's plugins.
+#[test]
+fn a_view_letting_go_of_a_project_is_told_to_its_plugins() {
+    let f = fx();
+    let heard: Arc<Mutex<Vec<String>>> = Arc::default();
+    let listen = |core: &Arc<ProjectCore>| {
+        let sink = Arc::clone(&heard);
+        core.rpc().on_caller_gone(Arc::new(move |caller: &str| {
+            sink.lock().unwrap().push(caller.to_owned());
+        }))
+    };
+    let dirs: Vec<tempfile::TempDir> = (0..4).map(|_| tempfile::tempdir().unwrap()).collect();
+    // tab closed
+    let (closed, view) = tab(&f, "main", &project(dirs[0].path())).unwrap();
+    let _a = listen(&core_of(&f, &view));
+    let _ = f.registry.close_tab(closed);
+    assert_eq!(*heard.lock().unwrap(), std::slice::from_ref(&view));
+    // another folder opened in the same tab
+    let (_, view) = tab(&f, "main", &project(dirs[1].path())).unwrap();
+    let _b = listen(&core_of(&f, &view));
+    f.registry
+        .attach(&view, &project(dirs[2].path()), None)
+        .unwrap();
+    assert_eq!(heard.lock().unwrap().last(), Some(&view));
+    // the window goes
+    let (_, view) = tab(&f, "w-1", &project(dirs[3].path())).unwrap();
+    let _c = listen(&core_of(&f, &view));
+    f.registry.forget_window("w-1");
+    assert_eq!(heard.lock().unwrap().last(), Some(&view));
+    assert_eq!(heard.lock().unwrap().len(), 3);
+}
+
 #[test]
 fn this_tab_placement_releases_the_old_workspace() {
     let f = fx();
