@@ -115,7 +115,7 @@ mod tests {
         // the project opened alone: its own root
         assert_eq!(
             agent_files(&vault(&dir.path().join("hub b"))),
-            ["AGENTS.md"]
+            ["AGENTS.md", ".claude/"]
         );
     }
 
