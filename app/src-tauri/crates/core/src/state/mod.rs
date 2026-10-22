@@ -271,7 +271,8 @@ impl<T: StateData> StateFile<T> {
             private::prepare(&guard.permark, &guard.state, dir)
                 .map_err(|e| StateError::io(&self.path, e))?;
         }
-        let _lock = shared_write::lock_for(&self.path);
+        let _lock =
+            shared_write::lock_for(&self.path).map_err(|e| StateError::io(&self.path, e))?;
         for _ in 0..raw::UPDATE_ATTEMPTS {
             let bytes = match std::fs::read(&self.path) {
                 Ok(bytes) => Some(bytes),

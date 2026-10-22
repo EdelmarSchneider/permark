@@ -217,7 +217,19 @@ fn two_tabs_marking_read_at_once_lose_nothing() {
     }
     ta.join().unwrap();
     let member_read = root.join("sub/.permark/local/plugins/unread/read.json");
-    // each tab saved at least once after the other: the root tab knows the alone tab's marks
+    // the alone tab saved its last mark; the root tab's next save learns it
+    wait("alone tab saved", || {
+        docs_of(&member_read).get("d11.md").is_some()
+    });
+    call(&core, "markUnread", json!({ "path": "sub/d0.md" }));
+    wait("root tab saved", || {
+        docs_of(&member_read).get("d0.md").is_none()
+    });
+    call(
+        &core,
+        "markRead",
+        json!({ "path": "sub/d0.md", "hash": hash("# d0\n") }),
+    );
     wait("root tab learns", || {
         !unread_now(&core).iter().any(|p| p.starts_with("sub/d"))
     });

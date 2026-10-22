@@ -94,10 +94,12 @@ impl RawFile {
         .map_err(|e| StateError::io(&self.path, e))
     }
 
-    /// The writers' lock of this file (`shared_write`): held around a read + write made by hand (`None`: none to be
-    /// had; compare-and-swap still guards the write).
-    #[must_use]
-    pub fn lock(&self) -> Option<FileLock> {
+    /// The writers' lock of this file (`shared_write`): held around a read + write made by hand (`Ok(None)`: none to
+    /// be had; compare-and-swap still guards the write).
+    ///
+    /// # Errors
+    /// Another writer held it too long: do not write now.
+    pub fn lock(&self) -> io::Result<Option<FileLock>> {
         lock_for(&self.path)
     }
 
@@ -112,7 +114,7 @@ impl RawFile {
         mut next: impl FnMut(Option<&[u8]>) -> Option<Vec<u8>>,
     ) -> Result<Option<Vec<u8>>, StateError> {
         self.guarded()?;
-        let _lock = self.lock();
+        let _lock = self.lock().map_err(|e| StateError::io(&self.path, e))?;
         for _ in 0..UPDATE_ATTEMPTS {
             let now = self.read().map_err(|e| StateError::io(&self.path, e))?;
             let Some(bytes) = next(now.as_deref()) else {

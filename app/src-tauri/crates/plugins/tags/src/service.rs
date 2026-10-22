@@ -454,7 +454,10 @@ impl Shared {
             Flush::Failed
         };
         // no other core (tab, app) writes this file between the read and the write (`projects.md` §14 D51)
-        let _shared = unit.file.lock();
+        let _shared = match unit.file.lock() {
+            Ok(lock) => lock,
+            Err(error) => return fail(error.to_string()),
+        };
         let bytes = match unit.file.read() {
             Ok(bytes) => bytes,
             Err(error) => return fail(error.to_string()),
