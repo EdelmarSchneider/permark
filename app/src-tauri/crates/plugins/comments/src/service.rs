@@ -111,7 +111,8 @@ fn merge_book(base: &[Comment], mine: &[Comment], fresh: Book) -> Book {
 impl Slot {
     fn new(file: RawFile) -> Self {
         Self {
-            file,
+            // written under the plugin's lock: a hung other writer never holds the lists up long (N10)
+            file: file.brief_lock_wait(),
             book: Book::default(),
             base: Vec::new(),
             stamp: None,

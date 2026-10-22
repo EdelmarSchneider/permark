@@ -20,6 +20,9 @@ dirs.workspace = true
 git2.workspace = true
 toml_edit.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
 [dev-dependencies]
 tempfile.workspace = true
 

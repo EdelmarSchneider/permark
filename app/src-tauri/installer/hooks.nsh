@@ -7,8 +7,9 @@
 ; 2. "OPEN WITH". Every file type PerMark reads is registered so it is offered under "Open with" (a ProgID per group of
 ;    types, the extension's OpenWithProgids list, and the app's capabilities for the Default Apps page). The default app
 ;    of a type is NEVER set here: Windows protects it. The welcome page asks "Open these files with PerMark" (Markdown
-;    checked, the other types unchecked; the welcome text says Windows confirms); with a type checked, the installer opens Windows' Default Apps page for
-;    PerMark at the end, where the person confirms. An update asks nothing and opens nothing.
+;    checked, the other types unchecked; the title of the check grid says Windows confirms); with a type checked, the
+;    installer opens Windows' Default Apps page for PerMark at the end, where the person confirms. An update asks nothing
+;    and opens nothing.
 ;
 ; 3. FILE MANAGER ENTRIES. "Open with PerMark" (folders, the background of a folder, Markdown files) and "New Markdown
 ;    file" (folders, the background of a folder), each a check box on the welcome page, also switchable in the app's
@@ -37,19 +38,19 @@
 
 ; ---- Words (Windows language ids: 1033 en, 1046 pt-BR, 3082 es, 1031 de, 2052 zh-CN, 1040 it) ----------------------
 
-LangString PermarkWelcome 1033 "PerMark is a unified document workspace: one place to read, write and organize Markdown and the files around it.$\r$\n$\r$\nSetup will install PerMark for you. No administrator rights are needed.$\r$\n$\r$\nFor the file types you check below, Windows asks you to confirm in its Settings after the installation."
-LangString PermarkWelcome 1046 "O PerMark é um espaço de trabalho unificado para documentos: um só lugar para ler, escrever e organizar Markdown e os arquivos ao redor.$\r$\n$\r$\nO instalador vai instalar o PerMark para você. Não é preciso ser administrador.$\r$\n$\r$\nPara os tipos de arquivo marcados abaixo, o Windows pede sua confirmação nas Configurações depois da instalação."
-LangString PermarkWelcome 3082 "PerMark es un espacio de trabajo unificado para documentos: un solo lugar para leer, escribir y organizar Markdown y los archivos que lo rodean.$\r$\n$\r$\nEl instalador instalará PerMark para usted. No se necesitan permisos de administrador.$\r$\n$\r$\nPara los tipos de archivo que marque abajo, Windows le pedirá que lo confirme en Configuración después de la instalación."
-LangString PermarkWelcome 1031 "PerMark ist ein einheitlicher Arbeitsplatz für Dokumente: ein Ort zum Lesen, Schreiben und Ordnen von Markdown und den Dateien drumherum.$\r$\n$\r$\nDas Setup installiert PerMark für Sie. Administratorrechte sind nicht nötig.$\r$\n$\r$\nFür die unten angehakten Dateitypen bittet Windows Sie nach der Installation um Bestätigung in den Einstellungen."
-LangString PermarkWelcome 2052 "PerMark 是统一文档工作区：在一个地方阅读、编写和整理 Markdown 及其周边文件。$\r$\n$\r$\n安装程序将为您安装 PerMark，无需管理员权限。$\r$\n$\r$\n对于下面勾选的文件类型，安装后 Windows 会请您在“设置”中确认。"
-LangString PermarkWelcome 1040 "PerMark è uno spazio di lavoro unificato per i documenti: un unico posto per leggere, scrivere e organizzare Markdown e i file che lo circondano.$\r$\n$\r$\nIl programma di installazione installerà PerMark per te. Non servono i permessi di amministratore.$\r$\n$\r$\nPer i tipi di file selezionati qui sotto, dopo l'installazione Windows ti chiederà di confermare nelle Impostazioni."
+LangString PermarkWelcome 1033 "PerMark is a unified document workspace: one place to read, write and organize Markdown and the files around it.$\r$\n$\r$\nSetup will install PerMark for you. No administrator rights are needed."
+LangString PermarkWelcome 1046 "O PerMark é um espaço de trabalho unificado para documentos: um só lugar para ler, escrever e organizar Markdown e os arquivos ao redor.$\r$\n$\r$\nO instalador vai instalar o PerMark para você. Não é preciso ser administrador."
+LangString PermarkWelcome 3082 "PerMark es un espacio de trabajo unificado para documentos: un solo lugar para leer, escribir y organizar Markdown y los archivos que lo rodean.$\r$\n$\r$\nEl instalador instalará PerMark para usted. No se necesitan permisos de administrador."
+LangString PermarkWelcome 1031 "PerMark ist ein einheitlicher Arbeitsplatz für Dokumente: ein Ort zum Lesen, Schreiben und Ordnen von Markdown und den Dateien drumherum.$\r$\n$\r$\nDas Setup installiert PerMark für Sie. Administratorrechte sind nicht nötig."
+LangString PermarkWelcome 2052 "PerMark 是统一文档工作区：在一个地方阅读、编写和整理 Markdown 及其周边文件。$\r$\n$\r$\n安装程序将为您安装 PerMark，无需管理员权限。"
+LangString PermarkWelcome 1040 "PerMark è uno spazio di lavoro unificato per i documenti: un unico posto per leggere, scrivere e organizzare Markdown e i file che lo circondano.$\r$\n$\r$\nIl programma di installazione installerà PerMark per te. Non servono i permessi di amministratore."
 
-LangString PermarkTypesTitle 1033 "Open these files with PerMark:"
-LangString PermarkTypesTitle 1046 "Abrir estes arquivos com o PerMark:"
-LangString PermarkTypesTitle 3082 "Abrir estos archivos con PerMark:"
-LangString PermarkTypesTitle 1031 "Diese Dateien mit PerMark öffnen:"
-LangString PermarkTypesTitle 2052 "用 PerMark 打开这些文件："
-LangString PermarkTypesTitle 1040 "Apri questi file con PerMark:"
+LangString PermarkTypesTitle 1033 "Open these files with PerMark (Windows asks you to confirm in its Settings after the installation):"
+LangString PermarkTypesTitle 1046 "Abrir estes arquivos com o PerMark (o Windows pede sua confirmação nas Configurações depois da instalação):"
+LangString PermarkTypesTitle 3082 "Abrir estos archivos con PerMark (Windows le pedirá que lo confirme en Configuración después de la instalación):"
+LangString PermarkTypesTitle 1031 "Diese Dateien mit PerMark öffnen (Windows bittet Sie nach der Installation in den Einstellungen um Bestätigung):"
+LangString PermarkTypesTitle 2052 "用 PerMark 打开这些文件（安装后 Windows 会请您在“设置”中确认）："
+LangString PermarkTypesTitle 1040 "Apri questi file con PerMark (dopo l'installazione Windows ti chiederà di confermare nelle Impostazioni):"
 
 LangString PermarkText 1033 "Text"
 LangString PermarkText 1046 "Texto"
@@ -348,16 +349,34 @@ Var PermarkBoxProperties
 !macroend
 
 ; ---- The welcome page: short text, the types, the two entries -------------------------------------------------------
+; Everything under the page's title sits in fixed boxes (dialog units, x 120..315, y 42..185 of 193), each as tall as the
+; longest of the six languages needs, so no text can run into the next control (the template's own text label is one 130u
+; box, tall enough to cover the grid below it; ours stays empty and our boxes replace it):
+;   42  the welcome text: two paragraphs, <= 6 lines
+;   96  the title of the check grid, <= 3 lines (it carries the sentence "Windows asks you to confirm")
+;  123  the grid: 2 rows of 4 boxes, widths 52 + 44 + 42 + 57 (the last holds "Properties", the widest label)
+;  150  the two entries, 2 lines each
+; Windows CJK fonts make a line ~8.5u, Latin ~8u; the lines above are measured in all six languages with the dialog font.
 
-; the page's own text ends with the title of the check grid (a label of ours over that text would not show)
-!define MUI_WELCOMEPAGE_TEXT "$(PermarkWelcome)$\r$\n$\r$\n$(PermarkTypesTitle)"
+!define MUI_WELCOMEPAGE_TEXT " "
 
-!macro PERMARK_TYPE_BOX VAR X Y LABEL NAME
-  ${NSD_CreateCheckbox} ${X} ${Y} 48u 11u "${LABEL}"
+; raise a control above the template's tall (empty) text label
+!macro PERMARK_RAISE VAR
+  System::Call 'user32::SetWindowPos(p ${VAR}, p 0, i 0, i 0, i 0, i 0, i 3)'
+!macroend
+
+!macro PERMARK_LABEL Y H TEXT
+  ${NSD_CreateLabel} 120u ${Y} 195u ${H} "${TEXT}"
+  Pop $0
+  SetCtlColors $0 "000000" "FFFFFF"
+  !insertmacro PERMARK_RAISE $0
+!macroend
+
+!macro PERMARK_TYPE_BOX VAR X Y W LABEL NAME
+  ${NSD_CreateCheckbox} ${X} ${Y} ${W} 11u "${LABEL}"
   Pop ${VAR}
   SetCtlColors ${VAR} "000000" "FFFFFF"
-  ; the welcome text is a tall label: raise the box above it
-  System::Call 'user32::SetWindowPos(p ${VAR}, p 0, i 0, i 0, i 0, i 0, i 3)'
+  !insertmacro PERMARK_RAISE ${VAR}
   ; $R9 = ";markdown;json;" (recorded | default); StrLoc is declared by the template
   ${StrLoc} $R8 "$R9" "${NAME};" ">"
   ${If} $R8 != ""
@@ -381,7 +400,7 @@ Var PermarkBoxProperties
   ${NSD_CreateCheckbox} 120u ${Y} 195u ${H} "${LABEL}"
   Pop ${VAR}
   SetCtlColors ${VAR} "000000" "FFFFFF"
-  System::Call 'user32::SetWindowPos(p ${VAR}, p 0, i 0, i 0, i 0, i 0, i 3)'
+  !insertmacro PERMARK_RAISE ${VAR}
   ${If} $0 <> 0
     ${NSD_Check} ${VAR}
   ${EndIf}
@@ -400,17 +419,20 @@ Function PermarkWelcomeShow
   StrCpy $R9 ";$R9"
   ClearErrors
 
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxMarkdown 120u 110u "Markdown" ";markdown"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxText 169u 110u "$(PermarkText)" ";text"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxJson 218u 110u "JSON" ";json"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxXml 267u 110u "XML" ";xml"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxYaml 120u 121u "YAML" ";yaml"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxToml 169u 121u "TOML" ";toml"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxIni 218u 121u "INI" ";ini"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxProperties 267u 121u "$(PermarkProperties)" ";properties"
+  !insertmacro PERMARK_LABEL 42u 52u "$(PermarkWelcome)"
+  !insertmacro PERMARK_LABEL 96u 25u "$(PermarkTypesTitle)"
 
-  !insertmacro PERMARK_ENTRY_BOX $PermarkMenuBox 141u 16u "$(OpenWithMenuOption)" "${PERMARK_MENU_CHOICE}"
-  !insertmacro PERMARK_ENTRY_BOX $PermarkNewBox 162u 20u "$(NewMarkdownOption)" "${PERMARK_NEW_CHOICE}"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxMarkdown 120u 123u 52u "Markdown" ";markdown"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxText 172u 123u 44u "$(PermarkText)" ";text"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxJson 216u 123u 42u "JSON" ";json"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxXml 258u 123u 57u "XML" ";xml"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxYaml 120u 134u 52u "YAML" ";yaml"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxToml 172u 134u 44u "TOML" ";toml"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxIni 216u 134u 42u "INI" ";ini"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxProperties 258u 134u 57u "$(PermarkProperties)" ";properties"
+
+  !insertmacro PERMARK_ENTRY_BOX $PermarkMenuBox 150u 16u "$(OpenWithMenuOption)" "${PERMARK_MENU_CHOICE}"
+  !insertmacro PERMARK_ENTRY_BOX $PermarkNewBox 168u 17u "$(NewMarkdownOption)" "${PERMARK_NEW_CHOICE}"
   Pop $R9
   Pop $R8
   Pop $0

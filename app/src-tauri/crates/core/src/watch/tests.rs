@@ -523,19 +523,28 @@ fn a_created_folder_is_expanded_into_its_files() {
 #[test]
 fn nothing_is_reported_for_a_touched_but_unchanged_tree() {
     let f = make(&["a.md", "docs/b.md"], true);
+    // a new file written after the touches: once it is reported, the touches before it were looked at (the OS reports
+    // in order). Run 39550333941 (macOS) waited 500 ms instead: the first touches came after it, as "created".
+    let fence = |name: &str| {
+        fs::write(f.dir.path().join(name), name).unwrap();
+        wait_for(&f.seen, name, |c| c.iter().any(|c| c.path == name))
+    };
     for p in ["a.md", "docs/b.md"] {
         let bytes = fs::read(f.dir.path().join(p)).unwrap();
         fs::write(f.dir.path().join(p), bytes).unwrap();
     }
-    let all = quiet_for(&f.seen, 500);
+    let all = fence("fence1.md");
     // the first sight of a file cannot be told from a change; a second identical write must be silent
     f.seen.lock().unwrap().clear();
     for p in ["a.md", "docs/b.md"] {
         let bytes = fs::read(f.dir.path().join(p)).unwrap();
         fs::write(f.dir.path().join(p), bytes).unwrap();
     }
-    let again = quiet_for(&f.seen, 500);
-    assert!(again.is_empty(), "first: {all:?}, again: {again:?}");
+    let again = fence("fence2.md");
+    assert!(
+        again.iter().all(|c| c.path.starts_with("fence")),
+        "first: {all:?}, again: {again:?}"
+    );
 }
 
 // ---- teardown ------------------------------------------------------------------------------------------------------------
