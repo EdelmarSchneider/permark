@@ -10,6 +10,7 @@ import type { createMockDistribution } from "./mockDistribution";
 import type { createMockTokens } from "./mockTokens";
 import type { createMockConvert } from "./mockConvert";
 import type { ReviewChange } from "./generated/ReviewChange";
+import { createMockGitMembers, type GitMembersProbe } from "./mockGitMembers";
 import type {
   ActivityEntry,
   BaselineKind,
@@ -19,6 +20,7 @@ import type {
   PluginEvents,
   PluginMethod,
   PluginMethods,
+  ProjectsView,
   Result,
   SinceVisit,
   UnreadList,
@@ -43,6 +45,8 @@ export type MockPluginProbe = {
   git(): GitSnapshot;
   /** Announces a snapshot as the backend would (`null`: no repository any more). */
   announceGit(snapshot: GitSnapshot | null): void;
+  /** Repositories of included projects (`git.repos`, interest, member snapshots). */
+  gitMembers: GitMembersProbe;
   /** Tags, comments, silence: what the organizing plugins hold. */
   organizing: OrganizingProbe;
   /** The notes: what the backend holds, ways to put them in a state. */
@@ -116,6 +120,7 @@ export function createMockPlugins(
   distribution: ReturnType<typeof createMockDistribution>["handlers"] &
     ReturnType<typeof createMockTokens>["handlers"] &
     ReturnType<typeof createMockConvert>["handlers"],
+  projectsView: () => ProjectsView | null = () => null,
 ): {
   call<M extends PluginMethod>(
     method: M,
@@ -244,13 +249,22 @@ export function createMockPlugins(
   };
 
   const agent = createMockAgent(emit);
+  const members = createMockGitMembers({ view: projectsView, emit });
   const handlers: Handlers = {
     ...organizing.handlers,
     ...agent.handlers,
     ...notes.handlers,
     ...distribution,
-    "git.snapshot": () => snapshot(),
-    "git.refresh": () => null,
+    "git.snapshot": ({ project }) => (project ? members.snapshot(project) : snapshot()),
+    "git.refresh": ({ project }) => {
+      members.refresh(project ?? null);
+      return null;
+    },
+    "git.repos": () => members.repos(),
+    "git.interest": ({ ids, level, view }) => {
+      members.interest(view ?? "main", level, ids);
+      return null;
+    },
     "git.setBaseline": ({ kind }) => {
       baseline = kind;
       seq += 1;
@@ -359,6 +373,7 @@ export function createMockPlugins(
       calls,
       git: snapshot,
       announceGit: (next) => emit("git:snapshot", next),
+      gitMembers: members.probe,
       organizing: organizing.probe,
       notes: notes.probe,
       agent: agent.probe,

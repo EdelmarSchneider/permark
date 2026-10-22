@@ -133,6 +133,12 @@ import type { BaselineKind } from "./generated/BaselineKind";
 import type { FeedItem } from "./generated/FeedItem";
 import type { GitFile } from "./generated/GitFile";
 import type { GitSnapshot } from "./generated/GitSnapshot";
+import type { CommitLine } from "./generated/CommitLine";
+import type { InterestLevel } from "./generated/InterestLevel";
+import type { ProjectSnapshot } from "./generated/ProjectSnapshot";
+import type { RepoError } from "./generated/RepoError";
+import type { RepoSummary } from "./generated/RepoSummary";
+import type { ReposChanged } from "./generated/ReposChanged";
 import type { Letter } from "./generated/Letter";
 import type { ReviewChange } from "./generated/ReviewChange";
 import type { ReviewChangeKind } from "./generated/ReviewChangeKind";
@@ -458,8 +464,17 @@ export interface Commands {
  * registrations; DTOs from `generated/`. A plugin that is off answers `unavailable`.
  */
 export interface PluginMethods {
-  "git.snapshot": { args: Record<string, never>; result: GitSnapshot | null };
-  "git.refresh": { args: Record<string, never>; result: null };
+  /** `project`: an included project's uid (its repository; `null` until a view declared interest); absent = root. */
+  "git.snapshot": { args: { project?: string | null }; result: GitSnapshot | null };
+  /** Window focus: absent = the root + every repository a view looks at; `project` = that one. */
+  "git.refresh": { args: { project?: string | null }; result: null };
+  /** Repositories of the included projects (cheap facts at once, counts | details as known). */
+  "git.repos": { args: Record<string, never>; result: RepoSummary[] };
+  /**
+   * What this view (`view`: a tab id; absent = the window) wants to know at `level`: replaces its set for that level.
+   * Send `[]` when the view goes | hides (nothing else drops it).
+   */
+  "git.interest": { args: { ids: string[]; level: InterestLevel; view?: string }; result: null };
   "git.setBaseline": { args: { kind: BaselineKind }; result: null };
   "live-feed.items": { args: Record<string, never>; result: FeedItem[] };
   "live-feed.clear": { args: Record<string, never>; result: null };
@@ -622,6 +637,8 @@ export type PluginMethod = keyof PluginMethods;
 /** Events of project plugins: `{ root, data }` (the folder they are about; a window keeps its own). */
 export interface PluginEvents {
   "git:snapshot": GitSnapshot | null;
+  "git:repos": ReposChanged;
+  "git:projectSnapshot": ProjectSnapshot;
   "live-feed:items": { upsert: FeedItem[] };
   "live-feed:activity": { entry: ActivityEntry };
   "unread:changed": UnreadList;
@@ -669,6 +686,12 @@ export type {
   FeedItem,
   GitFile,
   GitSnapshot,
+  CommitLine,
+  InterestLevel,
+  ProjectSnapshot,
+  RepoError,
+  RepoSummary,
+  ReposChanged,
   Letter,
   ReviewChange,
   ReviewChangeKind,
