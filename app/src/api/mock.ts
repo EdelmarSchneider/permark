@@ -70,6 +70,7 @@ function defaultSettings(): AppSettings {
     editor: "",
     keymap: {},
     plugins: {},
+    rightViews: null,
   };
 }
 
@@ -131,6 +132,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       else plugins[change.value.plugin] = change.value.enabled;
       return { ...settings, plugins };
     }
+    case "rightViews":
+      return { ...settings, rightViews: change.value };
     default:
       return change satisfies never;
   }
@@ -725,13 +728,6 @@ export function createMockApi(): Api & {
     },
     settingsGet: () => ok(settings),
     settingsSet: (change) => {
-      // the right column's arrangement (`rightViews`): kept as given until the settings type has the field
-      const raw = change as { key: string; value: unknown };
-      if (raw.key === "rightViews") {
-        settings = { ...settings, rightViews: raw.value } as AppSettings;
-        emit("settings-changed", { scope: { scope: "app" }, keys: [raw.key], settings });
-        return ok(settings);
-      }
       settings = applyChange(settings, change);
       emit("settings-changed", { scope: { scope: "app" }, keys: [change.key], settings });
       if (change.key === "pluginEnabled") announceShell();

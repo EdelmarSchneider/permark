@@ -29,9 +29,9 @@ export const DEFAULT_WAIT_MS = 500;
 /** The arrangement is written this long after the last change (a divider dragged). */
 const SAVE_DELAY_MS = 400;
 
-/** The arrangement in the settings (`rightViews`; absent before the field exists: the default). */
+/** The arrangement in the settings (`rightViews`; `null` = never set | unreadable: the default). */
 export function arrangementOf(settings: AppSettings): RightViews {
-  return parseRightViews((settings as AppSettings & { rightViews?: unknown }).rightViews);
+  return parseRightViews(settings.rightViews);
 }
 
 export class RightViewsStore {
@@ -175,7 +175,11 @@ export class RightViewsStore {
     clearTimeout(this.#timer);
     this.#timer = null;
     // the settings field `rightViews` (core.md §settings): a failed write keeps the layout for this run
-    const change = { key: "rightViews", value: this.arrangement } as unknown as SettingChange;
+    const { v, groups } = this.arrangement;
+    const change: SettingChange = {
+      key: "rightViews",
+      value: { v, groups: groups.map((g) => ({ views: [...g.views], share: g.share })) },
+    };
     void this.#api?.settingsSet(change);
   }
 }
