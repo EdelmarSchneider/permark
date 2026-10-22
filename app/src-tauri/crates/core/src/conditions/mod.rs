@@ -116,6 +116,8 @@ pub struct Context {
     pub platform: Platform,
     /// Plugins on for this workspace (app plugins + this project's).
     pub plugins: BTreeSet<PluginId>,
+    /// Agent files at the project root (`workspace::AGENT_FILES` order; a `/` ends a folder); `[]` elsewhere.
+    pub agent_files: Vec<String>,
 }
 
 impl Context {
@@ -133,6 +135,7 @@ impl Context {
             distribution,
             platform: Platform::current(),
             plugins: BTreeSet::new(),
+            agent_files: Vec::new(),
         }
     }
 }

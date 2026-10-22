@@ -1,5 +1,6 @@
 //! Workspaces: what a window shows. `Project` (a folder, shared `ProjectCore`), `SingleFile`, `Notes`.
 
+mod agent_files;
 mod project;
 mod registry;
 pub mod view_fsm;
@@ -10,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+pub use agent_files::{agent_files, AGENT_FILES};
 pub use project::{CoreEnv, ProjectCore};
 pub use registry::{
     Attached, Begin, MoveRefused, MoveTicket, OpenError, Outcome, Prepared, SessionWindow, TabOpen,

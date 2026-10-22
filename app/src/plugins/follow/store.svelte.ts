@@ -64,6 +64,11 @@ export class FollowStore {
     });
   }
 
+  /** On, but waiting: the person edits (no jump until the window is back in View with nothing unsaved). */
+  get paused(): boolean {
+    return this.on && this.#busy();
+  }
+
   toggle(): void {
     if (this.on) this.stop();
     else this.on = true;
@@ -78,7 +83,17 @@ export class FollowStore {
   consider(upsert: readonly FeedItem[]): void {
     if (!this.on || this.#busy()) return;
     const target = followTarget(upsert);
-    if (target === null || target === documents.path) return;
+    if (target !== null) this.#jump(target);
+  }
+
+  /** Turns follow on and opens `path` at once (the toast's Follow: its latest document = the first jump). */
+  followTo(path: string): void {
+    this.on = true;
+    if (!this.#busy()) this.#jump(path);
+  }
+
+  #jump(target: string): void {
+    if (target === documents.path) return;
     const here = documents.path;
     // the first jump of a run remembers where the person was; later jumps keep it
     if (this.jumpedFrom === null && here !== null) this.jumpedFrom = here;
