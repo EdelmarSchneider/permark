@@ -7,7 +7,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 const { createMockApi, MOCK_FOLDER } = await import("./mock");
 const { tauriApi } = await import("./tauri");
-const { MOCK_PROJECTS_FRESH, MOCK_PROJECTS_LISTED, MOCK_PROJECTS_BROKEN } =
+const { MOCK_PROJECTS_FRESH, MOCK_PROJECTS_LISTED, MOCK_PROJECTS_BROKEN, MOCK_PROJECTS_VOCAB } =
   await import("./mockProjects");
 const core = await import("@tauri-apps/api/core");
 
@@ -102,5 +102,44 @@ describe("mock projects", () => {
     });
     await tauriApi.projectsUndo(3);
     expect(invoke).toHaveBeenCalledWith("projects_undo", { token: 3 });
+    await tauriApi.vocabularyPromote("category", "lab");
+    expect(invoke).toHaveBeenCalledWith("vocabulary_promote", { kind: "category", name: "lab" });
+  });
+
+  it("official lists: status marks on cards and tags, promote (round 4)", async () => {
+    const plain = value(await (await opened(MOCK_PROJECTS_LISTED)).projectsView());
+    expect(plain.vocabulary.active).toBe(false);
+    expect(plain.rows.every((r) => r.categoryStatus === null)).toBe(true);
+
+    const api = await opened(MOCK_PROJECTS_VOCAB);
+    const view = value(await api.projectsView());
+    expect(view.vocabulary).toMatchObject({ active: true, file: { status: "ok" } });
+    const byPath = new Map(view.rows.map((r) => [r.path, r]));
+    expect(byPath.get("hub-b")?.categoryStatus).toBe("official");
+    expect(byPath.get("site")?.categoryStatus).toBe("local");
+    expect(byPath.get("tools/scratch")?.categoryStatus).toBe("unlisted");
+    expect(byPath.get("hub-b")?.localTags).toBe(1);
+    const overview = value(await api.pluginCall("tags.overview", {}));
+    expect(overview.marks).toBe(true);
+    const tag = (name: string) => overview.tags.find((t) => t.name === name);
+    expect(tag("spec")).toMatchObject({ status: "official", owner: null });
+    expect(tag("draft")).toMatchObject({ status: "local", owner: "vocabhubb2" });
+    expect(tag("roadmap")).toMatchObject({ status: "unlisted", owner: null });
+    const meta = value(await api.pluginCall("tags.fileMeta", { path: "site/index.md" }));
+    expect(meta.tags[0]).toMatchObject({ name: "draft", status: "unlisted" });
+
+    let tagsChanged = 0;
+    await api.onPlugin("tags:changed", () => (tagsChanged += 1));
+    expect(value(await api.vocabularyPromote("tag", "Draft"))).toBeNull();
+    const after = value(await api.projectsView());
+    expect(after.vocabulary.tags.map((t) => t.name)).toEqual(["draft", "needs-review", "spec"]);
+    expect(after.rows.find((r) => r.path === "hub-b")?.localTags).toBe(0);
+    expect(tag("draft")).toBeDefined();
+    const again = value(await api.pluginCall("tags.overview", {}));
+    expect(again.tags.find((t) => t.name === "draft")?.status).toBe("official");
+    expect(tagsChanged).toBe(1);
+    // a folder without a project list has no .permark/ to write in
+    const fresh = await opened(MOCK_PROJECTS_FRESH);
+    expect((await fresh.vocabularyPromote("tag", "x")).ok).toBe(false);
   });
 });

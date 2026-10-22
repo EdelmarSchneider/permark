@@ -502,6 +502,19 @@ pub fn projects_card_set(
     project_of(&handle, &window)?.projects_card_set(&target, &change)
 }
 
+/// Makes a tag | category official in the opened folder (`.permark/vocabulary.toml`; `projects.md` §7.2 promote).
+#[tauri::command(async)]
+pub fn vocabulary_promote(
+    handle: AppHandle,
+    window: Webview,
+    kind: permark_core::projects::VocabKind,
+    name: String,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .promote(kind, &name)
+}
+
 // ---- Explorer: file operations -------------------------------------------------------------------------------------------
 
 #[tauri::command(async)]
@@ -1459,6 +1472,7 @@ commands![
     projects_remove,
     projects_answer_move,
     projects_card_set,
+    vocabulary_promote,
     fileops_plan_move,
     fileops_apply_move,
     fileops_delete,
