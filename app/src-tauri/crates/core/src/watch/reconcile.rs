@@ -220,6 +220,7 @@ const MAX_RENAME_CHAIN: usize = 8;
 /// - a rename the OS reported (one event, or two in a row paired by the watch), followed back through renames of the
 ///   same batch to where it began;
 /// - else a folder created right after a removal in the OS report (Windows: a move to another parent);
+/// - else the only folder gone + the only folder come by a rename whose start is unknown (a chain the events cut);
 /// - else a folder gone + a folder come in the same batch with the same name, each the only one of that name.
 fn project_moves(env: &Env<'_>, looked: &[Item]) -> Vec<(String, String)> {
     let rel = |abs: &Path| {
@@ -239,6 +240,7 @@ fn project_moves(env: &Env<'_>, looked: &[Item]) -> Vec<(String, String)> {
     let mut moved = Vec::new();
     let mut gone = Vec::new();
     let mut came = Vec::new();
+    let mut renamed_in = Vec::new();
     for Item {
         pending: p,
         path,
@@ -263,8 +265,13 @@ fn project_moves(env: &Env<'_>, looked: &[Item]) -> Vec<(String, String)> {
             };
             let left =
                 key_of(&origin_path) != key_of(&path) && fs::symlink_metadata(&origin).is_err();
-            if is_dir && left && held(&origin_path) {
-                moved.push((origin_path, path));
+            if is_dir && left {
+                if held(&origin_path) {
+                    moved.push((origin_path, path));
+                } else {
+                    // a chain whose start the events lost (macOS: each step's two events, undirected)
+                    renamed_in.push(path);
+                }
             }
             continue;
         }
@@ -284,6 +291,12 @@ fn project_moves(env: &Env<'_>, looked: &[Item]) -> Vec<(String, String)> {
     }
     let name = |path: &str| crate::paths::fold(path.rsplit('/').next().unwrap_or(path));
     gone.retain(|g| !moved.iter().any(|(from, _)| key_of(from) == key_of(g)));
+    if let ([from], [to]) = (gone.as_slice(), renamed_in.as_slice()) {
+        // one folder holding a project went, one folder came by a rename from a place now gone: the same folder
+        moved.push((from.clone(), to.clone()));
+        return moved;
+    }
+    came.extend(renamed_in);
     for from in &gone {
         let same = |list: &[String]| list.iter().filter(|p| name(p) == name(from)).count();
         let to: Vec<&String> = came
