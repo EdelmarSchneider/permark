@@ -5,6 +5,7 @@ pub mod card;
 pub mod fsm;
 #[cfg(test)]
 mod git_seam_tests;
+mod grace;
 pub mod map;
 pub mod record;
 #[cfg(test)]

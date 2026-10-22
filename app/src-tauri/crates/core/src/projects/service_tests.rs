@@ -969,11 +969,17 @@ fn a_segment_turned_into_a_junction_later_makes_the_member_gone() {
     let core = ProjectCore::open(Root::open(root).unwrap(), &env);
     let view = ready(&core);
     assert_eq!(state(&view, "hubs/a"), Some(MemberState::Included));
-    fs::rename(root.join("hubs"), root.join("real-hubs")).unwrap();
-    if !junction(&root.join("hubs"), &root.join("real-hubs")) {
+    // the real folder leaves the opened folder (a rename inside it is a move the member follows: same folder on disk);
+    // held for the grace window (the clock stopped), then a junction takes its place before the window ends
+    core.projects().freeze_clock();
+    let real = base.path().join("real-hubs");
+    fs::rename(root.join("hubs"), &real).unwrap();
+    wait("held", || core.projects().vanished_count() == 1);
+    if !junction(&root.join("hubs"), &real) {
         eprintln!("junction could not be made here; skipped");
         return;
     }
+    core.projects().advance(grace::GRACE);
     wait("member gone through the junction", || {
         state(&core.projects_view(), "hubs/a") == Some(MemberState::Missing)
     });

@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{channel, Sender};
+use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock, Weak};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -18,6 +18,7 @@ use super::fsm::{
     self, AgentChoice, Candidate, Event, Found, Inputs, Membership, MissingReason, Presence,
     ProjectMarker, RecEntry, RootAnswer, MEMBERSHIP_FILE,
 };
+use super::grace::{self, Came, FolderId, Left, Vanished};
 use super::map::{within, AgentRules, AncestorRules, MemberInfo, ProjectMap};
 use super::record::{self, HiddenRule, RecordOp, RecordRead, RecordSkip, SkippedEntry};
 use super::uid::ProjectUid;
@@ -124,6 +125,8 @@ struct MemberRes {
     /// Entries of its own (dormant) record.
     inner: Vec<(VaultPath, ProjectUid)>,
     has_record: bool,
+    /// Its folder on disk (a move split across watch batches pairs by it; `grace.rs`).
+    id: Option<FolderId>,
 }
 
 /// Reads what a member brings from its folder (cheap: a few small files).
@@ -164,6 +167,7 @@ fn load_member(dirs: &AppDirs, abs: &Path) -> MemberRes {
         },
         inner,
         has_record: !matches!(read, RecordRead::Absent),
+        id: FolderId::of(abs),
     }
 }
 
@@ -299,6 +303,11 @@ struct Inner {
     root_commits: HashMap<String, Option<String>>,
     /// Path keys asked of the `git` plugin, answer not back yet (asked once per session while the lease lives).
     asked: HashSet<String>,
+    /// Included entries whose folder vanished while open, held as here for a short window (`grace.rs`).
+    vanished: BTreeMap<ProjectUid, Vanished>,
+    /// New folders kept out of the found set while a window runs (tests look).
+    #[cfg_attr(not(test), allow(dead_code))]
+    waiting: usize,
     other: serde_json::Map<String, serde_json::Value>,
 }
 
@@ -323,6 +332,8 @@ struct Hint {
 enum Msg {
     Walk,
     Batch(Hint),
+    /// A grace window ended (`grace.rs`): look again.
+    Tick,
     Stop,
 }
 
@@ -358,6 +369,8 @@ pub struct Projects {
     stopped: Arc<AtomicBool>,
     /// Signalled when the map becomes ready | the core closes (agent calls wait on `inner`).
     ready_cv: Condvar,
+    /// `Some`: the time, moved by hand (tests); the worker then never ends a window on its own.
+    manual_now: Mutex<Option<Instant>>,
 }
 
 impl std::fmt::Debug for Projects {
@@ -445,6 +458,8 @@ impl Projects {
                 migrated: kept.migrated,
                 root_commits: HashMap::new(),
                 asked: HashSet::new(),
+                vanished: BTreeMap::new(),
+                waiting: 0,
                 other: kept.other,
             }),
             map: RwLock::new(Arc::new(ProjectMap::default())),
@@ -456,6 +471,7 @@ impl Projects {
             worker: Mutex::new(None),
             stopped: Arc::new(AtomicBool::new(false)),
             ready_cv: Condvar::new(),
+            manual_now: Mutex::new(None),
         });
         {
             let mut inner = lock(&projects.inner);
@@ -481,22 +497,34 @@ impl Projects {
         let stopped = Arc::clone(&self.stopped);
         let handle = std::thread::Builder::new()
             .name("permark-projects".to_owned())
-            .spawn(move || {
-                while let Ok(msg) = rx.recv() {
-                    if matches!(msg, Msg::Stop) {
-                        return;
-                    }
-                    let Some(markers) = wait_walk(&explorer, &stopped) else {
-                        return;
-                    };
-                    let Some(projects) = weak.upgrade() else {
-                        return;
-                    };
-                    match msg {
-                        Msg::Stop => return,
-                        Msg::Walk => projects.discover(&Hint::default(), true, &markers),
-                        Msg::Batch(hint) => projects.on_hint(&hint, &markers),
-                    }
+            .spawn(move || loop {
+                // a grace window running: wake at its end (no `Projects` held while waiting)
+                let wake = weak.upgrade().and_then(|p| p.next_window_end());
+                let msg = match wake {
+                    Some(after) => match rx.recv_timeout(after) {
+                        Ok(msg) => msg,
+                        Err(RecvTimeoutError::Timeout) => Msg::Tick,
+                        Err(RecvTimeoutError::Disconnected) => return,
+                    },
+                    None => match rx.recv() {
+                        Ok(msg) => msg,
+                        Err(_) => return,
+                    },
+                };
+                if matches!(msg, Msg::Stop) {
+                    return;
+                }
+                let Some(markers) = wait_walk(&explorer, &stopped) else {
+                    return;
+                };
+                let Some(projects) = weak.upgrade() else {
+                    return;
+                };
+                match msg {
+                    Msg::Stop => return,
+                    Msg::Walk => projects.discover(&Hint::default(), true, &markers),
+                    Msg::Batch(hint) => projects.on_hint(&hint, &markers),
+                    Msg::Tick => projects.discover(&Hint::default(), false, &markers),
                 }
             })
             .ok();
@@ -525,6 +553,55 @@ impl Projects {
         let mut inner = lock(&self.inner);
         inner.res.clear();
         inner.undo = None;
+        // the worker (and with it the window's wake-up) is gone: nothing stays held
+        inner.vanished.clear();
+        inner.waiting = 0;
+    }
+
+    fn now(&self) -> Instant {
+        lock(&self.manual_now).unwrap_or_else(Instant::now)
+    }
+
+    /// Time left until the first grace window ends (`None`: none running, or the time is moved by hand).
+    fn next_window_end(&self) -> Option<Duration> {
+        if lock(&self.manual_now).is_some() {
+            return None;
+        }
+        let now = Instant::now();
+        lock(&self.inner)
+            .vanished
+            .values()
+            .map(|v| v.until.saturating_duration_since(now))
+            .min()
+    }
+
+    /// Tests: the time stops here; only [`Projects::advance`] moves it.
+    #[cfg(test)]
+    pub(crate) fn freeze_clock(&self) {
+        *lock(&self.manual_now) = Some(Instant::now());
+    }
+
+    /// Tests: moves the stopped time by `by`, then lets the worker look again (a window may have ended).
+    #[cfg(test)]
+    pub(crate) fn advance(&self, by: Duration) {
+        if let Some(now) = lock(&self.manual_now).as_mut() {
+            *now += by;
+        }
+        if let Some(tx) = lock(&self.tx).as_ref() {
+            let _ = tx.send(Msg::Tick);
+        }
+    }
+
+    /// Tests: entries held as here while their folder is away.
+    #[cfg(test)]
+    pub(crate) fn vanished_count(&self) -> usize {
+        lock(&self.inner).vanished.len()
+    }
+
+    /// Tests: new folders waiting for a window to end.
+    #[cfg(test)]
+    pub(crate) fn waiting_count(&self) -> usize {
+        lock(&self.inner).waiting
     }
 
     /// Per-member resources held now (teardown tests).
@@ -828,8 +905,13 @@ impl Projects {
         let mut seen = HashMap::new();
         let all_out = inner.inputs.answer == RootAnswer::DeclinedAll;
         let declined: HashSet<String> = inner.inputs.declined.iter().cloned().collect();
+        // live only (never at open, never files-only): a folder gone while open is held as here for a moment
+        let live = inner.ready && !self.files_only;
+        let now = self.now();
+        let mut vanished = BTreeMap::new();
         for entry in &entries {
-            let state = if hard.hides(&entry.path) {
+            let refused = all_out || declined.contains(&entry.path.key());
+            let mut state = if hard.hides(&entry.path) {
                 Presence::Ignored
             } else if entry
                 .path
@@ -844,7 +926,14 @@ impl Projects {
                     None => Presence::Gone,
                 }
             };
-            let refused = all_out || declined.contains(&entry.path.key());
+            if state == Presence::Gone && live && !refused {
+                let id = inner.res.get(&entry.uid).and_then(|r| r.id);
+                let was = inner.inputs.presence.get(&entry.uid);
+                if let Some(v) = grace::hold(inner.vanished.get(&entry.uid), was, id, now) {
+                    state = Presence::Here(v.marker);
+                    vanished.insert(entry.uid.clone(), v);
+                }
+            }
             if matches!(state, Presence::Here(_)) && !refused {
                 let res = inner.res.entry(entry.uid.clone()).or_insert_with(|| {
                     load_member(&self.dirs, &abs_of(self.root.path(), &entry.path))
@@ -859,6 +948,7 @@ impl Projects {
             presence.insert(entry.uid.clone(), state);
         }
         inner.inputs.presence = presence;
+        inner.vanished = vanished;
         let here: HashSet<ProjectUid> = inner.inputs.included().into_iter().collect();
         inner.res.retain(|uid, _| here.contains(uid));
     }
@@ -1049,7 +1139,7 @@ impl Projects {
             let found = self.found_now(&inner, markers);
             inner.inputs.found = found;
             self.presence(&mut inner);
-            self.reattach(&mut inner, hint, &mut after);
+            self.reattach(&mut inner, hint, &old.found, &mut after);
             inner.ready = true;
             self.ready_cv.notify_all();
             if was_ready && !first {
@@ -1138,7 +1228,15 @@ impl Projects {
     /// saw live, the case of its name); anything found at open (card id, first commit, folder name) is a question to
     /// the person, one candidate at a time (clones share card id + first commit). Refused folders are never a
     /// candidate (D28).
-    fn reattach(&self, inner: &mut Inner, hint: &Hint, after: &mut After) {
+    /// A move the OS split across batches pairs by the folder's disk identity inside a grace window (`grace.rs`);
+    /// `before`: the found set before this pass.
+    fn reattach(
+        &self,
+        inner: &mut Inner,
+        hint: &Hint,
+        before: &BTreeMap<String, Found>,
+        after: &mut After,
+    ) {
         let mut moves: Vec<(ProjectUid, VaultPath)> = Vec::new();
         // a folder renamed to another case of its name (case-insensitive disk): still here; the path follows the disk
         for entry in &inner.inputs.entries {
@@ -1150,9 +1248,9 @@ impl Projects {
         }
         // 1. a rename the watch paired covers it (live: the same folder)
         for entry in &inner.inputs.entries {
-            if inner.inputs.presence.get(&entry.uid) != Some(&Presence::Gone)
-                || inner.inputs.refused(&entry.path.key())
-            {
+            let away = inner.inputs.presence.get(&entry.uid) == Some(&Presence::Gone)
+                || inner.vanished.contains_key(&entry.uid);
+            if !away || inner.inputs.refused(&entry.path.key()) {
                 continue;
             }
             if let Some(path) = renamed_path(&entry.path, &hint.renames) {
@@ -1161,6 +1259,101 @@ impl Projects {
                 }
             }
         }
+        self.apply_moves(inner, moves, after);
+        // 2. inside a grace window: a folder that came is a held entry's own folder (the rest wait while one runs)
+        let (moves, waiting) = self.grace_pairs(inner, before);
+        self.apply_moves(inner, moves, after);
+        inner.waiting = 0;
+        if inner.vanished.is_empty() {
+            for f in waiting {
+                inner.inputs.found.insert(f.path.key(), f);
+            }
+        } else {
+            inner.waiting = waiting.len();
+        }
+        inner.ask = self.move_question(inner);
+    }
+
+    /// While a grace window runs: folders new since `before` (not listed) leave the found set (no row, no strip); one
+    /// that is a held entry's folder goes back as where that entry moved. Returns those moves + the folders waiting.
+    fn grace_pairs(
+        &self,
+        inner: &mut Inner,
+        before: &BTreeMap<String, Found>,
+    ) -> (Vec<(ProjectUid, VaultPath)>, Vec<Found>) {
+        if inner.vanished.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+        let listed: HashSet<String> = inner.inputs.entries.iter().map(|e| e.path.key()).collect();
+        let fresh: Vec<String> = inner
+            .inputs
+            .found
+            .keys()
+            .filter(|k| !before.contains_key(*k) && !listed.contains(*k))
+            .cloned()
+            .collect();
+        let waiting: Vec<Found> = fresh
+            .iter()
+            .filter_map(|k| inner.inputs.found.remove(k))
+            .collect();
+        if waiting.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+        let ids: Vec<Option<FolderId>> = waiting
+            .iter()
+            .map(|f| FolderId::of(&abs_of(self.root.path(), &f.path)))
+            .collect();
+        let firsts: Vec<Option<String>> = inner
+            .vanished
+            .keys()
+            .map(|uid| first_commit_of(inner, uid))
+            .collect();
+        let pairs = {
+            let left: Vec<Left<'_>> = inner
+                .vanished
+                .iter()
+                .zip(&firsts)
+                .filter_map(|((uid, v), first)| {
+                    Some(Left {
+                        uid,
+                        path: &inner.inputs.entry(uid)?.path,
+                        id: v.id,
+                        first_commit: first.as_deref(),
+                    })
+                })
+                .collect();
+            let came: Vec<Came<'_>> = waiting
+                .iter()
+                .zip(&ids)
+                .map(|(f, id)| Came {
+                    path: &f.path,
+                    id: *id,
+                    root_commit: inner
+                        .root_commits
+                        .get(&f.path.key())
+                        .and_then(Option::as_deref),
+                })
+                .collect();
+            grace::pair(&left, &came)
+        };
+        let mut waiting: Vec<Option<Found>> = waiting.into_iter().map(Some).collect();
+        let mut moves = Vec::new();
+        for (uid, i) in pairs {
+            if let Some(f) = waiting.get_mut(i).and_then(Option::take) {
+                moves.push((uid, f.path.clone()));
+                inner.inputs.found.insert(f.path.key(), f);
+            }
+        }
+        (moves, waiting.into_iter().flatten().collect())
+    }
+
+    /// Re-attach moves (the entry follows its folder): record path, profile state, one `moved` row each.
+    fn apply_moves(
+        &self,
+        inner: &mut Inner,
+        moves: Vec<(ProjectUid, VaultPath)>,
+        after: &mut After,
+    ) {
         for (uid, path) in moves {
             if self.files_only {
                 break;
@@ -1192,7 +1385,6 @@ impl Projects {
                 after.changed = true;
             }
         }
-        inner.ask = self.move_question(inner);
     }
 
     /// The one move question now (`projects.md` §4.4 steps 2-4), if any: a missing entry (not refused) + one offered
