@@ -1,9 +1,13 @@
 // Wrapped lines of a very long text, counted without drawing them. The viewer draws such a text in a monospace font
 // and breaks a long line after any character (a terminal's way, `line-break: anywhere`), so the rows a line takes
-// follow from its width in columns: the first row holds `cols` columns, every further row `cols - INDENT` (it starts
-// a little to the right). Only the lines near the screen are drawn; these numbers place them. Pure.
+// follow from its width in columns: the first row holds `cols` columns, every further row `cols - INDENT - lead`
+// (it starts a little to the right of the line's own indentation, `lead`). Only the lines near the screen are drawn;
+// these numbers place them. Pure.
+//
+// Why not at spaces, as smaller files wrap: the browser also breaks after `-`, `/` and other signs, by rules a count
+// here cannot follow exactly; a count that is off would cut the last rows of the file. Breaking anywhere is exact.
 
-/** Continuation rows start this many columns to the right. */
+/** Continuation rows start this many columns to the right (of the line's indentation). */
 export const INDENT = 2;
 /** Fewest columns a row is counted with (a very narrow window still makes progress). */
 export const MIN_COLS = INDENT + 8;
@@ -40,32 +44,53 @@ function zero(code: number): boolean {
 
 /** The columns a line takes (a close count: fonts differ for rare characters; the drawing never overlaps). */
 export function columns(line: string): number {
-  if (PLAIN.test(line)) return line.length;
+  return measure(line).width;
+}
+
+/** The columns a line takes and the columns of its leading spaces | tabs. */
+export function measure(line: string): { width: number; lead: number } {
+  if (PLAIN.test(line)) return { width: line.length, lead: line.length - line.trimStart().length };
   let width = 0;
+  let lead = -1;
   for (const char of line) {
     const code = char.codePointAt(0) ?? 0;
+    const blank = code === 0x09 || code === 0x20;
+    if (!blank && lead < 0 && code !== 0x0d) lead = width;
     if (code === 0x09) width += TAB - (width % TAB);
     else if (code === 0x0d) continue;
     else if (zero(code)) continue;
     else width += wide(code) ? 2 : 1;
   }
-  return width;
+  return { width, lead: lead < 0 ? width : lead };
 }
 
-/** The rows a line of `width` columns takes in rows of `cols` columns. */
-export function rowsOf(width: number, cols: number): number {
+/** The most indentation the further rows of a line keep (a deeply indented line still gets room). */
+export const MAX_LEAD = 24;
+
+/** The indentation a line's further rows keep: its own, at most `MAX_LEAD` and half of what a row holds. */
+export function leadFor(lead: number, cols: number): number {
+  const c = Math.max(cols, MIN_COLS);
+  return Math.max(0, Math.min(lead, MAX_LEAD, Math.floor((c - INDENT) / 2)));
+}
+
+/** The rows a line of `width` columns (indented `lead`) takes in rows of `cols` columns. */
+export function rowsOf(width: number, cols: number, lead = 0): number {
   const c = Math.max(cols, MIN_COLS);
   if (width <= c) return 1;
-  return 1 + Math.ceil((width - c) / (c - INDENT));
+  return 1 + Math.ceil((width - c) / (c - INDENT - leadFor(lead, c)));
 }
 
 /** Where each line starts, in rows: `starts[i]` = rows above line i; `starts[n]` = all the rows. */
-export function rowStarts(widths: ArrayLike<number>, cols: number): Float64Array {
+export function rowStarts(
+  widths: ArrayLike<number>,
+  cols: number,
+  leads?: ArrayLike<number>,
+): Float64Array {
   const starts = new Float64Array(widths.length + 1);
   let at = 0;
   for (let i = 0; i < widths.length; i++) {
     starts[i] = at;
-    at += rowsOf(widths[i] ?? 0, cols);
+    at += rowsOf(widths[i] ?? 0, cols, leads?.[i] ?? 0);
   }
   starts[widths.length] = at;
   return starts;
@@ -89,15 +114,15 @@ export function lineAtRow(starts: Float64Array, row: number): { line: number; ro
 }
 
 /** Where row `row` of a line starts, in characters (one column each: the long lines this is used for are plain). */
-export function rowOffset(row: number, cols: number): number {
+export function rowOffset(row: number, cols: number, lead = 0): number {
   const c = Math.max(cols, MIN_COLS);
-  return row <= 0 ? 0 : c + (row - 1) * (c - INDENT);
+  return row <= 0 ? 0 : c + (row - 1) * (c - INDENT - leadFor(lead, c));
 }
 
 /** Rows `from` .. `to` (exclusive) of a line: its text from where `from` starts, never cutting a surrogate pair. */
-export function rowsText(line: string, from: number, to: number, cols: number): string {
-  const start = edge(line, rowOffset(from, cols));
-  const end = edge(line, rowOffset(to, cols));
+export function rowsText(line: string, from: number, to: number, cols: number, lead = 0): string {
+  const start = edge(line, rowOffset(from, cols, lead));
+  const end = edge(line, rowOffset(to, cols, lead));
   return line.slice(start, end);
 }
 
@@ -145,21 +170,50 @@ export function piecesFor(
   return { top, pieces };
 }
 
+/** The columns and indentation of every line. */
+export type Widths = { widths: Int32Array; leads: Int32Array };
+
 /** The columns of every line, the ones `before` had for the same lines kept (a text that grew by a chunk). */
 export function widthsOf(
   lines: readonly string[],
-  before: { lines: readonly string[]; widths: Int32Array } | null,
-): Int32Array {
+  before: ({ lines: readonly string[] } & Widths) | null,
+): Widths {
   const widths = new Int32Array(lines.length);
+  const leads = new Int32Array(lines.length);
   let from = 0;
   // a chunk goes on with the last line held: every line before it is the same string
   if (before !== null && before.lines.length > 1 && lines.length >= before.lines.length) {
     const kept = before.lines.length - 1;
     if (lines[0] === before.lines[0] && lines[kept - 1] === before.lines[kept - 1]) {
       widths.set(before.widths.subarray(0, kept));
+      leads.set(before.leads.subarray(0, kept));
       from = kept;
     }
   }
-  for (let i = from; i < lines.length; i++) widths[i] = columns(lines[i] ?? "");
-  return widths;
+  for (let i = from; i < lines.length; i++) {
+    const m = measure(lines[i] ?? "");
+    widths[i] = m.width;
+    leads[i] = m.lead;
+  }
+  return { widths, leads };
+}
+
+// ---- the line kept at the top when the rows change (wrapping switched, a new width) ----------------------------
+
+/** A line and how far into its first row the pane starts (pixels; never past that row). */
+export type Anchor = { line: number; delta: number };
+
+/**
+ * The line at the top of rows of one height `row` (no wrapping): the line holding the pane's top edge `y` (pixels
+ * from the first line's top). A line showing less than a pixel is passed over: rounding never makes the line above
+ * the one being read the anchor.
+ */
+export function anchorAt(y: number, row: number, count: number): Anchor {
+  const line = Math.min(Math.max(1, Math.floor((y + 1) / row) + 1), Math.max(count, 1));
+  return { line, delta: Math.max(0, y - (line - 1) * row) };
+}
+
+/** How far into the anchored line the pane starts again: within its first row (the person read from there). */
+export function intoLine(delta: number, row: number): number {
+  return Math.max(0, Math.min(delta, row - 1));
 }

@@ -11,6 +11,11 @@ import {
   rowStarts,
   rowsText,
   widthsOf,
+  anchorAt,
+  intoLine,
+  leadFor,
+  measure,
+  MAX_LEAD,
 } from "./wrapRows";
 
 describe("the columns of a line", () => {
@@ -116,13 +121,13 @@ describe("where the lines start, in rows", () => {
 
   it("keeps the widths of the lines a chunk did not change", () => {
     const before = ["one", "two", "thr"];
-    const kept = { lines: before, widths: widthsOf(before, null) };
+    const kept = { lines: before, ...widthsOf(before, null) };
     // the next chunk went on with the last line
     const after = ["one", "two", "three and more", "four"];
     const next = Object.assign([...after], { 0: before[0], 1: before[1] });
-    expect([...widthsOf(next, kept)]).toEqual([3, 3, 14, 4]);
+    expect([...widthsOf(next, kept).widths]).toEqual([3, 3, 14, 4]);
     // another text: all counted again
-    expect([...widthsOf(["xxxxxxx", "y"], kept)]).toEqual([7, 1]);
+    expect([...widthsOf(["xxxxxxx", "y"], kept).widths]).toEqual([7, 1]);
   });
 });
 
@@ -132,7 +137,7 @@ describe("very long texts (adversarial)", () => {
     const text = `${Array.from({ length: 200 }, () => line).join("\n")}\n`;
     const startedAt = performance.now();
     const { lines } = linesOf(text);
-    const starts = rowStarts(widthsOf(lines, null), 120);
+    const starts = rowStarts(widthsOf(lines, null).widths, 120);
     const drawn = piecesFor(starts, 12_345, 140, 200);
     const took = performance.now() - startedAt;
     expect(lines).toHaveLength(200);
@@ -147,7 +152,7 @@ describe("very long texts (adversarial)", () => {
 
   it("draws a few rows of a single line of 5 MB", () => {
     const line = "0123456789".repeat(500_000);
-    const starts = rowStarts(widthsOf([line], null), 100);
+    const starts = rowStarts(widthsOf([line], null).widths, 100);
     const total = starts[1] ?? 0;
     expect(total).toBe(rowsOf(5_000_000, 100));
     const end = piecesFor(starts, total - 10, 140, 200);
@@ -165,5 +170,70 @@ describe("very long texts (adversarial)", () => {
     const width = columns(line);
     expect(width).toBe(600_000 * 15);
     expect(performance.now() - startedAt).toBeLessThan(2000);
+  });
+});
+
+describe("indented lines (their further rows keep the indentation)", () => {
+  it("measures the leading spaces and tabs of a line", () => {
+    expect(measure("    x = 1")).toEqual({ width: 9, lead: 4 });
+    expect(measure("\tx")).toEqual({ width: 9, lead: 8 });
+    expect(measure("x")).toEqual({ width: 1, lead: 0 });
+    expect(measure("   ")).toEqual({ width: 3, lead: 3 });
+    expect(measure("  日本")).toEqual({ width: 6, lead: 2 });
+  });
+
+  it("counts further rows narrower by the indentation, at most half a row and MAX_LEAD", () => {
+    expect(leadFor(4, 80)).toBe(4);
+    expect(leadFor(60, 80)).toBe(MAX_LEAD);
+    expect(leadFor(20, 30)).toBe(14);
+    // 80 + 74 + 74 columns: three rows with an indentation of 4
+    expect(rowsOf(80 + 74 * 2, 80, 4)).toBe(3);
+    expect(rowsOf(80 + 74 * 2 + 1, 80, 4)).toBe(4);
+    expect(rowOffset(2, 80, 4)).toBe(80 + 74);
+    const line = `    ${"y".repeat(600)}`;
+    const rows = rowsOf(line.length, 80, 4);
+    const joined = Array.from({ length: rows }, (_, r) => rowsText(line, r, r + 1, 80, 4)).join("");
+    expect(joined).toBe(line);
+  });
+
+  it("keeps the indentation of the lines a chunk did not change", () => {
+    const before = ["  one", "two"];
+    const kept = { lines: before, ...widthsOf(before, null) };
+    expect([...widthsOf(["  one", "two more", "   x"], kept).leads]).toEqual([2, 0, 3]);
+  });
+});
+
+describe("the line kept at the top when wrapping switches (adversarial)", () => {
+  const row = 21.6;
+
+  it("never takes the line above when the pane's edge is a hair above a line's top (rounding)", () => {
+    // line 61 at the top: its top is 60 rows down; the pane's edge reads a fraction of a pixel less
+    expect(anchorAt(60 * row - 0.01, row, 140)).toEqual({ line: 61, delta: 0 });
+    expect(anchorAt(60 * row - 0.6, row, 140).line).toBe(61);
+    expect(anchorAt(60 * row + 5, row, 140)).toEqual({ line: 61, delta: expect.closeTo(5, 5) });
+    // a line more than a pixel in view is the one at the top
+    expect(anchorAt(60 * row - 2, row, 140).line).toBe(60);
+    expect(anchorAt(-30, row, 140)).toEqual({ line: 1, delta: 0 });
+    expect(anchorAt(1e9, row, 140).line).toBe(140);
+  });
+
+  it("puts the line back at the top whatever the long line above it grew to (7 665 and 520 characters)", () => {
+    for (const above of [7665, 520]) {
+      // the log: line 60 is the long one, every other line short; line 61 was at the top, not wrapping
+      const widths = Array.from({ length: 140 }, (_, i) => (i === 59 ? above : 40));
+      const at = anchorAt(60 * row - 0.01, row, widths.length);
+      expect(at.line).toBe(61);
+      // wrapping on: the line's top is the rows above it; the pane goes there, within its first row
+      const starts = rowStarts(widths, 120);
+      const top = (starts[at.line - 1] ?? 0) * row + intoLine(at.delta, row);
+      expect(top).toBeCloseTo((59 + rowsOf(above, 120)) * row, 5);
+      expect(rowsOf(above, 120)).toBeGreaterThan(1);
+    }
+  });
+
+  it("starts again within the first row of the line, never deeper into a line that grew", () => {
+    expect(intoLine(15, row)).toBe(15);
+    expect(intoLine(300, row)).toBeCloseTo(row - 1, 5);
+    expect(intoLine(-3, row)).toBe(0);
   });
 });

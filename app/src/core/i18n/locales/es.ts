@@ -571,7 +571,9 @@ export default {
   "cmd.cycleWidth": "Cambiar el ancho de lectura",
   "cmd.wrapLines": "Ajustar líneas largas (sí | no)",
   "wrap.on": "Las líneas largas ahora se ajustan.",
-  "wrap.off": "Las líneas largas ya no se ajustan. Desplázate hacia el lado para leerlas.",
+  "wrap.off":
+    "Las líneas largas ya no se ajustan. Para desplazarte hacia el lado, usa Mayús y la rueda del ratón, o haz clic en el texto y usa las flechas.",
+  "text.scrollRegion": "Texto (se desplaza hacia el lado)",
   "cmd.settings": "Abrir configuración",
   "cmd.newFile": "Nuevo archivo Markdown...",
   "cmd.toggleEdit": "Alternar entre Ver y el último editor",

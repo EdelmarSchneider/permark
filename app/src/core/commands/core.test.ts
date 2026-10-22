@@ -83,7 +83,7 @@ describe("the core's commands", () => {
     expect(windowStore.notices.at(-1)).toMatchObject({ kind: "note", text: en["doc.noChange"] });
   });
 
-  it("switch long lines wrapping with Alt+Z: saved, said, and twice is back", async () => {
+  it("switch long lines wrapping with Alt+Z: saved, said by one note that closes, twice is back", async () => {
     const keyOf = (id: string): string | undefined => shortcuts.find((s) => s.command === id)?.keys;
     expect(keyOf("doc.wrapLines")).toBe("Alt+z");
     const { api } = await import("../../api");
@@ -95,11 +95,23 @@ describe("the core's commands", () => {
     await wrap?.run();
     expect(look.wrap).toBe(false);
     expect(set).toHaveBeenLastCalledWith({ key: "wrapLines", value: false });
-    expect(windowStore.notices.at(-1)).toMatchObject({ kind: "note", text: en["wrap.off"] });
+    expect(windowStore.notices.at(-1)).toMatchObject({
+      kind: "timed",
+      text: en["wrap.off"],
+      closeAfterMs: 4000,
+    });
     await wrap?.run();
     expect(look.wrap).toBe(true);
     expect(set).toHaveBeenLastCalledWith({ key: "wrapLines", value: true });
-    expect(windowStore.notices.at(-1)).toMatchObject({ kind: "note", text: en["wrap.on"] });
+    expect(windowStore.notices.at(-1)).toMatchObject({ kind: "timed", text: en["wrap.on"] });
+    // the new note replaced the one before: never a stack of notes that say the opposite
+    const wrapNotes = (): number =>
+      windowStore.notices.filter(
+        (n) => n.kind === "timed" && (n.text === en["wrap.on"] || n.text === en["wrap.off"]),
+      ).length;
+    expect(wrapNotes()).toBe(1);
+    for (let i = 0; i < 6; i++) await wrap?.run();
+    expect(wrapNotes()).toBe(1);
     // refused: the views go back, the person is told
     set.mockResolvedValueOnce({
       ok: false,
@@ -112,7 +124,8 @@ describe("the core's commands", () => {
     await wrap?.run();
     expect(look.wrap).toBe(true);
     const told = windowStore.notices.at(-1);
-    expect(told?.kind === "note" ? told.text : "").toMatch(/^Couldn't keep this setting/);
+    expect(told?.kind === "timed" ? told.text : "").toMatch(/^Couldn't keep this setting/);
+    expect(wrapNotes()).toBe(0);
     set.mockRestore();
   });
 

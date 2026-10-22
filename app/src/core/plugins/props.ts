@@ -12,6 +12,8 @@ export type EmbedProps = {
   display: boolean;
   /** Code: each line in an element of its own (`span.ln`), for a viewer that wraps long lines and numbers them. */
   lines?: boolean;
+  /** Code: the text scrolls sideways in a box the keyboard reaches (a viewer of a whole file), named this. */
+  region?: string;
 };
 
 /** The text selected in the page, and where it is (a plugin comments on it). */

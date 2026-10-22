@@ -575,7 +575,9 @@ export default {
   "cmd.cycleWidth": "Cambia larghezza di lettura",
   "cmd.wrapLines": "A capo nelle righe lunghe (sì | no)",
   "wrap.on": "Ora le righe lunghe vanno a capo.",
-  "wrap.off": "Le righe lunghe non vanno più a capo. Scorri di lato per leggerle.",
+  "wrap.off":
+    "Le righe lunghe non vanno più a capo. Per scorrere di lato, usa Maiusc e la rotellina, oppure fai clic sul testo e usa le frecce.",
+  "text.scrollRegion": "Testo (scorre di lato)",
   "cmd.settings": "Apri impostazioni",
   "cmd.newFile": "Nuovo file Markdown...",
   "cmd.toggleEdit": "Passa da Vista all'ultimo editor e viceversa",

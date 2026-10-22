@@ -557,7 +557,9 @@ const en = {
   "cmd.cycleWidth": "Change reading width",
   "cmd.wrapLines": "Wrap long lines (on | off)",
   "wrap.on": "Long lines now wrap.",
-  "wrap.off": "Long lines no longer wrap. Scroll sideways to read them.",
+  "wrap.off":
+    "Long lines no longer wrap. To scroll sideways, use Shift and the mouse wheel, or click the text and press the arrow keys.",
+  "text.scrollRegion": "Text (scrolls sideways)",
   "cmd.settings": "Open settings",
   "cmd.newFile": "New Markdown file...",
   "cmd.toggleEdit": "Switch between View and the last editor",

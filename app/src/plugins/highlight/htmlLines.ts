@@ -49,9 +49,30 @@ export function htmlLines(source: string): string[] {
   return out;
 }
 
-/** Each line in a `span.ln` (its line break inside it, so a copy keeps one per line and an empty line its height). */
-export function lineSpans(html: string): string {
+/** The most indentation the further rows of a wrapped line keep (as the text viewer's `MAX_LEAD`). */
+const MAX_LEAD = 24;
+
+/** The columns of a line's leading spaces | tabs (tab stops of 8), at most `MAX_LEAD`. */
+export function leadCols(line: string): number {
+  let width = 0;
+  for (const char of line) {
+    if (char === " ") width += 1;
+    else if (char === "\t") width += 8 - (width % 8);
+    else break;
+    if (width >= MAX_LEAD) return MAX_LEAD;
+  }
+  return width;
+}
+
+/**
+ * Each line in a `span.ln` (its line break inside it, so a copy keeps one per line and an empty line its height);
+ * `leads[i]` = the indentation line i's further rows keep (`--lead`).
+ */
+export function lineSpans(html: string, leads: readonly number[] = []): string {
   return htmlLines(html)
-    .map((line) => `<span class="ln">${line}\n</span>`)
+    .map((line, i) => {
+      const lead = leads[i] ?? 0;
+      return `<span class="ln"${lead > 0 ? ` style="--lead:${lead}"` : ""}>${line}\n</span>`;
+    })
     .join("");
 }

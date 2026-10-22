@@ -5,13 +5,12 @@ import type { WorkspaceKind } from "../../api/generated/WorkspaceKind";
 import { documents } from "../doc/document.svelte";
 import { reading, WIDTHS } from "../doc/reading.svelte";
 import { webPictures } from "../doc/webPictures.svelte";
+import { toggleWrap } from "../doc/wrapLines";
 import { chooseMode, editBlockedReason, editingNow } from "../editing/choose";
 import { editing } from "../editing/session.svelte";
 import { diagramPanel } from "../editing/diagramPanel.svelte";
 import { copyPathOf, newInTree, revealInTree } from "../explorer/current";
 import { t, type MessageKey } from "../i18n";
-import { apiErrorText } from "../errors";
-import { look } from "../look.svelte";
 import {
   CORE_OWNER,
   type ContributionInput,
@@ -54,20 +53,6 @@ type Spec = {
 const hasDocument = (): boolean => documents.path !== null;
 const readable = (): boolean => hasDocument() && !editingNow();
 const canEdit = (): boolean => (hasDocument() && editBlockedReason() === null) || editingNow();
-
-/** Long lines wrap | stop wrapping everywhere (the setting, saved at once); said in the notices (read out). */
-async function toggleWrap(): Promise<void> {
-  const on = !look.wrap;
-  // the views follow at once; `settings-changed` confirms
-  look.wrap = on;
-  const refused = await store.trySetting({ key: "wrapLines", value: on });
-  if (refused !== null) {
-    look.wrap = !on;
-    store.notifyNote(t("settings.notSaved", { message: apiErrorText(refused) }));
-    return;
-  }
-  store.notifyNote(t(on ? "wrap.on" : "wrap.off"));
-}
 
 function cycleWidth(): void {
   const at = WIDTHS.indexOf(reading.width);

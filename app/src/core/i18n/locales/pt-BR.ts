@@ -569,7 +569,9 @@ export default {
   "cmd.cycleWidth": "Mudar a largura de leitura",
   "cmd.wrapLines": "Quebrar linhas longas (liga | desliga)",
   "wrap.on": "As linhas longas agora quebram.",
-  "wrap.off": "As linhas longas não quebram mais. Role para o lado para lê-las.",
+  "wrap.off":
+    "As linhas longas não quebram mais. Para rolar para o lado, use Shift e a roda do mouse, ou clique no texto e use as setas.",
+  "text.scrollRegion": "Texto (rola para o lado)",
   "cmd.settings": "Abrir configurações",
   "cmd.newFile": "Novo arquivo Markdown...",
   "cmd.toggleEdit": "Alternar entre Ver e o último editor",

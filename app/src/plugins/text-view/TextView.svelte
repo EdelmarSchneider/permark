@@ -29,7 +29,21 @@
   import { look } from "../../core/look.svelte";
   import { contributions } from "../../core/plugins/instance.svelte";
   import type { ViewerProps } from "../../core/plugins/props";
-  import { MIN_COLS, piecesFor, rowStarts, rowsText, widthsOf, type Piece } from "./wrapRows";
+  import {
+    anchorAt,
+    intoLine,
+    leadFor,
+    measure,
+    MAX_LEAD,
+    MIN_COLS,
+    piecesFor,
+    rowStarts,
+    rowsText,
+    widthsOf,
+    type Anchor,
+    type Piece,
+    type Widths,
+  } from "./wrapRows";
 
   let { view }: ViewerProps = $props();
 
@@ -83,14 +97,19 @@
   // ---- rows of a very long text that wraps: counted, not drawn ----------------------------------------------------
 
   /** The columns of each line, kept while chunks come (only a wrapping very long text needs them). */
-  let widthCache: { lines: readonly string[]; widths: Int32Array } | null = null;
-  const widths = $derived.by(() => {
+  let widthCache: ({ lines: readonly string[] } & Widths) | null = null;
+  const widths = $derived.by((): Widths | null => {
     if (!virtual || !wrap) return null;
     const next = widthsOf(lines, widthCache);
-    widthCache = { lines, widths: next };
+    widthCache = { lines, ...next };
     return next;
   });
-  const starts = $derived(widths === null ? null : rowStarts(widths, cols));
+  const starts = $derived(widths === null ? null : rowStarts(widths.widths, cols, widths.leads));
+
+  /** The indentation the further rows of line `i` (0-based) keep. */
+  function leadOf(i: number): number {
+    return widths === null ? 0 : leadFor(widths.leads[i] ?? 0, cols);
+  }
   const totalRows = $derived(starts === null ? count : (starts[count] ?? 0));
 
   /** Rows above line `i` (0-based). */
@@ -122,7 +141,12 @@
   function partOf(piece: Piece): string {
     const raw = lines[piece.line] ?? "";
     const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
-    return rowsText(line, piece.from, piece.to, cols);
+    return rowsText(line, piece.from, piece.to, cols, widths?.leads[piece.line] ?? 0);
+  }
+
+  /** The indentation the further rows of a line of a smaller file keep. */
+  function leadSmall(raw: string): number {
+    return Math.min(measure(raw).lead, MAX_LEAD);
   }
 
   /** A line of the plain view without its carriage return, with its line break (a copy keeps one per line). */
@@ -157,22 +181,27 @@
   $effect(() => {
     const element = host;
     if (!element || !virtual || !wrap) return;
-    const measure = (): void => {
+    const fit = (): void => {
       const probe = element.querySelector<HTMLElement>(".probe");
       const char = (probe?.getBoundingClientRect().width ?? 0) / PROBE.length;
       // no layout (a hidden tab): the count stays until there is one
       if (!(char > 0)) return;
-      const number =
-        element.querySelector<HTMLElement>(".row .no")?.getBoundingClientRect().width ?? 0;
-      const room = element.clientWidth - number - PAD_RIGHT - 1;
+      // the text starts after the number and its column
+      const line = element.querySelector<HTMLElement>(".row .line");
+      const left = line
+        ? line.getBoundingClientRect().left -
+          element.getBoundingClientRect().left -
+          element.clientLeft
+        : 0;
+      const room = element.clientWidth - left - PAD_RIGHT - 1;
       cols = Math.max(MIN_COLS, Math.floor(room / char));
     };
-    measure();
+    fit();
     if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", measure);
-      return () => window.removeEventListener("resize", measure);
+      window.addEventListener("resize", fit);
+      return () => window.removeEventListener("resize", fit);
     }
-    const observer = new ResizeObserver(measure);
+    const observer = new ResizeObserver(fit);
     observer.observe(element);
     return () => observer.disconnect();
   });
@@ -231,8 +260,6 @@
     return (virtual ? host?.querySelector<HTMLElement>(".virtual") : codeBox) ?? null;
   }
 
-  type Anchor = { line: number; delta: number };
-
   /** The line at the top of the pane as drawn now, and how far into it the pane starts. */
   function anchorNow(): Anchor | null {
     const pane = host?.closest<HTMLElement>("[data-scroller]");
@@ -244,7 +271,8 @@
     const rows = drawnBox.querySelectorAll<HTMLElement>(".row[data-line]");
     for (const element of rows) {
       const rect = element.getBoundingClientRect();
-      if (rect.bottom <= edge || rect.height === 0) continue;
+      // a row showing less than a pixel is passed over (rounding never anchors the line above)
+      if (rect.bottom <= edge + 1 || rect.height === 0) continue;
       const line = Number(element.dataset.line);
       const from = Number(element.dataset.from);
       return { line, delta: edge - rect.top + from * row };
@@ -256,24 +284,27 @@
       let hi = spans.length - 1;
       while (lo < hi) {
         const mid = (lo + hi) >> 1;
-        if ((spans[mid]?.getBoundingClientRect().bottom ?? 0) > edge) hi = mid;
+        if ((spans[mid]?.getBoundingClientRect().bottom ?? 0) > edge + 1) hi = mid;
         else lo = mid + 1;
       }
       const rect = spans[lo]?.getBoundingClientRect();
       if (rect && rect.height > 0) return { line: lo + 1, delta: edge - rect.top };
     }
-    const y = edge - boxTop - (virtual ? 0 : PAD);
-    const line = Math.min(Math.max(1, Math.floor(y / row) + 1), Math.max(count, 1));
-    return { line, delta: Math.max(0, y - (line - 1) * row) };
+    return anchorAt(edge - boxTop - (virtual ? 0 : PAD), row, count);
   }
 
-  /** Brings the anchored line back to the top of the pane. */
-  function restore(anchor: Anchor): void {
+  /**
+   * Brings the anchored line back to the top of the pane: after a switch of wrapping, at its first row (where the
+   * person read from); after a new width, as far into it as it was.
+   */
+  function restore(anchor: Anchor, switched: boolean): void {
     const pane = host?.closest<HTMLElement>("[data-scroller]");
     const drawnBox = linesBox();
     if (!pane || !drawnBox) return;
     const at = place(anchor.line, anchor.line);
-    const into = Math.min(anchor.delta, Math.max(0, at.height - 1));
+    const into = switched
+      ? intoLine(anchor.delta, row)
+      : Math.max(0, Math.min(anchor.delta, at.height - 1));
     const y =
       drawnBox.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
     pane.scrollTop = Math.max(0, y + at.top + into);
@@ -281,12 +312,15 @@
 
   // wrapping switched | the rows got wider or narrower: the line at the top stays at the top
   let shownAs: { wrap: boolean; cols: number } | null = null;
-  let anchor: Anchor | null = null;
+  let anchor: { at: Anchor; switched: boolean } | null = null;
   $effect.pre(() => {
     const now = { wrap, cols: virtual && wrap ? cols : 0 };
     untrack(() => {
       if (shownAs !== null && (now.wrap !== shownAs.wrap || now.cols !== shownAs.cols)) {
-        anchor = anchorNow();
+        // a change before the last one was restored keeps that one's line (the drawing moved, the person did not)
+        const at = anchor?.at ?? anchorNow();
+        const switched = now.wrap !== shownAs.wrap || anchor?.switched === true;
+        anchor = at === null ? null : { at, switched };
       }
       shownAs = now;
     });
@@ -296,8 +330,13 @@
     void cols;
     untrack(() => {
       const kept = anchor;
-      anchor = null;
-      if (kept !== null) void tick().then(() => restore(kept));
+      if (kept === null) return;
+      void tick().then(() => {
+        // a newer change took over meanwhile: that one restores
+        if (anchor !== kept) return;
+        anchor = null;
+        restore(kept.at, kept.switched);
+      });
     });
   });
 
@@ -450,7 +489,15 @@
   style:--digits={digits}
 >
   {#if virtual}
-    <div class="virtual" style:height={`${totalRows * row}px`}>
+    <!-- not wrapping: the box scrolls sideways, so the keyboard can reach it (arrow keys scroll it) -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div
+      class="virtual"
+      style:height={`${totalRows * row}px`}
+      tabindex={wrap ? undefined : 0}
+      role={wrap ? undefined : "region"}
+      aria-label={wrap ? undefined : t("text.scrollRegion")}
+    >
       {#if wrap}<span class="probe" aria-hidden="true">{PROBE}</span>{/if}
       <div class="slice" style:transform={`translateY(${drawn.top * row}px)`}>
         {#each drawn.pieces as piece (`${piece.line}:${piece.from}`)}
@@ -460,7 +507,9 @@
             data-line={piece.line + 1}
             data-from={piece.from}
           >
-            <span class="no">{piece.from === 0 ? piece.line + 1 : ""}</span><span class="line"
+            <span class="no">{piece.from === 0 ? piece.line + 1 : ""}</span><span
+              class="line"
+              style:--lead={wrap ? leadOf(piece.line) : null}
               >{#if whole(piece)}{#each pieces(lines[piece.line] ?? "", piece.line + 1) as part, i (i)}{#if part.secret !== null}<button
                       type="button"
                       class="secret"
@@ -505,16 +554,24 @@
       {#if code}
         {#await code.view() then loaded}
           {@const Code = loaded.default}
-          <Code source={text} info={body?.language ?? ""} display={false} lines={wrap} />
+          <Code
+            source={text}
+            info={body?.language ?? ""}
+            display={false}
+            lines={wrap}
+            region={wrap ? undefined : t("text.scrollRegion")}
+          />
         {/await}
       {:else if wrap}
         <pre><code
-            >{#each lines as line, i (i)}<span class="ln">{plain(line)}</span>{:else}<span
-                class="ln">{"\n"}</span
-              >{/each}</code
+            >{#each lines as line, i (i)}<span class="ln" style:--lead={leadSmall(line)}
+                >{plain(line)}</span
+              >{:else}<span class="ln">{"\n"}</span>{/each}</code
           ></pre>
       {:else}
-        <pre><code>{text}</code></pre>
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <pre tabindex="0" role="region" aria-label={t("text.scrollRegion")}><code>{text}</code
+          ></pre>
       {/if}
       {@render glowing()}
       {@render locating()}
@@ -603,11 +660,12 @@
     background-size: 1px 100%;
     background-position: calc(14px + var(--gutter) + 10px) 0;
   }
+  /* a further row starts 2 to the right of the line's own indentation (`--lead`) */
   .wrap .code :global(.ln) {
     display: block;
     position: relative;
-    padding-left: 2ch;
-    text-indent: -2ch;
+    padding-left: calc((2 + var(--lead, 0)) * 1ch);
+    text-indent: calc((2 + var(--lead, 0)) * -1ch);
     counter-increment: ln;
   }
   .wrap .code :global(.ln::before) {
@@ -639,13 +697,26 @@
     height: var(--row);
     white-space: pre;
   }
+  /* the number column, as the gutter of a smaller file (a line between it and the text) */
   .no {
     flex: none;
     width: 5.5em;
+    margin-right: 16px;
     padding-right: 10px;
+    border-right: 1px solid var(--border);
     color: var(--faint);
     text-align: right;
     user-select: none;
+  }
+  /* not wrapping: the box takes the keyboard to scroll sideways */
+  .virtual:focus,
+  .code :global(pre:focus) {
+    outline: none;
+  }
+  .virtual:focus-visible,
+  .code :global(pre:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
   /* wrapped rows: a row holds `--cols` characters, breaks after any one of them; its further rows start 2 to the right */
   .wrap .virtual {
@@ -661,9 +732,9 @@
   .wrap .line {
     flex: none;
     box-sizing: content-box;
-    width: calc((var(--cols) - 2) * 1ch + 1px);
-    padding-left: 2ch;
-    text-indent: -2ch;
+    width: calc((var(--cols) - 2 - var(--lead, 0)) * 1ch + 1px);
+    padding-left: calc((2 + var(--lead, 0)) * 1ch);
+    text-indent: calc((2 + var(--lead, 0)) * -1ch);
     white-space: break-spaces;
     word-break: break-all;
     line-break: anywhere;

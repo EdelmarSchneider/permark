@@ -390,4 +390,24 @@ describe("long lines that wrap (the setting)", () => {
       0,
     );
   });
+
+  it("not wrapping: the text box takes the keyboard to scroll sideways (named region)", async () => {
+    look.wrap = false;
+    show(viewOf("one\ntwo\n", null, "a.txt"));
+    await until(() => target.querySelector(".code pre[tabindex='0']") !== null, "focusable");
+    const box = target.querySelector(".code pre");
+    expect(box?.getAttribute("role")).toBe("region");
+    expect(box?.getAttribute("aria-label")).toBe("Text (scrolls sideways)");
+    look.wrap = true;
+    flushSync();
+    await until(
+      () => target.querySelector(".code pre[tabindex]") === null,
+      "no tab stop when wrapping",
+    );
+    if (component) await unmount(component);
+    component = null;
+    look.wrap = false;
+    show(viewOf(lines(0, 30_000), null, "big.txt"));
+    expect(target.querySelector(".virtual")?.getAttribute("tabindex")).toBe("0");
+  });
 });

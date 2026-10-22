@@ -8,10 +8,10 @@
   import { t } from "../../core/i18n";
   import type { EmbedProps } from "../../core/plugins/props";
   import { highlightFence, type CodeOutcome } from "./highlighter";
-  import { lineSpans } from "./htmlLines";
+  import { leadCols, lineSpans } from "./htmlLines";
   import "./tokens.css";
 
-  let { source, info, lines = false }: EmbedProps = $props();
+  let { source, info, lines = false, region }: EmbedProps = $props();
 
   let outcome = $state.raw<CodeOutcome>({ html: null, label: null });
   let copied = $state(false);
@@ -53,7 +53,9 @@
   });
 
   /** One element per line when the viewer asks for it (the plain text too, before highlighting). */
-  const drawn = $derived(lines ? lineSpans(html ?? escape(source)) : html);
+  const drawn = $derived(
+    lines ? lineSpans(html ?? escape(source), source.split("\n").map(leadCols)) : html,
+  );
 
   function reveal(event: MouseEvent): void {
     const target = event.target;
@@ -92,8 +94,12 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-<pre onclick={reveal}><code
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions, a11y_no_noninteractive_tabindex -->
+<pre
+  onclick={reveal}
+  tabindex={region === undefined ? undefined : 0}
+  role={region === undefined ? undefined : "region"}
+  aria-label={region}><code
     >{#if drawn !== null}{@html drawn}{:else}{source}{/if}</code
   ></pre>
 <div class="corner">

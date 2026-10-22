@@ -3,6 +3,7 @@
   // whether long lines of text wrap (everywhere).
   import type { LanguagePref, ThemePref, Tone } from "../../../api";
   import { keyHint } from "../../commands/hint";
+  import { setWrap } from "../../doc/wrapLines";
   import {
     WIDTHS,
     ZOOM_DEFAULT,
@@ -134,7 +135,7 @@
     type="checkbox"
     role="switch"
     checked={look.wrap}
-    onchange={(e) => void store.changeSetting({ key: "wrapLines", value: e.currentTarget.checked })}
+    onchange={(e) => void setWrap(e.currentTarget.checked, false)}
   />
 </SettingRow>
 

@@ -577,7 +577,9 @@ export default {
   "cmd.cycleWidth": "Lesebreite ändern",
   "cmd.wrapLines": "Lange Zeilen umbrechen (an | aus)",
   "wrap.on": "Lange Zeilen werden jetzt umgebrochen.",
-  "wrap.off": "Lange Zeilen werden nicht mehr umgebrochen. Zum Lesen seitlich scrollen.",
+  "wrap.off":
+    "Lange Zeilen werden nicht mehr umgebrochen. Seitlich scrollen: Umschalt und Mausrad, oder in den Text klicken und die Pfeiltasten nutzen.",
+  "text.scrollRegion": "Text (seitlich scrollbar)",
   "cmd.settings": "Einstellungen öffnen",
   "cmd.newFile": "Neue Markdown-Datei ...",
   "cmd.toggleEdit": "Zwischen Ansicht und dem zuletzt verwendeten Editor wechseln",
