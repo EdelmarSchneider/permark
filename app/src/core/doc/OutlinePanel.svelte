@@ -1,6 +1,7 @@
 <script lang="ts">
   // The outline of the document in the right panel: the headings, indented by structure, the one the reader is at
   // marked. A click goes to the heading.
+  import type { Snippet } from "svelte";
   import type { OutlineItem } from "../../api";
   import { conditions } from "../conditions/context.svelte";
   import { t } from "../i18n";
@@ -9,8 +10,12 @@
   import { documents } from "./document.svelte";
   import { depths } from "./outline";
 
-  type Props = { items: readonly OutlineItem[] };
-  let { items }: Props = $props();
+  type Props = {
+    items: readonly OutlineItem[];
+    /** The view options button of the right column (drawn with two views or more). */
+    viewMenu?: Snippet;
+  };
+  let { items, viewMenu }: Props = $props();
 
   const indent = $derived(depths(items));
   let list: HTMLElement | undefined = $state();
@@ -37,12 +42,15 @@
 </script>
 
 <section class="outline" aria-label={t("outline.label")}>
-  <h2 class="title">
-    <span>{t("outline.label")}</span>
-    {#each shown as { column, header } (column.owner + column.id)}
-      <span class="column-head" title={header?.title}>{header?.text}</span>
-    {/each}
-  </h2>
+  <div class="head" data-view-header>
+    <h2 class="title">
+      <span>{t("outline.label")}</span>
+      {#each shown as { column, header } (column.owner + column.id)}
+        <span class="column-head" title={header?.title}>{header?.text}</span>
+      {/each}
+    </h2>
+    {#if viewMenu}<span class="menu">{@render viewMenu()}</span>{/if}
+  </div>
   {#each columns as column (column.owner + column.id)}
     {#await column.watcher() then loaded}
       {@const Watcher = loaded.default}
@@ -87,7 +95,17 @@
     flex: 1;
     min-height: 0;
   }
+  .head {
+    display: flex;
+    align-items: center;
+  }
+  .menu {
+    flex: none;
+    padding-right: var(--sp-2);
+  }
   .title {
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: baseline;
     justify-content: space-between;

@@ -1,36 +1,30 @@
-<script lang="ts">
-  // The views of the right panel as tabs (Outline | Live changes), drawn only when there are two or more: the outline
-  // of the document (when it has one) and the right panels plugins offer now. Selecting shows a view, never hides
-  // the panel. One Tab stop: arrows move between the tabs, Enter | Space select.
-  import ListTree from "@lucide/svelte/icons/list-tree";
+<script module lang="ts">
   import type { Component } from "svelte";
-  import { t } from "../i18n";
-  import { activeRight, rightPanels } from "./panels.svelte";
-  import { toggleOutlinePanel } from "./sides";
-  import { ui } from "./ui.svelte";
 
-  type Props = { outline: boolean };
-  let { outline }: Props = $props();
-
-  type View = {
+  /** A tab: the view's id, its label, its icon (crowded strips show it alone), a short count. */
+  export type TabView = {
     id: string;
     label: string;
     icon: Component<{ size?: number }> | undefined;
     badge: string | null;
   };
+</script>
 
-  const OUTLINE = "outline";
+<script lang="ts">
+  // The views of one group of the right column as tabs (Outline | Live changes): drawn by the column only when the
+  // group shows two views or more. Selecting shows a view, never hides it. One Tab stop: arrows move between the tabs,
+  // Enter | Space select; right click | Shift+F10 | the Menu key open the view's options.
+  import { t } from "../i18n";
 
-  const views = $derived.by((): View[] => [
-    ...(outline ? [{ id: OUTLINE, label: t("outline.tab"), icon: ListTree, badge: null }] : []),
-    ...rightPanels().map((panel) => ({
-      id: panel.id,
-      label: t(panel.label),
-      icon: panel.icon,
-      badge: panel.badge?.() ?? null,
-    })),
-  ]);
-  const selected = $derived(activeRight() ?? (outline ? OUTLINE : null));
+  type Props = {
+    views: readonly TabView[];
+    selected: string | null;
+    onselect: (id: string) => void;
+    /** The view's options at a point (`null`: under the tab). */
+    onmenu?: (id: string, at: { x: number; y: number }, anchor: HTMLElement) => void;
+  };
+  let { views, selected, onselect, onmenu }: Props = $props();
+
   /** Many tabs: the ones that are not open show their icon alone (the label is the tooltip). */
   const crowded = $derived(views.length > 2);
   /** The tab that takes the Tab stop (the selected one until arrows move the focus). */
@@ -43,13 +37,24 @@
   );
   let strip: HTMLElement | undefined = $state();
 
-  function select(id: string): void {
-    if (id === selected) return;
-    if (id === OUTLINE) toggleOutlinePanel();
-    else ui.toggleRight(id);
+  function tabOf(id: string | null): HTMLElement | null {
+    return strip?.querySelector<HTMLElement>(`[data-view="${id ?? ""}"]`) ?? null;
+  }
+
+  function menuAt(id: string, el: HTMLElement): void {
+    const box = el.getBoundingClientRect();
+    onmenu?.(id, { x: box.left, y: box.bottom }, el);
   }
 
   function keydown(event: KeyboardEvent): void {
+    if ((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu") {
+      const el = tabOf(stop);
+      if (el !== null && stop !== null) {
+        event.preventDefault();
+        menuAt(stop, el);
+      }
+      return;
+    }
     const at = views.findIndex((v) => v.id === stop);
     const last = views.length - 1;
     let to: number;
@@ -72,49 +77,54 @@
     event.preventDefault();
     const id = views[to]?.id ?? null;
     focused = id;
-    strip?.querySelector<HTMLElement>(`[data-view="${id ?? ""}"]`)?.focus();
+    tabOf(id)?.focus();
   }
 </script>
 
-{#if views.length >= 2}
-  <!-- svelte-ignore a11y_interactive_supports_focus -->
-  <div
-    class="tabs"
-    class:crowded
-    role="tablist"
-    aria-label={t("panel.tabs")}
-    bind:this={strip}
-    onkeydown={keydown}
-    onfocusout={(event) => {
-      if (!(event.relatedTarget instanceof Node) || !strip?.contains(event.relatedTarget)) {
-        focused = null;
-      }
-    }}
-  >
-    {#each views as view (view.id)}
-      {@const iconOnly = view.icon !== undefined && crowded && selected !== view.id}
-      <button
-        type="button"
-        role="tab"
-        class="tab"
-        class:icon-only={iconOnly}
-        data-view={view.id}
-        tabindex={stop === view.id ? 0 : -1}
-        aria-selected={selected === view.id}
-        aria-label={view.badge === null ? view.label : `${view.label} (${view.badge})`}
-        title={view.label}
-        onclick={() => select(view.id)}
-      >
-        {#if view.icon}
-          {@const Icon = view.icon}
-          <Icon size={14} />
-        {/if}
-        {#if !iconOnly}<span class="label">{view.label}</span>{/if}
-        {#if view.badge !== null}<span class="badge" aria-hidden="true">{view.badge}</span>{/if}
-      </button>
-    {/each}
-  </div>
-{/if}
+<!-- svelte-ignore a11y_interactive_supports_focus -->
+<div
+  class="tabs"
+  class:crowded
+  role="tablist"
+  aria-label={t("panel.tabs")}
+  bind:this={strip}
+  onkeydown={keydown}
+  onfocusout={(event) => {
+    if (!(event.relatedTarget instanceof Node) || !strip?.contains(event.relatedTarget)) {
+      focused = null;
+    }
+  }}
+>
+  {#each views as view (view.id)}
+    {@const iconOnly = view.icon !== undefined && crowded && selected !== view.id}
+    <button
+      type="button"
+      role="tab"
+      class="tab"
+      class:icon-only={iconOnly}
+      data-view={view.id}
+      tabindex={stop === view.id ? 0 : -1}
+      aria-selected={selected === view.id}
+      aria-label={view.badge === null ? view.label : `${view.label} (${view.badge})`}
+      title={view.label}
+      onclick={() => {
+        if (view.id !== selected) onselect(view.id);
+      }}
+      oncontextmenu={(event) => {
+        if (onmenu === undefined || !(event.currentTarget instanceof HTMLElement)) return;
+        event.preventDefault();
+        onmenu(view.id, { x: event.clientX, y: event.clientY }, event.currentTarget);
+      }}
+    >
+      {#if view.icon}
+        {@const Icon = view.icon}
+        <Icon size={14} />
+      {/if}
+      {#if !iconOnly}<span class="label">{view.label}</span>{/if}
+      {#if view.badge !== null}<span class="badge" aria-hidden="true">{view.badge}</span>{/if}
+    </button>
+  {/each}
+</div>
 
 <style>
   .tabs {

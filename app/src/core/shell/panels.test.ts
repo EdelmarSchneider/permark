@@ -3,7 +3,7 @@ import "../testing/media";
 import { afterEach, describe, expect, it } from "vitest";
 import { contributions } from "../plugins/instance.svelte";
 import { NO_REQUIREMENT } from "../conditions/available";
-import { activeRight, activeSidebar, leftPanels, rightPanels } from "./panels.svelte";
+import { activeSidebar, leftPanels, rightPanels } from "./panels.svelte";
 import { ui } from "./ui.svelte";
 import type { PluginId } from "../../api/generated/PluginId";
 
@@ -28,7 +28,6 @@ function panel(id: string, side: "left" | "right", owner = "test", offered?: () 
 afterEach(() => {
   for (const remove of removals.splice(0)) remove();
   ui.sidebar = "files";
-  ui.right = null;
 });
 
 describe("plugin panels", () => {
@@ -45,29 +44,15 @@ describe("plugin panels", () => {
     expect(activeSidebar()).toBe("files");
   });
 
-  it("the right panel shows only when chosen and still there, and toggles", () => {
-    expect(activeRight()).toBeNull();
-    panel("b.panel", "right");
-    ui.toggleRight("b.panel");
-    expect(activeRight()).toBe("b.panel");
-    ui.toggleRight("b.panel");
-    expect(activeRight()).toBeNull();
-    ui.right = "missing.panel";
-    expect(activeRight()).toBeNull();
-  });
-
-  it("a dormant panel is not drawn and its choice falls back, until its plugin offers it", () => {
+  it("a dormant panel is not listed until its plugin offers it", () => {
     const state = { offered: false };
     panel("b.panel", "right", "test", () => state.offered);
     panel("c.panel", "left", "test", () => state.offered);
     expect(rightPanels()).toEqual([]);
     expect(leftPanels()).toEqual([]);
-    ui.right = "b.panel";
-    expect(activeRight()).toBeNull();
     state.offered = true;
     expect(rightPanels().map((p) => p.id)).toEqual(["b.panel"]);
     expect(leftPanels().map((p) => p.id)).toEqual(["c.panel"]);
-    expect(activeRight()).toBe("b.panel");
   });
 
   it("keep one order whatever order the plugins finished loading in", () => {

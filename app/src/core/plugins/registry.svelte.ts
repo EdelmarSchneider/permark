@@ -95,6 +95,11 @@ export type Contribution = Owned &
         offered?: () => boolean;
         /** Reactive; a short count after the tab label in the right tab strip (`null`: none). */
         badge?: () => string | null;
+        /**
+         * Side right: open when the project has no choice for it yet (absent = false); asked once per project load.
+         * Right views get prop `viewMenu` (`PanelViewProps`): the view options button for their header.
+         */
+        defaultOpen?: () => boolean;
       }
     | {
         kind: "statusItem";

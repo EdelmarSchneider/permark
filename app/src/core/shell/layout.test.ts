@@ -6,13 +6,16 @@ import {
   keyWidth,
   outlineShown,
   PAGE_MIN,
+  panelShown,
   RIGHT,
   rightAvailable,
   rightShown,
   SIDEBAR,
   toggleOutline,
+  togglePanel,
   toggleRight,
   type RightSide,
+  type SidePanel,
 } from "./layout";
 import { LayoutStore } from "./layout.svelte";
 
@@ -125,87 +128,107 @@ describe("the layout store", () => {
 });
 
 describe("showing | hiding the right panel", () => {
+  const live = (over: Partial<SidePanel> = {}): SidePanel => ({
+    id: "live-feed.panel",
+    open: false,
+    selected: true,
+    ...over,
+  });
   const side = (over: Partial<RightSide> = {}): RightSide => ({
-    panel: null,
     hasOutline: true,
     outlineOn: true,
+    outlineSelected: true,
+    panels: [],
     hidden: false,
     ...over,
   });
 
-  it("shows a plugin panel, else the outline when on; hidden shows nothing", () => {
+  it("shows when a view is present (the outline when on, an open panel); hidden shows nothing", () => {
     expect(rightShown(side())).toBe(true);
     expect(rightShown(side({ outlineOn: false }))).toBe(false);
-    expect(rightShown(side({ outlineOn: false, panel: "live-feed.panel" }))).toBe(true);
+    expect(rightShown(side({ outlineOn: false, panels: [live({ open: true })] }))).toBe(true);
+    expect(rightShown(side({ outlineOn: false, panels: [live()] }))).toBe(false);
     expect(rightShown(side({ hasOutline: false }))).toBe(false);
     expect(rightShown(side({ hidden: true }))).toBe(false);
-    expect(rightShown(side({ hidden: true, panel: "live-feed.panel" }))).toBe(false);
+    expect(rightShown(side({ hidden: true, panels: [live({ open: true })] }))).toBe(false);
     expect(rightAvailable(side({ hasOutline: false }))).toBe(false);
-    expect(rightAvailable(side({ hasOutline: false, panel: "x" }))).toBe(true);
+    expect(rightAvailable(side({ hasOutline: false, panels: [live()] }))).toBe(true);
     expect(rightAvailable(side({ hidden: true, outlineOn: false }))).toBe(true);
   });
 
   it("the toggle hides what shows, shows what is hidden, and never does nothing visible", () => {
-    const keep = { closePanel: false };
-    expect(toggleRight(side())).toEqual({ hidden: true, outlineOn: true, ...keep });
-    expect(toggleRight(side({ hidden: true }))).toEqual({
-      hidden: false,
-      outlineOn: true,
-      ...keep,
-    });
-    // shown again with nothing on: the outline turns on
+    expect(toggleRight(side())).toEqual({ hidden: true });
+    expect(toggleRight(side({ hidden: true }))).toEqual({ hidden: false });
+    // shown again with nothing present: the outline turns on
     expect(toggleRight(side({ outlineOn: false }))).toEqual({
       hidden: false,
       outlineOn: true,
-      ...keep,
+      select: "outline",
     });
     expect(toggleRight(side({ hidden: true, outlineOn: false }))).toEqual({
       hidden: false,
       outlineOn: true,
-      ...keep,
+      select: "outline",
     });
-    // a plugin panel chosen: it shows again, the outline choice stays
-    expect(toggleRight(side({ hidden: true, outlineOn: false, panel: "p" }))).toEqual({
+    // an open panel: it shows again, the outline choice stays
+    expect(
+      toggleRight(side({ hidden: true, outlineOn: false, panels: [live({ open: true })] })),
+    ).toEqual({ hidden: false });
+    // no outline, nothing open: the first offered panel opens
+    expect(toggleRight(side({ hasOutline: false, panels: [live()] }))).toEqual({
       hidden: false,
-      outlineOn: false,
-      ...keep,
+      open: { id: "live-feed.panel", open: true },
+      select: "live-feed.panel",
     });
     // nothing it could show: no change
-    expect(toggleRight(side({ hasOutline: false, hidden: true }))).toEqual({
-      hidden: true,
-      outlineOn: true,
-      ...keep,
-    });
+    expect(toggleRight(side({ hasOutline: false, hidden: true }))).toEqual({});
   });
 
-  it("the outline toggle shows the outline unless it shows (a hidden panel comes back, a plugin panel lets go)", () => {
+  it("the outline toggle: on screen -> off; else on, selected, the region shown (an open panel stays open)", () => {
     expect(outlineShown(side())).toBe(true);
-    expect(outlineShown(side({ panel: "p" }))).toBe(false);
+    expect(outlineShown(side({ outlineSelected: false }))).toBe(false);
     expect(outlineShown(side({ hidden: true }))).toBe(false);
-    expect(toggleOutline(side())).toEqual({ hidden: false, outlineOn: false, closePanel: false });
-    expect(toggleOutline(side({ hidden: true, outlineOn: false }))).toEqual({
-      hidden: false,
-      outlineOn: true,
-      closePanel: true,
-    });
-    expect(toggleOutline(side({ hidden: true, outlineOn: true }))).toEqual({
-      hidden: false,
-      outlineOn: true,
-      closePanel: true,
-    });
-    expect(toggleOutline(side({ outlineOn: false }))).toEqual({
-      hidden: false,
-      outlineOn: true,
-      closePanel: true,
-    });
-    // a plugin panel shows (hidden or not): the outline replaces it
-    for (const hidden of [false, true]) {
-      expect(toggleOutline(side({ panel: "live-feed.panel", hidden }))).toEqual({
+    expect(toggleOutline(side())).toEqual({ outlineOn: false });
+    for (const over of [
+      { hidden: true, outlineOn: false },
+      { hidden: true },
+      { outlineOn: false },
+      { outlineSelected: false, panels: [live({ open: true })] },
+    ]) {
+      expect(toggleOutline(side(over)), JSON.stringify(over)).toEqual({
         hidden: false,
         outlineOn: true,
-        closePanel: true,
+        select: "outline",
       });
     }
+  });
+
+  it("a panel toggle: on screen -> closed; open elsewhere -> brought forward; closed -> opened", () => {
+    const id = "live-feed.panel";
+    expect(panelShown(side({ panels: [live({ open: true })] }), id)).toBe(true);
+    expect(togglePanel(side({ panels: [live({ open: true })] }), id)).toEqual({
+      open: { id, open: false },
+    });
+    // a tab behind another, or the region hidden: never closed, brought forward
+    expect(togglePanel(side({ panels: [live({ open: true, selected: false })] }), id)).toEqual({
+      hidden: false,
+      select: id,
+    });
+    expect(togglePanel(side({ hidden: true, panels: [live({ open: true })] }), id)).toEqual({
+      hidden: false,
+      select: id,
+    });
+    expect(togglePanel(side({ panels: [live()] }), id)).toEqual({
+      hidden: false,
+      open: { id, open: true },
+      select: id,
+    });
+    // not offered (dormant): opened all the same (the person asked)
+    expect(togglePanel(side(), id)).toEqual({
+      hidden: false,
+      open: { id, open: true },
+      select: id,
+    });
   });
 
   it("rapid toggles alternate and end where an even | odd count says", () => {
@@ -214,6 +237,34 @@ describe("showing | hiding the right panel", () => {
     expect(rightShown(now)).toBe(false);
     now = { ...now, ...toggleRight(now) };
     expect(rightShown(now)).toBe(true);
+  });
+});
+
+describe("the right column's views in the project session", () => {
+  it("are read with the layout (0.6.x sessions and junk: nothing chosen) and written after a change", async () => {
+    vi.useFakeTimers();
+    const api = createMockApi();
+    await api.projectSessionSet("layout.views", null);
+    const store = new LayoutStore();
+    await store.load(api, true);
+    expect(store.views).toEqual({ v: 1, open: {}, selected: [] });
+    const loads = store.loads;
+    store.setOpen("live-feed.panel", false);
+    store.setSelected(["outline"]);
+    await vi.advanceTimersByTimeAsync(450);
+    const saved = await api.projectSessionGet("layout.views");
+    expect(saved.ok && saved.value).toEqual({
+      v: 1,
+      open: { "live-feed.panel": false },
+      selected: ["outline"],
+    });
+    for (const junk of ["x", 3, { v: 2, open: { a: true } }, { v: 1, open: { a: "yes" } }]) {
+      await api.projectSessionSet("layout.views", junk);
+      await store.load(api, true);
+      expect(store.views.open, JSON.stringify(junk)).toEqual({});
+    }
+    expect(store.loads).toBe(loads + 4);
+    vi.useRealTimers();
   });
 });
 

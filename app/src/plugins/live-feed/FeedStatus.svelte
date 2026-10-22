@@ -4,8 +4,7 @@
   // (not while the pointer is over it or the focus inside). Nothing at all until the project calls for the feed.
   import { documents } from "../../core/doc/document.svelte";
   import { t, tn } from "../../core/i18n";
-  import { layout } from "../../core/shell/layout.svelte";
-  import { ui } from "../../core/shell/ui.svelte";
+  import { rightViews } from "../../core/shell/rightViews.svelte";
   import { followStore } from "./followLink.svelte";
   import { ACTIVE_MS, countText, feed, PANEL } from "./store.svelte";
   import { split } from "./time";
@@ -49,11 +48,11 @@
   }
 </script>
 
-{#if feed.offered}
+{#if feed.called}
   <button
     type="button"
     class="chip"
-    aria-pressed={ui.right === PANEL && !layout.rightHidden}
+    aria-pressed={rightViews.onScreen(PANEL)}
     aria-label={feed.unseen > 0
       ? tn("live.chipLabel", feed.unseen, { n: countText(feed.unseen) })
       : t("live.label")}

@@ -15,6 +15,7 @@
   import Save from "@lucide/svelte/icons/save";
   import Send from "@lucide/svelte/icons/send";
   import Tag from "@lucide/svelte/icons/tag";
+  import type { Snippet } from "svelte";
   import type { ActivityEntry, FeedItem, ProjectEvent } from "../../api";
   import { keyHint } from "../../core/commands/hint";
   import { documents } from "../../core/doc/document.svelte";
@@ -22,11 +23,17 @@
   import { t, tn } from "../../core/i18n";
   import { projects } from "../../core/projects/instance.svelte";
   import { middleCut, relativeTo } from "../../core/projects/model";
-  import { ui } from "../../core/shell/ui.svelte";
+  import { closeView } from "../../core/shell/sides";
   import { followStore } from "./followLink.svelte";
   import { mineLabel, pathOf, type FeedShow } from "./mine";
   import { feed, PANEL } from "./store.svelte";
   import { ago, split } from "./time";
+
+  type Props = {
+    /** The view options button of the right column (drawn with two views or more). */
+    viewMenu?: Snippet;
+  };
+  let { viewMenu }: Props = $props();
 
   let now = $state(Date.now());
   // "3 min ago" and "Last change ..." stay true while the panel is open
@@ -124,8 +131,8 @@
 </script>
 
 <section class="feed" aria-label={t("live.label")}>
-  <header>
-    <h2>{t("live.label")}</h2>
+  <header data-view-header>
+    <h2 title={t("live.label")}>{t("live.label")}</h2>
     <span class="spacer"></span>
     {#if follow !== null}
       <button
@@ -150,12 +157,13 @@
     >
       <RefreshCw size={14} />
     </button>
+    {@render viewMenu?.()}
     <button
       type="button"
       class="icon close"
       aria-label={t("feed.close")}
       title={t("feed.close")}
-      onclick={() => ui.toggleRight(PANEL)}>×</button
+      onclick={() => closeView(PANEL)}>×</button
     >
     <p class="last">
       {feed.lastAt > 0 ? t("live.last", { ago: ago(feed.lastAt, now) }) : t("live.none")}
@@ -323,7 +331,11 @@
     border-bottom: 1px solid var(--border);
   }
   h2 {
+    flex: 0 1 auto;
+    min-width: 0;
     margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
     font-size: var(--fs-ui);
     font-weight: 600;

@@ -34,6 +34,7 @@
 
   function run(at: number, shift = false): void {
     const entry = entries[at];
+    if (entry?.kind === "item" && entry.disabled === true) return;
     close();
     if (entry?.kind === "item") entry.run(shift);
   }
@@ -107,7 +108,13 @@
         type="button"
         role="menuitem"
         aria-haspopup={entry.opens === true ? "menu" : undefined}
-        class={["item", entry.danger && "danger", active === at && "is-active"]}
+        aria-disabled={entry.disabled === true ? "true" : undefined}
+        class={[
+          "item",
+          entry.danger && "danger",
+          entry.disabled && "is-disabled",
+          active === at && "is-active",
+        ]}
         onpointerenter={() => (picked = at)}
         onclick={(e) => run(at, e.shiftKey)}
       >
@@ -158,6 +165,11 @@
   }
   .item.is-active {
     background: var(--hover);
+  }
+  /* can't act now: quieter (still AA), still reached by the arrows */
+  .item.is-disabled {
+    color: var(--muted);
+    cursor: default;
   }
   .item.danger {
     color: var(--git-deleted-text);

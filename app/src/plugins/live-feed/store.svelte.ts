@@ -6,12 +6,13 @@
 
 import { api, type ActivityEntry, type Api, type FeedItem } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
+import { callsForAgents } from "../../core/conditions/agents";
+import { conditions } from "../../core/conditions/context.svelte";
 import { changedSections } from "../../core/doc/outline";
 import { InFront } from "../../core/inFront.svelte";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
-import { layout } from "../../core/shell/layout.svelte";
-import { activeRight } from "../../core/shell/panels.svelte";
-import { ui } from "../../core/shell/ui.svelte";
+import { rightViews } from "../../core/shell/rightViews.svelte";
+import { togglePanel } from "../../core/shell/sides";
 import { silence } from "../../core/silence/silence.svelte";
 import { panelRows, pathOf, type FeedShow, type PanelRow } from "./mine";
 
@@ -126,10 +127,12 @@ export class FeedStore {
     this.#root = root;
     this.#shown = shown;
     this.#session = session;
-    this.#onScreen =
-      onScreen ??
-      (() =>
-        activeRight() === PANEL && !layout.rightHidden && ui.focus !== "on" && this.#front.value);
+    this.#onScreen = onScreen ?? (() => rightViews.onScreen(PANEL) && this.#front.value);
+  }
+
+  /** The project calls for the feed: an outside change was seen (remembered), or it has git | agent files. */
+  get called(): boolean {
+    return this.offered || callsForAgents(conditions.current);
   }
 
   /** The Changes panel is on screen: what comes in is seen. */
@@ -340,7 +343,7 @@ export class FeedStore {
   /** The person asks for the Changes panel: it shows | closes (and the feed is offered from now on). */
   toggle(): void {
     this.offer();
-    ui.toggleRight(PANEL);
+    togglePanel(PANEL);
   }
 
   async clear(): Promise<void> {

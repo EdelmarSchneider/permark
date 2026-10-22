@@ -1,12 +1,14 @@
 // Plugin `live-feed`: the Changes panel (every file the disk reported, grouped when many change at once), the status
 // chip, the quiet toast for documents that changed behind the person's back, the glow on changed passages and the
-// marks on their sections in the outline. Chip + panel stay dormant until the project calls for them.
+// marks on their sections in the outline. Chip + panel stay dormant until the project calls for them (an outside
+// change, or git | agent files: then the panel shows by itself once per project, until the person closes it).
 
 import Activity from "@lucide/svelte/icons/activity";
+import { callsForAgents } from "../../core/conditions/agents";
 import { NO_REQUIREMENT } from "../../core/conditions/available";
+import { conditions } from "../../core/conditions/context.svelte";
 import { t } from "../../core/i18n";
 import { definePlugin } from "../../core/plugins/registry.svelte";
-import { ui } from "../../core/shell/ui.svelte";
 import { startGlow, stepGlow } from "./glow";
 import { countText, feed, PANEL } from "./store.svelte";
 
@@ -24,7 +26,9 @@ export default definePlugin({
         icon: Activity,
         requires: NO_REQUIREMENT,
         view: () => import("./FeedPanel.svelte"),
-        offered: () => feed.offered,
+        offered: () => feed.called,
+        // shown by itself in a project with git or agent files, until the person closes it there
+        defaultOpen: () => callsForAgents(conditions.current),
         badge: () => (feed.unseen > 0 ? countText(feed.unseen) : null),
       }),
       cx.contribute({
@@ -61,7 +65,6 @@ export default definePlugin({
     ];
     return () => {
       for (const remove of removals) remove();
-      if (ui.right === PANEL) ui.right = null;
       stopGlow();
       stop();
     };

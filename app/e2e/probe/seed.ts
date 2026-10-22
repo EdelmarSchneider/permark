@@ -51,6 +51,7 @@ type MockApi = {
   openPath(path: string, placement: string): Promise<unknown>;
   openNotes(placement: string): Promise<unknown>;
   settingsSet(change: { key: string; value: unknown }): Promise<unknown>;
+  projectSessionSet(key: string, value: unknown): Promise<unknown>;
   planImport(
     target: string,
     sources: string[],
@@ -67,6 +68,7 @@ type MockApi = {
     project: { add(path: string, text: string): void; files: Map<string, string> };
     drops: { fire(event: unknown): void };
     projects: { news(event: unknown): void };
+    context: { set(over: Record<string, unknown>): void };
     plugins: {
       feed(items: unknown[]): void;
       gitMembers: {
@@ -266,6 +268,64 @@ export async function seed(page: Page, use: SeedUse, args: Record<string, unknow
           target: typeof args["target"] === "string" ? args["target"] : "",
           sources: sources as string[],
         },
+      );
+      break;
+    }
+    case "agentProject":
+    case "gitOnlyProject":
+    case "plainFolder": {
+      // the kind of project (BEFORE `project`): Live changes takes its default (shown with git | agent files)
+      const over =
+        use === "agentProject"
+          ? { agentFiles: ["CLAUDE.md"], git: { status: "noRepo" } }
+          : use === "gitOnlyProject"
+            ? { agentFiles: [], git: { status: "repo", state: "clean" } }
+            : { agentFiles: [], git: { status: "noRepo" } };
+      await withMock(
+        page,
+        async (m, o) => {
+          await m.mockApi.projectSessionSet("layout.views", null);
+          m.mockApi.probe.context.set(o);
+        },
+        over,
+      );
+      break;
+    }
+    case "rightViews": {
+      // the right column's arrangement (app setting)
+      const preset = str(args, "preset");
+      const presets: Record<string, unknown> = {
+        stacked: {
+          v: 1,
+          groups: [
+            { views: ["outline"], share: 0.5 },
+            { views: ["live-feed.panel"], share: 0.5 },
+          ],
+        },
+        tabs: { v: 1, groups: [{ views: ["outline", "live-feed.panel"], share: 1 }] },
+        liveTop: {
+          v: 1,
+          groups: [
+            { views: ["live-feed.panel"], share: 0.5 },
+            { views: ["outline"], share: 0.5 },
+          ],
+        },
+        three: {
+          v: 1,
+          groups: [
+            { views: ["outline"], share: 0.4 },
+            { views: ["live-feed.panel"], share: 0.3 },
+            { views: ["comments.panel"], share: 0.3 },
+          ],
+        },
+      };
+      const value = presets[preset];
+      if (value === undefined)
+        throw new Error(`seed rightViews: preset stacked | tabs | liveTop | three`);
+      await withMock(
+        page,
+        async (m, v) => void (await m.mockApi.settingsSet({ key: "rightViews", value: v })),
+        value,
       );
       break;
     }

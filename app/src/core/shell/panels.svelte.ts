@@ -1,5 +1,6 @@
-// The panels plugins contribute: tabs of the left sidebar (next to Files and Search) and the panel at the right of the
-// page. Which one shows lives in `ui`; a panel whose plugin went off is not shown (the view falls back).
+// The panels plugins contribute: tabs of the left sidebar (next to Files and Search) and the views of the right column.
+// Which sidebar tab shows lives in `ui`; the right column's arrangement in `rightViews.svelte.ts`. A panel whose plugin
+// went off | that its plugin does not offer now is not listed.
 
 import { conditions } from "../conditions/context.svelte";
 import { contributions } from "../plugins/instance.svelte";
@@ -48,10 +49,4 @@ export function rightPanels(): Panel[] {
 export function activeSidebar(): string {
   if (ui.sidebar === "files" || ui.sidebar === "search") return ui.sidebar;
   return leftPanels().some((p) => p.id === ui.sidebar) ? ui.sidebar : "files";
-}
-
-/** The plugin panel at the right, if one is chosen and exists. */
-export function activeRight(): string | null {
-  const wanted = ui.right;
-  return wanted !== null && rightPanels().some((p) => p.id === wanted) ? wanted : null;
 }
