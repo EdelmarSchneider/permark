@@ -5,6 +5,8 @@
 
 #![cfg_attr(test, allow(clippy::assert_is_empty))]
 
+#[cfg(test)]
+mod owners_tests;
 mod service;
 #[cfg(test)]
 mod tests;
@@ -96,17 +98,19 @@ impl Plugin for UnreadPlugin {
                 .iter()
                 .map(|w| format!("{WORKTREE_PREFIX}{}", w.name)),
         );
+        let Some(store) = cx.store() else {
+            return Err(PluginError::Start {
+                id: ID,
+                reason: "needs a project".to_owned(),
+            });
+        };
         let service = Arc::new(UnreadService::start(ServiceArgs {
             scope: project.documents.scope().clone(),
             explorer: Arc::clone(&project.explorer),
             roots,
-            read_file: cx.state_file("read.json"),
+            owners: project.owners(store),
             // a reader with no window leaves the picture of the last visit alone
-            visit_file: if cx.files_only() {
-                None
-            } else {
-                cx.state_file("visit.json")
-            },
+            visit: !cx.files_only(),
             announce: Arc::new(move |list| {
                 events.emit(
                     "changed",
@@ -119,6 +123,15 @@ impl Plugin for UnreadPlugin {
         let subscription = hub.subscribe({
             let service = Arc::clone(&service);
             move |batch| service.feed(batch)
+        });
+        // the read state follows where each included project keeps it (`projects.md` §9.2)
+        let owners = project.follow_owners({
+            let service = Arc::downgrade(&service);
+            move |change| {
+                if let Some(service) = service.upgrade() {
+                    service.follow_owners(&change);
+                }
+            }
         });
         let mut registrations = Vec::new();
         let s = Arc::clone(&service);
@@ -165,6 +178,7 @@ impl Plugin for UnreadPlugin {
             .provide(Arc::new(UnreadApi(service.lookup())));
         Ok(Box::new(UnreadRunning {
             subscription: Some(subscription),
+            owners,
             registrations,
             lease: Some(lease),
             api: Some(api),
@@ -177,6 +191,7 @@ impl Plugin for UnreadPlugin {
 /// the worker joins (saving `read.json` and the picture of this visit).
 struct UnreadRunning {
     subscription: Option<Subscription>,
+    owners: Option<permark_core::projects::ProjectsSubscription>,
     registrations: Vec<RpcRegistration>,
     lease: Option<ServiceLease>,
     api: Option<ServiceLease>,
@@ -188,6 +203,7 @@ impl Running for UnreadRunning {}
 impl Drop for UnreadRunning {
     fn drop(&mut self) {
         self.subscription.take();
+        self.owners.take();
         self.registrations.clear();
         self.api.take();
         self.lease.take();

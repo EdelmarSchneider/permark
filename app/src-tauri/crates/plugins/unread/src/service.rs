@@ -10,6 +10,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use permark_core::document::DocScope;
 use permark_core::fsx;
+use permark_core::plugins::PluginId;
+use permark_core::projects::{Owners, OwnersChange};
 use permark_core::state::{Loaded, StateData, StateFile};
 use permark_core::tree::Explorer;
 use permark_core::watch::{ChangeKind, FsBatch};
@@ -243,16 +245,185 @@ pub struct ServiceArgs {
     pub explorer: Arc<Explorer>,
     /// Prefixes of the roots: `""`, then `@wt/<name>` for each linked worktree.
     pub roots: Vec<String>,
-    pub read_file: Option<StateFile<ReadFile>>,
-    pub visit_file: Option<StateFile<VisitFile>>,
+    /// Where the read state lives: the opened folder + each included project (`projects.md` §9.2).
+    pub owners: Owners,
+    /// Keep the picture of the last visit (`visit.json`; a reader with no window leaves it alone).
+    pub visit: bool,
     pub announce: Announce,
     pub timing: Timing,
     /// `false`: a reader with no window (`files_only`): `read.json` is read, never written.
     pub persist: bool,
 }
 
+const ID: PluginId = PluginId::of("unread");
+
+/// The read state per owner, as the files hold it (owner-relative), and what each file keeps for deeper owners.
+struct Files {
+    owners: Owners,
+    /// The owners are changing: writes wait.
+    paused: bool,
+    persist: bool,
+    visit: bool,
+    /// Per owner: entries that lie in a deeper owner (kept as written, unused while it is included).
+    read_dormant: Vec<BTreeMap<String, String>>,
+    visit_dormant: Vec<BTreeMap<String, String>>,
+    /// Per owner: what `read.json` holds now (owner-relative), as last read | written.
+    written: Vec<Option<BTreeMap<String, String>>>,
+}
+
+/// What the owners' files hold: the opened folder's read state, each member's (folder key, map), and the files.
+type ReadState = (
+    Option<BTreeMap<String, u64>>,
+    Vec<(String, Option<BTreeMap<String, u64>>)>,
+);
+
+fn read_file_of(owners: &Owners, i: usize) -> StateFile<ReadFile> {
+    owners.slots()[i].store.plugin_file(&ID, "read.json")
+}
+
+fn visit_file_of(owners: &Owners, i: usize) -> StateFile<VisitFile> {
+    owners.slots()[i].store.plugin_file(&ID, "visit.json")
+}
+
+/// Splits one owner file's map into its own entries (root-relative) and the dormant ones (owner-relative).
+fn own_and_dormant(
+    owners: &Owners,
+    i: usize,
+    docs: BTreeMap<String, String>,
+) -> (BTreeMap<String, String>, BTreeMap<String, String>) {
+    let mut own = BTreeMap::new();
+    let mut dormant = BTreeMap::new();
+    for (rel, hash) in docs {
+        let path = owners.join(i, &rel);
+        if owners.owner_of(&path) == i {
+            own.insert(path, hash);
+        } else {
+            dormant.insert(rel, hash);
+        }
+    }
+    (own, dormant)
+}
+
+impl Files {
+    fn new(owners: Owners, persist: bool, visit: bool) -> Self {
+        let n = owners.slots().len();
+        Self {
+            owners,
+            paused: false,
+            persist,
+            visit,
+            read_dormant: vec![BTreeMap::new(); n],
+            visit_dormant: vec![BTreeMap::new(); n],
+            written: vec![None; n],
+        }
+    }
+
+    /// Reads every owner's `read.json` (a missing | damaged one = that owner has no read state).
+    fn load_read(&mut self) -> ReadState {
+        let owners = self.owners.clone();
+        let mut root = None;
+        let mut members = Vec::new();
+        for i in 0..owners.slots().len() {
+            let loaded = match read_file_of(&owners, i).load() {
+                Loaded::Found(read) => Some(read.docs),
+                Loaded::Missing | Loaded::Recovered { .. } => None,
+            };
+            self.written[i].clone_from(&loaded);
+            let saved = loaded.map(|docs| {
+                let (own, dormant) = own_and_dormant(&owners, i, docs);
+                self.read_dormant[i] = dormant;
+                own.into_iter()
+                    .filter_map(|(path, hash)| Some((path, hash_from_hex(&hash)?)))
+                    .collect::<BTreeMap<String, u64>>()
+            });
+            if i == 0 {
+                root = saved;
+            } else {
+                members.push((owners.slots()[i].key().to_owned(), saved));
+            }
+        }
+        (root, members)
+    }
+
+    /// The last-visit picture over every owner (the opened folder's time; `None`: no owner has one).
+    fn load_visit(&mut self) -> Option<VisitFile> {
+        if !self.visit {
+            return None;
+        }
+        let owners = self.owners.clone();
+        let mut out: Option<VisitFile> = None;
+        for i in 0..owners.slots().len() {
+            let Loaded::Found(visit) = visit_file_of(&owners, i).load() else {
+                continue;
+            };
+            let (own, dormant) = own_and_dormant(&owners, i, visit.docs);
+            self.visit_dormant[i] = dormant;
+            let merged = out.get_or_insert_with(|| VisitFile {
+                at_ms: visit.at_ms,
+                docs: BTreeMap::new(),
+            });
+            if i == 0 {
+                merged.at_ms = visit.at_ms;
+            }
+            merged.docs.extend(own);
+        }
+        out
+    }
+
+    /// Writes each owner's `read.json` whose entries changed (root-relative `saved` split by owner).
+    fn save_read(&mut self, saved: BTreeMap<String, u64>) {
+        if !self.persist || self.paused {
+            return;
+        }
+        let owners = self.owners.clone();
+        for (i, part) in owners.split(saved).into_iter().enumerate() {
+            let mut docs: BTreeMap<String, String> =
+                part.into_iter().map(|(p, h)| (p, hex_of(h))).collect();
+            docs.extend(
+                self.read_dormant[i]
+                    .iter()
+                    .map(|(p, h)| (p.clone(), h.clone())),
+            );
+            // an owner with no file and nothing to keep stays without one
+            if self.written[i].as_ref() == Some(&docs)
+                || (self.written[i].is_none() && docs.is_empty() && i != 0)
+            {
+                continue;
+            }
+            // a state that cannot be written does not stop anything; the next change tries again
+            if read_file_of(&owners, i)
+                .save(&ReadFile { docs: docs.clone() })
+                .is_ok()
+            {
+                self.written[i] = Some(docs);
+            }
+        }
+    }
+
+    /// Writes each owner's picture of this visit.
+    fn save_visit(&self, current: BTreeMap<String, u64>, at_ms: u64) {
+        if !self.visit || self.paused {
+            return;
+        }
+        for (i, part) in self.owners.split(current).into_iter().enumerate() {
+            let mut docs: BTreeMap<String, String> =
+                part.into_iter().map(|(p, h)| (p, hex_of(h))).collect();
+            docs.extend(
+                self.visit_dormant[i]
+                    .iter()
+                    .map(|(p, h)| (p.clone(), h.clone())),
+            );
+            if i != 0 && docs.is_empty() {
+                continue;
+            }
+            let _ = visit_file_of(&self.owners, i).save(&VisitFile { at_ms, docs });
+        }
+    }
+}
+
 pub struct UnreadService {
     hub: Arc<UnreadHub>,
+    files: Arc<Mutex<Files>>,
     since: Arc<Mutex<Option<SinceVisit>>>,
     tx: Sender<Msg>,
     stop: Arc<AtomicBool>,
@@ -268,27 +439,19 @@ impl std::fmt::Debug for UnreadService {
 impl UnreadService {
     #[must_use]
     pub fn start(args: ServiceArgs) -> Self {
-        let saved = args.read_file.as_ref().and_then(|file| match file.load() {
-            Loaded::Found(read) => Some(
-                read.docs
-                    .into_iter()
-                    .filter_map(|(path, hash)| Some((path, hash_from_hex(&hash)?)))
-                    .collect(),
-            ),
-            // no state yet, or a damaged one: a project with no read state
-            Loaded::Missing | Loaded::Recovered { .. } => None,
-        });
-        let last_visit = args.visit_file.as_ref().and_then(|file| match file.load() {
-            Loaded::Found(visit) => Some(visit),
-            Loaded::Missing | Loaded::Recovered { .. } => None,
-        });
-        let tracker = Arc::new(Mutex::new(Tracker::new(saved)));
+        let mut files = Files::new(args.owners.clone(), args.persist, args.visit);
+        // no state yet, or a damaged one: an owner with no read state
+        let (root, members) = files.load_read();
+        let last_visit = files.load_visit();
+        let files = Arc::new(Mutex::new(files));
+        let tracker = Arc::new(Mutex::new(Tracker::with_owners(root, members)));
         let (tx, rx) = mpsc::channel();
         let hub = UnreadHub::new(Arc::clone(&tracker), args.scope.clone(), tx.clone());
         let since = Arc::new(Mutex::new(None));
         let stop = Arc::new(AtomicBool::new(false));
         let worker = Worker {
             args,
+            files: Arc::clone(&files),
             tracker,
             hub: Arc::clone(&hub),
             since: Arc::clone(&since),
@@ -303,10 +466,42 @@ impl UnreadService {
             .ok();
         Self {
             hub,
+            files,
             since,
             tx,
             stop,
             thread,
+        }
+    }
+
+    /// The owners change: before, the read state is written and writes wait; after, it is read again from the new
+    /// owners' files (a project included now keeps what the opened folder knew: the core copied it).
+    pub fn follow_owners(&self, change: &OwnersChange<'_>) {
+        match change {
+            OwnersChange::Pause => {
+                let tracker = lock(&self.hub.tracker);
+                let saved = (!tracker.baseline_pending()).then(|| tracker.saved());
+                drop(tracker);
+                let mut files = lock(&self.files);
+                if let Some(saved) = saved {
+                    files.save_read(saved);
+                }
+                files.paused = true;
+            }
+            OwnersChange::Resume(owners) => {
+                let (root, members) = {
+                    let mut files = lock(&self.files);
+                    let (persist, visit) = (files.persist, files.visit);
+                    *files = Files::new((*owners).clone(), persist, visit);
+                    let read = files.load_read();
+                    // the picture of the last visit stays as it was at open; the dormant entries of the new
+                    // owners' files are kept when it is written
+                    let _ = files.load_visit();
+                    read
+                };
+                lock(&self.hub.tracker).reload(root, members);
+                let _ = self.tx.send(Msg::Touched { wrote: true });
+            }
         }
     }
 
@@ -445,6 +640,7 @@ fn read_document(scope: &DocScope, path: &str) -> Option<(u64, Vec<u8>)> {
 
 struct Worker {
     args: ServiceArgs,
+    files: Arc<Mutex<Files>>,
     tracker: Arc<Mutex<Tracker>>,
     hub: Arc<UnreadHub>,
     since: Arc<Mutex<Option<SinceVisit>>>,
@@ -515,43 +711,28 @@ impl Worker {
     }
 
     fn save(&self) {
-        let Some(file) = self.args.read_file.as_ref().filter(|_| self.args.persist) else {
+        if !self.args.persist {
             return;
-        };
+        }
         let tracker = lock(&self.tracker);
         // nothing is saved before the baseline is taken
         if tracker.baseline_pending() {
             return;
         }
-        let docs = tracker
-            .saved()
-            .into_iter()
-            .map(|(path, hash)| (path, hex_of(hash)))
-            .collect();
+        let saved = tracker.saved();
         drop(tracker);
-        // a state that cannot be written does not stop anything; the next change tries again
-        let _ = file.save(&ReadFile { docs });
+        lock(&self.files).save_read(saved);
     }
 
     /// The project closes: what every document holds now is the picture the next visit compares with.
     fn write_visit(&self) {
-        let Some(file) = &self.args.visit_file else {
-            return;
-        };
         let tracker = lock(&self.tracker);
         if !tracker.looked() {
             return;
         }
-        let docs = tracker
-            .current()
-            .into_iter()
-            .map(|(path, hash)| (path, hex_of(hash)))
-            .collect();
+        let current = tracker.current();
         drop(tracker);
-        let _ = file.save(&VisitFile {
-            at_ms: now_ms(),
-            docs,
-        });
+        lock(&self.files).save_visit(current, now_ms());
     }
 
     /// A full look at the disk.

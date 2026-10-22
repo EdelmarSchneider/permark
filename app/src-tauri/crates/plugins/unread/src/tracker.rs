@@ -50,6 +50,9 @@ pub struct Tracker {
     docs: BTreeMap<String, Doc>,
     /// The project had no read state: the first look at the disk becomes the baseline (everything there is read).
     baseline_pending: bool,
+    /// Included projects that keep their own read state (`projects.md` §9.2): folder key + whether they have none
+    /// yet (their documents count as read at the next look, as a project opened for the first time).
+    members: Vec<(String, bool)>,
     looked: bool,
     scan: Option<ScanLog>,
     revision: u64,
@@ -77,6 +80,7 @@ impl Tracker {
         let mut tracker = Self {
             docs: BTreeMap::new(),
             baseline_pending: saved.is_none(),
+            members: Vec::new(),
             looked: false,
             scan: None,
             revision: 0,
@@ -94,6 +98,80 @@ impl Tracker {
             }
         }
         tracker
+    }
+
+    /// The opened folder's read state (`root`) + each included project's (folder key, `None`: none yet).
+    #[must_use]
+    pub fn with_owners(
+        root: Option<BTreeMap<String, u64>>,
+        members: Vec<(String, Option<BTreeMap<String, u64>>)>,
+    ) -> Self {
+        let mut tracker = Self::new(root);
+        for (key, saved) in members {
+            tracker.members.push((key, saved.is_none()));
+            for (path, hash) in saved.into_iter().flatten() {
+                if is_tracked(&path) {
+                    tracker.docs.insert(
+                        key_of(&path),
+                        Doc {
+                            path,
+                            current: None,
+                            read: Some(hash),
+                        },
+                    );
+                }
+            }
+        }
+        tracker
+    }
+
+    /// The owners changed while open: the read state is taken again from their files. A document of an owner with no
+    /// read state counts as read as it stands now (a first look: no flood of dots); before the first look, as at
+    /// open.
+    pub fn reload(
+        &mut self,
+        root: Option<BTreeMap<String, u64>>,
+        members: Vec<(String, Option<BTreeMap<String, u64>>)>,
+    ) {
+        let mut saved: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+        let root_fresh = root.is_none();
+        saved.extend(root.into_iter().flatten().map(|(p, h)| (key_of(&p), h)));
+        self.members.clear();
+        for (key, map) in members {
+            self.members.push((key, map.is_none()));
+            saved.extend(map.into_iter().flatten().map(|(p, h)| (key_of(&p), h)));
+        }
+        self.baseline_pending = root_fresh && !self.looked;
+        let looked = self.looked;
+        let fresh: Vec<String> = self
+            .docs
+            .keys()
+            .filter(|k| looked && self.owner_fresh(k, root_fresh))
+            .cloned()
+            .collect();
+        for (key, doc) in &mut self.docs {
+            doc.read = if fresh.contains(key) {
+                doc.current.or(saved.get(key).copied())
+            } else {
+                saved.get(key).copied()
+            };
+        }
+        if looked {
+            for member in &mut self.members {
+                member.1 = false;
+            }
+        }
+        self.revision += 1;
+    }
+
+    /// Whether the owner of `key` has no read state (the deepest included project holding it, else the opened
+    /// folder: `root_fresh`).
+    fn owner_fresh(&self, key: &str, root_fresh: bool) -> bool {
+        self.members
+            .iter()
+            .filter(|(m, _)| under(m, key))
+            .max_by_key(|(m, _)| m.len())
+            .map_or(root_fresh, |(_, fresh)| *fresh)
     }
 
     /// The first look at the disk has not happened yet.
@@ -151,7 +229,7 @@ impl Tracker {
             .collect();
         let had_state = !self.baseline_pending;
         let mut seen: HashSet<String> = HashSet::with_capacity(files.len());
-        let mut wrote = self.baseline_pending;
+        let mut wrote = self.baseline_pending || self.members.iter().any(|m| m.1);
         for (path, hash) in files {
             let key = key_of(&path);
             seen.insert(key.clone());
@@ -161,6 +239,7 @@ impl Tracker {
             let new_worktree = had_state
                 && worktree_of(&key).is_some_and(|w| !known_worktrees.contains(w))
                 && !self.docs.contains_key(&key);
+            let fresh_now = self.owner_fresh(&key, self.baseline_pending);
             let doc = self.docs.entry(key).or_insert_with(|| Doc {
                 path: path.clone(),
                 current: None,
@@ -168,10 +247,13 @@ impl Tracker {
             });
             path.clone_into(&mut doc.path);
             doc.current = Some(hash);
-            if self.baseline_pending || new_worktree {
+            if fresh_now || new_worktree {
                 doc.read = Some(hash);
                 wrote = true;
             }
+        }
+        for member in &mut self.members {
+            member.1 = false;
         }
         // documents the walk did not find are gone (except what the app touched meanwhile)
         let before = self.docs.len();

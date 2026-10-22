@@ -9,6 +9,8 @@
 
 mod marks;
 #[cfg(test)]
+mod owners_tests;
+#[cfg(test)]
 mod tests;
 
 use std::borrow::Cow;
@@ -23,6 +25,7 @@ use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
     PluginScope, RpcRegistration, Running, ServiceLease,
 };
+use permark_core::projects::{Owners, OwnersChange, ProjectsSubscription};
 use permark_core::state::RawFile;
 use permark_core::watch::{ChangeKind, FsBatch, Subscription};
 use serde::{Deserialize, Serialize};
@@ -66,13 +69,66 @@ pub fn plugin() -> Arc<dyn Plugin> {
     })
 }
 
-/// The marks of one project, kept in `quiet.json`.
-pub struct QuietService {
-    marks: RwLock<Marks>,
+/// One owner's `quiet.json` (the opened folder's, or an included project's: `projects.md` §9.2).
+struct OwnerFile {
     file: RawFile,
     /// The file existed and was not marks: it is put aside before the first write.
-    damaged: Mutex<bool>,
+    damaged: bool,
+    /// Marks of this file that lie in a deeper owner: kept as written, unused while that one is included.
+    dormant: BTreeMap<String, Interest>,
+    /// What the file holds now (owner-relative), as last read | written.
+    written: BTreeMap<String, Interest>,
+}
+
+/// Where the marks are kept: one file per owner (`owners` none: one file, no projects).
+struct Files {
+    owners: Option<Owners>,
+    slots: Vec<OwnerFile>,
+    /// The owners are changing: writes wait.
+    paused: bool,
+    /// A change waits to be written.
+    pending: bool,
+}
+
+/// The marks of one project, kept in `quiet.json` of each owner (one root-relative view; the closest mark across the
+/// chain's files wins, `projects.md` §5.3 D17).
+pub struct QuietService {
+    marks: RwLock<Marks>,
+    files: Mutex<Files>,
     announce: Arc<dyn Fn(&QuietMarks) + Send + Sync>,
+}
+
+/// Reads every owner's file into one root-relative set of marks.
+fn read_owners(owners: &Owners) -> (Marks, Vec<OwnerFile>) {
+    let mut merged = BTreeMap::new();
+    let mut slots = Vec::with_capacity(owners.slots().len());
+    for (i, slot) in owners.slots().iter().enumerate() {
+        let file = slot.store.raw_file(FILE);
+        let (marks, damaged) = match file.read() {
+            Ok(Some(bytes)) => {
+                Marks::parse(&bytes).map_or((Marks::default(), true), |m| (m, false))
+            }
+            Ok(None) => (Marks::default(), false),
+            // a file that cannot be read now is set aside like a damaged one before the first write
+            Err(_) => (Marks::default(), true),
+        };
+        let mut dormant = BTreeMap::new();
+        for (rel, interest) in marks.iter() {
+            let path = owners.join(i, rel);
+            if owners.owner_of(&path) == i {
+                merged.insert(path, interest);
+            } else {
+                dormant.insert(rel.to_owned(), interest);
+            }
+        }
+        slots.push(OwnerFile {
+            file,
+            damaged,
+            dormant,
+            written: marks.to_map(),
+        });
+    }
+    (Marks::from_map(merged), slots)
 }
 
 impl QuietService {
@@ -87,12 +143,71 @@ impl QuietService {
             Ok(None) => (Marks::default(), false),
             Err(_) => (Marks::default(), true),
         };
+        let written = marks.to_map();
         Arc::new(Self {
             marks: RwLock::new(marks),
-            file,
-            damaged: Mutex::new(damaged),
+            files: Mutex::new(Files {
+                owners: None,
+                slots: vec![OwnerFile {
+                    file,
+                    damaged,
+                    dormant: BTreeMap::new(),
+                    written,
+                }],
+                paused: false,
+                pending: false,
+            }),
             announce,
         })
+    }
+
+    /// The marks of every owner (the opened folder + included projects).
+    #[must_use]
+    pub fn load_owners(
+        owners: Owners,
+        announce: Arc<dyn Fn(&QuietMarks) + Send + Sync>,
+    ) -> Arc<Self> {
+        let (marks, slots) = read_owners(&owners);
+        Arc::new(Self {
+            marks: RwLock::new(marks),
+            files: Mutex::new(Files {
+                owners: Some(owners),
+                slots,
+                paused: false,
+                pending: false,
+            }),
+            announce,
+        })
+    }
+
+    /// The owners change: before, what waits is written and writes wait; after, the marks are read again from the new
+    /// owners' files (the window is told).
+    pub fn follow_owners(&self, change: &OwnersChange<'_>) {
+        match change {
+            OwnersChange::Pause => {
+                let pending = self.lock_files().pending;
+                if pending {
+                    let _ = self.save();
+                }
+                self.lock_files().paused = true;
+            }
+            OwnersChange::Resume(owners) => {
+                let (marks, slots) = read_owners(owners);
+                {
+                    let mut files = self.lock_files();
+                    files.owners = Some((*owners).clone());
+                    files.slots = slots;
+                    files.paused = false;
+                    files.pending = false;
+                }
+                *self.marks.write().unwrap_or_else(PoisonError::into_inner) = marks;
+                (self.announce)(&self.marks());
+            }
+        }
+    }
+
+    fn lock_files(&self) -> std::sync::MutexGuard<'_, Files> {
+        self.files.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     #[must_use]
@@ -122,6 +237,10 @@ impl QuietService {
                 VaultPath::parse(path)?.to_string()
             });
         }
+        // the owners are changing (a moment): the mark would land in a file about to be read again
+        if self.lock_files().paused {
+            return Err(IpcError::new(ErrorKind::Unavailable).subject(FILE));
+        }
         let changed = {
             let mut marks = self.marks.write().unwrap_or_else(PoisonError::into_inner);
             let before = marks.clone();
@@ -139,10 +258,26 @@ impl QuietService {
     /// Moved files take their marks along.
     fn on_batch(&self, batch: &FsBatch) {
         let mut changed = false;
+        let owner_folders: Vec<String> = self
+            .lock_files()
+            .owners
+            .as_ref()
+            .map(|o| {
+                o.slots()
+                    .iter()
+                    .skip(1)
+                    .map(|s| s.key().to_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
         {
             let mut marks = self.marks.write().unwrap_or_else(PoisonError::into_inner);
             for change in &batch.changes {
                 if let ChangeKind::Renamed { from } = &change.kind {
+                    // an included project moved as a whole: its own file moves with it (or its profile folder does)
+                    if owner_folders.contains(&permark_core::paths::key_of(from)) {
+                        continue;
+                    }
                     changed |= marks.renamed(from, &change.path);
                 }
             }
@@ -152,32 +287,40 @@ impl QuietService {
         }
     }
 
+    /// Writes each owner's file whose marks changed (the root-relative marks split by owner, dormant ones kept).
     fn save(&self) -> Result<(), IpcError> {
-        let bytes = self
+        let marks = self
             .marks
             .read()
             .unwrap_or_else(PoisonError::into_inner)
-            .to_json();
-        let mut damaged = self.damaged.lock().unwrap_or_else(PoisonError::into_inner);
-        if *damaged {
-            // what was there is not marks this version can read: kept next to the new file, never overwritten
-            let ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_millis());
-            let aside = self
-                .file
-                .path()
-                .with_file_name(format!("quiet.unreadable-{ms}.json"));
-            match std::fs::rename(self.file.path(), aside) {
-                Ok(()) => *damaged = false,
-                // gone meanwhile: nothing to keep
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => *damaged = false,
-                // still there and not ours to replace: no write
-                Err(e) => return Err(IpcError::io("quiet.json", &e)),
-            }
+            .to_map();
+        let mut files = self.lock_files();
+        if files.paused {
+            files.pending = true;
+            return Ok(());
         }
-        self.file.write(&bytes)?;
-        Ok(())
+        let parts: Vec<BTreeMap<String, Interest>> = match &files.owners {
+            Some(owners) => owners
+                .split(marks)
+                .into_iter()
+                .map(|part| part.into_iter().collect())
+                .collect(),
+            None => vec![marks],
+        };
+        let mut result = Ok(());
+        for (slot, mut part) in files.slots.iter_mut().zip(parts) {
+            part.extend(slot.dormant.iter().map(|(p, i)| (p.clone(), *i)));
+            if part == slot.written && !slot.damaged {
+                continue;
+            }
+            if let Err(e) = write_marks(slot, &part) {
+                result = Err(e);
+                continue;
+            }
+            slot.written = part;
+        }
+        files.pending = result.is_err();
+        result
     }
 
     /// Search asks this: is the path silenced?
@@ -185,6 +328,29 @@ impl QuietService {
     pub fn lookup(self: &Arc<Self>) -> Arc<dyn SilenceLookup> {
         Arc::new(Lookup(Arc::clone(self)))
     }
+}
+
+/// Writes one owner's marks (a damaged file is put aside first, never overwritten).
+fn write_marks(slot: &mut OwnerFile, marks: &BTreeMap<String, Interest>) -> Result<(), IpcError> {
+    if slot.damaged {
+        // what was there is not marks this version can read: kept next to the new file, never overwritten
+        let ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis());
+        let aside = slot
+            .file
+            .path()
+            .with_file_name(format!("quiet.unreadable-{ms}.json"));
+        match std::fs::rename(slot.file.path(), aside) {
+            Ok(()) => slot.damaged = false,
+            // gone meanwhile: nothing to keep
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => slot.damaged = false,
+            // still there and not ours to replace: no write
+            Err(e) => return Err(IpcError::io("quiet.json", &e)),
+        }
+    }
+    slot.file.write(&Marks::from_map(marks.clone()).to_json())?;
+    Ok(())
 }
 
 /// A `speaking` mark with no silenced folder above it changes nothing.
@@ -230,8 +396,8 @@ impl Plugin for QuietPlugin {
             });
         };
         let events = cx.events().clone();
-        let service = QuietService::load(
-            store.raw_file(FILE),
+        let service = QuietService::load_owners(
+            project.owners(store),
             Arc::new(move |marks| {
                 events.emit(
                     "changed",
@@ -239,6 +405,15 @@ impl Plugin for QuietPlugin {
                 );
             }),
         );
+        // marks follow where each included project keeps its state (`projects.md` §9)
+        let owners = project.follow_owners({
+            let service = Arc::downgrade(&service);
+            move |change| {
+                if let Some(service) = service.upgrade() {
+                    service.follow_owners(&change);
+                }
+            }
+        });
         let subscription = hub.subscribe({
             let service = Arc::clone(&service);
             move |batch| service.on_batch(batch)
@@ -256,6 +431,7 @@ impl Plugin for QuietPlugin {
             .provide(Arc::new(SilenceApi(service.lookup())));
         Ok(Box::new(QuietRunning {
             subscription: Some(subscription),
+            owners,
             registrations,
             lease: Some(lease),
         }))
@@ -265,6 +441,7 @@ impl Plugin for QuietPlugin {
 /// A started `quiet` plugin. Drop = teardown: the watch is not heard, nobody is answered, the service is withdrawn.
 struct QuietRunning {
     subscription: Option<Subscription>,
+    owners: Option<ProjectsSubscription>,
     registrations: Vec<RpcRegistration>,
     lease: Option<ServiceLease>,
 }
@@ -274,6 +451,7 @@ impl Running for QuietRunning {}
 impl Drop for QuietRunning {
     fn drop(&mut self) {
         self.subscription.take();
+        self.owners.take();
         self.registrations.clear();
         self.lease.take();
     }

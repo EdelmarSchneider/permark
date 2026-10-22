@@ -6,13 +6,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::meta::Entries;
 use crate::normalize::normalize_tag;
 
-/// What was read of a document's front matter, and the stamp it was read at.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct DocTags {
-    pub tags: Vec<String>,
-    pub len: u64,
-    pub mtime_ms: u64,
-}
+/// What was read of a document's front matter, and the stamp it was read at (the index pass's harvest).
+pub use permark_core::search::harvest::DocTags;
 
 /// The front matter tags of the Markdown documents of the main root, by project path.
 pub type Docs = HashMap<String, DocTags>;

@@ -1,16 +1,18 @@
 //! The tags service of one project: the app's entries in memory, written to `meta.toml` a moment after the last
-//! change (surgically, see [`crate::meta`]); the front matter tags found in the documents (a catalog kept by its own
-//! thread); the answers the UI and search ask for.
+//! change (surgically, see [`crate::meta`]); the front matter tags the index pass found (core harvest, `projects.md`
+//! §7.3: the documents are never read again here); the answers the UI and search ask for.
 //!
-//! `meta.toml` lives where the state store says: `.permark/meta.toml` when the project has `.permark/` (watched: an
-//! edit by someone else is read in, the changes made here and not written yet laid on top), else in the profile. A file
-//! that cannot be read is never written over: the app's tags are read-only until it is fixed, changes made before it
-//! broke are parked and written once it reads again.
+//! `meta.toml` lives where each owner's state store says (`projects.md` §9.2): the opened folder's, and one per
+//! included project (the file it uses opened alone). Each is `.permark/meta.toml` when that folder has `.permark/`
+//! (watched: an edit by someone else is read in, the changes made here and not written yet laid on top), else in the
+//! profile. One root-relative view over all of them; each change goes to the file of the path's owner. A file that
+//! cannot be read is never written over: its tags are read-only until it is fixed, changes made before it broke are
+//! parked and written once it reads again.
 
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 use std::thread::{self, JoinHandle};
@@ -21,11 +23,15 @@ use permark_core::error::{ErrorKind, IpcError};
 use permark_core::fsx;
 use permark_core::organizing::{TagCount, TagLookup, TagsSummary};
 use permark_core::paths::{key_of, VaultPath, WORKTREE_PREFIX};
-use permark_core::state::RawFile;
-use permark_core::tree::{category_of, Category, Explorer};
+use permark_core::projects::{
+    OwnerSlot, Owners, OwnersChange, ProjectUid, Projects, ProjectsSubscription, VocabKind,
+};
+use permark_core::search::harvest::{Harvest, HarvestSubscription};
+use permark_core::state::{RawFile, StateLocation};
+use permark_core::tree::{category_of, Category};
 use permark_core::watch::{ChangeKind, FsBatch, OwnWrites};
 
-use crate::catalog::{self, DocTags, Docs};
+use crate::catalog::{self, Docs};
 use crate::frontmatter::{from_text, HEAD_BYTES};
 use crate::meta::{edit_text, Entries, Op, Problem};
 use crate::normalize::normalize_tags;
@@ -33,6 +39,7 @@ use crate::types::{
     FileMeta, IndexEntry, MetaProblem, TagCountView, TagRefView, TagStyleView, TaggedFile,
     TagsIndex, TagsLocation, TagsOverview, TagsStatus,
 };
+use crate::{META_FILE, META_PATH};
 
 /// Files a "files with these tags" answer carries at most.
 const MAX_LISTED: usize = 5000;
@@ -64,24 +71,25 @@ impl Default for Timing {
 
 /// What the service is made of.
 pub struct ServiceArgs {
-    /// Where the entries are kept.
-    pub file: RawFile,
-    /// The profile's copy from before the project had `.permark/` (merged in, then deleted).
-    pub legacy: Option<RawFile>,
-    pub location: TagsLocation,
-    /// Project path of `file` when the watch reports it (`.permark/meta.toml`).
-    pub watched: Option<String>,
+    /// Where the entries are kept: the opened folder + each included project (`projects.md` §9.2).
+    pub owners: Owners,
+    /// Merge (then delete) the profile copies from before a folder had `.permark/` (not for a reader with no window).
+    pub legacy: bool,
     pub own: Arc<OwnWrites>,
     pub scope: DocScope,
-    pub explorer: Arc<Explorer>,
+    /// Front matter tags from the index pass.
+    pub harvest: Arc<Harvest>,
+    /// Official vocabularies + owner chains (status marks); `None` without projects.
+    pub projects: Option<Arc<Projects>>,
     /// Called when something the UI shows changed.
     pub announce: Arc<dyn Fn() + Send + Sync>,
     pub timing: Timing,
 }
 
 struct Inner {
+    /// Owner-relative paths.
     entries: Entries,
-    /// Changes made here and not written yet, oldest first.
+    /// Changes made here and not written yet, oldest first (owner-relative).
     pending: Vec<Op>,
     problem: Option<Problem>,
     /// The last read or write failed (it is tried again).
@@ -91,35 +99,94 @@ struct Inner {
     loaded: bool,
     /// The legacy file is merged into the pending changes and is deleted after the next successful write.
     legacy_merged: bool,
+    /// When the writer looks at this file next.
+    deadline: Option<Instant>,
+    /// The first change of the current run (writes never wait longer than `max_wait` after it).
+    first: Option<Instant>,
+    failures: usize,
+}
+
+/// One owner's `meta.toml`.
+struct Unit {
+    uid: Option<ProjectUid>,
+    file: RawFile,
+    legacy: Option<RawFile>,
+    /// Project path of `file` when the watch reports it (`<owner>/.permark/meta.toml`).
+    watched: Option<String>,
+    inner: Mutex<Inner>,
+    /// One write at a time (the writer thread and a pause may both flush).
+    writing: Mutex<()>,
+}
+
+impl Unit {
+    fn new(slot: &OwnerSlot, legacy: bool) -> Self {
+        let in_project = slot.store.location() == StateLocation::Project;
+        let watched = in_project.then(|| {
+            if slot.path.is_empty() {
+                META_PATH.to_owned()
+            } else {
+                format!("{}/{META_PATH}", slot.path)
+            }
+        });
+        Self {
+            uid: slot.uid.clone(),
+            file: slot.store.shared_file(META_FILE),
+            legacy: if legacy {
+                slot.store.legacy_shared_file(META_FILE)
+            } else {
+                None
+            },
+            watched,
+            inner: Mutex::new(Inner {
+                entries: Entries::default(),
+                pending: Vec::new(),
+                problem: None,
+                io_error: None,
+                disk_hash: None,
+                loaded: false,
+                legacy_merged: false,
+                deadline: None,
+                first: None,
+                failures: 0,
+            }),
+            writing: Mutex::new(()),
+        }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Inner> {
+        self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// The owners' files now.
+struct Units {
+    owners: Owners,
+    list: Vec<Arc<Unit>>,
+    /// The owners are changing: the person's edits are refused for that moment, moves wait in `held`.
+    paused: bool,
+    held: Vec<Op>,
 }
 
 struct Shared {
-    file: RawFile,
-    legacy: Option<RawFile>,
+    units: RwLock<Units>,
     location: TagsLocation,
-    watched: Option<String>,
+    legacy: bool,
     own: Arc<OwnWrites>,
     scope: DocScope,
-    explorer: Arc<Explorer>,
+    harvest: Arc<Harvest>,
+    projects: Option<Arc<Projects>>,
     announce: Arc<dyn Fn() + Send + Sync>,
     timing: Timing,
-    inner: Mutex<Inner>,
-    docs: RwLock<Docs>,
-    /// The first look at the documents is done.
-    catalog_ready: AtomicBool,
     rev: AtomicU64,
+    /// The merged root-relative entries as of `rev`.
+    merged: Mutex<Option<(u64, Arc<Entries>)>>,
 }
 
 enum MetaMsg {
     /// Something was edited: write after the quiet period.
     Edited,
-    /// The file may have changed.
-    Reload,
-    Stop,
-}
-
-enum CatalogMsg {
-    Batch(FsBatch),
+    /// This file may have changed.
+    Reload(Arc<Unit>),
     Stop,
 }
 
@@ -169,35 +236,105 @@ fn text_of(bytes: &[u8]) -> Result<(bool, &str), Problem> {
         })
 }
 
+/// Rebases the paths of an op into an owner's file.
+fn rebased(op: &Op, owners: &Owners, i: usize) -> Op {
+    let rel = |p: &str| owners.rel(i, p);
+    match op {
+        Op::SetTags { path, tags } => Op::SetTags {
+            path: rel(path),
+            tags: tags.clone(),
+        },
+        Op::SetDescription { path, description } => Op::SetDescription {
+            path: rel(path),
+            description: description.clone(),
+        },
+        Op::Remove { path } => Op::Remove { path: rel(path) },
+        Op::Rename { from, to } => Op::Rename {
+            from: rel(from),
+            to: rel(to),
+        },
+        Op::RenameTree { from, to } => Op::RenameTree {
+            from: rel(from),
+            to: rel(to),
+        },
+        Op::SetStyle { .. } => op.clone(),
+    }
+}
+
+/// Whether `key` is `base` or inside it.
+fn within(key: &str, base: &str) -> bool {
+    key == base
+        || key
+            .strip_prefix(base)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
 impl Shared {
-    fn lock(&self) -> MutexGuard<'_, Inner> {
-        self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    fn units(&self) -> std::sync::RwLockReadGuard<'_, Units> {
+        self.units.read().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn rev(&self) -> u64 {
+        self.rev.load(Ordering::Relaxed)
+    }
+
+    /// Every owner's entries in one root-relative store (dormant entries left out; the opened folder's looks first).
+    fn merged(&self) -> Arc<Entries> {
+        let rev = self.rev();
+        let mut cache = self.merged.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((at, entries)) = cache.as_ref() {
+            if *at == rev {
+                return Arc::clone(entries);
+            }
+        }
+        let units = self.units();
+        let entries = if units.list.len() == 1 {
+            units.list[0].lock().entries.clone()
+        } else {
+            let mut out = Entries::default();
+            for (i, unit) in units.list.iter().enumerate() {
+                let inner = unit.lock();
+                for (path, entry) in inner.entries.iter() {
+                    let at = units.owners.join(i, path);
+                    if units.owners.owner_of(&at) == i {
+                        out.insert(&at, entry.clone());
+                    }
+                }
+                for (tag, style) in inner.entries.styles() {
+                    out.insert_style(tag, style.clone());
+                }
+            }
+            out
+        };
+        let entries = Arc::new(entries);
+        *cache = Some((rev, Arc::clone(&entries)));
+        entries
     }
 
     /// Takes the file on disk as the truth, then lays what was changed here and not written yet on top of it.
-    fn reload(&self) {
-        let mut read = self.file.read();
+    fn reload(&self, unit: &Unit) {
+        let mut read = unit.file.read();
         // many programs write by truncating first: an empty file is believed only after a moment
         for pause in [100, 300] {
             let looks_cut = matches!(&read, Ok(None))
                 || matches!(&read, Ok(Some(b)) if b.iter().all(u8::is_ascii_whitespace));
-            if !looks_cut || self.lock().entries.is_empty() {
+            if !looks_cut || unit.lock().entries.is_empty() {
                 break;
             }
             thread::sleep(Duration::from_millis(pause));
-            read = self.file.read();
+            read = unit.file.read();
         }
         let bytes = match read {
             Ok(bytes) => bytes,
             Err(error) => {
-                self.lock().io_error = Some(error.to_string());
+                unit.lock().io_error = Some(error.to_string());
                 bump(self);
                 return;
             }
         };
         let hash = bytes.as_deref().map(|b| fsx::hash(b).0);
         {
-            let inner = self.lock();
+            let inner = unit.lock();
             if inner.loaded && inner.disk_hash == hash {
                 return;
             }
@@ -206,7 +343,7 @@ impl Shared {
             None => Ok(Entries::default()),
             Some(bytes) => text_of(bytes).and_then(|(_, text)| Entries::parse(text)),
         };
-        let mut inner = self.lock();
+        let mut inner = unit.lock();
         inner.loaded = true;
         inner.disk_hash = hash;
         inner.io_error = None;
@@ -224,10 +361,11 @@ impl Shared {
         bump(self);
     }
 
-    /// Writes the pending changes into the file as it is now.
-    fn flush(&self) -> Flush {
+    /// Writes the pending changes of one file into it as it is now.
+    fn flush(&self, unit: &Unit) -> Flush {
+        let _writing = unit.writing.lock().unwrap_or_else(PoisonError::into_inner);
         let ops = {
-            let inner = self.lock();
+            let inner = unit.lock();
             if inner.pending.is_empty() && !inner.legacy_merged {
                 return Flush::Done;
             }
@@ -237,11 +375,11 @@ impl Shared {
             inner.pending.clone()
         };
         let fail = |message: String| {
-            self.lock().io_error = Some(message);
+            unit.lock().io_error = Some(message);
             bump(self);
             Flush::Failed
         };
-        let bytes = match self.file.read() {
+        let bytes = match unit.file.read() {
             Ok(bytes) => bytes,
             Err(error) => return fail(error.to_string()),
         };
@@ -249,7 +387,7 @@ impl Shared {
             None => (false, ""),
             Some(Ok(parts)) => parts,
             Some(Err(problem)) => {
-                self.lock().problem = Some(problem);
+                unit.lock().problem = Some(problem);
                 bump(self);
                 return Flush::Parked;
             }
@@ -257,7 +395,7 @@ impl Shared {
         let new_text = match edit_text(text, &ops) {
             Ok(text) => text,
             Err(problem) => {
-                self.lock().problem = Some(problem);
+                unit.lock().problem = Some(problem);
                 bump(self);
                 return Flush::Parked;
             }
@@ -270,12 +408,12 @@ impl Shared {
         let unchanged = bytes.as_deref() == Some(out.as_slice());
         let hash = fsx::hash(&out);
         if !unchanged && !ops.is_empty() {
-            if let Some(path) = &self.watched {
+            if let Some(path) = &unit.watched {
                 self.own.expect_write(path, hash);
             }
-            let written = self.file.write_over(bytes.as_deref(), &out);
+            let written = unit.file.write_over(bytes.as_deref(), &out);
             if !matches!(written, Ok(true)) {
-                if let Some(path) = &self.watched {
+                if let Some(path) = &unit.watched {
                     self.own.retract_write(path, hash);
                 }
             }
@@ -287,7 +425,7 @@ impl Shared {
         }
         let entries = Entries::parse(&new_text).unwrap_or_default();
         let legacy_done = {
-            let mut inner = self.lock();
+            let mut inner = unit.lock();
             let done = ops.len().min(inner.pending.len());
             inner.pending.drain(..done);
             let mut entries = entries;
@@ -304,7 +442,7 @@ impl Shared {
             std::mem::take(&mut inner.legacy_merged)
         };
         if legacy_done {
-            if let Some(legacy) = &self.legacy {
+            if let Some(legacy) = &unit.legacy {
                 // nothing is lost: it is all in `meta.toml` now
                 let _ = legacy.remove();
             }
@@ -313,9 +451,17 @@ impl Shared {
         Flush::Done
     }
 
-    /// Merges the profile's copy (from before the project had `.permark/`) into the entries as pending changes.
-    fn merge_legacy(&self) {
-        let Some(legacy) = &self.legacy else { return };
+    /// Writes one file now: an outside write in between is read first, then the rest goes on top (stop, pause).
+    fn flush_settled(&self, unit: &Unit) {
+        if matches!(self.flush(unit), Flush::Raced) {
+            self.reload(unit);
+            let _ = self.flush(unit);
+        }
+    }
+
+    /// Merges the profile's copy (from before the folder had `.permark/`) into the entries as pending changes.
+    fn merge_legacy(unit: &Unit) {
+        let Some(legacy) = &unit.legacy else { return };
         let Ok(Some(bytes)) = legacy.read() else {
             return;
         };
@@ -323,7 +469,7 @@ impl Shared {
             // unreadable: left where it is, tried again at the next start
             return;
         };
-        let mut inner = self.lock();
+        let mut inner = unit.lock();
         let mut ops = Vec::new();
         for (path, entry) in old.iter() {
             let current = inner.entries.get(path).cloned().unwrap_or_default();
@@ -361,89 +507,225 @@ impl Shared {
         inner.pending.extend(ops);
         inner.legacy_merged = true;
     }
+
+    /// Reads a unit's file (and merges its legacy copy) the first time.
+    fn open_unit(&self, unit: &Unit) {
+        self.reload(unit);
+        // a legacy copy is merged only into a file that reads (the merge is written over it)
+        if unit.lock().problem.is_none() {
+            Self::merge_legacy(unit);
+        }
+        let mut inner = unit.lock();
+        if !inner.pending.is_empty() || inner.legacy_merged {
+            inner.deadline = Some(Instant::now());
+        }
+    }
+
+    /// Splits a root-relative op into owner ops (`(unit, op)`); a move across owners becomes a removal in one file
+    /// and the entry written in the other. `merged` = the root-relative entries (taken before any lock).
+    fn route(owners: &Owners, merged: &Entries, op: &Op) -> Vec<(usize, Op)> {
+        if owners.is_single() {
+            return vec![(0, op.clone())];
+        }
+        let one = |path: &str| {
+            let i = owners.owner_of(path);
+            (i, rebased(op, owners, i))
+        };
+        match op {
+            Op::SetTags { path, .. } | Op::SetDescription { path, .. } | Op::Remove { path } => {
+                vec![one(path)]
+            }
+            // looks set here belong to the opened folder's file
+            Op::SetStyle { .. } => vec![(0, op.clone())],
+            Op::Rename { from, to } => {
+                let (a, b) = (owners.owner_of(from), owners.owner_of(to));
+                if a == b {
+                    return vec![one(from)];
+                }
+                Self::moved_entry(owners, merged, from, to)
+            }
+            Op::RenameTree { from, to } => {
+                let (a, b) = (owners.owner_of(from), owners.owner_of(to));
+                let from_key = key_of(from);
+                // an owner below the moved folder: its own file is not touched (its paths are its own)
+                let crosses = owners
+                    .slots()
+                    .iter()
+                    .skip(1)
+                    .any(|s| within(s.key(), &from_key));
+                if a == b && !crosses {
+                    return vec![one(from)];
+                }
+                let moving: Vec<String> = merged
+                    .iter()
+                    .map(|(p, _)| p.to_owned())
+                    .filter(|p| within(&key_of(p), &from_key) && owners.owner_of(p) == a)
+                    .collect();
+                let mut out = Vec::new();
+                for path in moving {
+                    let rest = path.get(from.len()..).unwrap_or_default();
+                    out.extend(Self::moved_entry(
+                        owners,
+                        merged,
+                        &path,
+                        &format!("{to}{rest}"),
+                    ));
+                }
+                out
+            }
+        }
+    }
+
+    /// One entry moved across owners: written in the target's file, removed from the source's.
+    fn moved_entry(owners: &Owners, merged: &Entries, from: &str, to: &str) -> Vec<(usize, Op)> {
+        let Some(entry) = merged.get(from).cloned() else {
+            return Vec::new();
+        };
+        let (a, b) = (owners.owner_of(from), owners.owner_of(to));
+        let target = owners.rel(b, to);
+        let mut out = vec![(
+            a,
+            Op::Remove {
+                path: owners.rel(a, from),
+            },
+        )];
+        if !entry.tags.is_empty() {
+            out.push((
+                b,
+                Op::SetTags {
+                    path: target.clone(),
+                    tags: entry.tags,
+                },
+            ));
+        }
+        if !entry.description.is_empty() {
+            out.push((
+                b,
+                Op::SetDescription {
+                    path: target,
+                    description: entry.description,
+                },
+            ));
+        }
+        out
+    }
+
+    /// The status of a tag for a file (`projects.md` §7.2); `None`: no projects, or marks dormant.
+    fn status_for(
+        &self,
+        tag: &str,
+        path: Option<&str>,
+    ) -> (
+        Option<permark_core::projects::TagStatus>,
+        Option<ProjectUid>,
+    ) {
+        let Some(projects) = &self.projects else {
+            return (None, None);
+        };
+        let vocab = projects.vocabularies();
+        let found = match path {
+            Some(path) => {
+                let chain = projects.snapshot().owner_of(path).chain;
+                vocab.status(VocabKind::Tag, tag, &chain)
+            }
+            None => vocab.status_anywhere(VocabKind::Tag, tag),
+        };
+        found.map_or((None, None), |(status, owner)| (Some(status), owner))
+    }
 }
 
-/// The writer: waits for changes, writes after the quiet period, retries failures, reads in outside edits.
+/// The writer: waits for changes, writes each file after its quiet period, retries failures, reads in outside edits.
 fn meta_loop(shared: &Shared, rx: &Receiver<MetaMsg>) {
     let timing = shared.timing;
-    let mut first: Option<Instant> = None;
-    let mut deadline: Option<Instant> = None;
-    let mut failures = 0usize;
-    if !shared.lock().pending.is_empty() || shared.lock().legacy_merged {
-        deadline = Some(Instant::now());
-    }
     loop {
-        let message = match deadline {
+        let next = shared
+            .units()
+            .list
+            .iter()
+            .filter_map(|u| u.lock().deadline)
+            .min();
+        let message = match next {
             Some(at) => rx.recv_timeout(at.saturating_duration_since(Instant::now())),
             None => rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
         };
         match message {
             Ok(MetaMsg::Edited) => {
                 let now = Instant::now();
-                let start = *first.get_or_insert(now);
-                deadline = Some((now + timing.quiet).min(start + timing.max_wait));
+                for unit in &shared.units().list {
+                    let mut inner = unit.lock();
+                    if inner.pending.is_empty() || inner.problem.is_some() {
+                        continue;
+                    }
+                    let start = *inner.first.get_or_insert(now);
+                    let due = (now + timing.quiet).min(start + timing.max_wait);
+                    inner.deadline = Some(inner.deadline.map_or(due, |d| d.min(due)));
+                }
             }
-            Ok(MetaMsg::Reload) => {
-                shared.reload();
-                let waiting = !shared.lock().pending.is_empty();
-                if waiting && shared.lock().problem.is_none() {
+            Ok(MetaMsg::Reload(unit)) => {
+                shared.reload(&unit);
+                let mut inner = unit.lock();
+                if !inner.pending.is_empty() && inner.problem.is_none() {
                     // written once the file is quiet: another program may be halfway through writing it
-                    deadline = Some(Instant::now() + timing.quiet);
+                    inner.deadline = Some(Instant::now() + timing.quiet);
                 }
             }
             Ok(MetaMsg::Stop) | Err(RecvTimeoutError::Disconnected) => {
                 // what was changed is written before the service goes
-                if matches!(shared.flush(), Flush::Raced) {
-                    shared.reload();
-                    let _ = shared.flush();
+                let list = shared.units().list.clone();
+                for unit in &list {
+                    shared.flush_settled(unit);
                 }
                 return;
             }
-            Err(RecvTimeoutError::Timeout) => match shared.flush() {
-                Flush::Done => {
-                    failures = 0;
-                    first = None;
-                    deadline = None;
+            Err(RecvTimeoutError::Timeout) => {
+                let now = Instant::now();
+                let due: Vec<Arc<Unit>> = shared
+                    .units()
+                    .list
+                    .iter()
+                    .filter(|u| u.lock().deadline.is_some_and(|d| d <= now))
+                    .cloned()
+                    .collect();
+                for unit in due {
+                    let result = shared.flush(&unit);
+                    if matches!(result, Flush::Raced) {
+                        // the other program's version is read first, then what is waiting goes on top of it
+                        shared.reload(&unit);
+                    }
+                    let mut inner = unit.lock();
+                    match result {
+                        Flush::Done => {
+                            inner.failures = 0;
+                            inner.first = None;
+                            inner.deadline = None;
+                        }
+                        Flush::Parked => {
+                            inner.first = None;
+                            inner.deadline = None;
+                        }
+                        Flush::Raced => {
+                            inner.first = None;
+                            let waiting = !inner.pending.is_empty() && inner.problem.is_none();
+                            inner.deadline = waiting.then(|| Instant::now() + timing.quiet);
+                        }
+                        Flush::Failed => {
+                            let pause = timing.retry[inner.failures.min(timing.retry.len() - 1)];
+                            inner.failures += 1;
+                            inner.deadline = Some(Instant::now() + pause);
+                        }
+                    }
                 }
-                Flush::Parked => {
-                    first = None;
-                    deadline = None;
-                }
-                Flush::Raced => {
-                    // the other program's version is read first, then what is waiting goes on top of it
-                    shared.reload();
-                    first = None;
-                    let inner = shared.lock();
-                    let waiting = !inner.pending.is_empty() && inner.problem.is_none();
-                    drop(inner);
-                    deadline = waiting.then(|| Instant::now() + timing.quiet);
-                }
-                Flush::Failed => {
-                    let pause = timing.retry[failures.min(timing.retry.len() - 1)];
-                    failures += 1;
-                    deadline = Some(Instant::now() + pause);
-                }
-            },
+            }
         }
     }
 }
 
-// ---- the catalog of front matter tags ----------------------------------------------------------------------------
+// ---- front matter tags of files the index does not cover (linked worktrees, files on demand) -------------------
 
-/// What the front matter of one document says, read again only when its length or time changed.
-fn read_doc(shared: &Shared, path: &str, known: Option<&DocTags>) -> Option<DocTags> {
-    let (_, abs) = shared.scope.resolve(path).ok()?;
-    read_doc_at(&abs, known)
-}
-
-fn read_doc_at(abs: &Path, known: Option<&DocTags>) -> Option<DocTags> {
+fn read_doc_at(abs: &Path) -> Option<Vec<String>> {
     let meta = std::fs::metadata(abs).ok()?;
     if !meta.is_file() {
         return None;
-    }
-    let (len, mtime) = (meta.len(), mtime_ms(&meta));
-    if let Some(known) = known.filter(|k| k.len == len && k.mtime_ms == mtime) {
-        return Some(known.clone());
     }
     let mut head = Vec::new();
     fsx::retry(
@@ -458,113 +740,7 @@ fn read_doc_at(abs: &Path, known: Option<&DocTags>) -> Option<DocTags> {
     )
     .ok()?;
     let text = fsx::decode(&head)?.text;
-    Some(DocTags {
-        tags: from_text(&text),
-        len,
-        mtime_ms: mtime,
-    })
-}
-
-fn scan_all(shared: &Shared, stop: &AtomicBool) {
-    let (paths, _) = shared.explorer.scan_documents("");
-    let known = shared
-        .docs
-        .read()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    let mut docs = Docs::new();
-    for (at, path) in paths.iter().enumerate() {
-        if at % 64 == 0 && stop.load(Ordering::Relaxed) {
-            return;
-        }
-        if let Some(doc) = read_doc(shared, path, known.get(path)) {
-            docs.insert(path.clone(), doc);
-        }
-    }
-    *shared.docs.write().unwrap_or_else(PoisonError::into_inner) = docs;
-    shared.catalog_ready.store(true, Ordering::Release);
-    bump(shared);
-}
-
-/// Applies one batch to the catalog; `true` when something changed.
-fn apply_batch(shared: &Shared, batch: &FsBatch) -> bool {
-    let mut docs = shared.docs.write().unwrap_or_else(PoisonError::into_inner);
-    let mut changed = false;
-    for change in &batch.changes {
-        if is_worktree(&change.path) {
-            continue;
-        }
-        let below = format!("{}/", change.path);
-        match &change.kind {
-            ChangeKind::Removed => {
-                if change.is_dir {
-                    let before = docs.len();
-                    docs.retain(|p, _| !p.starts_with(&below));
-                    changed |= docs.len() != before;
-                } else {
-                    changed |= docs.remove(&change.path).is_some();
-                }
-            }
-            ChangeKind::Renamed { from } => {
-                if change.is_dir {
-                    let from_below = format!("{from}/");
-                    let moved: Vec<String> = docs
-                        .keys()
-                        .filter(|p| p.starts_with(&from_below))
-                        .cloned()
-                        .collect();
-                    for old in moved {
-                        if let Some(doc) = docs.remove(&old) {
-                            docs.insert(format!("{}{}", below, &old[from_below.len()..]), doc);
-                            changed = true;
-                        }
-                    }
-                } else {
-                    changed |= docs.remove(from).is_some();
-                    changed |= refresh(shared, &mut docs, &change.path);
-                }
-            }
-            ChangeKind::Created | ChangeKind::Modified => {
-                if !change.is_dir {
-                    changed |= refresh(shared, &mut docs, &change.path);
-                }
-            }
-        }
-    }
-    changed
-}
-
-/// Reads `path` again into `docs`; `true` when the entry changed.
-fn refresh(shared: &Shared, docs: &mut Docs, path: &str) -> bool {
-    if !is_markdown(path) {
-        return false;
-    }
-    let before = docs.get(path).cloned();
-    match read_doc(shared, path, before.as_ref()) {
-        Some(doc) => {
-            let differs = before.as_ref().map(|b| &b.tags) != Some(&doc.tags);
-            docs.insert(path.to_owned(), doc);
-            differs
-        }
-        None => docs.remove(path).is_some(),
-    }
-}
-
-fn catalog_loop(shared: &Shared, rx: &Receiver<CatalogMsg>, stop: &AtomicBool) {
-    scan_all(shared, stop);
-    while let Ok(message) = rx.recv() {
-        let CatalogMsg::Batch(batch) = message else {
-            return;
-        };
-        if stop.load(Ordering::Relaxed) {
-            return;
-        }
-        if batch.bulk || batch.rescan {
-            scan_all(shared, stop);
-        } else if apply_batch(shared, &batch) {
-            bump(shared);
-        }
-    }
+    Some(from_text(&text))
 }
 
 // ---- the service -------------------------------------------------------------------------------------------------
@@ -572,9 +748,9 @@ fn catalog_loop(shared: &Shared, rx: &Receiver<CatalogMsg>, stop: &AtomicBool) {
 pub struct TagsService {
     shared: Arc<Shared>,
     meta_tx: Sender<MetaMsg>,
-    catalog_tx: Sender<CatalogMsg>,
-    stop: Arc<AtomicBool>,
     threads: Mutex<Vec<JoinHandle<()>>>,
+    harvest_sub: Mutex<Option<HarvestSubscription>>,
+    map_sub: Mutex<Option<ProjectsSubscription>>,
 }
 
 fn denied(path: &str, why: &str) -> IpcError {
@@ -582,40 +758,43 @@ fn denied(path: &str, why: &str) -> IpcError {
 }
 
 impl TagsService {
-    /// Reads `meta.toml` (and merges the legacy copy), then starts the writer and the catalog.
+    /// Reads every owner's `meta.toml` (and merges the legacy copies), then starts the writer; the catalog follows the
+    /// index pass.
     #[must_use]
     pub fn start(args: ServiceArgs) -> Self {
+        let location = if args.owners.root().store.location() == StateLocation::Project {
+            TagsLocation::Project
+        } else {
+            TagsLocation::Profile
+        };
+        let list: Vec<Arc<Unit>> = args
+            .owners
+            .slots()
+            .iter()
+            .map(|s| Arc::new(Unit::new(s, args.legacy)))
+            .collect();
         let shared = Arc::new(Shared {
-            file: args.file,
+            units: RwLock::new(Units {
+                owners: args.owners,
+                list: list.clone(),
+                paused: false,
+                held: Vec::new(),
+            }),
+            location,
             legacy: args.legacy,
-            location: args.location,
-            watched: args.watched,
             own: args.own,
             scope: args.scope,
-            explorer: args.explorer,
+            harvest: args.harvest,
+            projects: args.projects,
             announce: args.announce,
             timing: args.timing,
-            inner: Mutex::new(Inner {
-                entries: Entries::default(),
-                pending: Vec::new(),
-                problem: None,
-                io_error: None,
-                disk_hash: None,
-                loaded: false,
-                legacy_merged: false,
-            }),
-            docs: RwLock::new(Docs::new()),
-            catalog_ready: AtomicBool::new(false),
             rev: AtomicU64::new(1),
+            merged: Mutex::new(None),
         });
-        shared.reload();
-        // a legacy copy is merged only into a file that reads (the merge is written over it)
-        if shared.lock().problem.is_none() {
-            shared.merge_legacy();
+        for unit in &list {
+            shared.open_unit(unit);
         }
-        let stop = Arc::new(AtomicBool::new(false));
         let (meta_tx, meta_rx) = channel();
-        let (catalog_tx, catalog_rx) = channel();
         let mut threads = Vec::new();
         let writer = Arc::clone(&shared);
         threads.extend(
@@ -624,21 +803,79 @@ impl TagsService {
                 .spawn(move || meta_loop(&writer, &meta_rx))
                 .ok(),
         );
-        let scanner = Arc::clone(&shared);
-        let flag = Arc::clone(&stop);
-        threads.extend(
-            thread::Builder::new()
-                .name("permark-tags-catalog".to_owned())
-                .stack_size(4 * 1024 * 1024)
-                .spawn(move || catalog_loop(&scanner, &catalog_rx, &flag))
-                .ok(),
-        );
+        let harvest_sub = shared.harvest.subscribe({
+            let weak = Arc::downgrade(&shared);
+            move || {
+                if let Some(shared) = weak.upgrade() {
+                    bump(&shared);
+                }
+            }
+        });
+        // official lists | owner chains changed: the status marks change
+        let map_sub = shared.projects.as_ref().map(|p| {
+            let weak = Arc::downgrade(&shared);
+            p.subscribe_map(move |_| {
+                if let Some(shared) = weak.upgrade() {
+                    bump(&shared);
+                }
+            })
+        });
         Self {
             shared,
             meta_tx,
-            catalog_tx,
-            stop,
             threads: Mutex::new(threads),
+            harvest_sub: Mutex::new(Some(harvest_sub)),
+            map_sub: Mutex::new(map_sub),
+        }
+    }
+
+    /// The owners change: before, every file is written and changes wait; after, the files of the new owners are read
+    /// (a change waiting in a file that could not be written goes on in the same owner's new file).
+    pub fn follow_owners(&self, change: &OwnersChange<'_>) {
+        match change {
+            OwnersChange::Pause => {
+                let list = self.shared.units().list.clone();
+                for unit in &list {
+                    self.shared.flush_settled(unit);
+                }
+                self.shared
+                    .units
+                    .write()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .paused = true;
+            }
+            OwnersChange::Resume(owners) => {
+                let old = self.shared.units().list.clone();
+                let list: Vec<Arc<Unit>> = owners
+                    .slots()
+                    .iter()
+                    .map(|s| Arc::new(Unit::new(s, self.shared.legacy)))
+                    .collect();
+                for unit in &list {
+                    // changes that could not be written before stay with their owner
+                    if let Some(before) = old.iter().find(|u| u.uid == unit.uid) {
+                        let pending = std::mem::take(&mut before.lock().pending);
+                        unit.lock().pending = pending;
+                    }
+                    self.shared.open_unit(unit);
+                }
+                let held = {
+                    let mut units = self
+                        .shared
+                        .units
+                        .write()
+                        .unwrap_or_else(PoisonError::into_inner);
+                    units.owners = (*owners).clone();
+                    units.list = list;
+                    units.paused = false;
+                    std::mem::take(&mut units.held)
+                };
+                bump(&self.shared);
+                if !held.is_empty() {
+                    self.queue(held);
+                }
+                let _ = self.meta_tx.send(MetaMsg::Edited);
+            }
         }
     }
 
@@ -649,52 +886,68 @@ impl TagsService {
         }
         // moved files take their entries along
         let mut ops = Vec::new();
-        let mut reload = false;
-        for change in &batch.changes {
-            if let Some(watched) = &self.shared.watched {
-                if !change.own && key_of(&change.path) == key_of(watched) {
-                    reload = true;
-                }
-            }
-            if let ChangeKind::Renamed { from } = &change.kind {
-                if is_worktree(from) || is_worktree(&change.path) {
-                    continue;
-                }
-                ops.push(if change.is_dir {
-                    Op::RenameTree {
-                        from: from.clone(),
-                        to: change.path.clone(),
+        let mut reload: Vec<Arc<Unit>> = Vec::new();
+        {
+            let units = self.shared.units();
+            let owner_folders: Vec<&str> = units
+                .owners
+                .slots()
+                .iter()
+                .skip(1)
+                .map(OwnerSlot::key)
+                .collect();
+            for change in &batch.changes {
+                for unit in &units.list {
+                    if let Some(watched) = &unit.watched {
+                        if !change.own
+                            && key_of(&change.path) == key_of(watched)
+                            && !reload.iter().any(|u| Arc::ptr_eq(u, unit))
+                        {
+                            reload.push(Arc::clone(unit));
+                        }
                     }
-                } else {
-                    Op::Rename {
-                        from: from.clone(),
-                        to: change.path.clone(),
+                }
+                if let ChangeKind::Renamed { from } = &change.kind {
+                    if is_worktree(from) || is_worktree(&change.path) {
+                        continue;
                     }
-                });
+                    // an included project moved as a whole: its own file moves with it (or its profile folder does)
+                    if owner_folders.contains(&key_of(from).as_str()) {
+                        continue;
+                    }
+                    ops.push(if change.is_dir {
+                        Op::RenameTree {
+                            from: from.clone(),
+                            to: change.path.clone(),
+                        }
+                    } else {
+                        Op::Rename {
+                            from: from.clone(),
+                            to: change.path.clone(),
+                        }
+                    });
+                }
             }
         }
         if !ops.is_empty() {
             self.queue(ops);
         }
-        if reload {
-            let _ = self.meta_tx.send(MetaMsg::Reload);
+        for unit in reload {
+            let _ = self.meta_tx.send(MetaMsg::Reload(unit));
         }
-        let _ = self.catalog_tx.send(CatalogMsg::Batch(batch.clone()));
     }
 
-    /// Changes that follow from the project (moves): kept even while the file cannot be read.
+    /// Changes that follow from the project (moves): kept even while a file cannot be read; held while the owners
+    /// change.
     fn queue(&self, ops: Vec<Op>) {
-        let mut inner = self.shared.lock();
+        let merged = self.shared.merged();
         let touching: Vec<Op> = ops
             .into_iter()
             .filter(|op| match op {
-                Op::Rename { from, .. } => inner.entries.get(from).is_some(),
+                Op::Rename { from, .. } => merged.get(from).is_some(),
                 Op::RenameTree { from, .. } => {
                     let prefix = format!("{}/", key_of(from));
-                    inner
-                        .entries
-                        .iter()
-                        .any(|(p, _)| key_of(p).starts_with(&prefix))
+                    merged.iter().any(|(p, _)| key_of(p).starts_with(&prefix))
                 }
                 _ => true,
             })
@@ -702,34 +955,66 @@ impl TagsService {
         if touching.is_empty() {
             return;
         }
-        for op in &touching {
-            inner.entries.apply(op);
+        {
+            let mut units = self
+                .shared
+                .units
+                .write()
+                .unwrap_or_else(PoisonError::into_inner);
+            if units.paused {
+                units.held.extend(touching);
+                return;
+            }
+            let routed: Vec<(usize, Op)> = touching
+                .iter()
+                .flat_map(|op| Shared::route(&units.owners, &merged, op))
+                .collect();
+            for (i, op) in routed {
+                let Some(unit) = units.list.get(i) else {
+                    continue;
+                };
+                let mut inner = unit.lock();
+                inner.entries.apply(&op);
+                inner.pending.push(op);
+            }
+            drop(units);
         }
-        inner.pending.extend(touching);
-        drop(inner);
         bump(&self.shared);
         let _ = self.meta_tx.send(MetaMsg::Edited);
     }
 
-    /// A change the person made.
-    fn edit(&self, path: Option<&str>, op: Op) -> Result<(), IpcError> {
+    /// A change the person made (root-relative).
+    fn edit(&self, path: Option<&str>, op: &Op) -> Result<(), IpcError> {
         if let Some(path) = path {
             if is_worktree(path) {
                 return Err(denied(path, "worktree"));
             }
         }
+        let merged = self.shared.merged();
         {
-            let mut inner = self.shared.lock();
-            if let Some(problem) = &inner.problem {
-                return Err(IpcError::new(ErrorKind::Unavailable)
-                    .subject("meta.toml")
-                    .detail(match problem.line {
-                        Some(line) => format!("line {line}: {}", problem.message),
-                        None => problem.message.clone(),
-                    }));
+            let units = self.shared.units();
+            if units.paused {
+                return Err(IpcError::new(ErrorKind::Unavailable).subject("meta.toml"));
             }
-            inner.entries.apply(&op);
-            inner.pending.push(op);
+            let routed = Shared::route(&units.owners, &merged, op);
+            // refused as a whole when a file it touches cannot be read
+            for (i, _) in &routed {
+                if let Some(problem) = units.list.get(*i).and_then(|u| u.lock().problem.clone()) {
+                    return Err(IpcError::new(ErrorKind::Unavailable)
+                        .subject("meta.toml")
+                        .detail(match problem.line {
+                            Some(line) => format!("line {line}: {}", problem.message),
+                            None => problem.message.clone(),
+                        }));
+                }
+            }
+            for (i, op) in routed {
+                if let Some(unit) = units.list.get(i) {
+                    let mut inner = unit.lock();
+                    inner.entries.apply(&op);
+                    inner.pending.push(op);
+                }
+            }
         }
         bump(&self.shared);
         let _ = self.meta_tx.send(MetaMsg::Edited);
@@ -749,10 +1034,10 @@ impl TagsService {
     /// Replaces the tags the app keeps for a file.
     ///
     /// # Errors
-    /// Not a file of the project, a worktree file, or `meta.toml` cannot be read.
+    /// Not a file of the project, a worktree file, or its `meta.toml` cannot be read.
     pub fn set_tags(&self, path: &str, tags: &[String]) -> Result<FileMeta, IpcError> {
         let path = self.existing_file(path)?;
-        self.edit(Some(&path), Op::set_tags(&path, tags))?;
+        self.edit(Some(&path), &Op::set_tags(&path, tags))?;
         self.file_meta(&path)
     }
 
@@ -762,7 +1047,7 @@ impl TagsService {
     /// As [`TagsService::set_tags`].
     pub fn set_description(&self, path: &str, description: &str) -> Result<FileMeta, IpcError> {
         let path = self.existing_file(path)?;
-        self.edit(Some(&path), Op::set_description(&path, description))?;
+        self.edit(Some(&path), &Op::set_description(&path, description))?;
         self.file_meta(&path)
     }
 
@@ -778,39 +1063,53 @@ impl TagsService {
     ) -> Result<(), IpcError> {
         let op = Op::set_style(tag, color, icon)
             .ok_or_else(|| IpcError::new(ErrorKind::InvalidData).subject("tag"))?;
-        self.edit(None, op)
+        self.edit(None, &op)
     }
 
+    /// Where the tags live, and the first problem of any owner's file (the opened folder's first).
     #[must_use]
     pub fn status(&self) -> TagsStatus {
-        let inner = self.shared.lock();
+        let units = self.shared.units();
+        let mut problem = None;
+        let mut write_error = None;
+        let mut parked = 0usize;
+        for unit in &units.list {
+            let inner = unit.lock();
+            if problem.is_none() {
+                problem = inner.problem.as_ref().map(|p| MetaProblem {
+                    message: p.message.clone(),
+                    line: p.line.and_then(|l| u32::try_from(l).ok()),
+                });
+            }
+            if write_error.is_none() {
+                write_error.clone_from(&inner.io_error);
+            }
+            parked += inner.pending.len();
+        }
         TagsStatus {
             location: self.shared.location,
-            problem: inner.problem.as_ref().map(|p| MetaProblem {
-                message: p.message.clone(),
-                line: p.line.and_then(|l| u32::try_from(l).ok()),
-            }),
-            write_error: inner.io_error.clone(),
-            parked: u32::try_from(inner.pending.len()).unwrap_or(u32::MAX),
+            problem,
+            write_error,
+            parked: u32::try_from(parked).unwrap_or(u32::MAX),
         }
     }
 
     fn rev(&self) -> u64 {
-        self.shared.rev.load(Ordering::Relaxed)
+        self.shared.rev()
     }
 
-    /// Every file that has a tag or a description, and the looks of the tags.
+    fn docs(&self) -> Arc<Docs> {
+        self.shared.harvest.snapshot()
+    }
+
+    /// Every file that has a tag or a description, and the looks of the tags (an official look wins).
     #[must_use]
     pub fn index(&self) -> TagsIndex {
         let rev = self.rev();
         let status = self.status();
-        let inner = self.shared.lock();
-        let docs = self
-            .shared
-            .docs
-            .read()
-            .unwrap_or_else(PoisonError::into_inner);
-        let entries = catalog::index(&inner.entries, &docs)
+        let entries = self.shared.merged();
+        let docs = self.docs();
+        let rows = catalog::index(&entries, &docs)
             .into_iter()
             .map(|row| IndexEntry {
                 path: row.path,
@@ -818,8 +1117,7 @@ impl TagsService {
                 description: row.description,
             })
             .collect();
-        let styles = inner
-            .entries
+        let mut styles = entries
             .styles()
             .map(|(tag, style)| {
                 (
@@ -831,9 +1129,25 @@ impl TagsService {
                 )
             })
             .collect::<BTreeMap<_, _>>();
+        if let Some(projects) = &self.shared.projects {
+            let vocab = projects.vocabularies();
+            if let Some(official) = vocab.official.vocab() {
+                for (tag, style) in &official.tags {
+                    if style.color.is_some() || style.icon.is_some() {
+                        styles.insert(
+                            tag.clone(),
+                            TagStyleView {
+                                color: style.color.clone(),
+                                icon: style.icon.clone(),
+                            },
+                        );
+                    }
+                }
+            }
+        }
         TagsIndex {
             rev,
-            entries,
+            entries: rows,
             styles,
             status,
         }
@@ -842,15 +1156,10 @@ impl TagsService {
     /// Entries whose file is gone (an entry that is no valid project path is left alone).
     #[must_use]
     pub fn orphans(&self) -> Vec<String> {
-        let paths: Vec<String> = self
-            .shared
-            .lock()
-            .entries
+        self.shared
+            .merged()
             .iter()
             .map(|(p, _)| p.to_owned())
-            .collect();
-        paths
-            .into_iter()
             .filter(|path| {
                 !is_worktree(path)
                     && VaultPath::parse(path).is_ok()
@@ -863,73 +1172,65 @@ impl TagsService {
             .collect()
     }
 
-    /// Tags with counts, untagged documents, orphans.
+    /// Tags with counts (+ official | local | unlisted while official lists exist), untagged documents, orphans.
     #[must_use]
     pub fn overview(&self) -> TagsOverview {
         let rev = self.rev();
         let orphans = self.orphans().len();
-        let inner = self.shared.lock();
-        let docs = self
+        let entries = self.shared.merged();
+        let docs = self.docs();
+        let marks = self
             .shared
-            .docs
-            .read()
-            .unwrap_or_else(PoisonError::into_inner);
+            .projects
+            .as_ref()
+            .is_some_and(|p| p.vocabularies().active());
         TagsOverview {
             rev,
-            tags: catalog::tag_counts(&inner.entries, &docs)
+            tags: catalog::tag_counts(&entries, &docs)
                 .into_iter()
-                .map(|t| TagCountView {
-                    name: t.name,
-                    count: u32::try_from(t.count).unwrap_or(u32::MAX),
-                    only_in_files: t.only_in_files,
+                .map(|t| {
+                    let (status, owner) = if marks {
+                        self.shared.status_for(&t.name, None)
+                    } else {
+                        (None, None)
+                    };
+                    TagCountView {
+                        name: t.name,
+                        count: u32::try_from(t.count).unwrap_or(u32::MAX),
+                        only_in_files: t.only_in_files,
+                        status,
+                        owner,
+                    }
                 })
                 .collect(),
-            untagged: u32::try_from(catalog::untagged(&inner.entries, &docs).len())
-                .unwrap_or(u32::MAX),
+            untagged: u32::try_from(catalog::untagged(&entries, &docs).len()).unwrap_or(u32::MAX),
             orphans: u32::try_from(orphans).unwrap_or(u32::MAX),
+            marks,
         }
     }
 
     /// The files that have every one of `tags`, or (`untagged`) the documents that have none.
     #[must_use]
     pub fn files_with(&self, tags: &[String], untagged: bool) -> Vec<TaggedFile> {
-        let (paths, descriptions, stamps) = {
-            let inner = self.shared.lock();
-            let docs = self
-                .shared
-                .docs
-                .read()
-                .unwrap_or_else(PoisonError::into_inner);
-            let mut paths = if untagged {
-                catalog::untagged(&inner.entries, &docs)
-            } else {
-                catalog::files_with(&inner.entries, &docs, tags)
-            };
-            paths.truncate(MAX_LISTED);
-            let descriptions: Vec<String> = paths
-                .iter()
-                .map(|p| {
-                    inner
-                        .entries
-                        .get(p)
-                        .map(|e| e.description.clone())
-                        .unwrap_or_default()
-                })
-                .collect();
-            let stamps: Vec<Option<u64>> = paths
-                .iter()
-                .map(|p| docs.get(p).map(|d| d.mtime_ms))
-                .collect();
-            (paths, descriptions, stamps)
+        let entries = self.shared.merged();
+        let docs = self.docs();
+        let mut paths = if untagged {
+            catalog::untagged(&entries, &docs)
+        } else {
+            catalog::files_with(&entries, &docs, tags)
         };
+        paths.truncate(MAX_LISTED);
         paths
             .into_iter()
-            .zip(descriptions)
-            .zip(stamps)
-            .map(|((path, description), stamp)| TaggedFile {
-                modified_ms: stamp.unwrap_or_else(|| self.modified_ms(&path)),
+            .map(|path| TaggedFile {
+                description: entries
+                    .get(&path)
+                    .map(|e| e.description.clone())
+                    .unwrap_or_default(),
+                modified_ms: docs
+                    .get(&path)
+                    .map_or_else(|| self.modified_ms(&path), |d| d.mtime_ms),
                 path,
-                description,
             })
             .collect()
     }
@@ -951,45 +1252,55 @@ impl TagsService {
         let parsed = VaultPath::parse(path)?;
         let path = parsed.to_string();
         let worktree = is_worktree(&path);
-        let file_tags = if worktree || !is_markdown(&path) {
-            if is_markdown(&path) {
-                self.shared
-                    .scope
-                    .resolve(&path)
-                    .ok()
-                    .and_then(|(_, abs)| read_doc_at(&abs, None))
-                    .map(|d| d.tags)
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
-            }
-        } else {
+        let file_tags = if !is_markdown(&path) {
+            Vec::new()
+        } else if worktree {
             self.shared
-                .docs
-                .read()
-                .unwrap_or_else(PoisonError::into_inner)
-                .get(&path)
-                .map(|d| d.tags.clone())
+                .scope
+                .resolve(&path)
+                .ok()
+                .and_then(|(_, abs)| read_doc_at(&abs))
                 .unwrap_or_default()
-        };
-        let inner = self.shared.lock();
-        let entry = if worktree {
-            None
         } else {
-            inner.entries.get(&path)
+            self.shared.harvest.tags_of(&path).unwrap_or_default()
         };
+        let entries = self.shared.merged();
+        let entry = if worktree { None } else { entries.get(&path) };
         let app = entry.map(|e| e.tags.clone()).unwrap_or_default();
+        let editable = !worktree && {
+            let units = self.shared.units();
+            let i = units.owners.owner_of(&path);
+            !units.paused
+                && units
+                    .list
+                    .get(i)
+                    .is_some_and(|u| u.lock().problem.is_none())
+        };
+        let marks = self
+            .shared
+            .projects
+            .as_ref()
+            .is_some_and(|p| p.vocabularies().active());
         Ok(FileMeta {
             tags: catalog::combine(&file_tags, &app)
                 .into_iter()
-                .map(|t| TagRefView {
-                    name: t.name,
-                    file: t.file,
-                    app: t.app,
+                .map(|t| {
+                    let (status, owner) = if marks && !worktree {
+                        self.shared.status_for(&t.name, Some(&path))
+                    } else {
+                        (None, None)
+                    };
+                    TagRefView {
+                        name: t.name,
+                        file: t.file,
+                        app: t.app,
+                        status,
+                        owner,
+                    }
                 })
                 .collect(),
             description: entry.map(|e| e.description.clone()).unwrap_or_default(),
-            editable: !worktree && inner.problem.is_none(),
+            editable,
             path,
         })
     }
@@ -997,12 +1308,12 @@ impl TagsService {
     /// Removes the entries of files that are gone; how many went.
     ///
     /// # Errors
-    /// `meta.toml` cannot be read.
+    /// A `meta.toml` cannot be read.
     pub fn clean_up(&self) -> Result<usize, IpcError> {
         let orphans = self.orphans();
         let count = orphans.len();
         for path in orphans {
-            self.edit(None, Op::Remove { path })?;
+            self.edit(None, &Op::Remove { path })?;
         }
         Ok(count)
     }
@@ -1016,29 +1327,29 @@ impl TagsService {
     /// Waits until the first look at the documents is done (tests).
     #[must_use]
     pub fn wait_catalog(&self, timeout: Duration) -> bool {
-        let start = Instant::now();
-        loop {
-            if self.shared.catalog_ready.load(Ordering::Acquire) {
-                return true;
-            }
-            if start.elapsed() > timeout {
-                return false;
-            }
-            thread::sleep(Duration::from_millis(10));
-        }
+        self.shared.harvest.wait_ready(timeout)
     }
 
     /// Writes what is pending now (tests, stop).
     pub fn flush_now(&self) {
-        let _ = self.shared.flush();
+        let list = self.shared.units().list.clone();
+        for unit in &list {
+            let _ = self.shared.flush(unit);
+        }
     }
 }
 
 impl Drop for TagsService {
     fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
+        self.harvest_sub
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        self.map_sub
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
         let _ = self.meta_tx.send(MetaMsg::Stop);
-        let _ = self.catalog_tx.send(CatalogMsg::Stop);
         let threads =
             std::mem::take(&mut *self.threads.lock().unwrap_or_else(PoisonError::into_inner));
         for thread in threads {
@@ -1051,23 +1362,19 @@ struct Lookup(Arc<Shared>);
 
 impl TagLookup for Lookup {
     fn files_with_all(&self, tags: &[String]) -> std::collections::HashSet<String> {
-        let inner = self.0.lock();
-        let docs = self.0.docs.read().unwrap_or_else(PoisonError::into_inner);
-        catalog::files_with_set(&inner.entries, &docs, tags)
+        catalog::files_with_set(&self.0.merged(), &self.0.harvest.snapshot(), tags)
     }
 
     fn tags_of(&self, path: &str) -> Vec<String> {
-        let inner = self.0.lock();
-        let docs = self.0.docs.read().unwrap_or_else(PoisonError::into_inner);
-        catalog::tags_of(&inner.entries, &docs, path)
+        catalog::tags_of(&self.0.merged(), &self.0.harvest.snapshot(), path)
     }
 
     fn summary(&self) -> TagsSummary {
-        let inner = self.0.lock();
-        let docs = self.0.docs.read().unwrap_or_else(PoisonError::into_inner);
+        let entries = self.0.merged();
+        let docs = self.0.harvest.snapshot();
         let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
         TagsSummary {
-            tags: catalog::tag_counts(&inner.entries, &docs)
+            tags: catalog::tag_counts(&entries, &docs)
                 .into_iter()
                 .map(|t| TagCount {
                     tag: t.name,
@@ -1075,28 +1382,20 @@ impl TagLookup for Lookup {
                 })
                 .collect(),
             documents: count(docs.len()),
-            untagged: count(catalog::untagged(&inner.entries, &docs).len()),
+            untagged: count(catalog::untagged(&entries, &docs).len()),
         }
     }
 
     fn description_of(&self, path: &str) -> String {
         self.0
-            .lock()
-            .entries
+            .merged()
             .get(path)
             .map(|e| e.description.clone())
             .unwrap_or_default()
     }
 
     fn wait_ready(&self, timeout: Duration) -> bool {
-        let start = Instant::now();
-        while !self.0.catalog_ready.load(Ordering::Acquire) {
-            if start.elapsed() > timeout {
-                return false;
-            }
-            thread::sleep(Duration::from_millis(10));
-        }
-        true
+        self.0.harvest.wait_ready(timeout)
     }
 }
 
