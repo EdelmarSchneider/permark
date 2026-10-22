@@ -351,8 +351,13 @@ fn html_dests(html: &str, base: usize, out: &mut Vec<Dest>) {
     let bytes = html.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        if html[i..].starts_with("<!--") {
-            i = html[i..].find("-->").map_or(bytes.len(), |e| i + e + 3);
+        // `i` walks one byte at a time, so it can land inside a multibyte character: the
+        // comment markers are matched on the bytes and the `&str` is never sliced here.
+        if bytes[i..].starts_with(b"<!--") {
+            i = bytes[i..]
+                .windows(3)
+                .position(|w| w == b"-->")
+                .map_or(bytes.len(), |e| i + e + 3);
             continue;
         }
         if bytes[i] == b'<' && bytes.get(i + 1).is_some_and(u8::is_ascii_alphabetic) {
