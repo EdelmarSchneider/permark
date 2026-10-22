@@ -6,6 +6,7 @@ import type { MemberState } from "./MemberState";
 import type { MissingReason } from "./MissingReason";
 import type { ProjectMarker } from "./ProjectMarker";
 import type { ProjectUid } from "./ProjectUid";
+import type { TagStatus } from "./TagStatus";
 
 /**
  * One project row (Settings > Projects, the strip names, the Explorer node look).
@@ -55,4 +56,14 @@ cardPlace: CardPlace | null,
  * Missing only: the folder Locate…'s picker opens at (absolute): the old parent folder when it still exists,
  * else the opened folder.
  */
-locateFrom: string | null, };
+locateFrom: string | null, 
+/**
+ * Its card's category against the official lists (`projects.md` §7.2); `None`: no category, or no official
+ * list (marks dormant).
+ */
+categoryStatus: TagStatus | null, 
+/**
+ * Included only: tags | categories its own `.permark/vocabulary.toml` lists that are not official (count as
+ * local; Settings Tags row).
+ */
+localTags: number, localCategories: number, };

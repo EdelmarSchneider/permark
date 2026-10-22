@@ -8,6 +8,8 @@
 
 pub mod anchor;
 pub mod model;
+#[cfg(test)]
+mod owners_tests;
 mod service;
 #[cfg(test)]
 mod tests;
@@ -22,6 +24,7 @@ use permark_core::plugins::{
     typed, CxWorkspace, Manifest, Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope,
     RpcRegistration, Running, ServiceLease,
 };
+use permark_core::projects::OwnersChange;
 use permark_core::watch::Subscription;
 use permark_core::IpcError;
 use serde::Deserialize;
@@ -95,6 +98,7 @@ impl Plugin for CommentsPlugin {
         &self.manifest
     }
 
+    #[allow(clippy::too_many_lines)] // one registration per method the window calls
     fn start(&self, cx: &PluginCx) -> Result<Box<dyn Running>, PluginError> {
         let (Some(project), CxWorkspace::Project(_), Some(hub), Some(store)) =
             (cx.project(), &cx.workspace, cx.watch(), cx.store())
@@ -105,11 +109,31 @@ impl Plugin for CommentsPlugin {
             });
         };
         let events = cx.events().clone();
-        let service = Arc::new(CommentsService::start(
-            store.raw_file(FILE),
+        let started = project.owners(store);
+        // S3: before the worker knows the owners, nothing is written (it could land in the outer folder's file)
+        let early = !project.owners_known();
+        let service = Arc::new(CommentsService::start_owners(
+            started.clone(),
             project.documents.scope().clone(),
             Arc::new(move || events.emit("changed", serde_json::Value::Null)),
         ));
+        if early {
+            service.start_paused();
+        }
+        // comments follow where each included project keeps its state (`projects.md` §9.2)
+        let owners = project.follow_owners({
+            let service = Arc::downgrade(&service);
+            move |change| {
+                if let Some(service) = service.upgrade() {
+                    service.follow_owners(&change);
+                }
+            }
+        });
+        // an owners change between the read above and the subscription (or owners known meanwhile): caught up here
+        let now = project.owners(store);
+        if !now.same(&started) || (early && project.owners_known()) {
+            service.follow_owners(&OwnersChange::Resume(&now));
+        }
         let subscription = hub.subscribe({
             let service = Arc::clone(&service);
             move |batch| service.feed(batch)
@@ -189,6 +213,7 @@ impl Plugin for CommentsPlugin {
             .provide(Arc::new(CommentsApi(Arc::new(Book(Arc::clone(&service))))));
         Ok(Box::new(CommentsRunning {
             subscription: Some(subscription),
+            owners,
             registrations,
             lease: Some(lease),
             service: Some(service),
@@ -199,6 +224,7 @@ impl Plugin for CommentsPlugin {
 /// A started `comments` plugin. Drop = teardown: the watch is not heard, nobody is answered, the worker joins.
 struct CommentsRunning {
     subscription: Option<Subscription>,
+    owners: Option<permark_core::projects::ProjectsSubscription>,
     registrations: Vec<RpcRegistration>,
     lease: Option<ServiceLease>,
     service: Option<Arc<CommentsService>>,
@@ -209,6 +235,7 @@ impl Running for CommentsRunning {}
 impl Drop for CommentsRunning {
     fn drop(&mut self) {
         self.subscription.take();
+        self.owners.take();
         self.registrations.clear();
         self.lease.take();
         self.service.take();

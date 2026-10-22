@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use super::vocabulary::TagStatus;
+
 use super::card::{CardDto, CardPlace};
 use super::fsm::{AgentChoice, MissingReason, ProjectMarker, RootAnswer};
 use super::record::{HiddenRule, SkippedEntry};
@@ -53,6 +55,45 @@ pub struct ProjectRow {
     /// Missing only: the folder Locate…'s picker opens at (absolute): the old parent folder when it still exists,
     /// else the opened folder.
     pub locate_from: Option<String>,
+    /// Its card's category against the official lists (`projects.md` §7.2); `None`: no category, or no official
+    /// list (marks dormant).
+    pub category_status: Option<TagStatus>,
+    /// Included only: tags | categories its own `.permark/vocabulary.toml` lists that are not official (count as
+    /// local; Settings Tags row).
+    pub local_tags: u32,
+    pub local_categories: u32,
+}
+
+/// The opened folder's vocabulary file as the UI sees it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "status", rename_all = "camelCase")]
+#[ts(export)]
+pub enum VocabularyStatus {
+    Absent,
+    Ok,
+    Unreadable { line: u32, message: String },
+    Newer,
+}
+
+/// One official name with its look.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[ts(export)]
+pub struct VocabularyEntry {
+    pub name: String,
+    pub color: Option<String>,
+    pub icon: Option<String>,
+}
+
+/// Official tags + categories of the opened folder (`projects.md` §7).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct VocabularyView {
+    pub file: VocabularyStatus,
+    /// Marks are shown (the opened folder lists >= 1 name); `false`: dormant, nothing new on screen.
+    pub active: bool,
+    pub tags: Vec<VocabularyEntry>,
+    pub categories: Vec<VocabularyEntry>,
 }
 
 /// The record as the UI sees it.
@@ -115,6 +156,9 @@ pub struct ProjectsView {
     pub ask: Option<MoveAsk>,
     /// The opened folder's own card (Settings > Project).
     pub root_card: CardDto,
+    /// The opened folder's card category against its own official list (`None`: no category | dormant).
+    pub root_category_status: Option<TagStatus>,
+    pub vocabulary: VocabularyView,
 }
 
 /// Which projects a command acts on.

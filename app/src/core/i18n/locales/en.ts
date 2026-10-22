@@ -2012,6 +2012,90 @@ const en = {
   "projects.card.gitError": "Git can't read this project.",
   "projects.card.noCommits": "No commits yet",
   "projects.status.prefix": "{short} ·",
+  // ---- projects round 4: official | local | unlisted, promote, official lists
+  "tags.status.official": "Official",
+  "tags.status.local": "Local to {short}",
+  "tags.status.localAny": "Local to a project",
+  "tags.status.unlisted": "Unlisted (found in files, in no list)",
+  "projects.category.unlisted": "Unlisted (in no list)",
+  "tags.promote": "Make official in {root}",
+  "projects.category.promote": "Make official in {root}",
+  "tags.promoteAsk": "“{name}” becomes an official tag for every project in {root}.",
+  "projects.category.promoteAsk":
+    "“{name}” becomes an official category for every project in {root}.",
+  "tags.promoteConfirm": "Make official",
+  "tags.promoted": "“{name}” is now an official tag of {root}.",
+  "projects.category.promoted": "“{name}” is now an official category of {root}.",
+  "tags.officialLook": "Its color and icon come from the official list of {root}.",
+  "projects.vocabulary.saves":
+    "PerMark saves the official list in this folder (.permark/vocabulary.toml).",
+  "projects.vocabulary.creates": "PerMark creates .permark/vocabulary.toml in this folder.",
+  "projects.vocabulary.title": "Official tags and categories",
+  "projects.vocabulary.intro":
+    "Official tags and categories hold for every project in {root}. A project's own names count as local; tags found only in files are unlisted.",
+  "projects.vocabulary.tags": "Official tags",
+  "projects.vocabulary.categories": "Official categories",
+  "projects.vocabulary.none": "None yet.",
+  "projects.vocabulary.addTag": "New official tag",
+  "projects.vocabulary.addCategory": "New official category",
+  "projects.vocabulary.add": "Add",
+  "projects.vocabulary.typeName": "Type a name first.",
+  "projects.vocabulary.already": "“{name}” is already official.",
+  "projects.vocabulary.editHint": "You can also edit the list by hand.",
+  "projects.vocabulary.unreadable":
+    "The official list in this folder can't be read (line {line}). PerMark won't change it until it is fixed.",
+  "projects.vocabulary.newer":
+    "The official list was written by a newer version of PerMark. Changes are off until you update PerMark.",
+  "projects.vocabulary.unavailable": "The official list of this folder can't be changed now.",
+  "projects.vocabulary.conflict":
+    "The official list changed while PerMark was saving it. Try again.",
+  "projects.rules.tags": "Tags",
+  "projects.rules.tagsInfoNone":
+    "Official tags come from {root}. This project lists no tags of its own.",
+  "projects.rules.tagsInfo.one":
+    "Official tags come from {root}. This project lists 1 tag of its own, shown as local.",
+  "projects.rules.tagsInfo.other":
+    "Official tags come from {root}. This project lists {n} tags of its own, shown as local.",
+  "comments.projectCount.one": "1 open comment",
+  "comments.projectCount.other": "{n} open comments",
+  // ---- projects round 4 UX fixes: marks legend, official list edits, project-only lists
+  "tags.countSr.one": "1 file",
+  "tags.countSr.other": "{n} files",
+  "tags.promoteRow": "Make official",
+  "tags.promoteRowNamed": "Make official: {name}",
+  "tags.officialEdit": "Edit the official list…",
+  "tags.legend.label": "What the marks mean",
+  "tags.legend.local": "Local to one project",
+  "tags.legend.unlisted": "Unlisted (only in files)",
+  "projects.category.offered": "Official categories: {names}. Pick one or type your own.",
+  "projects.only": "Showing only {name}",
+  "projects.showAll": "Show all",
+  "projects.vocabulary.keep":
+    "Renaming or removing a name changes only this list: files and project cards keep the names they use, which then count as local or unlisted.",
+  "projects.vocabulary.rename": "Rename",
+  "projects.vocabulary.renameNamed": "Rename {name}",
+  "projects.vocabulary.newName": "New name for {name}",
+  "projects.vocabulary.save": "Save",
+  "projects.vocabulary.remove": "Remove",
+  "projects.vocabulary.removeNamed": "Remove {name}",
+  "projects.vocabulary.look": "Color and icon",
+  "projects.vocabulary.lookNamed": "Color and icon of {name}",
+  "projects.vocabulary.done": "Done",
+  "projects.vocabulary.removeAskTag":
+    "Remove “{name}” from the official tags? Files keep this tag as it is.",
+  "projects.vocabulary.removeAskCategory":
+    "Remove “{name}” from the official categories? Projects keep this category as it is.",
+  "projects.vocabulary.renamedTag":
+    "Renamed the official tag “{name}” to “{to}”. Files keep “{name}” as it is.",
+  "projects.vocabulary.renamedCategory":
+    "Renamed the official category “{name}” to “{to}”. Projects keep “{name}” as it is.",
+  "projects.vocabulary.removedTag":
+    "“{name}” is no longer an official tag. Files keep it as it is.",
+  "projects.vocabulary.removedCategory":
+    "“{name}” is no longer an official category. Projects keep it as it is.",
+  "projects.vocabulary.added": "Added “{name}”.",
+  "projects.vocabulary.undone": "Undone: “{name}” is no longer official.",
+  "projects.vocabulary.addAs": "Will be added as “{name}” (lowercase, dashes for spaces).",
 } as const;
 
 export default en;

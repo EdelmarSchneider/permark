@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { Result } from "./types";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -7,7 +8,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
 const { createMockApi, MOCK_FOLDER } = await import("./mock");
 const { tauriApi } = await import("./tauri");
-const { MOCK_PROJECTS_FRESH, MOCK_PROJECTS_LISTED, MOCK_PROJECTS_BROKEN } =
+const { MOCK_PROJECTS_FRESH, MOCK_PROJECTS_LISTED, MOCK_PROJECTS_BROKEN, MOCK_PROJECTS_VOCAB } =
   await import("./mockProjects");
 const core = await import("@tauri-apps/api/core");
 
@@ -102,5 +103,121 @@ describe("mock projects", () => {
     });
     await tauriApi.projectsUndo(3);
     expect(invoke).toHaveBeenCalledWith("projects_undo", { token: 3 });
+    await tauriApi.vocabularyPromote("category", "lab");
+    expect(invoke).toHaveBeenCalledWith("vocabulary_promote", { kind: "category", name: "lab" });
+    await tauriApi.vocabularyRename("tag", "spec", "specs");
+    expect(invoke).toHaveBeenCalledWith("vocabulary_rename", {
+      kind: "tag",
+      name: "spec",
+      newName: "specs",
+    });
+    await tauriApi.vocabularyRemove("category", "lab");
+    expect(invoke).toHaveBeenCalledWith("vocabulary_remove", { kind: "category", name: "lab" });
+    await tauriApi.vocabularySetStyle("tag", "spec", "blue", null);
+    expect(invoke).toHaveBeenCalledWith("vocabulary_set_style", {
+      kind: "tag",
+      name: "spec",
+      color: "blue",
+      icon: null,
+    });
+  });
+
+  it("official lists: status marks on cards and tags, promote (round 4)", async () => {
+    const plain = value(await (await opened(MOCK_PROJECTS_LISTED)).projectsView());
+    expect(plain.vocabulary.active).toBe(false);
+    expect(plain.rows.every((r) => r.categoryStatus === null)).toBe(true);
+
+    const api = await opened(MOCK_PROJECTS_VOCAB);
+    const view = value(await api.projectsView());
+    expect(view.vocabulary).toMatchObject({ active: true, file: { status: "ok" } });
+    const byPath = new Map(view.rows.map((r) => [r.path, r]));
+    expect(byPath.get("hub-b")?.categoryStatus).toBe("official");
+    expect(byPath.get("site")?.categoryStatus).toBe("local");
+    expect(byPath.get("tools/scratch")?.categoryStatus).toBe("unlisted");
+    expect(byPath.get("hub-b")?.localTags).toBe(1);
+    const overview = value(await api.pluginCall("tags.overview", {}));
+    expect(overview.marks).toBe(true);
+    const tag = (name: string) => overview.tags.find((t) => t.name === name);
+    expect(tag("spec")).toMatchObject({ status: "official", owner: null });
+    expect(tag("draft")).toMatchObject({ status: "local", owner: "vocabhubb2" });
+    expect(tag("roadmap")).toMatchObject({ status: "unlisted", owner: null });
+    const meta = value(await api.pluginCall("tags.fileMeta", { path: "site/index.md" }));
+    expect(meta.tags[0]).toMatchObject({ name: "draft", status: "unlisted" });
+
+    let tagsChanged = 0;
+    await api.onPlugin("tags:changed", () => (tagsChanged += 1));
+    expect(value(await api.vocabularyPromote("tag", "Draft"))).toBeNull();
+    const after = value(await api.projectsView());
+    expect(after.vocabulary.tags.map((t) => t.name)).toEqual(["draft", "needs-review", "spec"]);
+    expect(after.rows.find((r) => r.path === "hub-b")?.localTags).toBe(0);
+    expect(tag("draft")).toBeDefined();
+    const again = value(await api.pluginCall("tags.overview", {}));
+    expect(again.tags.find((t) => t.name === "draft")?.status).toBe("official");
+    expect(tagsChanged).toBe(1);
+    // a folder without a project list has no .permark/ to write in
+    const fresh = await opened(MOCK_PROJECTS_FRESH);
+    expect((await fresh.vocabularyPromote("tag", "x")).ok).toBe(false);
+  });
+
+  it("official lists: rename, remove, look (D46)", async () => {
+    const api = await opened(MOCK_PROJECTS_VOCAB);
+    let tagsChanged = 0;
+    await api.onPlugin("tags:changed", () => (tagsChanged += 1));
+    const refusal = async (r: Promise<Result<null>>) => {
+      const res = await r;
+      if (res.ok || res.error.kind !== "backend") throw new Error("expected a backend refusal");
+      return [res.error.error.kind, res.error.error.subject];
+    };
+    expect(await refusal(api.vocabularyRename("tag", "spec", "needs-review"))).toEqual([
+      "exists",
+      "newName",
+    ]);
+    expect(await refusal(api.vocabularyRename("tag", "nope", "x"))).toEqual(["notFound", "name"]);
+    expect(await refusal(api.vocabularyRename("tag", "spec", " "))).toEqual([
+      "invalidData",
+      "newName",
+    ]);
+    expect(await refusal(api.vocabularySetStyle("tag", "spec", "ultraviolet", null))).toEqual([
+      "invalidData",
+      "color",
+    ]);
+    expect(await refusal(api.vocabularyRemove("category", "nope"))).toEqual(["notFound", "name"]);
+    expect(tagsChanged).toBe(0);
+
+    // same name | same look: nothing to do
+    expect(value(await api.vocabularyRename("tag", "spec", "Spec"))).toBeNull();
+    expect(value(await api.vocabularySetStyle("tag", "spec", "blue", "book-open"))).toBeNull();
+    expect(tagsChanged).toBe(0);
+
+    expect(value(await api.vocabularyRename("tag", "Spec", "Specs"))).toBeNull();
+    let view = value(await api.projectsView());
+    expect(view.vocabulary.tags).toEqual([
+      { name: "needs-review", color: null, icon: null },
+      { name: "specs", color: "blue", icon: "book-open" },
+    ]);
+    // documents untouched: the old name in files is now unlisted
+    const overview = value(await api.pluginCall("tags.overview", {}));
+    expect(overview.tags.find((t) => t.name === "spec")?.status).toBe("local");
+    expect(value(await api.vocabularySetStyle("tag", "specs", null, "star"))).toBeNull();
+    expect(value(await api.vocabularySetStyle("category", "software", "red", null))).toBeNull();
+    view = value(await api.projectsView());
+    expect(view.vocabulary.tags[1]).toEqual({ name: "specs", color: null, icon: "star" });
+    expect(view.vocabulary.categories).toEqual([{ name: "software", color: "red", icon: null }]);
+    expect(value(await api.vocabularyRemove("category", "software"))).toBeNull();
+    view = value(await api.projectsView());
+    expect(view.rows.find((r) => r.path === "hub-b")?.categoryStatus).toBe("unlisted");
+    for (const name of ["needs-review", "specs"]) {
+      expect(value(await api.vocabularyRemove("tag", name))).toBeNull();
+    }
+    view = value(await api.projectsView());
+    expect(view.vocabulary.active).toBe(false);
+    expect(view.rows.every((r) => r.categoryStatus === null)).toBe(true);
+    expect(tagsChanged).toBe(6);
+    // a folder without a project list has no .permark/ to write in
+    const fresh = await opened(MOCK_PROJECTS_FRESH);
+    expect(await refusal(fresh.vocabularyRemove("tag", "x"))).toEqual([
+      "unavailable",
+      "vocabulary",
+    ]);
   });
 });

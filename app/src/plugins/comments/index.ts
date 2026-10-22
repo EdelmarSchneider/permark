@@ -23,6 +23,23 @@ export default definePlugin({
         badge: (path, isDir) => comments.badge(path, isDir),
       }),
       cx.contribute({
+        kind: "projectCount",
+        id: "comments.projectCount",
+        requires: NO_REQUIREMENT,
+        count: (row) => {
+          const text = comments.projectCount(row.path);
+          return text === null
+            ? null
+            : {
+                text,
+                open: () => {
+                  comments.showOnly({ folder: row.path, name: row.name });
+                  ui.showSidebar(PANEL);
+                },
+              };
+        },
+      }),
+      cx.contribute({
         kind: "panel",
         id: PANEL,
         side: "left",

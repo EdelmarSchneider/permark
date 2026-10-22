@@ -78,6 +78,11 @@ import type { ProjectsView } from "./generated/ProjectsView";
 import type { RecordSkip } from "./generated/RecordSkip";
 import type { RecordStatus } from "./generated/RecordStatus";
 import type { RootAnswer } from "./generated/RootAnswer";
+import type { TagStatus } from "./generated/TagStatus";
+import type { VocabularyEntry } from "./generated/VocabularyEntry";
+import type { VocabularyKind } from "./generated/VocabularyKind";
+import type { VocabularyStatus } from "./generated/VocabularyStatus";
+import type { VocabularyView } from "./generated/VocabularyView";
 import type { SkippedEntry } from "./generated/SkippedEntry";
 import type { IndexStatus } from "./generated/IndexStatus";
 import type { IpcError } from "./generated/IpcError";
@@ -328,6 +333,11 @@ export type {
   RecordSkip,
   RecordStatus,
   RootAnswer,
+  TagStatus,
+  VocabularyEntry,
+  VocabularyKind,
+  VocabularyStatus,
+  VocabularyView,
   SkippedEntry,
 };
 
@@ -371,6 +381,16 @@ export interface Commands {
   projects_remove: { args: { uids: ProjectUid[] }; result: null };
   projects_answer_move: { args: { uid: ProjectUid; path: string; same: boolean }; result: null };
   projects_card_set: { args: { target: CardTarget; change: CardChange }; result: CardDto };
+  vocabulary_promote: { args: { kind: VocabularyKind; name: string }; result: null };
+  vocabulary_rename: {
+    args: { kind: VocabularyKind; name: string; newName: string };
+    result: null;
+  };
+  vocabulary_remove: { args: { kind: VocabularyKind; name: string }; result: null };
+  vocabulary_set_style: {
+    args: { kind: VocabularyKind; name: string; color: string | null; icon: string | null };
+    result: null;
+  };
   fileops_plan_move: { args: { moves: MoveSpec[]; updateLinks: boolean }; result: MovePlan };
   fileops_apply_move: { args: { planId: number; updateLinks: boolean }; result: MoveOutcome };
   fileops_delete: { args: { paths: string[] }; result: DeleteOutcome };
@@ -844,6 +864,31 @@ export interface Api {
   projectsAnswerMove(uid: ProjectUid, path: string, same: boolean): Promise<Result<null>>;
   /** One field of a card (the folder's own | an included project's); an empty value removes the field. */
   projectsCardSet(target: CardTarget, change: CardChange): Promise<Result<CardDto>>;
+  /**
+   * Makes a tag | category official in this folder (`.permark/vocabulary.toml`; the local look is copied). Already
+   * official: nothing to do. `unavailable` (subject `vocabulary`): no `.permark/` here, the list can't be read | is
+   * newer. Changes arrive as `projects-changed` (+ `tags:changed`).
+   */
+  vocabularyPromote(kind: VocabularyKind, name: string): Promise<Result<null>>;
+  /**
+   * Renames an official tag | category (only its line in `.permark/vocabulary.toml` changes; documents are never
+   * edited: the old name left in files becomes unlisted). Same name: nothing to do. Refusals: `invalidData`
+   * (`name` | `newName` empty), `notFound` `name` (not in the list), `exists` `newName` (already in the list),
+   * `unavailable` | `conflict` `vocabulary` as promote. Changes arrive as `projects-changed` (+ `tags:changed`).
+   */
+  vocabularyRename(kind: VocabularyKind, name: string, newName: string): Promise<Result<null>>;
+  /** Takes an official tag | category out of the list (documents untouched). Refusals as rename (no `exists`). */
+  vocabularyRemove(kind: VocabularyKind, name: string): Promise<Result<null>>;
+  /**
+   * The whole look of an official tag | category, like `tags.setStyle` (`null` = no color | no icon). Refusals as
+   * remove, plus `invalidData` `color` | `icon` (a value outside the style sets).
+   */
+  vocabularySetStyle(
+    kind: VocabularyKind,
+    name: string,
+    color: string | null,
+    icon: string | null,
+  ): Promise<Result<null>>;
   planMove(moves: MoveSpec[], updateLinks: boolean): Promise<Result<MovePlan>>;
   applyMove(planId: number, updateLinks: boolean): Promise<Result<MoveOutcome>>;
   deleteFiles(paths: string[]): Promise<Result<DeleteOutcome>>;

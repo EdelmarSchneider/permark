@@ -1,4 +1,4 @@
-// The icons a tag can wear: lucide components by the names the file keeps.
+// The icons a tag | an official name can wear: lucide components by the names the files keep.
 
 import type { Component } from "svelte";
 import Alert from "@lucide/svelte/icons/triangle-alert";

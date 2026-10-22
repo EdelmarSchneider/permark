@@ -502,6 +502,61 @@ pub fn projects_card_set(
     project_of(&handle, &window)?.projects_card_set(&target, &change)
 }
 
+/// Makes a tag | category official in the opened folder (`.permark/vocabulary.toml`; `projects.md` §7.2 promote).
+#[tauri::command(async)]
+pub fn vocabulary_promote(
+    handle: AppHandle,
+    window: Webview,
+    kind: permark_core::projects::VocabKind,
+    name: String,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .promote(kind, &name)
+}
+
+/// Renames an official tag | category (`projects.md` §7.2; documents untouched).
+#[tauri::command(async)]
+pub fn vocabulary_rename(
+    handle: AppHandle,
+    window: Webview,
+    kind: permark_core::projects::VocabKind,
+    name: String,
+    new_name: String,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .vocabulary_rename(kind, &name, &new_name)
+}
+
+/// Takes an official tag | category out of the list (`projects.md` §7.2; documents untouched).
+#[tauri::command(async)]
+pub fn vocabulary_remove(
+    handle: AppHandle,
+    window: Webview,
+    kind: permark_core::projects::VocabKind,
+    name: String,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .vocabulary_remove(kind, &name)
+}
+
+/// The whole look of an official tag | category (`null` = none; `projects.md` §7.2).
+#[tauri::command(async)]
+pub fn vocabulary_set_style(
+    handle: AppHandle,
+    window: Webview,
+    kind: permark_core::projects::VocabKind,
+    name: String,
+    color: Option<String>,
+    icon: Option<String>,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .vocabulary_set_style(kind, &name, color.as_deref(), icon.as_deref())
+}
+
 // ---- Explorer: file operations -------------------------------------------------------------------------------------------
 
 #[tauri::command(async)]
@@ -1466,6 +1521,10 @@ commands![
     projects_remove,
     projects_answer_move,
     projects_card_set,
+    vocabulary_promote,
+    vocabulary_rename,
+    vocabulary_remove,
+    vocabulary_set_style,
     fileops_plan_move,
     fileops_apply_move,
     fileops_delete,

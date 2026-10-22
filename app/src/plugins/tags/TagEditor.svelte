@@ -183,10 +183,13 @@
   <div class="chips" role="group" aria-labelledby="tags-label">
     {#each meta?.tags ?? [] as tag (tag.name)}
       {@const style = tags.styleOf(tag.name)}
+      {@const mark = tags.markOf(tag)}
       <TagChip
         name={tag.name}
         color={style?.color}
         icon={style?.icon}
+        status={mark?.status ?? null}
+        statusWords={mark?.words ?? ""}
         locked={tag.file}
         onremove={tag.app && !tag.file && editable ? () => void remove(tag.name) : undefined}
       />

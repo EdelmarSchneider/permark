@@ -51,6 +51,7 @@ describe("the following plugins", () => {
     expect(await kinds("unread")).toEqual([
       "command",
       "panel",
+      "projectCount",
       "shortcut",
       "statusItem",
       "treeBadge",
@@ -134,6 +135,7 @@ describe("the organizing plugins", () => {
       "command",
       "docDecoration",
       "panel",
+      "projectCount",
       "selectionMenu",
       "shortcut",
       "statusItem",

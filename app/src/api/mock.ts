@@ -360,7 +360,11 @@ export function createMockApi(): Api & {
   const pickedFrom: (string | null)[] = [];
 
   const project = new MockProject();
-  const organizing = createMockOrganizing(emitPlugin, project);
+  // read when asked (the projects mock is made below)
+  const organizing = createMockOrganizing(emitPlugin, project, () => ({
+    view: projects.probe.viewOf(rootNow()),
+    root: rootNow(),
+  }));
   const editing = createMockEditing(() => Object.keys(seedFiles()).sort());
   const notes = createMockNotes(editing.probe.files, () => {
     for (const handler of appListeners["notes:intent"]) handler(null);
@@ -395,6 +399,7 @@ export function createMockApi(): Api & {
   const importing = createMockImport(project, emit, () => refreshTree());
   const projects = createMockProjects({
     root: rootNow,
+    tagsChanged: () => emitPlugin("tags:changed", null),
     emit,
     feed: (item) => emitPlugin("live-feed:items", { upsert: [item] }),
     addFiles: (files) => {

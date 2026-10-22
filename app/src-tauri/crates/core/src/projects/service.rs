@@ -20,12 +20,15 @@ use super::fsm::{
 };
 use super::grace::{self, Came, FolderId, Left, Vanished};
 use super::map::{within, AgentRules, AncestorRules, MemberInfo, ProjectMap};
+use super::owners::{OwnerSlot, Owners, OwnersChange};
 use super::record::{self, HiddenRule, RecordOp, RecordRead, RecordSkip, SkippedEntry};
 use super::uid::ProjectUid;
 use super::view::{
     CardTarget, IncludeOutcome, InnerLine, LocateRefusal, MemberState, MoveAsk, OfferSummary,
     ProjectEvent, ProjectPick, ProjectRow, ProjectsChanged, ProjectsView, RecordStatus,
+    VocabularyEntry, VocabularyStatus, VocabularyView,
 };
+use super::vocabulary::{self, TagStatus, VocabKind, VocabRead, Vocabularies};
 use crate::events::{CoreEvent, EventSink};
 use crate::paths::{Root, VaultPath, CASE_INSENSITIVE};
 use crate::settings::ProjectConfig;
@@ -147,6 +150,12 @@ fn abs_of(root: &Path, path: &VaultPath) -> PathBuf {
     abs
 }
 
+/// Whether a member's 0.6 state was copied since it was last included (a project left out and included again is
+/// copied again: only what the opened folder got since, `projects.md` §14 D50).
+fn is_copied(inner: &Inner, member: &MemberInfo) -> bool {
+    inner.migrated.iter().any(|u| u == member.uid.as_str())
+}
+
 /// Where `path` is now when one of `renames` (`(from, to)`, first that covers it wins) moved it or a folder above it.
 fn renamed_path(path: &VaultPath, renames: &[(String, String)]) -> Option<VaultPath> {
     let key = path.key();
@@ -182,6 +191,8 @@ struct MemberRes {
     has_record: bool,
     /// Its folder on disk (a move split across watch batches pairs by it; `grace.rs`).
     id: Option<FolderId>,
+    /// Its own tag | category lists (local to it; `projects.md` §7.1).
+    vocab: vocabulary::Vocab,
 }
 
 /// Reads what a member brings from its folder (cheap: a few small files).
@@ -223,6 +234,7 @@ fn load_member(dirs: &AppDirs, abs: &Path) -> MemberRes {
         inner,
         has_record: !matches!(read, RecordRead::Absent),
         id: FolderId::of(abs),
+        vocab: vocabulary::read(abs).vocab().cloned().unwrap_or_default(),
     }
 }
 
@@ -340,6 +352,10 @@ struct Inner {
     res: HashMap<ProjectUid, MemberRes>,
     /// The opened folder's own card, read when first asked for (a plain folder never reads it).
     root_card: Option<(Card, CardPlace)>,
+    /// The opened folder's own vocabulary file, read on first use (a plain folder never reads it before a view asks).
+    vocab_root: Option<VocabRead>,
+    /// The vocabularies as of map `seq` (rebuilt when the map changed).
+    vocab: Option<(u64, Arc<Vocabularies>)>,
     member_set: MemberSet,
     ready: bool,
     seq: u64,
@@ -352,8 +368,13 @@ struct Inner {
     ancestors: (Vec<AncestorRules>, Option<Instant>),
     /// The root's own `ignore` list (`.permark/config.toml`), read at open and when that file changes.
     root_ignore: Vec<String>,
-    /// Uids whose 0.6 state was copied (round 4; kept as read).
+    /// Uids whose 0.6 state was copied (`projects.md` §9.3): their state lives in their own files.
     migrated: Vec<String>,
+    /// Members whose copy failed this session: tried again at the next start, not at every map change.
+    copy_failed: HashSet<ProjectUid>,
+    /// Members moved since the owners were last told (`(from, to)`): their profile state folder follows once the
+    /// plugins wrote what they hold (`projects.md` §9.1).
+    pending_moves: Vec<(VaultPath, VaultPath)>,
     /// Root commits of found repositories learned this session (path key -> commit; `None`: none to learn).
     root_commits: HashMap<String, Option<String>>,
     /// Path keys asked of the `git` plugin, answer not back yet (asked once per session while the lease lives).
@@ -396,6 +417,9 @@ enum Msg {
 
 type Listener = Arc<dyn Fn(&ProjectEvent) + Send + Sync>;
 type MapListener = Arc<dyn Fn(&Arc<ProjectMap>) + Send + Sync>;
+type OwnersFollower = Arc<dyn Fn(OwnersChange<'_>) + Send + Sync>;
+/// At most this many uids are remembered as copied (oldest dropped).
+const MAX_MIGRATED: usize = 2000;
 
 /// Asks the `git` plugin for the root commits of found repositories (`(path key, folder)`; `projects.md` §4.4, §8).
 /// Must return at once: the plugin queues the lookups in its bounded pool and answers later through
@@ -420,6 +444,14 @@ pub struct Projects {
     map_listeners: Mutex<Vec<(u64, MapListener)>>,
     /// Root commits of found repositories (re-attach by first commit), while the `git` plugin runs.
     identity: Mutex<Option<(u64, RootCommitAsk)>>,
+    /// Where state lives now (`projects.md` §9): the opened folder + the included projects whose 0.6 state was copied.
+    owners: Mutex<Owners>,
+    /// Told before | after the owners change (plugins with per-project state, the journal).
+    owner_followers: Mutex<Vec<(u64, OwnersFollower)>>,
+    /// One owners change at a time (the worker and a command may both finish a change).
+    owners_turn: Mutex<()>,
+    /// The owners of the record's members are known (the worker read them; never on the open path).
+    owners_known: AtomicBool,
     next: AtomicU64,
     tx: Mutex<Option<Sender<Msg>>>,
     worker: Mutex<Option<JoinHandle<()>>>,
@@ -451,6 +483,7 @@ impl Drop for ProjectsSubscription {
         if let Some(owner) = self.owner.upgrade() {
             lock(&owner.listeners).retain(|(id, _)| *id != self.id);
             lock(&owner.map_listeners).retain(|(id, _)| *id != self.id);
+            lock(&owner.owner_followers).retain(|(id, _)| *id != self.id);
             let lease = {
                 let mut identity = lock(&owner.identity);
                 let lease = identity.as_ref().is_some_and(|(id, _)| *id == self.id);
@@ -512,6 +545,8 @@ impl Projects {
                 disk_skipped: Vec::new(),
                 res: HashMap::new(),
                 root_card: None,
+                vocab_root: None,
+                vocab: None,
                 member_set: MemberSet::default(),
                 ready: false,
                 seq: 0,
@@ -523,6 +558,8 @@ impl Projects {
                 ancestors: (Vec::new(), None),
                 root_ignore: root_ignore.to_vec(),
                 migrated: kept.migrated,
+                copy_failed: HashSet::new(),
+                pending_moves: Vec::new(),
                 root_commits: HashMap::new(),
                 asked: HashSet::new(),
                 vanished: BTreeMap::new(),
@@ -533,6 +570,10 @@ impl Projects {
             listeners: Mutex::new(Vec::new()),
             map_listeners: Mutex::new(Vec::new()),
             identity: Mutex::new(None),
+            owners: Mutex::new(Owners::root_only(store.clone())),
+            owner_followers: Mutex::new(Vec::new()),
+            owners_turn: Mutex::new(()),
+            owners_known: AtomicBool::new(false),
             next: AtomicU64::new(0),
             tx: Mutex::new(None),
             worker: Mutex::new(None),
@@ -601,6 +642,11 @@ impl Projects {
                 if let Some(projects) = weak.upgrade() {
                     projects.load();
                     projects.announce_members();
+                    // the members' owners (+ their one-time copy) are in place: plugins that wait may read, and
+                    // the ones that started paused (S3: nothing written to the outer folder's file meanwhile) go on.
+                    // Told even when nothing changed; a follower already running on these owners ignores it.
+                    projects.owners_known.store(true, Ordering::Release);
+                    projects.tell_owners(&OwnersChange::Resume(&projects.owners()));
                 }
                 Self::work(&weak, &explorer, &stopped, &rx);
             })
@@ -766,7 +812,7 @@ impl Projects {
                 hint.record = true;
             } else if matches!(
                 name,
-                ".aiignore" | "project.toml" | "config.toml" | "projects.toml"
+                ".aiignore" | "project.toml" | "config.toml" | "projects.toml" | "vocabulary.toml"
             ) {
                 hint.files.push(change.path.clone());
             }
@@ -1217,8 +1263,15 @@ impl Projects {
                     after.changed = true;
                 }
             }
+            let mut files = false;
             for path in &hint.files {
-                after.changed |= self.reload_files_at(&mut inner, path);
+                files |= self.reload_files_at(&mut inner, path);
+            }
+            if files {
+                // cards, rules and lists read again: the map carries them
+                inner.seq += 1;
+                self.rebuild_map(&inner);
+                after.changed = true;
             }
         }
         if hint.rescan || hint.folders || hint.record || after.changed {
@@ -1235,6 +1288,10 @@ impl Projects {
             let changed = ignore != inner.root_ignore;
             inner.root_ignore = ignore;
             return changed;
+        }
+        if key == crate::paths::key_of(".permark/vocabulary.toml") {
+            inner.vocab_root = Some(vocabulary::read(self.root.path()));
+            return true;
         }
         if key == crate::paths::key_of(".permark/project.toml") {
             if let Some(file) = card::file_of(&self.dirs, self.root.path()) {
@@ -1506,7 +1563,7 @@ impl Projects {
             if self.write_record(&ops, false).is_ok() {
                 inner.inputs = next;
                 if let Some(from) = &from {
-                    self.follow_state(from, &path);
+                    self.follow_state(inner, from, &path);
                 }
                 after.news.push(ProjectEvent::Moved {
                     name: Self::name_of(inner, &uid, path.as_str()),
@@ -1611,6 +1668,199 @@ impl Projects {
         None
     }
 
+    // ---- state per project (round 4) ------------------------------------------------------------------------------
+
+    /// Where state lives now: the opened folder + every included project whose 0.6 state was copied (`projects.md`
+    /// §9.1). A project not copied yet (the copy failed) keeps its state in the opened folder's files meanwhile.
+    #[must_use]
+    pub fn owners(&self) -> Owners {
+        lock(&self.owners).clone()
+    }
+
+    /// Hears every owners change until the subscription goes: `Pause` (write what is pending, then hold writes),
+    /// the copy of 0.6 state + moved profile folders, then `Resume(owners)` (read again). Called on the thread that
+    /// made the change, never under the projects lock.
+    #[must_use]
+    pub fn follow_owners(
+        self: &Arc<Self>,
+        follower: impl Fn(OwnersChange<'_>) + Send + Sync + 'static,
+    ) -> ProjectsSubscription {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        lock(&self.owner_followers).push((id, Arc::new(follower)));
+        ProjectsSubscription {
+            owner: Arc::downgrade(self),
+            id,
+        }
+    }
+
+    /// Whether the worker set the owners of the record's members (a follower that starts before stays paused until
+    /// the `Resume` that follows, so nothing lands in the wrong owner's file).
+    #[must_use]
+    pub fn owners_known(&self) -> bool {
+        self.owners_known.load(Ordering::Acquire)
+    }
+
+    /// Waits (at most `timeout`) until the worker set the owners of the record's members, on the caller's own thread
+    /// (a plugin worker: never the open path). `false`: not yet.
+    #[must_use]
+    pub fn wait_owners(&self, timeout: Duration) -> bool {
+        let start = Instant::now();
+        while !self.owners_known.load(Ordering::Acquire) {
+            if start.elapsed() >= timeout || self.stopped.load(Ordering::Relaxed) {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        true
+    }
+
+    /// Whether the 0.6 state of `uid` was copied (tests, views).
+    #[must_use]
+    pub fn is_migrated(&self, uid: &ProjectUid) -> bool {
+        let map = self.snapshot();
+        let inner = lock(&self.inner);
+        inner.migrated.iter().any(|m| m == uid.as_str())
+            || map.member(uid).is_some_and(|m| is_copied(&inner, m))
+    }
+
+    /// The owners for `map`: members copied (or about to be: `extra`) whose folder is there.
+    fn owners_for(&self, map: &ProjectMap, extra: &[ProjectUid]) -> Owners {
+        let root = StateStore::for_project(&self.dirs, &self.root);
+        let copied: Vec<bool> = {
+            let inner = lock(&self.inner);
+            map.members().iter().map(|m| is_copied(&inner, m)).collect()
+        };
+        let slots = map
+            .members()
+            .iter()
+            .zip(copied)
+            .filter(|(m, copied)| *copied || extra.contains(&m.uid))
+            .map(|(m, _)| m)
+            .filter_map(|m| {
+                let store = self.store_of(&m.path)?;
+                Some(OwnerSlot::member(m.uid.clone(), m.path.as_str(), store))
+            })
+            .collect();
+        Owners::new(root, slots)
+    }
+
+    /// The owners follow the map: followers paused, moved profile folders carried (§9.1), 0.6 state of newly
+    /// included projects copied once (§9.3), followers resumed with the new owners. Nothing happens while the places
+    /// stay the same.
+    fn update_owners(&self) {
+        let _turn = lock(&self.owners_turn);
+        let map = self.snapshot();
+        let moves = std::mem::take(&mut lock(&self.inner).pending_moves);
+        if !self.files_only {
+            self.forget_left(&map);
+        }
+        let to_copy: Vec<MemberInfo> = if self.files_only {
+            Vec::new()
+        } else {
+            let inner = lock(&self.inner);
+            map.members()
+                .iter()
+                .filter(|m| !is_copied(&inner, m) && !inner.copy_failed.contains(&m.uid))
+                .cloned()
+                .collect()
+        };
+        let uids: Vec<ProjectUid> = to_copy.iter().map(|m| m.uid.clone()).collect();
+        let wanted = self.owners_for(&map, &uids);
+        if wanted.same(&lock(&self.owners)) && moves.is_empty() && to_copy.is_empty() {
+            return;
+        }
+        self.tell_owners(&OwnersChange::Pause);
+        for (from, to) in &moves {
+            // best effort: a failure leaves the state under the old id, as before round 3
+            let _ = crate::state::move_profile_state(
+                &self.dirs,
+                &abs_of(self.root.path(), from),
+                &abs_of(self.root.path(), to),
+            );
+        }
+        if !to_copy.is_empty() {
+            self.copy_state(&to_copy);
+        }
+        let now = self.owners_for(&map, &[]);
+        *lock(&self.owners) = now.clone();
+        self.tell_owners(&OwnersChange::Resume(&now));
+    }
+
+    fn tell_owners(&self, change: &OwnersChange<'_>) {
+        let followers: Vec<OwnersFollower> = lock(&self.owner_followers)
+            .iter()
+            .map(|(_, f)| Arc::clone(f))
+            .collect();
+        for follower in followers {
+            follower(match change {
+                OwnersChange::Pause => OwnersChange::Pause,
+                OwnersChange::Resume(owners) => OwnersChange::Resume(owners),
+            });
+        }
+    }
+
+    /// Members that were owners and are no longer in the map (left out, removed, declined): their copy mark goes, so
+    /// an include later copies what the opened folder got meanwhile (the ledger keeps out what was copied before).
+    fn forget_left(&self, map: &ProjectMap) {
+        let left: Vec<String> = lock(&self.owners)
+            .slots()
+            .iter()
+            .filter_map(|s| s.uid.as_ref())
+            .filter(|uid| map.member(uid).is_none())
+            .map(|uid| uid.as_str().to_owned())
+            .collect();
+        if left.is_empty() {
+            return;
+        }
+        let mut inner = lock(&self.inner);
+        let before = inner.migrated.len();
+        inner.migrated.retain(|u| !left.contains(u));
+        if inner.migrated.len() != before {
+            // a failed save keeps the mark on disk: a later include with the same uid then copies at the next start
+            let _ = self.save_membership(&inner);
+        }
+    }
+
+    /// Copies the opened folder's 0.6 state into each member (`projects.md` §9.3, by entry: §14 D50); marks the ones
+    /// that succeeded (copy + ledger saved).
+    fn copy_state(&self, members: &[MemberInfo]) {
+        let root = StateStore::for_project(&self.dirs, &self.root);
+        let ledger_file =
+            root.profile_file::<super::migrate::LedgerFile>(super::migrate::LEDGER_FILE);
+        let mut ledger = ledger_file.load().into_value();
+        let mut done = Vec::new();
+        let mut failed = Vec::new();
+        for member in members {
+            let Some(target) = self.store_of(&member.path) else {
+                continue;
+            };
+            let seen = ledger.members.entry(member.key.clone()).or_default();
+            match super::migrate::copy_state(&root, &target, member.path.as_str(), seen) {
+                Ok(_) => done.push(member),
+                Err(_) => failed.push(member.uid.clone()),
+            }
+        }
+        if !done.is_empty() && ledger_file.save(&ledger).is_err() {
+            // the copies stand (the project's entries win next time); the marks wait for a ledger that is saved
+            failed.extend(done.drain(..).map(|m| m.uid.clone()));
+        }
+        let mut inner = lock(&self.inner);
+        inner.copy_failed.extend(failed);
+        if done.is_empty() {
+            return;
+        }
+        for member in done {
+            let uid = member.uid.as_str().to_owned();
+            if !inner.migrated.contains(&uid) {
+                inner.migrated.push(uid);
+            }
+        }
+        let over = inner.migrated.len().saturating_sub(MAX_MIGRATED);
+        inner.migrated.drain(..over);
+        // not saved: copied again next start (by ledger: nothing twice)
+        let _ = self.save_membership(&inner);
+    }
+
     // ---- publishing ------------------------------------------------------------------------------------------------
 
     fn rebuild_map(&self, inner: &Inner) {
@@ -1662,8 +1912,11 @@ impl Projects {
         *self.map.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(map);
     }
 
-    /// After the lock: rescan (members changed), `projects-changed`, feed news.
+    /// After the lock: owners (state places) told, rescan (members changed), `projects-changed`, feed news.
     fn finish(&self, after: &After) {
+        if after.changed {
+            self.update_owners();
+        }
         if after.rescan {
             self.hub.publish(&FsBatch {
                 rescan: true,
@@ -1760,7 +2013,7 @@ impl Projects {
         }
         if let Event::SetPath(uid, to) = event {
             if let Some(from) = inner.inputs.entry(uid).map(|e| e.path.clone()) {
-                self.follow_state(&from, to);
+                self.follow_state(inner, &from, to);
             }
         }
         for op in &ops {
@@ -1788,15 +2041,13 @@ impl Projects {
 
     /// A member moved: its profile state folder follows its new `ProjectId` (`projects.md` §9.1; best effort: a
     /// failure leaves the state under the old id, as before round 3).
-    fn follow_state(&self, from: &VaultPath, to: &VaultPath) {
+    /// Done when the owners are told next (`update_owners`): the plugins write what they hold first, so nothing lands
+    /// in the old folder after it moved.
+    fn follow_state(&self, inner: &mut Inner, from: &VaultPath, to: &VaultPath) {
         if self.files_only || from.key() == to.key() {
             return;
         }
-        let _ = crate::state::move_profile_state(
-            &self.dirs,
-            &abs_of(self.root.path(), from),
-            &abs_of(self.root.path(), to),
-        );
+        inner.pending_moves.push((from.clone(), to.clone()));
     }
 
     /// The opened folder's own card (read on first use).
@@ -2307,6 +2558,9 @@ impl Projects {
                 inner: inner_count,
                 card_place: res.and_then(|r| r.place),
                 locate_from,
+                category_status: None,
+                local_tags: 0,
+                local_categories: 0,
             });
         }
         let record = match &inner.record {
@@ -2326,7 +2580,7 @@ impl Projects {
         skipped.extend(inner.disk_skipped.iter().copied());
         skipped.sort_by_key(|s| s.line);
         let present = !matches!(inner.record, RecordRead::Absent) || !rows.is_empty();
-        ProjectsView {
+        let view = ProjectsView {
             seq: inner.seq,
             present,
             ready: inner.ready,
@@ -2337,7 +2591,252 @@ impl Projects {
             skipped,
             ask: inner.ask.clone(),
             root_card: card::dto(&root_card.0, &self.root.name(), root_card.1),
+            root_category_status: None,
+            vocabulary: VocabularyView {
+                file: VocabularyStatus::Absent,
+                active: false,
+                tags: Vec::new(),
+                categories: Vec::new(),
+            },
+        };
+        drop(inner);
+        self.with_vocabulary(view)
+    }
+
+    /// Official lists + status marks on a view (`projects.md` §7.2, §12.2 Tags row).
+    fn with_vocabulary(&self, mut view: ProjectsView) -> ProjectsView {
+        let vocab = self.vocabularies();
+        let map = self.snapshot();
+        let entries = |kind: VocabKind| -> Vec<VocabularyEntry> {
+            vocab
+                .official
+                .vocab()
+                .map(|v| {
+                    v.list(kind)
+                        .iter()
+                        .map(|(name, style)| VocabularyEntry {
+                            name: name.clone(),
+                            color: style.color.clone(),
+                            icon: style.icon.clone(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        view.vocabulary = VocabularyView {
+            file: match &vocab.official {
+                VocabRead::Absent => VocabularyStatus::Absent,
+                VocabRead::Read(_) => VocabularyStatus::Ok,
+                VocabRead::Newer(_) => VocabularyStatus::Newer,
+                VocabRead::Unreadable { line, message } => VocabularyStatus::Unreadable {
+                    line: *line,
+                    message: message.clone(),
+                },
+            },
+            active: vocab.active(),
+            tags: entries(VocabKind::Tag),
+            categories: entries(VocabKind::Category),
+        };
+        let status = |category: Option<&str>, chain: &[ProjectUid]| -> Option<TagStatus> {
+            vocab
+                .status(VocabKind::Category, category?, chain)
+                .map(|(s, _)| s)
+        };
+        view.root_category_status = status(view.root_card.category.as_deref(), &[]);
+        let official = vocab.official.vocab();
+        for row in &mut view.rows {
+            if row.state != MemberState::Included {
+                continue;
+            }
+            let chain: Vec<ProjectUid> =
+                map.chain(&row.path).iter().map(|m| m.uid.clone()).collect();
+            row.category_status = status(row.category.as_deref(), &chain);
+            if let Some(own) = row.uid.as_ref().and_then(|u| vocab.local.get(u)) {
+                let count = |kind: VocabKind| {
+                    let n = own
+                        .list(kind)
+                        .keys()
+                        .filter(|name| official.is_none_or(|o| !o.list(kind).contains_key(*name)))
+                        .count();
+                    u32::try_from(n).unwrap_or(u32::MAX)
+                };
+                row.local_tags = count(VocabKind::Tag);
+                row.local_categories = count(VocabKind::Category);
+            }
         }
+        view
+    }
+
+    /// The opened folder's official lists + each included project's own (read on first use; rebuilt after a map
+    /// change).
+    #[must_use]
+    pub fn vocabularies(&self) -> Arc<Vocabularies> {
+        let mut inner = lock(&self.inner);
+        if let Some((seq, vocab)) = &inner.vocab {
+            if *seq == inner.seq {
+                return Arc::clone(vocab);
+            }
+        }
+        if inner.vocab_root.is_none() {
+            inner.vocab_root = Some(vocabulary::read(self.root.path()));
+        }
+        let map = self.snapshot();
+        let local = map
+            .members()
+            .iter()
+            .filter_map(|m| {
+                let res = inner.res.get(&m.uid)?;
+                (!res.vocab.is_empty()).then(|| (m.uid.clone(), res.vocab.clone()))
+            })
+            .collect();
+        let vocab = Arc::new(Vocabularies {
+            official: inner.vocab_root.clone().unwrap_or_default(),
+            local,
+        });
+        inner.vocab = Some((inner.seq, Arc::clone(&vocab)));
+        vocab
+    }
+
+    /// Adds a tag | category to the opened folder's official list (`projects.md` §7.2 promote): `[tags.<name>]` |
+    /// `[categories.<name>]` appended (the local look copied when a project lists it with one); nothing else of the
+    /// file changes. Already official: nothing to do.
+    ///
+    /// # Errors
+    /// `InvalidData` (empty name); `Unavailable` (no `.permark/` here, list unreadable | newer, a link in the way,
+    /// a reader with no window); `Conflict` (kept changing while saving); IO.
+    pub fn promote(&self, kind: VocabKind, name: &str) -> Result<(), IpcError> {
+        let name = vocab_name(name, "name")?;
+        let style = self
+            .vocabularies()
+            .local_style(kind, &name)
+            .cloned()
+            .unwrap_or_default();
+        self.edit_vocabulary(|text| {
+            vocabulary::promote_text(text, kind, &name, &style)
+                .map_err(|m| vocab_unavailable().detail(m))
+        })
+    }
+
+    /// Renames an official tag | category (`projects.md` §7.2): only the entry's key changes. Documents are never
+    /// edited (the old name left in files becomes unlisted).
+    ///
+    /// # Errors
+    /// `InvalidData` (`name` | `newName` empty); `NotFound` (`name` not listed); `Exists` (`newName` already listed);
+    /// `Unavailable` | `Conflict` | IO as [`Projects::promote`].
+    pub fn vocabulary_rename(
+        &self,
+        kind: VocabKind,
+        name: &str,
+        new_name: &str,
+    ) -> Result<(), IpcError> {
+        let name = vocab_name(name, "name")?;
+        let new_name = vocab_name(new_name, "newName")?;
+        self.edit_vocabulary(|text| {
+            vocabulary::rename_text(text, kind, &name, &new_name).map_err(refusal)
+        })
+    }
+
+    /// Takes an official tag | category out of the list (`projects.md` §7.2); comments around it stay.
+    ///
+    /// # Errors
+    /// `InvalidData` (empty name); `NotFound` (not listed); `Unavailable` | `Conflict` | IO as [`Projects::promote`].
+    pub fn vocabulary_remove(&self, kind: VocabKind, name: &str) -> Result<(), IpcError> {
+        let name = vocab_name(name, "name")?;
+        self.edit_vocabulary(|text| {
+            vocabulary::remove_text(text, kind, &name)
+                .map(Some)
+                .map_err(refusal)
+        })
+    }
+
+    /// Sets the whole look of an official tag | category (`None` = no color | no icon), like `tags.setStyle`.
+    ///
+    /// # Errors
+    /// `InvalidData` (empty name; `color` | `icon` outside the style sets); `NotFound` (not listed); `Unavailable` |
+    /// `Conflict` | IO as [`Projects::promote`].
+    pub fn vocabulary_set_style(
+        &self,
+        kind: VocabKind,
+        name: &str,
+        color: Option<&str>,
+        icon: Option<&str>,
+    ) -> Result<(), IpcError> {
+        let name = vocab_name(name, "name")?;
+        let style = vocabulary::VocabStyle {
+            color: style_value(color, crate::organizing::normalize::known_color, "color")?,
+            icon: style_value(icon, crate::organizing::normalize::known_icon, "icon")?,
+        };
+        self.edit_vocabulary(|text| {
+            vocabulary::set_style_text(text, kind, &name, &style).map_err(refusal)
+        })
+    }
+
+    /// One write of the opened folder's `vocabulary.toml` (`projects.md` §7.2, `state::shared_write` rules): under
+    /// the file's lock, `edit` gets the text as it is on disk now (BOM off; `""` = no file) and answers the new text
+    /// (`None`: nothing to write); written only while the file still holds what was read, else read again and `edit`
+    /// asked again (an outside edit meanwhile is never written over). Then the lists are read again and the windows
+    /// told (`projects-changed`, `tags:changed`).
+    fn edit_vocabulary(
+        &self,
+        edit: impl FnMut(&str) -> Result<Option<String>, IpcError>,
+    ) -> Result<(), IpcError> {
+        if self.files_only || !real_dir(&self.root.path().join(PERMARK_DIR)) {
+            return Err(vocab_unavailable());
+        }
+        let path = self
+            .root
+            .path()
+            .join(PERMARK_DIR)
+            .join(vocabulary::VOCABULARY_FILE);
+        if crate::tree::is_link_meta_of(&path) {
+            return Err(vocab_unavailable());
+        }
+        let Some(bytes) = vocabulary::write_file(&path, &self.own, edit)? else {
+            return Ok(());
+        };
+        {
+            let mut inner = lock(&self.inner);
+            inner.vocab_root = Some(vocabulary::parse(&bytes));
+            inner.seq += 1;
+            self.rebuild_map(&inner);
+        }
+        self.finish(&After {
+            changed: true,
+            ..After::default()
+        });
+        Ok(())
+    }
+}
+
+fn vocab_unavailable() -> IpcError {
+    IpcError::new(ErrorKind::Unavailable).subject("vocabulary")
+}
+
+/// A name typed for a list, tag-normalized; empty -> `InvalidData` on `subject`.
+fn vocab_name(raw: &str, subject: &str) -> Result<String, IpcError> {
+    crate::organizing::normalize::normalize_tag(raw)
+        .ok_or_else(|| IpcError::new(ErrorKind::InvalidData).subject(subject))
+}
+
+/// A color | icon from the style sets (any case), `None` = none; another value -> `InvalidData` on `subject`.
+fn style_value(
+    raw: Option<&str>,
+    known: fn(&str) -> Option<&'static str>,
+    subject: &str,
+) -> Result<Option<String>, IpcError> {
+    raw.map(|raw| {
+        known(raw)
+            .map(str::to_owned)
+            .ok_or_else(|| IpcError::new(ErrorKind::InvalidData).subject(subject))
+    })
+    .transpose()
+}
+
+fn refusal(why: vocabulary::EditRefusal) -> IpcError {
+    match why {
+        vocabulary::EditRefusal::Unreadable(m) => vocab_unavailable().detail(m),
+        vocabulary::EditRefusal::NotListed => IpcError::new(ErrorKind::NotFound).subject("name"),
+        vocabulary::EditRefusal::Taken => IpcError::new(ErrorKind::Exists).subject("newName"),
     }
 }
 

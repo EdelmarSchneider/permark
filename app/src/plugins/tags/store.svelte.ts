@@ -8,12 +8,15 @@ import type {
   TaggedFile,
   TagsIndex,
   TagsOverview,
+  TagStatus,
   TagStyleView,
 } from "../../api";
 import { apiErrorText } from "../../core/errors";
 import { t } from "../../core/i18n";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
 import type { TreeBadge } from "../../core/plugins/registry.svelte";
+import { projects } from "../../core/projects/instance.svelte";
+import { ownerShort, statusWords } from "../../core/projects/vocabulary";
 import { windowStore } from "../../core/window.svelte";
 import { filterCounts, tipOf } from "./model";
 
@@ -141,6 +144,30 @@ export class TagsStore {
     return this.#byPath.get(path)?.description ?? "";
   }
 
+  /** The mark of a tag (`projects.md` §7.2) with its words; `null` while the opened folder has no official list. */
+  markOf(item: { status: TagStatus | null; owner: string | null }): {
+    status: TagStatus;
+    words: string;
+  } | null {
+    if (item.status === null) return null;
+    return {
+      status: item.status,
+      words: statusWords(item.status, "tag", ownerShort(projects.view, item.owner)),
+    };
+  }
+
+  /** A tag of the opened folder's official list can be made official from the tags view: its list exists (or can be
+   *  made: the folder includes projects). A plain folder never offers it. */
+  get promotable(): boolean {
+    const view = projects.view;
+    if (!view?.present) return false;
+    return (
+      view.vocabulary.active ||
+      view.vocabulary.file.status !== "absent" ||
+      view.record.status !== "absent"
+    );
+  }
+
   styleOf(tag: string): TagStyleView | undefined {
     return this.index?.styles[tag];
   }
@@ -154,9 +181,25 @@ export class TagsStore {
     return tip === "" ? null : { text: "", tip };
   }
 
-  /** Every tag with its count, filtered by the box of the tags view. */
+  /** Every tag with its count, filtered by the box of the tags view. Where marks show, the official tags no file uses
+   *  yet are listed too (count 0): the view holds the whole official list (UX round 4 F9). */
   get listed() {
-    return filterCounts(this.overview?.tags ?? [], this.filter);
+    const overview = this.overview;
+    const counts = overview?.tags ?? [];
+    if (!overview?.marks) return filterCounts(counts, this.filter);
+    const known = new Set(counts.map((c) => c.name));
+    const unused = (projects.view?.vocabulary.tags ?? [])
+      .filter((e) => !known.has(e.name))
+      .map((e) => ({
+        name: e.name,
+        count: 0,
+        onlyInFiles: false,
+        status: "official" as const,
+        owner: null,
+      }));
+    // the backend lists by count, then name: the unused ones (count 0) come last
+    unused.sort((a, b) => a.name.localeCompare(b.name));
+    return filterCounts(unused.length === 0 ? counts : [...counts, ...unused], this.filter);
   }
 
   // ---- the tags view ------------------------------------------------------------------------------------------

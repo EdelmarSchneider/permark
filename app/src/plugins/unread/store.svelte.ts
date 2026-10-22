@@ -48,6 +48,15 @@ export class UnreadStore {
   #list = $state.raw<UnreadList>({ ready: false, unread: [] });
   /** The ones that call for attention: what the person silenced is left out (the backend still keeps it unread). */
   unread = $derived.by(() => this.#list.unread.filter((path) => !silence.isSilenced(path)));
+  /** The Unread tab shows one project's documents (its detail card's count led here); `null`: all. */
+  only = $state.raw<{ folder: string; name: string } | null>(null);
+  /** What the Unread tab lists: all | the project's (documents at | below its folder). */
+  shown = $derived.by(() => {
+    const only = this.only;
+    if (only === null) return this.unread;
+    const prefix = `${only.folder}/`;
+    return this.unread.filter((p) => p.startsWith(prefix));
+  });
   #all = $derived(new Set(this.#list.unread));
   #folders = $derived.by(() => {
     const folders = new Map<string, number>();
@@ -163,6 +172,17 @@ export class UnreadStore {
 
   next(from: string | null): string | null {
     return nextUnread(this.unread, from);
+  }
+
+  /** The Unread tab lists only a project's documents (`null`: all again). */
+  showOnly(only: { folder: string; name: string } | null): void {
+    this.only = only;
+  }
+
+  /** Unread documents at | below a project's folder, for its detail card (`null` when none). */
+  projectCount(folder: string): string | null {
+    const n = this.countBelow(folder);
+    return n === 0 ? null : tn("unread.folderCount", n);
   }
 
   async markRead(path: string, hash: string): Promise<void> {

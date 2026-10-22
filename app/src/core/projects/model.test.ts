@@ -39,6 +39,9 @@ function row(path: string, fields: Partial<ProjectRow> = {}): ProjectRow {
     inner: null,
     cardPlace: null,
     locateFrom: null,
+    categoryStatus: null,
+    localTags: 0,
+    localCategories: 0,
     ...fields,
   };
 }
@@ -63,6 +66,8 @@ function view(fields: Partial<ProjectsView> = {}): ProjectsView {
       invalid: [],
       warning: null,
     },
+    rootCategoryStatus: null,
+    vocabulary: { file: { status: "absent" }, active: false, tags: [], categories: [] },
     ...fields,
   };
 }
