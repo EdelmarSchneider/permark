@@ -672,6 +672,7 @@ function pairSpans(text: string, named: { value: boolean }): Span[] {
     if (value.list) secret = inner.trim() !== "" && inner !== HIDDEN;
     else if (first === "`" && inner.includes("${")) secret = false;
     else if (envLine) secret = envValueSecret(cls, key, inner);
+    else if (sep === ":" && !value.quoted && isTypeAnnotation(inner, after)) secret = false;
     else secret = looksSecret(cls, key, inner, value.quoted, after, text);
     if (value.to > value.from && secret && !isCount(key, inner)) {
       found.push({ from: value.from, to: value.to });
@@ -687,6 +688,69 @@ const ADDRESS = /:\/\/[^\s/?#"'\\@]*?:([^\s/?#"'\\@]+)@/g;
 /** Known token formats, secret whatever their key: OpenAI | Anthropic, Stripe, GitHub, GitLab, AWS, Google, Slack, Hugging Face, npm, JWT. */
 const TOKEN =
   /(?<![\p{L}\p{N}_-])(?:(sk-|sk_live_|sk_test_|rk_live_|rk_test_|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|glpat-|hf_|npm_)([A-Za-z0-9_-]+)|(?:AKIA|ASIA)[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{35}|xox[abprs]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})(?![A-Za-z0-9_-])/gu;
+
+/** Type names a value of a secret field may be declared with (`password: string`, `token: str`, `key: String`). */
+const PRIMITIVE_TYPES = new Set([
+  "string",
+  "str",
+  "int",
+  "integer",
+  "float",
+  "double",
+  "number",
+  "bool",
+  "boolean",
+  "bytes",
+  "byte",
+  "any",
+  "unknown",
+  "object",
+  "void",
+  "never",
+  "bigint",
+  "symbol",
+  "char",
+  "rune",
+  "long",
+  "short",
+  "decimal",
+  "date",
+  "datetime",
+  "uuid",
+  "i8",
+  "i16",
+  "i32",
+  "i64",
+  "i128",
+  "isize",
+  "u8",
+  "u16",
+  "u32",
+  "u64",
+  "u128",
+  "usize",
+  "f32",
+  "f64",
+]);
+
+/** `AuthConfig`, `Secret`: a type name (capital first, letters only, some lowercase). */
+const PASCAL = /^[A-Z][A-Za-z]*$/;
+
+/** A type annotation after `:` (`password: string;`, `auth: AuthConfig`): the mirror of `is_type_annotation` (Rust). */
+function isTypeAnnotation(value: string, after: string): boolean {
+  const follower = after.trimStart();
+  const followed = /^[;,)=|>}\]]/.test(follower);
+  if (!(followed || follower === "")) return false;
+  const v = value.endsWith("?") ? value.slice(0, -1) : value;
+  const primitive = (t: string): boolean => PRIMITIVE_TYPES.has(t.toLowerCase());
+  const pascal = (t: string): boolean => PASCAL.test(t) && /[a-z]/.test(t);
+  const lt = v.indexOf("<");
+  if (lt >= 0) {
+    const head = v.slice(0, lt);
+    return IDENT.test(head) && (primitive(head) || pascal(head));
+  }
+  return primitive(v) || (pascal(v) && (followed || (keyWords(v).length > 1 && !isSecretKey(v))));
+}
 
 /** The random part of a prefixed token: 20+ characters with upper, lower case and digits (a slug is not one). */
 function isRandom(prefix: string, body: string): boolean {
@@ -713,6 +777,14 @@ function isPemLine(line: string): boolean {
 
 /** `-----BEGIN | END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----` in a line. */
 const BEGIN_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/;
+/** A marker of a block that is no secret (`CERTIFICATE`, `PUBLIC KEY`, `PGP PUBLIC KEY BLOCK`, ...). */
+function isPublicMarker(line: string, marker: "BEGIN" | "END"): boolean {
+  for (const match of line.matchAll(/-----(BEGIN|END) ([A-Z0-9 ]*)-----/g)) {
+    const label = match[2] ?? "";
+    if (match[1] === marker && !/PRIVATE KEY( BLOCK)?$/.test(label)) return true;
+  }
+  return false;
+}
 const END_KEY = /-----END [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----/;
 const END_LINE = /^[ \t]*-----END/;
 
@@ -729,11 +801,35 @@ function keyBodyLines(lines: readonly string[]): Set<number> {
     } else if (BEGIN_KEY.test(line)) {
       inside = i + 1 < lines.length;
     } else if (END_KEY.test(line)) {
-      for (let j = i - 1; j >= 0; j -= 1) {
-        const t = (lines[j] ?? "").trim();
-        if (!(t === "" || (t.length >= 8 && /^[A-Za-z0-9+/=]+$/.test(t)))) break;
-        if (t !== "") out.add(j);
-      }
+      base64Above(lines, i, out);
+    }
+  }
+  return out;
+}
+
+/** The base64 lines right above line `end` (blank lines between them skipped). */
+function base64Above(lines: readonly string[], end: number, out: Set<number>): void {
+  for (let j = end - 1; j >= 0; j -= 1) {
+    const t = (lines[j] ?? "").trim();
+    if (!(t === "" || (t.length >= 8 && /^[A-Za-z0-9+/=]+$/.test(t)))) break;
+    if (t !== "") out.add(j);
+  }
+}
+
+/** Lines (0-based) of public blocks (certificates, public keys), also a part read without its BEGIN: the mirror of `public_block_lines` (Rust). */
+function publicBlockLines(lines: readonly string[]): Set<number> {
+  const out = new Set<number>();
+  if (!lines.some((line) => line.includes("-----"))) return out;
+  let inside = false;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    if (inside) {
+      inside = !END_LINE.test(line);
+      if (inside) out.add(i);
+    } else if (isPublicMarker(line, "BEGIN")) {
+      inside = true;
+    } else if (isPublicMarker(line, "END")) {
+      base64Above(lines, i, out);
     }
   }
   return out;
@@ -749,13 +845,14 @@ export function findCodeSecrets(text: string): Span[] {
   const lines = rawLines.map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l));
   if (!HINT.test(text.toLowerCase()) && !lines.some(isPemLine)) return [];
   const bodies = keyBodyLines(lines);
+  const publics = publicBlockLines(lines);
   const found: Span[] = [];
   const named = { value: false };
   let start = 0;
   lines.forEach((line, i) => {
     const base = start;
     start += (rawLines[i] ?? "").length + 1;
-    if (bodies.has(i) || isPemLine(line)) {
+    if (bodies.has(i) || (isPemLine(line) && !publics.has(i))) {
       named.value = false;
       const t = line.trim();
       if (t !== "" && t !== HIDDEN) {
@@ -784,6 +881,11 @@ export function findCodeSecrets(text: string): Span[] {
     if (last === undefined || span.from >= last.to) out.push(span);
   }
   return out;
+}
+
+/** Lines (0-based) of certificates | public keys of a text held as lines: no mask there (their 64-char lines look like key lines). */
+export function publicKeyLines(lines: readonly string[]): Set<number> {
+  return publicBlockLines(lines.map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l)));
 }
 
 /** Lines (0-based) inside private key blocks of a text held as lines (a viewer that masks line by line). */

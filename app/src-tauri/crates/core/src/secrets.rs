@@ -730,6 +730,40 @@ fn looks_secret(
         && rest.next().is_some_and(char::is_alphanumeric))
 }
 
+/// Type names a value of a secret field may be declared with (`password: string`, `token: str`, `key: String`).
+const PRIMITIVE_TYPES: &[&str] = &[
+    "string", "str", "int", "integer", "float", "double", "number", "bool", "boolean", "bytes",
+    "byte", "any", "unknown", "object", "void", "never", "bigint", "symbol", "char", "rune",
+    "long", "short", "decimal", "date", "datetime", "uuid", "i8", "i16", "i32", "i64", "i128",
+    "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32", "f64",
+];
+
+/// `AuthConfig`, `Secret`: a type name (capital first, letters only, some lowercase).
+fn is_pascal(value: &str) -> bool {
+    value.starts_with(|c: char| c.is_ascii_uppercase())
+        && value.chars().all(|c| c.is_ascii_alphabetic())
+        && value.chars().any(|c| c.is_ascii_lowercase())
+}
+
+/// A type annotation after `:` (`password: string;`, `token: Option<String>,`, `auth: AuthConfig`, `secret:
+/// Secret;`): a primitive type | a generic | a type name, followed by `; , ) = | > } ]` or the line end. A type name
+/// at the line end only with 2+ words that name no secret (`password: AdminPassword` | `password: Hunter` stay
+/// secret).
+fn is_type_annotation(value: &str, after: &str) -> bool {
+    let next = after.trim_start();
+    let followed = next.starts_with([';', ',', ')', '=', '|', '>', '}', ']']);
+    if !(followed || next.is_empty()) {
+        return false;
+    }
+    let value = value.strip_suffix('?').unwrap_or(value);
+    let primitive = |v: &str| PRIMITIVE_TYPES.contains(&v.to_ascii_lowercase().as_str());
+    if let Some((head, _)) = value.split_once('<') {
+        return is_identifier(head) && (primitive(head) || is_pascal(head));
+    }
+    primitive(value)
+        || (is_pascal(value) && (followed || (key_words(value).len() > 1 && !is_secret_key(value))))
+}
+
 /// The random part of a prefixed token: 20+ characters with upper, lower case and digits (a slug is not one).
 fn is_random(body: &str) -> bool {
     body.len() >= 20
@@ -830,17 +864,78 @@ fn is_pem_line(content: &str) -> bool {
         && t.chars().any(|c| c.is_ascii_digit())
 }
 
+/// The labels of the `-----BEGIN <label>-----` (`marker` `BEGIN` | `END`) markers of a line.
+fn marker_labels<'a>(line: &'a str, marker: &str) -> Vec<&'a str> {
+    let open = format!("-----{marker} ");
+    line.match_indices(open.as_str())
+        .filter_map(|(at, m)| {
+            let rest = &line[at + m.len()..];
+            let label = rest
+                .find(|c: char| !(c.is_ascii_uppercase() || c.is_ascii_digit() || c == ' '))
+                .map_or(rest, |end| &rest[..end]);
+            rest[label.len()..].starts_with("-----").then_some(label)
+        })
+        .collect()
+}
+
+fn is_private_label(label: &str) -> bool {
+    label.ends_with("PRIVATE KEY") || label.ends_with("PRIVATE KEY BLOCK")
+}
+
 /// `-----BEGIN [A-Z0-9 ]*PRIVATE KEY( BLOCK)?-----` (`marker` `BEGIN` | `END`) somewhere in the line.
 fn is_private_key_marker(line: &str, marker: &str) -> bool {
-    let open = format!("-----{marker} ");
-    line.match_indices(open.as_str()).any(|(at, m)| {
-        let rest = &line[at + m.len()..];
-        let label = rest
-            .find(|c: char| !(c.is_ascii_uppercase() || c.is_ascii_digit() || c == ' '))
-            .map_or(rest, |end| &rest[..end]);
-        (label.ends_with("PRIVATE KEY") || label.ends_with("PRIVATE KEY BLOCK"))
-            && rest[label.len()..].starts_with("-----")
-    })
+    marker_labels(line, marker)
+        .into_iter()
+        .any(is_private_label)
+}
+
+/// A marker of a block that is no secret (`CERTIFICATE`, `PUBLIC KEY`, `PGP PUBLIC KEY BLOCK`, ...).
+fn is_public_marker(line: &str, marker: &str) -> bool {
+    marker_labels(line, marker)
+        .into_iter()
+        .any(|label| !is_private_label(label))
+}
+
+/// Line numbers (0-based) of public blocks (certificates, public keys): their body, also a part of one read without
+/// its `BEGIN` (base64 lines right above its `END`). Their 64-char lines stay visible.
+fn public_block_lines(text: &str) -> Vec<usize> {
+    let mut out = Vec::new();
+    if !text.contains("-----") {
+        return out;
+    }
+    let lines: Vec<&str> = text.lines().collect();
+    let mut inside = false;
+    for (i, line) in lines.iter().enumerate() {
+        if inside {
+            inside = !line.trim_start_matches([' ', '\t']).starts_with("-----END");
+            if inside {
+                out.push(i);
+            }
+        } else if is_public_marker(line, "BEGIN") {
+            inside = true;
+        } else if is_public_marker(line, "END") {
+            out.extend(base64_above(&lines, i));
+        }
+    }
+    out
+}
+
+/// The base64 lines right above line `end` (blank lines between them skipped).
+fn base64_above(lines: &[&str], end: usize) -> Vec<usize> {
+    let mut out = Vec::new();
+    for j in (0..end).rev() {
+        let t = lines[j].trim();
+        let base64 = t.len() >= 8
+            && t.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '='));
+        if !(t.is_empty() || base64) {
+            break;
+        }
+        if !t.is_empty() {
+            out.push(j);
+        }
+    }
+    out
 }
 
 /// Line numbers (0-based) of a private key body whose `BEGIN` line is not in the text (a part read from the middle
@@ -858,18 +953,7 @@ fn orphan_key_lines(text: &str) -> Vec<usize> {
         } else if is_private_key_marker(line, "BEGIN") {
             inside = true;
         } else if is_private_key_marker(line, "END") {
-            for j in (0..i).rev() {
-                let t = lines[j].trim();
-                let base64 = t.len() >= 8
-                    && t.chars()
-                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '='));
-                if !(t.is_empty() || base64) {
-                    break;
-                }
-                if !t.is_empty() {
-                    out.push(j);
-                }
-            }
+            out.extend(base64_above(&lines, i));
         }
     }
     out
@@ -883,6 +967,7 @@ pub fn mask_text(text: &str) -> Cow<'_, str> {
         return Cow::Borrowed(text);
     }
     let orphans = orphan_key_lines(text);
+    let public = public_block_lines(text);
     let mut out = String::with_capacity(text.len());
     let mut changed = false;
     let mut named = false; // the line before named a secret variable (`- name: DB_PASSWORD`)
@@ -904,7 +989,7 @@ pub fn mask_text(text: &str) -> Cow<'_, str> {
             in_key = !end;
             !end
         } else {
-            orphans.contains(&number) || is_pem_line(content)
+            orphans.contains(&number) || (is_pem_line(content) && !public.contains(&number))
         };
         if body {
             named = false;
@@ -1234,6 +1319,8 @@ fn mask_pairs<'a>(line: &'a str, named: &mut bool) -> Cow<'a, str> {
             false
         } else if env_line {
             env_value_secret(class, key, value)
+        } else if sep == Some(':') && !found.quoted && is_type_annotation(value, after) {
+            false
         } else {
             looks_secret(class, key, value, found.quoted, after, line)
         };

@@ -6,7 +6,12 @@
   import { untrack } from "svelte";
   import { api } from "../../api";
   import { conditions } from "../../core/conditions/context.svelte";
-  import { findCodeSecrets, MASK, privateKeyLines } from "../../core/config/secrets";
+  import {
+    findCodeSecrets,
+    MASK,
+    privateKeyLines,
+    publicKeyLines,
+  } from "../../core/config/secrets";
   import { documents } from "../../core/doc/document.svelte";
   import {
     append,
@@ -117,6 +122,8 @@
 
   /** Lines (0-based) inside a private key block: masked whole (a line alone does not show it is one). */
   const keyBody = $derived(privateKeyLines(lines));
+  /** Lines of certificates | public keys: never masked. */
+  const publicBody = $derived(publicKeyLines(lines));
 
   /** A line cut where its secret values are (a line of CRLF text loses its carriage return). */
   function pieces(raw: string, no: number): Piece[] {
@@ -124,7 +131,7 @@
     const lead = line.length - line.trimStart().length;
     const spans = keyBody.has(no - 1)
       ? [{ from: lead, to: line.length }]
-      : line.length > 4000
+      : line.length > 4000 || publicBody.has(no - 1)
         ? []
         : findCodeSecrets(line);
     if (spans.length === 0) return [{ text: line, secret: null }];

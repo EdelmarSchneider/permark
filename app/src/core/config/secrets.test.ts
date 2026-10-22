@@ -1,7 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { findCodeSecrets, isSecretKey, keyWords, MASK, privateKeyLines } from "./secrets";
+import {
+  findCodeSecrets,
+  isSecretKey,
+  keyWords,
+  MASK,
+  privateKeyLines,
+  publicKeyLines,
+} from "./secrets";
 
 /** The cases both mirrors read (`crates/core/src/secrets.rs` reads the same file). */
 type Cases = {
@@ -81,6 +88,13 @@ describe("secrets in a loose text", () => {
     expect(
       privateKeyLines(["-----BEGIN PUBLIC KEY-----", "MFkw", "-----END PUBLIC KEY-----"]).size,
     ).toBe(0);
+    // certificates | public keys: their lines are never masked, also a part without its BEGIN
+    const cert = ["-----BEGIN CERTIFICATE-----", "MIIDdz", "-----END CERTIFICATE-----"];
+    expect([...publicKeyLines(cert)]).toEqual([1]);
+    expect([...publicKeyLines(["MIIDdzCCAl", "AbCdEf12==", "-----END CERTIFICATE-----"])]).toEqual([
+      1, 0,
+    ]);
+    expect(publicKeyLines(lines).size).toBe(0);
   });
 
   it("has a fixed mask", () => {
