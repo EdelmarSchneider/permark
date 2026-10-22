@@ -21,7 +21,7 @@ pub use enable::{on_ids, resolve_enabled, EnableInputs, Enablement, OffReason};
 pub use facts::{ProjectFacts, RepoHandle, RepoReader};
 pub use files::{ChangeListener, FolderScan, WindowFiles, WindowFilesApi};
 pub use registry::{PluginRegistry, RegistryError};
-pub use rpc::{typed, NoArgs, RpcCall, RpcHandler, RpcRegistration, RpcTable};
+pub use rpc::{typed, GoneHandler, NoArgs, RpcCall, RpcHandler, RpcRegistration, RpcTable};
 pub use services::{ServiceLease, Services};
 pub use set::PluginSet;
 
@@ -465,6 +465,14 @@ impl PluginCx {
             .map(|project| &project.rpc)
             .or_else(|| self.app.as_ref().map(|app| &app.rpc))?;
         Some(table.register(&self.id, method, handler))
+    }
+
+    /// Hears the callers (`RpcCall.window`) that let go of the project (Project scope: tab closed, another folder
+    /// opened in it, window gone) until the registration is dropped: per-caller state goes with them. `None` for
+    /// App-scope instances (their callers have no project to let go of).
+    #[must_use]
+    pub fn on_caller_gone(&self, handler: GoneHandler) -> Option<RpcRegistration> {
+        Some(self.project.as_ref()?.rpc.on_caller_gone(handler))
     }
 
     /// Gives a Project-scope instance the file watch of its project.

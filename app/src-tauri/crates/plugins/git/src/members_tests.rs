@@ -244,7 +244,8 @@ fn random_walks_keep_the_machine_whole() {
 
 // ---- a fake backend ------------------------------------------------------------------------------------------------
 
-/// Answers from memory; counts calls at once; each status takes `delay`; folders named `bad*` fail.
+/// Answers from memory; counts calls at once (status, root commit, blob: each one "git process"); each takes
+/// `delay`; folders named `bad*` fail. `stubborn`: cannot be cancelled (as the built-in backend).
 struct Fake {
     delay: Duration,
     now: AtomicUsize,
@@ -252,6 +253,7 @@ struct Fake {
     order: Mutex<Vec<String>>,
     roots: AtomicUsize,
     files: usize,
+    stubborn: bool,
 }
 
 impl Fake {
@@ -263,6 +265,14 @@ impl Fake {
             order: Mutex::new(Vec::new()),
             roots: AtomicUsize::new(0),
             files: 2,
+            stubborn: false,
+        })
+    }
+
+    fn stubborn(delay: Duration) -> Arc<Self> {
+        Arc::new(Self {
+            stubborn: true,
+            ..Arc::into_inner(Self::new(delay)).unwrap()
         })
     }
 
@@ -282,20 +292,12 @@ struct FakeCall {
     cancel: Option<Arc<AtomicBool>>,
 }
 
-impl GitOps for FakeCall {
-    fn kind(&self) -> BackendKind {
-        BackendKind::Builtin
-    }
-
-    fn discover(&self, _: &Path, _: Option<&Path>) -> Discovery {
-        Discovery::NoRepo
-    }
-
-    fn status(&self, location: &RepoLocation, _: &Baseline) -> Result<RawStatus, GitError> {
+impl FakeCall {
+    /// One "git process": counted while it runs, `delay` long unless cancelled.
+    fn busy(&self) {
         let fake = &self.fake;
         let now = fake.now.fetch_add(1, Ordering::SeqCst) + 1;
         fake.most.fetch_max(now, Ordering::SeqCst);
-        lock(&fake.order).push(Fake::name(location));
         let started = Instant::now();
         while started.elapsed() < fake.delay {
             if self
@@ -308,6 +310,22 @@ impl GitOps for FakeCall {
             std::thread::sleep(Duration::from_millis(2));
         }
         fake.now.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+impl GitOps for FakeCall {
+    fn kind(&self) -> BackendKind {
+        BackendKind::Builtin
+    }
+
+    fn discover(&self, _: &Path, _: Option<&Path>) -> Discovery {
+        Discovery::NoRepo
+    }
+
+    fn status(&self, location: &RepoLocation, _: &Baseline) -> Result<RawStatus, GitError> {
+        let fake = &self.fake;
+        lock(&fake.order).push(Fake::name(location));
+        self.busy();
         if Fake::name(location).starts_with("bad") {
             return Err(GitError::Failed("detected dubious ownership".to_owned()));
         }
@@ -331,7 +349,8 @@ impl GitOps for FakeCall {
     }
 
     fn blob_at_head(&self, _: &RepoLocation, _: &str) -> Result<Option<Vec<u8>>, GitError> {
-        Ok(None)
+        self.busy();
+        Ok(Some(b"committed".to_vec()))
     }
 
     fn commit_exists(&self, _: &RepoLocation, _: &str) -> bool {
@@ -352,10 +371,14 @@ impl GitOps for FakeCall {
 
     fn root_commit(&self, _: &RepoLocation) -> Result<Option<String>, GitError> {
         self.fake.roots.fetch_add(1, Ordering::SeqCst);
+        self.busy();
         Ok(Some("b".repeat(40)))
     }
 
     fn cancellable(&self, flag: &Arc<AtomicBool>) -> Option<Arc<dyn GitOps>> {
+        if self.fake.stubborn {
+            return None;
+        }
         Some(Arc::new(Self {
             fake: Arc::clone(&self.fake),
             cancel: Some(Arc::clone(flag)),
@@ -369,6 +392,7 @@ struct Heard {
     snapshots: Mutex<Vec<ProjectSnapshot>>,
     first: Mutex<Vec<Vec<(String, String)>>>,
     excluded: Mutex<Vec<Vec<String>>>,
+    roots: Mutex<Vec<(String, Option<String>)>>,
 }
 
 fn quick() -> Timings {
@@ -384,7 +408,8 @@ fn env(backend: Option<Arc<dyn GitOps>>, heard: &Arc<Heard>, visits: Option<Path
         Some(b) => BackendChoice::Fixed(b),
         None => BackendChoice::Pref(permark_core::settings::GitBackendPref::System),
     };
-    let (h1, h2, h3, h4) = (
+    let (h1, h2, h3, h4, h5) = (
+        Arc::clone(heard),
         Arc::clone(heard),
         Arc::clone(heard),
         Arc::clone(heard),
@@ -406,6 +431,7 @@ fn env(backend: Option<Arc<dyn GitOps>>, heard: &Arc<Heard>, visits: Option<Path
             Some(StateStore::app(&dirs).file("visit.json"))
         }),
         first_commits: Arc::new(move |learned| lock(&h4.first).push(learned.to_vec())),
+        root_commits: Arc::new(move |answers| lock(&h5.roots).extend(answers.iter().cloned())),
         announce_after: Duration::from_millis(20),
         first_commit_after: Duration::from_millis(100),
     }
@@ -775,4 +801,151 @@ fn the_index_lock_is_waited_out_a_little() {
     assert_eq!(members.counters().1, 0, "waits while git writes the index");
     wait_until("answer after the wait", || settled(&members));
     assert!(started.elapsed() >= Duration::from_millis(140));
+}
+
+// ---- fix round (verifier round 3: S2, S3, N3) ------------------------------------------------------------------------
+
+/// Folders to look up (`(key, folder)`), each a repository on disk.
+fn lookups_in(root: &Path, n: usize) -> Vec<(String, PathBuf)> {
+    members_in(root, &names(n, "x"))
+        .into_iter()
+        .map(|m| (m.key, m.folder))
+        .collect()
+}
+
+/// S2: root-commit lookups, member work and other plugins' member reads share one bound: never more than
+/// [`POOL_THREADS`] member git processes at once, whatever arrives together.
+#[test]
+fn lookups_member_work_and_callers_reads_never_run_more_than_two_at_a_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Fake::new(Duration::from_millis(10));
+    let heard = Arc::new(Heard::default());
+    let members = Arc::new(Members::new(env(Some(fake_backend(&fake)), &heard, None)));
+    let list = members_in(dir.path(), &names(20, "p"));
+    members.sync(&list);
+    let lookups = lookups_in(&dir.path().join("found"), 12);
+    members.look_up_roots(lookups.clone());
+    let all: Vec<(String, bool)> = list.iter().map(|m| (m.uid.clone(), true)).collect();
+    members.changed(&all);
+    let backend = fake_backend(&fake);
+    let readers: Vec<_> = (0..4)
+        .map(|n| {
+            let members = Arc::clone(&members);
+            let backend = Arc::clone(&backend);
+            let location = members.location(&list[n].uid).unwrap();
+            std::thread::spawn(move || {
+                for _ in 0..5 {
+                    let blob = members
+                        .with_permit(|| backend.blob_at_head(&location, "a.md").unwrap())
+                        .flatten();
+                    assert_eq!(blob.as_deref(), Some(&b"committed"[..]));
+                }
+            })
+        })
+        .collect();
+    for reader in readers {
+        reader.join().unwrap();
+    }
+    wait_until("every lookup answered", || lock(&heard.roots).len() == 12);
+    wait_until("every repository answered", || settled(&members));
+    let (most, _, _) = members.counters();
+    assert!(most <= POOL_THREADS, "{most} at once");
+    assert!(
+        fake.most.load(Ordering::SeqCst) <= POOL_THREADS,
+        "{} git processes at once",
+        fake.most.load(Ordering::SeqCst)
+    );
+    assert_eq!(members.lookups_run(), 12, "asked once per folder");
+    let keys: HashSet<String> = lock(&heard.roots).iter().map(|(k, _)| k.clone()).collect();
+    assert_eq!(keys.len(), 12);
+    assert!(lock(&heard.roots)
+        .iter()
+        .all(|(_, c)| c.as_deref() == Some(&"b".repeat(40)[..])));
+}
+
+/// S2: no git -> lookups answer "none" without a process; a folder asked twice while queued is looked up once.
+#[test]
+fn lookups_without_git_answer_none_and_repeats_coalesce() {
+    let dir = tempfile::tempdir().unwrap();
+    let heard = Arc::new(Heard::default());
+    let mut no_git = env(None, &heard, None);
+    no_git.backends = Arc::new(BackendCell::decided(None));
+    let members = Members::new(no_git);
+    let lookups = lookups_in(dir.path(), 3);
+    members.look_up_roots(lookups.clone());
+    members.look_up_roots(lookups);
+    wait_until("answers", || lock(&heard.roots).len() >= 3);
+    std::thread::sleep(Duration::from_millis(50));
+    let answers = lock(&heard.roots).clone();
+    assert!(answers.iter().all(|(_, c)| c.is_none()), "{answers:?}");
+    assert!(answers.len() <= 6);
+    assert_eq!(members.lookups_run(), 0, "no git process");
+}
+
+/// S2: closing cancels a running lookup at once (installed git killed) and answers nothing more.
+#[test]
+fn dropping_cancels_running_lookups_and_answers_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Fake::new(Duration::from_secs(10));
+    let heard = Arc::new(Heard::default());
+    let members = Members::new(env(Some(fake_backend(&fake)), &heard, None));
+    members.look_up_roots(lookups_in(dir.path(), 4));
+    wait_until("lookups running", || fake.now.load(Ordering::SeqCst) == 2);
+    let started = Instant::now();
+    drop(members);
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
+    assert!(lock(&heard.roots).is_empty(), "no answer after close");
+}
+
+/// S3: a view that let go of the project takes its interest with it (every level), other views keep theirs.
+#[test]
+fn a_caller_that_goes_takes_its_interest_with_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Fake::new(Duration::ZERO);
+    let heard = Arc::new(Heard::default());
+    let members = Members::new(env(Some(fake_backend(&fake)), &heard, None));
+    let list = members_in(dir.path(), &names(3, "p"));
+    members.sync(&list);
+    let ids: Vec<String> = list.iter().map(|m| m.uid.clone()).collect();
+    members.interest("v-1/7", Glance, &ids);
+    members.interest("v-1/7", Detail, &ids[..1]);
+    members.interest("v-1", Glance, &ids[1..]);
+    members.interest("v-12/3", Glance, &ids[2..]);
+    wait_until("answers", || settled(&members));
+    members.forget_caller("v-1");
+    let st = lock(&members.pool.state);
+    let left: Vec<&(String, InterestLevel)> = st.interest.keys().collect();
+    assert_eq!(
+        left,
+        [&("v-12/3".to_owned(), Glance)],
+        "only the other view"
+    );
+    assert_eq!(st.interest_of(&ids[0]), None);
+    assert_eq!(st.interest_of(&ids[2]), Some(Glance));
+}
+
+/// N3: closing never waits for a running built-in (not cancellable) read; it ends on its own later.
+#[test]
+fn closing_does_not_wait_for_a_read_that_cannot_be_cancelled() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Fake::stubborn(Duration::from_millis(1500));
+    let heard = Arc::new(Heard::default());
+    let members = Members::new(env(Some(fake_backend(&fake)), &heard, None));
+    let list = members_in(dir.path(), &names(1, "p"));
+    members.sync(&list);
+    members.interest("v-1", Glance, &[list[0].uid.clone()]);
+    wait_until("the read runs", || fake.now.load(Ordering::SeqCst) == 1);
+    let started = Instant::now();
+    drop(members);
+    assert!(
+        started.elapsed() < Duration::from_millis(1000),
+        "{:?}",
+        started.elapsed()
+    );
+    // it ends on its own
+    wait_until("the read ended", || fake.now.load(Ordering::SeqCst) == 0);
 }

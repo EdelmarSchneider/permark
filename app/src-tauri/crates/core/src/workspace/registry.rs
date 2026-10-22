@@ -1409,6 +1409,8 @@ fn release(inner: &mut Inner, id: WorkspaceId, view: &str) -> Option<Entry> {
         entry.workspace.documents().set_unsaved(view, None);
         if let Workspace::Project(core) = &entry.workspace {
             core.explorer().close_view(view);
+            // what plugins keep for this view goes too (git interest; `projects.md` §8)
+            core.rpc().caller_gone(view);
         }
     }
     let held = inner

@@ -3,10 +3,12 @@
 //! [`POOL_THREADS`] threads (started at the first need, joined on drop): never more git work at once, whatever the
 //! number of repositories. Triggers: its files changed (even with no view interest, D24), a view's interest, a signal
 //! of its `.git`, window focus. Debounced per repository (300 ms quiet, 2 s at most), FIFO, interest jumps ahead; a
-//! stopped repository's running work is cancelled (the installed git's program killed).
+//! stopped repository's running work is cancelled (the installed git's program killed). The same bound covers the
+//! root-commit lookups re-attach asks for (queued behind member work, cancelled on drop) and the member reads other
+//! plugins make on their own thread ([`Members::with_permit`]): never more than [`POOL_THREADS`] member git processes.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::PathBuf;
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
@@ -31,6 +33,9 @@ pub const MAX_LISTS: usize = 8;
 const MAX_INTEREST: usize = 500;
 /// How often a waiting `index.lock` is looked at again.
 const LOCK_POLL: Duration = Duration::from_millis(40);
+/// How long dropping waits for running work before leaving it to end on its own (the built-in backend cannot be
+/// cancelled).
+const STOP_WAIT: Duration = Duration::from_millis(200);
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -172,6 +177,8 @@ pub struct MemberRef {
 pub type VisitFile = Arc<dyn Fn(&str) -> Option<StateFile<Visit>> + Send + Sync>;
 /// Hands learned first commits to the projects record (one call per batch).
 pub type FirstCommits = Arc<dyn Fn(&[(String, String)]) + Send + Sync>;
+/// Hands root-commit lookups back (`(path key, commit)`; `None`: none | no git).
+pub type RootCommits = Arc<dyn Fn(&[(String, Option<String>)]) + Send + Sync>;
 
 /// What a member folder says when first seen | moved: where its repository is + its cheap facts.
 type Read = (Result<RepoLocation, String>, Option<Cheap>);
@@ -191,6 +198,8 @@ pub struct Env {
     pub exclude: Arc<dyn Fn(Vec<String>) + Send + Sync>,
     pub visit_file: VisitFile,
     pub first_commits: FirstCommits,
+    /// Answers of [`Members::look_up_roots`].
+    pub root_commits: RootCommits,
     /// Summaries are announced this long after the first change (more may follow).
     pub announce_after: Duration,
     /// Learned first commits are written this long after the first one (one write per batch).
@@ -290,6 +299,9 @@ struct State {
     learned_at: Option<Instant>,
     /// Pool threads started.
     threads: usize,
+    /// Root-commit lookups waiting (`(path key, folder)`; run when no member work may).
+    lookups: VecDeque<(String, PathBuf)>,
+    lookups_run: usize,
 }
 
 impl State {
@@ -424,6 +436,8 @@ struct Pool {
     state: Mutex<State>,
     cv: Condvar,
     env: Env,
+    /// Cancels running lookups (set on drop).
+    lookup_cancel: Arc<AtomicBool>,
 }
 
 /// Work handed to a pool thread.
@@ -511,6 +525,7 @@ impl Members {
                 state: Mutex::new(State::default()),
                 cv: Condvar::new(),
                 env,
+                lookup_cancel: Arc::new(AtomicBool::new(false)),
             }),
             threads: Mutex::new(Vec::new()),
         }
@@ -762,6 +777,53 @@ impl Members {
         self.wake();
     }
 
+    /// A caller (window view) let go of the project: its interest goes, whatever level (`projects.md` §8 RAII; the
+    /// frontend's `[]` may never come when a view dies).
+    pub fn forget_caller(&self, caller: &str) {
+        let prefix = format!("{caller}/");
+        lock(&self.pool.state)
+            .interest
+            .retain(|(who, _), _| who != caller && !who.starts_with(&prefix));
+    }
+
+    /// Looks up the root commits of these found repositories (`(path key, folder)`; re-attach, `projects.md` §4.4):
+    /// queued behind member work in the same pool, answered through [`Env::root_commits`]. Returns at once.
+    pub fn look_up_roots(&self, folders: Vec<(String, PathBuf)>) {
+        {
+            let mut st = lock(&self.pool.state);
+            if st.stopping {
+                return;
+            }
+            for (key, folder) in folders {
+                if !st.lookups.iter().any(|(k, _)| *k == key) {
+                    st.lookups.push_back((key, folder));
+                }
+            }
+        }
+        self.wake();
+    }
+
+    /// Runs `read` (a member git read on the caller's thread, e.g. review's committed text) as one of the pool's
+    /// [`POOL_THREADS`] places: waits while they are all busy. `None`: closing.
+    pub fn with_permit<R>(&self, read: impl FnOnce() -> R) -> Option<R> {
+        let mut st = lock(&self.pool.state);
+        while st.running >= POOL_THREADS && !st.stopping {
+            st = self
+                .pool
+                .cv
+                .wait(st)
+                .unwrap_or_else(PoisonError::into_inner);
+        }
+        if st.stopping {
+            return None;
+        }
+        st.running += 1;
+        st.max_running = st.max_running.max(st.running);
+        drop(st);
+        let _permit = Permit(&self.pool);
+        Some(read())
+    }
+
     /// Every followed repository, sorted by path.
     #[must_use]
     pub fn summaries(&self) -> Vec<RepoSummary> {
@@ -813,6 +875,12 @@ impl Members {
         (st.max_running, st.jobs_run, st.announcements)
     }
 
+    /// Root-commit lookups done (tests).
+    #[must_use]
+    pub fn lookups_run(&self) -> usize {
+        lock(&self.pool.state).lookups_run
+    }
+
     /// Pool threads started (0 until there is something to do).
     #[must_use]
     pub fn threads(&self) -> usize {
@@ -825,13 +893,23 @@ impl Drop for Members {
         {
             let mut st = lock(&self.pool.state);
             st.stopping = true;
+            st.lookups.clear();
             for slot in st.slots.values() {
                 slot.cancel.store(true, Ordering::SeqCst);
             }
         }
+        self.pool.lookup_cancel.store(true, Ordering::SeqCst);
         self.pool.cv.notify_all();
+        // the installed git is killed at once; a built-in (libgit2) read cannot be: closing leaves it to end on its
+        // own (its answer is dropped, its visit written when it ends)
+        let until = Instant::now() + STOP_WAIT;
         for handle in lock(&self.threads).drain(..) {
-            let _ = handle.join();
+            while !handle.is_finished() && Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            if handle.is_finished() {
+                let _ = handle.join();
+            }
         }
         let env = self.pool.env.clone();
         let (visits, learned) = {
@@ -848,6 +926,16 @@ impl Drop for Members {
         if !learned.is_empty() {
             (env.first_commits)(&learned);
         }
+    }
+}
+
+/// One of the pool's places taken by a caller's own read; given back on drop (also on a panic).
+struct Permit<'p>(&'p Pool);
+
+impl Drop for Permit<'_> {
+    fn drop(&mut self) {
+        lock(&self.0.state).running -= 1;
+        self.0.cv.notify_all();
     }
 }
 
@@ -1099,7 +1187,11 @@ fn work(pool: &Pool) {
             st = lock(&pool.state);
             continue;
         }
-        if let Some(job) = pick(&mut st, now, env, backend.as_ref()) {
+        let room = st.running < POOL_THREADS;
+        if let Some(job) = room
+            .then(|| pick(&mut st, now, env, backend.as_ref()))
+            .flatten()
+        {
             st.running += 1;
             st.max_running = st.max_running.max(st.running);
             drop(st);
@@ -1111,17 +1203,22 @@ fn work(pool: &Pool) {
             settle(&mut st, answer, Instant::now(), env, &mut out);
             drop(st);
             deliver(env, &out);
+            pool.cv.notify_all();
             st = lock(&pool.state);
             continue;
         }
-        let next = st
+        // no member work may run now: a root-commit lookup (same bound)
+        if room && !st.lookups.is_empty() {
+            st = run_lookup(pool, st, backend.as_ref());
+            continue;
+        }
+        // full (callers' reads hold the places): only announcements are due until a place is given back
+        let dues = st
             .slots
             .values()
-            .filter(|s| matches!(s.fsm, RepoFsm::Queued { .. }))
-            .filter_map(|s| s.due)
-            .chain(st.announce_at)
-            .chain(st.learned_at)
-            .min();
+            .filter(|s| room && matches!(s.fsm, RepoFsm::Queued { .. }))
+            .filter_map(|s| s.due);
+        let next = dues.chain(st.announce_at).chain(st.learned_at).min();
         st = match next {
             Some(at) => {
                 pool.cv
@@ -1136,6 +1233,52 @@ fn work(pool: &Pool) {
             None => pool.cv.wait(st).unwrap_or_else(PoisonError::into_inner),
         };
     }
+}
+
+/// Runs the next root-commit lookup with the state let go meanwhile (no git: every waiting one answers none at once).
+fn run_lookup<'p>(
+    pool: &'p Pool,
+    mut st: MutexGuard<'p, State>,
+    backend: Option<&Arc<dyn GitOps>>,
+) -> MutexGuard<'p, State> {
+    let env = &pool.env;
+    let Some(backend) = backend else {
+        let answers: Vec<(String, Option<String>)> =
+            st.lookups.drain(..).map(|(k, _)| (k, None)).collect();
+        drop(st);
+        (env.root_commits)(&answers);
+        return lock(&pool.state);
+    };
+    let Some((key, folder)) = st.lookups.pop_front() else {
+        return st;
+    };
+    st.running += 1;
+    st.max_running = st.max_running.max(st.running);
+    drop(st);
+    let commit = root_commit_of(backend, &folder, &pool.lookup_cancel);
+    let mut st = lock(&pool.state);
+    st.running -= 1;
+    st.lookups_run += 1;
+    let stopping = st.stopping;
+    drop(st);
+    if !stopping {
+        (env.root_commits)(&[(key, commit)]);
+    }
+    pool.cv.notify_all();
+    lock(&pool.state)
+}
+
+/// The root commit of the repository at `folder` (cancellable with the installed git).
+fn root_commit_of(
+    backend: &Arc<dyn GitOps>,
+    folder: &Path,
+    cancel: &Arc<AtomicBool>,
+) -> Option<String> {
+    let location = member_location(folder).ok()?;
+    let backend = backend
+        .cancellable(cancel)
+        .unwrap_or_else(|| Arc::clone(backend));
+    backend.root_commit(&location).ok().flatten()
 }
 
 fn deliver(env: &Env, out: &Outside) {

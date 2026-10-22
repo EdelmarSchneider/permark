@@ -233,6 +233,9 @@ pub struct ServiceArgs {
     pub announce: Announce,
     pub prefs: Option<StateFile<Prefs>>,
     pub visit: Option<StateFile<Visit>>,
+    /// Path keys of included projects with their own repository known at start: left out of the very first status
+    /// (`projects.md` §8; later changes: [`GitService::set_excluded`]).
+    pub excluded: Vec<String>,
 }
 
 /// "Since the last visit" of one repository: the commit stored at the last close, the session's start, HEAD now.
@@ -316,6 +319,15 @@ impl GitService {
     #[must_use]
     pub fn start(args: ServiceArgs) -> Self {
         let shared = Arc::new(Shared::default());
+        {
+            let mut keys = args.excluded.clone();
+            keys.sort();
+            keys.dedup();
+            *shared
+                .excluded
+                .write()
+                .unwrap_or_else(PoisonError::into_inner) = keys;
+        }
         let backends = Arc::new(BackendCell::new(args.choice.clone()));
         let stop = Arc::new(AtomicBool::new(false));
         let (tx, rx) = mpsc::channel();

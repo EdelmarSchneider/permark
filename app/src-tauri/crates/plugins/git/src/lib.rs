@@ -38,7 +38,8 @@ use serde::Deserialize;
 pub use builtin::BuiltinGit;
 pub use cheap::{cheap_facts, member_location, Cheap};
 pub use members::{
-    step, Env, MemberRef, Members, RepoEvent, RepoFsm, Schedule, MAX_LISTS, POOL_THREADS,
+    step, Env, MemberRef, Members, RepoEvent, RepoFsm, RootCommits, Schedule, MAX_LISTS,
+    POOL_THREADS,
 };
 pub use ops::{Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_FILES};
 pub use service::{
@@ -175,14 +176,14 @@ impl RepoReader for Routed {
             if let Some(projects) = self.projects.as_ref().and_then(Weak::upgrade) {
                 let map = projects.snapshot();
                 if let Some(member) = git_owner(&map, path) {
-                    let location = self.members.upgrade()?.location(member.uid.as_str())?;
+                    let members = self.members.upgrade()?;
+                    let location = members.location(member.uid.as_str())?;
                     let depth = member.path.segments().count();
                     let rel = path.split('/').skip(depth).collect::<Vec<_>>().join("/");
-                    return self
-                        .backends
-                        .get()?
-                        .blob_at_head(&location, &rel)
-                        .ok()
+                    let backend = self.backends.get()?;
+                    // one of the pool's places: member git work stays bounded (`projects.md` §8)
+                    return members
+                        .with_permit(|| backend.blob_at_head(&location, &rel).ok().flatten())
                         .flatten();
                 }
             }
@@ -227,6 +228,18 @@ impl Plugin for GitPlugin {
                 serde_json::to_value(snapshot).unwrap_or(serde_json::Value::Null),
             );
         });
+        let root_path = vault.main().path().to_path_buf();
+        let projects: Option<Arc<Projects>> = project.projects().cloned();
+        // members known at open leave the root status from its first look (verifier N2)
+        let excluded: Vec<String> = projects
+            .as_ref()
+            .map(|p| {
+                member_refs(&p.snapshot(), &root_path)
+                    .into_iter()
+                    .map(|m| m.key)
+                    .collect()
+            })
+            .unwrap_or_default();
         let service = Arc::new(GitService::start(ServiceArgs {
             root: vault.main().path().to_path_buf(),
             worktrees: vault
@@ -241,9 +254,8 @@ impl Plugin for GitPlugin {
             announce,
             prefs: cx.state_file("prefs.json"),
             visit: cx.state_file("visit.json"),
+            excluded,
         }));
-        let root_path = vault.main().path().to_path_buf();
-        let projects: Option<Arc<Projects>> = project.projects().cloned();
         let weak_projects = projects.as_ref().map(Arc::downgrade);
         let members = Arc::new(Members::new(members_env(
             cx,
@@ -261,10 +273,12 @@ impl Plugin for GitPlugin {
                     }
                 });
                 members.sync(&member_refs(&projects.snapshot(), &root_path));
-                let cell = service.backends();
-                let identity = projects.provide_root_commits(Arc::new(move |folder| {
-                    let location = member_location(folder).ok()?;
-                    cell.get()?.root_commit(&location).ok().flatten()
+                // root commits for re-attach: looked up in the member pool, answered later
+                let asking = Arc::downgrade(&members);
+                let identity = projects.provide_root_commits(Arc::new(move |folders| {
+                    if let Some(members) = asking.upgrade() {
+                        members.look_up_roots(folders);
+                    }
                 }));
                 (Some(lease), Some(identity))
             }
@@ -342,6 +356,13 @@ impl Plugin for GitPlugin {
                     .unwrap_or_default())
             }),
         ));
+        // a view that lets go of the project takes its interest with it (`projects.md` §8 RAII)
+        let gone_members = Arc::downgrade(&members);
+        registrations.extend(cx.on_caller_gone(Arc::new(move |caller: &str| {
+            if let Some(members) = gone_members.upgrade() {
+                members.forget_caller(caller);
+            }
+        })));
         let interest_members = Arc::downgrade(&members);
         registrations.extend(cx.rpc(
             "interest",
@@ -384,6 +405,7 @@ fn members_env(cx: &PluginCx, service: &Arc<GitService>, projects: Option<Weak<P
     let baseline_of = Arc::downgrade(service);
     let excluding = Arc::downgrade(service);
     let visit_projects = projects.clone();
+    let root_projects = projects.clone();
     let files_only = cx.files_only();
     Env {
         backends: service.backends(),
@@ -428,6 +450,11 @@ fn members_env(cx: &PluginCx, service: &Arc<GitService>, projects: Option<Weak<P
                 .filter_map(|(uid, oid)| Some((ProjectUid::parse(uid)?, oid.clone())))
                 .collect();
             let _ = projects.set_first_commits(&learned);
+        }),
+        root_commits: Arc::new(move |answers: &[(String, Option<String>)]| {
+            if let Some(projects) = root_projects.as_ref().and_then(Weak::upgrade) {
+                projects.root_commits_learned(answers);
+            }
         }),
         announce_after: Duration::from_millis(150),
         first_commit_after: Duration::from_secs(2),

@@ -1,9 +1,10 @@
-//! Round 3 seams of the projects service (`projects.md` §8, §4.4 step 3, §9.1): map listeners, first commits written
-//! once, re-attach by first commit + name | the question when only the commit matches, the profile state folder
-//! following a moved member, member stores. A fake root-commit source stands in for the `git` plugin.
+//! Round 3 seams of the projects service (`projects.md` §8, §4.4, §9.1): map listeners, first commits written once,
+//! the move question by first commit (+ name) | card id (never a silent re-attach found at open, D31; never a refused
+//! folder, D28), the profile state folder following a moved member, member stores. A fake root-commit source stands in
+//! for the `git` plugin: it answers later, on its own thread, as the plugin's pool does.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -60,14 +61,40 @@ fn read_record_text(root: &Path) -> String {
 const UID: &str = "k7m2q7xd2a";
 const ROOT_A: &str = "0123456789abcdef0123456789abcdef01234567";
 
-/// Root commits by folder name (the fake git): `beta*` folders share `ROOT_A`.
-fn source(calls: &Arc<AtomicUsize>) -> RootCommitFn {
+/// Root commits by folder name (the fake git): `beta*` folders share `ROOT_A`. Answers on another thread after
+/// `delay` per folder; counts folders asked.
+fn source_with(
+    calls: &Arc<AtomicUsize>,
+    projects: &Arc<Projects>,
+    delay: Duration,
+) -> RootCommitAsk {
     let calls = Arc::clone(calls);
-    Arc::new(move |folder: &Path| {
-        calls.fetch_add(1, Ordering::SeqCst);
-        let name = folder.file_name()?.to_string_lossy().into_owned();
-        name.starts_with("beta").then(|| ROOT_A.to_owned())
+    let weak = Arc::downgrade(projects);
+    Arc::new(move |folders: Vec<(String, PathBuf)>| {
+        let calls = Arc::clone(&calls);
+        let weak = weak.clone();
+        std::thread::spawn(move || {
+            let answers: Vec<(String, Option<String>)> = folders
+                .into_iter()
+                .map(|(key, folder)| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    std::thread::sleep(delay);
+                    let name = folder
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default();
+                    (key, name.starts_with("beta").then(|| ROOT_A.to_owned()))
+                })
+                .collect();
+            if let Some(projects) = weak.upgrade() {
+                projects.root_commits_learned(&answers);
+            }
+        });
     })
+}
+
+fn source(calls: &Arc<AtomicUsize>, projects: &Arc<Projects>) -> RootCommitAsk {
+    source_with(calls, projects, Duration::ZERO)
 }
 
 #[test]
@@ -158,7 +185,7 @@ fn first_commits_are_written_once_per_entry_surgically() {
 }
 
 #[test]
-fn moved_while_closed_is_attached_by_first_commit_and_name_and_its_state_follows() {
+fn moved_while_closed_is_asked_by_first_commit_and_name_and_its_state_follows_the_yes() {
     let (dir, root) = root_dir();
     repo(&root, "inner/beta");
     record(
@@ -186,11 +213,35 @@ fn moved_while_closed_is_attached_by_first_commit_and_name_and_its_state_follows
     .unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
     let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
-    let lease = core.projects().provide_root_commits(source(&calls));
-    wait("re-attached", || {
-        read_record_text(&root).contains("path = \"inner/beta\"")
-    });
+    let lease = core
+        .projects()
+        .provide_root_commits(source(&calls, core.projects()));
+    // D31: a match found at open is a question (clones share the first commit), never a silent re-attach
+    wait("the question", || core.projects_view().ask.is_some());
+    let ask = core.projects_view().ask.unwrap();
+    assert_eq!(
+        (ask.was.as_str(), ask.candidate.as_str()),
+        ("beta", "inner/beta")
+    );
+    assert!(read_record_text(&root).contains("path = \"beta\""));
+    let heard: Arc<Mutex<Vec<ProjectEvent>>> = Arc::default();
+    let sink = Arc::clone(&heard);
+    let _news = core
+        .projects()
+        .subscribe(move |e| sink.lock().unwrap().push(e.clone()));
+    core.projects()
+        .answer_move(&ask.uid, &ask.candidate, true)
+        .unwrap();
+    assert!(read_record_text(&root).contains("path = \"inner/beta\""));
     assert!(core.projects_view().ask.is_none());
+    assert!(
+        heard
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, ProjectEvent::Back { path, .. } if path == "inner/beta")),
+        "Changes row back"
+    );
     let new_id = ProjectId::of(&Root::open(&root.join("inner/beta")).unwrap());
     let new_dir = dirs.profile.join("projects").join(new_id.as_str());
     assert!(
@@ -223,7 +274,9 @@ fn renamed_while_closed_with_the_same_first_commit_asks_and_lookalikes_never_att
     let base = tempfile::tempdir().unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
     let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
-    let _lease = core.projects().provide_root_commits(source(&calls));
+    let _lease = core
+        .projects()
+        .provide_root_commits(source(&calls, core.projects()));
     wait("the question", || core.projects_view().ask.is_some());
     let ask = core.projects_view().ask.unwrap();
     assert_eq!(
@@ -251,7 +304,9 @@ fn renamed_while_closed_with_the_same_first_commit_asks_and_lookalikes_never_att
         &format!("version = 1\n\n[[project]]\nid = \"{UID}\"\npath = \"beta\"\nfirst_commit = \"{ROOT_A}\"\n"),
     );
     let core2 = ProjectCore::open(Root::open(&root2).unwrap(), &env(base.path()));
-    let _lease2 = core2.projects().provide_root_commits(source(&calls));
+    let _lease2 = core2
+        .projects()
+        .provide_root_commits(source(&calls, core2.projects()));
     assert!(core2.projects().wait_ready(Duration::from_secs(10)));
     std::thread::sleep(Duration::from_millis(300));
     assert!(core2.projects_view().ask.is_none());
@@ -288,4 +343,248 @@ fn the_profile_state_folder_follows_and_merges() {
         assert!(!crate::state::move_profile_state(&dirs, &to, &upper).unwrap());
         assert!(new.exists());
     }
+}
+
+// ---- verifier (round 3): clones share a first commit -------------------------------------------------------------
+
+fn row_state(core: &ProjectCore, path: &str) -> Option<crate::projects::view::MemberState> {
+    core.projects_view()
+        .rows
+        .iter()
+        .find(|r| r.path == path)
+        .map(|r| r.state)
+}
+
+/// The person said No to a clone (`archive/beta`); the included `beta` is deleted while closed. Step 3 must never
+/// attach the entry to the refused clone (D28: the person's no beats; nothing re-points the record to it silently).
+#[test]
+fn verifier_a_declined_clone_is_never_attached_by_first_commit() {
+    let (_dir, root) = root_dir();
+    repo(&root, "beta");
+    repo(&root, "archive/beta");
+    record(
+        &root,
+        &format!("version = 1\n\n[[project]]\nid = \"{UID}\"\npath = \"beta\"\nfirst_commit = \"{ROOT_A}\"\n"),
+    );
+    let base = tempfile::tempdir().unwrap();
+    {
+        let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+        assert!(core.projects().wait_ready(Duration::from_secs(10)));
+        core.projects()
+            .decline(&ProjectPick::Paths {
+                paths: vec!["archive/beta".to_owned()],
+            })
+            .unwrap();
+        assert_eq!(
+            row_state(&core, "archive/beta"),
+            Some(crate::projects::view::MemberState::Declined)
+        );
+    }
+    fs::remove_dir_all(root.join("beta")).unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+    assert!(core.projects().wait_ready(Duration::from_secs(10)));
+    // still refused after the reopen, before git can say anything
+    assert_eq!(
+        row_state(&core, "archive/beta"),
+        Some(crate::projects::view::MemberState::Declined)
+    );
+    let _lease = core
+        .projects()
+        .provide_root_commits(source(&calls, core.projects()));
+    std::thread::sleep(Duration::from_millis(800));
+    let text = read_record_text(&root);
+    eprintln!(
+        "record after reopen:\n{text}\nrows: {:?}\nroot-commit calls: {}",
+        core.projects_view()
+            .rows
+            .iter()
+            .map(|r| (r.path.clone(), r.state))
+            .collect::<Vec<_>>(),
+        calls.load(Ordering::SeqCst)
+    );
+    assert!(
+        text.contains("path = \"beta\""),
+        "record re-pointed at the declined clone:\n{text}"
+    );
+    assert_ne!(
+        row_state(&core, "archive/beta"),
+        Some(crate::projects::view::MemberState::Included)
+    );
+    assert!(
+        core.projects_view().ask.is_none(),
+        "a refused folder is never even a candidate"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "nothing looked up for it");
+}
+
+/// The included `beta` is deleted (not moved) while closed; another clone with the same folder name that the person
+/// never included sits elsewhere. D31: the person is asked; a No leaves everything as it was.
+#[test]
+fn verifier_a_never_included_clone_after_the_original_was_deleted() {
+    let (_dir, root) = root_dir();
+    repo(&root, "beta");
+    repo(&root, "archive/beta");
+    record(
+        &root,
+        &format!("version = 1\n\n[[project]]\nid = \"{UID}\"\npath = \"beta\"\nfirst_commit = \"{ROOT_A}\"\n"),
+    );
+    let base = tempfile::tempdir().unwrap();
+    fs::remove_dir_all(root.join("beta")).unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+    let _lease = core
+        .projects()
+        .provide_root_commits(source(&calls, core.projects()));
+    assert!(core.projects().wait_ready(Duration::from_secs(10)));
+    wait("the question", || core.projects_view().ask.is_some());
+    let ask = core.projects_view().ask.unwrap();
+    assert_eq!(
+        (ask.was.as_str(), ask.candidate.as_str()),
+        ("beta", "archive/beta")
+    );
+    assert!(
+        read_record_text(&root).contains("path = \"beta\""),
+        "nothing silent"
+    );
+    core.projects()
+        .answer_move(&ask.uid, &ask.candidate, false)
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(core.projects_view().ask.is_none(), "not asked again");
+    assert!(read_record_text(&root).contains("path = \"beta\""));
+    assert_eq!(
+        row_state(&core, "archive/beta"),
+        Some(crate::projects::view::MemberState::Offered)
+    );
+}
+
+/// S2: root commits are asked only after the first map, never waited for: a slow git per unlisted repository never
+/// delays `ready` (agent `ERR busy`, Explorer nodes); each folder asked once; nothing after close.
+#[test]
+fn verifier_learning_root_commits_never_delays_the_first_map() {
+    let (_dir, root) = root_dir();
+    for n in 0..10 {
+        repo(&root, &format!("x{n}"));
+    }
+    record(
+        &root,
+        &format!("version = 1\n\n[[project]]\nid = \"{UID}\"\npath = \"gone\"\nfirst_commit = \"{ROOT_A}\"\n"),
+    );
+    let base = tempfile::tempdir().unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let asked_before_ready = Arc::new(AtomicUsize::new(0));
+    let start = Instant::now();
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+    let inner = source_with(&calls, core.projects(), Duration::from_millis(500));
+    let weak = Arc::downgrade(core.projects());
+    let early = Arc::clone(&asked_before_ready);
+    let lease = core
+        .projects()
+        .provide_root_commits(Arc::new(move |folders| {
+            if weak.upgrade().is_some_and(|p| !p.snapshot().ready) {
+                early.fetch_add(folders.len(), Ordering::SeqCst);
+            }
+            inner(folders);
+        }));
+    assert!(core.projects().wait_ready(Duration::from_secs(15)));
+    let ready_after = start.elapsed();
+    // 10 folders x 500 ms = 5 s if the map waited for git
+    assert!(
+        ready_after < Duration::from_secs(3),
+        "ready after {ready_after:?}"
+    );
+    wait("every folder asked", || calls.load(Ordering::SeqCst) == 10);
+    assert_eq!(
+        asked_before_ready.load(Ordering::SeqCst),
+        0,
+        "asked before the map"
+    );
+    // a later pass asks nothing again
+    core.projects().watch(&crate::watch::FsBatch {
+        rescan: true,
+        ..crate::watch::FsBatch::default()
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(calls.load(Ordering::SeqCst), 10, "once per folder");
+    // closing: late answers change nothing
+    drop(lease);
+    core.projects().stop();
+    core.projects()
+        .root_commits_learned(&[("x0".to_owned(), Some(ROOT_A.to_owned()))]);
+    assert!(core.projects_view().ask.is_none());
+}
+
+/// Same class, step 2 (round 2 code): a declined clone carrying the same card id (`.permark/project.toml` committed
+/// in the repository, so every clone has it).
+#[test]
+fn verifier_a_declined_clone_with_the_same_card_id_is_never_attached() {
+    let (_dir, root) = root_dir();
+    for rel in ["beta", "archive/beta"] {
+        fs::create_dir_all(root.join(rel).join(".permark")).unwrap();
+        fs::write(
+            root.join(rel).join(".permark/project.toml"),
+            format!("version = 1\nid = \"{UID}\"\n"),
+        )
+        .unwrap();
+    }
+    record(
+        &root,
+        &format!("version = 1\n\n[[project]]\nid = \"{UID}\"\npath = \"beta\"\n"),
+    );
+    let base = tempfile::tempdir().unwrap();
+    {
+        let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+        assert!(core.projects().wait_ready(Duration::from_secs(10)));
+        core.projects()
+            .decline(&ProjectPick::Paths {
+                paths: vec!["archive/beta".to_owned()],
+            })
+            .unwrap();
+    }
+    fs::remove_dir_all(root.join("beta")).unwrap();
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+    assert!(core.projects().wait_ready(Duration::from_secs(10)));
+    std::thread::sleep(Duration::from_millis(500));
+    let text = read_record_text(&root);
+    assert!(text.contains("path = \"beta\""), "{text}");
+    assert_eq!(
+        row_state(&core, "archive/beta"),
+        Some(crate::projects::view::MemberState::Declined)
+    );
+    assert!(core.projects_view().ask.is_none(), "never a candidate");
+}
+
+/// D31: clones carrying the same card id, original deleted while closed: asked one candidate at a time, the next
+/// after a No; nothing written without a Yes.
+#[test]
+fn clones_with_the_same_card_id_are_asked_one_at_a_time() {
+    let (_dir, root) = root_dir();
+    for rel in ["archive/beta", "backup/beta"] {
+        fs::create_dir_all(root.join(rel).join(".permark")).unwrap();
+        fs::write(
+            root.join(rel).join(".permark/project.toml"),
+            format!("version = 1\nid = \"{UID}\"\n"),
+        )
+        .unwrap();
+    }
+    record(
+        &root,
+        &format!("version = 1\n\n[[project]]\nid = \"{UID}\"\npath = \"beta\"\n"),
+    );
+    let base = tempfile::tempdir().unwrap();
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+    assert!(core.projects().wait_ready(Duration::from_secs(10)));
+    let first = core.projects_view().ask.expect("asked");
+    assert_eq!(first.candidate, "archive/beta");
+    core.projects()
+        .answer_move(&first.uid, &first.candidate, false)
+        .unwrap();
+    let second = core.projects_view().ask.expect("the next one");
+    assert_eq!(second.candidate, "backup/beta");
+    core.projects()
+        .answer_move(&second.uid, &second.candidate, false)
+        .unwrap();
+    assert!(core.projects_view().ask.is_none());
+    assert!(read_record_text(&root).contains("path = \"beta\""));
 }
