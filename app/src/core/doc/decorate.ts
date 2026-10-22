@@ -1,12 +1,12 @@
 // Work a block does when it comes near the screen: embeds (code highlighting, formulas, diagrams) are mounted,
-// links are looked up (a missing target is marked), code references become links to the editor.
+// links are looked up (a missing target is marked), code references become links (to the file, here or in the editor).
 // Nothing here runs for blocks far from the screen, so a long document opens at once.
 
 import { mount, unmount, type Component } from "svelte";
 import type { Api, LinkTarget } from "../../api";
 import { t } from "../i18n";
 import type { EmbedProps } from "../plugins/props";
-import { findTextRefs, parseInlineRef, refLabel, type CodeRef } from "./codeRefs";
+import { findTextRefs, parseInlineRef, refTitle, type CodeRef } from "./codeRefs";
 import { realCode } from "./enhance";
 
 export type LazyEmbed = () => Promise<{ default: Component<EmbedProps> }>;
@@ -15,6 +15,9 @@ export type EmbedLookup = (language: string) => LazyEmbed | undefined;
 
 /** The mark on an element that holds a code reference. */
 export const CODE_REF = "code-ref";
+
+/** What a reference's tooltip depends on: whether the person chose an editor, and how the platform names Ctrl. */
+export type RefSetup = () => { editorSet: boolean; mod: string };
 
 const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 const BATCH_AFTER_MS = 0;
@@ -90,6 +93,9 @@ export class Decorator {
   /** Blocks that are near the screen (and so have their embeds). */
   #near = new Set<HTMLElement>();
 
+  /** Read when a reference is marked (its tooltip says what a click does). */
+  refSetup: RefSetup = () => ({ editorSet: false, mod: "Ctrl" });
+
   constructor(api: Api) {
     this.#api = api;
     this.links = new LinkCache(api);
@@ -116,6 +122,15 @@ export class Decorator {
       this.#near.delete(block);
       for (const element of this.#placeholders(block)) this.#unmountOne(element);
     };
+  }
+
+  /** The tooltips of the references under `root` say again what a click does (the editor setting changed). */
+  retitle(root: Element): void {
+    const setup = this.refSetup();
+    for (const element of root.querySelectorAll<HTMLElement>(`.${CODE_REF}`)) {
+      const target = codeRefOf(element);
+      if (target) element.title = titleOf(target.paths, target.line, setup);
+    }
   }
 
   /** Takes every embed down (the document is closed). */
@@ -252,9 +267,10 @@ export class Decorator {
     const result = await this.#api.resolveCodeRefs(doc, written);
     if (!result.ok || doc !== this.#doc) return;
     const files = new Map(written.map((path, at) => [path, result.value[at] ?? []]));
+    const setup = this.refSetup();
     for (const { element, ref } of inline) {
       const paths = files.get(ref.path) ?? [];
-      if (paths.length > 0 && element.isConnected) markCodeRef(element, ref, paths);
+      if (paths.length > 0 && element.isConnected) markCodeRef(element, ref, paths, setup);
     }
     // from the end of each text node to its start, so earlier offsets stay valid
     for (const { node, start, end, ref } of text.reverse()) {
@@ -265,26 +281,39 @@ export class Decorator {
       range.setEnd(node, end);
       const span = document.createElement("span");
       range.surroundContents(span);
-      markCodeRef(span, ref, paths);
+      markCodeRef(span, ref, paths, setup);
     }
   }
 }
 
-/** Makes an element a code reference: where it leads and a title that says so. */
-function markCodeRef(element: HTMLElement, ref: CodeRef, paths: readonly string[]): void {
+/** Makes an element a code reference: where it leads and a title that says what a click does. */
+function markCodeRef(
+  element: HTMLElement,
+  ref: CodeRef,
+  paths: readonly string[],
+  setup: { editorSet: boolean; mod: string },
+): void {
   element.classList.add(CODE_REF);
   element.setAttribute("data-ref-paths", paths.join("\n"));
   if (ref.line !== null) element.setAttribute("data-ref-line", String(ref.line));
   if (ref.col !== null) element.setAttribute("data-ref-col", String(ref.col));
   element.tabIndex = 0;
   element.setAttribute("role", "link");
+  element.title = titleOf(paths, ref.line, setup);
+}
+
+/** What the tooltip of a reference says: where it leads and what a click does. */
+function titleOf(
+  paths: readonly string[],
+  line: number | null,
+  setup: { editorSet: boolean; mod: string },
+): string {
   const first = paths[0] ?? "";
-  element.title =
-    paths.length > 1
-      ? t("codeRef.titleMany", { count: paths.length })
-      : ref.line === null
-        ? t("codeRef.title", { path: first })
-        : t("codeRef.titleAt", { path: refLabel(first, null), line: ref.line });
+  if (paths.length > 1) return t("codeRef.titleMany", { count: paths.length });
+  const title = refTitle(first, line, setup.editorSet);
+  return title.line === null
+    ? t(title.key, { path: first, mod: setup.mod })
+    : t(title.key, { path: first, line: title.line, mod: setup.mod });
 }
 
 /** What a click on a code reference asks for. */

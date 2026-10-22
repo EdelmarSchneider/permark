@@ -661,9 +661,11 @@ fn single(dir: &tempfile::TempDir, name: &str, bytes: &[u8]) -> (Arc<Documents>,
 }
 
 #[test]
-fn a_single_file_workspace_reads_only_its_own_file() {
+fn a_single_file_workspace_reads_the_files_of_its_folder_and_nothing_outside() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("other.md"), "o").unwrap();
+    std::fs::create_dir_all(dir.path().join("docs")).unwrap();
+    std::fs::write(dir.path().join("docs/guide ü.md"), "# Guide\n").unwrap();
     let (docs, _) = single(&dir, "note.md", b"# Note\n\n![i](pic.png)\n");
     let view = docs.open("w", "note.md", &[], &formats()).unwrap();
     let Body::Markdown { blocks, .. } = &view.body else {
@@ -675,18 +677,67 @@ fn a_single_file_workspace_reads_only_its_own_file() {
         .as_ref()
         .unwrap()
         .contains("pm-asset:pic.png"));
+    // B3: a link to a sibling | a file below the folder opens in the window
+    assert!(docs.open("w", "other.md", &[], &formats()).is_ok());
+    assert!(docs.open("w", "docs/guide ü.md", &[], &formats()).is_ok());
+    assert_eq!(docs.text("docs/guide ü.md").unwrap(), "# Guide\n");
     assert_eq!(
-        docs.open("w", "other.md", &[], &formats())
+        docs.open("w", "docs/none.md", &[], &formats())
             .unwrap_err()
             .kind,
         ErrorKind::NotFound
     );
-    assert!(docs.open("w", "../note.md", &[], &formats()).is_err());
+    // nothing outside the folder: parent steps, absolute paths, a link | junction leading out
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret.md"), "s").unwrap();
+    let parent_name = dir
+        .path()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    for path in [
+        "../note.md".to_owned(),
+        "docs/../../x.md".to_owned(),
+        format!("../{parent_name}/note.md"),
+        outside.path().join("secret.md").display().to_string(),
+        "/etc/passwd".to_owned(),
+        "C:/Windows/win.ini".to_owned(),
+    ] {
+        assert!(docs.open("w", &path, &[], &formats()).is_err(), "{path}");
+        assert!(docs.text(&path).is_err(), "{path}");
+    }
+    if link_out(&dir.path().join("jump"), outside.path()) {
+        for path in ["jump/secret.md", "jump", "jump/new.md"] {
+            assert!(docs.open("w", path, &[], &formats()).is_err(), "{path}");
+            assert!(docs.text(path).is_err(), "{path}");
+        }
+    } else {
+        eprintln!("SKIPPED: cannot make a link | junction here");
+    }
     // another spelling of its name is the file itself where the file system ignores case (Windows, macOS by default)
     assert_eq!(
         docs.open("w", "NOTE.md", &[], &formats()).is_ok(),
         dir.path().join("NOTE.md").exists()
     );
+}
+
+/// A link (Unix: symlink; Windows: junction, no admin needed) at `link` leading to `target`.
+fn link_out(link: &std::path::Path, target: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .stdout(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    }
 }
 
 #[test]
@@ -745,4 +796,302 @@ fn the_core_markdown_format_is_always_there() {
     assert!(registry
         .pick("a.md", b"")
         .is_some_and(|f| f.id() == MarkdownFormat.id()));
+}
+
+// ---- verify B3: the single-file boundary, adversarial ------------------------------------------------------------
+
+#[test]
+fn a_single_file_refuses_every_spelling_of_a_way_out() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("docs")).unwrap();
+    std::fs::write(dir.path().join("docs/in.md"), "in").unwrap();
+    let (docs, _) = single(&dir, "note.md", b"# Note\n");
+    let long = "a/".repeat(20_000);
+    let bad: Vec<String> = vec![
+        "..\\note.md".into(),
+        "docs\\..\\..\\x.md".into(),
+        "docs/./../../x.md".into(),
+        "./../x.md".into(),
+        "C:note.md".into(),
+        "c:/x.md".into(),
+        "\\\\server\\share\\x.md".into(),
+        "//server/share/x.md".into(),
+        "\\\\?\\C:\\Windows\\win.ini".into(),
+        "\\\\.\\pipe\\x".into(),
+        "/x.md".into(),
+        "note.md\0".into(),
+        format!("{long}x.md"),
+    ];
+    for path in &bad {
+        assert!(
+            docs.open("w", path, &[], &formats()).is_err(),
+            "open {path:.60}"
+        );
+        assert!(docs.text(path).is_err(), "text {path:.60}");
+    }
+    if cfg!(windows) {
+        // an alternate data stream of the own file, written for real: never reachable
+        std::fs::write(dir.path().join("note.md:hidden"), "stream").unwrap();
+        for path in [
+            "note.md:hidden",
+            "note.md::$DATA",
+            "note.md:hidden:$DATA",
+            "NUL",
+            "con.md",
+            "note.md.",
+            "note.md ",
+        ] {
+            assert!(
+                docs.open("w", path, &[], &formats()).is_err(),
+                "open {path}"
+            );
+            assert!(docs.text(path).is_err(), "text {path}");
+        }
+    }
+    // inside stays reachable, whatever the separators
+    assert_eq!(docs.text("docs\\in.md").unwrap(), "in");
+    assert_eq!(docs.text("docs/../docs/./in.md").unwrap(), "in");
+}
+
+#[test]
+fn a_single_file_refuses_a_junction_out_under_any_case_and_separator() {
+    let dir = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret.md"), "s").unwrap();
+    let (docs, _) = single(&dir, "note.md", b"# Note\n");
+    if !link_out(&dir.path().join("jump"), outside.path()) {
+        eprintln!("SKIPPED: cannot make a link | junction here");
+        return;
+    }
+    let mut paths = vec!["jump\\secret.md", "./jump/secret.md", "jump/./secret.md"];
+    if cfg!(windows) || cfg!(target_os = "macos") {
+        paths.extend(["JUMP/secret.md", "Jump/SECRET.md"]);
+    }
+    for path in paths {
+        assert!(docs.open("w", path, &[], &formats()).is_err(), "{path}");
+        assert!(docs.text(path).is_err(), "{path}");
+        assert!(docs.scope().resolve(path).is_err(), "{path}");
+        assert!(docs.scope().resolve_new(path).is_err(), "new {path}");
+    }
+}
+
+#[test]
+fn a_single_file_opens_unicode_space_and_long_paths_under_its_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let names = [
+        "sub dir/\u{f1}and\u{fa}.md",
+        "\u{6587}\u{6863}/\u{8bf4}\u{660e} a.md",
+        "cafe\u{301}/nfd.md",
+        "emoji \u{1f680}/x y.md",
+    ];
+    for name in names {
+        let p = dir.path().join(name);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(&p, name).unwrap();
+    }
+    // past the old 260-character limit of Windows paths
+    let mut deep = String::new();
+    for i in 0..12 {
+        std::fmt::Write::write_fmt(
+            &mut deep,
+            format_args!("folder-number-{i:02}-{}/", "x".repeat(10)),
+        )
+        .unwrap();
+    }
+    let deep_file = format!("{deep}deep.md");
+    let p = dir.path().join(&deep_file);
+    std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+    std::fs::write(&p, "deep").unwrap();
+    assert!(p.as_os_str().len() > 260, "{}", p.as_os_str().len());
+    let (docs, _) = single(&dir, "note.md", b"# Note\n");
+    for name in names {
+        assert_eq!(docs.text(name).unwrap(), name, "{name}");
+    }
+    assert_eq!(docs.text(&deep_file).unwrap(), "deep");
+    assert!(docs.open("w", &deep_file, &[], &formats()).is_ok());
+}
+
+#[test]
+fn a_single_file_root_path_is_its_folder_never_a_document() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("docs")).unwrap();
+    let (docs, _) = single(&dir, "note.md", b"# Note\n");
+    for path in ["", ".", "docs", "docs/"] {
+        assert!(docs.open("w", path, &[], &formats()).is_err(), "{path:?}");
+        assert!(docs.text(path).is_err(), "{path:?}");
+    }
+    // the scope itself answers the folder for "" (a caller that does not check `is_file` gets a folder)
+    let (_, abs) = docs.scope().resolve("").unwrap();
+    assert!(abs.is_dir());
+}
+
+#[test]
+fn a_sibling_shown_in_a_single_file_window_is_polled_too() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("other.md"), b"v1").unwrap();
+    let (docs, events) = single(&dir, "note.md", b"own");
+    docs.open("w", "other.md", &[], &formats()).unwrap();
+    std::thread::sleep(Duration::from_millis(50));
+    std::fs::write(dir.path().join("other.md"), b"v2 changed").unwrap();
+    let started = Instant::now();
+    let mut got = Vec::new();
+    while got.is_empty() && started.elapsed() < Duration::from_secs(6) {
+        std::thread::sleep(Duration::from_millis(100));
+        got = events.take();
+    }
+    assert!(
+        matches!(got.first(), Some(CoreEvent::DocumentChanged(c)) if c.window == "w" && c.path == "other.md" && matches!(c.change, DocChange::Changed { .. })),
+        "{got:?}"
+    );
+}
+
+#[test]
+fn a_single_file_link_leaves_no_way_out_in_any_spelling() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("docs")).unwrap();
+    std::fs::write(dir.path().join("docs/in.md"), "in").unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret.md"), "s").unwrap();
+    let (docs, _) = single(&dir, "note.md", b"# Note\n");
+    let secret = outside.path().join("secret.md");
+    let hrefs: Vec<String> = vec![
+        "../secret.md".into(),
+        "docs/../../secret.md".into(),
+        "%2e%2e/secret.md".into(),
+        "..%2Fsecret.md".into(),
+        "..%5Csecret.md".into(),
+        secret.display().to_string(),
+        format!(
+            "file:///{}",
+            secret.display().to_string().replace('\\', "/")
+        ),
+        "C:/Windows/win.ini".into(),
+        "C:\\Windows\\win.ini".into(),
+        "file:///etc/passwd".into(),
+        "\\\\server\\share\\x.md".into(),
+        "//server/share/x.md".into(),
+        "javascript:alert(1)".into(),
+        "data:text/html,x".into(),
+    ];
+    let root = dunce::canonicalize(dir.path()).unwrap();
+    let targets = docs.scope().resolve_links("note.md", &hrefs);
+    for (href, target) in hrefs.iter().zip(&targets) {
+        // never a document | file the window would then open outside the folder
+        match target {
+            LinkTarget::Doc { path, .. }
+            | LinkTarget::Asset { path }
+            | LinkTarget::Folder { path } => {
+                let (_, abs) = docs.scope().resolve(path).unwrap();
+                assert!(abs.starts_with(&root), "{href} -> {target:?}");
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(
+        docs.scope()
+            .resolve_links("note.md", &["docs/in.md".to_owned()])[0],
+        LinkTarget::Doc {
+            path: "docs/in.md".to_owned(),
+            anchor: None
+        }
+    );
+}
+
+/// reading.md §Links (single file): `Outside` -> notice + "Open the folder"; CHANGELOG [Unreleased] Fixed promises it
+/// for "a link that leads outside the file's folder". A relative `../` link is the common way out.
+#[test]
+fn a_single_file_relative_link_above_its_folder_is_outside() {
+    let dir = tempfile::tempdir().unwrap();
+    let (docs, _) = single(&dir, "note.md", b"# Note\n");
+    let targets = docs
+        .scope()
+        .resolve_links("note.md", &["../elsewhere/plan.md".to_owned()]);
+    assert_eq!(targets[0], LinkTarget::Outside, "{targets:?}");
+}
+
+/// The other spellings of "above the folder" too; a missing file inside it stays missing; a project keeps `Missing`.
+#[test]
+fn only_a_single_file_says_outside_for_a_relative_way_up() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("docs")).unwrap();
+    std::fs::write(dir.path().join("docs/a.md"), "# A\n").unwrap();
+    let (docs, _) = single(&dir, "note.md", b"# Note\n");
+    let hrefs: Vec<String> = [
+        "..\\x.md",
+        "../x.md#part",
+        "docs/../../x.md?q=1",
+        "%2E%2E/x.md",
+        "nope.md",
+        "docs/../docs/a.md",
+    ]
+    .iter()
+    .map(|h| (*h).to_owned())
+    .collect();
+    let targets = docs.scope().resolve_links("note.md", &hrefs);
+    assert_eq!(targets[0], LinkTarget::Outside);
+    assert_eq!(targets[1], LinkTarget::Outside);
+    assert_eq!(targets[2], LinkTarget::Outside);
+    assert_eq!(targets[3], LinkTarget::Outside);
+    assert!(
+        matches!(targets[4], LinkTarget::Missing { .. }),
+        "{targets:?}"
+    );
+    assert!(matches!(targets[5], LinkTarget::Doc { .. }), "{targets:?}");
+    // a project: a way up above its root names nothing of it (missing), as before
+    let p = project();
+    let targets = p
+        .docs
+        .scope()
+        .resolve_links("note.md", &["../x.md".to_owned()]);
+    assert!(
+        matches!(targets[0], LinkTarget::Missing { .. }),
+        "{targets:?}"
+    );
+}
+
+/// reading.md §Code references, single file: exact paths, the document's folder first, then the file's folder;
+/// existing files only; folders and ways out never.
+#[test]
+fn a_single_file_matches_code_references_exactly_inside_its_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("docs/img")).unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("docs/img/a.png"), "png").unwrap();
+    std::fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+    std::fs::write(dir.path().join("docs/main.rs"), "// near\n").unwrap();
+    let (docs, _) = single(&dir, "note.md", b"# Note\n");
+    let written: Vec<String> = [
+        "img/a.png",
+        "src/main.rs",
+        "main.rs",
+        "/src/main.rs",
+        "src",
+        "../x.rs",
+        "lib.rs",
+    ]
+    .iter()
+    .map(|w| (*w).to_owned())
+    .collect();
+    let found = docs
+        .scope()
+        .exact_code_refs("docs/guide.md", &written)
+        .unwrap();
+    assert_eq!(
+        found,
+        vec![
+            vec!["docs/img/a.png".to_owned()],
+            vec!["src/main.rs".to_owned()],
+            vec!["docs/main.rs".to_owned()],
+            vec!["src/main.rs".to_owned()],
+            vec![],
+            vec![],
+            vec![],
+        ]
+    );
+    // a project answers from its file list, not here
+    assert!(project()
+        .docs
+        .scope()
+        .exact_code_refs("a.md", &written)
+        .is_none());
 }

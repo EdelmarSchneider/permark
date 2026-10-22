@@ -85,6 +85,60 @@ describe("a text file", () => {
   });
 });
 
+describe("a line asked for (a code reference)", () => {
+  afterEach(() => {
+    documents.lineRequest = null;
+  });
+
+  it("is tinted a moment where it is, once per request", async () => {
+    documents.lineRequest = { path: "a.txt", line: 30, seq: 901 };
+    show(viewOf(lines(0, 50), null, "a.txt"));
+    await until(() => target.querySelector(".located") !== null, "band");
+    const band = target.querySelector<HTMLElement>(".located");
+    // padding of the plain view + 29 lines above it
+    expect(parseFloat(band?.style.top ?? "")).toBeCloseTo(14 + 29 * 21.6, 0);
+    // gone after its moment
+    await until(() => target.querySelector(".located") === null, "band gone");
+  });
+
+  it("is not asked for another file", async () => {
+    documents.lineRequest = { path: "other.txt", line: 3, seq: 902 };
+    show(viewOf(lines(0, 50), null, "a.txt"));
+    await tick();
+    expect(target.querySelector(".located")).toBeNull();
+  });
+
+  it("loads the parts of a large text until the line is in, at most ten, then says so", async () => {
+    const notes: string[] = [];
+    vi.spyOn(documents, "notify").mockImplementation((text) => void notes.push(text));
+    // parts of 300 lines that never end: the view stops asking once the end is far (2 000 lines), the line asks ten
+    let at = 100;
+    const more = vi.spyOn(api, "documentMore").mockImplementation(() => {
+      const chunk = lines(at, at + 300);
+      at += 300;
+      return ok({ text: chunk, next: 10_000 + at });
+    });
+    documents.lineRequest = { path: "big.log", line: 50_000, seq: 903 };
+    show(viewOf(lines(0, 100), { loaded: 1000, total: 900_000_000 }));
+    await until(() => notes.length > 0, "note");
+    expect(more.mock.calls.length).toBeLessThanOrEqual(20);
+    expect(notes[0]).toContain("50000");
+    expect(target.querySelector(".located")).not.toBeNull();
+  });
+
+  it("past the end of a whole file: its last line, no note", async () => {
+    const notify = vi.spyOn(documents, "notify");
+    documents.lineRequest = { path: "a.txt", line: 400, seq: 904 };
+    show(viewOf(lines(0, 10), null, "a.txt"));
+    await until(() => target.querySelector(".located") !== null, "band");
+    expect(parseFloat(target.querySelector<HTMLElement>(".located")?.style.top ?? "")).toBeCloseTo(
+      14 + 9 * 21.6,
+      0,
+    );
+    expect(notify).not.toHaveBeenCalled();
+  });
+});
+
 describe("a very large file", () => {
   it("shows its first part at once as plain rows, and asks for the rest", async () => {
     const more = vi

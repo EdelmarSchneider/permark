@@ -15,6 +15,8 @@ import {
   type WorkspaceView,
 } from "../../api";
 import { BlockHost } from "./blocks";
+import { decideRef, inApp } from "./codeRefs";
+import { outsideTarget } from "./outside";
 import { Decorator, codeRefOf, type CodeRefTarget, type EmbedLookup } from "./decorate";
 import { enhanceBlock, type EnhanceEnv } from "./enhance";
 import { currentIndex } from "./outline";
@@ -37,21 +39,6 @@ export type DocState =
   | { status: "loading"; path: string; view: DocumentView | null }
   | { status: "ready"; view: DocumentView; deleted: Deleted | null; fresh: boolean }
   | { status: "failed"; path: string; error: ApiError };
-
-/** Files the app shows itself; everything else goes to the system's program. */
-const IN_APP = new Set(
-  (
-    "md markdown mdown mkd mdx mdc txt text rst adoc asciidoc org log toml yaml yml ini cfg conf properties env " +
-    "json jsonc json5 jsonl ndjson csv tsv xml xsd xsl xslt rss atom svg png jpg jpeg gif webp avif bmp ico " +
-    "mp3 wav ogg oga opus flac m4a aac weba wma aif aiff mka mp4 m4v webm ogv mov mkv avi wmv flv mpg mpeg 3gp"
-  ).split(" "),
-);
-
-function extensionOf(path: string): string {
-  const name = path.split("/").at(-1) ?? path;
-  const dot = name.lastIndexOf(".");
-  return dot <= 0 ? "" : name.slice(dot + 1).toLowerCase();
-}
 
 /** What an update of the page that was not a fresh document changed, in block ids. */
 export type BlockUpdate = {
@@ -79,13 +66,46 @@ export type LineGlow = {
 /** A view of the blocks to show instead of the document's own (a plugin's review). */
 export type BlockTransform = (blocks: readonly Block[], view: DocumentView) => readonly Block[];
 
+/** A button of a quiet note. */
+export type HookAction = { label: string; run: () => void };
+
+/** A line of a text document (or of a sheet) to bring into view, told to the viewer that shows it. */
+export type LineRequest = { path: string; line: number; seq: number };
+
 export type Hooks = {
   /** A quiet note for the person. */
   note(text: string): void;
+  /**
+   * The quiet note of the page (with its buttons): one at a time, a newer one takes its place; it goes when the page
+   * changes (`clearPageNote`).
+   */
+  pageNote(text: string, ...actions: HookAction[]): void;
+  /** The page's note goes. */
+  clearPageNote(): void;
   /** A failed request, worded by the shell. */
   fail(error: ApiError): void;
   /** The folder of the project's tree, shown. */
   reveal(path: string): void;
+  /** The person chose an editor (setting `editor` not empty). */
+  editorSet(): boolean;
+  /** How the platform names the key held for "in your editor" (`Ctrl` | `Cmd`). */
+  modKey(): string;
+  /** Settings at the editor choice. */
+  chooseEditor(): void;
+  /** A folder opened as a project in a new tab, showing `document` (a path inside it) when given. */
+  openFolderWith(folder: string, document: string | null): void;
+};
+
+const NO_HOOKS: Hooks = {
+  note: () => {},
+  pageNote: () => {},
+  clearPageNote: () => {},
+  fail: () => {},
+  reveal: () => {},
+  editorSet: () => false,
+  modKey: () => "Ctrl",
+  chooseEditor: () => {},
+  openFolderWith: () => {},
 };
 
 export class DocumentController {
@@ -99,7 +119,7 @@ export class DocumentController {
   readonly decorator: Decorator;
 
   #api: Api;
-  #hooks: Hooks = { note: () => {}, fail: () => {}, reveal: () => {} };
+  #hooks: Hooks = NO_HOOKS;
   #workspace: WorkspaceView | null = null;
   #seq = 0;
   #shown: string | null = null;
@@ -120,14 +140,35 @@ export class DocumentController {
   paintTick = $state(0);
   /** Lines of the text shown that glow for a moment (the text viewer draws them). */
   lineGlow = $state.raw<LineGlow | null>(null);
+  /** A line the viewer of a text | sheet document brings into view (a code reference, a search hit). */
+  lineRequest = $state.raw<LineRequest | null>(null);
+  #lineSeq = 0;
+  /**
+   * The file a single-file window shows when a link led away from its own (`null`: its own). Single-file windows have
+   * no project registry document: the window holds it here.
+   */
+  singleDoc = $state<string | null>(null);
+  /** The hint "choose an editor for code" was given in this window. */
+  #hintedEditor = false;
+  /** The document the page's note is about (it goes when another one shows). */
+  #notePage: string | null = null;
 
   constructor(api: Api = defaultApi) {
     this.#api = api;
     this.decorator = new Decorator(api);
+    this.decorator.refSetup = () => ({
+      editorSet: this.#hooks.editorSet(),
+      mod: this.#hooks.modKey(),
+    });
   }
 
   bind(hooks: Hooks): void {
     this.#hooks = hooks;
+  }
+
+  /** A quiet note from a viewer of the page. */
+  notify(text: string): void {
+    this.#hooks.note(text);
   }
 
   // ---- what is shown ---------------------------------------------------------------------------------------
@@ -182,6 +223,7 @@ export class DocumentController {
     this.#leave();
     this.#reset();
     this.#workspace = workspace;
+    this.singleDoc = null;
     this.trail.clear();
     if (workspace !== null) {
       void reading.load(this.#api);
@@ -205,6 +247,7 @@ export class DocumentController {
     this.#viaTrail = null;
     this.#anchor = null;
     this.#line = null;
+    this.lineRequest = null;
     this.#headings = [];
     this.currentHeading = -1;
     this.zoomed = null;
@@ -233,7 +276,12 @@ export class DocumentController {
     if (!viaTrail) this.trail.visit({ path, anchor });
     this.#anchor = anchor;
     this.#line = intent?.line ?? null;
+    // a line asked for an earlier document is not asked again when a viewer shows up later
+    this.lineRequest = null;
+    if (this.#notePage !== null && this.#notePage !== path) this.#clearNote();
     this.#shown = path;
+    // a single file: the tab and the window title name the file shown (the backend holds it; nothing else follows)
+    if (this.singleFile) void this.#api.showDocument(path);
     if (this.#workspace?.kind === "project") recentFiles.visit(path);
     this.#painted = null;
     const opening = this.#open(path, true);
@@ -257,6 +305,15 @@ export class DocumentController {
     const before = this.view;
     this.state = { status: "ready", view: result.value, deleted: null, fresh };
     if (!fresh && !own) this.#toldText(before, result.value);
+    // a page of blocks scrolls itself when it is built; another viewer is told the line
+    if (fresh && result.value.body.kind !== "markdown" && this.#line !== null) {
+      this.#askLine(result.value.path, this.#line);
+      this.#line = null;
+    }
+  }
+
+  #askLine(path: string, line: number): void {
+    this.lineRequest = { path, line, seq: ++this.#lineSeq };
   }
 
   /** A text document was read again: tells who listens which lines are different now. */
@@ -388,7 +445,7 @@ export class DocumentController {
     this.#line = null;
     if (anchor !== null && this.scrollToAnchor(anchor)) return;
     if (line !== null) {
-      this.scrollToLine(line);
+      this.scrollToLine(line, true);
       return;
     }
     const scroller = this.host.scroller;
@@ -443,8 +500,8 @@ export class DocumentController {
     return 1;
   }
 
-  /** Scrolls the block holding `line` to the top of the pane. */
-  scrollToLine(line: number): void {
+  /** Scrolls the block holding `line` to the top of the pane; `locate`: it is tinted a moment (a place was asked). */
+  scrollToLine(line: number, locate = false): void {
     const view = this.view;
     const scroller = this.host.scroller;
     if (view?.body.kind !== "markdown" || !scroller) return;
@@ -455,6 +512,7 @@ export class DocumentController {
     }
     if (!target) return;
     scroller.scrollTop += target.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    if (locate) tint(target);
   }
 
   /** Scrolls so that the element with this id is at the top of the pane; false when there is none. */
@@ -467,11 +525,7 @@ export class DocumentController {
     }
     const delta = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
     scroller.scrollTop += delta;
-    el.classList.remove("pm-located");
-    // restart the animation
-    void el.offsetWidth;
-    el.classList.add("pm-located");
-    setTimeout(() => el.classList.remove("pm-located"), 1600);
+    tint(el);
     return true;
   }
 
@@ -500,25 +554,30 @@ export class DocumentController {
     const path = this.#shown;
     if (path === null) return;
     const [target] = await this.decorator.links.resolve([value]);
-    if (target) this.#follow(target);
+    if (target) this.#follow(target, value);
   }
 
-  #follow(target: LinkTarget): void {
+  #follow(target: LinkTarget, href: string): void {
     switch (target.type) {
       case "anchor":
         this.#sameDocument(target.id);
         break;
       case "doc":
-        if (this.singleFile) return;
+        // a single file follows links inside its folder (the backend resolves them there, never above it)
+        this.#toPage();
         this.navigate(target.path, target.anchor);
         break;
       case "folder":
         if (!this.singleFile) this.#hooks.reveal(target.path);
+        else this.#inFolderOnly(null);
         break;
       case "asset":
-        if (this.singleFile) return;
-        if (IN_APP.has(extensionOf(target.path))) this.navigate(target.path, null);
-        else void this.openExternal(target.path, "defaultApp");
+        if (inApp(target.path)) {
+          this.#toPage();
+          this.navigate(target.path, null);
+        } else if (!this.singleFile) void this.openExternal(target.path, "defaultApp");
+        // a single file hands no file to the system's program: its folder, opened as a project, does
+        else this.#inFolderOnly(target.path);
         break;
       case "web":
         void this.openWeb(target.url);
@@ -527,11 +586,80 @@ export class DocumentController {
         this.#hooks.note(t("link.missing", { path: target.path }));
         break;
       case "outside":
-        this.#hooks.note(t("link.outside"));
+        if (this.singleFile) this.#outside(href);
+        else this.#hooks.note(t("link.outside"));
         break;
       default:
         target satisfies never;
     }
+  }
+
+  /** The keyboard goes to the page that shows what a link | reference opened (the link goes away with the page). */
+  #toPage(): void {
+    this.host.scroller?.focus({ preventScroll: true });
+  }
+
+  /** The single file's folder: where it is and its name. */
+  #folder(): { path: string; name: string } | null {
+    const workspace = this.#workspace;
+    if (workspace?.kind !== "singleFile") return null;
+    const name =
+      workspace.folder
+        .split(/[\\/]/)
+        .filter((s) => s !== "")
+        .at(-1) ?? workspace.folder;
+    return { path: workspace.folder, name };
+  }
+
+  /**
+   * A link of a single file above its folder: the nearest folder holding both the page and the target opens as a
+   * project showing it; when only a drive | the system root holds both, the note only says where the link leads.
+   */
+  #outside(href: string): void {
+    const own = this.#folder();
+    const page = this.#shown;
+    if (own === null || page === null) return;
+    const target = outsideTarget(own.path, page, href);
+    const text = t("link.outsideFolder", { folder: own.name });
+    if (target === null) {
+      this.#note(page, text);
+      return;
+    }
+    this.#note(page, text, {
+      label: t("link.openToFollow", { folder: target.name }),
+      run: () => this.#hooks.openFolderWith(target.folder, target.document),
+    });
+  }
+
+  /** A folder | a file of a single file's folder that only a project window shows: its folder opens as one. */
+  #inFolderOnly(document: string | null): void {
+    const own = this.#folder();
+    const page = this.#shown;
+    if (own === null || page === null) return;
+    this.#note(page, t("link.inFolderOnly", { folder: own.name }), {
+      label: t("link.openToFollow", { folder: own.name }),
+      run: () => this.#hooks.openFolderWith(own.path, document),
+    });
+  }
+
+  /** The page's note, about `page` (it goes when another document shows). */
+  #note(page: string, text: string, ...actions: HookAction[]): void {
+    this.#notePage = page;
+    this.#hooks.pageNote(
+      text,
+      ...actions.map((a) => ({
+        label: a.label,
+        run: () => {
+          this.#clearNote();
+          a.run();
+        },
+      })),
+    );
+  }
+
+  #clearNote(): void {
+    this.#notePage = null;
+    this.#hooks.clearPageNote();
   }
 
   #sameDocument(id: string): void {
@@ -553,7 +681,8 @@ export class DocumentController {
   navigate(path: string, anchor: string | null, line: number | null = null): void {
     if (path === this.#shown) {
       if (anchor === null && line !== null) {
-        this.scrollToLine(line);
+        if (this.view?.body.kind === "markdown") this.scrollToLine(line, true);
+        else this.#askLine(path, line);
         this.trail.visit({ path, anchor: null });
       } else this.#sameDocument(anchor ?? "");
       return;
@@ -564,6 +693,11 @@ export class DocumentController {
 
   async #show(path: string): Promise<boolean> {
     if (!(await confirmLeave({ kind: "document", path }))) return false;
+    if (this.singleFile) {
+      // the window shows it (`DocumentArea` follows `singleDoc`)
+      this.singleDoc = path;
+      return true;
+    }
     const result = await this.#api.showDocument(path);
     if (!result.ok) this.#hooks.fail(result.error);
     return true;
@@ -612,9 +746,61 @@ export class DocumentController {
 
   // ---- code references, web, the system --------------------------------------------------------------------
 
-  async openCodeRef(target: CodeRefTarget, path: string): Promise<void> {
-    const result = await this.#api.openInEditor(path, target.line, target.col);
-    if (!result.ok) this.#hooks.fail(result.error);
+  /**
+   * A click | Enter on a code reference to `path` (`modifier`: Ctrl | Cmd held: the editor, whatever the file). Files
+   * PerMark shows open here at the line; code opens in the editor, or here when none is chosen. Never an error for
+   * want of an editor.
+   */
+  async openCodeRef(target: CodeRefTarget, path: string, modifier = false): Promise<void> {
+    const decision = decideRef(path, this.#hooks.editorSet(), modifier);
+    switch (decision.kind) {
+      case "inApp":
+        this.#refHere(path, target.line, decision.hint);
+        return;
+      case "chooseEditor":
+        this.#noEditor();
+        return;
+      case "editor": {
+        const result = await this.#api.openInEditor(path, target.line, target.col);
+        if (result.ok) return;
+        const notSet =
+          result.error.kind === "backend" && result.error.error.kind === "editorNotSet";
+        // the setting went meanwhile: as if none had been chosen
+        if (!notSet) this.#hooks.fail(result.error);
+        else if (modifier) this.#noEditor();
+        else this.#refHere(path, target.line, true);
+        return;
+      }
+      default:
+        decision satisfies never;
+    }
+  }
+
+  #refHere(path: string, line: number | null, hint: boolean): void {
+    this.#toPage();
+    this.navigate(path, null, line);
+    if (!hint || this.#hintedEditor) return;
+    this.#hintedEditor = true;
+    // about the page the code shows on
+    this.#note(path, t("codeRef.hintEditor"), {
+      label: t("codeRef.chooseEditor"),
+      run: () => this.#hooks.chooseEditor(),
+    });
+  }
+
+  #noEditor(): void {
+    const page = this.#shown;
+    if (page === null) return;
+    this.#note(page, t("codeRef.noEditor"), {
+      label: t("codeRef.chooseEditor"),
+      run: () => this.#hooks.chooseEditor(),
+    });
+  }
+
+  /** The tooltips of the references on the page say again what a click does (the editor setting changed). */
+  retitleRefs(): void {
+    const root = this.host.scroller;
+    if (root) this.decorator.retitle(root);
   }
 
   codeRefAt(element: Element): CodeRefTarget | null {
@@ -705,6 +891,14 @@ export class DocumentController {
   async copyPlain(text: string): Promise<void> {
     await this.#copy(text);
   }
+}
+
+/** Tints an element a moment (the place that was asked for); the animation starts again when it is asked again. */
+function tint(el: HTMLElement): void {
+  el.classList.remove("pm-located");
+  void el.offsetWidth;
+  el.classList.add("pm-located");
+  setTimeout(() => el.classList.remove("pm-located"), 1600);
 }
 
 function safeDecode(text: string): string {

@@ -1,5 +1,6 @@
 // Code references: `src/main.rs:42` in a document becomes a link to that line of that file. This module is the pure
-// part: reading a reference out of text. Finding the project files they name is the backend's (`code_refs_resolve`).
+// part: reading a reference out of text, and what a click on one does. Finding the project files they name is the
+// backend's (`code_refs_resolve`).
 //
 // A reference is a path with a file extension and an optional line: `src/main.rs`, `:42`, `:42:7`, `:10-20`, `#L10`,
 // `#L10-L20`. In inline code the line is optional; in plain text it is required, so prose is never turned into links.
@@ -113,4 +114,69 @@ export function findTextRefs(text: string): TextRef[] {
 /** A reference as it is written back: `src/main.rs:42`. */
 export function refLabel(path: string, line: number | null): string {
   return line === null ? path : `${path}:${line}`;
+}
+
+// ---- what a click on a reference does --------------------------------------------------------------------------
+
+/** Files PerMark shows itself (Markdown, text, config, data, media); everything else goes elsewhere. */
+const IN_APP = new Set(
+  (
+    "md markdown mdown mkd mdx mdc txt text rst adoc asciidoc org log toml yaml yml ini cfg conf properties env " +
+    "json jsonc json5 jsonl ndjson csv tsv xml xsd xsl xslt rss atom svg png jpg jpeg gif webp avif bmp ico " +
+    "mp3 wav ogg oga opus flac m4a aac weba wma aif aiff mka mp4 m4v webm ogv mov mkv avi wmv flv mpg mpeg 3gp"
+  ).split(" "),
+);
+
+/** The extension of a file name, lower case (`""`: none; a leading dot names a file, not an extension). */
+export function extensionOf(path: string): string {
+  const name = path.split("/").at(-1) ?? path;
+  const dot = name.lastIndexOf(".");
+  return dot <= 0 ? "" : name.slice(dot + 1).toLowerCase();
+}
+
+/** PerMark shows this file itself. */
+export function inApp(path: string): boolean {
+  return IN_APP.has(extensionOf(path));
+}
+
+/** Where a reference opens: in PerMark (`hint`: code shown here for want of an editor), the editor, or nowhere. */
+export type RefDecision =
+  { kind: "inApp"; hint: boolean } | { kind: "editor" } | { kind: "chooseEditor" };
+
+/**
+ * What a click on a reference to `path` does. `editorSet`: the person chose an editor; `modifier`: Ctrl | Cmd was held
+ * (the editor, whatever the file). Files PerMark shows open in PerMark; code opens in the editor, or here when none is
+ * chosen. Never an error.
+ */
+export function decideRef(path: string, editorSet: boolean, modifier: boolean): RefDecision {
+  if (modifier) return editorSet ? { kind: "editor" } : { kind: "chooseEditor" };
+  if (inApp(path)) return { kind: "inApp", hint: false };
+  return editorSet ? { kind: "editor" } : { kind: "inApp", hint: true };
+}
+
+export type RefTitle =
+  | { key: "codeRef.titleOpen" | "codeRef.titleOpenEditor" | "codeRef.titleEditor"; line: null }
+  | {
+      key: "codeRef.titleOpenAt" | "codeRef.titleOpenAtEditor" | "codeRef.titleEditorAt";
+      line: number;
+    };
+
+/** The tooltip of a reference names what a click does (and the Ctrl | Cmd way to the editor when there is one). */
+export function refTitle(path: string, line: number | null, editorSet: boolean): RefTitle {
+  const editor = editorSet && !inApp(path);
+  const offer = editorSet && !editor;
+  if (line === null) {
+    return {
+      key: editor ? "codeRef.titleEditor" : offer ? "codeRef.titleOpenEditor" : "codeRef.titleOpen",
+      line: null,
+    };
+  }
+  return {
+    key: editor
+      ? "codeRef.titleEditorAt"
+      : offer
+        ? "codeRef.titleOpenAtEditor"
+        : "codeRef.titleOpenAt",
+    line,
+  };
 }

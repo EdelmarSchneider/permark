@@ -38,7 +38,10 @@ function workspaceTitle(
           })
         : t("window.title.projectOnly", { project: workspace.name });
     case "singleFile":
-      return t("window.title.file", { document: star + workspace.name });
+      // the file shown (a link may have led to another file of its folder)
+      return t("window.title.file", {
+        document: star + (document ? lastSegment(document) : workspace.name),
+      });
     case "notes":
       return star + t("window.title.notes");
     default:

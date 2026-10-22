@@ -6,16 +6,17 @@ use std::sync::Arc;
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::error::{ErrorKind, IpcError};
+use crate::error::IpcError;
 use crate::format::DocEnv;
-use crate::links::{resolve, Target};
+use crate::links::{local_target, resolve, scheme_of, Target};
 use crate::notes::NotesScope;
 use crate::paths::{FileScope, Vault, VaultPath};
 
 #[derive(Debug, Clone)]
 pub enum DocScope {
     Project(Vault),
-    /// Only its own file is a document; the files next to it are assets.
+    /// A single-file workspace: its own file and any file below its folder (links to siblings open there); nothing
+    /// outside the folder (`..`, absolute paths, links | junctions leading out are refused).
     File(FileScope),
     /// The Notes window: the notes folder and the loose files.
     Notes(Arc<NotesScope>),
@@ -73,18 +74,13 @@ impl DocScope {
     /// Folded identity key + absolute path of a document path (checked against the boundary).
     ///
     /// # Errors
-    /// Escapes the workspace | invalid | not found; in a single-file workspace, any file but its own.
+    /// Escapes the workspace (single file: its folder) | invalid | not found.
     pub fn resolve(&self, path: &str) -> Result<(String, PathBuf), IpcError> {
         let parsed = VaultPath::parse(path)?;
         let abs = match self {
             Self::Project(vault) => vault.resolve(&parsed)?,
-            Self::File(scope) => {
-                let abs = scope.resolve_asset(&parsed)?;
-                if abs != scope.file() {
-                    return Err(IpcError::new(ErrorKind::NotFound).subject(path));
-                }
-                abs
-            }
+            // any file under the folder (B3: links to siblings); `resolve_under` refuses every way out
+            Self::File(scope) => scope.resolve_asset(&parsed)?,
             Self::Notes(scope) => return scope.resolve(path),
         };
         Ok((parsed.key(), abs))
@@ -124,11 +120,64 @@ impl DocScope {
         let Some((vault, from)) = self.link_base(doc) else {
             return hrefs.iter().map(|_| LinkTarget::Outside).collect();
         };
+        let single = matches!(self, Self::File(_));
         hrefs
             .iter()
-            .map(|href| resolve(&vault, &from, href).into())
+            .map(|href| match resolve(&vault, &from, href) {
+                // a single file's folder is its whole world: a relative path climbing above it leads outside (the
+                // window says so and offers the folder that holds both), it is not "missing"
+                Target::Missing(_) if single && climbs_above(doc, href) => LinkTarget::Outside,
+                target => target.into(),
+            })
             .collect()
     }
+
+    /// The files of a single file's folder that code references name, written exactly (the document's folder first,
+    /// then the file's folder; existing files only; no tail matching: a single file has no file list). Folder-relative
+    /// paths; one per reference at most. Other workspaces: `None` (the project's list answers).
+    #[must_use]
+    pub fn exact_code_refs(&self, doc: &str, written: &[String]) -> Option<Vec<Vec<String>>> {
+        let Self::File(scope) = self else {
+            return None;
+        };
+        let folder = doc.rsplit_once('/').map_or("", |(f, _)| f);
+        Some(
+            written
+                .iter()
+                .map(|w| {
+                    let w = w.trim_start_matches('/');
+                    let near = if folder.is_empty() {
+                        w.to_owned()
+                    } else {
+                        format!("{folder}/{w}")
+                    };
+                    [near, w.to_owned()]
+                        .into_iter()
+                        .find(|candidate| {
+                            VaultPath::parse(candidate)
+                                .ok()
+                                .and_then(|p| scope.resolve_asset(&p).ok())
+                                .is_some_and(|abs| abs.is_file())
+                        })
+                        .and_then(|found| VaultPath::parse(&found).ok())
+                        .map(|p| vec![p.to_string()])
+                        .unwrap_or_default()
+                })
+                .collect(),
+        )
+    }
+}
+
+/// A relative link (no scheme, not root-relative) whose path climbs above the root of the document `doc`.
+fn climbs_above(doc: &str, href: &str) -> bool {
+    let href = href.trim();
+    let target = href.split_once('#').map_or(href, |(t, _)| t);
+    let path = target.split_once('?').map_or(target, |(p, _)| p);
+    !path.is_empty()
+        && scheme_of(path).is_none()
+        && !path.starts_with('/')
+        && !path.starts_with('\\')
+        && local_target(doc, href).is_none()
 }
 
 impl DocEnv for DocScope {
