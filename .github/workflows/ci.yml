@@ -89,7 +89,9 @@ jobs:
           echo "PERMARK_TOKEN_VOCAB_REQUIRED=1" >> "$GITHUB_ENV"
 
       # Builds the frontend first (`tauri::generate_context!` embeds app/dist at compile time).
+      # A hung test ends the step instead of the job's 45 minutes (usual: 5-8 min warm; cold build headroom).
       - name: Quality gate
+        timeout-minutes: 25
         run: npm run check
 
       # `cargo test` regenerated the IPC types (ts-rs); committed ones must match.

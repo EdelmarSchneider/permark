@@ -292,6 +292,9 @@ impl Worker {
                 break;
             }
         }
+        // stopped mid-read: readers blocked on the full queue are let go (each sees `stop` before its next file and
+        // drops its sender); without this the scope never ends and the index drop hangs (CI 39698724615)
+        for _ in rx {}
         if !pending.is_empty() {
             self.insert(pending);
         }

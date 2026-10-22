@@ -1107,6 +1107,61 @@ fn dropping_the_index_during_the_first_build_is_prompt() {
     );
 }
 
+/// Progress events take their time (a busy window): the inserter falls behind the readers.
+struct SlowSink;
+
+impl EventSink for SlowSink {
+    fn emit(&self, event: CoreEvent) {
+        if matches!(event, CoreEvent::IndexProgress(_)) {
+            std::thread::sleep(Duration::from_millis(300));
+        }
+    }
+}
+
+/// Dropped while documents are being read with the readers ahead of the inserter (their queue full): the readers
+/// blocked on the full queue are released, the drop never hangs (CI 39698724615 hung 40 min on Windows).
+#[test]
+fn dropping_the_index_while_documents_are_read_never_hangs() {
+    let dir = tempfile::tempdir().unwrap();
+    let body = "alpha beta gamma delta ".repeat(50);
+    for n in 0..5000 {
+        write(
+            dir.path(),
+            &format!("d{}/n{n}.md", n % 50),
+            &format!("# T{n}\n\nword{n} {body}\n\n## Part\n\n{body}\n"),
+        );
+    }
+    for _ in 0..3 {
+        let vault = Vault::new(Root::open(dir.path()).unwrap());
+        let sink: Arc<dyn EventSink> = Arc::new(SlowSink);
+        let explorer = Arc::new(Explorer::new(
+            &vault,
+            &ProjectConfig::default(),
+            Arc::clone(&sink),
+            None,
+        ));
+        let index = SearchIndex::start(vault, explorer, sink, "root".to_owned());
+        let start = Instant::now();
+        while index.status().total == 0 {
+            assert!(start.elapsed() < Duration::from_secs(60), "never started");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        // past the first progress event (before the readers start), into the next one (the readers fill their queue)
+        // (hung here before the fix: ~1100 of 5000 read, 2026-10-22)
+        std::thread::sleep(Duration::from_millis(550));
+        // the drop runs on its own thread: a hang fails the test instead of the whole run
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            drop(index);
+            let _ = tx.send(());
+        });
+        assert!(
+            rx.recv_timeout(Duration::from_secs(20)).is_ok(),
+            "the index drop hung while documents were read"
+        );
+    }
+}
+
 // ---- measured ------------------------------------------------------------------------------------------------------
 
 #[test]
