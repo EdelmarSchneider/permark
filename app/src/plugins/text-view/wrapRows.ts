@@ -121,9 +121,19 @@ export function rowOffset(row: number, cols: number, lead = 0): number {
 
 /** Rows `from` .. `to` (exclusive) of a line: its text from where `from` starts, never cutting a surrogate pair. */
 export function rowsText(line: string, from: number, to: number, cols: number, lead = 0): string {
-  const start = edge(line, rowOffset(from, cols, lead));
-  const end = edge(line, rowOffset(to, cols, lead));
+  const [start, end] = rowsRange(line, from, to, cols, lead);
   return line.slice(start, end);
+}
+
+/** Where rows `from` .. `to` (exclusive) of a line start and end, in characters (`rowsText`'s cut). */
+export function rowsRange(
+  line: string,
+  from: number,
+  to: number,
+  cols: number,
+  lead = 0,
+): [number, number] {
+  return [edge(line, rowOffset(from, cols, lead)), edge(line, rowOffset(to, cols, lead))];
 }
 
 /** `at`, moved back off the second half of a surrogate pair. */

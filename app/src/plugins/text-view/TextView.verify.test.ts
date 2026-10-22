@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 // Verifier (integration 0.7): secrets x wrap x very long text. Directive "secrets hidden on screen by default".
-// Known gap (pre-existing since 0.6.3, TextView `pieces`: `line.length > 4000` -> no secret scan): a secret on a line
-// longer than 4000 characters shows unmasked, wrapping on or off. `it.fails` documents it; goes red when fixed.
+// A secret on a line longer than 4000 characters stays masked, wrapping on or off (long lines scanned by windows).
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocumentView } from "../../api";
@@ -43,8 +42,9 @@ function show(view: DocumentView): void {
 }
 
 const SECRET = "abc123secretvalue";
-// a line of ~5 KB: over the 4000-character cap, drawn whole (< 200 rows)
-const MID = `API_TOKEN=${SECRET} ${"x".repeat(5_000)}\n`;
+// a line of ~5 KB: over the 4000-character cap, drawn whole (< 200 rows), in a text long enough to be drawn by rows
+// (a smaller text is drawn by the code block, which masks the whole text)
+const MID = `API_TOKEN=${SECRET} ${"x".repeat(5_000)}\n${"y\n".repeat(25_000)}`;
 // the same secret on a short line, in a text long enough to be drawn by rows (masked: control)
 const SHORT = `API_TOKEN=${SECRET} x\n${"y\n".repeat(25_000)}`;
 // one line of ~300 KB (> 200 rows at 80 columns), the secret near its start: drawn in parts when wrapping
@@ -72,7 +72,7 @@ describe("verify: a secret on a very long line", () => {
     expect(shown).not.toContain(SECRET);
   });
 
-  it.fails("GAP: masked on a 5 KB line when long lines do not wrap", () => {
+  it("masked on a 5 KB line when long lines do not wrap", () => {
     look.wrap = false;
     show(viewOf(MID, "one.log"));
     const shown = [...target.querySelectorAll(".row .line")].map((l) => l.textContent).join("");
@@ -80,7 +80,7 @@ describe("verify: a secret on a very long line", () => {
     expect(target.querySelector(".row .secret")?.textContent).toBe(MASK);
   });
 
-  it.fails("GAP: stays masked on a 300 KB line when long lines wrap (the default)", () => {
+  it("stays masked on a 300 KB line when long lines wrap (the default)", () => {
     look.wrap = true;
     show(viewOf(LONG, "one.log"));
     const shown = [...target.querySelectorAll(".row .line")].map((l) => l.textContent).join("");
