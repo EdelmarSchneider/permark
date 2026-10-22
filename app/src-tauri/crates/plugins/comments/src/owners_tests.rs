@@ -215,3 +215,193 @@ fn a_reader_with_no_window_never_sees_a_torn_file() {
         32
     );
 }
+
+// ---- verifier round 4 (adversarial) -----------------------------------------------------------------------------
+
+fn wait_until(what: &str, mut ok: impl FnMut() -> bool) {
+    let start = std::time::Instant::now();
+    while !ok() {
+        assert!(
+            start.elapsed() < Duration::from_secs(15),
+            "timed out: {what}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn paths_of(core: &ProjectCore) -> Vec<String> {
+    list(core)
+        .iter()
+        .map(|c| c["path"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// V1: a member folder renamed while open (silent re-attach, §4.4 step 1): its comments stay visible and stay in the
+/// member's own file (never land in the root file as dormant entries).
+#[test]
+fn verify_member_renamed_while_open_keeps_its_comments() {
+    for round in 0..5 {
+        let (_dir, root) = setup();
+        let base = tempfile::tempdir().unwrap();
+        let env = env(base.path());
+        let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+        assert!(core.projects().wait_ready(Duration::from_secs(10)));
+        assert!(paths_of(&core).contains(&format!("{MEMBER}/doc.md")));
+        std::fs::rename(root.join(MEMBER), root.join("sub z")).unwrap();
+        let uid = permark_core::projects::ProjectUid::parse(UID).unwrap();
+        wait_until("member moved", || {
+            core.projects()
+                .snapshot()
+                .member(&uid)
+                .is_some_and(|m| m.path.as_str() == "sub z")
+        });
+        std::thread::sleep(Duration::from_millis(1500));
+        let paths = paths_of(&core);
+        let root_book = std::fs::read_to_string(root.join(".permark/local/comments.json")).unwrap();
+        assert!(
+            paths.contains(&"sub z/doc.md".to_owned()),
+            "round {round}: member comment gone from the list: {paths:?}; root file: {root_book}"
+        );
+        assert!(
+            !root_book.contains("sub z/doc.md"),
+            "round {round}: landed in root file: {root_book}"
+        );
+    }
+}
+
+/// V2: an ancestor of a member renamed while open.
+#[test]
+fn verify_ancestor_of_member_renamed_while_open_keeps_its_comments() {
+    for round in 0..5 {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dunce::canonicalize(dir.path()).unwrap().join("root");
+        let member = root.join("hubs").join("m");
+        std::fs::create_dir_all(root.join(".permark/local")).unwrap();
+        std::fs::create_dir_all(member.join(".permark/local")).unwrap();
+        std::fs::write(member.join("doc.md"), "alpha\n").unwrap();
+        std::fs::write(
+            member.join(".permark/local/comments.json"),
+            format!(
+                r#"{{"version":1,"comments":[{}]}}"#,
+                comment_json("m1", "doc.md", "member")
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join(".permark/projects.toml"),
+            format!("version = 1\n\n[[project]]\nid = \"{UID}\"\npath = \"hubs/m\"\n"),
+        )
+        .unwrap();
+        let base = tempfile::tempdir().unwrap();
+        let env = env(base.path());
+        let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+        assert!(core.projects().wait_ready(Duration::from_secs(10)));
+        assert!(paths_of(&core).contains(&"hubs/m/doc.md".to_owned()));
+        std::fs::rename(root.join("hubs"), root.join("hubs2")).unwrap();
+        let uid = permark_core::projects::ProjectUid::parse(UID).unwrap();
+        wait_until("member moved", || {
+            core.projects()
+                .snapshot()
+                .member(&uid)
+                .is_some_and(|m| m.path.as_str() == "hubs2/m")
+        });
+        std::thread::sleep(Duration::from_millis(1500));
+        let paths = paths_of(&core);
+        let root_book =
+            std::fs::read_to_string(root.join(".permark/local/comments.json")).unwrap_or_default();
+        assert!(
+            paths.contains(&"hubs2/m/doc.md".to_owned()),
+            "round {round}: member comment gone from the list: {paths:?}; root file: {root_book}"
+        );
+    }
+}
+
+/// V3: left out, a comment added on a project document (goes to the root file), included again (same path: no
+/// second copy): the comment must still show.
+#[test]
+fn verify_comment_added_while_left_out_survives_include_again() {
+    let (_dir, root) = setup();
+    let base = tempfile::tempdir().unwrap();
+    let env = env(base.path());
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    assert!(core.projects().wait_ready(Duration::from_secs(10)));
+    let uid = permark_core::projects::ProjectUid::parse(UID).unwrap();
+    core.projects()
+        .leave_out(std::slice::from_ref(&uid))
+        .unwrap();
+    wait_until("left out", || core.projects().owners().is_single());
+    call(
+        &core,
+        "add",
+        json!({ "path": format!("{MEMBER}/doc.md"), "quote": "alpha", "text": "while left out" }),
+    )
+    .unwrap();
+    assert!(list(&core).iter().any(|c| c["text"] == "while left out"));
+    core.projects_include(
+        &env,
+        &permark_core::projects::ProjectPick::Paths {
+            paths: vec![MEMBER.to_owned()],
+        },
+    )
+    .unwrap();
+    wait_until("included again", || {
+        core.projects().owners().slots().len() == 2
+    });
+    let texts: Vec<Value> = list(&core).iter().map(|c| c["text"].clone()).collect();
+    assert!(
+        texts.contains(&json!("while left out")),
+        "comment written while left out is hidden after include again: {texts:?}"
+    );
+}
+
+/// V4: root tab + project opened alone add comments to the same project at the same time: nothing lost.
+#[test]
+fn verify_two_tabs_adding_concurrently_lose_nothing() {
+    let (_dir, root) = setup();
+    let base = tempfile::tempdir().unwrap();
+    let env = env(base.path());
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    assert!(core.projects().wait_ready(Duration::from_secs(10)));
+    let alone = ProjectCore::open(Root::open(&root.join(MEMBER)).unwrap(), &env);
+    let a = std::thread::spawn({
+        let core = Arc::clone(&core);
+        move || {
+            for i in 0..40 {
+                call(&core, "add", json!({ "path": format!("{MEMBER}/doc.md"), "quote": "alpha", "text": format!("r{i}") }))
+                    .unwrap();
+            }
+        }
+    });
+    let b = std::thread::spawn({
+        let alone = Arc::clone(&alone);
+        move || {
+            for i in 0..40 {
+                call(
+                    &alone,
+                    "add",
+                    json!({ "path": "doc.md", "quote": "alpha", "text": format!("a{i}") }),
+                )
+                .unwrap();
+            }
+        }
+    });
+    a.join().unwrap();
+    b.join().unwrap();
+    let file: Value = serde_json::from_slice(
+        &std::fs::read(root.join(MEMBER).join(".permark/local/comments.json")).unwrap(),
+    )
+    .unwrap();
+    let texts: Vec<String> = file["comments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["text"].as_str().unwrap().to_owned())
+        .collect();
+    let r = texts.iter().filter(|t| t.starts_with('r')).count();
+    let a = texts.iter().filter(|t| t.starts_with('a')).count();
+    assert_eq!(
+        texts.len(),
+        81,
+        "lost updates: root tab kept {r}/40, alone tab kept {a}/40"
+    );
+}

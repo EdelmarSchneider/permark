@@ -629,3 +629,105 @@ fn the_journal_of_a_project_gets_the_facts_about_its_files() {
         .iter()
         .any(|e| e.fact.path() == Some("docs/a.md")));
 }
+
+/// V7 (verifier, local only): the copy on REAL 0.6.x bytes (the director's F:/PerMarkRoot/.permark, copied to a temp
+/// folder; never touched in place). Every member with entries: copy OK, root bytes identical, entry counts == source
+/// entries under the member, second run writes nothing.
+#[test]
+#[ignore = "verifier: needs F:/PerMarkRoot"]
+fn verify_real_profile_copy() {
+    let real = Path::new("F:/PerMarkRoot/.permark");
+    let dir = tempfile::tempdir().unwrap();
+    let base = dunce::canonicalize(dir.path()).unwrap();
+    let root = base.join("root");
+    for f in [
+        "config.toml",
+        "meta.toml",
+        "local/comments.json",
+        "local/quiet.json",
+        "local/plugins/unread/read.json",
+        "local/plugins/unread/visit.json",
+    ] {
+        let from = real.join(f);
+        if from.is_file() {
+            let to = root.join(".permark").join(f);
+            fs::create_dir_all(to.parent().unwrap()).unwrap();
+            fs::copy(&from, &to).unwrap();
+        }
+    }
+    let dirs = AppDirs::under(&base.join("app"));
+    let store = |rel: &str| {
+        let p = if rel.is_empty() {
+            root.clone()
+        } else {
+            root.join(rel)
+        };
+        fs::create_dir_all(&p).unwrap();
+        StateStore::for_project(&dirs, &Root::open(&p).unwrap())
+    };
+    let before = files_of(&root.join(".permark"));
+    let read = json_at(&root.join(".permark/local/plugins/unread/read.json"));
+    let docs = read["data"]["docs"].as_object().unwrap();
+    let comments = json_at(&root.join(".permark/local/comments.json"));
+    let list = comments["comments"].as_array().unwrap();
+    println!("real: read {} docs, {} comments", docs.len(), list.len());
+    for member in [
+        "hubs/hub-b-software",
+        "hubs/hub-a-vision",
+        "orchestrator",
+        "shared",
+    ] {
+        let target = store(member);
+        let t = Instant::now();
+        let copied = copy_state(&store(""), &target, member).unwrap();
+        let took = t.elapsed();
+        let want_docs = docs
+            .keys()
+            .filter(|k| k.starts_with(&format!("{member}/")))
+            .count();
+        let want_comments = list
+            .iter()
+            .filter(|c| {
+                c["path"]
+                    .as_str()
+                    .unwrap_or("")
+                    .starts_with(&format!("{member}/"))
+            })
+            .count();
+        let got_docs = if want_docs > 0 {
+            json_at(
+                &target
+                    .plugin_dir(&crate::plugins::PluginId::of("unread"))
+                    .join("read.json"),
+            )["data"]["docs"]
+                .as_object()
+                .unwrap()
+                .len()
+        } else {
+            0
+        };
+        let got_comments = if want_comments > 0 {
+            json_at(&target.dir().join("comments.json"))["comments"]
+                .as_array()
+                .unwrap()
+                .len()
+        } else {
+            0
+        };
+        println!("{member}: wrote {:?} in {took:?}; docs {got_docs}/{want_docs}; comments {got_comments}/{want_comments}", copied.written);
+        assert_eq!(got_docs, want_docs, "{member}");
+        assert_eq!(got_comments, want_comments, "{member}");
+        assert!(
+            copy_state(&store(""), &target, member)
+                .unwrap()
+                .written
+                .is_empty(),
+            "{member}: second run wrote"
+        );
+    }
+    assert_eq!(
+        files_of(&root.join(".permark")),
+        before,
+        "root bytes changed"
+    );
+}
