@@ -129,6 +129,50 @@ fn map_lists_files_by_path_with_facts_and_counts_folders_past_depth() {
     assert!(call(&fx, "map", json!({ "depth": "deep" })).is_err());
 }
 
+/// Small models name the root `/` (LLM gate 2026-10-22): every root spelling -> the root map; nothing built on a
+/// root spelling ever leaves the open folder.
+#[test]
+fn map_takes_every_root_spelling_and_never_escapes() {
+    let fx = Budget::new();
+    let (root, _) = call(&fx, "map", json!({ "depth": 1 })).unwrap();
+    for path in ["", " ", ".", "./", "/", "//", "\\", "\\\\", " / ", "./."] {
+        let (value, text) = call(&fx, "map", json!({ "path": path, "depth": 1 })).unwrap();
+        assert_eq!(value, root, "{path:?}");
+        assert!(text.starts_with("map path=. depth=1 "), "{path:?}: {text}");
+    }
+    for path in [
+        "/..",
+        "//..",
+        "/../",
+        "\\..",
+        "\\..\\",
+        "./..",
+        "/./..",
+        "docs/../..",
+        "docs\\..\\..",
+        "/docs",
+        "/etc",
+        "\\Windows",
+        "C:/",
+        "C:\\",
+        "c:",
+        "\\\\?\\C:\\",
+        "\\\\server\\share",
+        "//server/share",
+        "/private",
+        "/.git",
+        "\\.permark",
+    ] {
+        assert!(
+            matches!(
+                call(&fx, "map", json!({ "path": path })),
+                Err(ToolError::NotFound(_))
+            ),
+            "{path:?}"
+        );
+    }
+}
+
 #[test]
 fn map_says_unread_only_when_the_person_shares_changes() {
     let fx = Budget::new();

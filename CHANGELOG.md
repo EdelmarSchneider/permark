@@ -43,6 +43,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - In a row of choices in the settings (such as the theme), `Alt`, `Ctrl` or `Shift` with an arrow key no longer changes the choice; only the arrow keys alone do. <!-- f: settings, keyboard-shortcuts -->
 - The back and forward side buttons of the mouse work again: they go back and forward through the documents you viewed, like `Alt+Left` and `Alt+Right` and the Back and Forward buttons. They work while you read, in Edit and Source, and with the pointer over the side panels; they do nothing while a dialog or the search box is open. <!-- f: links-and-history -->
 - When an agent names itself in a request, PerMark now always shows and records that name. Before, the name it gave when it connected could sometimes replace it a moment later. <!-- f: agent-connection -->
+- Agents now read a whole file more reliably. The description of the agent's read tool now says plainly that leaving out the part reads the whole file; some smaller AI models used to ask for a part called "none" or "all" and got nothing back. <!-- f: agent-connection -->
 - On Windows, renaming, moving or deleting a project folder right after PerMark stopped asking git about it (for example after you close the folder or leave the project out) no longer fails because the folder is "in use". Before, a git program that PerMark had stopped could keep running in that folder for a few seconds. <!-- f: git-status, nested-projects -->
 
 ## [0.6.4] - 2026-10-22
