@@ -394,10 +394,14 @@ describe("long lines that wrap (the setting)", () => {
   it("not wrapping: the text box takes the keyboard to scroll sideways (named region)", async () => {
     look.wrap = false;
     show(viewOf("one\ntwo\n", null, "a.txt"));
-    await until(() => target.querySelector(".code pre[tabindex='0']") !== null, "focusable");
-    const box = target.querySelector(".code pre");
-    expect(box?.getAttribute("role")).toBe("region");
-    expect(box?.getAttribute("aria-label")).toBe("Text (scrolls sideways)");
+    // asked until it holds: the highlighted text replaces the plain one when it comes
+    await until(
+      () =>
+        target.querySelector(
+          ".code pre[tabindex='0'][role='region'][aria-label='Text (scrolls sideways)']",
+        ) !== null,
+      "a focusable, named region",
+    );
     look.wrap = true;
     flushSync();
     await until(
