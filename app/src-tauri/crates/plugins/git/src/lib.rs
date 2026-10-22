@@ -18,6 +18,8 @@ mod system;
 mod tests;
 #[cfg(windows)]
 mod tree;
+#[cfg(all(test, windows))]
+mod verify_tests;
 mod types;
 mod worktrees;
 
