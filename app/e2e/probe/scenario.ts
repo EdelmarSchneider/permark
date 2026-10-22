@@ -25,6 +25,7 @@ export const SEEDS = [
   "gitOnlyProject",
   "plainFolder",
   "rightViews",
+  "agent",
 ] as const;
 export type SeedUse = (typeof SEEDS)[number];
 

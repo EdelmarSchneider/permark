@@ -1,10 +1,13 @@
 <script lang="ts">
-  // Quick settings under the header button: language, theme, light tone, and the way to the keyboard map and to all
-  // the settings. Closes on Escape | a click outside.
+  // Quick settings under the header button: language, theme, light tone, the rows plugins put here (the agent
+  // connection's state + its way in), and the way to the keyboard map and to all the settings. Closes on Escape | a
+  // click outside.
   import Settings from "@lucide/svelte/icons/settings";
   import type { LanguagePref, ThemePref, Tone } from "../../api";
+  import { conditions } from "../conditions/context.svelte";
   import { language, LOCALE_NAMES, LOCALES, t, type MessageKey } from "../i18n";
   import { look } from "../look.svelte";
+  import { contributions } from "../plugins/instance.svelte";
   import type { WindowStore } from "../window.svelte";
   import Segments from "./settings/Segments.svelte";
   import { ui } from "./ui.svelte";
@@ -30,6 +33,13 @@
   }
 
   let panel: HTMLElement | undefined = $state();
+  /** The quick rows of the plugins' own settings sections (order of their sections). */
+  const quick = $derived(
+    contributions
+      .visible("settingsPage", conditions.current)
+      .filter((p) => p.quick !== undefined)
+      .sort((a, b) => a.order - b.order),
+  );
 
   // closes on Escape | click outside (imperative listeners, torn down on close)
   $effect(() => {
@@ -93,6 +103,12 @@
       onchange={(value) => void store.changeSetting({ key: "tone", value })}
     />
   </div>
+
+  {#each quick as page (page.owner + page.id)}
+    {#await page.quick?.() then loaded}
+      {#if loaded}<loaded.default />{/if}
+    {/await}
+  {/each}
 
   <div class="foot">
     <button type="button" class="btn btn--sm" onclick={() => ui.openKeyboard()}>

@@ -706,3 +706,141 @@ describe("the code offer", () => {
     expect(rows(root).some((r) => r.dataset["path"] === "src")).toBe(false);
   });
 });
+
+describe("the new-file field", () => {
+  const field = (root: HTMLElement): HTMLInputElement => {
+    const input = root.querySelector<HTMLInputElement>("input[type=text]");
+    if (!input) throw new Error("no field");
+    return input;
+  };
+  const type = async (input: HTMLInputElement, value: string): Promise<void> => {
+    input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await tick();
+  };
+
+  it("says that .md is added and how a plain text file is made, as the field's description", async () => {
+    const { root, store } = await render();
+    store.beginNew("file");
+    await tick();
+    const input = field(root);
+    const id = input.getAttribute("aria-describedby");
+    expect(id).toBeTruthy();
+    const note = root.querySelector(`[id="${id ?? ""}"]`);
+    expect(note?.textContent).toBe(".md is added. End the name with .txt for a plain text file.");
+    expect(note?.getAttribute("role")).toBeNull();
+    // a problem takes its place (never two bubbles), and the note comes back with a good name
+    await type(input, "a.rtf");
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await vi.waitFor(() =>
+      expect(root.querySelector('[role="alert"]')?.textContent).toBe(
+        "End the name with .md or .txt.",
+      ),
+    );
+    expect(root.querySelector(".note")).toBeNull();
+    expect(input.getAttribute("aria-describedby")).toBeNull();
+    await type(input, "todo.txt");
+    await vi.waitFor(() => expect(root.querySelector('[role="alert"]')).toBeNull());
+    expect(root.querySelector(".field .note")).not.toBeNull();
+  });
+
+  it("is quiet for a new folder and a rename", async () => {
+    const { root, store } = await render();
+    store.beginNew("folder");
+    await tick();
+    expect(field(root).getAttribute("aria-describedby")).toBeNull();
+    expect(root.querySelector(".field .note")).toBeNull();
+    store.cancelEdit();
+    store.beginRename("README.md");
+    await tick();
+    expect(field(root).getAttribute("aria-describedby")).toBeNull();
+    expect(root.querySelector(".field .note")).toBeNull();
+  });
+});
+
+describe("plugin notes under the list", () => {
+  const code = ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts", "src/e.ts"];
+  const project = {
+    needs: [{ need: "workspace" as const, kinds: ["project" as const] }],
+    prefers: [],
+  };
+  const view = () => import("../testing/NoteProbe.svelte");
+  const note = (root: HTMLElement): HTMLElement | null => root.querySelector(".probe-note");
+
+  beforeEach(() => {
+    conditions.set({ ...neutralContext(), workspace: "project" });
+  });
+  afterEach(() => {
+    conditions.set(neutralContext());
+  });
+
+  it("shows the first note that has something to say, one at a time, after the code offer", async () => {
+    const { root, registry } = await render("never", code);
+    const said = { first: false, second: true };
+    registry.register({
+      kind: "explorerNote",
+      id: "p.second",
+      order: 20,
+      owner: "p",
+      requires: project,
+      when: () => said.second,
+      view,
+    });
+    registry.register({
+      kind: "explorerNote",
+      id: "p.first",
+      order: 10,
+      owner: "p",
+      requires: project,
+      when: () => said.first,
+      view,
+    });
+    await tick();
+    // the code offer comes first: the note waits
+    expect(root.querySelector(".code-offer")).not.toBeNull();
+    expect(note(root)).toBeNull();
+    const decline = Array.from(root.querySelectorAll<HTMLButtonElement>(".code-offer button")).find(
+      (b) => b.textContent?.trim() === "No thanks",
+    );
+    decline?.click();
+    // answered: the note shows in the same session, alone
+    await vi.waitFor(() => expect(note(root)).not.toBeNull());
+    expect(root.querySelector(".code-offer")).toBeNull();
+    expect(root.querySelectorAll(".probe-note")).toHaveLength(1);
+    // above the counts line
+    const foot = root.querySelector(".foot");
+    expect(foot && note(root)?.compareDocumentPosition(foot)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    // its button hands focus back to the list
+    note(root)?.querySelector("button")?.click();
+    expect(document.activeElement?.getAttribute("role")).toBe("tree");
+  });
+
+  it("is not drawn where its requirement is unmet or no note has something to say", async () => {
+    const { root, registry } = await render();
+    registry.register({
+      kind: "explorerNote",
+      id: "p.never",
+      order: 10,
+      owner: "p",
+      requires: project,
+      when: () => false,
+      view,
+    });
+    await tick();
+    expect(note(root)).toBeNull();
+    registry.register({
+      kind: "explorerNote",
+      id: "p.yes",
+      order: 20,
+      owner: "p",
+      requires: project,
+      when: () => true,
+      view,
+    });
+    await vi.waitFor(() => expect(note(root)).not.toBeNull());
+    conditions.set({ ...neutralContext(), workspace: "singleFile" });
+    await vi.waitFor(() => expect(note(root)).toBeNull());
+  });
+});

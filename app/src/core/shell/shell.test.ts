@@ -102,7 +102,16 @@ afterEach(async () => {
   unregister?.();
   // put the shared mock back where the next test expects it
   await store.changeSetting({ key: "openIn", value: "tab" });
-  for (const id of ["git", "unread", "review", "notes", "agent", "updates", "shell-integration"]) {
+  for (const id of [
+    "git",
+    "unread",
+    "review",
+    "notes",
+    "agent",
+    "token-count",
+    "updates",
+    "shell-integration",
+  ]) {
     await store.changeSetting({ key: "pluginEnabled", value: { plugin: id, enabled: null } });
   }
   mock.probe.shell.setOthers([]);
@@ -224,6 +233,8 @@ describe("the settings page", () => {
     );
     expect(headings[0]).toBe("Default app");
     expect(headings).toEqual(expect.arrayContaining(["File manager", "Updates", "Git", "Notes"]));
+    // the agent connection has its own section (Settings > AI agents)
+    expect(headings).not.toContain("Agent connection");
     // Windows: who opens the files now, and the way to Windows' own page
     await until(
       () => target.textContent?.includes("Choose in Windows Settings") === true,
@@ -231,7 +242,7 @@ describe("the settings page", () => {
     );
     expect(target.textContent).toContain("Opens with PerMark");
     // plugins off: their sections go, the default app stays
-    for (const id of ["git", "notes", "agent", "updates", "shell-integration"]) {
+    for (const id of ["git", "notes", "token-count", "updates", "shell-integration"]) {
       await store.changeSetting({ key: "pluginEnabled", value: { plugin: id, enabled: false } });
     }
     await until(

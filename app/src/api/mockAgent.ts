@@ -32,6 +32,10 @@ export type AgentProbe = {
   connect(client: string | null): void;
   /** An agent asked something. */
   request(record: AgentRequest): void;
+  /** The switch turned from outside the window (another window, the palette of another view). */
+  setEnabled(on: boolean): void;
+  /** The server fails to start (`inUse`: another PerMark serves the project; any other text: the reason) | runs. */
+  fail(reason: string | null): void;
   status(): AgentStatus;
   /** The hand-offs confirmed, as `{ upto, checked }`. */
   handedOff: { upto: number; checked: number[] }[];
@@ -92,12 +96,17 @@ export function createMockAgent(
     GROUPS.map((g) => [g, !DEFAULT_OFF.has(g)]),
   );
   let clients: string[] = [];
+  let failure: string | null = null;
   let recent: AgentRequest[] = [];
   const published: AgentWindowContext[] = [];
   const handedOff: { upto: number; checked: number[] }[] = [];
   const status = (): AgentStatus => ({
     enabled,
-    server: enabled ? { state: "listening" } : { state: "off" },
+    server: !enabled
+      ? { state: "off" }
+      : failure !== null
+        ? { state: "error", reason: failure }
+        : { state: "listening" },
     clients: enabled ? clients : [],
     groups: { ...groups },
     denied: [],
@@ -157,6 +166,15 @@ export function createMockAgent(
     handlers,
     probe: {
       published,
+      setEnabled: (on) => {
+        enabled = on;
+        if (!on) clients = [];
+        announce();
+      },
+      fail: (reason) => {
+        failure = reason;
+        announce();
+      },
       connect: (client) => {
         clients = client === null ? [] : [client];
         announce();

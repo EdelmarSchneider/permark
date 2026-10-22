@@ -220,6 +220,8 @@ export function createMockApi(): Api & {
   // the mock folder has `CLAUDE.md` (a project that calls for agents): Live changes starts closed so the scenarios and
   // calibration fixtures look as before; seeds `agentProject` | `gitOnlyProject` | `plainFolder` remove this
   session.set("layout.views", { v: 1, open: { "live-feed.panel": false }, selected: [] });
+  // ...and its offer to share it with agents was answered, for the same reason (probe seed `agent offer=unasked`)
+  session.set("agent.offer", "declined");
   /** Facts of a shown project's context over the mock's own (`agentFiles` until the backend type has it). */
   let contextOver: Record<string, unknown> = { agentFiles: ["CLAUDE.md"] };
   const listeners: { [E in EventName]: Set<(payload: Events[E]) => void> } = {

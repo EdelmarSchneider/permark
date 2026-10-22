@@ -1,12 +1,15 @@
 <script lang="ts">
   // The agent item of the status bar, only while the switch is on: a dot and "Agent" (waiting), the client's name
-  // (connected) or a problem. A click opens what is shared, the latest requests, Turn off and the setup command.
+  // (connected) or a problem. A click opens what is shared, the latest requests, Turn off, the setup command and the
+  // way to the settings section.
   import Bot from "@lucide/svelte/icons/bot";
   import type { AgentRequest } from "../../api";
   import { t, type MessageKey } from "../../core/i18n";
+  import { ui } from "../../core/shell/ui.svelte";
   import { claudeCodeCommand } from "./setup";
   import { GROUPS } from "./groups";
   import { handOff } from "./handoff.svelte";
+  import { AGENT_PAGE } from "./offer.svelte";
   import { agent } from "./store.svelte";
 
   const status = $derived(agent.status);
@@ -161,6 +164,16 @@
             {t("agent.popover.turnOff")}
           </button>
         </div>
+        <button
+          type="button"
+          class="settings-link"
+          onclick={() => {
+            agent.popover = false;
+            ui.openSettingsPage(AGENT_PAGE, "content");
+          }}
+        >
+          {t("agent.statusSettings")}
+        </button>
       </div>
     {/if}
   </span>
@@ -277,6 +290,17 @@
   .time {
     color: var(--muted);
     font-variant-numeric: tabular-nums;
+  }
+  .settings-link {
+    display: block;
+    margin: var(--sp-2) 0 0 auto;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--accent-text);
+    font: inherit;
+    text-decoration: underline;
+    cursor: pointer;
   }
   .actions {
     display: flex;

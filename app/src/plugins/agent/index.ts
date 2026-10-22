@@ -1,10 +1,13 @@
 // Plugin `agent`: the agent connection of a project. Dormant until the person turns it on: then a status item (who is
-// connected, what was asked), the context the window publishes, and the places an agent asks to show. The settings
-// rows and the hand-off (palette; the status popover too while the switch is on) are there whenever the plugin is on.
+// connected, what was asked), the context the window publishes, and the places an agent asks to show. Its own settings
+// section (+ a row in the gear popover), the hand-off (palette; the status popover too while the switch is on) and the
+// once-only offer of a project holding agent files are there whenever the plugin is on.
 
 import type { Requirement } from "../../core/conditions/available";
 import { definePlugin } from "../../core/plugins/registry.svelte";
+import { ui } from "../../core/shell/ui.svelte";
 import { handOff } from "./handoff.svelte";
+import { AGENT_PAGE, offer } from "./offer.svelte";
 import { claudeCodeCommand } from "./setup";
 import { agent } from "./store.svelte";
 
@@ -18,6 +21,7 @@ export default definePlugin({
   manifest: { id: "agent", kind: "feature", dependsOn: [] },
   activate(cx) {
     const stop = agent.start();
+    const stopOffer = offer.start();
     const removals = [
       cx.contribute({
         kind: "statusItem",
@@ -44,11 +48,28 @@ export default definePlugin({
         run: () => void handOff.open(),
       }),
       cx.contribute({
-        kind: "settingsSection",
-        id: "agent.settings",
-        label: "agent.title",
+        kind: "settingsPage",
+        id: AGENT_PAGE,
+        label: "agent.section",
+        order: 30,
         requires: PROJECT,
-        view: () => import("./AgentSettings.svelte"),
+        view: () => import("./AgentSection.svelte"),
+        quick: () => import("./AgentQuick.svelte"),
+      }),
+      cx.contribute({
+        kind: "explorerNote",
+        id: "agent.offer",
+        order: 10,
+        requires: PROJECT,
+        when: () => offer.shown,
+        view: () => import("./AgentOffer.svelte"),
+      }),
+      cx.contribute({
+        kind: "command",
+        id: "agent.openSettings",
+        label: "agent.cmd.settings",
+        requires: PROJECT,
+        run: () => ui.openSettingsPage(AGENT_PAGE, "content"),
       }),
       cx.contribute({
         kind: "projectSection",
@@ -88,6 +109,7 @@ export default definePlugin({
       for (const remove of removals) remove();
       agent.popover = false;
       handOff.close();
+      stopOffer();
       stop();
     };
   },
