@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { relativeTime } from "./time";
+import { compactRelativeFormat, relativeTime } from "./time";
 
 const NOW = Date.UTC(2026, 9, 19, 12, 0, 0);
 const MIN = 60_000;
@@ -17,6 +17,19 @@ describe("relativeTime", () => {
     expect(relativeTime(NOW - 800 * DAY, NOW, "en")).toBe("2 years ago");
     expect(relativeTime(NOW - 3 * HOUR, NOW, "de")).toBe("vor 3 Stunden");
     expect(relativeTime(NOW - DAY, NOW, "pt-BR")).toBe("ontem");
+    expect(relativeTime(NOW - 3 * HOUR, NOW, "ja")).toBe("3 時間前");
+    expect(relativeTime(NOW - 5 * MIN, NOW, "ko")).toBe("5분 전");
+  });
+
+  it("keeps the compact form readable: no bare minus sign where narrow has one", () => {
+    expect(compactRelativeFormat("en").format(-3, "minute")).toBe("3m ago");
+    // Intl puts no-break spaces in some of these
+    expect(compactRelativeFormat("fr").format(-3, "minute")).toMatch(/^il\sy\sa\s3\smin$/);
+    expect(compactRelativeFormat("pt-PT").format(-2, "hour")).toMatch(/^há\s2\sh$/);
+    expect(compactRelativeFormat("ro").format(-4, "day")).toMatch(/^acum\s4\szile$/);
+    for (const locale of ["en", "pt-BR", "es", "de", "zh-CN", "it", "ja", "ko", "ca", "gl"]) {
+      expect(compactRelativeFormat(locale).format(-3, "minute"), locale).not.toMatch(/^[-\u2212]/);
+    }
   });
 
   it("a moment ahead of now (a clock that differs) reads as now, and nothing throws on odd numbers", () => {

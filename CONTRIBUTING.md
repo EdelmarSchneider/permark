@@ -48,27 +48,31 @@ npm run fmt     # fixes formatting (rustfmt and prettier)
 - The version number lives in `app/package.json`. `npm run version:sync` copies it to the other files; you rarely need it.
 
 ## Translations
-PerMark speaks English, Português (Brasil), Español, Deutsch, 简体中文 and Italiano. English is the source language and
-the fallback.
+PerMark speaks English, Português (Brasil), Español, Deutsch, 简体中文, Italiano, 日本語, 한국어, Français, Português
+(Portugal), Català, Galego and Română. English is the source language and the fallback.
 
 - **Where.** One file per language in `app/src/core/i18n/locales/`: `en.ts`, `pt-BR.ts`, `es.ts`, `de.ts`, `zh-CN.ts`,
-  `it.ts`. Each is a flat list of `"area.key": "text"` pairs. The comment at the top of a file states the tone of that
-  language (for example how buttons and hints address the reader); please follow it.
+  `it.ts`, `ja.ts`, `ko.ts`, `fr.ts`, `pt-PT.ts`, `ca.ts`, `gl.ts`, `ro.ts`. Each is a flat list of `"area.key": "text"`
+  pairs. The comment at the top of a file states the tone of that language (for example how buttons and hints address
+  the reader); please follow it.
 - **Fixing a translation.** Edit the text in the language's file and run `npm run check`. Nothing else changes.
-- **Adding or renaming a string.** Add the key to `en.ts` and to all five other files in the same pull request, with a
+- **Adding or renaming a string.** Add the key to `en.ts` and to all twelve other files in the same pull request, with a
   real translation (not the English text). Use `t("area.key")` in the code; `t("area.key", { name })` fills a
   `{name}` placeholder.
-- **Parity test.** `npm run check` fails when a language lacks a key or has an extra one, when a placeholder differs from
-  the English one, when a text is empty, or when `app.name` is not "PerMark". It also fails to compile when code uses a
-  key that English does not have.
+- **Parity test.** `npm run check` fails when a language lacks a key or has an extra one (a `.few` form aside), when a
+  placeholder differs from the English one, when a text is empty, or when `app.name` is not "PerMark". It also fails to
+  compile when code uses a key that English does not have.
 - **Plurals.** A text that depends on a number has two keys, `area.key.one` and `area.key.other`, and code calls
   `tn("area.key", count)`; `{n}` is the count. The plural rules of the active language pick the key: "one" where the
-  language calls the count singular, "other" for every other count. Every language file has both keys (Chinese has a
-  single plural form, so its `.one` text is never shown, but it must exist and make sense). Write the number as `{n}`.
+  language calls the count singular, "other" for every other count. Every language file has both keys (Chinese,
+  Japanese and Korean have a single plural form, so their `.one` text is never shown, but it must exist and make sense).
+  Romanian also has a third form, `area.key.few`, for 0 and 2 to 19 ("2 fișiere"), where `.other` is for 20 and more
+  ("20 de fișiere"); `tn` reads `.few` when the language says "few" and the file has it. Write the number as `{n}`.
 - **Wording.** Keep product names and technical terms as they are (PerMark, Markdown, Git, MCP). Keep a text short enough
   for a button or a status bar, and say what happens in plain words.
 - **A new language** touches more than the table: the language list in `locales.ts`, the Rust language setting, the
-  Windows installer texts (`app/src-tauri/installer/hooks.nsh` and `tauri.conf.json`) and the Store manifest
+  Windows installer texts (`app/src-tauri/installer/hooks.nsh` and `tauri.conf.json`, plus a file in
+  `app/src-tauri/installer/languages/` for a language Tauri's installer does not translate) and the Store manifest
   (`app/src-tauri/msstore/AppxManifest.xml`). Please open an issue first.
 
 ## Sign your commits (DCO)

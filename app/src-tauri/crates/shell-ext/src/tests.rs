@@ -17,14 +17,44 @@ fn labels_follow_the_language_not_the_region() {
         "Mit PerMark öffnen"
     );
     assert_eq!(
-        labels::pick(&labels::OPEN, &["fr-FR", "pt-PT"]),
+        labels::pick(&labels::OPEN, &["sv-SE", "pt-BR"]),
         "Abrir com o PerMark"
+    );
+    assert_eq!(
+        labels::pick(&labels::NEW_MARKDOWN, &["sv-SE", "pt-PT"]),
+        "Novo ficheiro Markdown com o PerMark"
+    );
+    assert_eq!(
+        labels::pick(&labels::NEW_MARKDOWN, &["pt"]),
+        "Novo arquivo Markdown com o PerMark"
     );
     assert_eq!(
         labels::pick(&labels::NEW_MARKDOWN, &["zh-Hant-TW"]),
         "用 PerMark 新建 Markdown 文件"
     );
-    assert_eq!(labels::pick(&labels::OPEN, &["fr-FR"]), "Open with PerMark");
+    assert_eq!(
+        labels::pick(&labels::OPEN, &["sv-SE", "ja-JP"]),
+        "PerMark で開く"
+    );
+    assert_eq!(
+        labels::pick(&labels::NEW_MARKDOWN, &["JA_jp"]),
+        "PerMark で新しい Markdown ファイルを作成"
+    );
+    assert_eq!(labels::pick(&labels::OPEN, &["ko-KR"]), "PerMark로 열기");
+    assert_eq!(
+        labels::pick(&labels::OPEN, &["fr-CA"]),
+        "Ouvrir avec PerMark"
+    );
+    assert_eq!(
+        labels::pick(&labels::OPEN, &["ca-ES-valencia"]),
+        "Obre amb PerMark"
+    );
+    assert_eq!(labels::pick(&labels::OPEN, &["gl-ES"]), "Abrir con PerMark");
+    assert_eq!(
+        labels::pick(&labels::OPEN, &["ro-RO"]),
+        "Deschide cu PerMark"
+    );
+    assert_eq!(labels::pick(&labels::OPEN, &["sv-SE"]), "Open with PerMark");
     assert_eq!(
         labels::pick::<&str>(&labels::OPEN, &[]),
         "Open with PerMark"

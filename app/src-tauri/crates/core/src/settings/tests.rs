@@ -697,11 +697,19 @@ fn keymap_entries_of_0_6_0_read_under_the_new_ids() {
 }
 
 #[test]
-fn installer_codes_are_one_of_the_six_and_nothing_else() {
+fn installer_codes_are_one_of_the_thirteen_and_nothing_else() {
     use super::installer::language_from_code;
     assert_eq!(language_from_code("en"), Some(LanguagePref::En));
     assert_eq!(language_from_code(" pt-BR\r\n"), Some(LanguagePref::PtBr));
     assert_eq!(language_from_code("zh-CN"), Some(LanguagePref::ZhCn));
+    assert_eq!(language_from_code("ja"), Some(LanguagePref::Ja));
+    assert_eq!(language_from_code("ja-JP"), None);
+    assert_eq!(language_from_code("ko"), Some(LanguagePref::Ko));
+    assert_eq!(language_from_code("fr"), Some(LanguagePref::Fr));
+    assert_eq!(language_from_code("pt-PT"), Some(LanguagePref::PtPt));
+    assert_eq!(language_from_code("ca"), Some(LanguagePref::Ca));
+    assert_eq!(language_from_code("gl"), Some(LanguagePref::Gl));
+    assert_eq!(language_from_code("ro"), Some(LanguagePref::Ro));
     assert_eq!(
         language_from_code("de\0"),
         None,

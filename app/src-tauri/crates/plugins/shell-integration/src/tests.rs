@@ -68,15 +68,27 @@ fn languages_resolve_from_the_setting_or_the_system() {
         Language::De
     );
     assert_eq!(
-        Language::resolve(LanguagePref::System, &["fr-FR", "pt-PT"]),
+        Language::resolve(LanguagePref::System, &["sv-SE", "pt-BR"]),
         Language::PtBr
+    );
+    assert_eq!(
+        Language::resolve(LanguagePref::System, &["sv-SE", "pt-PT"]),
+        Language::PtPt
     );
     assert_eq!(
         Language::resolve(LanguagePref::System, &["zh-Hant-TW"]),
         Language::ZhCn
     );
     assert_eq!(
-        Language::resolve(LanguagePref::System, &["fr-FR"]),
+        Language::resolve(LanguagePref::System, &["sv-SE", "ja-JP"]),
+        Language::Ja
+    );
+    assert_eq!(
+        Language::resolve(LanguagePref::Ja, &["de-DE"]),
+        Language::Ja
+    );
+    assert_eq!(
+        Language::resolve(LanguagePref::System, &["sv-SE"]),
         Language::En
     );
     assert_eq!(
@@ -85,6 +97,21 @@ fn languages_resolve_from_the_setting_or_the_system() {
     );
     assert_eq!(Language::from_tag(""), None);
     assert_eq!(Language::from_tag("IT_it"), Some(Language::It));
+    assert_eq!(Language::from_tag("JA_jp"), Some(Language::Ja));
+    assert_eq!(Language::from_tag("jpn"), None);
+    assert_eq!(Language::from_tag("ko-KR"), Some(Language::Ko));
+    assert_eq!(Language::from_tag("kor"), None);
+    assert_eq!(Language::from_tag("fr-CA"), Some(Language::Fr));
+    assert_eq!(Language::from_tag("ca-ES-valencia"), Some(Language::Ca));
+    assert_eq!(Language::from_tag("gl-ES"), Some(Language::Gl));
+    assert_eq!(Language::from_tag("ro_MD"), Some(Language::Ro));
+    assert_eq!(Language::from_tag("rom"), None);
+    for tag in ["pt", "pt-BR", "pt_br", "pt-Latn", "pt-Latn-BR"] {
+        assert_eq!(Language::from_tag(tag), Some(Language::PtBr), "{tag}");
+    }
+    for tag in ["pt-PT", "PT_pt", "pt-AO", "pt-Latn-PT", "pt-150"] {
+        assert_eq!(Language::from_tag(tag), Some(Language::PtPt), "{tag}");
+    }
 }
 
 #[test]
@@ -128,6 +155,13 @@ fn the_installer_writes_the_same_entries_and_words() {
             (Language::De, 1031),
             (Language::ZhCn, 2052),
             (Language::It, 1040),
+            (Language::Ja, 1041),
+            (Language::Ko, 1042),
+            (Language::Fr, 1036),
+            (Language::PtPt, 2070),
+            (Language::Ca, 1027),
+            (Language::Gl, 1110),
+            (Language::Ro, 1048),
         ] {
             let line = format!(" {lcid} \"{}\"", entry.label(language));
             assert!(HOOKS.contains(&line), "hooks.nsh lacks {line}");
