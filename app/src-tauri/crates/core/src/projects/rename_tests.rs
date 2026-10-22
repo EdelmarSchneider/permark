@@ -203,6 +203,16 @@ fn news_of(live: &Live) -> Vec<ProjectEvent> {
     live.news.lock().unwrap().clone()
 }
 
+/// `(gone, appeared)` rows told so far.
+fn told(live: &Live) -> (usize, usize) {
+    let news = news_of(live);
+    let count = |f: fn(&ProjectEvent) -> bool| news.iter().filter(|e| f(e)).count();
+    (
+        count(|e| matches!(e, ProjectEvent::Gone { .. })),
+        count(|e| matches!(e, ProjectEvent::Appeared { .. })),
+    )
+}
+
 /// A move whose halves come in two batches (the watch cannot pair them; macOS splits a rename so): the folder that
 /// comes during the window is the same folder on disk -> one `moved` row, no gone, no strip. The clock is stopped: the
 /// window cannot end by itself here.
@@ -239,16 +249,12 @@ fn a_lookalike_during_the_window_waits_and_is_never_paired() {
         live.record().contains("path = \"inner/beta\""),
         "never re-attached silently"
     );
+    // rows go out after the map (the view may show the end state first)
+    wait("rows", || told(&live) == (1, 1));
+    // late batches have their chance to add a row
+    std::thread::sleep(Duration::from_millis(300));
     let news = news_of(&live);
-    let gone = news
-        .iter()
-        .filter(|e| matches!(e, ProjectEvent::Gone { .. }))
-        .count();
-    let came = news
-        .iter()
-        .filter(|e| matches!(e, ProjectEvent::Appeared { .. }))
-        .count();
-    assert_eq!((gone, came), (1, 1), "{news:?}");
+    assert_eq!(told(&live), (1, 1), "{news:?}");
     assert!(
         !news.iter().any(|e| matches!(e, ProjectEvent::Moved { .. })),
         "{news:?}"
@@ -301,14 +307,9 @@ fn the_window_ends_by_itself() {
         "not before the window ends"
     );
     assert_eq!(live.core.projects().vanished_count(), 0);
-    let news = news_of(&live);
-    assert_eq!(
-        news.iter()
-            .filter(|e| matches!(e, ProjectEvent::Gone { .. }))
-            .count(),
-        1,
-        "{news:?}"
-    );
+    wait("gone row", || told(&live).0 == 1);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(told(&live), (1, 0), "{:?}", news_of(&live));
 }
 
 #[test]
