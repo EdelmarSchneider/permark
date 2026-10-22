@@ -548,3 +548,114 @@ fn deep_nesting_is_one_locked_block() {
     assert_eq!(kinds("").len(), 0);
     assert_eq!(kinds("\n\n  \n").len(), 0);
 }
+
+// ---- verify B3: saves in a single-file window, adversarial --------------------------------------------------------
+
+#[test]
+fn a_single_file_sibling_changed_on_disk_is_a_conflict_never_overwritten() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("only.md");
+    std::fs::write(&file, b"# Only\n").unwrap();
+    std::fs::write(dir.path().join("other.md"), b"a\r\nb\r\n").unwrap();
+    let scope = DocScope::File(FileScope::open(&file).unwrap());
+    let formats = formats();
+    let editor = Editor {
+        scope: &scope,
+        formats: &formats,
+        own: None,
+        observer: None,
+    };
+    let seen = editor.source("other.md").unwrap();
+    // an agent | another program writes the sibling after the person opened it
+    std::fs::write(dir.path().join("other.md"), b"agent\r\n").unwrap();
+    let outcome = editor
+        .save("other.md", &seen.hash, &[edit(1, 0, &["mine"])])
+        .unwrap();
+    assert!(
+        matches!(outcome, SaveOutcome::Conflict { .. }),
+        "{outcome:?}"
+    );
+    assert_eq!(
+        std::fs::read(dir.path().join("other.md")).unwrap(),
+        b"agent\r\n"
+    );
+    // surgical on the sibling: CRLF kept, untouched lines byte-identical
+    let fresh = editor.source("other.md").unwrap();
+    editor
+        .save("other.md", &fresh.hash, &[edit(1, 0, &["mine"])])
+        .unwrap();
+    assert_eq!(
+        std::fs::read(dir.path().join("other.md")).unwrap(),
+        b"agent\r\nmine\r\n"
+    );
+}
+
+#[test]
+fn a_single_file_never_saves_through_a_way_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("only.md");
+    std::fs::write(&file, b"# Only\n").unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret.md"), b"s\n").unwrap();
+    let scope = DocScope::File(FileScope::open(&file).unwrap());
+    let formats = formats();
+    let editor = Editor {
+        scope: &scope,
+        formats: &formats,
+        own: None,
+        observer: None,
+    };
+    let source = editor.source("only.md").unwrap();
+    let secret = outside.path().join("secret.md").display().to_string();
+    let mut bad = vec![
+        "../secret.md".to_owned(),
+        "..\\secret.md".to_owned(),
+        secret.clone(),
+        "C:secret.md".to_owned(),
+        "\\\\?\\".to_owned() + &secret,
+        "//server/share/x.md".to_owned(),
+        String::new(),
+    ];
+    if cfg!(windows) {
+        bad.push("only.md:stream".to_owned());
+        bad.push("only.md::$DATA".to_owned());
+    }
+    let linked = link_out(&dir.path().join("jump"), outside.path());
+    if linked {
+        bad.push("jump/secret.md".to_owned());
+        bad.push("jump/new.md".to_owned());
+    }
+    for path in &bad {
+        assert!(
+            editor
+                .save(path, &source.hash, &[edit(1, 0, &["x"])])
+                .is_err(),
+            "save {path}"
+        );
+        assert!(editor.save_as(path, "x\n", true).is_err(), "save as {path}");
+    }
+    assert_eq!(
+        std::fs::read(outside.path().join("secret.md")).unwrap(),
+        b"s\n"
+    );
+    assert!(!outside.path().join("new.md").exists());
+    assert_eq!(std::fs::read(&file).unwrap(), b"# Only\n");
+}
+
+/// A link (Unix: symlink; Windows: junction, no admin needed) at `link` leading to `target`.
+fn link_out(link: &std::path::Path, target: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .stdout(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    }
+}

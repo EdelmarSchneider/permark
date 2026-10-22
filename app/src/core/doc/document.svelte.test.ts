@@ -555,3 +555,80 @@ describe("where the reader is", () => {
     expect(reading.scrollOf("d59.md")).toBe(69);
   });
 });
+
+// ---- verify B3: never run, never leave the folder (adversarial) ------------------------------------------------
+
+describe("verify B3: code references and single-file links never run a program", () => {
+  const programs = [
+    "tools/run.exe",
+    "tools/setup.msi",
+    "tools/go.bat",
+    "tools/go.cmd",
+    "tools/go.ps1",
+    "tools/go.sh",
+    "tools/go.lnk",
+    "tools/go.url",
+    "tools/go.desktop",
+    "tools/go.scr",
+    "tools/go.jar",
+    "tools/go",
+    "tools/.bashrc",
+    "tools/go.EXE",
+  ];
+
+  it("a reference to a program: PerMark shows it or the person's editor gets it, never the system", async () => {
+    for (const editor of [false, true]) {
+      for (const modifier of [false, true]) {
+        const fx = await setup();
+        for (const path of programs) fx.api.probe.project.add(path, "MZ");
+        if (editor) await chooseEditor(fx);
+        await open(fx, "README.md");
+        for (const path of programs) {
+          await fx.doc.openCodeRef({ paths: [path], line: 1, col: null }, path, modifier);
+          await tick();
+        }
+        expect(fx.api.probe.opened).toEqual([]);
+        expect(fx.failures).toEqual([]);
+        if (editor) {
+          expect(fx.api.probe.editor.map((e) => e.path)).toEqual(programs);
+        } else {
+          expect(fx.api.probe.editor).toEqual([]);
+        }
+      }
+    }
+  });
+
+  it("a single file: links to programs and odd spellings stay inert or inside", async () => {
+    const fx = await setup(`${MOCK_FOLDER}/README.md`);
+    for (const path of programs) fx.api.probe.project.add(path, "MZ");
+    await showSingle(fx);
+    const hrefs = [
+      ...programs,
+      "file:///C:/Windows/System32/calc.exe",
+      "C:\\Windows\\System32\\calc.exe",
+      "\\\\server\\share\\run.exe",
+      "javascript:alert(1)",
+      "vbscript:x",
+      "data:text/html,<script>x</script>",
+    ];
+    for (const href of hrefs) {
+      await fx.doc.activateLink(href);
+      await showSingle(fx);
+    }
+    expect(fx.api.probe.opened).toEqual([]);
+    expect(fx.api.probe.editor).toEqual([]);
+  });
+
+  it("a single file: links clicked in a burst end on the last one", async () => {
+    const fx = await setup(`${MOCK_FOLDER}/README.md`);
+    await showSingle(fx);
+    await Promise.all([
+      fx.doc.activateLink("docs/guide.md"),
+      fx.doc.activateLink("notes/todo.txt"),
+      fx.doc.activateLink("docs/guide.md"),
+    ]);
+    await showSingle(fx);
+    expect(fx.doc.singleDoc).toBe("docs/guide.md");
+    expect(fx.doc.path).toBe("docs/guide.md");
+  });
+});
