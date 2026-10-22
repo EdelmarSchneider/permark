@@ -649,8 +649,6 @@ export default {
   "git.error": "Git 无法读取此仓库。",
   "live.label": "实时更改",
   "live.chipCount": "实时 · {n}",
-  "live.chipLabel.one": "实时更改，{n} 条新内容",
-  "live.chipLabel.other": "实时更改，{n} 条新内容",
   "live.last": "最近更改 {ago}",
   "live.none": "暂无更改",
   "outline.tab": "大纲",

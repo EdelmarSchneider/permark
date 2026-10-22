@@ -43,6 +43,8 @@
   });
 
   const follow = $derived(followStore());
+  /** The newest row of the panel, outside change or the person's own action (the header line says it). */
+  const latest = $derived(Math.max(feed.lastAt, feed.mine.at(-1)?.at ?? 0));
   const followHint = $derived(keyHint("follow.toggle"));
 
   function open(item: FeedItem): void {
@@ -132,41 +134,44 @@
 
 <section class="feed" aria-label={t("live.label")}>
   <header data-view-header>
-    <h2 title={t("live.label")}>{t("live.label")}</h2>
-    <span class="spacer"></span>
-    {#if follow !== null}
+    <!-- the title and the buttons on one line at any width: the title gives way (ellipsis), the buttons never wrap -->
+    <div class="top">
+      <h2 title={t("live.label")}>{t("live.label")}</h2>
+      <span class="spacer"></span>
+      {#if follow !== null}
+        <button
+          type="button"
+          class="follow"
+          aria-pressed={follow.on}
+          title={followHint === null
+            ? t("follow.toggle")
+            : t("follow.buttonHint", { key: followHint })}
+          onclick={() => follow?.toggle()}
+        >
+          <Radio size={13} aria-hidden="true" />
+          {t("follow.button")}
+        </button>
+      {/if}
       <button
         type="button"
-        class="follow"
-        aria-pressed={follow.on}
-        title={followHint === null
-          ? t("follow.toggle")
-          : t("follow.buttonHint", { key: followHint })}
-        onclick={() => follow?.toggle()}
+        class="icon"
+        title={t("feed.clear")}
+        aria-label={t("feed.clear")}
+        onclick={() => void feed.clear()}
       >
-        <Radio size={13} aria-hidden="true" />
-        {t("follow.button")}
+        <RefreshCw size={14} />
       </button>
-    {/if}
-    <button
-      type="button"
-      class="icon"
-      title={t("feed.clear")}
-      aria-label={t("feed.clear")}
-      onclick={() => void feed.clear()}
-    >
-      <RefreshCw size={14} />
-    </button>
-    {@render viewMenu?.()}
-    <button
-      type="button"
-      class="icon close"
-      aria-label={t("feed.close")}
-      title={t("feed.close")}
-      onclick={() => closeView(PANEL)}>×</button
-    >
+      {@render viewMenu?.()}
+      <button
+        type="button"
+        class="icon close"
+        aria-label={t("feed.close")}
+        title={t("feed.close")}
+        onclick={() => closeView(PANEL)}>×</button
+      >
+    </div>
     <p class="last">
-      {feed.lastAt > 0 ? t("live.last", { ago: ago(feed.lastAt, now) }) : t("live.none")}
+      {latest > 0 ? t("live.last", { ago: ago(latest, now) }) : t("live.none")}
     </p>
     <div class="show" role="radiogroup" aria-label={t("feed.show.label")}>
       {#each SHOWS as show (show.id)}
@@ -330,18 +335,32 @@
     padding: var(--sp-2) var(--sp-3);
     border-bottom: 1px solid var(--border);
   }
-  h2 {
+  .top {
+    display: flex;
+    flex-basis: 100%;
+    align-items: center;
+    gap: var(--sp-1);
+    min-width: 0;
+  }
+  .top > :global(*) {
+    flex: none;
+  }
+  /* same title style as the outline above it (one column, one look) */
+  .top > h2 {
     flex: 0 1 auto;
     min-width: 0;
     margin: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: var(--fs-ui);
+    color: var(--muted);
+    font-size: var(--fs-ui-xs);
     font-weight: 600;
+    letter-spacing: 0.05em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
-  .spacer {
-    flex: 1;
+  .top > .spacer {
+    flex: 1 1 0;
   }
   .follow {
     display: inline-flex;
@@ -365,8 +384,9 @@
   /* pressed = the look of the "Following" pill */
   .follow[aria-pressed="true"] {
     border-color: transparent;
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: var(--accent);
+    background: var(--accent-soft);
+    /* the accent text, a touch toward --text: AA with margin in every light tone */
+    color: color-mix(in srgb, var(--accent-text) 85%, var(--text));
   }
   .last {
     flex-basis: 100%;
@@ -494,11 +514,12 @@
   .handoff .icon-cell {
     color: var(--accent);
   }
+  /* the file name keeps room (at least 40 % of the row); the badges give way first (ellipsis) */
   .text {
     display: flex;
     flex-direction: column;
     flex: 1;
-    min-width: 0;
+    min-width: 40%;
   }
   .name,
   .folder {
@@ -511,7 +532,11 @@
     font-size: var(--fs-ui-xs);
   }
   .tag {
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     padding: 0 6px;
     border-radius: 999px;
     background: var(--surface-2);

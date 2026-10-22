@@ -680,8 +680,6 @@ export default {
   "git.error": "O Git não consegue ler este repositório.",
   "live.label": "Alterações ao vivo",
   "live.chipCount": "Ao vivo · {n}",
-  "live.chipLabel.one": "Alterações ao vivo, {n} nova",
-  "live.chipLabel.other": "Alterações ao vivo, {n} novas",
   "live.last": "Última alteração {ago}",
   "live.none": "Nenhuma alteração ainda",
   "outline.tab": "Estrutura",

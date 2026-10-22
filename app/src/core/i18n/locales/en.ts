@@ -664,8 +664,6 @@ const en = {
   "git.error": "Git can't read this repository.",
   "live.label": "Live changes",
   "live.chipCount": "Live · {n}",
-  "live.chipLabel.one": "Live changes, {n} new",
-  "live.chipLabel.other": "Live changes, {n} new",
   "live.last": "Last change {ago}",
   "live.none": "No changes yet",
   "outline.tab": "Outline",

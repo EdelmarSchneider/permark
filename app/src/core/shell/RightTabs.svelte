@@ -105,7 +105,11 @@
       data-view={view.id}
       tabindex={stop === view.id ? 0 : -1}
       aria-selected={selected === view.id}
-      aria-label={view.badge === null ? view.label : `${view.label} (${view.badge})`}
+      aria-label={iconOnly
+        ? view.badge === null
+          ? view.label
+          : `${view.label} ${view.badge}`
+        : undefined}
       title={view.label}
       onclick={() => {
         if (view.id !== selected) onselect(view.id);
@@ -121,7 +125,7 @@
         <Icon size={14} />
       {/if}
       {#if !iconOnly}<span class="label">{view.label}</span>{/if}
-      {#if view.badge !== null}<span class="badge" aria-hidden="true">{view.badge}</span>{/if}
+      {#if view.badge !== null}{" "}<span class="badge">{view.badge}</span>{/if}
     </button>
   {/each}
 </div>

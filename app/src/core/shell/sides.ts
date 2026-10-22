@@ -2,6 +2,7 @@
 // the stores' state read, the pure step of `layout.ts` applied, the frame animated, the focus let go of a region that
 // hides (its controls go inert: keys reach the page).
 
+import { tick } from "svelte";
 import type { WindowView } from "../../api";
 import { reading } from "../doc/reading.svelte";
 import { windowStore } from "../window.svelte";
@@ -121,17 +122,26 @@ export function showView(id: string): void {
 
 /** Closes a view of the right column (its place in the arrangement stays): a panel closed, the outline off. */
 export function closeView(id: string): void {
-  // the keyboard was in that view: it goes to another view's options, else to the page
-  if (typeof document !== "undefined") {
-    const active = document.activeElement;
-    if (active instanceof HTMLElement && active.closest(`[data-right-view="${id}"]`) !== null) {
-      const other = [...document.querySelectorAll<HTMLElement>("[data-view-menu]")].find(
-        (el) => el.dataset["viewMenu"] !== id,
-      );
-      if (other) other.focus();
-      else focusPage(active);
-    }
-  }
+  const active = typeof document === "undefined" ? null : document.activeElement;
+  const inside =
+    active instanceof HTMLElement && active.closest(`[data-right-view="${id}"]`) !== null;
   if (id === OUTLINE) reading.setOutline(false);
   else layout.setOpen(id, false);
+  // the keyboard was in that view: once it is gone, the next control of the right column takes it (else the page);
+  // never the page body
+  if (inside && active instanceof HTMLElement) {
+    const was = active;
+    void tick().then(() => keepFocus(was));
+  }
+}
+
+/** After a view closed under the focus: the first control of a view still shown, else the page. */
+function keepFocus(was: HTMLElement): void {
+  const now = document.activeElement;
+  if (now instanceof HTMLElement && now !== document.body && now.isConnected) return;
+  const next = document.querySelector<HTMLElement>(
+    '[data-region="right"] [data-right-view]:not([hidden]) :is(button:not([disabled]), [tabindex="0"], input, a[href])',
+  );
+  if (next) next.focus();
+  else focusPage(was);
 }

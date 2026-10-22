@@ -121,27 +121,30 @@
 ></div>
 
 <style>
-  /* a 1 px line in the column; the hit zone (8 px) reaches over the views around it */
+  /* the whole divider track (7 px) is the grab zone; the 1 px line sits in its middle; nothing of a view under it */
   .divider {
     position: relative;
-    z-index: 2;
-    height: 1px;
-    background: var(--border);
+    height: 100%;
     cursor: row-resize;
     touch-action: none;
     outline: none;
   }
-  .divider::before {
+  .divider::after {
     content: "";
     position: absolute;
-    inset: -4px 0 -3px;
+    top: 3px;
+    right: 0;
+    left: 0;
+    height: 1px;
+    background: var(--border);
   }
-  .divider:hover,
-  .divider.is-dragging {
+  .divider:hover::after,
+  .divider.is-dragging::after {
     background: var(--accent-muted);
   }
-  .divider:focus-visible {
+  .divider:focus-visible::after {
+    top: 1px;
+    height: 5px;
     background: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent);
   }
 </style>

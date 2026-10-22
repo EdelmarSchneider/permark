@@ -53,9 +53,6 @@
     type="button"
     class="chip"
     aria-pressed={rightViews.onScreen(PANEL)}
-    aria-label={feed.unseen > 0
-      ? tn("live.chipLabel", feed.unseen, { n: countText(feed.unseen) })
-      : t("live.label")}
     title={t("live.label")}
     onclick={() => feed.toggle()}
   >

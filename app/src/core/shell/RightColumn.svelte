@@ -35,6 +35,8 @@
 
   /** A tab strip's height (px), for the "too short" check. */
   const STRIP_PX = 32;
+  /** The divider's track: its own room (the line in its middle), so it never covers a row of a view. */
+  const DIVIDER_PX = 7;
 
   let height = $state(0);
   const groups = $derived(rightViews.drawn);
@@ -46,7 +48,8 @@
   $effect(() => {
     const stacked = rightViews.stacked;
     const strips = stacked.filter((g) => g.views.length > 1).length;
-    const need = stacked.length * MIN_GROUP_PX + (stacked.length - 1) + strips * STRIP_PX;
+    const need =
+      stacked.length * MIN_GROUP_PX + (stacked.length - 1) * DIVIDER_PX + strips * STRIP_PX;
     rightViews.short = stacked.length > 1 && height > 0 && height < need;
   });
 
@@ -57,7 +60,7 @@
     divider: number | null;
   };
 
-  /** Grid rows: per group a strip (tabs only), its content (its share), a 1 px divider before the next group. */
+  /** Grid rows: per group a strip (tabs only), its content (its share), a divider before the next group. */
   const plan = $derived.by(() => {
     const tracks: string[] = [];
     const placed: Placed[] = [];
@@ -71,13 +74,35 @@
       const content = tracks.length;
       let divider: number | null = null;
       if (i < groups.length - 1) {
-        tracks.push("1px");
+        tracks.push(`${DIVIDER_PX}px`);
         divider = tracks.length;
       }
       placed.push({ group, strip, content, divider });
     });
     return { tracks: tracks.join(" "), placed };
   });
+
+  type Item =
+    | { key: string; kind: "strip"; place: Placed }
+    | { key: string; kind: "view"; id: string; place: Placed }
+    | { key: string; kind: "line"; place: Placed; next: Placed };
+
+  /**
+   * What the grid holds, in the order it is seen (= the Tab order): a group's strip, its views, the divider below it.
+   * One keyed list: a view moved to another group keeps its element (never remounted).
+   */
+  const items = $derived(
+    plan.placed.flatMap((place, i): Item[] => {
+      const next = plan.placed[i + 1];
+      return [
+        ...(place.strip !== null ? [{ key: `strip:${i}`, kind: "strip" as const, place }] : []),
+        ...place.group.views.map((id) => ({ key: `view:${id}`, kind: "view" as const, id, place })),
+        ...(place.divider !== null && next !== undefined
+          ? [{ key: `line:${i}`, kind: "line" as const, place, next }]
+          : []),
+      ];
+    }),
+  );
 
   function labelOf(id: string): string {
     if (id === OUTLINE) return t("outline.tab");
@@ -95,10 +120,6 @@
         badge: panel?.badge?.() ?? null,
       };
     });
-  }
-
-  function placedOf(id: string): Placed | undefined {
-    return plan.placed.find((p) => p.group.views.includes(id));
   }
 
   /** The view a group shows: alone, or its selected tab. */
@@ -238,78 +259,75 @@
 </script>
 
 <div class="column" bind:clientHeight={height} style:grid-template-rows={plan.tracks}>
-  {#each plan.placed as place, i (i)}
-    {#if place.strip !== null}
-      <div class="strip" style:grid-row={place.strip}>
+  {#each items as item (item.key)}
+    {#if item.kind === "strip"}
+      <div class="strip" style:grid-row={item.place.strip}>
         <RightTabs
-          views={tabsOf(place.group)}
-          selected={shownIn(place.group)}
+          views={tabsOf(item.place.group)}
+          selected={shownIn(item.place.group)}
           onselect={selectView}
           onmenu={openMenu}
         />
       </div>
-    {/if}
-    {#if place.divider !== null}
-      {@const next = plan.placed[i + 1]}
-      {#if next}
-        {@const top = shownIn(place.group) ?? ""}
-        {@const bottom = shownIn(next.group) ?? ""}
-        <div class="line" style:grid-row={place.divider}>
-          <ViewDivider
-            top={labelOf(top)}
-            bottom={labelOf(bottom)}
-            controls={`right-view-${top}`}
-            measure={() => ({ above: heightOf(place.group), below: heightOf(next.group) })}
-            onsplit={(ratio) =>
-              rightViews.arrange(
-                resizePair(rightViews.layout, place.group.at, next.group.at, ratio),
-              )}
-          />
-        </div>
-      {/if}
-    {/if}
-  {/each}
-  {#each present as id (id)}
-    {@const place = placedOf(id)}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="view"
-      id={`right-view-${id}`}
-      data-right-view={id}
-      style:grid-row={place?.content ?? 1}
-      hidden={place !== undefined && place.group.views.length > 1 && shownIn(place.group) !== id}
-      oncontextmenu={(event) => headerMenu(id, event)}
-      onkeydown={(event) => headerKeys(id, event)}
-    >
-      {#snippet options()}
-        <button
-          type="button"
-          class="options"
-          data-view-menu={id}
-          aria-label={t("panel.viewMenu", { name: labelOf(id) })}
-          title={t("panel.viewMenu", { name: labelOf(id) })}
-          aria-haspopup="menu"
-          aria-expanded={menu?.id === id}
-          onclick={(event) => openFrom(id, event.currentTarget)}
-        >
-          <Ellipsis size={14} aria-hidden="true" />
-        </button>
-      {/snippet}
-      {#if id === OUTLINE}
-        {#if outline}<OutlinePanel
-            items={outline}
-            viewMenu={arranging ? options : undefined}
-          />{/if}
-      {:else}
-        {@const panel = rightViews.panels.find((p) => p.id === id)}
-        {#if panel}
-          {#await panel.view() then loaded}
-            {@const PanelView = loaded.default as unknown as Component<PanelViewProps>}
-            <PanelView viewMenu={arranging ? options : undefined} />
-          {/await}
+    {:else if item.kind === "line"}
+      {@const top = shownIn(item.place.group) ?? ""}
+      {@const bottom = shownIn(item.next.group) ?? ""}
+      <div class="line" style:grid-row={item.place.divider}>
+        <ViewDivider
+          top={labelOf(top)}
+          bottom={labelOf(bottom)}
+          controls={`right-view-${top}`}
+          measure={() => ({ above: heightOf(item.place.group), below: heightOf(item.next.group) })}
+          onsplit={(ratio) =>
+            rightViews.arrange(
+              resizePair(rightViews.layout, item.place.group.at, item.next.group.at, ratio),
+            )}
+        />
+      </div>
+    {:else}
+      {@const id = item.id}
+      {@const tabbed = item.place.group.views.length > 1}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="view"
+        class:tabbed
+        id={`right-view-${id}`}
+        data-right-view={id}
+        style:grid-row={item.place.content}
+        hidden={tabbed && shownIn(item.place.group) !== id}
+        oncontextmenu={(event) => headerMenu(id, event)}
+        onkeydown={(event) => headerKeys(id, event)}
+      >
+        {#snippet options()}
+          <button
+            type="button"
+            class="options"
+            data-view-menu={id}
+            aria-label={t("panel.viewMenu", { name: labelOf(id) })}
+            title={t("panel.viewMenu", { name: labelOf(id) })}
+            aria-haspopup="menu"
+            aria-expanded={menu?.id === id}
+            onclick={(event) => openFrom(id, event.currentTarget)}
+          >
+            <Ellipsis size={14} aria-hidden="true" />
+          </button>
+        {/snippet}
+        {#if id === OUTLINE}
+          {#if outline}<OutlinePanel
+              items={outline}
+              viewMenu={arranging ? options : undefined}
+            />{/if}
+        {:else}
+          {@const panel = rightViews.panels.find((p) => p.id === id)}
+          {#if panel}
+            {#await panel.view() then loaded}
+              {@const PanelView = loaded.default as unknown as Component<PanelViewProps>}
+              <PanelView viewMenu={arranging ? options : undefined} />
+            {/await}
+          {/if}
         {/if}
-      {/if}
-    </div>
+      </div>
+    {/if}
   {/each}
   <p class="sr-only" role="status">{rightViews.status}</p>
 </div>
@@ -350,6 +368,15 @@
   }
   .view[hidden] {
     display: none;
+  }
+  /* a view shown as a tab: its tab names it, the header's title stays for screen readers only */
+  .view.tabbed :global([data-view-header] h2) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
   .options {
     display: inline-grid;
