@@ -107,7 +107,7 @@ pub fn tool_list() -> Vec<Tool> {
         .annotate(reading.clone()),
         Tool::new(
             "read",
-            "Text of one part of a file: `at` = heading path `A > B`, `#anchor`, key path, lines `L10-L40` | `L10` (from line 10 on); none = all.",
+            "Text of one part of a file: `at` = heading path `A > B`, `#anchor`, key path, lines `L10-L40` | `L10` (from line 10 on); no `at` = whole file.",
             schema(json!({ "type": "object", "properties": {
                 "path": path(),
                 "at": text("Part to read.")
