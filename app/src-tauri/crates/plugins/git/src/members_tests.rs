@@ -785,22 +785,50 @@ fn a_moved_member_keeps_its_session_and_a_visit_is_remembered_where_it_lives() {
     assert!(text.contains(&"a".repeat(40)), "{text}");
 }
 
+/// Ordering, not elapsed time: the window is far longer than any runner stall, so only the lock going away can
+/// release the refresh. No git call while `index.lock` exists; one soon after it is removed.
 #[test]
-fn the_index_lock_is_waited_out_a_little() {
+fn the_index_lock_is_waited_out_then_git_runs_once_it_is_gone() {
     let dir = tempfile::tempdir().unwrap();
     let fake = Fake::new(Duration::ZERO);
     let heard = Arc::new(Heard::default());
-    let members = Members::new(env(Some(fake_backend(&fake)), &heard, None));
+    let mut env = env(Some(fake_backend(&fake)), &heard, None);
+    env.timings.lock_wait = Duration::from_secs(60);
+    let members = Members::new(env);
     let list = members_in(dir.path(), &names(1, "p"));
     let lock_file = list[0].folder.join(".git/index.lock");
     std::fs::write(&lock_file, "").unwrap();
     members.sync(&list);
     let started = Instant::now();
     members.interest("main", Glance, &[list[0].uid.clone()]);
-    std::thread::sleep(Duration::from_millis(60));
+    std::thread::sleep(Duration::from_millis(150));
     assert_eq!(members.counters().1, 0, "waits while git writes the index");
-    wait_until("answer after the wait", || settled(&members));
-    assert!(started.elapsed() >= Duration::from_millis(140));
+    std::fs::remove_file(&lock_file).unwrap();
+    wait_until("answer after the lock is gone", || settled(&members));
+    assert!(
+        started.elapsed() < Duration::from_secs(60),
+        "released by the lock going, not by the wait running out"
+    );
+    assert_eq!(members.counters().1, 1, "one look once the lock is gone");
+}
+
+/// A lock that never goes (a stale file) holds the refresh back only for `lock_wait`, then the look is made anyway.
+#[test]
+fn a_stale_index_lock_delays_the_look_by_the_wait_and_no_more() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Fake::new(Duration::ZERO);
+    let heard = Arc::new(Heard::default());
+    let members = Members::new(env(Some(fake_backend(&fake)), &heard, None));
+    let list = members_in(dir.path(), &names(1, "p"));
+    std::fs::write(list[0].folder.join(".git/index.lock"), "").unwrap();
+    members.sync(&list);
+    let started = Instant::now();
+    members.interest("main", Glance, &[list[0].uid.clone()]);
+    wait_until("answer despite the stale lock", || settled(&members));
+    assert!(
+        started.elapsed() >= quick().lock_wait,
+        "waited the window out first"
+    );
 }
 
 // ---- fix round (verifier round 3: S2, S3, N3) ------------------------------------------------------------------------
