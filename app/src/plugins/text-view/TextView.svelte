@@ -2,8 +2,9 @@
   // A text file: line numbers, monospace, highlighted by its extension when the highlight plugin is on. A very long
   // file shows only the lines near the screen (plain), so it opens at once and never freezes the window; a file too
   // large to read whole shows its first part and asks for the rest as the reader comes to it. Lines that changed on
-  // disk glow for a moment. Secret values are masked until clicked.
-  import { untrack } from "svelte";
+  // disk glow for a moment; a line asked for (a code reference) comes into view, tinted a moment. Secret values are
+  // masked until clicked.
+  import { tick, untrack } from "svelte";
   import { api } from "../../api";
   import { conditions } from "../../core/conditions/context.svelte";
   import {
@@ -86,24 +87,45 @@
 
   const shown = $derived(lines.slice(top, top + visible));
 
+  /** The request for a chunk on its way (one at a time). */
+  let pending: Promise<void> | null = null;
+
   /** Asks for the next chunk when the lines in view are close to the end of what is held. */
   async function more(): Promise<void> {
     // lines of a version of the file that has gone are let go
     if (grown !== null && grown.owner !== view) grown = null;
     const mine = held;
-    if (partial === null || mine.next === null || !wantsMore(mine, top, visible)) return;
+    if (pending !== null || partial === null || mine.next === null) return;
+    if (!wantsMore(mine, top, visible)) return;
+    // only a chunk that came goes on (a failed | superseded one waits for the person | the new version)
+    if (await next(mine)) void more();
+  }
+
+  /** Asks for the chunk after what `mine` holds; true when it came. */
+  async function next(mine: Held): Promise<boolean> {
+    if (mine.next === null || pending !== null) return false;
+    const asked = nextOf(mine, mine.next);
+    pending = asked.then(() => undefined);
+    try {
+      return await asked;
+    } finally {
+      pending = null;
+    }
+  }
+
+  async function nextOf(mine: Held, offset: number): Promise<boolean> {
     grown = loading(mine, { status: "loading" });
-    const result = await api.documentMore(view.path, mine.next, view.size, view.mtimeMs);
+    const result = await api.documentMore(view.path, offset, view.size, view.mtimeMs);
     // another version of the file came meanwhile: that one starts again
-    if (grown?.owner !== view || grown.load.status !== "loading") return;
+    if (grown?.owner !== view || grown.load.status !== "loading") return false;
     if (!result.ok) {
       const gone = result.error.kind === "backend" && result.error.error.kind === "conflict";
       if (gone) documents.reload();
       grown = loading(mine, { status: gone ? "idle" : "failed" });
-      return;
+      return false;
     }
     grown = append(mine, result.value);
-    void more();
+    return true;
   }
 
   function again(): void {
@@ -157,6 +179,53 @@
   // ---- glow: the lines that changed on disk ---------------------------------------------------------------------
 
   const glow = $derived(documents.lineGlow?.path === view.path ? documents.lineGlow : null);
+
+  // ---- a line asked for: at the top third of the pane, tinted a moment ---------------------------------------------
+
+  /** A large text loads at most this many more parts to reach a line; the rest comes by scrolling. */
+  const MAX_PARTS = 10;
+  const LOCATE_MS = 1600;
+  let located = $state.raw<{ line: number; seq: number } | null>(null);
+  let handled = 0;
+
+  $effect(() => {
+    const request = documents.lineRequest;
+    if (!request || !host || request.path !== view.path || request.seq === handled) return;
+    handled = request.seq;
+    untrack(() => void bring(request.line, request.seq));
+  });
+
+  async function bring(line: number, seq: number): Promise<void> {
+    const owner = view;
+    for (let parts = 0; parts < MAX_PARTS; parts++) {
+      while (pending !== null) await pending;
+      if (view !== owner || handled !== seq) return;
+      const mine = held;
+      if (partial === null || mine.lines.length >= line || mine.next === null) break;
+      if (mine.load.status === "failed" || mine.load.status === "capped") break;
+      if (!(await next(mine))) break;
+    }
+    if (view !== owner || handled !== seq) return;
+    const at = Math.min(line, Math.max(held.lines.length, 1));
+    // a line past the end of a whole file is its last line, no note; a part not loaded yet is said
+    if (at < line && held.next !== null) documents.notify(t("codeRef.lineFar", { line }));
+    await tick();
+    const pane = host?.closest<HTMLElement>("[data-scroller]");
+    if (host && pane) {
+      const pad = virtual ? 0 : PAD;
+      const y =
+        host.getBoundingClientRect().top -
+        pane.getBoundingClientRect().top +
+        pane.scrollTop +
+        pad +
+        (at - 1) * row;
+      pane.scrollTop = Math.max(0, y - pane.clientHeight / 3);
+    }
+    located = { line: at, seq };
+    setTimeout(() => {
+      if (located?.seq === seq) located = null;
+    }, LOCATE_MS);
+  }
 </script>
 
 <div class="text" bind:this={host} data-language={body?.language ?? ""} style:--row={`${row}px`}>
@@ -178,6 +247,7 @@
         {/each}
       </div>
       {@render glowing(0)}
+      {@render locating(0)}
     </div>
     {#if partial !== null}
       <p class="note" role="status">
@@ -215,9 +285,23 @@
         <pre><code>{text}</code></pre>
       {/if}
       {@render glowing(PAD)}
+      {@render locating(PAD)}
     </div>
   {/if}
 </div>
+
+{#snippet locating(pad: number)}
+  {#if located !== null}
+    {#key located.seq}
+      <div
+        class="located"
+        aria-hidden="true"
+        style:top={`${pad + (located.line - 1) * row}px`}
+        style:height={`${row}px`}
+      ></div>
+    {/key}
+  {/if}
+{/snippet}
 
 {#snippet glowing(pad: number)}
   {#if glow !== null}
@@ -342,6 +426,24 @@
     background: var(--git-deleted);
     opacity: 0.55;
   }
+  /* the line a reference asked for: a band in the reading tint, fading out (static under reduced motion) */
+  .located {
+    position: absolute;
+    left: 0;
+    right: 0;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--mark) 55%, transparent);
+    animation: line-locate var(--dur-locate) ease-out forwards;
+  }
+  @keyframes line-locate {
+    0%,
+    30% {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
   @keyframes line-glow {
     from {
       opacity: 1;
@@ -351,7 +453,8 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .glow {
+    .glow,
+    .located {
       animation: none;
       opacity: 0.5;
     }

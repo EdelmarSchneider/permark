@@ -7,7 +7,13 @@ import type { Context } from "./generated/Context";
 import type { ErrorKind } from "./generated/ErrorKind";
 import type { WindowView } from "./generated/WindowView";
 import type { WorkspaceView } from "./generated/WorkspaceView";
-import { mockAssetUrl, mockLinkTarget, mockNoteView, mockView } from "./mockDocs";
+import {
+  MOCK_DOCUMENT_PATHS,
+  mockAssetUrl,
+  mockLinkTarget,
+  mockNoteView,
+  mockView,
+} from "./mockDocs";
 import { createMockConfig } from "./mockConfig";
 import { createMockDistribution, type DistributionProbe } from "./mockDistribution";
 import { createMockTokens, type TokensProbe } from "./mockTokens";
@@ -820,10 +826,19 @@ export function createMockApi(): Api & {
         probe.shown = { path, known };
         return ok(mockNoteView(path, text));
       }
-      // a single file shows its own name; the mock serves the showcase for it
+      // a single file shows its own name; the mock serves the showcase for it (the files next to it: the project's)
       const asked =
-        view.state === "showing" && view.workspace.kind === "singleFile" ? "README.md" : path;
-      const found = mockView(asked, known, project.exists(path));
+        view.state === "showing" &&
+        view.workspace.kind === "singleFile" &&
+        path === view.workspace.name
+          ? "README.md"
+          : path;
+      // a Markdown file the probe | a test added (no rendered fixture): the simple view of its text
+      const added = project.files.get(asked);
+      const found =
+        added !== undefined && /\.md$/i.test(asked) && !MOCK_DOCUMENT_PATHS.includes(asked)
+          ? mockNoteView(asked, added, { inline: true })
+          : mockView(asked, known, project.exists(path));
       probe.shown = { path, known };
       if (!found) {
         return Promise.resolve({
@@ -853,6 +868,17 @@ export function createMockApi(): Api & {
     resolveCodeRefs: (_doc, written) =>
       ok(written.map((w) => (project.exists(w.replace(/^\//, "")) ? [w.replace(/^\//, "")] : []))),
     openInEditor: (path, line, col) => {
+      // as the backend: no editor chosen, nothing starts
+      if (settings.editor.trim() === "") {
+        return Promise.resolve({
+          ok: false,
+          error: {
+            kind: "backend",
+            command: "open_in_editor",
+            error: { kind: "editorNotSet", subject: null, detail: null },
+          },
+        });
+      }
       probe.editor.push({ path, line, col });
       return ok(null);
     },

@@ -129,8 +129,11 @@ export function mockLinkTarget(
   const parts = target?.startsWith("/") ? [] : folder;
   for (const part of decodeURIComponent(target ?? "").split("/")) {
     if (part === "" || part === ".") continue;
-    if (part === "..") parts.pop();
-    else parts.push(part);
+    if (part === "..") {
+      // above the folder of the workspace: never served
+      if (parts.length === 0) return { type: "outside" };
+      parts.pop();
+    } else parts.push(part);
   }
   const joined = parts.join("/");
   for (const candidate of [joined, `${joined}.md`]) {
@@ -145,8 +148,22 @@ export function mockLinkTarget(
 
 const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;" };
 
+/** `inline`: inline code and links of the text become `code` | `a` (a Markdown file a test added). */
+function inlineOf(safe: string): string {
+  return safe
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label: string, href: string) => {
+      const quoted = href.replace(/"/g, "&quot;");
+      return `<a href="${quoted}">${label}</a>`;
+    });
+}
+
 /** A simple view of a note's text for the mock: a heading or a paragraph per run of lines (no renderer here). */
-export function mockNoteView(path: string, text: string): DocumentView {
+export function mockNoteView(
+  path: string,
+  text: string,
+  options: { inline?: boolean } = {},
+): DocumentView {
   const lines = text.split("\n");
   const blocks: Block[] = [];
   const outline: OutlineItem[] = [];
@@ -155,9 +172,10 @@ export function mockNoteView(path: string, text: string): DocumentView {
     const run = lines.slice(start, end).join("\n");
     const id = `n${blocks.length}-${run.length}`;
     const heading = /^(#{1,6})\s+(.*)$/.exec(run);
-    const safe = (heading?.[2] ?? run)
+    const escaped = (heading?.[2] ?? run)
       .replace(/[&<>]/g, (c) => ESCAPES[c] ?? c)
       .replace(/\n/g, "<br>");
+    const safe = options.inline === true ? inlineOf(escaped) : escaped;
     const tag = heading ? `h${heading[1]?.length ?? 1}` : "p";
     if (heading) {
       outline.push({

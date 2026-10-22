@@ -1,7 +1,7 @@
 <script lang="ts">
   // The document area: header, the page (or the viewer of the file's kind), the notices around it, find in page.
   // Everything about what is shown lives in the document controller; this is the frame and the keys.
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { api, type WorkspaceView } from "../../api";
   import { apiErrorText } from "../errors";
   import { conditions } from "../conditions/context.svelte";
@@ -32,8 +32,20 @@
 
   let scroller: HTMLElement | undefined = $state();
 
-  // a single file shows its own file; a project shows the document the window was told to
-  const path = $derived(workspace.kind === "singleFile" ? workspace.name : shown);
+  // a single file shows its own file, or the one a link inside its folder led to; a project shows the document the
+  // window was told to
+  const path = $derived(
+    workspace.kind === "singleFile" ? (documents.singleDoc ?? workspace.name) : shown,
+  );
+
+  /** Settings at the editor choice ("Choose editor" of a code reference's note). */
+  function chooseEditor(): void {
+    ui.openSettingsPage("editing");
+    // after the page took the focus for itself (its section list)
+    void tick().then(() =>
+      requestAnimationFrame(() => document.getElementById("set-editor")?.focus()),
+    );
+  }
 
   /** What the header shows as the place: a loose file of the Notes shows its name, not its internal path. */
   function headerPath(place: string): string {
@@ -84,8 +96,15 @@
   $effect(() => {
     documents.bind({
       note: (text) => store.notifyNote(text),
+      action: (text, ...actions) => store.notifyAction(text, ...actions),
       fail: (error) => store.notifyFileOpFailed(error),
       reveal: (folder) => revealInTree(folder),
+      editorSet: () => store.editor.trim() !== "",
+      modKey: () => (conditions.current.platform === "mac" ? "Cmd" : "Ctrl"),
+      chooseEditor,
+      openFolder: () => {
+        if (workspace.kind === "singleFile") void store.open(workspace.folder, "tab");
+      },
     });
     editing.bind({
       note: (text) => store.notifyNote(text),
