@@ -105,7 +105,8 @@ pub struct QuietService {
 fn read_owners(owners: &Owners) -> (Marks, Vec<OwnerFile>) {
     let mut slots = Vec::with_capacity(owners.slots().len());
     for (i, slot) in owners.slots().iter().enumerate() {
-        let file = slot.store.raw_file(FILE);
+        // written under the plugin's lock: a hung other writer never holds a change up long (N10)
+        let file = slot.store.raw_file(FILE).brief_lock_wait();
         let (marks, damaged) = match file.read() {
             Ok(Some(bytes)) => {
                 Marks::parse(&bytes).map_or((Marks::default(), true), |m| (m, false))
@@ -160,6 +161,7 @@ impl QuietService {
     /// damaged one before the first write, never written over).
     #[must_use]
     pub fn load(file: RawFile, announce: Arc<dyn Fn(&QuietMarks) + Send + Sync>) -> Arc<Self> {
+        let file = file.brief_lock_wait();
         let (marks, damaged) = match file.read() {
             Ok(Some(bytes)) => {
                 Marks::parse(&bytes).map_or((Marks::default(), true), |m| (m, false))

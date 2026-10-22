@@ -5,7 +5,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use super::shared_write::{lock_for, FileLock};
+use super::shared_write::{lock_within, FileLock, BRIEF_WAIT, WAIT};
 use super::{private, Guard, StateError};
 use crate::fsx::{retry, write_atomic, write_atomic_checked};
 
@@ -36,6 +36,8 @@ enum Guarded {
 pub struct RawFile {
     path: PathBuf,
     guard: Guarded,
+    /// Most time a write waits for the other writers' lock.
+    lock_wait: Duration,
 }
 
 impl RawFile {
@@ -43,6 +45,7 @@ impl RawFile {
         Self {
             path,
             guard: guard.map_or(Guarded::No, Guarded::State),
+            lock_wait: WAIT,
         }
     }
 
@@ -50,7 +53,16 @@ impl RawFile {
         Self {
             path,
             guard: Guarded::Shared { permark },
+            lock_wait: WAIT,
         }
+    }
+
+    /// Writes wait at most [`BRIEF_WAIT`] for the other writers' lock: for a file written while a plugin's own lock
+    /// is held (its lists wait meanwhile).
+    #[must_use]
+    pub fn brief_lock_wait(mut self) -> Self {
+        self.lock_wait = BRIEF_WAIT;
+        self
     }
 
     #[must_use]
@@ -100,7 +112,7 @@ impl RawFile {
     /// # Errors
     /// Another writer held it too long: do not write now.
     pub fn lock(&self) -> io::Result<Option<FileLock>> {
-        lock_for(&self.path)
+        lock_within(&self.path, self.lock_wait)
     }
 
     /// Read-change-write for a file several cores write (`shared_write`): under the file's lock, `next` gets the bytes
