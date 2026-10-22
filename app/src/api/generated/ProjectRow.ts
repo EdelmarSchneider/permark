@@ -50,4 +50,9 @@ inner: number | null,
 /**
  * Where its card is saved (included only).
  */
-cardPlace: CardPlace | null, };
+cardPlace: CardPlace | null, 
+/**
+ * Missing only: the folder Locate…'s picker opens at (absolute): the old parent folder when it still exists,
+ * else the opened folder.
+ */
+locateFrom: string | null, };

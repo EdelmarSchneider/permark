@@ -8,7 +8,7 @@ use notify::event::{CreateKind, DataChange, EventKind, ModifyKind, RemoveKind, R
 use notify::Event;
 
 use super::reconcile::Pending;
-use super::service::hints_from;
+use super::service::{hints_from, RenamePairs};
 use super::*;
 use crate::conditions::{Distribution, Requirement};
 use crate::events::{CoreEvent, Recorder};
@@ -207,6 +207,56 @@ fn os_events_become_hints() {
 }
 
 #[test]
+fn the_two_halves_of_a_move_are_paired_only_when_in_a_row() {
+    let name = |mode| EventKind::Modify(ModifyKind::Name(mode));
+    let from = |h: &[Pending]| h[0].rename_from.clone();
+    let after = |h: &[Pending]| h[0].after_removal.clone();
+    // Windows rename: old name, then new name
+    let mut pairs = RenamePairs::default();
+    assert!(pairs.hints(&event(name(RenameMode::From), &["/p/old"]))[0].removed);
+    let h = pairs.hints(&event(name(RenameMode::To), &["/p/new"]));
+    assert_eq!(from(&h), Some("/p/old".into()));
+    assert_eq!(after(&h), None);
+    // used once
+    let h = pairs.hints(&event(name(RenameMode::To), &["/p/again"]));
+    assert_eq!(from(&h), None);
+    // Windows move to another parent: removal, then creation -> a maybe, never a rename
+    let mut pairs = RenamePairs::default();
+    pairs.hints(&event(EventKind::Remove(RemoveKind::Any), &["/p/a/x"]));
+    let h = pairs.hints(&event(EventKind::Create(CreateKind::Any), &["/p/b/x"]));
+    assert_eq!((from(&h), after(&h)), (None, Some("/p/a/x".into())));
+    // anything in between ends the pair
+    let mut pairs = RenamePairs::default();
+    pairs.hints(&event(name(RenameMode::From), &["/p/old"]));
+    pairs.hints(&event(
+        EventKind::Modify(ModifyKind::Data(DataChange::Any)),
+        &["/p/z"],
+    ));
+    let h = pairs.hints(&event(name(RenameMode::To), &["/p/new"]));
+    assert_eq!((from(&h), after(&h)), (None, None));
+    // a rename's old half followed by a creation, a removal followed by a rename's new half: no pair
+    let mut pairs = RenamePairs::default();
+    pairs.hints(&event(name(RenameMode::From), &["/p/old"]));
+    let h = pairs.hints(&event(EventKind::Create(CreateKind::Any), &["/p/new"]));
+    assert_eq!((from(&h), after(&h)), (None, None));
+    pairs.hints(&event(EventKind::Remove(RemoveKind::Any), &["/p/old"]));
+    let h = pairs.hints(&event(name(RenameMode::To), &["/p/new"]));
+    assert_eq!((from(&h), after(&h)), (None, None));
+    // the same path again (an atomic save): no pair
+    let mut pairs = RenamePairs::default();
+    pairs.hints(&event(EventKind::Remove(RemoveKind::Any), &["/p/a"]));
+    let h = pairs.hints(&event(EventKind::Create(CreateKind::Any), &["/p/a"]));
+    assert_eq!(after(&h), None);
+    // a one-event rename stays as it was and ends any pair
+    let mut pairs = RenamePairs::default();
+    pairs.hints(&event(name(RenameMode::From), &["/p/old"]));
+    let h = pairs.hints(&event(name(RenameMode::Both), &["/p/x", "/p/y"]));
+    assert_eq!(h[1].rename_from, Some("/p/x".into()));
+    let h = pairs.hints(&event(name(RenameMode::To), &["/p/new"]));
+    assert_eq!(from(&h), None);
+}
+
+#[test]
 fn pending_hints_merge_per_path() {
     let mut a = Pending {
         abs: "/p/a".into(),
@@ -214,18 +264,35 @@ fn pending_hints_merge_per_path() {
         removed: false,
         modified: false,
         rename_from: None,
+        after_removal: None,
         deferred: false,
     };
     let b = Pending {
         removed: true,
         modified: true,
         rename_from: Some("/p/x".into()),
+        after_removal: None,
         created: false,
         ..a.clone()
     };
     a.merge(&b);
     assert!(a.created && a.removed && a.modified);
     assert_eq!(a.rename_from.as_deref(), Some(Path::new("/p/x")));
+    // the same path under another case of its name: the name it came to wins
+    let mut old = Pending {
+        abs: "/p/beta".into(),
+        created: false,
+        removed: true,
+        ..b.clone()
+    };
+    old.merge(&Pending {
+        abs: "/p/Beta".into(),
+        created: true,
+        removed: false,
+        ..b
+    });
+    assert_eq!(old.abs, Path::new("/p/Beta"));
+    assert!(old.created && old.removed);
 }
 
 // ---- hub -------------------------------------------------------------------------------------------------------------
@@ -607,6 +674,7 @@ fn a_folder_gone_before_its_files_were_news_is_reported_as_a_folder() {
             removed: true,
             modified: false,
             rename_from: None,
+            after_removal: None,
             deferred: false,
         });
         if let Some(is_dir) = reported {
@@ -632,6 +700,7 @@ fn hints_for_paths_outside_the_project_are_ignored() {
         removed: false,
         modified: false,
         rename_from: None,
+        after_removal: None,
         deferred: false,
     });
     assert!(quiet_for(&f.seen, 300).is_empty(), "silent");
@@ -990,6 +1059,7 @@ fn a_nested_change_is_news_whatever_the_spelling_of_its_path() {
             removed: false,
             modified: true,
             rename_from: None,
+            after_removal: None,
             deferred: false,
         });
         let all = wait_for(&seen, &format!("{}", spelling.display()), |c| !c.is_empty());
@@ -1260,4 +1330,212 @@ fn an_edited_exclude_file_of_a_nested_repo_counts_at_once() {
     wait_for(&seen, "doc", |c| wrote(c, "hubs/a/doc.md"));
     let all = quiet_for(&seen, 400);
     assert!(!all.iter().any(|c| c.path == "hubs/a/draft.md"), "{all:?}");
+}
+
+// ---- moves of a project folder ---------------------------------------------------------------------------------------
+
+/// The batch's `moved` pairs for a project folder `inner/beta` (an included member) after `act` changed the disk and
+/// the OS reported `events` (fed through the pairing as the native handler does).
+fn moved_after(act: impl Fn(&Path), events: impl Fn(&Path) -> Vec<Event>) -> Vec<(String, String)> {
+    let dir = tempfile::tempdir().unwrap();
+    for f in ["inner/beta/.git/HEAD", "inner/beta/plan.md", "other/x.md"] {
+        let path = dir.path().join(f);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, "x").unwrap();
+    }
+    let root = Root::open(dir.path()).unwrap();
+    let base = root.path().to_path_buf();
+    let vault = Vault::new(root);
+    let explorer = Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        Arc::new(Recorder::default()),
+        None,
+    );
+    explorer.set_members(&crate::tree::MemberSet {
+        members: vec![(
+            "inner/beta".to_owned(),
+            crate::tree::MemberRule {
+                hidden: crate::projects::HiddenRule::Own,
+                git: true,
+                ignore: Vec::new(),
+            },
+        )],
+    });
+    let hub = WatchHub::new();
+    let seen: Seen = Arc::default();
+    let _sub = hub.subscribe({
+        let seen = Arc::clone(&seen);
+        move |batch| seen.lock().unwrap().push(batch.clone())
+    });
+    let watcher = Watcher::start_with(
+        &vault,
+        explorer.ignorers(),
+        hub,
+        Arc::new(OwnWrites::new()),
+        None,
+        FAST,
+        false,
+    );
+    act(&base);
+    let mut pairs = RenamePairs::default();
+    for event in events(&base) {
+        for hint in pairs.hints(&event) {
+            watcher.inject(hint);
+        }
+    }
+    let started = Instant::now();
+    while seen.lock().unwrap().is_empty() && started.elapsed() < Duration::from_secs(10) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    let moved: Vec<(String, String)> = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .flat_map(|b| b.moved.clone())
+        .collect();
+    moved
+}
+
+fn at(base: &Path, kind: EventKind, rel: &[&str]) -> Event {
+    let mut e = Event::new(kind);
+    for r in rel {
+        e = e.add_path(base.join(r));
+    }
+    e
+}
+
+fn mv(base: &Path, from: &str, to: &str) {
+    fs::rename(base.join(from), base.join(to)).unwrap();
+}
+
+fn pair(from: &str, to: &str) -> Vec<(String, String)> {
+    vec![(from.to_owned(), to.to_owned())]
+}
+
+#[test]
+fn a_project_folder_move_is_paired_whatever_the_system_reported() {
+    let name = |mode| EventKind::Modify(ModifyKind::Name(mode));
+    let removed = EventKind::Remove(RemoveKind::Any);
+    let created = EventKind::Create(CreateKind::Any);
+    // Linux: one event
+    let got = moved_after(
+        |b| mv(b, "inner/beta", "inner/beta2"),
+        |b| {
+            vec![at(
+                b,
+                name(RenameMode::Both),
+                &["inner/beta", "inner/beta2"],
+            )]
+        },
+    );
+    assert_eq!(got, pair("inner/beta", "inner/beta2"));
+    // Windows rename: old name, new name
+    let got = moved_after(
+        |b| mv(b, "inner/beta", "inner/beta2"),
+        |b| {
+            vec![
+                at(b, name(RenameMode::From), &["inner/beta"]),
+                at(b, name(RenameMode::To), &["inner/beta2"]),
+            ]
+        },
+    );
+    assert_eq!(got, pair("inner/beta", "inner/beta2"));
+    // Windows move to another parent, renamed on the way: removal, creation
+    let got = moved_after(
+        |b| mv(b, "inner/beta", "other/gamma"),
+        |b| {
+            vec![
+                at(b, removed, &["inner/beta"]),
+                at(b, created, &["other/gamma"]),
+            ]
+        },
+    );
+    assert_eq!(got, pair("inner/beta", "other/gamma"));
+    // macOS: two renames at once, each step's events undirected (the chain's start lost)
+    let got = moved_after(
+        |b| {
+            mv(b, "inner/beta", "inner/beta2");
+            mv(b, "inner/beta2", "inner/beta3");
+        },
+        |b| {
+            vec![
+                at(b, name(RenameMode::Any), &["inner/beta"]),
+                at(b, name(RenameMode::Any), &["inner/beta2"]),
+                at(b, name(RenameMode::Any), &["inner/beta2"]),
+                at(b, name(RenameMode::Any), &["inner/beta3"]),
+            ]
+        },
+    );
+    assert_eq!(got, pair("inner/beta", "inner/beta3"));
+    // removal + creation apart, same name: paired by name
+    let got = moved_after(
+        |b| mv(b, "inner/beta", "other/beta"),
+        |b| {
+            vec![
+                at(b, removed, &["inner/beta"]),
+                at(b, EventKind::Modify(ModifyKind::Any), &["other/x.md"]),
+                at(b, created, &["other/beta"]),
+            ]
+        },
+    );
+    assert_eq!(got, pair("inner/beta", "other/beta"));
+}
+
+#[test]
+fn unrelated_folders_are_never_taken_for_a_project_move() {
+    let removed = EventKind::Remove(RemoveKind::Any);
+    let created = EventKind::Create(CreateKind::Any);
+    // the project went, two folders of other names came, not right after it
+    let got = moved_after(
+        |b| {
+            fs::remove_dir_all(b.join("inner/beta")).unwrap();
+            fs::create_dir_all(b.join("other/gamma")).unwrap();
+            fs::create_dir_all(b.join("other/delta")).unwrap();
+        },
+        |b| {
+            vec![
+                at(b, removed, &["inner/beta"]),
+                at(b, EventKind::Modify(ModifyKind::Any), &["other/x.md"]),
+                at(b, created, &["other/gamma"]),
+                at(b, created, &["other/delta"]),
+            ]
+        },
+    );
+    assert_eq!(got, Vec::new());
+    // a plain folder (no project) renamed: nothing for the projects
+    let got = moved_after(
+        |b| mv(b, "other", "other2"),
+        |b| {
+            vec![
+                at(
+                    b,
+                    EventKind::Modify(ModifyKind::Name(RenameMode::From)),
+                    &["other"],
+                ),
+                at(
+                    b,
+                    EventKind::Modify(ModifyKind::Name(RenameMode::To)),
+                    &["other2"],
+                ),
+            ]
+        },
+    );
+    assert_eq!(got, Vec::new());
+    // the project went out of the folder; a file with its name came
+    let outside = tempfile::tempdir().unwrap();
+    let got = moved_after(
+        |b| {
+            fs::rename(b.join("inner/beta"), outside.path().join("beta")).unwrap();
+            fs::write(b.join("other/beta"), "x").unwrap();
+        },
+        |b| {
+            vec![
+                at(b, removed, &["inner/beta"]),
+                at(b, created, &["other/beta"]),
+            ]
+        },
+    );
+    assert_eq!(got, Vec::new());
 }

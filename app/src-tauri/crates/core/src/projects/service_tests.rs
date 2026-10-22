@@ -993,3 +993,7 @@ fn closing_during_the_walk_lets_the_service_go_at_once() {
         "close never waits for the walk"
     );
 }
+
+/// Live moves (real fs renames under the real watch).
+#[path = "rename_tests.rs"]
+mod rename;

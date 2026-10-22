@@ -157,6 +157,8 @@ export type MockProbe = {
   shell: MockShell["probe"];
   /** Themes the window's title bar was asked to take (`null`: the system's). */
   windowThemes: ("light" | "dark" | null)[];
+  /** Folders the folder picker was asked to open at, in order (`null`: the system's choice). */
+  pickedFrom: (string | null)[];
   /** The default app, the file manager entries, the updater. */
   distribution: DistributionProbe;
   /** The token count plugin: vocabularies, what it was asked to count. */
@@ -353,6 +355,7 @@ export function createMockApi(): Api & {
 
   const shell = createMockShell({ settings: () => settings, changed: announceShell });
   const windowThemes: ("light" | "dark" | null)[] = [];
+  const pickedFrom: (string | null)[] = [];
 
   const project = new MockProject();
   const organizing = createMockOrganizing(emitPlugin, project);
@@ -407,6 +410,7 @@ export function createMockApi(): Api & {
     plugins: plugins.probe,
     shell: shell.probe,
     windowThemes,
+    pickedFrom,
     distribution: distribution.probe,
     tokens: tokens.probe,
     convert: convert.probe,
@@ -935,7 +939,10 @@ export function createMockApi(): Api & {
         window.removeEventListener("drop", drop);
       });
     },
-    pickFolder: () => Promise.resolve(MOCK_FOLDER),
+    pickFolder: (_title, from) => {
+      pickedFrom.push(from ?? null);
+      return Promise.resolve(MOCK_FOLDER);
+    },
     pickFile: () => Promise.resolve(MOCK_FILE),
     pickPictures: () => Promise.resolve([`${MOCK_FOLDER}/pictures/diagram.png`]),
     setWindowTheme: (theme) => {

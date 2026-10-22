@@ -331,11 +331,12 @@ export class ProjectsStore {
     if (row.uid !== null) await this.#run(this.#api.projectsSetAgent(row.uid, choice));
   }
 
-  /** Locate… of a missing project: the folder picker, then the backend's checks. Returns the refusal in words
-   *  (`null`: placed, or the picker was closed). */
+  /** Locate… of a missing project: the folder picker (at the old parent folder, else the opened folder: never the
+   *  system's last choice), then the backend's checks. Returns the refusal in words (`null`: placed, or the picker
+   *  was closed). */
   async locate(row: ProjectRow, title: string): Promise<string | null> {
     if (row.uid === null) return null;
-    const picked = await this.#api.pickFolder(title);
+    const picked = await this.#api.pickFolder(title, row.locateFrom ?? this.root);
     if (picked === null) return null;
     const result = await this.#api.projectsLocate(row.uid, picked);
     if (!result.ok) {

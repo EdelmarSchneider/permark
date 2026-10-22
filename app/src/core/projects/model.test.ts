@@ -38,6 +38,7 @@ function row(path: string, fields: Partial<ProjectRow> = {}): ProjectRow {
     parent: null,
     inner: null,
     cardPlace: null,
+    locateFrom: null,
     ...fields,
   };
 }

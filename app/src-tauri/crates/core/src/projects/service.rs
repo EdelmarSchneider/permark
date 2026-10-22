@@ -91,6 +91,24 @@ fn abs_of(root: &Path, path: &VaultPath) -> PathBuf {
     abs
 }
 
+/// Where `path` is now when one of `renames` (`(from, to)`, first that covers it wins) moved it or a folder above it.
+fn renamed_path(path: &VaultPath, renames: &[(String, String)]) -> Option<VaultPath> {
+    let key = path.key();
+    renames.iter().find_map(|(from, to)| {
+        if !within(&key, &crate::paths::key_of(from)) {
+            return None;
+        }
+        let depth = from.split('/').count();
+        let rest: Vec<&str> = path.as_str().split('/').skip(depth).collect();
+        let now = if rest.is_empty() {
+            to.clone()
+        } else {
+            format!("{to}/{}", rest.join("/"))
+        };
+        VaultPath::parse(&now).ok()
+    })
+}
+
 fn folder_name(path: &str) -> String {
     path.rsplit('/').next().unwrap_or(path).to_owned()
 }
@@ -525,6 +543,14 @@ impl Projects {
                 hint.files.push(change.path.clone());
             }
         }
+        // folders holding a project that moved (whatever the ignore rules say), paired by the watch first: their
+        // origin beats a later step of the same chain
+        for pair in batch.moved.iter().rev() {
+            if !hint.renames.contains(pair) {
+                hint.renames.insert(0, pair.clone());
+            }
+        }
+        hint.folders |= !hint.renames.is_empty();
         if hint.rescan || hint.folders || hint.record || !hint.files.is_empty() {
             if let Some(tx) = lock(&self.tx).as_ref() {
                 let _ = tx.send(Msg::Batch(hint));
@@ -935,6 +961,15 @@ impl Projects {
     /// Re-attach (`projects.md` §4.4): rename hints, card ids, then one question.
     #[allow(clippy::too_many_lines)] // the steps of §4.4 in their order
     fn reattach(&self, inner: &mut Inner, hint: &Hint, after: &mut After) {
+        let mut moves: Vec<(ProjectUid, VaultPath, bool)> = Vec::new();
+        // a folder renamed to another case of its name (case-insensitive disk): still here; the path follows the disk
+        for entry in &inner.inputs.entries {
+            if let Some(found) = inner.inputs.found.get(&entry.path.key()) {
+                if found.path != entry.path && !inner.inputs.refused(&entry.path.key()) {
+                    moves.push((entry.uid.clone(), found.path.clone(), true));
+                }
+            }
+        }
         let missing: Vec<RecEntry> = inner
             .inputs
             .entries
@@ -943,27 +978,13 @@ impl Projects {
             .filter(|e| !inner.inputs.refused(&e.path.key()))
             .cloned()
             .collect();
-        if missing.is_empty() {
+        if missing.is_empty() && moves.is_empty() {
             inner.ask = None;
             return;
         }
-        let mut moves: Vec<(ProjectUid, VaultPath, bool)> = Vec::new();
         for entry in &missing {
             // 1. a rename the watch paired covers it
-            let key = entry.path.key();
-            let renamed = hint.renames.iter().find_map(|(from, to)| {
-                let from_key = crate::paths::key_of(from);
-                within(&key, &from_key).then(|| {
-                    let depth = from.split('/').count();
-                    let rest: Vec<&str> = entry.path.as_str().split('/').skip(depth).collect();
-                    if rest.is_empty() {
-                        to.clone()
-                    } else {
-                        format!("{to}/{}", rest.join("/"))
-                    }
-                })
-            });
-            if let Some(Ok(path)) = renamed.map(|p| VaultPath::parse(&p)) {
+            if let Some(path) = renamed_path(&entry.path, &hint.renames) {
                 if marker_at(&abs_of(self.root.path(), &path)).is_some() {
                     moves.push((entry.uid.clone(), path, true));
                     continue;
@@ -1511,6 +1532,22 @@ impl Projects {
         Ok(None)
     }
 
+    /// Where Locate… starts for a project last seen at `path`: its old parent folder when still there (inside the
+    /// root, reached without a link), else the opened folder.
+    fn locate_from(&self, path: &str) -> String {
+        let parent = VaultPath::parse(path)
+            .ok()
+            .and_then(|p| p.parent())
+            .filter(|p| !p.is_root() && !through_link(self.root.path(), p))
+            .map(|p| abs_of(self.root.path(), &p))
+            .filter(|abs| real_dir(abs));
+        parent
+            .as_deref()
+            .unwrap_or(self.root.path())
+            .display()
+            .to_string()
+    }
+
     /// The move question's answer: `same` = it moved (the entry follows), else the candidate stays a new project and
     /// is not asked about again this session.
     ///
@@ -1669,6 +1706,7 @@ impl Projects {
                     });
                 }
             }
+            let locate_from = (row_state == MemberState::Missing).then(|| self.locate_from(&path));
             rows.push(ProjectRow {
                 key: key.clone(),
                 uid: entry.map(|e| e.uid.clone()),
@@ -1694,6 +1732,7 @@ impl Projects {
                 parent,
                 inner: inner_count,
                 card_place: res.and_then(|r| r.place),
+                locate_from,
             });
         }
         let record = match &inner.record {

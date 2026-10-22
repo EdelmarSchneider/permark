@@ -170,6 +170,8 @@ describe("projects store", () => {
     expect(await fx.store.locate(gone!, "Locate…")).toBe(
       "Choose a folder inside workspace-listed.",
     );
+    // the picker opens at the old parent folder (R5: never the system's last folder)
+    expect(fx.api.probe.pickedFrom).toEqual([`${MOCK_PROJECTS_LISTED}/hubs`]);
     fx.store.remove(gone!);
     expect(fx.store.view?.rows.some((r) => r.state === "missing")).toBe(false);
     expect(fx.fails).toEqual([]);

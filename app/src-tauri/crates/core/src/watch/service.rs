@@ -113,6 +113,7 @@ pub(crate) fn hints_from(event: &Event) -> Vec<Pending> {
         removed: false,
         modified: false,
         rename_from: None,
+        after_removal: None,
         deferred: false,
     };
     let mut hints = Vec::new();
@@ -142,6 +143,7 @@ pub(crate) fn hints_from(event: &Event) -> Vec<Pending> {
                 hints.push(Pending {
                     created: true,
                     rename_from: Some(from.clone()),
+                    after_removal: None,
                     ..blank(to)
                 });
             }
@@ -184,6 +186,44 @@ pub(crate) fn hints_from(event: &Event) -> Vec<Pending> {
         EventKind::Access(_) | EventKind::Other => {}
     }
     hints
+}
+
+/// Pairs the two halves of a move the OS reports as two events in a row: a rename (Windows: old name, then new name;
+/// macOS: two events without direction) -> the new name's hint learns where it came from, as with a one-event rename;
+/// a removal, then a creation (Windows: a move to another parent) -> the creation's hint keeps it as a maybe
+/// (`after_removal`). Any other event in between ends the pair.
+#[derive(Debug, Default)]
+pub(crate) struct RenamePairs {
+    /// (path, half of a rename | a plain removal)
+    out: Option<(PathBuf, bool)>,
+}
+
+impl RenamePairs {
+    /// [`hints_from`], a hint linked to the removal just before it.
+    pub(crate) fn hints(&mut self, event: &Event) -> Vec<Pending> {
+        let mut hints = hints_from(event);
+        let (half, removal, creation) = match &event.kind {
+            EventKind::Modify(ModifyKind::Name(mode)) => {
+                (!matches!(mode, RenameMode::Both), false, false)
+            }
+            EventKind::Remove(_) => (false, true, false),
+            EventKind::Create(_) => (false, false, true),
+            _ => (false, false, false),
+        };
+        let out = self.out.take();
+        if let [one] = hints.as_mut_slice() {
+            if (half || removal) && one.removed {
+                self.out = Some((one.abs.clone(), half));
+            } else if let Some((from, renamed)) = out.filter(|(from, _)| *from != one.abs) {
+                if half && renamed && one.created {
+                    one.rename_from = Some(from);
+                } else if creation && !renamed {
+                    one.after_removal = Some(from);
+                }
+            }
+        }
+        hints
+    }
 }
 
 /// Git is in the middle of an operation (checkout, merge, rebase, ...): its marker files exist.
@@ -359,12 +399,13 @@ fn start_natives(vault: &Vault, tx: &Sender<Msg>) -> Result<Vec<RecommendedWatch
     let mut started = Vec::new();
     for (path, required) in roots {
         let sender = tx.clone();
+        let mut pairs = RenamePairs::default();
         let handler = move |result: notify::Result<Event>| match result {
             Ok(event) => {
                 if event.need_rescan() {
                     let _ = sender.send(Msg::Rescan);
                 }
-                for hint in hints_from(&event) {
+                for hint in pairs.hints(&event) {
                     let _ = sender.send(Msg::Hint(hint));
                 }
             }
@@ -489,6 +530,7 @@ fn run(shared: &Shared, rx: &Receiver<Msg>) {
                         removed: missing,
                         modified: !missing,
                         rename_from: None,
+                        after_removal: None,
                         deferred: false,
                     });
                 }
@@ -552,6 +594,7 @@ fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
         changes: done.changes,
         bulk,
         rescan,
+        moved: done.moved,
     };
     if !batch.is_empty() {
         shared.hub.publish(&batch);

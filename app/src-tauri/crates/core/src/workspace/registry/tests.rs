@@ -425,13 +425,14 @@ fn events_only_when_something_differs() {
     assert!(names.contains(&"context-changed".to_owned()));
     assert!(names.contains(&"window-changed".to_owned()));
     f.registry.refresh();
-    // the search index reports its own progress whenever it likes; everything else stays quiet
+    // the search index reports its own progress whenever it likes, the projects service the end of its first walk;
+    // everything else stays quiet
     let rest: Vec<String> = f
         .sink
         .take()
         .iter()
         .map(|e| e.name().to_owned())
-        .filter(|n| n != "index-progress")
+        .filter(|n| n != "index-progress" && n != "projects-changed")
         .collect();
     assert_eq!(rest, Vec::<String>::new());
     let context = f.registry.context_of(&view).unwrap();

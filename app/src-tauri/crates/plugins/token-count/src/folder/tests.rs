@@ -81,6 +81,7 @@ impl TestFiles {
                 .collect(),
             bulk,
             rescan,
+            moved: Vec::new(),
         });
     }
 
