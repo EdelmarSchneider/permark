@@ -18,7 +18,10 @@ use std::time::{Duration, Instant};
 use crate::paths::CASE_INSENSITIVE;
 
 /// How long a writer waits for the others to finish (a write takes milliseconds; many writers queue up).
-const WAIT: Duration = Duration::from_secs(30);
+pub(crate) const WAIT: Duration = Duration::from_secs(30);
+/// The wait of a writer that holds a plugin's lock meanwhile (comments, quiet: their lists wait for it). Longer -> a
+/// hung holder: this write fails at once-ish (the person is told | it is tried again later), lists keep answering.
+pub const BRIEF_WAIT: Duration = Duration::from_secs(2);
 const POLL: Duration = Duration::from_millis(5);
 const OPEN_RETRY: [Duration; 3] = [
     Duration::from_millis(50),
@@ -38,6 +41,14 @@ pub struct FileLock {
 /// # Errors
 /// `WouldBlock`: another writer held it longer than [`WAIT`] (the caller does not write now).
 pub fn lock_for(path: &Path) -> std::io::Result<Option<FileLock>> {
+    lock_within(path, WAIT)
+}
+
+/// [`lock_for`] waiting at most `wait`.
+///
+/// # Errors
+/// `WouldBlock`: another writer held it longer than `wait`.
+pub fn lock_within(path: &Path, wait: Duration) -> std::io::Result<Option<FileLock>> {
     let Some(dir) = lock_dir() else {
         return Ok(None);
     };
@@ -60,7 +71,7 @@ pub fn lock_for(path: &Path) -> std::io::Result<Option<FileLock>> {
     loop {
         match file.try_lock() {
             Ok(()) => return Ok(Some(FileLock { _file: file })),
-            Err(TryLockError::WouldBlock) if start.elapsed() < WAIT => std::thread::sleep(POLL),
+            Err(TryLockError::WouldBlock) if start.elapsed() < wait => std::thread::sleep(POLL),
             Err(TryLockError::WouldBlock) => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::WouldBlock,
@@ -302,6 +313,24 @@ mod verify_tests {
         assert_eq!(std::fs::read(state.path()).unwrap(), state_before);
         drop((held_raw, held_state));
         // freed: writes go through again
+        raw.update(|_| Some(b"after".to_vec())).unwrap();
+        assert_eq!(std::fs::read(raw.path()).unwrap(), b"after");
+    }
+
+    /// N10 (verifier round 4): a writer holding a plugin's lock gives up after the brief wait, not the long one.
+    #[test]
+    fn a_brief_wait_writer_gives_up_long_before_the_others() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw =
+            super::super::RawFile::private(dir.path().join("raw.json"), None).brief_lock_wait();
+        std::fs::write(raw.path(), b"before").unwrap();
+        let held = lock_for(raw.path()).unwrap().expect("lock");
+        let start = Instant::now();
+        assert!(raw.update(|_| Some(b"after".to_vec())).is_err());
+        let took = start.elapsed();
+        assert!(took >= BRIEF_WAIT && took < WAIT, "{took:?}");
+        assert_eq!(std::fs::read(raw.path()).unwrap(), b"before");
+        drop(held);
         raw.update(|_| Some(b"after".to_vec())).unwrap();
         assert_eq!(std::fs::read(raw.path()).unwrap(), b"after");
     }
