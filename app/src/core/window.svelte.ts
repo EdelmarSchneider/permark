@@ -17,6 +17,7 @@ import {
   type StateRecovered,
   type Unlisten,
   type WindowView,
+  type WorkspaceView,
 } from "../api";
 import { conditions } from "./conditions/context.svelte";
 import { confirmLeave } from "./editing/guard";
@@ -72,6 +73,28 @@ type NoticeClock = {
 
 type NoticeBody = Notice extends infer N ? (N extends Notice ? Omit<N, "id"> : never) : never;
 
+/** What the window has on screen: a workspace and its document. */
+export type OnScreen = { workspace: WorkspaceView; document: string | null };
+
+/** What is on screen after `view`. While another workspace opens, the one shown before stays as it was, its document
+ *  included (`before` itself: nothing on screen changes, so nothing reloads for a folder about to go). */
+export function onScreen(view: WindowView, before: OnScreen | null): OnScreen | null {
+  switch (view.state) {
+    case "showing":
+      return { workspace: view.workspace, document: view.document };
+    case "opening":
+      if (view.showing === null) return null;
+      return before?.workspace.id === view.showing.id
+        ? before
+        : { workspace: view.showing, document: null };
+    case "welcome":
+    case "closing":
+      return null;
+    default:
+      return view satisfies never;
+  }
+}
+
 export type Boot =
   { status: "booting" } | { status: "ready" } | { status: "failed"; error: ApiError };
 
@@ -85,6 +108,13 @@ export class WindowStore {
   /** Its tab (`null`: the window's Welcome view). */
   tab = $state<number | null>(null);
   view = $state.raw<WindowView>({ state: "welcome" });
+  /** What is on screen (`onScreen`): while opening, the workspace shown before. */
+  screen = $state.raw<OnScreen | null>(null);
+  /** The folder of the project on screen (`null`: none). Changes only when the folder does: what follows the project
+   *  does not run again while another folder opens in this view. */
+  readonly root = $derived(
+    this.screen?.workspace.kind === "project" ? this.screen.workspace.root : null,
+  );
   recent = $state.raw<readonly RecentFolder[]>([]);
   notices = $state.raw<readonly Notice[]>([]);
   /** Whether a move rewrites the links that point at it (the setting). */
@@ -184,25 +214,21 @@ export class WindowStore {
   }
 
   #showView(view: WindowView): void {
-    const before = this.view;
+    // compared on screen: an in-place open passes through Opening, where the workspace shown before stays
+    const before = this.screen?.workspace ?? null;
     this.view = view;
+    this.screen = onScreen(view, this.screen);
+    const after = this.screen?.workspace ?? null;
     // focus mode belongs to the workspace it was turned on in
-    if (
-      view.state === "welcome" ||
-      (view.state === "showing" &&
-        before.state === "showing" &&
-        before.workspace.id !== view.workspace.id)
-    ) {
+    if (view.state === "welcome" || (before !== null && after !== null && before.id !== after.id)) {
       ui.resetFocus();
     }
     // PerMark was initialized in the project this window shows: its plugins started over on the new state folder
     if (
-      before.state === "showing" &&
-      view.state === "showing" &&
-      before.workspace.kind === "project" &&
-      view.workspace.kind === "project" &&
-      before.workspace.id === view.workspace.id &&
-      before.workspace.stateLocation !== view.workspace.stateLocation
+      before?.kind === "project" &&
+      after?.kind === "project" &&
+      before.id === after.id &&
+      before.stateLocation !== after.stateLocation
     ) {
       restartPlugins();
     }

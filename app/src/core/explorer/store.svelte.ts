@@ -45,6 +45,15 @@ const SESSION_EXPANDED = "explorer.expanded";
 /** Folders remembered open (a project with thousands of open folders is not a state worth keeping). */
 const MAX_REMEMBERED = 500;
 
+/** The backend has no tree for this view right now: no project on it (another folder opening in it) | its tree not open
+ *  yet | gone (`unsupported` | `unavailable`). Keeping the open document listed is background work: nothing to tell. */
+export function treeGone(error: ApiError): boolean {
+  return (
+    error.kind === "backend" &&
+    (error.error.kind === "unsupported" || error.error.kind === "unavailable")
+  );
+}
+
 /** The quiet offer to show the code files the filter hides (`codeOffer.ts`). */
 export type CodeOffer = { status: "none" } | { status: "offered"; hidden: number };
 
@@ -480,7 +489,7 @@ export class ExplorerStore {
 
   async #follow(path: string | null): Promise<void> {
     const kept = await this.#api.treeKeep(path);
-    if (!kept.ok) this.#host.fail(kept.error);
+    if (!kept.ok && !treeGone(kept.error)) this.#host.fail(kept.error);
     if (path !== null) this.reveal(path);
   }
 

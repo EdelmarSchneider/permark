@@ -6,6 +6,7 @@ import { opensAsText } from "../core/explorer/importModel";
 import type { Context } from "./generated/Context";
 import type { ErrorKind } from "./generated/ErrorKind";
 import type { WindowView } from "./generated/WindowView";
+import type { WorkspaceRefDto } from "./generated/WorkspaceRefDto";
 import type { WorkspaceView } from "./generated/WorkspaceView";
 import {
   MOCK_DOCUMENT_PATHS,
@@ -208,6 +209,9 @@ export type MockProbe = {
   projects: ProjectsProbe;
   /** Facts of the shown project's context (`agentFiles`, `git`) over the mock's own; emitted at once. */
   context: { set(over: Record<string, unknown>): void };
+  /** Opens in this tab of a view that shows something: how long the backend's Opening state lasts (0: until the page
+   *  reacted to it), the folders whose open fails (`io`), the project calls refused meanwhile (`project_of`). */
+  opening: { ms: number; fails: Set<string>; refused: string[] };
 };
 
 /** Fresh mock (tests get their own; the dev build uses `mockApi`). */
@@ -483,6 +487,7 @@ export function createMockApi(): Api & {
         }
       },
     },
+    opening: { ms: 0, fails: new Set(), refused: [] },
   };
   let tree: TreeView | null = null;
   let liveOff = false;
@@ -505,6 +510,57 @@ export function createMockApi(): Api & {
         error: { kind, subject: kind === "invalidName" ? null : refusal.subject, detail },
       },
     };
+  }
+
+  function refused<T>(command: CommandName, kind: ErrorKind, subject: string | null): Result<T> {
+    return {
+      ok: false,
+      error: { kind: "backend", command, error: { kind, subject, detail: null } },
+    };
+  }
+
+  /** A project call while the view opens another workspace: refused as the backend does (`project_of` serves the
+   *  Showing state only), `null` otherwise. */
+  function whileOpening<T>(command: CommandName, what: string = command): Result<T> | null {
+    if (view.state !== "opening") return null;
+    probe.opening.refused.push(what);
+    const session = command === "project_session_get" || command === "project_session_set";
+    return refused(command, "unsupported", session ? "project session" : "project");
+  }
+
+  /** The latest open in this tab (an older one still opening is superseded). */
+  let openTicket = 0;
+
+  /** An open in this tab of a view that shows something, as the backend runs it: Opening first (what was shown stays on
+   *  screen; project calls refused), then the new workspace (`show`) | back to the old one when the open fails | nothing
+   *  when a newer open came meanwhile (`superseded`). */
+  async function openHere(
+    target: WorkspaceRefDto,
+    show: () => WindowView,
+  ): Promise<Result<{ outcome: "opened"; view: WindowView }>> {
+    const before = view;
+    const ticket = ++openTicket;
+    const showing =
+      before.state === "showing"
+        ? before.workspace
+        : before.state === "opening"
+          ? before.showing
+          : null;
+    view = { state: "opening", target, showing };
+    emit("window-changed", { window: "main", view, tab: activeTab });
+    // the page reacts to the Opening view (Svelte flushes in a microtask) while the backend builds the workspace
+    if (probe.opening.ms > 0) await new Promise((r) => setTimeout(r, probe.opening.ms));
+    else for (let i = 0; i < 5; i++) await null;
+    if (ticket !== openTicket) return refused("open_path", "superseded", null);
+    const path = target.kind === "notes" ? "notes" : target.path;
+    if (probe.opening.fails.has(path)) {
+      const back = tabList.find((t) => t.tab === activeTab)?.view ?? before;
+      showView(back);
+      const error = { kind: "io" as const, subject: path, detail: null };
+      emit("open-failed", { window: "main", path, error });
+      return { ok: false, error: { kind: "backend", command: "open_path", error } };
+    }
+    return { ok: true, value: { outcome: "opened", view: show() } };
   }
 
   /** Recomputes the window list and tells it the difference, like the backend does after a change. */
@@ -639,7 +695,14 @@ export function createMockApi(): Api & {
       }
       if (placement === "newWindow") return ok({ outcome: "openedElsewhere", window: "w-1" });
       // this tab (the mock's page shows what it opens either way: a first tab when there is none)
-      if (placement === "thisTab") return ok({ outcome: "opened", view: show(path, "this") });
+      if (placement === "thisTab") {
+        const here = view.state === "showing" || view.state === "opening";
+        if (here) {
+          const kind = /\.(md|markdown|mdown|txt)$/i.test(path) ? "singleFile" : "project";
+          return openHere({ kind, path }, () => show(path, "this"));
+        }
+        return ok({ outcome: "opened", view: show(path, "this") });
+      }
       show(path, "tab");
       return ok({ outcome: "newTab", tab: activeTab ?? 0 });
     },
@@ -656,6 +719,14 @@ export function createMockApi(): Api & {
         document: null,
       };
       const here = placement === "thisTab";
+      if (here && (view.state === "showing" || view.state === "opening")) {
+        return openHere({ kind: "notes" }, () => {
+          tree = null;
+          showView(shown);
+          announceTabs();
+          return view;
+        });
+      }
       if (!here || activeTab === null) {
         activeTab = nextTab++;
         tabList = [...tabList, { tab: activeTab, view: shown }];
@@ -785,17 +856,31 @@ export function createMockApi(): Api & {
       if (change.key === "pluginEnabled") announceShell();
       return ok(settings);
     },
-    projectSessionGet: (key) => ok(session.get(key) ?? null),
+    projectSessionGet: (key) =>
+      Promise.resolve(
+        whileOpening("project_session_get") ?? { ok: true, value: session.get(key) ?? null },
+      ),
     projectSessionSet: (key, value) => {
+      const no = whileOpening<null>("project_session_set");
+      if (no) return Promise.resolve(no);
       if (value === null) session.delete(key);
       else session.set(key, value);
       return ok(null);
     },
-    treeOpen: (filter) => ok(snapshot(filter ?? DEFAULT_FILTER)),
-    treeSetFilter: (filter) => ok(snapshot(filter)),
-    treeOpenFolder: () => ok(null),
+    treeOpen: (filter) =>
+      Promise.resolve(
+        whileOpening("tree_open") ?? { ok: true, value: snapshot(filter ?? DEFAULT_FILTER) },
+      ),
+    treeSetFilter: (filter) =>
+      Promise.resolve(whileOpening("tree_set_filter") ?? { ok: true, value: snapshot(filter) }),
+    treeOpenFolder: () =>
+      Promise.resolve(whileOpening("tree_open_folder") ?? { ok: true, value: null }),
     treeKeep: (path) => {
-      if (tree) tree = { ...tree, keep: path };
+      const no = whileOpening<null>("tree_keep");
+      if (no) return Promise.resolve(no);
+      // no tree open for this view (not yet | closed): `TreeError::NoView`
+      if (!tree) return Promise.resolve(refused<null>("tree_keep", "unavailable", null));
+      tree = { ...tree, keep: path };
       return ok(null);
     },
     treeClose: () => {
@@ -1081,7 +1166,13 @@ export function createMockApi(): Api & {
       return Promise.resolve();
     },
     showWindow: () => ok(undefined),
-    pluginCall: plugins.call,
+    // an App plugin (the notes) answers from anywhere; a project plugin needs the project shown (`project_of`)
+    pluginCall: (method, args) => {
+      const plugin = method.split(".")[0];
+      const app = MOCK_MANIFESTS.some((m) => m.id === plugin && m.scope === "app");
+      const no = app ? null : whileOpening<never>("plugin_call", method);
+      return no ? Promise.resolve(no) : plugins.call(method, args);
+    },
     defaultAppGet: distribution.defaultAppGet,
     defaultAppSet: distribution.defaultAppSet,
     defaultAppAsked: distribution.defaultAppAsked,

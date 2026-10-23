@@ -8,7 +8,7 @@ import en from "./i18n/locales/en";
 import { tabs } from "./shell/tabs.svelte";
 import { windowTitle } from "./title";
 import { ui } from "./shell/ui.svelte";
-import { WindowStore } from "./window.svelte";
+import { onScreen, WindowStore } from "./window.svelte";
 
 async function started(api: Api = createMockApi()): Promise<WindowStore> {
   const store = new WindowStore(api);
@@ -119,6 +119,48 @@ describe("window open flow", () => {
       error: { kind: "io", subject: "b", detail: "x" },
     });
     expect(store.notices).toHaveLength(1);
+  });
+});
+
+describe("in-place open: what stays on screen", () => {
+  const docs = {
+    kind: "project" as const,
+    id: 1,
+    name: "docs",
+    root: "C:/docs",
+    stateLocation: "profile" as const,
+  };
+  const plain = { ...docs, id: 2, name: "plain", root: "C:/plain" };
+
+  it("while another workspace opens, the one shown before stays, its document included", () => {
+    const shown = onScreen({ state: "showing", workspace: docs, document: "a.md" }, null);
+    expect(shown).toEqual({ workspace: docs, document: "a.md" });
+    const opening = onScreen(
+      { state: "opening", target: { kind: "project", path: "C:/plain" }, showing: docs },
+      shown,
+    );
+    // the same object: nothing on screen changes, nothing that follows it runs again
+    expect(opening).toBe(shown);
+    // a second open meanwhile (it supersedes the first): still the same
+    expect(onScreen({ state: "opening", target: { kind: "notes" }, showing: docs }, opening)).toBe(
+      shown,
+    );
+    expect(onScreen({ state: "showing", workspace: plain, document: null }, opening)).toEqual({
+      workspace: plain,
+      document: null,
+    });
+  });
+
+  it("an opening view of another workspace than the screen's shows it bare; nothing shown -> nothing", () => {
+    const before = { workspace: plain, document: "x.md" };
+    expect(
+      onScreen({ state: "opening", target: { kind: "notes" }, showing: docs }, before),
+    ).toEqual({ workspace: docs, document: null });
+    expect(onScreen({ state: "opening", target: { kind: "notes" }, showing: null }, before)).toBe(
+      null,
+    );
+    expect(onScreen({ state: "welcome" }, before)).toBe(null);
+    expect(onScreen({ state: "closing" }, before)).toBe(null);
   });
 });
 

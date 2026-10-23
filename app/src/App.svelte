@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, type AppInfo, type WorkspaceView } from "./api";
+  import { api, type AppInfo } from "./api";
   import { language, t } from "./core/i18n";
   import DocumentArea from "./core/doc/DocumentArea.svelte";
   import { documents } from "./core/doc/document.svelte";
@@ -52,21 +52,8 @@
 
   let info = $state<InfoState>({ status: "loading" });
 
-  /** What the window shows now; while opening, what stays on screen. */
-  const shown = $derived.by((): { workspace: WorkspaceView; document: string | null } | null => {
-    const view = store.view;
-    switch (view.state) {
-      case "showing":
-        return { workspace: view.workspace, document: view.document };
-      case "opening":
-        return view.showing ? { workspace: view.showing, document: null } : null;
-      case "welcome":
-      case "closing":
-        return null;
-      default:
-        return view satisfies never;
-    }
-  });
+  /** What the window shows now; while opening, what stays on screen (its document included). */
+  const shown = $derived(store.screen);
 
   const openingName = $derived.by(() => {
     const view = store.view;

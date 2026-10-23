@@ -216,3 +216,23 @@ export function timeLabel(modifiedMs: number, now: number): string {
 export function isLooseFile(path: string): boolean {
   return opensAsText(path);
 }
+
+/** The row a key moves to in a radio list of `count` rows from `at` (-1: none focused): Down | Right next, Up | Left
+ *  previous (both wrap), Home first, End last; another key stays. */
+export function nextRow(at: number, count: number, key: string): number {
+  const last = count - 1;
+  switch (key) {
+    case "Home":
+      return 0;
+    case "End":
+      return last;
+    case "ArrowDown":
+    case "ArrowRight":
+      return at < 0 || at >= last ? 0 : at + 1;
+    case "ArrowUp":
+    case "ArrowLeft":
+      return at <= 0 ? last : at - 1;
+    default:
+      return at;
+  }
+}

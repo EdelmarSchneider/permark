@@ -635,9 +635,11 @@ export class NotesStore {
   async chooseMoveFolder(folder: string | null): Promise<void> {
     const shown = this.move;
     if (shown.status !== "open" || folder === null) return;
+    // chosen at once (arrows move the choice); the name it suggests lands only while that folder is still the choice
+    this.move = { ...shown, folder, error: null };
     const name = await this.#suggest(shown.path, folder);
     const now = this.move;
-    if (now.status === "open") this.move = { ...now, folder, name, error: null };
+    if (now.status === "open" && now.folder === folder) this.move = { ...now, name };
   }
 
   async browseMoveFolder(): Promise<void> {

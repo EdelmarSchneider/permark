@@ -355,6 +355,31 @@ describe("move to a project", () => {
     expect(store.entries.some((e) => e.path === FIRST)).toBe(true);
   });
 
+  it("rapid choices (arrows): chosen at once, the last folder keeps its own suggested name", async () => {
+    const { store, api } = await setup();
+    await store.openMove(FIRST);
+    const call = api.pluginCall;
+    // the first suggestion answers last
+    let n = 0;
+    api.pluginCall = ((method, args) => {
+      if (method !== "notes.suggestName") return call(method, args);
+      const delay = n++ === 0 ? 30 : 0;
+      return new Promise((r) => setTimeout(r, delay)).then(() => call(method, args));
+    }) as typeof api.pluginCall;
+    const first = store.chooseMoveFolder("C:/first");
+    expect(store.move.status === "open" && store.move.folder).toBe("C:/first");
+    const second = store.chooseMoveFolder("C:/second");
+    expect(store.move.status === "open" && store.move.folder).toBe("C:/second");
+    store.setMoveName("typed.md");
+    await second;
+    const named = store.move.status === "open" ? store.move.name : null;
+    await first;
+    // the late answer for the first folder changes nothing
+    expect(store.move.status === "open" && store.move.folder).toBe("C:/second");
+    expect(store.move.status === "open" && store.move.name).toBe(named);
+    api.pluginCall = call;
+  });
+
   it("keeps the dialog open with the reason when the move is refused", async () => {
     const { store } = await setup();
     await store.openMove(FIRST);
