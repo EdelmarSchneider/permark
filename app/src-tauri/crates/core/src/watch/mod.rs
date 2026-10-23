@@ -1,5 +1,6 @@
 //! File watch: OS events -> verified changes ([`FsBatch`]) -> subscribers (the Explorer first, plugins after).
 
+mod network;
 mod noise;
 mod own;
 mod reconcile;
@@ -21,7 +22,7 @@ pub use types::{Change, ChangeKind, FsBatch, BULK_CHANGES};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LiveStatus {
     Available,
-    /// `reason` is an i18n suffix (`watchFailed`).
+    /// `reason`: `watchFailed` (the OS watch cannot start | stopped) | `network` (a network folder: not watched).
     Unavailable {
         reason: String,
     },
