@@ -2,6 +2,7 @@
   // Move a note into a project: pick the folder (a recent project or Browse) and the file name; the note's exact text
   // is copied there (never over a file), then the note leaves the notes (undo is offered).
   import { t } from "../../core/i18n";
+  import { nextRow } from "./model";
   import NoteDialog from "./NoteDialog.svelte";
   import type { NotesStore } from "./store.svelte";
 
@@ -16,31 +17,76 @@
       shown.folder !== null &&
       !recents.some((r) => r.path === shown.folder),
   );
+  /** The one row of the list in the Tab order: the chosen folder, else the first (radio group: arrows move in it). */
+  const tabStop = $derived(
+    shown.status !== "open" || browsed
+      ? null
+      : recents.some((r) => r.path === shown.folder)
+        ? shown.folder
+        : (recents[0]?.path ?? null),
+  );
+  const MOVES = new Set(["ArrowDown", "ArrowRight", "ArrowUp", "ArrowLeft", "Home", "End"]);
+
+  /** Arrows | Home | End move the choice through the list (it follows the focus, which stays in view). */
+  function onListKey(e: KeyboardEvent): void {
+    if (!MOVES.has(e.key) || e.ctrlKey || e.metaKey || e.altKey) return;
+    const list = e.currentTarget;
+    if (!(list instanceof HTMLElement)) return;
+    const rows = Array.from(list.querySelectorAll<HTMLElement>("[role='radio']"));
+    if (rows.length === 0) return;
+    e.preventDefault();
+    const at = rows.findIndex((r) => r === document.activeElement);
+    const row = rows[nextRow(at, rows.length, e.key)];
+    if (!row) return;
+    row.focus();
+    row.scrollIntoView({ block: "nearest" });
+    row.click();
+  }
 </script>
 
 {#if shown.status === "open"}
   <NoteDialog title={t("notes.move.title")} close={() => store.closeMove()}>
-    <div class="group" role="radiogroup" aria-label={t("notes.move.destination")}>
-      <span class="label">{t("notes.move.destination")}</span>
-      {#each recents as recent (recent.path)}
-        <button
-          type="button"
-          class="choice"
-          role="radio"
-          aria-checked={shown.folder === recent.path}
-          onclick={() => void store.chooseMoveFolder(recent.path)}
+    <div class="group">
+      <span class="label" id="notes-move-destination">{t("notes.move.destination")}</span>
+      {#if recents.length > 0 || browsed}
+        <!-- the list scrolls inside the dialog: many recent folders never push the buttons out -->
+        <div
+          class="list"
+          role="radiogroup"
+          tabindex="-1"
+          aria-labelledby="notes-move-destination"
+          onkeydown={onListKey}
         >
-          <span class="name">{recent.name}</span>
-          <span class="path">{recent.path}</span>
-        </button>
-      {/each}
-      {#if browsed && shown.folder !== null}
-        <button type="button" class="choice" role="radio" aria-checked="true" data-skip>
-          <span class="name">{shown.folder.split(/[\\/]/).filter(Boolean).at(-1)}</span>
-          <span class="path">{shown.folder}</span>
-        </button>
-      {/if}
-      {#if recents.length === 0 && !browsed}
+          {#each recents as recent (recent.path)}
+            <button
+              type="button"
+              class="choice"
+              role="radio"
+              aria-checked={shown.folder === recent.path}
+              tabindex={tabStop === recent.path ? 0 : -1}
+              title={recent.path}
+              onclick={() => void store.chooseMoveFolder(recent.path)}
+            >
+              <span class="name">{recent.name}</span>
+              <span class="path">{recent.path}</span>
+            </button>
+          {/each}
+          {#if browsed && shown.folder !== null}
+            <button
+              type="button"
+              class="choice"
+              role="radio"
+              aria-checked="true"
+              tabindex="0"
+              title={shown.folder}
+              data-skip
+            >
+              <span class="name">{shown.folder.split(/[\\/]/).filter(Boolean).at(-1)}</span>
+              <span class="path">{shown.folder}</span>
+            </button>
+          {/if}
+        </div>
+      {:else}
         <p class="faint">{t("notes.move.noRecents")}</p>
       {/if}
       <button
@@ -90,12 +136,30 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-1);
+    /* shrinks with the dialog (its list scrolls); the name field and the buttons keep their place */
+    flex: 0 1 auto;
+    min-height: 0;
+  }
+  .list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* room for the focus ring (2px + 1px offset) inside the scroller */
+    margin: -3px;
+    padding: 3px;
+  }
+  .list:focus {
+    outline: none;
   }
   .label {
     color: var(--muted);
     font-size: var(--fs-ui-sm);
   }
   .choice {
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
@@ -129,10 +193,12 @@
     white-space: nowrap;
   }
   .browse {
+    flex-shrink: 0;
     align-self: flex-start;
     margin-top: var(--sp-1);
   }
   .field {
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     gap: var(--sp-1);

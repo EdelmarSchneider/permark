@@ -22,8 +22,9 @@
     }
     if (e.key !== "Tab" || !dialog) return;
     const focusable = Array.from(
+      // the Tab order only (a radio list has one stop: its other rows are `tabindex=-1`)
       dialog.querySelectorAll<HTMLElement>(
-        "button:not(:disabled), input:not(:disabled), [tabindex='0']",
+        ":is(button:not(:disabled), input:not(:disabled), [tabindex='0']):not([tabindex='-1'])",
       ),
     );
     const first = focusable[0];
@@ -74,6 +75,8 @@
     inset: 0;
     z-index: 50;
     display: grid;
+    /* one cell the size of the window (never the content's): the dialog's max-height holds, its body scrolls */
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
     place-items: center;
     padding: var(--sp-5);
     background: var(--backdrop);
