@@ -11,11 +11,11 @@ use std::time::{Duration, Instant};
 use notify::event::{ModifyKind, RenameMode};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
 
-use super::network::is_network;
 use super::own::OwnWrites;
 use super::reconcile::{reconcile, Env, Pending};
 use super::sigs::{sig_of, SigStore};
 use super::types::{FsBatch, BULK_CHANGES};
+use super::wsl::is_wsl;
 use super::{LiveStatus, StatusHook, WatchHub};
 use crate::paths::Vault;
 use crate::tree::{key_of, Ignorer};
@@ -244,8 +244,8 @@ fn git_operation(root: &Path) -> bool {
 }
 
 impl Watcher {
-    /// Starts watching every root of `vault`. Never fails: when the OS watchers cannot start (or the project is on a
-    /// network folder, not watched), [`Watcher::status`] says so and the open documents are polled.
+    /// Starts watching every root of `vault`. Never fails: when the OS watchers cannot start (or the project is in a
+    /// WSL folder, not watched), [`Watcher::status`] says so and the open documents are polled.
     #[must_use]
     pub fn start(
         vault: &Vault,
@@ -282,10 +282,10 @@ impl Watcher {
             tree: OnceLock::new(),
         });
         let mut natives = Vec::new();
-        if native && is_network(vault.main().path()) {
-            // a network folder may accept a watch and never report: say so rather than follow nothing
+        if native && is_wsl(vault.main().path()) {
+            // the WSL share accepts a watch and never reports: say so rather than follow nothing
             *lock(&shared.status) = LiveStatus::Unavailable {
-                reason: "network".to_owned(),
+                reason: "wsl".to_owned(),
             };
         } else if native {
             match start_natives(vault, &tx) {

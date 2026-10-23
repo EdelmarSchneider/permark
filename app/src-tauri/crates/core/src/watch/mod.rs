@@ -1,6 +1,5 @@
 //! File watch: OS events -> verified changes ([`FsBatch`]) -> subscribers (the Explorer first, plugins after).
 
-mod network;
 mod noise;
 mod own;
 mod reconcile;
@@ -9,6 +8,7 @@ mod sigs;
 #[cfg(test)]
 mod tests;
 mod types;
+mod wsl;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
@@ -22,7 +22,7 @@ pub use types::{Change, ChangeKind, FsBatch, BULK_CHANGES};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LiveStatus {
     Available,
-    /// `reason`: `watchFailed` (the OS watch cannot start | stopped) | `network` (a network folder: not watched).
+    /// `reason`: `watchFailed` (the OS watch cannot start | stopped) | `wsl` (a WSL folder on Windows: not watched).
     Unavailable {
         reason: String,
     },

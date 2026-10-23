@@ -57,6 +57,8 @@ import type {
 export const MOCK_VERSION = "0.0.0-mock";
 export const MOCK_FOLDER = "C:/Users/demo/permark-docs";
 export const MOCK_FILE = "C:/Users/demo/Downloads/proposal.md";
+/** A WSL folder (`watch/wsl.rs`): `\\wsl$\` | `\\wsl.localhost\`, also behind `\\?\UNC\` | `\\.\UNC\`, `/` | `\`. */
+const WSL_ROOT = /^[\\/]{2}(?:[?.][\\/]unc[\\/])?wsl(?:\$|\.localhost)(?:[\\/]|$)/i;
 
 const ok = <T>(value: T): Promise<Result<T>> => Promise.resolve({ ok: true, value });
 
@@ -545,12 +547,12 @@ export function createMockApi(): Api & {
     };
   }
 
-  /** A project follows its folder live (unless the probe says it cannot | it is on a network share, as the backend
-   *  decides on Windows: mapped drives are not modeled); a single file | the Notes never do. */
+  /** A project follows its folder live (unless the probe says it cannot | it is in a WSL folder, as the backend
+   *  decides on Windows: drives mapped to WSL are not modeled); a single file | the Notes never do. */
   function liveUpdates(): Context["liveUpdates"] {
     if (view.state !== "showing") return neutralContext().liveUpdates;
     if (view.workspace.kind !== "project") return { status: "unavailable", reason: "noWatcher" };
-    if (/^[\\/]{2}/.test(view.workspace.root)) return { status: "unavailable", reason: "network" };
+    if (WSL_ROOT.test(view.workspace.root)) return { status: "unavailable", reason: "wsl" };
     return liveOff ? { status: "unavailable", reason: "watchFailed" } : { status: "available" };
   }
 
