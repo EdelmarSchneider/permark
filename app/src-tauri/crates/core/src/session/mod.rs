@@ -174,7 +174,8 @@ pub fn restore_plan(
                             kept.push((at, reference));
                         }
                     }
-                    None => missing.push(path.clone()),
+                    // 0.6 saved shares as `\\?\UNC\...`: shown plain
+                    None => missing.push(crate::paths::simplified_text(path).into_owned()),
                 }
             }
             let wanted = saved.active.and_then(|a| usize::try_from(a).ok());
@@ -241,6 +242,42 @@ pub struct RecentFolder {
     pub missing: bool,
 }
 
+/// [`RecentStore::list`] of a loaded list, `is_dir` = the disk. Pure given `is_dir`.
+fn listed(list: RecentList, is_dir: impl Fn(&Path) -> bool) -> Vec<RecentFolder> {
+    let mut seen = std::collections::HashSet::new();
+    list.entries
+        .into_iter()
+        .filter_map(|e| {
+            if !seen.insert(entry_key(&e.path)) {
+                return None;
+            }
+            let path = plain_text(&e.path);
+            // a share's own name was its whole path
+            let name = if e.name == e.path {
+                path.clone()
+            } else {
+                e.name
+            };
+            Some(RecentFolder {
+                missing: !is_dir(Path::new(&path)),
+                path,
+                name,
+                opened_ms: e.opened_ms,
+            })
+        })
+        .collect()
+}
+
+/// A saved path in its plain spelling (see [`crate::paths::simplified`]).
+fn plain_text(path: &str) -> String {
+    crate::paths::simplified_text(path).into_owned()
+}
+
+/// Identity of a saved path without the disk (every spelling of a share, case where the OS ignores it).
+fn entry_key(path: &str) -> crate::paths::RootKey {
+    crate::paths::RootKey::of(Path::new(path))
+}
+
 /// `<profile>/recent.json`.
 #[derive(Debug)]
 pub struct RecentStore {
@@ -255,19 +292,11 @@ impl RecentStore {
         }
     }
 
-    /// Newest first, missing ones marked. Corrupt file -> empty (backup kept).
+    /// Newest first, missing ones marked, paths plain (0.6 saved shares as `\\?\UNC\...`; an old entry and a new
+    /// one for the same folder -> the newer only). Corrupt file -> empty (backup kept).
     #[must_use]
     pub fn list(&self) -> Vec<RecentFolder> {
-        self.load()
-            .entries
-            .into_iter()
-            .map(|e| RecentFolder {
-                missing: !Path::new(&e.path).is_dir(),
-                path: e.path,
-                name: e.name,
-                opened_ms: e.opened_ms,
-            })
-            .collect()
+        listed(self.load(), Path::is_dir)
     }
 
     fn load(&self) -> RecentList {
@@ -284,13 +313,8 @@ impl RecentStore {
     pub fn touch(&self, root: &Root, now_ms: u64) -> Result<(), StateError> {
         let mut list = self.load();
         list.entries.retain(|e| {
-            Root::open(Path::new(&e.path)).map_or_else(
-                |_| {
-                    crate::paths::fold(&e.path)
-                        != crate::paths::fold(&root.path().display().to_string())
-                },
-                |r| r != *root,
-            )
+            Root::open(Path::new(&e.path))
+                .map_or_else(|_| entry_key(&e.path) != *root.key(), |r| r != *root)
         });
         list.entries.insert(
             0,
@@ -304,14 +328,15 @@ impl RecentStore {
         self.file.save(&list)
     }
 
-    /// Removes an entry by its path as listed (missing folders too).
+    /// Removes an entry by its path as listed (missing folders too; an old `\\?\UNC\` spelling of it too).
     ///
     /// # Errors
     /// Write failure.
     pub fn remove(&self, path: &str) -> Result<(), StateError> {
         let mut list = self.load();
         let before = list.entries.len();
-        list.entries.retain(|e| e.path != path);
+        let key = entry_key(path);
+        list.entries.retain(|e| entry_key(&e.path) != key);
         if list.entries.len() == before {
             return Ok(());
         }

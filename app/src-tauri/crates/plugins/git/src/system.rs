@@ -151,8 +151,14 @@ pub fn run_until(
         .map(OsStr::new)
         .collect();
     all.extend_from_slice(args);
-    let mut child = Proc::start(exe, dunce::simplified(dir), &all, &SET, &SCRUBBED)
-        .map_err(|e| GitError::Spawn(e.to_string()))?;
+    let mut child = Proc::start(
+        exe,
+        &permark_core::paths::simplified(dir),
+        &all,
+        &SET,
+        &SCRUBBED,
+    )
+    .map_err(|e| GitError::Spawn(e.to_string()))?;
     let overflow = Arc::new(AtomicBool::new(false));
     let out = spawn_reader(child.stdout.take(), max, Arc::clone(&overflow));
     let err = spawn_reader(

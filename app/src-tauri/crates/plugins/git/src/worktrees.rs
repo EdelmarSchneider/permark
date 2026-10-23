@@ -57,13 +57,13 @@ pub(crate) fn common_dir(git_dir: &Path) -> PathBuf {
         }
         None => git_dir.to_path_buf(),
     };
-    dunce::canonicalize(&found).unwrap_or(found)
+    permark_core::paths::canonicalize(&found).unwrap_or(found)
 }
 
 /// The other working trees of the repository the project folder `root` belongs to.
 #[must_use]
 pub fn linked_worktrees(root: &Path, home: Option<&Path>) -> Vec<Linked> {
-    let root = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let root = permark_core::paths::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let Some((workdir, git_dir, linked)) = root
         .ancestors()
         .take(MAX_LEVELS)
@@ -81,9 +81,9 @@ pub fn linked_worktrees(root: &Path, home: Option<&Path>) -> Vec<Linked> {
     let common = common_dir(&git_dir);
     let mut found: Vec<Linked> = Vec::new();
     let mut add = |name: String, tree: PathBuf| {
-        let folder = dunce::simplified(&tree.join(&prefix)).to_path_buf();
+        let folder = permark_core::paths::simplified(&tree.join(&prefix)).into_owned();
         if folder.is_dir()
-            && dunce::canonicalize(&folder).ok() != Some(root.clone())
+            && permark_core::paths::canonicalize(&folder).ok() != Some(root.clone())
             && found.len() < MAX_WORKTREES
         {
             found.push(Linked { name, folder });
