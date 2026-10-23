@@ -40,7 +40,7 @@ jobs:
     steps:
       # By hand: the branch or tag the run was started on (no `ref` input then).
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ inputs.ref || github.ref }}
 

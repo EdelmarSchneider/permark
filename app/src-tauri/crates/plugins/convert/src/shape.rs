@@ -1,7 +1,7 @@
 //! What the data looks like (one flat table? how deep? how much of it sits in uniform arrays?) and where its secret
 //! values are.
 
-use permark_core::secrets::{is_count, is_secret_key, url_password};
+use permark_core::secrets::{has_token, is_count, is_secret_key, url_password};
 use serde_json::{Map, Value};
 
 /// The shape of a value, for judging targets: facts measured once, not states.
@@ -111,7 +111,9 @@ fn is_reference(text: &str) -> bool {
 fn is_secret_value(value: &Value, under_secret: bool) -> bool {
     match value {
         Value::String(s) => {
-            (under_secret && !s.is_empty() && !is_reference(s)) || url_password(s).is_some()
+            (under_secret && !s.is_empty() && !is_reference(s))
+                || url_password(s).is_some()
+                || has_token(s)
         }
         Value::Number(_) => under_secret,
         _ => false,

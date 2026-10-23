@@ -1,0 +1,59 @@
+{
+  "id": "copy-not-in-tree",
+  "bug": "A file copied into the project stays out of the file tree until a reload (another tab's tree news made ours look old)",
+  "found": "manual test; fixed 2026-10-20",
+  "persona": "A1",
+  "severityMin": "major",
+  "reproduction": "Mock has one view: seed foreignTreeNews sends the tree news a second tab's project makes in the real backend (window w-9); the copy itself = backend copy (planImport + applyImport), as a drop does.",
+  "fix": "92b6f85",
+  "scenario": {
+    "name": "copy-not-in-tree",
+    "steps": [
+      {
+        "do": "seed",
+        "use": "project"
+      },
+      {
+        "do": "seed",
+        "use": "foreignTreeNews"
+      },
+      {
+        "do": "seed",
+        "use": "importFiles",
+        "target": "",
+        "sources": ["C:/Users/demo/Downloads/copied-note.md"],
+        "probe": true,
+        "axe": false,
+        "watch": "[role='tree']",
+        "expectChange": true
+      }
+    ]
+  },
+  "expect": {
+    "before": [
+      {
+        "step": "step-3",
+        "flag": "no-change"
+      }
+    ],
+    "after": [
+      {
+        "step": "step-3",
+        "flag": "no-change",
+        "absent": true
+      }
+    ],
+    "now": [
+      {
+        "step": "step-3",
+        "flag": "no-change",
+        "absent": true
+      }
+    ]
+  },
+  "observed": {
+    "before": "ac11099 (92b6f85^): no-change: tree text unchanged after the copy, 0 net DOM changes",
+    "after": "92b6f85: tree shows copied-note.md at once (textAdded)",
+    "now": "develop 25b260e: same as after"
+  }
+}

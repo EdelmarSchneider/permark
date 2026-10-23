@@ -9,4 +9,8 @@ untagged: number,
 /**
  * Entries of files that are gone.
  */
-orphans: number, };
+orphans: number, 
+/**
+ * Status marks are shown (the opened folder lists official tags | categories); `false`: dormant.
+ */
+marks: boolean, };

@@ -293,7 +293,7 @@
         <div class="rows">
           {#each group.rows as row (row.path + "@" + row.line)}
             {@const value = row.value}
-            <div class="row" class:ignore>
+            <div class="row" class:ignore data-line={row.line}>
               {#if value.type === "pattern"}
                 <span class="mark" title={value.negated ? t("config.ignore.negation") : undefined}>
                   {value.negated ? "!" : ""}

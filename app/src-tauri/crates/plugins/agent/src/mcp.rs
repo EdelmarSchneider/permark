@@ -107,7 +107,7 @@ pub fn tool_list() -> Vec<Tool> {
         .annotate(reading.clone()),
         Tool::new(
             "read",
-            "Text of one part of a file: `at` = heading path `A > B`, `#anchor`, key path, lines `L10-L40` | `L10` (from line 10 on); none = all.",
+            "Text of one part of a file: `at` = heading path `A > B`, `#anchor`, key path, lines `L10-L40` | `L10` (from line 10 on); no `at` = whole file.",
             schema(json!({ "type": "object", "properties": {
                 "path": path(),
                 "at": text("Part to read.")
@@ -172,8 +172,26 @@ pub struct McpServer {
     agent: Arc<Agent>,
     /// Answers carry `structuredContent` too.
     structured: bool,
-    /// The client's name from `initialize` (a request's own `_meta` wins).
-    client: Arc<Mutex<Option<String>>>,
+    /// Who the client said it is.
+    client: Arc<Mutex<Heard>>,
+}
+
+/// Who the client said it is. Handlers run concurrently (`notifications/initialized` can be handled after a call), so a
+/// name a request gave in its own `_meta` is never replaced by the one from `initialize`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Heard {
+    Nothing,
+    Initialize(String),
+    Request(String),
+}
+
+impl Heard {
+    fn name(&self) -> Option<&str> {
+        match self {
+            Self::Nothing => None,
+            Self::Initialize(name) | Self::Request(name) => Some(name),
+        }
+    }
 }
 
 impl McpServer {
@@ -182,8 +200,32 @@ impl McpServer {
         Self {
             agent,
             structured,
-            client: Arc::new(Mutex::new(None)),
+            client: Arc::new(Mutex::new(Heard::Nothing)),
         }
+    }
+
+    /// Records who the client is, in the order the handlers decide it (the agent's name is set under the same lock;
+    /// never on a blocking thread, where two writers finish in any order). True: the name changed, the app should hear.
+    pub fn hear(&self, said: Heard) -> bool {
+        let mut heard = self.client.lock().unwrap_or_else(PoisonError::into_inner);
+        if matches!((&*heard, &said), (Heard::Request(_), Heard::Initialize(_))) {
+            return false;
+        }
+        let Some(name) = said.name() else {
+            return false;
+        };
+        let changed = heard.name() != Some(name);
+        if changed {
+            self.agent.name_client(name);
+        }
+        *heard = said;
+        changed
+    }
+
+    /// Opens the app session off the async thread.
+    async fn ensure_session(&self) {
+        let agent = Arc::clone(&self.agent);
+        let _ = tokio::task::spawn_blocking(move || agent.ensure_session()).await;
     }
 }
 
@@ -238,15 +280,8 @@ impl ServerHandler for McpServer {
             .or_else(|| context.meta.client_info())
             .map(|info| info.name);
         if let Some(name) = named {
-            let changed = {
-                let mut client = self.client.lock().unwrap_or_else(PoisonError::into_inner);
-                let changed = client.as_deref() != Some(name.as_str());
-                *client = Some(name.clone());
-                changed
-            };
-            if changed {
-                let agent = Arc::clone(&self.agent);
-                let _ = tokio::task::spawn_blocking(move || agent.hello(&name)).await;
+            if self.hear(Heard::Request(name)) {
+                self.ensure_session().await;
             }
         }
         let name = request.name.to_string();
@@ -268,9 +303,9 @@ impl ServerHandler for McpServer {
             .peer
             .peer_info()
             .map_or_else(|| "agent".to_owned(), |info| info.client_info.name.clone());
-        *self.client.lock().unwrap_or_else(PoisonError::into_inner) = Some(client.clone());
-        let agent = Arc::clone(&self.agent);
-        let _ = tokio::task::spawn_blocking(move || agent.hello(&client)).await;
+        if self.hear(Heard::Initialize(client)) {
+            self.ensure_session().await;
+        }
     }
 }
 

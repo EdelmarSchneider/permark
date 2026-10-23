@@ -21,6 +21,11 @@ pub struct RpcCall {
 
 pub type RpcHandler = Arc<dyn Fn(&RpcCall) -> Result<Value, IpcError> + Send + Sync>;
 
+/// Told the caller (`RpcCall.window`) that let go of the table's project (tab closed, another folder opened in it,
+/// window gone): what a plugin keeps per caller goes (teardown symmetry). Called under the window registry's lock:
+/// must be quick and must not call back into windows.
+pub type GoneHandler = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// Arguments of a method that takes none.
 #[derive(Debug, Default, Deserialize)]
 pub struct NoArgs {}
@@ -52,6 +57,7 @@ type Key = (PluginId, String);
 #[derive(Default)]
 pub struct RpcTable {
     handlers: RwLock<BTreeMap<Key, (u64, RpcHandler)>>,
+    gone: RwLock<BTreeMap<u64, GoneHandler>>,
     next: AtomicU64,
 }
 
@@ -84,8 +90,37 @@ impl RpcTable {
             .insert(key.clone(), (id, handler));
         RpcRegistration {
             table: Arc::downgrade(self),
-            key,
+            key: Some(key),
             id,
+        }
+    }
+
+    /// Hears callers that let go of the project until the returned registration is dropped.
+    #[must_use]
+    pub fn on_caller_gone(self: &Arc<Self>, handler: GoneHandler) -> RpcRegistration {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        self.gone
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(id, handler);
+        RpcRegistration {
+            table: Arc::downgrade(self),
+            key: None,
+            id,
+        }
+    }
+
+    /// A caller (`RpcCall.window`) let go of the project: every listener hears it.
+    pub fn caller_gone(&self, caller: &str) {
+        let handlers: Vec<GoneHandler> = self
+            .gone
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values()
+            .cloned()
+            .collect();
+        for handler in handlers {
+            handler(caller);
         }
     }
 
@@ -124,19 +159,32 @@ impl RpcTable {
 #[derive(Debug)]
 pub struct RpcRegistration {
     table: Weak<RpcTable>,
-    key: Key,
+    /// `None`: a caller-gone listener.
+    key: Option<Key>,
     id: u64,
 }
 
 impl Drop for RpcRegistration {
     fn drop(&mut self) {
-        if let Some(table) = self.table.upgrade() {
-            let mut map = table
-                .handlers
-                .write()
-                .unwrap_or_else(PoisonError::into_inner);
-            if map.get(&self.key).is_some_and(|(id, _)| *id == self.id) {
-                map.remove(&self.key);
+        let Some(table) = self.table.upgrade() else {
+            return;
+        };
+        match &self.key {
+            Some(key) => {
+                let mut map = table
+                    .handlers
+                    .write()
+                    .unwrap_or_else(PoisonError::into_inner);
+                if map.get(key).is_some_and(|(id, _)| *id == self.id) {
+                    map.remove(key);
+                }
+            }
+            None => {
+                table
+                    .gone
+                    .write()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .remove(&self.id);
             }
         }
     }
@@ -205,6 +253,22 @@ mod tests {
             table.call("demo", "m", &call(Value::Null)).unwrap(),
             serde_json::json!(2)
         );
+    }
+
+    #[test]
+    fn callers_gone_are_heard_until_the_registration_goes() {
+        let table = RpcTable::new();
+        let heard: Arc<std::sync::Mutex<Vec<String>>> = Arc::default();
+        let sink = Arc::clone(&heard);
+        let listening = table.on_caller_gone(Arc::new(move |caller: &str| {
+            sink.lock().unwrap().push(caller.to_owned());
+        }));
+        let _method = table.register(&id("demo"), "m", typed(|_: NoArgs, _| Ok(1)));
+        table.caller_gone("v-1");
+        drop(listening);
+        table.caller_gone("v-2");
+        assert_eq!(*heard.lock().unwrap(), ["v-1"]);
+        assert_eq!(table.served(), ["demo.m"], "methods stay");
     }
 
     #[test]

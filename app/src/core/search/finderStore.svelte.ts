@@ -21,6 +21,7 @@ import {
   type Row,
   type Scope,
   type SectionRow,
+  type TrailPlace,
 } from "./finderModel";
 
 /** Wait after the last key before the backend is asked. */
@@ -56,6 +57,10 @@ export type FinderHost = {
   outline(): SectionRow[];
   /** Files opened in this project, newest first. */
   opened(): readonly string[];
+  /** The window's trail (Back | Forward), newest first. */
+  places(): readonly TrailPlace[];
+  /** Goes to a place of the trail (its index). */
+  goToPlace(index: number): void;
   /** The window's Explorer shows hidden files (dot files | folders): they rank as any other then. */
   showsHidden(): boolean;
   openFile(path: string): void;
@@ -96,6 +101,7 @@ export class FinderStore {
       outline: this.#host.outline(),
       tags: this.scope === "all" || this.scope === "tags" ? this.#host.tags?.hits(this.query) : [],
       singleFile: this.#host.singleFile,
+      places: this.scope === "places" ? this.#host.places() : [],
     }),
   );
 
@@ -160,6 +166,10 @@ export class FinderStore {
         this.setScope(this.scopes.includes("all") ? "all" : this.scope);
         this.#refresh(true);
         break;
+      case "place":
+        this.#host.close();
+        this.#host.goToPlace(row.index);
+        break;
       case "command":
         if (row.entry.availability.status === "unavailable") return;
         this.#host.close();
@@ -188,6 +198,7 @@ export class FinderStore {
     if (
       this.scope === "commands" ||
       this.scope === "tags" ||
+      this.scope === "places" ||
       (this.scope === "sections" && this.#host.singleFile)
     ) {
       this.data = NO_DATA;

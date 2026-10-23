@@ -4,9 +4,10 @@
 import { untrack, type Component } from "svelte";
 import type { Manifest } from "../../api/generated/Manifest";
 import type { PluginId } from "../../api/generated/PluginId";
-import type { Block, Context, DocumentView } from "../../api";
+import type { Block, Context, DocumentView, ProjectRow } from "../../api";
 import { available, type Requirement } from "../conditions/available";
 import type { MessageKey } from "../i18n";
+import type { PluginPageId } from "../shell/ui.svelte";
 import type {
   EmbedProps,
   FrontMatterProps,
@@ -17,6 +18,9 @@ import type {
 } from "./props";
 
 /** Lazily loaded UI piece (heavy views load when first needed). */
+/** A count on a project's detail card and the way to its items (`projectCount`). */
+export type ProjectCount = { text: string; open: () => void };
+
 export type LazyComponent<Props extends Record<string, unknown> = Record<string, never>> =
   () => Promise<{
     default: Component<Props>;
@@ -45,6 +49,29 @@ export type TreeBadge = {
 /** What a plugin puts in a column of the outline panel: a short text and, when useful, a longer one for the tooltip. */
 export type OutlineCell = { text: string; title?: string };
 
+/**
+ * A short fact a plugin knows about an included project (its branch, what its repository is doing). `chip`: a state
+ * (drawn as a chip, as in the status bar; never cut); `warn`: a problem (a warning mark before `text`); `branch`:
+ * `text` is a branch name (a branch mark before it, so it reads apart from the project's short name); `commit`: `text`
+ * is a commit (a commit mark before it: not on a branch); `spoken`: what
+ * the screen-reader name adds after the visible words (none: nothing); `title`: the tooltip (else `text`).
+ */
+export type ProjectFact = {
+  text: string;
+  chip?: boolean;
+  warn?: boolean;
+  branch?: boolean;
+  commit?: boolean;
+  spoken?: string;
+  title?: string;
+};
+
+/** The props of a plugin's strip under the Explorer list: `focusList` moves focus to the list (the strip may go). */
+export type ExplorerNoteProps = { focusList: () => void };
+
+/** The props of a plugin's block in a project's detail card. */
+export type ProjectCardProps = { row: ProjectRow };
+
 /** Everything a plugin can add to the core UI. */
 export type Contribution = Owned &
   (
@@ -68,6 +95,15 @@ export type Contribution = Owned &
         /** A small icon: the tab shows it alone while another tab is the open one and the strip is crowded. */
         icon?: Component<{ size?: number }>;
         view: LazyComponent;
+        /** Reactive; false = not drawn (no tab, no panel: dormant until the project calls for it). Absent = true. */
+        offered?: () => boolean;
+        /** Reactive; a short count after the tab label in the right tab strip (`null`: none). */
+        badge?: () => string | null;
+        /**
+         * Side right: open when the project has no choice for it yet (absent = false); asked once per project load.
+         * Right views get prop `viewMenu` (`PanelViewProps`): the view options button for their header.
+         */
+        defaultOpen?: () => boolean;
       }
     | {
         kind: "statusItem";
@@ -96,6 +132,9 @@ export type Contribution = Owned &
         cell: (index: number) => OutlineCell | null;
         watcher: LazyComponent<OutlineWatcherProps>;
       }
+    /** A dot after the label of outline item `index` (a changed section): `text` for screen readers, `title` the
+     *  tooltip. Reads reactive state; the first non-null mark of the visible ones is drawn. */
+    | { kind: "outlineMark"; id: string; mark: (index: number) => OutlineCell | null }
     /** A strip under the document header (the review bar, a repository notice). Lowest `order` first. */
     | { kind: "docBar"; id: string; order: number; view: LazyComponent }
     /** Changes the blocks the page shows (the review adds the removed ones and its own bars). Reads reactive state. */
@@ -124,6 +163,28 @@ export type Contribution = Owned &
         order: number;
         step: (direction: 1 | -1) => boolean | Promise<boolean>;
       }
+    /**
+     * What a plugin knows about the included projects (git: branch, changes): the muted text of a project node, the
+     * status of its Settings row, a line in its expanded row, one sentence for the Settings intro, a block in its detail
+     * card. Every function reads reactive state; `null` = nothing to say. The plugin's own `treeBadge` on the project
+     * folder is left out of the card and the Settings row (its block | status says it).
+     */
+    | {
+        kind: "projectFacts";
+        id: string;
+        node: (row: ProjectRow) => ProjectFact | null;
+        row: (row: ProjectRow) => ProjectFact | null;
+        info: (row: ProjectRow) => { label: string; text: string } | null;
+        note: () => string | null;
+        card: LazyComponent<ProjectCardProps>;
+      }
+    /**
+     * A short count a plugin keeps about an included project, for the counts line of its detail card ("2 open
+     * comments"; joined with " · " after the folder's badge titles, which it replaces for its plugin). `open` shows
+     * those items (the plugin's tab, only that project's); the card closes first. Reads reactive state; `null` =
+     * nothing to say.
+     */
+    | { kind: "projectCount"; id: string; count: (row: ProjectRow) => ProjectCount | null }
     /** An entry of the Explorer's context menu (a single row). */
     | {
         kind: "treeMenu";
@@ -144,6 +205,30 @@ export type Contribution = Owned &
     /** Runs on the root of the page when it exists; returns what undoes it. */
     | { kind: "docDecoration"; id: string; decorate: (root: HTMLElement) => () => void }
     | { kind: "settingsSection"; id: string; label: MessageKey; view: LazyComponent }
+    /**
+     * A section of its own in the settings page nav (the agent connection), placed among the core sections by `order`
+     * (`CORE_SECTION_ORDER`). `view` draws the whole section (its own cards); `quick` = a row in the gear popover, last
+     * before its buttons. Opened with `ui.openSettingsPage(id, "content")`, the view focuses its first control itself.
+     */
+    | {
+        kind: "settingsPage";
+        id: PluginPageId;
+        label: MessageKey;
+        order: number;
+        view: LazyComponent;
+        quick?: LazyComponent;
+      }
+    /**
+     * A quiet strip under the Explorer list (the offer to share a project with agents), in the strip slot after the
+     * projects strip and the code offer: the first visible note by `order` whose `when` (reactive) holds, one at a time.
+     */
+    | {
+        kind: "explorerNote";
+        id: string;
+        order: number;
+        when: () => boolean;
+        view: LazyComponent<ExplorerNoteProps>;
+      }
     /** Rows a plugin adds to the Project section of the settings (what the project shares in `.permark/`). */
     | { kind: "projectSection"; id: string; label: MessageKey; view: LazyComponent }
     /** What the window shows for a workspace of a kind the core has no page for (the Notes): its sidebar and its page. */

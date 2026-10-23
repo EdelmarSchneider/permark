@@ -20,6 +20,7 @@ pub mod organizing;
 pub mod paths;
 pub mod plugins;
 pub mod process;
+pub mod projects;
 pub mod remote;
 pub mod search;
 pub mod secrets;

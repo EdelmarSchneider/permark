@@ -2,13 +2,20 @@
 // the stores' state read, the pure step of `layout.ts` applied, the frame animated, the focus let go of a region that
 // hides (its controls go inert: keys reach the page).
 
+import { tick } from "svelte";
 import type { WindowView } from "../../api";
-import { documents } from "../doc/document.svelte";
 import { reading } from "../doc/reading.svelte";
 import { windowStore } from "../window.svelte";
-import { toggleOutline, toggleRight, type RightChoice, type RightSide } from "./layout";
+import {
+  toggleOutline,
+  togglePanel as panelStep,
+  toggleRight,
+  type RightChoice,
+  type RightSide,
+} from "./layout";
 import { layout } from "./layout.svelte";
-import { activeRight } from "./panels.svelte";
+import { OUTLINE, select } from "./rightViews";
+import { rightViews } from "./rightViews.svelte";
 import { ui } from "./ui.svelte";
 
 /** Workspaces with a sidebar: a project, the Notes. */
@@ -28,11 +35,15 @@ export function hasSidebar(view: WindowView): boolean {
 
 /** The right region as the stores have it now (reactive when read in a `$derived`). */
 export function rightSide(): RightSide {
-  const view = documents.view;
   return {
-    panel: activeRight(),
-    hasOutline: view?.body.kind === "markdown" && view.body.outline.length > 0,
+    hasOutline: rightViews.hasOutline,
     outlineOn: reading.outline,
+    outlineSelected: rightViews.isSelected(OUTLINE),
+    panels: rightViews.panels.map((panel) => ({
+      id: panel.id,
+      open: rightViews.isOpen(panel),
+      selected: rightViews.isSelected(panel.id),
+    })),
     hidden: layout.rightHidden,
   };
 }
@@ -45,6 +56,11 @@ function letGo(region: "sidebar" | "right"): void {
   if (!(active instanceof HTMLElement) || active.closest(`[data-region="${region}"]`) === null) {
     return;
   }
+  focusPage(active);
+}
+
+/** The keyboard goes to the page: the editor when one is open, else the document scroller, else the page region. */
+function focusPage(active: HTMLElement): void {
   const page = document.querySelector<HTMLElement>('[data-region="page"]');
   const target =
     page?.querySelector<HTMLElement>("[contenteditable='true'], .cm-content") ??
@@ -54,17 +70,21 @@ function letGo(region: "sidebar" | "right"): void {
   else active.blur();
 }
 
+/** `id` becomes the view its group shows (its group: every view of its arrangement group). */
+export function selectView(id: string): void {
+  const group = rightViews.layout.groups.find((g) => g.views.includes(id));
+  layout.setSelected(select(layout.views.selected, group?.views ?? [id], id));
+}
+
 function apply(choice: RightChoice): void {
-  const same =
-    choice.hidden === layout.rightHidden &&
-    choice.outlineOn === reading.outline &&
-    !(choice.closePanel && ui.right !== null);
-  if (same) return;
-  if (choice.hidden !== layout.rightHidden) ui.animateFrame();
-  if (choice.hidden) letGo("right");
-  layout.setRightHidden(choice.hidden);
-  reading.setOutline(choice.outlineOn);
-  if (choice.closePanel) ui.right = null;
+  if (choice.hidden !== undefined && choice.hidden !== layout.rightHidden) {
+    ui.animateFrame();
+    if (choice.hidden) letGo("right");
+    layout.setRightHidden(choice.hidden);
+  }
+  if (choice.outlineOn !== undefined) reading.setOutline(choice.outlineOn);
+  if (choice.open !== undefined) layout.setOpen(choice.open.id, choice.open.open);
+  if (choice.select !== undefined) selectView(choice.select);
 }
 
 /** Mod+B: the sidebar hides | shows (only where there is one). */
@@ -84,4 +104,44 @@ export function toggleRightPanel(): void {
 /** Mod+Alt+O, the header's outline button: the outline shows | hides (a hidden right panel shows again with it). */
 export function toggleOutlinePanel(): void {
   apply(toggleOutline(rightSide()));
+}
+
+/** A panel's toggle (its chip, its command): on screen -> closed; open elsewhere -> brought forward; closed -> open. */
+export function togglePanel(id: string): void {
+  apply(panelStep(rightSide(), id));
+}
+
+/** Shows a view of the right column: opened (the outline turned on), selected in its group, the region shown. */
+export function showView(id: string): void {
+  apply(
+    id === OUTLINE
+      ? { hidden: false, outlineOn: true, select: id }
+      : { hidden: false, open: { id, open: true }, select: id },
+  );
+}
+
+/** Closes a view of the right column (its place in the arrangement stays): a panel closed, the outline off. */
+export function closeView(id: string): void {
+  const active = typeof document === "undefined" ? null : document.activeElement;
+  const inside =
+    active instanceof HTMLElement && active.closest(`[data-right-view="${id}"]`) !== null;
+  if (id === OUTLINE) reading.setOutline(false);
+  else layout.setOpen(id, false);
+  // the keyboard was in that view: once it is gone, the next control of the right column takes it (else the page);
+  // never the page body
+  if (inside && active instanceof HTMLElement) {
+    const was = active;
+    void tick().then(() => keepFocus(was));
+  }
+}
+
+/** After a view closed under the focus: the first control of a view still shown, else the page. */
+function keepFocus(was: HTMLElement): void {
+  const now = document.activeElement;
+  if (now instanceof HTMLElement && now !== document.body && now.isConnected) return;
+  const next = document.querySelector<HTMLElement>(
+    '[data-region="right"] [data-right-view]:not([hidden]) :is(button:not([disabled]), [tabindex="0"], input, a[href])',
+  );
+  if (next) next.focus();
+  else focusPage(was);
 }

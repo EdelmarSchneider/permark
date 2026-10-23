@@ -8,13 +8,10 @@ Choose the command for the operating system in use:
 
 ### Windows
 ```powershell
-winget install EdelmarSchneider.PerMark
-```
-*(Alternative via Scoop)*:
-```powershell
 scoop bucket add permark https://github.com/EdelmarSchneider/scoop-permark
 scoop install permark
 ```
+Scoop puts `permark` on `PATH`. Without Scoop: download `PerMark_<version>_x64-setup.exe` from the [latest release](https://github.com/EdelmarSchneider/permark/releases/latest) and run it (current user, no administrator rights). A `winget` package is not available yet.
 
 ### macOS
 ```bash
@@ -24,7 +21,7 @@ brew install --cask permark
 
 ### Linux (Debian / Ubuntu / Mint / Pop!_OS — `x86_64`)
 ```bash
-curl -fsSL https://github.com/EdelmarSchneider/permark/releases/latest/download/PerMark_0.6.4_amd64.deb -o /tmp/permark.deb
+curl -fsSL https://github.com/EdelmarSchneider/permark/releases/latest/download/PerMark_0.7.0_amd64.deb -o /tmp/permark.deb
 sudo apt-get update && sudo apt-get install -y /tmp/permark.deb
 rm -f /tmp/permark.deb
 ```

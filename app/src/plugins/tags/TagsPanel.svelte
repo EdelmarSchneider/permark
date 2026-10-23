@@ -1,17 +1,24 @@
 <script lang="ts">
   // The Tags tab of the sidebar: every tag with the number of files that have it, the documents without any, and the
   // files that have all the selected tags (Ctrl | Cmd + click adds a tag to the selection).
+  // Where official lists exist: a legend of the three marks on top, "Make official" on each local | unlisted row, and
+  // the official tags no file uses yet (count 0).
   import Palette from "@lucide/svelte/icons/palette";
   import X from "@lucide/svelte/icons/x";
+  import { tick } from "svelte";
   import { documents } from "../../core/doc/document.svelte";
   import { apiErrorText } from "../../core/errors";
   import { t, tn } from "../../core/i18n";
+  import { projects } from "../../core/projects/instance.svelte";
+  import PromoteAsk from "../../core/projects/PromoteAsk.svelte";
+  import StatusMark from "../../core/projects/StatusMark.svelte";
   import TagChip from "./TagChip.svelte";
   import TagStylePopover from "./TagStylePopover.svelte";
   import { tags } from "./store.svelte";
 
   let styling = $state<string | null>(null);
   let confirming = $state(false);
+  let list: HTMLElement | undefined = $state();
 
   const overview = $derived(tags.overview);
   const status = $derived(tags.status);
@@ -24,6 +31,39 @@
     return at < 0
       ? { name: path, folder: "" }
       : { name: path.slice(at + 1), folder: path.slice(0, at) };
+  }
+
+  /** A part of a tag's row: its look button | its chip. */
+  function partOf(tag: string, part: "look" | "chip"): HTMLElement | null {
+    for (const li of list?.querySelectorAll<HTMLElement>("li[data-row]") ?? []) {
+      if (li.dataset["row"] !== tag) continue;
+      return li.querySelector<HTMLElement>(part === "look" ? "button.icon" : ".chip button.face");
+    }
+    return null;
+  }
+
+  /** The look popover goes; from a key (Escape) focus returns to its button. */
+  async function closeStyle(refocus: boolean): Promise<void> {
+    const tag = styling;
+    styling = null;
+    if (!refocus || tag === null) return;
+    await tick();
+    partOf(tag, "look")?.focus();
+  }
+
+  function lookKey(event: KeyboardEvent, tag: string): void {
+    // Escape on the button of an open popover closes it too (focus stays on the button)
+    if (event.key === "Escape" && styling === tag && !event.isComposing) {
+      event.preventDefault();
+      event.stopPropagation();
+      styling = null;
+    }
+  }
+
+  /** Made official from its row: the row's button is gone; focus on the tag (its name now says "Official"). */
+  async function promoted(tag: string): Promise<void> {
+    await tick();
+    partOf(tag, "chip")?.focus();
   }
 
   async function cleanUp(): Promise<void> {
@@ -58,6 +98,31 @@
     <p class="notice warn" role="alert">{t("tags.writeError", { message: status.writeError })}</p>
   {/if}
 
+  {#if overview?.marks}
+    <div class="legend">
+      <ul aria-label={t("tags.legend.label")}>
+        <li>
+          <StatusMark status="official" words={t("tags.status.official")} silent /><span
+            >{t("tags.status.official")}</span
+          >
+        </li>
+        <li>
+          <StatusMark status="local" words={t("tags.legend.local")} silent /><span
+            >{t("tags.legend.local")}</span
+          >
+        </li>
+        <li>
+          <StatusMark status="unlisted" words={t("tags.legend.unlisted")} silent /><span
+            >{t("tags.legend.unlisted")}</span
+          >
+        </li>
+      </ul>
+      <button type="button" class="link" onclick={() => projects.showVocabulary("tag", null)}
+        >{t("tags.officialEdit")}</button
+      >
+    </div>
+  {/if}
+
   <div class="find">
     <input
       type="search"
@@ -86,14 +151,17 @@
           <span class="n">{overview.untagged}</span>
         </button>
       {/if}
-      <ul class="list">
+      <ul class="list" bind:this={list}>
         {#each tags.listed as item (item.name)}
           {@const style = tags.styleOf(item.name)}
-          <li>
+          {@const mark = overview.marks ? tags.markOf(item) : null}
+          <li data-row={item.name}>
             <TagChip
               name={item.name}
               color={style?.color}
               icon={style?.icon}
+              status={mark?.status ?? null}
+              statusWords={mark?.words ?? ""}
               count={item.count}
               active={tags.selected.includes(item.name)}
               onclick={(event) => tags.pick(item.name, event.ctrlKey || event.metaKey)}
@@ -107,12 +175,23 @@
               title={t("tags.style.title", { name: item.name })}
               aria-label={t("tags.style.title", { name: item.name })}
               aria-expanded={styling === item.name}
+              onkeydown={(e) => lookKey(e, item.name)}
               onclick={() => (styling = styling === item.name ? null : item.name)}
             >
-              <Palette size={13} />
+              <Palette size={14} />
             </button>
+            <!-- after the look button: its question takes the row's width below, in reading order -->
+            {#if mark !== null && mark.status !== "official" && tags.promotable}
+              <PromoteAsk kind="tag" name={item.name} short done={() => void promoted(item.name)} />
+            {/if}
             {#if styling === item.name}
-              <TagStylePopover tag={item.name} close={() => (styling = null)} />
+              <TagStylePopover
+                tag={item.name}
+                status={mark?.status ?? null}
+                statusWords={mark?.words ?? ""}
+                opener={partOf(item.name, "look")}
+                close={(refocus) => void closeStyle(refocus)}
+              />
             {/if}
           </li>
         {:else}
@@ -283,9 +362,32 @@
     padding: 0 var(--sp-3);
     list-style: none;
   }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-1) var(--sp-3);
+    padding: var(--sp-2) var(--sp-3) 0;
+    color: var(--muted);
+    font-size: var(--fs-ui-xs);
+  }
+  .legend ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-1) var(--sp-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .legend li {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
   .list li {
     position: relative;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--sp-1);
     padding: 2px 0;
@@ -293,19 +395,14 @@
   .icon {
     display: inline-grid;
     place-items: center;
-    width: 22px;
-    height: 22px;
+    width: 24px;
+    height: 24px;
     border: 0;
     border-radius: var(--radius-control);
     background: transparent;
-    color: var(--faint);
-    opacity: 0;
+    margin-left: auto;
+    color: var(--muted);
     cursor: pointer;
-  }
-  .list li:hover .icon,
-  .icon:focus-visible,
-  .icon[aria-expanded="true"] {
-    opacity: 1;
   }
   .icon:hover {
     background: var(--hover);

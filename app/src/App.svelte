@@ -1,11 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, type AppInfo, type WorkspaceView } from "./api";
+  import { api, type AppInfo } from "./api";
   import { language, t } from "./core/i18n";
   import DocumentArea from "./core/doc/DocumentArea.svelte";
   import { documents } from "./core/doc/document.svelte";
-  import OutlinePanel from "./core/doc/OutlinePanel.svelte";
-  import { reading } from "./core/doc/reading.svelte";
   import { look } from "./core/look.svelte";
   import ExplorerSidebar from "./core/explorer/ExplorerSidebar.svelte";
   import ImportAsk from "./core/explorer/ImportAsk.svelte";
@@ -17,6 +15,8 @@
   import FocusExit from "./core/shell/FocusExit.svelte";
   import Frame from "./core/shell/Frame.svelte";
   import PanelToggle from "./core/shell/PanelToggle.svelte";
+  import RightColumn from "./core/shell/RightColumn.svelte";
+  import { rightViews } from "./core/shell/rightViews.svelte";
   import Notices from "./core/shell/Notices.svelte";
   import DefaultAppDialog from "./core/shell/DefaultAppDialog.svelte";
   import { defaultApp } from "./core/shell/defaultApp.svelte";
@@ -33,7 +33,7 @@
   import SearchPanel from "./core/search/SearchPanel.svelte";
   import SidebarTabs from "./core/search/SidebarTabs.svelte";
   import KeymapDialog from "./core/shell/KeymapDialog.svelte";
-  import { confirmInit } from "./core/shell/initProject";
+  import { answerInit } from "./core/shell/initProject";
   import { rightAvailable } from "./core/shell/layout";
   import { layout } from "./core/shell/layout.svelte";
   import { hasSidebar, rightSide } from "./core/shell/sides";
@@ -43,29 +43,17 @@
   import { contributions } from "./core/plugins/instance.svelte";
   import { windowTitle } from "./core/title";
   import StatusItems from "./core/shell/StatusItems.svelte";
-  import { activeRight, activeSidebar, leftPanels, rightPanels } from "./core/shell/panels.svelte";
+  import { activeSidebar, leftPanels } from "./core/shell/panels.svelte";
   import { windowStore as store } from "./core/window.svelte";
+  import { projects } from "./core/projects/instance.svelte";
 
   type InfoState =
     { status: "loading" } | { status: "ready"; info: AppInfo } | { status: "failed" };
 
   let info = $state<InfoState>({ status: "loading" });
 
-  /** What the window shows now; while opening, what stays on screen. */
-  const shown = $derived.by((): { workspace: WorkspaceView; document: string | null } | null => {
-    const view = store.view;
-    switch (view.state) {
-      case "showing":
-        return { workspace: view.workspace, document: view.document };
-      case "opening":
-        return view.showing ? { workspace: view.showing, document: null } : null;
-      case "welcome":
-      case "closing":
-        return null;
-      default:
-        return view satisfies never;
-    }
-  });
+  /** What the window shows now; while opening, what stays on screen (its document included). */
+  const shown = $derived(store.screen);
 
   const openingName = $derived.by(() => {
     const view = store.view;
@@ -107,7 +95,6 @@
   );
   const notesOn = $derived(conditions.current.plugins.includes("notes"));
   const sidebarView = $derived(activeSidebar());
-  const rightPanel = $derived(activeRight());
 
   /** The outline of the document shown, when it has one and the panel is on. */
   const outline = $derived.by(() => {
@@ -122,6 +109,9 @@
       info = result.ok ? { status: "ready", info: result.value } : { status: "failed" };
     });
   });
+
+  // the right column's arrangement (app settings) and its views' defaults per project load
+  $effect(() => rightViews.start(api));
 
   // the core's commands and keys live in the registry while the window does; one key listener runs them
   $effect(() => installWindowKeys());
@@ -218,6 +208,23 @@
     };
   });
 
+  // projects inside the shown folder: followed while it shows (`projects.md` §12)
+  const projectRoot = $derived(shown?.workspace.kind === "project" ? shown.workspace.root : null);
+  $effect(() => {
+    const root = projectRoot;
+    if (root === null) return;
+    let off: (() => void) | null = null;
+    let gone = false;
+    void projects.start(root).then((stop) => {
+      if (gone) stop();
+      else off = stop;
+    });
+    return () => {
+      gone = true;
+      off?.();
+    };
+  });
+
   // first run: "Open these files with PerMark?" in the first window, once (the backend says when it is due)
   $effect(() => {
     if (store.label !== "") void defaultApp.askIfDue(store.label);
@@ -257,18 +264,7 @@
 {/snippet}
 
 {#snippet panel()}
-  {#if rightPanel !== null}
-    {#each rightPanels() as plugin (plugin.owner + plugin.id)}
-      {#if plugin.id === rightPanel}
-        {#await plugin.view() then loaded}
-          {@const PanelView = loaded.default}
-          <PanelView />
-        {/await}
-      {/if}
-    {/each}
-  {:else if outline}
-    <OutlinePanel items={outline} />
-  {/if}
+  <RightColumn {outline} />
 {/snippet}
 
 {#snippet main()}
@@ -318,7 +314,7 @@
     sidebar={shown?.workspace.kind === "project" || shown?.workspace.kind === "notes"
       ? sidebar
       : undefined}
-    panel={rightPanel !== null || (outline && reading.outline) ? panel : undefined}
+    panel={rightViews.drawn.length > 0 ? panel : undefined}
     focus={ui.focus === "on"}
     moving={ui.frameMoving}
     {main}
@@ -337,13 +333,17 @@
 {/if}
 {#if ui.settingsPage.status === "open"}
   <SettingsPage {store} />
+{:else}
+  <!-- what a projects action did (an include undone, a removal kept), for screen readers -->
+  <p class="sr-only" aria-live="polite">{projects.announcement}</p>
 {/if}
 {#if ui.initDialog.status === "asking"}
   {@const asked = ui.initDialog}
   <InitDialog
     name={asked.name}
     path={asked.path}
-    answer={(yes) => (yes ? void confirmInit(asked.path) : ui.closeInit())}
+    fresh={asked.opens}
+    answer={(yes) => answerInit(asked, yes)}
   />
 {/if}
 {#if ui.finder.status === "open"}

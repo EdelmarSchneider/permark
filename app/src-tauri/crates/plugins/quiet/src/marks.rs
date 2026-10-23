@@ -84,6 +84,12 @@ impl Marks {
         ))
     }
 
+    /// Marks from a map (path as written -> interest).
+    #[must_use]
+    pub fn from_map(marks: BTreeMap<String, Interest>) -> Self {
+        Self::index(marks)
+    }
+
     /// The text of `quiet.json`.
     #[must_use]
     pub fn to_json(&self) -> Vec<u8> {

@@ -21,7 +21,7 @@ pub use enable::{on_ids, resolve_enabled, EnableInputs, Enablement, OffReason};
 pub use facts::{ProjectFacts, RepoHandle, RepoReader};
 pub use files::{ChangeListener, FolderScan, WindowFiles, WindowFilesApi};
 pub use registry::{PluginRegistry, RegistryError};
-pub use rpc::{typed, NoArgs, RpcCall, RpcHandler, RpcRegistration, RpcTable};
+pub use rpc::{typed, GoneHandler, NoArgs, RpcCall, RpcHandler, RpcRegistration, RpcTable};
 pub use services::{ServiceLease, Services};
 pub use set::PluginSet;
 
@@ -272,6 +272,9 @@ pub struct ProjectServices {
     pub activity: Arc<crate::activity::ActivityLog>,
     rpc: Arc<RpcTable>,
     formats: Arc<RwLock<Arc<FormatRegistry>>>,
+    /// Projects inside the folder (`projects.md` §1.3): owner of a path, the agent scope, project news. `None` in
+    /// compositions made without a core (tests).
+    projects: Option<Arc<crate::projects::Projects>>,
 }
 
 impl ProjectServices {
@@ -300,7 +303,47 @@ impl ProjectServices {
             activity,
             rpc,
             formats,
+            projects: None,
         }
+    }
+
+    /// The composition with the folder's projects service.
+    #[must_use]
+    pub fn with_projects(mut self, projects: Arc<crate::projects::Projects>) -> Self {
+        self.projects = Some(projects);
+        self
+    }
+
+    /// Projects inside the folder (owner of a path, members, agent scope, project news).
+    #[must_use]
+    pub fn projects(&self) -> Option<&Arc<crate::projects::Projects>> {
+        self.projects.as_ref()
+    }
+
+    /// Where the person's state of each path lives now (`projects.md` §9): `store` alone in a composition without
+    /// projects.
+    #[must_use]
+    pub fn owners(&self, store: &StateStore) -> crate::projects::Owners {
+        self.projects.as_ref().map_or_else(
+            || crate::projects::Owners::root_only(store.clone()),
+            |p| p.owners(),
+        )
+    }
+
+    /// Whether the owners are known (`Projects::owners_known`); always without projects. A plugin keeping state per
+    /// owner that starts before starts paused and goes on at the `Resume` that follows.
+    #[must_use]
+    pub fn owners_known(&self) -> bool {
+        self.projects.as_ref().is_none_or(|p| p.owners_known())
+    }
+
+    /// Hears the owners change (`Projects::follow_owners`); `None` without projects (the owners never change).
+    #[must_use]
+    pub fn follow_owners(
+        &self,
+        follower: impl Fn(crate::projects::OwnersChange<'_>) + Send + Sync + 'static,
+    ) -> Option<crate::projects::ProjectsSubscription> {
+        self.projects.as_ref().map(|p| p.follow_owners(follower))
     }
 
     /// The formats of the plugins that are on for the project, now.
@@ -448,6 +491,14 @@ impl PluginCx {
             .map(|project| &project.rpc)
             .or_else(|| self.app.as_ref().map(|app| &app.rpc))?;
         Some(table.register(&self.id, method, handler))
+    }
+
+    /// Hears the callers (`RpcCall.window`) that let go of the project (Project scope: tab closed, another folder
+    /// opened in it, window gone) until the registration is dropped: per-caller state goes with them. `None` for
+    /// App-scope instances (their callers have no project to let go of).
+    #[must_use]
+    pub fn on_caller_gone(&self, handler: GoneHandler) -> Option<RpcRegistration> {
+        Some(self.project.as_ref()?.rpc.on_caller_gone(handler))
     }
 
     /// Gives a Project-scope instance the file watch of its project.

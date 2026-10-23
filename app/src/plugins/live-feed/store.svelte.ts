@@ -1,10 +1,18 @@
 // The live feed: every file the project's disk reported as created, changed, removed or renamed, newest first, and
 // the quiet toast that says documents changed while the person reads something else. Beside it, the person's own
 // actions from the project's activity journal (and the hand-off marks) for the panel's mine | outside | all filter.
+// Dormant until the project calls for it: nothing is drawn before the first change from outside PerMark (then for
+// good, remembered per project); while the panel is not on screen, the new outside rows are counted.
 
-import type { ActivityEntry, FeedItem } from "../../api";
+import { api, type ActivityEntry, type Api, type FeedItem } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
+import { callsForAgents } from "../../core/conditions/agents";
+import { conditions } from "../../core/conditions/context.svelte";
+import { changedSections } from "../../core/doc/outline";
+import { InFront } from "../../core/inFront.svelte";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
+import { rightViews } from "../../core/shell/rightViews.svelte";
+import { togglePanel } from "../../core/shell/sides";
 import { silence } from "../../core/silence/silence.svelte";
 import { panelRows, pathOf, type FeedShow, type PanelRow } from "./mine";
 
@@ -13,7 +21,16 @@ const MAX_ITEMS = 500;
 /** How long a toast stays. */
 export const TOAST_MS = 6000;
 /** A change this recent means the agent is working. */
-export const ACTIVE_MS = 5000;
+export const ACTIVE_MS = 30_000;
+/** How long a block counts as changed for the outline (= the glow). */
+export const CHANGED_MS = 3000;
+/** The id of the Changes panel. */
+export const PANEL = "live-feed.panel";
+/** The project session key that remembers the project called for the feed once (`true`; absent: dormant). */
+export const OFFERED_KEY = "feed.offered";
+
+/** The project session, as far as the feed uses it. */
+export type SessionPort = Pick<Api, "projectSessionGet" | "projectSessionSet">;
 
 const MARKDOWN = /\.(md|markdown|mdown|mkd|mdx|mdc)$/i;
 const TEXT_DOC = /\.(md|markdown|mdown|mkd|mdx|mdc|txt|text|rst|adoc|asciidoc|org)$/i;
@@ -29,10 +46,31 @@ export function isDocItem(item: FeedItem): boolean {
       return !item.isDir && TEXT_DOC.test(item.path);
     case "group":
     case "resync":
+    case "project":
       return true;
     default:
       return item satisfies never;
   }
+}
+
+/** A change from outside PerMark (an agent, a sync tool, a colleague): what wakes the dormant feed up. */
+export function isOutsideChange(item: FeedItem, silenced: (path: string) => boolean): boolean {
+  switch (item.item) {
+    case "entry":
+      return !item.own && !silenced(item.path);
+    case "group":
+      return !item.own;
+    case "resync":
+    case "project":
+      return false;
+    default:
+      return item satisfies never;
+  }
+}
+
+/** The count as the chip and the tab show it. */
+export function countText(n: number): string {
+  return n > 99 ? "99+" : String(n);
 }
 
 /** Newest first; an item with a known id replaces the one it updates. */
@@ -60,20 +98,57 @@ export class FeedStore {
   toast = $state.raw<Toast | null>(null);
   /** The time of the newest change (ms; 0: none yet). */
   lastAt = $state(0);
+  /** The project called for the feed once (a change from outside, or the person asked): the chip + the tab show. */
+  offered = $state(false);
+  /** New outside rows while the panel was not on screen (this window, since it opened). */
+  unseen = $state(0);
+  /** Blocks of the shown document that glow now (the outline marks their sections). */
+  glowing = $state.raw<{ path: string; ids: ReadonlySet<string> } | null>(null);
   readonly #client: PluginClient;
   readonly #root: () => string | null;
   readonly #shown: () => string | null;
+  readonly #session: SessionPort;
+  readonly #onScreen: () => boolean;
+  readonly #front = new InFront();
   #timer: ReturnType<typeof setTimeout> | null = null;
+  #held = false;
+  /** The project the feed follows now. */
+  #project: string | null = null;
+  readonly #glowTimers = new Set<ReturnType<typeof setTimeout>>();
 
   constructor(
     client: PluginClient = pluginClient,
     root: () => string | null = workspaceRoot,
     shown: () => string | null = () => documents.path,
+    session: SessionPort = api,
+    onScreen?: () => boolean,
   ) {
     this.#client = client;
     this.#root = root;
     this.#shown = shown;
+    this.#session = session;
+    this.#onScreen = onScreen ?? (() => rightViews.onScreen(PANEL) && this.#front.value);
   }
+
+  /** The project calls for the feed: an outside change was seen (remembered), or it has git | agent files. */
+  get called(): boolean {
+    return this.offered || callsForAgents(conditions.current);
+  }
+
+  /** The Changes panel is on screen: what comes in is seen. */
+  get onScreen(): boolean {
+    return this.#onScreen();
+  }
+
+  /** The outline items whose sections hold a block that glows now. */
+  readonly changed = $derived.by((): ReadonlySet<number> => {
+    const glow = this.glowing;
+    const view = documents.view;
+    if (glow === null || view?.path !== glow.path || view.body.kind !== "markdown") {
+      return new Set();
+    }
+    return changedSections(view.body.outline, view.body.blocks, glow.ids);
+  });
 
   /** The items the panel lists: what the person silenced is not among them. */
   get visible(): readonly FeedItem[] {
@@ -106,14 +181,26 @@ export class FeedStore {
   /** Follows the project of the window until the returned teardown runs. */
   start(): () => void {
     return $effect.root(() => {
+      $effect(() => this.#front.start());
+      // what comes in while the panel is on screen is seen
       $effect(() => {
-        if (this.#root() === null) {
+        if (this.#onScreen()) this.unseen = 0;
+      });
+      $effect(() => {
+        const root = this.#root();
+        if (root === null) {
           this.#reset();
           return;
         }
+        // another project: its own offer, its own count
+        if (this.#project !== null && this.#project !== root) this.#reset();
+        this.#project = root;
         let off: (() => void) | null = null;
         let gone = false;
         let offMine: (() => void) | null = null;
+        void this.#session.projectSessionGet(OFFERED_KEY).then((result) => {
+          if (!gone && result.ok && result.value === true) this.offered = true;
+        });
         void this.#client
           .on("live-feed:items", (data) => this.take(data.upsert))
           .then((stop) => {
@@ -145,20 +232,44 @@ export class FeedStore {
   #set(items: readonly FeedItem[]): void {
     this.items = mergeItems([], items);
     this.lastAt = this.items[0]?.atMs ?? 0;
+    if (items.some((i) => isOutsideChange(i, (path) => silence.isSilenced(path)))) this.offer();
   }
 
   #reset(): void {
+    this.#project = null;
     this.items = [];
     this.mine = [];
     this.lastAt = 0;
+    this.offered = false;
+    this.unseen = 0;
+    this.#clearGlow();
     this.dismissToast();
+  }
+
+  /** The project calls for the feed (a change from outside, the person asked): shown from now on, remembered. */
+  offer(): void {
+    if (this.offered) return;
+    this.offered = true;
+    if (this.#root() !== null) void this.#session.projectSessionSet(OFFERED_KEY, true);
   }
 
   /** Items the backend reported: listed, and the document ones that changed behind the person's back say so. */
   take(upsert: readonly FeedItem[]): void {
+    const known = new Set(this.items.map((i) => i.id));
     this.items = mergeItems(this.items, upsert);
     const heard = upsert.filter((i) => i.item !== "entry" || !silence.isSilenced(i.path));
     this.lastAt = Math.max(this.lastAt, ...heard.map((i) => i.atMs));
+    if (heard.some((i) => isOutsideChange(i, () => false))) this.offer();
+    if (!this.#onScreen()) {
+      // one per new row the panel lists under Outside with the current filters
+      const fresh = heard.filter(
+        (i) =>
+          !known.has(i.id) &&
+          !((i.item === "entry" || i.item === "group") && i.own) &&
+          (!this.docsOnly || isDocItem(i)),
+      );
+      this.unseen += new Set(fresh.map((i) => i.id)).size;
+    }
     const news = heard.filter(
       (i): i is Extract<FeedItem, { item: "entry" }> =>
         i.item === "entry" && !i.own && !i.isDir && isDocument(i.path) && i.path !== this.#shown(),
@@ -182,13 +293,57 @@ export class FeedStore {
 
   #arm(): void {
     if (this.#timer !== null) clearTimeout(this.#timer);
+    this.#timer = null;
+    // the pointer is over it | the focus inside: it stays until they leave
+    if (this.#held) return;
     this.#timer = setTimeout(() => this.dismissToast(), TOAST_MS);
+  }
+
+  /** The pointer came over the toast | the focus went inside: it stays (WCAG 2.2.1). */
+  holdToast(): void {
+    this.#held = true;
+    if (this.#timer !== null) clearTimeout(this.#timer);
+    this.#timer = null;
+  }
+
+  /** The pointer | focus left: the toast gets its full time again. */
+  releaseToast(): void {
+    this.#held = false;
+    if (this.toast !== null) this.#arm();
   }
 
   dismissToast(): void {
     if (this.#timer !== null) clearTimeout(this.#timer);
     this.#timer = null;
+    this.#held = false;
     this.toast = null;
+  }
+
+  /** Blocks of the shown document started to glow: their sections are marked for as long. */
+  glow(path: string, ids: readonly string[]): void {
+    if (ids.length === 0) return;
+    const before = this.glowing?.path === path ? this.glowing.ids : new Set<string>();
+    this.glowing = { path, ids: new Set([...before, ...ids]) };
+    const timer = setTimeout(() => {
+      this.#glowTimers.delete(timer);
+      const now = this.glowing;
+      if (now?.path !== path) return;
+      const left = [...now.ids].filter((id) => !ids.includes(id));
+      this.glowing = left.length === 0 ? null : { path, ids: new Set(left) };
+    }, CHANGED_MS);
+    this.#glowTimers.add(timer);
+  }
+
+  #clearGlow(): void {
+    for (const timer of this.#glowTimers) clearTimeout(timer);
+    this.#glowTimers.clear();
+    this.glowing = null;
+  }
+
+  /** The person asks for the Changes panel: it shows | closes (and the feed is offered from now on). */
+  toggle(): void {
+    this.offer();
+    togglePanel(PANEL);
   }
 
   async clear(): Promise<void> {

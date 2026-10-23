@@ -10,6 +10,8 @@ export type MenuEntry =
       danger?: boolean;
       /** Opens a submenu in place (drawn with ▸; ArrowRight runs it too). */
       opens?: boolean;
+      /** Can't act now: still reached by the arrows and announced (`aria-disabled`), does nothing. */
+      disabled?: boolean;
       /** `shift`: picked with Shift held (Shift+click | Shift+Enter). */
       run: (shift: boolean) => void;
     }

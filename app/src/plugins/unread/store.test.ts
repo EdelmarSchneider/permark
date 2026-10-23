@@ -6,7 +6,8 @@ import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import { PluginClient } from "../../core/plugins/client";
 import { Box } from "../../core/testing/box.svelte";
 import { silence } from "../../core/silence/silence.svelte";
-import { READ_MS, UnreadStore, isDocument, nextUnread } from "./store.svelte";
+import { READ_MS } from "../../core/readRule";
+import { UnreadStore, isDocument, nextUnread } from "./store.svelte";
 
 const settle = async (): Promise<void> => {
   for (let i = 0; i < 5; i++) {
@@ -55,14 +56,17 @@ afterEach(() => {
 });
 
 describe("next unread", () => {
-  it("is the one after the document, wrapping, never the document itself", () => {
-    const list = ["a.md", "b/c.md", "d.md"];
-    expect(nextUnread(list, null)).toBe("a.md");
+  it("is the one after the document in the list (newest change first), wrapping, never the document itself", () => {
+    // the backend's order: newest change first
+    const list = ["d.md", "a.md", "b/c.md"];
+    expect(nextUnread(list, null)).toBe("d.md");
+    expect(nextUnread(list, "d.md")).toBe("a.md");
     expect(nextUnread(list, "a.md")).toBe("b/c.md");
     expect(nextUnread(list, "b/c.md")).toBe("d.md");
-    expect(nextUnread(list, "d.md")).toBe("a.md");
+    // a document that is read (not in the list): the newest change
     expect(nextUnread(list, "bz.md")).toBe("d.md");
     expect(nextUnread(["a.md"], "a.md")).toBeNull();
+    expect(nextUnread(["a.md"], "x.md")).toBe("a.md");
     expect(nextUnread([], null)).toBeNull();
     expect(isDocument("x.markdown")).toBe(true);
     expect(isDocument("x.txt")).toBe(false);
@@ -80,7 +84,28 @@ describe("the unread store", () => {
     api.probe.plugins.unread(["docs/other.md", "docs/deep/x.md"]);
     expect(store.badge("docs", true)).toMatchObject({ text: "3" });
     expect(store.badge("docs/deep", true)).toMatchObject({ text: "1" });
-    expect(store.next("docs/deep/x.md")).toBe("docs/guide.md");
+    // newest change first: the last one the agent wrote, then the one before
+    expect(store.unread).toEqual(["docs/deep/x.md", "docs/other.md", "docs/guide.md"]);
+    expect(store.next(null)).toBe("docs/deep/x.md");
+    expect(store.next("docs/deep/x.md")).toBe("docs/other.md");
+    expect(store.next("docs/guide.md")).toBe("docs/deep/x.md");
+    stop();
+  });
+
+  it("one project's documents: its count for the detail card, the list the tab shows (UX round 4 F8)", async () => {
+    const { api, store, stop } = await setup();
+    api.probe.plugins.unread(["hub-b/a.md", "hub-b/x/b.md", "hub-bc/c.md", "site/d.md"]);
+    await settle();
+    expect(store.projectCount("hub-b")).toBe("2 unread");
+    expect(store.projectCount("tools")).toBeNull();
+    expect(store.shown).toEqual(store.unread);
+    store.showOnly({ folder: "hub-b", name: "Hub B" });
+    flushSync();
+    // a sibling folder whose name starts the same is not inside
+    expect(store.shown).toEqual(["hub-b/x/b.md", "hub-b/a.md"]);
+    store.showOnly(null);
+    flushSync();
+    expect(store.shown).toEqual(store.unread);
     stop();
   });
 
@@ -201,5 +226,117 @@ describe("the unread store", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(store.isUnread("docs/guide.md")).toBe(true);
     stop();
+  });
+
+  it("reads after 3 s in front, not a moment sooner (UX regressions #7)", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const { store, stop, show } = await setup();
+    vi.useFakeTimers();
+    expect(READ_MS).toBe(3000);
+    show({ path: "docs/guide.md", hash: "ab".repeat(8) });
+    vi.advanceTimersByTime(2900);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.isUnread("docs/guide.md")).toBe(true);
+    vi.advanceTimersByTime(100);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.isUnread("docs/guide.md")).toBe(false);
+    stop();
+  });
+
+  it("a tab switch at 2 s leaves the document unread", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const { store, stop, show, tab } = await setup();
+    vi.useFakeTimers();
+    show({ path: "docs/guide.md", hash: "ab".repeat(8) });
+    vi.advanceTimersByTime(2000);
+    tab(false);
+    vi.advanceTimersByTime(READ_MS * 2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.isUnread("docs/guide.md")).toBe(true);
+    stop();
+  });
+
+  describe("a scroll of the document", () => {
+    const pane = (): HTMLElement => {
+      const el = document.createElement("div");
+      el.setAttribute("data-scroller", "");
+      el.tabIndex = -1;
+      el.innerHTML = "<p>text</p>";
+      document.body.append(el);
+      return el;
+    };
+    afterEach(() => document.body.replaceChildren());
+
+    it("by the person reads it at once (0.5 s in)", async () => {
+      vi.spyOn(document, "hasFocus").mockReturnValue(true);
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+      const { store, stop, show } = await setup();
+      const el = pane();
+      vi.useFakeTimers();
+      show({ path: "docs/guide.md", hash: "ab".repeat(8) });
+      vi.advanceTimersByTime(500);
+      el.querySelector("p")?.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 120 }));
+      el.dispatchEvent(new Event("scroll"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.isUnread("docs/guide.md")).toBe(false);
+      stop();
+    });
+
+    it("by keys on the page counts; keys typed into an editor do not", async () => {
+      vi.spyOn(document, "hasFocus").mockReturnValue(true);
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+      const { store, stop, show } = await setup();
+      const el = pane();
+      const editor = document.createElement("div");
+      editor.setAttribute("contenteditable", "true");
+      el.append(editor);
+      vi.useFakeTimers();
+      show({ path: "docs/guide.md", hash: "ab".repeat(8) });
+      editor.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+      el.dispatchEvent(new Event("scroll"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.isUnread("docs/guide.md")).toBe(true);
+      el.dispatchEvent(new KeyboardEvent("keydown", { key: "PageDown", bubbles: true }));
+      el.dispatchEvent(new Event("scroll"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.isUnread("docs/guide.md")).toBe(false);
+      stop();
+    });
+
+    it("by the app (a place restored, a jump) or long after the input does not count", async () => {
+      vi.spyOn(document, "hasFocus").mockReturnValue(true);
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+      const { store, stop, show } = await setup();
+      const el = pane();
+      vi.useFakeTimers();
+      show({ path: "docs/guide.md", hash: "ab".repeat(8) });
+      el.dispatchEvent(new Event("scroll"));
+      el.dispatchEvent(new WheelEvent("wheel", { bubbles: true }));
+      vi.advanceTimersByTime(1500);
+      el.dispatchEvent(new Event("scroll"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.isUnread("docs/guide.md")).toBe(true);
+      // a wheel outside the document pane (a sidebar list) is not reading it
+      document.body.dispatchEvent(new WheelEvent("wheel", { bubbles: true }));
+      el.dispatchEvent(new Event("scroll"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.isUnread("docs/guide.md")).toBe(true);
+      stop();
+    });
+
+    it("while the window is not in front does not count", async () => {
+      vi.spyOn(document, "hasFocus").mockReturnValue(false);
+      const { store, stop, show } = await setup();
+      const el = pane();
+      vi.useFakeTimers();
+      show({ path: "docs/guide.md", hash: "ab".repeat(8) });
+      el.dispatchEvent(new WheelEvent("wheel", { bubbles: true }));
+      el.dispatchEvent(new Event("scroll"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.isUnread("docs/guide.md")).toBe(true);
+      stop();
+    });
   });
 });

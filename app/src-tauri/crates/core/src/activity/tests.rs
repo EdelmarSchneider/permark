@@ -474,6 +474,7 @@ fn batch(changes: Vec<Change>) -> FsBatch {
         changes,
         bulk: false,
         rescan: false,
+        moved: Vec::new(),
     }
 }
 

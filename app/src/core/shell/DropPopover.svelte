@@ -1,8 +1,12 @@
 <script lang="ts">
   // A small question at the point where files were dropped (not modal: nothing else is blocked). Stays inside the
   // view and does not move once shown; Esc | a click outside closes it; Tab | Shift+Tab stay inside; the element
-  // marked `data-autofocus` takes the keyboard when it opens, and the keyboard goes back where it was when it closes.
-  import type { Snippet } from "svelte";
+  // marked `data-autofocus` takes the keyboard when it opens, and the keyboard goes back where it was when it closes
+  // (`home` when it was nowhere: a drop from outside).
+  // A tab switch is no answer: the question waits in its tab (the view is hidden, its state kept) and takes the
+  // keyboard again when the tab comes back.
+  import { tick, type Snippet } from "svelte";
+  import { onScreen } from "../inFront.svelte";
   import { popoverPlace } from "./dropPlace";
 
   type Props = {
@@ -12,9 +16,11 @@
     close: () => void;
     /** The content is complete (a question still checking names has its buttons off). */
     ready?: boolean;
+    /** Where the keyboard goes on close when it was nowhere before the question (the page itself). */
+    home?: () => HTMLElement | null;
     children: Snippet;
   };
-  let { at, labelledby, describedby, close, ready = true, children }: Props = $props();
+  let { at, labelledby, describedby, close, ready = true, home, children }: Props = $props();
 
   let box: HTMLElement | undefined = $state();
   let place = $state<{ x: number; y: number } | null>(null);
@@ -31,19 +37,41 @@
 
   // the keyboard comes in on open (once the content is there) and goes back on close
   $effect(() => {
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    return () => before?.focus({ preventScroll: true });
+    const at = document.activeElement;
+    const before = at instanceof HTMLElement && at !== document.body ? at : null;
+    return () => {
+      if (!onScreen()) return;
+      const back = before?.isConnected ? before : (home?.() ?? null);
+      back?.focus({ preventScroll: true });
+    };
   });
+  // after the placed box is drawn (hidden until placed: focus() on it before would do nothing); while it checks names
+  // the box itself holds the keyboard (Esc, Tab stay with it), then its first answer. Only while the view is on screen
+  // (a hidden tab never takes the keyboard); again when it comes back.
   $effect(() => {
-    if (place === null || !ready) return;
-    const target = box?.querySelector<HTMLElement>("[data-autofocus]:not(:disabled)");
-    if (target && !box?.contains(document.activeElement)) target.focus({ preventScroll: true });
+    if (place === null || !onScreen()) return;
+    const want = ready;
+    let live = true;
+    void tick().then(() => {
+      if (!live || !box) return;
+      const target = want ? box.querySelector<HTMLElement>("[data-autofocus]:not(:disabled)") : box;
+      if (!target || target === document.activeElement) return;
+      if (target !== box && box.contains(document.activeElement) && document.activeElement !== box)
+        return;
+      target.focus({ preventScroll: true });
+    });
+    return () => {
+      live = false;
+    };
   });
 
-  // a press anywhere else closes it (before that press does its own work)
+  // a press anywhere else closes it (before that press does its own work); a press on another tab's chip is a tab
+  // switch, not an answer
   $effect(() => {
     const outside = (e: PointerEvent): void => {
-      if (box && e.target instanceof Node && !box.contains(e.target)) close();
+      if (!box || !(e.target instanceof Node) || box.contains(e.target)) return;
+      if (e.target instanceof Element && e.target.closest("[data-tab]:not([aria-current])")) return;
+      close();
     };
     window.addEventListener("pointerdown", outside, true);
     return () => window.removeEventListener("pointerdown", outside, true);
@@ -51,13 +79,14 @@
 
   /** Esc closes it wherever the keyboard is (also while it checks names and nothing inside can take the keyboard). */
   function onwindowkey(e: KeyboardEvent): void {
-    if (e.key !== "Escape") return;
+    if (e.key !== "Escape" || !onScreen()) return;
     e.preventDefault();
     close();
   }
 
   function onkeydown(e: KeyboardEvent): void {
-    if (e.key !== "Tab" || !box) return;
+    // Ctrl | Cmd | Alt + Tab switch tabs | windows: never kept inside
+    if (e.key !== "Tab" || e.ctrlKey || e.metaKey || e.altKey || !box) return;
     const focusable = Array.from(
       box.querySelectorAll<HTMLElement>("button:not(:disabled):not([tabindex='-1'])"),
     );

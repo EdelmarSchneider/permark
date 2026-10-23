@@ -1,6 +1,6 @@
 // The agent connection as the window sees it: the switch and what the status bar shows (the backend's word), the
 // context it publishes while the switch is on (debounced), and the places an agent asks to show. Dormant while off:
-// nothing is published and nothing is shown but the settings rows.
+// nothing is published and nothing is shown but the settings section, its gear row and the once-only offer.
 
 import type { AgentStatus, AgentWindowContext, PluginEvents, Result } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
@@ -60,10 +60,9 @@ export class AgentStore {
   start(): () => void {
     return $effect.root(() => {
       $effect(() => {
-        if (this.#root() === null) {
-          this.status = null;
-          return;
-        }
+        // a new project starts unknown: the last project's switch never stands for this one
+        this.status = null;
+        if (this.#root() === null) return;
         let gone = false;
         const offs: (() => void)[] = [];
         const keep = (stop: () => void): void => {
@@ -124,14 +123,18 @@ export class AgentStore {
     };
   }
 
-  #apply(result: Result<AgentStatus>): void {
+  /** Takes the new status; a refusal says so in a notice unless the caller shows it in place (`inline`). */
+  #apply(result: Result<AgentStatus>, inline = false): boolean {
     if (result.ok) this.status = result.value;
-    else windowStore.notifyNote(t("agent.notSaved"));
+    else if (!inline) windowStore.notifyNote(t("agent.notSaved"));
+    return result.ok;
   }
 
-  async setEnabled(enabled: boolean): Promise<void> {
-    this.#apply(await this.#client.call("agent.setEnabled", { enabled }));
+  /** Turns the switch; false = refused (state unchanged). `inline`: the caller shows the refusal, no notice. */
+  async setEnabled(enabled: boolean, inline = false): Promise<boolean> {
+    const ok = this.#apply(await this.#client.call("agent.setEnabled", { enabled }), inline);
     if (!enabled) this.popover = false;
+    return ok;
   }
 
   async setGroup(group: string, on: boolean): Promise<void> {

@@ -417,3 +417,109 @@ fn a_checked_write_never_lands_over_what_another_program_wrote_since_the_read() 
         .collect();
     assert_eq!(left, ["meta.toml"]);
 }
+
+/// N1: undo of an init removes `.permark/` in one step (renamed away, then deleted): nothing left behind, the state
+/// back in the profile.
+#[test]
+fn uninit_project_removes_the_folder_whole_and_leaves_no_temp() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    store
+        .file::<Sample>("session.json")
+        .save(&sample(7))
+        .unwrap();
+    assert!(uninit_project(&f.dirs, &f.root()).unwrap());
+    let names: Vec<String> = fs::read_dir(f.project.path())
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(names.is_empty(), "nothing left: {names:?}");
+    let back = f.store();
+    assert_eq!(back.location(), StateLocation::Profile);
+    assert_eq!(
+        back.file::<Sample>("session.json").load().into_value(),
+        sample(7)
+    );
+}
+
+/// N1: a file held open inside `.permark/` (Windows: antivirus, editor) -> the folder stays whole, never half removed.
+#[cfg(windows)]
+#[test]
+fn uninit_project_with_a_held_file_keeps_the_folder_whole() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    store
+        .file::<Sample>("session.json")
+        .save(&sample(3))
+        .unwrap();
+    let held = f.root().path().join(".permark/local/session.json");
+    let _open = fs::File::open(&held).unwrap();
+    assert!(uninit_project(&f.dirs, &f.root()).is_err());
+    let permark = f.root().path().join(".permark");
+    for name in ["config.toml", ".gitignore", "local/session.json", "cache"] {
+        assert!(permark.join(name).exists(), "{name} kept");
+    }
+    assert_eq!(f.store().location(), StateLocation::Project);
+}
+
+/// Shares: 0.6 keyed their state by the `\\?\UNC\` spelling (std's canonical form). Opened plain now, they keep that
+/// id -> their profile state (unread, sessions, agent connection) stays found, with no move.
+#[cfg(windows)]
+#[test]
+fn a_share_keeps_the_project_id_0_6_gave_it() {
+    let plain = crate::paths::RootKey::of(Path::new(r"\\wsl.localhost\Ubuntu-24.04\tmp\pm07wsl"));
+    let verbatim =
+        crate::paths::RootKey::of(Path::new(r"\\?\UNC\wsl.localhost\Ubuntu-24.04\tmp\pm07wsl"));
+    let then = crate::fsx::hash(b"//?/unc/wsl.localhost/ubuntu-24.04/tmp/pm07wsl").hex();
+    assert_eq!(ProjectId::of_key(&plain).0, then);
+    assert_eq!(ProjectId::of_key(&verbatim).0, then);
+    let drive = crate::paths::RootKey::of(Path::new(r"C:\Users\me"));
+    assert_eq!(
+        ProjectId::of_key(&drive).0,
+        crate::fsx::hash(b"c:/users/me").hex()
+    );
+    // 0.5's key of a share kept the prefix too
+    assert_eq!(
+        older::older_project_key(Path::new(r"\\srv\Share\x\")),
+        crate::fsx::hash(b"//?/unc/srv/share/x").hex()
+    );
+    assert_eq!(
+        older::older_project_key(Path::new(r"\\?\UNC\srv\share\x")),
+        older::older_project_key(Path::new(r"\\srv\share\x"))
+    );
+}
+
+/// A real share (loopback admin share): the id of the root opened now == the id 0.6 computed from std's canonical
+/// `\\?\UNC\` path; a move between spellings of one share moves nothing.
+#[cfg(windows)]
+#[test]
+fn a_real_share_root_keeps_its_0_6_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let Some(shared) = crate::paths::via_admin_share(dir.path()) else {
+        eprintln!("skipped: no loopback admin share here");
+        return;
+    };
+    let root = Root::open(&shared).unwrap();
+    assert!(!root.path().to_string_lossy().starts_with(r"\\?\"));
+    let then_canon = std::fs::canonicalize(&shared).unwrap();
+    let then_key = crate::paths::fold(
+        then_canon
+            .to_string_lossy()
+            .replace('\\', "/")
+            .trim_end_matches('/'),
+    );
+    assert_eq!(
+        ProjectId::of(&root).as_str(),
+        crate::fsx::hash(then_key.as_bytes()).hex()
+    );
+    let base = tempfile::tempdir().unwrap();
+    let dirs = AppDirs::under(base.path());
+    let kept = dirs
+        .profile
+        .join("projects")
+        .join(ProjectId::of(&root).as_str());
+    fs::create_dir_all(&kept).unwrap();
+    assert!(!move_profile_state(&dirs, &then_canon, root.path()).unwrap());
+    assert!(kept.is_dir());
+}

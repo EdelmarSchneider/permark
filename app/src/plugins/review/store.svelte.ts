@@ -5,11 +5,15 @@
 
 import { untrack } from "svelte";
 import type { Basis, DocumentView, Result, ReviewView } from "../../api";
+import type { Reason, Requirement } from "../../core/conditions/available";
+import { READ_MS, personScrolls } from "../../core/readRule";
+import { conditions } from "../../core/conditions/context.svelte";
+import { reasonKey } from "../../core/conditions/guidance";
 import { documents } from "../../core/doc/document.svelte";
 import { t, tn } from "../../core/i18n";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
 import { InFront, onScreen } from "../../core/inFront.svelte";
-import { windowStore } from "../../core/window.svelte";
+import { windowStore, type NoticeAction, type NoticeGone } from "../../core/window.svelte";
 import { kindWord } from "./blocks";
 
 export type ReviewUi =
@@ -19,8 +23,31 @@ export type ReviewUi =
 
 const MARKDOWN = /\.(md|markdown|mdown|mkd|mdx|mdc)$/i;
 
-/** The document in front is looked at (read) when it has been shown this long. */
-export const SEEN_MS = 1000;
+/** Comparing with the last commit needs git and a repository (`conditions.md`). */
+export const COMMIT_BASIS: Requirement = {
+  needs: [{ need: "gitAvailable" }, { need: "gitRepo" }],
+  prefers: [],
+};
+
+/** Why the last commit cannot be compared with here, or null when it can. */
+function commitBlocked(): Reason | null {
+  const availability = conditions.available(COMMIT_BASIS);
+  return availability.status === "unavailable" ? availability.reason : null;
+}
+
+/** The document in front is looked at (read) when it has been shown this long, or sooner when the person scrolls it. */
+export const SEEN_MS = READ_MS;
+
+/** A quiet line that stays until the person dismisses it (the window's lasting notice); `onGone` hears how it went.
+ *  Showing it returns a function that takes it back. */
+export type ReviewNotice = {
+  text: string;
+  actions: readonly NoticeAction[];
+  onGone: (how: NoticeGone) => void;
+};
+
+/** A review closed with changes left in it, while "Review again" is offered. */
+type Closed = { path: string; at: number; takeBack: () => void };
 
 /** What a document is reviewed by: blocks of a page, lines of a code view, or nothing. */
 export type ReviewKind = "blocks" | "lines" | null;
@@ -66,17 +93,24 @@ export class ReviewStore {
   basis = $state<Basis>("read");
   /** Keeps and reverts of this review that Undo can take back. */
   undoable = $state(0);
+  /** Why the last choice of what to compare with did not take (shown next to the choice), or null. */
+  basisNote = $state<string | null>(null);
   /** The latest thing said for screen readers (a live region in the bar). */
   announcement = $state("");
   #seq = 0;
   /** The document an `offer` | `reviewing` belongs to (to release it when the person leaves). */
   #held: string | null = null;
+  /** A review just closed with changes in it: still held while "Review again" is offered (a stray Esc loses
+   *  nothing), released when that offer goes or the person leaves the document. */
+  #closed: Closed | null = null;
   readonly #client: PluginClient;
   readonly #root: () => string | null;
   readonly #say: (text: string) => void;
   readonly #page: PagePort;
   /** The window is in front and visible, and this view is its tab on screen: looking counts only then. */
   readonly #front: InFront;
+  readonly #commitBlocked: () => Reason | null;
+  readonly #notice: (notice: ReviewNotice) => () => void;
 
   constructor(
     client: PluginClient = pluginClient,
@@ -84,12 +118,25 @@ export class ReviewStore {
     say: (text: string) => void = (text) => windowStore.notifyNote(text),
     port: PagePort = page,
     shown: () => boolean = onScreen,
+    commit: () => Reason | null = commitBlocked,
+    notice: (notice: ReviewNotice) => () => void = (notice) => {
+      const id = windowStore.notifyLasting(notice);
+      return () => windowStore.dismiss(id);
+    },
   ) {
     this.#client = client;
     this.#root = root;
     this.#say = say;
     this.#page = port;
     this.#front = new InFront(shown);
+    this.#commitBlocked = commit;
+    this.#notice = notice;
+  }
+
+  /** Why "the last commit" cannot be chosen here (no git, no repository), in one sentence; null when it can. */
+  get commitUnavailable(): string | null {
+    const reason = this.#commitBlocked();
+    return reason === null ? null : t(reasonKey(reason));
   }
 
   get reviewing(): ReviewView | null {
@@ -125,11 +172,20 @@ export class ReviewStore {
         const { path, hash, kind } = this.#page.shown();
         if (kind !== "lines" || path === null || hash === null || !this.#front.value) return;
         if (this.#root() === null) return;
-        const timer = setTimeout(
-          () => void this.#client.call("review.seen", { path, hash }),
-          SEEN_MS,
-        );
-        return () => clearTimeout(timer);
+        let told = false;
+        const seen = (): void => {
+          if (told) return;
+          told = true;
+          void this.#client.call("review.seen", { path, hash });
+        };
+        const timer = setTimeout(seen, SEEN_MS);
+        const offScroll = personScrolls(() => {
+          if (this.#front.value) seen();
+        });
+        return () => {
+          clearTimeout(timer);
+          offScroll();
+        };
       });
       $effect(() => this.#front.start());
       return () => this.#reset();
@@ -139,8 +195,10 @@ export class ReviewStore {
   #reset(): void {
     this.#seq += 1;
     this.#held = null;
+    this.#forget();
     this.state = { status: "idle" };
     this.undoable = 0;
+    this.basisNote = null;
   }
 
   async #sync(path: string | null, hash: string | null): Promise<void> {
@@ -152,6 +210,7 @@ export class ReviewStore {
       this.#held = null;
       this.undoable = 0;
     }
+    if (this.#closed !== null && this.#closed.path !== path) this.#letGo();
     if (path === null || hash === null) {
       this.state = { status: "idle" };
       this.#page.repaint();
@@ -181,6 +240,8 @@ export class ReviewStore {
     if (seq !== this.#seq) return;
     if (status.ok && status.value.state.state === "changes") {
       this.#held = path;
+      // the bar offers them again: "Review again" is no longer what holds them
+      if (this.#closed?.path === path) this.#forget();
       this.state = { status: "offer", path, count: status.value.state.count };
     } else {
       this.state = { status: "idle" };
@@ -197,12 +258,19 @@ export class ReviewStore {
   async begin(): Promise<void> {
     const { path, kind } = this.#page.shown();
     if (path === null || kind === null) return;
+    // asked again while "Review again" is offered (palette, key, F7): the same as that button
+    const closed = this.#closed;
+    if (closed !== null && closed.path === path) return this.#again(closed);
     const status = await this.#client.call("review.status", { path });
     if (!status.ok) return;
     let state = status.value.state;
     // nothing new since the person looked: what changed since the last commit is still worth a look
     let basis: Basis | undefined;
-    if (status.value.basis === "read" && (state.state === "same" || state.state === "noBasis")) {
+    if (
+      status.value.basis === "read" &&
+      (state.state === "same" || state.state === "noBasis") &&
+      this.#commitBlocked() === null
+    ) {
       const commit = await this.#client.call("review.status", { path, basis: "commit" });
       if (commit.ok && commit.value.state.state === "changes") {
         basis = "commit";
@@ -219,6 +287,7 @@ export class ReviewStore {
     if (basis !== undefined) this.basis = basis;
     this.#held = path;
     this.undoable = 0;
+    this.basisNote = null;
     this.#show(result.value, 0);
     this.announce(tn("review.sr.opened", result.value.count, { kind: kindAt(result.value, 0) }));
   }
@@ -232,15 +301,79 @@ export class ReviewStore {
     this.#page.repaint();
   }
 
-  /** Closes the review: what is shown is what was read. */
+  /** Closes the review: what is shown is what was read. Changes left in it stay held a moment, while a quiet line
+   *  offers "Review again" at the same change (an Esc pressed by mistake loses nothing). */
   async done(): Promise<void> {
-    const path = this.reviewing?.path ?? this.#held;
+    const view = this.reviewing;
+    const path = view?.path ?? this.#held;
+    const at = this.current;
     this.#seq += 1;
     this.state = { status: "idle" };
     this.undoable = 0;
     this.#held = null;
+    this.basisNote = null;
     this.#page.repaint();
-    if (path !== null) await this.#client.call("review.release", { path });
+    if (path === null) return;
+    if (view !== null && view.count > 0) {
+      if (this.#closed?.path === path) this.#forget();
+      else this.#letGo();
+      // no clock: it waits for the person (a keyboard user reaches it, or asks for the review again)
+      const closed: Closed = { path, at, takeBack: () => undefined };
+      this.#closed = closed;
+      closed.takeBack = this.#notice({
+        text: t("review.closed"),
+        actions: [{ label: t("review.again"), run: () => void this.#again(closed) }],
+        onGone: (how) => {
+          if (how !== "action" && this.#closed === closed) this.#letGo();
+        },
+      });
+      return;
+    }
+    await this.#client.call("review.release", { path });
+  }
+
+  /** The review that just closed opens again where it was. */
+  async #again(closed: Closed): Promise<void> {
+    if (this.#closed !== closed) return;
+    this.#forget();
+    const { path } = this.#page.shown();
+    if (path !== closed.path) {
+      void this.#client.call("review.release", { path: closed.path });
+      return;
+    }
+    const result = await this.#client.call("review.open", { path, basis: this.basis });
+    if (!result.ok || result.value.count === 0) {
+      void this.#client.call("review.release", { path });
+      if (result.ok) this.#say(t("review.allDone"));
+      return;
+    }
+    this.#seq += 1;
+    this.#held = path;
+    this.undoable = 0;
+    this.#show(result.value, closed.at);
+    this.announce(
+      t("review.sr.at", {
+        i: this.current + 1,
+        n: result.value.count,
+        kind: kindAt(result.value, this.current),
+      }),
+    );
+  }
+
+  /** The review closed a moment ago is over: its changes are let go (they count as read). */
+  #letGo(): void {
+    const closed = this.#closed;
+    if (closed === null) return;
+    this.#forget();
+    void this.#client.call("review.release", { path: closed.path });
+  }
+
+  /** "Review again" is no longer offered (its notice goes); what holds the changes is decided by the caller. */
+  #forget(): void {
+    const closed = this.#closed;
+    if (closed === null) return;
+    this.#closed = null;
+    closed.takeBack();
   }
 
   async keep(index = this.current): Promise<void> {
@@ -398,14 +531,40 @@ export class ReviewStore {
     return true;
   }
 
+  /** Compares with `basis` from now on. The last commit where it cannot be had (no git, no repository, no commit
+   *  of the file): the choice stays as it was and a note next to it says why (`basisNote`), never a silent switch. */
   async setBasis(basis: Basis): Promise<void> {
     if (basis === this.basis) return;
+    const blocked = basis === "commit" ? this.commitUnavailable : null;
+    if (blocked !== null) {
+      this.basisNote = blocked;
+      return;
+    }
+    const before = this.basis;
+    const view = this.reviewing;
+    if (view !== null) {
+      const result = await this.#client.call("review.open", { path: view.path, basis });
+      if (!result.ok) {
+        this.basisNote = t("review.basisFailed");
+        return;
+      }
+      if (this.basis !== before) return;
+      this.basisNote = null;
+      this.basis = basis;
+      await this.#client.call("review.setBasis", { basis });
+      this.#show(result.value, 0);
+      // the set of changes is another one now: said, not only drawn
+      this.announce(
+        tn(
+          basis === "commit" ? "review.sr.basisCommit" : "review.sr.basisRead",
+          result.value.count,
+        ),
+      );
+      return;
+    }
+    this.basisNote = null;
     this.basis = basis;
     await this.#client.call("review.setBasis", { basis });
-    const view = this.reviewing;
-    if (view === null) return;
-    const result = await this.#client.call("review.open", { path: view.path, basis });
-    if (result.ok) this.#show(result.value, 0);
   }
 
   /** Writes a deleted document back as it was last read. */

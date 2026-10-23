@@ -392,7 +392,7 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 
 | Action | Shortcut |
 |---|---|
-| Switch between Edit and Source | `Ctrl+Alt+E` |
+| Open Source mode | `Ctrl+Alt+E` |
 | Back to View | `Ctrl+E` or `Esc` |
 | Save | `Ctrl+S` |
 | New file | `Ctrl+N` |

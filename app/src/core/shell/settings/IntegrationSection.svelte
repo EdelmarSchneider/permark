@@ -1,6 +1,7 @@
 <script lang="ts">
   // Integration: the default app (every build), then what plugins that are on put in the settings (file manager
-  // entries, updates, the agent connection, which git, the Notes folder). A feature this build lacks has no row.
+  // entries, updates, which git, the Notes folder; the agent connection has its own section). A feature this build
+  // lacks has no row.
   import { conditions } from "../../conditions/context.svelte";
   import { t } from "../../i18n";
   import { contributions } from "../../plugins/instance.svelte";

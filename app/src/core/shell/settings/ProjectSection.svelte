@@ -1,11 +1,12 @@
 <script lang="ts">
-  // Project: what the project shares with its team in `.permark/config.toml` - which files the Explorer shows by
+  // This folder: what the project shares with its team in `.permark/config.toml` - which files the Explorer shows by
   // default, what is left out of the feed and of search, what agents never get. Each control is kept at once, in that
   // file only (the rest of the file stays as it is). Without `.permark/` the section only offers to create it.
   import type { TreeShow } from "../../../api";
   import { conditions } from "../../conditions/context.svelte";
   import { t, type MessageKey } from "../../i18n";
   import { contributions } from "../../plugins/instance.svelte";
+  import { projects } from "../../projects/instance.svelte";
   import { askInitHere } from "../initProject";
   import Card from "./Card.svelte";
   import ListEditor from "./ListEditor.svelte";
@@ -27,6 +28,10 @@
     return () => projectSettings.clearProblem();
   });
 
+  /** The card fields load only where the folder holds projects (a plain folder never needs them). */
+  const cardFields = (): Promise<typeof import("../../projects/CardFields.svelte")> =>
+    import("../../projects/CardFields.svelte");
+
   type Preset = TreeShow | "unset";
   const PRESETS: { value: Preset; label: MessageKey }[] = [
     { value: "unset", label: "project.treeUnset" },
@@ -37,6 +42,32 @@
   ];
 </script>
 
+{#if projects.present && projects.view}
+  {@const card = projects.view.rootCard}
+  <!-- the opened folder's own card (it holds projects: its name shows where they are listed) -->
+  <section class="group root-card" aria-labelledby="proj-card">
+    <h3 id="proj-card">{t("projects.card.title")}</h3>
+    <Card>
+      <div class="card-body">
+        {#await cardFields() then fields}
+          <fields.default
+            id="root-card"
+            target={{ kind: "root" }}
+            place={card.place}
+            categoryStatus={projects.view.rootCategoryStatus}
+            short={card.short}
+            values={{
+              name: card.name,
+              short: card.short,
+              description: card.description ?? "",
+              category: card.category ?? "",
+            }}
+          />
+        {/await}
+      </div>
+    </Card>
+  </section>
+{/if}
 {#if !initialized}
   <Card>
     <SettingRow label={t("project.notInitialized")} hint={t("project.notInitializedHint")}>
@@ -134,6 +165,12 @@
   }
   .group + .group {
     margin-top: var(--sp-5);
+  }
+  .root-card {
+    margin-bottom: var(--sp-5);
+  }
+  .card-body {
+    padding: var(--sp-3) var(--sp-4);
   }
   h3 {
     margin: 0 0 var(--sp-2);

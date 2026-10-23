@@ -1,11 +1,14 @@
 <script lang="ts">
-  // The feed's item in the status bar (opens the Changes panel) and the toast that says documents changed while the
-  // person reads something else. Quiet: no sound, goes away by itself.
+  // The feed's item in the status bar (opens the Changes panel; counts the outside changes not seen yet) and the
+  // toast that says documents changed while the person reads something else. Quiet: no sound, goes away by itself
+  // (not while the pointer is over it or the focus inside). Nothing at all until the project calls for the feed.
   import { documents } from "../../core/doc/document.svelte";
   import { t, tn } from "../../core/i18n";
-  import { layout } from "../../core/shell/layout.svelte";
-  import { ui } from "../../core/shell/ui.svelte";
-  import { ACTIVE_MS, feed } from "./store.svelte";
+  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
+  import { liveOff } from "../../core/shell/liveSignal.svelte";
+  import { rightViews } from "../../core/shell/rightViews.svelte";
+  import { followStore } from "./followLink.svelte";
+  import { ACTIVE_MS, countText, feed, PANEL } from "./store.svelte";
   import { split } from "./time";
 
   let now = $state(Date.now());
@@ -14,6 +17,12 @@
     return () => clearInterval(timer);
   });
   const active = $derived(feed.lastAt > 0 && now - feed.lastAt < ACTIVE_MS);
+  const follow = $derived(followStore());
+  /** Live updates off: the chip says it (one place; the core's own item steps aside while the chip is there). */
+  const off = $derived(liveOff.off);
+  $effect(() => {
+    return feed.called && off ? liveOff.claim() : undefined;
+  });
 
   const KINDS = {
     created: "toast.kind.created",
@@ -26,28 +35,67 @@
     documents.navigate(path, null);
     feed.dismissToast();
   }
+
+  function followLatest(path: string): void {
+    follow?.followTo(path);
+    feed.dismissToast();
+  }
+
+  /** The focus left the toast (not to another of its buttons): it gets its time again. */
+  function focusOut(event: FocusEvent): void {
+    const to = event.relatedTarget;
+    if (
+      to instanceof Node &&
+      event.currentTarget instanceof Node &&
+      event.currentTarget.contains(to)
+    ) {
+      return;
+    }
+    feed.releaseToast();
+  }
 </script>
 
-<button
-  type="button"
-  class="chip"
-  aria-pressed={ui.right === "live-feed.panel" && !layout.rightHidden}
-  title={t("live.label")}
-  onclick={() => ui.toggleRight("live-feed.panel")}
->
-  <span class="dot" class:active aria-hidden="true"></span>
-  {t("live.chip")}
-</button>
+{#if feed.called}
+  <button
+    type="button"
+    class="chip"
+    class:off
+    aria-pressed={rightViews.onScreen(PANEL)}
+    title={off ? `${t("status.liveOff")}. ${t("status.liveOffHint")}` : t("live.label")}
+    onclick={() => feed.toggle()}
+  >
+    {#if off}
+      <TriangleAlert size={13} aria-hidden="true" />
+      {t("status.liveOffShort")}
+    {:else}
+      <span class="dot" class:active aria-hidden="true"></span>
+      {feed.unseen > 0 ? t("live.chipCount", { n: countText(feed.unseen) }) : t("live.chip")}
+    {/if}
+  </button>
+{/if}
 
 {#if feed.toast}
   {@const toast = feed.toast}
-  <div class="toast" role="status" aria-live="polite">
+  <div
+    class="toast"
+    role="status"
+    aria-live="polite"
+    onpointerenter={() => feed.holdToast()}
+    onpointerleave={() => feed.releaseToast()}
+    onfocusin={() => feed.holdToast()}
+    onfocusout={focusOut}
+  >
     <button type="button" class="open" onclick={() => openLatest(toast.path)}>
       <strong>{tn("toast.docsChanged", toast.count)}</strong>
       <span class="latest"
         >{t("toast.latest")}: {split(toast.path).name} {t(KINDS[toast.kind])}</span
       >
     </button>
+    {#if follow !== null && !follow.on}
+      <button type="button" class="follow" onclick={() => followLatest(toast.path)}
+        >{t("toast.follow")}</button
+      >
+    {/if}
     <button
       type="button"
       class="close"
@@ -70,21 +118,24 @@
     font: inherit;
     cursor: pointer;
   }
+  .chip.off {
+    color: var(--git-modified-text);
+    white-space: nowrap;
+  }
   .chip:hover,
   .chip[aria-pressed="true"] {
     background: var(--hover);
     color: var(--text);
   }
+  /* idle: full --muted (non-text contrast >= 3:1 on the status bar); active: the accent. No animation. */
   .dot {
     width: 7px;
     height: 7px;
     border-radius: 50%;
     background: var(--muted);
-    opacity: 0.5;
   }
   .dot.active {
     background: var(--accent);
-    opacity: 1;
   }
   .toast {
     position: fixed;
@@ -124,6 +175,19 @@
     color: var(--muted);
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .follow {
+    padding: 0 var(--sp-3);
+    border: 0;
+    border-left: 1px solid var(--border);
+    background: transparent;
+    color: var(--accent-text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .follow:hover {
+    background: var(--hover);
   }
   .close {
     padding: 0 var(--sp-3);

@@ -1,5 +1,6 @@
 // What the core hands to the views plugins contribute (types only; the registry and the components share them).
 
+import type { Snippet } from "svelte";
 import type { DocumentView, OutlineItem, WorkspaceId, WorkspaceView } from "../../api";
 
 /** An embed (a code block, a formula, a diagram) is mounted with the text it draws. */
@@ -10,6 +11,10 @@ export type EmbedProps = {
   info: string;
   /** A formula on a line of its own. */
   display: boolean;
+  /** Code: each line in an element of its own (`span.ln`), for a viewer that wraps long lines and numbers them. */
+  lines?: boolean;
+  /** Code: the text scrolls sideways in a box the keyboard reaches (a viewer of a whole file), named this. */
+  region?: string;
 };
 
 /** The text selected in the page, and where it is (a plugin comments on it). */
@@ -49,4 +54,9 @@ export type WorkspaceViewProps = {
 /** The headings the outline panel shows: a plugin that adds a column to them works out its figures from these. */
 export type OutlineWatcherProps = {
   items: readonly OutlineItem[];
+};
+
+/** The props of a view of the right column (`panel` side right): the view options button for its header. */
+export type PanelViewProps = {
+  viewMenu?: Snippet;
 };

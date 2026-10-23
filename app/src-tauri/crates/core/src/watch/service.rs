@@ -15,6 +15,7 @@ use super::own::OwnWrites;
 use super::reconcile::{reconcile, Env, Pending};
 use super::sigs::{sig_of, SigStore};
 use super::types::{FsBatch, BULK_CHANGES};
+use super::wsl::is_wsl;
 use super::{LiveStatus, StatusHook, WatchHub};
 use crate::paths::Vault;
 use crate::tree::{key_of, Ignorer};
@@ -113,6 +114,7 @@ pub(crate) fn hints_from(event: &Event) -> Vec<Pending> {
         removed: false,
         modified: false,
         rename_from: None,
+        after_removal: None,
         deferred: false,
     };
     let mut hints = Vec::new();
@@ -142,6 +144,7 @@ pub(crate) fn hints_from(event: &Event) -> Vec<Pending> {
                 hints.push(Pending {
                     created: true,
                     rename_from: Some(from.clone()),
+                    after_removal: None,
                     ..blank(to)
                 });
             }
@@ -186,6 +189,44 @@ pub(crate) fn hints_from(event: &Event) -> Vec<Pending> {
     hints
 }
 
+/// Pairs the two halves of a move the OS reports as two events in a row: a rename (Windows: old name, then new name;
+/// macOS: two events without direction) -> the new name's hint learns where it came from, as with a one-event rename;
+/// a removal, then a creation (Windows: a move to another parent) -> the creation's hint keeps it as a maybe
+/// (`after_removal`). Any other event in between ends the pair.
+#[derive(Debug, Default)]
+pub(crate) struct RenamePairs {
+    /// (path, half of a rename | a plain removal)
+    out: Option<(PathBuf, bool)>,
+}
+
+impl RenamePairs {
+    /// [`hints_from`], a hint linked to the removal just before it.
+    pub(crate) fn hints(&mut self, event: &Event) -> Vec<Pending> {
+        let mut hints = hints_from(event);
+        let (half, removal, creation) = match &event.kind {
+            EventKind::Modify(ModifyKind::Name(mode)) => {
+                (!matches!(mode, RenameMode::Both), false, false)
+            }
+            EventKind::Remove(_) => (false, true, false),
+            EventKind::Create(_) => (false, false, true),
+            _ => (false, false, false),
+        };
+        let out = self.out.take();
+        if let [one] = hints.as_mut_slice() {
+            if (half || removal) && one.removed {
+                self.out = Some((one.abs.clone(), half));
+            } else if let Some((from, renamed)) = out.filter(|(from, _)| *from != one.abs) {
+                if half && renamed && one.created {
+                    one.rename_from = Some(from);
+                } else if creation && !renamed {
+                    one.after_removal = Some(from);
+                }
+            }
+        }
+        hints
+    }
+}
+
 /// Git is in the middle of an operation (checkout, merge, rebase, ...): its marker files exist.
 fn git_operation(root: &Path) -> bool {
     let git = root.join(".git");
@@ -203,8 +244,8 @@ fn git_operation(root: &Path) -> bool {
 }
 
 impl Watcher {
-    /// Starts watching every root of `vault`. Never fails: when the OS watchers cannot start, [`Watcher::status`] says
-    /// so and the open documents are polled.
+    /// Starts watching every root of `vault`. Never fails: when the OS watchers cannot start (or the project is in a
+    /// WSL folder, not watched), [`Watcher::status`] says so and the open documents are polled.
     #[must_use]
     pub fn start(
         vault: &Vault,
@@ -241,7 +282,12 @@ impl Watcher {
             tree: OnceLock::new(),
         });
         let mut natives = Vec::new();
-        if native {
+        if native && is_wsl(vault.main().path()) {
+            // the WSL share accepts a watch and never reports: say so rather than follow nothing
+            *lock(&shared.status) = LiveStatus::Unavailable {
+                reason: "wsl".to_owned(),
+            };
+        } else if native {
             match start_natives(vault, &tx) {
                 Ok(started) => natives = started,
                 Err(()) => {
@@ -359,12 +405,13 @@ fn start_natives(vault: &Vault, tx: &Sender<Msg>) -> Result<Vec<RecommendedWatch
     let mut started = Vec::new();
     for (path, required) in roots {
         let sender = tx.clone();
+        let mut pairs = RenamePairs::default();
         let handler = move |result: notify::Result<Event>| match result {
             Ok(event) => {
                 if event.need_rescan() {
                     let _ = sender.send(Msg::Rescan);
                 }
-                for hint in hints_from(&event) {
+                for hint in pairs.hints(&event) {
                     let _ = sender.send(Msg::Hint(hint));
                 }
             }
@@ -489,6 +536,7 @@ fn run(shared: &Shared, rx: &Receiver<Msg>) {
                         removed: missing,
                         modified: !missing,
                         rename_from: None,
+                        after_removal: None,
                         deferred: false,
                     });
                 }
@@ -505,10 +553,14 @@ fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
             .and_then(|name| name.to_str())
             .is_some_and(Ignorer::is_ignore_file)
     };
-    if rescan
-        || pending
-            .iter()
-            .any(|p| is_ignore_file(&p.abs) || p.rename_from.as_deref().is_some_and(is_ignore_file))
+    if rescan {
+        // events were lost: projects may have come or gone unseen
+        for (_, ignorer) in &shared.ignorers {
+            ignorer.forget_projects();
+        }
+    } else if pending
+        .iter()
+        .any(|p| is_ignore_file(&p.abs) || p.rename_from.as_deref().is_some_and(is_ignore_file))
     {
         for (_, ignorer) in &shared.ignorers {
             ignorer.clear();
@@ -527,6 +579,15 @@ fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
         known: &known,
     };
     let mut done = reconcile(&env, pending);
+    // a nested project came, went or moved: the changes above were decided with what was known before (a project
+    // that went still reports its files); from now on the new layout counts, and everything that keeps a picture of
+    // the disk builds it again (tree, index, unread)
+    let rescan = rescan || done.projects_moved;
+    if done.projects_moved {
+        for (_, ignorer) in &shared.ignorers {
+            ignorer.forget_projects();
+        }
+    }
     shared.own.pair_moves(&mut done.changes);
     shared.own.mark(&mut done.changes, |path| {
         shared.sigs.get(&key_of(path)).map(|s| s.hash)
@@ -539,6 +600,7 @@ fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
         changes: done.changes,
         bulk,
         rescan,
+        moved: done.moved,
     };
     if !batch.is_empty() {
         shared.hub.publish(&batch);

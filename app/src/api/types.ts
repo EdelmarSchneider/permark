@@ -52,6 +52,38 @@ import type { DocumentChanged } from "./generated/DocumentChanged";
 import type { DocumentView } from "./generated/DocumentView";
 import type { TextChunk } from "./generated/TextChunk";
 import type { IndexProgress } from "./generated/IndexProgress";
+import type { AgentChoice } from "./generated/AgentChoice";
+import type { CardChange } from "./generated/CardChange";
+import type { CardDto } from "./generated/CardDto";
+import type { CardField } from "./generated/CardField";
+import type { CardPlace } from "./generated/CardPlace";
+import type { CardTarget } from "./generated/CardTarget";
+import type { CardWarning } from "./generated/CardWarning";
+import type { HiddenRule } from "./generated/HiddenRule";
+import type { IncludeOutcome } from "./generated/IncludeOutcome";
+import type { InnerLine } from "./generated/InnerLine";
+import type { LocateRefusal } from "./generated/LocateRefusal";
+import type { MemberState } from "./generated/MemberState";
+import type { MissingReason } from "./generated/MissingReason";
+import type { MoveAsk } from "./generated/MoveAsk";
+import type { OfferSummary } from "./generated/OfferSummary";
+import type { ProjectPick } from "./generated/ProjectPick";
+import type { ProjectEvent } from "./generated/ProjectEvent";
+import type { ProjectMarker } from "./generated/ProjectMarker";
+import type { ProjectRow } from "./generated/ProjectRow";
+import type { ProjectUid } from "./generated/ProjectUid";
+import type { ProjectsChanged } from "./generated/ProjectsChanged";
+import type { ProjectsUndone } from "./generated/ProjectsUndone";
+import type { ProjectsView } from "./generated/ProjectsView";
+import type { RecordSkip } from "./generated/RecordSkip";
+import type { RecordStatus } from "./generated/RecordStatus";
+import type { RootAnswer } from "./generated/RootAnswer";
+import type { TagStatus } from "./generated/TagStatus";
+import type { VocabularyEntry } from "./generated/VocabularyEntry";
+import type { VocabularyKind } from "./generated/VocabularyKind";
+import type { VocabularyStatus } from "./generated/VocabularyStatus";
+import type { VocabularyView } from "./generated/VocabularyView";
+import type { SkippedEntry } from "./generated/SkippedEntry";
 import type { IndexStatus } from "./generated/IndexStatus";
 import type { IpcError } from "./generated/IpcError";
 import type { LinkTarget } from "./generated/LinkTarget";
@@ -106,6 +138,12 @@ import type { BaselineKind } from "./generated/BaselineKind";
 import type { FeedItem } from "./generated/FeedItem";
 import type { GitFile } from "./generated/GitFile";
 import type { GitSnapshot } from "./generated/GitSnapshot";
+import type { CommitLine } from "./generated/CommitLine";
+import type { InterestLevel } from "./generated/InterestLevel";
+import type { ProjectSnapshot } from "./generated/ProjectSnapshot";
+import type { RepoError } from "./generated/RepoError";
+import type { RepoSummary } from "./generated/RepoSummary";
+import type { ReposChanged } from "./generated/ReposChanged";
 import type { Letter } from "./generated/Letter";
 import type { ReviewChange } from "./generated/ReviewChange";
 import type { ReviewChangeKind } from "./generated/ReviewChangeKind";
@@ -267,6 +305,41 @@ export type { TreeDelta } from "./generated/TreeDelta";
 export type { TreeNode } from "./generated/TreeNode";
 export type { Unlisted } from "./generated/Unlisted";
 export type { UndoKind } from "./generated/UndoKind";
+/** Projects inside the folder (`projects.md`). */
+export type {
+  AgentChoice,
+  CardChange,
+  CardDto,
+  CardField,
+  CardPlace,
+  CardTarget,
+  CardWarning,
+  HiddenRule,
+  IncludeOutcome,
+  InnerLine,
+  LocateRefusal,
+  MemberState,
+  MissingReason,
+  MoveAsk,
+  OfferSummary,
+  ProjectEvent,
+  ProjectPick,
+  ProjectMarker,
+  ProjectRow,
+  ProjectUid,
+  ProjectsChanged,
+  ProjectsUndone,
+  ProjectsView,
+  RecordSkip,
+  RecordStatus,
+  RootAnswer,
+  TagStatus,
+  VocabularyEntry,
+  VocabularyKind,
+  VocabularyStatus,
+  VocabularyView,
+  SkippedEntry,
+};
 
 /** JSON value as the backend stores it (project session values). */
 export type JsonValue =
@@ -279,6 +352,7 @@ export interface Commands {
   open_path: { args: { path: string; placement: OpenPlacement }; result: OpenOutcome };
   open_notes: { args: { placement: OpenPlacement }; result: OpenOutcome };
   open_in_project: { args: { path: string }; result: null };
+  open_folder_with: { args: { folder: string; document: string | null }; result: null };
   list_windows: { args: Record<string, never>; result: WindowSummary[] };
   focus_workspace: { args: { id: WorkspaceId }; result: null };
   tab_activate: { args: { tab: TabId }; result: null };
@@ -297,6 +371,27 @@ export interface Commands {
   tree_open_folder: { args: { path: string }; result: null };
   tree_keep: { args: { path: string | null }; result: null };
   tree_close: { args: Record<string, never>; result: null };
+  projects_view: { args: Record<string, never>; result: ProjectsView };
+  projects_include: { args: { pick: ProjectPick }; result: IncludeOutcome };
+  projects_decline: { args: { pick: ProjectPick }; result: null };
+  projects_undo: { args: { token: number }; result: ProjectsUndone };
+  projects_leave_out: { args: { uids: ProjectUid[] }; result: null };
+  projects_set_hidden: { args: { uid: ProjectUid; rule: HiddenRule }; result: null };
+  projects_set_agent: { args: { uid: ProjectUid; choice: AgentChoice }; result: null };
+  projects_locate: { args: { uid: ProjectUid; path: string }; result: LocateRefusal | null };
+  projects_remove: { args: { uids: ProjectUid[] }; result: null };
+  projects_answer_move: { args: { uid: ProjectUid; path: string; same: boolean }; result: null };
+  projects_card_set: { args: { target: CardTarget; change: CardChange }; result: CardDto };
+  vocabulary_promote: { args: { kind: VocabularyKind; name: string }; result: null };
+  vocabulary_rename: {
+    args: { kind: VocabularyKind; name: string; newName: string };
+    result: null;
+  };
+  vocabulary_remove: { args: { kind: VocabularyKind; name: string }; result: null };
+  vocabulary_set_style: {
+    args: { kind: VocabularyKind; name: string; color: string | null; icon: string | null };
+    result: null;
+  };
   fileops_plan_move: { args: { moves: MoveSpec[]; updateLinks: boolean }; result: MovePlan };
   fileops_apply_move: { args: { planId: number; updateLinks: boolean }; result: MoveOutcome };
   fileops_delete: { args: { paths: string[] }; result: DeleteOutcome };
@@ -366,6 +461,7 @@ export interface Commands {
   };
   plugin_call: { args: { plugin: string; method: string; args: JsonValue }; result: JsonValue };
   project_init: { args: { path: string }; result: null };
+  folder_empty: { args: { path: string }; result: boolean };
   project_config_get: { args: Record<string, never>; result: ProjectSettings };
   project_config_set: { args: { change: ProjectSettingChange }; result: ProjectSettings };
   plugins_list: { args: Record<string, never>; result: PluginInfo[] };
@@ -390,8 +486,17 @@ export interface Commands {
  * registrations; DTOs from `generated/`. A plugin that is off answers `unavailable`.
  */
 export interface PluginMethods {
-  "git.snapshot": { args: Record<string, never>; result: GitSnapshot | null };
-  "git.refresh": { args: Record<string, never>; result: null };
+  /** `project`: an included project's uid (its repository; `null` until a view declared interest); absent = root. */
+  "git.snapshot": { args: { project?: string | null }; result: GitSnapshot | null };
+  /** Window focus: absent = the root + every repository a view looks at; `project` = that one. */
+  "git.refresh": { args: { project?: string | null }; result: null };
+  /** Repositories of the included projects (cheap facts at once, counts | details as known). */
+  "git.repos": { args: Record<string, never>; result: RepoSummary[] };
+  /**
+   * What this view (`view`: a tab id; absent = the window) wants to know at `level`: replaces its set for that level.
+   * Send `[]` when the view goes | hides (nothing else drops it).
+   */
+  "git.interest": { args: { ids: string[]; level: InterestLevel; view?: string }; result: null };
   "git.setBaseline": { args: { kind: BaselineKind }; result: null };
   "live-feed.items": { args: Record<string, never>; result: FeedItem[] };
   "live-feed.clear": { args: Record<string, never>; result: null };
@@ -554,6 +659,8 @@ export type PluginMethod = keyof PluginMethods;
 /** Events of project plugins: `{ root, data }` (the folder they are about; a window keeps its own). */
 export interface PluginEvents {
   "git:snapshot": GitSnapshot | null;
+  "git:repos": ReposChanged;
+  "git:projectSnapshot": ProjectSnapshot;
   "live-feed:items": { upsert: FeedItem[] };
   "live-feed:activity": { entry: ActivityEntry };
   "unread:changed": UnreadList;
@@ -601,6 +708,12 @@ export type {
   FeedItem,
   GitFile,
   GitSnapshot,
+  CommitLine,
+  InterestLevel,
+  ProjectSnapshot,
+  RepoError,
+  RepoSummary,
+  ReposChanged,
   Letter,
   ReviewChange,
   ReviewChangeKind,
@@ -677,6 +790,8 @@ export interface Events {
   "view-moved": ViewMoved;
   "plugins-changed": null;
   "index-progress": IndexProgress;
+  /** The projects of a folder changed: the window showing `root` reads `projectsView` again. */
+  "projects-changed": ProjectsChanged;
   "import-progress": ImportProgressEvent;
 }
 export type EventName = keyof Events;
@@ -705,6 +820,8 @@ export interface Api {
   openNotes(placement: OpenPlacement): Promise<Result<OpenOutcome>>;
   /** Opens the project that holds a file (a new tab of this window), showing the file. */
   openInProject(path: string): Promise<Result<null>>;
+  /** Opens a folder as a project (a new tab of this window, or where it is), showing a document inside it. */
+  openFolderWith(folder: string, document: string | null): Promise<Result<null>>;
   /** Every window with its tabs (this view shows its own window's). */
   listWindows(): Promise<Result<WindowSummary[]>>;
   focusWorkspace(id: WorkspaceId): Promise<Result<null>>;
@@ -731,6 +848,50 @@ export interface Api {
   /** The open document stays in the list even when the filter hides it. */
   treeKeep(path: string | null): Promise<Result<null>>;
   treeClose(): Promise<Result<null>>;
+  /** Projects inside this window's folder: Settings > Projects + the strip. Changes arrive as `projects-changed`. */
+  projectsView(): Promise<Result<ProjectsView>>;
+  /** Includes projects (`all` = every offered one); a folder without `.permark/` is initialized first. */
+  projectsInclude(pick: ProjectPick): Promise<Result<IncludeOutcome>>;
+  /** "No thanks": `all` on the first question declines for this folder; paths decline those (profile only). */
+  projectsDecline(pick: ProjectPick): Promise<Result<null>>;
+  /** Takes back the last include (its `undo` token). */
+  projectsUndo(token: number): Promise<Result<ProjectsUndone>>;
+  projectsLeaveOut(uids: ProjectUid[]): Promise<Result<null>>;
+  projectsSetHidden(uid: ProjectUid, rule: HiddenRule): Promise<Result<null>>;
+  projectsSetAgent(uid: ProjectUid, choice: AgentChoice): Promise<Result<null>>;
+  /** Locate… of a missing project: `path` = the folder picked (absolute). `null` = done, else why not. */
+  projectsLocate(uid: ProjectUid, path: string): Promise<Result<LocateRefusal | null>>;
+  /** Missing projects taken off the list. */
+  projectsRemove(uids: ProjectUid[]): Promise<Result<null>>;
+  /** The move question: `same` = the project at `path` is the missing one. */
+  projectsAnswerMove(uid: ProjectUid, path: string, same: boolean): Promise<Result<null>>;
+  /** One field of a card (the folder's own | an included project's); an empty value removes the field. */
+  projectsCardSet(target: CardTarget, change: CardChange): Promise<Result<CardDto>>;
+  /**
+   * Makes a tag | category official in this folder (`.permark/vocabulary.toml`; the local look is copied). Already
+   * official: nothing to do. `unavailable` (subject `vocabulary`): no `.permark/` here, the list can't be read | is
+   * newer. Changes arrive as `projects-changed` (+ `tags:changed`).
+   */
+  vocabularyPromote(kind: VocabularyKind, name: string): Promise<Result<null>>;
+  /**
+   * Renames an official tag | category (only its line in `.permark/vocabulary.toml` changes; documents are never
+   * edited: the old name left in files becomes unlisted). Same name: nothing to do. Refusals: `invalidData`
+   * (`name` | `newName` empty), `notFound` `name` (not in the list), `exists` `newName` (already in the list),
+   * `unavailable` | `conflict` `vocabulary` as promote. Changes arrive as `projects-changed` (+ `tags:changed`).
+   */
+  vocabularyRename(kind: VocabularyKind, name: string, newName: string): Promise<Result<null>>;
+  /** Takes an official tag | category out of the list (documents untouched). Refusals as rename (no `exists`). */
+  vocabularyRemove(kind: VocabularyKind, name: string): Promise<Result<null>>;
+  /**
+   * The whole look of an official tag | category, like `tags.setStyle` (`null` = no color | no icon). Refusals as
+   * remove, plus `invalidData` `color` | `icon` (a value outside the style sets).
+   */
+  vocabularySetStyle(
+    kind: VocabularyKind,
+    name: string,
+    color: string | null,
+    icon: string | null,
+  ): Promise<Result<null>>;
   planMove(moves: MoveSpec[], updateLinks: boolean): Promise<Result<MovePlan>>;
   applyMove(planId: number, updateLinks: boolean): Promise<Result<MoveOutcome>>;
   deleteFiles(paths: string[]): Promise<Result<DeleteOutcome>>;
@@ -847,6 +1008,8 @@ export interface Api {
   defaultAppHandoff(): Promise<Result<null>>;
   /** Creates `.permark/` in a folder; a project open on it reloads its state at once. */
   projectInit(path: string): Promise<Result<null>>;
+  /** Whether a folder has nothing in it yet (one that cannot be read counts as not empty). */
+  folderEmpty(path: string): Promise<Result<boolean>>;
   /** The shared settings (`.permark/config.toml`) of this window's project. */
   projectConfigGet(): Promise<Result<ProjectSettings>>;
   projectConfigSet(change: ProjectSettingChange): Promise<Result<ProjectSettings>>;
@@ -873,8 +1036,8 @@ export interface Api {
   openDropped(paths: string[], scope: DropScope): Promise<Result<DropOpened>>;
   /** This view's window comes forward and the view takes the keyboard (before a drop question; may be refused). */
   focusView(): Promise<Result<null>>;
-  /** System folder | file picker; `null` = cancelled. */
-  pickFolder(title: string): Promise<string | null>;
+  /** System folder | file picker; `null` = cancelled. `from`: the folder it opens at (else the system's choice). */
+  pickFolder(title: string, from?: string | null): Promise<string | null>;
   /** `anyFile`: no filter on the kind of file (the Notes open any text file). */
   pickFile(title: string, filterName: string, anyFile?: boolean): Promise<string | null>;
   /** Pictures chosen in the system's file dialog (PNG, JPG, GIF, WebP, SVG); absolute paths, none when cancelled. */

@@ -4,6 +4,7 @@
 pub mod older;
 mod private;
 mod raw;
+pub mod shared_write;
 
 use std::io;
 use std::marker::PhantomData;
@@ -20,6 +21,7 @@ use crate::paths::Root;
 use crate::plugins::PluginId;
 
 pub use raw::RawFile;
+pub use shared_write::{merge3, FileLock};
 
 pub const PERMARK_DIR: &str = ".permark";
 /// Per-project files that ALWAYS stay in the profile (a project's files must never switch them).
@@ -84,7 +86,8 @@ impl AppDirs {
     }
 }
 
-/// Stable id of a project folder: xxh3 of its `RootKey` (every spelling of one folder -> one id).
+/// Stable id of a project folder: xxh3 of its `RootKey` as saved ([`crate::paths::RootKey::saved_spelling`]: shares
+/// keep 0.6's `//?/unc/` spelling) -> every spelling of one folder, in every version since 0.6, -> one id.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ProjectId(String);
@@ -92,7 +95,11 @@ pub struct ProjectId(String);
 impl ProjectId {
     #[must_use]
     pub fn of(root: &Root) -> Self {
-        Self(crate::fsx::hash(root.key().as_str().as_bytes()).hex())
+        Self::of_key(root.key())
+    }
+
+    fn of_key(key: &crate::paths::RootKey) -> Self {
+        Self(crate::fsx::hash(key.saved_spelling().as_bytes()).hex())
     }
 
     #[must_use]
@@ -224,19 +231,91 @@ impl<T: StateData> StateFile<T> {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Loaded::Missing,
             Err(_) => return Loaded::Recovered { backup: None },
         };
-        let read = serde_json::from_slice::<EnvelopeIn<serde_json::Value>>(&bytes)
-            .ok()
-            .and_then(|envelope| match envelope.version {
-                v if v == T::VERSION => serde_json::from_value(envelope.data).ok(),
-                v if v < T::VERSION => T::upgrade(v, envelope.data),
-                _ => None,
-            });
-        match read {
+        match Self::parse(&bytes) {
             Some(data) => Loaded::Found(data),
             None => Loaded::Recovered {
                 backup: self.move_aside(),
             },
         }
+    }
+
+    /// The data of the file's bytes (`None`: not this layout, or a newer version).
+    fn parse(bytes: &[u8]) -> Option<T> {
+        serde_json::from_slice::<EnvelopeIn<serde_json::Value>>(bytes)
+            .ok()
+            .and_then(|envelope| match envelope.version {
+                v if v == T::VERSION => serde_json::from_value(envelope.data).ok(),
+                v if v < T::VERSION => T::upgrade(v, envelope.data),
+                _ => None,
+            })
+    }
+
+    fn encode(&self, data: &T) -> Result<Vec<u8>, StateError> {
+        serde_json::to_vec_pretty(&EnvelopeOut {
+            version: T::VERSION,
+            data,
+        })
+        .map_err(|source| StateError::Encode {
+            path: self.path.display().to_string(),
+            source,
+        })
+    }
+
+    /// Read-change-write for a file several cores write (`shared_write`): under the file's lock, `next` gets the data
+    /// on disk now (`None`: no file; a file this version cannot read is moved aside first, as [`StateFile::load`]
+    /// does) and returns what to write (`None`: nothing). Written only while the file still holds what `next` saw,
+    /// else read again and `next` asked again. Returns the data on disk afterwards.
+    ///
+    /// # Errors
+    /// Encode | IO failure, a link in place of `.permark/`, a file that kept changing under a writer without the lock.
+    pub fn update(
+        &self,
+        mut next: impl FnMut(Option<&T>) -> Option<T>,
+    ) -> Result<Option<T>, StateError> {
+        if let (Some(guard), Some(dir)) = (&self.guard, self.path.parent()) {
+            private::prepare(&guard.permark, &guard.state, dir)
+                .map_err(|e| StateError::io(&self.path, e))?;
+        }
+        let _lock =
+            shared_write::lock_for(&self.path).map_err(|e| StateError::io(&self.path, e))?;
+        for _ in 0..raw::UPDATE_ATTEMPTS {
+            let bytes = match std::fs::read(&self.path) {
+                Ok(bytes) => Some(bytes),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+                Err(error) => return Err(StateError::io(&self.path, error)),
+            };
+            let fresh = match bytes.as_deref().map(Self::parse) {
+                None => None,
+                Some(Some(data)) => Some(data),
+                Some(None) => {
+                    // kept beside it, never written over (the next round sees no file)
+                    let _ = self.move_aside();
+                    continue;
+                }
+            };
+            let Some(data) = next(fresh.as_ref()) else {
+                return Ok(fresh);
+            };
+            let out = self.encode(&data)?;
+            if bytes.as_deref() == Some(out.as_slice()) {
+                return Ok(Some(data));
+            }
+            let written =
+                crate::fsx::write_atomic_checked(&self.path, &out, || {
+                    match std::fs::read(&self.path) {
+                        Ok(now) => Ok(bytes.as_deref() == Some(now.as_slice())),
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                            Ok(bytes.is_none())
+                        }
+                        Err(error) => Err(error),
+                    }
+                })
+                .map_err(|e| StateError::io(&self.path, e))?;
+            if written {
+                return Ok(Some(data));
+            }
+        }
+        Err(StateError::io(&self.path, raw::kept_changing()))
     }
 
     /// `<name>.broken-<ms>` next to it; never overwrites an older backup.
@@ -267,14 +346,7 @@ impl<T: StateData> StateFile<T> {
     /// # Errors
     /// Encode failure, IO failure, `.permark/` folder replaced by a link.
     pub fn save(&self, data: &T) -> Result<(), StateError> {
-        let bytes = serde_json::to_vec_pretty(&EnvelopeOut {
-            version: T::VERSION,
-            data,
-        })
-        .map_err(|source| StateError::Encode {
-            path: self.path.display().to_string(),
-            source,
-        })?;
+        let bytes = self.encode(data)?;
         if let (Some(guard), Some(dir)) = (&self.guard, self.path.parent()) {
             private::prepare(&guard.permark, &guard.state, dir)
                 .map_err(|e| StateError::io(&self.path, e))?;
@@ -460,6 +532,12 @@ impl StateStore {
         }
     }
 
+    /// A raw file in a plugin's namespace (the one-time copy of 0.6 state writes the plugins' files as they are).
+    #[must_use]
+    pub fn plugin_raw_file(&self, id: &PluginId, name: &str) -> RawFile {
+        RawFile::private(self.plugin_dir(id).join(name), self.guard.clone())
+    }
+
     /// Deletes a plugin's namespace (state + cache). Missing = done. A link in its place is removed as a link
     /// (never followed).
     ///
@@ -556,6 +634,129 @@ pub fn init_project(dirs: &AppDirs, root: &Root) -> Result<StateStore, StateErro
         copy_missing(&before.dir, &after.dir, true).map_err(fail(&before.dir))?;
     }
     Ok(after)
+}
+
+/// Takes back what [`init_project`] made, when it is untouched (`projects.md` §2.4, undo of a first include):
+/// `.permark/` holds only `config.toml` + `.gitignore` with the bytes init wrote, `local/`, `cache/`, no link anywhere.
+/// The project's private state (`local/`, the live state since init) is carried back into the profile (newer wins),
+/// then `.permark/` is removed in one step: renamed away first (a temp name the tree and the watch never show), then
+/// deleted; a file held open (antivirus, editor) makes the rename fail and leaves `.permark/` whole, never half
+/// removed. The caller stopped the plugins before (their files flushed) and reloads the state after.
+/// `Ok(false)`: changed since init, left as it is.
+///
+/// # Errors
+/// IO failure while carrying back | renaming (`.permark/` then stays whole).
+pub fn uninit_project(dirs: &AppDirs, root: &Root) -> Result<bool, StateError> {
+    let permark = root.path().join(PERMARK_DIR);
+    if !private::is_real_folder(&permark) {
+        return Ok(false);
+    }
+    let fail = |p: &Path| {
+        let p = p.to_path_buf();
+        move |e| StateError::io(&p, e)
+    };
+    let names: Vec<String> = std::fs::read_dir(&permark)
+        .map_err(fail(&permark))?
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    let allowed = ["config.toml", ".gitignore", "local", "cache"];
+    if names.iter().any(|n| !allowed.contains(&n.as_str())) {
+        return Ok(false);
+    }
+    let same = |name: &str, want: &str| {
+        std::fs::read(permark.join(name)).is_ok_and(|bytes| bytes == want.as_bytes())
+    };
+    if !same("config.toml", DEFAULT_CONFIG_TOML) || !same(".gitignore", PROJECT_GITIGNORE) {
+        return Ok(false);
+    }
+    for sub in ["local", "cache"] {
+        if holds_link(&permark.join(sub)) {
+            return Ok(false);
+        }
+    }
+    let profile = dirs
+        .profile
+        .join("projects")
+        .join(ProjectId::of(root).as_str());
+    let local = permark.join("local");
+    if private::is_real_folder(&local) {
+        std::fs::create_dir_all(&profile).map_err(fail(&profile))?;
+        copy_over(&local, &profile).map_err(fail(&local))?;
+    }
+    // one step for everyone looking: `.permark/` is there whole or gone; the leftover temp folder is best effort
+    let gone = root.path().join(format!(
+        ".permark-undo-{}-{:x}.tmp",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos())
+    ));
+    std::fs::rename(&permark, &gone).map_err(fail(&permark))?;
+    let _ = std::fs::remove_dir_all(&gone);
+    Ok(true)
+}
+
+/// A project folder moved from `from` to `to` (absolute; `from` may be gone): its profile state folder and its profile
+/// cache folder follow the new `ProjectId` (`projects.md` §9.1). Target missing -> renamed; target present -> what it
+/// lacks is copied in (the target wins), then the old folder is removed. Same id (case-only rename on a
+/// case-insensitive disk) | nothing kept under the old id -> nothing done. Returns whether anything moved.
+///
+/// # Errors
+/// IO failure (the old folder then stays where it is).
+pub fn move_profile_state(dirs: &AppDirs, from: &Path, to: &Path) -> Result<bool, StateError> {
+    let id = |path: &Path| ProjectId::of_key(&crate::paths::RootKey::of(path)).0;
+    let (old_id, new_id) = (id(from), id(to));
+    if old_id == new_id {
+        return Ok(false);
+    }
+    let mut moved = false;
+    for base in [dirs.profile.join("projects"), dirs.cache.join("projects")] {
+        let old = base.join(&old_id);
+        if !private::is_real_folder(&old) {
+            continue;
+        }
+        let new = base.join(&new_id);
+        if std::fs::symlink_metadata(&new).is_err() {
+            std::fs::rename(&old, &new).map_err(|e| StateError::io(&old, e))?;
+        } else {
+            copy_missing(&old, &new, false).map_err(|e| StateError::io(&new, e))?;
+            std::fs::remove_dir_all(&old).map_err(|e| StateError::io(&old, e))?;
+        }
+        moved = true;
+    }
+    Ok(moved)
+}
+
+/// Whether a folder tree holds a link (symlink | junction) anywhere (the folder itself included).
+fn holds_link(dir: &Path) -> bool {
+    match private::entry(dir) {
+        private::Entry::Missing => false,
+        private::Entry::Other => true,
+        private::Entry::Folder => std::fs::read_dir(dir).map_or(true, |entries| {
+            entries.flatten().any(|e| {
+                let path = e.path();
+                crate::tree::is_link_meta_of(&path)
+                    || e.file_type()
+                        .map_or(true, |t| t.is_dir() && holds_link(&path))
+            })
+        }),
+    }
+}
+
+/// Copies files + folders of `from` into `to`, the copy winning over what `to` holds (links never followed).
+fn copy_over(from: &Path, to: &Path) -> io::Result<()> {
+    for entry in std::fs::read_dir(from)?.flatten() {
+        let target = to.join(entry.file_name());
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            std::fs::create_dir_all(&target)?;
+            copy_over(&entry.path(), &target)?;
+        } else if kind.is_file() {
+            std::fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
 }
 
 /// Copies files + folders of `from` into `to`, never over an existing entry (links not followed or copied).

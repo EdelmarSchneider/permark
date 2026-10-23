@@ -6,8 +6,15 @@ import { opensAsText } from "../core/explorer/importModel";
 import type { Context } from "./generated/Context";
 import type { ErrorKind } from "./generated/ErrorKind";
 import type { WindowView } from "./generated/WindowView";
+import type { WorkspaceRefDto } from "./generated/WorkspaceRefDto";
 import type { WorkspaceView } from "./generated/WorkspaceView";
-import { mockAssetUrl, mockLinkTarget, mockNoteView, mockView } from "./mockDocs";
+import {
+  MOCK_DOCUMENT_PATHS,
+  mockAssetUrl,
+  mockLinkTarget,
+  mockNoteView,
+  mockView,
+} from "./mockDocs";
 import { createMockConfig } from "./mockConfig";
 import { createMockDistribution, type DistributionProbe } from "./mockDistribution";
 import { createMockTokens, type TokensProbe } from "./mockTokens";
@@ -18,6 +25,7 @@ import { createMockNotes, MOCK_NOTES_FOLDER } from "./mockNotes";
 import { createMockOrganizing } from "./mockOrganizing";
 import { createMockPlugins, type MockPluginProbe } from "./mockPlugins";
 import { MockProject, MockRefusal, seedFiles } from "./mockFs";
+import { createMockProjects, type ProjectsProbe } from "./mockProjects";
 import { mockFiles, mockRecent, mockSections } from "./mockSearch";
 import { createMockShell, MOCK_MANIFESTS, type MockShell } from "./mockShell";
 import type {
@@ -50,6 +58,8 @@ import type {
 export const MOCK_VERSION = "0.0.0-mock";
 export const MOCK_FOLDER = "C:/Users/demo/permark-docs";
 export const MOCK_FILE = "C:/Users/demo/Downloads/proposal.md";
+/** A WSL folder (`watch/wsl.rs`): `\\wsl$\` | `\\wsl.localhost\`, also behind `\\?\UNC\` | `\\.\UNC\`, `/` | `\`. */
+const WSL_ROOT = /^[\\/]{2}(?:[?.][\\/]unc[\\/])?wsl(?:\$|\.localhost)(?:[\\/]|$)/i;
 
 const ok = <T>(value: T): Promise<Result<T>> => Promise.resolve({ ok: true, value });
 
@@ -69,6 +79,8 @@ function defaultSettings(): AppSettings {
     editor: "",
     keymap: {},
     plugins: {},
+    rightViews: null,
+    wrapLines: true,
   };
 }
 
@@ -83,6 +95,7 @@ function neutralContext(): Context {
     distribution: "direct",
     platform: "windows",
     plugins: [],
+    agentFiles: [],
   };
 }
 
@@ -129,6 +142,10 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       else plugins[change.value.plugin] = change.value.enabled;
       return { ...settings, plugins };
     }
+    case "rightViews":
+      return { ...settings, rightViews: change.value };
+    case "wrapLines":
+      return { ...settings, wrapLines: change.value };
     default:
       return change satisfies never;
   }
@@ -156,6 +173,8 @@ export type MockProbe = {
   shell: MockShell["probe"];
   /** Themes the window's title bar was asked to take (`null`: the system's). */
   windowThemes: ("light" | "dark" | null)[];
+  /** Folders the folder picker was asked to open at, in order (`null`: the system's choice). */
+  pickedFrom: (string | null)[];
   /** The default app, the file manager entries, the updater. */
   distribution: DistributionProbe;
   /** The token count plugin: vocabularies, what it was asked to count. */
@@ -166,6 +185,8 @@ export type MockProbe = {
   imports: ImportProbe;
   /** Picture files read for a drop on an editor, by path. */
   pictures: string[];
+  /** The project's folder cannot report changes (live updates off) | can again; the context is told at once. */
+  liveOff(off: boolean): void;
   /** Drop to open: what was asked, paths that are gone (they fail), paths that are folders (else files, text by
    * name), and `fire` = a system drag event on the view. */
   drops: {
@@ -186,6 +207,13 @@ export type MockProbe = {
   };
   /** Web pictures asked for, by address; the per-project choice. */
   remote: { asked: string[]; always: boolean };
+  /** Projects inside the folder: the fixture per folder, what was asked, news for the Changes panel. */
+  projects: ProjectsProbe;
+  /** Facts of the shown project's context (`agentFiles`, `git`) over the mock's own; emitted at once. */
+  context: { set(over: Record<string, unknown>): void };
+  /** Opens in this tab of a view that shows something: how long the backend's Opening state lasts (0: until the page
+   *  reacted to it), the folders whose open fails (`io`), the project calls refused meanwhile (`project_of`). */
+  opening: { ms: number; fails: Set<string>; refused: string[] };
 };
 
 /** Fresh mock (tests get their own; the dev build uses `mockApi`). */
@@ -206,6 +234,13 @@ export function createMockApi(): Api & {
     { path: "D:/old/specs", name: "specs", openedMs: Date.now() - 86_400_000, missing: true },
   ];
   const session = new Map<string, JsonValue>();
+  // the mock folder has `CLAUDE.md` (a project that calls for agents): Live changes starts closed so the scenarios and
+  // calibration fixtures look as before; seeds `agentProject` | `gitOnlyProject` | `plainFolder` remove this
+  session.set("layout.views", { v: 1, open: { "live-feed.panel": false }, selected: [] });
+  // ...and its offer to share it with agents was answered, for the same reason (probe seed `agent offer=unasked`)
+  session.set("agent.offer", "declined");
+  /** Facts of a shown project's context over the mock's own (`agentFiles` until the backend type has it). */
+  let contextOver: Record<string, unknown> = { agentFiles: ["CLAUDE.md"] };
   const listeners: { [E in EventName]: Set<(payload: Events[E]) => void> } = {
     "window-changed": new Set(),
     "context-changed": new Set(),
@@ -221,9 +256,12 @@ export function createMockApi(): Api & {
     "import-progress": new Set(),
     "plugins-changed": new Set(),
     "index-progress": new Set(),
+    "projects-changed": new Set(),
   };
   const pluginListeners: { [E in PluginEventName]: Set<(payload: PluginEnvelope<E>) => void> } = {
     "git:snapshot": new Set(),
+    "git:repos": new Set(),
+    "git:projectSnapshot": new Set(),
     "live-feed:items": new Set(),
     "live-feed:activity": new Set(),
     "unread:changed": new Set(),
@@ -244,6 +282,10 @@ export function createMockApi(): Api & {
     // the agent switch is part of the window's context, as in the app
     if (event === "agent:status") emit("context-changed", { window: "main", context: context() });
   }
+  function singleFileShown(): boolean {
+    return view.state === "showing" && view.workspace.kind === "singleFile";
+  }
+
   function inProject(): boolean {
     return view.state === "showing" && view.workspace.kind === "project";
   }
@@ -273,7 +315,13 @@ export function createMockApi(): Api & {
     return {
       tab: entry.tab,
       kind: workspace.kind,
-      title: workspace.kind === "notes" ? "Notes" : workspace.name,
+      // a single file showing another file of its folder: the chip names the file shown (as the backend)
+      title:
+        workspace.kind === "notes"
+          ? "Notes"
+          : workspace.kind === "singleFile" && entry.view.document
+            ? nameOf(entry.view.document)
+            : workspace.name,
       path: workspace.kind === "notes" ? "" : pathOfView(entry.view),
       loaded: true,
       unsaved: entry.tab === activeTab && editing.probe.unsaved !== null,
@@ -349,9 +397,14 @@ export function createMockApi(): Api & {
 
   const shell = createMockShell({ settings: () => settings, changed: announceShell });
   const windowThemes: ("light" | "dark" | null)[] = [];
+  const pickedFrom: (string | null)[] = [];
 
   const project = new MockProject();
-  const organizing = createMockOrganizing(emitPlugin, project);
+  // read when asked (the projects mock is made below)
+  const organizing = createMockOrganizing(emitPlugin, project, () => ({
+    view: projects.probe.viewOf(rootNow()),
+    root: rootNow(),
+  }));
   const editing = createMockEditing(() => Object.keys(seedFiles()).sort());
   const notes = createMockNotes(editing.probe.files, () => {
     for (const handler of appListeners["notes:intent"]) handler(null);
@@ -380,8 +433,22 @@ export function createMockApi(): Api & {
     organizing,
     notes,
     { ...distribution.handlers, ...tokens.handlers, ...convert.handlers },
+    // read when asked (the projects mock is made just below)
+    () => projects.probe.viewOf(rootNow()),
   );
   const importing = createMockImport(project, emit, () => refreshTree());
+  const projects = createMockProjects({
+    root: rootNow,
+    tagsChanged: () => emitPlugin("tags:changed", null),
+    emit,
+    feed: (item) => emitPlugin("live-feed:items", { upsert: [item] }),
+    addFiles: (files) => {
+      for (const [path, text] of Object.entries(files)) {
+        if (!project.files.has(path)) project.add(path, text);
+      }
+      refreshTree();
+    },
+  });
   const probe: MockProbe = {
     opened: [],
     editor: [],
@@ -392,11 +459,16 @@ export function createMockApi(): Api & {
     plugins: plugins.probe,
     shell: shell.probe,
     windowThemes,
+    pickedFrom,
     distribution: distribution.probe,
     tokens: tokens.probe,
     convert: convert.probe,
     imports: importing.probe,
     pictures: [],
+    liveOff: (off) => {
+      liveOff = off;
+      emit("context-changed", { window: "main", context: context() });
+    },
     drops: {
       opened: [],
       missing: new Set(),
@@ -408,8 +480,19 @@ export function createMockApi(): Api & {
     },
     remote: { asked: [], always: false },
     tabs: { moved: [], movedTo: [], answers: [], saved: [], refuseMove: false },
+    projects: projects.probe,
+    context: {
+      set: (over) => {
+        contextOver = { ...contextOver, ...over };
+        if (view.state === "showing") {
+          emit("context-changed", { window: "main", context: context() });
+        }
+      },
+    },
+    opening: { ms: 0, fails: new Set(), refused: [] },
   };
   let tree: TreeView | null = null;
+  let liveOff = false;
   /** The view's drop listeners (the system's drag events, fired by tests through `probe.drops.fire`). */
   const dropHandlers = new Set<(event: DropEvent) => void>();
 
@@ -429,6 +512,57 @@ export function createMockApi(): Api & {
         error: { kind, subject: kind === "invalidName" ? null : refusal.subject, detail },
       },
     };
+  }
+
+  function refused<T>(command: CommandName, kind: ErrorKind, subject: string | null): Result<T> {
+    return {
+      ok: false,
+      error: { kind: "backend", command, error: { kind, subject, detail: null } },
+    };
+  }
+
+  /** A project call while the view opens another workspace: refused as the backend does (`project_of` serves the
+   *  Showing state only), `null` otherwise. */
+  function whileOpening<T>(command: CommandName, what: string = command): Result<T> | null {
+    if (view.state !== "opening") return null;
+    probe.opening.refused.push(what);
+    const session = command === "project_session_get" || command === "project_session_set";
+    return refused(command, "unsupported", session ? "project session" : "project");
+  }
+
+  /** The latest open in this tab (an older one still opening is superseded). */
+  let openTicket = 0;
+
+  /** An open in this tab of a view that shows something, as the backend runs it: Opening first (what was shown stays on
+   *  screen; project calls refused), then the new workspace (`show`) | back to the old one when the open fails | nothing
+   *  when a newer open came meanwhile (`superseded`). */
+  async function openHere(
+    target: WorkspaceRefDto,
+    show: () => WindowView,
+  ): Promise<Result<{ outcome: "opened"; view: WindowView }>> {
+    const before = view;
+    const ticket = ++openTicket;
+    const showing =
+      before.state === "showing"
+        ? before.workspace
+        : before.state === "opening"
+          ? before.showing
+          : null;
+    view = { state: "opening", target, showing };
+    emit("window-changed", { window: "main", view, tab: activeTab });
+    // the page reacts to the Opening view (Svelte flushes in a microtask) while the backend builds the workspace
+    if (probe.opening.ms > 0) await new Promise((r) => setTimeout(r, probe.opening.ms));
+    else for (let i = 0; i < 5; i++) await null;
+    if (ticket !== openTicket) return refused("open_path", "superseded", null);
+    const path = target.kind === "notes" ? "notes" : target.path;
+    if (probe.opening.fails.has(path)) {
+      const back = tabList.find((t) => t.tab === activeTab)?.view ?? before;
+      showView(back);
+      const error = { kind: "io" as const, subject: path, detail: null };
+      emit("open-failed", { window: "main", path, error });
+      return { ok: false, error: { kind: "backend", command: "open_path", error } };
+    }
+    return { ok: true, value: { outcome: "opened", view: show() } };
   }
 
   /** Recomputes the window list and tells it the difference, like the backend does after a change. */
@@ -469,8 +603,21 @@ export function createMockApi(): Api & {
     };
   }
 
+  /** A project follows its folder live (unless the probe says it cannot | it is in a WSL folder, as the backend
+   *  decides on Windows: drives mapped to WSL are not modeled); a single file | the Notes never do. */
+  function liveUpdates(): Context["liveUpdates"] {
+    if (view.state !== "showing") return neutralContext().liveUpdates;
+    if (view.workspace.kind !== "project") return { status: "unavailable", reason: "noWatcher" };
+    if (WSL_ROOT.test(view.workspace.root)) return { status: "unavailable", reason: "wsl" };
+    return liveOff ? { status: "unavailable", reason: "watchFailed" } : { status: "available" };
+  }
+
   function context(): Context {
-    const base = shell.context({ ...neutralContext(), plugins: shell.pluginsOn(inProject()) });
+    const base = shell.context({
+      ...neutralContext(),
+      plugins: shell.pluginsOn(inProject()),
+      liveUpdates: liveUpdates(),
+    });
     if (view.state !== "showing") return base;
     const kinds = { project: "project", singleFile: "singleFile", notes: "notes" } as const;
     const agent = plugins.probe.agent.status();
@@ -480,7 +627,8 @@ export function createMockApi(): Api & {
         : agent.clients[0] !== undefined
           ? { status: "connected", client: agent.clients[0] }
           : { status: "on" };
-    return { ...base, workspace: kinds[view.workspace.kind], agent: condition };
+    const over = view.workspace.kind === "project" ? contextOver : {};
+    return { ...base, workspace: kinds[view.workspace.kind], agent: condition, ...over } as Context;
   }
 
   /** Opens `path` in a new tab (`this`: in the active one) and shows it. */
@@ -549,7 +697,14 @@ export function createMockApi(): Api & {
       }
       if (placement === "newWindow") return ok({ outcome: "openedElsewhere", window: "w-1" });
       // this tab (the mock's page shows what it opens either way: a first tab when there is none)
-      if (placement === "thisTab") return ok({ outcome: "opened", view: show(path, "this") });
+      if (placement === "thisTab") {
+        const here = view.state === "showing" || view.state === "opening";
+        if (here) {
+          const kind = /\.(md|markdown|mdown|txt)$/i.test(path) ? "singleFile" : "project";
+          return openHere({ kind, path }, () => show(path, "this"));
+        }
+        return ok({ outcome: "opened", view: show(path, "this") });
+      }
       show(path, "tab");
       return ok({ outcome: "newTab", tab: activeTab ?? 0 });
     },
@@ -566,6 +721,14 @@ export function createMockApi(): Api & {
         document: null,
       };
       const here = placement === "thisTab";
+      if (here && (view.state === "showing" || view.state === "opening")) {
+        return openHere({ kind: "notes" }, () => {
+          tree = null;
+          showView(shown);
+          announceTabs();
+          return view;
+        });
+      }
       if (!here || activeTab === null) {
         activeTab = nextTab++;
         tabList = [...tabList, { tab: activeTab, view: shown }];
@@ -579,6 +742,15 @@ export function createMockApi(): Api & {
     },
     openInProject: (path) => {
       probe.opened.push({ path, mode: "project" });
+      return ok(null);
+    },
+    openFolderWith: (folder, document) => {
+      probe.opened.push({
+        path: document === null ? folder : `${folder}|${document}`,
+        mode: "folder",
+      });
+      show(folder, "tab");
+      if (document !== null && view.state === "showing") showView({ ...view, document });
       return ok(null);
     },
     listWindows: () => ok(windowsNow()),
@@ -672,6 +844,8 @@ export function createMockApi(): Api & {
       }
       return ok(null);
     },
+    // the demo project has files; any other folder picked is new
+    folderEmpty: (path) => ok(path !== MOCK_FOLDER),
     recentList: () => ok(recent),
     recentRemove: (path) => {
       recent = recent.filter((r) => r.path !== path);
@@ -684,17 +858,31 @@ export function createMockApi(): Api & {
       if (change.key === "pluginEnabled") announceShell();
       return ok(settings);
     },
-    projectSessionGet: (key) => ok(session.get(key) ?? null),
+    projectSessionGet: (key) =>
+      Promise.resolve(
+        whileOpening("project_session_get") ?? { ok: true, value: session.get(key) ?? null },
+      ),
     projectSessionSet: (key, value) => {
+      const no = whileOpening<null>("project_session_set");
+      if (no) return Promise.resolve(no);
       if (value === null) session.delete(key);
       else session.set(key, value);
       return ok(null);
     },
-    treeOpen: (filter) => ok(snapshot(filter ?? DEFAULT_FILTER)),
-    treeSetFilter: (filter) => ok(snapshot(filter)),
-    treeOpenFolder: () => ok(null),
+    treeOpen: (filter) =>
+      Promise.resolve(
+        whileOpening("tree_open") ?? { ok: true, value: snapshot(filter ?? DEFAULT_FILTER) },
+      ),
+    treeSetFilter: (filter) =>
+      Promise.resolve(whileOpening("tree_set_filter") ?? { ok: true, value: snapshot(filter) }),
+    treeOpenFolder: () =>
+      Promise.resolve(whileOpening("tree_open_folder") ?? { ok: true, value: null }),
     treeKeep: (path) => {
-      if (tree) tree = { ...tree, keep: path };
+      const no = whileOpening<null>("tree_keep");
+      if (no) return Promise.resolve(no);
+      // no tree open for this view (not yet | closed): `TreeError::NoView`
+      if (!tree) return Promise.resolve(refused<null>("tree_keep", "unavailable", null));
+      tree = { ...tree, keep: path };
       return ok(null);
     },
     treeClose: () => {
@@ -791,10 +979,19 @@ export function createMockApi(): Api & {
         probe.shown = { path, known };
         return ok(mockNoteView(path, text));
       }
-      // a single file shows its own name; the mock serves the showcase for it
+      // a single file shows its own name; the mock serves the showcase for it (the files next to it: the project's)
       const asked =
-        view.state === "showing" && view.workspace.kind === "singleFile" ? "README.md" : path;
-      const found = mockView(asked, known, project.exists(path));
+        view.state === "showing" &&
+        view.workspace.kind === "singleFile" &&
+        path === view.workspace.name
+          ? "README.md"
+          : path;
+      // a Markdown file the probe | a test added (no rendered fixture): the simple view of its text
+      const added = project.files.get(asked);
+      const found =
+        added !== undefined && /\.md$/i.test(asked) && !MOCK_DOCUMENT_PATHS.includes(asked)
+          ? mockNoteView(asked, added, { inline: true })
+          : mockView(asked, known, project.exists(path));
       probe.shown = { path, known };
       if (!found) {
         return Promise.resolve({
@@ -819,11 +1016,46 @@ export function createMockApi(): Api & {
           ? (editing.probe.files.get(path) ?? "")
           : `# ${path}\n`,
       ),
+    // as the backend: a relative link above the folder of a single file leads outside; in a project it is missing
     resolveLinks: (doc, hrefs) =>
-      ok(hrefs.map((href) => mockLinkTarget(doc, href, (p) => project.exists(p)))),
-    resolveCodeRefs: (_doc, written) =>
-      ok(written.map((w) => (project.exists(w.replace(/^\//, "")) ? [w.replace(/^\//, "")] : []))),
+      ok(
+        hrefs.map((href) => mockLinkTarget(doc, href, (p) => project.exists(p), singleFileShown())),
+      ),
+    // as the backend: a single file matches written paths exactly (the document's folder, then the file's folder)
+    resolveCodeRefs: (doc, written) =>
+      ok(
+        written.map((w) => {
+          const path = w.replace(/^\//, "");
+          if (!singleFileShown()) return project.exists(path) ? [path] : [];
+          const folder = doc.split("/").slice(0, -1).join("/");
+          const near = folder === "" ? path : `${folder}/${path}`;
+          const found = [near, path].find((p) => project.files.has(p));
+          return found === undefined ? [] : [found];
+        }),
+      ),
     openInEditor: (path, line, col) => {
+      // as the backend: a file, never a folder (a single file's root path is its folder)
+      if (path === "" || (project.exists(path) && !project.files.has(path))) {
+        return Promise.resolve({
+          ok: false,
+          error: {
+            kind: "backend",
+            command: "open_in_editor",
+            error: { kind: "notFound", subject: path, detail: null },
+          },
+        });
+      }
+      // as the backend: no editor chosen, nothing starts
+      if (settings.editor.trim() === "") {
+        return Promise.resolve({
+          ok: false,
+          error: {
+            kind: "backend",
+            command: "open_in_editor",
+            error: { kind: "editorNotSet", subject: null, detail: null },
+          },
+        });
+      }
       probe.editor.push({ path, line, col });
       return ok(null);
     },
@@ -847,6 +1079,7 @@ export function createMockApi(): Api & {
       return ok(null);
     },
     ...createMockConfig((path) => editing.probe.files.get(path) ?? null),
+    ...projects.handlers,
     searchStatus: () =>
       ok({
         phase: "ready",
@@ -873,6 +1106,8 @@ export function createMockApi(): Api & {
     assetUrl: (_workspace, path) => mockAssetUrl(path),
     showDocument: (path) => {
       if (view.state === "showing") showView({ ...view, document: path });
+      // the chips follow (a single file's chip names the file shown), as the backend publishes
+      announceTabs();
       return ok(null);
     },
     on: (event, handler) => {
@@ -918,7 +1153,10 @@ export function createMockApi(): Api & {
         window.removeEventListener("drop", drop);
       });
     },
-    pickFolder: () => Promise.resolve(MOCK_FOLDER),
+    pickFolder: (_title, from) => {
+      pickedFrom.push(from ?? null);
+      return Promise.resolve(MOCK_FOLDER);
+    },
     pickFile: () => Promise.resolve(MOCK_FILE),
     pickPictures: () => Promise.resolve([`${MOCK_FOLDER}/pictures/diagram.png`]),
     setWindowTheme: (theme) => {
@@ -930,7 +1168,13 @@ export function createMockApi(): Api & {
       return Promise.resolve();
     },
     showWindow: () => ok(undefined),
-    pluginCall: plugins.call,
+    // an App plugin (the notes) answers from anywhere; a project plugin needs the project shown (`project_of`)
+    pluginCall: (method, args) => {
+      const plugin = method.split(".")[0];
+      const app = MOCK_MANIFESTS.some((m) => m.id === plugin && m.scope === "app");
+      const no = app ? null : whileOpening<never>("plugin_call", method);
+      return no ? Promise.resolve(no) : plugins.call(method, args);
+    },
     defaultAppGet: distribution.defaultAppGet,
     defaultAppSet: distribution.defaultAppSet,
     defaultAppAsked: distribution.defaultAppAsked,

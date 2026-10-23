@@ -24,6 +24,10 @@ pub mod live;
 pub mod map;
 pub mod mcp;
 pub mod perms;
+#[cfg(test)]
+mod projects_edge_tests;
+#[cfg(test)]
+mod projects_tests;
 pub mod render;
 pub mod server;
 pub mod structure;
@@ -65,12 +69,19 @@ pub enum ToolError {
         /// The first time resolving was asked for while off: the person is offered it.
         first_ask: bool,
     },
+    /// A project inside the folder takes the group away below it (its `[agent] deny`).
+    #[error("not allowed below {member}: {}", group.id())]
+    DeniedBelow { group: Group, member: String },
     #[error("not found: {0}")]
     NotFound(String),
     #[error("invalid: {0}")]
     Invalid(String),
     #[error("PerMark is not open on this project")]
     NotOpen,
+    /// The projects inside the folder are not known yet (the first walk runs): nothing is answered until they are
+    /// (fail closed, `projects.md` §5.2).
+    #[error("PerMark is still reading this folder")]
+    Busy,
     #[error("{0}")]
     Failed(String),
 }
@@ -80,10 +91,11 @@ impl ToolError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Off => "off",
-            Self::Denied { .. } => "denied",
+            Self::Denied { .. } | Self::DeniedBelow { .. } => "denied",
             Self::NotFound(_) => "notFound",
             Self::Invalid(_) => "invalid",
             Self::NotOpen => "notOpen",
+            Self::Busy => "busy",
             Self::Failed(_) => "error",
         }
     }
@@ -104,6 +116,7 @@ impl ToolError {
             "notFound" => Self::NotFound(after("not found: ")),
             "invalid" => Self::Invalid(after("invalid: ")),
             "notOpen" => Self::NotOpen,
+            "busy" => Self::Busy,
             _ => Self::Failed(message.to_owned()),
         }
     }
@@ -246,8 +259,12 @@ impl Plugin for AgentPlugin {
                     && local.location() == StateLocation::Project
                 {
                     // compact, no empty fields, versioned like the agent's text answers
-                    let guard = h.tools.guard_now();
-                    if let Ok((shared, open)) = h.tools.context(&guard) {
+                    // never waits: before the projects inside are known the file is left as it is
+                    let context = h
+                        .tools
+                        .guard_now(std::time::Duration::ZERO)
+                        .and_then(|guard| h.tools.context(&guard));
+                    if let Ok((shared, open)) = context {
                         let mut value = serde_json::to_value(&shared).unwrap_or_default();
                         if let Some(map) = value.as_object_mut() {
                             map.insert("v".to_owned(), serde_json::json!(1));
@@ -268,7 +285,10 @@ impl Plugin for AgentPlugin {
         registrations.extend(cx.rpc(
             "handOffPreview",
             typed(move |args: handoff::PreviewArgs, _| {
-                let guard = h.tools.guard_now();
+                let guard = h
+                    .tools
+                    .guard_now(tools::PROJECTS_WAIT)
+                    .map_err(|e| IpcError::new(ErrorKind::Unavailable).detail(e.to_string()))?;
                 Ok(handoff::preview(&h.tools, &guard, args.checked.as_deref()))
             }),
         ));
@@ -276,7 +296,10 @@ impl Plugin for AgentPlugin {
         registrations.extend(cx.rpc(
             "handOffConfirm",
             typed(move |args: handoff::ConfirmArgs, _| {
-                let guard = h.tools.guard_now();
+                let guard = h
+                    .tools
+                    .guard_now(tools::PROJECTS_WAIT)
+                    .map_err(|e| IpcError::new(ErrorKind::Unavailable).detail(e.to_string()))?;
                 handoff::confirm(&h.tools, &guard, args.upto, &args.checked)
                     .map_err(|e| IpcError::new(ErrorKind::Unavailable).detail(e.to_string()))
             }),

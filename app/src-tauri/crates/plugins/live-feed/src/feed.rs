@@ -6,6 +6,7 @@
 
 use std::collections::VecDeque;
 
+use permark_core::projects::ProjectEvent;
 use permark_core::watch::{is_git_signal, ChangeKind, FsBatch};
 use serde::Serialize;
 use ts_rs::TS;
@@ -82,13 +83,25 @@ pub enum FeedItem {
         #[ts(type = "number")]
         at_ms: u64,
     },
+    /// A project inside the folder appeared, moved, went, came back, or the project list changed
+    /// (`projects.md` §12.5).
+    Project {
+        #[ts(type = "number")]
+        id: u64,
+        #[ts(type = "number")]
+        at_ms: u64,
+        event: ProjectEvent,
+    },
 }
 
 impl FeedItem {
     #[must_use]
     pub fn id(&self) -> u64 {
         match self {
-            Self::Entry { id, .. } | Self::Group { id, .. } | Self::Resync { id, .. } => *id,
+            Self::Entry { id, .. }
+            | Self::Group { id, .. }
+            | Self::Resync { id, .. }
+            | Self::Project { id, .. } => *id,
         }
     }
 }
@@ -125,6 +138,16 @@ impl Feed {
         self.items.push_front(item.clone());
         self.items.truncate(MAX_ITEMS);
         item
+    }
+
+    /// A project news item at `now_ms`.
+    pub fn project(&mut self, event: &ProjectEvent, now_ms: u64) -> FeedItem {
+        let id = self.take_id();
+        self.push(FeedItem::Project {
+            id,
+            at_ms: now_ms,
+            event: event.clone(),
+        })
     }
 
     /// Takes one batch at time `now_ms`; returns the items it created or changed (for the UI to upsert).
@@ -275,6 +298,7 @@ mod tests {
             changes,
             bulk: false,
             rescan: false,
+            moved: Vec::new(),
         }
     }
 
@@ -410,6 +434,7 @@ mod tests {
             changes: many,
             bulk: true,
             rescan: false,
+            moved: Vec::new(),
         };
         let out = feed.apply(&large, 5);
         assert_eq!(out.len(), 1);
@@ -437,6 +462,7 @@ mod tests {
             changes: checkout,
             bulk: true,
             rescan: false,
+            moved: Vec::new(),
         };
         let out = feed.apply(&git, 6);
         assert!(matches!(
@@ -452,6 +478,7 @@ mod tests {
             changes: vec![change(".git/index", ChangeKind::Modified)],
             bulk: true,
             rescan: false,
+            moved: Vec::new(),
         };
         assert!(matches!(
             &feed.apply(&signals, 7)[0],
@@ -466,6 +493,7 @@ mod tests {
             changes: Vec::new(),
             bulk: true,
             rescan: false,
+            moved: Vec::new(),
         };
         assert!(feed.apply(&empty, 8).is_empty());
     }
@@ -489,6 +517,7 @@ mod tests {
                 changes: moved,
                 bulk: true,
                 rescan: false,
+                moved: Vec::new(),
             },
             0,
         );
@@ -510,6 +539,7 @@ mod tests {
                 changes: Vec::new(),
                 bulk: false,
                 rescan: true,
+                moved: Vec::new(),
             },
             1,
         );

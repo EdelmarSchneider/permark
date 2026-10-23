@@ -1,32 +1,52 @@
 <script lang="ts">
   // The right panel "Changes": what the disk reported and what the person did in PerMark (with the hand-off marks),
-  // newest first; a filter shows mine | outside | all. Click a row to open the file.
+  // newest first; a filter shows mine | outside | all. Click a row to open the file. Paths inside an included project
+  // say which one ("{short} · {folder}"); the project list's own news (appeared, moved, gone) are rows too.
   import ArrowRightLeft from "@lucide/svelte/icons/arrow-right-left";
   import FilePen from "@lucide/svelte/icons/file-pen";
   import FilePlus from "@lucide/svelte/icons/file-plus";
   import FileX from "@lucide/svelte/icons/file-x";
+  import FolderDot from "@lucide/svelte/icons/folder-dot";
+  import FolderGit2 from "@lucide/svelte/icons/folder-git-2";
   import Layers from "@lucide/svelte/icons/layers";
   import MessageSquare from "@lucide/svelte/icons/message-square";
+  import Radio from "@lucide/svelte/icons/radio";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import Save from "@lucide/svelte/icons/save";
   import Send from "@lucide/svelte/icons/send";
   import Tag from "@lucide/svelte/icons/tag";
-  import type { ActivityEntry, FeedItem } from "../../api";
+  import type { Snippet } from "svelte";
+  import type { ActivityEntry, FeedItem, ProjectEvent } from "../../api";
+  import { keyHint } from "../../core/commands/hint";
   import { documents } from "../../core/doc/document.svelte";
+  import { revealInTree } from "../../core/explorer/current";
   import { t, tn } from "../../core/i18n";
-  import { ui } from "../../core/shell/ui.svelte";
+  import { projects } from "../../core/projects/instance.svelte";
+  import { middleCut, relativeTo } from "../../core/projects/model";
+  import LiveOffNote from "../../core/shell/LiveOffNote.svelte";
+  import { closeView } from "../../core/shell/sides";
+  import { followStore } from "./followLink.svelte";
   import { mineLabel, pathOf, type FeedShow } from "./mine";
-  import { ACTIVE_MS, feed } from "./store.svelte";
+  import { feed, PANEL } from "./store.svelte";
   import { ago, split } from "./time";
 
+  type Props = {
+    /** The view options button of the right column (drawn with two views or more). */
+    viewMenu?: Snippet;
+  };
+  let { viewMenu }: Props = $props();
+
   let now = $state(Date.now());
-  // "3 min ago" and the idle | active dot stay true while the panel is open
+  // "3 min ago" and "Last change ..." stay true while the panel is open
   $effect(() => {
     const timer = setInterval(() => (now = Date.now()), 5000);
     return () => clearInterval(timer);
   });
 
-  const active = $derived(feed.lastAt > 0 && now - feed.lastAt < ACTIVE_MS);
+  const follow = $derived(followStore());
+  /** The newest row of the panel, outside change or the person's own action (the header line says it). */
+  const latest = $derived(Math.max(feed.lastAt, feed.mine.at(-1)?.at ?? 0));
+  const followHint = $derived(keyHint("follow.toggle"));
 
   function open(item: FeedItem): void {
     if (item.item === "entry" && !item.isDir && item.kind !== "removed") {
@@ -42,6 +62,58 @@
   /** The action left nothing to open (a delete, the undo of a new file). */
   function gone(entry: ActivityEntry): boolean {
     return entry.fact.kind === "file" && entry.fact.op === "delete";
+  }
+
+  /** The folder line of a path: inside an included project "{short} · {folder in it}", else the folder as is. */
+  function folderLine(path: string, folder: string): string {
+    const owner = projects.ownerOf(path);
+    if (owner === null) return folder;
+    const inner = split(relativeTo(owner, path)).folder;
+    return inner === ""
+      ? owner.short
+      : t("projects.feed.label", { short: owner.short, folder: inner });
+  }
+
+  /** The words of a project row; `cut`: long paths cut in the middle (the row), else whole (its tooltip). */
+  function projectText(event: ProjectEvent, cut = false): string {
+    const path = (p: string): string => (cut ? middleCut(p, 40) : p);
+    switch (event.kind) {
+      case "appeared":
+        return t("projects.feed.appeared", {
+          name: event.name,
+          folder: event.path === "" ? (projects.view?.rootCard.name ?? "") : path(event.path),
+        });
+      case "moved":
+        return t("projects.feed.moved", { name: event.name, path: path(event.path) });
+      case "gone":
+        return t("projects.feed.gone", { name: event.name });
+      case "back":
+        return t("projects.feed.back", { name: event.name, path: path(event.path) });
+      case "listChanged":
+        return t("projects.feed.listChanged");
+      case "keptOut":
+        return t("projects.feed.keptOut", { name: event.name });
+      default:
+        return event satisfies never;
+    }
+  }
+
+  /** What a project row does (`null`: nothing): a project not found now -> its row in Settings (Locate… | Remove from
+   *  list) | kept out by the person's no (Include there); the list changed -> Settings > Projects inside; else the
+   *  folder shown in the Explorer. */
+  function projectAction(event: ProjectEvent): (() => void) | null {
+    if (event.kind === "listChanged") return () => projects.openSettings();
+    const row = projects.rowAt(event.path);
+    if (row?.state === "missing" || event.kind === "keptOut")
+      return () => projects.openSettings(row);
+    if (event.kind === "gone" && row === null) return null;
+    return () => revealInTree(event.path);
+  }
+
+  function projectIsRepo(event: ProjectEvent): boolean {
+    if (event.kind === "listChanged") return true;
+    const row = projects.view?.rows.find((r) => r.path === event.path);
+    return row?.marker !== "permark";
   }
 
   const SHOWS: readonly {
@@ -62,32 +134,46 @@
 </script>
 
 <section class="feed" aria-label={t("live.label")}>
-  <header>
-    <span
-      class="dot"
-      class:active
-      role="img"
-      aria-label={active ? t("live.active") : t("live.idle")}
-      title={active ? t("live.active") : t("live.idle")}
-    ></span>
-    <h2>{t("live.label")}</h2>
-    <span class="spacer"></span>
-    <button
-      type="button"
-      class="icon"
-      title={t("feed.clear")}
-      aria-label={t("feed.clear")}
-      onclick={() => void feed.clear()}
-    >
-      <RefreshCw size={14} />
-    </button>
-    <button
-      type="button"
-      class="icon close"
-      aria-label={t("feed.close")}
-      title={t("feed.close")}
-      onclick={() => ui.toggleRight("live-feed.panel")}>×</button
-    >
+  <header data-view-header>
+    <!-- the title and the buttons on one line at any width: the title gives way (ellipsis), the buttons never wrap -->
+    <div class="top">
+      <h2 title={t("live.label")}>{t("live.label")}</h2>
+      <span class="spacer"></span>
+      {#if follow !== null}
+        <button
+          type="button"
+          class="follow"
+          aria-pressed={follow.on}
+          title={followHint === null
+            ? t("follow.toggle")
+            : t("follow.buttonHint", { key: followHint })}
+          onclick={() => follow?.toggle()}
+        >
+          <Radio size={13} aria-hidden="true" />
+          {t("follow.button")}
+        </button>
+      {/if}
+      <button
+        type="button"
+        class="icon"
+        title={t("feed.clear")}
+        aria-label={t("feed.clear")}
+        onclick={() => void feed.clear()}
+      >
+        <RefreshCw size={14} />
+      </button>
+      {@render viewMenu?.()}
+      <button
+        type="button"
+        class="icon close"
+        aria-label={t("feed.close")}
+        title={t("feed.close")}
+        onclick={() => closeView(PANEL)}>×</button
+      >
+    </div>
+    <p class="last">
+      {latest > 0 ? t("live.last", { ago: ago(latest, now) }) : t("live.none")}
+    </p>
     <div class="show" role="radiogroup" aria-label={t("feed.show.label")}>
       {#each SHOWS as show (show.id)}
         <button
@@ -104,6 +190,7 @@
       {t("live.docsOnly")}
     </label>
   </header>
+  <LiveOffNote />
   <ul>
     {#each feed.rows as row (row.key)}
       <li>
@@ -173,7 +260,9 @@
             </span>
             <span class="text">
               <span class="name">{where.name || t("feed.root")}</span>
-              {#if where.folder}<span class="folder">{where.folder}</span>{/if}
+              {#if where.folder || projects.ownerOf(item.path) !== null}<span class="folder"
+                  >{folderLine(item.path, where.folder)}</span
+                >{/if}
               {#if item.kind === "renamed"}
                 <span class="folder">{t("feed.renamedFrom", { name: split(item.from).name })}</span>
               {/if}
@@ -199,6 +288,23 @@
             </span>
             <span class="when">{ago(item.atMs, now)}</span>
           </div>
+        {:else if row.item.item === "project"}
+          {@const event = row.item.event}
+          {@const act = projectAction(event)}
+          <button
+            type="button"
+            class="row"
+            title={projectText(event)}
+            disabled={act === null}
+            onclick={() => act?.()}
+          >
+            <span class="icon-cell">
+              {#if projectIsRepo(event)}<FolderGit2 size={15} />{:else}<FolderDot size={15} />{/if}
+            </span>
+            <!-- the whole sentence stays readable (the path cut in its middle, the line wraps) -->
+            <span class="text"><span class="name wraps">{projectText(event, true)}</span></span>
+            <span class="when">{ago(row.at, now)}</span>
+          </button>
         {:else}
           <div class="row note">
             <span class="icon-cell"><RefreshCw size={15} /></span>
@@ -231,25 +337,64 @@
     padding: var(--sp-2) var(--sp-3);
     border-bottom: 1px solid var(--border);
   }
-  h2 {
+  .top {
+    display: flex;
+    flex-basis: 100%;
+    align-items: center;
+    gap: var(--sp-1);
+    min-width: 0;
+  }
+  .top > :global(*) {
+    flex: none;
+  }
+  /* same title style as the outline above it (one column, one look) */
+  .top > h2 {
+    flex: 0 1 auto;
+    min-width: 0;
     margin: 0;
-    white-space: nowrap;
-    font-size: var(--fs-ui);
+    overflow: hidden;
+    color: var(--muted);
+    font-size: var(--fs-ui-xs);
     font-weight: 600;
+    letter-spacing: 0.05em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
-  .spacer {
-    flex: 1;
+  .top > .spacer {
+    flex: 1 1 0;
   }
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--muted);
-    opacity: 0.5;
+  .follow {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding: 0 var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: var(--fs-ui-xs);
+    font-weight: 600;
+    cursor: pointer;
   }
-  .dot.active {
-    background: var(--accent);
-    opacity: 1;
+  .follow:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+  /* pressed = the look of the "Following" pill */
+  .follow[aria-pressed="true"] {
+    border-color: transparent;
+    background: var(--accent-soft);
+    /* the accent text, a touch toward --text: AA with margin in every light tone */
+    color: color-mix(in srgb, var(--accent-text) 85%, var(--text));
+  }
+  .last {
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--muted);
+    font-size: var(--fs-ui-xs);
   }
   .show {
     display: inline-flex;
@@ -333,6 +478,10 @@
   button.row:disabled {
     cursor: default;
   }
+  .name.wraps {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .gone .name {
     text-decoration: line-through;
     color: var(--muted);
@@ -367,11 +516,12 @@
   .handoff .icon-cell {
     color: var(--accent);
   }
+  /* the file name keeps room (at least 40 % of the row); the badges give way first (ellipsis) */
   .text {
     display: flex;
     flex-direction: column;
     flex: 1;
-    min-width: 0;
+    min-width: 40%;
   }
   .name,
   .folder {
@@ -384,7 +534,11 @@
     font-size: var(--fs-ui-xs);
   }
   .tag {
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     padding: 0 6px;
     border-radius: 999px;
     background: var(--surface-2);

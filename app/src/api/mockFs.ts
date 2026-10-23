@@ -68,6 +68,7 @@ export function seedFiles(): Record<string, string> {
     "README.md": "# Demo\n\nSee [the guide](docs/guide.md) and [notes](notes/ideas.md).\n",
     "docs/guide.md":
       "# Guide\n\nBack to the [readme](../README.md). Ideas: [i](../notes/ideas.md).\n",
+    "docs/handbook.md": "# Handbook\n\nA long document to read.\n",
     "docs/img/logo.png": "png",
     "notes/ideas.md": "# Ideas\n\n- one\n",
     "notes/todo.txt": "todo",
@@ -321,6 +322,10 @@ export class MockProject {
   create(dir: string, name: string, kind: NewKind): string {
     const full = kind === "file" && !/\.[a-z]+$/i.test(name) ? `${name}.md` : name;
     if (/[\\/:*?"<>|]/.test(full)) throw new MockRefusal("invalidName", "chars");
+    // as the backend (`fileops/names.rs` `new_file_name`): only Markdown and plain text are made here
+    if (kind === "file" && !/\.(md|markdown|txt)$/i.test(full)) {
+      throw new MockRefusal("invalidName", "notMarkdown");
+    }
     const path = dir === "" ? full : `${dir}/${full}`;
     if (this.exists(path)) throw new MockRefusal("exists", path);
     if (kind === "file") this.add(path, "");

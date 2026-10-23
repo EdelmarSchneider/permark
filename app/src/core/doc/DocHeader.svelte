@@ -414,7 +414,7 @@
   .saved {
     flex: none;
     margin-right: var(--sp-2);
-    color: var(--faint);
+    color: var(--muted);
     font-size: var(--fs-ui-xs);
     white-space: nowrap;
   }

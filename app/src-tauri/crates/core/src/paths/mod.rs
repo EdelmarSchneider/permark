@@ -2,6 +2,7 @@
 //! [`VaultPath`] (project-relative), [`Vault`] (roots + `resolve`), [`FileScope`] (single file + its folder).
 //! Every file access in core goes through `Vault::resolve` | `FileScope::resolve_asset`.
 
+mod plain;
 mod root;
 mod scope;
 mod vault;
@@ -11,6 +12,11 @@ use std::ffi::OsStr;
 use std::io;
 use std::path::{Component, Path, PathBuf, Prefix, PrefixComponent};
 
+pub(crate) use plain::strip_prefix_ci;
+#[cfg(all(test, windows))]
+pub(crate) use plain::via_admin_share;
+pub use plain::{canonicalize, simplified, simplified_text};
+pub(crate) use root::legacy_unc_key;
 pub use root::{Root, RootKey};
 pub use scope::FileScope;
 pub use vault::{Vault, Worktree, WORKTREE_PREFIX};
@@ -134,12 +140,12 @@ pub(crate) fn same_volume(path: &Path, root: &Path) -> bool {
 }
 
 /// Canonical deepest existing ancestor of `path` + missing tail (path order). Follows symlinks | junctions, expands
-/// 8.3 names, fixes case; `\\?\` dropped when possible (dunce). `None` when nothing exists | path ends in `..`.
+/// 8.3 names, fixes case; `\\?\` dropped when possible ([`simplified`]). `None` when nothing exists | path ends in `..`.
 pub(crate) fn split_existing(path: &Path) -> Option<(PathBuf, Vec<&OsStr>)> {
     let mut existing = path;
     let mut tail: Vec<&OsStr> = Vec::new();
     let canon = loop {
-        if let Ok(canon) = dunce::canonicalize(existing) {
+        if let Ok(canon) = canonicalize(existing) {
             break canon;
         }
         tail.push(existing.file_name()?);

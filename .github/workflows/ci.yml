@@ -1,14 +1,34 @@
 name: CI
 
 # The quality gate (`npm run check` in app/: version, rustfmt, prettier, build, clippy -D warnings, svelte-check,
-# cargo test, vitest)
-# on every push to the long-lived branches, to feature, release and hotfix branches (the release flow needs no pull
-# request), and on every pull request.
+# cargo test, vitest) on the three systems.
+# Runs on every push to develop, main, release and hotfix branches, and on every pull request. Feature and bugfix
+# branches have the local gate; they get this run only on request, once before the merge, when the change can behave
+# differently per system: `gh workflow run CI --ref <branch>` (GitHub's free minutes are shared; spend them where they
+# catch something).
+# Changes to the people's docs and the site alone do not run it. Store package + third-party notices:
+# ci-packaging.yml.
 
 on:
   push:
-    branches: [develop, main, "feature/**", "bugfix/**", "release/**", "hotfix/**"]
+    branches: [develop, main, "release/**", "hotfix/**"]
+    # People's docs + the site (llms-install.md is not here: the version check reads it).
+    paths-ignore:
+      - CHANGELOG.md
+      - CONTRIBUTING.md
+      - README.md
+      - TRADEMARKS.md
+      - "docs/**"
+      - "site/**"
   pull_request:
+    paths-ignore:
+      - CHANGELOG.md
+      - CONTRIBUTING.md
+      - README.md
+      - TRADEMARKS.md
+      - "docs/**"
+      - "site/**"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -40,7 +60,7 @@ jobs:
         working-directory: app
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # The system libraries the Tauri crates link against on Linux.
       - name: Install Linux dependencies
@@ -62,7 +82,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/develop' }}
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -89,58 +109,12 @@ jobs:
           echo "PERMARK_TOKEN_VOCAB_REQUIRED=1" >> "$GITHUB_ENV"
 
       # Builds the frontend first (`tauri::generate_context!` embeds app/dist at compile time).
+      # A hung test ends the step instead of the job's 45 minutes (usual: 5-8 min warm; cold build headroom).
       - name: Quality gate
+        timeout-minutes: 25
         run: npm run check
 
       # `cargo test` regenerated the IPC types (ts-rs); committed ones must match.
       - name: Generated IPC types are committed
         shell: bash
         run: git diff --exit-code -- src/api/generated
-
-  # The Microsoft Store flavor: no updater, no registry writer (`--no-default-features --features store`), the shell
-  # extension DLL (profile `release-shell`, which unwinds on a panic) and the package (MakeAppx checks the manifest).
-  # The package is not kept: the Release workflow builds the one that is uploaded.
-  store:
-    name: Store package (windows-latest)
-    runs-on: windows-latest
-    timeout-minutes: 60
-    defaults:
-      run:
-        working-directory: app
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust (pinned)
-        run: rustup toolchain install
-
-      # Saved from develop only: every branch, pull request and tag can restore develop's caches, but nothing else can
-      # restore theirs, and the repository's 10 GB cache budget evicts the useful ones first when everything saves.
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: app/src-tauri
-          save-if: ${{ github.ref == 'refs/heads/develop' }}
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: app/package-lock.json
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      # `tauri::generate_context!` embeds app/dist at compile time.
-      - name: Build the frontend
-        run: npm run build
-
-      - name: Lint the Store flavor
-        working-directory: app/src-tauri
-        run: cargo clippy -p permark --no-default-features --features store --all-targets -- -D warnings
-
-      - name: Build and pack the Store package
-        shell: pwsh
-        working-directory: .
-        run: ./scripts/build-msix.ps1 -Build -OutDir "$env:RUNNER_TEMP\msix"

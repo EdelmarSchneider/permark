@@ -1409,6 +1409,8 @@ fn release(inner: &mut Inner, id: WorkspaceId, view: &str) -> Option<Entry> {
         entry.workspace.documents().set_unsaved(view, None);
         if let Workspace::Project(core) = &entry.workspace {
             core.explorer().close_view(view);
+            // what plugins keep for this view goes too (git interest; `projects.md` §8)
+            core.rpc().caller_gone(view);
         }
     }
     let held = inner
@@ -1458,10 +1460,21 @@ fn name_of(reference: &WorkspaceRef) -> (WorkspaceKind, String, String) {
 }
 
 fn tab_summary(inner: &Inner, tab: &Tab) -> TabSummary {
-    let (kind, title, path) = tab_target(inner, tab).map_or_else(
+    let (kind, mut title, path) = tab_target(inner, tab).map_or_else(
         || (WorkspaceKind::Welcome, String::new(), String::new()),
         |r| name_of(&r),
     );
+    // a single file showing another file of its folder (a link): the chip names the file shown
+    if kind == WorkspaceKind::SingleFile {
+        let shown = tab
+            .view()
+            .and_then(|view| inner.views.get(view))
+            .and_then(|slot| slot.document.as_ref())
+            .and_then(|document| document.name().map(str::to_owned));
+        if let Some(shown) = shown {
+            title = shown;
+        }
+    }
     let (loaded, unsaved) = match tab.view() {
         Some(view) => (true, unsaved_of(inner, view).is_some()),
         None => (false, false),
@@ -1565,6 +1578,7 @@ fn context_of(
             context.plugins = core.plugins_on();
             context.git = core.facts().git();
             context.agent = core.facts().agent();
+            context.agent_files = core.agent_files().to_vec();
             context.live_updates = match core.live_status() {
                 crate::watch::LiveStatus::Available => LiveUpdates::Available,
                 crate::watch::LiveStatus::Unavailable { reason } => {

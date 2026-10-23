@@ -4,7 +4,7 @@ resolver = "2"
 
 # Version source = app/package.json; written here by `npm run version:sync`.
 [workspace.package]
-version = "0.6.4"
+version = "0.7.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/EdelmarSchneider/permark"
@@ -64,6 +64,7 @@ winreg = "0.56.0"
 rustix = { version = "1.1.5", features = ["process"] }
 windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",
+  "Win32_System_JobObjects",
   "Win32_Security",
   "Win32_Storage_FileSystem",
   "Win32_System_Threading",
@@ -86,6 +87,11 @@ unsafe_code = "deny"
 pedantic = { level = "warn", priority = -1 }
 unwrap_used = "deny"
 expect_used = "deny"
+
+# Third-party crates build without debug info in dev and test builds: a much smaller target folder
+# and faster links. PerMark's own crates keep full debug info.
+[profile.dev.package."*"]
+debug = false
 
 [profile.release]
 codegen-units = 1
@@ -110,6 +116,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+# Never published on crates.io (also keeps it out of the third-party notices, about.toml).
+publish = false
 
 [lib]
 # `_lib` suffix: lib + bin of one package must not share a name (cargo#8519, Windows).

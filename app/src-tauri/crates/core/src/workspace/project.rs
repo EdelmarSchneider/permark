@@ -20,6 +20,10 @@ use crate::plugins::{
     PluginRegistry, PluginScope, PluginSet, ProjectFacts, ProjectServices, RpcTable, ServiceLease,
     Services,
 };
+use crate::projects::{
+    CardChange, CardDto, CardTarget, IncludeOutcome, LocateRefusal, OwnersChange, ProjectPick,
+    Projects, ProjectsSubscription, ProjectsUndone, ProjectsView,
+};
 use crate::search::{SearchFilter, SearchIndex, SearchOptions};
 use crate::settings::{
     AppSettings, ProjectConfig, ProjectConfigFile, ProjectSettingChange, SettingsError,
@@ -244,9 +248,12 @@ pub struct ProjectCore {
     // Teardown order = declaration order after `Drop::drop` stops the plugins: the Explorer stops listening, the
     // watcher joins its thread, then file operations, the Explorer and the rest go.
     _explorer_sub: Subscription,
+    _projects_sub: Subscription,
     _documents_sub: Subscription,
     _search_sub: Subscription,
     _activity_sub: Option<Subscription>,
+    /// The journal follows where each included project keeps its state (`projects.md` §9.2).
+    _activity_owners: ProjectsSubscription,
     search: Arc<SearchIndex>,
     watcher: Watcher,
     fileops: FileOps,
@@ -257,6 +264,8 @@ pub struct ProjectCore {
     /// The plugins `formats` was built from: the index reads config files again only when this set changes.
     formats_on: Mutex<BTreeSet<PluginId>>,
     explorer: Arc<Explorer>,
+    /// Projects inside the folder (record, membership, owner map).
+    projects: Arc<Projects>,
     hub: Arc<WatchHub>,
     id: ProjectId,
     vault: Vault,
@@ -273,6 +282,8 @@ pub struct ProjectCore {
     app_services: Arc<Services>,
     /// Opened for a reader with no window: only these plugins run, each told `files_only`.
     files_only: Option<BTreeSet<PluginId>>,
+    /// Agent files at the root, read once at load (`Context.agent_files`).
+    agent_files: Vec<String>,
 }
 
 impl std::fmt::Debug for ProjectCore {
@@ -327,6 +338,7 @@ impl ProjectCore {
         Self::build(root, env, Some(only.iter().cloned().collect()))
     }
 
+    #[allow(clippy::too_many_lines)] // the composition root: every service built and wired in one place
     fn build(root: Root, env: &CoreEnv, files_only: Option<BTreeSet<PluginId>>) -> Arc<Self> {
         let id = ProjectId::of(&root);
         let store = StateStore::for_project(&env.dirs, &root);
@@ -339,6 +351,8 @@ impl ProjectCore {
         let (enablement, on) = project_enablement(env, &config, &store, files_only.as_ref());
         let extra_roots = env.registry.roots(&on, &root);
         let vault = Vault::new(root).with_worktrees(extra_roots);
+        // a few name checks at the root, no walk (Live's default + the agent offer read them)
+        let agent_files = super::agent_files(&vault);
         let hub = WatchHub::new();
         let own = Arc::new(OwnWrites::new());
         let explorer = Arc::new(Explorer::new(
@@ -351,6 +365,21 @@ impl ProjectCore {
         let explorer_sub = hub.subscribe({
             let explorer = Arc::clone(&explorer);
             move |batch| explorer.apply_batch(batch)
+        });
+        // the included projects shape the walk: read before it starts, never here (open costs the same for any record)
+        let projects = Projects::open(
+            vault.main(),
+            &env.dirs,
+            Arc::clone(&explorer),
+            Arc::clone(&own),
+            Arc::clone(&hub),
+            Arc::clone(&env.sink),
+            files_only.is_some(),
+            &config.ignore,
+        );
+        let projects_sub = hub.subscribe({
+            let projects = Arc::clone(&projects);
+            move |batch| projects.watch(batch)
         });
         let documents =
             Documents::for_project(DocScope::Project(vault.clone()), Arc::clone(&env.sink));
@@ -371,8 +400,21 @@ impl ProjectCore {
             vault.main().path().display().to_string(),
             Arc::clone(&formats),
         ));
+        // front matter tags from the index pass: cached per owning project, shown at once next open (a reader with no
+        // window writes no cache)
+        if files_only.is_none() {
+            let weak = Arc::downgrade(&projects);
+            let fallback = store.clone();
+            search.harvest().use_cache(Some(Arc::new(move || {
+                weak.upgrade().map_or_else(
+                    || crate::projects::Owners::root_only(fallback.clone()),
+                    |p| p.owners(),
+                )
+            })));
+        }
         let search_sub = hub.subscribe(search.feeder());
         let watcher = start_watcher(&vault, &explorer, &hub, &own, env);
+        projects.start();
         // a reader with no window reads the journal, never writes it
         let activity = Arc::new(if files_only.is_some() {
             ActivityLog::read_only(&store, system_clock())
@@ -385,6 +427,15 @@ impl ProjectCore {
                 move |batch| activity.outside(batch)
             })
         });
+        activity.follow_owners(&OwnersChange::Resume(&projects.owners()));
+        let activity_owners = projects.follow_owners({
+            let activity = Arc::downgrade(&activity);
+            move |change| {
+                if let Some(activity) = activity.upgrade() {
+                    activity.follow_owners(&change);
+                }
+            }
+        });
         let fileops = FileOps::new(
             vault.clone(),
             Arc::clone(&explorer),
@@ -394,9 +445,11 @@ impl ProjectCore {
         .with_activity(Arc::clone(&activity));
         let core = Arc::new(Self {
             _explorer_sub: explorer_sub,
+            _projects_sub: projects_sub,
             _documents_sub: documents_sub,
             _search_sub: search_sub,
             _activity_sub: activity_sub,
+            _activity_owners: activity_owners,
             search,
             watcher,
             fileops,
@@ -405,6 +458,7 @@ impl ProjectCore {
             formats,
             formats_on: Mutex::new(on.clone()),
             explorer,
+            projects,
             hub,
             id,
             store: RwLock::new(store),
@@ -418,9 +472,16 @@ impl ProjectCore {
             services: Services::new(),
             app_services: Arc::clone(env.services()),
             files_only,
+            agent_files,
         });
         core.start_plugins(env, enablement, &on);
         core
+    }
+
+    /// The agent files found at the root when the project was opened (`AGENT_FILES` order).
+    #[must_use]
+    pub fn agent_files(&self) -> &[String] {
+        &self.agent_files
     }
 
     /// What plugins publish about the project (the git condition windows read).
@@ -454,6 +515,7 @@ impl ProjectCore {
             Arc::clone(&self.rpc),
             Arc::clone(&self.formats),
         )
+        .with_projects(Arc::clone(&self.projects))
     }
 
     /// The activity journal of the project.
@@ -514,6 +576,15 @@ impl ProjectCore {
         if !options.include_silenced {
             filter.muted = self.services.get::<SilenceApi>().map(|api| api.0.clone());
         }
+        if let Some(uid) = &options.project {
+            // "This project": the member's subtree, projects inside it included
+            self.projects.load();
+            let map = self.projects.snapshot();
+            let member = map.member(uid).ok_or_else(|| {
+                crate::IpcError::new(crate::ErrorKind::NotFound).subject(uid.as_str().to_owned())
+            })?;
+            filter.within = Some(member.key.clone());
+        }
         Ok(filter)
     }
 
@@ -521,6 +592,99 @@ impl ProjectCore {
     #[must_use]
     pub fn explorer(&self) -> &Arc<Explorer> {
         &self.explorer
+    }
+
+    /// Projects inside the folder.
+    #[must_use]
+    pub fn projects(&self) -> &Arc<Projects> {
+        &self.projects
+    }
+
+    /// Settings > Projects + the strip.
+    #[must_use]
+    pub fn projects_view(&self) -> ProjectsView {
+        self.projects.view()
+    }
+
+    /// Includes projects; a folder without `.permark/` is initialized first (`projects.md` §2.4: `.permark/` alone
+    /// would move the state). Returns whether PerMark was initialized (the caller tells the windows).
+    ///
+    /// # Errors
+    /// `Unavailable` (record unreadable | newer), init failure, `Conflict`, IO.
+    pub fn projects_include(
+        &self,
+        env: &CoreEnv,
+        pick: &ProjectPick,
+    ) -> Result<(IncludeOutcome, bool), crate::IpcError> {
+        self.projects.include(pick, &|| {
+            crate::state::init_project(&env.dirs, self.vault.main())?;
+            self.reload_state(env);
+            Ok(())
+        })
+    }
+
+    /// Takes back the last include (`token`); a `.permark/` it made goes when untouched (the state goes back to the
+    /// profile). Returns the outcome + whether the state moved (the caller tells the windows).
+    ///
+    /// # Errors
+    /// Record | profile write failures.
+    pub fn projects_undo(
+        &self,
+        env: &CoreEnv,
+        token: u64,
+    ) -> Result<(ProjectsUndone, bool), crate::IpcError> {
+        let plan = self.projects.undo(token)?;
+        if !plan.undone || !plan.created_permark {
+            return Ok((
+                ProjectsUndone {
+                    undone: plan.undone,
+                    permark_kept: false,
+                },
+                false,
+            ));
+        }
+        // plugins flush their files into `.permark/local/` first; the state then goes back to the profile
+        self.plugins
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .stop_all();
+        let removed = crate::state::uninit_project(&env.dirs, self.vault.main()).unwrap_or(false);
+        if removed {
+            self.reload_state(env);
+        } else {
+            self.apply_plugins(env);
+        }
+        Ok((
+            ProjectsUndone {
+                undone: true,
+                permark_kept: !removed,
+            },
+            removed,
+        ))
+    }
+
+    /// Locate… for a missing project (`abs`: the folder the person picked).
+    ///
+    /// # Errors
+    /// Record write failures.
+    pub fn projects_locate(
+        &self,
+        uid: &crate::projects::ProjectUid,
+        abs: &std::path::Path,
+    ) -> Result<Option<LocateRefusal>, crate::IpcError> {
+        self.projects.locate(uid, abs)
+    }
+
+    /// One field of a card (the folder's own | a member's).
+    ///
+    /// # Errors
+    /// Card write failures.
+    pub fn projects_card_set(
+        &self,
+        target: &CardTarget,
+        change: &CardChange,
+    ) -> Result<CardDto, crate::IpcError> {
+        self.projects.card_set(target, change)
     }
 
     /// File operations (move, rename, delete, new, undo).
@@ -806,6 +970,8 @@ fn project_enablement(
 
 impl Drop for ProjectCore {
     fn drop(&mut self) {
+        // the projects worker joins first: every member released
+        self.projects.stop();
         // the next action starts a new session
         self.activity.closed();
         // explicit: plugins stop before vault + store go (reverse dependency order inside the set)

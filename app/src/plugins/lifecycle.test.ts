@@ -41,15 +41,23 @@ describe("the following plugins", () => {
     expect(await kinds("git")).toEqual([
       "command",
       "docBar",
+      "projectFacts",
       "settingsSection",
       "statusItem",
       "treeBadge",
     ]);
-    expect(await kinds("live-feed")).toEqual(["changeStep", "command", "panel", "statusItem"]);
+    expect(await kinds("live-feed")).toEqual([
+      "changeStep",
+      "command",
+      "outlineMark",
+      "panel",
+      "statusItem",
+    ]);
     expect(await kinds("follow")).toEqual(["command", "shortcut", "statusItem"]);
     expect(await kinds("unread")).toEqual([
       "command",
       "panel",
+      "projectCount",
       "shortcut",
       "statusItem",
       "treeBadge",
@@ -62,6 +70,7 @@ describe("the following plugins", () => {
       "docBar",
       "docBlocks",
       "docDecoration",
+      "outlineMark",
       "shortcut",
     ]);
   });
@@ -69,10 +78,10 @@ describe("the following plugins", () => {
   it("switching off puts back the panels the plugin had opened", async () => {
     const registry = new ContributionRegistry();
     const host = new PluginHost(registry, pluginLoaders());
+    // the right column lists only the panels registered now: Live changes goes with its plugin
     await host.enable("live-feed");
-    ui.right = "live-feed.panel";
     host.disable("live-feed");
-    expect(ui.right).toBeNull();
+    expect(registry.of("panel").filter((p) => p.side === "right")).toEqual([]);
     await host.enable("unread");
     ui.showSidebar("unread.panel");
     host.disable("unread");
@@ -133,6 +142,7 @@ describe("the organizing plugins", () => {
       "command",
       "docDecoration",
       "panel",
+      "projectCount",
       "selectionMenu",
       "shortcut",
       "statusItem",

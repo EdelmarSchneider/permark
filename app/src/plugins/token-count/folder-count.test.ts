@@ -123,11 +123,12 @@ describe("a count from request to summary", () => {
     expect(summary?.folder).toBe("docs");
     expect(summary?.tokenizer).toBe("chars4");
     expect(summary?.approx).toBe(true);
-    // the guide is counted, the logo is a picture by its name
-    expect(summary?.counted).toBe(1);
+    // the guide and the handbook are counted, the logo is a picture by its name
+    expect(summary?.counted).toBe(2);
     expect(summary?.skippedBinary).toBe(1);
     expect(summary?.skippedList[0]).toEqual({ path: "docs/img/logo.png", reason: "binary" });
-    expect(summary?.top[0]?.path).toBe("docs/guide.md");
+    // the biggest first
+    expect(summary?.top.map((t) => t.path)).toEqual(["docs/guide.md", "docs/handbook.md"]);
     await until(() => folders.job.state === "idle", "the job is dismissed");
     // the badge: quiet, ≈ because chars÷4 is an estimate
     const badge = folders.badge("docs", true);

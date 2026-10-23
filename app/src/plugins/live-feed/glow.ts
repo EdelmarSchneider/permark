@@ -122,12 +122,19 @@ export function stepGlow(direction: 1 | -1): boolean {
   return true;
 }
 
-/** Starts glowing for the page of this window; returns what stops it (and clears what is on screen). */
-export function startGlow(): () => void {
+/**
+ * Starts glowing for the page of this window; returns what stops it (and clears what is on screen). `glowed`: the
+ * blocks of the shown document that started to glow (the outline marks their sections).
+ */
+export function startGlow(
+  glowed: (path: string, ids: readonly string[]) => void = () => {},
+): () => void {
   const timers = new Set<ReturnType<typeof setTimeout>>();
-  const off = documents.onUpdated((update) =>
-    mark(update, documents.host.container, (id) => documents.host.element(id), timers),
-  );
+  const off = documents.onUpdated((update) => {
+    mark(update, documents.host.container, (id) => documents.host.element(id), timers);
+    const path = documents.path;
+    if (path !== null && documents.host.container !== null) glowed(path, update.added);
+  });
   const offText = documents.onTextUpdated((update) => markLines(update, timers));
   return () => {
     off();

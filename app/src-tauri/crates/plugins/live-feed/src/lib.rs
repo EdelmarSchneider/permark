@@ -72,6 +72,21 @@ impl Plugin for LiveFeedPlugin {
                 }
             }))
         });
+        // project news (appeared, moved, gone, back, list changed) are rows of their own
+        let projects = cx
+            .project()
+            .and_then(|p| p.projects().cloned())
+            .map(|projects| {
+                let feed = Arc::clone(&feed);
+                let events = events.clone();
+                projects.subscribe(move |event| {
+                    let item = feed
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .project(event, now_ms());
+                    events.emit("items", json!({ "upsert": [item] }));
+                })
+            });
         let subscription = hub.subscribe({
             let feed = Arc::clone(&feed);
             move |batch| {
@@ -116,6 +131,7 @@ impl Plugin for LiveFeedPlugin {
         ));
         Ok(Box::new(FeedRunning {
             _subscription: subscription,
+            _projects: projects,
             _registrations: registrations,
             _listening: listening,
         }))
@@ -125,6 +141,7 @@ impl Plugin for LiveFeedPlugin {
 /// A started feed. Drop = teardown: the watch is not heard any more, nobody is answered.
 struct FeedRunning {
     _subscription: Subscription,
+    _projects: Option<permark_core::projects::ProjectsSubscription>,
     _registrations: Vec<RpcRegistration>,
     _listening: Option<Listening>,
 }
@@ -214,6 +231,52 @@ mod tests {
     }
 
     #[test]
+    fn the_feed_follows_a_nested_repo_below_an_ignored_folder() {
+        let base = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let put = |rel: &str, text: &str| {
+            let path = project.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        // the master repo ignores `hubs/`; `hubs/a` is a repo of its own
+        put(".git/HEAD", "ref: refs/heads/main\n");
+        put(".gitignore", "hubs/\n");
+        put("hubs/a/.git/HEAD", "ref: refs/heads/main\n");
+        put("hubs/a/plan.md", "plan");
+        let env = CoreEnv::new(
+            AppDirs::under(base.path()),
+            Arc::new(PluginRegistry::new(vec![plugin()]).unwrap()),
+            Arc::new(NoEvents),
+            Distribution::Direct,
+            AppSettings::default(),
+        );
+        let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
+        std::thread::sleep(Duration::from_millis(250));
+        put("hubs/loose.md", "the container's own file");
+        put("hubs/a/plan.md", "plan written by an agent");
+        let started = std::time::Instant::now();
+        while !items_of(&core)
+            .iter()
+            // macOS may report a file the watch never read as created
+            .any(|i| {
+                i["path"] == "hubs/a/plan.md" && (i["kind"] == "modified" || i["kind"] == "created")
+            })
+        {
+            assert!(
+                started.elapsed() < Duration::from_secs(20),
+                "the feed heard nothing: {:?}",
+                items_of(&core)
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            !items_of(&core).iter().any(|i| i["path"] == "hubs/loose.md"),
+            "the container's own files stay ignored"
+        );
+    }
+
+    #[test]
     fn a_project_feed_hears_the_disk_answers_its_windows_and_goes_away_when_off() {
         let base = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();
@@ -257,5 +320,55 @@ mod tests {
         });
         core.apply_plugins(&env);
         assert!(core.rpc().served().is_empty());
+    }
+
+    #[test]
+    fn project_news_are_rows_of_the_feed() {
+        let base = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let put = |rel: &str, text: &str| {
+            let path = project.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        put(
+            ".permark/projects.toml",
+            "[[project]]
+id = \"aaaaaaaaaa\"
+path = \"hub\"
+",
+        );
+        put(
+            "hub/.git/HEAD",
+            "ref: refs/heads/main
+",
+        );
+        put("hub/plan.md", "plan");
+        let env = CoreEnv::new(
+            AppDirs::under(base.path()),
+            Arc::new(PluginRegistry::new(vec![plugin()]).unwrap()),
+            Arc::new(NoEvents),
+            Distribution::Direct,
+            AppSettings::default(),
+        );
+        let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
+        let start = std::time::Instant::now();
+        while !core.projects_view().ready {
+            assert!(start.elapsed() < Duration::from_secs(15));
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        std::thread::sleep(Duration::from_millis(200));
+        std::fs::remove_dir_all(project.path().join("hub")).unwrap();
+        let start = std::time::Instant::now();
+        loop {
+            let rows = items_of(&core);
+            if let Some(row) = rows.iter().find(|i| i["item"] == "project") {
+                assert_eq!(row["event"]["kind"], "gone");
+                assert_eq!(row["event"]["path"], "hub");
+                break;
+            }
+            assert!(start.elapsed() < Duration::from_secs(15), "{rows:?}");
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 }

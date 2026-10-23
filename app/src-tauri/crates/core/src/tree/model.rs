@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use unicode_normalization::UnicodeNormalization;
 
-use super::ignore::{DirHints, Frames, Ignorer};
+use super::ignore::{named, Entry, Frames, Ignorer};
 use super::{category_of, NodeKind, RootKind, Unlisted, LARGE_FOLDER};
 use crate::fsx::is_scratch_name;
 use crate::paths::{fold, WORKTREE_PREFIX};
@@ -34,6 +34,18 @@ pub(crate) fn below_root(path: &str) -> &str {
         Some(rest) => rest.split_once('/').map_or("", |(_, rest)| rest),
         None => path,
     }
+}
+
+/// PerMark's folder in a project: a real one marks a project (`projects.md` §1.1).
+const PERMARK: &str = ".permark";
+
+/// A folder the walk saw holding a project marker (`.git` | a real `.permark`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Marker {
+    /// Project path (disk spelling).
+    pub path: String,
+    pub git: bool,
+    pub permark: bool,
 }
 
 /// One root of the vault with what the model needs to walk it.
@@ -100,7 +112,7 @@ struct Found {
     stat: Option<(u64, i64)>,
 }
 
-fn is_reparse_point(entry: &fs::DirEntry) -> bool {
+pub(super) fn is_reparse_point(entry: &fs::DirEntry) -> bool {
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
@@ -115,10 +127,26 @@ fn is_reparse_point(entry: &fs::DirEntry) -> bool {
     }
 }
 
-/// Whether the model never holds this entry: git's folder, the app's private state folders, scratch files.
+/// Whether an entry (its own metadata, not followed) is a link: symlink | junction | other reparse point.
+pub(crate) fn is_link(meta: &fs::Metadata) -> bool {
+    meta.file_type().is_symlink() || {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            meta.file_attributes() & 0x400 != 0
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
+    }
+}
+
+/// Whether the model never holds this entry: git's folder, the app's private state folders (a nested project's too),
+/// scratch files.
 pub(crate) fn always_out(parent_path: &str, name: &str) -> bool {
-    name == ".git"
-        || (below_root(parent_path) == ".permark" && matches!(name, "local" | "cache"))
+    Ignorer::is_git_name(name)
+        || (parent_path.rsplit('/').next() == Some(".permark") && matches!(name, "local" | "cache"))
         || is_scratch_name(name)
 }
 
@@ -139,18 +167,23 @@ pub(crate) fn path_always_out(path: &str) -> bool {
 
 /// Direct entries of a folder (links are never followed: a link to a folder is a leaf) + what the listing says about
 /// the folder itself. `None`: unreadable.
-fn read_entries(abs: &Path, parent_path: &str, want_stat: bool) -> Option<(Vec<Found>, DirHints)> {
+fn read_entries(
+    abs: &Path,
+    parent_path: &str,
+    want_stat: bool,
+) -> Option<(Vec<Found>, super::ignore::DirHints)> {
     let mut found = Vec::new();
-    let mut hints = DirHints::default();
+    let mut hints = super::ignore::DirHints::default();
     for entry in fs::read_dir(abs).ok()?.flatten() {
         let Ok(name) = entry.file_name().into_string() else {
             continue; // a name that is not text cannot be a project path
         };
-        match name.as_str() {
-            ".gitignore" => hints.gitignore = true,
-            ".ignore" => hints.ignore = true,
-            ".git" => hints.git = true,
-            _ => {}
+        if named(&name, ".gitignore") {
+            hints.gitignore = true;
+        } else if named(&name, ".ignore") {
+            hints.ignore = true;
+        } else if Ignorer::is_git_name(&name) {
+            hints.git = true;
         }
         if always_out(parent_path, &name) {
             continue;
@@ -160,6 +193,9 @@ fn read_entries(abs: &Path, parent_path: &str, want_stat: bool) -> Option<(Vec<F
         };
         let link = file_type.is_symlink() || is_reparse_point(&entry);
         let is_dir = file_type.is_dir() && !link;
+        if is_dir && named(&name, PERMARK) {
+            hints.permark = true;
+        }
         if want_stat && link && !is_dir {
             // a folder scan reads files: through a link (or a cloud placeholder) it would leave the folder
             continue;
@@ -189,41 +225,6 @@ fn large(entries: usize) -> NodeKind {
     }
 }
 
-/// Folders searched for a nested repository below an ignored folder.
-const REPO_SEARCH_DEPTH: usize = 4;
-/// Entries one such search looks at.
-const REPO_SEARCH_ENTRIES: usize = 3000;
-
-/// Whether a repository (a folder with its own `.git`) sits somewhere below `dir`: an ignored folder that leads to
-/// one is still shown, so the way to the repository is not cut (the root repo may ignore `hubs/` while every hub is
-/// a repo of its own).
-fn holds_repo(dir: &Path, depth: usize, budget: &mut usize) -> bool {
-    if depth == 0 {
-        return false;
-    }
-    let Ok(entries) = fs::read_dir(dir) else {
-        return false;
-    };
-    let mut folders = Vec::new();
-    for entry in entries.flatten() {
-        *budget = budget.saturating_sub(1);
-        if *budget == 0 {
-            return false;
-        }
-        let name = entry.file_name();
-        if name == ".git" {
-            return true;
-        }
-        let plain_folder = entry.file_type().is_ok_and(|t| t.is_dir()) && !is_reparse_point(&entry);
-        if plain_folder && name != "node_modules" {
-            folders.push(entry.path());
-        }
-    }
-    folders
-        .iter()
-        .any(|folder| holds_repo(folder, depth - 1, budget))
-}
-
 /// What a walk of one folder works with.
 struct Walk<'a> {
     root: &'a RootCtx,
@@ -236,6 +237,8 @@ pub(crate) struct TreeModel {
     nodes: HashMap<String, Node>,
     /// Folder key -> child keys, sorted (folders first, then by name).
     children: HashMap<String, Vec<String>>,
+    /// Folder key -> its project marker, for the folders of the main root the walk listed (not the root itself).
+    markers: HashMap<String, Marker>,
 }
 
 impl TreeModel {
@@ -244,7 +247,44 @@ impl TreeModel {
             roots,
             nodes: HashMap::new(),
             children: HashMap::new(),
+            markers: HashMap::new(),
         }
+    }
+
+    /// Folders holding a project marker (main root, the root itself left out).
+    pub(crate) fn markers(&self) -> Vec<Marker> {
+        let mut out: Vec<Marker> = self.markers.values().cloned().collect();
+        out.sort_by(|a, b| a.path.cmp(&b.path));
+        out
+    }
+
+    /// Notes what a folder listing said about the folder's marker.
+    fn note_marker(&mut self, dir_path: &str, git: bool, permark: bool) {
+        if dir_path.is_empty() || dir_path.starts_with(WORKTREE_PREFIX) {
+            return;
+        }
+        let key = key_of(dir_path);
+        if git || permark {
+            self.markers.insert(
+                key,
+                Marker {
+                    path: dir_path.to_owned(),
+                    git,
+                    permark,
+                },
+            );
+        } else {
+            self.markers.remove(&key);
+        }
+    }
+
+    /// A `.permark` folder of `parent_path` came (`true`) or went.
+    fn note_permark(&mut self, parent_path: &str, here: bool) {
+        let git = self
+            .markers
+            .get(&key_of(parent_path))
+            .is_some_and(|m| m.git);
+        self.note_marker(parent_path, git, here);
     }
 
     pub(crate) fn node(&self, key: &str) -> Option<&Node> {
@@ -342,6 +382,15 @@ impl TreeModel {
         if let Some(list) = self.children.get_mut(&node.parent) {
             list.retain(|k| k != key);
         }
+        if !self.markers.is_empty() {
+            let below = format!("{key}/");
+            self.markers
+                .retain(|k, _| k != key && !k.starts_with(below.as_str()));
+            if node.is_dir() && named(&node.name, PERMARK) {
+                let parent = parent_of(&node.path).to_owned();
+                self.note_permark(&parent, false);
+            }
+        }
         1 + self.drop_below(key)
     }
 
@@ -363,6 +412,7 @@ impl TreeModel {
     pub(crate) fn rebuild(&mut self) {
         self.nodes.clear();
         self.children.clear();
+        self.markers.clear();
         let mut budget = MAX_ENTRIES;
         for index in 0..self.roots.len() {
             let root = self.roots[index].clone();
@@ -396,11 +446,18 @@ impl TreeModel {
         let Some((found, hints)) = read_entries(dir_abs, dir_path, false) else {
             return Ok(());
         };
+        if root.prefix.is_empty() && (hints.git || hints.permark) {
+            self.note_marker(dir_path, hints.git, hints.permark);
+        }
         if depth > 0 && !asked && found.len() > LARGE_FOLDER {
             return Err(found.len());
         }
+        // inside a container only nested projects count: its own rules are needed only on the way to an included one
         let frames = if depth == 0 {
             parent_frames.clone()
+        } else if in_ignored {
+            root.ignorer
+                .container_frames(parent_frames, dir_abs, Some(hints))
         } else {
             root.ignorer.enter_hinted(parent_frames, dir_abs, hints)
         };
@@ -411,10 +468,11 @@ impl TreeModel {
                 format!("{dir_path}/{}", entry.name)
             };
             let abs = dir_abs.join(&entry.name);
-            // a nested repository is walked under its own rules, whatever surrounds it
-            let nested = entry.is_dir && root.ignorer.is_nested_repo(&abs);
-            let ignored =
-                !nested && (in_ignored || root.ignorer.is_ignored(&frames, &abs, entry.is_dir));
+            let may_contain = depth < MAX_DEPTH && walk.budget > 0;
+            let place = root
+                .ignorer
+                .classify(&frames, &abs, entry.is_dir, in_ignored, may_contain);
+            let ignored = place == Entry::Ignored;
             if !entry.is_dir {
                 walk.budget = walk.budget.saturating_sub(1);
                 let kind = NodeKind::File {
@@ -423,13 +481,8 @@ impl TreeModel {
                 self.push(Node::new(path, entry.name, kind, ignored));
                 continue;
             }
-            // an ignored folder that leads to a nested repository is a container: shown, its own content ignored
-            let mut budget = REPO_SEARCH_ENTRIES;
-            let container = ignored
-                && depth < MAX_DEPTH
-                && walk.budget > 0
-                && holds_repo(&abs, REPO_SEARCH_DEPTH, &mut budget);
-            if container {
+            // an ignored folder that leads to a nested project is a container: shown, its own content ignored
+            if place == Entry::Container {
                 walk.budget = walk.budget.saturating_sub(1);
                 self.push(Node::new(
                     path.clone(),
@@ -437,10 +490,7 @@ impl TreeModel {
                     NodeKind::Dir { unlisted: None },
                     false,
                 ));
-                let inner = root
-                    .ignorer
-                    .enter_hinted(&frames, &abs, DirHints::default());
-                let _ = self.list_dir(walk, &abs, &path, &inner, true, depth + 1, true);
+                let _ = self.list_dir(walk, &abs, &path, &frames, true, depth + 1, true);
                 continue;
             }
             if ignored || depth + 1 > MAX_DEPTH || walk.budget == 0 {
@@ -464,8 +514,9 @@ impl TreeModel {
                 false,
             );
             self.push(dir_node);
-            if let Err(entries) = self.list_dir(walk, &abs, &path, &frames, false, depth + 1, false)
-            {
+            // a nested project hidden by the rules around it is walked under its own
+            let base = root.ignorer.base_for(place, &frames, &abs);
+            if let Err(entries) = self.list_dir(walk, &abs, &path, &base, false, depth + 1, false) {
                 self.push(Node::new(path, entry.name, large(entries), false));
             }
         }
@@ -490,7 +541,9 @@ impl TreeModel {
         };
         let (name, ignored) = (node.name.clone(), node.ignored);
         let in_ignored = ignored || matches!(unlisted, Unlisted::Ignored);
-        let frames = root.ignorer.frames_at(abs.parent().unwrap_or(&abs));
+        let Some((_, frames)) = root.ignorer.locate(&abs, true) else {
+            return false;
+        };
         let mut walk = Walk {
             root: &root,
             budget: MAX_ENTRIES,
@@ -526,6 +579,14 @@ impl TreeModel {
         let Ok(meta) = fs::symlink_metadata(&abs) else {
             return self.remove_subtree(&key) > 0;
         };
+        if root.prefix.is_empty() && named(name, PERMARK) {
+            // a project marker came (a real folder) or became something else
+            let real = meta.is_dir() && !is_link(&meta);
+            let parent = parent_of(path).to_owned();
+            if !below_root(&parent).is_empty() {
+                self.note_permark(&parent, real);
+            }
+        }
         // parents first: a folder that appeared with its files
         let parent_path = parent_of(path);
         let parent_key = key_of(parent_path);
@@ -541,20 +602,15 @@ impl TreeModel {
                 _ => return changed,
             }
         }
-        let link = meta.file_type().is_symlink() || {
-            #[cfg(windows)]
-            {
-                use std::os::windows::fs::MetadataExt;
-                meta.file_attributes() & 0x400 != 0
-            }
-            #[cfg(not(windows))]
-            {
-                false
-            }
+        let is_dir = meta.is_dir() && !is_link(&meta);
+        let Some((place, base)) = root.ignorer.locate(&abs, is_dir) else {
+            return changed;
         };
-        let is_dir = meta.is_dir() && !link;
-        let ignored = self.nodes.get(&parent_key).is_some_and(|n| n.ignored)
-            || root.ignorer.path_ignored(&abs, is_dir);
+        let ignored = match place {
+            Entry::Shown => self.nodes.get(&parent_key).is_some_and(|n| n.ignored),
+            Entry::Project | Entry::Container => false,
+            Entry::Ignored => true,
+        };
         if !is_dir {
             let kind = NodeKind::File {
                 category: category_of(name),
@@ -590,14 +646,16 @@ impl TreeModel {
             NodeKind::Dir { unlisted: None },
             false,
         ));
-        // a folder that appeared (created, moved in): walk it
-        let frames = root.ignorer.frames_at(abs.parent().unwrap_or(&abs));
+        // a folder that appeared (created, moved in): walk it (a container: only the projects below it count)
         let mut walk = Walk {
             root: &root,
             budget: MAX_ENTRIES,
         };
         let depth = below_root(path).matches('/').count() + 1;
-        if let Err(entries) = self.list_dir(&mut walk, &abs, path, &frames, false, depth, false) {
+        let container = place == Entry::Container;
+        if let Err(entries) =
+            self.list_dir(&mut walk, &abs, path, &base, container, depth, container)
+        {
             self.insert(Node::new(
                 path.to_owned(),
                 name.to_owned(),
@@ -675,8 +733,12 @@ pub(crate) fn scan_folder(
     stop: &mut dyn FnMut(&ScanFile) -> bool,
 ) -> Scan {
     root.ignorer.clear();
-    let frames = root.ignorer.frames_at(abs);
-    let in_ignored = abs != root.abs && root.ignorer.path_ignored(abs, true);
+    let (in_ignored, frames) = match root.ignorer.locate(abs, true) {
+        None => (false, root.ignorer.root_frames()),
+        Some((Entry::Shown | Entry::Project, base)) => (false, root.ignorer.enter(&base, abs)),
+        Some((Entry::Container, base)) => (true, root.ignorer.container_frames(&base, abs, None)),
+        Some((Entry::Ignored, base)) => (true, base),
+    };
     let mut cx = ScanCx {
         root,
         cancel,
@@ -707,6 +769,9 @@ fn scan_dir(
     let root = cx.root;
     let frames = if depth == 0 {
         parent_frames.clone()
+    } else if in_ignored {
+        root.ignorer
+            .container_frames(parent_frames, dir_abs, Some(hints))
     } else {
         root.ignorer.enter_hinted(parent_frames, dir_abs, hints)
     };
@@ -717,10 +782,10 @@ fn scan_dir(
             format!("{dir_path}/{}", entry.name)
         };
         let abs = dir_abs.join(&entry.name);
-        // a nested repository is walked under its own rules, whatever surrounds it
-        let nested = entry.is_dir && root.ignorer.is_nested_repo(&abs);
-        let ignored =
-            !nested && (in_ignored || root.ignorer.is_ignored(&frames, &abs, entry.is_dir));
+        let place =
+            root.ignorer
+                .classify(&frames, &abs, entry.is_dir, in_ignored, depth < MAX_DEPTH);
+        let ignored = place != Entry::Shown;
         if cx.budget == 0 {
             cx.out.cut_off = true;
             return;
@@ -757,16 +822,14 @@ fn scan_dir(
             cx.out.cut_off = true;
             continue;
         }
-        if ignored {
-            // an ignored folder that leads to a nested repository is a container: entered, its own files stay out
-            let mut budget = REPO_SEARCH_ENTRIES;
-            if holds_repo(&abs, REPO_SEARCH_DEPTH, &mut budget) {
-                scan_dir(cx, &abs, &path, &frames, true, depth + 1);
-            } else {
-                cx.out.unchecked.push(path);
+        match place {
+            // an ignored folder that leads to a nested project is a container: entered, its own files stay out
+            Entry::Container => scan_dir(cx, &abs, &path, &frames, true, depth + 1),
+            Entry::Ignored => cx.out.unchecked.push(path),
+            Entry::Shown | Entry::Project => {
+                let base = root.ignorer.base_for(place, &frames, &abs);
+                scan_dir(cx, &abs, &path, &base, false, depth + 1);
             }
-            continue;
         }
-        scan_dir(cx, &abs, &path, &frames, false, depth + 1);
     }
 }

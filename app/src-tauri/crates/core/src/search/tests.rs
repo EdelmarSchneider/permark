@@ -1058,6 +1058,7 @@ fn paths_and_recent_answer_quick_open() {
         skip: ["docs/alpha.md".to_owned()].into_iter().collect(),
         muted: None,
         hidden_last: false,
+        within: None,
     };
     assert_eq!(f.index.paths("alpha", 10, 5, &skip).files.len(), 1);
     assert_eq!(
@@ -1104,6 +1105,61 @@ fn dropping_the_index_during_the_first_build_is_prompt() {
         "joined in {:?}",
         start.elapsed()
     );
+}
+
+/// Progress events take their time (a busy window): the inserter falls behind the readers.
+struct SlowSink;
+
+impl EventSink for SlowSink {
+    fn emit(&self, event: CoreEvent) {
+        if matches!(event, CoreEvent::IndexProgress(_)) {
+            std::thread::sleep(Duration::from_millis(300));
+        }
+    }
+}
+
+/// Dropped while documents are being read with the readers ahead of the inserter (their queue full): the readers
+/// blocked on the full queue are released, the drop never hangs (CI 39698724615 hung 40 min on Windows).
+#[test]
+fn dropping_the_index_while_documents_are_read_never_hangs() {
+    let dir = tempfile::tempdir().unwrap();
+    let body = "alpha beta gamma delta ".repeat(50);
+    for n in 0..5000 {
+        write(
+            dir.path(),
+            &format!("d{}/n{n}.md", n % 50),
+            &format!("# T{n}\n\nword{n} {body}\n\n## Part\n\n{body}\n"),
+        );
+    }
+    for _ in 0..3 {
+        let vault = Vault::new(Root::open(dir.path()).unwrap());
+        let sink: Arc<dyn EventSink> = Arc::new(SlowSink);
+        let explorer = Arc::new(Explorer::new(
+            &vault,
+            &ProjectConfig::default(),
+            Arc::clone(&sink),
+            None,
+        ));
+        let index = SearchIndex::start(vault, explorer, sink, "root".to_owned());
+        let start = Instant::now();
+        while index.status().total == 0 {
+            assert!(start.elapsed() < Duration::from_secs(60), "never started");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        // past the first progress event (before the readers start), into the next one (the readers fill their queue)
+        // (hung here before the fix: ~1100 of 5000 read, 2026-10-22)
+        std::thread::sleep(Duration::from_millis(550));
+        // the drop runs on its own thread: a hang fails the test instead of the whole run
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            drop(index);
+            let _ = tx.send(());
+        });
+        assert!(
+            rx.recv_timeout(Duration::from_secs(20)).is_ok(),
+            "the index drop hung while documents were read"
+        );
+    }
 }
 
 // ---- measured ------------------------------------------------------------------------------------------------------
@@ -1353,4 +1409,93 @@ fn hidden_means_a_dot_segment_below_the_root() {
     );
     assert!(is_hidden_path("@wt/feature/.github/ci.yml"));
     assert!(!is_hidden_path(""));
+}
+
+// ---- harvest: front matter tags from the index pass (`projects.md` §7.3) -------------------------------------------
+
+/// 10 000 tagged documents: every one read once by the pass, its tags in the harvest; a change | removal from the
+/// watch updates only that document; a Markdown file larger than the index reads still gives its tags (head only).
+#[test]
+fn harvest_takes_front_matter_tags_from_the_one_pass_and_follows_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    for n in 0..10_000 {
+        write(
+            dir.path(),
+            &format!("d{}/n{n}.md", n % 100),
+            &format!("---\ntags: [t{}, shared]\n---\n# N{n}\n", n % 7),
+        );
+    }
+    write(dir.path(), "plain.md", "# no front matter\n");
+    write(
+        dir.path(),
+        "toml.md",
+        "+++\ntags = [\"Toml Tag\"]\n+++\nx\n",
+    );
+    let big = format!(
+        "---\ntags: [huge]\n---\n{}",
+        "word ".repeat(usize::try_from(MARKDOWN_LIMIT).unwrap() / 5 + 10)
+    );
+    write(dir.path(), "big.md", &big);
+    let vault = Vault::new(Root::open(dir.path()).unwrap());
+    let sink = Arc::new(Recorder::default());
+    let explorer = Arc::new(Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        sink.clone(),
+        None,
+    ));
+    let index = SearchIndex::start(vault, explorer, sink, "root".to_owned());
+    let started = Instant::now();
+    assert!(index.harvest().wait_ready(Duration::from_secs(120)));
+    let took = started.elapsed();
+    let docs = index.harvest().snapshot();
+    assert_eq!(
+        docs.len(),
+        10_003,
+        "every Markdown document, tagged or not ({took:?})"
+    );
+    assert_eq!(docs["d3/n3.md"].tags, ["t3", "shared"]);
+    assert!(docs["plain.md"].tags.is_empty());
+    assert_eq!(docs["toml.md"].tags, ["toml-tag"]);
+    assert_eq!(
+        docs["big.md"].tags,
+        ["huge"],
+        "too large for the index: head only"
+    );
+
+    let rev = index.harvest().rev();
+    write(dir.path(), "d3/n3.md", "---\ntags: [changed]\n---\n# N3\n");
+    let feed = index.feeder();
+    let change = |path: &str, kind: ChangeKind| Change {
+        path: path.to_owned(),
+        kind,
+        is_dir: false,
+        own: false,
+    };
+    feed(&FsBatch {
+        changes: vec![change("d3/n3.md", ChangeKind::Modified)],
+        ..FsBatch::default()
+    });
+    let wait = |what: &str, ok: &dyn Fn() -> bool| {
+        let start = Instant::now();
+        while !ok() {
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "timed out: {what}"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    // the revision goes up right after the tags are in (listeners are told then)
+    wait("changed tags", &|| {
+        index.harvest().tags_of("d3/n3.md") == Some(vec!["changed".to_owned()])
+            && index.harvest().rev() > rev
+    });
+    fs::remove_file(dir.path().join("d3/n3.md")).unwrap();
+    feed(&FsBatch {
+        changes: vec![change("d3/n3.md", ChangeKind::Removed)],
+        ..FsBatch::default()
+    });
+    wait("removed", &|| index.harvest().tags_of("d3/n3.md").is_none());
+    assert_eq!(index.harvest().snapshot().len(), 10_002);
 }

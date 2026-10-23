@@ -1,11 +1,13 @@
 //! `Root`: a canonical absolute folder. Only `Root::open` builds one.
 
+use std::borrow::Cow;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use super::{fold, slash, VaultError};
+use super::{fold, slash, strip_prefix_ci, VaultError};
 
-/// Canonical absolute existing folder (symlinks resolved, case as on disk, `\\?\` dropped unless needed).
+/// Canonical absolute existing folder (symlinks resolved, case as on disk, `\\?\` | `\\?\UNC\` dropped unless
+/// needed: [`super::simplified`]).
 #[derive(Debug, Clone)]
 pub struct Root {
     path: PathBuf,
@@ -23,12 +25,38 @@ impl RootKey {
         &self.0
     }
 
+    /// `\\?\UNC\server\share` | `\\.\UNC\...` keyed as `\\server\share` (any length: a long path keeping its prefix
+    /// gets the same key).
     pub(crate) fn of(path: &Path) -> Self {
         let mut text = slash(path);
+        if cfg!(windows) {
+            if let Some(rest) =
+                strip_prefix_ci(&text, "//?/UNC/").or_else(|| strip_prefix_ci(&text, "//./UNC/"))
+            {
+                text = format!("//{rest}");
+            }
+        }
         while text.len() > 1 && text.ends_with('/') && !text.ends_with(":/") {
             text.pop();
         }
         Self(fold(&text))
+    }
+
+    /// The key as 0.5 + 0.6 spelled it: they kept `\\?\UNC\` on every share (`//?/unc/server/share/...`). Profile
+    /// folders of projects are named after it -> state those versions saved stays found. Other keys: unchanged.
+    #[must_use]
+    pub fn saved_spelling(&self) -> Cow<'_, str> {
+        legacy_unc_key(&self.0)
+    }
+}
+
+/// [`RootKey::saved_spelling`] of key text (`/` separators, folded).
+pub(crate) fn legacy_unc_key(key: &str) -> Cow<'_, str> {
+    match key.strip_prefix("//") {
+        Some(rest) if cfg!(windows) && !rest.starts_with("?/") && !rest.starts_with("./") => {
+            Cow::Owned(format!("//?/unc/{rest}"))
+        }
+        _ => Cow::Borrowed(key),
     }
 }
 
@@ -38,7 +66,7 @@ impl Root {
     /// # Errors
     /// `NotFound`, `NotAFolder`, `Io` (access denied, ...).
     pub fn open(path: &Path) -> Result<Self, VaultError> {
-        let path = dunce::canonicalize(path).map_err(|e| VaultError::io(path, e))?;
+        let path = super::canonicalize(path).map_err(|e| VaultError::io(path, e))?;
         let meta = std::fs::metadata(&path).map_err(|e| VaultError::io(&path, e))?;
         if !meta.is_dir() {
             return Err(VaultError::NotAFolder(path.display().to_string()));
@@ -135,5 +163,35 @@ mod tests {
         assert_eq!(RootKey::of(Path::new("C:\\")).as_str(), "c:/");
         #[cfg(unix)]
         assert_eq!(RootKey::of(Path::new("/")).as_str(), "/");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn share_spellings_share_a_key_and_keep_their_saved_spelling() {
+        let plain = RootKey::of(Path::new(r"\\wsl.localhost\Ubuntu-24.04\tmp\pm07wsl"));
+        assert_eq!(plain.as_str(), "//wsl.localhost/ubuntu-24.04/tmp/pm07wsl");
+        for other in [
+            r"\\?\UNC\wsl.localhost\Ubuntu-24.04\tmp\pm07wsl",
+            r"\\?\unc\WSL.localhost\Ubuntu-24.04\tmp\pm07wsl\",
+            r"\\.\UNC\wsl.localhost\Ubuntu-24.04\tmp\pm07wsl",
+        ] {
+            assert_eq!(RootKey::of(Path::new(other)), plain, "{other}");
+        }
+        // 0.6 named the profile folder after the verbatim spelling
+        assert_eq!(
+            plain.saved_spelling(),
+            "//?/unc/wsl.localhost/ubuntu-24.04/tmp/pm07wsl"
+        );
+        let drive = RootKey::of(Path::new(r"C:\Users\me"));
+        assert_eq!(drive.saved_spelling(), drive.as_str());
+        let long_drive = RootKey::of(Path::new(r"\\?\C:\x"));
+        assert_eq!(long_drive.saved_spelling(), long_drive.as_str());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn saved_spelling_is_the_key_outside_windows() {
+        let key = RootKey::of(Path::new("//srv/x"));
+        assert_eq!(key.saved_spelling(), key.as_str());
     }
 }

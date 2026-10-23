@@ -1,7 +1,7 @@
 <script lang="ts">
   // The document area: header, the page (or the viewer of the file's kind), the notices around it, find in page.
   // Everything about what is shown lives in the document controller; this is the frame and the keys.
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { api, type WorkspaceView } from "../../api";
   import { apiErrorText } from "../errors";
   import { conditions } from "../conditions/context.svelte";
@@ -13,6 +13,7 @@
   import DocHeader from "./DocHeader.svelte";
   import { documents } from "./document.svelte";
   import FindBar from "./FindBar.svelte";
+  import { ownedByTarget } from "./escape";
   import { editExtra } from "./headerFit";
   import ImageZoom from "./ImageZoom.svelte";
   import MarkdownBody from "./MarkdownBody.svelte";
@@ -31,8 +32,20 @@
 
   let scroller: HTMLElement | undefined = $state();
 
-  // a single file shows its own file; a project shows the document the window was told to
-  const path = $derived(workspace.kind === "singleFile" ? workspace.name : shown);
+  // a single file shows its own file, or the one a link inside its folder led to; a project shows the document the
+  // window was told to
+  const path = $derived(
+    workspace.kind === "singleFile" ? (documents.singleDoc ?? workspace.name) : shown,
+  );
+
+  /** Settings at the editor choice ("Choose editor" of a code reference's note). */
+  function chooseEditor(): void {
+    ui.openSettingsPage("editing");
+    // after the page took the focus for itself (its section list)
+    void tick().then(() =>
+      requestAnimationFrame(() => document.getElementById("set-editor")?.focus()),
+    );
+  }
 
   /** What the header shows as the place: a loose file of the Notes shows its name, not its internal path. */
   function headerPath(place: string): string {
@@ -83,8 +96,18 @@
   $effect(() => {
     documents.bind({
       note: (text) => store.notifyNote(text),
+      pageNote: (text, ...actions) => store.notifyKeyed("page", text, ...actions),
+      clearPageNote: () => store.dismissKey("page"),
       fail: (error) => store.notifyFileOpFailed(error),
       reveal: (folder) => revealInTree(folder),
+      editorSet: () => store.editor.trim() !== "",
+      modKey: () => (conditions.current.platform === "mac" ? "Cmd" : "Ctrl"),
+      chooseEditor,
+      openFolderWith: (folder, document) => {
+        void api.openFolderWith(folder, document).then((result) => {
+          if (!result.ok) store.notifyFileOpFailed(result.error);
+        });
+      },
     });
     editing.bind({
       note: (text) => store.notifyNote(text),
@@ -111,6 +134,12 @@
       if (editing.path !== null && editing.path !== shown) editing.release();
       void documents.show(path);
     });
+  });
+
+  // the editor setting changed: the references on the page say again what a click does
+  $effect(() => {
+    void store.editor;
+    untrack(() => documents.retitleRefs());
   });
 
   // the area goes away with the workspace (the window shows the welcome again): the controller lets go of the document
@@ -140,9 +169,6 @@
     };
   });
 
-  /** What may keep an Escape for itself: a field, a menu, a dialog, the editors' pop-ups. */
-  const OWNS_ESCAPE = "input, select, textarea, form, [role=dialog], [role=listbox], [role=menu]";
-
   // Escape leaves focus mode first, and before the editors see it (the visual editor's key map takes Escape for
   // itself). Not while something innermost is open: a field, a menu, a dialog, an overlay, the image zoom, a pop-up of
   // an editor (completions, the Source find panel); the find bar closes first.
@@ -150,8 +176,7 @@
     const onKey = (event: KeyboardEvent): void => {
       if (ui.focus !== "on" || event.isComposing || event.key !== "Escape") return;
       if (event.ctrlKey || event.metaKey || event.altKey) return;
-      const inside = event.target instanceof Element ? event.target.closest(OWNS_ESCAPE) : null;
-      if (inside !== null || ui.modal || documents.zoomed !== null) return;
+      if (ownedByTarget(event.target) || ui.modal || documents.zoomed !== null) return;
       if (document.querySelector(".slash, .cm-tooltip-autocomplete, .cm-search") !== null) return;
       event.preventDefault();
       event.stopPropagation();
@@ -169,8 +194,7 @@
       if (event.isComposing || event.defaultPrevented) return;
       if (event.key !== "Escape" || !editingNow || event.ctrlKey || event.metaKey || event.altKey)
         return;
-      const inside = event.target instanceof Element ? event.target.closest(OWNS_ESCAPE) : null;
-      if (inside === null) {
+      if (!ownedByTarget(event.target)) {
         event.preventDefault();
         chooseMode("view");
       }
@@ -390,6 +414,11 @@
   }
   .scroller:focus {
     outline: none;
+  }
+  /* the keyboard sent here (a review closed, a side hidden): the page shows it holds the keyboard */
+  .scroller:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
   .scroller {
     flex: 1;

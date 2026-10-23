@@ -10,6 +10,7 @@ import type { createMockDistribution } from "./mockDistribution";
 import type { createMockTokens } from "./mockTokens";
 import type { createMockConvert } from "./mockConvert";
 import type { ReviewChange } from "./generated/ReviewChange";
+import { createMockGitMembers, type GitMembersProbe } from "./mockGitMembers";
 import type {
   ActivityEntry,
   BaselineKind,
@@ -19,6 +20,7 @@ import type {
   PluginEvents,
   PluginMethod,
   PluginMethods,
+  ProjectsView,
   Result,
   SinceVisit,
   UnreadList,
@@ -35,7 +37,7 @@ export type MockPluginProbe = {
   feed(items: FeedItem[]): void;
   /** An action of the person as if the activity journal had noted it. */
   mine(entry: ActivityEntry): void;
-  /** Marks documents unread as if an agent changed them. */
+  /** Marks documents unread as if an agent changed them, in this order (the last one is the newest change). */
   unread(paths: string[]): void;
   /** Calls the plugins got, `<plugin>.<method>`. */
   calls: string[];
@@ -43,6 +45,8 @@ export type MockPluginProbe = {
   git(): GitSnapshot;
   /** Announces a snapshot as the backend would (`null`: no repository any more). */
   announceGit(snapshot: GitSnapshot | null): void;
+  /** Repositories of included projects (`git.repos`, interest, member snapshots). */
+  gitMembers: GitMembersProbe;
   /** Tags, comments, silence: what the organizing plugins hold. */
   organizing: OrganizingProbe;
   /** The notes: what the backend holds, ways to put them in a state. */
@@ -116,6 +120,7 @@ export function createMockPlugins(
   distribution: ReturnType<typeof createMockDistribution>["handlers"] &
     ReturnType<typeof createMockTokens>["handlers"] &
     ReturnType<typeof createMockConvert>["handlers"],
+  projectsView: () => ProjectsView | null = () => null,
 ): {
   call<M extends PluginMethod>(
     method: M,
@@ -193,8 +198,13 @@ export function createMockPlugins(
       isDir: false,
     },
   ];
+  /** Unread documents, oldest change first (the backend sends the newest first). */
   let unread = new Set<string>([GUIDE]);
-  const unreadList = (): UnreadList => ({ ready: true, unread: [...unread].sort() });
+  const changed = (path: string): void => {
+    unread.delete(path);
+    unread.add(path);
+  };
+  const unreadList = (): UnreadList => ({ ready: true, unread: [...unread].reverse() });
   const announceUnread = (): void => emit("unread:changed", unreadList());
   const since: SinceVisit = {
     ready: true,
@@ -244,17 +254,27 @@ export function createMockPlugins(
   };
 
   const agent = createMockAgent(emit);
+  const members = createMockGitMembers({ view: projectsView, emit, baseline: () => baseline });
   const handlers: Handlers = {
     ...organizing.handlers,
     ...agent.handlers,
     ...notes.handlers,
     ...distribution,
-    "git.snapshot": () => snapshot(),
-    "git.refresh": () => null,
+    "git.snapshot": ({ project }) => (project ? members.snapshot(project) : snapshot()),
+    "git.refresh": ({ project }) => {
+      members.refresh(project ?? null);
+      return null;
+    },
+    "git.repos": () => members.repos(),
+    "git.interest": ({ ids, level, view }) => {
+      members.interest(view ?? "main", level, ids);
+      return null;
+    },
     "git.setBaseline": ({ kind }) => {
       baseline = kind;
       seq += 1;
       emit("git:snapshot", snapshot());
+      members.rebaseline();
       return null;
     },
     "live-feed.items": () => feed,
@@ -353,12 +373,13 @@ export function createMockPlugins(
         emit("live-feed:activity", { entry });
       },
       unread: (paths) => {
-        for (const path of paths) unread.add(path);
+        for (const path of paths) changed(path);
         announceUnread();
       },
       calls,
       git: snapshot,
       announceGit: (next) => emit("git:snapshot", next),
+      gitMembers: members.probe,
       organizing: organizing.probe,
       notes: notes.probe,
       agent: agent.probe,

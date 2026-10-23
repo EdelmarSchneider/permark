@@ -23,6 +23,10 @@ use permark_core::format::{
 };
 use permark_core::paths::VaultPath;
 use permark_core::plugins::{Enablement, Manifest, PluginId, PluginScope, RpcCall};
+use permark_core::projects::{
+    AgentChoice, CardChange, CardDto, CardTarget, HiddenRule, IncludeOutcome, LocateRefusal,
+    ProjectPick, ProjectUid, ProjectsUndone, ProjectsView,
+};
 use permark_core::search::{IndexStatus, PathResults, Recent, SearchOptions, SectionResults};
 use permark_core::session::{ProjectSession, RecentFolder};
 use permark_core::settings::{
@@ -180,6 +184,35 @@ pub fn open_in_project(handle: AppHandle, window: Webview, path: String) -> Resu
         window.label(),
         &WorkspaceRef::Project(root),
         Some(document),
+        OpenPlacement::Tab,
+    )
+    .map(|_| ())
+}
+
+/// Opens `folder` as a project in a new tab of this window (or where it is open already), showing `document` (a path
+/// inside it) when given: a link of a single file that leads outside its folder, followed from the folder holding
+/// both. The folder is the person's choice (a button they pressed); the document is checked against it.
+#[tauri::command(async)]
+pub fn open_folder_with(
+    handle: AppHandle,
+    window: Webview,
+    folder: String,
+    document: Option<String>,
+) -> Result<(), IpcError> {
+    let root = permark_core::paths::Root::open(std::path::Path::new(&folder))?;
+    let document = document
+        .as_deref()
+        .map(VaultPath::parse)
+        .transpose()
+        .map_err(IpcError::from)?;
+    if let Some(document) = &document {
+        permark_core::paths::Vault::new(root.clone()).resolve(document)?;
+    }
+    open_placed(
+        &handle,
+        window.label(),
+        &WorkspaceRef::Project(root),
+        document,
         OpenPlacement::Tab,
     )
     .map(|_| ())
@@ -367,6 +400,192 @@ pub fn tree_close(handle: AppHandle, window: Webview) {
     }
 }
 
+// ---- Projects inside the folder (`projects.md`) ---------------------------------------------------------------------------
+
+/// Settings > Projects + the strip of the window's folder. Changes arrive as `projects-changed { root, seq }`.
+#[tauri::command(async)]
+pub fn projects_view(handle: AppHandle, window: Webview) -> Result<ProjectsView, IpcError> {
+    Ok(project_of(&handle, &window)?.projects_view())
+}
+
+/// Includes projects (`all` = every offered one). A folder without `.permark/` is initialized first; its windows are
+/// told.
+#[tauri::command(async)]
+pub fn projects_include(
+    handle: AppHandle,
+    window: Webview,
+    pick: ProjectPick,
+) -> Result<IncludeOutcome, IpcError> {
+    let shell = state(&handle);
+    let core = project_of(&handle, &window)?;
+    let (outcome, initialized) = core.projects_include(&shell.env, &pick)?;
+    if initialized {
+        shell.registry.refresh();
+    }
+    Ok(outcome)
+}
+
+/// "No thanks": `all` on the first question declines for this folder; paths decline those projects (profile only).
+#[tauri::command(async)]
+pub fn projects_decline(
+    handle: AppHandle,
+    window: Webview,
+    pick: ProjectPick,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?.projects().decline(&pick)
+}
+
+/// Takes back the last include (its token); a `.permark/` it made goes when untouched.
+#[tauri::command(async)]
+pub fn projects_undo(
+    handle: AppHandle,
+    window: Webview,
+    token: u64,
+) -> Result<ProjectsUndone, IpcError> {
+    let shell = state(&handle);
+    let core = project_of(&handle, &window)?;
+    let (outcome, moved) = core.projects_undo(&shell.env, token)?;
+    if moved {
+        shell.registry.refresh();
+    }
+    Ok(outcome)
+}
+
+#[tauri::command(async)]
+pub fn projects_leave_out(
+    handle: AppHandle,
+    window: Webview,
+    uids: Vec<ProjectUid>,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?.projects().leave_out(&uids)
+}
+
+#[tauri::command(async)]
+pub fn projects_set_hidden(
+    handle: AppHandle,
+    window: Webview,
+    uid: ProjectUid,
+    rule: HiddenRule,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .set_hidden(&uid, rule)
+}
+
+/// Agent sharing of one project (profile only).
+#[tauri::command(async)]
+pub fn projects_set_agent(
+    handle: AppHandle,
+    window: Webview,
+    uid: ProjectUid,
+    choice: AgentChoice,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .set_agent(&uid, choice)
+}
+
+/// Locate… of a missing project: `path` = the folder the person picked (absolute). `null` = done, else why not.
+#[tauri::command(async)]
+pub fn projects_locate(
+    handle: AppHandle,
+    window: Webview,
+    uid: ProjectUid,
+    path: String,
+) -> Result<Option<LocateRefusal>, IpcError> {
+    project_of(&handle, &window)?.projects_locate(&uid, std::path::Path::new(&path))
+}
+
+/// Missing projects taken off the list.
+#[tauri::command(async)]
+pub fn projects_remove(
+    handle: AppHandle,
+    window: Webview,
+    uids: Vec<ProjectUid>,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?.projects().remove(&uids)
+}
+
+/// The move question: `same` = the project at `path` is the missing one.
+#[tauri::command(async)]
+pub fn projects_answer_move(
+    handle: AppHandle,
+    window: Webview,
+    uid: ProjectUid,
+    path: String,
+    same: bool,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .answer_move(&uid, &path, same)
+}
+
+/// One field of a card (the folder's own | an included project's).
+#[tauri::command(async)]
+pub fn projects_card_set(
+    handle: AppHandle,
+    window: Webview,
+    target: CardTarget,
+    change: CardChange,
+) -> Result<CardDto, IpcError> {
+    project_of(&handle, &window)?.projects_card_set(&target, &change)
+}
+
+/// Makes a tag | category official in the opened folder (`.permark/vocabulary.toml`; `projects.md` §7.2 promote).
+#[tauri::command(async)]
+pub fn vocabulary_promote(
+    handle: AppHandle,
+    window: Webview,
+    kind: permark_core::projects::VocabKind,
+    name: String,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .promote(kind, &name)
+}
+
+/// Renames an official tag | category (`projects.md` §7.2; documents untouched).
+#[tauri::command(async)]
+pub fn vocabulary_rename(
+    handle: AppHandle,
+    window: Webview,
+    kind: permark_core::projects::VocabKind,
+    name: String,
+    new_name: String,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .vocabulary_rename(kind, &name, &new_name)
+}
+
+/// Takes an official tag | category out of the list (`projects.md` §7.2; documents untouched).
+#[tauri::command(async)]
+pub fn vocabulary_remove(
+    handle: AppHandle,
+    window: Webview,
+    kind: permark_core::projects::VocabKind,
+    name: String,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .vocabulary_remove(kind, &name)
+}
+
+/// The whole look of an official tag | category (`null` = none; `projects.md` §7.2).
+#[tauri::command(async)]
+pub fn vocabulary_set_style(
+    handle: AppHandle,
+    window: Webview,
+    kind: permark_core::projects::VocabKind,
+    name: String,
+    color: Option<String>,
+    icon: Option<String>,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .vocabulary_set_style(kind, &name, color.as_deref(), icon.as_deref())
+}
+
 // ---- Explorer: file operations -------------------------------------------------------------------------------------------
 
 #[tauri::command(async)]
@@ -548,12 +767,22 @@ pub fn show_document(
     window: Webview,
     path: Option<String>,
 ) -> Result<(), IpcError> {
-    let core = project_of(&handle, &window)?;
     let parsed = path
         .as_deref()
         .map(VaultPath::parse)
         .transpose()
         .map_err(IpcError::from)?;
+    // a single file tells which file of its folder it shows (tab + window title); it polls by itself
+    if let Some((_, Workspace::SingleFile(file))) =
+        state(&handle).registry.workspace_of(window.label())
+    {
+        if let Some(parsed) = &parsed {
+            file.scope.resolve_asset(parsed).map_err(IpcError::from)?;
+        }
+        state(&handle).registry.set_document(window.label(), parsed);
+        return Ok(());
+    }
+    let core = project_of(&handle, &window)?;
     // without live updates the open document is polled
     let abs = parsed.as_ref().and_then(|p| core.vault().resolve(p).ok());
     core.watcher().poll_document(window.label(), abs.as_deref());
@@ -664,9 +893,13 @@ pub fn code_refs_resolve(
     let (workspace, _) = reading_of(&handle, &window)?;
     Ok(match workspace {
         Workspace::Project(core) => resolve_code_refs(core.explorer(), &doc, &written),
-        Workspace::SingleFile(_) | Workspace::Notes(_) => {
-            written.iter().map(|_| Vec::new()).collect()
-        }
+        // exact paths under the file's folder (no file list to match a tail against)
+        Workspace::SingleFile(file) => file
+            .documents
+            .scope()
+            .exact_code_refs(&doc, &written)
+            .unwrap_or_default(),
+        Workspace::Notes(_) => written.iter().map(|_| Vec::new()).collect(),
     })
 }
 
@@ -682,6 +915,10 @@ pub fn open_in_editor(
 ) -> Result<(), IpcError> {
     let (workspace, _) = reading_of(&handle, &window)?;
     let (_, abs) = documents_of(&workspace).scope().resolve(&path)?;
+    // a file, never a folder (a single file's root path is its folder)
+    if !abs.is_file() {
+        return Err(IpcError::new(ErrorKind::NotFound).subject(path));
+    }
     let template = state(&handle).env.settings().editor;
     editor::launch(&template, &abs, line.unwrap_or(1), col.unwrap_or(1))?;
     Ok(())
@@ -1187,6 +1424,13 @@ pub fn project_init(handle: AppHandle, path: String) -> Result<(), IpcError> {
     state(&handle).init_project(std::path::Path::new(&path))
 }
 
+/// Whether a folder has nothing in it yet (New project asks first before writing `.permark/` into a folder with files).
+/// A folder that cannot be read counts as not empty.
+#[tauri::command(async)]
+pub fn folder_empty(path: String) -> bool {
+    std::fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_none())
+}
+
 /// The shared settings of the project the window shows.
 #[tauri::command(async)]
 pub fn project_config_get(handle: AppHandle, window: Webview) -> Result<ProjectSettings, IpcError> {
@@ -1295,6 +1539,7 @@ commands![
     open_path,
     open_notes,
     open_in_project,
+    open_folder_with,
     list_windows,
     focus_workspace,
     tab_activate,
@@ -1313,6 +1558,21 @@ commands![
     tree_open_folder,
     tree_keep,
     tree_close,
+    projects_view,
+    projects_include,
+    projects_decline,
+    projects_undo,
+    projects_leave_out,
+    projects_set_hidden,
+    projects_set_agent,
+    projects_locate,
+    projects_remove,
+    projects_answer_move,
+    projects_card_set,
+    vocabulary_promote,
+    vocabulary_rename,
+    vocabulary_remove,
+    vocabulary_set_style,
     fileops_plan_move,
     fileops_apply_move,
     fileops_delete,
@@ -1355,6 +1615,7 @@ commands![
     search_recent,
     plugin_call,
     project_init,
+    folder_empty,
     project_config_get,
     project_config_set,
     plugins_list,

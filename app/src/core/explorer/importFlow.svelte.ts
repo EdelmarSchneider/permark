@@ -19,13 +19,15 @@ export type Point = { x: number; y: number };
 
 export type ImportState =
   | { status: "idle" }
-  /** The plan is on its way; after a moment (`slow`) the question shows already, saying it is checking names. */
-  | { status: "planning"; folder: string; where: string; at: Point; slow: boolean }
+  /** The plan is on its way; after a moment (`slow`) the question shows already, saying it is checking names.
+   *  `project`: the name of the project dropped on (a cancel notice names it once another one shows). */
+  | { status: "planning"; folder: string; where: string; project: string; at: Point; slow: boolean }
   | {
       status: "asking";
       plan: ImportPlan;
       /** The target folder as the person reads it. */
       where: string;
+      project: string;
       at: Point;
       conflicts: ConflictChoice;
     }
@@ -44,6 +46,8 @@ export const SLOW_PLAN_MS = 300;
 export type ImportHost = {
   fail(error: ApiError): void;
   note(text: string): void;
+  /** A note that a drop was cancelled; the returned function takes it back (a newer drop: it would contradict it). */
+  cancelNote(text: string): () => void;
   action(text: string, ...actions: { label: string; run: () => void }[]): void;
   /** The name of the open project (what the project folder is called in sentences). */
   project(): string;
@@ -69,6 +73,8 @@ export class ImportFlow {
   #slow: ReturnType<typeof setTimeout> | null = null;
   /** Tells a plan's answer whether it still matters (a newer drop or a cancel came meanwhile). */
   #asked = 0;
+  /** Takes back the note of the last drop cancelled, while it is on screen. */
+  #takeBack: (() => void) | null = null;
 
   constructor(api: Api, host: ImportHost) {
     this.#api = api;
@@ -96,11 +102,19 @@ export class ImportFlow {
     return this.state.status === "planning" || this.state.status === "asking";
   }
 
-  /** The project is gone or another one is shown: nothing of this drop matters any more. */
+  /** The project is gone or another one is shown: nothing of this drop matters any more. A question that was open
+   *  or on its way is said to be cancelled (it never vanishes unexplained). */
   reset(): void {
+    const state = this.state;
     this.#stopSlow();
     this.#asked += 1;
     this.state = { status: "idle" };
+    if (state.status === "planning" || state.status === "asking") {
+      this.#takeBack?.();
+      this.#takeBack = this.#host.cancelNote(
+        t("import.dropCancelled", { folder: state.where, project: state.project }),
+      );
+    }
   }
 
   /** Files | folders dropped on the Explorer at `at`, into `folder`: the question, once the plan is back. */
@@ -111,9 +125,13 @@ export class ImportFlow {
       return;
     }
     this.discard();
+    // a new drop: the note that an earlier one was cancelled says nothing true any more
+    this.#takeBack?.();
+    this.#takeBack = null;
     const asked = ++this.#asked;
-    const where = folderLabel(folder, this.#host.project());
-    this.state = { status: "planning", folder, where, at, slow: false };
+    const project = this.#host.project();
+    const where = folderLabel(folder, project);
+    this.state = { status: "planning", folder, where, project, at, slow: false };
     this.#slow = setTimeout(() => {
       this.#slow = null;
       const state = this.state;
@@ -133,7 +151,14 @@ export class ImportFlow {
     }
     if (!slow) this.#focus();
     // Keep both comes preselected; Enter on the question copies (never takes anything away from where it is)
-    this.state = { status: "asking", plan: planned.value, where, at, conflicts: "keepBoth" };
+    this.state = {
+      status: "asking",
+      plan: planned.value,
+      where,
+      project,
+      at,
+      conflicts: "keepBoth",
+    };
   }
 
   setConflicts(conflicts: ConflictChoice): void {
@@ -141,7 +166,7 @@ export class ImportFlow {
     if (state.status === "asking") this.state = { ...state, conflicts };
   }
 
-  /** The person closed the question (Cancel | Esc | outside click | the view hidden): nothing happens. */
+  /** The person closed the question (Cancel | Esc | outside click): nothing happens. A tab switch is no answer. */
   cancel(): void {
     if (this.state.status !== "planning" && this.state.status !== "asking") return;
     this.discard();

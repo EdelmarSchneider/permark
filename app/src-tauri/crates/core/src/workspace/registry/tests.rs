@@ -317,6 +317,39 @@ fn a_failed_open_keeps_what_was_shown() {
     assert_eq!(ipc.kind, ErrorKind::Unsupported);
 }
 
+/// Teardown symmetry for per-view plugin state (`projects.md` §8, verifier S3): a view that lets go of a project
+/// (tab closed, another folder opened in it, window gone) is announced to the project's plugins.
+#[test]
+fn a_view_letting_go_of_a_project_is_told_to_its_plugins() {
+    let f = fx();
+    let heard: Arc<Mutex<Vec<String>>> = Arc::default();
+    let listen = |core: &Arc<ProjectCore>| {
+        let sink = Arc::clone(&heard);
+        core.rpc().on_caller_gone(Arc::new(move |caller: &str| {
+            sink.lock().unwrap().push(caller.to_owned());
+        }))
+    };
+    let dirs: Vec<tempfile::TempDir> = (0..4).map(|_| tempfile::tempdir().unwrap()).collect();
+    // tab closed
+    let (closed, view) = tab(&f, "main", &project(dirs[0].path())).unwrap();
+    let _a = listen(&core_of(&f, &view));
+    let _ = f.registry.close_tab(closed);
+    assert_eq!(*heard.lock().unwrap(), std::slice::from_ref(&view));
+    // another folder opened in the same tab
+    let (_, view) = tab(&f, "main", &project(dirs[1].path())).unwrap();
+    let _b = listen(&core_of(&f, &view));
+    f.registry
+        .attach(&view, &project(dirs[2].path()), None)
+        .unwrap();
+    assert_eq!(heard.lock().unwrap().last(), Some(&view));
+    // the window goes
+    let (_, view) = tab(&f, "w-1", &project(dirs[3].path())).unwrap();
+    let _c = listen(&core_of(&f, &view));
+    f.registry.forget_window("w-1");
+    assert_eq!(heard.lock().unwrap().last(), Some(&view));
+    assert_eq!(heard.lock().unwrap().len(), 3);
+}
+
 #[test]
 fn this_tab_placement_releases_the_old_workspace() {
     let f = fx();
@@ -418,6 +451,7 @@ fn request_close_during_load_closes_without_a_prompt() {
 fn events_only_when_something_differs() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("CLAUDE.md"), "c").unwrap();
     f.sink.take();
     let (_, view) = tab(&f, "main", &project(dir.path())).unwrap();
     let names: Vec<String> = f.sink.take().iter().map(|e| e.name().to_owned()).collect();
@@ -425,18 +459,20 @@ fn events_only_when_something_differs() {
     assert!(names.contains(&"context-changed".to_owned()));
     assert!(names.contains(&"window-changed".to_owned()));
     f.registry.refresh();
-    // the search index reports its own progress whenever it likes; everything else stays quiet
+    // the search index reports its own progress whenever it likes, the projects service the end of its first walk;
+    // everything else stays quiet
     let rest: Vec<String> = f
         .sink
         .take()
         .iter()
         .map(|e| e.name().to_owned())
-        .filter(|n| n != "index-progress")
+        .filter(|n| n != "index-progress" && n != "projects-changed")
         .collect();
     assert_eq!(rest, Vec::<String>::new());
     let context = f.registry.context_of(&view).unwrap();
     assert_eq!(context.workspace, WorkspaceKind::Project);
     assert_eq!(context.permark, PermarkCondition::NotInitialized);
+    assert_eq!(context.agent_files, ["CLAUDE.md"]);
     assert!(context
         .plugins
         .contains(&crate::plugins::PluginId::of("unread")));
@@ -444,6 +480,10 @@ fn events_only_when_something_differs() {
     assert_eq!(
         f.registry.context_of(&welcome).unwrap().workspace,
         WorkspaceKind::Welcome
+    );
+    assert_eq!(
+        f.registry.context_of(&welcome).unwrap().agent_files,
+        Vec::<String>::new()
     );
 }
 
@@ -1208,9 +1248,12 @@ fn a_target_that_cannot_take_the_tab_refuses_and_the_tab_stays() {
     assert_eq!(f.registry.window_of(&view).as_deref(), Some("main"));
 }
 
-/// Adversarial: 8 threads move 8 tabs between 4 windows (each keeps a tab of its own) for 200 rounds, and each goes on
-/// until it has moved a tab at least once (no thread starves). Every move that ran left its tab with its view; at the
-/// end every tab is in exactly one window, every workspace found once.
+/// Adversarial: 8 threads move 8 tabs between 4 windows (each keeps a tab of its own), 200 tries each, tab + target
+/// picked per try by a seeded generator. Under contention a try is refused (`begin_move`: the tab is already there |
+/// another move of it is under way) or applies; a granted ticket always applies (nothing else can move that tab, no
+/// window closes) and leaves the tab with its view. After: every tab in exactly one window, every workspace found
+/// once, no reservation left; every tab then moves at once to any other window (a refusal never outlives the move
+/// that caused it). No timing bound: how many tries apply depends on the interleaving, not counted on.
 #[test]
 fn concurrent_moves_between_existing_windows_keep_one_place() {
     let f = fx();
@@ -1229,43 +1272,49 @@ fn concurrent_moves_between_existing_windows_keep_one_place() {
             moving.push((id, view, reference));
         }
     }
-    let moves = std::sync::atomic::AtomicUsize::new(0);
-    let started = std::time::Instant::now();
+    let applied = std::sync::atomic::AtomicUsize::new(0);
     std::thread::scope(|s| {
-        for n in 0..8 {
-            let (f, moving, moves, windows) = (&f, &moving, &moves, &windows);
+        for n in 0..8u64 {
+            let (f, moving, applied, windows) = (&f, &moving, &applied, &windows);
             s.spawn(move || {
-                // how many of the 200 rounds succeed depends on the interleaving (a tab reserved by another thread, a
-                // move to where the tab already is): not counted on; one move of its own per thread is
-                let mut mine = 0;
-                let mut round = 0;
-                while round < 200 || mine == 0 {
-                    assert!(
-                        started.elapsed() < std::time::Duration::from_secs(30),
-                        "thread {n} never moved a tab"
-                    );
-                    let (tab_id, view, _) = &moving[(n + round) % moving.len()];
-                    let to = windows[(n + 3 * round) % windows.len()];
-                    round += 1;
-                    let Ok(ticket) = f
+                // xorshift64, seeded per thread: every (tab, target) pair reachable by every thread, same on every run
+                let mut seed = 0x9E37_79B9_7F4A_7C15_u64 ^ (n + 1);
+                let mut next = |bound: usize| {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 7;
+                    seed ^= seed << 17;
+                    usize::try_from(seed % bound as u64).unwrap()
+                };
+                for _ in 0..200 {
+                    let (tab_id, view, _) = &moving[next(moving.len())];
+                    let to = windows[next(windows.len())];
+                    if let Ok(ticket) = f
                         .registry
                         .begin_move(*tab_id, &MoveTo::Window(to.to_owned()))
-                    else {
-                        continue;
-                    };
-                    if f.registry.move_tab(&ticket, to, Some(view)).is_ok() {
-                        mine += 1;
-                        moves.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    {
+                        assert!(
+                            f.registry.move_tab(&ticket, to, Some(view)).is_ok(),
+                            "a granted move applies"
+                        );
                         assert_eq!(f.registry.window_of_tab(*tab_id).as_deref(), Some(to));
+                        applied.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     }
+                    // one snapshot: two reads could straddle another thread's move
+                    let inner = lock(&f.registry.inner);
                     assert_eq!(
-                        f.registry.window_of_tab(*tab_id),
-                        f.registry.window_of(view)
+                        inner.window_of_tab(*tab_id),
+                        inner.views.get(view.as_str()).map(|s| s.window.clone()),
+                        "the tab is where its view is"
                     );
                 }
             });
         }
     });
+    eprintln!("{} moves applied", applied.into_inner());
+    assert!(
+        lock(&f.registry.inner).moving.is_empty(),
+        "no reservation left"
+    );
     let listed = f.registry.list_windows();
     for (tab_id, view, reference) in &moving {
         let count: usize = listed
@@ -1280,9 +1329,20 @@ fn concurrent_moves_between_existing_windows_keep_one_place() {
         assert_eq!(f.registry.find(reference).map(|p| p.tab), Some(*tab_id));
     }
     assert_eq!(listed.iter().map(|w| w.tabs.len()).sum::<usize>(), 12);
-    let moves = moves.into_inner();
-    eprintln!("{moves} moves");
-    assert!(moves >= 8, "every thread moved a tab: {moves}");
+    // contention over: every tab moves to every window it is not in
+    for (tab_id, view, _) in &moving {
+        for to in windows {
+            if f.registry.window_of_tab(*tab_id).as_deref() == Some(to) {
+                continue;
+            }
+            let ticket = f
+                .registry
+                .begin_move(*tab_id, &MoveTo::Window(to.to_owned()))
+                .expect("a free tab moves");
+            assert!(f.registry.move_tab(&ticket, to, Some(view)).is_ok());
+            assert_eq!(f.registry.window_of_tab(*tab_id).as_deref(), Some(to));
+        }
+    }
 }
 
 /// "Move to new window" never takes a window's only tab (spec: disabled with one tab), nor its last one staying

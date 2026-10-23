@@ -16,10 +16,10 @@ import {
 } from "./model";
 
 const counts = [
-  { name: "spec", count: 5, onlyInFiles: false },
-  { name: "needs-review", count: 3, onlyInFiles: false },
-  { name: "design", count: 2, onlyInFiles: true },
-  { name: "speculation", count: 1, onlyInFiles: false },
+  { name: "spec", count: 5, onlyInFiles: false, status: null, owner: null },
+  { name: "needs-review", count: 3, onlyInFiles: false, status: null, owner: null },
+  { name: "design", count: 2, onlyInFiles: true, status: null, owner: null },
+  { name: "speculation", count: 1, onlyInFiles: false, status: null, owner: null },
 ];
 
 describe("how a typed tag is cleaned (the backend's rules)", () => {

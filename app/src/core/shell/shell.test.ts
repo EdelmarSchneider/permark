@@ -37,7 +37,8 @@ const { installWindowKeys } = await import("../commands/install");
 const { contributions } = await import("../plugins/instance.svelte");
 const { conditions } = await import("../conditions/context.svelte");
 const { pluginsStore, projectSettings } = await import("./settings/stores.svelte");
-const { confirmInit, askInitHere } = await import("./initProject");
+const { confirmInit, askInitHere, newProject, answerInit } = await import("./initProject");
+const { default: Notices } = await import("./Notices.svelte");
 
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
 const store = windowStore;
@@ -102,7 +103,16 @@ afterEach(async () => {
   unregister?.();
   // put the shared mock back where the next test expects it
   await store.changeSetting({ key: "openIn", value: "tab" });
-  for (const id of ["git", "unread", "review", "notes", "agent", "updates", "shell-integration"]) {
+  for (const id of [
+    "git",
+    "unread",
+    "review",
+    "notes",
+    "agent",
+    "token-count",
+    "updates",
+    "shell-integration",
+  ]) {
     await store.changeSetting({ key: "pluginEnabled", value: { plugin: id, enabled: null } });
   }
   mock.probe.shell.setOthers([]);
@@ -115,7 +125,7 @@ afterEach(async () => {
 });
 
 describe("the settings page", () => {
-  it("lists Reading, Editing, Integration, Plugins - Project only while a project is shown", async () => {
+  it("lists Reading, Editing, Integration, Plugins - This folder only while a project is shown", async () => {
     await store.start().catch(() => {});
     started = true;
     await toWelcome();
@@ -131,7 +141,7 @@ describe("the settings page", () => {
     await open();
     mountPage("reading");
     await tick();
-    expect(names()).toEqual(["Reading", "Editing", "Integration", "Plugins", "Project"]);
+    expect(names()).toEqual(["Reading", "Editing", "Integration", "Plugins", "This folder"]);
   });
 
   it("Escape closes it and a section the person cannot reach falls back to Reading", async () => {
@@ -157,7 +167,7 @@ describe("the settings page", () => {
     press(document.activeElement!, "ArrowUp");
     press(document.activeElement!, "ArrowUp");
     await tick();
-    expect(target.querySelector("h3.title")?.textContent).toBe("Project");
+    expect(target.querySelector("h3.title")?.textContent).toBe("This folder");
   });
 
   it("Editing: a refused editor command is said in words, a good one is kept with its preview", async () => {
@@ -224,6 +234,8 @@ describe("the settings page", () => {
     );
     expect(headings[0]).toBe("Default app");
     expect(headings).toEqual(expect.arrayContaining(["File manager", "Updates", "Git", "Notes"]));
+    // the agent connection has its own section (Settings > AI agents)
+    expect(headings).not.toContain("Agent connection");
     // Windows: who opens the files now, and the way to Windows' own page
     await until(
       () => target.textContent?.includes("Choose in Windows Settings") === true,
@@ -231,7 +243,7 @@ describe("the settings page", () => {
     );
     expect(target.textContent).toContain("Opens with PerMark");
     // plugins off: their sections go, the default app stays
-    for (const id of ["git", "notes", "agent", "updates", "shell-integration"]) {
+    for (const id of ["git", "notes", "token-count", "updates", "shell-integration"]) {
       await store.changeSetting({ key: "pluginEnabled", value: { plugin: id, enabled: false } });
     }
     await until(
@@ -433,6 +445,8 @@ describe("the project settings and Initialize PerMark", () => {
       },
     });
     flushSync();
+    // a stray Enter writes nothing: the keyboard starts on Cancel
+    expect(document.activeElement?.textContent?.trim()).toBe("Cancel");
     expect(target.textContent).toContain("Initialize PerMark in permark-docs?");
     expect(target.textContent).toContain(".permark/config.toml");
     expect(target.textContent).toContain("Your files are not touched.");
@@ -441,6 +455,59 @@ describe("the project settings and Initialize PerMark", () => {
     byText("button.btn--primary", "Initialize PerMark").click();
     expect(answers).toEqual([false, false, true]);
     ui.closeInit();
+  });
+
+  it("New project on a folder with files in it asks first; yes sets it up and opens it", async () => {
+    await open();
+    await newProject();
+    expect(ui.initDialog).toEqual({
+      status: "asking",
+      path: MOCK_FOLDER,
+      name: "permark-docs",
+      opens: true,
+    });
+    await confirmInit(MOCK_FOLDER, true);
+    expect(ui.initDialog.status).toBe("closed");
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    expect(store.view.state === "showing" && store.view.workspace.name).toBe("permark-docs");
+  });
+
+  it("New project, the question on a folder with files: plain words, the safe button goes back to choosing", async () => {
+    await open();
+    component = mount(InitDialog, {
+      target,
+      props: { name: "permark-docs", path: MOCK_FOLDER, fresh: true, answer: () => undefined },
+    });
+    flushSync();
+    expect(target.textContent).toContain("Make permark-docs a project?");
+    expect(target.textContent).toContain("This folder already has files in it.");
+    expect(target.textContent).not.toContain(".gitignore");
+    expect(document.activeElement?.textContent?.trim()).toBe("Choose another folder…");
+    await unmount(component);
+    component = null;
+    // no: the folder picker again, starting at the folder chosen
+    await newProject();
+    expect(ui.initDialog.status).toBe("asking");
+    answerInit({ path: MOCK_FOLDER, opens: true }, false);
+    await until(() => mock.probe.pickedFrom.at(-1) === MOCK_FOLDER, "picker at the folder");
+    await until(() => ui.initDialog.status === "asking", "asked again");
+    ui.closeInit();
+  });
+
+  it("a notice that waits for the person: Esc with the keyboard in it dismisses it", async () => {
+    const gone: string[] = [];
+    component = mount(Notices, { target, props: { store } });
+    store.notifyLasting({ text: "Review closed.", actions: [], onGone: (how) => gone.push(how) });
+    flushSync();
+    const mine = byText("[role=group]", "Review closed.");
+    const dismiss = mine.querySelector<HTMLButtonElement>("button")!;
+    dismiss.focus();
+    const esc = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    dismiss.dispatchEvent(esc);
+    flushSync();
+    expect(esc.defaultPrevented).toBe(true);
+    expect(gone).toEqual(["dismissed"]);
+    expect(target.textContent).not.toContain("Review closed.");
   });
 
   it("the command and the remedy exist only while the project is not initialized", async () => {
@@ -1176,6 +1243,10 @@ describe("the welcome screen", () => {
     component = mount(Welcome, { target, props: { store } });
     flushSync();
     byText("button", "New project").click();
+    // the demo folder has files in it: asked first
+    await until(() => ui.initDialog.status === "asking", "asked");
+    expect(store.view.state).toBe("welcome");
+    await confirmInit(MOCK_FOLDER, true);
     await until(() => store.view.state === "showing", "opened");
     expect(mock.probe.shell.project().initialized).toBe(true);
     await until(() => conditions.current.permark === "initialized", "initialized");

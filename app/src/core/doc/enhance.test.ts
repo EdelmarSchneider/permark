@@ -104,6 +104,24 @@ describe("enhanceBlock", () => {
     expect(items[1]?.classList.contains("is-done")).toBe(false);
   });
 
+  it("names each task checkbox by its task, without the nested list, cut when long", () => {
+    const long = "word ".repeat(60);
+    const root = enhanceBlock(
+      make(
+        `<ul class="contains-task-list"><li class="task-list-item"><input type="checkbox" checked disabled> Write the <em>spec</em>
+  now<ul><li>sub item</li></ul></li><li class="task-list-item"><input type="checkbox" disabled> ${long}</li><li class="task-list-item"><input type="checkbox" disabled></li></ul>`,
+      ),
+      env,
+    );
+    const boxes = root.querySelectorAll("input");
+    expect(boxes[0]?.getAttribute("aria-label")).toBe("Write the spec now");
+    const cut = boxes[1]?.getAttribute("aria-label") ?? "";
+    expect(cut.length).toBeLessThanOrEqual(120);
+    expect(cut.endsWith("…")).toBe(true);
+    // nothing to name it by: no empty name
+    expect(boxes[2]?.hasAttribute("aria-label")).toBe(false);
+  });
+
   it("turns asset URLs into loadable ones and decodes the path", () => {
     const root = enhanceBlock(make('<p><img src="pm-asset:docs/img/a%20b.png" alt="x"></p>'), env);
     const img = root.querySelector("img");

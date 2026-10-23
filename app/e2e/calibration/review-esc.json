@@ -1,0 +1,69 @@
+{
+  "id": "review-esc",
+  "bug": "Review bar: the Done button's tooltip says Esc closes the review; Esc does nothing",
+  "found": "manual test; fixed 2026-10-21",
+  "persona": "K",
+  "severityMin": "minor",
+  "reproduction": "Direct.",
+  "fix": "72dec97",
+  "scenario": {
+    "name": "review-esc",
+    "steps": [
+      {
+        "do": "seed",
+        "use": "project"
+      },
+      {
+        "do": "seed",
+        "use": "doc",
+        "path": "docs/guide.md"
+      },
+      {
+        "do": "click",
+        "target": "role=button[name='Review']",
+        "probe": false
+      },
+      {
+        "do": "press",
+        "key": "Escape"
+      }
+    ]
+  },
+  "expect": {
+    "before": [
+      {
+        "step": "step-4",
+        "flag": "dead-key-promised"
+      }
+    ],
+    "after": [
+      {
+        "step": "step-4",
+        "flag": "dead-key-promised",
+        "absent": true
+      },
+      {
+        "step": "step-4",
+        "flag": "dead-key",
+        "absent": true
+      }
+    ],
+    "now": [
+      {
+        "step": "step-4",
+        "flag": "dead-key-promised",
+        "absent": true
+      },
+      {
+        "step": "step-4",
+        "flag": "dead-key",
+        "absent": true
+      }
+    ]
+  },
+  "observed": {
+    "before": "90512c5 (72dec97^): dead-key + dead-key-promised (Done button title \"(Esc)\"); 0 net DOM changes after Esc (msedge)",
+    "after": "72dec97: Esc closes the review (bar gone, page drawn without changes); focus on the document scroller with a visible ring; no flags (msedge)",
+    "now": "bugfix/ux-small 72dec97: same as after"
+  }
+}

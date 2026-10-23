@@ -106,6 +106,11 @@ pub fn error(tool: &str, error: &ToolError) -> String {
             "ERR denied: group {} off in this project -> ask person; NEVER retry around it",
             group.id()
         ),
+        ToolError::DeniedBelow { group, member } => format!(
+            "ERR denied: group {} off below {} -> ask person",
+            group.id(),
+            format::value(&one(member))
+        ),
         ToolError::NotFound(what) => format!(
             "ERR notFound: {} -> {}",
             format::value(&one(what)),
@@ -119,6 +124,9 @@ pub fn error(tool: &str, error: &ToolError) -> String {
         ToolError::Invalid(why) => format!("ERR invalid: {} -> fix the arguments", one(why)),
         ToolError::NotOpen => {
             "ERR notOpen: PerMark not open on this project -> ask person to open it".to_owned()
+        }
+        ToolError::Busy => {
+            "ERR busy: PerMark still reading this folder -> retry in a few seconds".to_owned()
         }
         ToolError::Failed(why) => format!("ERR error: {} -> retry later", one(why)),
     }
@@ -672,6 +680,7 @@ mod tests {
             error("get_context", &ToolError::NotOpen),
             error("map", &ToolError::Failed("x".to_owned())),
             error("resolve_comment", &ToolError::NotFound("c9".to_owned())),
+            error("read", &ToolError::Busy),
         ];
         for line in &lines {
             assert!(line.starts_with("ERR "), "{line}");
@@ -684,6 +693,14 @@ mod tests {
         );
         assert!(lines[2].contains("\"docs/my plan.md\""));
         assert_eq!(lines[6], "ERR notFound: c9 -> check ids with list_comments");
+        assert_eq!(
+            lines[7],
+            "ERR busy: PerMark still reading this folder -> retry in a few seconds"
+        );
+        assert!(matches!(
+            ToolError::from_wire("busy", &ToolError::Busy.to_string()),
+            ToolError::Busy
+        ));
     }
 
     #[test]

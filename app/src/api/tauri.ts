@@ -123,6 +123,7 @@ export const tauriApi: Api = {
   openPath: (path, placement) => call("open_path", { path, placement }),
   openNotes: (placement) => call("open_notes", { placement }),
   openInProject: (path) => call("open_in_project", { path }),
+  openFolderWith: (folder, document) => call("open_folder_with", { folder, document }),
   listWindows: () => call("list_windows", {}),
   focusWorkspace: (id) => call("focus_workspace", { id }),
   tabActivate: (tab) => call("tab_activate", { tab }),
@@ -220,6 +221,23 @@ export const tauriApi: Api = {
   onPlugin: <E extends PluginEventName>(event: E, handler: (payload: PluginEnvelope<E>) => void) =>
     listenHere<PluginEnvelope<E>>(event, handler),
   projectInit: (path) => call("project_init", { path }),
+  folderEmpty: (path) => call("folder_empty", { path }),
+  projectsView: () => call("projects_view", {}),
+  projectsInclude: (pick) => call("projects_include", { pick }),
+  projectsDecline: (pick) => call("projects_decline", { pick }),
+  projectsUndo: (token) => call("projects_undo", { token }),
+  projectsLeaveOut: (uids) => call("projects_leave_out", { uids }),
+  projectsSetHidden: (uid, rule) => call("projects_set_hidden", { uid, rule }),
+  projectsSetAgent: (uid, choice) => call("projects_set_agent", { uid, choice }),
+  projectsLocate: (uid, path) => call("projects_locate", { uid, path }),
+  projectsRemove: (uids) => call("projects_remove", { uids }),
+  projectsAnswerMove: (uid, path, same) => call("projects_answer_move", { uid, path, same }),
+  projectsCardSet: (target, change) => call("projects_card_set", { target, change }),
+  vocabularyPromote: (kind, name) => call("vocabulary_promote", { kind, name }),
+  vocabularyRename: (kind, name, newName) => call("vocabulary_rename", { kind, name, newName }),
+  vocabularyRemove: (kind, name) => call("vocabulary_remove", { kind, name }),
+  vocabularySetStyle: (kind, name, color, icon) =>
+    call("vocabulary_set_style", { kind, name, color, icon }),
   projectConfigGet: () => call("project_config_get", {}),
   projectConfigSet: (change) => call("project_config_set", { change }),
   pluginsList: () => call("plugins_list", {}),
@@ -245,8 +263,13 @@ export const tauriApi: Api = {
   },
   openDropped: (paths, scope) => call("open_dropped", { paths, scope }),
   focusView: () => call("view_focus", {}),
-  pickFolder: async (title) => {
-    const picked = await open({ directory: true, multiple: false, title });
+  pickFolder: async (title, from) => {
+    const picked = await open({
+      directory: true,
+      multiple: false,
+      title,
+      ...(from ? { defaultPath: from } : {}),
+    });
     return typeof picked === "string" ? picked : null;
   },
   pickFile: async (title, filterName, anyFile = false) => {

@@ -97,3 +97,36 @@ describe("Source find panel", () => {
     expect(parent?.querySelectorAll(".cm-specialChar").length).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe("Source and the wrap setting", () => {
+  const wraps = (): boolean => parent?.querySelector(".cm-content.cm-lineWrapping") != null;
+
+  it("wraps by default, follows the setting in place, text and caret kept", () => {
+    const s = source(`${"x".repeat(5000)}\nshort\n`);
+    expect(wraps()).toBe(true);
+    s.scrollToLine(2);
+    const caret = s.view.state.selection.main.head;
+    s.setWrap(false);
+    expect(wraps()).toBe(false);
+    s.setWrap(false);
+    expect(wraps()).toBe(false);
+    s.setWrap(true);
+    expect(wraps()).toBe(true);
+    expect(s.text()).toBe(`${"x".repeat(5000)}\nshort\n`);
+    expect(s.view.state.selection.main.head).toBe(caret);
+  });
+
+  it("starts without wrapping when the setting is off", () => {
+    parent = document.createElement("div");
+    document.body.append(parent);
+    made = createSource({
+      parent,
+      text: "a\n",
+      path: "notes.txt",
+      markdown: false,
+      host,
+      wrap: false,
+    });
+    expect(wraps()).toBe(false);
+  });
+});

@@ -1140,6 +1140,38 @@ async fn exchange(
 }
 
 #[test]
+fn mcp_client_name_from_a_request_survives_a_late_initialized() {
+    use crate::mcp::{Heard, McpServer};
+    let fx = fx();
+    let compose: crate::cli::Compose = Arc::new(|_: &Root| Err("not used".to_owned()));
+    let agent = Arc::new(Agent::discover(
+        &fx.dirs,
+        &fx.root,
+        compose,
+        Arc::new(|_: &Path| Ok(())),
+    ));
+    // handlers run concurrently: `notifications/initialized` handled after a call that named itself
+    let server = McpServer::new(Arc::clone(&agent), false);
+    assert!(server.hear(Heard::Request("meta-client".to_owned())));
+    assert!(
+        !server.hear(Heard::Initialize("claude-code".to_owned())),
+        "late initialize ignored"
+    );
+    assert_eq!(agent.client(), "meta-client");
+    // in order: initialize first, then a request's own name wins; the same name again is no news
+    let server = McpServer::new(Arc::clone(&agent), false);
+    assert!(server.hear(Heard::Initialize("claude-code".to_owned())));
+    assert_eq!(agent.client(), "claude-code");
+    assert!(server.hear(Heard::Request("meta-client".to_owned())));
+    assert!(!server.hear(Heard::Request("meta-client".to_owned())));
+    assert_eq!(agent.client(), "meta-client");
+    // a later request naming another client wins; nothing heard changes nothing
+    assert!(server.hear(Heard::Request("other".to_owned())));
+    assert!(!server.hear(Heard::Nothing));
+    assert_eq!(agent.client(), "other");
+}
+
+#[test]
 #[allow(clippy::too_many_lines)] // one session: handshake, list, calls, errors, with and without structured content
 fn mcp_initialize_list_and_call_over_stdio_lines() {
     let fx = fx();

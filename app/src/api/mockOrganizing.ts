@@ -5,6 +5,7 @@
 import { isQuiet } from "../core/silence/silence.svelte";
 import { COLORS, ICONS, normalizeDescription, normalizeTags } from "../plugins/tags/model";
 import type { MockProject } from "./mockFs";
+import { mockTagStatus } from "./mockProjects";
 import type {
   CommentView,
   Interest,
@@ -13,6 +14,7 @@ import type {
   PluginEvents,
   PluginMethod,
   PluginMethods,
+  ProjectsView,
   SearchOptions,
 } from "./types";
 
@@ -111,6 +113,8 @@ function targetOf(doc: string, href: string): string | null {
 export function createMockOrganizing(
   emit: <E extends PluginEventName>(event: E, data: PluginEvents[E]) => void,
   project: MockProject,
+  /** The projects view of the window's folder now (official lists, included projects; round 4 status marks). */
+  projects: () => { view: ProjectsView | null; root: string } = () => ({ view: null, root: "" }),
 ): {
   handlers: Handlers;
   allows(options: SearchOptions): (path: string) => boolean;
@@ -139,6 +143,10 @@ export function createMockOrganizing(
     writeError: null,
     parked: 0,
   });
+  const mark = (name: string, path: string | null): ReturnType<typeof mockTagStatus> => {
+    const { view, root } = projects();
+    return mockTagStatus(view, root, "tag", name, path);
+  };
   const meta = (path: string): PluginMethods["tags.fileMeta"]["result"] => {
     const mine = app.get(path)?.tags ?? [];
     const names = tagsOf(path);
@@ -148,6 +156,7 @@ export function createMockOrganizing(
         name,
         file: fileTags(path).includes(name),
         app: mine.includes(name),
+        ...(path.startsWith("@wt/") ? { status: null, owner: null } : mark(name, path)),
       })),
       description: app.get(path)?.description ?? "",
       editable: problem === null && !path.startsWith("@wt/"),
@@ -242,7 +251,13 @@ export function createMockOrganizing(
           description: app.get(path)?.description ?? "",
         }))
         .filter((e) => e.tags.length > 0 || e.description !== ""),
-      styles: Object.fromEntries([...styles].map(([tag, s]) => [tag, { ...s }])),
+      styles: Object.fromEntries([
+        ...[...styles].map(([tag, s]) => [tag, { ...s }]),
+        // an official look wins over the app's own
+        ...(projects().view?.vocabulary.tags ?? [])
+          .filter((e) => e.color !== null || e.icon !== null)
+          .map((e) => [e.name, { color: e.color, icon: e.icon }]),
+      ]),
       status: status(),
     }),
     "tags.overview": () => {
@@ -258,10 +273,16 @@ export function createMockOrganizing(
       return {
         rev,
         tags: [...found]
-          .map(([name, v]) => ({ name, count: v.count, onlyInFiles: v.onlyInFiles }))
+          .map(([name, v]) => ({
+            name,
+            count: v.count,
+            onlyInFiles: v.onlyInFiles,
+            ...mark(name, null),
+          }))
           .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
         untagged: documents().filter((p) => tagsOf(p).length === 0).length,
         orphans: [...app.keys()].filter((p) => !project.files.has(p)).length,
+        marks: projects().view?.vocabulary.active ?? false,
       };
     },
     "tags.status": () => status(),

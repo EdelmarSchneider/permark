@@ -571,6 +571,62 @@ fn a_slow_git_is_killed_and_a_flood_of_output_is_cut() {
     assert!(SystemGit::at(fx.root.join("no-such-git")).is_none());
 }
 
+/// Run 39774909321: a stopped git left its child running in the folder (Git for Windows' `git.exe` is a launcher;
+/// killing it orphaned the real git) -> the person's rename failed with OS error 32. The whole tree goes.
+#[test]
+fn a_cancelled_git_leaves_nothing_running_in_the_folder() {
+    let Some(exe) = find_git() else {
+        eprintln!("SKIPPED: no git executable on PATH");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("work ü");
+    std::fs::create_dir_all(&folder).unwrap();
+    Repository::init(&folder).unwrap();
+    let marker = dir.path().join("started.txt");
+    let marker_text = marker.to_string_lossy().replace('\\', "/");
+    let alias = format!("alias.hold=!echo started > \"{marker_text}\"; sleep 30");
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let worker = {
+        let (exe, folder, cancel) = (exe.clone(), folder.clone(), Arc::clone(&cancel));
+        std::thread::spawn(move || {
+            system::run_until(
+                &exe,
+                &folder,
+                &[OsStr::new("-c"), OsStr::new(&alias), OsStr::new("hold")],
+                Duration::from_secs(60),
+                1024,
+                Some(&cancel),
+            )
+        })
+    };
+    let started = Instant::now();
+    while !marker.exists() {
+        assert!(started.elapsed() < Duration::from_secs(30), "never started");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(
+        worker.join().unwrap().unwrap_err(),
+        GitError::Failed("stopped".to_owned())
+    );
+    // at once: no grandchild (shell, sleep) holds the folder as its working directory. The system may need a few ms
+    // after the job is empty to let go of a working directory (verifier: 1 in 1200 at once, fine after 10 ms): a short
+    // retry, never more than 200 ms (an orphan that keeps running holds it for 30 s)
+    let target = dir.path().join("renamed ü");
+    let started = Instant::now();
+    loop {
+        match std::fs::rename(&folder, &target) {
+            Ok(()) => break,
+            Err(e) if started.elapsed() < Duration::from_millis(200) => {
+                eprintln!("rename retried: {e}");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => panic!("the folder is still held: {e}"),
+        }
+    }
+}
+
 #[test]
 fn only_the_repository_own_filter_drivers_are_named() {
     let out = b"system\0filter.lfs.clean\ngit-lfs clean -- %f\0global\0filter.lfs.process\ngit-lfs filter-process\0local\0filter.x.clean\nsh -c 'evil'\0local\0filter.x.smudge\ncat\0worktree\0filter.a.b.process\nrun\0command\0filter.c.clean\nok\0local\0broken";
@@ -654,6 +710,7 @@ fn start_with(
         },
         prefs,
         visit,
+        excluded: Box::new(Vec::new),
     });
     Running {
         service,
@@ -804,6 +861,7 @@ fn a_missing_backend_is_unavailable_and_dropping_the_service_stops_it() {
         announce: Arc::new(|_| {}),
         prefs: None,
         visit: None,
+        excluded: Box::new(Vec::new),
     });
     if SystemGit::find().is_none() {
         wait_until("the verdict", || facts.git() == GitCondition::Unavailable);

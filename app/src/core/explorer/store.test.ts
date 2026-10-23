@@ -261,6 +261,30 @@ describe("rows and selection", () => {
     store.revealActive();
     expect(store.isOpen("docs")).toBe(false);
   });
+
+  it("keeping the open document listed tells nothing while the tree is gone, and tells a real refusal", async () => {
+    let answer: ApiError | null = null;
+    const { store, failures } = await setup("ask", (api) => ({
+      ...api,
+      treeKeep: (path) =>
+        answer === null ? api.treeKeep(path) : Promise.resolve({ ok: false, error: answer }),
+    }));
+    const refusal = (kind: "unsupported" | "unavailable" | "pathEscape"): ApiError => ({
+      kind: "backend",
+      command: "tree_keep",
+      error: { kind, subject: kind === "unsupported" ? "project" : null, detail: null },
+    });
+    // another folder opening in the view (no project) | the tree not open yet or closed (`NoView`)
+    answer = refusal("unsupported");
+    await store.setActive("README.md");
+    answer = refusal("unavailable");
+    await store.setActive(null);
+    expect(failures).toEqual([]);
+    // a path the backend refuses is still told
+    answer = refusal("pathEscape");
+    await store.setActive("../outside.md");
+    expect(failures.map((f) => f.kind === "backend" && f.error.kind)).toEqual(["pathEscape"]);
+  });
 });
 
 // ---- names ---------------------------------------------------------------------------------------------------------------
@@ -785,6 +809,7 @@ describe("imported items in the tree", () => {
     return new ImportFlow(api, {
       fail: () => {},
       note: () => {},
+      cancelNote: () => () => {},
       action: () => {},
       project: () => "permark-docs",
       view: () => "main",

@@ -4,7 +4,6 @@
 use std::ffi::OsStr;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
@@ -24,6 +23,13 @@ const MAX_OUTPUT: usize = 64 * 1024 * 1024;
 /// Most bytes of a committed file.
 const MAX_BLOB: usize = 8 * 1024 * 1024;
 const MAX_STDERR: usize = 64 * 1024;
+
+/// Variables every call sets: no optional locks (a status never blocks the person's git), plain messages, no prompt.
+const SET: [(&str, &str); 3] = [
+    ("GIT_OPTIONAL_LOCKS", "0"),
+    ("LC_ALL", "C"),
+    ("GIT_TERMINAL_PROMPT", "0"),
+];
 
 /// Variables that would point git somewhere else than the folder it is asked about.
 const SCRUBBED: [&str; 8] = [
@@ -122,29 +128,37 @@ pub fn run(
     timeout: Duration,
     max: usize,
 ) -> Result<Output, GitError> {
-    let mut command = Command::new(exe);
-    command
-        .current_dir(dunce::simplified(dir))
-        .args(["--no-pager", "-c", "core.fsmonitor=false"])
-        .args(args)
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .env("LC_ALL", "C")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    for name in SCRUBBED {
-        command.env_remove(name);
+    run_until(exe, dir, args, timeout, max, None)
+}
+
+/// [`run`] that also stops (the program killed) when `cancel` is set.
+///
+/// # Errors
+/// As [`run`]; `Failed("stopped")` when cancelled.
+pub fn run_until(
+    exe: &Path,
+    dir: &Path,
+    args: &[&OsStr],
+    timeout: Duration,
+    max: usize,
+    cancel: Option<&AtomicBool>,
+) -> Result<Output, GitError> {
+    if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+        return Err(GitError::Failed("stopped".to_owned()));
     }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // no console window flashing up for each call
-        command.creation_flags(0x0800_0000);
-    }
-    let mut child = command
-        .spawn()
-        .map_err(|e| GitError::Spawn(e.to_string()))?;
+    let mut all: Vec<&OsStr> = ["--no-pager", "-c", "core.fsmonitor=false"]
+        .into_iter()
+        .map(OsStr::new)
+        .collect();
+    all.extend_from_slice(args);
+    let mut child = Proc::start(
+        exe,
+        &permark_core::paths::simplified(dir),
+        &all,
+        &SET,
+        &SCRUBBED,
+    )
+    .map_err(|e| GitError::Spawn(e.to_string()))?;
     let overflow = Arc::new(AtomicBool::new(false));
     let out = spawn_reader(child.stdout.take(), max, Arc::clone(&overflow));
     let err = spawn_reader(
@@ -153,21 +167,23 @@ pub fn run(
         Arc::new(AtomicBool::new(false)),
     );
     let started = Instant::now();
-    let status = loop {
+    let code = loop {
         match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) => {}
+            Ok(Wait::Ended(code)) => break code,
+            Ok(Wait::Running) => {}
             Err(e) => return Err(GitError::Spawn(e.to_string())),
         }
         if overflow.load(Ordering::SeqCst) {
-            let _ = child.kill();
-            let _ = child.wait();
+            child.kill();
             return Err(GitError::TooLarge(max));
         }
         if started.elapsed() > timeout {
-            let _ = child.kill();
-            let _ = child.wait();
+            child.kill();
             return Err(GitError::Timeout);
+        }
+        if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+            child.kill();
+            return Err(GitError::Failed("stopped".to_owned()));
         }
         thread::sleep(Duration::from_millis(3));
     };
@@ -177,11 +193,70 @@ pub fn run(
         return Err(GitError::TooLarge(max));
     }
     Ok(Output {
-        code: status.code(),
+        code,
         stdout: out.take(),
         stderr: String::from_utf8_lossy(&err.take()).trim().to_owned(),
     })
 }
+
+/// A started git: still running, or ended with this exit code (`None`: ended by a signal).
+pub(crate) enum Wait {
+    Running,
+    Ended(Option<i32>),
+}
+
+/// Elsewhere git on `PATH` is the real program (no launcher): `std::process`, killed as is (see `tree.rs` for
+/// Windows).
+#[cfg(not(windows))]
+struct Proc {
+    child: std::process::Child,
+    stdout: Option<std::process::ChildStdout>,
+    stderr: Option<std::process::ChildStderr>,
+}
+
+#[cfg(not(windows))]
+impl Proc {
+    fn start(
+        exe: &Path,
+        dir: &Path,
+        args: &[&OsStr],
+        set: &[(&str, &str)],
+        remove: &[&str],
+    ) -> std::io::Result<Self> {
+        let mut command = std::process::Command::new(exe);
+        command
+            .current_dir(dir)
+            .args(args)
+            .envs(set.iter().copied())
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        for name in remove {
+            command.env_remove(name);
+        }
+        let mut child = command.spawn()?;
+        Ok(Self {
+            stdout: child.stdout.take(),
+            stderr: child.stderr.take(),
+            child,
+        })
+    }
+
+    fn try_wait(&mut self) -> std::io::Result<Wait> {
+        Ok(self
+            .child
+            .try_wait()?
+            .map_or(Wait::Running, |status| Wait::Ended(status.code())))
+    }
+
+    fn kill(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+#[cfg(windows)]
+use crate::tree::Proc;
 
 /// A hex object id as git prints it (4..=64 digits): the only text of ours that reaches git as a revision.
 fn is_hex_oid(text: &str) -> bool {
@@ -190,11 +265,16 @@ fn is_hex_oid(text: &str) -> bool {
 
 pub struct SystemGit {
     exe: PathBuf,
+    /// Set -> the running call is killed and later calls refuse (a member repository stopped).
+    cancel: Option<Arc<AtomicBool>>,
 }
 
 impl std::fmt::Debug for SystemGit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SystemGit").field("exe", &self.exe).finish()
+        f.debug_struct("SystemGit")
+            .field("exe", &self.exe)
+            .field("cancellable", &self.cancel.is_some())
+            .finish()
     }
 }
 
@@ -217,12 +297,27 @@ impl SystemGit {
             4096,
         )
         .ok()?;
-        (out.code == Some(0) && out.stdout.starts_with(b"git version")).then_some(Self { exe })
+        (out.code == Some(0) && out.stdout.starts_with(b"git version"))
+            .then_some(Self { exe, cancel: None })
     }
 
     fn call(&self, dir: &Path, args: &[&str]) -> Result<Output, GitError> {
         let args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
-        run(&self.exe, dir, &args, TIMEOUT, MAX_OUTPUT)
+        run_until(
+            &self.exe,
+            dir,
+            &args,
+            TIMEOUT,
+            MAX_OUTPUT,
+            self.cancel.as_deref(),
+        )
+    }
+
+    /// Text of a call that must succeed; `None` when git answered with a non-zero code (no such revision, no
+    /// upstream, no commit yet).
+    fn text_or_none(&self, dir: &Path, args: &[&str]) -> Result<Option<String>, GitError> {
+        let out = self.call(dir, args)?;
+        Ok((out.code == Some(0)).then(|| String::from_utf8_lossy(&out.stdout).trim().to_owned()))
     }
 
     /// `-c` options that switch off the filter drivers the repository's own config sets (see [`repo_filter_drivers`]).
@@ -478,7 +573,14 @@ impl GitOps for SystemGit {
             OsStr::new("blob"),
             OsStr::new(&spec),
         ];
-        let out = run(&self.exe, &location.workdir, &args, TIMEOUT, MAX_BLOB)?;
+        let out = run_until(
+            &self.exe,
+            &location.workdir,
+            &args,
+            TIMEOUT,
+            MAX_BLOB,
+            self.cancel.as_deref(),
+        )?;
         Ok((out.code == Some(0)).then_some(out.stdout))
     }
 
@@ -501,4 +603,75 @@ impl GitOps for SystemGit {
         self.call(&location.workdir, &["cat-file", "-e", &spec])
             .is_ok_and(|out| out.code == Some(0))
     }
+
+    fn ahead_behind(&self, location: &RepoLocation) -> Result<Option<(u32, u32)>, GitError> {
+        let dir = &location.workdir;
+        // `@{upstream}` of the branch HEAD names; none (or detached) -> no answer
+        let Some(upstream) = self
+            .text_or_none(
+                dir,
+                &["rev-parse", "-q", "--verify", "@{upstream}^{commit}"],
+            )?
+            .filter(|oid| is_hex_oid(oid))
+        else {
+            return Ok(None);
+        };
+        let range = format!("HEAD...{upstream}");
+        let Some(text) =
+            self.text_or_none(dir, &["rev-list", "--left-right", "--count", &range, "--"])?
+        else {
+            return Ok(None);
+        };
+        let mut parts = text.split_whitespace().map(str::parse::<u32>);
+        match (parts.next(), parts.next()) {
+            (Some(Ok(ahead)), Some(Ok(behind))) => Ok(Some((ahead, behind))),
+            _ => Err(GitError::Parse(text)),
+        }
+    }
+
+    fn last_commit(&self, location: &RepoLocation) -> Result<Option<(i64, String)>, GitError> {
+        // the raw commit object: no pretty-printing, so no signature check (`log.showSignature` would run gpg)
+        let out = self.call(&location.workdir, &["cat-file", "commit", "HEAD"])?;
+        if out.code != Some(0) {
+            return Ok(None);
+        }
+        Ok(parse_commit_object(&String::from_utf8_lossy(&out.stdout)))
+    }
+
+    fn root_commit(&self, location: &RepoLocation) -> Result<Option<String>, GitError> {
+        let Some(text) = self.text_or_none(
+            &location.workdir,
+            &["rev-list", "--max-parents=0", "HEAD", "--"],
+        )?
+        else {
+            return Ok(None);
+        };
+        Ok(text
+            .lines()
+            .map(str::trim)
+            .filter(|l| is_hex_oid(l))
+            .min()
+            .map(str::to_owned))
+    }
+
+    fn cancellable(&self, flag: &Arc<AtomicBool>) -> Option<Arc<dyn GitOps>> {
+        Some(Arc::new(Self {
+            exe: self.exe.clone(),
+            cancel: Some(Arc::clone(flag)),
+        }))
+    }
+}
+
+/// Committer time (ms) + subject of a raw commit object (`git cat-file commit`); `None`: unreadable.
+pub(crate) fn parse_commit_object(text: &str) -> Option<(i64, String)> {
+    let (headers, message) = text.split_once("\n\n").unwrap_or((text, ""));
+    let committer = headers.lines().find_map(|l| l.strip_prefix("committer "))?;
+    // `Name <mail> 1700000000 +0100`: the time is the second field from the end
+    let mut fields = committer.rsplitn(3, ' ');
+    let _zone = fields.next()?;
+    let seconds: i64 = fields.next()?.parse().ok()?;
+    Some((
+        seconds.saturating_mul(1000),
+        crate::ops::subject_of(message),
+    ))
 }

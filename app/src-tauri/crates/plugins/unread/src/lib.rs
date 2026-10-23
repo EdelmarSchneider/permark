@@ -5,6 +5,8 @@
 
 #![cfg_attr(test, allow(clippy::assert_is_empty))]
 
+#[cfg(test)]
+mod owners_tests;
 mod service;
 #[cfg(test)]
 mod tests;
@@ -22,6 +24,7 @@ use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
     PluginScope, RpcRegistration, Running, ServiceLease,
 };
+use permark_core::projects::OwnersChange;
 use permark_core::watch::Subscription;
 use serde::Deserialize;
 
@@ -79,6 +82,7 @@ impl Plugin for UnreadPlugin {
         &self.manifest
     }
 
+    #[allow(clippy::too_many_lines)] // one registration per method the window calls
     fn start(&self, cx: &PluginCx) -> Result<Box<dyn Running>, PluginError> {
         let (Some(project), CxWorkspace::Project(vault), Some(hub)) =
             (cx.project(), &cx.workspace, cx.watch())
@@ -96,17 +100,20 @@ impl Plugin for UnreadPlugin {
                 .iter()
                 .map(|w| format!("{WORKTREE_PREFIX}{}", w.name)),
         );
+        let Some(store) = cx.store() else {
+            return Err(PluginError::Start {
+                id: ID,
+                reason: "needs a project".to_owned(),
+            });
+        };
+        let started = project.owners(store);
         let service = Arc::new(UnreadService::start(ServiceArgs {
             scope: project.documents.scope().clone(),
             explorer: Arc::clone(&project.explorer),
             roots,
-            read_file: cx.state_file("read.json"),
+            owners: started.clone(),
             // a reader with no window leaves the picture of the last visit alone
-            visit_file: if cx.files_only() {
-                None
-            } else {
-                cx.state_file("visit.json")
-            },
+            visit: !cx.files_only(),
             announce: Arc::new(move |list| {
                 events.emit(
                     "changed",
@@ -115,11 +122,33 @@ impl Plugin for UnreadPlugin {
             }),
             timing: Timing::default(),
             persist: !cx.files_only(),
+            owners_known: {
+                let projects = project.projects().map(Arc::downgrade);
+                Arc::new(move || {
+                    if let Some(projects) = projects.as_ref().and_then(std::sync::Weak::upgrade) {
+                        let _ = projects.wait_owners(std::time::Duration::from_secs(5));
+                    }
+                })
+            },
         }));
         let subscription = hub.subscribe({
             let service = Arc::clone(&service);
             move |batch| service.feed(batch)
         });
+        // the read state follows where each included project keeps it (`projects.md` §9.2)
+        let owners = project.follow_owners({
+            let service = Arc::downgrade(&service);
+            move |change| {
+                if let Some(service) = service.upgrade() {
+                    service.follow_owners(&change);
+                }
+            }
+        });
+        // an owners change between the read above and the subscription: caught up here
+        let now = project.owners(store);
+        if !now.same(&started) {
+            service.follow_owners(&OwnersChange::Resume(&now));
+        }
         let mut registrations = Vec::new();
         let s = Arc::clone(&service);
         registrations.extend(cx.rpc("list", typed(move |_: NoArgs, _| Ok(s.list()))));
@@ -165,6 +194,7 @@ impl Plugin for UnreadPlugin {
             .provide(Arc::new(UnreadApi(service.lookup())));
         Ok(Box::new(UnreadRunning {
             subscription: Some(subscription),
+            owners,
             registrations,
             lease: Some(lease),
             api: Some(api),
@@ -177,6 +207,7 @@ impl Plugin for UnreadPlugin {
 /// the worker joins (saving `read.json` and the picture of this visit).
 struct UnreadRunning {
     subscription: Option<Subscription>,
+    owners: Option<permark_core::projects::ProjectsSubscription>,
     registrations: Vec<RpcRegistration>,
     lease: Option<ServiceLease>,
     api: Option<ServiceLease>,
@@ -188,6 +219,7 @@ impl Running for UnreadRunning {}
 impl Drop for UnreadRunning {
     fn drop(&mut self) {
         self.subscription.take();
+        self.owners.take();
         self.registrations.clear();
         self.api.take();
         self.lease.take();

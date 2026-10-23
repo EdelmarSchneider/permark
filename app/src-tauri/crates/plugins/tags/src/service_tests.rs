@@ -243,11 +243,11 @@ fn files_get_tags_in_front_matter_and_in_the_app_and_are_found_by_both() {
     let meta = h.call("fileMeta", json!({ "path": "a.md" })).unwrap();
     assert_eq!(
         meta["tags"][0],
-        json!({ "name": "fm", "file": true, "app": false })
+        json!({ "name": "fm", "file": true, "app": false, "status": null, "owner": null })
     );
     assert_eq!(
         meta["tags"][2],
-        json!({ "name": "app", "file": false, "app": true })
+        json!({ "name": "app", "file": false, "app": true, "status": null, "owner": null })
     );
     // search asks the same questions through the core seam
     let only = h
@@ -256,6 +256,7 @@ fn files_get_tags_in_front_matter_and_in_the_app_and_are_found_by_both() {
             include_silenced: true,
             tags: vec!["asset".to_owned()],
             hidden_last: false,
+            project: None,
         })
         .unwrap()
         .only
@@ -574,6 +575,7 @@ fn off_leaves_nothing_and_on_again_reads_the_same_file() {
             include_silenced: true,
             tags: vec!["x".to_owned()],
             hidden_last: false,
+            project: None,
         })
         .unwrap_err();
     assert_eq!(error.kind, ErrorKind::Unsupported);

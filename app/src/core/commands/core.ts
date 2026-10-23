@@ -5,6 +5,7 @@ import type { WorkspaceKind } from "../../api/generated/WorkspaceKind";
 import { documents } from "../doc/document.svelte";
 import { reading, WIDTHS } from "../doc/reading.svelte";
 import { webPictures } from "../doc/webPictures.svelte";
+import { toggleWrap } from "../doc/wrapLines";
 import { chooseMode, editBlockedReason, editingNow } from "../editing/choose";
 import { editing } from "../editing/session.svelte";
 import { diagramPanel } from "../editing/diagramPanel.svelte";
@@ -16,13 +17,17 @@ import {
   type ContributionRegistry,
 } from "../plugins/registry.svelte";
 import { closeOwnTab } from "../shell/closeWorkspace";
+import { projects } from "../projects/instance.svelte";
 import { askInitHere } from "../shell/initProject";
 import { rightAvailable } from "../shell/layout";
+import { defaultRightViews } from "../shell/rightViews";
+import { rightViews } from "../shell/rightViews.svelte";
 import { rightSide, toggleOutlinePanel, toggleRightPanel, toggleSidebar } from "../shell/sides";
 import { tabs } from "../shell/tabs.svelte";
 import { ui } from "../shell/ui.svelte";
 import { conditions } from "../conditions/context.svelte";
 import { stepChange } from "./changes";
+import { isTypingTarget } from "./dispatch";
 import { windowStore as store } from "../window.svelte";
 import { NO_REQUIREMENT, type Requirement } from "../conditions/available";
 
@@ -115,6 +120,13 @@ const SPECS: readonly Spec[] = [
     run: () => askInitHere(),
   },
   {
+    id: "projects.settings",
+    label: "projects.palette.settings",
+    requires: PROJECT,
+    when: () => projects.present,
+    run: () => projects.openSettings(),
+  },
+  {
     id: "tab.close",
     label: "cmd.tabClose",
     keys: ["Mod+w"],
@@ -174,6 +186,15 @@ const SPECS: readonly Spec[] = [
     run: () => toggleRightPanel(),
   },
   {
+    id: "panel.resetLayout",
+    label: "panel.resetLayoutCommand",
+    requires: READING,
+    run: () => {
+      rightViews.arrange(defaultRightViews());
+      rightViews.status = t("panel.layoutReset");
+    },
+  },
+  {
     id: "file.new",
     label: "cmd.newFile",
     keys: ["Mod+n"],
@@ -208,6 +229,14 @@ const SPECS: readonly Spec[] = [
     run: () => documents.forward(),
   },
   {
+    // the trail menu of Back | Forward, by keyboard and in the palette
+    id: "trail.show",
+    label: "trail.show",
+    requires: READING,
+    when: () => documents.trail.canBack || documents.trail.canForward,
+    run: () => ui.openFinder("trail"),
+  },
+  {
     id: "doc.zoomIn",
     label: "cmd.zoomIn",
     keys: ["Mod+="],
@@ -237,6 +266,15 @@ const SPECS: readonly Spec[] = [
     keys: ["Mod+Alt+w"],
     requires: READING,
     run: cycleWidth,
+  },
+  {
+    id: "doc.wrapLines",
+    label: "cmd.wrapLines",
+    keys: ["Alt+z"],
+    requires: READING,
+    // macOS: Option+Z types a character (Ω, ż) where text goes; there the key stays text
+    when: () => !(conditions.current.platform === "mac" && isTypingTarget(document.activeElement)),
+    run: toggleWrap,
   },
   {
     id: "edit.diagramPanel",
@@ -322,7 +360,7 @@ const SPECS: readonly Spec[] = [
   },
   {
     id: "edit.source",
-    label: "cmd.toggleEditMode",
+    label: "cmd.openSource",
     keys: ["Mod+Alt+e"],
     requires: READING,
     when: canEdit,

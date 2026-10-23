@@ -167,7 +167,15 @@ impl Harness {
         )
     }
 
+    /// The unread documents by path (which ones; the order has its own test).
     fn unread(&self) -> Vec<String> {
+        let mut list = self.unread_in_order();
+        list.sort();
+        list
+    }
+
+    /// The unread documents in the order the windows get them.
+    fn unread_in_order(&self) -> Vec<String> {
         self.call("list", Value::Null)
             .map(|v| {
                 v["unread"]
@@ -248,13 +256,28 @@ fn the_first_visit_reads_everything_then_news_is_unread_until_read() {
     h.open();
     wait_until("the first look", || h.ready());
     assert_eq!(h.unread(), Vec::<String>::new(), "the baseline: all read");
-    // the probe was handed every document as read, with its bytes
-    wait_until("copies offered", || h.calls().len() >= 2);
-    let calls = h.calls();
-    assert!(calls.contains(&"at_rest:a.md:true".to_owned()), "{calls:?}");
+    // the probe was handed every document as read, with its bytes: live while the first look ran, else (it
+    // subscribed after that look, run 39717402281) from the hub's list once ready, as the review plugin catches up
+    let hub = h
+        .core
+        .as_ref()
+        .unwrap()
+        .services()
+        .services
+        .get::<UnreadHub>()
+        .unwrap();
+    let mut offered = h.calls();
+    for (path, hash) in hub.at_rest() {
+        let bytes = std::fs::read(h.root().join(&path)).unwrap();
+        offered.push(format!("at_rest:{path}:{}", fsx::hash(&bytes).0 == hash));
+    }
     assert!(
-        calls.contains(&"at_rest:docs/b ü.md:true".to_owned()),
-        "{calls:?}"
+        offered.contains(&"at_rest:a.md:true".to_owned()),
+        "{offered:?}"
+    );
+    assert!(
+        offered.contains(&"at_rest:docs/b ü.md:true".to_owned()),
+        "{offered:?}"
     );
     // the state is written once the baseline is taken
     wait_until("read.json", || h.read_json().is_some());
@@ -274,13 +297,20 @@ fn the_first_visit_reads_everything_then_news_is_unread_until_read() {
     wait_until("the announcement", || {
         h.sink.0.lock().unwrap().iter().any(|(n, p)| {
             n == "unread:changed"
-                && p["data"]["unread"] == json!(["a.md", "fresh.md"])
+                && p["data"]["unread"].as_array().is_some_and(|a| a.len() == 2)
                 && p["root"].is_string()
         })
     });
 
     // reading the version that is on disk settles it, and the hub hears it
     let hash = h.hash_of("a.md");
+    let a_at_rest = |calls: &[String]| {
+        calls
+            .iter()
+            .filter(|c| c.as_str() == "at_rest:a.md:true")
+            .count()
+    };
+    let before = a_at_rest(&h.calls());
     h.call("markRead", json!({"path": "a.md", "hash": hash}))
         .unwrap();
     assert_eq!(h.unread(), ["fresh.md"]);
@@ -291,13 +321,7 @@ fn the_first_visit_reads_everything_then_news_is_unread_until_read() {
             .any(|c| c.starts_with("read:a.md:") && c.ends_with(&hash)),
         "{calls:?}"
     );
-    assert!(
-        calls
-            .iter()
-            .filter(|c| c.as_str() == "at_rest:a.md:true")
-            .count()
-            >= 2
-    );
+    assert!(a_at_rest(&calls) > before, "{calls:?}");
     // reading a version that is not the one on disk leaves it unread
     h.call(
         "markRead",
@@ -449,4 +473,62 @@ fn a_damaged_read_file_is_a_project_with_no_read_state() {
         "a baseline again, nothing flooded"
     );
     wait_until("the state is written again", || Path::new(&path).exists());
+}
+
+#[test]
+fn a_document_in_a_nested_repo_below_an_ignored_folder_becomes_unread_when_an_agent_writes() {
+    let mut h = Harness::new();
+    // the master repo ignores `hubs/`; `hubs/a` is a repo of its own
+    h.write(".git/HEAD", "ref: refs/heads/main\n");
+    h.write(".gitignore", "hubs/\n");
+    h.write("hubs/a/.git/HEAD", "ref: refs/heads/main\n");
+    h.write("hubs/a/plan.md", "plan\n");
+    h.write("hubs/loose.md", "the container's own file\n");
+    h.open();
+    wait_until("the first look", || h.ready());
+    assert_eq!(h.unread(), Vec::<String>::new());
+    std::thread::sleep(Duration::from_millis(250));
+    h.write("hubs/loose.md", "changed, still ignored\n");
+    h.write("hubs/a/plan.md", "plan changed by an agent\n");
+    wait_until("the nested document is unread", || {
+        h.unread() == ["hubs/a/plan.md"]
+    });
+}
+
+#[test]
+fn the_windows_get_the_newest_change_first_and_the_agent_gets_them_by_path() {
+    use permark_core::organizing::UnreadLookup;
+    use std::time::SystemTime;
+    let mut h = Harness::new();
+    h.open();
+    wait_until("the first look", || h.ready());
+    std::thread::sleep(Duration::from_millis(250));
+    let base = SystemTime::now() - Duration::from_secs(3600);
+    // written in one order, changed at other times: `b` last, `a` + `c` at the same moment (then by path)
+    for (rel, minutes) in [("c.md", 10), ("b.md", 30), ("a.md", 10), ("z/old.md", 1)] {
+        h.write(rel, rel);
+        std::fs::File::options()
+            .write(true)
+            .open(h.root().join(rel))
+            .unwrap()
+            .set_modified(base + Duration::from_secs(60 * minutes))
+            .unwrap();
+    }
+    wait_until("all four unread", || h.unread().len() == 4);
+    assert_eq!(h.unread_in_order(), ["b.md", "a.md", "c.md", "z/old.md"]);
+    wait_until("the announcement in the same order", || {
+        h.sink.0.lock().unwrap().iter().any(|(n, p)| {
+            n == "unread:changed"
+                && p["data"]["unread"] == json!(["b.md", "a.md", "c.md", "z/old.md"])
+        })
+    });
+    let hub = h
+        .core
+        .as_ref()
+        .unwrap()
+        .services()
+        .services
+        .get::<UnreadHub>()
+        .unwrap();
+    assert_eq!(hub.unread().paths, ["a.md", "b.md", "c.md", "z/old.md"]);
 }

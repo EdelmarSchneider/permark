@@ -17,7 +17,7 @@ impl FileScope {
     /// # Errors
     /// `NotFound`, `NotAFile` (a folder), `Io`.
     pub fn open(path: &Path) -> Result<Self, VaultError> {
-        let file = dunce::canonicalize(path).map_err(|e| VaultError::io(path, e))?;
+        let file = super::canonicalize(path).map_err(|e| VaultError::io(path, e))?;
         let meta = std::fs::metadata(&file).map_err(|e| VaultError::io(&file, e))?;
         if !meta.is_file() {
             return Err(VaultError::NotAFile(file.display().to_string()));

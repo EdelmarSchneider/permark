@@ -1,5 +1,7 @@
 <script lang="ts">
   // A small mark a plugin puts on a path: a git letter, an unread dot or count. The tone picks the color (tokens).
+  // Screen readers hear its meaning in words ("Unread", "Modified: ..."), never the raw "M" | "•": the visible mark
+  // is hidden from them and the title is spoken instead (every row that draws marks: Explorer, header, search).
   import type { TreeBadge } from "../plugins/registry.svelte";
 
   type Props = { badge: TreeBadge };
@@ -7,7 +9,11 @@
 </script>
 
 {#if badge.text !== ""}
-  <span class="badge tone-{badge.tone ?? 'muted'}" title={badge.title}>{badge.text}</span>
+  <span class="badge tone-{badge.tone ?? 'muted'}" title={badge.title}
+    >{#if badge.title}<span class="mark" aria-hidden="true">{badge.text}</span><span class="sr-only"
+        >, {badge.title}</span
+      >{:else}{badge.text}{/if}</span
+  >
 {/if}
 
 <style>

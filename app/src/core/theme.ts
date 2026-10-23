@@ -27,5 +27,8 @@ export function applyLook(root: HTMLElement, theme: Theme, tone: Tone): void {
 }
 
 export function systemPrefersDark(): boolean {
-  return typeof window !== "undefined" && window.matchMedia(DARK_QUERY).matches;
+  // a window without media queries (a test page) reads as light
+  return typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia(DARK_QUERY).matches
+    : false;
 }

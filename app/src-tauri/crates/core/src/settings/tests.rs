@@ -666,6 +666,36 @@ fn open_in_values_of_0_6_0_map_on_read_and_the_file_changes_only_when_set() {
 }
 
 #[test]
+fn wrap_lines_is_on_unless_the_file_says_false() {
+    // a settings file of 0.6.1 (before the key existed): long lines wrap
+    let old = AppSettings::from_doc(&doc(include_str!(
+        "../../../../src/fixtures/settings-0.6.1.toml"
+    )));
+    assert!(old.wrap_lines);
+    assert!(AppSettings::from_doc(&doc("")).wrap_lines);
+    assert!(!AppSettings::from_doc(&doc("wrap_lines = false\n")).wrap_lines);
+    // a value that is not a boolean counts as not set
+    assert!(AppSettings::from_doc(&doc("wrap_lines = \"no\"\n")).wrap_lines);
+    assert!(AppSettings::from_doc(&doc("wrap_lines = 0\n")).wrap_lines);
+    assert_eq!(SettingChange::WrapLines(false).key(), "wrap_lines");
+}
+
+#[test]
+fn wrap_lines_change_rewrites_only_its_key() {
+    let text = "# mine\ntheme = \"dark\" # kept\n\n[plugins.git]\nenabled = false\n";
+    let off = applied(text, &SettingChange::WrapLines(false));
+    // one line more, every other line as it was
+    let rest: Vec<&str> = off.lines().filter(|l| *l != "wrap_lines = false").collect();
+    assert_eq!(rest, text.lines().collect::<Vec<_>>(), "{off}");
+    assert!(!AppSettings::from_doc(&doc(&off)).wrap_lines);
+    assert_eq!(AppSettings::from_doc(&doc(&off)).theme, ThemePref::Dark);
+    let written = "# mine\nwrap_lines = false # mine too\ntheme = \"dark\"\n";
+    let on = applied(written, &SettingChange::WrapLines(true));
+    assert_eq!(on, written.replace("false", "true"));
+    assert!(AppSettings::from_doc(&doc(&on)).wrap_lines);
+}
+
+#[test]
 fn keymap_entries_of_0_6_0_read_under_the_new_ids() {
     let text = "[keymap]\n\"app.closeWorkspace\" = \"Mod+Q\"\n\"workspace.next\" = \"Mod+Alt+N\"\n\"tab.next\" = \"Mod+J\"\n";
     let s = AppSettings::from_doc(&doc(text));
@@ -840,6 +870,36 @@ fn removing_every_project_setting_gives_the_file_back_byte_for_byte() {
         text = project_applied(&text, change);
     }
     assert_eq!(text, DEFAULT_CONFIG_TOML, "nothing of ours is left behind");
+}
+
+#[test]
+fn a_new_table_goes_below_the_header_and_the_header_stays_when_the_table_goes() {
+    let show = ProjectSettingChange::TreeShow(Some(TreeShow::Everything));
+    // the file "Initialize PerMark" writes: comments only
+    let out = project_applied(DEFAULT_CONFIG_TOML, &show);
+    assert_eq!(
+        out,
+        format!("{DEFAULT_CONFIG_TOML}[tree]\nshow = \"everything\"\n")
+    );
+    let crlf = DEFAULT_CONFIG_TOML.replace('\n', "\r\n");
+    let out = project_applied(&crlf, &show);
+    assert_eq!(out, format!("{crlf}[tree]\r\nshow = \"everything\"\r\n"));
+    // a hand-written header above the first table stays when that table goes
+    let hand =
+        "# team file\n\n[tree]\nshow = \"documents\" # default\n\n[agent]\ndeny = [\"notes\"]\n";
+    let out = project_applied(hand, &ProjectSettingChange::TreeShow(None));
+    // (the blank line above a table goes with it)
+    assert_eq!(out, "# team file\n\n[agent]\ndeny = [\"notes\"]\n");
+    let out = project_applied(&out, &ProjectSettingChange::AgentDeny(Vec::new()));
+    assert_eq!(out, "# team file\n");
+    // a root key below the header, and a last comment line with no line end
+    let out = project_applied(
+        "# head\n# no end",
+        &ProjectSettingChange::Ignore(list(&["x/"])),
+    );
+    assert!(out.starts_with("# head\n"), "{out:?}");
+    assert!(out.contains("ignore = [\"x/\"]"), "{out:?}");
+    assert_eq!(ProjectConfig::from_doc(&doc(&out)).ignore, list(&["x/"]));
 }
 
 #[test]
@@ -1034,4 +1094,188 @@ fn older_settings_that_are_missing_damaged_or_odd_write_nothing() {
         assert!(file.adopt_older(&older).unwrap().is_none(), "{text}");
         assert!(!file.path().exists(), "{text}");
     }
+}
+
+// ---- right_views (design-live-follow §14.2.1) ------------------------------------------------------------------
+
+fn stacked() -> RightViews {
+    RightViews {
+        v: 1,
+        groups: vec![
+            ViewGroup {
+                views: vec!["outline".to_owned()],
+                share: 0.5,
+            },
+            ViewGroup {
+                views: vec!["live-feed.panel".to_owned()],
+                share: 0.5,
+            },
+        ],
+    }
+}
+
+/// A settings file 0.6.4 wrote (no `[right_views]`): reads as `None` (the frontend's default), and setting the
+/// arrangement adds only its table.
+const SETTINGS_0_6_4: &str = "# my settings\r\nlanguage = \"pt-BR\"\r\ntheme = \"dark\" # night\r\nopen_in = \"tab\"\r\n\r\n[keymap]\r\n\"tab.close\" = \"Mod+W\"\r\n\r\n[plugins.git]\r\nbackend = \"system\"\r\n";
+
+#[test]
+fn a_0_6_4_settings_file_has_no_arrangement_and_gains_only_its_table() {
+    let old = AppSettings::from_doc(&doc(SETTINGS_0_6_4));
+    assert_eq!(old.right_views, None);
+    assert_eq!(old.language, LanguagePref::PtBr);
+    let text = applied(SETTINGS_0_6_4, &SettingChange::RightViews(Some(stacked())));
+    assert!(text.starts_with(SETTINGS_0_6_4), "{text}");
+    assert!(text.contains("\r\n[right_views]\r\n"), "{text}");
+    assert!(
+        !text.replace("\r\n", "").contains('\n'),
+        "CRLF kept: {text:?}"
+    );
+    let read = AppSettings::from_doc(&doc(&text));
+    assert_eq!(read.right_views, Some(stacked()));
+    assert_eq!(read.theme, ThemePref::Dark);
+    // back to the default: the table goes, the file is as 0.6.4 left it
+    assert_eq!(
+        applied(&text, &SettingChange::RightViews(None)),
+        SETTINGS_0_6_4
+    );
+    assert_eq!(
+        applied(SETTINGS_0_6_4, &SettingChange::RightViews(None)),
+        SETTINGS_0_6_4
+    );
+}
+
+#[test]
+fn a_changed_arrangement_keeps_its_place_and_the_rest_of_the_file() {
+    let text = "theme = \"light\"\n\n# the right column\n[right_views]\nv = 1\ngroups = [{ views = [\"outline\"], share = 1 }]\n\n[keymap]\n\"tab.close\" = \"Mod+W\"\n";
+    let mut tabs = stacked();
+    tabs.groups = vec![ViewGroup {
+        views: vec!["outline".to_owned(), "live-feed.panel".to_owned()],
+        share: 1.0,
+    }];
+    let read = AppSettings::from_doc(&doc(text));
+    // a whole number share (hand-written) reads as a fraction
+    assert_eq!(
+        read.right_views.as_ref().unwrap().groups[0].views,
+        ["outline"]
+    );
+    let out = applied(text, &SettingChange::RightViews(Some(tabs.clone())));
+    assert!(
+        out.starts_with("theme = \"light\"\n\n# the right column\n[right_views]\n"),
+        "{out}"
+    );
+    assert!(
+        out.ends_with("[keymap]\n\"tab.close\" = \"Mod+W\"\n"),
+        "{out}"
+    );
+    assert_eq!(AppSettings::from_doc(&doc(&out)).right_views, Some(tabs));
+}
+
+#[test]
+fn an_unreadable_arrangement_reads_as_the_default_and_the_rest_survives() {
+    for bad in [
+        "[right_views]\ngroups = []\n",
+        "[right_views]\nv = -1\ngroups = []\n",
+        "[right_views]\nv = \"1\"\ngroups = []\n",
+        "[right_views]\nv = 1\n",
+        "[right_views]\nv = 1\ngroups = \"outline\"\n",
+        "[right_views]\nv = 1\ngroups = [1, 2]\n",
+        "[right_views]\nv = 1\ngroups = [{ views = \"outline\", share = 0.5 }]\n",
+        "[right_views]\nv = 1\ngroups = [{ views = [1], share = 0.5 }]\n",
+        "[right_views]\nv = 1\ngroups = [{ views = [\"outline\"] }]\n",
+        "[right_views]\nv = 1\ngroups = [{ views = [\"outline\"], share = \"half\" }]\n",
+        "[right_views]\nv = 1\ngroups = [{ views = [\"outline\"], share = nan }]\n",
+        "[right_views]\nv = 1\ngroups = [{ views = [\"outline\"], share = inf }]\n",
+        "right_views = 3\n",
+    ] {
+        let text = format!("theme = \"dark\"\n{bad}");
+        let read = AppSettings::from_doc(&doc(&text));
+        assert_eq!(read.right_views, None, "{bad}");
+        assert_eq!(read.theme, ThemePref::Dark, "{bad}");
+    }
+    // the other spelling of an array of tables reads too; an unknown key inside is ignored
+    let text = "[right_views]\nv = 2\nmine = true\n\n[[right_views.groups]]\nviews = [\"outline\", \"x:y\"]\nshare = 0.25\n";
+    assert_eq!(
+        AppSettings::from_doc(&doc(text)).right_views,
+        Some(RightViews {
+            v: 2,
+            groups: vec![ViewGroup {
+                views: vec!["outline".to_owned(), "x:y".to_owned()],
+                share: 0.25,
+            }],
+        })
+    );
+}
+
+#[test]
+fn an_arrangement_out_of_bounds_is_refused_before_it_reaches_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    fs::write(file.path(), "theme = \"dark\"\n").unwrap();
+    let group = |views: &[&str], share: f64| ViewGroup {
+        views: views.iter().map(|v| (*v).to_owned()).collect(),
+        share,
+    };
+    let long = "x".repeat(65);
+    let many: Vec<&str> = vec!["a"; 17];
+    for groups in [
+        vec![group(&["a"], 0.25); 4],
+        vec![group(&many, 1.0)],
+        vec![group(&[""], 1.0)],
+        vec![group(&[long.as_str()], 1.0)],
+        vec![group(&["a b"], 1.0)],
+        vec![group(&["ü"], 1.0)],
+        vec![group(&["a"], 1.5)],
+        vec![group(&["a"], -0.1)],
+        vec![group(&["a"], f64::NAN)],
+        vec![group(&["a"], f64::INFINITY)],
+    ] {
+        let change = SettingChange::RightViews(Some(RightViews { v: 1, groups }));
+        assert!(
+            matches!(file.apply(&change), Err(SettingsError::Invalid { ref reason, .. }) if reason == "rightViews"),
+            "{change:?}"
+        );
+    }
+    assert_eq!(
+        fs::read_to_string(file.path()).unwrap(),
+        "theme = \"dark\"\n"
+    );
+    // in bounds: written; an empty arrangement is a value too (the frontend decides what it means)
+    let saved = file
+        .apply(&SettingChange::RightViews(Some(stacked())))
+        .unwrap();
+    assert_eq!(saved.right_views, Some(stacked()));
+    assert_eq!(file.load().right_views, Some(stacked()));
+    let empty = RightViews {
+        v: 1,
+        groups: Vec::new(),
+    };
+    file.apply(&SettingChange::RightViews(Some(empty.clone())))
+        .unwrap();
+    assert_eq!(file.load().right_views, Some(empty));
+}
+
+#[test]
+fn the_arrangement_change_wire_format() {
+    let change: SettingChange = serde_json::from_str(
+        r#"{"key":"rightViews","value":{"v":1,"groups":[{"views":["outline"],"share":0.5},{"views":["live-feed.panel"],"share":0.5}]}}"#,
+    )
+    .unwrap();
+    assert_eq!(change, SettingChange::RightViews(Some(stacked())));
+    assert_eq!(change.key(), "right_views");
+    let reset: SettingChange =
+        serde_json::from_str(r#"{"key":"rightViews","value":null}"#).unwrap();
+    assert_eq!(reset, SettingChange::RightViews(None));
+    let settings = serde_json::to_value(AppSettings::default()).unwrap();
+    assert_eq!(settings["rightViews"], serde_json::Value::Null);
+    for bad in [
+        r#"{"key":"rightViews","value":{"groups":[]}}"#,
+        r#"{"key":"rightViews","value":{"v":1,"groups":[{"views":"outline","share":0.5}]}}"#,
+    ] {
+        assert!(serde_json::from_str::<SettingChange>(bad).is_err(), "{bad}");
+    }
+    // no value at all = the reset (serde reads an absent `Option` content as `None`)
+    assert_eq!(
+        serde_json::from_str::<SettingChange>(r#"{"key":"rightViews"}"#).unwrap(),
+        SettingChange::RightViews(None)
+    );
 }

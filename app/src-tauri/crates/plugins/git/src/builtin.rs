@@ -37,7 +37,17 @@ pub struct BuiltinGit;
 
 fn open(location: &RepoLocation) -> Result<Repository, GitError> {
     init();
-    Ok(Repository::open(&location.git_dir)?)
+    // the git folder first; a gitfile's target without `core.worktree` (a hand-made submodule-like folder) reads as
+    // bare there: then the working tree, which follows its `.git` file
+    match Repository::open(&location.git_dir) {
+        Ok(repo) if !repo.is_bare() => Ok(repo),
+        first => Ok(Repository::open(&location.workdir).or(first)?),
+    }
+}
+
+/// HEAD names a branch without a commit yet.
+fn unborn(repo: &Repository) -> bool {
+    matches!(repo.head(), Err(e) if matches!(e.code(), ErrorCode::UnbornBranch | ErrorCode::NotFound))
 }
 
 fn head_info(repo: &Repository) -> HeadInfo {
@@ -208,7 +218,10 @@ impl GitOps for BuiltinGit {
             Err(e) => return Discovery::Error(e.message().to_owned()),
         };
         // a bare repository has no working tree
-        let Some(workdir) = repo.workdir().map(dunce::simplified).map(Path::to_path_buf) else {
+        let Some(workdir) = repo
+            .workdir()
+            .map(|w| permark_core::paths::simplified(w).into_owned())
+        else {
             return Discovery::NoRepo;
         };
         if too_broad(&workdir, root, home) {
@@ -221,8 +234,9 @@ impl GitOps for BuiltinGit {
             return Discovery::NoRepo;
         }
         Discovery::Repo(RepoLocation {
-            workdir: dunce::canonicalize(&workdir).unwrap_or(workdir),
-            git_dir: dunce::canonicalize(repo.path()).unwrap_or_else(|_| repo.path().to_path_buf()),
+            workdir: permark_core::paths::canonicalize(&workdir).unwrap_or(workdir),
+            git_dir: permark_core::paths::canonicalize(repo.path())
+                .unwrap_or_else(|_| repo.path().to_path_buf()),
             prefix,
         })
     }
@@ -292,5 +306,73 @@ impl GitOps for BuiltinGit {
             return false;
         };
         Oid::from_str(oid).is_ok() && repo.revparse_single(&format!("{oid}^{{commit}}")).is_ok()
+    }
+
+    fn ahead_behind(&self, location: &RepoLocation) -> Result<Option<(u32, u32)>, GitError> {
+        let repo = open(location)?;
+        if unborn(&repo) {
+            return Ok(None);
+        }
+        let Ok(head) = repo.head() else {
+            return Ok(None);
+        };
+        if !head.is_branch() {
+            return Ok(None);
+        }
+        let (Some(local), Ok(upstream)) = (head.target(), git2::Branch::wrap(head).upstream())
+        else {
+            return Ok(None);
+        };
+        let Some(remote) = upstream.get().target() else {
+            return Ok(None);
+        };
+        let (ahead, behind) = repo.graph_ahead_behind(local, remote)?;
+        Ok(Some((
+            u32::try_from(ahead).unwrap_or(u32::MAX),
+            u32::try_from(behind).unwrap_or(u32::MAX),
+        )))
+    }
+
+    fn last_commit(&self, location: &RepoLocation) -> Result<Option<(i64, String)>, GitError> {
+        let repo = open(location)?;
+        if unborn(&repo) {
+            return Ok(None);
+        }
+        let commit = match repo.head().and_then(|head| head.peel_to_commit()) {
+            Ok(commit) => commit,
+            Err(e) if matches!(e.code(), ErrorCode::UnbornBranch | ErrorCode::NotFound) => {
+                return Ok(None)
+            }
+            Err(e) => return Err(e.into()),
+        };
+        let message = String::from_utf8_lossy(commit.message_bytes()).into_owned();
+        let seconds = commit.committer().when().seconds();
+        Ok(Some((
+            seconds.saturating_mul(1000),
+            crate::ops::subject_of(&message),
+        )))
+    }
+
+    fn root_commit(&self, location: &RepoLocation) -> Result<Option<String>, GitError> {
+        let repo = open(location)?;
+        if unborn(&repo) {
+            return Ok(None);
+        }
+        let mut walk = repo.revwalk()?;
+        match walk.push_head() {
+            Ok(()) => {}
+            Err(e) if matches!(e.code(), ErrorCode::UnbornBranch | ErrorCode::NotFound) => {
+                return Ok(None)
+            }
+            Err(e) => return Err(e.into()),
+        }
+        let mut root: Option<Oid> = None;
+        for oid in walk {
+            let oid = oid?;
+            if repo.find_commit(oid)?.parent_count() == 0 && root.is_none_or(|r| oid < r) {
+                root = Some(oid);
+            }
+        }
+        Ok(root.map(|oid| oid.to_string()))
     }
 }

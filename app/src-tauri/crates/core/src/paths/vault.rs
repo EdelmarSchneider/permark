@@ -116,7 +116,8 @@ impl Vault {
     /// symlinked alias) is retried canonical, only on a volume a root lives on.
     #[must_use]
     pub fn relativize(&self, abs: &Path) -> Option<VaultPath> {
-        let abs = dunce::simplified(abs);
+        let abs = super::simplified(abs);
+        let abs: &Path = &abs;
         self.locate(abs).or_else(|| {
             let roots = std::iter::once(&self.main).chain(self.worktrees.iter().map(|w| &w.root));
             if !roots.into_iter().any(|r| same_volume(abs, r.path())) {

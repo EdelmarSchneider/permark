@@ -199,18 +199,61 @@ describe("the page", () => {
     expect(event.defaultPrevented).toBe(true);
     await until(() => documents.path === "docs/guide.md", "navigated");
     expect(documents.trail.canBack).toBe(true);
+    // the keyboard is on the new page, not lost with the link
+    expect(document.activeElement?.hasAttribute("data-scroller")).toBe(true);
   });
 
-  it("opens web links in the browser and code references in the editor", async () => {
+  it("opens web links in the browser and code references in the chosen editor", async () => {
+    await mock.settingsSet({ key: "editor", value: "zed {path}:{line}:{col}" });
+    await until(() => store.editor !== "", "editor chosen");
     await show("README.md");
     await until(() => target.querySelector(".code-ref") !== null, "code reference");
     const web = target.querySelector<HTMLAnchorElement>('a[href="https://example.com"]');
     web?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
     await until(() => mock.probe.web.includes("https://example.com"), "web link opened");
     const ref = target.querySelector<HTMLElement>(".code-ref");
+    expect(ref?.title).toContain("Open in your editor");
     ref?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
     await until(() => mock.probe.editor.length > 0, "editor opened");
     expect(mock.probe.editor[0]).toMatchObject({ path: "src/main.rs" });
+    expect(documents.path).toBe("README.md");
+    await mock.settingsSet({ key: "editor", value: "" });
+  });
+
+  it("shows code here when no editor is chosen: Enter as a click, a hint instead of an error", async () => {
+    const started = mock.probe.editor.length;
+    await show("README.md");
+    await until(() => target.querySelector(".code-ref") !== null, "code reference");
+    const ref = target.querySelector<HTMLElement>(".code-ref");
+    // the tooltip says nothing about an editor that is not there
+    expect(ref?.title).not.toContain("editor");
+    ref?.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+    await until(() => documents.path === "src/main.rs", "code shown here");
+    expect(mock.probe.editor).toHaveLength(started);
+    // the keyboard is on the page, not lost with the reference
+    expect(document.activeElement?.hasAttribute("data-scroller")).toBe(true);
+    expect(store.notices.some((n) => n.kind === "action")).toBe(true);
+    expect(store.notices.some((n) => n.kind === "fileOpFailed")).toBe(false);
+  });
+
+  it("Ctrl+Enter on a reference asks for the editor; without one a note, nothing opens", async () => {
+    const started = mock.probe.editor.length;
+    await show("README.md");
+    await until(() => target.querySelector(".code-ref") !== null, "code reference");
+    const ref = target.querySelector<HTMLElement>(".code-ref");
+    ref?.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await until(() => store.notices.some((n) => n.kind === "action"), "note");
+    expect(documents.path).toBe("README.md");
+    expect(mock.probe.editor).toHaveLength(started);
   });
 
   it("folds prompt blocks and marks variables", async () => {
@@ -306,13 +349,38 @@ describe("reading", () => {
     );
     await until(() => documents.path === "README.md", "back");
   });
+
+  it("the mouse side buttons go back and forward, once per press, and take the webview's own navigation", async () => {
+    await show("README.md");
+    await documents.activateLink("docs/guide.md");
+    await until(() => documents.path === "docs/guide.md", "guide");
+    await until(() => target.querySelector(".md-body") !== null, "page");
+    const release = (button: number): MouseEvent => {
+      const event = new MouseEvent("mouseup", { button, bubbles: true, cancelable: true });
+      target.querySelector(".md-body")?.dispatchEvent(event);
+      return event;
+    };
+    expect(release(3).defaultPrevented).toBe(true);
+    await until(() => documents.path === "README.md", "back");
+    // the click that follows the release is not a second step
+    target
+      .querySelector(".md-body")
+      ?.dispatchEvent(new MouseEvent("auxclick", { button: 3, bubbles: true, cancelable: true }));
+    expect(release(4).defaultPrevented).toBe(true);
+    await until(() => documents.path === "docs/guide.md", "forward");
+    expect(documents.trail.canBack).toBe(true);
+    // the other buttons stay with the page
+    for (const button of [0, 1, 2]) expect(release(button).defaultPrevented).toBe(false);
+    await tick();
+    expect(documents.path).toBe("docs/guide.md");
+  });
 });
 
 describe("other kinds of file", () => {
   it("shows text with line numbers and a language label", async () => {
     await show("src/main.rs");
-    await until(() => target.querySelector(".text .gutter") !== null, "text view");
-    expect(target.querySelector(".gutter")?.textContent).toBe("1\n2\n3");
+    // long lines wrap by default: one element per line, numbered by the page
+    await until(() => target.querySelectorAll(".text .code .ln").length === 3, "text view");
     await until(() => target.querySelector(".text .lang")?.textContent === "Rust", "highlight");
   });
 
@@ -795,5 +863,35 @@ describe("focus mode", () => {
     expect(target.querySelector(".cm-editor")).not.toBeNull();
     escape();
     await until(() => target.querySelector(".cm-editor") === null, "back to View");
+  });
+});
+
+describe("going back from an editor", () => {
+  const modeButton = (label: string): HTMLButtonElement | undefined =>
+    [...target.querySelectorAll<HTMLButtonElement>(".modes button")].find(
+      (b) => b.textContent?.trim() === label,
+    );
+
+  it("in Source, Alt+Left stays a text key; the back side button goes back", async () => {
+    await show("README.md");
+    await documents.activateLink("docs/guide.md");
+    await until(() => documents.path === "docs/guide.md", "guide");
+    await until(() => modeButton("Source") !== undefined, "mode switch");
+    modeButton("Source")?.click();
+    await until(() => target.querySelector(".cm-content") !== null, "source editor");
+    const content = target.querySelector(".cm-content") as HTMLElement;
+    const key = new KeyboardEvent("keydown", {
+      key: "ArrowLeft",
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    content.dispatchEvent(key);
+    await tick();
+    expect(documents.path).toBe("docs/guide.md");
+    const up = new MouseEvent("mouseup", { button: 3, bubbles: true, cancelable: true });
+    content.dispatchEvent(up);
+    expect(up.defaultPrevented).toBe(true);
+    await until(() => documents.path === "README.md", "back");
   });
 });

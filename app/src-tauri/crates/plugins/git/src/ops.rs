@@ -2,6 +2,8 @@
 //! "too broad" repositories, repository state from marker files). NEVER commits, stages or creates anything.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use permark_core::conditions::RepoState;
 
@@ -97,6 +99,42 @@ pub trait GitOps: Send + Sync {
     fn commit_exists(&self, location: &RepoLocation, oid: &str) -> bool;
     /// Commits reachable from `new` and not from `old` (`None`: a commit unknown | git failed).
     fn commit_count(&self, location: &RepoLocation, old: &str, new: &str) -> Option<u32>;
+    /// `(ahead, behind)` of HEAD against its branch's upstream as last fetched (PerMark never fetches); `None`: no
+    /// upstream, detached, no commit.
+    ///
+    /// # Errors
+    /// Git failed | timed out.
+    fn ahead_behind(&self, location: &RepoLocation) -> Result<Option<(u32, u32)>, GitError>;
+    /// The commit at HEAD: committer time (ms since epoch) + subject (first line, <= [`MAX_SUBJECT`] chars); `None`:
+    /// no commit yet.
+    ///
+    /// # Errors
+    /// Git failed | timed out.
+    fn last_commit(&self, location: &RepoLocation) -> Result<Option<(i64, String)>, GitError>;
+    /// The root commit of HEAD's history (several roots -> the smallest id); `None`: no commit yet.
+    ///
+    /// # Errors
+    /// Git failed | timed out.
+    fn root_commit(&self, location: &RepoLocation) -> Result<Option<String>, GitError>;
+    /// The same backend whose calls stop when `flag` is set (a running program is killed); `None`: calls of this
+    /// backend cannot be stopped (they run to their end; the caller drops the answer).
+    fn cancellable(&self, _flag: &Arc<AtomicBool>) -> Option<Arc<dyn GitOps>> {
+        None
+    }
+}
+
+/// Longest subject kept of a commit message.
+pub const MAX_SUBJECT: usize = 200;
+
+/// The subject of a commit message: its first non-empty line, trimmed, cut at [`MAX_SUBJECT`] chars.
+#[must_use]
+pub fn subject_of(message: &str) -> String {
+    let line = message
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("");
+    line.chars().take(MAX_SUBJECT).collect()
 }
 
 /// `path` (relative to the working tree) below the project folder `prefix`: the part below it; `None`: outside.
@@ -115,7 +153,7 @@ pub fn pathspec(prefix: &str) -> Option<String> {
 }
 
 fn canonical(path: &Path) -> PathBuf {
-    dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+    permark_core::paths::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn same_folder(a: &Path, b: &Path) -> bool {

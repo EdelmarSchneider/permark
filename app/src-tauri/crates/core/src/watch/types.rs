@@ -32,12 +32,15 @@ pub struct FsBatch {
     pub bulk: bool,
     /// Events were lost (overflow): consumers that keep a picture of the disk rebuild it.
     pub rescan: bool,
+    /// Folders holding a nested project (at | below) that moved in this batch, `(from, to)` project paths, whatever the
+    /// ignore rules say of either place (`explorer.md` §15 E4): the projects service keeps their identity.
+    pub moved: Vec<(String, String)>,
 }
 
 impl FsBatch {
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.changes.is_empty() && !self.rescan
+        self.changes.is_empty() && !self.rescan && self.moved.is_empty()
     }
 }
 

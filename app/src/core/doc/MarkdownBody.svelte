@@ -135,8 +135,9 @@
     }
   }
 
+  // Enter on a reference opens it as a click does; Ctrl | Cmd + Enter as Ctrl | Cmd + click (the editor)
   function onkeydown(event: KeyboardEvent): void {
-    if (event.key !== "Enter" || event.isComposing) return;
+    if (event.key !== "Enter" || event.isComposing || event.altKey || event.shiftKey) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
     const ref = documents.codeRefAt(target);
@@ -146,16 +147,17 @@
     }
   }
 
-  /** One file: the editor at the line. Several: a menu of them. */
+  /** One file: opened at the line (here or in the editor, by its kind). Several: a menu of them. */
   function openRef(
     paths: string[],
     line: number | null,
     col: number | null,
     event: MouseEvent | KeyboardEvent,
   ): void {
+    const modifier = event.ctrlKey || event.metaKey;
     const [only] = paths;
     if (paths.length === 1 && only !== undefined) {
-      void documents.openCodeRef({ paths, line, col }, only);
+      void documents.openCodeRef({ paths, line, col }, only, modifier);
       return;
     }
     const at =
@@ -167,7 +169,7 @@
       entries: paths.map((path) => ({
         kind: "item",
         label: line === null ? path : `${path}:${line}`,
-        run: () => void documents.openCodeRef({ paths, line, col }, path),
+        run: () => void documents.openCodeRef({ paths, line, col }, path, modifier),
       })),
     };
   }
