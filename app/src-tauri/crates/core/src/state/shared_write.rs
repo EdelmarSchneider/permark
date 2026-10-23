@@ -53,7 +53,9 @@ pub fn lock_within(path: &Path, wait: Duration) -> std::io::Result<Option<FileLo
     let Some(dir) = lock_dir() else {
         return Ok(None);
     };
-    let mut key = dunce::simplified(path).to_string_lossy().into_owned();
+    let mut key = crate::paths::simplified(path)
+        .to_string_lossy()
+        .into_owned();
     if CASE_INSENSITIVE {
         key = key.to_lowercase();
     }

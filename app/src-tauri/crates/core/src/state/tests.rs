@@ -462,3 +462,64 @@ fn uninit_project_with_a_held_file_keeps_the_folder_whole() {
     }
     assert_eq!(f.store().location(), StateLocation::Project);
 }
+
+/// Shares: 0.6 keyed their state by the `\\?\UNC\` spelling (std's canonical form). Opened plain now, they keep that
+/// id -> their profile state (unread, sessions, agent connection) stays found, with no move.
+#[cfg(windows)]
+#[test]
+fn a_share_keeps_the_project_id_0_6_gave_it() {
+    let plain = crate::paths::RootKey::of(Path::new(r"\\wsl.localhost\Ubuntu-24.04\tmp\pm07wsl"));
+    let verbatim =
+        crate::paths::RootKey::of(Path::new(r"\\?\UNC\wsl.localhost\Ubuntu-24.04\tmp\pm07wsl"));
+    let then = crate::fsx::hash(b"//?/unc/wsl.localhost/ubuntu-24.04/tmp/pm07wsl").hex();
+    assert_eq!(ProjectId::of_key(&plain).0, then);
+    assert_eq!(ProjectId::of_key(&verbatim).0, then);
+    let drive = crate::paths::RootKey::of(Path::new(r"C:\Users\me"));
+    assert_eq!(
+        ProjectId::of_key(&drive).0,
+        crate::fsx::hash(b"c:/users/me").hex()
+    );
+    // 0.5's key of a share kept the prefix too
+    assert_eq!(
+        older::older_project_key(Path::new(r"\\srv\Share\x\")),
+        crate::fsx::hash(b"//?/unc/srv/share/x").hex()
+    );
+    assert_eq!(
+        older::older_project_key(Path::new(r"\\?\UNC\srv\share\x")),
+        older::older_project_key(Path::new(r"\\srv\share\x"))
+    );
+}
+
+/// A real share (loopback admin share): the id of the root opened now == the id 0.6 computed from std's canonical
+/// `\\?\UNC\` path; a move between spellings of one share moves nothing.
+#[cfg(windows)]
+#[test]
+fn a_real_share_root_keeps_its_0_6_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let Some(shared) = crate::paths::via_admin_share(dir.path()) else {
+        eprintln!("skipped: no loopback admin share here");
+        return;
+    };
+    let root = Root::open(&shared).unwrap();
+    assert!(!root.path().to_string_lossy().starts_with(r"\\?\"));
+    let then_canon = std::fs::canonicalize(&shared).unwrap();
+    let then_key = crate::paths::fold(
+        then_canon
+            .to_string_lossy()
+            .replace('\\', "/")
+            .trim_end_matches('/'),
+    );
+    assert_eq!(
+        ProjectId::of(&root).as_str(),
+        crate::fsx::hash(then_key.as_bytes()).hex()
+    );
+    let base = tempfile::tempdir().unwrap();
+    let dirs = AppDirs::under(base.path());
+    let kept = dirs
+        .profile
+        .join("projects")
+        .join(ProjectId::of(&root).as_str());
+    fs::create_dir_all(&kept).unwrap();
+    assert!(!move_profile_state(&dirs, &then_canon, root.path()).unwrap());
+    assert!(kept.is_dir());
+}

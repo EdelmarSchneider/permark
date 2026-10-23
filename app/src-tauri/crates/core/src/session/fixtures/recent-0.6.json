@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "data": {
+    "entries": [
+      {
+        "path": "\\\\wsl.localhost\\Ubuntu-24.04\\tmp\\pm07wsl",
+        "name": "pm07wsl",
+        "opened_ms": 300
+      },
+      {
+        "path": "\\\\?\\UNC\\wsl.localhost\\Ubuntu-24.04\\home\\edelm\\cursos",
+        "name": "cursos",
+        "opened_ms": 200
+      },
+      {
+        "path": "\\\\?\\UNC\\wsl.localhost\\Ubuntu-24.04\\tmp\\pm07wsl",
+        "name": "pm07wsl",
+        "opened_ms": 100
+      },
+      {
+        "path": "\\\\?\\UNC\\srv\\share",
+        "name": "\\\\?\\UNC\\srv\\share",
+        "opened_ms": 50
+      },
+      {
+        "path": "C:\\Users\\me\\docs",
+        "name": "docs",
+        "opened_ms": 10
+      }
+    ]
+  }
+}

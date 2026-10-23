@@ -70,15 +70,17 @@ pub fn parse_older_window(bytes: &[u8]) -> Option<Geometry> {
 }
 
 /// 0.5's key of a project folder: xxh3 of its path with `/` separators, trailing separators dropped, lower case on
-/// Windows (the folder as opened: canonical, without the `\\?\` prefix).
+/// Windows (the folder as opened: canonical, without the `\\?\` prefix of a drive; a share kept its `\\?\UNC\`).
 #[must_use]
 pub fn older_project_key(root: &Path) -> String {
-    let mut text = dunce::simplified(root).to_string_lossy().replace('\\', "/");
+    let mut text = crate::paths::simplified(root)
+        .to_string_lossy()
+        .replace('\\', "/");
     while text.ends_with('/') && text.len() > 1 {
         text.pop();
     }
     if cfg!(windows) {
-        text = text.to_lowercase();
+        text = crate::paths::legacy_unc_key(&text.to_lowercase()).into_owned();
     }
     crate::fsx::hash(text.as_bytes()).hex()
 }

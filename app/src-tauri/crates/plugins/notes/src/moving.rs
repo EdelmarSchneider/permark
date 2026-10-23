@@ -42,7 +42,8 @@ impl NotesService {
             return Err(IpcError::new(ErrorKind::InvalidPath).subject(folder.display().to_string()));
         }
         let shown = folder.display().to_string();
-        let folder = dunce::canonicalize(folder).map_err(|e| IpcError::io(&shown, &e))?;
+        let folder =
+            permark_core::paths::canonicalize(folder).map_err(|e| IpcError::io(&shown, &e))?;
         if !folder.is_dir() {
             return Err(IpcError::new(ErrorKind::NotFound).subject(shown));
         }

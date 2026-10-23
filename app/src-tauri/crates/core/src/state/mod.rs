@@ -86,7 +86,8 @@ impl AppDirs {
     }
 }
 
-/// Stable id of a project folder: xxh3 of its `RootKey` (every spelling of one folder -> one id).
+/// Stable id of a project folder: xxh3 of its `RootKey` as saved ([`crate::paths::RootKey::saved_spelling`]: shares
+/// keep 0.6's `//?/unc/` spelling) -> every spelling of one folder, in every version since 0.6, -> one id.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ProjectId(String);
@@ -94,7 +95,11 @@ pub struct ProjectId(String);
 impl ProjectId {
     #[must_use]
     pub fn of(root: &Root) -> Self {
-        Self(crate::fsx::hash(root.key().as_str().as_bytes()).hex())
+        Self::of_key(root.key())
+    }
+
+    fn of_key(key: &crate::paths::RootKey) -> Self {
+        Self(crate::fsx::hash(key.saved_spelling().as_bytes()).hex())
     }
 
     #[must_use]
@@ -700,8 +705,7 @@ pub fn uninit_project(dirs: &AppDirs, root: &Root) -> Result<bool, StateError> {
 /// # Errors
 /// IO failure (the old folder then stays where it is).
 pub fn move_profile_state(dirs: &AppDirs, from: &Path, to: &Path) -> Result<bool, StateError> {
-    let id =
-        |path: &Path| crate::fsx::hash(crate::paths::RootKey::of(path).as_str().as_bytes()).hex();
+    let id = |path: &Path| ProjectId::of_key(&crate::paths::RootKey::of(path)).0;
     let (old_id, new_id) = (id(from), id(to));
     if old_id == new_id {
         return Ok(false);
