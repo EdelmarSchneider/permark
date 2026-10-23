@@ -151,11 +151,6 @@
     return Math.min(measure(raw).lead, MAX_LEAD);
   }
 
-  /** A line of the plain view without its carriage return, with its line break (a copy keeps one per line). */
-  function plain(raw: string): string {
-    return `${raw.endsWith("\r") ? raw.slice(0, -1) : raw}\n`;
-  }
-
   // the rows in view follow the pane that scrolls (the document area's)
   $effect(() => {
     const element = host;
@@ -536,13 +531,11 @@
             <span class="no">{piece.from === 0 ? piece.line + 1 : ""}</span><span
               class="line"
               style:--lead={wrap ? leadOf(piece.line) : null}
-              >{#each pieces(lines[piece.line] ?? "", piece.line + 1, whole(piece) ? undefined : rangeOf(piece)) as part, i (i)}{#if part.secret !== null}<button
-                    type="button"
-                    class="secret"
-                    title={t("config.reveal")}
-                    aria-label={t("config.reveal")}
-                    onclick={() => reveal(part.secret ?? "")}>{part.text}</button
-                  >{:else}{part.text}{/if}{/each}</span
+              >{@render masked(
+                lines[piece.line] ?? "",
+                piece.line + 1,
+                whole(piece) ? undefined : rangeOf(piece),
+              )}</span
             >
           </div>
         {/each}
@@ -578,7 +571,11 @@
     {#if !wrap}<pre class="gutter" aria-hidden="true">{numbers}</pre>{/if}
     <div class="code" bind:this={codeBox}>
       {#if code}
-        {#await code.view() then loaded}
+        {#await code.view()}
+          <!-- the highlighter comes in a moment: the plain lines hold its place meanwhile, so a line asked for (and
+               the band over it) lands where it is, wrapped rows counted, instead of in a page with no height yet -->
+          {@render plainText()}
+        {:then loaded}
           {@const Code = loaded.default}
           <Code
             source={text}
@@ -588,22 +585,43 @@
             region={wrap ? undefined : t("text.scrollRegion")}
           />
         {/await}
-      {:else if wrap}
-        <pre><code
-            >{#each lines as line, i (i)}<span class="ln" style:--lead={leadSmall(line)}
-                >{plain(line)}</span
-              >{:else}<span class="ln">{"\n"}</span>{/each}</code
-          ></pre>
       {:else}
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <pre tabindex="0" role="region" aria-label={t("text.scrollRegion")}><code>{text}</code
-          ></pre>
+        {@render plainText()}
       {/if}
       {@render glowing()}
       {@render locating()}
     </div>
   {/if}
 </div>
+
+<!-- a line (or the part `range` of it), its secret values masked until clicked -->
+{#snippet masked(
+  raw: string,
+  no: number,
+  range?: [number, number],
+)}{#each pieces(raw, no, range) as part, i (i)}{#if part.secret !== null}<button
+        type="button"
+        class="secret"
+        title={t("config.reveal")}
+        aria-label={t("config.reveal")}
+        onclick={() => reveal(part.secret ?? "")}>{part.text}</button
+      >{:else}{part.text}{/if}{/each}{/snippet}
+
+<!-- a smaller file without the highlighter (off, or still on its way): wrapped one element per line, else one block -->
+{#snippet plainText()}
+  {#if wrap}
+    <pre><code
+        >{#each lines as line, i (i)}<span class="ln" style:--lead={leadSmall(line)}
+            >{@render masked(line, i + 1)}{"\n"}</span
+          >{:else}<span class="ln">{"\n"}</span>{/each}</code
+      ></pre>
+  {:else}
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <pre tabindex="0" role="region" aria-label={t("text.scrollRegion")}><code
+        >{#each lines as line, i (i)}{@render masked(line, i + 1)}{"\n"}{/each}</code
+      ></pre>
+  {/if}
+{/snippet}
 
 {#snippet locating()}
   {#if located !== null}
