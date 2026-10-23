@@ -545,10 +545,12 @@ export function createMockApi(): Api & {
     };
   }
 
-  /** A project follows its folder live (unless the probe says it cannot); a single file | the Notes never do. */
+  /** A project follows its folder live (unless the probe says it cannot | it is on a network share, as the backend
+   *  decides on Windows: mapped drives are not modeled); a single file | the Notes never do. */
   function liveUpdates(): Context["liveUpdates"] {
     if (view.state !== "showing") return neutralContext().liveUpdates;
     if (view.workspace.kind !== "project") return { status: "unavailable", reason: "noWatcher" };
+    if (/^[\\/]{2}/.test(view.workspace.root)) return { status: "unavailable", reason: "network" };
     return liveOff ? { status: "unavailable", reason: "watchFailed" } : { status: "available" };
   }
 
