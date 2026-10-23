@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/EdelmarSchneider/permark/security/advisories/new
+    about: Please report vulnerabilities privately here, not in a public issue.
+  - name: PerMark website
+    url: https://edelmarschneider.github.io/permark/
+    about: Learn what PerMark is and how to get it.

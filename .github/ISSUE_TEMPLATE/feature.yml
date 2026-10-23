@@ -1,0 +1,36 @@
+name: Feature idea
+description: Suggest an idea that would make PerMark better for you.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for sharing your idea. Every idea is read, and ideas help us see what people need.
+
+        Please keep in mind: **ideas, not promises.** PerMark stays focused on what serves the most people, so not every idea will be built. Some may fit better as an optional plugin.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Tell us what you are trying to do, and what makes it hard today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: How do you imagine it could work?
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Who would it help?
+      multiple: true
+      options:
+        - People reading and writing notes
+        - People working with AI agents
+        - Other
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Have you tried another way, or another app, to get the same result?
