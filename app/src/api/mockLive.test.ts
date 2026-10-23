@@ -15,19 +15,29 @@ async function liveOf(path: string) {
   return boot.value.context.liveUpdates;
 }
 
-// backend parity: `watch/network.rs` (a share is not watched: live updates off, reason `network`)
+// backend parity: `watch/wsl.rs` (a WSL folder is not watched: live updates off, reason `wsl`; other shares are)
 describe("mock live updates", () => {
-  it("a local folder follows live", async () => {
-    expect(await liveOf("C:\\Users\\me\\docs")).toEqual({ status: "available" });
+  it.each([
+    "C:\\Users\\me\\docs",
+    "\\\\server\\share\\docs",
+    "\\\\?\\UNC\\server\\share",
+    "//carbon/Shared",
+    "\\\\server\\wsl$\\x",
+    "\\\\wsl.localhost.example\\share",
+    "\\\\mywsl$\\share",
+  ])("follows live: %s", async (path) => {
+    expect(await liveOf(path)).toEqual({ status: "available" });
   });
 
   it.each([
     "\\\\wsl.localhost\\Ubuntu-24.04\\tmp\\pm07wsl",
     "\\\\wsl$\\Ubuntu\\home",
-    "\\\\?\\UNC\\server\\share\\dir",
+    "\\\\?\\UNC\\wsl.localhost\\Ubuntu\\tmp",
+    "\\\\.\\UNC\\wsl$\\Ubuntu",
     "\\\\WSL.LOCALHOST\\Ubuntu\\",
-    "//server/share/docs",
-  ])("a share is off with reason network: %s", async (path) => {
-    expect(await liveOf(path)).toEqual({ status: "unavailable", reason: "network" });
+    "//wsl$/Ubuntu/tmp",
+    "//wsl.localhost/Ubuntu",
+  ])("a WSL folder is off with reason wsl: %s", async (path) => {
+    expect(await liveOf(path)).toEqual({ status: "unavailable", reason: "wsl" });
   });
 });
