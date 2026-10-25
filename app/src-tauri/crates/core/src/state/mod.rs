@@ -1,5 +1,6 @@
 //! Where PerMark keeps its own state: the person's profile, or `.permark/local/` of a project that has `.permark/`.
-//! Versioned JSON files; corrupt -> moved aside, defaults used, caller warns. Plugins get own namespaces.
+//! Versioned JSON files; corrupt -> moved aside, defaults used, caller warns; unreadable (an IO error) -> left as it is,
+//! defaults used, never written over by a handle holding those defaults. Plugins get own namespaces.
 
 pub mod older;
 mod private;
@@ -9,6 +10,7 @@ pub mod shared_write;
 use std::io;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::de::DeserializeOwned;
@@ -165,7 +167,12 @@ pub trait StateData: Serialize + DeserializeOwned {
 pub enum Loaded<T> {
     Missing,
     Found(T),
-    /// Unreadable | other version: moved to `backup` (None: could not be moved); caller uses default + warns.
+    /// Corrupt | other version: moved to `backup`. `None`: an IO error kept it from being read (another program
+    /// holds it, no permission), or it could not be moved: left as it is, and a save of it is refused from this
+    /// handle until its own load | update reads it (another handle reading it never unblocks this one), and from
+    /// every handle that never read it while it is there, so the defaults a caller uses meanwhile never replace the
+    /// person's data. A handle that read the file itself keeps saving: it holds the person's data.
+    /// Caller uses default + warns.
     Recovered {
         backup: Option<PathBuf>,
     },
@@ -205,6 +212,9 @@ struct Guard {
 pub struct StateFile<T> {
     path: PathBuf,
     guard: Option<Guard>,
+    /// What this handle's own last load | update made of the file: [`unread::NEVER`], [`unread::READ`] (read it, found
+    /// none, or moved it aside) or [`unread::FAILED`] (left it unread: it holds defaults).
+    read: AtomicU8,
     _data: PhantomData<fn() -> T>,
 }
 
@@ -213,6 +223,7 @@ impl<T> Clone for StateFile<T> {
         Self {
             path: self.path.clone(),
             guard: self.guard.clone(),
+            read: AtomicU8::new(self.read.load(Ordering::SeqCst)),
             _data: PhantomData,
         }
     }
@@ -226,17 +237,44 @@ impl<T: StateData> StateFile<T> {
 
     #[must_use]
     pub fn load(&self) -> Loaded<T> {
-        let bytes = match std::fs::read(&self.path) {
+        // a file held for a moment (antivirus, sync client) is tried again first
+        let bytes = match crate::fsx::retry(&crate::fsx::RETRY_DELAYS, || std::fs::read(&self.path))
+        {
             Ok(bytes) => bytes,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Loaded::Missing,
-            Err(_) => return Loaded::Recovered { backup: None },
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                self.has_read();
+                return Loaded::Missing;
+            }
+            Err(_) => {
+                self.failed();
+                return Loaded::Recovered { backup: None };
+            }
         };
-        match Self::parse(&bytes) {
-            Some(data) => Loaded::Found(data),
-            None => Loaded::Recovered {
-                backup: self.move_aside(),
-            },
+        if let Some(data) = Self::parse(&bytes) {
+            self.has_read();
+            return Loaded::Found(data);
         }
+        let backup = self.move_aside();
+        if backup.is_some() {
+            // nothing left to write over: the defaults may be saved
+            self.has_read();
+        } else {
+            // still in place (newer data, or a file that cannot be moved): never written over either
+            self.failed();
+        }
+        Loaded::Recovered { backup }
+    }
+
+    /// This handle read the file (or found none, or moved it aside): it holds what is on disk and may save.
+    fn has_read(&self) {
+        self.read.store(unread::READ, Ordering::SeqCst);
+    }
+
+    /// This handle left the file unread (its caller holds defaults): its saves are refused, and those of handles that
+    /// never read the file while it is there.
+    fn failed(&self) {
+        unread::mark(&self.path);
+        self.read.store(unread::FAILED, Ordering::SeqCst);
     }
 
     /// The data of the file's bytes (`None`: not this layout, or a newer version).
@@ -264,7 +302,9 @@ impl<T: StateData> StateFile<T> {
     /// Read-change-write for a file several cores write (`shared_write`): under the file's lock, `next` gets the data
     /// on disk now (`None`: no file; a file this version cannot read is moved aside first, as [`StateFile::load`]
     /// does) and returns what to write (`None`: nothing). Written only while the file still holds what `next` saw,
-    /// else read again and `next` asked again. Returns the data on disk afterwards.
+    /// else read again and `next` asked again. Returns the data on disk afterwards. After an `Err`, never save defaults
+    /// in place of what is on disk: the file may hold the person's data (a file it could not read is stamped, so a
+    /// handle that never read it is refused while the file is there; once it is gone, nothing is left to lose).
     ///
     /// # Errors
     /// Encode | IO failure, a link in place of `.permark/`, a file that kept changing under a writer without the lock.
@@ -282,17 +322,28 @@ impl<T: StateData> StateFile<T> {
             let bytes = match std::fs::read(&self.path) {
                 Ok(bytes) => Some(bytes),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-                Err(error) => return Err(StateError::io(&self.path, error)),
+                Err(error) => {
+                    // not read: no handle that never read it writes over it; this handle's own state stays (a
+                    // handle holding what it read keeps writing)
+                    unread::mark(&self.path);
+                    return Err(StateError::io(&self.path, error));
+                }
             };
             let fresh = match bytes.as_deref().map(Self::parse) {
                 None => None,
                 Some(Some(data)) => Some(data),
                 Some(None) => {
                     // kept beside it, never written over (the next round sees no file)
-                    let _ = self.move_aside();
-                    continue;
+                    if self.move_aside().is_some() {
+                        continue;
+                    }
+                    // cannot be moved: left as it is, and no handle writes over it (review S1)
+                    self.failed();
+                    return Err(StateError::io(&self.path, unread::refused()));
                 }
             };
+            // read (or gone): what this handle writes next starts from what is on disk
+            self.has_read();
             let Some(data) = next(fresh.as_ref()) else {
                 return Ok(fresh);
             };
@@ -346,12 +397,98 @@ impl<T: StateData> StateFile<T> {
     /// # Errors
     /// Encode failure, IO failure, `.permark/` folder replaced by a link.
     pub fn save(&self, data: &T) -> Result<(), StateError> {
+        let read = self.read.load(Ordering::SeqCst);
+        if !unread::may_write(&self.path, read) {
+            return Err(StateError::io(&self.path, unread::refused()));
+        }
         let bytes = self.encode(data)?;
         if let (Some(guard), Some(dir)) = (&self.guard, self.path.parent()) {
             private::prepare(&guard.permark, &guard.state, dir)
                 .map_err(|e| StateError::io(&self.path, e))?;
         }
-        write_atomic(&self.path, &bytes).map_err(|e| StateError::io(&self.path, e))
+        if !(read == unread::NEVER && unread::is_stamped(&self.path)) {
+            return write_atomic(&self.path, &bytes).map_err(|e| StateError::io(&self.path, e));
+        }
+        // a file that could not be read once, gone at the check above: still gone right before each rename attempt
+        // (one put back meanwhile is kept, as `update` does); written, it holds only PerMark's own data
+        let written = crate::fsx::write_atomic_checked(&self.path, &bytes, || {
+            Ok(unread::may_write(&self.path, read))
+        })
+        .map_err(|e| StateError::io(&self.path, e))?;
+        if !written {
+            return Err(StateError::io(&self.path, unread::refused()));
+        }
+        unread::clear(&self.path);
+        Ok(())
+    }
+}
+
+/// The state files a load | update could not read (or parse and move aside) and left in place (board item 15): a save
+/// that writes the defaults a caller got over the person's data is refused. Refused: a handle whose own last load |
+/// update left the file unread (`FAILED`), and a handle that never read a file stamped here (`NEVER`: it may carry
+/// the defaults of another handle, as the session save makes a new handle). A handle that read the file itself
+/// (`READ`) writes even after another handle failed: it holds the person's data. A file that is gone holds nothing to
+/// lose: a `NEVER` handle may write a stamped file while it is not there (only a not-found answer counts as gone; any
+/// other error, and any entry, a folder or a link included, counts as there), and that write clears the stamp: the file
+/// then holds only PerMark's own data. A `FAILED` handle stays refused. One set for the process (other processes do not
+/// see it); otherwise a stamp stays until the process ends.
+mod unread {
+    use std::collections::HashSet;
+    use std::path::Path;
+    use std::sync::{Mutex, OnceLock, PoisonError};
+
+    pub(super) const NEVER: u8 = 0;
+    pub(super) const READ: u8 = 1;
+    pub(super) const FAILED: u8 = 2;
+
+    fn stamped() -> std::sync::MutexGuard<'static, HashSet<String>> {
+        static STAMPED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+        STAMPED
+            .get_or_init(Mutex::default)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn key(path: &Path) -> String {
+        let key = crate::paths::simplified(path)
+            .to_string_lossy()
+            .into_owned();
+        if crate::paths::CASE_INSENSITIVE {
+            key.to_lowercase()
+        } else {
+            key
+        }
+    }
+
+    pub(super) fn mark(path: &Path) {
+        stamped().insert(key(path));
+    }
+
+    pub(super) fn is_stamped(path: &Path) -> bool {
+        stamped().contains(&key(path))
+    }
+
+    /// After a `NEVER` handle wrote the file while it was gone: what is there now is PerMark's own data.
+    pub(super) fn clear(path: &Path) {
+        stamped().remove(&key(path));
+    }
+
+    /// A handle whose own last load | update made `read` of the file may write it. One that never read it may, unless
+    /// the file could not be read once and is still there: a file that is gone holds nothing to lose (the review keeps
+    /// a copy again after removing it as unused).
+    pub(super) fn may_write(path: &Path, read: u8) -> bool {
+        match read {
+            READ => true,
+            NEVER => {
+                !is_stamped(path)
+                    || matches!(std::fs::symlink_metadata(path), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+            }
+            _ => false,
+        }
+    }
+
+    pub(super) fn refused() -> std::io::Error {
+        std::io::Error::other("not read yet: kept as it is until PerMark can read it")
     }
 }
 
@@ -452,6 +589,7 @@ impl StateStore {
         StateFile {
             path: self.dir.join(name),
             guard: self.guard.clone(),
+            read: AtomicU8::new(unread::NEVER),
             _data: PhantomData,
         }
     }
@@ -487,6 +625,7 @@ impl StateStore {
         StateFile {
             path: self.profile_dir.join(name),
             guard: None,
+            read: AtomicU8::new(unread::NEVER),
             _data: PhantomData,
         }
     }
@@ -503,6 +642,7 @@ impl StateStore {
         StateFile {
             path: self.app_dir.join(name),
             guard: None,
+            read: AtomicU8::new(unread::NEVER),
             _data: PhantomData,
         }
     }
@@ -513,6 +653,7 @@ impl StateStore {
         StateFile {
             path: self.cache.join(name),
             guard: self.cache_guard.clone(),
+            read: AtomicU8::new(unread::NEVER),
             _data: PhantomData,
         }
     }
@@ -528,6 +669,7 @@ impl StateStore {
         StateFile {
             path: self.plugin_dir(id).join(name),
             guard: self.guard.clone(),
+            read: AtomicU8::new(unread::NEVER),
             _data: PhantomData,
         }
     }

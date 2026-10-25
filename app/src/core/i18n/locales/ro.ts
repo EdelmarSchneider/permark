@@ -54,6 +54,8 @@ export default {
   // ---- notices
   "notice.stateRecovered":
     "Unele date salvate de PerMark nu au putut fi citite și au fost puse deoparte: {file}",
+  "notice.stateUnreadable":
+    "Unele date salvate de PerMark nu au putut fi citite. Au fost lăsate neatinse, iar PerMark nu le va modifica până nu le va putea citi din nou, de obicei după o repornire: {file}",
 
   // ---- settings
   "settings.title": "Setări",

@@ -53,6 +53,8 @@ export default {
   // ---- notices
   "notice.stateRecovered":
     "Alcuni dati salvati di PerMark non sono leggibili e sono stati messi da parte: {file}",
+  "notice.stateUnreadable":
+    "Alcuni dati salvati di PerMark non sono leggibili. Sono stati lasciati intatti e PerMark non li modificherà finché non riuscirà a leggerli di nuovo, di solito dopo un riavvio: {file}",
 
   // ---- settings
   "settings.title": "Impostazioni",

@@ -50,6 +50,8 @@ const en = {
 
   // ---- notices
   "notice.stateRecovered": "Some saved PerMark data couldn't be read and was set aside: {file}",
+  "notice.stateUnreadable":
+    "Some saved PerMark data couldn't be read. It was left untouched, and PerMark won't change it until it can read it again, usually after a restart: {file}",
 
   // ---- settings
   "settings.title": "Settings",
