@@ -83,17 +83,16 @@ impl Entry {
     pub const fn label(self, language: Language) -> &'static str {
         match (self, language) {
             (Self::Menu, Language::En) => "Open with PerMark",
-            (Self::Menu, Language::PtBr) => "Abrir com o PerMark",
-            (Self::Menu, Language::Es) => "Abrir con PerMark",
+            // pt-BR and pt-PT, es and gl say it the same way
+            (Self::Menu, Language::PtBr | Language::PtPt) => "Abrir com o PerMark",
+            (Self::Menu, Language::Es | Language::Gl) => "Abrir con PerMark",
             (Self::Menu, Language::De) => "Mit PerMark öffnen",
             (Self::Menu, Language::ZhCn) => "用 PerMark 打开",
             (Self::Menu, Language::It) => "Apri con PerMark",
             (Self::Menu, Language::Ja) => "PerMark で開く",
             (Self::Menu, Language::Ko) => "PerMark로 열기",
             (Self::Menu, Language::Fr) => "Ouvrir avec PerMark",
-            (Self::Menu, Language::PtPt) => "Abrir com o PerMark",
             (Self::Menu, Language::Ca) => "Obre amb PerMark",
-            (Self::Menu, Language::Gl) => "Abrir con PerMark",
             (Self::Menu, Language::Ro) => "Deschide cu PerMark",
             (Self::NewFile, Language::En) => "New Markdown file with PerMark",
             (Self::NewFile, Language::PtBr) => "Novo arquivo Markdown com o PerMark",
