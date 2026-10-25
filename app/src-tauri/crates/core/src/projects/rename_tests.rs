@@ -53,6 +53,10 @@ impl Live {
     /// sleep). A marker file goes through the watch twice: a path the watch looks at again (`deferred`, at most
     /// once) comes at the latest with the second marker's batch. The hub calls this test's subscriber after the
     /// project's own, so every batch of the projects worker is queued by then; its answer to `settle` comes after them.
+    /// It covers the watch and the worker's queue only: not timers (a grace window: callers check
+    /// `vanished_count` | `waiting_count`) and not other threads, such as the git plugin's root-commit answers.
+    /// The marker is a plain file at the opened folder's top with a name no ignore rule of these tests covers (no
+    /// dot, no extension; a test that adds a rule matching `permark-settle-mark-*` would hide it and time out here).
     fn settled(&self) {
         static MARKS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let seen: Arc<Mutex<Vec<String>>> = Arc::default();
@@ -66,7 +70,7 @@ impl Live {
         });
         for _ in 0..2 {
             let n = MARKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let mark = format!("settle-{n}.txt");
+            let mark = format!("permark-settle-mark-{n}");
             fs::write(self.root().join(&mark), "x").unwrap();
             wait(&format!("the watch saw {mark}"), || {
                 seen.lock().unwrap().contains(&mark)
@@ -97,6 +101,9 @@ impl Live {
         });
         // late batches of the same move have had their chance to do harm
         self.settled();
+        // and no grace window is left running (`settled` does not wait for timers)
+        assert_eq!(self.core.projects().vanished_count(), 0, "no window left");
+        assert_eq!(self.core.projects().waiting_count(), 0, "nothing waiting");
         let view = self.core.projects_view();
         assert_eq!(view.rows.len(), 1, "{view:#?}");
         assert_eq!(state(&view, path), Some(MemberState::Included));
@@ -340,6 +347,8 @@ fn the_window_ends_by_itself() {
     wait("gone row", || told(&live).0 == 1);
     live.settled();
     assert_eq!(told(&live), (1, 0), "{:?}", news_of(&live));
+    assert_eq!(live.core.projects().vanished_count(), 0, "no window left");
+    assert_eq!(live.core.projects().waiting_count(), 0, "nothing waiting");
 }
 
 #[test]
