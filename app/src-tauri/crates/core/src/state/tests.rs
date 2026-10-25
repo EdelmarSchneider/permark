@@ -523,3 +523,133 @@ fn a_real_share_root_keeps_its_0_6_id() {
     assert!(!move_profile_state(&dirs, &then_canon, root.path()).unwrap());
     assert!(kept.is_dir());
 }
+
+/// The file at `path` cannot be read by this process until this goes (another program holding it on Windows, no
+/// read permission on Unix).
+struct Unreadable {
+    #[cfg(windows)]
+    _held: fs::File,
+    #[cfg(not(windows))]
+    path: std::path::PathBuf,
+}
+
+#[cfg(not(windows))]
+impl Drop for Unreadable {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(0o644));
+    }
+}
+
+fn unreadable(path: &Path) -> Unreadable {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        let held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(path)
+            .unwrap();
+        Unreadable { _held: held }
+    }
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o000)).unwrap();
+        Unreadable {
+            path: path.to_path_buf(),
+        }
+    }
+}
+
+/// Unreadable is in force, yet this process reads the file anyway (root on Unix): the test has nothing to check.
+fn readable_anyway(path: &Path) -> bool {
+    fs::read(path).is_ok()
+}
+
+const KEPT: &[u8] = br#"{"version":3,"data":{"items":{"kept":7}}}"#;
+
+/// Board item 15: a state file PerMark could not read (an IO error, not a missing or corrupt file) is never written
+/// over with the defaults used meanwhile: it stays as it is, and saves are refused (by any handle on that file) until
+/// a load reads it again.
+#[test]
+fn an_unreadable_state_file_is_never_written_over() {
+    let f = fx();
+    let file = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+    fs::write(file.path(), KEPT).unwrap();
+    let held = unreadable(file.path());
+    if readable_anyway(file.path()) {
+        return;
+    }
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    assert!(file.path().exists(), "left in place, not moved aside");
+    drop(held);
+    // what the caller does with the defaults it got: never written over the person's data
+    assert!(file.save(&Sample::default()).is_err());
+    assert!(f.store().file::<Sample>("x.json").save(&sample(1)).is_err());
+    assert_eq!(fs::read(file.path()).unwrap(), KEPT);
+    // read again: the data is there and saves go through
+    let Loaded::Found(data) = file.load() else {
+        panic!("readable again");
+    };
+    assert_eq!(data.items.get("kept"), Some(&7));
+    file.save(&sample(2)).unwrap();
+    assert_eq!(file.load(), Loaded::Found(sample(2)));
+}
+
+/// A file held only for a moment (an antivirus | sync client) is read after a short retry: its data, no defaults.
+#[test]
+fn a_state_file_held_for_a_moment_is_read_after_a_retry() {
+    let f = fx();
+    let file = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+    fs::write(file.path(), KEPT).unwrap();
+    let held = unreadable(file.path());
+    if readable_anyway(file.path()) {
+        return;
+    }
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        drop(held);
+    });
+    let loaded = file.load();
+    release.join().unwrap();
+    let Loaded::Found(data) = loaded else {
+        panic!("read after the retry: {loaded:?}");
+    };
+    assert_eq!(data.items.get("kept"), Some(&7));
+}
+
+/// An update reads the file itself under its lock: once it can, it changes the data on disk (never the defaults), and
+/// plain saves go through again.
+#[test]
+fn an_update_after_an_unreadable_load_changes_the_data_on_disk() {
+    let f = fx();
+    let file = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+    fs::write(file.path(), KEPT).unwrap();
+    let held = unreadable(file.path());
+    if readable_anyway(file.path()) {
+        return;
+    }
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    assert!(
+        file.update(|_| Some(Sample::default())).is_err(),
+        "still unreadable: no write"
+    );
+    drop(held);
+    let after = file
+        .update(|now| {
+            let mut next = Sample {
+                items: now.map(|s| s.items.clone()).unwrap_or_default(),
+            };
+            next.items.insert("added".to_owned(), 1);
+            Some(next)
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.items.get("kept"), Some(&7));
+    assert_eq!(after.items.get("added"), Some(&1));
+    file.save(&after).unwrap();
+}

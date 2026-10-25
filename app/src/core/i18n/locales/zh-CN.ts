@@ -50,6 +50,8 @@ export default {
 
   // ---- notices
   "notice.stateRecovered": "部分已保存的 PerMark 数据无法读取，已另行保留：{file}",
+  "notice.stateUnreadable":
+    "部分已保存的 PerMark 数据无法读取，已保持原样。在能够读取之前，PerMark 不会覆盖它：{file}",
 
   // ---- settings
   "settings.title": "设置",

@@ -1,5 +1,6 @@
 //! Where PerMark keeps its own state: the person's profile, or `.permark/local/` of a project that has `.permark/`.
-//! Versioned JSON files; corrupt -> moved aside, defaults used, caller warns. Plugins get own namespaces.
+//! Versioned JSON files; corrupt -> moved aside, defaults used, caller warns; unreadable (an IO error) -> left as it is,
+//! defaults used, never written over until read again. Plugins get own namespaces.
 
 pub mod older;
 mod private;
@@ -165,7 +166,10 @@ pub trait StateData: Serialize + DeserializeOwned {
 pub enum Loaded<T> {
     Missing,
     Found(T),
-    /// Unreadable | other version: moved to `backup` (None: could not be moved); caller uses default + warns.
+    /// Corrupt | other version: moved to `backup`. `None`: an IO error kept it from being read (another program
+    /// holds it, no permission), or it could not be moved: left as it is, and every save of it is refused until a
+    /// load | update reads it again, so the defaults the caller uses meanwhile never replace the person's data.
+    /// Caller uses default + warns.
     Recovered {
         backup: Option<PathBuf>,
     },
@@ -226,17 +230,29 @@ impl<T: StateData> StateFile<T> {
 
     #[must_use]
     pub fn load(&self) -> Loaded<T> {
-        let bytes = match std::fs::read(&self.path) {
+        // a file held for a moment (antivirus, sync client) is tried again first
+        let bytes = match crate::fsx::retry(&crate::fsx::RETRY_DELAYS, || std::fs::read(&self.path))
+        {
             Ok(bytes) => bytes,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Loaded::Missing,
-            Err(_) => return Loaded::Recovered { backup: None },
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                unread::clear(&self.path);
+                return Loaded::Missing;
+            }
+            Err(_) => {
+                unread::mark(&self.path);
+                return Loaded::Recovered { backup: None };
+            }
         };
-        match Self::parse(&bytes) {
-            Some(data) => Loaded::Found(data),
-            None => Loaded::Recovered {
-                backup: self.move_aside(),
-            },
+        unread::clear(&self.path);
+        if let Some(data) = Self::parse(&bytes) {
+            return Loaded::Found(data);
         }
+        let backup = self.move_aside();
+        if backup.is_none() {
+            // still in place (newer data, or a file that cannot be moved): never written over either
+            unread::mark(&self.path);
+        }
+        Loaded::Recovered { backup }
     }
 
     /// The data of the file's bytes (`None`: not this layout, or a newer version).
@@ -284,6 +300,8 @@ impl<T: StateData> StateFile<T> {
                 Err(error) if error.kind() == io::ErrorKind::NotFound => None,
                 Err(error) => return Err(StateError::io(&self.path, error)),
             };
+            // read (or gone): what is written next starts from what is on disk
+            unread::clear(&self.path);
             let fresh = match bytes.as_deref().map(Self::parse) {
                 None => None,
                 Some(Some(data)) => Some(data),
@@ -346,12 +364,58 @@ impl<T: StateData> StateFile<T> {
     /// # Errors
     /// Encode failure, IO failure, `.permark/` folder replaced by a link.
     pub fn save(&self, data: &T) -> Result<(), StateError> {
+        if unread::is(&self.path) {
+            return Err(StateError::io(&self.path, unread::refused()));
+        }
         let bytes = self.encode(data)?;
         if let (Some(guard), Some(dir)) = (&self.guard, self.path.parent()) {
             private::prepare(&guard.permark, &guard.state, dir)
                 .map_err(|e| StateError::io(&self.path, e))?;
         }
         write_atomic(&self.path, &bytes).map_err(|e| StateError::io(&self.path, e))
+    }
+}
+
+/// The state files whose last load could not read them and left them in place (board item 15): a save of one would
+/// write the defaults its caller got over the person's data, so it is refused until a load | update reads it again.
+/// One set for the process: every handle on the same file sees it.
+mod unread {
+    use std::collections::HashSet;
+    use std::path::Path;
+    use std::sync::{Mutex, OnceLock, PoisonError};
+
+    fn set() -> std::sync::MutexGuard<'static, HashSet<String>> {
+        static SET: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+        SET.get_or_init(Mutex::default)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn key(path: &Path) -> String {
+        let key = crate::paths::simplified(path)
+            .to_string_lossy()
+            .into_owned();
+        if crate::paths::CASE_INSENSITIVE {
+            key.to_lowercase()
+        } else {
+            key
+        }
+    }
+
+    pub(super) fn mark(path: &Path) {
+        set().insert(key(path));
+    }
+
+    pub(super) fn clear(path: &Path) {
+        set().remove(&key(path));
+    }
+
+    pub(super) fn is(path: &Path) -> bool {
+        set().contains(&key(path))
+    }
+
+    pub(super) fn refused() -> std::io::Error {
+        std::io::Error::other("not read yet: kept as it is until PerMark can read it")
     }
 }
 
