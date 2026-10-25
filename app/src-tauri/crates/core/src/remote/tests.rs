@@ -274,7 +274,7 @@ fn v6(text: &str) -> IpAddr {
 }
 
 #[test]
-fn only_addresses_on_the_open_internet_are_public() {
+fn addresses_off_the_open_internet_are_not_public() {
     for ip in [
         "0.0.0.0",
         "0.1.2.3",
@@ -300,6 +300,8 @@ fn only_addresses_on_the_open_internet_are_public() {
         "239.255.255.250",
         "240.0.0.1",
         "255.255.255.255",
+        "192.88.99.1",
+        "192.88.99.255",
     ] {
         assert!(!is_public(v4(ip)), "{ip} is not public");
     }
@@ -315,6 +317,18 @@ fn only_addresses_on_the_open_internet_are_public() {
         "100::1",
         "2001:db8::1",
         "64:ff9b:1::1",
+        // 2001::/23 outside IANA's global sub-ranges: Teredo, benchmarking, ORCHID (deprecated), the rest
+        "2001::1",
+        "2001:0:4136:e378:8000:63bf:3fff:fdd2",
+        "2001:1::4",
+        "2001:2::1",
+        "2001:4::1",
+        "2001:10::1",
+        "2001:1ff:ffff::1",
+        "3fff::1",
+        "3fff:fff:ffff::1",
+        "5f00::1",
+        "5f00:ffff::1",
         // an IPv6 form that carries a local IPv4 address
         "::ffff:127.0.0.1",
         "::ffff:7f00:1",
@@ -331,6 +345,10 @@ fn only_addresses_on_the_open_internet_are_public() {
     ] {
         assert!(!is_public(v6(ip)), "{ip} is not public");
     }
+}
+
+#[test]
+fn addresses_on_the_open_internet_are_public() {
     for ip in [
         "1.1.1.1",
         "8.8.8.8",
@@ -347,6 +365,8 @@ fn only_addresses_on_the_open_internet_are_public() {
         "198.17.255.255",
         "198.20.0.1",
         "223.255.255.254",
+        "192.88.98.1",
+        "192.88.100.1",
     ] {
         assert!(is_public(v4(ip)), "{ip} is public");
     }
@@ -357,6 +377,18 @@ fn only_addresses_on_the_open_internet_are_public() {
         "::ffff:8.8.8.8",
         "64:ff9b::808:808",
         "2002:808:808::1",
+        // IANA's globally reachable sub-ranges of 2001::/23
+        "2001:1::1",
+        "2001:1::2",
+        "2001:1::3",
+        "2001:3::1",
+        "2001:4:112::1",
+        "2001:20::1",
+        "2001:3f::1",
+        "2001:200::1",
+        "3fff:1000::1",
+        "5eff::1",
+        "5f01::1",
     ] {
         assert!(is_public(v6(ip)), "{ip} is public");
     }
@@ -446,21 +478,25 @@ fn a_public_host_is_still_asked() {
 
 #[test]
 fn a_redirect_to_a_local_address_is_refused_and_never_asked() {
-    for target in [
-        "https://127.0.0.1/a.png",
-        "https://localhost/a.png",
-        "https://169.254.169.254/latest/meta-data/",
-        "https://[::ffff:127.0.0.1]/a.png",
-        "//192.168.1.1/a.png",
-        "https://127.1/a.png",
+    for (target, expected) in [
+        ("https://127.0.0.1/a.png", ErrorKind::Denied),
+        ("https://localhost/a.png", ErrorKind::Denied),
+        (
+            "https://169.254.169.254/latest/meta-data/",
+            ErrorKind::Denied,
+        ),
+        ("https://[::ffff:127.0.0.1]/a.png", ErrorKind::Denied),
+        ("//192.168.1.1/a.png", ErrorKind::Denied),
+        ("https://127.1/a.png", ErrorKind::InvalidData),
+        ("https://localhost../a.png", ErrorKind::InvalidData),
     ] {
         let web = Web::default().page("https://a.example/p", 302, Some(target), None, b"");
         let error = fetch_picture(&web, "https://a.example/p").unwrap_err();
-        assert!(
-            matches!(error.kind, ErrorKind::Denied | ErrorKind::InvalidData),
-            "{target}: {error:?}"
+        assert_eq!(
+            (error.kind, error.detail.as_deref()),
+            (expected, Some("address")),
+            "{target}"
         );
-        assert_eq!(error.detail.as_deref(), Some("address"), "{target}");
         assert_eq!(*web.asked.borrow(), ["https://a.example/p"], "{target}");
     }
 }
@@ -497,4 +533,36 @@ fn a_name_that_resolves_to_a_local_address_is_refused() {
         (ErrorKind::Denied, Some("address"), Some("inside.example"))
     );
     assert_eq!(web.asked.borrow().len(), 2);
+}
+
+#[test]
+fn a_host_with_an_empty_label_is_refused() {
+    let web = Web::default();
+    // only one trailing dot is ignored
+    for url in [
+        "https://localhost../a.png",
+        "https://127.0.0.1../a.png",
+        "https://example.com../a.png",
+        "https://example..com/a.png",
+        "https://.example.com/a.png",
+        "https://./a.png",
+        "https://../a.png",
+        "https://..:443/a.png",
+    ] {
+        assert_eq!(
+            kind(fetch_picture(&web, url)),
+            (ErrorKind::InvalidData, Some("address".to_owned())),
+            "{url}"
+        );
+    }
+    assert!(web.asked.borrow().is_empty());
+    // one trailing dot is fine
+    let web = Web::default().page(
+        "https://example.com./a.png",
+        200,
+        None,
+        Some("image/png"),
+        PNG,
+    );
+    assert!(fetch_picture(&web, "https://example.com./a.png").is_ok());
 }

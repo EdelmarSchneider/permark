@@ -72,6 +72,7 @@ function publicV4([a = 0, b = 0, c = 0]: number[]): boolean {
     (a === 172 && b >= 16 && b < 32) ||
     (a === 192 && b === 168) ||
     (a === 192 && b === 0 && (c === 0 || c === 2)) ||
+    (a === 192 && b === 88 && c === 99) ||
     (a === 198 && (b === 18 || b === 19)) ||
     (a === 198 && b === 51 && c === 100) ||
     (a === 203 && b === 0 && c === 113);
@@ -102,8 +103,18 @@ function publicV6(s: number[]): boolean {
     (s0 & 0xff00) === 0xff00 ||
     (s0 === 0x100 && zero(s, 1, 4)) ||
     (s0 === 0x2001 && s1 === 0x0db8) ||
+    (s0 === 0x2001 && s1 < 0x200 && !ianaGlobal2001(s)) ||
+    (s0 === 0x3fff && s1 < 0x1000) ||
+    s0 === 0x5f00 ||
     (s0 === 0x64 && s1 === 0xff9b && s2 === 1);
   return !notPublic;
+}
+
+/** The globally reachable sub-ranges of `2001::/23` (IANA), as `iana_global_2001` in the backend. */
+function ianaGlobal2001(s: number[]): boolean {
+  const s1 = s[1] ?? 0;
+  const anycast = s1 === 1 && zero(s, 2, 7) && (s[7] ?? 0) >= 1 && (s[7] ?? 0) <= 3;
+  return anycast || s1 === 3 || (s1 === 4 && s[2] === 0x112) || (s1 >= 0x20 && s1 < 0x40);
 }
 
 function hostPart(authority: string): string {
@@ -133,7 +144,9 @@ export function mockPictureRefusal(url: string): IpcError | null {
     if (segments === null) return invalid;
     return publicV6(segments) ? null : local;
   }
+  // one trailing dot is ignored; any other empty label is refused
   const name = (host.endsWith(".") ? host.slice(0, -1) : host).toLowerCase();
+  if (name.split(".").some((label) => label === "")) return invalid;
   if (name === "localhost" || name.endsWith(".localhost")) return local;
   const last = name.split(".").pop() ?? "";
   if (!/^\d/.test(last)) return null;

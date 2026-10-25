@@ -25,6 +25,13 @@ describe("the mock's web picture address rules", () => {
       ["https://0.0.0.0/a.png", "0.0.0.0"],
       ["https://198.18.0.1/a.png", "198.18.0.1"],
       ["https://240.0.0.1/a.png", "240.0.0.1"],
+      ["https://192.88.99.1/a.png", "192.88.99.1"],
+      ["https://[2001::1]/a.png", "[2001::1]"],
+      ["https://[2001:2::1]/a.png", "[2001:2::1]"],
+      ["https://[2001:10::1]/a.png", "[2001:10::1]"],
+      ["https://[2001:1ff:ffff::1]/a.png", "[2001:1ff:ffff::1]"],
+      ["https://[3fff::1]/a.png", "[3fff::1]"],
+      ["https://[5f00::1]/a.png", "[5f00::1]"],
       ["https://[::1]/a.png", "[::1]"],
       ["https://[::1]:8443/a.png", "[::1]"],
       ["https://[::]/a.png", "[::]"],
@@ -64,6 +71,13 @@ describe("the mock's web picture address rules", () => {
       "https://[fe80::1%25eth0]/a.png",
       "https://[127.0.0.1]/a.png",
       "https://[::1/a.png",
+      // empty labels: only one trailing dot is ignored
+      "https://localhost../a.png",
+      "https://127.0.0.1../a.png",
+      "https://example..com/a.png",
+      "https://.example.com/a.png",
+      "https://./a.png",
+      "https://../a.png",
     ]) {
       expect(mockPictureRefusal(url), url).toEqual({
         kind: "invalidData",
@@ -87,6 +101,15 @@ describe("the mock's web picture address rules", () => {
       "https://my-localhost/a.png",
       "https://127.0.0.1.example.com/a.png",
       "https://10.example/a.png",
+      "https://example.com./a.png",
+      "https://192.88.98.1/a.png",
+      "https://[2001:1::1]/a.png",
+      "https://[2001:3::1]/a.png",
+      "https://[2001:4:112::1]/a.png",
+      "https://[2001:20::1]/a.png",
+      "https://[2001:200::1]/a.png",
+      "https://[3fff:1000::1]/a.png",
+      "https://[5f01::1]/a.png",
     ]) {
       expect(mockPictureRefusal(url), url).toBeNull();
     }

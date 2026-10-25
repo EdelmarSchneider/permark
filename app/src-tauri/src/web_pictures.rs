@@ -30,8 +30,11 @@ impl std::error::Error for LocalAddress {}
 
 /// ureq's own resolver, refusing a host with any address that is not public (`remote::is_public`). ureq connects only
 /// to the addresses returned here, so the address checked is the address connected to (no DNS rebinding window); each
-/// redirect hop is its own request and is resolved again. The system proxy's own address is the person's setup and is
+/// new connection is resolved and checked, and a reused connection was checked when it opened (redirect hops included). The system proxy's own address is the person's setup and is
 /// not checked; through a proxy the proxy resolves the picture's host, so only `remote::check_url` applies there.
+///
+/// Uses ureq's `unversioned` API (`Resolver`, `DefaultResolver`, `DefaultConnector`, `Agent::with_parts`), which does
+/// not follow semver: a ureq update may need this adjusted (the tests below fail if the check stops working).
 #[derive(Debug, Default)]
 struct PublicOnly(DefaultResolver);
 
@@ -77,6 +80,7 @@ fn agent(proxy: Option<ureq::Proxy>) -> ureq::Agent {
         .timeout_connect(Some(Duration::from_secs(15)))
         .timeout_global(Some(Duration::from_secs(30)))
         .build();
+    // ureq `unversioned` API (see `PublicOnly`): may need adjusting on ureq updates
     ureq::Agent::with_parts(config, DefaultConnector::default(), PublicOnly::default())
 }
 

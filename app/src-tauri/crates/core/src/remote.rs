@@ -145,6 +145,7 @@ fn public_v4(ip: Ipv4Addr) -> bool {
         || (a == 172 && (16..32).contains(&b))
         || (a == 192 && b == 168)
         || (a == 192 && b == 0 && (c == 0 || c == 2)) // protocol assignments, documentation
+        || (a == 192 && b == 88 && c == 99) // 6to4 relay anycast (deprecated)
         || (a == 198 && (b == 18 || b == 19)) // benchmarking
         || (a == 198 && b == 51 && c == 100) // documentation
         || (a == 203 && b == 0 && c == 113); // documentation
@@ -180,8 +181,20 @@ fn public_v6(ip: Ipv6Addr) -> bool {
         || (s[0] & 0xff00) == 0xff00 // multicast
         || s[..4] == [0x100, 0, 0, 0] // discard only
         || (s[0] == 0x2001 && s[1] == 0x0db8) // documentation
+        || (s[0] == 0x2001 && s[1] < 0x200 && !iana_global_2001(s)) // IETF protocol assignments
+        || (s[0] == 0x3fff && s[1] < 0x1000) // documentation (RFC 9637)
+        || s[0] == 0x5f00 // segment routing SIDs (RFC 9602)
         || (s[0] == 0x64 && s[1] == 0xff9b && s[2] == 1); // local-use NAT64
     !not_public
+}
+
+/// The globally reachable sub-ranges of `2001::/23` (IANA special-purpose registry): PCP, TURN and DNS-SD SRP anycast
+/// (`2001:1::1` | `::2` | `::3`), AMT `2001:3::/32`, AS112 `2001:4:112::/48`, ORCHID v2 `2001:20::/28`, DRIP
+/// `2001:30::/28`. The rest (Teredo `2001::/32`, benchmarking `2001:2::/48`, ORCHID `2001:10::/28`, unassigned) is not
+/// public.
+fn iana_global_2001(s: [u16; 8]) -> bool {
+    let anycast = s[1] == 1 && s[2..7] == [0; 5] && (1..=3).contains(&s[7]);
+    anycast || s[1] == 3 || (s[1] == 4 && s[2] == 0x112) || (0x20..0x40).contains(&s[1])
 }
 
 /// The host of an authority as written: `[v6]` with its brackets, else everything before a port.
@@ -208,7 +221,11 @@ fn check_host(authority: &str) -> Result<(), IpcError> {
             .ok_or_else(|| refuse(ErrorKind::InvalidData, "address"))?;
         IpAddr::V6(ip)
     } else {
+        // one trailing dot (the root) is ignored; any other empty label is refused (`localhost..`, `a..b`, `.a`)
         let name = host.strip_suffix('.').unwrap_or(host).to_ascii_lowercase();
+        if name.split('.').any(str::is_empty) {
+            return Err(refuse(ErrorKind::InvalidData, "address"));
+        }
         if name == "localhost" || name.ends_with(".localhost") {
             return Err(local(host));
         }
