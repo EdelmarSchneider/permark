@@ -10,6 +10,8 @@ pub mod map;
 pub mod migrate;
 #[cfg(test)]
 mod migrate_tests;
+#[cfg(test)]
+mod move_answer_tests;
 pub mod owners;
 pub mod record;
 #[cfg(test)]

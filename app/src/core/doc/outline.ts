@@ -32,3 +32,28 @@ export function currentIndex(tops: readonly number[], limit: number): number {
   }
   return found;
 }
+
+/**
+ * The outline items whose sections hold one of the blocks `ids` (a changed passage): a block belongs to the last
+ * heading block at or before it. Blocks before the first heading, and ids not among `blocks`, mark nothing.
+ */
+export function changedSections(
+  items: readonly Pick<OutlineItem, "block">[],
+  blocks: readonly { id: string }[],
+  ids: Iterable<string>,
+): Set<number> {
+  const position = new Map(blocks.map((block, at) => [block.id, at]));
+  const heads = items.map((item) => position.get(item.block));
+  const found = new Set<number>();
+  for (const id of ids) {
+    const at = position.get(id);
+    if (at === undefined) continue;
+    let index = -1;
+    heads.forEach((head, i) => {
+      if (head !== undefined && head <= at && (index < 0 || head >= (heads[index] ?? -1)))
+        index = i;
+    });
+    if (index >= 0) found.add(index);
+  }
+  return found;
+}

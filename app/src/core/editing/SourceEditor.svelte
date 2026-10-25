@@ -2,9 +2,11 @@
   // Source mode: the raw file in CodeMirror (loaded on first use), with its find + replace panel and go to line.
   // Nothing is hidden, masked or drawn over the text: secret values show as they are. Beside the editor (never over
   // it), an optional panel draws the diagram the caret is in (off by default, one switch per window).
+  import { untrack } from "svelte";
   import { SEARCH_PHRASES } from "./source/phrases";
   import { api } from "../../api";
   import { t } from "../i18n";
+  import { look } from "../look.svelte";
   import type { Content, EditingSession } from "./session.svelte";
   import type { SourceView } from "./source/cm";
   import type { Fence } from "./source/fence";
@@ -41,6 +43,7 @@
         text: current.text,
         path: current.path,
         markdown,
+        wrap: look.wrap,
         phrases: Object.fromEntries(SEARCH_PHRASES.map(([phrase, key]) => [phrase, t(key)])),
         host: {
           changed: () => session.changed(),
@@ -84,6 +87,12 @@
       source = null;
       fence = null;
     };
+  });
+
+  // the wrap setting changed: the open editor follows (place and caret stay)
+  $effect(() => {
+    const on = look.wrap;
+    untrack(() => source?.setWrap(on));
   });
 
   /** Runs of changed lines (save message). */

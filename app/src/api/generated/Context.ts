@@ -15,4 +15,8 @@ export type Context = { workspace: WorkspaceKind, git: GitCondition, permark: Pe
 /**
  * Plugins on for this workspace (app plugins + this project's).
  */
-plugins: Array<PluginId>, };
+plugins: Array<PluginId>, 
+/**
+ * Agent files at the project root (`workspace::AGENT_FILES` order; a `/` ends a folder); `[]` elsewhere.
+ */
+agentFiles: Array<string>, };

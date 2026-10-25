@@ -7,6 +7,7 @@ import type { PluginId } from "../../api/generated/PluginId";
 import type { Block, Context, DocumentView, ProjectRow } from "../../api";
 import { available, type Requirement } from "../conditions/available";
 import type { MessageKey } from "../i18n";
+import type { PluginPageId } from "../shell/ui.svelte";
 import type {
   EmbedProps,
   FrontMatterProps,
@@ -65,6 +66,9 @@ export type ProjectFact = {
   title?: string;
 };
 
+/** The props of a plugin's strip under the Explorer list: `focusList` moves focus to the list (the strip may go). */
+export type ExplorerNoteProps = { focusList: () => void };
+
 /** The props of a plugin's block in a project's detail card. */
 export type ProjectCardProps = { row: ProjectRow };
 
@@ -91,6 +95,15 @@ export type Contribution = Owned &
         /** A small icon: the tab shows it alone while another tab is the open one and the strip is crowded. */
         icon?: Component<{ size?: number }>;
         view: LazyComponent;
+        /** Reactive; false = not drawn (no tab, no panel: dormant until the project calls for it). Absent = true. */
+        offered?: () => boolean;
+        /** Reactive; a short count after the tab label in the right tab strip (`null`: none). */
+        badge?: () => string | null;
+        /**
+         * Side right: open when the project has no choice for it yet (absent = false); asked once per project load.
+         * Right views get prop `viewMenu` (`PanelViewProps`): the view options button for their header.
+         */
+        defaultOpen?: () => boolean;
       }
     | {
         kind: "statusItem";
@@ -119,6 +132,9 @@ export type Contribution = Owned &
         cell: (index: number) => OutlineCell | null;
         watcher: LazyComponent<OutlineWatcherProps>;
       }
+    /** A dot after the label of outline item `index` (a changed section): `text` for screen readers, `title` the
+     *  tooltip. Reads reactive state; the first non-null mark of the visible ones is drawn. */
+    | { kind: "outlineMark"; id: string; mark: (index: number) => OutlineCell | null }
     /** A strip under the document header (the review bar, a repository notice). Lowest `order` first. */
     | { kind: "docBar"; id: string; order: number; view: LazyComponent }
     /** Changes the blocks the page shows (the review adds the removed ones and its own bars). Reads reactive state. */
@@ -189,6 +205,30 @@ export type Contribution = Owned &
     /** Runs on the root of the page when it exists; returns what undoes it. */
     | { kind: "docDecoration"; id: string; decorate: (root: HTMLElement) => () => void }
     | { kind: "settingsSection"; id: string; label: MessageKey; view: LazyComponent }
+    /**
+     * A section of its own in the settings page nav (the agent connection), placed among the core sections by `order`
+     * (`CORE_SECTION_ORDER`). `view` draws the whole section (its own cards); `quick` = a row in the gear popover, last
+     * before its buttons. Opened with `ui.openSettingsPage(id, "content")`, the view focuses its first control itself.
+     */
+    | {
+        kind: "settingsPage";
+        id: PluginPageId;
+        label: MessageKey;
+        order: number;
+        view: LazyComponent;
+        quick?: LazyComponent;
+      }
+    /**
+     * A quiet strip under the Explorer list (the offer to share a project with agents), in the strip slot after the
+     * projects strip and the code offer: the first visible note by `order` whose `when` (reactive) holds, one at a time.
+     */
+    | {
+        kind: "explorerNote";
+        id: string;
+        order: number;
+        when: () => boolean;
+        view: LazyComponent<ExplorerNoteProps>;
+      }
     /** Rows a plugin adds to the Project section of the settings (what the project shares in `.permark/`). */
     | { kind: "projectSection"; id: string; label: MessageKey; view: LazyComponent }
     /** What the window shows for a workspace of a kind the core has no page for (the Notes): its sidebar and its page. */

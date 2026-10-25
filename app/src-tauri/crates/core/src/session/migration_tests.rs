@@ -301,3 +301,115 @@ fn a_0_6_1_project_session_takes_the_hidden_panels_beside_its_keys() {
     expected["layout.sidebar-hidden"] = serde_json::json!(true);
     assert_eq!(now["data"]["values"], expected, "old keys untouched");
 }
+
+const RECENT_0_6: &str = include_str!("fixtures/recent-0.6.json");
+
+/// The recent list 0.6 wrote: shares (WSL folders included) saved as `\\?\UNC\...`, beside a newer plain entry of
+/// one of them. Listed plain, one entry per folder (the newest), names fixed; a read writes nothing.
+#[test]
+fn a_0_6_recent_list_lists_shares_plainly_once() {
+    let (_base, store) = store();
+    std::fs::write(store.dir().join("recent.json"), RECENT_0_6).unwrap();
+    let recent = RecentStore::new(&store);
+    let list = listed(recent.load(), |_| true);
+    if cfg!(windows) {
+        let shown: Vec<(&str, &str, u64)> = list
+            .iter()
+            .map(|r| (r.path.as_str(), r.name.as_str(), r.opened_ms))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (r"\\wsl.localhost\Ubuntu-24.04\tmp\pm07wsl", "pm07wsl", 300),
+                (
+                    r"\\wsl.localhost\Ubuntu-24.04\home\edelm\cursos",
+                    "cursos",
+                    200
+                ),
+                (r"\\srv\share", r"\\srv\share", 50),
+                (r"C:\Users\me\docs", "docs", 10),
+            ]
+        );
+        assert!(list
+            .iter()
+            .all(|r| !r.path.contains(r"\\?\") && !r.name.contains(r"\\?\")));
+    } else {
+        // no shares outside Windows: every entry as saved
+        assert_eq!(list.len(), 5);
+    }
+    assert_eq!(recent.list().len(), list.len());
+    let bytes = std::fs::read(store.dir().join("recent.json")).unwrap();
+    assert_eq!(bytes, RECENT_0_6.as_bytes(), "a read writes nothing");
+}
+
+/// Removing a folder by the plain path the list shows removes its old `\\?\UNC\` entries too.
+#[cfg(windows)]
+#[test]
+fn removing_a_listed_share_removes_its_0_6_spellings() {
+    let (_base, store) = store();
+    std::fs::write(store.dir().join("recent.json"), RECENT_0_6).unwrap();
+    let recent = RecentStore::new(&store);
+    recent
+        .remove(r"\\wsl.localhost\Ubuntu-24.04\tmp\pm07wsl")
+        .unwrap();
+    recent
+        .remove(r"\\wsl.localhost\Ubuntu-24.04\home\edelm\cursos")
+        .unwrap();
+    let left: Vec<String> = recent.load().entries.into_iter().map(|e| e.path).collect();
+    assert_eq!(left, [r"\\?\UNC\srv\share", r"C:\Users\me\docs"]);
+}
+
+/// A share opened again (through the loopback admin share: a real one) replaces its 0.6 `\\?\UNC\` entry.
+#[cfg(windows)]
+#[test]
+fn opening_a_share_again_replaces_its_0_6_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let Some(shared) = crate::paths::via_admin_share(dir.path()) else {
+        eprintln!("skipped: no loopback admin share here");
+        return;
+    };
+    let (_base, store) = store();
+    let old = std::fs::canonicalize(&shared)
+        .unwrap()
+        .display()
+        .to_string();
+    assert!(old.starts_with(r"\\?\UNC\"));
+    let file = serde_json::json!({
+        "version": 1,
+        "data": { "entries": [{ "path": old, "name": "x", "opened_ms": 1 }] }
+    });
+    std::fs::write(store.dir().join("recent.json"), file.to_string()).unwrap();
+    let recent = RecentStore::new(&store);
+    let root = Root::open(&shared).unwrap();
+    recent.touch(&root, 2).unwrap();
+    let list = recent.list();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].opened_ms, 2);
+    assert!(
+        list[0].path.starts_with(r"\\localhost\"),
+        "{}",
+        list[0].path
+    );
+    assert!(!list[0].missing);
+}
+
+/// A session 0.6 saved with a share that is gone: the open failure names it plainly.
+#[cfg(windows)]
+#[test]
+fn a_missing_0_6_share_is_named_plainly() {
+    let session = AppSession {
+        windows: vec![SavedWindow {
+            geometry: None,
+            tabs: vec![WorkspaceRefDto::Project {
+                path: r"\\?\UNC\wsl.localhost\Ubuntu-24.04\tmp\gone".to_owned(),
+            }],
+            active: Some(0),
+        }],
+        ..AppSession::default()
+    };
+    let plan = restore_plan(&session, |_| None);
+    assert_eq!(
+        plan.windows[0].missing,
+        [r"\\wsl.localhost\Ubuntu-24.04\tmp\gone"]
+    );
+}

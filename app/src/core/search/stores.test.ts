@@ -95,6 +95,8 @@ function host(
     label: () => "Save",
     outline: () => [],
     opened: () => ["o.md"],
+    places: () => [],
+    goToPlace: vi.fn(),
     showsHidden: () => false,
     openFile: vi.fn(),
     reveal: vi.fn(),

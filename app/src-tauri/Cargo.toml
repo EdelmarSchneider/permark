@@ -4,7 +4,7 @@ resolver = "2"
 
 # Version source = app/package.json; written here by `npm run version:sync`.
 [workspace.package]
-version = "0.6.4"
+version = "0.7.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/EdelmarSchneider/permark"
@@ -64,7 +64,6 @@ winreg = "0.56.0"
 rustix = { version = "1.1.5", features = ["process"] }
 windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",
-  "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_JobObjects",
   "Win32_Security",
   "Win32_Storage_FileSystem",

@@ -347,6 +347,128 @@ fn off_leaves_nothing_behind() {
     drop(core);
 }
 
+/// An opened folder and linked worktrees beside it (siblings, as `git worktree add` makes them).
+struct Roots {
+    _dirs: Vec<tempfile::TempDir>,
+    main: PathBuf,
+    worktrees: Vec<(String, PathBuf)>,
+}
+
+impl Roots {
+    fn new(worktrees: &[&str]) -> Self {
+        let mut dirs = vec![tempfile::tempdir().unwrap()];
+        let main = dunce::canonicalize(dirs[0].path()).unwrap();
+        let mut found = Vec::new();
+        for name in worktrees {
+            let dir = tempfile::tempdir().unwrap();
+            found.push(((*name).to_owned(), dunce::canonicalize(dir.path()).unwrap()));
+            dirs.push(dir);
+        }
+        Self {
+            _dirs: dirs,
+            main,
+            worktrees: found,
+        }
+    }
+
+    fn vault(&self) -> Vault {
+        Vault::new(Root::open(&self.main).unwrap()).with_worktrees(self.worktrees.clone())
+    }
+
+    /// Writes a document (`@wt/<name>/...` lands in that worktree) and has the checker read it.
+    fn add(&self, checker: &mut Checker, path: &str, text: &str) {
+        let abs = match path.strip_prefix(WORKTREE_PREFIX) {
+            Some(rest) => {
+                let (name, rel) = rest.split_once('/').unwrap();
+                let (_, root) = self.worktrees.iter().find(|(n, _)| n == name).unwrap();
+                root.join(rel)
+            }
+            None => self.main.join(path),
+        };
+        std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+        std::fs::write(&abs, text).unwrap();
+        checker.read(&self.vault(), path, &abs);
+    }
+}
+
+fn root(prefix: &str, total: u32) -> BrokenRoot {
+    BrokenRoot {
+        prefix: prefix.to_owned(),
+        total,
+    }
+}
+
+#[test]
+fn the_opened_folder_is_counted_apart_from_its_linked_worktrees() {
+    // issue #62: the panel showed opened root + every worktree as the folder's count
+    let roots = Roots::new(&["feature", "clean"]);
+    let mut checker = Checker::new();
+    roots.add(&mut checker, "docs/a.md", "[x](gone.md)\n");
+    roots.add(
+        &mut checker,
+        "@wt/feature/docs/a.md",
+        "[x](gone.md)\n\n[y](also-gone.md)\n",
+    );
+    roots.add(&mut checker, "@wt/feature/docs/b.md", "[z](nope.md)\n");
+    let vault = roots.vault();
+    let report = report_of(&checker, true, &vault);
+    assert_eq!(report.current, 1, "only the opened folder");
+    assert_eq!(report.total, 4, "every root, as before");
+    assert_eq!(
+        report.roots,
+        [root("", 1), root("@wt/feature", 3), root("@wt/clean", 0)]
+    );
+    let paths: Vec<&str> = report.docs.iter().map(|d| d.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        [
+            "docs/a.md",
+            "@wt/feature/docs/a.md",
+            "@wt/feature/docs/b.md"
+        ],
+        "the opened folder first"
+    );
+    assert!(!report.truncated);
+    let summary = summary_of(&checker, true);
+    assert_eq!((summary.current, summary.total), (1, 4));
+}
+
+#[test]
+fn a_folder_without_worktrees_reports_one_root_and_nothing_before_the_first_scan_is_hidden() {
+    let roots = Roots::new(&[]);
+    let mut checker = Checker::new();
+    assert_eq!(
+        report_of(&checker, false, &roots.vault()).roots,
+        [root("", 0)]
+    );
+    roots.add(&mut checker, "a.md", "[x](gone.md)\n");
+    let report = report_of(&checker, false, &roots.vault());
+    assert!(!report.ready);
+    assert_eq!((report.current, report.total), (1, 1));
+    assert_eq!(report.roots, [root("", 1)]);
+}
+
+#[test]
+fn the_cap_keeps_the_opened_folders_links_before_a_worktrees() {
+    let roots = Roots::new(&["big"]);
+    let mut checker = Checker::new();
+    let mut many = String::new();
+    for n in 0..(MAX_LISTED + 100) {
+        let _ = writeln!(many, "[l{n}](gone/{n}.md)\n");
+    }
+    // `@` sorts before letters: by path alone the worktree would fill the list
+    roots.add(&mut checker, "@wt/big/aaa.md", &many);
+    roots.add(&mut checker, "zzz.md", "[a](gone-a.md) [b](gone-b.md)\n");
+    let report = report_of(&checker, true, &roots.vault());
+    assert_eq!(report.docs[0].path, "zzz.md");
+    assert_eq!(report.docs[0].links.len(), 2);
+    let listed: usize = report.docs.iter().map(|d| d.links.len()).sum();
+    assert_eq!(listed, MAX_LISTED);
+    assert!(report.truncated);
+    assert_eq!(report.current, 2);
+    assert_eq!(report.roots, [root("", 2), root("@wt/big", 600)]);
+}
+
 #[test]
 fn closing_the_project_during_the_first_scan_is_prompt() {
     let h = Harness::new();

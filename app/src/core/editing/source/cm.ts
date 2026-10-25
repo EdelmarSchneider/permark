@@ -81,6 +81,8 @@ const theme = EditorView.theme({
     fontFeatureSettings: '"liga" 0, "calt" 0',
   },
   ".cm-content": { fontFamily: "var(--font-code)", caretColor: "var(--text)", padding: "12px 0" },
+  // a wrapped line goes on a little to the right (its first row stays where it was)
+  ".cm-lineWrapping .cm-line": { paddingLeft: "calc(6px + 2ch)", textIndent: "-2ch" },
   ".cm-scroller": { fontFamily: "var(--font-code)", lineHeight: "1.6" },
   ".cm-gutters": {
     backgroundColor: "var(--bg)",
@@ -159,6 +161,8 @@ export type SourceView = {
   scrollToLine(line: number): void;
   selection(): string;
   insert(text: string, at?: number): void;
+  /** Long lines wrap (the setting) or scroll sideways. */
+  setWrap(on: boolean): void;
   /** Selects the next match of `query` after the selection; false when none. */
   destroy(): void;
 };
@@ -171,9 +175,12 @@ export function createSource(options: {
   host: SourceHost;
   /** The search panel's words in the app's language (CodeMirror phrase -> text). */
   phrases?: Record<string, string>;
+  /** Long lines wrap (the setting; default on). */
+  wrap?: boolean;
 }): SourceView {
   const { host } = options;
   const language = new Compartment();
+  const wrapping = new Compartment();
   const loaded = languageFor(options.path, options.markdown);
   const keys = keymap.of([
     {
@@ -234,7 +241,7 @@ export function createSource(options: {
         drawSelection(),
         history(),
         bracketMatching(),
-        EditorView.lineWrapping,
+        wrapping.of(options.wrap === false ? [] : EditorView.lineWrapping),
         language.of(loaded instanceof Promise ? [] : loaded),
         syntaxHighlighting(style),
         theme,
@@ -310,6 +317,8 @@ export function createSource(options: {
       });
       view.focus();
     },
+    setWrap: (on) =>
+      view.dispatch({ effects: wrapping.reconfigure(on ? EditorView.lineWrapping : []) }),
     destroy: () => view.destroy(),
   };
 }

@@ -56,7 +56,7 @@ pub fn member_location(folder: &Path) -> Result<RepoLocation, String> {
         if !target.is_dir() {
             return Err("the repository named by .git is missing".to_owned());
         }
-        dunce::canonicalize(&target).unwrap_or(target)
+        permark_core::paths::canonicalize(&target).unwrap_or(target)
     } else {
         return Err("no .git".to_owned());
     };

@@ -321,7 +321,8 @@ impl FileOps {
         if !fs::metadata(&target_abs).is_ok_and(|m| m.is_dir()) {
             return Err(FileOpError::Vault(VaultError::NotFound(target.to_string())));
         }
-        let target_canon = dunce::canonicalize(&target_abs).unwrap_or_else(|_| target_abs.clone());
+        let target_canon =
+            crate::paths::canonicalize(&target_abs).unwrap_or_else(|_| target_abs.clone());
         let mut refused = Vec::new();
         let mut seen: Vec<Seen> = Vec::new();
         for raw in sources {
@@ -410,7 +411,7 @@ impl FileOps {
         if is_protected(&target.join_name(name)) {
             return Err(refuse(ImportRefusal::Protected));
         }
-        let canon = dunce::canonicalize(path).map_err(|_| refuse(ImportRefusal::Missing))?;
+        let canon = crate::paths::canonicalize(path).map_err(|_| refuse(ImportRefusal::Missing))?;
         if meta.is_dir() && target_canon.starts_with(&canon) {
             return Err(refuse(ImportRefusal::IntoItself));
         }

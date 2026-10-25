@@ -23,7 +23,8 @@ describe("every key with every plugin on", () => {
     const ids = registry.of("command").map((c) => c.id);
     for (const mac of [false, true]) {
       const map = buildKeymap(shortcuts, {}, ids, mac);
-      for (const combo of ["Mod+b", "Mod+Alt+b", "Mod+Shift+d", "Mod+Shift+n"]) {
+      // Mod+Shift+s: move the open note to a project, in the Notes tab only (UX regressions #13)
+      for (const combo of ["Mod+b", "Mod+Alt+b", "Mod+Shift+d", "Mod+Shift+n", "Mod+Shift+s"]) {
         expect(map.owners.get(combo)?.length, `${combo} mac=${mac}`).toBe(1);
       }
       const requiresOf = (id: string) => registry.of("command").find((c) => c.id === id)?.requires;
@@ -33,6 +34,11 @@ describe("every key with every plugin on", () => {
         expect(map.owners.get(combo)?.length, `${combo} mac=${mac}`).toBe(2);
       }
       expect(conflicts(map, requiresOf), `mac=${mac}`).toEqual([]);
+      expect(map.owners.get("Mod+Shift+s")).toEqual(["notes.moveToProject"]);
+      expect(requiresOf("notes.moveToProject")).toEqual({
+        needs: [{ need: "workspace", kinds: ["notes"] }],
+        prefers: [],
+      });
     }
   });
 });

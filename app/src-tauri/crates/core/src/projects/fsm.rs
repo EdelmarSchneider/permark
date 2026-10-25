@@ -16,7 +16,7 @@ use crate::paths::VaultPath;
 use crate::state::StateData;
 
 pub const MEMBERSHIP_FILE: &str = "membership.json";
-/// Longest `declined` | `migrated` list kept (oldest dropped).
+/// Longest `declined` | `migrated` | `notMoved` list kept (oldest dropped).
 pub const MAX_ANSWERS: usize = 2000;
 
 /// The root's answer to "include the projects inside?".
@@ -93,8 +93,32 @@ pub struct Membership {
     /// Members the agent does not see (profile only: nothing in a folder widens or narrows it).
     #[serde(default)]
     pub agent_off: Vec<String>,
+    /// Move questions the person answered "No, it's new" (§4.4): never asked again while that entry stays missing.
+    /// Absent in older files = none answered; an app without the field keeps it as an unknown field.
+    #[serde(default, deserialize_with = "lenient_not_moved")]
+    pub not_moved: Vec<NotMoved>,
     #[serde(flatten)]
     pub other: serde_json::Map<String, serde_json::Value>,
+}
+
+/// One "No, it's new": the missing entry `uid` is not the project found at path key `path`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotMoved {
+    pub uid: String,
+    pub path: String,
+}
+
+/// `notMoved` as far as it reads: a malformed item (or a value that is no list) is skipped, never the whole file
+/// (a file that does not parse is moved aside with every other answer in it).
+fn lenient_not_moved<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<NotMoved>, D::Error> {
+    let value = serde_json::Value::deserialize(d)?;
+    Ok(match value {
+        serde_json::Value::Array(items) => items
+            .into_iter()
+            .filter_map(|v| serde_json::from_value(v).ok())
+            .collect(),
+        _ => Vec::new(),
+    })
 }
 
 impl StateData for Membership {

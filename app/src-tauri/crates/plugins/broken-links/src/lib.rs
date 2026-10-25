@@ -25,8 +25,8 @@ use permark_core::plugins::{
 use permark_core::tree::Explorer;
 use permark_core::watch::{FsBatch, Subscription};
 
-pub use check::{Checker, MAX_DOC_BYTES};
-pub use types::{BrokenDoc, BrokenLink, BrokenReport, BrokenSummary};
+pub use check::{root_of, Checker, MAX_DOC_BYTES};
+pub use types::{BrokenDoc, BrokenLink, BrokenReport, BrokenRoot, BrokenSummary};
 
 const ID: PluginId = PluginId::of("broken-links");
 /// The most links a report lists (the count is complete past it).
@@ -77,13 +77,94 @@ pub struct BrokenLinksService {
     thread: Mutex<Option<JoinHandle<()>>>,
 }
 
+fn count(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+/// What the window is told: every root, and the opened folder alone.
+fn summary_of(checker: &Checker, ready: bool) -> BrokenSummary {
+    BrokenSummary {
+        ready,
+        total: count(checker.total()),
+        current: count(checker.totals_by_root().get("").copied().unwrap_or(0)),
+    }
+}
+
+/// The report: the opened folder first (its documents and its count), then each worktree in the vault's order, then
+/// any other root; so the list cap cuts a worktree's links before the opened folder's.
+fn report_of(checker: &Checker, ready: bool, vault: &Vault) -> BrokenReport {
+    let worktrees: Vec<String> = vault
+        .worktrees()
+        .iter()
+        .map(|w| format!("{WORKTREE_PREFIX}{}", w.name))
+        .collect();
+    let rank = |prefix: &str| -> usize {
+        if prefix.is_empty() {
+            0
+        } else {
+            worktrees
+                .iter()
+                .position(|w| w == prefix)
+                .map_or(usize::MAX, |at| at + 1)
+        }
+    };
+    let mut broken: Vec<(&str, Vec<&check::LinkRec>)> = checker.broken().into_iter().collect();
+    // stable: by root, then by path as before
+    broken.sort_by_key(|(path, _)| rank(root_of(path)));
+    let mut docs = Vec::new();
+    let mut listed = 0usize;
+    for (path, links) in broken {
+        if listed >= MAX_LISTED {
+            break;
+        }
+        let links: Vec<BrokenLink> = links
+            .iter()
+            .take(MAX_LISTED - listed)
+            .map(|l| BrokenLink {
+                line: l.line,
+                written: l.written.clone(),
+            })
+            .collect();
+        listed += links.len();
+        docs.push(BrokenDoc {
+            path: path.to_owned(),
+            links,
+        });
+    }
+    let by_root = checker.totals_by_root();
+    let mut roots: Vec<BrokenRoot> = std::iter::once(String::new())
+        .chain(worktrees.iter().cloned())
+        .map(|prefix| BrokenRoot {
+            total: count(by_root.get(prefix.as_str()).copied().unwrap_or(0)),
+            prefix,
+        })
+        .collect();
+    // a root the vault does not name (it went while its documents were still known): counted, never lost
+    roots.extend(
+        by_root
+            .iter()
+            .filter(|(prefix, _)| rank(prefix) == usize::MAX)
+            .map(|(prefix, n)| BrokenRoot {
+                prefix: (*prefix).to_owned(),
+                total: count(*n),
+            }),
+    );
+    let total = checker.total();
+    BrokenReport {
+        ready,
+        docs,
+        total: count(total),
+        current: count(by_root.get("").copied().unwrap_or(0)),
+        roots,
+        truncated: total > listed,
+        skipped: count(checker.skipped()),
+    }
+}
+
 impl Shared {
     fn summary(&self) -> BrokenSummary {
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        BrokenSummary {
-            ready: state.ready,
-            total: u32::try_from(state.checker.total()).unwrap_or(u32::MAX),
-        }
+        summary_of(&state.checker, state.ready)
     }
 
     fn abs_of(&self, path: &str) -> Option<std::path::PathBuf> {
@@ -216,33 +297,7 @@ impl BrokenLinksService {
             .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        let mut docs = Vec::new();
-        let mut listed = 0usize;
-        for (path, links) in state.checker.broken() {
-            if listed >= MAX_LISTED {
-                break;
-            }
-            let take = links.iter().take(MAX_LISTED - listed);
-            let links: Vec<BrokenLink> = take
-                .map(|l| BrokenLink {
-                    line: l.line,
-                    written: l.written.clone(),
-                })
-                .collect();
-            listed += links.len();
-            docs.push(BrokenDoc {
-                path: path.to_owned(),
-                links,
-            });
-        }
-        let total = state.checker.total();
-        BrokenReport {
-            ready: state.ready,
-            docs,
-            total: u32::try_from(total).unwrap_or(u32::MAX),
-            truncated: total > listed,
-            skipped: u32::try_from(state.checker.skipped()).unwrap_or(u32::MAX),
-        }
+        report_of(&state.checker, state.ready, &self.shared.vault)
     }
 
     /// Waits until the first scan is done (tests).

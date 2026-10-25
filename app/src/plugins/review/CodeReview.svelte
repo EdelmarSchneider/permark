@@ -2,8 +2,10 @@
   // The body of a code | text document while it is in review: the text read-only, the changes in it (see lines.ts).
   // The review store owns what the changes are and what Keep | Revert do; this draws them. The code view loads on
   // first use. It is drawn for the version of the file the review was drawn from, and only for that one.
+  import { untrack } from "svelte";
   import { api } from "../../api";
   import { t } from "../../core/i18n";
+  import { look } from "../../core/look.svelte";
   import type { ViewerProps } from "../../core/plugins/props";
   import type { LinesView } from "./lines";
   import { review } from "./store.svelte";
@@ -55,6 +57,7 @@
       lines = createLinesView({
         parent,
         path: view.path,
+        wrap: look.wrap,
         host: {
           keep: (index) => void review.keep(index),
           revert: (index) => void review.revert(index),
@@ -85,6 +88,12 @@
       lines.reveal(shown.review.changes[shown.at]);
     }
   }
+
+  // the wrap setting changed: the code view follows
+  $effect(() => {
+    const on = look.wrap;
+    untrack(() => lines?.setWrap(on));
+  });
 
   // what is drawn follows the review (an effect only because the code view is not Svelte)
   $effect(() => {

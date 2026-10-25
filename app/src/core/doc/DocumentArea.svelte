@@ -1,7 +1,7 @@
 <script lang="ts">
   // The document area: header, the page (or the viewer of the file's kind), the notices around it, find in page.
   // Everything about what is shown lives in the document controller; this is the frame and the keys.
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { api, type WorkspaceView } from "../../api";
   import { apiErrorText } from "../errors";
   import { conditions } from "../conditions/context.svelte";
@@ -32,8 +32,20 @@
 
   let scroller: HTMLElement | undefined = $state();
 
-  // a single file shows its own file; a project shows the document the window was told to
-  const path = $derived(workspace.kind === "singleFile" ? workspace.name : shown);
+  // a single file shows its own file, or the one a link inside its folder led to; a project shows the document the
+  // window was told to
+  const path = $derived(
+    workspace.kind === "singleFile" ? (documents.singleDoc ?? workspace.name) : shown,
+  );
+
+  /** Settings at the editor choice ("Choose editor" of a code reference's note). */
+  function chooseEditor(): void {
+    ui.openSettingsPage("editing");
+    // after the page took the focus for itself (its section list)
+    void tick().then(() =>
+      requestAnimationFrame(() => document.getElementById("set-editor")?.focus()),
+    );
+  }
 
   /** What the header shows as the place: a loose file of the Notes shows its name, not its internal path. */
   function headerPath(place: string): string {
@@ -84,8 +96,18 @@
   $effect(() => {
     documents.bind({
       note: (text) => store.notifyNote(text),
+      pageNote: (text, ...actions) => store.notifyKeyed("page", text, ...actions),
+      clearPageNote: () => store.dismissKey("page"),
       fail: (error) => store.notifyFileOpFailed(error),
       reveal: (folder) => revealInTree(folder),
+      editorSet: () => store.editor.trim() !== "",
+      modKey: () => (conditions.current.platform === "mac" ? "Cmd" : "Ctrl"),
+      chooseEditor,
+      openFolderWith: (folder, document) => {
+        void api.openFolderWith(folder, document).then((result) => {
+          if (!result.ok) store.notifyFileOpFailed(result.error);
+        });
+      },
     });
     editing.bind({
       note: (text) => store.notifyNote(text),
@@ -112,6 +134,12 @@
       if (editing.path !== null && editing.path !== shown) editing.release();
       void documents.show(path);
     });
+  });
+
+  // the editor setting changed: the references on the page say again what a click does
+  $effect(() => {
+    void store.editor;
+    untrack(() => documents.retitleRefs());
   });
 
   // the area goes away with the workspace (the window shows the welcome again): the controller lets go of the document

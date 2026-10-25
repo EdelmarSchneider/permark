@@ -1,5 +1,6 @@
 <script lang="ts">
-  // Follow mode in the status bar: that it is on (and how to stop it), and the way back from the last jump.
+  // Follow mode in the status bar: that it is on (and how to stop it), that it waits while the person edits, and the
+  // way back from the last jump.
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
   import Radio from "@lucide/svelte/icons/radio";
   import { t } from "../../core/i18n";
@@ -12,6 +13,7 @@
   <span class="follow" role="status">
     <Radio size={13} aria-hidden="true" />
     {t("follow.on")}
+    {#if follow.paused}<span class="paused">· {t("follow.paused")}</span>{/if}
     {#if from}
       <button type="button" class="link" title={t("follow.back")} onclick={() => follow.goBack()}>
         <ArrowLeft size={12} aria-hidden="true" />
@@ -29,9 +31,14 @@
     gap: 6px;
     padding: 0 6px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: var(--accent);
+    /* the accent as small text on its soft tint: AA in every theme and tone (--accent itself is below it here) */
+    background: var(--accent-soft);
+    color: color-mix(in srgb, var(--accent-text) 85%, var(--text));
     font-weight: 600;
+  }
+  /* quieter by weight, not by color: the pill's text color is the one that keeps AA on its tint */
+  .paused {
+    font-weight: 400;
   }
   .link {
     display: inline-flex;

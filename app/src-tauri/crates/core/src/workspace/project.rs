@@ -282,6 +282,8 @@ pub struct ProjectCore {
     app_services: Arc<Services>,
     /// Opened for a reader with no window: only these plugins run, each told `files_only`.
     files_only: Option<BTreeSet<PluginId>>,
+    /// Agent files at the root, read once at load (`Context.agent_files`).
+    agent_files: Vec<String>,
 }
 
 impl std::fmt::Debug for ProjectCore {
@@ -349,6 +351,8 @@ impl ProjectCore {
         let (enablement, on) = project_enablement(env, &config, &store, files_only.as_ref());
         let extra_roots = env.registry.roots(&on, &root);
         let vault = Vault::new(root).with_worktrees(extra_roots);
+        // a few name checks at the root, no walk (Live's default + the agent offer read them)
+        let agent_files = super::agent_files(&vault);
         let hub = WatchHub::new();
         let own = Arc::new(OwnWrites::new());
         let explorer = Arc::new(Explorer::new(
@@ -472,9 +476,16 @@ impl ProjectCore {
             services: Services::new(),
             app_services: Arc::clone(env.services()),
             files_only,
+            agent_files,
         });
         core.start_plugins(env, enablement, &on);
         core
+    }
+
+    /// The agent files found at the root when the project was opened (`AGENT_FILES` order).
+    #[must_use]
+    pub fn agent_files(&self) -> &[String] {
+        &self.agent_files
     }
 
     /// What plugins publish about the project (the git condition windows read).

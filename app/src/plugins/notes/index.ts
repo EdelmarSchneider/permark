@@ -141,6 +141,21 @@ export default definePlugin({
         when: () => notes.entry?.kind === "note",
         run: () => (notes.current === null ? undefined : notes.openVersions(notes.current)),
       }),
+      // "Save as" convention: the open note goes to a project (Notes tab only; elsewhere the key is free)
+      cx.contribute({
+        kind: "command",
+        id: "notes.moveToProject",
+        label: "notes.moveToProject",
+        requires: IN_NOTES,
+        when: () => notes.entry?.kind === "note",
+        run: () => (notes.current === null ? undefined : notes.openMove(notes.current)),
+      }),
+      cx.contribute({
+        kind: "shortcut",
+        keys: "Mod+Shift+s",
+        command: "notes.moveToProject",
+        requires: IN_NOTES,
+      }),
       cx.contribute({
         kind: "command",
         id: "notes.openFile",

@@ -1,7 +1,9 @@
 <script lang="ts">
-  // The reading look of this project: width and zoom. A small popover under its button; Escape or a click elsewhere
-  // closes it.
+  // The reading look of this project: width and zoom; and whether long lines wrap (everywhere: the same setting as the
+  // settings page and Alt+Z). A small popover under its button; Escape or a click elsewhere closes it.
   import { t } from "../i18n";
+  import { look } from "../look.svelte";
+  import { setWrap } from "./wrapLines";
   import { WIDTHS, ZOOM_DEFAULT, ZOOM_MAX, ZOOM_MIN, reading, type Width } from "./reading.svelte";
 
   type Props = { close: () => void };
@@ -91,6 +93,15 @@
       {t("cmd.zoomReset")}
     </button>
   </div>
+  <label class="wrap">
+    <span>{t("settings.wrap")}</span>
+    <input
+      type="checkbox"
+      role="switch"
+      checked={look.wrap}
+      onchange={(e) => void setWrap(e.currentTarget.checked, false)}
+    />
+  </label>
 </div>
 
 <style>
@@ -146,6 +157,15 @@
     display: flex;
     align-items: center;
     gap: var(--sp-2);
+  }
+  .wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    margin-top: var(--sp-1);
+    min-height: 26px;
+    cursor: pointer;
   }
   .zoom-value {
     min-width: 3.2em;

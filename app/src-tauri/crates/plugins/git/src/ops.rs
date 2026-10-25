@@ -153,7 +153,7 @@ pub fn pathspec(prefix: &str) -> Option<String> {
 }
 
 fn canonical(path: &Path) -> PathBuf {
-    dunce::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+    permark_core::paths::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn same_folder(a: &Path, b: &Path) -> bool {

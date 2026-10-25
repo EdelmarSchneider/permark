@@ -51,6 +51,7 @@ type MockApi = {
   openPath(path: string, placement: string): Promise<unknown>;
   openNotes(placement: string): Promise<unknown>;
   settingsSet(change: { key: string; value: unknown }): Promise<unknown>;
+  projectSessionSet(key: string, value: unknown): Promise<unknown>;
   planImport(
     target: string,
     sources: string[],
@@ -67,7 +68,14 @@ type MockApi = {
     project: { add(path: string, text: string): void; files: Map<string, string> };
     drops: { fire(event: unknown): void };
     projects: { news(event: unknown): void };
+    context: { set(over: Record<string, unknown>): void };
     plugins: {
+      agent: {
+        setEnabled(on: boolean): void;
+        fail(reason: string | null): void;
+        connect(client: string | null): void;
+      };
+      feed(items: unknown[]): void;
       gitMembers: {
         unavailable(on: boolean): void;
         hold(on: boolean): void;
@@ -265,6 +273,139 @@ export async function seed(page: Page, use: SeedUse, args: Record<string, unknow
           target: typeof args["target"] === "string" ? args["target"] : "",
           sources: sources as string[],
         },
+      );
+      break;
+    }
+    case "agentProject":
+    case "gitOnlyProject":
+    case "plainFolder": {
+      // the kind of project (BEFORE `project`): Live changes takes its default (shown with git | agent files)
+      const over =
+        use === "agentProject"
+          ? { agentFiles: ["CLAUDE.md"], git: { status: "noRepo" } }
+          : use === "gitOnlyProject"
+            ? { agentFiles: [], git: { status: "repo", state: "clean" } }
+            : { agentFiles: [], git: { status: "noRepo" } };
+      await withMock(
+        page,
+        async (m, o) => {
+          await m.mockApi.projectSessionSet("layout.views", null);
+          m.mockApi.probe.context.set(o);
+        },
+        over,
+      );
+      break;
+    }
+    case "agent": {
+      // the agent connection of the mock project: the once-only offer's answer (BEFORE `project`), the switch, a server
+      // error, a connected client
+      const offer = args["offer"];
+      if (offer !== undefined && offer !== "unasked" && offer !== "declined" && offer !== "setup") {
+        throw new Error('seed agent: "offer" = unasked | declined | setup');
+      }
+      const error = args["error"];
+      if (error !== undefined && (typeof error !== "string" || error === "")) {
+        throw new Error('seed agent: "error" text expected');
+      }
+      const client = args["client"];
+      if (client !== undefined && (typeof client !== "string" || client === "")) {
+        throw new Error('seed agent: "client" text expected');
+      }
+      const on = args["on"] === true || error !== undefined || client !== undefined;
+      await withMock(
+        page,
+        async (m, a) => {
+          if (a.offer !== null) {
+            await m.mockApi.projectSessionSet(
+              "agent.offer",
+              a.offer === "unasked" ? null : a.offer,
+            );
+          }
+          const agent = m.mockApi.probe.plugins.agent;
+          if (a.error !== null) agent.fail(a.error);
+          if (a.on) agent.setEnabled(true);
+          if (a.client !== null) agent.connect(a.client);
+        },
+        {
+          offer: typeof offer === "string" ? offer : null,
+          error: typeof error === "string" ? error : null,
+          client: typeof client === "string" ? client : null,
+          on,
+        },
+      );
+      break;
+    }
+    case "rightViews": {
+      // the right column's arrangement (app setting)
+      const preset = str(args, "preset");
+      const presets: Record<string, unknown> = {
+        stacked: {
+          v: 1,
+          groups: [
+            { views: ["outline"], share: 0.5 },
+            { views: ["live-feed.panel"], share: 0.5 },
+          ],
+        },
+        tabs: { v: 1, groups: [{ views: ["outline", "live-feed.panel"], share: 1 }] },
+        liveTop: {
+          v: 1,
+          groups: [
+            { views: ["live-feed.panel"], share: 0.5 },
+            { views: ["outline"], share: 0.5 },
+          ],
+        },
+        three: {
+          v: 1,
+          groups: [
+            { views: ["outline"], share: 0.4 },
+            { views: ["live-feed.panel"], share: 0.3 },
+            { views: ["comments.panel"], share: 0.3 },
+          ],
+        },
+      };
+      const value = presets[preset];
+      if (value === undefined)
+        throw new Error(`seed rightViews: preset stacked | tabs | liveTop | three`);
+      await withMock(
+        page,
+        async (m, v) => void (await m.mockApi.settingsSet({ key: "rightViews", value: v })),
+        value,
+      );
+      break;
+    }
+    case "feedQuiet":
+      // a project nobody changed from outside yet (BEFORE `project`): the live feed stays dormant
+      await withMock(
+        page,
+        async (m) => void (await m.mockApi.pluginCall("live-feed.clear", {})),
+        null,
+      );
+      break;
+    case "feedNews": {
+      // `count` changes from outside PerMark (an agent writing), each a new row of the live feed
+      const count = typeof args["count"] === "number" ? args["count"] : 1;
+      const path = str(args, "path", "docs/handbook.md");
+      const kind = str(args, "kind", "modified");
+      if (!["created", "modified", "removed"].includes(kind)) {
+        throw new Error(`seed feedNews: kind created | modified | removed, not ${kind}`);
+      }
+      await withMock(
+        page,
+        (m, a) => {
+          const at = Date.now();
+          const items = Array.from({ length: a.count }, (_, n) => ({
+            item: "entry",
+            id: 100_000 + Math.floor(at % 100_000) * 10 + n,
+            path: a.path,
+            kind: a.kind,
+            atMs: at + n,
+            saves: 1,
+            own: false,
+            isDir: false,
+          }));
+          m.mockApi.probe.plugins.feed(items);
+        },
+        { count, path, kind },
       );
       break;
     }

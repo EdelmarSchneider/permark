@@ -103,7 +103,8 @@ pub fn same_place(a: &Path, b: &Path) -> bool {
 /// The comparable spelling of a path: resolved when it is there, `/` separators, no trailing one, case folded where
 /// the system ignores case.
 fn place_key(path: &Path) -> String {
-    let real = dunce::canonicalize(path).unwrap_or_else(|_| dunce::simplified(path).to_path_buf());
+    let real = permark_core::paths::canonicalize(path)
+        .unwrap_or_else(|_| permark_core::paths::simplified(path).into_owned());
     let text = real.to_string_lossy().replace('\\', "/");
     fold(text.trim_end_matches('/'))
 }

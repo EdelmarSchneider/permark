@@ -1,0 +1,69 @@
+name: Bug report
+description: Something in PerMark does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for taking the time to report a bug. The details below help us find and fix it faster.
+
+        **Please never paste document content that holds secrets, tokens, passwords or private data.** Use a small made-up example instead.
+
+        Found a security problem? Please do not report it here. Use [private vulnerability reporting](https://github.com/EdelmarSchneider/permark/security/advisories/new) instead.
+  - type: input
+    id: version
+    attributes:
+      label: PerMark version
+      description: It is in the name of the file you downloaded, or in your app store or package manager.
+      placeholder: "for example 0.7.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: Operating system version
+      description: For Linux, please add the distribution.
+      placeholder: "for example Windows 11 24H2, macOS 15.1, Ubuntu 24.04"
+  - type: dropdown
+    id: channel
+    attributes:
+      label: How did you install PerMark?
+      options:
+        - GitHub release
+        - Snap
+        - Microsoft Store
+        - winget
+        - Built from source
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you do, step by step, before the problem appeared?
+      placeholder: |
+        1. Open a folder with ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: Expected and actual behavior
+      description: What did you expect to happen, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: screenshots-logs
+    attributes:
+      label: Screenshots or logs (optional)
+      description: You can drag images into this box. Please check that they show no private data.

@@ -89,6 +89,8 @@ export class MockProject {
   readonly dirs = new Set<string>();
   /** Folders made in the Explorer: shown while empty. */
   readonly kept = new Set<string>();
+  /** Names of the linked worktrees of the vault, in its order (their files sit below `@wt/<name>/`). */
+  readonly worktrees: string[] = [];
   readonly #undo: (Op & { id: number })[] = [];
   #nextUndo = 1;
   readonly #plans = new Map<number, MoveSpec[]>();
@@ -322,6 +324,10 @@ export class MockProject {
   create(dir: string, name: string, kind: NewKind): string {
     const full = kind === "file" && !/\.[a-z]+$/i.test(name) ? `${name}.md` : name;
     if (/[\\/:*?"<>|]/.test(full)) throw new MockRefusal("invalidName", "chars");
+    // as the backend (`fileops/names.rs` `new_file_name`): only Markdown and plain text are made here
+    if (kind === "file" && !/\.(md|markdown|txt)$/i.test(full)) {
+      throw new MockRefusal("invalidName", "notMarkdown");
+    }
     const path = dir === "" ? full : `${dir}/${full}`;
     if (this.exists(path)) throw new MockRefusal("exists", path);
     if (kind === "file") this.add(path, "");

@@ -12,33 +12,79 @@ type Fx = {
   doc: DocumentController;
   workspace: WorkspaceView;
   notes: string[];
+  /** The page's notes (with buttons), in order: the text and the button labels. */
+  actions: { text: string; labels: string[]; run: () => void }[];
+  /** The page's note on screen now (one at a time; `null`: none). */
+  pageNote: string | null;
   failures: ApiError[];
   revealed: string[];
+  chose: number;
+  folders: { folder: string; document: string | null }[];
+  /** The person's editor (setting): set by a test. */
+  editor: { set: boolean };
   /** What the window does with `window-changed`: the document follows. */
   follow: () => Promise<void>;
 };
 
-async function setup(): Promise<Fx> {
+async function setup(path: string = MOCK_FOLDER): Promise<Fx> {
   const api = createMockApi();
-  await api.openPath(MOCK_FOLDER, "thisTab");
+  await api.openPath(path, "thisTab");
   const boot = await api.windowBoot();
   if (!boot.ok || boot.value.view.state !== "showing") throw new Error("no workspace");
   const workspace = boot.value.view.workspace;
   const doc = new DocumentController(api);
-  const notes: string[] = [];
-  const failures: ApiError[] = [];
-  const revealed: string[] = [];
+  const fx: Fx = {
+    api,
+    doc,
+    workspace,
+    notes: [],
+    actions: [],
+    failures: [],
+    revealed: [],
+    chose: 0,
+    folders: [],
+    pageNote: null,
+    editor: { set: false },
+    follow: () => tick(),
+  };
   doc.bind({
-    note: (text) => notes.push(text),
-    fail: (error) => failures.push(error),
-    reveal: (path) => revealed.push(path),
+    note: (text) => fx.notes.push(text),
+    pageNote: (text, ...buttons) => {
+      fx.pageNote = text;
+      fx.actions.push({
+        text,
+        labels: buttons.map((b) => b.label),
+        run: () => buttons[0]?.run(),
+      });
+    },
+    clearPageNote: () => (fx.pageNote = null),
+    fail: (error) => fx.failures.push(error),
+    reveal: (folder) => fx.revealed.push(folder),
+    editorSet: () => fx.editor.set,
+    modKey: () => "Ctrl",
+    chooseEditor: () => (fx.chose += 1),
+    openFolderWith: (folder, document) => fx.folders.push({ folder, document }),
   });
   doc.setWorkspace(workspace);
   // the window tells the document what to show, as the real window does on `window-changed`
   await api.on("window-changed", (event) => {
-    if (event.view.state === "showing") void doc.show(event.view.document);
+    if (event.view.state === "showing" && event.view.workspace.kind === "project")
+      void doc.show(event.view.document);
   });
-  return { api, doc, workspace, notes, failures, revealed, follow: () => tick() };
+  return fx;
+}
+
+/** A single-file window: what `DocumentArea` shows follows the controller (its own file, or where a link led). */
+async function showSingle(fx: Fx): Promise<void> {
+  if (fx.workspace.kind !== "singleFile") throw new Error("not a single file");
+  await fx.doc.show(fx.doc.singleDoc ?? fx.workspace.name);
+  await tick();
+}
+
+/** The person chose an editor (the mock's setting too: the backend checks it). */
+async function chooseEditor(fx: Fx): Promise<void> {
+  fx.editor.set = true;
+  await fx.api.settingsSet({ key: "editor", value: "zed {path}:{line}:{col}" });
 }
 
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
@@ -296,6 +342,7 @@ describe("copying", () => {
 describe("the editor", () => {
   it("opens the document and code references in the editor, with the line", async () => {
     const fx = await setup();
+    await chooseEditor(fx);
     await open(fx, "README.md");
     await fx.doc.openInEditor();
     await fx.doc.openCodeRef({ paths: ["src/main.rs"], line: 12, col: 3 }, "src/main.rs");
@@ -323,6 +370,229 @@ describe("the editor", () => {
   });
 });
 
+describe("code references", () => {
+  const ref = (path: string, line: number | null = null) => ({ paths: [path], line, col: null });
+
+  it("opens a file PerMark shows in PerMark at the line, editor or not, never an error", async () => {
+    for (const set of [false, true]) {
+      const fx = await setup();
+      if (set) await chooseEditor(fx);
+      await open(fx, "README.md");
+      await fx.doc.openCodeRef(ref("notes/todo.txt", 2), "notes/todo.txt");
+      await tick();
+      expect(fx.doc.path).toBe("notes/todo.txt");
+      // a text viewer is told the line (a page of blocks scrolls itself)
+      expect(fx.doc.lineRequest).toMatchObject({ path: "notes/todo.txt", line: 2 });
+      expect(fx.api.probe.editor).toEqual([]);
+      expect(fx.failures).toEqual([]);
+      expect(fx.actions).toEqual([]);
+      // a history entry, like a link
+      await fx.doc.back();
+      await tick();
+      expect(fx.doc.path).toBe("README.md");
+    }
+  });
+
+  it("shows code here when no editor is chosen, with one hint per window session", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    await fx.doc.openCodeRef(ref("src/main.rs", 1), "src/main.rs");
+    await tick();
+    expect(fx.doc.path).toBe("src/main.rs");
+    expect(fx.failures).toEqual([]);
+    expect(fx.actions.map((a) => a.text)).toEqual([
+      "To open code in your editor, choose one in Settings.",
+    ]);
+    expect(fx.actions[0]?.labels).toEqual(["Choose editor"]);
+    fx.actions[0]?.run();
+    expect(fx.chose).toBe(1);
+    // again, in this session (another workspace of the window too): no second hint
+    await open(fx, "README.md");
+    await fx.doc.openCodeRef(ref("src/main.rs", 1), "src/main.rs");
+    fx.doc.setWorkspace(null);
+    fx.doc.setWorkspace(fx.workspace);
+    await open(fx, "README.md");
+    await fx.doc.openCodeRef(ref("src/main.rs", 1), "src/main.rs");
+    expect(fx.actions).toHaveLength(1);
+  });
+
+  it("opens code in the chosen editor, and the page stays", async () => {
+    const fx = await setup();
+    await chooseEditor(fx);
+    await open(fx, "README.md");
+    const places = fx.doc.trail.recent().length;
+    await fx.doc.openCodeRef({ paths: ["src/main.rs"], line: 4, col: 2 }, "src/main.rs");
+    expect(fx.api.probe.editor).toEqual([{ path: "src/main.rs", line: 4, col: 2 }]);
+    expect(fx.doc.path).toBe("README.md");
+    expect(fx.doc.trail.recent()).toHaveLength(places);
+  });
+
+  it("Ctrl | Cmd: the editor for any file; without one a note, and nothing opens", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    await fx.doc.openCodeRef(ref("docs/guide.md", 3), "docs/guide.md", true);
+    await tick();
+    expect(fx.doc.path).toBe("README.md");
+    expect(fx.api.probe.editor).toEqual([]);
+    expect(fx.failures).toEqual([]);
+    expect(fx.actions.map((a) => a.text)).toEqual([
+      "No editor is chosen yet. Choose one in Settings.",
+    ]);
+    await chooseEditor(fx);
+    await fx.doc.openCodeRef(ref("docs/guide.md", 3), "docs/guide.md", true);
+    expect(fx.api.probe.editor).toEqual([{ path: "docs/guide.md", line: 3, col: null }]);
+    expect(fx.doc.path).toBe("README.md");
+  });
+
+  it("an editor setting removed meanwhile counts as none", async () => {
+    const fx = await setup();
+    // the window still believes an editor is set; the backend says there is none
+    fx.editor.set = true;
+    await open(fx, "README.md");
+    await fx.doc.openCodeRef(ref("src/main.rs", 1), "src/main.rs");
+    await tick();
+    expect(fx.doc.path).toBe("src/main.rs");
+    expect(fx.failures).toEqual([]);
+    expect(fx.actions).toHaveLength(1);
+    await fx.doc.openCodeRef(ref("src/main.rs", 1), "src/main.rs", true);
+    expect(fx.actions.at(-1)?.text).toBe("No editor is chosen yet. Choose one in Settings.");
+    expect(fx.failures).toEqual([]);
+  });
+
+  it("tells a failed start of the chosen editor", async () => {
+    const fx = await setup();
+    await chooseEditor(fx);
+    await open(fx, "README.md");
+    vi.spyOn(fx.api, "openInEditor").mockResolvedValue({
+      ok: false,
+      error: {
+        kind: "backend",
+        command: "open_in_editor",
+        error: { kind: "editorFailed", subject: null, detail: "not found" },
+      },
+    });
+    await fx.doc.openCodeRef(ref("src/main.rs", 1), "src/main.rs");
+    expect(fx.failures).toHaveLength(1);
+    expect(fx.doc.path).toBe("README.md");
+  });
+
+  it("a line of the shown text document is told again (a second click)", async () => {
+    const fx = await setup();
+    await open(fx, "notes/todo.txt");
+    fx.doc.navigate("notes/todo.txt", null, 3);
+    const first = fx.doc.lineRequest;
+    fx.doc.navigate("notes/todo.txt", null, 3);
+    expect(fx.doc.lineRequest?.line).toBe(3);
+    expect(fx.doc.lineRequest?.seq).not.toBe(first?.seq);
+  });
+});
+
+describe("a single file", () => {
+  const file = `${MOCK_FOLDER}/README.md`;
+
+  it("follows links inside its folder in the same tab, with back and forward", async () => {
+    const fx = await setup(file);
+    await showSingle(fx);
+    expect(fx.doc.path).toBe("README.md");
+    await fx.doc.activateLink("docs/guide.md");
+    await showSingle(fx);
+    expect(fx.doc.path).toBe("docs/guide.md");
+    expect(fx.doc.view?.path).toBe("docs/guide.md");
+    await fx.doc.back();
+    await showSingle(fx);
+    expect(fx.doc.path).toBe("README.md");
+    await fx.doc.forward();
+    await showSingle(fx);
+    expect(fx.doc.path).toBe("docs/guide.md");
+    // from there, a link back up to the file's folder stays inside
+    await fx.doc.activateLink("../README.md");
+    await showSingle(fx);
+    expect(fx.doc.path).toBe("README.md");
+  });
+
+  it("a link above the file's folder: the folder holding both opens, showing the target", async () => {
+    const fx = await setup(file);
+    await showSingle(fx);
+    await fx.doc.activateLink("../elsewhere/plan.md#goals");
+    await showSingle(fx);
+    expect(fx.doc.path).toBe("README.md");
+    expect(fx.actions.map((a) => [a.text, a.labels])).toEqual([
+      ["This link leads outside permark-docs.", ["Open demo to follow this link"]],
+    ]);
+    fx.actions[0]?.run();
+    expect(fx.folders).toEqual([{ folder: "C:/Users/demo", document: "elsewhere/plan.md" }]);
+    // the note went with its button
+    expect(fx.pageNote).toBeNull();
+  });
+
+  it("a link above the drive's first folder: says where it leads, offers nothing that can't reach it", async () => {
+    const fx = await setup(file);
+    await showSingle(fx);
+    await fx.doc.activateLink("../../../../x.md");
+    expect(fx.actions.map((a) => [a.text, a.labels])).toEqual([
+      ["This link leads outside permark-docs.", []],
+    ]);
+  });
+
+  it("a file only a folder window shows: says so, with the folder to open, never the system", async () => {
+    const fx = await setup(file);
+    fx.api.probe.project.add("tools/run.exe", "MZ");
+    await showSingle(fx);
+    await fx.doc.activateLink("tools/run.exe");
+    await showSingle(fx);
+    expect(fx.doc.path).toBe("README.md");
+    expect(fx.api.probe.opened).toEqual([]);
+    expect(fx.actions.map((a) => [a.text, a.labels])).toEqual([
+      [
+        "This link opens when permark-docs is open as a folder.",
+        ["Open permark-docs to follow this link"],
+      ],
+    ]);
+    fx.actions[0]?.run();
+    expect(fx.folders).toEqual([{ folder: MOCK_FOLDER, document: "tools/run.exe" }]);
+  });
+
+  it("one note at a time, gone when another document shows", async () => {
+    const fx = await setup(file);
+    await showSingle(fx);
+    await fx.doc.activateLink("../elsewhere/a.md");
+    await fx.doc.activateLink("../elsewhere/b.md");
+    expect(fx.pageNote).toBe("This link leads outside permark-docs.");
+    await fx.doc.activateLink("docs/guide.md");
+    await showSingle(fx);
+    expect(fx.pageNote).toBeNull();
+  });
+
+  it("tells the backend which file it shows (tab and window title)", async () => {
+    const fx = await setup(file);
+    const shown = vi.spyOn(fx.api, "showDocument");
+    await showSingle(fx);
+    await fx.doc.activateLink("docs/guide.md");
+    await showSingle(fx);
+    expect(shown.mock.calls.map((c) => c[0])).toEqual(["README.md", "docs/guide.md"]);
+  });
+
+  it("references in a single file: exact paths of its folder only", async () => {
+    const fx = await setup(file);
+    await showSingle(fx);
+    const found = await fx.api.resolveCodeRefs("docs/guide.md", [
+      "img/logo.png",
+      "README.md",
+      "main.rs",
+    ]);
+    expect(found.ok && found.value).toEqual([["docs/img/logo.png"], ["README.md"], []]);
+  });
+
+  it("a new workspace starts at its own file", async () => {
+    const fx = await setup(file);
+    await showSingle(fx);
+    await fx.doc.activateLink("docs/guide.md");
+    expect(fx.doc.singleDoc).toBe("docs/guide.md");
+    fx.doc.setWorkspace(null);
+    expect(fx.doc.singleDoc).toBeNull();
+  });
+});
+
 describe("where the reader is", () => {
   it("remembers a place per document and gives it back", () => {
     reading.remember("a.md", 420.4);
@@ -336,5 +606,82 @@ describe("where the reader is", () => {
     for (let i = 0; i < 60; i++) reading.remember(`d${i}.md`, 10 + i);
     expect(reading.scrollOf("d0.md")).toBeNull();
     expect(reading.scrollOf("d59.md")).toBe(69);
+  });
+});
+
+// ---- verify B3: never run, never leave the folder (adversarial) ------------------------------------------------
+
+describe("verify B3: code references and single-file links never run a program", () => {
+  const programs = [
+    "tools/run.exe",
+    "tools/setup.msi",
+    "tools/go.bat",
+    "tools/go.cmd",
+    "tools/go.ps1",
+    "tools/go.sh",
+    "tools/go.lnk",
+    "tools/go.url",
+    "tools/go.desktop",
+    "tools/go.scr",
+    "tools/go.jar",
+    "tools/go",
+    "tools/.bashrc",
+    "tools/go.EXE",
+  ];
+
+  it("a reference to a program: PerMark shows it or the person's editor gets it, never the system", async () => {
+    for (const editor of [false, true]) {
+      for (const modifier of [false, true]) {
+        const fx = await setup();
+        for (const path of programs) fx.api.probe.project.add(path, "MZ");
+        if (editor) await chooseEditor(fx);
+        await open(fx, "README.md");
+        for (const path of programs) {
+          await fx.doc.openCodeRef({ paths: [path], line: 1, col: null }, path, modifier);
+          await tick();
+        }
+        expect(fx.api.probe.opened).toEqual([]);
+        expect(fx.failures).toEqual([]);
+        if (editor) {
+          expect(fx.api.probe.editor.map((e) => e.path)).toEqual(programs);
+        } else {
+          expect(fx.api.probe.editor).toEqual([]);
+        }
+      }
+    }
+  });
+
+  it("a single file: links to programs and odd spellings stay inert or inside", async () => {
+    const fx = await setup(`${MOCK_FOLDER}/README.md`);
+    for (const path of programs) fx.api.probe.project.add(path, "MZ");
+    await showSingle(fx);
+    const hrefs = [
+      ...programs,
+      "file:///C:/Windows/System32/calc.exe",
+      "C:\\Windows\\System32\\calc.exe",
+      "\\\\server\\share\\run.exe",
+      "javascript:alert(1)",
+      "vbscript:x",
+      "data:text/html,<script>x</script>",
+    ];
+    for (const href of hrefs) {
+      await fx.doc.activateLink(href);
+      await showSingle(fx);
+    }
+    expect(fx.api.probe.opened).toEqual([]);
+    expect(fx.api.probe.editor).toEqual([]);
+  });
+
+  it("a single file: links clicked in a burst end on the last one", async () => {
+    const fx = await setup(`${MOCK_FOLDER}/README.md`);
+    await showSingle(fx);
+    await Promise.all([
+      fx.doc.activateLink("docs/guide.md"),
+      fx.doc.activateLink("notes/todo.txt"),
+      fx.doc.activateLink("docs/guide.md"),
+    ]);
+    await showSingle(fx);
+    expect(fx.doc.singleDoc).toBe("docs/guide.md");
+    expect(fx.doc.path).toBe("docs/guide.md");
   });
 });

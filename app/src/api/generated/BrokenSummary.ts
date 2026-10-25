@@ -3,4 +3,12 @@
 /**
  * What the window is told when the picture changed.
  */
-export type BrokenSummary = { ready: boolean, total: number, };
+export type BrokenSummary = { ready: boolean, 
+/**
+ * Every root.
+ */
+total: number, 
+/**
+ * The opened folder alone.
+ */
+current: number, };

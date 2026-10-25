@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { findTextRefs, parseInlineRef, refLabel } from "./codeRefs";
+import {
+  decideRef,
+  extensionOf,
+  findTextRefs,
+  inApp,
+  parseInlineRef,
+  refLabel,
+  refTitle,
+} from "./codeRefs";
 
 describe("inline references", () => {
   it("reads a path with or without a line", () => {
@@ -76,5 +84,49 @@ describe("references in text", () => {
   it("writes a reference back", () => {
     expect(refLabel("a.rs", 3)).toBe("a.rs:3");
     expect(refLabel("a.rs", null)).toBe("a.rs");
+  });
+});
+
+describe("what a click on a reference does", () => {
+  it("knows the files PerMark shows itself", () => {
+    for (const path of [
+      "README.md",
+      "docs/a.MD",
+      "notes/todo.txt",
+      "package.json",
+      "c.yml",
+      "x.png",
+    ])
+      expect(inApp(path), path).toBe(true);
+    for (const path of ["src/main.rs", "app.ts", "Makefile", ".env.local", "a.md.rs", "dir.md/x"])
+      expect(inApp(path), path).toBe(false);
+    expect(extensionOf(".gitignore")).toBe("");
+    expect(extensionOf("a/b.TOML")).toBe("toml");
+  });
+
+  // the table of the spec (reading.md §Code references), every cell
+  it.each([
+    // path, editor set, modifier, decision
+    ["docs/guide.md", true, false, { kind: "inApp", hint: false }],
+    ["docs/guide.md", false, false, { kind: "inApp", hint: false }],
+    ["src/main.rs", true, false, { kind: "editor" }],
+    ["src/main.rs", false, false, { kind: "inApp", hint: true }],
+    ["docs/guide.md", true, true, { kind: "editor" }],
+    ["src/main.rs", true, true, { kind: "editor" }],
+    ["docs/guide.md", false, true, { kind: "chooseEditor" }],
+    ["src/main.rs", false, true, { kind: "chooseEditor" }],
+  ] as const)("%s, editor %s, modifier %s", (path, editorSet, modifier, decision) => {
+    expect(decideRef(path, editorSet, modifier)).toEqual(decision);
+  });
+
+  it("names in the tooltip what a click does", () => {
+    expect(refTitle("docs/a.md", 3, true)).toEqual({ key: "codeRef.titleOpenAtEditor", line: 3 });
+    expect(refTitle("docs/a.md", null, true).key).toBe("codeRef.titleOpenEditor");
+    expect(refTitle("docs/a.md", 3, false).key).toBe("codeRef.titleOpenAt");
+    expect(refTitle("src/a.rs", 3, true).key).toBe("codeRef.titleEditorAt");
+    expect(refTitle("src/a.rs", null, true).key).toBe("codeRef.titleEditor");
+    // no editor: code is shown here, and the tooltip promises nothing about an editor
+    expect(refTitle("src/a.rs", 3, false).key).toBe("codeRef.titleOpenAt");
+    expect(refTitle("src/a.rs", null, false).key).toBe("codeRef.titleOpen");
   });
 });

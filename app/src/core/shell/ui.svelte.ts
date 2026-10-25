@@ -15,10 +15,10 @@ export type Finder =
   /** `seed` changes on every open: the box starts fresh. */
   | { status: "open"; preset: FinderPreset; seed: number };
 
-/** The sections of the settings page. */
-export type SettingsSection =
+/** The core sections of the settings page. */
+export type CoreSettingsSection =
   "reading" | "editing" | "integration" | "plugins" | "projects" | "project";
-export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
+export const SETTINGS_SECTIONS: readonly CoreSettingsSection[] = [
   "reading",
   "editing",
   "integration",
@@ -26,6 +26,21 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   "projects",
   "project",
 ];
+/** Where each core section sits among the plugins' own (`settingsPage { order }`). */
+export const CORE_SECTION_ORDER: Readonly<Record<CoreSettingsSection, number>> = {
+  reading: 10,
+  editing: 20,
+  integration: 40,
+  plugins: 50,
+  projects: 60,
+  project: 70,
+};
+/** A plugin's own section (`<plugin>.<name>`: the dot keeps it apart from every core section name). */
+export type PluginPageId = `${string}.${string}`;
+/** A section of the settings page: a core one or a plugin's own. */
+export type SettingsSection = CoreSettingsSection | PluginPageId;
+/** Where focus goes when the page opens: the nav (the section list) or the section's first control. */
+export type SettingsEntry = "nav" | "content";
 export type SettingsPage = { status: "closed" } | { status: "open"; section: SettingsSection };
 /** The "Initialize PerMark" question: which folder (`path`, absolute), what it is called, and whether it opens once
  *  set up (New project; otherwise it is the project shown already). */
@@ -52,6 +67,9 @@ class UiStore {
   keyboard = $state(false);
   settings = $state(false);
   settingsPage = $state.raw<SettingsPage>({ status: "closed" });
+  /** The section asked to take focus when it shows (`takeContentFocus`). Not reactive: taking it changes nothing on
+   *  screen (a write to the page state would draw the section again). */
+  #contentFocus: SettingsSection | null = null;
   initDialog = $state.raw<InitDialog>({ status: "closed" });
   finding = $state(false);
   /** The window close prompt (this view is the one on screen): the tabs with unsaved edits; `null`: not asking. */
@@ -143,18 +161,35 @@ class UiStore {
     this.settings = false;
   }
 
-  /** The full settings page (the popover closes). */
-  openSettingsPage(section: SettingsSection = "reading"): void {
+  /** The full settings page (the popover closes). `entry` `content`: the section focuses its first control. */
+  openSettingsPage(section: SettingsSection = "reading", entry: SettingsEntry = "nav"): void {
     this.settings = false;
     this.settingsPage = { status: "open", section };
+    this.#contentFocus = entry === "content" ? section : null;
   }
 
   showSettingsSection(section: SettingsSection): void {
-    if (this.settingsPage.status === "open") this.settingsPage = { status: "open", section };
+    if (this.settingsPage.status !== "open") return;
+    this.settingsPage = { status: "open", section };
+    this.#contentFocus = null;
+  }
+
+  /**
+   * Whether the open section `section` was asked to take focus (opened with `entry` `content`); asking answers once
+   * (the request is spent: showing the section again from the nav keeps focus there).
+   */
+  takeContentFocus(section: SettingsSection): boolean {
+    const page = this.settingsPage;
+    if (page.status !== "open" || page.section !== section || this.#contentFocus !== section) {
+      return false;
+    }
+    this.#contentFocus = null;
+    return true;
   }
 
   closeSettingsPage(): void {
     this.settingsPage = { status: "closed" };
+    this.#contentFocus = null;
   }
 
   /** Asks whether to initialize PerMark in a folder. */

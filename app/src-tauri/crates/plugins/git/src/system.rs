@@ -4,7 +4,6 @@
 use std::ffi::OsStr;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
@@ -24,6 +23,13 @@ const MAX_OUTPUT: usize = 64 * 1024 * 1024;
 /// Most bytes of a committed file.
 const MAX_BLOB: usize = 8 * 1024 * 1024;
 const MAX_STDERR: usize = 64 * 1024;
+
+/// Variables every call sets: no optional locks (a status never blocks the person's git), plain messages, no prompt.
+const SET: [(&str, &str); 3] = [
+    ("GIT_OPTIONAL_LOCKS", "0"),
+    ("LC_ALL", "C"),
+    ("GIT_TERMINAL_PROMPT", "0"),
+];
 
 /// Variables that would point git somewhere else than the folder it is asked about.
 const SCRUBBED: [&str; 8] = [
@@ -140,30 +146,19 @@ pub fn run_until(
     if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
         return Err(GitError::Failed("stopped".to_owned()));
     }
-    let mut command = Command::new(exe);
-    command
-        .current_dir(dunce::simplified(dir))
-        .args(["--no-pager", "-c", "core.fsmonitor=false"])
-        .args(args)
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .env("LC_ALL", "C")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    for name in SCRUBBED {
-        command.env_remove(name);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // no console window flashing up for each call; suspended until it is in its job (`Tree::adopt`)
-        command.creation_flags(0x0800_0000 | crate::tree::START_SUSPENDED);
-    }
-    let mut child = command
-        .spawn()
-        .map_err(|e| GitError::Spawn(e.to_string()))?;
-    let tree = Tree::adopt(&mut child).map_err(|e| GitError::Spawn(e.to_string()))?;
+    let mut all: Vec<&OsStr> = ["--no-pager", "-c", "core.fsmonitor=false"]
+        .into_iter()
+        .map(OsStr::new)
+        .collect();
+    all.extend_from_slice(args);
+    let mut child = Proc::start(
+        exe,
+        &permark_core::paths::simplified(dir),
+        &all,
+        &SET,
+        &SCRUBBED,
+    )
+    .map_err(|e| GitError::Spawn(e.to_string()))?;
     let overflow = Arc::new(AtomicBool::new(false));
     let out = spawn_reader(child.stdout.take(), max, Arc::clone(&overflow));
     let err = spawn_reader(
@@ -172,22 +167,22 @@ pub fn run_until(
         Arc::new(AtomicBool::new(false)),
     );
     let started = Instant::now();
-    let status = loop {
+    let code = loop {
         match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) => {}
+            Ok(Wait::Ended(code)) => break code,
+            Ok(Wait::Running) => {}
             Err(e) => return Err(GitError::Spawn(e.to_string())),
         }
         if overflow.load(Ordering::SeqCst) {
-            tree.kill(&mut child);
+            child.kill();
             return Err(GitError::TooLarge(max));
         }
         if started.elapsed() > timeout {
-            tree.kill(&mut child);
+            child.kill();
             return Err(GitError::Timeout);
         }
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-            tree.kill(&mut child);
+            child.kill();
             return Err(GitError::Failed("stopped".to_owned()));
         }
         thread::sleep(Duration::from_millis(3));
@@ -198,32 +193,70 @@ pub fn run_until(
         return Err(GitError::TooLarge(max));
     }
     Ok(Output {
-        code: status.code(),
+        code,
         stdout: out.take(),
         stderr: String::from_utf8_lossy(&err.take()).trim().to_owned(),
     })
 }
 
-/// Elsewhere git on `PATH` is the real program: killing it is enough (see `tree.rs` for Windows).
+/// A started git: still running, or ended with this exit code (`None`: ended by a signal).
+pub(crate) enum Wait {
+    Running,
+    Ended(Option<i32>),
+}
+
+/// Elsewhere git on `PATH` is the real program (no launcher): `std::process`, killed as is (see `tree.rs` for
+/// Windows).
 #[cfg(not(windows))]
-struct Tree;
+struct Proc {
+    child: std::process::Child,
+    stdout: Option<std::process::ChildStdout>,
+    stderr: Option<std::process::ChildStderr>,
+}
 
 #[cfg(not(windows))]
-impl Tree {
-    #[allow(clippy::unnecessary_wraps)]
-    fn adopt(_: &mut std::process::Child) -> std::io::Result<Self> {
-        Ok(Self)
+impl Proc {
+    fn start(
+        exe: &Path,
+        dir: &Path,
+        args: &[&OsStr],
+        set: &[(&str, &str)],
+        remove: &[&str],
+    ) -> std::io::Result<Self> {
+        let mut command = std::process::Command::new(exe);
+        command
+            .current_dir(dir)
+            .args(args)
+            .envs(set.iter().copied())
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        for name in remove {
+            command.env_remove(name);
+        }
+        let mut child = command.spawn()?;
+        Ok(Self {
+            stdout: child.stdout.take(),
+            stderr: child.stderr.take(),
+            child,
+        })
     }
 
-    #[allow(clippy::unused_self)]
-    fn kill(&self, child: &mut std::process::Child) {
-        let _ = child.kill();
-        let _ = child.wait();
+    fn try_wait(&mut self) -> std::io::Result<Wait> {
+        Ok(self
+            .child
+            .try_wait()?
+            .map_or(Wait::Running, |status| Wait::Ended(status.code())))
+    }
+
+    fn kill(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
 #[cfg(windows)]
-use crate::tree::Tree;
+use crate::tree::Proc;
 
 /// A hex object id as git prints it (4..=64 digits): the only text of ours that reaches git as a revision.
 fn is_hex_oid(text: &str) -> bool {

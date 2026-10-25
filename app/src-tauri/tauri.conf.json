@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "PerMark",
-  "version": "0.6.4",
+  "version": "0.7.0",
   "identifier": "dev.permark.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -43,8 +43,20 @@
           "SpanishInternational",
           "German",
           "SimpChinese",
-          "Italian"
+          "Italian",
+          "Japanese",
+          "Korean",
+          "French",
+          "Portuguese",
+          "Catalan",
+          "Galician",
+          "Romanian"
         ],
+        "customLanguageFiles": {
+          "Catalan": "installer/languages/Catalan.nsh",
+          "Galician": "installer/languages/Galician.nsh",
+          "Romanian": "installer/languages/Romanian.nsh"
+        },
         "displayLanguageSelector": true,
         "installerHooks": "installer/hooks.nsh"
       }

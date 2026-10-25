@@ -185,6 +185,15 @@ impl BackendCell {
     pub fn unavailable(&self) -> bool {
         matches!(self.chosen.get(), Some(None))
     }
+
+    /// Whether the chosen backend's running calls can be killed (the installed git), without choosing.
+    #[must_use]
+    pub fn killable(&self) -> bool {
+        self.chosen
+            .get()
+            .and_then(Option::as_ref)
+            .is_some_and(|b| b.cancellable(&Arc::new(AtomicBool::new(false))).is_some())
+    }
 }
 
 /// Whether the file `path` (project path) is at | below one of `excluded` (path keys).

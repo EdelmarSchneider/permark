@@ -8,6 +8,7 @@ mod sigs;
 #[cfg(test)]
 mod tests;
 mod types;
+mod wsl;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
@@ -21,7 +22,7 @@ pub use types::{Change, ChangeKind, FsBatch, BULK_CHANGES};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LiveStatus {
     Available,
-    /// `reason` is an i18n suffix (`watchFailed`).
+    /// `reason`: `watchFailed` (the OS watch cannot start | stopped) | `wsl` (a WSL folder on Windows: not watched).
     Unavailable {
         reason: String,
     },

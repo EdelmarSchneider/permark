@@ -13,20 +13,10 @@ import {
 } from "../../api";
 import { windowStore } from "../window.svelte";
 
-/** The folder of the project this window shows (`null`: none). Reactive. */
+/** The folder of the project this window shows (`null`: none). Reactive; while another folder opens in this view, still
+ *  the one on screen (unchanged: what follows it does not run again for a folder about to go). */
 export function workspaceRoot(): string | null {
-  const view = windowStore.view;
-  switch (view.state) {
-    case "showing":
-      return view.workspace.kind === "project" ? view.workspace.root : null;
-    case "opening":
-      return view.showing?.kind === "project" ? view.showing.root : null;
-    case "welcome":
-    case "closing":
-      return null;
-    default:
-      return view satisfies never;
-  }
+  return windowStore.root;
 }
 
 export class PluginClient {

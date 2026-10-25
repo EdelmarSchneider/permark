@@ -1,14 +1,21 @@
 <script lang="ts">
-  // The full settings: a left list of sections (Reading, Editing, Integration, Plugins, Projects inside, This folder)
-  // and the shown one at the right, each a card of rows; Projects inside only where the folder holds projects
-  // (`projects.md` §12.2; loaded when shown). Covers the window below the top bar; Escape or Close goes back to where
-  // the person was.
+  // The full settings: a left list of sections (Reading, Editing, Integration, Plugins, Projects inside, This folder,
+  // and the plugins' own, such as AI agents, by order) and the shown one at the right, each a card of rows; Projects
+  // inside only where the folder holds projects (`projects.md` §12.2; loaded when shown). Covers the window below the
+  // top bar; Escape or Close goes back to where the person was.
   import X from "@lucide/svelte/icons/x";
   import { conditions } from "../../conditions/context.svelte";
   import { t, type MessageKey } from "../../i18n";
+  import { contributions } from "../../plugins/instance.svelte";
   import { projects } from "../../projects/instance.svelte";
   import type { WindowStore } from "../../window.svelte";
-  import { SETTINGS_SECTIONS, ui, type SettingsSection } from "../ui.svelte";
+  import {
+    CORE_SECTION_ORDER,
+    SETTINGS_SECTIONS,
+    ui,
+    type CoreSettingsSection,
+    type SettingsSection,
+  } from "../ui.svelte";
   import Card from "./Card.svelte";
   import EditingSection from "./EditingSection.svelte";
   import IntegrationSection from "./IntegrationSection.svelte";
@@ -19,7 +26,7 @@
   type Props = { store: WindowStore };
   let { store }: Props = $props();
 
-  const LABELS: Record<SettingsSection, MessageKey> = {
+  const LABELS: Record<CoreSettingsSection, MessageKey> = {
     reading: "settings.section.reading",
     editing: "settings.section.editing",
     integration: "settings.section.integration",
@@ -29,18 +36,30 @@
   };
 
   const inProject = $derived(conditions.current.workspace === "project");
-  /** Sections the person can reach here: Project only while a project is shown, Projects only where it holds some. */
-  const sections = $derived(
-    SETTINGS_SECTIONS.filter(
-      (s) =>
-        (s !== "project" || inProject) && (s !== "projects" || (inProject && projects.present)),
-    ),
+  /** The plugins' own sections that may show here (plugin on, requirement met). */
+  const pluginPages = $derived(contributions.visible("settingsPage", conditions.current));
+  type NavItem = { id: SettingsSection; label: MessageKey; order: number };
+  /** Sections the person can reach here: Project only while a project is shown, Projects only where it holds some;
+   *  the plugins' sections among them by order. */
+  const nav = $derived(
+    [
+      ...SETTINGS_SECTIONS.filter(
+        (s) =>
+          (s !== "project" || inProject) && (s !== "projects" || (inProject && projects.present)),
+      ).map((s): NavItem => ({ id: s, label: LABELS[s], order: CORE_SECTION_ORDER[s] })),
+      ...pluginPages.map((p): NavItem => ({ id: p.id, label: p.label, order: p.order })),
+    ].sort((a, b) => a.order - b.order),
   );
+  const sections = $derived(nav.map((item) => item.id));
   const wanted = $derived(ui.settingsPage.status === "open" ? ui.settingsPage.section : "reading");
   /** Settings > Projects inside: its code loads the first time it shows (a plain folder never needs it). */
   const projectsSection = (): Promise<typeof import("../../projects/ProjectsSection.svelte")> =>
     import("../../projects/ProjectsSection.svelte");
   const section = $derived(sections.includes(wanted) ? wanted : "reading");
+  const shown = $derived(nav.find((item) => item.id === section));
+  const pluginPage = $derived(pluginPages.find((p) => p.id === section) ?? null);
+  /** Its code, loaded once per page shown (the same promise while it shows: the section is never drawn twice). */
+  const pluginView = $derived(pluginPage?.view() ?? null);
 
   let page: HTMLElement | undefined = $state();
 
@@ -119,23 +138,27 @@
     </header>
     <div class="layout">
       <nav class="nav" aria-label={t("settings.sections")}>
-        {#each sections as name (name)}
+        {#each nav as item (item.id)}
           <button
             type="button"
             class="nav-item"
-            aria-current={name === section ? "page" : undefined}
-            tabindex={name === section ? 0 : -1}
-            onclick={() => ui.showSettingsSection(name)}
+            aria-current={item.id === section ? "page" : undefined}
+            tabindex={item.id === section ? 0 : -1}
+            onclick={() => ui.showSettingsSection(item.id)}
             onkeydown={onnavkey}
           >
-            {t(LABELS[name])}
+            {t(item.label)}
           </button>
         {/each}
       </nav>
       <div class="content">
         <div class="inner">
-          <h3 class="title">{t(LABELS[section])}</h3>
-          {#if section === "reading"}
+          <h3 class="title">{t(shown?.label ?? LABELS.reading)}</h3>
+          {#if pluginView !== null}
+            {#await pluginView then loaded}
+              <loaded.default />
+            {/await}
+          {:else if section === "reading"}
             <Card><ReadingSection {store} /></Card>
           {:else if section === "editing"}
             <Card><EditingSection {store} /></Card>

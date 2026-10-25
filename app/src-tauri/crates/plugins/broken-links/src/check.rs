@@ -43,6 +43,16 @@ pub struct Checker {
     skipped: HashSet<String>,
 }
 
+/// The root a project path belongs to: `""` (the opened folder) or `@wt/<name>` (a linked worktree).
+#[must_use]
+pub fn root_of(path: &str) -> &str {
+    let Some(rest) = path.strip_prefix(WORKTREE_PREFIX) else {
+        return "";
+    };
+    let name = rest.split('/').next().unwrap_or(rest);
+    &path[..WORKTREE_PREFIX.len() + name.len()]
+}
+
 fn is_document(path: &str) -> bool {
     category_of(path.rsplit('/').next().unwrap_or(path)) == Category::Markdown
 }
@@ -115,6 +125,19 @@ impl Checker {
             .values()
             .map(|links| links.iter().filter(|l| l.broken).count())
             .sum()
+    }
+
+    /// Broken links per root (`root_of`); roots without any are left out.
+    #[must_use]
+    pub fn totals_by_root(&self) -> BTreeMap<&str, usize> {
+        let mut out: BTreeMap<&str, usize> = BTreeMap::new();
+        for (path, links) in &self.docs {
+            let broken = links.iter().filter(|l| l.broken).count();
+            if broken > 0 {
+                *out.entry(root_of(path)).or_default() += broken;
+            }
+        }
+        out
     }
 
     /// Reads a document (again): its links, checked against the disk. A document that cannot be read is dropped and

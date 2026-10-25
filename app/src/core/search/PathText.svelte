@@ -30,7 +30,7 @@
   }
   .folder {
     margin-left: var(--sp-2);
-    color: var(--faint);
+    color: var(--muted); /* small text: >= 4.5:1 (--faint is for icons and borders) */
     font-size: var(--fs-ui-sm);
   }
 </style>

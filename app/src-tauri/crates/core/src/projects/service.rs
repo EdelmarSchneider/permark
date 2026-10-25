@@ -15,8 +15,8 @@ use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
 use super::card::{self, Card, CardChange, CardDto, CardPlace};
 use super::fsm::{
-    self, AgentChoice, Candidate, Event, Found, Inputs, Membership, MissingReason, Presence,
-    ProjectMarker, RecEntry, RootAnswer, MEMBERSHIP_FILE,
+    self, AgentChoice, Candidate, Event, Found, Inputs, Membership, MissingReason, NotMoved,
+    Presence, ProjectMarker, RecEntry, RootAnswer, MAX_ANSWERS, MEMBERSHIP_FILE,
 };
 use super::grace::{self, Came, FolderId, Left, Vanished};
 use super::map::{within, AgentRules, AncestorRules, MemberInfo, ProjectMap};
@@ -363,7 +363,9 @@ struct Inner {
     removed: HashSet<ProjectUid>,
     undo: Option<IncludeUndo>,
     gone_told: HashSet<ProjectUid>,
-    rejected: HashSet<(ProjectUid, String)>,
+    /// Move questions answered "No, it's new" (missing entry, candidate path key), oldest first; kept in the profile
+    /// (`membership.json` `notMoved`) until that entry is here again.
+    rejected: Vec<(ProjectUid, String)>,
     ask: Option<MoveAsk>,
     ancestors: (Vec<AncestorRules>, Option<Instant>),
     /// The root's own `ignore` list (`.permark/config.toml`), read at open and when that file changes.
@@ -553,7 +555,11 @@ impl Projects {
                 removed: HashSet::new(),
                 undo: None,
                 gone_told: HashSet::new(),
-                rejected: HashSet::new(),
+                rejected: kept
+                    .not_moved
+                    .iter()
+                    .filter_map(|n| Some((ProjectUid::parse(&n.uid)?, n.path.clone())))
+                    .collect(),
                 ask: None,
                 ancestors: (Vec::new(), None),
                 root_ignore: root_ignore.to_vec(),
@@ -1129,6 +1135,7 @@ impl Projects {
         inner.vanished = vanished;
         let here: HashSet<ProjectUid> = inner.inputs.included().into_iter().collect();
         inner.res.retain(|uid, _| here.contains(uid));
+        self.forget_answers_of_present(inner);
     }
 
     /// Opened alone (`projects.md` §5.2): every ancestor (<= 32 levels up) whose record lists this folder or a folder
@@ -1461,6 +1468,19 @@ impl Projects {
             inner.waiting = waiting.len();
         }
         inner.ask = self.move_question(inner);
+    }
+
+    /// A "No, it's new" holds while its entry stays missing: once the entry is here again (back at its path, moved by
+    /// a Yes | Locate… | a rename seen live), the answer goes, so a later move of that project is asked again.
+    fn forget_answers_of_present(&self, inner: &mut Inner) {
+        let before = inner.rejected.len();
+        let presence = &inner.inputs.presence;
+        inner
+            .rejected
+            .retain(|(uid, _)| !matches!(presence.get(uid), Some(Presence::Here(_))));
+        if inner.rejected.len() != before {
+            let _ = self.save_membership(inner);
+        }
     }
 
     /// While a grace window runs: folders new since `before` (not listed) leave the found set (no row, no strip); one
@@ -1968,6 +1988,14 @@ impl Projects {
                 .iter()
                 .map(|u| u.as_str().to_owned())
                 .collect(),
+            not_moved: inner
+                .rejected
+                .iter()
+                .map(|(uid, path)| NotMoved {
+                    uid: uid.as_str().to_owned(),
+                    path: path.clone(),
+                })
+                .collect(),
             other: inner.other.clone(),
         };
         Ok(self.membership.save(&data)?)
@@ -2355,7 +2383,7 @@ impl Projects {
     }
 
     /// The move question's answer: `same` = it moved (the entry follows), else the candidate stays a new project and
-    /// is not asked about again this session.
+    /// is not asked about again while the entry stays missing (kept in the profile: a new core, a restart remember it).
     ///
     /// # Errors
     /// `Unavailable`, `Conflict`, IO.
@@ -2384,7 +2412,14 @@ impl Projects {
             self.finish(&after);
         } else {
             let mut inner = self.state();
-            inner.rejected.insert((uid.clone(), path.key()));
+            let pair = (uid.clone(), path.key());
+            if !inner.rejected.contains(&pair) {
+                inner.rejected.push(pair);
+                let over = inner.rejected.len().saturating_sub(MAX_ANSWERS);
+                inner.rejected.drain(..over);
+                // not saved (profile not writable): still not asked again while this folder stays open
+                let _ = self.save_membership(&inner);
+            }
             // the next candidate, if any (clones: one at a time)
             inner.ask = self.move_question(&inner);
             inner.seq += 1;

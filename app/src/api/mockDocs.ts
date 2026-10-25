@@ -25,7 +25,7 @@ const TEXTS: Record<string, { text: string; language: string; format: string }> 
     format: "json",
   },
   "notes/todo.txt": {
-    text: "todo\n- read the guide\n- write the next section\n",
+    text: "todo\n- read the guide\n- write the next section\n- check the build log:\n  2026-10-22T09:14:03.512Z INFO [runner] step 4/7 finished: built 1284 modules in 38.2 s, cache hits 1120 (87.2%), warnings 3 (unused import in src/render/page.ts:41, deprecated option 'legacyAnchors' in docs.config.json, slow plugin 'mermaid' took 6.1 s), output written to dist/site with 412 pages, 96 images and 18 downloads; next step: link check over 3 018 links (external links skipped: offline mode)\n",
     language: "txt",
     format: "text",
   },
@@ -116,6 +116,7 @@ export function mockLinkTarget(
   doc: string,
   href: string,
   exists: (path: string) => boolean,
+  singleFile = false,
 ): LinkTarget {
   const value = href.trim();
   if (value.startsWith("#")) return { type: "anchor", id: decodeURIComponent(value.slice(1)) };
@@ -129,8 +130,13 @@ export function mockLinkTarget(
   const parts = target?.startsWith("/") ? [] : folder;
   for (const part of decodeURIComponent(target ?? "").split("/")) {
     if (part === "" || part === ".") continue;
-    if (part === "..") parts.pop();
-    else parts.push(part);
+    if (part === "..") {
+      // above the root: never served; a single file says outside, a project missing (as the backend)
+      if (parts.length === 0) {
+        return singleFile ? { type: "outside" } : { type: "missing", path: target ?? "" };
+      }
+      parts.pop();
+    } else parts.push(part);
   }
   const joined = parts.join("/");
   for (const candidate of [joined, `${joined}.md`]) {
@@ -145,8 +151,22 @@ export function mockLinkTarget(
 
 const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;" };
 
+/** `inline`: inline code and links of the text become `code` | `a` (a Markdown file a test added). */
+function inlineOf(safe: string): string {
+  return safe
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label: string, href: string) => {
+      const quoted = href.replace(/"/g, "&quot;");
+      return `<a href="${quoted}">${label}</a>`;
+    });
+}
+
 /** A simple view of a note's text for the mock: a heading or a paragraph per run of lines (no renderer here). */
-export function mockNoteView(path: string, text: string): DocumentView {
+export function mockNoteView(
+  path: string,
+  text: string,
+  options: { inline?: boolean } = {},
+): DocumentView {
   const lines = text.split("\n");
   const blocks: Block[] = [];
   const outline: OutlineItem[] = [];
@@ -155,9 +175,10 @@ export function mockNoteView(path: string, text: string): DocumentView {
     const run = lines.slice(start, end).join("\n");
     const id = `n${blocks.length}-${run.length}`;
     const heading = /^(#{1,6})\s+(.*)$/.exec(run);
-    const safe = (heading?.[2] ?? run)
+    const escaped = (heading?.[2] ?? run)
       .replace(/[&<>]/g, (c) => ESCAPES[c] ?? c)
       .replace(/\n/g, "<br>");
+    const safe = options.inline === true ? inlineOf(escaped) : escaped;
     const tag = heading ? `h${heading[1]?.length ?? 1}` : "p";
     if (heading) {
       outline.push({

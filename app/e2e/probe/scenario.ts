@@ -19,6 +19,13 @@ export const SEEDS = [
   "tabShown",
   "projectNews",
   "gitRepos",
+  "feedQuiet",
+  "feedNews",
+  "agentProject",
+  "gitOnlyProject",
+  "plainFolder",
+  "rightViews",
+  "agent",
 ] as const;
 export type SeedUse = (typeof SEEDS)[number];
 

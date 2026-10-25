@@ -697,12 +697,22 @@ fn a_project_renamed_while_closed_is_found_again_by_its_first_commit() {
         .is_ok_and(|t| t.contains("path = \"inner/beta\"")));
     assert!(core.projects_view().ask.is_none());
     drop(core);
-    // renamed while closed (other name): the person is asked
-    std::fs::rename(
-        root.join("inner").join("beta"),
-        root.join("inner").join("beta2"),
-    )
-    .unwrap();
+    // renamed while closed (other name): the person is asked. Closing killed + waited for the git still running there;
+    // the system may need a few ms after that to let go of a working directory: a short retry, never more than 200 ms
+    let started = Instant::now();
+    loop {
+        match std::fs::rename(
+            root.join("inner").join("beta"),
+            root.join("inner").join("beta2"),
+        ) {
+            Ok(()) => break,
+            Err(e) if started.elapsed() < Duration::from_millis(200) => {
+                eprintln!("rename retried: {e}");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => panic!("the folder is still held after close: {e}"),
+        }
+    }
     let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
     wait_until("the move question", || core.projects_view().ask.is_some());
     let ask = core.projects_view().ask.unwrap();

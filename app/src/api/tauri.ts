@@ -123,6 +123,7 @@ export const tauriApi: Api = {
   openPath: (path, placement) => call("open_path", { path, placement }),
   openNotes: (placement) => call("open_notes", { placement }),
   openInProject: (path) => call("open_in_project", { path }),
+  openFolderWith: (folder, document) => call("open_folder_with", { folder, document }),
   listWindows: () => call("list_windows", {}),
   focusWorkspace: (id) => call("focus_workspace", { id }),
   tabActivate: (tab) => call("tab_activate", { tab }),

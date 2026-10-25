@@ -249,6 +249,8 @@ export type LinesView = {
   show(text: string, data: LinesData): void;
   /** Brings the change into view. */
   reveal(change: ReviewChange | undefined): void;
+  /** Long lines wrap (the setting) or scroll sideways. */
+  setWrap(on: boolean): void;
   destroy(): void;
 };
 
@@ -256,8 +258,11 @@ export function createLinesView(options: {
   parent: HTMLElement;
   path: string;
   host: LinesHost;
+  /** Long lines wrap (the setting; default on). */
+  wrap?: boolean;
 }): LinesView {
   const language = new Compartment();
+  const wrapping = new Compartment();
   const reveal = new Set<string>();
   let data: LinesData = { changes: [], total: 0, current: -1, canKeep: false };
   let show: (id: string) => void = () => {};
@@ -278,7 +283,7 @@ export function createLinesView(options: {
     lineNumbers(),
     EditorState.readOnly.of(true),
     EditorView.editable.of(false),
-    EditorView.lineWrapping,
+    wrapping.of(options.wrap === false ? [] : EditorView.lineWrapping),
     language.of(loaded instanceof Promise ? [] : loaded),
     codeLook,
     marks,
@@ -311,6 +316,8 @@ export function createLinesView(options: {
       const at = change.start < doc.lines ? doc.line(change.start + 1).from : doc.length;
       view.dispatch({ effects: EditorView.scrollIntoView(at, { y: "center" }) });
     },
+    setWrap: (on) =>
+      view.dispatch({ effects: wrapping.reconfigure(on ? EditorView.lineWrapping : []) }),
     destroy: () => view.destroy(),
   };
 }

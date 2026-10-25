@@ -218,7 +218,10 @@ impl GitOps for BuiltinGit {
             Err(e) => return Discovery::Error(e.message().to_owned()),
         };
         // a bare repository has no working tree
-        let Some(workdir) = repo.workdir().map(dunce::simplified).map(Path::to_path_buf) else {
+        let Some(workdir) = repo
+            .workdir()
+            .map(|w| permark_core::paths::simplified(w).into_owned())
+        else {
             return Discovery::NoRepo;
         };
         if too_broad(&workdir, root, home) {
@@ -231,8 +234,9 @@ impl GitOps for BuiltinGit {
             return Discovery::NoRepo;
         }
         Discovery::Repo(RepoLocation {
-            workdir: dunce::canonicalize(&workdir).unwrap_or(workdir),
-            git_dir: dunce::canonicalize(repo.path()).unwrap_or_else(|_| repo.path().to_path_buf()),
+            workdir: permark_core::paths::canonicalize(&workdir).unwrap_or(workdir),
+            git_dir: permark_core::paths::canonicalize(repo.path())
+                .unwrap_or_else(|_| repo.path().to_path_buf()),
             prefix,
         })
     }
