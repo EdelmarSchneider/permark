@@ -51,11 +51,29 @@ describe("the broken links store", () => {
     stop();
   });
 
+  it("counts the opened folder apart from its linked worktrees, and lists it first (#62)", async () => {
+    const { api, store, stop } = await setup();
+    api.probe.project.add("docs/bad.md", "[gone](missing.md)\n");
+    api.probe.project.add("@wt/feature/docs/bad.md", "[a](gone-a.md) [b](gone-b.md)\n");
+    await store.load();
+    expect(store.report?.total).toBe(3);
+    expect(store.report?.current).toBe(1);
+    expect(store.report?.roots).toEqual([
+      { prefix: "", total: 1 },
+      { prefix: "@wt/feature", total: 2 },
+    ]);
+    expect(store.report?.docs.map((d) => d.path)).toEqual([
+      "docs/bad.md",
+      "@wt/feature/docs/bad.md",
+    ]);
+    stop();
+  });
+
   it("asks again when the backend says the picture changed", async () => {
     const { api, store, stop } = await setup();
     api.probe.project.add("a.md", "[x](nope.md)\n");
     // the mock backend announces nothing for a broken link; the store reloads on the event
-    api.probe.plugins.announce("broken-links:changed", { ready: true, total: 1 });
+    api.probe.plugins.announce("broken-links:changed", { ready: true, total: 1, current: 1 });
     await new Promise((resolve) => setTimeout(resolve, RELOAD_MS + 30));
     await settle();
     expect(store.total).toBe(1);

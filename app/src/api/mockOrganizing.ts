@@ -223,7 +223,19 @@ export function createMockOrganizing(
   const broken = (): PluginMethods["broken-links.list"]["result"] => {
     const docs: PluginMethods["broken-links.list"]["result"]["docs"] = [];
     let total = 0;
-    for (const path of documents().sort()) {
+    // the opened folder first, then each linked worktree (`@wt/<name>`), as the backend lists and counts them
+    const rootOf = (path: string): string =>
+      path.startsWith("@wt/") ? path.split("/").slice(0, 2).join("/") : "";
+    const order = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+    const paths = documents().sort((a, b) => {
+      const [ra, rb] = [rootOf(a), rootOf(b)];
+      if (ra === rb) return order(a, b);
+      return ra === "" ? -1 : rb === "" ? 1 : order(ra, rb);
+    });
+    const roots = new Map<string, number>([["", 0]]);
+    for (const path of paths) {
+      const root = rootOf(path);
+      if (!roots.has(root)) roots.set(root, 0);
       const links: { line: number; written: string }[] = [];
       (project.files.get(path) ?? "").split("\n").forEach((line, at) => {
         for (const m of line.matchAll(/\]\(([^)\s]+)\)/g)) {
@@ -237,8 +249,17 @@ export function createMockOrganizing(
       });
       if (links.length > 0) docs.push({ path, links });
       total += links.length;
+      roots.set(root, (roots.get(root) ?? 0) + links.length);
     }
-    return { ready: true, docs, total, truncated: false, skipped: 0 };
+    return {
+      ready: true,
+      docs,
+      total,
+      current: roots.get("") ?? 0,
+      roots: [...roots].map(([prefix, n]) => ({ prefix, total: n })),
+      truncated: false,
+      skipped: 0,
+    };
   };
 
   const handlers: Handlers = {

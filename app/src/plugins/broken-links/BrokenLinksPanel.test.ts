@@ -48,6 +48,8 @@ afterEach(async () => {
   stop?.();
   stop = null;
   mock.probe.project.files.delete("docs/bad.md");
+  mock.probe.project.files.delete("@wt/feature/docs/bad.md");
+  brokenLinks.report = null;
   vi.restoreAllMocks();
 });
 
@@ -68,6 +70,57 @@ describe("the Broken links tab", () => {
     expect(target.querySelector("h3 .name")?.textContent).toBe("bad.md");
     expect(target.querySelector(".written")?.textContent).toBe("missing.md");
     expect(target.querySelector(".line")?.textContent).toBe("3");
+    // one root: no section headings
+    expect(target.querySelector(".root")).toBeNull();
+  });
+
+  it("counts the opened folder alone and shows each linked worktree apart (#62)", async () => {
+    mock.probe.project.add("docs/bad.md", "# Bad\n\n[gone](missing.md)\n");
+    mock.probe.project.add("@wt/feature/docs/bad.md", "[a](gone-a.md)\n\n[b](gone-b.md)\n");
+    stop = brokenLinks.start();
+    component = mount(Panel, { target });
+    flushSync();
+    await until(() => target.querySelector(".root") !== null, "the sections");
+    expect(target.querySelector("header .count")?.textContent).toBe("1");
+    const text = (selector: string): string[] =>
+      Array.from(target.querySelectorAll(selector)).map(
+        (e) => e.textContent?.replace(/\s+/g, " ").trim() ?? "",
+      );
+    expect(text(".root")).toEqual(["This folder 1", "Linked worktree feature 2"]);
+    // the opened folder first; a worktree's folder is shown without its prefix, the full path stays in the tooltip
+    expect(text(".doc .folder")).toEqual(["docs", "docs"]);
+    const heads = Array.from(target.querySelectorAll<HTMLElement>(".doc-head"));
+    expect(heads.map((h) => h.title)).toEqual(["docs/bad.md", "@wt/feature/docs/bad.md"]);
+    const navigate = vi.spyOn(documents, "navigate").mockImplementation(() => {});
+    heads[1]?.querySelector<HTMLElement>(".doc")?.click();
+    expect(navigate).toHaveBeenCalledWith("@wt/feature/docs/bad.md", null);
+  });
+
+  it("says the opened folder has none when only a worktree has broken links", async () => {
+    mock.probe.project.add("@wt/feature/docs/bad.md", "[a](gone-a.md)\n");
+    stop = brokenLinks.start();
+    component = mount(Panel, { target });
+    flushSync();
+    await until(() => target.querySelector(".root") !== null, "the sections");
+    expect(target.querySelector("header .count")).toBeNull();
+    expect(target.textContent).toContain("No broken links in this folder");
+    expect(target.textContent).toContain("Linked worktree feature");
+  });
+
+  it("shows no count before the first scan is done", () => {
+    component = mount(Panel, { target });
+    brokenLinks.report = {
+      ready: false,
+      docs: [],
+      total: 12_345,
+      current: 12_345,
+      roots: [{ prefix: "", total: 12_345 }],
+      truncated: false,
+      skipped: 0,
+    };
+    flushSync();
+    expect(target.querySelector(".count")).toBeNull();
+    expect(target.querySelector("[role=status]")).not.toBeNull();
   });
 
   it("opens the document, and at the line of a link", async () => {

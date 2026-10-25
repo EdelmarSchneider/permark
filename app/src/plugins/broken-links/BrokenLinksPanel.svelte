@@ -1,24 +1,57 @@
 <script lang="ts">
   // The Broken links tab: the Markdown links that lead nowhere, by document. A row shows the line and the destination as
-  // it is written; a click opens the document at that line.
+  // it is written; a click opens the document at that line. The count is the opened folder's; when a linked worktree
+  // has broken links too, each root gets its own section so none is mistaken for the other.
   import { documents } from "../../core/doc/document.svelte";
   import { t, tn } from "../../core/i18n";
   import { brokenLinks } from "./store.svelte";
 
-  const report = $derived(brokenLinks.report);
+  import type { BrokenDoc } from "../../api";
 
-  function split(path: string): { name: string; folder: string } {
-    const at = path.lastIndexOf("/");
+  /** The prefix of a linked worktree's paths (`@wt/<name>/…`). */
+  const WORKTREE = "@wt/";
+
+  const report = $derived(brokenLinks.report);
+  /** Sections only when a linked worktree has broken links: a folder without one looks as before. */
+  const sectioned = $derived(
+    report?.roots.some((root) => root.prefix !== "" && root.total > 0) ?? false,
+  );
+  const sections = $derived.by((): { prefix: string; total: number; docs: BrokenDoc[] }[] => {
+    if (report === null) return [];
+    if (!sectioned) return [{ prefix: "", total: report.current, docs: report.docs }];
+    return report.roots
+      .filter((root) => root.prefix === "" || root.total > 0)
+      .map((root) => ({
+        ...root,
+        docs: report.docs.filter((d) => rootOf(d.path) === root.prefix),
+      }));
+  });
+
+  function rootOf(path: string): string {
+    return path.startsWith(WORKTREE) ? path.split("/").slice(0, 2).join("/") : "";
+  }
+
+  function rootTitle(prefix: string): string {
+    return prefix === ""
+      ? t("brokenLinks.thisFolder")
+      : t("brokenLinks.worktree", { name: prefix.slice(WORKTREE.length) });
+  }
+
+  /** The name and folder of a document, inside its root (the section says which). */
+  function split(path: string, prefix: string): { name: string; folder: string } {
+    const own = prefix === "" ? path : path.slice(prefix.length + 1);
+    const at = own.lastIndexOf("/");
     return at < 0
-      ? { name: path, folder: "" }
-      : { name: path.slice(at + 1), folder: path.slice(0, at) };
+      ? { name: own, folder: "" }
+      : { name: own.slice(at + 1), folder: own.slice(0, at) };
   }
 </script>
 
 <section class="broken" aria-label={t("brokenLinks.title")}>
   <header>
     <h2>{t("brokenLinks.title")}</h2>
-    {#if report && report.total > 0}<span class="count">{report.total}</span>{/if}
+    {#if report && report.ready && report.current > 0}<span class="count">{report.current}</span
+      >{/if}
   </header>
 
   <div class="body">
@@ -27,30 +60,39 @@
     {:else if report.total === 0}
       <p class="note strong">{t("brokenLinks.none")}</p>
     {:else}
-      {#each report.docs as doc (doc.path)}
-        {@const where = split(doc.path)}
-        <h3 title={doc.path}>
-          <button type="button" class="doc" onclick={() => documents.navigate(doc.path, null)}>
-            <span class="name">{where.name}</span>
-            {#if where.folder !== ""}<span class="folder">{where.folder}</span>{/if}
-          </button>
-          <span class="n">{doc.links.length}</span>
-        </h3>
-        <ul>
-          {#each doc.links as link (`${link.line}:${link.written}`)}
-            <li>
-              <button
-                type="button"
-                class="link"
-                title={t("brokenLinks.open", { path: doc.path, line: link.line })}
-                onclick={() => documents.navigate(doc.path, null, link.line)}
-              >
-                <span class="line">{link.line}</span>
-                <span class="written">{link.written}</span>
-              </button>
-            </li>
-          {/each}
-        </ul>
+      {#each sections as section (section.prefix)}
+        {#if sectioned}
+          <h3 class="root">
+            <span>{rootTitle(section.prefix)}</span>
+            <span class="n">{section.total}</span>
+          </h3>
+          {#if section.total === 0}<p class="note">{t("brokenLinks.noneHere")}</p>{/if}
+        {/if}
+        {#each section.docs as doc (doc.path)}
+          {@const where = split(doc.path, section.prefix)}
+          <svelte:element this={sectioned ? "h4" : "h3"} class="doc-head" title={doc.path}>
+            <button type="button" class="doc" onclick={() => documents.navigate(doc.path, null)}>
+              <span class="name">{where.name}</span>
+              {#if where.folder !== ""}<span class="folder">{where.folder}</span>{/if}
+            </button>
+            <span class="n">{doc.links.length}</span>
+          </svelte:element>
+          <ul>
+            {#each doc.links as link (`${link.line}:${link.written}`)}
+              <li>
+                <button
+                  type="button"
+                  class="link"
+                  title={t("brokenLinks.open", { path: doc.path, line: link.line })}
+                  onclick={() => documents.navigate(doc.path, null, link.line)}
+                >
+                  <span class="line">{link.line}</span>
+                  <span class="written">{link.written}</span>
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/each}
       {/each}
       {#if report.truncated}
         <p class="note">{t("brokenLinks.truncated", { n: report.total })}</p>
@@ -107,7 +149,18 @@
   .faint {
     color: var(--faint);
   }
-  h3 {
+  .root {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+    margin: var(--sp-2) 0 0;
+    padding: var(--sp-1) var(--sp-3);
+    border-bottom: 1px solid var(--border);
+    color: var(--muted);
+    font-size: var(--fs-ui-xs);
+    font-weight: 600;
+  }
+  .doc-head {
     display: flex;
     align-items: baseline;
     gap: var(--sp-2);
