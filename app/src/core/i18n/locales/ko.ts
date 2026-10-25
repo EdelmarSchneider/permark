@@ -51,6 +51,8 @@ export default {
 
   // ---- notices
   "notice.stateRecovered": "저장된 PerMark 데이터 일부를 읽을 수 없어 따로 보관했습니다: {file}",
+  "notice.stateUnreadable":
+    "저장된 PerMark 데이터 일부를 읽을 수 없었습니다. 데이터는 그대로 두었으며, 다시 읽을 수 있을 때까지(보통 다시 시작한 후) PerMark는 이 데이터를 변경하지 않습니다: {file}",
 
   // ---- settings
   "settings.title": "설정",

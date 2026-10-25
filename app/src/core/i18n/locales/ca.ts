@@ -54,6 +54,8 @@ export default {
   // ---- notices
   "notice.stateRecovered":
     "Algunes dades desades del PerMark no s'han pogut llegir i s'han apartat: {file}",
+  "notice.stateUnreadable":
+    "Algunes dades desades del PerMark no s'han pogut llegir. S'han deixat intactes, i el PerMark no les canviarà fins que les pugui tornar a llegir, normalment després de reiniciar-lo: {file}",
 
   // ---- settings
   "settings.title": "Configuració",

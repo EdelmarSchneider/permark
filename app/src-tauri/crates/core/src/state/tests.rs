@@ -523,3 +523,431 @@ fn a_real_share_root_keeps_its_0_6_id() {
     assert!(!move_profile_state(&dirs, &then_canon, root.path()).unwrap());
     assert!(kept.is_dir());
 }
+
+/// The file at `path` cannot be read by this process until this goes (another program holding it on Windows, no
+/// read permission on Unix).
+struct Unreadable {
+    #[cfg(windows)]
+    _held: fs::File,
+    #[cfg(not(windows))]
+    path: std::path::PathBuf,
+}
+
+#[cfg(not(windows))]
+impl Drop for Unreadable {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&self.path, fs::Permissions::from_mode(0o644));
+    }
+}
+
+fn unreadable(path: &Path) -> Unreadable {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        let held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(path)
+            .unwrap();
+        Unreadable { _held: held }
+    }
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o000)).unwrap();
+        Unreadable {
+            path: path.to_path_buf(),
+        }
+    }
+}
+
+/// Unreadable is in force, yet this process reads the file anyway (root on Unix): the test has nothing to check.
+fn readable_anyway(path: &Path) -> bool {
+    let anyway = fs::read(path).is_ok();
+    if anyway {
+        eprintln!(
+            "skipped: this process reads {} anyway (root?)",
+            path.display()
+        );
+    }
+    anyway
+}
+
+/// The file at `path` can be read but not moved (renamed) until this goes: held without delete sharing on Windows,
+/// its folder read-only on Unix.
+struct Unmovable {
+    #[cfg(windows)]
+    _held: fs::File,
+    #[cfg(not(windows))]
+    dir: std::path::PathBuf,
+}
+
+#[cfg(not(windows))]
+impl Drop for Unmovable {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&self.dir, fs::Permissions::from_mode(0o755));
+    }
+}
+
+fn unmovable(path: &Path) -> Unmovable {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 1;
+        let held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(path)
+            .unwrap();
+        Unmovable { _held: held }
+    }
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = path.parent().unwrap().to_path_buf();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
+        Unmovable { dir }
+    }
+}
+
+/// Unmovable is in force, yet this process moves the file anyway (root on Unix): the test has nothing to check.
+fn movable_anyway(path: &Path) -> bool {
+    let probe = path.with_extension("probe");
+    let anyway = fs::rename(path, &probe).is_ok();
+    if anyway {
+        fs::rename(&probe, path).unwrap();
+        eprintln!(
+            "skipped: this process moves {} anyway (root?)",
+            path.display()
+        );
+    }
+    anyway
+}
+
+const KEPT: &[u8] = br#"{"version":3,"data":{"items":{"kept":7}}}"#;
+
+/// Board item 15: a state file PerMark could not read (an IO error, not a missing or corrupt file) is never written
+/// over with the defaults used meanwhile: it stays as it is, and saves are refused (by any handle on that file) until
+/// a load reads it again.
+#[test]
+fn an_unreadable_state_file_is_never_written_over() {
+    let f = fx();
+    let file = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+    fs::write(file.path(), KEPT).unwrap();
+    let held = unreadable(file.path());
+    if readable_anyway(file.path()) {
+        return;
+    }
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    assert!(file.path().exists(), "left in place, not moved aside");
+    drop(held);
+    // what the caller does with the defaults it got: never written over the person's data
+    assert!(file.save(&Sample::default()).is_err());
+    assert!(f.store().file::<Sample>("x.json").save(&sample(1)).is_err());
+    assert_eq!(fs::read(file.path()).unwrap(), KEPT);
+    // read again: the data is there and saves go through
+    let Loaded::Found(data) = file.load() else {
+        panic!("readable again");
+    };
+    assert_eq!(data.items.get("kept"), Some(&7));
+    file.save(&sample(2)).unwrap();
+    assert_eq!(file.load(), Loaded::Found(sample(2)));
+}
+
+/// A file held only for a moment (an antivirus | sync client) is read after a short retry: its data, no defaults.
+#[test]
+fn a_state_file_held_for_a_moment_is_read_after_a_retry() {
+    let f = fx();
+    let file = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+    fs::write(file.path(), KEPT).unwrap();
+    let held = unreadable(file.path());
+    if readable_anyway(file.path()) {
+        return;
+    }
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        drop(held);
+    });
+    let loaded = file.load();
+    release.join().unwrap();
+    let Loaded::Found(data) = loaded else {
+        panic!("read after the retry: {loaded:?}");
+    };
+    assert_eq!(data.items.get("kept"), Some(&7));
+}
+
+/// An update reads the file itself under its lock: once it can, it changes the data on disk (never the defaults), and
+/// plain saves go through again.
+#[test]
+fn an_update_after_an_unreadable_load_changes_the_data_on_disk() {
+    let f = fx();
+    let file = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+    fs::write(file.path(), KEPT).unwrap();
+    let held = unreadable(file.path());
+    if readable_anyway(file.path()) {
+        return;
+    }
+    assert_eq!(file.load(), Loaded::Recovered { backup: None });
+    assert!(
+        file.update(|_| Some(Sample::default())).is_err(),
+        "still unreadable: no write"
+    );
+    drop(held);
+    let after = file
+        .update(|now| {
+            let mut next = Sample {
+                items: now.map(|s| s.items.clone()).unwrap_or_default(),
+            };
+            next.items.insert("added".to_owned(), 1);
+            Some(next)
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(after.items.get("kept"), Some(&7));
+    assert_eq!(after.items.get("added"), Some(&1));
+    file.save(&after).unwrap();
+}
+
+/// Board item 15 (review S2): a load that reads the file from another handle does not unblock a handle that got the
+/// defaults: its save would write them over the data the other one read.
+#[test]
+fn another_handle_reading_does_not_unblock_the_caller_holding_defaults() {
+    let f = fx();
+    let holding_defaults = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(holding_defaults.path().parent().unwrap()).unwrap();
+    fs::write(holding_defaults.path(), KEPT).unwrap();
+    let held = unreadable(holding_defaults.path());
+    if readable_anyway(holding_defaults.path()) {
+        return;
+    }
+    assert_eq!(holding_defaults.load(), Loaded::Recovered { backup: None });
+    drop(held);
+    let reader = f.store().file::<Sample>("x.json");
+    assert!(matches!(reader.load(), Loaded::Found(_)));
+    assert!(holding_defaults.save(&Sample::default()).is_err());
+    assert!(
+        f.store()
+            .file::<Sample>("x.json")
+            .save(&Sample::default())
+            .is_err(),
+        "a handle that never read it is not unblocked either"
+    );
+    assert_eq!(fs::read(holding_defaults.path()).unwrap(), KEPT);
+    // the one that read it may write; the other one again after it reads the file itself
+    reader.save(&sample(2)).unwrap();
+    assert_eq!(holding_defaults.load(), Loaded::Found(sample(2)));
+    holding_defaults.save(&sample(3)).unwrap();
+    assert_eq!(reader.load(), Loaded::Found(sample(3)));
+}
+
+/// The PR #67 check: a file that could not be read once and is gone now holds nothing to lose. A handle that never read
+/// it may write it again (the review keeps its copies of a version this way after it removed them as unused); one that
+/// failed to read it still may not, and while the file is there a fresh handle is refused as before. Once a fresh
+/// handle wrote it, the file holds only PerMark's own data: the stamp is gone and later fresh handles save it.
+#[test]
+fn a_handle_that_never_read_a_stamped_file_may_write_it_once_it_is_gone() {
+    let f = fx();
+    let failed = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(failed.path().parent().unwrap()).unwrap();
+    fs::write(failed.path(), KEPT).unwrap();
+    let held = unreadable(failed.path());
+    if readable_anyway(failed.path()) {
+        return;
+    }
+    assert_eq!(failed.load(), Loaded::Recovered { backup: None });
+    drop(held);
+    assert!(f.store().file::<Sample>("x.json").save(&sample(1)).is_err());
+    assert_eq!(fs::read(failed.path()).unwrap(), KEPT);
+    fs::remove_file(failed.path()).unwrap();
+    f.store().file::<Sample>("x.json").save(&sample(2)).unwrap();
+    assert_eq!(
+        f.store().file::<Sample>("x.json").load(),
+        Loaded::Found(sample(2))
+    );
+    assert!(
+        failed.save(&Sample::default()).is_err(),
+        "the handle holding defaults is still refused"
+    );
+    f.store()
+        .file::<Sample>("x.json")
+        .save(&sample(3))
+        .expect("PerMark's own write cleared the stamp: a later fresh handle saves");
+    assert_eq!(
+        f.store().file::<Sample>("x.json").load(),
+        Loaded::Found(sample(3))
+    );
+    assert!(
+        failed.save(&Sample::default()).is_err(),
+        "the handle holding defaults stays refused after the stamp is cleared"
+    );
+}
+
+/// PR #67 delta check: only a not-found answer counts as gone; any entry (a folder here) counts as there, and a write
+/// that did not happen leaves the stamp: the person's file put back afterwards is still never written over.
+#[test]
+fn a_folder_in_place_of_a_stamped_file_counts_as_there_and_keeps_the_stamp() {
+    let f = fx();
+    let failed = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(failed.path().parent().unwrap()).unwrap();
+    fs::write(failed.path(), KEPT).unwrap();
+    let held = unreadable(failed.path());
+    if readable_anyway(failed.path()) {
+        return;
+    }
+    assert_eq!(failed.load(), Loaded::Recovered { backup: None });
+    drop(held);
+    fs::remove_file(failed.path()).unwrap();
+    fs::create_dir(failed.path()).unwrap();
+    fs::write(failed.path().join("inside.txt"), b"k").unwrap();
+    assert!(f.store().file::<Sample>("x.json").save(&sample(1)).is_err());
+    assert_eq!(fs::read(failed.path().join("inside.txt")).unwrap(), b"k");
+    fs::remove_dir_all(failed.path()).unwrap();
+    fs::write(failed.path(), KEPT).unwrap();
+    assert!(
+        f.store().file::<Sample>("x.json").save(&sample(2)).is_err(),
+        "the refused write kept the stamp"
+    );
+    assert_eq!(fs::read(failed.path()).unwrap(), KEPT);
+}
+
+/// Review S1: an update that finds a file it cannot parse and cannot move aside fails and keeps it blocked: a later
+/// save of the defaults never writes over it.
+#[test]
+fn a_failed_update_on_an_unmovable_unparsable_file_keeps_the_mark() {
+    const BROKEN: &[u8] = b"{ not json";
+    let f = fx();
+    let file = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+    fs::write(file.path(), BROKEN).unwrap();
+    let held = unmovable(file.path());
+    if movable_anyway(file.path()) {
+        return;
+    }
+    assert!(file.update(|_| Some(sample(1))).is_err());
+    assert_eq!(fs::read(file.path()).unwrap(), BROKEN);
+    drop(held);
+    assert!(file.save(&Sample::default()).is_err());
+    assert!(f
+        .store()
+        .file::<Sample>("x.json")
+        .save(&Sample::default())
+        .is_err());
+    assert_eq!(fs::read(file.path()).unwrap(), BROKEN);
+}
+
+/// Re-review N1 (P4): a handle that read the file keeps writing it after another handle fails to read it (two tabs,
+/// the journal held by an antivirus when the second one opens): it holds the person's data, not defaults.
+#[test]
+fn a_handle_that_read_the_file_still_saves_after_another_one_fails() {
+    let f = fx();
+    let healthy = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(healthy.path().parent().unwrap()).unwrap();
+    fs::write(healthy.path(), KEPT).unwrap();
+    let Loaded::Found(mut data) = healthy.load() else {
+        panic!("readable");
+    };
+    let failing = f.store().file::<Sample>("x.json");
+    let held = unreadable(failing.path());
+    if readable_anyway(failing.path()) {
+        return;
+    }
+    assert_eq!(failing.load(), Loaded::Recovered { backup: None });
+    drop(held);
+    data.items.insert("more".to_owned(), 2);
+    healthy.save(&data).unwrap();
+    let saved = fs::read(healthy.path()).unwrap();
+    // the one that got the defaults, and one that never read it, are still refused
+    assert!(failing.save(&Sample::default()).is_err());
+    assert!(f
+        .store()
+        .file::<Sample>("x.json")
+        .save(&Sample::default())
+        .is_err());
+    assert_eq!(fs::read(healthy.path()).unwrap(), saved);
+    assert_eq!(healthy.load(), Loaded::Found(data));
+}
+
+/// P3: on a file no load ever failed on, fresh handles (several threads at once) save as before.
+#[test]
+fn fresh_handles_on_a_file_that_never_failed_save_as_before() {
+    let f = fx();
+    let first = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(first.path().parent().unwrap()).unwrap();
+    let store = f.store();
+    std::thread::scope(|scope| {
+        for n in 0..4u32 {
+            let store = &store;
+            scope.spawn(move || {
+                for _ in 0..10 {
+                    store.file::<Sample>("x.json").save(&sample(n)).unwrap();
+                }
+            });
+        }
+    });
+    assert!(matches!(first.load(), Loaded::Found(_)));
+    first.save(&sample(9)).unwrap();
+    assert_eq!(first.load(), Loaded::Found(sample(9)));
+}
+
+/// P5: a load that moves a corrupt file aside leaves nothing to write over: that handle may save its defaults, even
+/// on a file an earlier load could not read; the handle that got defaults then and a fresh one stay refused.
+#[test]
+fn a_handle_that_moved_the_file_aside_may_save() {
+    let f = fx();
+    let earlier = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(earlier.path().parent().unwrap()).unwrap();
+    fs::write(earlier.path(), KEPT).unwrap();
+    let held = unreadable(earlier.path());
+    if readable_anyway(earlier.path()) {
+        return;
+    }
+    assert_eq!(earlier.load(), Loaded::Recovered { backup: None });
+    drop(held);
+    fs::write(earlier.path(), b"{ not json").unwrap();
+    let mover = f.store().file::<Sample>("x.json");
+    let Loaded::Recovered {
+        backup: Some(backup),
+    } = mover.load()
+    else {
+        panic!("moved aside");
+    };
+    assert_eq!(fs::read(&backup).unwrap(), b"{ not json");
+    mover.save(&Sample::default()).unwrap();
+    assert!(earlier.save(&sample(1)).is_err());
+    assert!(f.store().file::<Sample>("x.json").save(&sample(1)).is_err());
+    assert_eq!(mover.load(), Loaded::Found(Sample::default()));
+}
+
+/// Delta check P7: an update that cannot read the file (an IO error) stamps it, so a fresh handle never saves the
+/// defaults over it afterwards; a handle that read the file itself keeps writing.
+#[test]
+fn an_update_that_cannot_read_the_file_keeps_fresh_handles_from_saving_defaults() {
+    let f = fx();
+    let healthy = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(healthy.path().parent().unwrap()).unwrap();
+    fs::write(healthy.path(), KEPT).unwrap();
+    assert!(matches!(healthy.load(), Loaded::Found(_)));
+    let held = unreadable(healthy.path());
+    if readable_anyway(healthy.path()) {
+        return;
+    }
+    assert!(f
+        .store()
+        .file::<Sample>("x.json")
+        .update(|_| Some(sample(1)))
+        .is_err());
+    drop(held);
+    assert!(f
+        .store()
+        .file::<Sample>("x.json")
+        .save(&Sample::default())
+        .is_err());
+    assert_eq!(fs::read(healthy.path()).unwrap(), KEPT);
+    healthy.save(&sample(2)).unwrap();
+    assert_eq!(healthy.load(), Loaded::Found(sample(2)));
+}
