@@ -55,7 +55,7 @@ export default {
   "notice.stateRecovered":
     "Non foi posíbel ler algúns datos gardados de PerMark e apartáronse: {file}",
   "notice.stateUnreadable":
-    "Non foi posíbel ler algúns datos gardados de PerMark e deixáronse como estaban. PerMark non os sobrescribirá ata que poida lelos: {file}",
+    "Non foi posíbel ler algúns datos gardados de PerMark. Deixáronse intactos, e PerMark non os cambiará ata que poida volver lelos, normalmente despois de reinicialo: {file}",
 
   // ---- settings
   "settings.title": "Configuración",

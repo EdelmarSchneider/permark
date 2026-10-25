@@ -564,7 +564,66 @@ fn unreadable(path: &Path) -> Unreadable {
 
 /// Unreadable is in force, yet this process reads the file anyway (root on Unix): the test has nothing to check.
 fn readable_anyway(path: &Path) -> bool {
-    fs::read(path).is_ok()
+    let anyway = fs::read(path).is_ok();
+    if anyway {
+        eprintln!(
+            "skipped: this process reads {} anyway (root?)",
+            path.display()
+        );
+    }
+    anyway
+}
+
+/// The file at `path` can be read but not moved (renamed) until this goes: held without delete sharing on Windows,
+/// its folder read-only on Unix.
+struct Unmovable {
+    #[cfg(windows)]
+    _held: fs::File,
+    #[cfg(not(windows))]
+    dir: std::path::PathBuf,
+}
+
+#[cfg(not(windows))]
+impl Drop for Unmovable {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&self.dir, fs::Permissions::from_mode(0o755));
+    }
+}
+
+fn unmovable(path: &Path) -> Unmovable {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 1;
+        let held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(path)
+            .unwrap();
+        Unmovable { _held: held }
+    }
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = path.parent().unwrap().to_path_buf();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
+        Unmovable { dir }
+    }
+}
+
+/// Unmovable is in force, yet this process moves the file anyway (root on Unix): the test has nothing to check.
+fn movable_anyway(path: &Path) -> bool {
+    let probe = path.with_extension("probe");
+    let anyway = fs::rename(path, &probe).is_ok();
+    if anyway {
+        fs::rename(&probe, path).unwrap();
+        eprintln!(
+            "skipped: this process moves {} anyway (root?)",
+            path.display()
+        );
+    }
+    anyway
 }
 
 const KEPT: &[u8] = br#"{"version":3,"data":{"items":{"kept":7}}}"#;
@@ -652,4 +711,61 @@ fn an_update_after_an_unreadable_load_changes_the_data_on_disk() {
     assert_eq!(after.items.get("kept"), Some(&7));
     assert_eq!(after.items.get("added"), Some(&1));
     file.save(&after).unwrap();
+}
+
+/// Board item 15 (review S2): a load that reads the file from another handle does not unblock a handle that got the
+/// defaults: its save would write them over the data the other one read.
+#[test]
+fn another_handle_reading_does_not_unblock_the_caller_holding_defaults() {
+    let f = fx();
+    let holding_defaults = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(holding_defaults.path().parent().unwrap()).unwrap();
+    fs::write(holding_defaults.path(), KEPT).unwrap();
+    let held = unreadable(holding_defaults.path());
+    if readable_anyway(holding_defaults.path()) {
+        return;
+    }
+    assert_eq!(holding_defaults.load(), Loaded::Recovered { backup: None });
+    drop(held);
+    let reader = f.store().file::<Sample>("x.json");
+    assert!(matches!(reader.load(), Loaded::Found(_)));
+    assert!(holding_defaults.save(&Sample::default()).is_err());
+    assert!(
+        f.store()
+            .file::<Sample>("x.json")
+            .save(&Sample::default())
+            .is_err(),
+        "a handle that never read it is not unblocked either"
+    );
+    assert_eq!(fs::read(holding_defaults.path()).unwrap(), KEPT);
+    // the one that read it may write; the other one again after it reads the file itself
+    reader.save(&sample(2)).unwrap();
+    assert_eq!(holding_defaults.load(), Loaded::Found(sample(2)));
+    holding_defaults.save(&sample(3)).unwrap();
+    assert_eq!(reader.load(), Loaded::Found(sample(3)));
+}
+
+/// Review S1: an update that finds a file it cannot parse and cannot move aside fails and keeps it blocked: a later
+/// save of the defaults never writes over it.
+#[test]
+fn a_failed_update_on_an_unmovable_unparsable_file_keeps_the_mark() {
+    const BROKEN: &[u8] = b"{ not json";
+    let f = fx();
+    let file = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+    fs::write(file.path(), BROKEN).unwrap();
+    let held = unmovable(file.path());
+    if movable_anyway(file.path()) {
+        return;
+    }
+    assert!(file.update(|_| Some(sample(1))).is_err());
+    assert_eq!(fs::read(file.path()).unwrap(), BROKEN);
+    drop(held);
+    assert!(file.save(&Sample::default()).is_err());
+    assert!(f
+        .store()
+        .file::<Sample>("x.json")
+        .save(&Sample::default())
+        .is_err());
+    assert_eq!(fs::read(file.path()).unwrap(), BROKEN);
 }

@@ -55,7 +55,7 @@ export default {
   "notice.stateRecovered":
     "保存されていた PerMark のデータの一部を読み取れなかったため、別の場所に移しました：{file}",
   "notice.stateUnreadable":
-    "保存されている PerMark のデータの一部を読み込めなかったため、そのまま残しました。読み込めるようになるまで PerMark は上書きしません：{file}",
+    "保存されていた PerMark のデータの一部を読み取れませんでした。データはそのまま残してあり、もう一度読み取れるようになるまで（通常は再起動後）PerMark は変更しません：{file}",
 
   // ---- settings
   "settings.title": "設定",

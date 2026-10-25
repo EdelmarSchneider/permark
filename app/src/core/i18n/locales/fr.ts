@@ -56,7 +56,7 @@ export default {
   "notice.stateRecovered":
     "Des données enregistrées de PerMark n'ont pas pu être lues et ont été mises de côté : {file}",
   "notice.stateUnreadable":
-    "Des données enregistrées de PerMark n'ont pas pu être lues et ont été laissées telles quelles. PerMark ne les écrasera pas tant qu'il ne pourra pas les lire : {file}",
+    "Des données enregistrées de PerMark n'ont pas pu être lues. Elles ont été laissées intactes, et PerMark ne les modifiera pas tant qu'il ne pourra pas les relire, en général après un redémarrage : {file}",
 
   // ---- settings
   "settings.title": "Paramètres",
