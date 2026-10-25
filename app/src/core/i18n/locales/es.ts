@@ -1064,6 +1064,11 @@ export default {
   "brokenLinks.noneHere": "No hay enlaces rotos en esta carpeta",
   "brokenLinks.thisFolder": "Esta carpeta",
   "brokenLinks.worktree": "Worktree vinculado {name}",
+  "brokenLinks.notListed": "No se listan: la lista muestra 500 enlaces como máximo.",
+  "brokenLinks.rootCount.one": "{n} enlace roto",
+  "brokenLinks.rootCount.other": "{n} enlaces rotos",
+  "brokenLinks.truncatedAll":
+    "Se muestran los primeros 500 de {n} enlaces rotos de esta carpeta y sus worktrees vinculados.",
   "brokenLinks.open": "Abrir {path} en la línea {line}",
   "brokenLinks.truncated": "Se muestran los primeros 500 de {n} enlaces rotos.",
   "brokenLinks.show": "Mostrar los enlaces rotos",

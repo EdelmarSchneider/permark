@@ -221,21 +221,26 @@ export function createMockOrganizing(
 
   // ---- broken links ----
   const broken = (): PluginMethods["broken-links.list"]["result"] => {
+    // As the backend (`report_of`): the opened folder first, then each worktree of the vault in its order (listed
+    // also at 0), then any other `@wt/<name>` with broken links; documents in that order, then by path; at most
+    // MAX_LISTED links listed, so a worktree's are cut before the opened folder's.
+    const MAX_LISTED = 500;
     const docs: PluginMethods["broken-links.list"]["result"]["docs"] = [];
     let total = 0;
-    // the opened folder first, then each linked worktree (`@wt/<name>`), as the backend lists and counts them
+    let listed = 0;
+    const known = project.worktrees.map((name) => `@wt/${name}`);
     const rootOf = (path: string): string =>
       path.startsWith("@wt/") ? path.split("/").slice(0, 2).join("/") : "";
+    const rank = (root: string): number => {
+      if (root === "") return 0;
+      const at = known.indexOf(root);
+      return at < 0 ? Number.MAX_SAFE_INTEGER : at + 1;
+    };
     const order = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
-    const paths = documents().sort((a, b) => {
-      const [ra, rb] = [rootOf(a), rootOf(b)];
-      if (ra === rb) return order(a, b);
-      return ra === "" ? -1 : rb === "" ? 1 : order(ra, rb);
-    });
-    const roots = new Map<string, number>([["", 0]]);
+    const paths = documents().sort((a, b) => rank(rootOf(a)) - rank(rootOf(b)) || order(a, b));
+    const roots = new Map<string, number>([["", 0], ...known.map((k): [string, number] => [k, 0])]);
     for (const path of paths) {
       const root = rootOf(path);
-      if (!roots.has(root)) roots.set(root, 0);
       const links: { line: number; written: string }[] = [];
       (project.files.get(path) ?? "").split("\n").forEach((line, at) => {
         for (const m of line.matchAll(/\]\(([^)\s]+)\)/g)) {
@@ -247,17 +252,23 @@ export function createMockOrganizing(
             links.push({ line: at + 1, written: href });
         }
       });
-      if (links.length > 0) docs.push({ path, links });
       total += links.length;
-      roots.set(root, (roots.get(root) ?? 0) + links.length);
+      if (links.length > 0) roots.set(root, (roots.get(root) ?? 0) + links.length);
+      if (links.length > 0 && listed < MAX_LISTED) {
+        const shown = links.slice(0, MAX_LISTED - listed);
+        listed += shown.length;
+        docs.push({ path, links: shown });
+      }
     }
+    // other roots in path order, after the vault's (the backend's `BTreeMap` of roots)
+    const others = [...roots.keys()].filter((r) => rank(r) === Number.MAX_SAFE_INTEGER).sort(order);
     return {
       ready: true,
       docs,
       total,
       current: roots.get("") ?? 0,
-      roots: [...roots].map(([prefix, n]) => ({ prefix, total: n })),
-      truncated: false,
+      roots: ["", ...known, ...others].map((prefix) => ({ prefix, total: roots.get(prefix) ?? 0 })),
+      truncated: total > listed,
       skipped: 0,
     };
   };

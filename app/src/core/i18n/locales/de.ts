@@ -1079,6 +1079,11 @@ export default {
   "brokenLinks.noneHere": "Keine defekten Links in diesem Ordner",
   "brokenLinks.thisFolder": "Dieser Ordner",
   "brokenLinks.worktree": "Verknüpfter Worktree {name}",
+  "brokenLinks.notListed": "Nicht aufgeführt: Die Liste zeigt höchstens 500 Links.",
+  "brokenLinks.rootCount.one": "{n} defekter Link",
+  "brokenLinks.rootCount.other": "{n} defekte Links",
+  "brokenLinks.truncatedAll":
+    "Die ersten 500 von {n} defekten Links in diesem Ordner und seinen verknüpften Worktrees werden angezeigt.",
   "brokenLinks.open": "{path} bei Zeile {line} öffnen",
   "brokenLinks.truncated": "Die ersten 500 von {n} defekten Links werden angezeigt.",
   "brokenLinks.show": "Defekte Links anzeigen",

@@ -62,11 +62,17 @@
     {:else}
       {#each sections as section (section.prefix)}
         {#if sectioned}
+          {@const title = rootTitle(section.prefix)}
           <h3 class="root">
-            <span>{rootTitle(section.prefix)}</span>
-            <span class="n">{section.total}</span>
+            <span class="root-name" {title}>{title}</span>
+            <span class="n" aria-hidden="true">{section.total}</span>
+            <span class="sr-only">{tn("brokenLinks.rootCount", section.total)}</span>
           </h3>
-          {#if section.total === 0}<p class="note">{t("brokenLinks.noneHere")}</p>{/if}
+          {#if section.total === 0}
+            <p class="note">{t("brokenLinks.noneHere")}</p>
+          {:else if section.docs.length === 0}
+            <p class="note">{t("brokenLinks.notListed")}</p>
+          {/if}
         {/if}
         {#each section.docs as doc (doc.path)}
           {@const where = split(doc.path, section.prefix)}
@@ -95,7 +101,12 @@
         {/each}
       {/each}
       {#if report.truncated}
-        <p class="note">{t("brokenLinks.truncated", { n: report.total })}</p>
+        <!-- the header counts the opened folder; the list (and this note) may also hold the worktrees' -->
+        <p class="note">
+          {t(report.total > report.current ? "brokenLinks.truncatedAll" : "brokenLinks.truncated", {
+            n: report.total,
+          })}
+        </p>
       {/if}
     {/if}
     {#if report && report.skipped > 0}
@@ -159,6 +170,12 @@
     color: var(--muted);
     font-size: var(--fs-ui-xs);
     font-weight: 600;
+  }
+  .root-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .doc-head {
     display: flex;

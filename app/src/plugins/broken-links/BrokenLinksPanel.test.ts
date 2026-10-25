@@ -49,6 +49,9 @@ afterEach(async () => {
   stop = null;
   mock.probe.project.files.delete("docs/bad.md");
   mock.probe.project.files.delete("@wt/feature/docs/bad.md");
+  mock.probe.project.files.delete("@wt/a-very-long-worktree-name-for-the-layout/x.md");
+  mock.probe.project.files.delete("docs/many.md");
+  mock.probe.project.worktrees.length = 0;
   brokenLinks.report = null;
   vi.restoreAllMocks();
 });
@@ -86,7 +89,10 @@ describe("the Broken links tab", () => {
       Array.from(target.querySelectorAll(selector)).map(
         (e) => e.textContent?.replace(/\s+/g, " ").trim() ?? "",
       );
-    expect(text(".root")).toEqual(["This folder 1", "Linked worktree feature 2"]);
+    expect(text(".root .root-name")).toEqual(["This folder", "Linked worktree feature"]);
+    expect(text(".root .n")).toEqual(["1", "2"]);
+    // the number is said as a count of broken links
+    expect(text(".root .sr-only")).toEqual(["1 broken link", "2 broken links"]);
     // the opened folder first; a worktree's folder is shown without its prefix, the full path stays in the tooltip
     expect(text(".doc .folder")).toEqual(["docs", "docs"]);
     const heads = Array.from(target.querySelectorAll<HTMLElement>(".doc-head"));
@@ -105,6 +111,46 @@ describe("the Broken links tab", () => {
     expect(target.querySelector("header .count")).toBeNull();
     expect(target.textContent).toContain("No broken links in this folder");
     expect(target.textContent).toContain("Linked worktree feature");
+  });
+
+  it("gives a long worktree name its whole text in a tooltip", async () => {
+    const name = "a-very-long-worktree-name-for-the-layout";
+    mock.probe.project.add(`@wt/${name}/x.md`, "[a](gone.md)\n");
+    stop = brokenLinks.start();
+    component = mount(Panel, { target });
+    flushSync();
+    await until(() => target.querySelector(".root") !== null, "the sections");
+    const names = Array.from(target.querySelectorAll<HTMLElement>(".root .root-name"));
+    expect(names.map((n) => n.title)).toEqual(["This folder", `Linked worktree ${name}`]);
+  });
+
+  it("says when a worktree's links fall past the list limit, and what the note counts", async () => {
+    mock.probe.project.worktrees.push("feature");
+    const many = Array.from({ length: 500 }, (_, i) => `[l${i}](gone-${i}.md)`).join("\n");
+    mock.probe.project.add("docs/many.md", `${many}\n`);
+    mock.probe.project.add("@wt/feature/docs/bad.md", "[a](gone-a.md)\n");
+    stop = brokenLinks.start();
+    component = mount(Panel, { target });
+    flushSync();
+    await until(() => target.querySelector(".root") !== null, "the sections");
+    expect(target.querySelector("header .count")?.textContent).toBe("500");
+    const sections = Array.from(target.querySelectorAll(".root"));
+    expect(sections).toHaveLength(2);
+    expect(target.textContent).toContain("Not listed: the list shows 500 links at most.");
+    expect(target.textContent).toContain(
+      "Showing the first 500 of 501 broken links in this folder and its linked worktrees.",
+    );
+  });
+
+  it("keeps the short note when only the opened folder has broken links", async () => {
+    const many = Array.from({ length: 501 }, (_, i) => `[l${i}](gone-${i}.md)`).join("\n");
+    mock.probe.project.add("docs/many.md", `${many}\n`);
+    stop = brokenLinks.start();
+    component = mount(Panel, { target });
+    flushSync();
+    await until(() => target.querySelector(".link") !== null, "the list");
+    expect(target.textContent).toContain("Showing the first 500 of 501 broken links.");
+    expect(target.textContent).not.toContain("Not listed");
   });
 
   it("shows no count before the first scan is done", () => {

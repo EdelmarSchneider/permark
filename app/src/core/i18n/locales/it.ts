@@ -1077,6 +1077,11 @@ export default {
   "brokenLinks.noneHere": "Nessun link interrotto in questa cartella",
   "brokenLinks.thisFolder": "Questa cartella",
   "brokenLinks.worktree": "Worktree collegato {name}",
+  "brokenLinks.notListed": "Non elencati: l'elenco mostra al massimo 500 link.",
+  "brokenLinks.rootCount.one": "{n} link interrotto",
+  "brokenLinks.rootCount.other": "{n} link interrotti",
+  "brokenLinks.truncatedAll":
+    "Sono mostrati i primi 500 di {n} link interrotti in questa cartella e nei suoi worktree collegati.",
   "brokenLinks.open": "Apri {path} alla riga {line}",
   "brokenLinks.truncated": "Sono mostrati i primi 500 di {n} link interrotti.",
   "brokenLinks.show": "Mostra i link interrotti",
