@@ -13,6 +13,21 @@ const MACOS: &str = include_str!("../tauri.macos.conf.json");
 const LINUX: &str = include_str!("../tauri.linux.conf.json");
 const DESKTOP: &str = include_str!("../linux/permark.desktop");
 const WORKSPACE: &str = include_str!("../Cargo.toml");
+/// Installer languages Tauri does not translate (`bundle.windows.nsis.customLanguageFiles`).
+const CUSTOM_LANGUAGES: [(&str, &str); 3] = [
+    (
+        "Catalan",
+        include_str!("../installer/languages/Catalan.nsh"),
+    ),
+    (
+        "Galician",
+        include_str!("../installer/languages/Galician.nsh"),
+    ),
+    (
+        "Romanian",
+        include_str!("../installer/languages/Romanian.nsh"),
+    ),
+];
 
 fn json(text: &str) -> serde_json::Value {
     serde_json::from_str(text).expect("valid JSON")
@@ -168,4 +183,27 @@ fn the_third_party_notices_ship_in_every_installer_and_in_the_store_package() {
     assert!(SCRIPT.contains("THIRD-PARTY-NOTICES.md"));
     // the app crate is not third-party software (cargo-about skips crates that are never published)
     assert!(WORKSPACE.contains("publish = false"));
+}
+
+#[test]
+fn the_custom_installer_languages_are_listed_and_carry_both_spellings_of_the_install_choice() {
+    let config = json(CONFIG);
+    let listed = config["bundle"]["windows"]["nsis"]["customLanguageFiles"]
+        .as_object()
+        .expect("customLanguageFiles");
+    assert_eq!(listed.len(), CUSTOM_LANGUAGES.len());
+    for (name, text) in CUSTOM_LANGUAGES {
+        assert_eq!(listed[name], format!("installer/languages/{name}.nsh"));
+        // the text of `LangString <key> ${LANG_...} "<text>"`
+        let value = |key: &str| {
+            text.lines()
+                .find_map(|line| line.strip_prefix(&format!("LangString {key} ")))
+                .and_then(|rest| rest.split_once(' '))
+                .map(|(_, text)| text.to_owned())
+        };
+        // Tauri CLI 2.12.4 reads `chooseHowToInstall`, 2.12.3 the misspelled `choowHowToInstall`: both, same words
+        let new = value("chooseHowToInstall");
+        assert!(new.is_some(), "{name}.nsh lacks chooseHowToInstall");
+        assert_eq!(new, value("choowHowToInstall"), "{name}.nsh");
+    }
 }

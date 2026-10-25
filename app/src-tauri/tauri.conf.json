@@ -43,8 +43,20 @@
           "SpanishInternational",
           "German",
           "SimpChinese",
-          "Italian"
+          "Italian",
+          "Japanese",
+          "Korean",
+          "French",
+          "Portuguese",
+          "Catalan",
+          "Galician",
+          "Romanian"
         ],
+        "customLanguageFiles": {
+          "Catalan": "installer/languages/Catalan.nsh",
+          "Galician": "installer/languages/Galician.nsh",
+          "Romanian": "installer/languages/Romanian.nsh"
+        },
         "displayLanguageSelector": true,
         "installerHooks": "installer/hooks.nsh"
       }

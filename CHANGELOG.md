@@ -5,6 +5,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Seven more interface languages: 日本語 (Japanese), 한국어 (Korean), Français (French), Português (Portugal) (European Portuguese), Català (Catalan), Galego (Galician) and Română (Romanian).** **Settings > Language** lists them, and *System default* picks each one for its system languages (`ja-JP`, `ko-KR`, `fr-CA`, `ca-ES-valencia` and the others); Portuguese outside Brazil (`pt-PT`, `pt-AO`, `pt-MZ`...) now picks European Portuguese, while `pt-BR` and a bare `pt` keep Brazilian Portuguese. The Windows installer offers them, the right-click entries in the file manager are worded in them (for example "PerMark で開く", "PerMark로 열기", "Ouvrir avec PerMark"), and the Microsoft Store package declares them. In Japanese and Korean, the interface uses Japanese and Korean fonts (Yu Gothic UI, Meiryo UI or Hiragino Sans; Malgun Gothic or Apple SD Gothic Neo) instead of Chinese letter shapes. Romanian counts use its three plural forms ("1 fișier", "2 fișiere", "20 de fișiere"). Thanks to @kelvin-mariano for the translations, the installer and file manager wording, and the Japanese and Korean fonts (#61; Japanese and Korean were asked for in #23). <!-- f: settings, file-manager-integration -->
+
 ### Fixed
 - The count next to **Broken links** is now the opened folder's own, and it shows only once PerMark has looked through all the documents. Before, it also counted the broken links of the git worktrees linked to the folder, so a folder with only a few broken links could show thousands, and the worktrees' links could push the folder's own off the list. When a linked worktree has broken links too, the tab now shows them apart: **This folder** first, then a section for each worktree (**Linked worktree** and its name), each with its count. A folder without linked worktrees looks as before. Thanks to @pkyes54 for the report (#62). <!-- f: broken-links -->
 
