@@ -414,6 +414,9 @@ enum Msg {
     Tick,
     /// A root-commit lease came: ask what a move question may need.
     Ask,
+    /// Tests: answered once every message sent before it was handled.
+    #[cfg(test)]
+    Settle(Sender<()>),
     Stop,
 }
 
@@ -709,6 +712,10 @@ impl Projects {
                 Msg::Batch(hint) => projects.on_hint(&hint, &markers),
                 Msg::Tick => projects.discover(&Hint::default(), false, &markers),
                 Msg::Ask => projects.ask_root_commits(),
+                #[cfg(test)]
+                Msg::Settle(done) => {
+                    let _ = done.send(());
+                }
             }
         }
     }
@@ -753,6 +760,17 @@ impl Projects {
             .values()
             .map(|v| v.until.saturating_duration_since(now))
             .min()
+    }
+
+    /// Tests: waits (at most `timeout`) until the worker handled every message sent before this call (`false`: no
+    /// worker, or no answer in time).
+    #[cfg(test)]
+    pub(crate) fn settle(&self, timeout: Duration) -> bool {
+        let (done, answer) = channel();
+        let sent = lock(&self.tx)
+            .as_ref()
+            .is_some_and(|tx| tx.send(Msg::Settle(done)).is_ok());
+        sent && answer.recv_timeout(timeout).is_ok()
     }
 
     /// Tests: the time stops here; only [`Projects::advance`] moves it.
