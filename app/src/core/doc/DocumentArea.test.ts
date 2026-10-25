@@ -25,14 +25,17 @@ const { syncPlugins } = await import("../plugins/instance.svelte");
 const { installWindowKeys } = await import("../commands/install");
 const { ui } = await import("../shell/ui.svelte");
 
-// The code and formula embeds are chunks loaded on first use, and highlight.js loads each grammar the same way. In the
-// app they come from the bundle at once; here the first import compiles them, which on a loaded machine took 6-9 s
-// and in the gate more than the 10 s wait of the first test that asked for a code block (board item 58). They are
-// loaded with the test file, untimed, so a test's wait covers only what the page does.
+// The code and formula embeds, the editor pane and its visual editor are chunks loaded on first use, and highlight.js
+// loads each grammar the same way. In the app they are prebuilt chunks that load quickly; here the first import
+// compiles them, which on a loaded machine took 6-9 s and in the gate more than the 10 s wait of the first test that
+// asked for them (board item 58). They are loaded with the test file, untimed, so a test's wait covers only what the
+// page does.
 const { ensureLanguage } = await import("../../plugins/highlight/highlighter");
 await Promise.all([
   import("../../plugins/highlight/CodeBlock.svelte"),
   import("../../plugins/math/Math.svelte"),
+  import("../editing/EditorPane.svelte"),
+  import("../editing/visual"),
   ensureLanguage("rust"),
   ensureLanguage("json"),
 ]);
