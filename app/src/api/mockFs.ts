@@ -89,6 +89,8 @@ export class MockProject {
   readonly dirs = new Set<string>();
   /** Folders made in the Explorer: shown while empty. */
   readonly kept = new Set<string>();
+  /** Names of the linked worktrees of the vault, in its order (their files sit below `@wt/<name>/`). */
+  readonly worktrees: string[] = [];
   readonly #undo: (Op & { id: number })[] = [];
   #nextUndo = 1;
   readonly #plans = new Map<number, MoveSpec[]>();

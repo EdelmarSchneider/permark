@@ -17,9 +17,9 @@ export class BrokenLinksStore {
     this.#root = root;
   }
 
-  /** How many links are broken (0 until the first scan has been told). */
-  get total(): number {
-    return this.report?.total ?? 0;
+  /** How many links are broken in the opened folder, linked worktrees not counted (0 until the first scan is done). */
+  get current(): number {
+    return this.report?.ready === true ? this.report.current : 0;
   }
 
   /** Follows the project of the window until the returned teardown runs. */

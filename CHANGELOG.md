@@ -5,6 +5,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- The count next to **Broken links** is now the opened folder's own, and it shows only once PerMark has looked through all the documents. Before, it also counted the broken links of the git worktrees linked to the folder, so a folder with only a few broken links could show thousands, and the worktrees' links could push the folder's own off the list. When a linked worktree has broken links too, the tab now shows them apart: **This folder** first, then a section for each worktree (**Linked worktree** and its name), each with its count. A folder without linked worktrees looks as before. Thanks to @pkyes54 for the report (#62). <!-- f: broken-links -->
+
 ## [0.7.0] - 2026-10-23
 
 ### Added
