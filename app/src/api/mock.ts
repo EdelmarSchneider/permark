@@ -26,6 +26,7 @@ import { createMockOrganizing } from "./mockOrganizing";
 import { createMockPlugins, type MockPluginProbe } from "./mockPlugins";
 import { MockProject, MockRefusal, seedFiles } from "./mockFs";
 import { createMockProjects, type ProjectsProbe } from "./mockProjects";
+import { mockPictureRefusal } from "./mockRemote";
 import { mockFiles, mockRecent, mockSections } from "./mockSearch";
 import { createMockShell, MOCK_MANIFESTS, type MockShell } from "./mockShell";
 import type {
@@ -937,14 +938,11 @@ export function createMockApi(): Api & {
     ...importing.api,
     remotePicture: (url) => {
       probe.remote.asked.push(url);
-      if (!url.startsWith("https://")) {
+      const refused = mockPictureRefusal(url);
+      if (refused !== null) {
         return Promise.resolve({
           ok: false,
-          error: {
-            kind: "backend",
-            command: "remote_picture",
-            error: { kind: "unsupported", subject: null, detail: "https" },
-          },
+          error: { kind: "backend", command: "remote_picture", error: refused },
         });
       }
       return ok(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
