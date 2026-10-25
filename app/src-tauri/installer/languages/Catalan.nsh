@@ -1,6 +1,6 @@
 ; Tauri's own installer strings (the pages and messages of its NSIS template) in Catalan, which Tauri does not
 ; translate: `bundle.windows.nsis.customLanguageFiles` in tauri.conf.json points here. Same names as Tauri's English.nsh
-; (Tauri CLI 2.12.3). Tauri copies the file as it is and adds the byte order mark itself, so the file has none; the
+; (Tauri CLI 2.12.3; 2.12.4 renamed choowHowToInstall to chooseHowToInstall: both are here, same words). Tauri copies the file as it is and adds the byte order mark itself, so the file has none; the
 ; product name is ${PRODUCTNAME}.
 LangString addOrReinstall ${LANG_CATALAN} "Afegeix o reinstal·la components"
 LangString alreadyInstalled ${LANG_CATALAN} "Ja està instal·lat"
@@ -8,6 +8,7 @@ LangString alreadyInstalledLong ${LANG_CATALAN} "${PRODUCTNAME} ${VERSION} ja es
 LangString appRunning ${LANG_CATALAN} "${PRODUCTNAME} s'està executant. Tanqueu-lo i torneu-ho a provar."
 LangString appRunningOkKill ${LANG_CATALAN} "${PRODUCTNAME} s'està executant.$\nFeu clic a D'acord per a tancar-lo."
 LangString chooseMaintenanceOption ${LANG_CATALAN} "Trieu l'operació de manteniment que voleu fer."
+LangString chooseHowToInstall ${LANG_CATALAN} "Trieu com voleu instal·lar ${PRODUCTNAME}."
 LangString choowHowToInstall ${LANG_CATALAN} "Trieu com voleu instal·lar ${PRODUCTNAME}."
 LangString createDesktop ${LANG_CATALAN} "Crea una drecera a l'escriptori"
 LangString dontUninstall ${LANG_CATALAN} "No el desinstal·lis"

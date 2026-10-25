@@ -627,7 +627,7 @@
 
 <div class="explorer" data-drop-explorer>
   <div class="bar">
-    <span class="menu-label">{t("project.explorer")}</span>
+    <span class="menu-label one-line" title={t("project.explorer")}>{t("project.explorer")}</span>
     <span class="spacer"></span>
     <button
       type="button"
@@ -914,7 +914,7 @@
       {/key}
     {/if}
     <div class="foot" role="status">
-      <span class="count">{countText}</span>
+      <span class="count one-line" title={countText}>{countText}</span>
       {#if store.shownFiles !== store.totalFiles}
         <button
           type="button"
@@ -1197,6 +1197,17 @@
     color: var(--accent-text);
     font: inherit;
     cursor: pointer;
+  }
+  /* a long translation is cut short (full text in the tooltip) rather than wrapping a lone letter or word */
+  .one-line {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .foot .link {
+    flex-shrink: 0;
+    white-space: nowrap;
   }
   .drop-hint {
     position: fixed;

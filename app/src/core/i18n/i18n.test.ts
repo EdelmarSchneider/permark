@@ -262,3 +262,15 @@ describe.each(LOCALES.filter((locale) => locale !== "en"))("the %s table", (loca
     expect(result.table["app.name"]).toBe("PerMark");
   });
 });
+
+describe("the ja table's style", () => {
+  it("writes ？ and ： full-width after Japanese text, and keeps the Git term worktree in English", async () => {
+    const result = await loadTable("ja");
+    if (result.status !== "loaded") throw new Error(`ja: ${result.status}`);
+    const halfWidthAfterJapanese = /[\u3001-\u303f\u3040-\u30ff\u3400-\u9fff\uff01-\uffef][?:]/u;
+    for (const [key, value] of Object.entries(result.table)) {
+      expect(halfWidthAfterJapanese.test(value), `ja ${key}: ${value}`).toBe(false);
+      expect(value, `ja ${key}`).not.toContain("\u30ef\u30fc\u30af\u30c4\u30ea\u30fc");
+    }
+  });
+});

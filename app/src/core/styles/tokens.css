@@ -48,34 +48,35 @@
   --dur-locate: 1.5s;
 }
 
-/* Japanese interface (`lang` on <html> follows the language): Japanese fonts come before the Chinese ones above, so kanji
-   take Japanese shapes; Inter and JetBrains Mono still draw Latin letters and digits. */
+/* Japanese interface (`lang` on <html> follows the language): Japanese fonts come before system-ui (on Linux it can be
+   a font with Chinese Han shapes) and before the Chinese ones above, so kanji take Japanese shapes; Inter and JetBrains
+   Mono still draw Latin letters and digits. */
 :root:lang(ja) {
   --font-ui:
-    "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", "Yu Gothic UI", "Meiryo UI",
-    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans CJK JP", "Microsoft YaHei UI",
-    "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    "Inter Variable", "Inter", "Yu Gothic UI", "Meiryo UI", "Hiragino Sans",
+    "Hiragino Kaku Gothic ProN", "Noto Sans CJK JP", system-ui, -apple-system, "Segoe UI",
+    "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
   --font-reading:
-    "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", "Yu Gothic UI", "Meiryo UI",
-    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans CJK JP", "Microsoft YaHei UI",
-    "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    "Inter Variable", "Inter", "Yu Gothic UI", "Meiryo UI", "Hiragino Sans",
+    "Hiragino Kaku Gothic ProN", "Noto Sans CJK JP", system-ui, -apple-system, "Segoe UI",
+    "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
   --font-code:
     "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", Consolas, "BIZ UDGothic",
     "MS Gothic", "Yu Gothic UI", "Meiryo UI", "Hiragino Sans", "Noto Sans Mono CJK JP",
     "Noto Sans CJK JP", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", monospace;
 }
 
-/* Korean interface: Korean fonts come before the Chinese ones above, so Hangul (and hanja) is drawn by a Korean font;
-   Inter and JetBrains Mono still draw Latin letters and digits. */
+/* Korean interface: Korean fonts come before system-ui and the Chinese ones above, so Hangul (and hanja) is drawn by a
+   Korean font; Inter and JetBrains Mono still draw Latin letters and digits. */
 :root:lang(ko) {
   --font-ui:
-    "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", "Malgun Gothic",
-    "Apple SD Gothic Neo", "Noto Sans CJK KR", "Microsoft YaHei UI", "PingFang SC",
-    "Noto Sans CJK SC", sans-serif;
+    "Inter Variable", "Inter", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK KR",
+    system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC",
+    sans-serif;
   --font-reading:
-    "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", "Malgun Gothic",
-    "Apple SD Gothic Neo", "Noto Sans CJK KR", "Microsoft YaHei UI", "PingFang SC",
-    "Noto Sans CJK SC", sans-serif;
+    "Inter Variable", "Inter", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK KR",
+    system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC",
+    sans-serif;
   --font-code:
     "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", Consolas, "D2Coding",
     "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans CJK KR", "Microsoft YaHei UI", "PingFang SC",

@@ -63,7 +63,7 @@ export default {
   "settings.themeSystem": "Sistem",
   "settings.themeLight": "Luminoasă",
   "settings.themeDark": "Întunecată",
-  "settings.tone": "Nuanța temei luminoase",
+  "settings.tone": "Nuanță luminoasă",
   "settings.toneWhite": "Alb",
   "settings.tonePaper": "Hârtie",
   "settings.toneSage": "Salvie",
@@ -1129,7 +1129,7 @@ export default {
   "brokenLinks.rootCount.few": "{n} linkuri nefuncționale",
   "brokenLinks.rootCount.other": "{n} de linkuri nefuncționale",
   "brokenLinks.truncatedAll":
-    "Se afișează primele 500 de linkuri nefuncționale din {n} din acest dosar și din worktree-urile legate.",
+    "Se afișează primele 500 dintre cele {n} de linkuri nefuncționale ale acestui dosar și ale worktree-urilor legate.",
   "brokenLinks.open": "Deschide {path} la rândul {line}",
   "brokenLinks.truncated": "Se afișează primele 500 de linkuri nefuncționale din {n}.",
   "brokenLinks.show": "Arată linkurile nefuncționale",

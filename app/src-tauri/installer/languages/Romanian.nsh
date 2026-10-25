@@ -1,6 +1,6 @@
 ; Tauri's own installer strings (the pages and messages of its NSIS template) in Romanian, which Tauri does not
 ; translate: `bundle.windows.nsis.customLanguageFiles` in tauri.conf.json points here. Same names as Tauri's English.nsh
-; (Tauri CLI 2.12.3). Tauri copies the file as it is and adds the byte order mark itself, so the file has none; the
+; (Tauri CLI 2.12.3; 2.12.4 renamed choowHowToInstall to chooseHowToInstall: both are here, same words). Tauri copies the file as it is and adds the byte order mark itself, so the file has none; the
 ; product name is ${PRODUCTNAME}.
 LangString addOrReinstall ${LANG_ROMANIAN} "Adaugă sau reinstalează componente"
 LangString alreadyInstalled ${LANG_ROMANIAN} "Deja instalat"
@@ -8,6 +8,7 @@ LangString alreadyInstalledLong ${LANG_ROMANIAN} "${PRODUCTNAME} ${VERSION} este
 LangString appRunning ${LANG_ROMANIAN} "${PRODUCTNAME} rulează! Închide aplicația mai întâi, apoi încearcă din nou."
 LangString appRunningOkKill ${LANG_ROMANIAN} "${PRODUCTNAME} rulează!$\nApasă OK pentru a închide aplicația forțat"
 LangString chooseMaintenanceOption ${LANG_ROMANIAN} "Alege operația de întreținere pe care vrei să o efectuezi."
+LangString chooseHowToInstall ${LANG_ROMANIAN} "Alege cum vrei să instalezi ${PRODUCTNAME}."
 LangString choowHowToInstall ${LANG_ROMANIAN} "Alege cum vrei să instalezi ${PRODUCTNAME}."
 LangString createDesktop ${LANG_ROMANIAN} "Creează o comandă rapidă pe desktop"
 LangString dontUninstall ${LANG_ROMANIAN} "Nu dezinstala"

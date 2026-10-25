@@ -64,7 +64,7 @@ export default {
   "settings.themeSystem": "Système",
   "settings.themeLight": "Clair",
   "settings.themeDark": "Sombre",
-  "settings.tone": "Teinte du thème clair",
+  "settings.tone": "Teinte claire",
   "settings.toneWhite": "Blanc",
   "settings.tonePaper": "Papier",
   "settings.toneSage": "Sauge",
@@ -351,7 +351,7 @@ export default {
   "settings.refTemplate": "Modèle de référence",
   "settings.width": "Largeur de lecture",
   "settings.zoom": "Zoom",
-  "settings.wrap": "Retour automatique à la ligne des lignes longues",
+  "settings.wrap": "Retour à la ligne automatique",
   "settings.wrapHint": "Dans les fichiers texte, les journaux et le mode Source.",
   "settings.wrapHintKeys":
     "Dans les fichiers texte, les journaux et le mode Source. {keys} l'active ou le désactive.",
@@ -588,7 +588,7 @@ export default {
   "cmd.zoomIn": "Zoom avant",
   "cmd.zoomOut": "Zoom arrière",
   "cmd.cycleWidth": "Changer la largeur de lecture",
-  "cmd.wrapLines": "Retour automatique à la ligne des lignes longues (oui | non)",
+  "cmd.wrapLines": "Retour à la ligne automatique (oui | non)",
   "wrap.on": "Les lignes longues reviennent maintenant à la ligne.",
   "wrap.off":
     "Les lignes longues ne reviennent plus à la ligne. Pour faire défiler horizontalement, utilisez Maj et la molette de la souris, ou cliquez dans le texte et appuyez sur les touches fléchées.",
