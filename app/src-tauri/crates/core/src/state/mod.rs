@@ -170,8 +170,8 @@ pub enum Loaded<T> {
     /// Corrupt | other version: moved to `backup`. `None`: an IO error kept it from being read (another program
     /// holds it, no permission), or it could not be moved: left as it is, and a save of it is refused from this
     /// handle until its own load | update reads it (another handle reading it never unblocks this one), and from
-    /// every handle that never read it, so the defaults a caller uses meanwhile never replace the person's data. A
-    /// handle that read the file itself keeps saving: it holds the person's data.
+    /// every handle that never read it while it is there, so the defaults a caller uses meanwhile never replace the
+    /// person's data. A handle that read the file itself keeps saving: it holds the person's data.
     /// Caller uses default + warns.
     Recovered {
         backup: Option<PathBuf>,
@@ -304,7 +304,7 @@ impl<T: StateData> StateFile<T> {
     /// does) and returns what to write (`None`: nothing). Written only while the file still holds what `next` saw,
     /// else read again and `next` asked again. Returns the data on disk afterwards. After an `Err`, never save defaults
     /// in place of what is on disk: the file may hold the person's data (a file it could not read is stamped, so a
-    /// handle that never read it is refused anyway).
+    /// handle that never read it is refused while the file is there; once it is gone, nothing is left to lose).
     ///
     /// # Errors
     /// Encode | IO failure, a link in place of `.permark/`, a file that kept changing under a writer without the lock.
@@ -397,7 +397,8 @@ impl<T: StateData> StateFile<T> {
     /// # Errors
     /// Encode failure, IO failure, `.permark/` folder replaced by a link.
     pub fn save(&self, data: &T) -> Result<(), StateError> {
-        if !unread::may_write(&self.path, self.read.load(Ordering::SeqCst)) {
+        let read = self.read.load(Ordering::SeqCst);
+        if !unread::may_write(&self.path, read) {
             return Err(StateError::io(&self.path, unread::refused()));
         }
         let bytes = self.encode(data)?;
@@ -405,7 +406,20 @@ impl<T: StateData> StateFile<T> {
             private::prepare(&guard.permark, &guard.state, dir)
                 .map_err(|e| StateError::io(&self.path, e))?;
         }
-        write_atomic(&self.path, &bytes).map_err(|e| StateError::io(&self.path, e))
+        if !(read == unread::NEVER && unread::is_stamped(&self.path)) {
+            return write_atomic(&self.path, &bytes).map_err(|e| StateError::io(&self.path, e));
+        }
+        // a file that could not be read once, gone at the check above: still gone right before each rename attempt
+        // (one put back meanwhile is kept, as `update` does); written, it holds only PerMark's own data
+        let written = crate::fsx::write_atomic_checked(&self.path, &bytes, || {
+            Ok(unread::may_write(&self.path, read))
+        })
+        .map_err(|e| StateError::io(&self.path, e))?;
+        if !written {
+            return Err(StateError::io(&self.path, unread::refused()));
+        }
+        unread::clear(&self.path);
+        Ok(())
     }
 }
 
@@ -413,8 +427,11 @@ impl<T: StateData> StateFile<T> {
 /// that writes the defaults a caller got over the person's data is refused. Refused: a handle whose own last load |
 /// update left the file unread (`FAILED`), and a handle that never read a file stamped here (`NEVER`: it may carry
 /// the defaults of another handle, as the session save makes a new handle). A handle that read the file itself
-/// (`READ`) writes even after another handle failed: it holds the person's data. One set for the process (other
-/// processes do not see it); a stamp stays until the process ends.
+/// (`READ`) writes even after another handle failed: it holds the person's data. A file that is gone holds nothing to
+/// lose: a `NEVER` handle may write a stamped file while it is not there (only a not-found answer counts as gone; any
+/// other error, and any entry, a folder or a link included, counts as there), and that write clears the stamp: the file
+/// then holds only PerMark's own data. A `FAILED` handle stays refused. One set for the process (other processes do not
+/// see it); otherwise a stamp stays until the process ends.
 mod unread {
     use std::collections::HashSet;
     use std::path::Path;
@@ -447,6 +464,15 @@ mod unread {
         stamped().insert(key(path));
     }
 
+    pub(super) fn is_stamped(path: &Path) -> bool {
+        stamped().contains(&key(path))
+    }
+
+    /// After a `NEVER` handle wrote the file while it was gone: what is there now is PerMark's own data.
+    pub(super) fn clear(path: &Path) {
+        stamped().remove(&key(path));
+    }
+
     /// A handle whose own last load | update made `read` of the file may write it. One that never read it may, unless
     /// the file could not be read once and is still there: a file that is gone holds nothing to lose (the review keeps
     /// a copy again after removing it as unused).
@@ -454,8 +480,7 @@ mod unread {
         match read {
             READ => true,
             NEVER => {
-                let is_stamped = stamped().contains(&key(path));
-                !is_stamped
+                !is_stamped(path)
                     || matches!(std::fs::symlink_metadata(path), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
             }
             _ => false,

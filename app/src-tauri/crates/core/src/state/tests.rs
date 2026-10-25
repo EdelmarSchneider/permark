@@ -747,7 +747,8 @@ fn another_handle_reading_does_not_unblock_the_caller_holding_defaults() {
 
 /// The PR #67 check: a file that could not be read once and is gone now holds nothing to lose. A handle that never read
 /// it may write it again (the review keeps its copies of a version this way after it removed them as unused); one that
-/// failed to read it still may not, and while the file is there a fresh handle is refused as before.
+/// failed to read it still may not, and while the file is there a fresh handle is refused as before. Once a fresh
+/// handle wrote it, the file holds only PerMark's own data: the stamp is gone and later fresh handles save it.
 #[test]
 fn a_handle_that_never_read_a_stamped_file_may_write_it_once_it_is_gone() {
     let f = fx();
@@ -772,14 +773,46 @@ fn a_handle_that_never_read_a_stamped_file_may_write_it_once_it_is_gone() {
         failed.save(&Sample::default()).is_err(),
         "the handle holding defaults is still refused"
     );
-    assert!(
-        f.store().file::<Sample>("x.json").save(&sample(3)).is_err(),
-        "the file is there again: a handle that never read it is refused"
-    );
+    f.store()
+        .file::<Sample>("x.json")
+        .save(&sample(3))
+        .expect("PerMark's own write cleared the stamp: a later fresh handle saves");
     assert_eq!(
         f.store().file::<Sample>("x.json").load(),
-        Loaded::Found(sample(2))
+        Loaded::Found(sample(3))
     );
+    assert!(
+        failed.save(&Sample::default()).is_err(),
+        "the handle holding defaults stays refused after the stamp is cleared"
+    );
+}
+
+/// PR #67 delta check: only a not-found answer counts as gone; any entry (a folder here) counts as there, and a write
+/// that did not happen leaves the stamp: the person's file put back afterwards is still never written over.
+#[test]
+fn a_folder_in_place_of_a_stamped_file_counts_as_there_and_keeps_the_stamp() {
+    let f = fx();
+    let failed = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(failed.path().parent().unwrap()).unwrap();
+    fs::write(failed.path(), KEPT).unwrap();
+    let held = unreadable(failed.path());
+    if readable_anyway(failed.path()) {
+        return;
+    }
+    assert_eq!(failed.load(), Loaded::Recovered { backup: None });
+    drop(held);
+    fs::remove_file(failed.path()).unwrap();
+    fs::create_dir(failed.path()).unwrap();
+    fs::write(failed.path().join("inside.txt"), b"k").unwrap();
+    assert!(f.store().file::<Sample>("x.json").save(&sample(1)).is_err());
+    assert_eq!(fs::read(failed.path().join("inside.txt")).unwrap(), b"k");
+    fs::remove_dir_all(failed.path()).unwrap();
+    fs::write(failed.path(), KEPT).unwrap();
+    assert!(
+        f.store().file::<Sample>("x.json").save(&sample(2)).is_err(),
+        "the refused write kept the stamp"
+    );
+    assert_eq!(fs::read(failed.path()).unwrap(), KEPT);
 }
 
 /// Review S1: an update that finds a file it cannot parse and cannot move aside fails and keeps it blocked: a later
