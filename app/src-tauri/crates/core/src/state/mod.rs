@@ -1,6 +1,6 @@
 //! Where PerMark keeps its own state: the person's profile, or `.permark/local/` of a project that has `.permark/`.
 //! Versioned JSON files; corrupt -> moved aside, defaults used, caller warns; unreadable (an IO error) -> left as it is,
-//! defaults used, never written over by a handle that has not read it since. Plugins get own namespaces.
+//! defaults used, never written over by a handle holding those defaults. Plugins get own namespaces.
 
 pub mod older;
 mod private;
@@ -10,7 +10,7 @@ pub mod shared_write;
 use std::io;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::de::DeserializeOwned;
@@ -168,9 +168,10 @@ pub enum Loaded<T> {
     Missing,
     Found(T),
     /// Corrupt | other version: moved to `backup`. `None`: an IO error kept it from being read (another program
-    /// holds it, no permission), or it could not be moved: left as it is, and a save of it is refused from every
-    /// handle that has not read it since (a load | update of that handle itself; one handle reading it never unblocks
-    /// another), so the defaults a caller uses meanwhile never replace the person's data.
+    /// holds it, no permission), or it could not be moved: left as it is, and a save of it is refused from this
+    /// handle until its own load | update reads it (another handle reading it never unblocks this one), and from
+    /// every handle that never read it, so the defaults a caller uses meanwhile never replace the person's data. A
+    /// handle that read the file itself keeps saving: it holds the person's data.
     /// Caller uses default + warns.
     Recovered {
         backup: Option<PathBuf>,
@@ -211,9 +212,9 @@ struct Guard {
 pub struct StateFile<T> {
     path: PathBuf,
     guard: Option<Guard>,
-    /// When this handle last read the file (or found none): an [`unread`] tick, 0 = never. A save is refused while
-    /// the file has been unreadable since then.
-    read: AtomicU64,
+    /// What this handle's own last load | update made of the file: [`unread::NEVER`], [`unread::READ`] (read it, found
+    /// none, or moved it aside) or [`unread::FAILED`] (left it unread: it holds defaults).
+    read: AtomicU8,
     _data: PhantomData<fn() -> T>,
 }
 
@@ -222,7 +223,7 @@ impl<T> Clone for StateFile<T> {
         Self {
             path: self.path.clone(),
             guard: self.guard.clone(),
-            read: AtomicU64::new(self.read.load(Ordering::SeqCst)),
+            read: AtomicU8::new(self.read.load(Ordering::SeqCst)),
             _data: PhantomData,
         }
     }
@@ -245,7 +246,7 @@ impl<T: StateData> StateFile<T> {
                 return Loaded::Missing;
             }
             Err(_) => {
-                unread::mark(&self.path);
+                self.failed();
                 return Loaded::Recovered { backup: None };
             }
         };
@@ -259,14 +260,21 @@ impl<T: StateData> StateFile<T> {
             self.has_read();
         } else {
             // still in place (newer data, or a file that cannot be moved): never written over either
-            unread::mark(&self.path);
+            self.failed();
         }
         Loaded::Recovered { backup }
     }
 
-    /// This handle read the file (or found none, or moved it aside): its saves are not refused for an earlier failure.
+    /// This handle read the file (or found none, or moved it aside): it holds what is on disk and may save.
     fn has_read(&self) {
-        self.read.store(unread::tick(), Ordering::SeqCst);
+        self.read.store(unread::READ, Ordering::SeqCst);
+    }
+
+    /// This handle left the file unread (its caller holds defaults): its saves, and those of handles that never read
+    /// the file, are refused.
+    fn failed(&self) {
+        unread::mark(&self.path);
+        self.read.store(unread::FAILED, Ordering::SeqCst);
     }
 
     /// The data of the file's bytes (`None`: not this layout, or a newer version).
@@ -323,7 +331,7 @@ impl<T: StateData> StateFile<T> {
                         continue;
                     }
                     // cannot be moved: left as it is, and no handle writes over it (review S1)
-                    unread::mark(&self.path);
+                    self.failed();
                     return Err(StateError::io(&self.path, unread::refused()));
                 }
             };
@@ -395,28 +403,26 @@ impl<T: StateData> StateFile<T> {
 }
 
 /// The state files a load | update could not read (or parse and move aside) and left in place (board item 15): a save
-/// from a handle that has not read the file since would write the defaults its caller got over the person's data, so
-/// it is refused. Each file keeps the tick of its last failure; each handle the tick of its own last read
-/// ([`StateFile::read`]); a save goes through only when the handle read the file after the failure. One set for the
-/// process (other processes do not see it); handles of a file made later (tick 0) are refused too.
+/// that writes the defaults a caller got over the person's data is refused. Refused: a handle whose own last load |
+/// update left the file unread (`FAILED`), and a handle that never read a file stamped here (`NEVER`: it may carry
+/// the defaults of another handle, as the session save makes a new handle). A handle that read the file itself
+/// (`READ`) writes even after another handle failed: it holds the person's data. One set for the process (other
+/// processes do not see it); a stamp stays until the process ends.
 mod unread {
-    use std::collections::HashMap;
+    use std::collections::HashSet;
     use std::path::Path;
-    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Mutex, OnceLock, PoisonError};
 
-    fn failed() -> std::sync::MutexGuard<'static, HashMap<String, u64>> {
-        static FAILED: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
-        FAILED
+    pub(super) const NEVER: u8 = 0;
+    pub(super) const READ: u8 = 1;
+    pub(super) const FAILED: u8 = 2;
+
+    fn stamped() -> std::sync::MutexGuard<'static, HashSet<String>> {
+        static STAMPED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+        STAMPED
             .get_or_init(Mutex::default)
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-    }
-
-    /// A new moment, later than every one before it (never 0).
-    pub(super) fn tick() -> u64 {
-        static NEXT: AtomicU64 = AtomicU64::new(1);
-        NEXT.fetch_add(1, Ordering::SeqCst)
     }
 
     fn key(path: &Path) -> String {
@@ -431,12 +437,16 @@ mod unread {
     }
 
     pub(super) fn mark(path: &Path) {
-        failed().insert(key(path), tick());
+        stamped().insert(key(path));
     }
 
-    /// A handle that last read the file at `read` may write it.
-    pub(super) fn may_write(path: &Path, read: u64) -> bool {
-        failed().get(&key(path)).is_none_or(|&since| read > since)
+    /// A handle whose own last load | update made `read` of the file may write it.
+    pub(super) fn may_write(path: &Path, read: u8) -> bool {
+        match read {
+            READ => true,
+            NEVER => !stamped().contains(&key(path)),
+            _ => false,
+        }
     }
 
     pub(super) fn refused() -> std::io::Error {
@@ -541,7 +551,7 @@ impl StateStore {
         StateFile {
             path: self.dir.join(name),
             guard: self.guard.clone(),
-            read: AtomicU64::new(0),
+            read: AtomicU8::new(unread::NEVER),
             _data: PhantomData,
         }
     }
@@ -577,7 +587,7 @@ impl StateStore {
         StateFile {
             path: self.profile_dir.join(name),
             guard: None,
-            read: AtomicU64::new(0),
+            read: AtomicU8::new(unread::NEVER),
             _data: PhantomData,
         }
     }
@@ -594,7 +604,7 @@ impl StateStore {
         StateFile {
             path: self.app_dir.join(name),
             guard: None,
-            read: AtomicU64::new(0),
+            read: AtomicU8::new(unread::NEVER),
             _data: PhantomData,
         }
     }
@@ -605,7 +615,7 @@ impl StateStore {
         StateFile {
             path: self.cache.join(name),
             guard: self.cache_guard.clone(),
-            read: AtomicU64::new(0),
+            read: AtomicU8::new(unread::NEVER),
             _data: PhantomData,
         }
     }
@@ -621,7 +631,7 @@ impl StateStore {
         StateFile {
             path: self.plugin_dir(id).join(name),
             guard: self.guard.clone(),
-            read: AtomicU64::new(0),
+            read: AtomicU8::new(unread::NEVER),
             _data: PhantomData,
         }
     }

@@ -769,3 +769,86 @@ fn a_failed_update_on_an_unmovable_unparsable_file_keeps_the_mark() {
         .is_err());
     assert_eq!(fs::read(file.path()).unwrap(), BROKEN);
 }
+
+/// Re-review N1 (P4): a handle that read the file keeps writing it after another handle fails to read it (two tabs,
+/// the journal held by an antivirus when the second one opens): it holds the person's data, not defaults.
+#[test]
+fn a_handle_that_read_the_file_still_saves_after_another_one_fails() {
+    let f = fx();
+    let healthy = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(healthy.path().parent().unwrap()).unwrap();
+    fs::write(healthy.path(), KEPT).unwrap();
+    let Loaded::Found(mut data) = healthy.load() else {
+        panic!("readable");
+    };
+    let failing = f.store().file::<Sample>("x.json");
+    let held = unreadable(failing.path());
+    if readable_anyway(failing.path()) {
+        return;
+    }
+    assert_eq!(failing.load(), Loaded::Recovered { backup: None });
+    drop(held);
+    data.items.insert("more".to_owned(), 2);
+    healthy.save(&data).unwrap();
+    let saved = fs::read(healthy.path()).unwrap();
+    // the one that got the defaults, and one that never read it, are still refused
+    assert!(failing.save(&Sample::default()).is_err());
+    assert!(f
+        .store()
+        .file::<Sample>("x.json")
+        .save(&Sample::default())
+        .is_err());
+    assert_eq!(fs::read(healthy.path()).unwrap(), saved);
+    assert_eq!(healthy.load(), Loaded::Found(data));
+}
+
+/// P3: on a file no load ever failed on, fresh handles (several threads at once) save as before.
+#[test]
+fn fresh_handles_on_a_file_that_never_failed_save_as_before() {
+    let f = fx();
+    let first = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(first.path().parent().unwrap()).unwrap();
+    let store = f.store();
+    std::thread::scope(|scope| {
+        for n in 0..4u32 {
+            let store = &store;
+            scope.spawn(move || {
+                for _ in 0..10 {
+                    store.file::<Sample>("x.json").save(&sample(n)).unwrap();
+                }
+            });
+        }
+    });
+    assert!(matches!(first.load(), Loaded::Found(_)));
+    first.save(&sample(9)).unwrap();
+    assert_eq!(first.load(), Loaded::Found(sample(9)));
+}
+
+/// P5: a load that moves a corrupt file aside leaves nothing to write over: that handle may save its defaults, even
+/// on a file an earlier load could not read; the handle that got defaults then and a fresh one stay refused.
+#[test]
+fn a_handle_that_moved_the_file_aside_may_save() {
+    let f = fx();
+    let earlier = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(earlier.path().parent().unwrap()).unwrap();
+    fs::write(earlier.path(), KEPT).unwrap();
+    let held = unreadable(earlier.path());
+    if readable_anyway(earlier.path()) {
+        return;
+    }
+    assert_eq!(earlier.load(), Loaded::Recovered { backup: None });
+    drop(held);
+    fs::write(earlier.path(), b"{ not json").unwrap();
+    let mover = f.store().file::<Sample>("x.json");
+    let Loaded::Recovered {
+        backup: Some(backup),
+    } = mover.load()
+    else {
+        panic!("moved aside");
+    };
+    assert_eq!(fs::read(&backup).unwrap(), b"{ not json");
+    mover.save(&Sample::default()).unwrap();
+    assert!(earlier.save(&sample(1)).is_err());
+    assert!(f.store().file::<Sample>("x.json").save(&sample(1)).is_err());
+    assert_eq!(mover.load(), Loaded::Found(Sample::default()));
+}
