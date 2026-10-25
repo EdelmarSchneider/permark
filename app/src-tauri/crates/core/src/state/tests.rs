@@ -852,3 +852,32 @@ fn a_handle_that_moved_the_file_aside_may_save() {
     assert!(f.store().file::<Sample>("x.json").save(&sample(1)).is_err());
     assert_eq!(mover.load(), Loaded::Found(Sample::default()));
 }
+
+/// Delta check P7: an update that cannot read the file (an IO error) stamps it, so a fresh handle never saves the
+/// defaults over it afterwards; a handle that read the file itself keeps writing.
+#[test]
+fn an_update_that_cannot_read_the_file_keeps_fresh_handles_from_saving_defaults() {
+    let f = fx();
+    let healthy = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(healthy.path().parent().unwrap()).unwrap();
+    fs::write(healthy.path(), KEPT).unwrap();
+    assert!(matches!(healthy.load(), Loaded::Found(_)));
+    let held = unreadable(healthy.path());
+    if readable_anyway(healthy.path()) {
+        return;
+    }
+    assert!(f
+        .store()
+        .file::<Sample>("x.json")
+        .update(|_| Some(sample(1)))
+        .is_err());
+    drop(held);
+    assert!(f
+        .store()
+        .file::<Sample>("x.json")
+        .save(&Sample::default())
+        .is_err());
+    assert_eq!(fs::read(healthy.path()).unwrap(), KEPT);
+    healthy.save(&sample(2)).unwrap();
+    assert_eq!(healthy.load(), Loaded::Found(sample(2)));
+}

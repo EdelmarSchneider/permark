@@ -302,7 +302,9 @@ impl<T: StateData> StateFile<T> {
     /// Read-change-write for a file several cores write (`shared_write`): under the file's lock, `next` gets the data
     /// on disk now (`None`: no file; a file this version cannot read is moved aside first, as [`StateFile::load`]
     /// does) and returns what to write (`None`: nothing). Written only while the file still holds what `next` saw,
-    /// else read again and `next` asked again. Returns the data on disk afterwards.
+    /// else read again and `next` asked again. Returns the data on disk afterwards. After an `Err`, never save defaults
+    /// in place of what is on disk: the file may hold the person's data (a file it could not read is stamped, so a
+    /// handle that never read it is refused anyway).
     ///
     /// # Errors
     /// Encode | IO failure, a link in place of `.permark/`, a file that kept changing under a writer without the lock.
@@ -320,7 +322,12 @@ impl<T: StateData> StateFile<T> {
             let bytes = match std::fs::read(&self.path) {
                 Ok(bytes) => Some(bytes),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-                Err(error) => return Err(StateError::io(&self.path, error)),
+                Err(error) => {
+                    // not read: no handle that never read it writes over it; this handle's own state stays (a
+                    // handle holding what it read keeps writing)
+                    unread::mark(&self.path);
+                    return Err(StateError::io(&self.path, error));
+                }
             };
             let fresh = match bytes.as_deref().map(Self::parse) {
                 None => None,
