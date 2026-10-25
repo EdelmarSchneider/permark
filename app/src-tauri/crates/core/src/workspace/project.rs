@@ -484,6 +484,12 @@ impl ProjectCore {
         &self.agent_files
     }
 
+    /// Tests: the watch hub of the project (a test subscriber hears each batch after the project's own parts).
+    #[cfg(test)]
+    pub(crate) fn hub(&self) -> &Arc<WatchHub> {
+        &self.hub
+    }
+
     /// What plugins publish about the project (the git condition windows read).
     #[must_use]
     pub fn facts(&self) -> &Arc<ProjectFacts> {

@@ -37,15 +37,45 @@ impl Live {
             let news = Arc::clone(&news);
             move |e| news.lock().unwrap().push(e.clone())
         });
-        // the OS watch is running before the first move
-        std::thread::sleep(Duration::from_millis(300));
-        Self {
+        let live = Self {
             base,
             dir,
             core,
             news,
             _sub: sub,
+        };
+        // the OS watch is running before the first move
+        live.settled();
+        live
+    }
+
+    /// Everything that happened so far went through the watch and the projects worker (board item 9: was a fixed
+    /// sleep). A marker file goes through the watch twice: a path the watch looks at again (`deferred`, at most
+    /// once) comes at the latest with the second marker's batch. The hub calls this test's subscriber after the
+    /// project's own, so every batch of the projects worker is queued by then; its answer to `settle` comes after them.
+    fn settled(&self) {
+        static MARKS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+        let _sub = self.core.hub().subscribe({
+            let seen = Arc::clone(&seen);
+            move |batch| {
+                seen.lock()
+                    .unwrap()
+                    .extend(batch.changes.iter().map(|c| c.path.clone()));
+            }
+        });
+        for _ in 0..2 {
+            let n = MARKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let mark = format!("settle-{n}.txt");
+            fs::write(self.root().join(&mark), "x").unwrap();
+            wait(&format!("the watch saw {mark}"), || {
+                seen.lock().unwrap().contains(&mark)
+            });
         }
+        assert!(
+            self.core.projects().settle(Duration::from_secs(10)),
+            "the projects worker answered"
+        );
     }
 
     fn root(&self) -> &Path {
@@ -65,8 +95,8 @@ impl Live {
                     && r.uid.as_ref().map(ProjectUid::as_str) == Some(UID)
             })
         });
-        // late batches of the same move have their chance to do harm
-        std::thread::sleep(Duration::from_millis(600));
+        // late batches of the same move have had their chance to do harm
+        self.settled();
         let view = self.core.projects_view();
         assert_eq!(view.rows.len(), 1, "{view:#?}");
         assert_eq!(state(&view, path), Some(MemberState::Included));
@@ -251,8 +281,8 @@ fn a_lookalike_during_the_window_waits_and_is_never_paired() {
     );
     // rows go out after the map (the view may show the end state first)
     wait("rows", || told(&live) == (1, 1));
-    // late batches have their chance to add a row
-    std::thread::sleep(Duration::from_millis(300));
+    // late batches have had their chance to add a row
+    live.settled();
     let news = news_of(&live);
     assert_eq!(told(&live), (1, 1), "{news:?}");
     assert!(
@@ -271,8 +301,8 @@ fn a_project_back_in_place_within_the_window_tells_nothing() {
     fs::rename(&away, live.root().join("inner/beta")).unwrap();
     wait("back", || live.core.projects().vanished_count() == 0);
     live.core.projects().advance(grace::GRACE * 2);
-    // late batches of the same moves have their chance to do harm
-    std::thread::sleep(Duration::from_millis(600));
+    // late batches of the same moves have had their chance to do harm
+    live.settled();
     let view = live.core.projects_view();
     assert_eq!(state(&view, "inner/beta"), Some(MemberState::Included));
     assert_eq!(view.offered.count, 0);
@@ -308,7 +338,7 @@ fn the_window_ends_by_itself() {
     );
     assert_eq!(live.core.projects().vanished_count(), 0);
     wait("gone row", || told(&live).0 == 1);
-    std::thread::sleep(Duration::from_millis(300));
+    live.settled();
     assert_eq!(told(&live), (1, 0), "{:?}", news_of(&live));
 }
 
