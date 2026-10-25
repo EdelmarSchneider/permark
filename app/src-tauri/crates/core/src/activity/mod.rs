@@ -13,6 +13,7 @@ pub mod net;
 #[cfg(test)]
 mod tests;
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError, Weak};
 use std::thread::JoinHandle;
@@ -484,7 +485,7 @@ struct State {
     /// `Some` while the owners are not known (before the projects worker tells them, while they change): facts about
     /// files wait here and go to their project's journal once told (CI 39814680202: a tag right after opening never
     /// reached the project's own journal). Bounded ([`MAX_WAITING`]; the opened folder's journal has them all).
-    waiting: Option<Vec<Waiting>>,
+    waiting: Option<VecDeque<Waiting>>,
     /// Facts waiting for the next write, per project journal (its file).
     mirror: Vec<(StateFile<Journal>, Mirrored)>,
 }
@@ -511,10 +512,11 @@ enum Waiting {
 impl State {
     fn wait(&mut self, item: Waiting) {
         if let Some(waiting) = &mut self.waiting {
-            if waiting.len() == MAX_WAITING {
-                waiting.remove(0);
+            // the oldest goes first (the opened folder's journal keeps it)
+            if waiting.len() >= MAX_WAITING {
+                waiting.pop_front();
             }
-            waiting.push(item);
+            waiting.push_back(item);
         }
     }
 
@@ -617,7 +619,7 @@ impl ActivityLog {
                 dirty: false,
                 file,
                 owners: None,
-                waiting: Some(Vec::new()),
+                waiting: Some(VecDeque::new()),
                 mirror: Vec::new(),
             }),
             wake: Condvar::new(),
@@ -691,7 +693,7 @@ impl ActivityLog {
                 {
                     let mut state = lock(&self.inner.state);
                     state.owners = None;
-                    state.waiting.get_or_insert_with(Vec::new);
+                    state.waiting.get_or_insert_with(VecDeque::new);
                 }
                 flush(&self.inner);
             }

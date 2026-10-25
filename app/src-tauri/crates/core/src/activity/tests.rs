@@ -936,3 +936,149 @@ fn facts_before_the_owners_are_known_reach_the_project_journal_once_told() {
     log.flush();
     assert_eq!(member_journal().entries.len(), 2);
 }
+
+/// The opened folder `p` with one included project `sub a`: its owners, the folder's journal (owners not told yet)
+/// and the project's own state.
+fn one_member() -> (
+    tempfile::TempDir,
+    StateStore,
+    crate::projects::Owners,
+    ActivityLog,
+    Time,
+) {
+    use crate::projects::{OwnerSlot, Owners, ProjectUid};
+    let (dir, store) = store();
+    let member_dir = dir.path().join("p/sub a");
+    std::fs::create_dir_all(&member_dir).unwrap();
+    let member = StateStore::for_project(
+        &AppDirs::under(&dir.path().join("state")),
+        &Root::open(&member_dir).unwrap(),
+    );
+    let owners = Owners::new(
+        store.clone(),
+        vec![OwnerSlot::member(
+            ProjectUid::parse("k7m2q7xd2a").unwrap(),
+            "sub a",
+            member.clone(),
+        )],
+    );
+    let time = Time::new();
+    let log = ActivityLog::open(&store, time.clock());
+    (dir, member, owners, log, time)
+}
+
+fn journal_of(store: &StateStore) -> Journal {
+    match store.file::<Journal>(JOURNAL_FILE).load() {
+        crate::state::Loaded::Found(j) => j,
+        _ => Journal::default(),
+    }
+}
+
+/// N4 (verifier 2026-10-25): while the owners are not known at most [`MAX_WAITING`] facts wait, the oldest go first;
+/// the opened folder's journal keeps them all.
+#[test]
+fn at_most_the_newest_waiting_facts_reach_the_project_journal() {
+    use crate::projects::OwnersChange;
+    let (_dir, member, owners, log, _time) = one_member();
+    let over = 5;
+    for i in 0..MAX_WAITING + over {
+        log.person(tag(true, &format!("sub a/f{i}.md"), "t"));
+    }
+    log.flush();
+    assert_eq!(log.snapshot().entries.len(), MAX_WAITING + over);
+    log.follow_owners(&OwnersChange::Resume(&owners));
+    log.flush();
+    let facts: Vec<Fact> = journal_of(&member)
+        .entries
+        .into_iter()
+        .map(|e| e.fact)
+        .collect();
+    let newest: Vec<Fact> = (over..MAX_WAITING + over)
+        .map(|i| tag(true, &format!("f{i}.md"), "t"))
+        .collect();
+    assert_eq!(facts, newest);
+}
+
+/// N4 (verifier 2026-10-25): a change made outside PerMark before the owners are known reaches the project's own
+/// journal once told, its path relative to the project; one outside every project stays in the folder's journal.
+#[test]
+fn an_outside_change_before_the_owners_are_known_reaches_the_project_journal_once_told() {
+    use crate::projects::OwnersChange;
+    let (_dir, member, owners, log, _time) = one_member();
+    log.outside(&batch(vec![
+        change("sub a/x.md", ChangeKind::Created, false),
+        change("top.md", ChangeKind::Modified, false),
+    ]));
+    log.flush();
+    assert_eq!(log.snapshot().entries.len(), 2);
+    assert!(journal_of(&member).entries.is_empty());
+    log.follow_owners(&OwnersChange::Resume(&owners));
+    log.flush();
+    let facts: Vec<Fact> = journal_of(&member)
+        .entries
+        .into_iter()
+        .map(|e| e.fact)
+        .collect();
+    assert_eq!(
+        facts,
+        [Fact::Outside {
+            change: OutsideChange::Created,
+            path: "x.md".to_owned(),
+            from: None
+        }]
+    );
+}
+
+/// N4 (verifier 2026-10-25): across a Pause and a Resume the project's journal keeps the order and the time of every
+/// fact: the ones before, the ones that waited (actions and outside changes mixed), the ones after.
+#[test]
+fn facts_keep_their_order_and_time_across_a_pause_and_a_resume() {
+    use crate::projects::OwnersChange;
+    let (_dir, member, owners, log, time) = one_member();
+    log.follow_owners(&OwnersChange::Resume(&owners));
+    log.person(tag(true, "sub a/a.md", "t"));
+    time.pass(MIN);
+    log.follow_owners(&OwnersChange::Pause);
+    log.person(tag(true, "sub a/b.md", "t"));
+    time.pass(MIN);
+    log.outside(&batch(vec![change(
+        "sub a/c.md",
+        ChangeKind::Created,
+        false,
+    )]));
+    time.pass(MIN);
+    log.person(tag(true, "sub a/d.md", "t"));
+    time.pass(MIN);
+    log.flush();
+    let before: Vec<Fact> = journal_of(&member)
+        .entries
+        .into_iter()
+        .map(|e| e.fact)
+        .collect();
+    assert_eq!(before, [tag(true, "a.md", "t")]);
+    log.follow_owners(&OwnersChange::Resume(&owners));
+    log.person(tag(true, "sub a/e.md", "t"));
+    log.flush();
+    let entries: Vec<(u64, Fact)> = journal_of(&member)
+        .entries
+        .into_iter()
+        .map(|e| (e.at, e.fact))
+        .collect();
+    assert_eq!(
+        entries,
+        [
+            (T0, tag(true, "a.md", "t")),
+            (T0 + MIN, tag(true, "b.md", "t")),
+            (
+                T0 + 2 * MIN,
+                Fact::Outside {
+                    change: OutsideChange::Created,
+                    path: "c.md".to_owned(),
+                    from: None
+                }
+            ),
+            (T0 + 3 * MIN, tag(true, "d.md", "t")),
+            (T0 + 4 * MIN, tag(true, "e.md", "t")),
+        ]
+    );
+}

@@ -72,8 +72,9 @@ impl Turns {
         Arc::clone(all.entry(name.to_owned()).or_default())
     }
 
-    /// Waits for this writer's turn until `until` (`None`: still not its turn; its ticket is given up).
-    fn take(self: &Arc<Self>, until: Instant) -> Option<Turn> {
+    /// Waits for this writer's turn until `until` (`None`: no deadline). `None` back: still not its turn at the
+    /// deadline; its ticket is given up.
+    fn take(self: &Arc<Self>, until: Option<Instant>) -> Option<Turn> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let ticket = state.next;
         state.next += 1;
@@ -81,6 +82,10 @@ impl Turns {
             if state.serving == ticket {
                 return Some(Turn(Arc::clone(self)));
             }
+            let Some(until) = until else {
+                state = self.cv.wait(state).unwrap_or_else(PoisonError::into_inner);
+                continue;
+            };
             let now = Instant::now();
             if now >= until {
                 state.gone.insert(ticket);
@@ -127,7 +132,7 @@ pub fn lock_for(path: &Path) -> std::io::Result<Option<FileLock>> {
     lock_within(path, WAIT)
 }
 
-/// [`lock_for`] waiting at most `wait`.
+/// [`lock_for`] waiting at most `wait` (a wait past what the clock can count, such as `Duration::MAX`: until free).
 ///
 /// # Errors
 /// `WouldBlock`: another writer held it longer than `wait`.
@@ -135,13 +140,7 @@ pub fn lock_within(path: &Path, wait: Duration) -> std::io::Result<Option<FileLo
     let Some(dir) = lock_dir() else {
         return Ok(None);
     };
-    let mut key = crate::paths::simplified(path)
-        .to_string_lossy()
-        .into_owned();
-    if CASE_INSENSITIVE {
-        key = key.to_lowercase();
-    }
-    let name = format!("{:016x}.lock", xxhash_rust::xxh3::xxh3_64(key.as_bytes()));
+    let name = lock_name(path);
     // an antivirus | indexer may hold a fresh file for a moment: tried again before giving up on the lock
     let Ok(file) = crate::fsx::retry(&OPEN_RETRY, || {
         OpenOptions::new()
@@ -152,7 +151,8 @@ pub fn lock_within(path: &Path, wait: Duration) -> std::io::Result<Option<FileLo
     }) else {
         return Ok(None);
     };
-    let until = Instant::now() + wait;
+    // `None`: no deadline (`Instant + wait` would overflow and panic)
+    let until = Instant::now().checked_add(wait);
     // this process's writers first, in order; then the OS lock (other processes), in the time left
     let turn = Turns::of(&name).take(until).ok_or_else(held_too_long)?;
     loop {
@@ -163,12 +163,25 @@ pub fn lock_within(path: &Path, wait: Duration) -> std::io::Result<Option<FileLo
                     _turn: turn,
                 }))
             }
-            Err(TryLockError::WouldBlock) if Instant::now() < until => std::thread::sleep(POLL),
+            Err(TryLockError::WouldBlock) if until.is_none_or(|u| Instant::now() < u) => {
+                std::thread::sleep(POLL);
+            }
             Err(TryLockError::WouldBlock) => return Err(held_too_long()),
             // a file system without locks: compare-and-swap alone
             Err(TryLockError::Error(_)) => return Ok(None),
         }
     }
+}
+
+/// The name of the lock file of the state file at `path` (one name per file, however a case-insensitive disk spells it).
+fn lock_name(path: &Path) -> String {
+    let mut key = crate::paths::simplified(path)
+        .to_string_lossy()
+        .into_owned();
+    if CASE_INSENSITIVE {
+        key = key.to_lowercase();
+    }
+    format!("{:016x}.lock", xxhash_rust::xxh3::xxh3_64(key.as_bytes()))
 }
 
 /// The folder of the lock files, private to this user (`None`: none to be had; compare-and-swap alone).
@@ -443,6 +456,66 @@ mod verify_tests {
             .unwrap()
             .is_some());
         assert!(start.elapsed() < Duration::from_secs(1));
+    }
+
+    /// S1 (verifier 2026-10-25): a wait past what the clock can count (`Duration::MAX`) has no deadline: no overflow
+    /// panic, the lock is taken at once when free and as soon as it is freed when held.
+    #[test]
+    fn a_huge_wait_never_overflows_and_takes_the_lock_once_free() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("huge.json");
+        assert!(lock_within(&path, Duration::MAX).unwrap().is_some());
+        let held = lock_for(&path).unwrap().expect("lock");
+        let waiter = {
+            let path = path.clone();
+            std::thread::spawn(move || lock_within(&path, Duration::MAX).map(|l| l.is_some()))
+        };
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!waiter.is_finished(), "waits while the lock is held");
+        drop(held);
+        assert!(waiter.join().unwrap().unwrap());
+    }
+
+    /// S2 (verifier 2026-10-25): a writer of another process (the lock file held through its own handle, outside this
+    /// process's turns) makes a writer give up after its wait and never blocks the turns after it; once freed, a writer
+    /// that waited goes on, and the next one takes the lock at once.
+    #[test]
+    fn a_foreign_holder_of_the_os_lock_times_the_writer_out_then_frees_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("foreign.json");
+        let foreign = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(lock_dir().expect("lock dir").join(lock_name(&path)))
+            .unwrap();
+        foreign.try_lock().unwrap();
+        let wait = Duration::from_millis(300);
+        let start = Instant::now();
+        let error = lock_within(&path, wait).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+        assert!(start.elapsed() >= wait, "{:?}", start.elapsed());
+        // the writer that gave up gave its turn back: the next one waits for the foreign holder only
+        let waiter = {
+            let path = path.clone();
+            std::thread::spawn(move || {
+                lock_within(&path, Duration::from_secs(10)).map(|l| l.is_some())
+            })
+        };
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(
+            !waiter.is_finished(),
+            "waits while the other process holds the lock"
+        );
+        foreign.unlock().unwrap();
+        assert!(waiter.join().unwrap().unwrap());
+        let start = Instant::now();
+        assert!(lock_within(&path, wait).unwrap().is_some());
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "{:?}",
+            start.elapsed()
+        );
     }
 
     /// N10 (verifier round 4): a writer holding a plugin's lock gives up after the brief wait, not the long one.
