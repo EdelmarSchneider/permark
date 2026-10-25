@@ -270,8 +270,8 @@ impl<T: StateData> StateFile<T> {
         self.read.store(unread::READ, Ordering::SeqCst);
     }
 
-    /// This handle left the file unread (its caller holds defaults): its saves, and those of handles that never read
-    /// the file, are refused.
+    /// This handle left the file unread (its caller holds defaults): its saves are refused, and those of handles that
+    /// never read the file while it is there.
     fn failed(&self) {
         unread::mark(&self.path);
         self.read.store(unread::FAILED, Ordering::SeqCst);
@@ -447,11 +447,17 @@ mod unread {
         stamped().insert(key(path));
     }
 
-    /// A handle whose own last load | update made `read` of the file may write it.
+    /// A handle whose own last load | update made `read` of the file may write it. One that never read it may, unless
+    /// the file could not be read once and is still there: a file that is gone holds nothing to lose (the review keeps
+    /// a copy again after removing it as unused).
     pub(super) fn may_write(path: &Path, read: u8) -> bool {
         match read {
             READ => true,
-            NEVER => !stamped().contains(&key(path)),
+            NEVER => {
+                let is_stamped = stamped().contains(&key(path));
+                !is_stamped
+                    || matches!(std::fs::symlink_metadata(path), Err(e) if e.kind() == std::io::ErrorKind::NotFound)
+            }
             _ => false,
         }
     }

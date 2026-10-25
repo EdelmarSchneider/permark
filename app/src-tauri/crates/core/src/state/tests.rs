@@ -745,6 +745,43 @@ fn another_handle_reading_does_not_unblock_the_caller_holding_defaults() {
     assert_eq!(reader.load(), Loaded::Found(sample(3)));
 }
 
+/// The PR #67 check: a file that could not be read once and is gone now holds nothing to lose. A handle that never read
+/// it may write it again (the review keeps its copies of a version this way after it removed them as unused); one that
+/// failed to read it still may not, and while the file is there a fresh handle is refused as before.
+#[test]
+fn a_handle_that_never_read_a_stamped_file_may_write_it_once_it_is_gone() {
+    let f = fx();
+    let failed = f.store().file::<Sample>("x.json");
+    fs::create_dir_all(failed.path().parent().unwrap()).unwrap();
+    fs::write(failed.path(), KEPT).unwrap();
+    let held = unreadable(failed.path());
+    if readable_anyway(failed.path()) {
+        return;
+    }
+    assert_eq!(failed.load(), Loaded::Recovered { backup: None });
+    drop(held);
+    assert!(f.store().file::<Sample>("x.json").save(&sample(1)).is_err());
+    assert_eq!(fs::read(failed.path()).unwrap(), KEPT);
+    fs::remove_file(failed.path()).unwrap();
+    f.store().file::<Sample>("x.json").save(&sample(2)).unwrap();
+    assert_eq!(
+        f.store().file::<Sample>("x.json").load(),
+        Loaded::Found(sample(2))
+    );
+    assert!(
+        failed.save(&Sample::default()).is_err(),
+        "the handle holding defaults is still refused"
+    );
+    assert!(
+        f.store().file::<Sample>("x.json").save(&sample(3)).is_err(),
+        "the file is there again: a handle that never read it is refused"
+    );
+    assert_eq!(
+        f.store().file::<Sample>("x.json").load(),
+        Loaded::Found(sample(2))
+    );
+}
+
 /// Review S1: an update that finds a file it cannot parse and cannot move aside fails and keeps it blocked: a later
 /// save of the defaults never writes over it.
 #[test]
