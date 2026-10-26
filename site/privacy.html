@@ -137,7 +137,7 @@
             <li>It is local: it talks only to programs on your computer and opens no network port.</li>
             <li>The agent reads, shows you a place and marks your comments done. It never edits a file through PerMark.</li>
             <li>A note reaches an agent only if you share that note.</li>
-            <li>Files listed in <code>.aiignore</code> never reach an agent. PerMark hides secret values by their key names. A secret inside ordinary text is not recognized, so list such files in <code>.aiignore</code>.</li>
+            <li>Files listed in <code>.aiignore</code> never reach an agent. Everything else it reads as written, passwords and keys included, so list files that hold secrets in <code>.aiignore</code>.</li>
           </ul>
           <p>The agent you connect is a separate program, and your choice. It may send what it reads through PerMark (your selection, your comments, search results) to its own AI service, as it would with anything else you show it. What that service does with it is between you and that service, under its terms and privacy policy. Turn the connection off, and the agent gets nothing more through PerMark.</p>
 
