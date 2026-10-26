@@ -1,5 +1,5 @@
 //! What every config syntax must keep, as checks the plugins run over their corpus: parse never panics, a value edit
-//! changes only the value token, comments and line breaks stay, read-only parts refuse, secret spans cover the tokens.
+//! changes only the value token, comments and line breaks stay, read-only parts refuse.
 
 use super::{ConfigEdit, EditRefusal, NewValue, RowValue, Scalar, ScalarKind, Sheet};
 use crate::format::{Editability, Format};
@@ -162,40 +162,6 @@ pub fn check_refusals(format: &dyn Format, name: &str, text: &str) {
     assert_eq!(missing, Err(EditRefusal::NotFound), "{name}");
 }
 
-/// The text with every secret span replaced.
-#[must_use]
-pub fn masked(format: &dyn Format, text: &str) -> String {
-    let mut out = text.to_owned();
-    for span in format.secrets(text).into_iter().rev() {
-        out.replace_range(span, "<hidden>");
-    }
-    out
-}
-
-/// None of `secrets` survives the masking of `text`, and every span is a real token inside the text.
-///
-/// # Panics
-/// A secret survives.
-pub fn check_masking(format: &dyn Format, name: &str, text: &str, secrets: &[&str]) {
-    for span in format.secrets(text) {
-        assert!(
-            text.get(span.clone()).is_some(),
-            "{name}: span {span:?} is not on boundaries"
-        );
-    }
-    let out = masked(format, text);
-    for secret in secrets {
-        assert!(
-            !out.contains(secret),
-            "{name}: `{secret}` survives masking:\n{out}"
-        );
-    }
-    assert!(
-        !secrets.is_empty() || out == text,
-        "{name}: nothing to hide, yet the text changed"
-    );
-}
-
 /// Tiny deterministic generator for the fuzz-ish checks.
 struct Rng(u64);
 
@@ -220,7 +186,6 @@ const POOL: &[&str] = &[
 ];
 
 fn touch(format: &dyn Format, text: &str) {
-    let _ = format.secrets(text);
     let _ = format.searchable(text);
     if let Some(sheet) = format.sheet(text) {
         for (i, scalar) in scalars(&sheet).into_iter().enumerate() {
@@ -246,7 +211,7 @@ fn touch(format: &dyn Format, text: &str) {
     }
 }
 
-/// Parse, mask, search and edit never panic: every prefix of the samples, mutated samples, random strings.
+/// Parse, search and edit never panic: every prefix of the samples, mutated samples, random strings.
 pub fn check_fuzz(format: &dyn Format, samples: &[&str]) {
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
     for text in samples {

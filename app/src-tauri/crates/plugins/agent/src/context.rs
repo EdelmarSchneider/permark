@@ -3,7 +3,6 @@
 
 use std::fmt::Write as _;
 
-use permark_core::secrets::mask_text;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -92,7 +91,7 @@ fn ordered(lines: Option<(u32, u32)>) -> Option<(u32, u32)> {
 
 impl WindowContext {
     /// What may be shared: the document must be a shared file of the project (else the whole context is nothing);
-    /// headings and the selection are cut to their limits, one line each, secrets masked; lines in order.
+    /// headings and the selection are cut to their limits, one line each; lines in order.
     #[must_use]
     pub fn sanitize(self, guard: &Guard) -> Self {
         let Some(doc) = self
@@ -122,7 +121,7 @@ impl WindowContext {
             .map(|s| {
                 let (text, cut) = cut_chars(&s.text, MAX_SELECTION_CHARS);
                 Selection {
-                    text: mask_text(&text).into_owned(),
+                    text,
                     lines: ordered(s.lines),
                     cut: cut || s.cut,
                 }

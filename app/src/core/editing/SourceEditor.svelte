@@ -1,7 +1,7 @@
 <script lang="ts">
   // Source mode: the raw file in CodeMirror (loaded on first use), with its find + replace panel and go to line.
-  // Nothing is hidden, masked or drawn over the text: secret values show as they are. Beside the editor (never over
-  // it), an optional panel draws the diagram the caret is in (off by default, one switch per window).
+  // Nothing is hidden or drawn over the text. Beside the editor (never over it), an optional panel draws the diagram
+  // the caret is in (off by default, one switch per window).
   import { untrack } from "svelte";
   import { SEARCH_PHRASES } from "./source/phrases";
   import { api } from "../../api";

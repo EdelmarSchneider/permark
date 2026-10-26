@@ -2,7 +2,7 @@
 
 //! Orientation aids and the activity trail over the fixture project: `map`, search budgets, outline links,
 //! `activity`, the hand-off (preview, confirm, frozen package), and the rules every answer keeps: hidden paths absent,
-//! secrets masked, zones that document text cannot close.
+//! zones that document text cannot close.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -30,6 +30,22 @@ fn paths(value: &Value, key: &str) -> Vec<String> {
         .iter()
         .map(|f| f["path"].as_str().unwrap().to_owned())
         .collect()
+}
+
+/// The search answer once it has a hit in `path` (the watch indexes the sections after it lists the file).
+fn searched(fx: &Budget, query: &str, path: &str) -> (Value, String) {
+    let started = std::time::Instant::now();
+    loop {
+        let (value, text) = call(fx, "search", json!({ "query": query })).unwrap();
+        if paths(&value, "hits").iter().any(|p| p == path) {
+            return (value, text);
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "{query}: no hit in {path}: {value}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 fn write(fx: &Budget, path: &str, text: &str) {
@@ -446,6 +462,98 @@ fn the_hand_off_freezes_what_the_person_did_and_activity_answers_it() {
     }
 }
 
+#[test]
+fn a_frozen_package_leaves_out_rows_whose_path_is_hidden_now_and_counts_them() {
+    let fx = Budget::new();
+    note(&fx, save("docs/plan.md", &["Plan > Rollout"]));
+    note(&fx, save("private/secret.md", &["Secret"]));
+    note(
+        &fx,
+        Fact::Comment {
+            op: CommentOp::Add,
+            path: "docs/spec.md".to_owned(),
+            id: "c2".to_owned(),
+            heading: Some("Spec > Retry policy".to_owned()),
+        },
+    );
+    let done = confirm(&fx);
+    let head = done.full.lines().next().unwrap().to_owned();
+    assert!(
+        head.contains(" n=2 ") && head.contains(" hidden=1"),
+        "{}",
+        done.full
+    );
+    assert!(
+        done.full.contains("\tcomment\tdocs/spec.md\t"),
+        "{}",
+        done.full
+    );
+    // the person hides a path after the hand-off: the package no longer names it, and says one more was hidden
+    write(&fx, ".aiignore", "private/\ndocs/spec.md\n");
+    let (_, text) = call(&fx, "activity", json!({})).unwrap();
+    assert!(!text.contains("docs/spec.md"), "{text}");
+    assert!(
+        text.contains("\tedited\tdocs/plan.md\tPlan > Rollout"),
+        "{text}"
+    );
+    let head = text.lines().next().unwrap();
+    assert!(
+        head.contains(" n=1 ") && head.contains(" hidden=2"),
+        "{text}"
+    );
+    assert!(
+        text.contains("-- session id=1 ") && text.contains(" rows=1\n"),
+        "{text}"
+    );
+    // every row hidden: only the header is left
+    write(&fx, ".aiignore", "private/\ndocs/\n");
+    let (_, text) = call(&fx, "activity", json!({})).unwrap();
+    assert!(!text.contains("docs/"), "{text}");
+    assert!(
+        !text.contains("#cols") && !text.contains("-- session"),
+        "{text}"
+    );
+    assert!(
+        text.contains(" n=0 ") && text.contains(" hidden=3"),
+        "{text}"
+    );
+    // the rule lifted: exactly the frozen text again
+    write(&fx, ".aiignore", "private/\n");
+    assert_eq!(call(&fx, "activity", json!({})).unwrap().1, done.full);
+}
+
+#[test]
+fn a_frozen_row_is_hidden_by_any_path_it_names() {
+    let text = "activity since=handoff package=2026-10-25T21:00 tz=-03:00 n=4 sessions=1\n\
+                #cols seq time by kind path detail flags\n\
+                -- session id=1 from=21:00 to=21:05 rows=3\n\
+                1\t21:00\tperson\trenamed\tdocs/b.md\tfrom=\"secret drafts/a.md\"\n\
+                2\t21:01\tperson\tedited\tdocs/c.md\tIntro blocks=1\tmoved_to=keep/c, d.md,changed_since\n\
+                3\t21:02\tperson\tconverted\tdocs/d.docx\tto=md saved=docs/d.md\n\
+                -- outside n=1\n\
+                4\t21:03\toutside\tmodified\tdocs/e.md\n\
+                -- outside_folders n=2\n\
+                hidden/\t1\t0\t0\n\
+                open/\t0\t2\t0\n";
+    let hide = |path: &str, is_dir: bool| -> bool {
+        matches!(
+            (path, is_dir),
+            ("secret drafts/a.md" | "keep/c, d.md" | "docs/e.md", false) | ("hidden", true)
+        )
+    };
+    let served = handoff::frozen_now(text, &hide);
+    assert_eq!(
+        served,
+        "activity since=handoff package=2026-10-25T21:00 tz=-03:00 n=1 sessions=1 hidden=4\n\
+         #cols seq time by kind path detail flags\n\
+         -- session id=1 from=21:00 to=21:05 rows=1\n\
+         3\t21:02\tperson\tconverted\tdocs/d.docx\tto=md saved=docs/d.md\n\
+         -- outside_folders n=1\n\
+         open/\t0\t2\t0\n"
+    );
+    // nothing hidden now: byte for byte the frozen text
+    assert_eq!(handoff::frozen_now(text, &|_: &str, _: bool| false), text);
+}
 fn outside(fx: &Budget, changes: Vec<(&str, ChangeKind)>) {
     fx.core().services().activity.outside(&FsBatch {
         changes: changes
@@ -563,35 +671,97 @@ fn document_text_never_closes_a_zone_or_breaks_a_row() {
 }
 
 #[test]
-fn secrets_never_leave_in_any_answer() {
+fn values_reach_the_agent_as_written() {
     let fx = Budget::new();
-    note(&fx, save("config/app.toml", &["auth"]));
-    confirm(&fx);
-    let mut texts = Vec::new();
-    for (name, tool, args) in crate::budget_tests::typical_calls() {
-        let (_, text) = call(&fx, tool, args).unwrap_or_else(|e| panic!("{name}: {e}"));
-        texts.push(text);
+    let mut texts = String::new();
+    for path in ["config/app.toml", "README.md", "data/items.json"] {
+        let (_, text) = call(&fx, "read", json!({ "path": path })).unwrap();
+        texts.push_str(&text);
     }
-    for (tool, args) in [
-        ("read", json!({ "path": "config/app.toml" })),
-        ("read", json!({ "path": "README.md" })),
-        ("read", json!({ "path": "data/items.json" })),
-        ("search", json!({ "query": "API_KEY" })),
-        ("search", json!({ "query": "password deploy" })),
-        ("outline", json!({ "path": "config/app.toml" })),
-        ("map", json!({ "depth": 6 })),
-        ("activity", json!({ "since": "0" })),
-    ] {
-        let (value, text) = call(&fx, tool, args).unwrap();
-        if tool == "search" {
-            // a search that finds nothing proves nothing: the lines holding the secrets must be hits
-            assert!(!value["hits"].as_array().unwrap().is_empty(), "{value}");
-        }
-        texts.push(text);
+    assert!(!texts.contains("<hidden>"), "{texts}");
+    for value in ["sk-live-123456", "hunter2", "tok-abc-123"] {
+        assert!(texts.contains(value), "{value} in {texts}");
     }
-    for text in &texts {
-        for secret in ["sk-live-123456", "hunter2", "tok-abc-123", "t-1\""] {
-            assert!(!text.contains(secret), "{secret} in {text}");
-        }
+}
+
+#[test]
+fn search_finds_a_value_in_the_text() {
+    let fx = Budget::new();
+    write(
+        &fx,
+        "ops/login.md",
+        "# Login\n\nShared login for staging: password: qx7hunter is rotated monthly.\n",
+    );
+    indexed(&fx, "ops/login.md");
+    searched(&fx, "staging rotated", "ops/login.md");
+    let (_, text) = searched(&fx, "qx7hunter", "ops/login.md");
+    assert!(text.contains("qx7hunter"), "{text}");
+}
+
+#[test]
+fn search_sizes_count_the_whole_section() {
+    let fx = Budget::new();
+    write(&fx, "ops/short.md", "# Rollout\n\npassword: q1\n");
+    write(
+        &fx,
+        "ops/long.md",
+        "# Rollout\n\npassword: q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1\n",
+    );
+    indexed(&fx, "ops/short.md");
+    indexed(&fx, "ops/long.md");
+    searched(&fx, "rollout", "ops/short.md");
+    let (value, _) = searched(&fx, "rollout", "ops/long.md");
+    let size = |path: &str| {
+        value["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|h| h["path"] == path)
+            .and_then(|h| h["size_tok"].as_u64())
+            .unwrap_or_else(|| panic!("{path}: {value}"))
+    };
+    assert!(size("ops/short.md") < size("ops/long.md"), "{value}");
+}
+
+const KEY_HEADING: &str = "# Ops\n\nintro\n\n## Password: qz8secret\n\nrotate monthly\n";
+
+/// The answer of a read with `at`, as text (an error too), with `at` itself taken out.
+fn read_at(fx: &Budget, path: &str, at: &str) -> String {
+    match call(fx, "read", json!({ "path": path, "at": at })) {
+        Ok((_, text)) => text.replace(at, "<at>"),
+        Err(e) => format!("error: {e}").replace(at, "<at>"),
     }
+}
+
+#[test]
+fn headings_leave_as_written() {
+    let fx = Budget::new();
+    write(&fx, "ops/keys.md", KEY_HEADING);
+    indexed(&fx, "ops/keys.md");
+    let (value, _) = searched(&fx, "rotate monthly", "ops/keys.md");
+    let hit = value["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|h| h["path"] == "ops/keys.md")
+        .unwrap_or_else(|| panic!("{value}"))
+        .clone();
+    assert_eq!(hit["headingPath"], json!(["Ops", "Password: qz8secret"]));
+    let (_, text) = call(&fx, "outline", json!({ "path": "ops/keys.md" })).unwrap();
+    assert!(text.contains("Ops > Password: qz8secret"), "{text}");
+    let shown = read_at(&fx, "ops/keys.md", "Ops > Password: qz8secret");
+    assert!(shown.contains("rotate monthly"), "{shown}");
+}
+
+#[test]
+fn a_hand_off_names_a_heading_as_written() {
+    let fx = Budget::new();
+    note(&fx, save("docs/plan.md", &["Plan > Password: qz8secret"]));
+    let done = confirm(&fx);
+    assert!(
+        done.full
+            .contains("section_gone=Plan > Password: qz8secret"),
+        "{}",
+        done.full
+    );
 }

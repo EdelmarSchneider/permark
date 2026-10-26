@@ -1,4 +1,4 @@
-use permark_core::format::config::fidelity::{check_corpus, check_masking, masked};
+use permark_core::format::config::fidelity::check_corpus;
 use permark_core::format::config::{RowValue, ScalarKind};
 use permark_core::format::{ConfigEdit, EditRefusal, Editability, Format, NewValue};
 
@@ -234,23 +234,12 @@ fn documents_after_the_first_are_one_read_only_row() {
         sheet.scalar("data.password").map(|s| s.text.as_str()),
         Some("s3cr3t-value")
     );
-    let Some(RowValue::Raw {
-        text,
-        reason,
-        secret,
-        ..
-    }) = sheet.row("documents").map(|r| r.value.clone())
+    let Some(RowValue::Raw { text, reason, .. }) = sheet.row("documents").map(|r| r.value.clone())
     else {
         panic!("documents row");
     };
     assert_eq!(reason, "multiDoc");
     assert!(text.contains("kind: Secret"));
-    // the first document's masking does not leave the second one open: its tokens are masked by `mask_text`
-    assert!(
-        secret,
-        "a secret key anywhere in the rest hides the whole rest"
-    );
-    check_masking(&format(), "multi", MULTI, &["s3cr3t-value", "tok-123"]);
 }
 
 #[test]
@@ -321,16 +310,6 @@ fn literals_are_checked_against_their_kind() {
     assert!(set("services.db.healthcheck.retries", "seven").is_err());
     assert!(set("services.web.environment.DEBUG", "true").is_ok());
     assert!(set("services.web.environment.DEBUG", "maybe").is_err());
-}
-
-#[test]
-fn secrets_are_masked_structurally() {
-    check_masking(&format(), "compose", COMPOSE, &["abc123secret", "hunter2"]);
-    check_masking(&format(), "workflow", WORKFLOW, &[]);
-    check_masking(&format(), "k8s", K8S, &["pw-1"]);
-    let out = masked(&format(), K8S);
-    assert!(out.contains("value: <hidden>"));
-    assert!(out.contains("value: debug"));
 }
 
 #[test]

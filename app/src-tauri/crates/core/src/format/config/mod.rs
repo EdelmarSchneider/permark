@@ -1,6 +1,6 @@
 //! Config formats: TOML, YAML, INI, dotenv, properties, ignore files. A plugin supplies a [`ConfigSyntax`] (claims,
 //! parse, the token a new value is written as); [`ConfigFormat`] turns it into a [`Format`]: the sheet body, the
-//! outline, surgical edits (a [`Splice`] of one value token), the secret spans and the keys search may read.
+//! outline, surgical edits (a [`Splice`] of one value token) and the keys search may read.
 
 pub mod fidelity;
 mod matches;
@@ -58,9 +58,7 @@ pub struct ConfigFormat<S>(pub S);
 
 impl<S: ConfigSyntax> ConfigFormat<S> {
     fn parsed(&self, text: &str) -> Sheet {
-        let mut sheet = self.0.parse(text);
-        sheet.finalize();
-        sheet
+        self.0.parse(text)
     }
 
     fn text_body(&self, text: &str, note: &'static str) -> Rendered {

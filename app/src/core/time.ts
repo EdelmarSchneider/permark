@@ -4,6 +4,17 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
+/**
+ * Compact "3 min ago": Intl's narrow style, or short where a language's narrow past is a bare minus sign ("-3 min" in
+ * French, European Portuguese and Romanian; short says "il y a 3 min").
+ */
+export function compactRelativeFormat(locale: string): Intl.RelativeTimeFormat {
+  const narrow = new Intl.RelativeTimeFormat(locale, { numeric: "always", style: "narrow" });
+  return /^[-\u2212]/.test(narrow.format(-1, "minute"))
+    ? new Intl.RelativeTimeFormat(locale, { numeric: "always", style: "short" })
+    : narrow;
+}
+
 /** `then` seen from `now` (both in ms); `locale` is a BCP 47 tag. A moment ahead of `now` reads as "now". */
 export function relativeTime(then: number, now: number, locale: string): string {
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });

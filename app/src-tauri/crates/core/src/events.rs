@@ -45,7 +45,7 @@ pub struct SettingsChanged {
     pub settings: AppSettings,
 }
 
-/// A state file was unreadable and moved aside; the view shows a quiet notice (handed over by `window_boot`).
+/// A state file was unreadable: moved aside (`backup`), or left in place and never written over (`backup` none); the view shows a quiet notice (handed over by `window_boot`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]

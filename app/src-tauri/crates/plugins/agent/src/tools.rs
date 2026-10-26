@@ -12,7 +12,6 @@ use permark_core::organizing::{CommentFilter, CommentsApi, TagsApi, UnreadApi};
 use permark_core::paths::Vault;
 use permark_core::plugins::ProjectServices;
 use permark_core::search::SearchFilter;
-use permark_core::secrets::mask_text;
 use permark_core::settings::ProjectConfig;
 use permark_core::state::StateStore;
 use permark_core::tokens::TokenCounterApi;
@@ -415,7 +414,7 @@ impl Tools {
         let mut entry = Map::new();
         entry.insert("path".to_owned(), json!(path));
         if !description.is_empty() {
-            entry.insert("description".to_owned(), json!(mask_text(&description)));
+            entry.insert("description".to_owned(), json!(description));
         }
         entry.insert("tags".to_owned(), json!(tags));
         Value::Object(entry)
@@ -473,7 +472,7 @@ impl Tools {
                     "path": hit.path,
                     "headingPath": hit.heading_path,
                     "line": hit.line,
-                    "snippet": mask_text(snippet.trim()),
+                    "snippet": snippet.trim(),
                 });
                 // the size of reading this section next (`read at=<heading path>`)
                 let size = guard
@@ -573,8 +572,8 @@ impl Tools {
                 let mut item = json!({
                     "id": c.id,
                     "path": c.path,
-                    "quote": mask_text(&c.quote),
-                    "text": mask_text(&c.text),
+                    "quote": c.quote,
+                    "text": c.text,
                     "headingPath": c.heading_path,
                     "line": c.line,
                     "state": c.state,
@@ -582,7 +581,7 @@ impl Tools {
                     "done": c.done,
                 });
                 if let (Some(reply), Some(map)) = (c.reply, item.as_object_mut()) {
-                    map.insert("reply".to_owned(), json!(mask_text(&reply)));
+                    map.insert("reply".to_owned(), json!(reply));
                 }
                 item
             })
@@ -623,7 +622,7 @@ impl Tools {
             .0
             .list()
             .into_iter()
-            .map(|n| json!({ "note": n.id, "title": mask_text(&n.title), "updated": iso(n.updated_ms) }))
+            .map(|n| json!({ "note": n.id, "title": n.title, "updated": iso(n.updated_ms) }))
             .collect();
         Ok(json!({ "notes": notes }))
     }
@@ -639,7 +638,7 @@ impl Tools {
             .0
             .read(&note)
             .map_err(|_| ToolError::NotFound(note.clone()))?;
-        Ok(json!({ "note": note, "title": mask_text(&found.title), "text": mask_text(&text) }))
+        Ok(json!({ "note": note, "title": found.title, "text": text }))
     }
 
     fn outline(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {

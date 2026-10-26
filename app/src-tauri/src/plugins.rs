@@ -354,8 +354,8 @@ mod tests {
         );
     }
 
-    /// The editor's config calls with the real plugins: one value edit changes only that value, secrets come back in
-    /// UTF-16 units, a part that cannot be edited exactly says why, ignore patterns count their files.
+    /// The editor's config calls with the real plugins: one value edit changes only that value, a part that cannot be
+    /// edited exactly says why, ignore patterns count their files.
     #[test]
     fn config_calls_through_the_editor() {
         use permark_core::document::DocScope;
@@ -391,12 +391,6 @@ mod tests {
             .unwrap();
         assert_eq!(edited.text, text.replace("\"x\"", "\"y\""));
         assert!(matches!(edited.body, Body::Sheet { .. }));
-        let secrets = editor.config_secrets("a.toml", text).unwrap();
-        assert_eq!(secrets.len(), 1);
-        let units: Vec<u16> = text.encode_utf16().collect();
-        let hidden =
-            String::from_utf16(&units[secrets[0].from as usize..secrets[0].to as usize]).unwrap();
-        assert_eq!(hidden, "\"sekret\"");
         let refused = editor
             .config_edit("a.toml", text, &set("long", "z"))
             .unwrap_err();

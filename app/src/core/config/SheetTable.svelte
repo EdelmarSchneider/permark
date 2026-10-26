@@ -17,12 +17,10 @@
   type Props = {
     table: Table;
     editable: boolean;
-    revealed: ReadonlySet<string>;
-    reveal: (path: string) => void;
     commit: (path: string, value: NewValue) => Promise<string | null>;
     edit: (edit: ConfigEdit) => Promise<string | null>;
   };
-  let { table, editable, revealed, reveal, commit, edit }: Props = $props();
+  let { table, editable, commit, edit }: Props = $props();
 
   let wrap: HTMLElement | undefined = $state();
   /** The rows drawn (long tables): first index and how many. */
@@ -332,8 +330,6 @@
                   scalar={cell}
                   label={`${table.fields[c] ?? ""} ${index + 1}`}
                   {editable}
-                  revealed={revealed.has(cell.path)}
-                  {reveal}
                   {commit}
                 />
               </td>

@@ -14,7 +14,7 @@
     targetKey,
     tokenizerName,
   } from "./model";
-  import { converter, type Act } from "./store.svelte";
+  import { converter } from "./store.svelte";
 
   const s = $derived(converter.state);
   const ready = $derived(s.status === "ready" ? s : null);
@@ -44,9 +44,6 @@
     dialog?.focus();
     return () => before?.focus();
   });
-
-  const actLabel = (act: Act): string =>
-    act === "copy" ? t("convert.copy") : act === "save" ? t("convert.save") : t("convert.open");
 
   function size(bytes: number): string {
     const format = new Intl.NumberFormat(language.locale, { maximumFractionDigits: 1 });
@@ -132,9 +129,6 @@
           {#if s.detail}<code>{s.detail}</code>{/if}
         </p>
       {:else if ready}
-        {#if ready.analysis.secrets > 0}
-          <p class="secrets">{tn("convert.secrets", ready.analysis.secrets)}</p>
-        {/if}
         <div class="split">
           <div class="targets" role="radiogroup" aria-label={t("convert.targets")}>
             {#each ready.analysis.targets as target (target.id)}
@@ -192,22 +186,7 @@
       {/if}
 
       <footer>
-        {#if ready && ready.action.kind === "confirm"}
-          {@const act = ready.action.act}
-          <span class="confirm" role="alert"
-            >{tn("convert.confirmSecrets", ready.analysis.secrets)}</span
-          >
-          <button type="button" class="btn btn--sm" onclick={() => converter.dismiss()}>
-            {t("convert.cancel")}
-          </button>
-          <button
-            type="button"
-            class="btn btn--sm btn--primary"
-            onclick={() => void converter.act(act, true)}
-          >
-            {actLabel(act)}
-          </button>
-        {:else if ready}
+        {#if ready}
           {#if ready.action.kind === "done"}
             <span class="result" role="status">
               {ready.action.path === null
@@ -326,10 +305,6 @@
     font-family: var(--font-code);
     overflow-wrap: anywhere;
   }
-  .secrets {
-    margin: 0;
-    color: var(--git-modified-text);
-  }
   .split {
     display: grid;
     grid-template-columns: minmax(250px, 340px) minmax(0, 1fr);
@@ -446,14 +421,12 @@
     justify-content: flex-end;
     gap: var(--sp-2);
   }
-  .confirm,
   .result {
     margin-right: auto;
     color: var(--muted);
     font-size: var(--fs-ui-sm);
     overflow-wrap: anywhere;
   }
-  .confirm,
   .result.failed {
     color: var(--git-deleted-text);
   }

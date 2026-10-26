@@ -82,7 +82,8 @@ fn count_into(text: &str, weight: u32, terms: &mut HashMap<String, u32>, len: &m
     }
 }
 
-fn section_input(section: Section, file_name: Option<&str>) -> SectionInput {
+/// The weighted terms of a section's headings + body + file name.
+fn count_section(section: &Section, file_name: Option<&str>) -> (HashMap<String, u32>, u32) {
     let mut terms: HashMap<String, u32> = HashMap::new();
     let mut len = 0_u32;
     let own = section.heading_path.len().saturating_sub(1);
@@ -98,6 +99,11 @@ fn section_input(section: Section, file_name: Option<&str>) -> SectionInput {
     if let Some(name) = file_name {
         count_into(name, W_FILE_NAME, &mut terms, &mut len);
     }
+    (terms, len)
+}
+
+fn section_input(section: Section, file_name: Option<&str>) -> SectionInput {
+    let (terms, len) = count_section(&section, file_name);
     SectionInput {
         heading_path: section.heading_path,
         anchor: section.anchor,

@@ -41,7 +41,10 @@
           ? apiErrorText(notice.error)
           : t("welcome.openFailed", { path: notice.path, message: apiErrorText(notice.error) });
       case "stateRecovered":
-        return t("notice.stateRecovered", { file: notice.notice.file });
+        // no backup: left in place, never written over (state files, board item 15)
+        return notice.notice.backup === null
+          ? t("notice.stateUnreadable", { file: notice.notice.file })
+          : t("notice.stateRecovered", { file: notice.notice.file });
       case "settingNotSaved":
         return t("settings.notSaved", { message: apiErrorText(notice.error) });
       case "initFailed":

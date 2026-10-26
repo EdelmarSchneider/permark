@@ -392,7 +392,7 @@ impl SearchIndex {
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Ranked sections for the words. Empty query: nothing.
+    /// Ranked sections for the words (the person and an agent get the same answer). Empty query: nothing.
     #[must_use]
     pub fn sections(&self, query: &str, limit: usize, filter: &SearchFilter) -> SectionResults {
         let limit = limit.clamp(1, MAX_LIMIT);

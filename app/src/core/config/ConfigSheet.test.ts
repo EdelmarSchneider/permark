@@ -100,40 +100,22 @@ describe("the sheet of every format", () => {
   });
 });
 
-describe("secrets", () => {
-  it("never put a secret value in the page while it is hidden; each reveals on its own", async () => {
+describe("values", () => {
+  it("show as written, key names that sound secret too", async () => {
     const root = await show(sheetOf(".env.example"));
-    const page = root.textContent ?? "";
-    for (const secret of ["pa55w0rd", "s3cr3t pass", "sk-live-abc123"]) {
-      expect(page, secret).not.toContain(secret);
-    }
-    expect(rowOf(root, "DB_PASSWORD").textContent).toContain("••••••");
-    expect(rowOf(root, "API_KEY").textContent).toContain("••••••");
-    // a value that is not secret stays plain, a pointer to a secret too
-    expect(rowOf(root, "BASE_URL").textContent).toContain("${HOST}/api");
-    // reveal one
-    const button = rowOf(root, "DB_PASSWORD").querySelector<HTMLButtonElement>(".reveal");
-    button?.click();
-    flushSync();
     expect(rowOf(root, "DB_PASSWORD").textContent).toContain("s3cr3t pass");
-    expect(rowOf(root, "API_KEY").textContent).not.toContain("sk-live-abc123");
-    expect(rowOf(root, "DB_PASSWORD").querySelector(".reveal")?.getAttribute("aria-pressed")).toBe(
-      "true",
-    );
-    // and hide it again
-    rowOf(root, "DB_PASSWORD").querySelector<HTMLButtonElement>(".reveal")?.click();
-    flushSync();
-    expect(root.textContent).not.toContain("s3cr3t pass");
+    expect(rowOf(root, "API_KEY").textContent).toContain("sk-live-abc123");
+    expect(rowOf(root, "BASE_URL").textContent).toContain("${HOST}/api");
+    expect(root.querySelector(".reveal")).toBeNull();
+    expect(root.textContent).not.toContain("••••••");
   });
 
-  it("hide whole raw values and list items under a secret key", async () => {
+  it("show raw values and list items as written", async () => {
     const root = await show(sheetOf("docker-compose.yml"));
-    expect(root.textContent).not.toContain("hunter2-prod");
-    expect(root.textContent).not.toContain("sk-live-9d2c41aa");
-    expect(rowOf(root, "POSTGRES_PASSWORD").textContent).toContain("••••••");
+    expect(root.textContent).toContain("hunter2-prod");
+    expect(root.textContent).toContain("sk-live-9d2c41aa");
     const toml = await show(sheetOf("Cargo.toml"));
-    expect(toml.textContent).not.toContain("dp_live_4f9a1c77b2");
-    expect(rowOf(toml, "api_token").textContent).toContain("••••••");
+    expect(rowOf(toml, "api_token").textContent).toContain("dp_live_4f9a1c77b2");
   });
 });
 

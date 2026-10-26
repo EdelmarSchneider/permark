@@ -22,7 +22,7 @@ reason: string,
  */
 best: boolean, 
 /**
- * The first lines, secret values masked.
+ * The first lines.
  */
 preview: string, 
 /**

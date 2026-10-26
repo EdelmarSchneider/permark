@@ -53,6 +53,8 @@ export default {
   // ---- notices
   "notice.stateRecovered":
     "Alguns dados salvos do PerMark não puderam ser lidos e foram guardados à parte: {file}",
+  "notice.stateUnreadable":
+    "Alguns dados salvos do PerMark não puderam ser lidos. Eles foram deixados intactos, e o PerMark não vai alterá-los até conseguir lê-los de novo, geralmente depois de reiniciar: {file}",
 
   // ---- settings
   "settings.title": "Configurações",
@@ -1061,6 +1063,14 @@ export default {
   "brokenLinks.none": "Nenhum link quebrado",
   "brokenLinks.skipped.one": "{n} documento não pôde ser verificado",
   "brokenLinks.skipped.other": "{n} documentos não puderam ser verificados",
+  "brokenLinks.noneHere": "Nenhum link quebrado nesta pasta",
+  "brokenLinks.thisFolder": "Esta pasta",
+  "brokenLinks.worktree": "Worktree vinculado {name}",
+  "brokenLinks.notListed": "Não listados: a lista mostra no máximo 500 links.",
+  "brokenLinks.rootCount.one": "{n} link quebrado",
+  "brokenLinks.rootCount.other": "{n} links quebrados",
+  "brokenLinks.truncatedAll":
+    "Mostrando os primeiros 500 de {n} links quebrados nesta pasta e nos seus worktrees vinculados.",
   "brokenLinks.open": "Abrir {path} na linha {line}",
   "brokenLinks.truncated": "Mostrando os primeiros 500 de {n} links quebrados.",
   "brokenLinks.show": "Mostrar os links quebrados",
@@ -1222,7 +1232,7 @@ export default {
   "agent.title": "Conexão com agentes",
   "agent.switch": "Compartilhar este projeto com agentes",
   "agent.switchHint":
-    "Um agente que você conectar (uma ferramenta de IA compatível com MCP, como Claude Code ou Cursor) pode ver o que você está olhando e o que mudou, pesquisar e ler os arquivos deste projeto, ler seus comentários e as notas que você compartilhar, e mostrar um lugar para você. Só neste computador. Senhas e chaves que o PerMark reconhece ficam ocultas, e agentes nunca editam arquivos pelo PerMark. Isso vale só para o que os agentes recebem do PerMark: um agente ainda pode abrir arquivos do seu computador por conta própria.",
+    "Um agente que você conectar (uma ferramenta de IA compatível com MCP, como Claude Code ou Cursor) pode ver o que você está olhando e o que mudou, pesquisar e ler os arquivos deste projeto, ler seus comentários e as notas que você compartilhar, e mostrar um lugar para você. Só neste computador. Arquivos listados no .aiignore ficam fora do alcance deles, e agentes nunca editam arquivos pelo PerMark. Isso vale só para o que os agentes recebem do PerMark: um agente ainda pode abrir arquivos do seu computador por conta própria.",
   "agent.groups": "O que os agentes podem fazer",
   "agent.group.context": "Ver o que você está olhando",
   "agent.group.changes": "Ver o que mudou",
@@ -1331,9 +1341,6 @@ export default {
   "config.sheet": "Configurações deste arquivo",
   "config.root": "Nível principal",
   "config.fold": "Recolher ou expandir {name}",
-  "config.reveal": "Mostrar valor",
-  "config.hide": "Ocultar valor",
-  "config.hidden": "Valor oculto",
   "config.empty": "vazio",
   "config.valueOf": "Valor de {key}",
   "config.fromSource": "Editar no Código",
@@ -1537,8 +1544,7 @@ export default {
   "plugin.fmt-ini.name": "Arquivos INI e cfg",
   "plugin.fmt-ini.about": "Lê arquivos INI como uma folha limpa e edita um valor por vez.",
   "plugin.fmt-dotenv.name": "Arquivos dotenv",
-  "plugin.fmt-dotenv.about":
-    "Lê arquivos .env como uma folha limpa; os valores secretos ficam ocultos.",
+  "plugin.fmt-dotenv.about": "Lê arquivos .env como uma folha limpa.",
   "plugin.fmt-properties.name": "Arquivos .properties",
   "plugin.fmt-properties.about":
     "Lê arquivos .properties como uma folha limpa e edita um valor por vez.",
@@ -1858,8 +1864,6 @@ export default {
   "convert.tooLarge": "Esta fonte tem mais de 50 MB, grande demais para converter aqui.",
   "convert.invalid": "Isto não é {format} válido.",
   "convert.failed": "A conversão não funcionou.",
-  "convert.secrets.one": "Contém {n} valor secreto: oculto na prévia.",
-  "convert.secrets.other": "Contém {n} valores secretos: ocultos na prévia.",
   "convert.targets": "Formatos",
   "convert.best": "melhor",
   "convert.fits": "Adequado",
@@ -1870,8 +1874,6 @@ export default {
   "convert.approxHint":
     "~ = tokens estimados. Para números exatos, escolha um tokenizador GPT como principal na Contagem de tokens e baixe o vocabulário dele.",
   "convert.exactHint": "Contado pelo tokenizador mostrado.",
-  "convert.confirmSecrets.one": "O resultado contém {n} valor secreto.",
-  "convert.confirmSecrets.other": "O resultado contém {n} valores secretos.",
   "convert.copied": "Copiado.",
   "convert.saved": "Salvo como {path}",
   "convert.actionFailed": "Isso não funcionou.",

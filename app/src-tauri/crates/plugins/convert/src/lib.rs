@@ -29,7 +29,7 @@ use serde_json::Value;
 use ts_rs::TS;
 
 pub use read::read;
-pub use shape::{count_secrets, mask_secrets, shape, Shape};
+pub use shape::{shape, Shape};
 pub use write::write;
 
 const ID: PluginId = PluginId::of("convert");
@@ -308,7 +308,7 @@ pub struct TargetView {
     pub reason: String,
     /// Fewest tokens among the targets that fit.
     pub best: bool,
-    /// The first lines, secret values masked.
+    /// The first lines.
     pub preview: String,
     /// What writing this target loses.
     pub notes: Vec<String>,
@@ -343,8 +343,6 @@ pub struct Analysis {
     pub tokenizer: Option<String>,
     /// The numbers are estimates.
     pub approx: bool,
-    /// Values under secret keys in the data.
-    pub secrets: u32,
     /// What reading the source lost.
     pub notes: Vec<String>,
     pub targets: Vec<TargetView>,
@@ -436,8 +434,6 @@ pub fn analyze(
     tick.check()?;
     let (source_tokens, tokenizer, approx) = count(text);
     let data = shape(&value);
-    let secrets = count_secrets(&value);
-    let masked = (secrets > 0).then(|| mask_secrets(&value));
     let mut outputs = HashMap::new();
     let mut targets = Vec::new();
     let mut compact_tokens = None;
@@ -466,12 +462,7 @@ pub fn analyze(
         if target == Target::Json {
             compact_tokens = Some(tokens);
         }
-        let shown = match &masked {
-            Some(masked) => write(target, masked, &mut tick, &mut Losses::default())
-                .map(|t| preview(&t))
-                .unwrap_or_default(),
-            None => preview(&output),
-        };
+        let shown = preview(&output);
         let (fit, reason) = judge(target, tokens, source_tokens, compact_tokens, &data);
         targets.push(TargetView {
             id: target.id().to_owned(),
@@ -512,7 +503,6 @@ pub fn analyze(
             source_tokens,
             tokenizer,
             approx,
-            secrets: u32::try_from(secrets).unwrap_or(u32::MAX),
             notes: losses.words(),
             targets,
         },
@@ -609,7 +599,6 @@ struct Job {
     id: u64,
     value: Value,
     outputs: HashMap<Target, String>,
-    secrets: u32,
     /// The source file (none: a text from the page).
     path: Option<String>,
 }
@@ -654,9 +643,6 @@ struct JobArgs {
 struct ResultArgs {
     job: u64,
     target: String,
-    /// The person confirmed that the result carries secret values.
-    #[serde(default)]
-    confirmed: bool,
 }
 
 #[derive(Deserialize)]
@@ -664,8 +650,6 @@ struct ResultArgs {
 struct SaveArgs {
     job: u64,
     target: String,
-    #[serde(default)]
-    confirmed: bool,
     /// Where a text from the page is saved next to (the open document); a file source saves next to itself.
     #[serde(default)]
     beside: Option<String>,
@@ -696,16 +680,12 @@ impl Shared {
         window: &str,
         job: u64,
         target: Target,
-        confirmed: bool,
     ) -> Result<(String, Option<String>), IpcError> {
         let jobs = self.jobs.lock().unwrap_or_else(PoisonError::into_inner);
         let found = jobs
             .iter()
             .find(|j| j.window == window && j.id == job)
             .ok_or_else(|| IpcError::new(ErrorKind::NotFound).detail("job"))?;
-        if found.secrets > 0 && !confirmed {
-            return Err(bad("secrets"));
-        }
         let text = if let Some(text) = found.outputs.get(&target) {
             text.clone()
         } else {
@@ -775,7 +755,6 @@ impl Shared {
                     id: args.job,
                     value: done.value,
                     outputs: done.outputs,
-                    secrets: done.analysis.secrets,
                     path,
                 });
                 Answer::Ready {
@@ -838,7 +817,7 @@ impl Plugin for Convert {
             "result",
             typed(move |args: ResultArgs, call| {
                 let target = Target::parse(&args.target).ok_or_else(|| bad("target"))?;
-                let (text, path) = s.output(&call.window, args.job, target, args.confirmed)?;
+                let (text, path) = s.output(&call.window, args.job, target)?;
                 // the person copies the result: the journal of the project notes it (a file source only)
                 if let (Some(path), Some(files)) = (
                     path,
@@ -862,7 +841,7 @@ impl Plugin for Convert {
             "save",
             typed(move |args: SaveArgs, call| {
                 let target = Target::parse(&args.target).ok_or_else(|| bad("target"))?;
-                let (text, path) = s.output(&call.window, args.job, target, args.confirmed)?;
+                let (text, path) = s.output(&call.window, args.job, target)?;
                 let beside = path.or(args.beside).ok_or_else(|| bad("beside"))?;
                 let name = format!("{}.{}", stem_of(&beside), target.ext());
                 let files = a

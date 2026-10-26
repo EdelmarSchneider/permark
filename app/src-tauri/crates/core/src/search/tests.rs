@@ -306,25 +306,17 @@ fn snippets_mark_matches_as_parts_cut_at_words_and_fall_back_to_the_heading() {
 }
 
 #[test]
-fn a_snippet_never_shows_a_secret_value_even_cut_between_key_and_value() {
+fn a_snippet_shows_the_text_as_written() {
     let mut index = Bm25::new();
     doc(
         &mut index,
         "a.md",
-        "# Ops
-
-Shared login for staging: password: hunter2 is rotated by the ops team every month.
-",
+        "# Ops\n\nShared login for staging: password: hunter2 is rotated by the ops team every month.\n",
     );
-    for query in ["every", "rotated", "password", "staging"] {
+    for query in ["rotated", "password", "hunter2"] {
         let hit = &index.search(query, 5, None)[0];
         let whole: String = hit.snippet.iter().map(|p| p.text.as_str()).collect();
-        assert!(!whole.contains("hunter2"), "{query}: {whole}");
-    }
-    // the value itself is no excerpt either
-    for hit in index.search("hunter2", 5, None) {
-        let whole: String = hit.snippet.iter().map(|p| p.text.as_str()).collect();
-        assert!(!whole.contains("hunter2"), "{whole}");
+        assert!(whole.contains("password: hunter2"), "{query}: {whole}");
     }
 }
 

@@ -1,10 +1,9 @@
 //! Structure before content: the outline of a file (Markdown headings, JSON top-level keys, the top-level parts of a
 //! config file, plain line count) and the text of one part of it (`at`: lines, a heading path, an anchor, a key path).
-//! Every text that leaves is masked: config files by their structure (the secret values of the format), all by key.
+//! Text leaves as the file holds it; `.aiignore` and the hidden paths keep whole files away (`guard.rs`).
 
 use permark_core::format::config::SheetKind;
-use permark_core::format::{ext_of, sections, FormatRegistry, Sheet, Span};
-use permark_core::secrets::{mask_text, HIDDEN};
+use permark_core::format::{ext_of, sections, FormatRegistry, Sheet};
 use permark_core::tokens::{estimate, Counted};
 use serde_json::{json, Value};
 
@@ -19,11 +18,9 @@ enum Kind {
 }
 
 /// The sheet of a config file when a config format that is on reads it.
-fn sheet_of(formats: &FormatRegistry, path: &str, text: &str) -> Option<(Sheet, Vec<Span>)> {
+fn sheet_of(formats: &FormatRegistry, path: &str, text: &str) -> Option<Sheet> {
     let head = &text.as_bytes()[..text.len().min(4096)];
-    let format = formats.pick(path, head)?;
-    let sheet = format.sheet(text)?;
-    Some((sheet, format.secrets(text)))
+    formats.pick(path, head)?.sheet(text)
 }
 
 fn kind_of(path: &str) -> Kind {
@@ -160,47 +157,43 @@ fn json_parts(text: &str) -> Vec<(Part, &'static str)> {
 pub type Tokens<'a> = &'a dyn Fn(&str) -> Option<Counted>;
 
 /// Sizes the parts of one file: `size_tok` (the core estimator, always) and `tokens` (the person's tokenizer, when
-/// one is on and ready) of the text a read of the part returns, secrets hidden.
+/// one is on and ready) of the text a read of the part returns.
 struct Sizer<'a> {
     text: &'a str,
     /// Byte offset where each line starts.
     starts: Vec<usize>,
-    spans: Option<&'a [Span]>,
     tokens: Option<Tokens<'a>>,
     /// The tokenizer of the first count: id, estimate or not.
     used: std::cell::Cell<Option<(&'static str, bool)>>,
 }
 
 impl<'a> Sizer<'a> {
-    fn new(text: &'a str, spans: Option<&'a [Span]>, tokens: Option<Tokens<'a>>) -> Self {
+    fn new(text: &'a str, tokens: Option<Tokens<'a>>) -> Self {
         let mut starts = vec![0];
         starts.extend(text.match_indices('\n').map(|(at, _)| at + 1));
         Self {
             text,
             starts,
-            spans,
             tokens,
             used: std::cell::Cell::new(None),
         }
     }
 
-    /// The text of lines `from..=to` (1-based) as a read returns it (secrets hidden).
-    fn shown(&self, from: u32, to: u32) -> String {
+    /// The text of lines `from..=to` (1-based) as a read returns it.
+    fn shown(&self, from: u32, to: u32) -> &'a str {
         let count = self.starts.len();
         let first = (from.max(1) as usize).min(count + 1);
         let last = (to as usize).min(count);
-        let (base, part) = if first > last {
-            (0, "")
+        if first > last {
+            return "";
+        }
+        let begin = self.starts[first - 1];
+        let end = if last == count {
+            self.text.len()
         } else {
-            let begin = self.starts[first - 1];
-            let end = if last == count {
-                self.text.len()
-            } else {
-                self.starts[last]
-            };
-            (begin, &self.text[begin..end])
+            self.starts[last]
         };
-        masked(part, base, self.spans)
+        &self.text[begin..end]
     }
 
     /// Adds the sizes of lines `from..=to` (1-based) to a part's object.
@@ -209,8 +202,8 @@ impl<'a> Sizer<'a> {
         let Some(map) = item.as_object_mut() else {
             return;
         };
-        map.insert("size_tok".to_owned(), json!(estimate(&shown)));
-        if let Some(counted) = self.tokens.and_then(|count| count(&shown)) {
+        map.insert("size_tok".to_owned(), json!(estimate(shown)));
+        if let Some(counted) = self.tokens.and_then(|count| count(shown)) {
             map.insert("tokens".to_owned(), json!(counted.value));
             if self.used.get().is_none() {
                 self.used.set(Some((counted.tokenizer, counted.approx)));
@@ -238,8 +231,8 @@ pub fn outline(
     tokens: Option<Tokens<'_>>,
 ) -> Value {
     let lines = line_count(text);
-    if let Some((sheet, spans)) = sheet_of(formats, path, text) {
-        let sizer = Sizer::new(text, Some(&spans), tokens);
+    if let Some(sheet) = sheet_of(formats, path, text) {
+        let sizer = Sizer::new(text, tokens);
         let items: Vec<Value> = sheet
             .outline()
             .into_iter()
@@ -262,7 +255,7 @@ pub fn outline(
         sizer.name_tokenizer(&mut answer);
         return answer;
     }
-    let sizer = Sizer::new(text, None, tokens);
+    let sizer = Sizer::new(text, tokens);
     let mut answer = match kind_of(path) {
         Kind::Markdown => {
             let items: Vec<Value> = markdown_parts(text)
@@ -306,7 +299,7 @@ pub fn section_size(
     let at = heading_path.join(" > ");
     let config = sheet_of(formats, path, text);
     let (from, to) = match &config {
-        Some((sheet, _)) if !at.is_empty() => sheet.range_of(&at)?,
+        Some(sheet) if !at.is_empty() => sheet.range_of(&at)?,
         None if kind_of(path) == Kind::Markdown => {
             let parts = markdown_parts(text);
             if at.is_empty() {
@@ -325,24 +318,13 @@ pub fn section_size(
         }
         _ => return None,
     };
-    let sizer = Sizer::new(
-        text,
-        config.as_ref().map(|(_, spans)| spans.as_slice()),
-        None,
-    );
-    Some(estimate(&sizer.shown(from, to)))
+    Some(estimate(Sizer::new(text, None).shown(from, to)))
 }
 
-/// The approximate tokens of reading a whole file (secrets hidden).
+/// The approximate tokens of reading a whole file.
 #[must_use]
-pub fn file_size(formats: &FormatRegistry, path: &str, text: &str) -> u64 {
-    let config = sheet_of(formats, path, text);
-    let sizer = Sizer::new(
-        text,
-        config.as_ref().map(|(_, spans)| spans.as_slice()),
-        None,
-    );
-    estimate(&sizer.shown(1, line_count(text)))
+pub fn file_size(text: &str) -> u64 {
+    estimate(text)
 }
 
 /// Lines asked by `at`: `L12-L40` (also `12-40`) | `L12` (from line 12 on) | `L12:301` (from character 301 of line 12
@@ -373,6 +355,7 @@ fn heading_parts(at: &str) -> Vec<String> {
         .collect()
 }
 
+/// The part `at` names, by the path an agent was given (headings as written, or an anchor).
 fn find_part(parts: &[Part], at: &str) -> Option<(u32, u32)> {
     if let Some(anchor) = at.strip_prefix('#') {
         return parts
@@ -416,7 +399,7 @@ pub fn heading_line(path: &str, text: &str, heading: &str) -> Option<u32> {
     }
 }
 
-/// The text of one part (all of it when `at` is missing), masked, cut at [`MAX_READ_CHARS`].
+/// The text of one part (all of it when `at` is missing), cut at [`MAX_READ_CHARS`].
 ///
 /// # Errors
 /// `NotFound(at)` when the file has no such part.
@@ -436,9 +419,7 @@ pub fn read(
             Some(_) => return Err(ToolError::NotFound(at.to_owned())),
             None => {
                 let found = match kind_of(path) {
-                    _ if config.is_some() => {
-                        config.as_ref().and_then(|(sheet, _)| sheet.range_of(at))
-                    }
+                    _ if config.is_some() => config.as_ref().and_then(|sheet| sheet.range_of(at)),
                     Kind::Markdown => find_part(&markdown_parts(text), at),
                     Kind::Json => {
                         let parts: Vec<Part> =
@@ -452,15 +433,12 @@ pub fn read(
             }
         },
     };
-    let spans = config.as_ref().map(|(_, spans)| spans.as_slice());
     let mut out = String::new();
     let mut used = 0_usize;
     let mut last = from.saturating_sub(1);
     let mut cut = None;
-    let mut base = 0_usize;
     for (n, line) in (1_u32..).zip(text.split_inclusive('\n')) {
         if n < from {
-            base += line.len();
             continue;
         }
         if n > to {
@@ -468,9 +446,9 @@ pub fn read(
         }
         let chars = line.chars().count();
         if n == from && (column > 1 || chars > MAX_READ_CHARS) {
-            // a line too long for one answer (minified JSON, a log line): its masked text in pieces, the cursor
-            // naming the character the next piece starts at
-            let (piece, next) = long_line_piece(&masked(line, base, spans), column);
+            // a line too long for one answer (minified JSON, a log line): its text in pieces, the cursor naming the
+            // character the next piece starts at
+            let (piece, next) = long_line_piece(line, column);
             let next = match next {
                 Some(c) => Some(format!("L{n}:{c}")),
                 None => (n < to).then(|| format!("L{}", n + 1)),
@@ -485,8 +463,7 @@ pub fn read(
         used += chars;
         last = n;
     }
-    let text = masked(&out, base, spans);
-    Ok(answer(path, at, (from, last.max(from)), &text, cut))
+    Ok(answer(path, at, (from, last.max(from)), &out, cut))
 }
 
 /// `[MAX_READ_CHARS]` characters of a long line from character `column` (1-based) on, and the column of the next
@@ -516,28 +493,6 @@ fn answer(
         }
     }
     answer
-}
-
-/// `part` (the bytes of the file from `base` on) with the secret `spans` of the format hidden, then the key-based
-/// mask over what is left.
-fn masked(part: &str, base: usize, spans: Option<&[Span]>) -> String {
-    let Some(spans) = spans.filter(|s| !s.is_empty()) else {
-        return mask_text(part).into_owned();
-    };
-    let end = base + part.len();
-    let mut out = String::with_capacity(part.len());
-    let mut at = base;
-    for span in spans {
-        let (from, to) = (span.start.max(base), span.end.min(end));
-        if from >= to || from < at {
-            continue;
-        }
-        out.push_str(part.get(at - base..from - base).unwrap_or_default());
-        out.push_str(HIDDEN);
-        at = to;
-    }
-    out.push_str(part.get(at - base..).unwrap_or_default());
-    mask_text(&out).into_owned()
 }
 
 #[cfg(test)]
@@ -572,7 +527,7 @@ mod tests {
         assert!(full["text"].as_str().unwrap().starts_with("## Rollout"));
         assert!(full["text"].as_str().unwrap().contains("### Steps"));
         assert!(!full["text"].as_str().unwrap().contains("## Risks"));
-        assert!(full["text"].as_str().unwrap().contains("API_KEY=<hidden>"));
+        assert!(full["text"].as_str().unwrap().contains("API_KEY=abc"));
         let tail = read(
             &FormatRegistry::core(),
             "p.md",
@@ -612,7 +567,7 @@ mod tests {
         let auth = read(&FormatRegistry::core(), "a.json", text, Some("auth")).unwrap();
         assert_eq!(
             auth["text"],
-            "  \"auth\": {\n    \"token\": \"<hidden>\"\n  },\n"
+            "  \"auth\": {\n    \"token\": \"t-1\"\n  },\n"
         );
     }
 
@@ -662,7 +617,7 @@ mod tests {
 
     #[test]
     fn a_line_too_long_for_one_answer_is_read_in_pieces() {
-        // minified JSON on one line, with a secret in the second piece
+        // minified JSON on one line, read in two pieces
         let mut text = String::from("{\"items\":[");
         while text.chars().count() < MAX_READ_CHARS + 500 {
             text.push_str("{\"name\":\"é\",\"n\":1},");
@@ -678,10 +633,10 @@ mod tests {
         let second = read(&FormatRegistry::core(), "min.json", &text, Some(cut)).unwrap();
         let rest = second["text"].as_str().unwrap();
         assert!(rest.ends_with("]}\n"), "{rest}");
-        assert!(!rest.contains("sk-live"), "{rest}");
-        // the pieces join to the masked line
+        assert!(rest.contains("sk-live-123456"), "{rest}");
+        // the pieces join to the line as the file holds it
         let line = &text[..=text.find('\n').unwrap()];
-        assert_eq!(format!("{piece}{rest}"), mask_text(line));
+        assert_eq!(format!("{piece}{rest}"), line);
         assert_eq!(second["cut"], "L2");
         let tail = read(&FormatRegistry::core(), "min.json", &text, Some("L2")).unwrap();
         assert_eq!(tail["text"], "{\"tail\":1}\n");

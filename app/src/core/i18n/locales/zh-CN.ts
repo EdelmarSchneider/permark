@@ -50,6 +50,8 @@ export default {
 
   // ---- notices
   "notice.stateRecovered": "部分已保存的 PerMark 数据无法读取，已另行保留：{file}",
+  "notice.stateUnreadable":
+    "部分已保存的 PerMark 数据无法读取。这些数据已保持原样，在能够再次读取之前（通常是重新启动后），PerMark 不会更改这些数据：{file}",
 
   // ---- settings
   "settings.title": "设置",
@@ -1019,6 +1021,13 @@ export default {
   "brokenLinks.none": "没有失效链接",
   "brokenLinks.skipped.one": "{n} 个文档无法检查",
   "brokenLinks.skipped.other": "{n} 个文档无法检查",
+  "brokenLinks.noneHere": "此文件夹中没有失效链接",
+  "brokenLinks.thisFolder": "此文件夹",
+  "brokenLinks.worktree": "关联的 worktree {name}",
+  "brokenLinks.notListed": "未列出：列表最多显示 500 个链接。",
+  "brokenLinks.rootCount.one": "{n} 个失效链接",
+  "brokenLinks.rootCount.other": "{n} 个失效链接",
+  "brokenLinks.truncatedAll": "显示此文件夹及其关联的 worktree 中 {n} 个失效链接的前 500 个。",
   "brokenLinks.open": "在第 {line} 行打开 {path}",
   "brokenLinks.truncated": "显示 {n} 个失效链接中的前 500 个。",
   "brokenLinks.show": "显示失效链接",
@@ -1174,7 +1183,7 @@ export default {
   "agent.title": "智能体连接",
   "agent.switch": "与智能体共享此项目",
   "agent.switchHint":
-    "你连接的智能体（支持 MCP 的 AI 工具，例如 Claude Code 或 Cursor）可以看到你正在查看的内容和变更，搜索和阅读本项目的文件，阅读你的评论和你共享的笔记，并向你展示某个位置。仅限本机。PerMark 识别出的密码和密钥会被隐藏，智能体从不通过 PerMark 编辑文件。这只涉及智能体从 PerMark 获得的内容：智能体仍可自行打开你电脑上的文件。",
+    "你连接的智能体（支持 MCP 的 AI 工具，例如 Claude Code 或 Cursor）可以看到你正在查看的内容和变更，搜索和阅读本项目的文件，阅读你的评论和你共享的笔记，并向你展示某个位置。仅限本机。列在 .aiignore 中的文件不会交给智能体，智能体从不通过 PerMark 编辑文件。这只涉及智能体从 PerMark 获得的内容：智能体仍可自行打开你电脑上的文件。",
   "agent.groups": "智能体可以做什么",
   "agent.group.context": "查看你正在看的内容",
   "agent.group.changes": "查看变更",
@@ -1278,9 +1287,6 @@ export default {
   "config.sheet": "此文件中的设置",
   "config.root": "顶层",
   "config.fold": "折叠或展开 {name}",
-  "config.reveal": "显示值",
-  "config.hide": "隐藏值",
-  "config.hidden": "已隐藏的值",
   "config.empty": "空",
   "config.valueOf": "{key} 的值",
   "config.fromSource": "在源码中编辑",
@@ -1468,7 +1474,7 @@ export default {
   "plugin.fmt-ini.name": "INI 和 cfg 文件",
   "plugin.fmt-ini.about": "将 INI 文件显示为清晰的表格，并可逐个修改值。",
   "plugin.fmt-dotenv.name": "dotenv 文件",
-  "plugin.fmt-dotenv.about": "将 .env 文件显示为清晰的表格；机密值保持隐藏。",
+  "plugin.fmt-dotenv.about": "将 .env 文件显示为清晰的表格。",
   "plugin.fmt-properties.name": ".properties 文件",
   "plugin.fmt-properties.about": "将 .properties 文件显示为清晰的表格，并可逐个修改值。",
   "plugin.fmt-ignore.name": "忽略文件",
@@ -1775,8 +1781,6 @@ export default {
   "convert.tooLarge": "此来源超过 50 MB，太大，无法在这里转换。",
   "convert.invalid": "这不是有效的 {format}。",
   "convert.failed": "转换未成功。",
-  "convert.secrets.one": "包含 {n} 个机密值：预览中已隐藏。",
-  "convert.secrets.other": "包含 {n} 个机密值：预览中已隐藏。",
   "convert.targets": "格式",
   "convert.best": "最佳",
   "convert.fits": "合适",
@@ -1787,8 +1791,6 @@ export default {
   "convert.approxHint":
     "~ = 估算的 token 数。如需精确数字，请在 Token 计数中将 GPT 分词器设为主要分词器并下载其词表。",
   "convert.exactHint": "由所示分词器计数。",
-  "convert.confirmSecrets.one": "结果包含 {n} 个机密值。",
-  "convert.confirmSecrets.other": "结果包含 {n} 个机密值。",
   "convert.copied": "已复制。",
   "convert.saved": "已另存为 {path}",
   "convert.actionFailed": "操作未成功。",

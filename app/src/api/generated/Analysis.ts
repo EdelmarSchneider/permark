@@ -15,10 +15,6 @@ tokenizer: string | null,
  */
 approx: boolean, 
 /**
- * Values under secret keys in the data.
- */
-secrets: number, 
-/**
  * What reading the source lost.
  */
 notes: Array<string>, targets: Array<TargetView>, };

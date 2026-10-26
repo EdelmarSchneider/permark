@@ -1,26 +1,20 @@
 <script lang="ts">
-  // One value of a sheet: text, number, date, bool (a switch), or empty. A secret value shows as a mask until the
-  // person asks for it. In Edit mode a click opens the value for typing; Enter or leaving it commits through the
-  // sheet's editor, Escape puts it back.
-  import Eye from "@lucide/svelte/icons/eye";
-  import EyeOff from "@lucide/svelte/icons/eye-off";
+  // One value of a sheet: text, number, date, bool (a switch), or empty, as written. In Edit mode a click opens the
+  // value for typing; Enter or leaving it commits through the sheet's editor, Escape puts it back.
   import Lock from "@lucide/svelte/icons/lock";
   import type { NewValue, Scalar } from "../../api";
   import { t } from "../i18n";
   import { reasonKey, refusalKey } from "./reasons";
-  import { MASK } from "./secrets";
 
   type Props = {
     scalar: Scalar;
     /** What the value is called (its key), for screen readers. */
     label: string;
     editable: boolean;
-    revealed: boolean;
-    reveal: (path: string) => void;
     /** Commits a new value; resolves to the word of a refusal, or null when it was made. */
     commit: (path: string, value: NewValue) => Promise<string | null>;
   };
-  let { scalar, label, editable, revealed, reveal, commit }: Props = $props();
+  let { scalar, label, editable, commit }: Props = $props();
 
   let draft = $state<string | null>(null);
   let refusal = $state<string | null>(null);
@@ -29,7 +23,6 @@
   const readOnly = $derived(scalar.edit.editable === "readOnly");
   const reason = $derived(scalar.edit.editable === "readOnly" ? scalar.edit.reason : null);
   const canEdit = $derived(editable && !readOnly);
-  const hidden = $derived(scalar.secret && !revealed);
 
   function begin(): void {
     if (!canEdit || scalar.kind === "bool") return;
@@ -90,7 +83,7 @@
   {#if draft !== null}
     <input
       class="field edit"
-      type={hidden ? "password" : "text"}
+      type="text"
       autocomplete="off"
       spellcheck="false"
       aria-label={t("config.valueOf", { key: label })}
@@ -114,8 +107,6 @@
       <span class="knob"></span>
     </button>
     <span class="word">{scalar.text}</span>
-  {:else if hidden}
-    <span class="mask" aria-label={t("config.hidden")}>{MASK}</span>
   {:else if scalar.kind === "null"}
     <span class="empty">{t("config.empty")}</span>
   {:else}
@@ -129,18 +120,6 @@
         aria-label={t("config.valueOf", { key: label })}
         onclick={begin}
       ></button>
-    {/if}
-    {#if scalar.secret}
-      <button
-        type="button"
-        class="icon-btn icon-btn--sm reveal"
-        aria-label={revealed ? t("config.hide") : t("config.reveal")}
-        title={revealed ? t("config.hide") : t("config.reveal")}
-        aria-pressed={revealed}
-        onclick={() => reveal(scalar.path)}
-      >
-        {#if revealed}<EyeOff size={14} />{:else}<Eye size={14} />{/if}
-      </button>
     {/if}
     {#if reason !== null}
       <span class="lock" title={t(reasonKey(reason))}>
@@ -164,21 +143,15 @@
     flex-wrap: wrap;
   }
   .text,
-  .mask,
   .empty,
   .word {
     min-width: 0;
     overflow-wrap: anywhere;
   }
   .code,
-  .mask,
   .word {
     font-family: var(--font-code);
     font-size: 0.92em;
-  }
-  .mask {
-    letter-spacing: 0.06em;
-    color: var(--muted);
   }
   .empty {
     color: var(--faint);
@@ -202,10 +175,6 @@
   }
   .hit:focus-visible {
     outline: 2px solid var(--accent);
-  }
-  .reveal {
-    position: relative;
-    z-index: 1;
   }
   .lock {
     display: inline-flex;

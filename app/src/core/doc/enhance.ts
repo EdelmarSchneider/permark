@@ -3,7 +3,6 @@
 // cheap; heavy things (highlighting, math, diagrams) come later, when the block is near the screen.
 // Returns the block's root: a `pre` or `table` that is a block of its own is wrapped, so the wrapper is the block.
 
-import { findCodeSecrets, MASK } from "../config/secrets";
 import { t } from "../i18n";
 
 /** The kind of block, as the wrapper tells it. */
@@ -102,37 +101,6 @@ function remoteChip(source: Element, url: string): HTMLElement {
   return chip;
 }
 
-/** The real text of a code block whose secret values are hidden in the page (the embeds and copy use it). */
-export const realCode = new WeakMap<Element, string>();
-
-function secretButton(real: string): HTMLButtonElement {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "secret";
-  button.textContent = MASK;
-  button.title = t("config.reveal");
-  button.setAttribute("aria-label", t("config.reveal"));
-  button.addEventListener("click", () => button.replaceWith(document.createTextNode(real)));
-  return button;
-}
-
-/** Secret values in a code block (`API_KEY=...`, `password: ...`) show as a mask until the person clicks them. */
-function hideCodeSecrets(pre: HTMLElement, wrapper: HTMLElement): void {
-  const code = pre.querySelector("code");
-  const text = code?.textContent ?? "";
-  const spans = findCodeSecrets(text);
-  if (code === null || spans.length === 0) return;
-  realCode.set(wrapper, text);
-  const nodes: Node[] = [];
-  let at = 0;
-  for (const { from, to } of spans) {
-    nodes.push(document.createTextNode(text.slice(at, from)), secretButton(text.slice(from, to)));
-    at = to;
-  }
-  nodes.push(document.createTextNode(text.slice(at)));
-  code.replaceChildren(...nodes);
-}
-
 /** Longest accessible name of a task checkbox (a long item is cut; the item itself is read next anyway). */
 const TASK_NAME_MAX = 120;
 
@@ -153,7 +121,6 @@ function enhanceOne(element: HTMLElement, env: EnhanceEnv): HTMLElement {
     case "pre": {
       const wrapper = wrap(element, CODE_BLOCK);
       wrapper.setAttribute("data-info", languageOf(element));
-      hideCodeSecrets(element, wrapper);
       result = wrapper;
       break;
     }

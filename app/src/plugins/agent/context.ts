@@ -1,5 +1,5 @@
 // What the window tells the agent connection about where the person is: pure helpers over the outline (the backend
-// cuts, masks and checks it again before anything leaves the app).
+// cuts and checks it again before anything leaves the app).
 
 import type { AgentSection, AgentWindowContext } from "../../api";
 import type { OutlineItem } from "../../api/generated/OutlineItem";

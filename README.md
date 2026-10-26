@@ -136,11 +136,11 @@ Markdown leads, and many files around it open too: config files as clean sheets,
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/config-sheet-dark.png">
-  <img src="docs/assets/config-sheet.png" alt="A TOML config file open as a clean sheet: sections, keys and values, with comments as captions and a secret value masked">
+  <img src="docs/assets/config-sheet.png" alt="A TOML config file open as a clean sheet: sections, keys and values, with comments as captions">
 </picture>
 
 - **Config files as clean sheets.** TOML, YAML, INI, `.env`, `.properties` and ignore files open as sections, keys and values,
-  with comments as captions. Change a value, and only those bytes change. Secret values are masked in the sheet.
+  with comments as captions. Change a value, and only those bytes change.
   Sheets edit values, not keys. YAML flow style is read-only, and a file over 256 KB or 3,000 rows shows as plain text.
 - **TOON.** `.toon` files, the compact data format made for AI, open as tables and cards and can be edited in place. The
   **Converter** turns JSON, XML, YAML, CSV and TOML into TOON or another format, shows the estimated token saving of each choice,
@@ -255,8 +255,8 @@ that speaks the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
 - **Local.** It talks only to programs on your computer and opens no network port.
 - **Read, never edit.** The agent sees where you are, what you selected, what changed, your comments and the notes you shared one
   by one. It reads, shows you a place and marks comments done. It never edits a file through PerMark.
-- **Your limits.** You choose what it may do, group by group. Files in `.aiignore` never reach an agent. Secret values are hidden
-  by their key names; a secret inside ordinary text is not recognized, so list such files in `.aiignore`.
+- **Your limits.** You choose what it may do, group by group. Files in `.aiignore` never reach an agent; everything else it reads
+  as written, passwords and keys included, so list files with secrets in `.aiignore`.
 - **Visible.** While the connection is on, the status bar shows **Agent**. Click it to see what is shared and the latest requests.
 
 <picture>

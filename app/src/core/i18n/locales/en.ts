@@ -50,6 +50,8 @@ const en = {
 
   // ---- notices
   "notice.stateRecovered": "Some saved PerMark data couldn't be read and was set aside: {file}",
+  "notice.stateUnreadable":
+    "Some saved PerMark data couldn't be read. It was left untouched, and PerMark won't change it until it can read it again, usually after a restart: {file}",
 
   // ---- settings
   "settings.title": "Settings",
@@ -1041,6 +1043,14 @@ const en = {
   "brokenLinks.none": "No broken links",
   "brokenLinks.skipped.one": "{n} document could not be checked",
   "brokenLinks.skipped.other": "{n} documents could not be checked",
+  "brokenLinks.noneHere": "No broken links in this folder",
+  "brokenLinks.thisFolder": "This folder",
+  "brokenLinks.worktree": "Linked worktree {name}",
+  "brokenLinks.notListed": "Not listed: the list shows 500 links at most.",
+  "brokenLinks.rootCount.one": "{n} broken link",
+  "brokenLinks.rootCount.other": "{n} broken links",
+  "brokenLinks.truncatedAll":
+    "Showing the first 500 of {n} broken links in this folder and its linked worktrees.",
   "brokenLinks.open": "Open {path} at line {line}",
   "brokenLinks.truncated": "Showing the first 500 of {n} broken links.",
   "brokenLinks.show": "Show the broken links",
@@ -1203,7 +1213,7 @@ const en = {
   "agent.title": "Agent connection",
   "agent.switch": "Share this project with agents",
   "agent.switchHint":
-    "An agent you connect (an AI tool that supports MCP, such as Claude Code or Cursor) can see what you're looking at and what changed, search and read this project's files, read your comments and the notes you share, and show you a place. Only on this computer. Passwords and keys that PerMark recognizes stay hidden, and agents never edit files through PerMark. This covers only what agents get from PerMark: an agent can still open files on your computer by itself.",
+    "An agent you connect (an AI tool that supports MCP, such as Claude Code or Cursor) can see what you're looking at and what changed, search and read this project's files, read your comments and the notes you share, and show you a place. Only on this computer. Files listed in .aiignore stay out of their reach, and agents never edit files through PerMark. This covers only what agents get from PerMark: an agent can still open files on your computer by itself.",
   "agent.groups": "What agents may do",
   "agent.group.context": "See what you're looking at",
   "agent.group.changes": "See what changed",
@@ -1310,9 +1320,6 @@ const en = {
   "config.sheet": "Settings in this file",
   "config.root": "Top level",
   "config.fold": "Fold or unfold {name}",
-  "config.reveal": "Show value",
-  "config.hide": "Hide value",
-  "config.hidden": "Hidden value",
   "config.empty": "empty",
   "config.valueOf": "Value of {key}",
   "config.fromSource": "Edit in Source",
@@ -1508,7 +1515,7 @@ const en = {
   "plugin.fmt-ini.name": "INI and cfg files",
   "plugin.fmt-ini.about": "Reads INI files as a clean sheet and edits one value at a time.",
   "plugin.fmt-dotenv.name": "Dotenv files",
-  "plugin.fmt-dotenv.about": "Reads .env files as a clean sheet; secret values stay hidden.",
+  "plugin.fmt-dotenv.about": "Reads .env files as a clean sheet.",
   "plugin.fmt-properties.name": "Properties files",
   "plugin.fmt-properties.about":
     "Reads .properties files as a clean sheet and edits one value at a time.",
@@ -1826,8 +1833,6 @@ const en = {
   "convert.tooLarge": "This source is over 50 MB, too large to convert here.",
   "convert.invalid": "This isn't valid {format}.",
   "convert.failed": "The conversion didn't work.",
-  "convert.secrets.one": "Contains {n} secret value: masked in the preview.",
-  "convert.secrets.other": "Contains {n} secret values: masked in the preview.",
   "convert.targets": "Formats",
   "convert.best": "best",
   "convert.fits": "Fits",
@@ -1838,8 +1843,6 @@ const en = {
   "convert.approxHint":
     "~ = estimated tokens. For exact numbers, make a GPT tokenizer the primary one in Token count and download its vocabulary.",
   "convert.exactHint": "Counted by the tokenizer shown.",
-  "convert.confirmSecrets.one": "The result contains {n} secret value.",
-  "convert.confirmSecrets.other": "The result contains {n} secret values.",
   "convert.copied": "Copied.",
   "convert.saved": "Saved as {path}",
   "convert.actionFailed": "That didn't work.",

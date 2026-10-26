@@ -168,6 +168,17 @@ describe("the list", () => {
     expect(row(root, ".github").className).toContain("is-dim");
   });
 
+  it("keeps the header and the counts line on one line, the full text in their tooltip", async () => {
+    // a long translation (Japanese) is cut short with an ellipsis instead of wrapping a lone letter
+    const { root } = await render();
+    for (const selector of [".bar .menu-label", ".foot .count"]) {
+      const el = root.querySelector<HTMLElement>(selector);
+      expect(el?.classList.contains("one-line"), selector).toBe(true);
+      expect(el?.title, selector).toBe(el?.textContent);
+      expect(el?.title, selector).not.toBe("");
+    }
+  });
+
   it("plugins add badges to rows through the registry, honoring their requirements", async () => {
     const { root, registry } = await render();
     registry.register({

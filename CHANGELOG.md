@@ -5,6 +5,21 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-26
+
+### Added
+- **Seven more interface languages: 日本語 (Japanese), 한국어 (Korean), Français (French), Português (Portugal) (European Portuguese), Català (Catalan), Galego (Galician) and Română (Romanian).** **Settings > Language** lists them, and *System default* picks each one for its system languages (`ja-JP`, `ko-KR`, `fr-CA`, `ca-ES-valencia` and the others); Portuguese outside Brazil (`pt-PT`, `pt-AO`, `pt-MZ`...) now picks European Portuguese, while `pt-BR` and a bare `pt` keep Brazilian Portuguese. The Windows installer offers them, the right-click entries in the file manager are worded in them (for example "PerMark で開く", "PerMark로 열기", "Ouvrir avec PerMark"), and the Microsoft Store package declares them. In Japanese and Korean, the interface uses Japanese and Korean fonts (Yu Gothic UI, Meiryo UI or Hiragino Sans; Malgun Gothic or Apple SD Gothic Neo) instead of Chinese letter shapes. Romanian counts use its three plural forms ("1 fișier", "2 fișiere", "20 de fișiere"). Thanks to @kelvin-mariano for the translations, the installer and file manager wording, and the Japanese and Korean fonts (#61; Japanese and Korean were asked for in #23). <!-- f: settings, file-manager-integration -->
+
+### Changed
+- Text is no longer masked: PerMark shows every value as written, in the reading view, in config sheets, in reviews and in the converter, and AI agents read it as written too. Key files such as `*.pem`, `id_rsa` or `.netrc` are no longer hidden from agents by their name either. To keep a file away from agents, list it in `.aiignore`, as before. <!-- f: agent-connection, text-and-data-files -->
+
+### Fixed
+- In a folder that includes other projects, what you do right after opening it (adding a tag, moving a file) is now also kept in that project's own record of your actions, which it shows when you open the project on its own. Before, actions in the first moments after opening could be missing there. <!-- f: nested-projects, agent-connection -->
+- The count next to **Broken links** is now the opened folder's own, and it shows only once PerMark has looked through all the documents. Before, it also counted the broken links of the git worktrees linked to the folder, so a folder with only a few broken links could show thousands, and the worktrees' links could push the folder's own off the list. When a linked worktree has broken links too, the tab now shows them apart: **This folder** first, then a section for each worktree (**Linked worktree** and its name), each with its count. A folder without linked worktrees looks as before. Thanks to @pkyes54 for the report (#62). <!-- f: broken-links -->
+- When PerMark can't read some of the data it saved (for example because another program has the file open at that moment), it now tries again for a moment, then leaves the file as it is and doesn't write over it until it can read it again, usually after a restart. Before, it went on with empty defaults and could save them over that data, so the windows and tabs from last time, or other things it remembered, could be lost for good. When this happens to the windows and tabs from last time, a quiet note names the file. <!-- f: session-restore -->
+- Web pictures are now only fetched from public internet addresses. <!-- f: pictures-in-documents -->
+- A hand-off no longer names, to an AI agent, files that were hidden from agents after the hand-off was made; it counts them among the hidden ones instead. <!-- f: agent-connection -->
+
 ## [0.7.0] - 2026-10-23
 
 ### Added

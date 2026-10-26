@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // The converter against the mock backend: what the plugin adds and removes, the pure rules, the dialog's state (one
-// job at a time, cancel, secrets confirmed before they leave), the dialog itself, and the code block button.
+// job at a time, cancel, values sent as written), the dialog itself, the code block button, and the mock's argument
+// check.
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -124,7 +125,7 @@ describe("the dialog's state", () => {
     expect(probe.calls).toContain("close 1");
   });
 
-  it("asks before secret values leave, and only then sends the confirmation", async () => {
+  it("copies at once, with no confirmation, whatever the values are", async () => {
     const store = new ConvertStore();
     const writeText = vi.fn().mockResolvedValue(undefined);
     store.bind(() => {}, writeText);
@@ -136,7 +137,6 @@ describe("the dialog's state", () => {
         sourceTokens: 8,
         tokenizer: null,
         approx: true,
-        secrets: 2,
         notes: [],
         targets: [
           {
@@ -146,7 +146,7 @@ describe("the dialog's state", () => {
             fit: "good",
             reason: "smaller",
             best: true,
-            preview: "password: ••••••\n",
+            preview: "password: x\n",
             notes: [],
           },
         ],
@@ -155,13 +155,8 @@ describe("the dialog's state", () => {
     store.open({ kind: "text", text: '{"password":"x"}', language: "json", beside: "a.md" });
     await until(() => store.state.status === "ready", "ready");
     await store.act("copy");
-    expect(store.state.status === "ready" && store.state.action).toEqual({
-      kind: "confirm",
-      act: "copy",
-    });
-    expect(writeText).not.toHaveBeenCalled();
-    await store.act("copy", true);
     expect(writeText).toHaveBeenCalledTimes(1);
+    expect(probe.calls.some((call) => call.startsWith("result "))).toBe(true);
   });
 
   it("a cancelled job stops, and its late answer is ignored", async () => {
@@ -293,5 +288,32 @@ describe("the table button", () => {
     expect(opened).toEqual(['a,b\n1,"x, y"\n']);
     stop();
     expect(document.querySelector(".pm-convert-table")).toBeNull();
+  });
+});
+
+describe("the mock backend", () => {
+  it("refuses an old `confirmed` flag like the backend", async () => {
+    const { createMockConvert } = await import("../../api/mockConvert");
+    const { handlers } = createMockConvert(() => null);
+    const refusal = (call: () => unknown): unknown => {
+      try {
+        call();
+      } catch (error) {
+        return error;
+      }
+      return null;
+    };
+    const old = { job: 1, target: "toon", confirmed: true } as { job: number; target: string };
+    expect(refusal(() => handlers["convert.result"](old))).toMatchObject({
+      kind: "invalidData",
+      subject: "confirmed",
+    });
+    expect(refusal(() => handlers["convert.save"](old))).toMatchObject({
+      kind: "invalidData",
+      subject: "confirmed",
+    });
+    expect(refusal(() => handlers["convert.result"]({ job: 1, target: "toon" }))).toMatchObject({
+      kind: "notFound",
+    });
   });
 });

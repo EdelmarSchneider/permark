@@ -1,0 +1,24 @@
+name: Question
+description: Ask how something in PerMark works.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Happy to help. Please check the [PerMark website](https://edelmarschneider.github.io/permark/) first; the answer may already be there.
+
+        **Please never paste document content that holds secrets, tokens, passwords or private data.**
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What do you want to know or do?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: PerMark version, operating system, and what you already tried (optional).
+    validations:
+      required: false

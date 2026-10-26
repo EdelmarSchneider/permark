@@ -13,6 +13,7 @@ pub mod net;
 #[cfg(test)]
 mod tests;
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError, Weak};
 use std::thread::JoinHandle;
@@ -481,8 +482,58 @@ struct State {
     /// The included projects whose own journal also gets the facts about their files (`projects.md` §9.2); `None`:
     /// only this journal (a plain folder, or the owners are changing).
     owners: Option<crate::projects::Owners>,
+    /// `Some` while the owners are not known (before the projects worker tells them, while they change): facts about
+    /// files wait here and go to their project's journal once told (CI 39814680202: a tag right after opening never
+    /// reached the project's own journal). Bounded ([`MAX_WAITING`]; the opened folder's journal has them all).
+    waiting: Option<VecDeque<Waiting>>,
     /// Facts waiting for the next write, per project journal (its file).
     mirror: Vec<(StateFile<Journal>, Mirrored)>,
+}
+
+/// Most facts kept while the owners are not known.
+const MAX_WAITING: usize = 1000;
+
+/// A fact noted while the owners were not known, routed when they are.
+#[derive(Debug, Clone)]
+enum Waiting {
+    Fact {
+        at: u64,
+        by: By,
+        fact: Fact,
+    },
+    Outside {
+        at: u64,
+        change: OutsideChange,
+        path: String,
+        from: Option<String>,
+    },
+}
+
+impl State {
+    fn wait(&mut self, item: Waiting) {
+        if let Some(waiting) = &mut self.waiting {
+            // the oldest goes first (the opened folder's journal keeps it)
+            if waiting.len() >= MAX_WAITING {
+                waiting.pop_front();
+            }
+            waiting.push_back(item);
+        }
+    }
+
+    /// The owners are known: what waited goes to its project's journal, in order.
+    fn route_waiting(&mut self) {
+        for item in self.waiting.take().unwrap_or_default() {
+            match item {
+                Waiting::Fact { at, by, fact } => mirror_fact(self, at, by, &fact),
+                Waiting::Outside {
+                    at,
+                    change,
+                    path,
+                    from,
+                } => mirror_outside(self, at, change, &path, from.as_deref()),
+            }
+        }
+    }
 }
 
 /// A fact for an included project's own journal, its paths relative to that project.
@@ -568,6 +619,7 @@ impl ActivityLog {
                 dirty: false,
                 file,
                 owners: None,
+                waiting: Some(VecDeque::new()),
                 mirror: Vec::new(),
             }),
             wake: Condvar::new(),
@@ -598,6 +650,7 @@ impl ActivityLog {
                     dirty: false,
                     file,
                     owners: None,
+                    waiting: None,
                     mirror: Vec::new(),
                 }),
                 wake: Condvar::new(),
@@ -637,11 +690,18 @@ impl ActivityLog {
         }
         match change {
             crate::projects::OwnersChange::Pause => {
-                lock(&self.inner.state).owners = None;
+                {
+                    let mut state = lock(&self.inner.state);
+                    state.owners = None;
+                    state.waiting.get_or_insert_with(VecDeque::new);
+                }
                 flush(&self.inner);
             }
             crate::projects::OwnersChange::Resume(owners) => {
-                lock(&self.inner.state).owners = (!owners.is_single()).then(|| (*owners).clone());
+                let mut state = lock(&self.inner.state);
+                state.owners = (!owners.is_single()).then(|| (*owners).clone());
+                state.route_waiting();
+                self.inner.wake.notify_all();
             }
         }
     }
@@ -653,7 +713,15 @@ impl ActivityLog {
         let now = self.now();
         let entry = {
             let mut state = lock(&self.inner.state);
-            mirror_fact(&mut state, now, by, &fact);
+            if state.waiting.is_some() {
+                state.wait(Waiting::Fact {
+                    at: now,
+                    by,
+                    fact: fact.clone(),
+                });
+            } else {
+                mirror_fact(&mut state, now, by, &fact);
+            }
             let seq = state.journal.push(now, by, fact);
             state.journal.trim(now);
             state.dirty = true;
@@ -720,7 +788,16 @@ impl ActivityLog {
                     ChangeKind::Removed => (OutsideChange::Deleted, None),
                     ChangeKind::Renamed { from } => (OutsideChange::Renamed, Some(from.as_str())),
                 };
-                mirror_outside(&mut state, now, kind, &change.path, from);
+                if state.waiting.is_some() {
+                    state.wait(Waiting::Outside {
+                        at: now,
+                        change: kind,
+                        path: change.path.clone(),
+                        from: from.map(str::to_owned),
+                    });
+                } else {
+                    mirror_outside(&mut state, now, kind, &change.path, from);
+                }
                 state.journal.push_outside(now, kind, &change.path, from);
                 noted = true;
             }

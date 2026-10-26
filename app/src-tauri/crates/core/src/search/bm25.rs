@@ -202,6 +202,11 @@ impl Bm25 {
         (1.0 + (n - df + 0.5) / (df + 0.5)).ln()
     }
 
+    /// Sections that hold a term `tid`.
+    fn df(&self, tid: u32) -> usize {
+        self.terms.postings[tid as usize].len()
+    }
+
     /// Ranked sections for a free-text query; the last word also matches as a prefix. `allow`: which documents may
     /// answer (the sections of the others never compete for a place).
     #[must_use]
@@ -242,11 +247,15 @@ impl Bm25 {
             let candidates = self.candidates(tok, is_last);
             for (tid, weight) in candidates {
                 let posts = &self.terms.postings[tid as usize];
-                let term_idf = self.idf(posts.len());
+                let term_idf = self.idf(self.df(tid));
                 for &(id, tf) in posts {
                     let Some(entry) = &self.chunks[id as usize] else {
                         continue;
                     };
+                    let len = entry.len;
+                    if tf == 0 {
+                        continue;
+                    }
                     if let Some(allow) = allow {
                         let ok = if let Some(&ok) = verdict.get(&entry.path) {
                             ok
@@ -260,8 +269,7 @@ impl Bm25 {
                         }
                     }
                     let tf = tf as f32;
-                    let norm =
-                        tf * (K1 + 1.0) / (tf + K1 * (1.0 - B + B * entry.len as f32 / avgdl));
+                    let norm = tf * (K1 + 1.0) / (tf + K1 * (1.0 - B + B * len as f32 / avgdl));
                     let slot = id as usize;
                     if seen[slot] == 0 {
                         touched.push(id);
@@ -303,7 +311,13 @@ impl Bm25 {
     /// CJK terms have no longer forms to complete: every character is already indexed alone.
     fn candidates(&self, tok: &Token, is_last: bool) -> Vec<(u32, f32)> {
         let mut candidates: Vec<(u32, f32)> = Vec::new();
-        if let Some(&id) = self.terms.ids.get(tok.term.as_str()) {
+        let seen = |id: u32| self.df(id) > 0;
+        if let Some(&id) = self
+            .terms
+            .ids
+            .get(tok.term.as_str())
+            .filter(|&&id| seen(id))
+        {
             candidates.push((id, 1.0));
         }
         if is_last && tok.kind == TokenKind::Word {
@@ -315,7 +329,7 @@ impl Bm25 {
                         std::ops::Bound::Unbounded,
                     ))
                     .take_while(|(t, _)| t.starts_with(tok.folded.as_str()))
-                    .filter(|(t, _)| ***t != *tok.term)
+                    .filter(|(t, &id)| ***t != *tok.term && seen(id))
                     .take(MAX_PREFIX_TERMS)
                     .map(|(_, &id)| (id, PREFIX_WEIGHT)),
             );
@@ -343,12 +357,8 @@ impl Bm25 {
 }
 
 /// Excerpt of `text` around the first match, matches marked; the heading text when the body has no match (the
-/// section matched by its title). Secret values are hidden before the cut: an excerpt that starts between a key and
-/// its value never shows the value without its key.
+/// section matched by its title).
 fn snippet(text: &str, heading: &str, matcher: &Matcher) -> Vec<SnippetPart> {
-    let text = crate::secrets::mask_text(text);
-    let heading = crate::secrets::mask_text(heading);
-    let (text, heading) = (text.as_ref(), heading.as_ref());
     let body = tokenize(text);
     let (source, toks) = if body.iter().any(|t| matcher.matches(t)) || heading.is_empty() {
         (text, body)

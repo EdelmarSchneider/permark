@@ -191,13 +191,10 @@ fn a_file_reads_as_cards_tables_and_lists() {
 }
 
 #[test]
-fn secret_columns_are_masked_and_never_searched() {
-    let masked = fidelity::masked(&ToonFormat, USERS);
-    assert!(!masked.contains("sk-live-1234") && !masked.contains("sk-test-5678"));
-    assert!(masked.contains("ops") && masked.contains("Ada"));
+fn every_value_is_searched_as_data() {
     let search = ToonFormat.searchable(USERS).unwrap();
     assert!(search.contains("Ada") && search.contains("users") && search.contains("token"));
-    assert!(!search.contains("sk-live"));
+    assert!(search.contains("sk-live-1234"));
 }
 
 #[test]
@@ -703,12 +700,4 @@ fn a_new_row_takes_plain_values_where_they_need_no_quotes() {
         quoted.contains("  0,\"Johnson, K\",math,false\n"),
         "{quoted}"
     );
-}
-
-#[test]
-fn a_tokens_column_of_counts_is_shown_and_a_token_column_is_masked() {
-    let text = "files[2]{path,tokens}:\n  plan.md,1200\n  spec.md,3400\nkeys[1]{name,token}:\n  ci,sk-123\nusage:\n  tokens: 99\n  api_token: abc\n";
-    let masked = fidelity::masked(&ToonFormat, text);
-    assert!(masked.contains("1200") && masked.contains("3400") && masked.contains("tokens: 99"));
-    assert!(!masked.contains("sk-123") && !masked.contains("abc"));
 }

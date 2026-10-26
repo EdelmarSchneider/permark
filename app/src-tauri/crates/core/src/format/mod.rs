@@ -1,6 +1,6 @@
 //! Formats: how a file becomes something to read. Core owns the API and Markdown; viewers, roles and Markdown
-//! features arrive from plugins as data ([`Contributions`]). The config formats add a structure (the sheet), value
-//! edits and secret spans to the trait (`config`).
+//! features arrive from plugins as data ([`Contributions`]). The config formats add a structure (the sheet) and value
+//! edits to the trait (`config`).
 
 mod analysis;
 pub mod config;
@@ -92,12 +92,6 @@ pub trait Format: Send + Sync {
     /// The part cannot be edited exactly (read-only reason), is missing, or the new value cannot be written.
     fn edit(&self, _text: &str, _edit: &ConfigEdit) -> Result<Splice, EditRefusal> {
         Err(EditRefusal::Unsupported)
-    }
-    /// Bytes of the secret value tokens of `text`, in order.
-    fn secrets(&self, text: &str) -> Vec<Span> {
-        self.sheet(text)
-            .map(|sheet| sheet.secret_spans())
-            .unwrap_or_default()
     }
     /// What search may read of `text`: keys only, never values (`None`: the format adds nothing).
     fn searchable(&self, _text: &str) -> Option<String> {

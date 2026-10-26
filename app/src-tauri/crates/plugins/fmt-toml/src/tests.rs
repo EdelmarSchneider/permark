@@ -1,4 +1,4 @@
-use permark_core::format::config::fidelity::{check_corpus, check_masking};
+use permark_core::format::config::fidelity::check_corpus;
 use permark_core::format::config::{RowValue, ScalarKind};
 use permark_core::format::Editability;
 use permark_core::format::{ConfigEdit, EditRefusal, Format, NewValue};
@@ -217,36 +217,6 @@ fn numbers_dates_and_bools_are_validated_literals() {
     assert!(set("tool.demo.released", "2027-01-01").is_ok());
     assert!(set("tool.demo.released", "tomorrow").is_err());
     assert!(set("tool.ruff.line-length", "true").is_err());
-}
-
-#[test]
-fn secrets_are_hidden_by_key_and_by_table() {
-    check_masking(
-        &format(),
-        "secrets",
-        SECRETS,
-        &[
-            "ghp_abcdef123456",
-            "bob",
-            "p@ss",
-            "s3cret",
-            "k-one",
-            "k-two",
-        ],
-    );
-    let out = permark_core::format::config::fidelity::masked(&format(), SECRETS);
-    // keys, bools, harmless words and plain values stay
-    assert!(out.contains("token = <hidden>"));
-    assert!(out.contains("enabled = true"));
-    assert!(out.contains("authors = [\"Ana\"]"));
-    assert!(out.contains("max_tokens = 4096"));
-    assert!(out.contains("host = \"localhost\""));
-    check_masking(
-        &format(),
-        "pyproject",
-        PYPROJECT,
-        &["sk-live-123456", "hunter2"],
-    );
 }
 
 #[test]

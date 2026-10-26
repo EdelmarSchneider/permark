@@ -1,4 +1,4 @@
-use permark_core::format::config::fidelity::{check_corpus, check_masking, masked};
+use permark_core::format::config::fidelity::check_corpus;
 use permark_core::format::config::ScalarKind;
 use permark_core::format::{ConfigEdit, EditRefusal, Editability, Format, NewValue};
 
@@ -142,28 +142,6 @@ fn repeated_keys_get_their_own_paths() {
     let sheet = format().sheet("A=1\nA=2\n").expect("parses");
     assert_eq!(sheet.scalar("A").map(|s| s.text.as_str()), Some("1"));
     assert_eq!(sheet.scalar("A[1]").map(|s| s.text.as_str()), Some("2"));
-}
-
-#[test]
-fn secrets_are_masked_references_are_not() {
-    check_masking(
-        &format(),
-        ".env.example",
-        EXAMPLE,
-        &["s3cr3t pass", "sk-live-abc123", "pass@localhost"],
-    );
-    let out = masked(&format(), EXAMPLE);
-    assert!(out.contains("NODE_ENV=development"));
-    assert!(out.contains("DB_PASSWORD=<hidden>"));
-    assert!(out.contains("export API_KEY=<hidden>"));
-    // a pointer to a secret is not the secret; an empty value hides nothing
-    assert!(out.contains("TOKEN_REF=${GITHUB_TOKEN}"));
-    assert!(out.contains("SECRET_KEY_BASE=\n"));
-    // an address with a password is secret whatever its key says
-    assert!(out.contains(
-        "DATABASE_URL=<hidden>
-"
-    ));
 }
 
 #[test]

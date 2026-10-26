@@ -53,6 +53,8 @@ export default {
   // ---- notices
   "notice.stateRecovered":
     "Alcuni dati salvati di PerMark non sono leggibili e sono stati messi da parte: {file}",
+  "notice.stateUnreadable":
+    "Alcuni dati salvati di PerMark non sono leggibili. Sono stati lasciati intatti e PerMark non li modificherà finché non riuscirà a leggerli di nuovo, di solito dopo un riavvio: {file}",
 
   // ---- settings
   "settings.title": "Impostazioni",
@@ -1074,6 +1076,14 @@ export default {
   "brokenLinks.none": "Nessun link interrotto",
   "brokenLinks.skipped.one": "{n} documento non è stato controllato",
   "brokenLinks.skipped.other": "{n} documenti non sono stati controllati",
+  "brokenLinks.noneHere": "Nessun link interrotto in questa cartella",
+  "brokenLinks.thisFolder": "Questa cartella",
+  "brokenLinks.worktree": "Worktree collegato {name}",
+  "brokenLinks.notListed": "Non elencati: l'elenco mostra al massimo 500 link.",
+  "brokenLinks.rootCount.one": "{n} link interrotto",
+  "brokenLinks.rootCount.other": "{n} link interrotti",
+  "brokenLinks.truncatedAll":
+    "Sono mostrati i primi 500 di {n} link interrotti in questa cartella e nei suoi worktree collegati.",
   "brokenLinks.open": "Apri {path} alla riga {line}",
   "brokenLinks.truncated": "Sono mostrati i primi 500 di {n} link interrotti.",
   "brokenLinks.show": "Mostra i link interrotti",
@@ -1236,7 +1246,7 @@ export default {
   "agent.title": "Connessione con gli agenti",
   "agent.switch": "Condividi questo progetto con gli agenti",
   "agent.switchHint":
-    "Un agente che colleghi (uno strumento di IA che supporta MCP, come Claude Code o Cursor) può vedere cosa stai guardando e cosa è cambiato, cercare e leggere i file di questo progetto, leggere i tuoi commenti e le note che condividi, e mostrarti un punto. Solo su questo computer. Le password e le chiavi che PerMark riconosce restano nascoste, e gli agenti non modificano mai file tramite PerMark. Questo vale solo per ciò che gli agenti ricevono da PerMark: un agente può comunque aprire da solo i file del tuo computer.",
+    "Un agente che colleghi (uno strumento di IA che supporta MCP, come Claude Code o Cursor) può vedere cosa stai guardando e cosa è cambiato, cercare e leggere i file di questo progetto, leggere i tuoi commenti e le note che condividi, e mostrarti un punto. Solo su questo computer. I file elencati in .aiignore restano fuori dalla loro portata, e gli agenti non modificano mai file tramite PerMark. Questo vale solo per ciò che gli agenti ricevono da PerMark: un agente può comunque aprire da solo i file del tuo computer.",
   "agent.groups": "Cosa possono fare gli agenti",
   "agent.group.context": "Vedere cosa stai guardando",
   "agent.group.changes": "Vedere cosa è cambiato",
@@ -1346,9 +1356,6 @@ export default {
   "config.sheet": "Impostazioni di questo file",
   "config.root": "Livello principale",
   "config.fold": "Comprimi o espandi {name}",
-  "config.reveal": "Mostra valore",
-  "config.hide": "Nascondi valore",
-  "config.hidden": "Valore nascosto",
   "config.empty": "vuoto",
   "config.valueOf": "Valore di {key}",
   "config.fromSource": "Modifica nel Sorgente",
@@ -1553,8 +1560,7 @@ export default {
   "plugin.fmt-ini.name": "File INI e cfg",
   "plugin.fmt-ini.about": "Legge i file INI come un foglio pulito e modifica un valore alla volta.",
   "plugin.fmt-dotenv.name": "File dotenv",
-  "plugin.fmt-dotenv.about":
-    "Legge i file .env come un foglio pulito; i valori segreti restano nascosti.",
+  "plugin.fmt-dotenv.about": "Legge i file .env come un foglio pulito.",
   "plugin.fmt-properties.name": "File .properties",
   "plugin.fmt-properties.about":
     "Legge i file .properties come un foglio pulito e modifica un valore alla volta.",
@@ -1875,8 +1881,6 @@ export default {
   "convert.tooLarge": "Questa sorgente supera i 50 MB, troppo grande da convertire qui.",
   "convert.invalid": "Questo non è {format} valido.",
   "convert.failed": "La conversione non è riuscita.",
-  "convert.secrets.one": "Contiene {n} valore segreto: nascosto nell'anteprima.",
-  "convert.secrets.other": "Contiene {n} valori segreti: nascosti nell'anteprima.",
   "convert.targets": "Formati",
   "convert.best": "migliore",
   "convert.fits": "Adatto",
@@ -1887,8 +1891,6 @@ export default {
   "convert.approxHint":
     "~ = token stimati. Per numeri esatti, scegli un tokenizzatore GPT come principale nel Conteggio dei token e scarica il suo vocabolario.",
   "convert.exactHint": "Contato con il tokenizzatore indicato.",
-  "convert.confirmSecrets.one": "Il risultato contiene {n} valore segreto.",
-  "convert.confirmSecrets.other": "Il risultato contiene {n} valori segreti.",
   "convert.copied": "Copiato.",
   "convert.saved": "Salvato come {path}",
   "convert.actionFailed": "Non ha funzionato.",

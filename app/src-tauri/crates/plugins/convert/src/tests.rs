@@ -407,19 +407,16 @@ fn a_table_is_best_as_toon_or_csv_and_deep_data_is_said_to_gain_nothing() {
 }
 
 #[test]
-fn secrets_are_counted_and_masked_in_previews_only() {
-    let data = json!({ "db": { "host": "h", "password": "hunter2" }, "url": "postgres://u:pw1@h/db", "api_key": "${KEY}", "token": 1234 });
-    assert_eq!(count_secrets(&data), 3);
-    let masked = mask_secrets(&data);
-    let text = masked.to_string();
-    assert!(!text.contains("hunter2") && !text.contains("pw1") && !text.contains("1234"));
-    assert!(text.contains("${KEY}"));
+fn previews_show_the_data_as_written() {
+    let data = json!({ "db": { "host": "h", "password": "hunter2" } });
     let done = run(&data.to_string(), Source::Json).unwrap();
-    assert_eq!(done.analysis.secrets, 3);
-    for t in &done.analysis.targets {
-        assert!(!t.preview.contains("hunter2"), "{}", t.id);
-    }
-    assert!(done.outputs.get(&Target::Toon).unwrap().contains("hunter2"));
+    let toon = done
+        .analysis
+        .targets
+        .iter()
+        .find(|t| t.id == "toon")
+        .unwrap();
+    assert!(toon.preview.contains("hunter2"), "{}", toon.preview);
 }
 
 #[test]
@@ -636,30 +633,23 @@ fn a_file_converts_and_saves_next_to_itself_never_over_a_file() {
 }
 
 #[test]
-fn secret_values_leave_only_after_confirmation() {
+fn a_result_needs_no_confirmation_and_an_old_confirmed_flag_is_refused() {
     let h = Harness::start();
     h.call(
         "analyze",
         json!({ "job": 1, "source": { "kind": "text", "text": "{\"password\":\"hunter2\"}" } }),
     )
     .unwrap();
-    let refused = h
-        .call("result", json!({ "job": 1, "target": "toon" }))
-        .unwrap_err();
-    assert_eq!(refused.detail.as_deref(), Some("secrets"));
-    assert!(h
-        .call(
-            "save",
-            json!({ "job": 1, "target": "toon", "beside": "a.md" })
-        )
-        .is_err());
     let text = h
+        .call("result", json!({ "job": 1, "target": "toon" }))
+        .unwrap();
+    assert_eq!(text, "password: hunter2");
+    assert!(h
         .call(
             "result",
             json!({ "job": 1, "target": "toon", "confirmed": true }),
         )
-        .unwrap();
-    assert_eq!(text, "password: hunter2");
+        .is_err());
 }
 
 #[test]

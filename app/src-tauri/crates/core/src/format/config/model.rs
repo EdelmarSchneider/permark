@@ -1,6 +1,6 @@
 //! The structure of a small configuration file: groups (cards) of rows, each row a key and a value, with the lines it
-//! sits on and the bytes of every value token. Parsers fill it; the sheet view, the outline, masking, search keys and
-//! surgical edits read it.
+//! sits on and the bytes of every value token. Parsers fill it; the sheet view, the outline, search keys and surgical
+//! edits read it.
 
 use std::ops::Range;
 
@@ -9,7 +9,6 @@ use ts_rs::TS;
 
 use super::util::split_path;
 use crate::format::Editability;
-use crate::secrets::{has_token, is_count, is_secret_key, is_secret_path, mask_text, url_password};
 
 /// Bytes of a text.
 pub type Span = Range<usize>;
@@ -44,7 +43,6 @@ pub struct Scalar {
     /// A string without its quotes; any other kind as written.
     pub text: String,
     pub edit: Editability,
-    pub secret: bool,
     /// The value token in the text (quotes included).
     #[serde(skip)]
     #[ts(skip)]
@@ -62,7 +60,6 @@ impl Scalar {
             kind,
             text,
             edit: Editability::Surgical,
-            secret: false,
             span: Some(span),
             quote: Quote::Plain,
         }
@@ -96,7 +93,6 @@ pub enum RowValue {
     Raw {
         text: String,
         reason: String,
-        secret: bool,
         #[serde(skip)]
         #[ts(skip)]
         span: Option<Span>,
@@ -272,95 +268,6 @@ impl Sheet {
         self.rows().map(|(_, r)| r).find(|r| r.path == path)
     }
 
-    /// Marks the secret values: a value under a secret key (`secrets::is_secret_path`) that is not a bool or empty;
-    /// the `value` next to a `name: DB_PASSWORD`; the text of a `API_KEY=...` list item.
-    pub fn finalize(&mut self) {
-        for group in &mut self.groups {
-            let named_secret = group.rows.iter().any(|r| {
-                matches!(r.key.as_str(), "name" | "key" | "env" | "var" | "variable")
-                    && matches!(&r.value, RowValue::Scalar(s) if is_secret_key(&s.text))
-            });
-            let group_secret = is_secret_path(&split_path(&group.path));
-            for row in &mut group.rows {
-                let key_secret = group_secret || is_secret_path(&split_path(&row.path));
-                let value_of_named =
-                    named_secret && matches!(row.key.as_str(), "value" | "val" | "default");
-                match &mut row.value {
-                    // a number under a count key (`tokens: 1200`) is a size
-                    RowValue::Scalar(s) if is_count(&row.key, &s.text) => s.secret = false,
-                    RowValue::Scalar(s) => mark(s, key_secret || value_of_named),
-                    RowValue::List { items } => {
-                        for s in items {
-                            let assignment = s.text.split_once('=').is_some_and(|(k, _)| {
-                                is_secret_key(k.trim_start_matches("export "))
-                            });
-                            mark(s, key_secret || assignment);
-                        }
-                    }
-                    RowValue::Raw { text, secret, .. } => {
-                        *secret = !text.trim().is_empty()
-                            && (key_secret || mask_text(text) != text.as_str());
-                    }
-                    RowValue::Pattern { .. } => {}
-                    RowValue::Table(table) => {
-                        // a column is secret when its field (any part of it) is a secret key
-                        let columns: Vec<bool> = table
-                            .fields
-                            .iter()
-                            .map(|f| is_secret_path(&split_path(f)))
-                            .collect();
-                        for row in &mut table.rows {
-                            for ((cell, column), field) in
-                                row.cells.iter_mut().zip(&columns).zip(&table.fields)
-                            {
-                                mark(cell, key_secret || *column);
-                                // a number in a count column (`tokens`) is a size
-                                let leaf = field.rsplit('.').next().unwrap_or(field);
-                                if cell.secret && is_count(leaf, &cell.text) {
-                                    cell.secret = false;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// Bytes of every secret value token, in file order.
-    #[must_use]
-    pub fn secret_spans(&self) -> Vec<Span> {
-        let mut spans: Vec<Span> = Vec::new();
-        for (_, row) in self.rows() {
-            match &row.value {
-                RowValue::Scalar(s) if s.secret => spans.extend(s.span.clone()),
-                RowValue::List { items } => {
-                    spans.extend(
-                        items
-                            .iter()
-                            .filter(|s| s.secret)
-                            .filter_map(|s| s.span.clone()),
-                    );
-                }
-                RowValue::Raw {
-                    secret: true,
-                    span: Some(span),
-                    ..
-                } => spans.push(span.clone()),
-                RowValue::Table(t) => spans.extend(
-                    t.rows
-                        .iter()
-                        .flat_map(|r| r.cells.iter())
-                        .filter(|s| s.secret)
-                        .filter_map(|s| s.span.clone()),
-                ),
-                _ => {}
-            }
-        }
-        spans.sort_by_key(|s| s.start);
-        spans
-    }
-
     /// Top-level parts: the first path segment of every group and row, in file order, with their line range.
     #[must_use]
     pub fn outline(&self) -> Vec<Part> {
@@ -477,7 +384,7 @@ impl Sheet {
         out
     }
 
-    /// Patterns of an ignore sheet (they are not secrets), one per line.
+    /// Patterns of an ignore sheet, one per line.
     #[must_use]
     pub fn patterns_text(&self, limit: usize) -> String {
         let mut out = String::new();
@@ -491,36 +398,6 @@ impl Sheet {
         }
         out
     }
-}
-
-fn mark(scalar: &mut Scalar, key_secret: bool) {
-    scalar.secret = key_secret
-        && !matches!(scalar.kind, ScalarKind::Bool | ScalarKind::Null)
-        && !scalar.text.is_empty()
-        && !is_reference(&scalar.text)
-        || url_password(&scalar.text).is_some()
-        || has_token(&scalar.text);
-}
-
-/// `${VAR}`, `$VAR`, `{{ secrets.NAME }}`: a pointer to a secret, not the secret.
-fn is_reference(text: &str) -> bool {
-    let t = text.trim();
-    let name = |s: &str| {
-        !s.is_empty()
-            && s.chars()
-                .all(|c| c.is_alphanumeric() || matches!(c, '_' | '.' | '-' | ' ' | ':'))
-    };
-    if let Some(inner) = t.strip_prefix("${{").and_then(|r| r.strip_suffix("}}")) {
-        return name(inner);
-    }
-    if let Some(inner) = t.strip_prefix("{{").and_then(|r| r.strip_suffix("}}")) {
-        return name(inner);
-    }
-    if let Some(inner) = t.strip_prefix("${").and_then(|r| r.strip_suffix('}')) {
-        return name(inner);
-    }
-    t.strip_prefix('$')
-        .is_some_and(|r| !r.is_empty() && r.chars().all(|c| c.is_alphanumeric() || c == '_'))
 }
 
 /// What a new value is.

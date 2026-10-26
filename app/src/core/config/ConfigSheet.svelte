@@ -1,20 +1,17 @@
 <script lang="ts">
   // A small configuration file as a sheet: a card per table | mapping | section, a row per key with its value and
-  // the comment that sits with it. Secret values are masked; a part that cannot be edited exactly says why. In Edit
+  // the comment that sits with it, as written; a part that cannot be edited exactly says why. In Edit
   // mode values take typing; an ignore file also takes new lines and deleted lines; a data file (TOON) also takes
   // new key names, new and removed keys, and its tables take rows. "Edit in Source" jumps to the line.
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import CodeXml from "@lucide/svelte/icons/code-xml";
-  import Eye from "@lucide/svelte/icons/eye";
-  import EyeOff from "@lucide/svelte/icons/eye-off";
   import Lock from "@lucide/svelte/icons/lock";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash from "@lucide/svelte/icons/trash";
   import type { ConfigEdit, Group, NewValue, Row, Scalar, Sheet, Table } from "../../api";
   import { t, tn } from "../i18n";
   import { reasonKey, refusalKey } from "./reasons";
-  import { MASK } from "./secrets";
   import SheetTable from "./SheetTable.svelte";
   import SheetValue from "./SheetValue.svelte";
 
@@ -47,7 +44,6 @@
     capped = false,
   }: Props = $props();
 
-  let revealed = $state.raw<ReadonlySet<string>>(new Set());
   let folded = $state.raw<ReadonlySet<string>>(new Set());
   /** The row an "add below" field is open under (`""`: the end of the list), and its text. */
   let adding = $state<string | null>(null);
@@ -88,7 +84,6 @@
       kind: "string",
       text,
       edit: { editable: "surgical" },
-      secret: false,
     };
   }
 
@@ -121,10 +116,6 @@
   function focusOnMount(node: HTMLInputElement): void {
     node.focus();
   }
-
-  const reveal = (path: string): void => {
-    revealed = toggle(revealed, path);
-  };
 
   /** The table a card holds alone (a TOON table is its own card). */
   function tableOf(group: Group): Table | null {
@@ -288,7 +279,7 @@
         </header>
       {/if}
       {#if open && table}
-        <SheetTable {table} {editable} {revealed} {reveal} {commit} {edit} />
+        <SheetTable {table} {editable} {commit} {edit} />
       {:else if open}
         <div class="rows">
           {#each group.rows as row (row.path + "@" + row.line)}
@@ -304,8 +295,6 @@
                       scalar={pseudo(row, value.text)}
                       label={value.text}
                       {editable}
-                      revealed={false}
-                      reveal={() => {}}
                       {commit}
                     />
                   {:else}
@@ -387,14 +376,7 @@
                 {/if}
                 <div class="body">
                   {#if value.type === "scalar"}
-                    <SheetValue
-                      scalar={value}
-                      label={row.key}
-                      {editable}
-                      revealed={revealed.has(value.path)}
-                      {reveal}
-                      {commit}
-                    />
+                    <SheetValue scalar={value} label={row.key} {editable} {commit} />
                   {:else if value.type === "list"}
                     <span class="chips">
                       {#each value.items as item (item.path)}
@@ -403,31 +385,16 @@
                             scalar={item}
                             label={`${row.key} ${item.path.slice(row.path.length)}`}
                             {editable}
-                            revealed={revealed.has(item.path)}
-                            {reveal}
                             {commit}
                           />
                         </span>
                       {/each}
                     </span>
                   {:else if value.type === "table"}
-                    <SheetTable table={value} {editable} {revealed} {reveal} {commit} {edit} />
+                    <SheetTable table={value} {editable} {commit} {edit} />
                   {:else}
-                    {@const masked = value.secret && !revealed.has(row.path)}
                     <span class="rawbox">
-                      <pre class="raw">{masked ? MASK : value.text}</pre>
-                      {#if value.secret}
-                        <button
-                          type="button"
-                          class="icon-btn icon-btn--sm"
-                          aria-pressed={!masked}
-                          aria-label={masked ? t("config.reveal") : t("config.hide")}
-                          title={masked ? t("config.reveal") : t("config.hide")}
-                          onclick={() => reveal(row.path)}
-                        >
-                          {#if masked}<Eye size={14} />{:else}<EyeOff size={14} />{/if}
-                        </button>
-                      {/if}
+                      <pre class="raw">{value.text}</pre>
                       <span class="lock" title={t(reasonKey(value.reason))}>
                         <Lock size={12} aria-label={t(reasonKey(value.reason))} />
                       </span>
