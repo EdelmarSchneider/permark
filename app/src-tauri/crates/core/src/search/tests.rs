@@ -328,6 +328,122 @@ Shared login for staging: password: hunter2 is rotated by the ops team every mon
     }
 }
 
+// ---- the agent's view: secret values are not there ------------------------------------------------------------
+
+fn agent(index: &Bm25, query: &str) -> Vec<SectionHit> {
+    index.search_for(Reader::Agent, query, 10, None)
+}
+
+const OPS: &str =
+    "# Ops\n\nShared login for staging: password: hunter2 is rotated by the ops team.\n";
+
+#[test]
+fn the_agent_never_finds_a_word_that_is_only_inside_a_secret_value() {
+    let mut index = Bm25::new();
+    doc(&mut index, "ops.md", OPS);
+    doc(&mut index, "other.md", "# Other\n\nnothing to see\n");
+    // the person still finds the value (the snippet hides it)
+    assert_eq!(paths_of(&index.search("hunter2", 5, None)), ["ops.md"]);
+    // the agent: no hit on the value, nor on any of its prefixes
+    for query in ["hunter2", "hunter", "hunt", "hun", "hu", "h", "HUNTER2"] {
+        assert!(agent(&index, query).is_empty(), "{query}");
+    }
+    // the words around it are found as before
+    assert_eq!(paths_of(&agent(&index, "staging")), ["ops.md"]);
+    assert_eq!(paths_of(&agent(&index, "password")), ["ops.md"]);
+}
+
+#[test]
+fn the_agent_ranks_as_if_the_secret_values_were_not_in_the_files() {
+    let texts = [
+        ("ops.md", OPS),
+        (
+            "deploy.md",
+            "# Deploy\n\nThe staging deploy uses API_KEY=sk-live-AbCdEf0123456789xyz for the ops team.\n",
+        ),
+        ("team.md", "# Team\n\nThe ops team owns staging.\n"),
+        ("plain.md", "# Plain\n\nhunter2 is also the name of a staging host.\n"),
+    ];
+    let mut with = Bm25::new();
+    let mut without = Bm25::new();
+    for (path, text) in texts {
+        doc(&mut with, path, text);
+        // the same text with the words of its secret values taken out
+        let gone = crate::secrets::mask_text(text).replace(crate::secrets::HIDDEN, "");
+        doc(&mut without, path, &gone);
+    }
+    for query in [
+        "staging",
+        "ops team",
+        "hunter2",
+        "hunter2 staging",
+        "sk",
+        "sk-live",
+        "abcdef0123456789xyz",
+        "staging hun",
+        "the",
+    ] {
+        let seen: Vec<(String, f32)> = agent(&with, query)
+            .into_iter()
+            .map(|h| (h.path, h.score))
+            .collect();
+        let expected: Vec<(String, f32)> = without
+            .search(query, 10, None)
+            .into_iter()
+            .map(|h| (h.path, h.score))
+            .collect();
+        assert_eq!(
+            seen.iter().map(|(p, _)| p).collect::<Vec<_>>(),
+            expected.iter().map(|(p, _)| p).collect::<Vec<_>>(),
+            "{query}"
+        );
+        for ((_, a), (_, b)) in seen.iter().zip(&expected) {
+            assert!((a - b).abs() < 1e-4, "{query}: {a} vs {b}");
+        }
+    }
+    // the value that is also an ordinary word elsewhere: only that place answers
+    assert_eq!(paths_of(&agent(&with, "hunter2")), ["plain.md"]);
+}
+
+#[test]
+fn secret_words_never_take_the_places_of_a_prefix() {
+    // more secret words with the prefix than a prefix expands to, sorted before the ordinary word
+    let mut secrets = String::from("# Keys\n\n");
+    for n in 0..80 {
+        let _ = writeln!(secrets, "API_KEY_{n}=zz{n:03}secretvalue{n}");
+    }
+    assert!(
+        !crate::secrets::mask_text(&secrets).contains("zz0"),
+        "the fixture's values are secret values"
+    );
+    let mut index = Bm25::new();
+    doc(&mut index, "keys.md", &secrets);
+    doc(&mut index, "word.md", "# Word\n\nzzword is ordinary\n");
+    assert_eq!(paths_of(&agent(&index, "zz")), ["word.md"]);
+    // the person's prefix is taken up by the 64 first terms (unchanged behavior)
+    assert!(!paths_of(&index.search("zz", 10, None)).contains(&"word.md"));
+}
+
+#[test]
+fn removing_or_changing_a_document_keeps_the_agent_view_right() {
+    let mut index = Bm25::new();
+    let ops = doc(&mut index, "ops.md", OPS);
+    let plain = doc(&mut index, "plain.md", "# Plain\n\nhunter2 here\n");
+    assert_eq!(paths_of(&agent(&index, "hunter2")), ["plain.md"]);
+    index.remove(&plain);
+    assert!(agent(&index, "hunter2").is_empty());
+    index.remove(&ops);
+    assert!(agent(&index, "hunter2").is_empty() && agent(&index, "staging").is_empty());
+    // the same word, now ordinary text: found again
+    doc(&mut index, "ops.md", "# Ops\n\nhunter2 is a host name\n");
+    assert_eq!(paths_of(&agent(&index, "hunter2")), ["ops.md"]);
+    // and secret again
+    let again = doc(&mut index, "x.md", OPS);
+    index.remove(&again);
+    doc(&mut index, "x.md", OPS);
+    assert_eq!(paths_of(&agent(&index, "hunter2")), ["ops.md"]);
+}
+
 #[test]
 fn snippet_marks_cjk_matches_once() {
     let mut index = Bm25::new();

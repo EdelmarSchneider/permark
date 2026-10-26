@@ -82,9 +82,27 @@ fn count_into(text: &str, weight: u32, terms: &mut HashMap<String, u32>, len: &m
     }
 }
 
-fn section_input(section: Section, file_name: Option<&str>) -> SectionInput {
+/// The weighted terms of a section's headings + body + file name. `secrets::mask_text` applied first to the headings +
+/// body when `Masked::Yes` (the file name is no secret value).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Masked {
+    No,
+    Yes,
+}
+
+fn count_section(
+    section: &Section,
+    file_name: Option<&str>,
+    masked: Masked,
+) -> (HashMap<String, u32>, u32) {
     let mut terms: HashMap<String, u32> = HashMap::new();
     let mut len = 0_u32;
+    let shown = |text: &str| -> String {
+        match masked {
+            Masked::No => text.to_owned(),
+            Masked::Yes => crate::secrets::mask_text(text).into_owned(),
+        }
+    };
     let own = section.heading_path.len().saturating_sub(1);
     for (at, heading) in section.heading_path.iter().enumerate() {
         let weight = if at == own {
@@ -92,12 +110,41 @@ fn section_input(section: Section, file_name: Option<&str>) -> SectionInput {
         } else {
             W_ANCESTOR_HEADING
         };
-        count_into(heading, weight, &mut terms, &mut len);
+        count_into(&shown(heading), weight, &mut terms, &mut len);
     }
-    count_into(&section.text, W_BODY, &mut terms, &mut len);
+    count_into(&shown(&section.text), W_BODY, &mut terms, &mut len);
     if let Some(name) = file_name {
         count_into(name, W_FILE_NAME, &mut terms, &mut len);
     }
+    (terms, len)
+}
+
+/// The part of `terms` that comes from inside secret values: what is gone once they are masked. Empty (one cheap
+/// check per text) when the section holds none.
+fn hidden_terms(
+    section: &Section,
+    file_name: Option<&str>,
+    terms: &HashMap<String, u32>,
+) -> Vec<(String, u32)> {
+    let has_secret = std::iter::once(section.text.as_str())
+        .chain(section.heading_path.iter().map(String::as_str))
+        .any(|text| matches!(crate::secrets::mask_text(text), std::borrow::Cow::Owned(_)));
+    if !has_secret {
+        return Vec::new();
+    }
+    let (shown, _) = count_section(section, file_name, Masked::Yes);
+    terms
+        .iter()
+        .filter_map(|(term, &tf)| {
+            let gone = tf.saturating_sub(shown.get(term).copied().unwrap_or(0));
+            (gone > 0).then(|| (term.clone(), gone))
+        })
+        .collect()
+}
+
+fn section_input(section: Section, file_name: Option<&str>) -> SectionInput {
+    let (terms, len) = count_section(&section, file_name, Masked::No);
+    let hidden = hidden_terms(&section, file_name, &terms);
     SectionInput {
         heading_path: section.heading_path,
         anchor: section.anchor,
@@ -105,6 +152,7 @@ fn section_input(section: Section, file_name: Option<&str>) -> SectionInput {
         text: section.text,
         terms: terms.into_iter().collect(),
         len,
+        hidden,
     }
 }
 

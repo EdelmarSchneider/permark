@@ -13,6 +13,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - The count next to **Broken links** is now the opened folder's own, and it shows only once PerMark has looked through all the documents. Before, it also counted the broken links of the git worktrees linked to the folder, so a folder with only a few broken links could show thousands, and the worktrees' links could push the folder's own off the list. When a linked worktree has broken links too, the tab now shows them apart: **This folder** first, then a section for each worktree (**Linked worktree** and its name), each with its count. A folder without linked worktrees looks as before. Thanks to @pkyes54 for the report (#62). <!-- f: broken-links -->
 - When PerMark can't read some of the data it saved (for example because another program has the file open at that moment), it now tries again for a moment, then leaves the file as it is and doesn't write over it until it can read it again, usually after a restart. Before, it went on with empty defaults and could save them over that data, so the windows and tabs from last time, or other things it remembered, could be lost for good. When this happens to the windows and tabs from last time, a quiet note names the file. <!-- f: session-restore -->
 - Web pictures are now only fetched from public internet addresses. <!-- f: pictures-in-documents -->
+- Search by AI agents now only matches the text agents are shown, with secret values hidden. <!-- f: agent-connection, search -->
 
 ## [0.7.0] - 2026-10-23
 
