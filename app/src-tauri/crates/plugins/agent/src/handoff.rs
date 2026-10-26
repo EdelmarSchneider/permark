@@ -242,6 +242,211 @@ fn shown(rows: Vec<Row>, guard: &Guard) -> (Vec<Row>, usize) {
     (kept, hidden)
 }
 
+/// A frozen package as it is served now: rows naming a path hidden since it was frozen are left out and counted in
+/// `hidden=` (the counts of the header and of each sub-table follow). Byte for byte the frozen text when none is.
+pub(crate) fn frozen_now(text: &str, hidden: &dyn Fn(&str, bool) -> bool) -> String {
+    let mut lines = text.split_inclusive('\n');
+    let Some(head) = lines.next() else {
+        return String::new();
+    };
+    let mut out: Vec<String> = Vec::new();
+    // the open sub-table: its line in `out`, whether it counts folders, rows kept | left out
+    let mut open: Option<(usize, bool, usize, usize)> = None;
+    let (mut left_rows, mut left_folders, mut gone_sessions, mut kept_any) = (0, 0, 0, false);
+    let mut close = |out: &mut Vec<String>, open: Option<(usize, bool, usize, usize)>| {
+        let Some((at, _, kept, left)) = open else {
+            return;
+        };
+        if left == 0 {
+            return;
+        }
+        if kept == 0 {
+            if out[at].starts_with("-- session ") {
+                gone_sessions += 1;
+            }
+            out.remove(at);
+        } else {
+            let key = if out[at].starts_with("-- session ") {
+                "rows"
+            } else {
+                "n"
+            };
+            out[at] = with_count(&out[at], key, Some(kept), &[]);
+        }
+    };
+    for line in lines {
+        if line.starts_with("-- ") {
+            close(&mut out, open.take());
+            open = Some((out.len(), line.starts_with("-- outside_folders"), 0, 0));
+            out.push(line.to_owned());
+            continue;
+        }
+        if !line.contains('\t') {
+            out.push(line.to_owned());
+            continue;
+        }
+        let folders = open.is_some_and(|o| o.1);
+        let gone = if folders {
+            let folder = line.split('\t').next().unwrap_or_default();
+            let folder = uncell(folder.trim_end_matches('/'));
+            folder != "." && hidden(&folder, true)
+        } else {
+            row_paths(line).iter().any(|p| hidden(p, false))
+        };
+        if let Some(o) = open.as_mut() {
+            if gone {
+                o.3 += 1;
+            } else {
+                o.2 += 1;
+            }
+        }
+        if gone {
+            if folders {
+                left_folders += 1;
+            } else {
+                left_rows += 1;
+            }
+        } else {
+            kept_any = true;
+            out.push(line.to_owned());
+        }
+    }
+    close(&mut out, open.take());
+    if left_rows + left_folders == 0 {
+        return text.to_owned();
+    }
+    if !kept_any {
+        out.retain(|l| !l.starts_with("#cols "));
+    }
+    let mut first = head.to_owned();
+    let count = |line: &str, key: &str| -> usize {
+        line.trim_end()
+            .split(' ')
+            .find_map(|t| t.strip_prefix(key)?.strip_prefix('=')?.parse().ok())
+            .unwrap_or(0)
+    };
+    let n = count(&first, "n").saturating_sub(left_rows);
+    let sessions = count(&first, "sessions").saturating_sub(gone_sessions);
+    let was_hidden = count(&first, "hidden");
+    first = with_count(&first, "n", Some(n), &[]);
+    first = with_count(
+        &first,
+        "sessions",
+        (sessions > 0).then_some(sessions),
+        &["n"],
+    );
+    first = with_count(
+        &first,
+        "hidden",
+        Some(was_hidden + left_rows + left_folders),
+        &["n", "sessions"],
+    );
+    first + &out.concat()
+}
+
+/// A header line with `key=count` set (`None`: removed); a new one goes after the last of `after` it holds.
+fn with_count(line: &str, key: &str, count: Option<usize>, after: &[&str]) -> String {
+    let (body, end) = line.split_at(line.trim_end_matches(['\n', '\r']).len());
+    let is = |t: &str, k: &str| {
+        t.strip_prefix(k)
+            .and_then(|r| r.strip_prefix('='))
+            .is_some_and(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()))
+    };
+    let mut tokens: Vec<String> = body.split(' ').map(str::to_owned).collect();
+    let set = count.map(|c| format!("{key}={c}"));
+    if let Some(at) = tokens.iter().position(|t| is(t, key)) {
+        match set {
+            Some(t) => tokens[at] = t,
+            None => {
+                tokens.remove(at);
+            }
+        }
+    } else if let Some(t) = set {
+        let at = tokens
+            .iter()
+            .rposition(|t| after.iter().any(|k| is(t, k)))
+            .map_or(tokens.len(), |at| at + 1);
+        tokens.insert(at, t);
+    }
+    tokens.join(" ") + end
+}
+
+/// The paths an activity row line names: its path, where it came from (`from=` | `saved=`), where it went.
+fn row_paths(line: &str) -> Vec<String> {
+    let fields: Vec<&str> = line.trim_end_matches(['\n', '\r']).split('\t').collect();
+    let mut paths = Vec::new();
+    if let Some(path) = fields.get(4) {
+        paths.push(uncell(path));
+    }
+    let detail = uncell(fields.get(5).copied().unwrap_or_default());
+    let other = match fields.get(3).copied() {
+        Some("renamed" | "moved") => detail.strip_prefix("from="),
+        Some("converted") => detail.find("saved=").map(|at| &detail[at + 6..]),
+        _ => None,
+    };
+    if let Some(rest) = other {
+        paths.push(header_value(rest));
+    }
+    let flags = uncell(fields.get(6).copied().unwrap_or_default());
+    let mut rest = flags.as_str();
+    while let Some(at) = rest.find("moved_to=") {
+        if at > 0 && !rest[..at].ends_with(',') {
+            rest = &rest[at + 9..];
+            continue;
+        }
+        let tail = &rest[at + 9..];
+        let end = [",gone", ",section_gone=", ",changed_since", ",moved_to="]
+            .iter()
+            .filter_map(|f| {
+                tail.match_indices(f).map(|(i, _)| i).find(|i| {
+                    tail[i + f.len()..].is_empty()
+                        || f.ends_with('=')
+                        || tail[i + f.len()..].starts_with(',')
+                })
+            })
+            .min()
+            .unwrap_or(tail.len());
+        paths.push(tail[..end].to_owned());
+        rest = &tail[end..];
+    }
+    paths
+}
+
+/// A header value read back: a JSON string, or the text up to the first space.
+fn header_value(text: &str) -> String {
+    if text.starts_with('"') {
+        if let Some(Ok(value)) = serde_json::Deserializer::from_str(text)
+            .into_iter::<String>()
+            .next()
+        {
+            return value;
+        }
+    }
+    text.split(' ').next().unwrap_or_default().to_owned()
+}
+
+/// A table cell read back (`\t`, `\n`, `\r`, `\\` unescaped).
+fn uncell(text: &str) -> String {
+    if !text.contains('\\') {
+        return text.to_owned();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('t') => out.push('\t'),
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some(other) => out.push(other),
+            None => out.push('\\'),
+        }
+    }
+    out
+}
 /// The changes outside: one row per file when few (or the person touched it), else counted per folder.
 struct Outside {
     rows: Vec<Row>,
@@ -675,7 +880,11 @@ pub fn activity_tool(
     if since == "handoff" && by.is_none() && limit.is_none() {
         return Ok(match &journal.package {
             // masked again: a package frozen by an older version may name a secret heading
-            Some(package) => json!({ "frozen": permark_core::secrets::mask_text(&package.text) }),
+            Some(package) => json!({
+                "frozen": permark_core::secrets::mask_text(&frozen_now(&package.text, &|path, is_dir| {
+                    guard.hidden(path, is_dir)
+                }))
+            }),
             None => json!({ "since": "handoff", "tz": format::tz(), "no_handoff": true }),
         });
     }
