@@ -1246,7 +1246,7 @@ export default {
   "agent.title": "エージェント接続",
   "agent.switch": "このプロジェクトをエージェントと共有",
   "agent.switchHint":
-    "接続したエージェント（Claude Code や Cursor など、MCP に対応した AI ツール）は、表示中の内容や変更点の確認、このプロジェクトのファイルの検索と読み取り、コメントと共有したメモの読み取り、特定の場所の表示ができます。このコンピューター上でのみ動作します。PerMark が認識したパスワードやキーは非表示のままで、エージェントが PerMark を通じてファイルを編集することはありません。これは PerMark からエージェントに渡る情報だけが対象です。エージェントは、コンピューター上のファイルを独自に開くこともできます。",
+    "接続したエージェント（Claude Code や Cursor など、MCP に対応した AI ツール）は、表示中の内容や変更点の確認、このプロジェクトのファイルの検索と読み取り、コメントと共有したメモの読み取り、特定の場所の表示ができます。このコンピューター上でのみ動作します。.aiignore に記載したファイルはエージェントから見えず、エージェントが PerMark を通じてファイルを編集することはありません。これは PerMark からエージェントに渡る情報だけが対象です。エージェントは、コンピューター上のファイルを独自に開くこともできます。",
   "agent.groups": "エージェントに許可すること",
   "agent.group.context": "表示中の内容を見る",
   "agent.group.changes": "変更点を見る",
@@ -1357,9 +1357,6 @@ export default {
   "config.sheet": "このファイルの設定",
   "config.root": "最上位",
   "config.fold": "{name} を折りたたむ/展開",
-  "config.reveal": "値を表示",
-  "config.hide": "値を隠す",
-  "config.hidden": "非表示の値",
   "config.empty": "空",
   "config.valueOf": "{key} の値",
   "config.fromSource": "ソースで編集",
@@ -1563,8 +1560,7 @@ export default {
   "plugin.fmt-ini.name": "INI と cfg ファイル",
   "plugin.fmt-ini.about": "INI ファイルを見やすいシートとして表示し、値を 1 つずつ編集できます。",
   "plugin.fmt-dotenv.name": "Dotenv ファイル",
-  "plugin.fmt-dotenv.about":
-    ".env ファイルを見やすいシートとして表示します。シークレット値は隠されたままです。",
+  "plugin.fmt-dotenv.about": ".env ファイルを見やすいシートとして表示します。",
   "plugin.fmt-properties.name": "Properties ファイル",
   "plugin.fmt-properties.about":
     ".properties ファイルを見やすいシートとして表示し、値を 1 つずつ編集できます。",
@@ -1887,8 +1883,6 @@ export default {
   "convert.tooLarge": "このソースは 50 MB を超えているため、ここでは変換できません。",
   "convert.invalid": "有効な {format} ではありません。",
   "convert.failed": "変換に失敗しました。",
-  "convert.secrets.one": "{n} 個のシークレット値が含まれています。プレビューではマスクされます。",
-  "convert.secrets.other": "{n} 個のシークレット値が含まれています。プレビューではマスクされます。",
   "convert.targets": "形式",
   "convert.best": "最適",
   "convert.fits": "適合",
@@ -1899,8 +1893,6 @@ export default {
   "convert.approxHint":
     "~ = 推定トークン数。正確な数を得るには、「トークン数」で GPT のトークナイザーをメインにして、その語彙をダウンロードしてください。",
   "convert.exactHint": "表示されているトークナイザーで数えています。",
-  "convert.confirmSecrets.one": "結果には {n} 個のシークレット値が含まれています。",
-  "convert.confirmSecrets.other": "結果には {n} 個のシークレット値が含まれています。",
   "convert.copied": "コピーしました。",
   "convert.saved": "{path} として保存しました",
   "convert.actionFailed": "うまくいきませんでした。",

@@ -1244,7 +1244,7 @@ export default {
   "agent.title": "Connexió amb agents",
   "agent.switch": "Comparteix aquest projecte amb agents",
   "agent.switchHint":
-    "Un agent que connecteu (una eina d'IA compatible amb MCP, com ara Claude Code o Cursor) pot veure el que esteu mirant i què ha canviat, cercar i llegir els fitxers d'aquest projecte, llegir els vostres comentaris i les notes que compartiu, i mostrar-vos un lloc. Només en aquest ordinador. Les contrasenyes i les claus que el PerMark reconeix es mantenen ocultes, i els agents mai no editen fitxers a través del PerMark. Això només cobreix el que els agents obtenen del PerMark: un agent encara pot obrir fitxers del vostre ordinador pel seu compte.",
+    "Un agent que connecteu (una eina d'IA compatible amb MCP, com ara Claude Code o Cursor) pot veure el que esteu mirant i què ha canviat, cercar i llegir els fitxers d'aquest projecte, llegir els vostres comentaris i les notes que compartiu, i mostrar-vos un lloc. Només en aquest ordinador. Els fitxers que llista .aiignore queden fora del seu abast, i els agents mai no editen fitxers a través del PerMark. Això només cobreix el que els agents obtenen del PerMark: un agent encara pot obrir fitxers del vostre ordinador pel seu compte.",
   "agent.groups": "Què poden fer els agents",
   "agent.group.context": "Veure el que esteu mirant",
   "agent.group.changes": "Veure què ha canviat",
@@ -1358,9 +1358,6 @@ export default {
   "config.sheet": "Paràmetres d'aquest fitxer",
   "config.root": "Nivell superior",
   "config.fold": "Plega o desplega {name}",
-  "config.reveal": "Mostra el valor",
-  "config.hide": "Amaga el valor",
-  "config.hidden": "Valor amagat",
   "config.empty": "buit",
   "config.valueOf": "Valor de {key}",
   "config.fromSource": "Edita al codi font",
@@ -1570,8 +1567,7 @@ export default {
   "plugin.fmt-ini.about":
     "Llegeix els fitxers INI com un full net i n'edita els valors d'un en un.",
   "plugin.fmt-dotenv.name": "Fitxers dotenv",
-  "plugin.fmt-dotenv.about":
-    "Llegeix els fitxers .env com un full net; els valors secrets es mantenen amagats.",
+  "plugin.fmt-dotenv.about": "Llegeix els fitxers .env com un full net.",
   "plugin.fmt-properties.name": "Fitxers .properties",
   "plugin.fmt-properties.about":
     "Llegeix els fitxers .properties com un full net i n'edita els valors d'un en un.",
@@ -1895,8 +1891,6 @@ export default {
   "convert.tooLarge": "Aquest origen supera els 50 MB; és massa gran per a convertir-lo aquí.",
   "convert.invalid": "No és {format} vàlid.",
   "convert.failed": "La conversió no ha funcionat.",
-  "convert.secrets.one": "Conté {n} valor secret: emmascarat a la previsualització.",
-  "convert.secrets.other": "Conté {n} valors secrets: emmascarats a la previsualització.",
   "convert.targets": "Formats",
   "convert.best": "millor",
   "convert.fits": "Adequat",
@@ -1907,8 +1901,6 @@ export default {
   "convert.approxHint":
     "~ = tokens estimats. Per a tenir xifres exactes, feu que un tokenitzador GPT sigui el principal a Recompte de tokens i baixeu-ne el vocabulari.",
   "convert.exactHint": "Comptat pel tokenitzador que es mostra.",
-  "convert.confirmSecrets.one": "El resultat conté {n} valor secret.",
-  "convert.confirmSecrets.other": "El resultat conté {n} valors secrets.",
   "convert.copied": "S'ha copiat.",
   "convert.saved": "S'ha desat com a {path}",
   "convert.actionFailed": "No ha funcionat.",

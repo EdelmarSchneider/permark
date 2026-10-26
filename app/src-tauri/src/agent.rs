@@ -14,8 +14,7 @@ use permark_plugin_agent::cli::{launch_app, Agent, Compose, Composed};
 use permark_plugin_agent::tools::Tools;
 
 /// The plugins a reader with no window starts: what the tools ask of (tags, comments, unread, notes, the token
-/// count when the person turned it on) and the config formats, so secret values are hidden by the structure of the
-/// file here too.
+/// count when the person turned it on) and the config formats, so config files have their structure here too.
 const FILES_PLUGINS: [&str; 12] = [
     "tags",
     "comments",
@@ -215,10 +214,11 @@ mod tests {
         assert_eq!(names, ["README.md", "docs"]);
     }
 
-    /// Config files are hidden by their structure in files mode: no secret value in `read` | `outline` | `search`.
+    /// Config files reach the agent as the file holds them in files mode: `read` gives the text as written, `outline`
+    /// the structure, `search` the key names.
     #[test]
     #[allow(clippy::too_many_lines)] // one project, every format, every way out
-    fn config_secrets_never_reach_the_agent() {
+    fn config_files_reach_the_agent_as_written() {
         let dir = tempfile::tempdir().unwrap();
         let root_dir = dir.path().join("proj");
         std::fs::create_dir_all(&root_dir).unwrap();
@@ -289,32 +289,10 @@ users[2]{name,token}:
             .unwrap();
         let composed = compose(dirs.clone())(&root).unwrap();
         let tools = &composed.tools;
-        let secrets = [
-            "abc123xyz",
-            "dbpass",
-            "bobby",
-            "p4ssw0rd",
-            "tok-777",
-            "hunter2",
-            "letmein",
-            "pw-prop",
-            "npm_tok_999",
-            "tok-toon-1",
-            "tok-toon-2",
-        ];
-        for (name, _) in files {
-            let whole = tools.call("read", json!({ "path": name })).unwrap();
-            let outline = tools.call("outline", json!({ "path": name })).unwrap();
-            let both = format!("{whole}{outline}");
-            for secret in secrets {
-                assert!(!both.contains(secret), "{name}: {secret} leaked: {both}");
-            }
-        }
-        // what stays: keys, plain values, the structure
         let env = tools.call("read", json!({ "path": ".env" })).unwrap();
         let text = env["text"].as_str().unwrap();
         assert!(
-            text.contains("API_KEY=<hidden>") && text.contains("PORT=3000"),
+            text.contains("API_KEY=abc123xyz") && text.contains("PORT=3000"),
             "{text}"
         );
         let outline = tools
@@ -333,7 +311,7 @@ users[2]{name,token}:
             .unwrap();
         let text = part["text"].as_str().unwrap();
         assert!(
-            text.contains("host = \"example.org\"") && text.contains("api_token = <hidden>"),
+            text.contains("host = \"example.org\"") && text.contains("api_token = \"tok-777\""),
             "{text}"
         );
         assert_eq!(part["lines"], json!([5, 7]), "{part}");
@@ -345,10 +323,10 @@ users[2]{name,token}:
             .unwrap();
         let text = key_path["text"].as_str().unwrap();
         assert!(
-            text.contains("DB_PASSWORD: <hidden>") && text.contains("MODE: prod"),
+            text.contains("DB_PASSWORD: hunter2") && text.contains("MODE: prod"),
             "{text}"
         );
-        // a TOON file: its tables in the outline, a row read by its path, the secret column hidden
+        // a TOON file: its tables in the outline, a row read by its path
         let outline = tools
             .call("outline", json!({ "path": "team.toon" }))
             .unwrap();
@@ -361,15 +339,11 @@ users[2]{name,token}:
         let row = tools
             .call("read", json!({ "path": "team.toon", "at": "users[1]" }))
             .unwrap();
-        assert_eq!(row["text"], "  Bob,<hidden>\n", "{row}");
-        // search finds keys, never values; first the index must hold the config files, else "no hit" proves nothing
+        assert_eq!(row["text"], "  Bob,tok-toon-2\n", "{row}");
+        // search finds config keys; first the index must hold the config files, else "no hit" proves nothing
         let found = |query: &str| -> Vec<String> {
             let answer = tools.call("search", json!({ "query": query })).unwrap();
             assert_eq!(answer["partial"], false, "index ready: {answer}");
-            assert!(
-                !answer["hits"].to_string().contains("hunter2"),
-                "{query}: {answer}"
-            );
             answer["hits"]
                 .as_array()
                 .unwrap()
@@ -385,10 +359,6 @@ users[2]{name,token}:
             "config keys indexed once the index is ready"
         );
         assert!(found("api_token").contains(&"deploy.toml".to_owned()));
-        for secret in secrets {
-            let hits = found(secret);
-            assert!(hits.is_empty(), "{secret} found in {hits:?}");
-        }
     }
 
     /// Waits until a search answers complete (`partial: false`): the first build of the index ended.

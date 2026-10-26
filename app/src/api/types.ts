@@ -40,7 +40,6 @@ import type { Row } from "./generated/Row";
 import type { RowValue } from "./generated/RowValue";
 import type { Scalar } from "./generated/Scalar";
 import type { ScalarKind } from "./generated/ScalarKind";
-import type { SecretRange } from "./generated/SecretRange";
 import type { Sheet } from "./generated/Sheet";
 import type { Group } from "./generated/Group";
 import type { LineEdit } from "./generated/LineEdit";
@@ -223,7 +222,6 @@ export type {
   RowValue,
   Scalar,
   ScalarKind,
-  SecretRange,
   Sheet,
   LineEdit,
   Measure,
@@ -641,11 +639,11 @@ export interface PluginMethods {
     result: ConvertAnswer;
   };
   "convert.result": {
-    args: { job: number; target: string; confirmed?: boolean };
+    args: { job: number; target: string };
     result: string;
   };
   "convert.save": {
-    args: { job: number; target: string; confirmed?: boolean; beside?: string };
+    args: { job: number; target: string; beside?: string };
     result: string;
   };
   "convert.cancel": { args: { job: number }; result: null };
@@ -961,7 +959,6 @@ export interface Api {
   configSheet(path: string, text: string): Promise<Result<Body>>;
   /** One value edit on the editor's text: the new text (only that value changed) and its sheet. */
   configEdit(path: string, text: string, edit: ConfigEdit): Promise<Result<ConfigEdited>>;
-  /** Where the secret values of the text are (UTF-16 units). */
   /** How many project files each pattern of an ignore file matches (`text`: the editor's version, else the disk's). */
   ignoreMatches(path: string, text: string | null): Promise<Result<IgnoreMatches>>;
   /** Measures of the enabled analyses, of a document (`path`) or a text. */

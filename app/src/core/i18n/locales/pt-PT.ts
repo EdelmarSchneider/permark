@@ -1244,7 +1244,7 @@ export default {
   "agent.title": "Ligação a agentes",
   "agent.switch": "Partilhar este projeto com agentes",
   "agent.switchHint":
-    "Um agente que ligar (uma ferramenta de IA compatível com MCP, como o Claude Code ou o Cursor) pode ver o que está a ver e o que mudou, pesquisar e ler os ficheiros deste projeto, ler os seus comentários e as notas que partilhar, e mostrar-lhe um local. Só neste computador. As palavras-passe e as chaves que o PerMark reconhece ficam ocultas, e os agentes nunca editam ficheiros através do PerMark. Isto abrange apenas o que os agentes obtêm do PerMark: um agente pode continuar a abrir ficheiros no seu computador por si próprio.",
+    "Um agente que ligar (uma ferramenta de IA compatível com MCP, como o Claude Code ou o Cursor) pode ver o que está a ver e o que mudou, pesquisar e ler os ficheiros deste projeto, ler os seus comentários e as notas que partilhar, e mostrar-lhe um local. Só neste computador. Os ficheiros listados no .aiignore ficam fora do seu alcance, e os agentes nunca editam ficheiros através do PerMark. Isto abrange apenas o que os agentes obtêm do PerMark: um agente pode continuar a abrir ficheiros no seu computador por si próprio.",
   "agent.groups": "O que os agentes podem fazer",
   "agent.group.context": "Ver o que está a ver",
   "agent.group.changes": "Ver o que mudou",
@@ -1354,9 +1354,6 @@ export default {
   "config.sheet": "Definições deste ficheiro",
   "config.root": "Nível superior",
   "config.fold": "Recolher ou expandir {name}",
-  "config.reveal": "Mostrar valor",
-  "config.hide": "Ocultar valor",
-  "config.hidden": "Valor oculto",
   "config.empty": "vazio",
   "config.valueOf": "Valor de {key}",
   "config.fromSource": "Editar no Código-fonte",
@@ -1567,8 +1564,7 @@ export default {
   "plugin.fmt-ini.name": "Ficheiros INI e cfg",
   "plugin.fmt-ini.about": "Mostra ficheiros INI como uma folha limpa e edita um valor de cada vez.",
   "plugin.fmt-dotenv.name": "Ficheiros dotenv",
-  "plugin.fmt-dotenv.about":
-    "Mostra ficheiros .env como uma folha limpa; os valores secretos ficam ocultos.",
+  "plugin.fmt-dotenv.about": "Mostra ficheiros .env como uma folha limpa.",
   "plugin.fmt-properties.name": "Ficheiros .properties",
   "plugin.fmt-properties.about":
     "Mostra ficheiros .properties como uma folha limpa e edita um valor de cada vez.",
@@ -1889,8 +1885,6 @@ export default {
   "convert.tooLarge": "Esta origem tem mais de 50 MB, é demasiado grande para converter aqui.",
   "convert.invalid": "Isto não é {format} válido.",
   "convert.failed": "A conversão não funcionou.",
-  "convert.secrets.one": "Contém {n} valor secreto: ocultado na pré-visualização.",
-  "convert.secrets.other": "Contém {n} valores secretos: ocultados na pré-visualização.",
   "convert.targets": "Formatos",
   "convert.best": "melhor",
   "convert.fits": "Adequado",
@@ -1901,8 +1895,6 @@ export default {
   "convert.approxHint":
     "~ = tokens estimados. Para números exatos, torne um tokenizador GPT o principal em Contagem de tokens e transfira o respetivo vocabulário.",
   "convert.exactHint": "Contado pelo tokenizador apresentado.",
-  "convert.confirmSecrets.one": "O resultado contém {n} valor secreto.",
-  "convert.confirmSecrets.other": "O resultado contém {n} valores secretos.",
   "convert.copied": "Copiado.",
   "convert.saved": "Guardado como {path}",
   "convert.actionFailed": "Isso não funcionou.",

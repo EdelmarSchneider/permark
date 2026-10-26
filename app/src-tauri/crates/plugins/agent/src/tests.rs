@@ -1,7 +1,7 @@
 #![allow(clippy::assert_is_empty)]
 
 //! The agent connection over a real project core (search index, vault, state store) with the organizing services
-//! played by small fakes: switch, groups, hidden paths, masking, open, server sessions, proxy and files mode.
+//! played by small fakes: switch, groups, hidden paths, open, server sessions, proxy and files mode.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -603,7 +603,7 @@ fn hidden_files_never_reach_any_list_or_snippet() {
 }
 
 #[test]
-fn secrets_are_masked_in_every_text() {
+fn every_text_reaches_the_agent_as_written() {
     let fx = fx();
     fx.on();
     fx.set_choice(&ProjectChoice {
@@ -617,16 +617,13 @@ fn secrets_are_masked_in_every_text() {
     let tools = fx.tools(Some(Arc::clone(&live)));
     let read = tools.call("read", json!({ "path": "README.md" })).unwrap();
     assert!(
-        read["text"].as_str().unwrap().contains("API_KEY=<hidden>"),
+        read["text"].as_str().unwrap().contains("API_KEY=sekret123"),
         "{read}"
     );
     let search = tools.call("search", json!({ "query": "hello" })).unwrap();
     let all = search.to_string();
-    assert!(
-        all.contains("README.md"),
-        "the line with the secret is a hit: {all}"
-    );
-    assert!(!all.contains("sekret123"), "{all}");
+    assert!(all.contains("README.md"), "{all}");
+    assert!(!all.contains("<hidden>"), "{all}");
     live.publish(WindowContext {
         doc: Some("README.md".to_owned()),
         mode: Mode::View,
@@ -641,7 +638,7 @@ fn secrets_are_masked_in_every_text() {
     let context = tools.call("get_context", Value::Null).unwrap();
     assert_eq!(
         context["selection"]["text"],
-        "export GITHUB_TOKEN=<hidden> and more"
+        "export GITHUB_TOKEN=ghp_abc and more"
     );
     assert_eq!(
         context["openComments"], 1,
@@ -650,15 +647,12 @@ fn secrets_are_masked_in_every_text() {
     let note = tools
         .call("read_note", json!({ "note": "2026-10-15 1432.md" }))
         .unwrap();
-    assert_eq!(note["text"], "Deploy with password: <hidden>\n");
-    let comments = tools.call("list_comments", Value::Null).unwrap();
-    assert!(!comments.to_string().contains("sekret123"), "{comments}");
+    let note = note["text"].as_str().unwrap();
+    assert!(note.starts_with("Deploy with password: "), "{note}");
+    assert!(!note.contains("<hidden>"), "{note}");
     let tags = tools.call("search", json!({ "tags": ["plan"] })).unwrap();
-    assert!(
-        tags.to_string().contains("README.md"),
-        "the document with the secret description is listed: {tags}"
-    );
-    assert!(!tags.to_string().contains("token=abc"), "{tags}");
+    assert!(tags.to_string().contains("README.md"), "{tags}");
+    assert!(!tags.to_string().contains("<hidden>"), "{tags}");
     assert!(not_found(
         tools.call("read_note", json!({ "note": "other.md" }))
     ));
@@ -1359,12 +1353,13 @@ fn the_outline_sizes_every_part_and_counts_tokens_only_when_the_plugin_serves() 
         .call("outline", json!({ "path": "docs/sized.md" }))
         .unwrap();
     let items = exact["items"].as_array().unwrap();
-    // the whole file is 52 characters but the secret is hidden first: the counted text is what `read` returns
+    // the counted text is what `read` returns
     let top = tools
         .call("read", json!({ "path": "docs/sized.md", "at": "Top" }))
         .unwrap();
     let shown = top["text"].as_str().unwrap();
-    assert!(shown.contains("API_KEY=<hidden>"));
+    assert!(shown.contains("API_KEY="));
+    assert!(!shown.contains("<hidden>"));
     assert_eq!(
         items[0]["tokens"].as_u64().unwrap(),
         shown.chars().count() as u64 / 2
@@ -1409,7 +1404,7 @@ fn silenced_paths_stay_visible_to_agents() {
 }
 
 #[test]
-fn comment_and_context_headings_never_carry_a_secret_value() {
+fn comment_and_context_headings_leave_as_written() {
     let fx = fx();
     fx.on();
     fx.comments.0.lock().unwrap()[0].heading_path =
@@ -1419,7 +1414,7 @@ fn comment_and_context_headings_never_carry_a_secret_value() {
     let list = tools.call("list_comments", Value::Null).unwrap();
     assert_eq!(
         list["comments"][0]["headingPath"],
-        json!(["Ops", "Password: <hidden>"]),
+        json!(["Ops", "Password: qz8secret"]),
         "{list}"
     );
     live.publish(WindowContext {
@@ -1433,9 +1428,9 @@ fn comment_and_context_headings_never_carry_a_secret_value() {
     let context = tools.call("get_context", Value::Null).unwrap();
     assert_eq!(
         context["section"]["headingPath"],
-        json!(["Ops", "Password: <hidden>"]),
+        json!(["Ops", "Password: qz8secret"]),
         "{context}"
     );
     let rendered = crate::render::render("get_context", &context);
-    assert!(!rendered.contains("qz8secret"), "{rendered}");
+    assert!(rendered.contains("Password: qz8secret"), "{rendered}");
 }

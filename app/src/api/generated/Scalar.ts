@@ -9,4 +9,4 @@ export type Scalar = { path: string, kind: ScalarKind,
 /**
  * A string without its quotes; any other kind as written.
  */
-text: string, edit: Editability, secret: boolean, };
+text: string, edit: Editability, };

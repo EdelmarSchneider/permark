@@ -3,7 +3,6 @@
   // Mounted into the block's wrapper when the block comes near the screen.
   import Check from "@lucide/svelte/icons/check";
   import Copy from "@lucide/svelte/icons/copy";
-  import { findCodeSecrets, MASK } from "../../core/config/secrets";
   import CodeActions from "../../core/doc/CodeActions.svelte";
   import { t } from "../../core/i18n";
   import type { EmbedProps } from "../../core/plugins/props";
@@ -15,61 +14,22 @@
 
   let outcome = $state.raw<CodeOutcome>({ html: null, label: null });
   let copied = $state(false);
-  let revealed = $state.raw<{ source: string; ids: ReadonlySet<number> }>({
-    source: "",
-    ids: new Set(),
-  });
-
-  // Secret values are replaced by one private-use character each before highlighting (it stays one token), and the
-  // character becomes a mask button afterwards. `source` stays the real text: copy copies it.
-  const FIRST = 0xe100;
-  const spans = $derived(findCodeSecrets(source).slice(0, 4000));
-  const shown = $derived.by(() => {
-    let out = "";
-    let at = 0;
-    spans.forEach((span, i) => {
-      out += source.slice(at, span.from) + String.fromCodePoint(FIRST + i);
-      at = span.to;
-    });
-    return out + source.slice(at);
-  });
-  const open = $derived(revealed.source === source ? revealed.ids : new Set<number>());
 
   function escape(text: string): string {
     return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
-  /** The highlighted (or plain) text with the placeholders turned into masks, or into the value once revealed. */
-  const html = $derived.by(() => {
-    if (spans.length === 0) return outcome.html;
-    const base = outcome.html ?? escape(shown);
-    return base.replace(/[\ue100-\uf8ff]/g, (char) => {
-      const i = (char.codePointAt(0) ?? FIRST) - FIRST;
-      const span = spans[i];
-      if (span === undefined) return char;
-      if (open.has(i)) return escape(source.slice(span.from, span.to));
-      return `<button type="button" class="secret" data-i="${i}" title="${t("config.reveal")}" aria-label="${t("config.reveal")}">${MASK}</button>`;
-    });
-  });
-
   /** One element per line when the viewer asks for it (the plain text too, before highlighting). */
   const drawn = $derived(
-    lines ? lineSpans(html ?? escape(source), source.split("\n").map(leadCols)) : html,
+    lines
+      ? lineSpans(outcome.html ?? escape(source), source.split("\n").map(leadCols))
+      : outcome.html,
   );
-
-  function reveal(event: MouseEvent): void {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const button = target.closest("button.secret");
-    const i = Number(button?.getAttribute("data-i"));
-    if (button === null || Number.isNaN(i)) return;
-    revealed = { source, ids: new Set([...open, i]) };
-  }
 
   // highlight.js loads on first use; a block changed meanwhile ignores the old answer
   $effect(() => {
     let stale = false;
-    void highlightFence(shown, info).then((result) => {
+    void highlightFence(source, info).then((result) => {
       if (!stale) outcome = result;
     });
     return () => {
@@ -94,9 +54,8 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions, a11y_no_noninteractive_tabindex -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <pre
-  onclick={reveal}
   tabindex={region === undefined ? undefined : 0}
   role={region === undefined ? undefined : "region"}
   aria-label={region}><code

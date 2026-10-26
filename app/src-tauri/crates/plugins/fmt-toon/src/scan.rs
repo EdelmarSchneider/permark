@@ -128,7 +128,6 @@ pub fn scan(text: &str) -> Scan {
     let mut sheet = Sheet::new(SheetKind::Data);
     sheet.groups = groups;
     sheet.spec = Some(SPEC_LABEL.to_owned());
-    sheet.finalize();
     Scan {
         sheet,
         sites: scanner.sites,
@@ -236,7 +235,6 @@ impl Scanner<'_> {
             value: RowValue::Raw {
                 text: self.text[cstart..cend].to_owned(),
                 reason: reason.to_owned(),
-                secret: false,
                 span: Some(cstart..cend),
             },
             comment: None,

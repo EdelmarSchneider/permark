@@ -153,7 +153,6 @@ function plainSheet(text: string): Sheet | null {
         kind,
         text: unquote(value),
         edit: { editable: "surgical" },
-        secret: false,
       },
       comment: null,
     });

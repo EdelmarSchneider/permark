@@ -93,7 +93,6 @@ impl ConfigSyntax for Yaml {
                     value: RowValue::Raw {
                         text: text[span.clone()].trim_end().to_owned(),
                         reason: "multiDoc".to_owned(),
-                        secret: false,
                         span: Some(span),
                     },
                     comment: None,
@@ -243,7 +242,6 @@ impl Emit<'_> {
                     value: RowValue::Raw {
                         text: text.clone(),
                         reason: (*reason).to_owned(),
-                        secret: false,
                         span: Some(span.clone()),
                     },
                     comment: item.comment.clone(),
@@ -337,7 +335,6 @@ impl Emit<'_> {
                 value: RowValue::Raw {
                     text: self.text[span.clone()].to_owned(),
                     reason: "mixed".to_owned(),
-                    secret: false,
                     span: Some(span),
                 },
                 comment: caption(None, None),

@@ -691,10 +691,8 @@ describe("config files", () => {
     expect(mock.probe.edit.saves.at(-1)?.edits).toHaveLength(1);
   });
 
-  it("Source shows the raw file: secret values as they are, nothing drawn over the text", async () => {
+  it("Source shows the raw file, nothing drawn over the text", async () => {
     await open(".env.example");
-    // View masks them
-    expect(target.textContent).not.toContain("sk-live-abc123");
     modeButton("Source")?.click();
     await until(() => target.querySelector(".cm-editor") !== null, "source editor");
     await until(
@@ -702,7 +700,6 @@ describe("config files", () => {
       "raw values",
     );
     expect(target.querySelector(".cm-content")?.textContent).toContain("pa55w0rd");
-    expect(target.querySelector(".cm-secret")).toBeNull();
     expect(target.querySelector(".cm-widgetBuffer, .cm-foldPlaceholder, .preview")).toBeNull();
   });
 });

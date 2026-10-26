@@ -9,7 +9,7 @@ use std::time::UNIX_EPOCH;
 use permark_core::fsx;
 use permark_core::organizing::{TagsApi, UnreadApi};
 use permark_core::paths::VaultPath;
-use permark_core::secrets::mask_text;
+
 use serde_json::{json, Map, Value};
 
 use crate::guard::Guard;
@@ -33,7 +33,7 @@ enum Size {
 #[derive(Default)]
 pub struct SizeCache(Mutex<HashMap<String, (u64, u64, Size)>>);
 
-fn size_of(tools: &Tools, cache: &SizeCache, path: &str, abs: &std::path::Path) -> Option<Size> {
+fn size_of(cache: &SizeCache, path: &str, abs: &std::path::Path) -> Option<Size> {
     let meta = std::fs::metadata(abs).ok()?;
     let modified = meta
         .modified()
@@ -51,11 +51,7 @@ fn size_of(tools: &Tools, cache: &SizeCache, path: &str, abs: &std::path::Path) 
         Size::Large
     } else {
         match fsx::read_text(abs, MAX_READ_BYTES) {
-            Ok(decoded) => Size::Tokens(structure::file_size(
-                &tools.services().formats(),
-                path,
-                &decoded.text,
-            )),
+            Ok(decoded) => Size::Tokens(structure::file_size(&decoded.text)),
             Err(fsx::FsxError::TooLarge { .. }) => Size::Large,
             Err(_) => Size::Binary,
         }
@@ -160,7 +156,7 @@ pub fn map(
             let abs = VaultPath::parse(path)
                 .ok()
                 .and_then(|p| tools.vault().resolve(&p).ok());
-            match abs.and_then(|abs| size_of(tools, cache, path, &abs)) {
+            match abs.and_then(|abs| size_of(cache, path, &abs)) {
                 Some(Size::Tokens(n)) => {
                     row.insert("size_tok".to_owned(), json!(n));
                 }
@@ -185,10 +181,7 @@ pub fn map(
                 }
                 let description = api.0.description_of(path);
                 if !description.trim().is_empty() {
-                    row.insert(
-                        "description".to_owned(),
-                        json!(mask_text(description.trim())),
-                    );
+                    row.insert("description".to_owned(), json!(description.trim()));
                 }
             }
             Value::Object(row)

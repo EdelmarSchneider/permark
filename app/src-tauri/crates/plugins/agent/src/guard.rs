@@ -23,7 +23,7 @@ pub const AI_IGNORE: &str = ".aiignore";
 const MAX_IGNORE_BYTES: u64 = 1024 * 1024;
 /// Folders of the project's own machinery (at any depth: a nested repository has its own), never shared.
 const PRIVATE_FOLDERS: [&str; 2] = [".permark", ".git"];
-/// Files that hold keys whole (no `key = value` for masking to find), never shared: exact names (folded).
+/// Files that hold keys or credentials whole, never shared: exact names (folded).
 const KEY_FILES: [&str; 4] = [".netrc", "_netrc", ".pgpass", ".git-credentials"];
 /// Extensions of key files (folded).
 const KEY_EXTENSIONS: [&str; 5] = ["pem", "key", "p12", "pfx", "keystore"];

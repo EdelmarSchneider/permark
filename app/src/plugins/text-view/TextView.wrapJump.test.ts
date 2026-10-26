@@ -196,24 +196,24 @@ it("a line right after a very long one, the last line, a line past the end", asy
   expect(notify).not.toHaveBeenCalled();
 });
 
-it("masks a secret value in the plain lines: while the highlighter comes, and with it off", async () => {
+it("shows the plain lines as written: while the highlighter comes, and with it off", async () => {
   const text = ["API_TOKEN=abcdef0123456789abcdef", "plain", ""].join("\n");
-  const secretView = {
+  const plainView = {
     ...viewOf("a.env.log"),
     body: { kind: "text" as const, text, language: "log" },
   };
-  show(secretView);
+  show(plainView);
   expect(pane.textContent).toContain("plain");
-  expect(pane.textContent).not.toContain("abcdef0123456789abcdef");
+  expect(pane.textContent).toContain("API_TOKEN=abcdef0123456789abcdef");
   if (component) await unmount(component);
   component = null;
   // the highlighter off: the plain lines are all there is
   removeCode?.();
   removeCode = null;
-  show(secretView);
-  expect(pane.textContent).not.toContain("abcdef0123456789abcdef");
+  show(plainView);
+  expect(pane.textContent).toContain("API_TOKEN=abcdef0123456789abcdef");
   look.wrap = false;
   flushSync();
-  expect(pane.textContent).not.toContain("abcdef0123456789abcdef");
+  expect(pane.textContent).toContain("API_TOKEN=abcdef0123456789abcdef");
   expect(pane.textContent).toContain("plain");
 });

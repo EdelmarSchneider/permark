@@ -54,7 +54,6 @@ function standIn(text: string): Analysis {
     sourceTokens: source,
     tokenizer: null,
     approx: true,
-    secrets: 0,
     notes: [],
     targets,
   };
@@ -81,22 +80,16 @@ export function createMockConvert(textOf: (path: string) => string | null): {
         if (answer.status === "ready") jobs.set(job, { source, analysis: answer.analysis });
         return answer;
       },
-      "convert.result": ({ job, target, confirmed }) => {
+      "convert.result": ({ job, target }) => {
         probe.calls.push(`result ${job} ${target}`);
         const found = jobs.get(job);
         if (found === undefined) throw new MockPluginError("notFound", "job");
-        if (found.analysis.secrets > 0 && confirmed !== true) {
-          throw new MockPluginError("invalidData", "secrets");
-        }
         return `${target} of ${textOfSource(found.source)}`;
       },
-      "convert.save": ({ job, target, confirmed, beside }) => {
+      "convert.save": ({ job, target, beside }) => {
         probe.calls.push(`save ${job} ${target}`);
         const found = jobs.get(job);
         if (found === undefined) throw new MockPluginError("notFound", "job");
-        if (found.analysis.secrets > 0 && confirmed !== true) {
-          throw new MockPluginError("invalidData", "secrets");
-        }
         const next = found.source.kind === "file" ? found.source.path : (beside ?? "");
         const view = found.analysis.targets.find((t) => t.id === target);
         const stem = next.replace(/\.[^./]*$/, "");

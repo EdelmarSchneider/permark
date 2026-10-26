@@ -671,41 +671,21 @@ fn document_text_never_closes_a_zone_or_breaks_a_row() {
 }
 
 #[test]
-fn secrets_never_leave_in_any_answer() {
+fn values_reach_the_agent_as_written() {
     let fx = Budget::new();
-    note(&fx, save("config/app.toml", &["auth"]));
-    confirm(&fx);
-    let mut texts = Vec::new();
-    for (name, tool, args) in crate::budget_tests::typical_calls() {
-        let (_, text) = call(&fx, tool, args).unwrap_or_else(|e| panic!("{name}: {e}"));
-        texts.push(text);
+    let mut texts = String::new();
+    for path in ["config/app.toml", "README.md", "data/items.json"] {
+        let (_, text) = call(&fx, "read", json!({ "path": path })).unwrap();
+        texts.push_str(&text);
     }
-    for (tool, args) in [
-        ("read", json!({ "path": "config/app.toml" })),
-        ("read", json!({ "path": "README.md" })),
-        ("read", json!({ "path": "data/items.json" })),
-        ("search", json!({ "query": "API_KEY" })),
-        ("search", json!({ "query": "password deploy" })),
-        ("outline", json!({ "path": "config/app.toml" })),
-        ("map", json!({ "depth": 6 })),
-        ("activity", json!({ "since": "0" })),
-    ] {
-        let (value, text) = call(&fx, tool, args).unwrap();
-        if tool == "search" {
-            // a search that finds nothing proves nothing: the lines holding the secrets must be hits
-            assert!(!value["hits"].as_array().unwrap().is_empty(), "{value}");
-        }
-        texts.push(text);
-    }
-    for text in &texts {
-        for secret in ["sk-live-123456", "hunter2", "tok-abc-123", "t-1\""] {
-            assert!(!text.contains(secret), "{secret} in {text}");
-        }
+    assert!(!texts.contains("<hidden>"), "{texts}");
+    for value in ["sk-live-123456", "hunter2", "tok-abc-123"] {
+        assert!(texts.contains(value), "{value} in {texts}");
     }
 }
 
 #[test]
-fn search_never_tells_whether_a_masked_value_is_there() {
+fn search_finds_a_value_in_the_text() {
     let fx = Budget::new();
     write(
         &fx,
@@ -713,23 +693,13 @@ fn search_never_tells_whether_a_masked_value_is_there() {
         "# Login\n\nShared login for staging: password: qx7hunter is rotated monthly.\n",
     );
     indexed(&fx, "ops/login.md");
-    // the words around the value are found: the file is in the index
     searched(&fx, "staging rotated", "ops/login.md");
-    // the value, and every prefix of it, answers exactly like a word that is nowhere
-    let (_, nowhere) = call(&fx, "search", json!({ "query": "zq9nowhere" })).unwrap();
-    let nowhere = nowhere.replace("zq9nowhere", "<q>");
-    for query in ["qx7hunter", "qx7hunte", "qx7h", "qx7", "qx", "QX7HUNTER"] {
-        let (value, text) = call(&fx, "search", json!({ "query": query })).unwrap();
-        assert!(
-            value["hits"].as_array().unwrap().is_empty(),
-            "{query}: {value}"
-        );
-        assert_eq!(text.replace(query, "<q>"), nowhere, "{query}");
-    }
+    let (_, text) = searched(&fx, "qx7hunter", "ops/login.md");
+    assert!(text.contains("qx7hunter"), "{text}");
 }
 
 #[test]
-fn search_sizes_are_of_the_masked_section() {
+fn search_sizes_count_the_whole_section() {
     let fx = Budget::new();
     write(&fx, "ops/short.md", "# Rollout\n\npassword: q1\n");
     write(
@@ -741,21 +711,19 @@ fn search_sizes_are_of_the_masked_section() {
     indexed(&fx, "ops/long.md");
     searched(&fx, "rollout", "ops/short.md");
     let (value, _) = searched(&fx, "rollout", "ops/long.md");
-    let sizes: Vec<u64> = value["hits"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|h| h["path"].as_str().unwrap().starts_with("ops/"))
-        .map(|h| h["size_tok"].as_u64().unwrap())
-        .collect();
-    assert_eq!(sizes.len(), 2, "{value}");
-    assert_eq!(
-        sizes[0], sizes[1],
-        "a secret's length shows in no size: {value}"
-    );
+    let size = |path: &str| {
+        value["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|h| h["path"] == path)
+            .and_then(|h| h["size_tok"].as_u64())
+            .unwrap_or_else(|| panic!("{path}: {value}"))
+    };
+    assert!(size("ops/short.md") < size("ops/long.md"), "{value}");
 }
 
-const SECRET_HEADING: &str = "# Ops\n\nintro\n\n## Password: qz8secret\n\nrotate monthly\n";
+const KEY_HEADING: &str = "# Ops\n\nintro\n\n## Password: qz8secret\n\nrotate monthly\n";
 
 /// The answer of a read with `at`, as text (an error too), with `at` itself taken out.
 fn read_at(fx: &Budget, path: &str, at: &str) -> String {
@@ -766,11 +734,11 @@ fn read_at(fx: &Budget, path: &str, at: &str) -> String {
 }
 
 #[test]
-fn headings_leave_masked_and_a_guessed_value_reads_like_a_missing_heading() {
+fn headings_leave_as_written() {
     let fx = Budget::new();
-    write(&fx, "ops/keys.md", SECRET_HEADING);
+    write(&fx, "ops/keys.md", KEY_HEADING);
     indexed(&fx, "ops/keys.md");
-    let (value, text) = searched(&fx, "rotate monthly", "ops/keys.md");
+    let (value, _) = searched(&fx, "rotate monthly", "ops/keys.md");
     let hit = value["hits"]
         .as_array()
         .unwrap()
@@ -778,47 +746,22 @@ fn headings_leave_masked_and_a_guessed_value_reads_like_a_missing_heading() {
         .find(|h| h["path"] == "ops/keys.md")
         .unwrap_or_else(|| panic!("{value}"))
         .clone();
-    assert_eq!(hit["headingPath"], json!(["Ops", "Password: <hidden>"]));
-    assert!(!text.contains("qz8secret"), "{text}");
-    let (value, text) = call(&fx, "outline", json!({ "path": "ops/keys.md" })).unwrap();
-    assert!(
-        !text.contains("qz8secret") && !value.to_string().contains("qz8secret"),
-        "{value}"
-    );
-    assert!(text.contains("Ops > Password: <hidden>"), "{text}");
-    // the masked path is the one that reads the part
-    let shown = read_at(&fx, "ops/keys.md", "Ops > Password: <hidden>");
+    assert_eq!(hit["headingPath"], json!(["Ops", "Password: qz8secret"]));
+    let (_, text) = call(&fx, "outline", json!({ "path": "ops/keys.md" })).unwrap();
+    assert!(text.contains("Ops > Password: qz8secret"), "{text}");
+    let shown = read_at(&fx, "ops/keys.md", "Ops > Password: qz8secret");
     assert!(shown.contains("rotate monthly"), "{shown}");
-    let tail = read_at(&fx, "ops/keys.md", "Password: <hidden>");
-    assert!(tail.contains("rotate monthly"), "{tail}");
-    // a guess answers exactly like a heading that is not there
-    for (guess, none) in [
-        ("Ops > Password: qz8secret", "Ops > Password: zz0nothing"),
-        ("Password: qz8secret", "Password: zz0nothing"),
-        ("password: QZ8SECRET", "password: ZZ0NOTHING"),
-        ("#password-qz8secret", "#password-zz0nothing"),
-    ] {
-        assert_eq!(
-            read_at(&fx, "ops/keys.md", guess),
-            read_at(&fx, "ops/keys.md", none),
-            "{guess}"
-        );
-    }
 }
 
 #[test]
-fn a_hand_off_never_names_a_secret_heading() {
+fn a_hand_off_names_a_heading_as_written() {
     let fx = Budget::new();
     note(&fx, save("docs/plan.md", &["Plan > Password: qz8secret"]));
     let done = confirm(&fx);
-    assert!(!done.full.contains("qz8secret"), "{}", done.full);
     assert!(
-        done.full.contains("section_gone=Plan > Password: <hidden>"),
+        done.full
+            .contains("section_gone=Plan > Password: qz8secret"),
         "{}",
         done.full
     );
-    let (_, text) = call(&fx, "activity", json!({ "since": "handoff" })).unwrap();
-    assert!(!text.contains("qz8secret"), "{text}");
-    let (_, text) = call(&fx, "activity", json!({ "since": "0" })).unwrap();
-    assert!(!text.contains("qz8secret"), "{text}");
 }

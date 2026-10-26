@@ -58,15 +58,6 @@ pub struct ConfigEdited {
     pub body: Body,
 }
 
-/// A secret value in the editor's text, in UTF-16 code units (what the editor counts).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
-pub struct SecretRange {
-    pub from: u32,
-    pub to: u32,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(
     tag = "outcome",
@@ -506,30 +497,6 @@ impl Editor<'_> {
         Ok(ConfigEdited { text: new, body })
     }
 
-    /// Where the secret values of an unsaved text are, in UTF-16 units.
-    ///
-    /// # Errors
-    /// No format reads `path`.
-    pub fn config_secrets(&self, path: &str, text: &str) -> Result<Vec<SecretRange>, IpcError> {
-        let format = self.config_format(path, text)?;
-        let spans = format.secrets(text);
-        let mut out = Vec::with_capacity(spans.len());
-        let mut units = 0_u32;
-        let mut byte = 0_usize;
-        for span in spans {
-            // spans come in file order; count UTF-16 units between them
-            if span.start < byte || span.end > text.len() {
-                continue;
-            }
-            let from = units + utf16_len(&text[byte..span.start]);
-            let to = from + utf16_len(&text[span.start..span.end]);
-            out.push(SecretRange { from, to });
-            units = to;
-            byte = span.end;
-        }
-        Ok(out)
-    }
-
     /// How many project files each pattern of an ignore file matches (Project workspaces only). `text`: the editor's
     /// version; none = the file as it is on disk.
     ///
@@ -590,10 +557,6 @@ impl Editor<'_> {
             _ => Ok(Vec::new()),
         }
     }
-}
-
-fn utf16_len(text: &str) -> u32 {
-    u32::try_from(text.encode_utf16().count()).unwrap_or(u32::MAX)
 }
 
 /// `name` -> (stem, `.ext` | ""). A dotfile has no extension.

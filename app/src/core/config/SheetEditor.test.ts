@@ -109,13 +109,13 @@ describe("Edit mode of a config file", () => {
     ]);
   });
 
-  it("a secret value stays masked in the editable sheet and is typed over without being shown", async () => {
+  it("a value under a key that sounds secret opens for typing as written", async () => {
     await open(".env.example");
-    expect(target.textContent).not.toContain("s3cr3t pass");
     rowOf("DB_PASSWORD").querySelector<HTMLButtonElement>(".hit")?.click();
     flushSync();
     const input = rowOf("DB_PASSWORD").querySelector<HTMLInputElement>("input");
-    expect(input?.type).toBe("password");
+    expect(input?.type).toBe("text");
+    expect(input?.value).toContain("s3cr3t pass");
   });
 
   it("an ignore file takes a new line and a deleted line, and nothing else moves", async () => {
