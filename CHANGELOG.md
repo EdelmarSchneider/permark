@@ -16,6 +16,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Search by AI agents now only matches the text agents are shown, with secret values hidden. <!-- f: agent-connection, search -->
 - Secret values are now hidden only where they are clearly secrets: the value of a setting named as one (such as `password` or `API_KEY`), a known token format, a private key block and the password in a web address. Labels and messages such as "Enter your password", in any language, and other text that only looks like a secret are no longer hidden. <!-- f: secret-masking, agent-connection -->
 - Headings that hold a secret value now reach AI agents with the value hidden, as the rest of the text does. <!-- f: secret-masking, agent-connection -->
+- A hand-off no longer names, to an AI agent, files that were hidden from agents after the hand-off was made; it counts them among the hidden ones instead. <!-- f: agent-connection -->
 
 ## [0.7.0] - 2026-10-23
 
