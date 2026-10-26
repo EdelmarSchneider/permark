@@ -445,6 +445,27 @@ fn removing_or_changing_a_document_keeps_the_agent_view_right() {
 }
 
 #[test]
+fn a_secret_value_that_holds_the_marker_word_is_out_of_reach_too() {
+    let mut index = Bm25::new();
+    doc(
+        &mut index,
+        "ops.md",
+        "# Ops\n\nShared login: password: my-hidden-pass2 for staging.\n",
+    );
+    assert!(!crate::secrets::mask_text("password: my-hidden-pass2").contains("my-"));
+    for query in ["hidden", "hidd", "hid", "my", "pass2"] {
+        assert!(agent(&index, query).is_empty(), "{query}");
+    }
+    // an ordinary word "hidden" elsewhere is found
+    doc(
+        &mut index,
+        "plain.md",
+        "# Plain\n\nthe hidden files stay hidden\n",
+    );
+    assert_eq!(paths_of(&agent(&index, "hidden")), ["plain.md"]);
+}
+
+#[test]
 fn snippet_marks_cjk_matches_once() {
     let mut index = Bm25::new();
     doc(

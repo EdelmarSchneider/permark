@@ -472,7 +472,7 @@ impl Tools {
                 let snippet: String = hit.snippet.iter().map(|p| p.text.as_str()).collect();
                 let mut item = json!({
                     "path": hit.path,
-                    "headingPath": hit.heading_path,
+                    "headingPath": structure::masked_headings(&hit.heading_path),
                     "line": hit.line,
                     "snippet": mask_text(snippet.trim()),
                 });
@@ -576,7 +576,7 @@ impl Tools {
                     "path": c.path,
                     "quote": mask_text(&c.quote),
                     "text": mask_text(&c.text),
-                    "headingPath": c.heading_path,
+                    "headingPath": structure::masked_headings(&c.heading_path),
                     "line": c.line,
                     "state": c.state,
                     "created": iso(c.created_ms),

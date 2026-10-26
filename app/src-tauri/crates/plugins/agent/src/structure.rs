@@ -43,6 +43,14 @@ struct Part {
     anchor: Option<String>,
     from: u32,
     to: u32,
+    /// `at` as an agent gets it: each heading masked ([`masked_headings`]). Other parts: `at`.
+    shown: String,
+}
+
+/// A heading path as it leaves for an agent: each heading with its secret values hidden (`agent.md` headings).
+#[must_use]
+pub fn masked_headings(path: &[String]) -> Vec<String> {
+    path.iter().map(|h| mask_text(h).into_owned()).collect()
 }
 
 fn line_count(text: &str) -> u32 {
@@ -70,6 +78,7 @@ fn markdown_parts(text: &str) -> Vec<Part> {
                 anchor: s.anchor.clone(),
                 from: s.line,
                 to,
+                shown: masked_headings(&s.heading_path).join(" > "),
             }
         })
         .collect()
@@ -131,6 +140,7 @@ fn json_parts(text: &str) -> Vec<(Part, &'static str)> {
                     parts.push((
                         Part {
                             at: key.clone(),
+                            shown: key.clone(),
                             label: key,
                             level: 1,
                             anchor: None,
@@ -268,7 +278,7 @@ pub fn outline(
             let items: Vec<Value> = markdown_parts(text)
                 .into_iter()
                 .map(|p| {
-                    let mut item = json!({ "at": p.at, "level": p.level, "line": p.from, "lines": p.to - p.from + 1 });
+                    let mut item = json!({ "at": p.shown, "level": p.level, "line": p.from, "lines": p.to - p.from + 1 });
                     sizer.add(&mut item, p.from, p.to);
                     item
                 })
@@ -373,10 +383,13 @@ fn heading_parts(at: &str) -> Vec<String> {
         .collect()
 }
 
+/// The part `at` names, by the path an agent was given: headings in their masked form; an anchor only of a heading
+/// without a secret value (a guessed value answers like a heading that is not there).
 fn find_part(parts: &[Part], at: &str) -> Option<(u32, u32)> {
     if let Some(anchor) = at.strip_prefix('#') {
         return parts
             .iter()
+            .filter(|p| p.shown == p.at)
             .find(|p| p.anchor.as_deref().is_some_and(|a| same(a, anchor)))
             .map(|p| (p.from, p.to));
     }
@@ -386,7 +399,7 @@ fn find_part(parts: &[Part], at: &str) -> Option<(u32, u32)> {
     }
     // the full path first, then a path that ends with the asked one (unique), then the last heading alone
     let full = parts.iter().find(|p| {
-        let have = heading_parts(&p.at);
+        let have = heading_parts(&p.shown);
         have.len() == wanted.len() && have.iter().zip(&wanted).all(|(a, b)| same(a, b))
     });
     if let Some(p) = full {
@@ -395,7 +408,7 @@ fn find_part(parts: &[Part], at: &str) -> Option<(u32, u32)> {
     let ending: Vec<&Part> = parts
         .iter()
         .filter(|p| {
-            let have = heading_parts(&p.at);
+            let have = heading_parts(&p.shown);
             have.len() >= wanted.len()
                 && have[have.len() - wanted.len()..]
                     .iter()

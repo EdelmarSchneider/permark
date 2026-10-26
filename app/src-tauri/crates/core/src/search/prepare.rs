@@ -100,7 +100,8 @@ fn count_section(
     let shown = |text: &str| -> String {
         match masked {
             Masked::No => text.to_owned(),
-            Masked::Yes => crate::secrets::mask_text(text).into_owned(),
+            // the marker is no word of the text: a value's own words (`hidden` too) are all gone
+            Masked::Yes => crate::secrets::mask_text(text).replace(crate::secrets::HIDDEN, " "),
         }
     };
     let own = section.heading_path.len().saturating_sub(1);
