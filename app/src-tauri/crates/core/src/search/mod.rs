@@ -35,6 +35,14 @@ use crate::watch::FsBatch;
 use index::Index;
 use worker::{message_of, Msg, Worker, STACK};
 
+/// Who reads the search answer. `Agent`: ranked as if the secret values were not in the files (`agent.md` Agent
+/// search): a masked value is not guessable by asking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reader {
+    Person,
+    Agent,
+}
+
 /// Most hits one query returns.
 pub const MAX_LIMIT: usize = 200;
 
@@ -392,12 +400,25 @@ impl SearchIndex {
             .unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Ranked sections for the words. Empty query: nothing.
+    /// Ranked sections for the words, as the person sees them. Empty query: nothing.
     #[must_use]
     pub fn sections(&self, query: &str, limit: usize, filter: &SearchFilter) -> SectionResults {
+        self.sections_for(Reader::Person, query, limit, filter)
+    }
+
+    /// Ranked sections for the words, as `reader` sees them. Empty query: nothing.
+    #[must_use]
+    pub fn sections_for(
+        &self,
+        reader: Reader,
+        query: &str,
+        limit: usize,
+        filter: &SearchFilter,
+    ) -> SectionResults {
         let limit = limit.clamp(1, MAX_LIMIT);
         let allow = |path: &str| filter.allows(path);
-        let hits = self.read().bm25.search(
+        let hits = self.read().bm25.search_for(
+            reader,
             query,
             limit,
             if filter.is_open() { None } else { Some(&allow) },

@@ -11,7 +11,7 @@ use permark_core::notes::SharedNotesApi;
 use permark_core::organizing::{CommentFilter, CommentsApi, TagsApi, UnreadApi};
 use permark_core::paths::Vault;
 use permark_core::plugins::ProjectServices;
-use permark_core::search::SearchFilter;
+use permark_core::search::{Reader, SearchFilter};
 use permark_core::secrets::mask_text;
 use permark_core::settings::ProjectConfig;
 use permark_core::state::StateStore;
@@ -462,7 +462,8 @@ impl Tools {
         };
         let index = &self.services.search;
         let ready = index.wait_ready(READY_WAIT);
-        let results = index.sections(query.trim(), limit(asked, 10, 25), &filter);
+        let results =
+            index.sections_for(Reader::Agent, query.trim(), limit(asked, 10, 25), &filter);
         let formats = self.services.formats();
         let hits: Vec<Value> = results
             .hits

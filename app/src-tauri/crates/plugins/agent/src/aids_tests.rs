@@ -595,3 +595,31 @@ fn secrets_never_leave_in_any_answer() {
         }
     }
 }
+
+#[test]
+fn search_never_tells_whether_a_masked_value_is_there() {
+    let fx = Budget::new();
+    write(
+        &fx,
+        "ops/login.md",
+        "# Login\n\nShared login for staging: password: qx7hunter is rotated monthly.\n",
+    );
+    indexed(&fx, "ops/login.md");
+    // the words around the value are found: the file is in the index
+    let (found, _) = call(&fx, "search", json!({ "query": "staging rotated" })).unwrap();
+    assert!(
+        paths(&found, "hits").contains(&"ops/login.md".to_owned()),
+        "{found}"
+    );
+    // the value, and every prefix of it, answers exactly like a word that is nowhere
+    let (_, nowhere) = call(&fx, "search", json!({ "query": "zq9nowhere" })).unwrap();
+    let nowhere = nowhere.replace("zq9nowhere", "<q>");
+    for query in ["qx7hunter", "qx7hunte", "qx7h", "qx7", "qx", "QX7HUNTER"] {
+        let (value, text) = call(&fx, "search", json!({ "query": query })).unwrap();
+        assert!(
+            value["hits"].as_array().unwrap().is_empty(),
+            "{query}: {value}"
+        );
+        assert_eq!(text.replace(query, "<q>"), nowhere, "{query}");
+    }
+}

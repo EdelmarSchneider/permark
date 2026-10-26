@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use super::fold::{is_cjk, tokenize, Token, TokenKind};
-use super::{SectionHit, SnippetPart};
+use super::{Reader, SectionHit, SnippetPart};
 
 const K1: f32 = 1.2;
 const B: f32 = 0.75;
@@ -31,6 +31,9 @@ pub struct SectionInput {
     pub terms: Vec<(String, u32)>,
     /// Weighted token count.
     pub len: u32,
+    /// `(term, weighted frequency)` of the part of `terms` that comes from inside secret values (`secrets::mask_text`
+    /// takes it out). Empty for a section without secrets.
+    pub hidden: Vec<(String, u32)>,
 }
 
 #[derive(Debug)]
@@ -86,6 +89,31 @@ impl Terms {
     }
 }
 
+/// What of one section comes from inside its secret values: the agent's view ranks without it.
+#[derive(Debug)]
+struct Hidden {
+    /// `(term id, weighted frequency from secret values, whole weighted frequency)`.
+    terms: Box<[(u32, u32, u32)]>,
+    len: u32,
+}
+
+impl Hidden {
+    fn tf(&self, tid: u32) -> u32 {
+        self.terms
+            .iter()
+            .find(|(t, _, _)| *t == tid)
+            .map_or(0, |&(_, hidden, _)| hidden)
+    }
+
+    /// Terms that occur in the section only inside secret values.
+    fn only_secret(&self) -> impl Iterator<Item = u32> + '_ {
+        self.terms
+            .iter()
+            .filter(|(_, hidden, whole)| hidden == whole)
+            .map(|&(tid, _, _)| tid)
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Bm25 {
     terms: Terms,
@@ -93,6 +121,12 @@ pub struct Bm25 {
     free: Vec<u32>,
     live: usize,
     total_len: u64,
+    /// Sections that hold a secret value, by id (nothing for the others).
+    hidden: HashMap<u32, Hidden>,
+    /// Per term id: in how many sections it occurs only inside secret values.
+    only_secret: HashMap<u32, u32>,
+    /// Sum of `Hidden::len`.
+    hidden_len: u64,
 }
 
 /// Which words of a text count as matches (snippets).
@@ -146,6 +180,7 @@ impl Bm25 {
                 self.terms.postings[tid as usize].push((id, *tf));
                 term_ids.push(tid);
             }
+            self.add_hidden(id, &section);
             self.total_len += u64::from(section.len);
             self.live += 1;
             self.chunks[id as usize] = Some(Entry {
@@ -166,6 +201,54 @@ impl Bm25 {
         ids
     }
 
+    fn add_hidden(&mut self, id: u32, section: &SectionInput) {
+        if section.hidden.is_empty() {
+            return;
+        }
+        let whole: HashMap<&str, u32> = section
+            .terms
+            .iter()
+            .map(|(t, tf)| (t.as_str(), *tf))
+            .collect();
+        let terms: Box<[(u32, u32, u32)]> = section
+            .hidden
+            .iter()
+            .filter_map(|(term, hidden)| {
+                let tid = *self.terms.ids.get(term.as_str())?;
+                let whole = *whole.get(term.as_str())?;
+                Some((tid, (*hidden).min(whole), whole))
+            })
+            .collect();
+        let hidden = Hidden {
+            len: terms
+                .iter()
+                .map(|&(_, h, _)| h)
+                .sum::<u32>()
+                .min(section.len),
+            terms,
+        };
+        for tid in hidden.only_secret() {
+            *self.only_secret.entry(tid).or_default() += 1;
+        }
+        self.hidden_len += u64::from(hidden.len);
+        self.hidden.insert(id, hidden);
+    }
+
+    fn remove_hidden(&mut self, id: u32) {
+        let Some(hidden) = self.hidden.remove(&id) else {
+            return;
+        };
+        for tid in hidden.only_secret() {
+            if let Some(n) = self.only_secret.get_mut(&tid) {
+                *n = n.saturating_sub(1);
+                if *n == 0 {
+                    self.only_secret.remove(&tid);
+                }
+            }
+        }
+        self.hidden_len = self.hidden_len.saturating_sub(u64::from(hidden.len));
+    }
+
     fn allocate(&mut self) -> u32 {
         if let Some(id) = self.free.pop() {
             return id;
@@ -184,6 +267,7 @@ impl Bm25 {
             };
             self.total_len = self.total_len.saturating_sub(u64::from(entry.len));
             self.live = self.live.saturating_sub(1);
+            self.remove_hidden(id);
             touched.extend(entry.terms.iter().copied());
             self.free.push(id);
         }
@@ -202,12 +286,36 @@ impl Bm25 {
         (1.0 + (n - df + 0.5) / (df + 0.5)).ln()
     }
 
-    /// Ranked sections for a free-text query; the last word also matches as a prefix. `allow`: which documents may
-    /// answer (the sections of the others never compete for a place).
+    /// Ranked sections for a free-text query, as the person sees the project (`Reader::Person`).
     #[must_use]
-    #[allow(clippy::cast_precision_loss)] // counts stay far below 2^24
     pub fn search(
         &self,
+        query: &str,
+        limit: usize,
+        allow: Option<&dyn Fn(&str) -> bool>,
+    ) -> Vec<SectionHit> {
+        self.search_for(Reader::Person, query, limit, allow)
+    }
+
+    /// Sections that hold a term `tid`, as `reader` sees them.
+    fn df(&self, reader: Reader, tid: u32) -> usize {
+        let all = self.terms.postings[tid as usize].len();
+        match reader {
+            Reader::Person => all,
+            Reader::Agent => {
+                all.saturating_sub(self.only_secret.get(&tid).map_or(0, |&n| n as usize))
+            }
+        }
+    }
+
+    /// Ranked sections for a free-text query; the last word also matches as a prefix. `allow`: which documents may
+    /// answer (the sections of the others never compete for a place). `Reader::Agent`: ranked as if the words inside
+    /// secret values were not in the sections (no match, no prefix completion, no share of frequencies or lengths).
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)] // counts stay far below 2^24
+    pub fn search_for(
+        &self,
+        reader: Reader,
         query: &str,
         limit: usize,
         allow: Option<&dyn Fn(&str) -> bool>,
@@ -222,7 +330,11 @@ impl Bm25 {
         if q.is_empty() || self.live == 0 || limit == 0 {
             return Vec::new();
         }
-        let avgdl = (self.total_len as f32 / self.live as f32).max(1.0);
+        let total_len = match reader {
+            Reader::Person => self.total_len,
+            Reader::Agent => self.total_len.saturating_sub(self.hidden_len),
+        };
+        let avgdl = (total_len as f32 / self.live as f32).max(1.0);
         let last = q.len() - 1;
         let mut scores = vec![0.0_f32; self.chunks.len()];
         let mut seen = vec![0_u32; self.chunks.len()];
@@ -239,14 +351,24 @@ impl Bm25 {
             if is_last && tok.kind == TokenKind::Word {
                 matcher.prefix = Some(tok.folded.clone());
             }
-            let candidates = self.candidates(tok, is_last);
+            let candidates = self.candidates(reader, tok, is_last);
             for (tid, weight) in candidates {
                 let posts = &self.terms.postings[tid as usize];
-                let term_idf = self.idf(posts.len());
+                let term_idf = self.idf(self.df(reader, tid));
                 for &(id, tf) in posts {
                     let Some(entry) = &self.chunks[id as usize] else {
                         continue;
                     };
+                    let (tf, len) = match (reader, self.hidden.get(&id)) {
+                        (Reader::Agent, Some(hidden)) => (
+                            tf.saturating_sub(hidden.tf(tid)),
+                            entry.len.saturating_sub(hidden.len),
+                        ),
+                        _ => (tf, entry.len),
+                    };
+                    if tf == 0 {
+                        continue;
+                    }
                     if let Some(allow) = allow {
                         let ok = if let Some(&ok) = verdict.get(&entry.path) {
                             ok
@@ -260,8 +382,7 @@ impl Bm25 {
                         }
                     }
                     let tf = tf as f32;
-                    let norm =
-                        tf * (K1 + 1.0) / (tf + K1 * (1.0 - B + B * entry.len as f32 / avgdl));
+                    let norm = tf * (K1 + 1.0) / (tf + K1 * (1.0 - B + B * len as f32 / avgdl));
                     let slot = id as usize;
                     if seen[slot] == 0 {
                         touched.push(id);
@@ -301,9 +422,16 @@ impl Bm25 {
 
     /// The posting lists a query token reads: its own term, and for the last (Word) token the terms it prefixes.
     /// CJK terms have no longer forms to complete: every character is already indexed alone.
-    fn candidates(&self, tok: &Token, is_last: bool) -> Vec<(u32, f32)> {
+    /// `Reader::Agent`: a term only inside secret values is no candidate (nor takes a prefix place).
+    fn candidates(&self, reader: Reader, tok: &Token, is_last: bool) -> Vec<(u32, f32)> {
         let mut candidates: Vec<(u32, f32)> = Vec::new();
-        if let Some(&id) = self.terms.ids.get(tok.term.as_str()) {
+        let seen = |id: u32| self.df(reader, id) > 0;
+        if let Some(&id) = self
+            .terms
+            .ids
+            .get(tok.term.as_str())
+            .filter(|&&id| seen(id))
+        {
             candidates.push((id, 1.0));
         }
         if is_last && tok.kind == TokenKind::Word {
@@ -315,7 +443,7 @@ impl Bm25 {
                         std::ops::Bound::Unbounded,
                     ))
                     .take_while(|(t, _)| t.starts_with(tok.folded.as_str()))
-                    .filter(|(t, _)| ***t != *tok.term)
+                    .filter(|(t, &id)| ***t != *tok.term && seen(id))
                     .take(MAX_PREFIX_TERMS)
                     .map(|(_, &id)| (id, PREFIX_WEIGHT)),
             );
