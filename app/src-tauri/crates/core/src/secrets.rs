@@ -276,6 +276,7 @@ const VALUE_KEYS: &[&str] = &["value", "val", "default"];
 /// no line of a private key) is passed over at once.
 const HINTS: &[&str] = &[
     "key",
+    "curl",
     "secret",
     "token",
     "pass",
@@ -702,6 +703,15 @@ fn looks_secret(
             return true;
         }
         let end_mark = value.trim_end().ends_with(['.', '!', '?', ':']);
+        // a label that names the slot in words (`password: "Enter your password"`) is no value
+        let own = head_words(key);
+        if sentence
+            && own
+                .last()
+                .is_some_and(|w| words.iter().any(|v| flat(v) == *w))
+        {
+            return false;
+        }
         return !(sentence && (end_mark || words.len() >= 4));
     }
     if CODE_WORDS.contains(&lower.as_str())
@@ -967,6 +977,8 @@ pub fn mask_text(text: &str) -> Cow<'_, str> {
         return Cow::Borrowed(text);
     }
     let orphans = orphan_key_lines(text);
+    let blocks = block_lines(text);
+    let tables = table_rules(text);
     let public = public_block_lines(text);
     let mut out = String::with_capacity(text.len());
     let mut changed = false;
@@ -989,7 +1001,9 @@ pub fn mask_text(text: &str) -> Cow<'_, str> {
             in_key = !end;
             !end
         } else {
-            orphans.contains(&number) || (is_pem_line(content) && !public.contains(&number))
+            orphans.contains(&number)
+                || blocks.contains(&number)
+                || (is_pem_line(content) && !public.contains(&number))
         };
         if body {
             named = false;
@@ -1008,7 +1022,11 @@ pub fn mask_text(text: &str) -> Cow<'_, str> {
         if !end && is_private_key_marker(content, "BEGIN") && line.ends_with('\n') {
             in_key = true;
         }
-        match mask_line(content, &mut named) {
+        let cells = tables
+            .iter()
+            .find(|(at, _)| *at == number)
+            .map(|(_, rules)| rules.as_slice());
+        match mask_line(content, &mut named, cells) {
             Cow::Borrowed(_) => out.push_str(line),
             Cow::Owned(masked) => {
                 changed = true;
@@ -1040,6 +1058,9 @@ pub fn url_password(text: &str) -> Option<Range<usize>> {
                 if !password.is_empty() && &text[password.clone()] != HIDDEN {
                     return Some(password);
                 }
+            } else if looks_random(&authority[..at]) {
+                // a token as the user (`https://<token>@host`)
+                return Some(start..start + at);
             }
         }
         from = start;
@@ -1047,9 +1068,356 @@ pub fn url_password(text: &str) -> Option<Range<usize>> {
     None
 }
 
+/// Byte ranges of the words of a line (split at spaces | tabs).
+fn word_ranges(line: &str) -> Vec<Range<usize>> {
+    let mut out = Vec::new();
+    let mut start = None;
+    for (i, c) in line.char_indices() {
+        if matches!(c, ' ' | '\t') {
+            if let Some(s) = start.take() {
+                out.push(s..i);
+            }
+        } else if start.is_none() {
+            start = Some(i);
+        }
+    }
+    if let Some(s) = start {
+        out.push(s..line.len());
+    }
+    out
+}
+
+/// A value nothing hides: empty, already hidden, a reference, a command.
+fn is_open_value(value: &str) -> bool {
+    value.is_empty() || value == HIDDEN || is_reference(value) || value.starts_with("$(")
+}
+
+/// The end (byte) of a quoted text that opens at `open` (a quote char): its closing quote | the line end.
+fn quote_end(line: &str, open: usize) -> usize {
+    let quote = line[open..].chars().next().unwrap_or('"');
+    let mut escaped = false;
+    for (i, c) in line[open + quote.len_utf8()..].char_indices() {
+        if escaped {
+            escaped = false;
+        } else if c == '\\' {
+            escaped = true;
+        } else if c == quote {
+            return open + quote.len_utf8() + i;
+        }
+    }
+    line.len()
+}
+
+/// `curl -u user:password`, `--user 'user:password'`, `--user=user:password`: the password.
+fn curl_spans(line: &str) -> Vec<Range<usize>> {
+    let words = word_ranges(line);
+    let is_curl = |r: &Range<usize>| {
+        let w = line[r.clone()].to_lowercase();
+        w == "curl" || w == "curl.exe" || w.ends_with("/curl")
+    };
+    let Some(first) = words.iter().position(is_curl) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut i = first + 1;
+    while i < words.len() {
+        let word = &line[words[i].clone()];
+        let start = if word == "-u" || word == "--user" {
+            match words.get(i + 1) {
+                Some(next) => next.start,
+                None => break,
+            }
+        } else if word.starts_with("--user=") {
+            words[i].start + "--user=".len()
+        } else {
+            i += 1;
+            continue;
+        };
+        let (from, to) = if line[start..].starts_with(['"', '\'']) {
+            (start + 1, quote_end(line, start))
+        } else {
+            let end = line[start..]
+                .find([' ', '\t'])
+                .map_or(line.len(), |e| start + e);
+            (start, end)
+        };
+        if let Some(colon) = line[from..to].find(':') {
+            let password = from + colon + 1..to;
+            if !is_open_value(&line[password.clone()]) {
+                out.push(password);
+            }
+        }
+        while i < words.len() && words[i].start <= to {
+            i += 1;
+        }
+    }
+    out
+}
+
+/// A `.netrc` line: `machine <host> login <name> password <value> ...` (or `default ...`), or the two words
+/// `password <value>` of the multi-line form: the password values.
+fn netrc_spans(line: &str) -> Vec<Range<usize>> {
+    let words = word_ranges(line);
+    let word = |i: usize| words.get(i).map(|r| &line[r.clone()]);
+    if words.len() == 2 && word(0) == Some("password") {
+        return std::iter::once(words[1].clone())
+            .filter(|r| !is_open_value(&line[r.clone()]))
+            .collect();
+    }
+    if !matches!(word(0), Some("machine" | "default")) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(keyword) = word(i) {
+        match keyword {
+            "default" => i += 1,
+            "machine" | "login" | "password" | "account" | "port" => {
+                let Some(value) = words.get(i + 1) else {
+                    break;
+                };
+                if keyword == "password" && !is_open_value(&line[value.clone()]) {
+                    out.push(value.clone());
+                }
+                i += 2;
+            }
+            "macdef" => break,
+            // not the netrc shape: prose that starts with "machine"
+            _ => return Vec::new(),
+        }
+    }
+    out
+}
+
+/// `setPassword("v")`, `set_api_key('v')`, `SetToken("v")`: the quoted arguments of a setter named after a secret key,
+/// judged as quoted values of that key.
+fn setter_spans(line: &str) -> Vec<Range<usize>> {
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(found) = line[from..].find('(') {
+        let open = from + found;
+        from = open + 1;
+        let name_start = line[..open]
+            .char_indices()
+            .rev()
+            .find(|(_, c)| !(c.is_alphanumeric() || *c == '_'))
+            .map_or(0, |(i, c)| i + c.len_utf8());
+        let name = &line[name_start..open];
+        let Some(rest) = name
+            .strip_prefix("set")
+            .or_else(|| name.strip_prefix("Set"))
+        else {
+            continue;
+        };
+        let key = match rest.strip_prefix('_') {
+            Some(key) => key,
+            None if rest.starts_with(|c: char| c.is_uppercase()) => rest,
+            None => continue,
+        };
+        let Some(class) = key_class(key) else {
+            continue;
+        };
+        let mut depth = 0_usize;
+        let mut at = open + 1;
+        while at < line.len() {
+            let Some(c) = line[at..].chars().next() else {
+                break;
+            };
+            match c {
+                '(' => depth += 1,
+                ')' if depth == 0 => break,
+                ')' => depth -= 1,
+                '"' | '\'' | '`' => {
+                    let end = quote_end(line, at);
+                    let value = &line[at + 1..end];
+                    let after = line.get(end + 1..).unwrap_or_default();
+                    if depth == 0 && looks_secret(class, key, value, true, after, line) {
+                        out.push(at + 1..end);
+                    }
+                    at = end.max(at) + 1;
+                    continue;
+                }
+                _ => {}
+            }
+            at += c.len_utf8();
+        }
+    }
+    out
+}
+
+/// Byte ranges of the cells (trimmed) of a Markdown table row: a line that starts with `|` (escaped `\|` stays in its
+/// cell). `None`: no table row.
+fn table_cells(line: &str) -> Option<Vec<Range<usize>>> {
+    let lead = line.len() - line.trim_start().len();
+    if !line[lead..].starts_with('|') {
+        return None;
+    }
+    let mut cells = Vec::new();
+    let mut start = lead + 1;
+    let mut prev = '|';
+    for (i, c) in line[lead + 1..].char_indices() {
+        let at = lead + 1 + i;
+        if c == '|' && prev != '\\' {
+            cells.push(start..at);
+            start = at + 1;
+        }
+        prev = c;
+    }
+    if !line[start..].trim().is_empty() {
+        cells.push(start..line.len());
+    }
+    Some(
+        cells
+            .into_iter()
+            .map(|r| {
+                let cell = &line[r.clone()];
+                let from = r.start + (cell.len() - cell.trim_start().len());
+                from..(r.start + cell.trim_end().len()).max(from)
+            })
+            .collect(),
+    )
+}
+
+/// A table's `|---|:-:|` row.
+fn is_separator_row(line: &str) -> bool {
+    table_cells(line).is_some_and(|cells| {
+        !cells.is_empty()
+            && cells.iter().all(|r| {
+                let cell = line[r.clone()].trim_matches(':');
+                !cell.is_empty() && cell.chars().all(|c| c == '-')
+            })
+    })
+}
+
+/// A cell that names a secret (`DB_PASSWORD`, `**Password**`, `API key`): its key class and name. A name has one or
+/// two words.
+fn cell_key(cell: &str) -> Option<(KeyClass, String)> {
+    let name = cell.trim_matches(|c: char| matches!(c, '`' | '*') || c.is_whitespace());
+    if name.is_empty() || name.split_whitespace().count() > 2 {
+        return None;
+    }
+    key_class(name).map(|class| (class, name.to_owned()))
+}
+
+/// What to judge in a table row: `(cell index, class of its key, the key)`.
+type CellRules = Vec<(usize, KeyClass, String)>;
+
+/// The table rows of `text` (0-based line numbers) with the cells to judge: under a header cell that names a secret,
+/// and right after a cell that names one. Header rows (right above a `|---|` row) are never judged.
+fn table_rules(text: &str) -> Vec<(usize, CellRules)> {
+    if !text.contains('|') {
+        return Vec::new();
+    }
+    let lines: Vec<&str> = text
+        .lines()
+        .map(|l| l.strip_suffix('\r').unwrap_or(l))
+        .collect();
+    let mut out = Vec::new();
+    let mut header: Option<Vec<Option<(KeyClass, String)>>> = None;
+    for (i, line) in lines.iter().enumerate() {
+        let Some(cells) = table_cells(line) else {
+            header = None;
+            continue;
+        };
+        if is_separator_row(line) {
+            continue;
+        }
+        if lines.get(i + 1).is_some_and(|next| is_separator_row(next)) {
+            header = Some(cells.iter().map(|r| cell_key(&line[r.clone()])).collect());
+            continue;
+        }
+        let mut rules = CellRules::new();
+        for (k, _) in cells.iter().enumerate() {
+            let column = header.as_ref().and_then(|h| h.get(k).cloned().flatten());
+            let left = k
+                .checked_sub(1)
+                .and_then(|j| cell_key(&line[cells[j].clone()]));
+            if let Some((class, key)) = column.or(left) {
+                rules.push((k, class, key));
+            }
+        }
+        if !rules.is_empty() {
+            out.push((i, rules));
+        }
+    }
+    out
+}
+
+/// The cells of a table row that hold a secret value (`rules` from [`table_rules`]); backticks around a value stay.
+fn cell_spans(line: &str, rules: &[(usize, KeyClass, String)]) -> Vec<Range<usize>> {
+    let Some(cells) = table_cells(line) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (k, class, key) in rules {
+        let Some(cell) = cells.get(*k) else {
+            continue;
+        };
+        let mut r = cell.clone();
+        let text = &line[r.clone()];
+        if text.len() >= 2 && text.starts_with('`') && text.ends_with('`') {
+            r = r.start + 1..r.end - 1;
+        }
+        let value = &line[r.clone()];
+        let typed =
+            PRIMITIVE_TYPES.contains(&value.trim_end_matches('?').to_ascii_lowercase().as_str());
+        if value.chars().any(char::is_alphanumeric)
+            && !typed
+            && looks_secret(*class, key, value, true, "", line)
+        {
+            out.push(r);
+        }
+    }
+    out
+}
+
+/// A YAML block scalar under a secret key (`password: |`, `- "api_key": >-  # note`).
+fn is_secret_block_key(line: &str) -> bool {
+    let t = line.trim();
+    let t = t.strip_prefix("- ").map_or(t, str::trim_start);
+    let Some((key, rest)) = t.split_once(':') else {
+        return false;
+    };
+    let key = key.trim().trim_matches(['"', '\'']);
+    let rest = rest.split_once('#').map_or(rest, |(v, _)| v).trim();
+    !key.is_empty()
+        && !key.contains(char::is_whitespace)
+        && is_block_mark(rest)
+        && key_class(key).is_some()
+}
+
+/// Lines (0-based) of the body of a block scalar under a secret key: the non-blank lines indented deeper than the
+/// key's line, up to the first non-blank line that is not.
+fn block_lines(text: &str) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut open: Option<usize> = None;
+    for (i, raw) in text.lines().enumerate() {
+        let line = raw.strip_suffix('\r').unwrap_or(raw);
+        let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
+        if let Some(key_indent) = open {
+            if line.trim().is_empty() {
+                continue;
+            }
+            if indent > key_indent {
+                out.push(i);
+                continue;
+            }
+            open = None;
+        }
+        if is_secret_block_key(line) {
+            open = Some(indent);
+        }
+    }
+    out
+}
+
 /// One line (without its line break): the password of every address; each `key <sep> value` pair whose key is
-/// secret; known tokens.
-fn mask_line<'a>(line: &'a str, named: &mut bool) -> Cow<'a, str> {
+/// secret; known tokens; `curl` users, `.netrc` passwords, setter arguments; the cells `cells` names (a table row).
+fn mask_line<'a>(
+    line: &'a str,
+    named: &mut bool,
+    cells: Option<&[(usize, KeyClass, String)]>,
+) -> Cow<'a, str> {
     let mut out = String::new();
     let mut rest = line;
     let mut changed = false;
@@ -1065,13 +1433,24 @@ fn mask_line<'a>(line: &'a str, named: &mut bool) -> Cow<'a, str> {
     } else {
         mask_pairs(line, named)
     };
-    let spans = token_spans(&pairs);
+    let mut spans = token_spans(&pairs);
+    spans.extend(curl_spans(&pairs));
+    spans.extend(netrc_spans(&pairs));
+    spans.extend(setter_spans(&pairs));
+    if let Some(rules) = cells {
+        spans.extend(cell_spans(&pairs, rules));
+    }
+    spans.retain(|r| r.end > r.start && &pairs[r.clone()] != HIDDEN);
     if spans.is_empty() {
         return pairs;
     }
+    spans.sort_by(|a, b| a.start.cmp(&b.start).then(b.end.cmp(&a.end)));
     let mut masked = String::with_capacity(pairs.len());
     let mut at = 0;
     for span in spans {
+        if span.start < at {
+            continue;
+        }
         masked.push_str(&pairs[at..span.start]);
         masked.push_str(HIDDEN);
         at = span.end;

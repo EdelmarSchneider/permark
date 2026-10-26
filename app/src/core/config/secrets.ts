@@ -469,6 +469,9 @@ function looksSecret(
     if (!strong) return !sentence;
     if (keyWords(key).some((w) => w.endsWith("passphrase"))) return true;
     const endMark = /[.!?:]$/.test(value.trimEnd());
+    // a label that names the slot in words (`password: "Enter your password"`) is no value
+    const own = headWords(key).at(-1);
+    if (sentence && own !== undefined && words.some((w) => flat(w) === own)) return false;
     return !(sentence && (endMark || words.length >= 4));
   }
   if (CODE_WORDS.has(lower) || BLOCK_MARK.test(value) || /^[!&*]/.test(value)) return false;
@@ -835,9 +838,280 @@ function publicBlockLines(lines: readonly string[]): Set<number> {
   return out;
 }
 
+/** An address with a token as the user (`https://<token>@host`): the mirror of `url_password` (Rust). */
+const ADDRESS_USER = /:\/\/([^\s/?#"'\\@:]+)@/g;
+
+/** Ranges of the words of a line (split at spaces | tabs). */
+function wordRanges(line: string): Span[] {
+  const out: Span[] = [];
+  for (const m of line.matchAll(/[^ \t]+/g)) out.push({ from: m.index, to: m.index + m[0].length });
+  return out;
+}
+
+/** A value nothing hides: empty, already hidden, a reference, a command. */
+function isOpenValue(value: string): boolean {
+  return value === "" || value === HIDDEN || isReference(value) || value.startsWith("$(");
+}
+
+/** The end of a quoted text that opens at `open`: its closing quote | the line end. */
+function quoteEnd(line: string, open: number): number {
+  const quote = line[open];
+  for (let i = open + 1; i < line.length; i += 1) {
+    if (line[i] === "\\") i += 1;
+    else if (line[i] === quote) return i;
+  }
+  return line.length;
+}
+
+/** `curl -u user:password`, `--user 'user:password'`, `--user=user:password`: the mirror of `curl_spans` (Rust). */
+function curlSpans(line: string): Span[] {
+  const words = wordRanges(line);
+  const text = (r: Span): string => line.slice(r.from, r.to);
+  const first = words.findIndex((r) => {
+    const w = text(r).toLowerCase();
+    return w === "curl" || w === "curl.exe" || w.endsWith("/curl");
+  });
+  if (first < 0) return [];
+  const out: Span[] = [];
+  let i = first + 1;
+  while (i < words.length) {
+    const word = words[i] as Span;
+    const w = text(word);
+    let start: number;
+    if (w === "-u" || w === "--user") {
+      const next = words[i + 1];
+      if (next === undefined) break;
+      start = next.from;
+    } else if (w.startsWith("--user=")) {
+      start = word.from + "--user=".length;
+    } else {
+      i += 1;
+      continue;
+    }
+    let from = start;
+    let to: number;
+    if (line[start] === '"' || line[start] === "'") {
+      from = start + 1;
+      to = quoteEnd(line, start);
+    } else {
+      const end = line.slice(start).search(/[ \t]/);
+      to = end < 0 ? line.length : start + end;
+    }
+    const colon = line.slice(from, to).indexOf(":");
+    if (colon >= 0 && !isOpenValue(line.slice(from + colon + 1, to))) {
+      out.push({ from: from + colon + 1, to });
+    }
+    while (i < words.length && (words[i] as Span).from <= to) i += 1;
+  }
+  return out;
+}
+
+/** A `.netrc` line (`machine <host> login <name> password <value>`, or `password <value>`): the mirror of `netrc_spans`. */
+function netrcSpans(line: string): Span[] {
+  const words = wordRanges(line);
+  const word = (i: number): string | undefined => {
+    const r = words[i];
+    return r === undefined ? undefined : line.slice(r.from, r.to);
+  };
+  if (words.length === 2 && word(0) === "password") {
+    const r = words[1] as Span;
+    return isOpenValue(line.slice(r.from, r.to)) ? [] : [r];
+  }
+  if (word(0) !== "machine" && word(0) !== "default") return [];
+  const out: Span[] = [];
+  let i = 0;
+  for (let keyword = word(i); keyword !== undefined; keyword = word(i)) {
+    if (keyword === "default") {
+      i += 1;
+    } else if (["machine", "login", "password", "account", "port"].includes(keyword)) {
+      const value = words[i + 1];
+      if (value === undefined) break;
+      if (keyword === "password" && !isOpenValue(line.slice(value.from, value.to))) out.push(value);
+      i += 2;
+    } else if (keyword === "macdef") {
+      break;
+    } else {
+      // not the netrc shape: prose that starts with "machine"
+      return [];
+    }
+  }
+  return out;
+}
+
+/** `setPassword("v")`, `set_api_key('v')`: the quoted arguments of a setter named after a secret key (`setter_spans`). */
+function setterSpans(line: string): Span[] {
+  const out: Span[] = [];
+  for (const m of line.matchAll(/([\p{L}\p{N}_]+)\(/gu)) {
+    const name = m[1] as string;
+    const rest = name.startsWith("set") || name.startsWith("Set") ? name.slice(3) : null;
+    if (rest === null) continue;
+    let key: string;
+    if (rest.startsWith("_")) key = rest.slice(1);
+    else if (/^\p{Lu}/u.test(rest)) key = rest;
+    else continue;
+    const cls = keyClass(key);
+    if (cls === null) continue;
+    let depth = 0;
+    let at = m.index + m[0].length;
+    while (at < line.length) {
+      const c = line[at];
+      if (c === "(") depth += 1;
+      else if (c === ")") {
+        if (depth === 0) break;
+        depth -= 1;
+      } else if (c === '"' || c === "'" || c === "`") {
+        const end = quoteEnd(line, at);
+        const value = line.slice(at + 1, end);
+        if (depth === 0 && looksSecret(cls, key, value, true, line.slice(end + 1), line)) {
+          out.push({ from: at + 1, to: end });
+        }
+        at = Math.max(end, at) + 1;
+        continue;
+      }
+      at += 1;
+    }
+  }
+  return out;
+}
+
+/** The cells (trimmed) of a Markdown table row (a line that starts with `|`); `null`: no table row. */
+function tableCells(line: string): Span[] | null {
+  const lead = line.length - line.trimStart().length;
+  if (line[lead] !== "|") return null;
+  const cells: Span[] = [];
+  let start = lead + 1;
+  for (let i = lead + 1; i < line.length; i += 1) {
+    if (line[i] === "|" && line[i - 1] !== "\\") {
+      cells.push({ from: start, to: i });
+      start = i + 1;
+    }
+  }
+  if (line.slice(start).trim() !== "") cells.push({ from: start, to: line.length });
+  return cells.map((r) => {
+    const cell = line.slice(r.from, r.to);
+    const from = r.from + (cell.length - cell.trimStart().length);
+    return { from, to: Math.max(r.from + cell.trimEnd().length, from) };
+  });
+}
+
+/** A table's `|---|:-:|` row. */
+function isSeparatorRow(line: string): boolean {
+  const cells = tableCells(line);
+  return (
+    cells !== null &&
+    cells.length > 0 &&
+    cells.every((r) => /^-+$/.test(line.slice(r.from, r.to).replace(/^:+|:+$/g, "")))
+  );
+}
+
+type CellKey = { cls: KeyClass; key: string };
+
+/** A cell that names a secret (`DB_PASSWORD`, `**Password**`, `API key`): one or two words. */
+function cellKey(cell: string): CellKey | null {
+  const name = cell.replace(/^[`*\s]+|[`*\s]+$/gu, "");
+  if (name === "" || name.split(/\s+/u).length > 2) return null;
+  const cls = keyClass(name);
+  return cls === null ? null : { cls, key: name };
+}
+
+type CellRule = { index: number } & CellKey;
+
+/** Table rows (line index) with the cells to judge: the mirror of `table_rules` (Rust). */
+function tableRules(lines: readonly string[]): Map<number, CellRule[]> {
+  const out = new Map<number, CellRule[]>();
+  if (!lines.some((l) => l.includes("|"))) return out;
+  let header: (CellKey | null)[] | null = null;
+  lines.forEach((line, i) => {
+    const cells = tableCells(line);
+    if (cells === null) {
+      header = null;
+      return;
+    }
+    if (isSeparatorRow(line)) return;
+    const next = lines[i + 1];
+    if (next !== undefined && isSeparatorRow(next)) {
+      header = cells.map((r) => cellKey(line.slice(r.from, r.to)));
+      return;
+    }
+    const rules: CellRule[] = [];
+    cells.forEach((_, k) => {
+      const column: CellKey | null = (header as (CellKey | null)[] | null)?.[k] ?? null;
+      const prev = k > 0 ? cells[k - 1] : undefined;
+      const left = prev === undefined ? null : cellKey(line.slice(prev.from, prev.to));
+      const found = column ?? left;
+      if (found !== null) rules.push({ index: k, ...found });
+    });
+    if (rules.length > 0) out.set(i, rules);
+  });
+  return out;
+}
+
+/** The cells of a table row that hold a secret value; backticks around a value stay (`cell_spans`). */
+function cellSpans(line: string, rules: readonly CellRule[]): Span[] {
+  const cells = tableCells(line);
+  if (cells === null) return [];
+  const out: Span[] = [];
+  for (const rule of rules) {
+    const cell = cells[rule.index];
+    if (cell === undefined) continue;
+    let { from, to } = cell;
+    const text = line.slice(from, to);
+    if (text.length >= 2 && text.startsWith("`") && text.endsWith("`")) {
+      from += 1;
+      to -= 1;
+    }
+    const value = line.slice(from, to);
+    const typed = PRIMITIVE_TYPES.has(value.replace(/\?+$/, "").toLowerCase());
+    if (
+      /[\p{L}\p{N}]/u.test(value) &&
+      !typed &&
+      looksSecret(rule.cls, rule.key, value, true, "", line)
+    ) {
+      out.push({ from, to });
+    }
+  }
+  return out;
+}
+
+/** A YAML block scalar under a secret key (`password: |`, `- "api_key": >-  # note`). */
+function isSecretBlockKey(line: string): boolean {
+  let t = line.trim();
+  if (t.startsWith("- ")) t = t.slice(2).trimStart();
+  const colon = t.indexOf(":");
+  if (colon < 0) return false;
+  const key = t
+    .slice(0, colon)
+    .trim()
+    .replace(/^["']+|["']+$/g, "");
+  let rest = t.slice(colon + 1);
+  const hash = rest.indexOf("#");
+  if (hash >= 0) rest = rest.slice(0, hash);
+  rest = rest.trim();
+  return key !== "" && !/\s/u.test(key) && BLOCK_MARK.test(rest) && keyClass(key) !== null;
+}
+
+/** Lines of the body of a block scalar under a secret key: the mirror of `block_lines` (Rust). */
+function blockLines(lines: readonly string[]): Set<number> {
+  const out = new Set<number>();
+  let open: number | null = null;
+  lines.forEach((line, i) => {
+    const indent = line.length - line.replace(/^[ \t]+/, "").length;
+    if (open !== null) {
+      if (line.trim() === "") return;
+      if (indent > open) {
+        out.add(i);
+        return;
+      }
+      open = null;
+    }
+    if (isSecretBlockKey(line)) open = indent;
+  });
+  return out;
+}
+
 /** Whether a text can hold a secret at all (most text cannot: it is passed over at once). */
 const HINT =
-  /key|secret|token|pass|pwd|credential|auth|:\/\/|sk-|sk_|rk_|gh[pousr]_|github_pat_|glpat-|akia|asia|aiza|xox|hf_|npm_|eyj/;
+  /key|curl|secret|token|pass|pwd|credential|auth|:\/\/|sk-|sk_|rk_|gh[pousr]_|github_pat_|glpat-|akia|asia|aiza|xox|hf_|npm_|eyj/;
 
 /** Spans (in `text`) of the secret values, in order, not overlapping. */
 export function findCodeSecrets(text: string): Span[] {
@@ -845,6 +1119,8 @@ export function findCodeSecrets(text: string): Span[] {
   const lines = rawLines.map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l));
   if (!HINT.test(text.toLowerCase()) && !lines.some(isPemLine)) return [];
   const bodies = keyBodyLines(lines);
+  const blocks = blockLines(lines);
+  const tables = tableRules(lines);
   const publics = publicBlockLines(lines);
   const found: Span[] = [];
   const named = { value: false };
@@ -852,7 +1128,7 @@ export function findCodeSecrets(text: string): Span[] {
   lines.forEach((line, i) => {
     const base = start;
     start += (rawLines[i] ?? "").length + 1;
-    if (bodies.has(i) || (isPemLine(line) && !publics.has(i))) {
+    if (bodies.has(i) || blocks.has(i) || (isPemLine(line) && !publics.has(i))) {
       named.value = false;
       const t = line.trim();
       if (t !== "" && t !== HIDDEN) {
@@ -860,8 +1136,24 @@ export function findCodeSecrets(text: string): Span[] {
       }
       return;
     }
-    for (const span of pairSpans(line, named))
-      found.push({ from: base + span.from, to: base + span.to });
+    const rules = tables.get(i);
+    for (const span of [
+      ...pairSpans(line, named),
+      ...curlSpans(line),
+      ...netrcSpans(line),
+      ...setterSpans(line),
+      ...(rules === undefined ? [] : cellSpans(line, rules)),
+    ]) {
+      if (span.to > span.from && line.slice(span.from, span.to) !== HIDDEN) {
+        found.push({ from: base + span.from, to: base + span.to });
+      }
+    }
+    for (const match of line.matchAll(ADDRESS_USER)) {
+      const user = match[1];
+      if (user === undefined || !looksRandom(user)) continue;
+      const from = base + match.index + 3;
+      found.push({ from, to: from + user.length });
+    }
     for (const match of line.matchAll(ADDRESS)) {
       const password = match[1];
       if (password === undefined || password === HIDDEN) continue;
@@ -886,6 +1178,22 @@ export function findCodeSecrets(text: string): Span[] {
 /** Lines (0-based) of certificates | public keys of a text held as lines: no mask there (their 64-char lines look like key lines). */
 export function publicKeyLines(lines: readonly string[]): Set<number> {
   return publicBlockLines(lines.map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l)));
+}
+
+/** Lines (0-based) of block scalar bodies under a secret key, of a text held as lines (masked whole, like a key body). */
+export function secretBlockLines(lines: readonly string[]): Set<number> {
+  return blockLines(lines.map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l)));
+}
+
+/** Secret cell spans of the Markdown table rows of a text held as lines (line 0-based -> spans in that line). */
+export function tableSecretSpans(lines: readonly string[]): Map<number, Span[]> {
+  const held = lines.map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l));
+  const out = new Map<number, Span[]>();
+  for (const [i, rules] of tableRules(held)) {
+    const spans = cellSpans(held[i] ?? "", rules);
+    if (spans.length > 0) out.set(i, spans);
+  }
+  return out;
 }
 
 /** Lines (0-based) inside private key blocks of a text held as lines (a viewer that masks line by line). */
