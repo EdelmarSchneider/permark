@@ -560,6 +560,15 @@ fn is_prose_word(word: &str) -> bool {
             .all(|c| c.is_alphabetic() || matches!(c, '\'' | '’'))
 }
 
+/// One word of letters, capitalized at most (`reset`, `Optional`): a word of a sentence or a label, not a password.
+fn is_plain_word(word: &str) -> bool {
+    word.chars().next().is_some_and(char::is_alphabetic)
+        && word
+            .chars()
+            .skip(1)
+            .all(|c| c.is_alphabetic() && !c.is_uppercase())
+}
+
 fn is_ident_start(c: char) -> bool {
     c.is_alphabetic() || matches!(c, '_' | '$')
 }
@@ -973,7 +982,11 @@ fn orphan_key_lines(text: &str) -> Vec<usize> {
 #[must_use]
 pub fn mask_text(text: &str) -> Cow<'_, str> {
     let lower = text.to_lowercase();
-    if !HINTS.iter().any(|hint| lower.contains(hint)) && !text.lines().any(is_pem_line) {
+    // `PIN` only as written (a table header): `pin` is in too many words
+    if !HINTS.iter().any(|hint| lower.contains(hint))
+        && !text.contains("PIN")
+        && !text.lines().any(is_pem_line)
+    {
         return Cow::Borrowed(text);
     }
     let orphans = orphan_key_lines(text);
@@ -1108,7 +1121,26 @@ fn quote_end(line: &str, open: usize) -> usize {
     line.len()
 }
 
-/// `curl -u user:password`, `--user 'user:password'`, `--user=user:password`: the password.
+/// Short curl flags that take no value and may come before `u` | `U` in one word (`-su`, `-sSu`).
+const CURL_BARE_FLAGS: &str = "sSkvLiIfgGNnqZ";
+
+/// Where the value of a user flag starts in a curl word: `-u` | `-U` alone (the next word: its length), attached
+/// (`-uadmin:pw`) or after bare flags (`-su`, `-sSuadmin:pw`).
+fn curl_short_user(word: &str) -> Option<usize> {
+    let flags = word.strip_prefix('-').filter(|f| !f.starts_with('-'))?;
+    for (i, c) in flags.char_indices() {
+        if matches!(c, 'u' | 'U') {
+            return Some(1 + i + 1);
+        }
+        if !CURL_BARE_FLAGS.contains(c) {
+            return None;
+        }
+    }
+    None
+}
+
+/// `curl -u user:password`, `--user 'user:password'`, `--user=user:password`, `-uuser:password`, `-su`,
+/// `-U` | `--proxy-user`: the password (a quoted one whole).
 fn curl_spans(line: &str) -> Vec<Range<usize>> {
     let words = word_ranges(line);
     let is_curl = |r: &Range<usize>| {
@@ -1122,13 +1154,18 @@ fn curl_spans(line: &str) -> Vec<Range<usize>> {
     let mut i = first + 1;
     while i < words.len() {
         let word = &line[words[i].clone()];
-        let start = if word == "-u" || word == "--user" {
+        let attached = ["--user=", "--proxy-user="]
+            .iter()
+            .find(|p| word.starts_with(**p))
+            .map(|p| p.len())
+            .or_else(|| curl_short_user(word).filter(|at| *at < word.len()));
+        let start = if let Some(at) = attached {
+            words[i].start + at
+        } else if word == "--user" || word == "--proxy-user" || curl_short_user(word).is_some() {
             match words.get(i + 1) {
                 Some(next) => next.start,
                 None => break,
             }
-        } else if word.starts_with("--user=") {
-            words[i].start + "--user=".len()
         } else {
             i += 1;
             continue;
@@ -1136,13 +1173,24 @@ fn curl_spans(line: &str) -> Vec<Range<usize>> {
         let (from, to) = if line[start..].starts_with(['"', '\'']) {
             (start + 1, quote_end(line, start))
         } else {
-            let end = line[start..]
-                .find([' ', '\t'])
-                .map_or(line.len(), |e| start + e);
-            (start, end)
+            // up to a space; a quote inside (`admin:"a b"`) runs to its closing quote
+            let mut at = start;
+            while let Some(c) = line[at..].chars().next() {
+                match c {
+                    ' ' | '\t' => break,
+                    '"' | '\'' => at = (quote_end(line, at) + 1).min(line.len()),
+                    c => at += c.len_utf8(),
+                }
+            }
+            (start, at)
         };
         if let Some(colon) = line[from..to].find(':') {
-            let password = from + colon + 1..to;
+            let mut password = from + colon + 1..to;
+            let text = &line[password.clone()];
+            if let Some(quote) = text.chars().next().filter(|c| matches!(c, '"' | '\'')) {
+                let closed = text.len() >= 2 && text.ends_with(quote);
+                password = password.start + 1..password.end - usize::from(closed);
+            }
             if !is_open_value(&line[password.clone()]) {
                 out.push(password);
             }
@@ -1159,27 +1207,48 @@ fn curl_spans(line: &str) -> Vec<Range<usize>> {
 fn netrc_spans(line: &str) -> Vec<Range<usize>> {
     let words = word_ranges(line);
     let word = |i: usize| words.get(i).map(|r| &line[r.clone()]);
-    if words.len() == 2 && word(0) == Some("password") {
-        return std::iter::once(words[1].clone())
-            .filter(|r| !is_open_value(&line[r.clone()]))
+    // the value at word `i`: (its range, a quoted one inside its quotes; the next word; quoted)
+    let value = |i: usize| -> Option<(Range<usize>, usize, bool)> {
+        let r = words.get(i)?;
+        if !line[r.start..].starts_with(['"', '\'']) {
+            return Some((r.clone(), i + 1, false));
+        }
+        let end = quote_end(line, r.start);
+        let next = words
+            .iter()
+            .position(|w| w.start > end)
+            .unwrap_or(words.len());
+        Some((r.start + 1..end, next, true))
+    };
+    // on a line that may be prose (`password reset`, `default login and password settings`) a plain word is no value
+    let hides = |(r, _, quoted): &(Range<usize>, usize, bool), prose: bool| {
+        let text = &line[r.clone()];
+        !is_open_value(text) && (*quoted || !prose || !is_plain_word(text))
+    };
+    if word(0) == Some("password") {
+        return value(1)
+            .filter(|v| v.1 == words.len() && hides(v, true))
+            .map(|v| v.0)
+            .into_iter()
             .collect();
     }
     if !matches!(word(0), Some("machine" | "default")) {
         return Vec::new();
     }
+    let prose = word(0) == Some("default");
     let mut out = Vec::new();
     let mut i = 0;
     while let Some(keyword) = word(i) {
         match keyword {
             "default" => i += 1,
             "machine" | "login" | "password" | "account" | "port" => {
-                let Some(value) = words.get(i + 1) else {
+                let Some(found) = value(i + 1) else {
                     break;
                 };
-                if keyword == "password" && !is_open_value(&line[value.clone()]) {
-                    out.push(value.clone());
+                if keyword == "password" && hides(&found, prose) {
+                    out.push(found.0.clone());
                 }
-                i += 2;
+                i = found.1;
             }
             "macdef" => break,
             // not the netrc shape: prose that starts with "machine"
@@ -1212,6 +1281,8 @@ fn setter_spans(line: &str) -> Vec<Range<usize>> {
         let key = match rest.strip_prefix('_') {
             Some(key) => key,
             None if rest.starts_with(|c: char| c.is_uppercase()) => rest,
+            // `setpassword(`: an all-lowercase name, the key whole
+            None if !rest.is_empty() && rest.chars().all(|c| c.is_ascii_lowercase()) => rest,
             None => continue,
         };
         let Some(class) = key_class(key) else {
@@ -1289,18 +1360,33 @@ fn is_separator_row(line: &str) -> bool {
     })
 }
 
-/// A cell that names a secret (`DB_PASSWORD`, `**Password**`, `API key`): its key class and name. A name has one or
-/// two words.
+/// A cell that names a secret (`DB_PASSWORD`, `**Password**`, `API key`, `PIN`): its key class and name. A name has
+/// one or two words.
 fn cell_key(cell: &str) -> Option<(KeyClass, String)> {
     let name = cell.trim_matches(|c: char| matches!(c, '`' | '*') || c.is_whitespace());
     if name.is_empty() || name.split_whitespace().count() > 2 {
         return None;
     }
+    // `PIN` as written in a table (`pin` keys elsewhere pin versions)
+    if name.split_whitespace().last() == Some("PIN") {
+        return Some((KeyClass::Strong, name.to_owned()));
+    }
     key_class(name).map(|class| (class, name.to_owned()))
 }
 
-/// What to judge in a table row: `(cell index, class of its key, the key)`.
-type CellRules = Vec<(usize, KeyClass, String)>;
+/// One cell to judge in a table row.
+#[derive(Clone)]
+struct CellRule {
+    index: usize,
+    class: KeyClass,
+    key: String,
+    /// Where a row's label may stand (right of a secret name, the first column under a secret header): a plain word
+    /// (`Optional`, `Length`) is no value there.
+    label: bool,
+}
+
+/// What to judge in a table row.
+type CellRules = Vec<CellRule>;
 
 /// The table rows of `text` (0-based line numbers) with the cells to judge: under a header cell that names a secret,
 /// and right after a cell that names one. Header rows (right above a `|---|` row) are never judged.
@@ -1329,11 +1415,17 @@ fn table_rules(text: &str) -> Vec<(usize, CellRules)> {
         let mut rules = CellRules::new();
         for (k, _) in cells.iter().enumerate() {
             let column = header.as_ref().and_then(|h| h.get(k).cloned().flatten());
+            let label = column.is_none() || (k == 0 && cells.len() > 1);
             let left = k
                 .checked_sub(1)
                 .and_then(|j| cell_key(&line[cells[j].clone()]));
             if let Some((class, key)) = column.or(left) {
-                rules.push((k, class, key));
+                rules.push(CellRule {
+                    index: k,
+                    class,
+                    key,
+                    label,
+                });
             }
         }
         if !rules.is_empty() {
@@ -1344,13 +1436,13 @@ fn table_rules(text: &str) -> Vec<(usize, CellRules)> {
 }
 
 /// The cells of a table row that hold a secret value (`rules` from [`table_rules`]); backticks around a value stay.
-fn cell_spans(line: &str, rules: &[(usize, KeyClass, String)]) -> Vec<Range<usize>> {
+fn cell_spans(line: &str, rules: &[CellRule]) -> Vec<Range<usize>> {
     let Some(cells) = table_cells(line) else {
         return Vec::new();
     };
     let mut out = Vec::new();
-    for (k, class, key) in rules {
-        let Some(cell) = cells.get(*k) else {
+    for rule in rules {
+        let Some(cell) = cells.get(rule.index) else {
             continue;
         };
         let mut r = cell.clone();
@@ -1363,7 +1455,8 @@ fn cell_spans(line: &str, rules: &[(usize, KeyClass, String)]) -> Vec<Range<usiz
             PRIMITIVE_TYPES.contains(&value.trim_end_matches('?').to_ascii_lowercase().as_str());
         if value.chars().any(char::is_alphanumeric)
             && !typed
-            && looks_secret(*class, key, value, true, "", line)
+            && !(rule.label && is_plain_word(value))
+            && looks_secret(rule.class, &rule.key, value, true, "", line)
         {
             out.push(r);
         }
@@ -1413,11 +1506,7 @@ fn block_lines(text: &str) -> Vec<usize> {
 
 /// One line (without its line break): the password of every address; each `key <sep> value` pair whose key is
 /// secret; known tokens; `curl` users, `.netrc` passwords, setter arguments; the cells `cells` names (a table row).
-fn mask_line<'a>(
-    line: &'a str,
-    named: &mut bool,
-    cells: Option<&[(usize, KeyClass, String)]>,
-) -> Cow<'a, str> {
+fn mask_line<'a>(line: &'a str, named: &mut bool, cells: Option<&[CellRule]>) -> Cow<'a, str> {
     let mut out = String::new();
     let mut rest = line;
     let mut changed = false;

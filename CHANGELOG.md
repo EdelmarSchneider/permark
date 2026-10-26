@@ -17,6 +17,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Secret values are now also hidden from AI agents, in search excerpts and in code blocks when they are written as a `curl -u` argument, in a `.netrc` file, in a call such as `setPassword(...)`, in a Markdown table cell, as a multi-line `password: |` value, or as a token in front of `@` in a web address. <!-- f: secret-masking, agent-connection -->
 - Headings that hold a secret value now reach AI agents with the value hidden, as the rest of the text does. <!-- f: secret-masking, agent-connection -->
 - A label such as "Enter your password" under a password key is no longer hidden as if it were the password. <!-- f: secret-masking -->
+- Ordinary words in documents, such as "password reset" or "Optional" next to a token in a table, are no longer hidden as if they were secret values. Secret values are now also hidden in more ways of writing a `curl` user and its password, in a quoted `.netrc` password, in a setter written in lowercase and in a table's PIN column. <!-- f: secret-masking, agent-connection -->
 - A hand-off no longer names, to an AI agent, files that were hidden from agents after the hand-off was made; it counts them among the hidden ones instead. <!-- f: agent-connection -->
 
 ## [0.7.0] - 2026-10-23

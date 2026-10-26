@@ -381,6 +381,9 @@ const COLOR = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 /** A word of a sentence: letters (and apostrophes), maybe one end mark (`required.`). */
 const PROSE_WORD = /^[\p{L}'’]+[.,!?:;]?$/u;
 const IDENT = /^[\p{L}_$][\p{L}\p{N}_$]*$/u;
+/** One word of letters, capitalized at most (`reset`, `Optional`): `is_plain_word`. */
+const PLAIN_WORD = /^\p{L}(?:(?!\p{Lu})\p{L})*$/u;
+const isPlainWord = (word: string): boolean => PLAIN_WORD.test(word);
 /** A YAML block scalar mark (`key: |`): the value is on the next lines. */
 const BLOCK_MARK = /^[|>][+-]?[0-9]?$/;
 
@@ -863,7 +866,21 @@ function quoteEnd(line: string, open: number): number {
   return line.length;
 }
 
-/** `curl -u user:password`, `--user 'user:password'`, `--user=user:password`: the mirror of `curl_spans` (Rust). */
+/** Short curl flags that take no value and may come before `u` | `U` in one word (`-su`, `-sSu`). */
+const CURL_BARE_FLAGS = "sSkvLiIfgGNnqZ";
+
+/** Where the value of a user flag starts in a curl word (`-u`, `-uadmin:pw`, `-su`, `-U`): `curl_short_user`. */
+function curlShortUser(word: string): number | null {
+  if (!word.startsWith("-") || word.startsWith("--")) return null;
+  for (let i = 1; i < word.length; i += 1) {
+    const c = word[i] as string;
+    if (c === "u" || c === "U") return i + 1;
+    if (!CURL_BARE_FLAGS.includes(c)) return null;
+  }
+  return null;
+}
+
+/** `curl -u user:password` and the other user flags (`--user=`, `-uuser:pw`, `-su`, `-U`, `--proxy-user`): `curl_spans`. */
 function curlSpans(line: string): Span[] {
   const words = wordRanges(line);
   const text = (r: Span): string => line.slice(r.from, r.to);
@@ -878,12 +895,16 @@ function curlSpans(line: string): Span[] {
     const word = words[i] as Span;
     const w = text(word);
     let start: number;
-    if (w === "-u" || w === "--user") {
+    const prefix = ["--user=", "--proxy-user="].find((p) => w.startsWith(p));
+    const short = curlShortUser(w);
+    const attached =
+      prefix !== undefined ? prefix.length : short !== null && short < w.length ? short : null;
+    if (attached !== null) {
+      start = word.from + attached;
+    } else if (w === "--user" || w === "--proxy-user" || short !== null) {
       const next = words[i + 1];
       if (next === undefined) break;
       start = next.from;
-    } else if (w.startsWith("--user=")) {
-      start = word.from + "--user=".length;
     } else {
       i += 1;
       continue;
@@ -894,12 +915,26 @@ function curlSpans(line: string): Span[] {
       from = start + 1;
       to = quoteEnd(line, start);
     } else {
-      const end = line.slice(start).search(/[ \t]/);
-      to = end < 0 ? line.length : start + end;
+      // up to a space; a quote inside (`admin:"a b"`) runs to its closing quote
+      let at = start;
+      while (at < line.length) {
+        const c = line[at];
+        if (c === " " || c === "\t") break;
+        at = c === '"' || c === "'" ? Math.min(quoteEnd(line, at) + 1, line.length) : at + 1;
+      }
+      to = at;
     }
     const colon = line.slice(from, to).indexOf(":");
-    if (colon >= 0 && !isOpenValue(line.slice(from + colon + 1, to))) {
-      out.push({ from: from + colon + 1, to });
+    if (colon >= 0) {
+      let pFrom = from + colon + 1;
+      let pTo = to;
+      const quote = line[pFrom];
+      if (pTo > pFrom && (quote === '"' || quote === "'")) {
+        const closed = pTo - pFrom >= 2 && line[pTo - 1] === quote;
+        pFrom += 1;
+        if (closed) pTo -= 1;
+      }
+      if (!isOpenValue(line.slice(pFrom, pTo))) out.push({ from: pFrom, to: pTo });
     }
     while (i < words.length && (words[i] as Span).from <= to) i += 1;
   }
@@ -913,21 +948,42 @@ function netrcSpans(line: string): Span[] {
     const r = words[i];
     return r === undefined ? undefined : line.slice(r.from, r.to);
   };
-  if (words.length === 2 && word(0) === "password") {
-    const r = words[1] as Span;
-    return isOpenValue(line.slice(r.from, r.to)) ? [] : [r];
+  type Value = { span: Span; next: number; quoted: boolean };
+  // the value at word `i`: a quoted one inside its quotes
+  const value = (i: number): Value | null => {
+    const r = words[i];
+    if (r === undefined) return null;
+    if (line[r.from] !== '"' && line[r.from] !== "'")
+      return { span: r, next: i + 1, quoted: false };
+    const end = quoteEnd(line, r.from);
+    const next = words.findIndex((w) => w.from > end);
+    return {
+      span: { from: r.from + 1, to: end },
+      next: next < 0 ? words.length : next,
+      quoted: true,
+    };
+  };
+  // on a line that may be prose (`password reset`) a plain word is no value
+  const hides = (v: Value, prose: boolean): boolean => {
+    const text = line.slice(v.span.from, v.span.to);
+    return !isOpenValue(text) && (v.quoted || !prose || !isPlainWord(text));
+  };
+  if (word(0) === "password") {
+    const v = value(1);
+    return v !== null && v.next === words.length && hides(v, true) ? [v.span] : [];
   }
   if (word(0) !== "machine" && word(0) !== "default") return [];
+  const prose = word(0) === "default";
   const out: Span[] = [];
   let i = 0;
   for (let keyword = word(i); keyword !== undefined; keyword = word(i)) {
     if (keyword === "default") {
       i += 1;
     } else if (["machine", "login", "password", "account", "port"].includes(keyword)) {
-      const value = words[i + 1];
-      if (value === undefined) break;
-      if (keyword === "password" && !isOpenValue(line.slice(value.from, value.to))) out.push(value);
-      i += 2;
+      const found = value(i + 1);
+      if (found === null) break;
+      if (keyword === "password" && hides(found, prose)) out.push(found.span);
+      i = found.next;
     } else if (keyword === "macdef") {
       break;
     } else {
@@ -948,6 +1004,8 @@ function setterSpans(line: string): Span[] {
     let key: string;
     if (rest.startsWith("_")) key = rest.slice(1);
     else if (/^\p{Lu}/u.test(rest)) key = rest;
+    // `setpassword(`: an all-lowercase name, the key whole
+    else if (/^[a-z]+$/.test(rest)) key = rest;
     else continue;
     const cls = keyClass(key);
     if (cls === null) continue;
@@ -1006,15 +1064,18 @@ function isSeparatorRow(line: string): boolean {
 
 type CellKey = { cls: KeyClass; key: string };
 
-/** A cell that names a secret (`DB_PASSWORD`, `**Password**`, `API key`): one or two words. */
+/** A cell that names a secret (`DB_PASSWORD`, `**Password**`, `API key`, `PIN`): one or two words. */
 function cellKey(cell: string): CellKey | null {
   const name = cell.replace(/^[`*\s]+|[`*\s]+$/gu, "");
   if (name === "" || name.split(/\s+/u).length > 2) return null;
+  // `PIN` as written in a table (`pin` keys elsewhere pin versions)
+  if (name.split(/\s+/u).at(-1) === "PIN") return { cls: "strong", key: name };
   const cls = keyClass(name);
   return cls === null ? null : { cls, key: name };
 }
 
-type CellRule = { index: number } & CellKey;
+/** `label`: where a row's label may stand (right of a secret name, the first column under a secret header). */
+type CellRule = { index: number; label: boolean } & CellKey;
 
 /** Table rows (line index) with the cells to judge: the mirror of `table_rules` (Rust). */
 function tableRules(lines: readonly string[]): Map<number, CellRule[]> {
@@ -1039,7 +1100,8 @@ function tableRules(lines: readonly string[]): Map<number, CellRule[]> {
       const prev = k > 0 ? cells[k - 1] : undefined;
       const left = prev === undefined ? null : cellKey(line.slice(prev.from, prev.to));
       const found = column ?? left;
-      if (found !== null) rules.push({ index: k, ...found });
+      const label = column === null || (k === 0 && cells.length > 1);
+      if (found !== null) rules.push({ index: k, label, ...found });
     });
     if (rules.length > 0) out.set(i, rules);
   });
@@ -1065,6 +1127,7 @@ function cellSpans(line: string, rules: readonly CellRule[]): Span[] {
     if (
       /[\p{L}\p{N}]/u.test(value) &&
       !typed &&
+      !(rule.label && isPlainWord(value)) &&
       looksSecret(rule.cls, rule.key, value, true, "", line)
     ) {
       out.push({ from, to });
@@ -1117,7 +1180,8 @@ const HINT =
 export function findCodeSecrets(text: string): Span[] {
   const rawLines = text.split("\n");
   const lines = rawLines.map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l));
-  if (!HINT.test(text.toLowerCase()) && !lines.some(isPemLine)) return [];
+  // `PIN` only as written (a table header): `pin` is in too many words
+  if (!HINT.test(text.toLowerCase()) && !text.includes("PIN") && !lines.some(isPemLine)) return [];
   const bodies = keyBodyLines(lines);
   const blocks = blockLines(lines);
   const tables = tableRules(lines);
