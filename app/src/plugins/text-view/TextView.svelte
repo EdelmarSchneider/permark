@@ -9,15 +9,7 @@
   import { tick, untrack } from "svelte";
   import { api } from "../../api";
   import { conditions } from "../../core/conditions/context.svelte";
-  import {
-    findCodeSecrets,
-    MASK,
-    privateKeyLines,
-    publicKeyLines,
-    secretBlockLines,
-    tableSecretSpans,
-    type Span,
-  } from "../../core/config/secrets";
+  import { findCodeSecrets, MASK, privateKeyLines, type Span } from "../../core/config/secrets";
   import { documents } from "../../core/doc/document.svelte";
   import {
     append,
@@ -396,35 +388,16 @@
 
   /** Lines (0-based) inside a private key block: masked whole (a line alone does not show it is one). */
   const keyBody = $derived(privateKeyLines(lines));
-  /** Lines of certificates | public keys: never masked. */
-  const publicBody = $derived(publicKeyLines(lines));
-  /** Lines of a block scalar under a secret key (`password: |`): masked whole. */
-  const blockBody = $derived(secretBlockLines(lines));
-  /** Table cells that hold a secret value (a header or the cell before names it). */
-  const tableCells = $derived(tableSecretSpans(lines));
-
-  /** `spans` and `more` in order, without overlaps (the first one found wins). */
-  function joined(spans: Span[], more: Span[] | undefined): Span[] {
-    if (more === undefined) return spans;
-    const all = [...spans, ...more].sort((a, b) => a.from - b.from || b.to - a.to);
-    const out: Span[] = [];
-    for (const span of all) {
-      const last = out[out.length - 1];
-      if (last === undefined || span.from >= last.to) out.push(span);
-    }
-    return out;
-  }
 
   /** The window scans of the very long lines of this text (line, 0-based -> its windows). */
   let longScans: { lines: readonly string[]; byLine: Map<number, WindowCache> } | null = null;
 
   /** Secret spans of line `i` (0-based) that reach into `from` .. `to`. */
   function spansOf(line: string, i: number, from: number, to: number): Span[] {
-    if (keyBody.has(i) || blockBody.has(i)) {
+    if (keyBody.has(i)) {
       return [{ from: line.length - line.trimStart().length, to: line.length }];
     }
-    if (publicBody.has(i)) return [];
-    if (line.length <= LONG_LINE) return joined(findCodeSecrets(line), tableCells.get(i));
+    if (line.length <= LONG_LINE) return findCodeSecrets(line);
     if (longScans?.lines !== lines) longScans = { lines, byLine: new Map() };
     let cache = longScans.byLine.get(i);
     if (cache === undefined) {

@@ -3,7 +3,7 @@
 //! key and loses the value; so do the password of an address, known token formats wherever they are (`sk-…`, `ghp_…`,
 //! `AKIA…`, JWT) and the body of a private key block. Principle: in a slot named like a secret, mask when in doubt
 //! (a false mask on a secret name is cheap, a leak is not); names that only contain a secret word (`keys`, `keyJump`)
-//! are no slot. Format-free on purpose: it covers config files, code, Markdown and selections alike; the config
+//! are no slot, and nothing is guessed from how a value looks or where it stands without one (only the obvious is hidden). Format-free on purpose: it covers config files, code, Markdown and selections alike; the config
 //! formats add structural masking of their own. Mirror: `src/core/config/secrets.ts`; both read
 //! `testdata/secrets/cases.json` and `testdata/secrets/leaks.json`.
 
@@ -272,11 +272,10 @@ const AUTH_SCHEMES: &[&str] = &[
 const NAME_KEYS: &[&str] = &["name", "key", "env", "var", "variable"];
 const VALUE_KEYS: &[&str] = &["value", "val", "default"];
 
-/// Pieces of text that every secret this module finds by name or format contains (lowercase); text with none (and
-/// no line of a private key) is passed over at once.
+/// Pieces of text that every secret this module finds by name or format contains (lowercase); text with none is
+/// passed over at once.
 const HINTS: &[&str] = &[
     "key",
-    "curl",
     "secret",
     "token",
     "pass",
@@ -424,7 +423,9 @@ fn key_class(name: &str) -> Option<KeyClass> {
         if KEY_QUALIFIERS.contains(&prev) {
             return Some(KeyClass::Normal);
         }
-        return (last == "key" && !PLAIN_KEY_QUALIFIERS.contains(&prev)).then_some(KeyClass::Weak);
+        // `STRIPE_KEY`: only written env-style (`openai_key`, `mapboxKey`, `tls.key` are no slot)
+        return (last == "key" && !PLAIN_KEY_QUALIFIERS.contains(&prev) && is_env_style(name))
+            .then_some(KeyClass::Weak);
     }
     if let Some(p) = prev {
         let joined = format!("{p}{last}");
@@ -461,7 +462,7 @@ fn key_class(name: &str) -> Option<KeyClass> {
 
 /// Whether a key names a secret: its last word (after `_prod`, `_base`, `_confirmation`, ... are set aside) is a
 /// secret word (`DB_PASSWORD`, `clientSecret`, `authToken`, `basic_auth`), or it is `key` after a word that is not a
-/// plain one (`api_key`, `privateKey`, `STRIPE_KEY`, `openai_key`, `tls.key`). `keys`, `keydown`, `keyJump`, `KeyW`,
+/// plain one (`api_key`, `privateKey`, `STRIPE_KEY` only all caps). `openai_key`, `tls.key`, `keys`, `keydown`, `keyJump`, `KeyW`,
 /// `monkey`, `tokenizer`, `max_tokens`, `token_count`, `authorName`, `secretName`, `PASSWORD_FILE`, `cacheKey`,
 /// `PUBLIC_KEY` are not.
 #[must_use]
@@ -469,23 +470,11 @@ pub fn is_secret_key(name: &str) -> bool {
     key_class(name).is_some()
 }
 
-/// Whether the path of a config value names a secret (the key name is the signal there): a segment is a secret key,
-/// or the last one is `key` | `keys` under a named parent (`[stripe] key`, `mapbox.key`; not `[0].key`,
-/// `cache.key`, `i18n.key`).
+/// Whether the path of a config value names a secret (the key name is the signal there): a segment is a secret key.
+/// A last `key` | `keys` alone is none, also under a named parent (`[stripe] key`, `mapbox.key`, `cache.key`).
 #[must_use]
 pub fn is_secret_path<S: AsRef<str>>(segments: &[S]) -> bool {
-    if segments.iter().any(|s| is_secret_key(s.as_ref())) {
-        return true;
-    }
-    let n = segments.len();
-    if n < 2
-        || !matches!(key_words(segments[n - 1].as_ref()).as_slice(), [w] if w == "key" || w == "keys")
-    {
-        return false;
-    }
-    key_words(segments[n - 2].as_ref())
-        .last()
-        .is_some_and(|w| !PLAIN_KEY_QUALIFIERS.contains(&w.as_str()))
+    segments.iter().any(|s| is_secret_key(s.as_ref()))
 }
 
 /// Whether `text` holds a known token (`sk-…`, `ghp_…`, `AKIA…`, JWT, ...), whatever its key.
@@ -606,16 +595,6 @@ fn is_slug(s: &str) -> bool {
         })
 }
 
-/// 12+ characters of a token alphabet with letters and digits, not a slug (`0a1b2c3d4e5f`, `LS0tLS1CRUdJTi…`).
-fn looks_random(s: &str) -> bool {
-    s.len() >= 12
-        && s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '+' | '/' | '='))
-        && s.chars().any(|c| c.is_ascii_digit())
-        && s.chars().any(|c| c.is_ascii_alphabetic())
-        && !is_slug(s)
-}
-
 /// `DB_PASSWORD`, `API_KEY`: a name written env-style.
 fn is_env_style(key: &str) -> bool {
     key.starts_with(|c: char| c.is_ascii_uppercase() || c == '_')
@@ -658,12 +637,12 @@ fn in_code(after: &str, line: &str) -> bool {
 }
 
 /// Whether the value of a secret key may be a secret (see the module doc for the principle). Never: empty, hidden,
-/// a reference, a bool, a command (`$(…)`). Weak slots: only a value that is no slot name and (env-style key | looks
-/// random). Not strong: a number, a color. Env lines (`DB_PASSWORD=…`, dotenv): everything else. Quoted: not the
-/// key's own name (`password: "Password"`) nor a sentence (strong: only with an end mark | 4+ words; passphrase:
-/// never). Unquoted: not code (`new`, `getPassword()`, `os.environ["X"]`, `process.env.X`), a block mark, a YAML tag
-/// (`!Ref`), the key's own name (strong: only in code), a variable named like a secret in code, an identifier ending
-/// a lone statement (`token = t;`), or a word starting a sentence (`The password: must be long`).
+/// a reference, a bool, a command (`$(.)`). Not strong: a number, a color. Quoted: not the key's own name
+/// (`password: "Password"`) nor a sentence of 2+ prose words, a label | message in any language (passphrase: always
+/// a value). Unquoted: not code (`new`, `getPassword()`, `os.environ["X"]`, `process.env.X`), a block mark, a YAML
+/// tag (`!Ref`), the key's own name (strong: only in code), a variable named like a secret in code, an identifier
+/// ending a lone statement (`token = t;`), or a word starting a sentence (`The password: must be long`). Weak slots
+/// never come here: they hold a secret only on an env line ([`env_value_secret`]).
 fn looks_secret(
     class: KeyClass,
     key: &str,
@@ -684,9 +663,6 @@ fn looks_secret(
         return false;
     }
     let strong = class == KeyClass::Strong;
-    if class == KeyClass::Weak && (is_slug(value) || !(is_env_style(key) || looks_random(value))) {
-        return false;
-    }
     if !strong && (is_number(value) || is_color(value)) {
         return false;
     }
@@ -694,25 +670,10 @@ fn looks_secret(
         if flat(value) == flat(key) {
             return false;
         }
+        // a sentence (2+ prose words, any language) is a label | message (`"Enter your password"`), not a value
         let words: Vec<&str> = value.split_whitespace().collect();
         let sentence = words.len() > 1 && words.iter().all(|w| is_prose_word(w));
-        if !strong {
-            return !sentence;
-        }
-        if key_words(key).iter().any(|w| w.ends_with("passphrase")) {
-            return true;
-        }
-        let end_mark = value.trim_end().ends_with(['.', '!', '?', ':']);
-        // a label that names the slot in words (`password: "Enter your password"`) is no value
-        let own = head_words(key);
-        if sentence
-            && own
-                .last()
-                .is_some_and(|w| words.iter().any(|v| flat(v) == *w))
-        {
-            return false;
-        }
-        return !(sentence && (end_mark || words.len() >= 4));
+        return !sentence || key_words(key).iter().any(|w| w.ends_with("passphrase"));
     }
     if CODE_WORDS.contains(&lower.as_str())
         || is_block_mark(value)
@@ -863,17 +824,6 @@ fn token_spans(line: &str) -> Vec<Range<usize>> {
     out
 }
 
-/// A line of a PEM body: exactly 64 base64 characters with upper, lower case and digits (a hex hash is not one).
-fn is_pem_line(content: &str) -> bool {
-    let t = content.trim();
-    t.len() == 64
-        && t.chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/'))
-        && t.chars().any(|c| c.is_ascii_uppercase())
-        && t.chars().any(|c| c.is_ascii_lowercase())
-        && t.chars().any(|c| c.is_ascii_digit())
-}
-
 /// The labels of the `-----BEGIN <label>-----` (`marker` `BEGIN` | `END`) markers of a line.
 fn marker_labels<'a>(line: &'a str, marker: &str) -> Vec<&'a str> {
     let open = format!("-----{marker} ");
@@ -897,37 +847,6 @@ fn is_private_key_marker(line: &str, marker: &str) -> bool {
     marker_labels(line, marker)
         .into_iter()
         .any(is_private_label)
-}
-
-/// A marker of a block that is no secret (`CERTIFICATE`, `PUBLIC KEY`, `PGP PUBLIC KEY BLOCK`, ...).
-fn is_public_marker(line: &str, marker: &str) -> bool {
-    marker_labels(line, marker)
-        .into_iter()
-        .any(|label| !is_private_label(label))
-}
-
-/// Line numbers (0-based) of public blocks (certificates, public keys): their body, also a part of one read without
-/// its `BEGIN` (base64 lines right above its `END`). Their 64-char lines stay visible.
-fn public_block_lines(text: &str) -> Vec<usize> {
-    let mut out = Vec::new();
-    if !text.contains("-----") {
-        return out;
-    }
-    let lines: Vec<&str> = text.lines().collect();
-    let mut inside = false;
-    for (i, line) in lines.iter().enumerate() {
-        if inside {
-            inside = !line.trim_start_matches([' ', '\t']).starts_with("-----END");
-            if inside {
-                out.push(i);
-            }
-        } else if is_public_marker(line, "BEGIN") {
-            inside = true;
-        } else if is_public_marker(line, "END") {
-            out.extend(base64_above(&lines, i));
-        }
-    }
-    out
 }
 
 /// The base64 lines right above line `end` (blank lines between them skipped).
@@ -973,13 +892,10 @@ fn orphan_key_lines(text: &str) -> Vec<usize> {
 #[must_use]
 pub fn mask_text(text: &str) -> Cow<'_, str> {
     let lower = text.to_lowercase();
-    if !HINTS.iter().any(|hint| lower.contains(hint)) && !text.lines().any(is_pem_line) {
+    if !HINTS.iter().any(|hint| lower.contains(hint)) {
         return Cow::Borrowed(text);
     }
     let orphans = orphan_key_lines(text);
-    let blocks = block_lines(text);
-    let tables = table_rules(text);
-    let public = public_block_lines(text);
     let mut out = String::with_capacity(text.len());
     let mut changed = false;
     let mut named = false; // the line before named a secret variable (`- name: DB_PASSWORD`)
@@ -1002,8 +918,6 @@ pub fn mask_text(text: &str) -> Cow<'_, str> {
             !end
         } else {
             orphans.contains(&number)
-                || blocks.contains(&number)
-                || (is_pem_line(content) && !public.contains(&number))
         };
         if body {
             named = false;
@@ -1022,11 +936,7 @@ pub fn mask_text(text: &str) -> Cow<'_, str> {
         if !end && is_private_key_marker(content, "BEGIN") && line.ends_with('\n') {
             in_key = true;
         }
-        let cells = tables
-            .iter()
-            .find(|(at, _)| *at == number)
-            .map(|(_, rules)| rules.as_slice());
-        match mask_line(content, &mut named, cells) {
+        match mask_line(content, &mut named) {
             Cow::Borrowed(_) => out.push_str(line),
             Cow::Owned(masked) => {
                 changed = true;
@@ -1058,9 +968,6 @@ pub fn url_password(text: &str) -> Option<Range<usize>> {
                 if !password.is_empty() && &text[password.clone()] != HIDDEN {
                     return Some(password);
                 }
-            } else if looks_random(&authority[..at]) {
-                // a token as the user (`https://<token>@host`)
-                return Some(start..start + at);
             }
         }
         from = start;
@@ -1068,356 +975,9 @@ pub fn url_password(text: &str) -> Option<Range<usize>> {
     None
 }
 
-/// Byte ranges of the words of a line (split at spaces | tabs).
-fn word_ranges(line: &str) -> Vec<Range<usize>> {
-    let mut out = Vec::new();
-    let mut start = None;
-    for (i, c) in line.char_indices() {
-        if matches!(c, ' ' | '\t') {
-            if let Some(s) = start.take() {
-                out.push(s..i);
-            }
-        } else if start.is_none() {
-            start = Some(i);
-        }
-    }
-    if let Some(s) = start {
-        out.push(s..line.len());
-    }
-    out
-}
-
-/// A value nothing hides: empty, already hidden, a reference, a command.
-fn is_open_value(value: &str) -> bool {
-    value.is_empty() || value == HIDDEN || is_reference(value) || value.starts_with("$(")
-}
-
-/// The end (byte) of a quoted text that opens at `open` (a quote char): its closing quote | the line end.
-fn quote_end(line: &str, open: usize) -> usize {
-    let quote = line[open..].chars().next().unwrap_or('"');
-    let mut escaped = false;
-    for (i, c) in line[open + quote.len_utf8()..].char_indices() {
-        if escaped {
-            escaped = false;
-        } else if c == '\\' {
-            escaped = true;
-        } else if c == quote {
-            return open + quote.len_utf8() + i;
-        }
-    }
-    line.len()
-}
-
-/// `curl -u user:password`, `--user 'user:password'`, `--user=user:password`: the password.
-fn curl_spans(line: &str) -> Vec<Range<usize>> {
-    let words = word_ranges(line);
-    let is_curl = |r: &Range<usize>| {
-        let w = line[r.clone()].to_lowercase();
-        w == "curl" || w == "curl.exe" || w.ends_with("/curl")
-    };
-    let Some(first) = words.iter().position(is_curl) else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    let mut i = first + 1;
-    while i < words.len() {
-        let word = &line[words[i].clone()];
-        let start = if word == "-u" || word == "--user" {
-            match words.get(i + 1) {
-                Some(next) => next.start,
-                None => break,
-            }
-        } else if word.starts_with("--user=") {
-            words[i].start + "--user=".len()
-        } else {
-            i += 1;
-            continue;
-        };
-        let (from, to) = if line[start..].starts_with(['"', '\'']) {
-            (start + 1, quote_end(line, start))
-        } else {
-            let end = line[start..]
-                .find([' ', '\t'])
-                .map_or(line.len(), |e| start + e);
-            (start, end)
-        };
-        if let Some(colon) = line[from..to].find(':') {
-            let password = from + colon + 1..to;
-            if !is_open_value(&line[password.clone()]) {
-                out.push(password);
-            }
-        }
-        while i < words.len() && words[i].start <= to {
-            i += 1;
-        }
-    }
-    out
-}
-
-/// A `.netrc` line: `machine <host> login <name> password <value> ...` (or `default ...`), or the two words
-/// `password <value>` of the multi-line form: the password values.
-fn netrc_spans(line: &str) -> Vec<Range<usize>> {
-    let words = word_ranges(line);
-    let word = |i: usize| words.get(i).map(|r| &line[r.clone()]);
-    if words.len() == 2 && word(0) == Some("password") {
-        return std::iter::once(words[1].clone())
-            .filter(|r| !is_open_value(&line[r.clone()]))
-            .collect();
-    }
-    if !matches!(word(0), Some("machine" | "default")) {
-        return Vec::new();
-    }
-    let mut out = Vec::new();
-    let mut i = 0;
-    while let Some(keyword) = word(i) {
-        match keyword {
-            "default" => i += 1,
-            "machine" | "login" | "password" | "account" | "port" => {
-                let Some(value) = words.get(i + 1) else {
-                    break;
-                };
-                if keyword == "password" && !is_open_value(&line[value.clone()]) {
-                    out.push(value.clone());
-                }
-                i += 2;
-            }
-            "macdef" => break,
-            // not the netrc shape: prose that starts with "machine"
-            _ => return Vec::new(),
-        }
-    }
-    out
-}
-
-/// `setPassword("v")`, `set_api_key('v')`, `SetToken("v")`: the quoted arguments of a setter named after a secret key,
-/// judged as quoted values of that key.
-fn setter_spans(line: &str) -> Vec<Range<usize>> {
-    let mut out = Vec::new();
-    let mut from = 0;
-    while let Some(found) = line[from..].find('(') {
-        let open = from + found;
-        from = open + 1;
-        let name_start = line[..open]
-            .char_indices()
-            .rev()
-            .find(|(_, c)| !(c.is_alphanumeric() || *c == '_'))
-            .map_or(0, |(i, c)| i + c.len_utf8());
-        let name = &line[name_start..open];
-        let Some(rest) = name
-            .strip_prefix("set")
-            .or_else(|| name.strip_prefix("Set"))
-        else {
-            continue;
-        };
-        let key = match rest.strip_prefix('_') {
-            Some(key) => key,
-            None if rest.starts_with(|c: char| c.is_uppercase()) => rest,
-            None => continue,
-        };
-        let Some(class) = key_class(key) else {
-            continue;
-        };
-        let mut depth = 0_usize;
-        let mut at = open + 1;
-        while at < line.len() {
-            let Some(c) = line[at..].chars().next() else {
-                break;
-            };
-            match c {
-                '(' => depth += 1,
-                ')' if depth == 0 => break,
-                ')' => depth -= 1,
-                '"' | '\'' | '`' => {
-                    let end = quote_end(line, at);
-                    let value = &line[at + 1..end];
-                    let after = line.get(end + 1..).unwrap_or_default();
-                    if depth == 0 && looks_secret(class, key, value, true, after, line) {
-                        out.push(at + 1..end);
-                    }
-                    at = end.max(at) + 1;
-                    continue;
-                }
-                _ => {}
-            }
-            at += c.len_utf8();
-        }
-    }
-    out
-}
-
-/// Byte ranges of the cells (trimmed) of a Markdown table row: a line that starts with `|` (escaped `\|` stays in its
-/// cell). `None`: no table row.
-fn table_cells(line: &str) -> Option<Vec<Range<usize>>> {
-    let lead = line.len() - line.trim_start().len();
-    if !line[lead..].starts_with('|') {
-        return None;
-    }
-    let mut cells = Vec::new();
-    let mut start = lead + 1;
-    let mut prev = '|';
-    for (i, c) in line[lead + 1..].char_indices() {
-        let at = lead + 1 + i;
-        if c == '|' && prev != '\\' {
-            cells.push(start..at);
-            start = at + 1;
-        }
-        prev = c;
-    }
-    if !line[start..].trim().is_empty() {
-        cells.push(start..line.len());
-    }
-    Some(
-        cells
-            .into_iter()
-            .map(|r| {
-                let cell = &line[r.clone()];
-                let from = r.start + (cell.len() - cell.trim_start().len());
-                from..(r.start + cell.trim_end().len()).max(from)
-            })
-            .collect(),
-    )
-}
-
-/// A table's `|---|:-:|` row.
-fn is_separator_row(line: &str) -> bool {
-    table_cells(line).is_some_and(|cells| {
-        !cells.is_empty()
-            && cells.iter().all(|r| {
-                let cell = line[r.clone()].trim_matches(':');
-                !cell.is_empty() && cell.chars().all(|c| c == '-')
-            })
-    })
-}
-
-/// A cell that names a secret (`DB_PASSWORD`, `**Password**`, `API key`): its key class and name. A name has one or
-/// two words.
-fn cell_key(cell: &str) -> Option<(KeyClass, String)> {
-    let name = cell.trim_matches(|c: char| matches!(c, '`' | '*') || c.is_whitespace());
-    if name.is_empty() || name.split_whitespace().count() > 2 {
-        return None;
-    }
-    key_class(name).map(|class| (class, name.to_owned()))
-}
-
-/// What to judge in a table row: `(cell index, class of its key, the key)`.
-type CellRules = Vec<(usize, KeyClass, String)>;
-
-/// The table rows of `text` (0-based line numbers) with the cells to judge: under a header cell that names a secret,
-/// and right after a cell that names one. Header rows (right above a `|---|` row) are never judged.
-fn table_rules(text: &str) -> Vec<(usize, CellRules)> {
-    if !text.contains('|') {
-        return Vec::new();
-    }
-    let lines: Vec<&str> = text
-        .lines()
-        .map(|l| l.strip_suffix('\r').unwrap_or(l))
-        .collect();
-    let mut out = Vec::new();
-    let mut header: Option<Vec<Option<(KeyClass, String)>>> = None;
-    for (i, line) in lines.iter().enumerate() {
-        let Some(cells) = table_cells(line) else {
-            header = None;
-            continue;
-        };
-        if is_separator_row(line) {
-            continue;
-        }
-        if lines.get(i + 1).is_some_and(|next| is_separator_row(next)) {
-            header = Some(cells.iter().map(|r| cell_key(&line[r.clone()])).collect());
-            continue;
-        }
-        let mut rules = CellRules::new();
-        for (k, _) in cells.iter().enumerate() {
-            let column = header.as_ref().and_then(|h| h.get(k).cloned().flatten());
-            let left = k
-                .checked_sub(1)
-                .and_then(|j| cell_key(&line[cells[j].clone()]));
-            if let Some((class, key)) = column.or(left) {
-                rules.push((k, class, key));
-            }
-        }
-        if !rules.is_empty() {
-            out.push((i, rules));
-        }
-    }
-    out
-}
-
-/// The cells of a table row that hold a secret value (`rules` from [`table_rules`]); backticks around a value stay.
-fn cell_spans(line: &str, rules: &[(usize, KeyClass, String)]) -> Vec<Range<usize>> {
-    let Some(cells) = table_cells(line) else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    for (k, class, key) in rules {
-        let Some(cell) = cells.get(*k) else {
-            continue;
-        };
-        let mut r = cell.clone();
-        let text = &line[r.clone()];
-        if text.len() >= 2 && text.starts_with('`') && text.ends_with('`') {
-            r = r.start + 1..r.end - 1;
-        }
-        let value = &line[r.clone()];
-        let typed =
-            PRIMITIVE_TYPES.contains(&value.trim_end_matches('?').to_ascii_lowercase().as_str());
-        if value.chars().any(char::is_alphanumeric)
-            && !typed
-            && looks_secret(*class, key, value, true, "", line)
-        {
-            out.push(r);
-        }
-    }
-    out
-}
-
-/// A YAML block scalar under a secret key (`password: |`, `- "api_key": >-  # note`).
-fn is_secret_block_key(line: &str) -> bool {
-    let t = line.trim();
-    let t = t.strip_prefix("- ").map_or(t, str::trim_start);
-    let Some((key, rest)) = t.split_once(':') else {
-        return false;
-    };
-    let key = key.trim().trim_matches(['"', '\'']);
-    let rest = rest.split_once('#').map_or(rest, |(v, _)| v).trim();
-    !key.is_empty()
-        && !key.contains(char::is_whitespace)
-        && is_block_mark(rest)
-        && key_class(key).is_some()
-}
-
-/// Lines (0-based) of the body of a block scalar under a secret key: the non-blank lines indented deeper than the
-/// key's line, up to the first non-blank line that is not.
-fn block_lines(text: &str) -> Vec<usize> {
-    let mut out = Vec::new();
-    let mut open: Option<usize> = None;
-    for (i, raw) in text.lines().enumerate() {
-        let line = raw.strip_suffix('\r').unwrap_or(raw);
-        let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
-        if let Some(key_indent) = open {
-            if line.trim().is_empty() {
-                continue;
-            }
-            if indent > key_indent {
-                out.push(i);
-                continue;
-            }
-            open = None;
-        }
-        if is_secret_block_key(line) {
-            open = Some(indent);
-        }
-    }
-    out
-}
-
 /// One line (without its line break): the password of every address; each `key <sep> value` pair whose key is
-/// secret; known tokens; `curl` users, `.netrc` passwords, setter arguments; the cells `cells` names (a table row).
-fn mask_line<'a>(
-    line: &'a str,
-    named: &mut bool,
-    cells: Option<&[(usize, KeyClass, String)]>,
-) -> Cow<'a, str> {
+/// secret; known tokens.
+fn mask_line<'a>(line: &'a str, named: &mut bool) -> Cow<'a, str> {
     let mut out = String::new();
     let mut rest = line;
     let mut changed = false;
@@ -1434,12 +994,6 @@ fn mask_line<'a>(
         mask_pairs(line, named)
     };
     let mut spans = token_spans(&pairs);
-    spans.extend(curl_spans(&pairs));
-    spans.extend(netrc_spans(&pairs));
-    spans.extend(setter_spans(&pairs));
-    if let Some(rules) = cells {
-        spans.extend(cell_spans(&pairs, rules));
-    }
     spans.retain(|r| r.end > r.start && &pairs[r.clone()] != HIDDEN);
     if spans.is_empty() {
         return pairs;
@@ -1692,12 +1246,14 @@ fn mask_pairs<'a>(line: &'a str, named: &mut bool) -> Cow<'a, str> {
         }
         let value = &line[found.from..found.to.max(found.from)];
         let after = &line[byte(found.next.min(chars.len()))..];
-        let secret = if found.list {
+        let secret = if class == KeyClass::Weak && !env_line {
+            false // `STRIPE_KEY` holds a secret only on an env line (`STRIPE_KEY=.`)
+        } else if found.list {
             !value.trim().is_empty() && value != HIDDEN
         } else if first == '`' && value.contains("${") {
             false
         } else if env_line {
-            env_value_secret(class, key, value)
+            env_value_secret(class, value)
         } else if sep == Some(':') && !found.quoted && is_type_annotation(value, after) {
             false
         } else {
@@ -1720,7 +1276,7 @@ fn mask_pairs<'a>(line: &'a str, named: &mut bool) -> Cow<'a, str> {
 
 /// The value of an env line (`DB_PASSWORD=…`, dotenv | shell): literal to the end of its token; only a reference,
 /// a command (`$(…)`), a bool, a slot name under a weak key and (not strong) a number are no secret.
-fn env_value_secret(class: KeyClass, key: &str, value: &str) -> bool {
+fn env_value_secret(class: KeyClass, value: &str) -> bool {
     let lower = value.to_lowercase();
     if value.is_empty()
         || value == HIDDEN
@@ -1733,9 +1289,7 @@ fn env_value_secret(class: KeyClass, key: &str, value: &str) -> bool {
     match class {
         KeyClass::Strong => true,
         KeyClass::Normal => !is_number(value),
-        KeyClass::Weak => {
-            !is_number(value) && !is_slug(value) && (is_env_style(key) || looks_random(value))
-        }
+        KeyClass::Weak => !is_number(value) && !is_slug(value),
     }
 }
 
