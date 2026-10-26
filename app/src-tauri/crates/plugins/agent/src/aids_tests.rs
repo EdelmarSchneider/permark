@@ -462,6 +462,98 @@ fn the_hand_off_freezes_what_the_person_did_and_activity_answers_it() {
     }
 }
 
+#[test]
+fn a_frozen_package_leaves_out_rows_whose_path_is_hidden_now_and_counts_them() {
+    let fx = Budget::new();
+    note(&fx, save("docs/plan.md", &["Plan > Rollout"]));
+    note(&fx, save("private/secret.md", &["Secret"]));
+    note(
+        &fx,
+        Fact::Comment {
+            op: CommentOp::Add,
+            path: "docs/spec.md".to_owned(),
+            id: "c2".to_owned(),
+            heading: Some("Spec > Retry policy".to_owned()),
+        },
+    );
+    let done = confirm(&fx);
+    let head = done.full.lines().next().unwrap().to_owned();
+    assert!(
+        head.contains(" n=2 ") && head.contains(" hidden=1"),
+        "{}",
+        done.full
+    );
+    assert!(
+        done.full.contains("\tcomment\tdocs/spec.md\t"),
+        "{}",
+        done.full
+    );
+    // the person hides a path after the hand-off: the package no longer names it, and says one more was hidden
+    write(&fx, ".aiignore", "private/\ndocs/spec.md\n");
+    let (_, text) = call(&fx, "activity", json!({})).unwrap();
+    assert!(!text.contains("docs/spec.md"), "{text}");
+    assert!(
+        text.contains("\tedited\tdocs/plan.md\tPlan > Rollout"),
+        "{text}"
+    );
+    let head = text.lines().next().unwrap();
+    assert!(
+        head.contains(" n=1 ") && head.contains(" hidden=2"),
+        "{text}"
+    );
+    assert!(
+        text.contains("-- session id=1 ") && text.contains(" rows=1\n"),
+        "{text}"
+    );
+    // every row hidden: only the header is left
+    write(&fx, ".aiignore", "private/\ndocs/\n");
+    let (_, text) = call(&fx, "activity", json!({})).unwrap();
+    assert!(!text.contains("docs/"), "{text}");
+    assert!(
+        !text.contains("#cols") && !text.contains("-- session"),
+        "{text}"
+    );
+    assert!(
+        text.contains(" n=0 ") && text.contains(" hidden=3"),
+        "{text}"
+    );
+    // the rule lifted: exactly the frozen text again
+    write(&fx, ".aiignore", "private/\n");
+    assert_eq!(call(&fx, "activity", json!({})).unwrap().1, done.full);
+}
+
+#[test]
+fn a_frozen_row_is_hidden_by_any_path_it_names() {
+    let text = "activity since=handoff package=2026-10-25T21:00 tz=-03:00 n=4 sessions=1\n\
+                #cols seq time by kind path detail flags\n\
+                -- session id=1 from=21:00 to=21:05 rows=3\n\
+                1\t21:00\tperson\trenamed\tdocs/b.md\tfrom=\"secret drafts/a.md\"\n\
+                2\t21:01\tperson\tedited\tdocs/c.md\tIntro blocks=1\tmoved_to=keep/c, d.md,changed_since\n\
+                3\t21:02\tperson\tconverted\tdocs/d.docx\tto=md saved=docs/d.md\n\
+                -- outside n=1\n\
+                4\t21:03\toutside\tmodified\tdocs/e.md\n\
+                -- outside_folders n=2\n\
+                hidden/\t1\t0\t0\n\
+                open/\t0\t2\t0\n";
+    let hide = |path: &str, is_dir: bool| -> bool {
+        matches!(
+            (path, is_dir),
+            ("secret drafts/a.md" | "keep/c, d.md" | "docs/e.md", false) | ("hidden", true)
+        )
+    };
+    let served = handoff::frozen_now(text, &hide);
+    assert_eq!(
+        served,
+        "activity since=handoff package=2026-10-25T21:00 tz=-03:00 n=1 sessions=1 hidden=4\n\
+         #cols seq time by kind path detail flags\n\
+         -- session id=1 from=21:00 to=21:05 rows=1\n\
+         3\t21:02\tperson\tconverted\tdocs/d.docx\tto=md saved=docs/d.md\n\
+         -- outside_folders n=1\n\
+         open/\t0\t2\t0\n"
+    );
+    // nothing hidden now: byte for byte the frozen text
+    assert_eq!(handoff::frozen_now(text, &|_: &str, _: bool| false), text);
+}
 fn outside(fx: &Budget, changes: Vec<(&str, ChangeKind)>) {
     fx.core().services().activity.outside(&FsBatch {
         changes: changes
