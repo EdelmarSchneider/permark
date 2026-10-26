@@ -93,7 +93,6 @@ pub trait Format: Send + Sync {
     fn edit(&self, _text: &str, _edit: &ConfigEdit) -> Result<Splice, EditRefusal> {
         Err(EditRefusal::Unsupported)
     }
-
     /// What search may read of `text`: keys only, never values (`None`: the format adds nothing).
     fn searchable(&self, _text: &str) -> Option<String> {
         None

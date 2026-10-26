@@ -647,11 +647,10 @@ fn every_text_reaches_the_agent_as_written() {
     let note = tools
         .call("read_note", json!({ "note": "2026-10-15 1432.md" }))
         .unwrap();
-    let note = note["text"].as_str().unwrap();
-    assert!(note.starts_with("Deploy with password: "), "{note}");
-    assert!(!note.contains("<hidden>"), "{note}");
+    assert_eq!(note["text"], "Deploy with password: hunter2\n");
     let tags = tools.call("search", json!({ "tags": ["plan"] })).unwrap();
     assert!(tags.to_string().contains("README.md"), "{tags}");
+    assert!(tags.to_string().contains("token=abc"), "{tags}");
     assert!(!tags.to_string().contains("<hidden>"), "{tags}");
     assert!(not_found(
         tools.call("read_note", json!({ "note": "other.md" }))

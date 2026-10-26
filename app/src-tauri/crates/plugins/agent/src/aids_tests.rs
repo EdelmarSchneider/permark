@@ -2,7 +2,7 @@
 
 //! Orientation aids and the activity trail over the fixture project: `map`, search budgets, outline links,
 //! `activity`, the hand-off (preview, confirm, frozen package), and the rules every answer keeps: hidden paths absent,
-//! secrets masked, zones that document text cannot close.
+//! zones that document text cannot close.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
