@@ -623,3 +623,29 @@ fn search_never_tells_whether_a_masked_value_is_there() {
         assert_eq!(text.replace(query, "<q>"), nowhere, "{query}");
     }
 }
+
+#[test]
+fn search_sizes_are_of_the_masked_section() {
+    let fx = Budget::new();
+    write(&fx, "ops/short.md", "# Rollout\n\npassword: q1\n");
+    write(
+        &fx,
+        "ops/long.md",
+        "# Rollout\n\npassword: q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1q1\n",
+    );
+    indexed(&fx, "ops/short.md");
+    indexed(&fx, "ops/long.md");
+    let (value, _) = call(&fx, "search", json!({ "query": "rollout" })).unwrap();
+    let sizes: Vec<u64> = value["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|h| h["path"].as_str().unwrap().starts_with("ops/"))
+        .map(|h| h["size_tok"].as_u64().unwrap())
+        .collect();
+    assert_eq!(sizes.len(), 2, "{value}");
+    assert_eq!(
+        sizes[0], sizes[1],
+        "a secret's length shows in no size: {value}"
+    );
+}
