@@ -23,28 +23,6 @@ pub const AI_IGNORE: &str = ".aiignore";
 const MAX_IGNORE_BYTES: u64 = 1024 * 1024;
 /// Folders of the project's own machinery (at any depth: a nested repository has its own), never shared.
 const PRIVATE_FOLDERS: [&str; 2] = [".permark", ".git"];
-/// Files that hold keys or credentials whole, never shared: exact names (folded).
-const KEY_FILES: [&str; 4] = [".netrc", "_netrc", ".pgpass", ".git-credentials"];
-/// Extensions of key files (folded).
-const KEY_EXTENSIONS: [&str; 5] = ["pem", "key", "p12", "pfx", "keystore"];
-/// Name starts of SSH private keys (folded; `id_rsa.pub` is public and stays visible).
-const SSH_KEYS: [&str; 4] = ["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"];
-
-/// A file name that holds a private key or credentials whole.
-fn is_key_file(name: &str) -> bool {
-    let name = name.to_lowercase();
-    if KEY_FILES.contains(&name.as_str()) {
-        return true;
-    }
-    let public = Path::new(&name)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("pub"));
-    if SSH_KEYS.iter().any(|k| name.starts_with(k)) && !public {
-        return true;
-    }
-    name.rsplit_once('.')
-        .is_some_and(|(stem, ext)| !stem.is_empty() && KEY_EXTENSIONS.contains(&ext))
-}
 
 /// The rules of one call (read fresh: `.aiignore` and `.permark/config.toml` can change while an agent runs).
 pub struct Guard {
@@ -213,9 +191,6 @@ impl Guard {
         {
             return true;
         }
-        if !is_dir && is_key_file(path.rsplit('/').next().unwrap_or_default()) {
-            return true;
-        }
         if self.scope.as_ref().is_some_and(|s| {
             if denied {
                 s.hides(path, is_dir)
@@ -284,7 +259,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn machinery_folders_at_any_depth_and_key_files_are_hidden() {
+    fn machinery_folders_at_any_depth_are_hidden_and_key_files_are_not() {
         let dir = tempfile::tempdir().unwrap();
         let root = Root::open(dir.path()).unwrap();
         let guard = Guard::new(&root, &[]);
@@ -293,33 +268,27 @@ mod tests {
             "sub/.git/config",
             "a/b/.permark/local/comments.json",
             "sub/.git",
-            "deploy/id_ed25519",
-            "id_rsa",
-            "certs/server.key",
-            "certs/chain.PEM",
-            "store.p12",
-            "home/.netrc",
-            ".git-credentials",
         ] {
             assert!(guard.hidden(path, false), "{path}");
         }
         assert!(guard.hidden("sub/.git", true));
         // the file system's own case rule: `.GIT` is git's folder only where case is ignored
         assert_eq!(guard.hidden("sub/.GIT/FETCH_HEAD", false), CASE_INSENSITIVE);
+        // key files are not hidden by name (director 2026-10-26, t27s6): `.aiignore` keeps them away
         for path in [
             "docs/plan.md",
+            "deploy/id_ed25519",
             "deploy/id_ed25519.pub",
-            "keys/readme.md",
+            "id_rsa",
+            "certs/server.key",
+            "certs/chain.PEM",
+            "store.p12",
+            "home/.netrc",
+            ".git-credentials",
             "a.gitignore",
             ".github/workflows/ci.yml",
-            ".pem",
-            "monkey.md",
         ] {
             assert!(!guard.hidden(path, false), "{path}");
         }
-        assert!(
-            !guard.hidden("certs.key", true),
-            "a folder is not a key file"
-        );
     }
 }
