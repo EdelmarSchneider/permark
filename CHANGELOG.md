@@ -14,9 +14,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - When PerMark can't read some of the data it saved (for example because another program has the file open at that moment), it now tries again for a moment, then leaves the file as it is and doesn't write over it until it can read it again, usually after a restart. Before, it went on with empty defaults and could save them over that data, so the windows and tabs from last time, or other things it remembered, could be lost for good. When this happens to the windows and tabs from last time, a quiet note names the file. <!-- f: session-restore -->
 - Web pictures are now only fetched from public internet addresses. <!-- f: pictures-in-documents -->
 - Search by AI agents now only matches the text agents are shown, with secret values hidden. <!-- f: agent-connection, search -->
-- Secret values are now also hidden from AI agents, in search excerpts and in code blocks when they are written as a `curl -u` argument, in a `.netrc` file, in a call such as `setPassword(...)`, in a Markdown table cell, as a multi-line `password: |` value, or as a token in front of `@` in a web address. <!-- f: secret-masking, agent-connection -->
+- Secret values are now hidden only where they are clearly secrets: the value of a setting named as one (such as `password` or `API_KEY`), a known token format, a private key block and the password in a web address. Labels and messages such as "Enter your password", in any language, and other text that only looks like a secret are no longer hidden. <!-- f: secret-masking, agent-connection -->
 - Headings that hold a secret value now reach AI agents with the value hidden, as the rest of the text does. <!-- f: secret-masking, agent-connection -->
-- A label such as "Enter your password" under a password key is no longer hidden as if it were the password. <!-- f: secret-masking -->
 
 ## [0.7.0] - 2026-10-23
 
