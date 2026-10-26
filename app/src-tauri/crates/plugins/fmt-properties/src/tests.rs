@@ -1,4 +1,4 @@
-use permark_core::format::config::fidelity::{check_corpus, check_masking, masked};
+use permark_core::format::config::fidelity::check_corpus;
 use permark_core::format::config::ScalarKind;
 use permark_core::format::{ConfigEdit, EditRefusal, Editability, Format, NewValue};
 
@@ -138,16 +138,6 @@ fn edits_replace_only_the_value_text() {
         edit("app.name", " lead"),
         Err(EditRefusal::Invalid("roundTrip"))
     );
-}
-
-#[test]
-fn secrets_are_masked_by_key() {
-    check_masking(&format(), "application.properties", SPRING, &["s3cr3t"]);
-    let out = masked(&format(), SPRING);
-    assert!(out.contains("spring.datasource.password=<hidden>"));
-    assert!(out.contains("spring.datasource.username: app"));
-    // the address of the datasource has no password in it
-    assert!(out.contains("jdbc:postgresql://localhost:5432/app"));
 }
 
 #[test]

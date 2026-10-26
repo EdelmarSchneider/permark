@@ -1300,7 +1300,7 @@ export default {
   "agent.title": "Conexiunea cu agenții",
   "agent.switch": "Partajează acest proiect cu agenții",
   "agent.switchHint":
-    "Un agent pe care îl conectezi (un instrument AI compatibil cu MCP, cum ar fi Claude Code sau Cursor) poate vedea ce ai pe ecran și ce s-a modificat, poate căuta și citi fișierele acestui proiect, îți poate citi comentariile și notele pe care le partajezi și îți poate arăta un loc. Doar pe acest computer. Parolele și cheile pe care PerMark le recunoaște rămân ascunse, iar agenții nu editează niciodată fișiere prin PerMark. Acest lucru acoperă doar ce primesc agenții de la PerMark: un agent poate deschide în continuare singur fișiere de pe computerul tău.",
+    "Un agent pe care îl conectezi (un instrument AI compatibil cu MCP, cum ar fi Claude Code sau Cursor) poate vedea ce ai pe ecran și ce s-a modificat, poate căuta și citi fișierele acestui proiect, îți poate citi comentariile și notele pe care le partajezi și îți poate arăta un loc. Doar pe acest computer. Fișierele listate în .aiignore rămân în afara accesului lor, iar agenții nu editează niciodată fișiere prin PerMark. Acest lucru acoperă doar ce primesc agenții de la PerMark: un agent poate deschide în continuare singur fișiere de pe computerul tău.",
   "agent.groups": "Ce pot face agenții",
   "agent.group.context": "Să vadă ce ai pe ecran",
   "agent.group.changes": "Să vadă ce s-a modificat",
@@ -1413,9 +1413,6 @@ export default {
   "config.sheet": "Setările din acest fișier",
   "config.root": "Nivelul de sus",
   "config.fold": "Restrânge sau extinde {name}",
-  "config.reveal": "Arată valoarea",
-  "config.hide": "Ascunde valoarea",
-  "config.hidden": "Valoare ascunsă",
   "config.empty": "gol",
   "config.valueOf": "Valoarea pentru {key}",
   "config.fromSource": "Editează în Sursă",
@@ -1624,8 +1621,7 @@ export default {
   "plugin.fmt-ini.about":
     "Afișează fișierele INI ca o fișă clară și editează câte o valoare pe rând.",
   "plugin.fmt-dotenv.name": "Fișiere dotenv",
-  "plugin.fmt-dotenv.about":
-    "Afișează fișierele .env ca o fișă clară; valorile secrete rămân ascunse.",
+  "plugin.fmt-dotenv.about": "Afișează fișierele .env ca o fișă clară.",
   "plugin.fmt-properties.name": "Fișiere .properties",
   "plugin.fmt-properties.about":
     "Afișează fișierele .properties ca o fișă clară și editează câte o valoare pe rând.",
@@ -1978,9 +1974,6 @@ export default {
     "Această sursă are peste 50 MB, așa că este prea mare pentru a fi convertită aici.",
   "convert.invalid": "Acesta nu este {format} valid.",
   "convert.failed": "Conversia nu a reușit.",
-  "convert.secrets.one": "Conține {n} valoare secretă: mascată în previzualizare.",
-  "convert.secrets.few": "Conține {n} valori secrete: mascate în previzualizare.",
-  "convert.secrets.other": "Conține {n} de valori secrete: mascate în previzualizare.",
   "convert.targets": "Formate",
   "convert.best": "cel mai bun",
   "convert.fits": "Potrivit",
@@ -1991,9 +1984,6 @@ export default {
   "convert.approxHint":
     "~ = tokeni estimați. Pentru numere exacte, setează un tokenizer GPT ca principal în Numărul de tokeni și descarcă-i vocabularul.",
   "convert.exactHint": "Numărat de tokenizerul afișat.",
-  "convert.confirmSecrets.one": "Rezultatul conține {n} valoare secretă.",
-  "convert.confirmSecrets.few": "Rezultatul conține {n} valori secrete.",
-  "convert.confirmSecrets.other": "Rezultatul conține {n} de valori secrete.",
   "convert.copied": "Copiat.",
   "convert.saved": "Salvat ca {path}",
   "convert.actionFailed": "Nu a funcționat.",

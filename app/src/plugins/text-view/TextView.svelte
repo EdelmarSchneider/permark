@@ -2,14 +2,13 @@
   // A text file: line numbers, monospace, highlighted by its extension when the highlight plugin is on. A very long
   // file shows only the lines near the screen (plain), so it opens at once and never freezes the window; a file too
   // large to read whole shows its first part and asks for the rest as the reader comes to it. Lines that changed on
-  // disk glow for a moment; a line asked for (a code reference) comes into view, tinted a moment. Secret values are
-  // masked until clicked. Long lines wrap (the setting): a wrapped line goes on a little to the right, its number on
-  // its first row only; a very long file counts its rows without drawing them (wrapRows.ts) and draws only the rows
-  // near the screen, even of a single line of many megabytes. Switching wraps keeps the line at the top in place.
+  // disk glow for a moment; a line asked for (a code reference) comes into view, tinted a moment. Long lines wrap (the
+  // setting): a wrapped line goes on a little to the right, its number on its first row only; a very long file counts
+  // its rows without drawing them (wrapRows.ts) and draws only the rows near the screen, even of a single line of many
+  // megabytes. Switching wraps keeps the line at the top in place.
   import { tick, untrack } from "svelte";
   import { api } from "../../api";
   import { conditions } from "../../core/conditions/context.svelte";
-  import { findCodeSecrets, MASK, privateKeyLines, type Span } from "../../core/config/secrets";
   import { documents } from "../../core/doc/document.svelte";
   import {
     append,
@@ -39,7 +38,6 @@
     type Piece,
     type Widths,
   } from "./wrapRows";
-  import { longLineSpans, LONG_LINE, type WindowCache } from "./longSecrets";
 
   let { view }: ViewerProps = $props();
 
@@ -125,7 +123,7 @@
     };
   });
 
-  /** A piece that is a whole line (its secrets masked) rather than some rows of a very long one. */
+  /** A piece that is a whole line rather than some rows of a very long one. */
   function whole(piece: Piece): boolean {
     return (
       starts === null ||
@@ -377,66 +375,10 @@
     void more();
   }
 
-  // ---- secrets: a value of a secret-looking key is a mask until it is clicked ----------------------------------
-
-  let shownSecrets = $state.raw<{ view: object | null; keys: ReadonlySet<string> }>({
-    view: null,
-    keys: new Set(),
-  });
-
-  type Part = { text: string; secret: string | null };
-
-  /** Lines (0-based) inside a private key block: masked whole (a line alone does not show it is one). */
-  const keyBody = $derived(privateKeyLines(lines));
-
-  /** The window scans of the very long lines of this text (line, 0-based -> its windows). */
-  let longScans: { lines: readonly string[]; byLine: Map<number, WindowCache> } | null = null;
-
-  /** Secret spans of line `i` (0-based) that reach into `from` .. `to`. */
-  function spansOf(line: string, i: number, from: number, to: number): Span[] {
-    if (keyBody.has(i)) {
-      return [{ from: line.length - line.trimStart().length, to: line.length }];
-    }
-    if (line.length <= LONG_LINE) return findCodeSecrets(line);
-    if (longScans?.lines !== lines) longScans = { lines, byLine: new Map() };
-    let cache = longScans.byLine.get(i);
-    if (cache === undefined) {
-      cache = new Map();
-      longScans.byLine.set(i, cache);
-    }
-    return longLineSpans(line, from, to, cache);
-  }
-
-  /**
-   * A line, or the part `range` of it (some rows of a very long one), cut where its secret values are (a line of CRLF
-   * text loses its carriage return). A value begun on an earlier row stays hidden: its mask is drawn where it starts.
-   */
-  function pieces(raw: string, no: number, range?: [number, number]): Part[] {
+  /** A line, or the part `range` of it (some rows of a very long one); a line of CRLF text loses its carriage return. */
+  function lineOf(raw: string, range?: [number, number]): string {
     const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
-    const [start, end] = range ?? [0, line.length];
-    const spans = spansOf(line, no - 1, start, end);
-    if (spans.length === 0) return [{ text: line.slice(start, end), secret: null }];
-    const open = shownSecrets.view === view ? shownSecrets.keys : new Set<string>();
-    const out: Part[] = [];
-    let at = start;
-    for (const span of spans) {
-      if (span.to <= start) continue;
-      if (span.from >= end) break;
-      const from = Math.max(span.from, start);
-      const to = Math.min(span.to, end);
-      out.push({ text: line.slice(at, from), secret: null });
-      const key = `${no}:${span.from}`;
-      if (open.has(key)) out.push({ text: line.slice(from, to), secret: null });
-      else if (span.from >= start) out.push({ text: MASK, secret: key });
-      at = to;
-    }
-    out.push({ text: line.slice(at, end), secret: null });
-    return out;
-  }
-
-  function reveal(key: string): void {
-    const keys = shownSecrets.view === view ? shownSecrets.keys : new Set<string>();
-    shownSecrets = { view, keys: new Set([...keys, key]) };
+    return range === undefined ? line : line.slice(range[0], range[1]);
   }
 
   // ---- glow: the lines that changed on disk ---------------------------------------------------------------------
@@ -524,11 +466,7 @@
             <span class="no">{piece.from === 0 ? piece.line + 1 : ""}</span><span
               class="line"
               style:--lead={wrap ? leadOf(piece.line) : null}
-              >{@render masked(
-                lines[piece.line] ?? "",
-                piece.line + 1,
-                whole(piece) ? undefined : rangeOf(piece),
-              )}</span
+              >{lineOf(lines[piece.line] ?? "", whole(piece) ? undefined : rangeOf(piece))}</span
             >
           </div>
         {/each}
@@ -587,31 +525,18 @@
   {/if}
 </div>
 
-<!-- a line (or the part `range` of it), its secret values masked until clicked -->
-{#snippet masked(
-  raw: string,
-  no: number,
-  range?: [number, number],
-)}{#each pieces(raw, no, range) as part, i (i)}{#if part.secret !== null}<button
-        type="button"
-        class="secret"
-        title={t("config.reveal")}
-        aria-label={t("config.reveal")}
-        onclick={() => reveal(part.secret ?? "")}>{part.text}</button
-      >{:else}{part.text}{/if}{/each}{/snippet}
-
 <!-- a smaller file without the highlighter (off, or still on its way): wrapped one element per line, else one block -->
 {#snippet plainText()}
   {#if wrap}
     <pre><code
         >{#each lines as line, i (i)}<span class="ln" style:--lead={leadSmall(line)}
-            >{@render masked(line, i + 1)}{"\n"}</span
+            >{lineOf(line)}{"\n"}</span
           >{:else}<span class="ln">{"\n"}</span>{/each}</code
       ></pre>
   {:else}
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <pre tabindex="0" role="region" aria-label={t("text.scrollRegion")}><code
-        >{#each lines as line, i (i)}{@render masked(line, i + 1)}{"\n"}{/each}</code
+        >{#each lines as line, i (i)}{lineOf(line)}{"\n"}{/each}</code
       ></pre>
   {/if}
 {/snippet}
@@ -716,9 +641,6 @@
     text-indent: 0;
     white-space: nowrap;
   }
-  .wrap .code :global(.secret) {
-    text-indent: 0;
-  }
   .virtual {
     grid-column: 1 / -1;
     position: relative;
@@ -780,9 +702,6 @@
   .wrap .row.cont .line {
     text-indent: 0;
   }
-  .wrap .line .secret {
-    text-indent: 0;
-  }
   .probe {
     position: absolute;
     top: 0;
@@ -790,22 +709,6 @@
     visibility: hidden;
     white-space: pre;
     pointer-events: none;
-  }
-  .secret {
-    margin: 0;
-    padding: 0 5px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--surface-2);
-    color: var(--muted);
-    font: inherit;
-    letter-spacing: 0.04em;
-    cursor: pointer;
-  }
-  .secret:hover,
-  .secret:focus-visible {
-    color: var(--text);
-    border-color: var(--border-strong);
   }
   .note {
     grid-column: 1 / -1;

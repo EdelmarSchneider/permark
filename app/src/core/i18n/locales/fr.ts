@@ -1263,7 +1263,7 @@ export default {
   "agent.title": "Connexion aux agents",
   "agent.switch": "Partager ce projet avec les agents",
   "agent.switchHint":
-    "Un agent que vous connectez (un outil d'IA compatible MCP, comme Claude Code ou Cursor) peut voir ce que vous regardez et ce qui a changé, rechercher et lire les fichiers de ce projet, lire vos commentaires et les notes que vous partagez, et vous montrer un emplacement. Uniquement sur cet ordinateur. Les mots de passe et les clés que PerMark reconnaît restent masqués, et les agents ne modifient jamais de fichiers via PerMark. Cela ne couvre que ce que les agents obtiennent de PerMark : un agent peut toujours ouvrir lui-même des fichiers sur votre ordinateur.",
+    "Un agent que vous connectez (un outil d'IA compatible MCP, comme Claude Code ou Cursor) peut voir ce que vous regardez et ce qui a changé, rechercher et lire les fichiers de ce projet, lire vos commentaires et les notes que vous partagez, et vous montrer un emplacement. Uniquement sur cet ordinateur. Les fichiers listés dans .aiignore restent hors de leur portée, et les agents ne modifient jamais de fichiers via PerMark. Cela ne couvre que ce que les agents obtiennent de PerMark : un agent peut toujours ouvrir lui-même des fichiers sur votre ordinateur.",
   "agent.groups": "Ce que les agents peuvent faire",
   "agent.group.context": "Voir ce que vous regardez",
   "agent.group.changes": "Voir ce qui a changé",
@@ -1375,9 +1375,6 @@ export default {
   "config.sheet": "Paramètres de ce fichier",
   "config.root": "Niveau supérieur",
   "config.fold": "Replier ou déplier {name}",
-  "config.reveal": "Afficher la valeur",
-  "config.hide": "Masquer la valeur",
-  "config.hidden": "Valeur masquée",
   "config.empty": "vide",
   "config.valueOf": "Valeur de {key}",
   "config.fromSource": "Modifier en mode Source",
@@ -1593,8 +1590,7 @@ export default {
   "plugin.fmt-ini.about":
     "Lit les fichiers INI sous forme de fiche claire et modifie une valeur à la fois.",
   "plugin.fmt-dotenv.name": "Fichiers dotenv",
-  "plugin.fmt-dotenv.about":
-    "Lit les fichiers .env sous forme de fiche claire ; les valeurs secrètes restent masquées.",
+  "plugin.fmt-dotenv.about": "Lit les fichiers .env sous forme de fiche claire.",
   "plugin.fmt-properties.name": "Fichiers .properties",
   "plugin.fmt-properties.about":
     "Lit les fichiers .properties sous forme de fiche claire et modifie une valeur à la fois.",
@@ -1926,8 +1922,6 @@ export default {
     "Cette source dépasse 50 Mo : elle est trop volumineuse pour être convertie ici.",
   "convert.invalid": "Ce contenu n'est pas du {format} valide.",
   "convert.failed": "La conversion a échoué.",
-  "convert.secrets.one": "Contient {n} valeur secrète : masquée dans l'aperçu.",
-  "convert.secrets.other": "Contient {n} valeurs secrètes : masquées dans l'aperçu.",
   "convert.targets": "Formats",
   "convert.best": "meilleur",
   "convert.fits": "Adapté",
@@ -1938,8 +1932,6 @@ export default {
   "convert.approxHint":
     "~ = jetons estimés. Pour des chiffres exacts, définissez un tokeniseur GPT comme principal dans Nombre de jetons et téléchargez son vocabulaire.",
   "convert.exactHint": "Compté par le tokeniseur indiqué.",
-  "convert.confirmSecrets.one": "Le résultat contient {n} valeur secrète.",
-  "convert.confirmSecrets.other": "Le résultat contient {n} valeurs secrètes.",
   "convert.copied": "Copié.",
   "convert.saved": "Enregistré sous {path}",
   "convert.actionFailed": "Cela n'a pas fonctionné.",

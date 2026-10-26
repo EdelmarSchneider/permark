@@ -1,6 +1,6 @@
 // The converter dialog's state: one job at a time (closed -> working -> ready | refused | cancelled), the target the
 // person looks at, and what an action is doing. Every call goes to the backend half; an answer for an older job is
-// ignored. Secret values leave only after the person confirms.
+// ignored.
 
 import type { Analysis, ConvertSource } from "../../api";
 import { pluginClient, type PluginClient } from "../../core/plugins/client";
@@ -15,7 +15,6 @@ export type Act = "copy" | "save" | "open";
 
 export type Action =
   | { kind: "idle" }
-  | { kind: "confirm"; act: Act }
   | { kind: "busy"; act: Act }
   | { kind: "done"; act: Act; path: string | null }
   | { kind: "failed"; act: Act };
@@ -157,20 +156,16 @@ export class ConvertStore {
     this.state = { ...s, selected: target, action: { kind: "idle" } };
   }
 
-  /** Copy | Save | Open the selected target; with secret values the person confirms first. */
-  async act(act: Act, confirmed = false): Promise<void> {
+  /** Copy | Save | Open the selected target. */
+  async act(act: Act): Promise<void> {
     const s = this.state;
     if (s.status !== "ready") return;
-    if (s.analysis.secrets > 0 && !confirmed) {
-      this.state = { ...s, action: { kind: "confirm", act } };
-      return;
-    }
     this.state = { ...s, action: { kind: "busy", act } };
     const done = (action: Action): void => {
       const now = this.state;
       if (now.status === "ready" && now.job === s.job) this.state = { ...now, action };
     };
-    const args = { job: s.job, target: s.selected, confirmed: s.analysis.secrets > 0 };
+    const args = { job: s.job, target: s.selected };
     if (act === "copy") {
       const result = await this.#client.call("convert.result", args);
       if (!result.ok) return done({ kind: "failed", act });
@@ -193,12 +188,6 @@ export class ConvertStore {
       this.close();
       this.#open(result.value);
     }
-  }
-
-  /** Back from the confirmation without doing anything. */
-  dismiss(): void {
-    const s = this.state;
-    if (s.status === "ready") this.state = { ...s, action: { kind: "idle" } };
   }
 
   close(): void {

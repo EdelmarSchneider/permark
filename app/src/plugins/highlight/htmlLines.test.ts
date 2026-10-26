@@ -36,11 +36,10 @@ describe("highlighted code cut into lines", () => {
     expect(htmlLines('<span class="c">x\r</span>\ny')).toEqual(['<span class="c">x</span>', "y"]);
   });
 
-  it("leaves a mask button whole (it holds no line break) and escaped text as it is", () => {
-    const html =
-      'TOKEN=<button type="button" class="secret" data-i="0">••••••</button>\n&lt;b&gt; &amp;';
+  it("leaves an element without a line break whole and escaped text as it is", () => {
+    const html = 'TOKEN=<span class="hljs-string">abc</span>\n&lt;b&gt; &amp;';
     expect(htmlLines(html)).toEqual([
-      'TOKEN=<button type="button" class="secret" data-i="0">••••••</button>',
+      'TOKEN=<span class="hljs-string">abc</span>',
       "&lt;b&gt; &amp;",
     ]);
   });

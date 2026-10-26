@@ -179,11 +179,7 @@ fn flag_words(flags: &[Flag]) -> Vec<String> {
         .map(|f| match f {
             Flag::Gone => "gone".to_owned(),
             Flag::MovedTo(p) => format!("moved_to={p}"),
-            // a heading is the person's text: its secret values stay hidden
-            Flag::SectionGone(h) => format!(
-                "section_gone={}",
-                permark_core::secrets::mask_text(&one_line(h))
-            ),
+            Flag::SectionGone(h) => format!("section_gone={}", one_line(h)),
             Flag::ChangedSince => "changed_since".to_owned(),
         })
         .collect()
@@ -221,8 +217,7 @@ fn row_value(row: &Row) -> Value {
         "path": row.path,
     });
     if !detail.is_empty() {
-        // headings and names are the person's text: a secret written in one stays hidden
-        value["detail"] = json!(permark_core::secrets::mask_text(&detail));
+        value["detail"] = json!(detail);
     }
     let flags = flag_words(&row.flags);
     if !flags.is_empty() {
@@ -879,11 +874,8 @@ pub fn activity_tool(
         .unwrap_or("handoff");
     if since == "handoff" && by.is_none() && limit.is_none() {
         return Ok(match &journal.package {
-            // masked again: a package frozen by an older version may name a secret heading
             Some(package) => json!({
-                "frozen": permark_core::secrets::mask_text(&frozen_now(&package.text, &|path, is_dir| {
-                    guard.hidden(path, is_dir)
-                }))
+                "frozen": frozen_now(&package.text, &|path, is_dir| guard.hidden(path, is_dir))
             }),
             None => json!({ "since": "handoff", "tz": format::tz(), "no_handoff": true }),
         });

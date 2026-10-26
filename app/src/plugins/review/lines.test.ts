@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReviewChange } from "../../api";
-import { MASK } from "../../core/config/secrets";
 import {
   OLD_LINES_SHOWN,
   createLinesView,
@@ -140,23 +139,13 @@ describe("the text in review", () => {
   });
 });
 
-describe("secret values in review", () => {
-  it("are masks in the text and in the old lines until one is clicked", () => {
+describe("values in review", () => {
+  it("show as written in the text and in the old lines", () => {
     const { parent, view } = setup();
-    const text = 'name = "x"\nAPI_TOKEN=new-secret-value\n';
-    view.show(text, data([change(0, "edited", 1, 1, ["API_TOKEN=old-secret-value"])]));
-    const content = parent.textContent ?? "";
-    expect(content).not.toContain("new-secret-value");
-    expect(content).not.toContain("old-secret-value");
-    const masks = parent.querySelectorAll<HTMLButtonElement>("button.cm-secret");
-    expect(masks).toHaveLength(2);
-    expect([...masks].every((m) => m.textContent === MASK)).toBe(true);
-    // a click shows that value only
-    const old = parent.querySelector<HTMLButtonElement>(".rv-old-text button.cm-secret");
-    old?.click();
-    expect(parent.querySelector(".rv-old-text")?.textContent).toBe("API_TOKEN=old-secret-value");
-    expect(parent.textContent).not.toContain("new-secret-value");
-    parent.querySelector<HTMLButtonElement>(".cm-line button.cm-secret")?.click();
-    expect(parent.querySelector(".cm-content")?.textContent).toContain("new-secret-value");
+    const text = 'name = "x"\nAPI_TOKEN=new-value\n';
+    view.show(text, data([change(0, "edited", 1, 1, ["API_TOKEN=old-value"])]));
+    expect(parent.querySelector(".rv-old-text")?.textContent).toBe("API_TOKEN=old-value");
+    expect(parent.querySelector(".cm-content")?.textContent).toContain("API_TOKEN=new-value");
+    expect(parent.querySelector(".cm-line button")).toBeNull();
   });
 });

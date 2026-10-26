@@ -1,4 +1,4 @@
-use permark_core::format::config::fidelity::{check_corpus, check_masking, masked};
+use permark_core::format::config::fidelity::check_corpus;
 use permark_core::format::config::{RowValue, ScalarKind};
 use permark_core::format::{ConfigEdit, EditRefusal, Editability, Format, NewValue};
 
@@ -200,21 +200,6 @@ fn values_that_cannot_be_written_are_declined() {
     assert_eq!(set("a\nb"), Err(EditRefusal::Invalid("newline")));
     assert_eq!(set(" lead"), Err(EditRefusal::Invalid("notRepresentable")));
     assert_eq!(set("x # y"), Err(EditRefusal::Invalid("notRepresentable")));
-}
-
-#[test]
-fn secrets_are_masked() {
-    check_masking(&format(), ".npmrc", NPMRC, &["npm_abcdef123456"]);
-    check_masking(
-        &format(),
-        ".pypirc",
-        PYPIRC,
-        &["pypi-AgEIcHlwaS5vcmcCJGsecret"],
-    );
-    let out = masked(&format(), NPMRC);
-    assert!(out.contains("always-auth=true"));
-    assert!(out.contains("registry=https://registry.npmjs.org/"));
-    check_masking(&format(), "editorconfig", EDITORCONFIG, &[]);
 }
 
 #[test]

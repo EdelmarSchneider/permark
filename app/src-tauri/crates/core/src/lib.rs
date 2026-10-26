@@ -23,7 +23,6 @@ pub mod process;
 pub mod projects;
 pub mod remote;
 pub mod search;
-pub mod secrets;
 pub mod session;
 pub mod settings;
 pub mod state;

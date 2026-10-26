@@ -50,14 +50,14 @@ describe("the plugin", () => {
 });
 
 describe("a toon block in a page", () => {
-  it("is drawn as the sheet the backend reads, secrets masked, read only", async () => {
+  it("is drawn as the sheet the backend reads, values as written, read only", async () => {
     const body = mockView("data/team.toon", [], true)?.body;
     if (body?.kind !== "sheet") throw new Error("no fixture sheet");
     const sheetCall = vi.spyOn(api, "configSheet").mockResolvedValue({ ok: true, value: body });
     const target = show("team[1]{id}:\n  1");
     await vi.waitFor(() => expect(target.querySelector("table")).not.toBeNull());
     expect(sheetCall).toHaveBeenCalledWith("embed.toon", "team[1]{id}:\n  1");
-    expect(target.textContent).not.toContain("sk-ci-5f2a91");
+    expect(target.textContent).toContain("sk-ci-5f2a91");
     expect(target.querySelector(".grip")).toBeNull();
     expect(target.querySelector(".copy-json")).not.toBeNull();
   });

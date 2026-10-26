@@ -7,7 +7,6 @@ import type { Api, LinkTarget } from "../../api";
 import { t } from "../i18n";
 import type { EmbedProps } from "../plugins/props";
 import { findTextRefs, parseInlineRef, refTitle, type CodeRef } from "./codeRefs";
-import { realCode } from "./enhance";
 
 export type LazyEmbed = () => Promise<{ default: Component<EmbedProps> }>;
 /** The embed for a language word (`mermaid`) or a reserved name (`@code`, `@math`), if a plugin brings one. */
@@ -167,10 +166,7 @@ export class Decorator {
     const isMath = element.hasAttribute("data-math-style");
     const source = isMath
       ? (element.textContent ?? "")
-      : (realCode.get(element) ??
-        element.querySelector("pre code")?.textContent ??
-        element.textContent ??
-        "");
+      : (element.querySelector("pre code")?.textContent ?? element.textContent ?? "");
     const record: Mounted = {
       loader,
       original: Array.from(element.childNodes),

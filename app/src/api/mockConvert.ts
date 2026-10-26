@@ -25,6 +25,12 @@ export type ConvertProbe = {
   saved: Map<string, string>;
 };
 
+/** Like the backend (`deny_unknown_fields`): an argument it does not know, such as an old `confirmed`, is refused. */
+function refuseUnknown(args: object, known: readonly string[]): void {
+  const extra = Object.keys(args).find((key) => !known.includes(key));
+  if (extra !== undefined) throw new MockPluginError("invalidData", extra);
+}
+
 const estimate = (text: string): number => Math.max(1, Math.round(text.length / 4));
 
 function standIn(text: string): Analysis {
@@ -54,7 +60,6 @@ function standIn(text: string): Analysis {
     sourceTokens: source,
     tokenizer: null,
     approx: true,
-    secrets: 0,
     notes: [],
     targets,
   };
@@ -81,22 +86,20 @@ export function createMockConvert(textOf: (path: string) => string | null): {
         if (answer.status === "ready") jobs.set(job, { source, analysis: answer.analysis });
         return answer;
       },
-      "convert.result": ({ job, target, confirmed }) => {
+      "convert.result": (args) => {
+        refuseUnknown(args, ["job", "target"]);
+        const { job, target } = args;
         probe.calls.push(`result ${job} ${target}`);
         const found = jobs.get(job);
         if (found === undefined) throw new MockPluginError("notFound", "job");
-        if (found.analysis.secrets > 0 && confirmed !== true) {
-          throw new MockPluginError("invalidData", "secrets");
-        }
         return `${target} of ${textOfSource(found.source)}`;
       },
-      "convert.save": ({ job, target, confirmed, beside }) => {
+      "convert.save": (args) => {
+        refuseUnknown(args, ["job", "target", "beside"]);
+        const { job, target, beside } = args;
         probe.calls.push(`save ${job} ${target}`);
         const found = jobs.get(job);
         if (found === undefined) throw new MockPluginError("notFound", "job");
-        if (found.analysis.secrets > 0 && confirmed !== true) {
-          throw new MockPluginError("invalidData", "secrets");
-        }
         const next = found.source.kind === "file" ? found.source.path : (beside ?? "");
         const view = found.analysis.targets.find((t) => t.id === target);
         const stem = next.replace(/\.[^./]*$/, "");

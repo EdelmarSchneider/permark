@@ -13,7 +13,6 @@ const { api } = await import("../../api");
 const { default: TextView } = await import("./TextView.svelte");
 const { documents } = await import("../../core/doc/document.svelte");
 const { syncPlugins } = await import("../../core/plugins/instance.svelte");
-const { MASK } = await import("../../core/config/secrets");
 const { look } = await import("../../core/look.svelte");
 const { rowsOf } = await import("./wrapRows");
 
@@ -225,44 +224,20 @@ describe("a very large file", () => {
     expect(target.querySelector(".note")?.textContent).toMatch(/first 1 MB of 3072 MB/);
   });
 
-  it("masks the values of secret keys until one is clicked", async () => {
+  it("shows every line as written, key values and private keys too", async () => {
     vi.spyOn(api, "documentMore").mockImplementation(() => ok({ text: "", next: null }));
-    show(viewOf("name = x\nAPI_TOKEN=abc123secret\nplain\n", { loaded: 40, total: 4000 }));
-    const rows = target.querySelectorAll(".row .line");
-    expect(rows[0]?.textContent).toBe("name = x");
-    expect(rows[1]?.textContent).toContain("API_TOKEN=");
-    expect(rows[1]?.textContent).not.toContain("abc123secret");
-    const mask = target.querySelector<HTMLButtonElement>(".row .secret");
-    expect(mask?.textContent).toBe(MASK);
-    mask?.click();
-    flushSync();
-    expect(target.querySelectorAll(".row .line")[1]?.textContent).toBe("API_TOKEN=abc123secret");
-    expect(target.querySelector(".row .secret")).toBeNull();
-  });
-
-  it("masks no ordinary code, and every line of a private key", async () => {
-    vi.spyOn(api, "documentMore").mockImplementation(() => ok({ text: "", next: null }));
-    const game = [
-      "var keys = { left: false, right: false, run: false, jump: false };",
-      'function keyJump(code) { return code === "KeyW" || code === "KeyZ"; }',
-      'document.addEventListener("keydown", function (e) {',
-      "  if (keyJump(e.code)) keys.jump = true;",
-      "  keys.left = false;",
-      "});",
-    ];
-    const pem = [
+    const text = [
+      "name = x",
+      "API_TOKEN=abc123",
       "-----BEGIN PRIVATE KEY-----",
-      "MIIEvQIBADANBg",
       "  AbCdEf==",
       "-----END PRIVATE KEY-----",
+      "",
     ];
-    show(viewOf([...game, ...pem, ""].join("\n"), { loaded: 400, total: 4000 }));
+    show(viewOf(text.join("\n"), { loaded: 400, total: 4000 }));
     const rows = [...target.querySelectorAll(".row .line")].map((row) => row.textContent);
-    expect(rows.slice(0, game.length)).toEqual(game);
-    expect(target.querySelectorAll(".row .secret")).toHaveLength(2);
-    expect(rows[game.length + 1]).toBe(MASK);
-    expect(rows[game.length + 2]).toBe(`  ${MASK}`);
-    expect(rows[game.length + 3]).toBe(pem[3]);
+    expect(rows.slice(0, 5)).toEqual(text.slice(0, 5));
+    expect(target.querySelector(".row button")).toBeNull();
   });
 });
 

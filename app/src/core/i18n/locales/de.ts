@@ -1248,7 +1248,7 @@ export default {
   "agent.title": "Agentenverbindung",
   "agent.switch": "Dieses Projekt mit Agenten teilen",
   "agent.switchHint":
-    "Ein verbundener Agent (ein KI-Werkzeug mit MCP-Unterstützung, etwa Claude Code oder Cursor) sieht, was gerade angezeigt wird und was sich geändert hat, kann die Dateien dieses Projekts suchen und lesen, Kommentare und geteilte Notizen lesen und eine Stelle zeigen. Nur auf diesem Computer. Passwörter und Schlüssel, die PerMark erkennt, bleiben verborgen, und Agenten bearbeiten nie Dateien über PerMark. Das gilt nur für das, was Agenten von PerMark bekommen: Ein Agent kann Dateien auf diesem Computer weiterhin selbst öffnen.",
+    "Ein verbundener Agent (ein KI-Werkzeug mit MCP-Unterstützung, etwa Claude Code oder Cursor) sieht, was gerade angezeigt wird und was sich geändert hat, kann die Dateien dieses Projekts suchen und lesen, Kommentare und geteilte Notizen lesen und eine Stelle zeigen. Nur auf diesem Computer. Dateien, die in .aiignore stehen, bleiben außer Reichweite, und Agenten bearbeiten nie Dateien über PerMark. Das gilt nur für das, was Agenten von PerMark bekommen: Ein Agent kann Dateien auf diesem Computer weiterhin selbst öffnen.",
   "agent.groups": "Was Agenten dürfen",
   "agent.group.context": "Sehen, was angezeigt wird",
   "agent.group.changes": "Sehen, was sich geändert hat",
@@ -1359,9 +1359,6 @@ export default {
   "config.sheet": "Einstellungen in dieser Datei",
   "config.root": "Oberste Ebene",
   "config.fold": "{name} ein- oder ausklappen",
-  "config.reveal": "Wert anzeigen",
-  "config.hide": "Wert verbergen",
-  "config.hidden": "Verborgener Wert",
   "config.empty": "leer",
   "config.valueOf": "Wert von {key}",
   "config.fromSource": "Im Quelltext bearbeiten",
@@ -1573,8 +1570,7 @@ export default {
   "plugin.fmt-ini.about":
     "Liest INI-Dateien als übersichtliche Tabelle und bearbeitet jeweils einen Wert.",
   "plugin.fmt-dotenv.name": "Dotenv-Dateien",
-  "plugin.fmt-dotenv.about":
-    "Liest .env-Dateien als übersichtliche Tabelle; geheime Werte bleiben verborgen.",
+  "plugin.fmt-dotenv.about": "Liest .env-Dateien als übersichtliche Tabelle.",
   "plugin.fmt-properties.name": "Properties-Dateien",
   "plugin.fmt-properties.about":
     "Liest .properties-Dateien als übersichtliche Tabelle und bearbeitet jeweils einen Wert.",
@@ -1902,8 +1898,6 @@ export default {
   "convert.tooLarge": "Diese Quelle ist größer als 50 MB und zu groß, um sie hier umzuwandeln.",
   "convert.invalid": "Das ist kein gültiges {format}.",
   "convert.failed": "Die Umwandlung hat nicht funktioniert.",
-  "convert.secrets.one": "Enthält {n} geheimen Wert: in der Vorschau verdeckt.",
-  "convert.secrets.other": "Enthält {n} geheime Werte: in der Vorschau verdeckt.",
   "convert.targets": "Formate",
   "convert.best": "am besten",
   "convert.fits": "Passt",
@@ -1914,8 +1908,6 @@ export default {
   "convert.approxHint":
     "~ = geschätzte Token. Für genaue Zahlen in der Token-Zählung einen GPT-Tokenizer als Hauptwert wählen und sein Vokabular herunterladen.",
   "convert.exactHint": "Gezählt mit dem angezeigten Tokenizer.",
-  "convert.confirmSecrets.one": "Das Ergebnis enthält {n} geheimen Wert.",
-  "convert.confirmSecrets.other": "Das Ergebnis enthält {n} geheime Werte.",
   "convert.copied": "Kopiert.",
   "convert.saved": "Gespeichert als {path}",
   "convert.actionFailed": "Das hat nicht funktioniert.",

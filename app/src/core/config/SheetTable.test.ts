@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// A data sheet (TOON) as the backend reads it: tables with their rows, keyed tables, secret columns masked; in Edit
+// A data sheet (TOON) as the backend reads it: tables with their rows, keyed tables, every value as written; in Edit
 // mode the cells, the keys, the fields and the rows each turn into one edit for the backend.
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -57,10 +57,10 @@ describe("a TOON file as a sheet", () => {
     expect(rows).toHaveLength(3);
     expect(cells(rows[1] as Element)).toEqual(["2", "Alan Turing", "review, specs", "true"]);
     expect(root.textContent).toContain("3 rows");
-    // a keyed table: the entry key first; the token column is secret and masked
+    // a keyed table: the entry key first; the token column as written
     const first = access?.querySelector("tbody tr");
     expect(first?.querySelector("td")?.textContent?.trim()).toBe("ci");
-    expect(root.textContent).not.toContain("sk-ci-5f2a91");
+    expect(root.textContent).toContain("sk-ci-5f2a91");
     expect(root.textContent).toContain("read");
     // the object card and its inline list
     expect(root.textContent).toContain("PerMark");
@@ -69,15 +69,6 @@ describe("a TOON file as a sheet", () => {
     // read only: no editing controls
     expect(root.querySelector(".grip")).toBeNull();
     expect(root.textContent).not.toContain("Add a row");
-  });
-
-  it("reveals one secret cell on request", async () => {
-    const root = await show(team());
-    const reveal = root.querySelector<HTMLButtonElement>("table .reveal");
-    reveal?.click();
-    flushSync();
-    expect(root.textContent).toContain("sk-ci-5f2a91");
-    expect(root.textContent).not.toContain("sk-bot-77c0de");
   });
 });
 
@@ -223,7 +214,6 @@ describe("long tables", () => {
             kind: "number",
             text: String(i),
             edit: { editable: "surgical" },
-            secret: false,
           },
         ],
       })),

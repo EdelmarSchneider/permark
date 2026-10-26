@@ -21,30 +21,20 @@ function show(source: string, info = "yaml"): HTMLElement {
   return target;
 }
 
-describe("code blocks with secret values", () => {
-  it("never put a secret in the page, highlighted or not, and show each on its own click", async () => {
+describe("code blocks", () => {
+  it("show the text as written, highlighted or not", async () => {
     const target = show(SOURCE);
     // before the highlighter answers
-    for (const secret of ["abc123", "hunter2"]) {
-      expect(target.textContent, secret).not.toContain(secret);
-    }
-    expect(target.querySelectorAll("button.secret")).toHaveLength(2);
+    expect(target.querySelector("pre code")?.textContent).toBe(SOURCE);
     // after it
     await vi.waitFor(() => expect(target.querySelector(".hljs-attr, .hljs-string")).not.toBeNull());
-    for (const secret of ["abc123", "hunter2"]) {
-      expect(target.textContent, secret).not.toContain(secret);
+    for (const value of ["API_KEY", "abc123", "hunter2", "plain"]) {
+      expect(target.textContent, value).toContain(value);
     }
-    expect(target.textContent).toContain("API_KEY");
-    expect(target.textContent).toContain("plain");
-    expect(target.querySelectorAll("button.secret")).toHaveLength(2);
-    target.querySelector<HTMLButtonElement>("button.secret")?.click();
-    flushSync();
-    await vi.waitFor(() => expect(target.textContent).toContain("abc123"));
-    expect(target.textContent).not.toContain("hunter2");
-    expect(target.querySelectorAll("button.secret")).toHaveLength(1);
+    expect(target.querySelector("pre button")).toBeNull();
   });
 
-  it("copies the real text", async () => {
+  it("copies the text", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
     const target = show(SOURCE);
@@ -52,11 +42,10 @@ describe("code blocks with secret values", () => {
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(SOURCE));
   });
 
-  it("is the same block as before when there is nothing to hide", async () => {
+  it("highlights plain code", async () => {
     const target = show("let ideas = 1;\n", "js");
     await vi.waitFor(() =>
       expect(target.querySelector("pre code")?.textContent).toContain("ideas"),
     );
-    expect(target.querySelector("button.secret")).toBeNull();
   });
 });

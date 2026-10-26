@@ -2,4 +2,4 @@
 import type { Scalar } from "./Scalar";
 import type { Table } from "./Table";
 
-export type RowValue = { "type": "scalar" } & Scalar | { "type": "list", items: Array<Scalar>, } | { "type": "raw", text: string, reason: string, secret: boolean, } | { "type": "pattern", path: string, text: string, negated: boolean, } | { "type": "table" } & Table;
+export type RowValue = { "type": "scalar" } & Scalar | { "type": "list", items: Array<Scalar>, } | { "type": "raw", text: string, reason: string, } | { "type": "pattern", path: string, text: string, negated: boolean, } | { "type": "table" } & Table;

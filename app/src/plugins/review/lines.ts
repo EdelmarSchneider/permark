@@ -1,8 +1,6 @@
 // The review of code and plain text as a read-only code view (CodeMirror): the text with line numbers and the
 // grammar's colors, the lines of every change tinted, and before them a block with a bar (what kind of change,
 // Keep | Revert) and the old lines. The view only draws what the backend said; it changes nothing by itself.
-//
-// Secret values (a value of a key like `token`, `password`) are masks until clicked, in the text and in the old lines.
 
 import {
   Compartment,
@@ -20,7 +18,6 @@ import {
   type DecorationSet,
 } from "@codemirror/view";
 import type { ReviewChange } from "../../api";
-import { findCodeSecrets, MASK } from "../../core/config/secrets";
 import { codeLook, languageFor } from "../../core/editing/source/cm";
 import { t } from "../../core/i18n";
 import { kindWord } from "./blocks";
@@ -55,33 +52,10 @@ function element(tag: string, className: string, text?: string): HTMLElement {
   return node;
 }
 
-/** A line of old text: its secret values are masks. */
-function oldLine(line: string, key: string, reveal: Set<string>): HTMLElement {
+/** A line of old text, as written. */
+function oldLine(line: string): HTMLElement {
   const row = element("div", "rv-old-line");
-  const text = element("span", "rv-old-text");
-  const spans = line.length > 4000 ? [] : findCodeSecrets(line);
-  let at = 0;
-  for (const span of spans) {
-    text.append(line.slice(at, span.from));
-    const value = line.slice(span.from, span.to);
-    const id = `${key}:${span.from}`;
-    if (reveal.has(id)) {
-      text.append(value);
-    } else {
-      const mask = element("button", "cm-secret", MASK);
-      mask.setAttribute("type", "button");
-      mask.setAttribute("title", t("config.reveal"));
-      mask.setAttribute("aria-label", t("config.reveal"));
-      mask.addEventListener("click", () => {
-        reveal.add(id);
-        mask.replaceWith(document.createTextNode(value));
-      });
-      text.append(mask);
-    }
-    at = span.to;
-  }
-  text.append(line.slice(at));
-  row.append(text);
+  row.append(element("span", "rv-old-text", line));
   return row;
 }
 
@@ -91,7 +65,6 @@ class HunkWidget extends WidgetType {
     private readonly change: ReviewChange,
     private readonly data: LinesData,
     private readonly host: LinesHost,
-    private readonly reveal: Set<string>,
   ) {
     super();
   }
@@ -154,9 +127,7 @@ class HunkWidget extends WidgetType {
     if (change.old.length > 0) {
       const old = element("div", "rv-old");
       old.setAttribute("aria-label", t("review.removedLabel"));
-      change.old.slice(0, OLD_LINES_SHOWN).forEach((line, i) => {
-        old.append(oldLine(line, `${change.index}.${i}`, this.reveal));
-      });
+      for (const line of change.old.slice(0, OLD_LINES_SHOWN)) old.append(oldLine(line));
       if (change.old.length > OLD_LINES_SHOWN) {
         old.append(
           element(
@@ -176,41 +147,8 @@ class HunkWidget extends WidgetType {
   }
 }
 
-/** A mask over a secret value of the text; a click shows that value. */
-class MaskWidget extends WidgetType {
-  constructor(
-    private readonly id: string,
-    private readonly show: (id: string) => void,
-  ) {
-    super();
-  }
-
-  override eq(other: MaskWidget): boolean {
-    return other.id === this.id;
-  }
-
-  override toDOM(): HTMLElement {
-    const button = element("button", "cm-secret", MASK);
-    button.setAttribute("type", "button");
-    button.setAttribute("title", t("config.reveal"));
-    button.setAttribute("aria-label", t("config.reveal"));
-    button.addEventListener("click", () => this.show(this.id));
-    return button;
-  }
-
-  override ignoreEvent(): boolean {
-    return false;
-  }
-}
-
 /** The decorations of a text with its changes. Pure given the state. */
-export function decorate(
-  state: EditorState,
-  data: LinesData,
-  host: LinesHost,
-  reveal: Set<string>,
-  show: (id: string) => void,
-): DecorationSet {
+export function decorate(state: EditorState, data: LinesData, host: LinesHost): DecorationSet {
   const doc = state.doc;
   const ranges: Range<Decoration>[] = [];
   for (const change of data.changes) {
@@ -219,7 +157,7 @@ export function decorate(
     const at = start < doc.lines ? doc.line(start + 1).from : doc.length;
     ranges.push(
       Decoration.widget({
-        widget: new HunkWidget(change, data, host, reveal),
+        widget: new HunkWidget(change, data, host),
         block: true,
         side: start < doc.lines ? -1 : 1,
       }).range(at),
@@ -231,17 +169,10 @@ export function decorate(
       ranges.push(mark.range(doc.line(n + 1).from));
     }
   }
-  const text = doc.toString();
-  for (const span of findCodeSecrets(text)) {
-    const id = String(span.from);
-    if (reveal.has(id) || span.to <= span.from) continue;
-    ranges.push(Decoration.replace({ widget: new MaskWidget(id, show) }).range(span.from, span.to));
-  }
   return Decoration.set(ranges, true);
 }
 
 const setData = StateEffect.define<LinesData>();
-const touch = StateEffect.define<null>();
 
 /** What the code view offers the component around it. */
 export type LinesView = {
@@ -263,16 +194,14 @@ export function createLinesView(options: {
 }): LinesView {
   const language = new Compartment();
   const wrapping = new Compartment();
-  const reveal = new Set<string>();
   let data: LinesData = { changes: [], total: 0, current: -1, canKeep: false };
-  let show: (id: string) => void = () => {};
   const marks = StateField.define<DecorationSet>({
-    create: (state) => decorate(state, data, options.host, reveal, show),
+    create: (state) => decorate(state, data, options.host),
     update(value, tr) {
       const next = tr.effects.find((effect) => effect.is(setData))?.value;
       if (next !== undefined) data = next;
-      if (next !== undefined || tr.docChanged || tr.effects.some((e) => e.is(touch))) {
-        return decorate(tr.state, data, options.host, reveal, show);
+      if (next !== undefined || tr.docChanged) {
+        return decorate(tr.state, data, options.host);
       }
       return value;
     },
@@ -292,10 +221,6 @@ export function createLinesView(options: {
     parent: options.parent,
     state: EditorState.create({ doc: "", extensions }),
   });
-  show = (id) => {
-    reveal.add(id);
-    view.dispatch({ effects: touch.of(null) });
-  };
   if (loaded instanceof Promise) {
     void loaded.then((support) => view.dispatch({ effects: language.reconfigure(support) }));
   }
@@ -303,8 +228,6 @@ export function createLinesView(options: {
     show: (text, next) => {
       const doc = lineText(text);
       const same = view.state.doc.toString() === doc;
-      // values the person showed belong to the text they were shown in
-      if (!same) reveal.clear();
       view.dispatch({
         changes: same ? undefined : { from: 0, to: view.state.doc.length, insert: doc },
         effects: setData.of(next),

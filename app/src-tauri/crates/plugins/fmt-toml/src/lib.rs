@@ -252,7 +252,6 @@ impl Walk<'_> {
         RowValue::Raw {
             text: self.text.get(span.clone()).unwrap_or_default().to_owned(),
             reason: reason.to_owned(),
-            secret: false,
             span: Some(span),
         }
     }

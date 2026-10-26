@@ -156,9 +156,9 @@ impl Format for ToonFormat {
     fn searchable(&self, text: &str) -> Option<String> {
         let sheet = self.sheet(text)?;
         let mut out = sheet.keys_text(SEARCH_LIMIT / 2);
-        // data values are content: they are searched, except the secret ones
+        // data values are content: they are searched
         let mut push = |s: &permark_core::format::config::Scalar| {
-            if !s.secret && !s.text.is_empty() && out.len() + s.text.len() < SEARCH_LIMIT {
+            if !s.text.is_empty() && out.len() + s.text.len() < SEARCH_LIMIT {
                 out.push_str(&s.text);
                 out.push('\n');
             }
