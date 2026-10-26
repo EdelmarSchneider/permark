@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import docWords from "./doc-words.json";
 import {
   findCodeSecrets,
   isSecretKey,
@@ -46,6 +47,24 @@ describe("the shared cases", () => {
   it("knows secret keys by their last word", () => {
     for (const key of cases.secretKeys) expect(isSecretKey(key), key).toBe(true);
     for (const key of cases.plainKeys) expect(isSecretKey(key), key).toBe(false);
+  });
+});
+
+describe("the documentation words (doc-words.json, read by both mirrors)", () => {
+  it("stand as labels in any case, never in backticks, and nothing else does", () => {
+    expect(docWords.length).toBeGreaterThanOrEqual(20);
+    expect(docWords.length).toBeLessThanOrEqual(40);
+    for (const word of docWords) {
+      expect(word, word).toBe(word.toLowerCase());
+      for (const text of [`| token | ${word.toUpperCase()} |`, `password ${word}`]) {
+        expect(findCodeSecrets(text), text).toEqual([]);
+      }
+    }
+    // in backticks a value is written as a value (`none`, `true` are no secret anywhere)
+    for (const word of ["optional", "reset", "length", "default", "n/a"]) {
+      expect(hide(`| token | \`${word}\` |`)).toBe("| token | `<hidden>` |");
+    }
+    expect(hide("| token | words |")).toBe("| token | <hidden> |");
   });
 });
 

@@ -560,13 +560,14 @@ fn is_prose_word(word: &str) -> bool {
             .all(|c| c.is_alphabetic() || matches!(c, '\'' | '’'))
 }
 
-/// One word of letters, capitalized at most (`reset`, `Optional`): a word of a sentence or a label, not a password.
-fn is_plain_word(word: &str) -> bool {
-    word.chars().next().is_some_and(char::is_alphabetic)
-        && word
-            .chars()
-            .skip(1)
-            .all(|c| c.is_alphabetic() && !c.is_uppercase())
+/// Documentation words (`Optional`, `reset`, `Length`), one JSON array of lowercase strings shared with the TS mirror.
+const DOC_WORDS: &str = include_str!("../../../../src/core/config/doc-words.json");
+
+/// A word of the fixed documentation list, ignoring case: where a label may stand (a `.netrc` line that may be prose,
+/// a table's label cell) it is no value. Any other word is hidden when in doubt.
+fn is_doc_word(word: &str) -> bool {
+    let lower = word.to_lowercase();
+    !lower.is_empty() && !lower.contains(['"', '\\']) && DOC_WORDS.contains(&format!("\"{lower}\""))
 }
 
 fn is_ident_start(c: char) -> bool {
@@ -1220,10 +1221,11 @@ fn netrc_spans(line: &str) -> Vec<Range<usize>> {
             .unwrap_or(words.len());
         Some((r.start + 1..end, next, true))
     };
-    // on a line that may be prose (`password reset`, `default login and password settings`) a plain word is no value
+    // on a line that may be prose (`password reset`, `default login and password settings`) a documentation word is
+    // no value
     let hides = |(r, _, quoted): &(Range<usize>, usize, bool), prose: bool| {
         let text = &line[r.clone()];
-        !is_open_value(text) && (*quoted || !prose || !is_plain_word(text))
+        !is_open_value(text) && (*quoted || !prose || !is_doc_word(text))
     };
     if word(0) == Some("password") {
         return value(1)
@@ -1380,8 +1382,8 @@ struct CellRule {
     index: usize,
     class: KeyClass,
     key: String,
-    /// Where a row's label may stand (right of a secret name, the first column under a secret header): a plain word
-    /// (`Optional`, `Length`) is no value there.
+    /// Where a row's label may stand (right of a secret name, the first column under a secret header): a documentation
+    /// word (`Optional`, `Length`) is no value there, unless in backticks.
     label: bool,
 }
 
@@ -1447,7 +1449,8 @@ fn cell_spans(line: &str, rules: &[CellRule]) -> Vec<Range<usize>> {
         };
         let mut r = cell.clone();
         let text = &line[r.clone()];
-        if text.len() >= 2 && text.starts_with('`') && text.ends_with('`') {
+        let ticked = text.len() >= 2 && text.starts_with('`') && text.ends_with('`');
+        if ticked {
             r = r.start + 1..r.end - 1;
         }
         let value = &line[r.clone()];
@@ -1455,7 +1458,7 @@ fn cell_spans(line: &str, rules: &[CellRule]) -> Vec<Range<usize>> {
             PRIMITIVE_TYPES.contains(&value.trim_end_matches('?').to_ascii_lowercase().as_str());
         if value.chars().any(char::is_alphanumeric)
             && !typed
-            && !(rule.label && is_plain_word(value))
+            && !(rule.label && !ticked && is_doc_word(value))
             && looks_secret(rule.class, &rule.key, value, true, "", line)
         {
             out.push(r);
@@ -1848,6 +1851,26 @@ mod tests {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    #[test]
+    fn only_the_listed_documentation_words_stand_as_labels() {
+        let words: Vec<String> = serde_json::from_str(DOC_WORDS).unwrap();
+        assert!(words.len() >= 20 && words.len() <= 40, "a short fixed list");
+        for word in &words {
+            assert_eq!(*word, word.to_lowercase(), "{word}");
+            assert!(!word.contains(['"', '\\']), "{word}");
+            let upper = word.to_uppercase();
+            for text in [format!("| token | {upper} |"), format!("password {word}")] {
+                assert_eq!(mask_text(&text), text, "{text}");
+            }
+        }
+        // in backticks a value is written as a value (`none`, `true` are no secret anywhere)
+        for word in ["optional", "reset", "length", "default", "n/a"] {
+            let ticked = format!("| token | `{word}` |");
+            assert_eq!(mask_text(&ticked), "| token | `<hidden>` |", "{ticked}");
+        }
+        assert!(!is_doc_word("words") && !is_doc_word("sunshine") && !is_doc_word(""));
     }
 
     #[test]

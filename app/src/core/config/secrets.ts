@@ -6,6 +6,8 @@
 // that only contain a secret word (`keys`, `keyJump`) are no slot. Both mirrors read `testdata/secrets/cases.json`
 // and `testdata/secrets/leaks.json`.
 
+import docWords from "./doc-words.json";
+
 /** What a hidden value shows. Fixed: the length of the value is not given away. */
 export const MASK = "••••••";
 
@@ -381,9 +383,9 @@ const COLOR = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 /** A word of a sentence: letters (and apostrophes), maybe one end mark (`required.`). */
 const PROSE_WORD = /^[\p{L}'’]+[.,!?:;]?$/u;
 const IDENT = /^[\p{L}_$][\p{L}\p{N}_$]*$/u;
-/** One word of letters, capitalized at most (`reset`, `Optional`): `is_plain_word`. */
-const PLAIN_WORD = /^\p{L}(?:(?!\p{Lu})\p{L})*$/u;
-const isPlainWord = (word: string): boolean => PLAIN_WORD.test(word);
+/** A word of the fixed documentation list (`doc-words.json`, shared with Rust), ignoring case: `is_doc_word`. */
+const DOC_WORDS = new Set<string>(docWords);
+const isDocWord = (word: string): boolean => DOC_WORDS.has(word.toLowerCase());
 /** A YAML block scalar mark (`key: |`): the value is on the next lines. */
 const BLOCK_MARK = /^[|>][+-]?[0-9]?$/;
 
@@ -963,10 +965,10 @@ function netrcSpans(line: string): Span[] {
       quoted: true,
     };
   };
-  // on a line that may be prose (`password reset`) a plain word is no value
+  // on a line that may be prose (`password reset`) a documentation word is no value
   const hides = (v: Value, prose: boolean): boolean => {
     const text = line.slice(v.span.from, v.span.to);
-    return !isOpenValue(text) && (v.quoted || !prose || !isPlainWord(text));
+    return !isOpenValue(text) && (v.quoted || !prose || !isDocWord(text));
   };
   if (word(0) === "password") {
     const v = value(1);
@@ -1074,7 +1076,8 @@ function cellKey(cell: string): CellKey | null {
   return cls === null ? null : { cls, key: name };
 }
 
-/** `label`: where a row's label may stand (right of a secret name, the first column under a secret header). */
+/** `label`: where a row's label may stand (right of a secret name, the first column under a secret header): a
+ * documentation word is no value there, unless in backticks. */
 type CellRule = { index: number; label: boolean } & CellKey;
 
 /** Table rows (line index) with the cells to judge: the mirror of `table_rules` (Rust). */
@@ -1118,7 +1121,8 @@ function cellSpans(line: string, rules: readonly CellRule[]): Span[] {
     if (cell === undefined) continue;
     let { from, to } = cell;
     const text = line.slice(from, to);
-    if (text.length >= 2 && text.startsWith("`") && text.endsWith("`")) {
+    const ticked = text.length >= 2 && text.startsWith("`") && text.endsWith("`");
+    if (ticked) {
       from += 1;
       to -= 1;
     }
@@ -1127,7 +1131,7 @@ function cellSpans(line: string, rules: readonly CellRule[]): Span[] {
     if (
       /[\p{L}\p{N}]/u.test(value) &&
       !typed &&
-      !(rule.label && isPlainWord(value)) &&
+      !(rule.label && !ticked && isDocWord(value)) &&
       looksSecret(rule.cls, rule.key, value, true, "", line)
     ) {
       out.push({ from, to });
