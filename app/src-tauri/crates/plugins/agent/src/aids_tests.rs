@@ -32,6 +32,22 @@ fn paths(value: &Value, key: &str) -> Vec<String> {
         .collect()
 }
 
+/// The search answer once it has a hit in `path` (the watch indexes the sections after it lists the file).
+fn searched(fx: &Budget, query: &str, path: &str) -> (Value, String) {
+    let started = std::time::Instant::now();
+    loop {
+        let (value, text) = call(fx, "search", json!({ "query": query })).unwrap();
+        if paths(&value, "hits").iter().any(|p| p == path) {
+            return (value, text);
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "{query}: no hit in {path}: {value}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 fn write(fx: &Budget, path: &str, text: &str) {
     let file = fx.root.join(path);
     std::fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -606,11 +622,7 @@ fn search_never_tells_whether_a_masked_value_is_there() {
     );
     indexed(&fx, "ops/login.md");
     // the words around the value are found: the file is in the index
-    let (found, _) = call(&fx, "search", json!({ "query": "staging rotated" })).unwrap();
-    assert!(
-        paths(&found, "hits").contains(&"ops/login.md".to_owned()),
-        "{found}"
-    );
+    searched(&fx, "staging rotated", "ops/login.md");
     // the value, and every prefix of it, answers exactly like a word that is nowhere
     let (_, nowhere) = call(&fx, "search", json!({ "query": "zq9nowhere" })).unwrap();
     let nowhere = nowhere.replace("zq9nowhere", "<q>");
@@ -635,7 +647,8 @@ fn search_sizes_are_of_the_masked_section() {
     );
     indexed(&fx, "ops/short.md");
     indexed(&fx, "ops/long.md");
-    let (value, _) = call(&fx, "search", json!({ "query": "rollout" })).unwrap();
+    searched(&fx, "rollout", "ops/short.md");
+    let (value, _) = searched(&fx, "rollout", "ops/long.md");
     let sizes: Vec<u64> = value["hits"]
         .as_array()
         .unwrap()
@@ -648,4 +661,72 @@ fn search_sizes_are_of_the_masked_section() {
         sizes[0], sizes[1],
         "a secret's length shows in no size: {value}"
     );
+}
+
+const SECRET_HEADING: &str = "# Ops\n\nintro\n\n## Password: qz8secret\n\nrotate monthly\n";
+
+/// The answer of a read with `at`, as text (an error too), with `at` itself taken out.
+fn read_at(fx: &Budget, path: &str, at: &str) -> String {
+    match call(fx, "read", json!({ "path": path, "at": at })) {
+        Ok((_, text)) => text.replace(at, "<at>"),
+        Err(e) => format!("error: {e}").replace(at, "<at>"),
+    }
+}
+
+#[test]
+fn headings_leave_masked_and_a_guessed_value_reads_like_a_missing_heading() {
+    let fx = Budget::new();
+    write(&fx, "ops/keys.md", SECRET_HEADING);
+    indexed(&fx, "ops/keys.md");
+    let (value, text) = searched(&fx, "rotate monthly", "ops/keys.md");
+    let hit = value["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|h| h["path"] == "ops/keys.md")
+        .unwrap_or_else(|| panic!("{value}"))
+        .clone();
+    assert_eq!(hit["headingPath"], json!(["Ops", "Password: <hidden>"]));
+    assert!(!text.contains("qz8secret"), "{text}");
+    let (value, text) = call(&fx, "outline", json!({ "path": "ops/keys.md" })).unwrap();
+    assert!(
+        !text.contains("qz8secret") && !value.to_string().contains("qz8secret"),
+        "{value}"
+    );
+    assert!(text.contains("Ops > Password: <hidden>"), "{text}");
+    // the masked path is the one that reads the part
+    let shown = read_at(&fx, "ops/keys.md", "Ops > Password: <hidden>");
+    assert!(shown.contains("rotate monthly"), "{shown}");
+    let tail = read_at(&fx, "ops/keys.md", "Password: <hidden>");
+    assert!(tail.contains("rotate monthly"), "{tail}");
+    // a guess answers exactly like a heading that is not there
+    for (guess, none) in [
+        ("Ops > Password: qz8secret", "Ops > Password: zz0nothing"),
+        ("Password: qz8secret", "Password: zz0nothing"),
+        ("password: QZ8SECRET", "password: ZZ0NOTHING"),
+        ("#password-qz8secret", "#password-zz0nothing"),
+    ] {
+        assert_eq!(
+            read_at(&fx, "ops/keys.md", guess),
+            read_at(&fx, "ops/keys.md", none),
+            "{guess}"
+        );
+    }
+}
+
+#[test]
+fn a_hand_off_never_names_a_secret_heading() {
+    let fx = Budget::new();
+    note(&fx, save("docs/plan.md", &["Plan > Password: qz8secret"]));
+    let done = confirm(&fx);
+    assert!(!done.full.contains("qz8secret"), "{}", done.full);
+    assert!(
+        done.full.contains("section_gone=Plan > Password: <hidden>"),
+        "{}",
+        done.full
+    );
+    let (_, text) = call(&fx, "activity", json!({ "since": "handoff" })).unwrap();
+    assert!(!text.contains("qz8secret"), "{text}");
+    let (_, text) = call(&fx, "activity", json!({ "since": "0" })).unwrap();
+    assert!(!text.contains("qz8secret"), "{text}");
 }

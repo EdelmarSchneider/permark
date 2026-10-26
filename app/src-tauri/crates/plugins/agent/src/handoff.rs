@@ -179,7 +179,11 @@ fn flag_words(flags: &[Flag]) -> Vec<String> {
         .map(|f| match f {
             Flag::Gone => "gone".to_owned(),
             Flag::MovedTo(p) => format!("moved_to={p}"),
-            Flag::SectionGone(h) => format!("section_gone={}", one_line(h)),
+            // a heading is the person's text: its secret values stay hidden
+            Flag::SectionGone(h) => format!(
+                "section_gone={}",
+                permark_core::secrets::mask_text(&one_line(h))
+            ),
             Flag::ChangedSince => "changed_since".to_owned(),
         })
         .collect()
@@ -670,7 +674,8 @@ pub fn activity_tool(
         .unwrap_or("handoff");
     if since == "handoff" && by.is_none() && limit.is_none() {
         return Ok(match &journal.package {
-            Some(package) => json!({ "frozen": package.text }),
+            // masked again: a package frozen by an older version may name a secret heading
+            Some(package) => json!({ "frozen": permark_core::secrets::mask_text(&package.text) }),
             None => json!({ "since": "handoff", "tz": format::tz(), "no_handoff": true }),
         });
     }

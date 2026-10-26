@@ -1407,3 +1407,35 @@ fn silenced_paths_stay_visible_to_agents() {
     let map = tools.call("map", json!({})).unwrap();
     assert!(map.to_string().contains("quiet/"), "{map}");
 }
+
+#[test]
+fn comment_and_context_headings_never_carry_a_secret_value() {
+    let fx = fx();
+    fx.on();
+    fx.comments.0.lock().unwrap()[0].heading_path =
+        vec!["Ops".to_owned(), "Password: qz8secret".to_owned()];
+    let live = fx.live();
+    let tools = fx.tools(Some(Arc::clone(&live)));
+    let list = tools.call("list_comments", Value::Null).unwrap();
+    assert_eq!(
+        list["comments"][0]["headingPath"],
+        json!(["Ops", "Password: <hidden>"]),
+        "{list}"
+    );
+    live.publish(WindowContext {
+        doc: Some("docs/plan.md".to_owned()),
+        section: Some(crate::context::Section {
+            heading_path: vec!["Ops".to_owned(), "Password: qz8secret".to_owned()],
+            lines: Some((1, 2)),
+        }),
+        ..WindowContext::default()
+    });
+    let context = tools.call("get_context", Value::Null).unwrap();
+    assert_eq!(
+        context["section"]["headingPath"],
+        json!(["Ops", "Password: <hidden>"]),
+        "{context}"
+    );
+    let rendered = crate::render::render("get_context", &context);
+    assert!(!rendered.contains("qz8secret"), "{rendered}");
+}

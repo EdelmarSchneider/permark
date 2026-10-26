@@ -110,7 +110,8 @@ impl WindowContext {
                     .heading_path
                     .iter()
                     .skip(skip)
-                    .map(|h| cut_chars(&one_line(h), MAX_HEADING_CHARS).0)
+                    // a heading is the person's text: its secret values stay hidden
+                    .map(|h| mask_text(&cut_chars(&one_line(h), MAX_HEADING_CHARS).0).into_owned())
                     .filter(|h| !h.is_empty())
                     .collect(),
                 lines: ordered(s.lines),
