@@ -1,16 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  findCodeSecrets,
-  isSecretKey,
-  keyWords,
-  MASK,
-  privateKeyLines,
-  publicKeyLines,
-  secretBlockLines,
-  tableSecretSpans,
-} from "./secrets";
+import { findCodeSecrets, isSecretKey, keyWords, MASK, privateKeyLines } from "./secrets";
 
 /** The cases both mirrors read (`crates/core/src/secrets.rs` reads the same file). */
 type Cases = {
@@ -89,36 +80,6 @@ describe("secrets in a loose text", () => {
     expect([...privateKeyLines(lines)]).toEqual([2, 4]);
     expect(
       privateKeyLines(["-----BEGIN PUBLIC KEY-----", "MFkw", "-----END PUBLIC KEY-----"]).size,
-    ).toBe(0);
-    // certificates | public keys: their lines are never masked, also a part without its BEGIN
-    const cert = ["-----BEGIN CERTIFICATE-----", "MIIDdz", "-----END CERTIFICATE-----"];
-    expect([...publicKeyLines(cert)]).toEqual([1]);
-    expect([...publicKeyLines(["MIIDdzCCAl", "AbCdEf12==", "-----END CERTIFICATE-----"])]).toEqual([
-      1, 0,
-    ]);
-    expect(publicKeyLines(lines).size).toBe(0);
-  });
-
-  it("gives a viewer that masks line by line the block bodies and table cells of its lines", () => {
-    const lines = ["db:", "  password: |", "    s3cret-line", "", "    second", "  host: db\r"];
-    expect([...secretBlockLines(lines)]).toEqual([2, 4]);
-    const table = [
-      "| User | Password |",
-      "|---|---|",
-      "| bob | s3cret99 |",
-      "| DB_PASSWORD | `Zq9!x` |",
-      "text",
-    ];
-    const cells = tableSecretSpans(table);
-    expect([...cells.keys()]).toEqual([2, 3]);
-    expect(cells.get(2)?.map((s) => table[2]?.slice(s.from, s.to))).toEqual(["s3cret99"]);
-    expect(cells.get(3)?.map((s) => table[3]?.slice(s.from, s.to))).toEqual(["Zq9!x"]);
-    expect(
-      tableSecretSpans([
-        "| Setting | Description |",
-        "|---|---|",
-        "| password | The account password |",
-      ]).size,
     ).toBe(0);
   });
 

@@ -225,14 +225,7 @@ fn secrets_are_hidden_by_key_and_by_table() {
         &format(),
         "secrets",
         SECRETS,
-        &[
-            "ghp_abcdef123456",
-            "bob",
-            "p@ss",
-            "s3cret",
-            "k-one",
-            "k-two",
-        ],
+        &["ghp_abcdef123456", "bob", "p@ss", "s3cret"],
     );
     let out = permark_core::format::config::fidelity::masked(&format(), SECRETS);
     // keys, bools, harmless words and plain values stay
@@ -241,6 +234,8 @@ fn secrets_are_hidden_by_key_and_by_table() {
     assert!(out.contains("authors = [\"Ana\"]"));
     assert!(out.contains("max_tokens = 4096"));
     assert!(out.contains("host = \"localhost\""));
+    // `keys` under a named table is no secret name (only the obvious is hidden)
+    assert!(out.contains("keys = [\"k-one\", \"k-two\"]"));
     check_masking(
         &format(),
         "pyproject",
