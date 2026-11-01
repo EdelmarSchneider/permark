@@ -387,3 +387,38 @@ describe("pictures dropped from the system", () => {
     expect(taken).toEqual([]);
   });
 });
+
+describe("the mode the person chose", () => {
+  it("survives letting go of the document, and a new window starts in View", async () => {
+    const { api, session } = setup();
+    await open(session);
+    expect(session.mode).toBe("source");
+    expect(session.chosenMode).toBe("source");
+    session.release();
+    expect(session.mode).toBe("view");
+    // the window remembers the choice, nothing is written to the settings
+    expect(session.chosenMode).toBe("source");
+    const next = new EditingSession(api);
+    expect(next.mode).toBe("view");
+    expect(next.chosenMode).toBe("view");
+  });
+
+  it("Escape to View makes View the remembered mode", async () => {
+    const { session } = setup();
+    await open(session);
+    expect(session.chosenMode).toBe("source");
+    await session.switchTo("view");
+    expect(session.mode).toBe("view");
+    expect(session.chosenMode).toBe("view");
+  });
+
+  it("keeps the mode across a switch to another document in the same window", async () => {
+    const { session } = setup();
+    await open(session);
+    session.release();
+    await session.enter("source", "docs/handbook.md", "markdown", { kind: "explicit" });
+    expect(session.mode).toBe("source");
+    expect(session.chosenMode).toBe("source");
+    expect(session.path).toBe("docs/handbook.md");
+  });
+});

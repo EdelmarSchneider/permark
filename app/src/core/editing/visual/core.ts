@@ -2,9 +2,9 @@
 // app's own). Runs without a window too (vitest drives it in jsdom).
 //
 // Added to the stock CommonMark + GFM schema: `pm_locked`, an atom holding a block the editor must not rewrite
-// (its source, drawn by the app). Left out: stock plugins that change a document by themselves (heading ids,
-// list renumbering, empty-line preservation). A no-break space is written as `&nbsp;`; link marks end at the
-// link's edge; the serializer writes the style below.
+// (its source, drawn by the app), and `taskItemView`, the real checkbox of a task item. Left out: stock plugins
+// that change a document by themselves (heading ids, list renumbering, empty-line preservation). A no-break space
+// is written as `&nbsp;`; link marks end at the link's edge; the serializer writes the style below.
 
 import {
   Editor,
@@ -25,6 +25,7 @@ import {
   headingKeymap,
   inlineCodeKeymap,
   linkSchema,
+  listItemSchema,
   orderedListKeymap,
   paragraphKeymap,
   remarkPreserveEmptyLinePlugin,
@@ -38,6 +39,7 @@ import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import { EditorState } from "@milkdown/kit/prose/state";
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $ctx, $node, $prose, $view } from "@milkdown/kit/utils";
+import { taskLabel } from "../../doc/enhance";
 
 export const LOCKED = "pm_locked";
 const NO_BREAK_SPACE = String.fromCharCode(0xa0);
@@ -176,6 +178,82 @@ const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
   };
 });
 
+/** One task item box flips (`pos` is the node's position): the path `taskItemView`'s click takes.
+ *  False when `pos` is not a task item, so a stray click does not mark the file changed. */
+export function flipTask(view: EditorView, pos: number, next: boolean): boolean {
+  const item = view.state.doc.nodeAt(pos);
+  if (item === null || item.type.name !== "list_item") return false;
+  const checked = item.attrs.checked;
+  if (typeof checked !== "boolean") return false;
+  view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { ...item.attrs, checked: next }));
+  return true;
+}
+
+/**
+ * The box of a task item in Edit mode. gfm draws a task item as `li[data-item-type=task]` with no
+ * `<input>`, so the list shows the browser's bullet dots and nothing can be clicked. This view adds the real
+ * checkbox, names it by its task (`taskName`, the same name view mode gives), writes the classes the reading
+ * stylesheet already styles (`task-list-item`, `is-done`), and keeps gfm's `data-*` attributes so a copy inside
+ * the editor reads back the same item. A plain list item gets the stock shape and no box.
+ */
+const taskItemView = $view(listItemSchema.node, (): NodeViewConstructor => (node, view, getPos) => {
+  const dom = document.createElement("li");
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  const content = document.createElement("div");
+  dom.append(box, content);
+  const isTask = (): boolean => typeof node.attrs.checked === "boolean";
+  // the name is read from the node, not from the drawn text: the view paints before the content is inserted
+  const nameOf = (): string => {
+    const pieces: string[] = [];
+    node.forEach((child) => {
+      if (child.type.name === "bullet_list" || child.type.name === "ordered_list") return;
+      pieces.push(child.textContent);
+    });
+    return taskLabel(pieces);
+  };
+  const paint = (): void => {
+    if (isTask()) {
+      dom.dataset.itemType = "task";
+      dom.dataset.label = String(node.attrs.label ?? "");
+      dom.dataset.listType = String(node.attrs.listType ?? "");
+      dom.dataset.spread = String(node.attrs.spread ?? "true");
+      dom.dataset.checked = String(node.attrs.checked);
+      if (box.parentElement !== dom) dom.prepend(box);
+      box.checked = node.attrs.checked === true;
+      const name = nameOf();
+      if (name === "") box.removeAttribute("aria-label");
+      else box.setAttribute("aria-label", name);
+    } else {
+      for (const key of ["itemType", "label", "listType", "spread", "checked"]) {
+        delete dom.dataset[key];
+      }
+      box.remove();
+      box.removeAttribute("aria-label");
+    }
+    dom.classList.toggle("task-list-item", isTask());
+    dom.classList.toggle("is-done", node.attrs.checked === true);
+  };
+  paint();
+  box.addEventListener("click", () => {
+    const at = getPos();
+    if (at === undefined) return;
+    flipTask(view, at, !(node.attrs.checked === true));
+  });
+  return {
+    dom,
+    contentDOM: content,
+    // the box is the app's control, not the editor's text
+    stopEvent: (event) => event.target instanceof Node && box.contains(event.target),
+    ignoreMutation: (mutation) => box.contains(mutation.target),
+    update: (next) => {
+      node = next;
+      paint();
+      return true;
+    },
+  };
+});
+
 /**
  * Stock plugins left out: they change a document by themselves, or are replaced. The Mod-Alt keymaps go too: AltGr
  * is Ctrl+Alt on Windows and types characters (`{` `[` `}` on many layouts); `keys.ts` binds them safely. Mod-e is
@@ -265,6 +343,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
     .use(lockedHostCtx)
     .use(lockedNode)
     .use(lockedView)
+    .use(taskItemView)
     .use((options.first ?? []).flat())
     .use([...commonmark, ...gfm].filter((plugin) => !LEFT_OUT.has(plugin)))
     .use(textNode)

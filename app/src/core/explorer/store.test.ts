@@ -1,7 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
-import type { Api, ApiError, LinkUpdate, TreeChanged } from "../../api";
+import type {
+  Added,
+  Api,
+  ApiError,
+  EventName,
+  Events,
+  LinkUpdate,
+  Result,
+  TreeChanged,
+  TreeDelta,
+  TreeNode,
+  TreeSnapshot,
+  Unlisten,
+} from "../../api";
 import { ImportFlow } from "./importFlow.svelte";
+import { ancestorsOf, applyDelta } from "./list";
+import { editing } from "../editing/session.svelte";
 import { ExplorerStore, type ExplorerHost } from "./store.svelte";
 
 type Mock = ReturnType<typeof createMockApi>;
@@ -37,6 +52,127 @@ async function setup(link: LinkUpdate = "ask", wrap?: (api: Mock) => Api): Promi
 
 function paths(store: ExplorerStore): string[] {
   return store.nodes.map((n) => n.path);
+}
+
+/** The two calls a create path must make: `treeOpenFolder` (the folder at the backend) and
+ *  `showDocument` (the window shows the file). */
+type Created = { opened: string[]; shown: string[]; wrap: (api: Mock) => Api };
+
+function spies(): Created {
+  const opened: string[] = [];
+  const shown: string[] = [];
+  const wrap = (api: Mock): Api => {
+    const w = closedFolders(api);
+    const openFolder = w.treeOpenFolder;
+    const show = w.showDocument;
+    return {
+      ...w,
+      treeOpenFolder: (path) => {
+        opened.push(path);
+        return openFolder(path);
+      },
+      showDocument: (path) => {
+        if (path !== null) shown.push(path);
+        return show(path);
+      },
+    };
+  };
+  return { opened, shown, wrap };
+}
+
+/** A backend that lists only the folders it has opened. The mock lists everything, and its folders
+ *  carry `unlisted: null` (mockFs.ts:135), so a closed folder's children reach the store and the
+ *  create path never has to ask the backend to open the folder. Here the full mock list is kept, the
+ *  rows under a closed folder are withheld, a closed folder carries an `unlisted` count, and the rows
+ *  created inside it arrive when its opening is asked for. `later` delivers a flush in a macrotask, so
+ *  the store reveals a row before it arrives. */
+function closedFolders(api: Mock, later = false): Api {
+  const openedFolders = new Set<string>();
+  const held = new Set<string>();
+  let allList: TreeNode[] = [];
+  const sent = new Set<string>();
+  const handlers = new Set<(e: TreeChanged) => void>();
+  let last = 0;
+  let totals = { totalFiles: 0, shownFiles: 0 };
+  const visible = (path: string) =>
+    ancestorsOf(path).every((a) => openedFolders.has(a) && !held.has(a));
+  const hide = (n: TreeNode): TreeNode => {
+    if (n.kind.type !== "dir" || openedFolders.has(n.path)) return n;
+    const entries = allList.filter(
+      (c) => c.path.startsWith(`${n.path}/`) && !visible(c.path),
+    ).length;
+    return {
+      ...n,
+      kind: { type: "dir", unlisted: entries === 0 ? null : { type: "large", entries } },
+    };
+  };
+  /** One delta of the visible part of the list, chained by the rows the store already has. */
+  const flush = (): void => {
+    const vis = allList.filter((n) => visible(n.path)).map(hide);
+    const gone = Array.from(sent).filter((p) => !vis.some((n) => n.path === p));
+    const added: Added[] = [];
+    let prev: string | null = null;
+    for (const n of vis) {
+      if (!sent.has(n.path)) added.push({ node: n, after: prev });
+      prev = n.path;
+    }
+    if (added.length === 0 && gone.length === 0) return;
+    sent.clear();
+    for (const n of vis) sent.add(n.path);
+    last += 1;
+    const delta: TreeDelta = {
+      seq: last,
+      removed: gone,
+      added,
+      renamed: [],
+      totalFiles: totals.totalFiles,
+      shownFiles: totals.shownFiles,
+      bulk: false,
+      filter: null,
+    };
+    for (const h of handlers) h({ window: "main", delta });
+  };
+  const remember = (r: Result<TreeSnapshot>): Result<TreeSnapshot> => {
+    if (!r.ok) return r;
+    allList = r.value.nodes;
+    last = r.value.seq;
+    totals = { totalFiles: r.value.totalFiles, shownFiles: r.value.shownFiles };
+    sent.clear();
+    for (const n of r.value.nodes.filter((x) => visible(x.path))) sent.add(n.path);
+    const vis = r.value.nodes.filter((n) => visible(n.path)).map(hide);
+    return { ok: true, value: { ...r.value, nodes: vis } };
+  };
+  return {
+    ...api,
+    treeOpen: (filter) => api.treeOpen(filter).then(remember),
+    treeSetFilter: (filter) => api.treeSetFilter(filter).then(remember),
+    treeOpenFolder: (path) => {
+      openedFolders.add(path);
+      if (later) {
+        held.add(path);
+        setTimeout(() => {
+          held.delete(path);
+          flush();
+        }, 0);
+      } else {
+        flush();
+      }
+      return api.treeOpenFolder(path);
+    },
+    on: <E extends EventName>(
+      event: E,
+      handler: (payload: Events[E]) => void,
+    ): Promise<Unlisten> => {
+      if (event !== "tree-changed") return api.on(event, handler);
+      const h = handler as (e: TreeChanged) => void;
+      handlers.add(h);
+      return api.on("tree-changed", (e) => {
+        allList = applyDelta(allList, e.delta);
+        totals = { totalFiles: e.delta.totalFiles, shownFiles: e.delta.shownFiles };
+        flush();
+      });
+    },
+  };
 }
 
 afterEach(() => {
@@ -428,6 +564,101 @@ describe("new files and folders", () => {
     f.store.typeName("README.md");
     await f.store.commitEdit();
     expect(f.store.edit).toMatchObject({ mode: "new", problem: "exists" });
+  });
+});
+
+// ---- a new file is chosen and opened ---------------------------------------------------------------------------------
+
+describe("a new file is chosen and opened", () => {
+  it("the file the person creates in a closed folder opens the folder at the backend, is listed, chosen, and its document is shown", async () => {
+    const c = spies();
+    const f = await setup("never", c.wrap);
+    editing.chosenMode = "view";
+    expect(f.store.isOpen("docs")).toBe(false);
+    f.store.beginNew("file", "docs");
+    f.store.typeName("draft.md");
+    await f.store.commitEdit();
+    expect(c.opened).toContain("docs");
+    expect(paths(f.store)).toContain("docs/draft.md");
+    expect([...f.store.selection]).toEqual(["docs/draft.md"]);
+    expect(f.store.focus).toBe("docs/draft.md");
+    expect(f.store.scrollTo?.path).toBe("docs/draft.md");
+    expect(c.shown).toEqual(["docs/draft.md"]);
+    // the file asks to open in the editor (the editing session applies it when the document arrives)
+    expect(editing.chosenMode).toBe("edit");
+    expect(f.failures).toEqual([]);
+  });
+
+  it("a row the backend has not listed yet is chosen the moment it arrives, and its document is shown", async () => {
+    const c = spies();
+    const f = await setup("never", (api) => {
+      const w = closedFolders(api, true);
+      const openFolder = w.treeOpenFolder;
+      const show = w.showDocument;
+      return {
+        ...w,
+        treeOpenFolder: (path) => {
+          c.opened.push(path);
+          return openFolder(path);
+        },
+        showDocument: (path) => {
+          if (path !== null) c.shown.push(path);
+          return show(path);
+        },
+      };
+    });
+    f.store.beginNew("file", "docs");
+    f.store.typeName("late.md");
+    editing.chosenMode = "view";
+    await f.store.commitEdit();
+    // the folder is open at the backend, its rows have not arrived
+    expect(c.opened).toContain("docs");
+    expect(f.store.isOpen("docs")).toBe(true);
+    expect(paths(f.store)).not.toContain("docs/late.md");
+    expect([...f.store.selection]).toEqual([]);
+    expect(c.shown).toEqual(["docs/late.md"]);
+    expect(editing.chosenMode).toBe("edit");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(paths(f.store)).toContain("docs/late.md");
+    expect([...f.store.selection]).toEqual(["docs/late.md"]);
+    expect(f.store.targets()).toEqual(["docs/late.md"]);
+    expect(f.store.scrollTo?.path).toBe("docs/late.md");
+    // the keyboard focus stays where the person had it (the import rule), so it is not moved to the row
+    expect(f.store.focus).toBe(null);
+    expect(f.failures).toEqual([]);
+  });
+
+  it("a new folder is chosen but no document is shown, and the folders above it open at the backend", async () => {
+    const c = spies();
+    const f = await setup("never", c.wrap);
+    editing.chosenMode = "view";
+    f.store.beginNew("folder", "docs/img");
+    f.store.typeName("raw");
+    await f.store.commitEdit();
+    expect(paths(f.store)).toContain("docs/img/raw");
+    expect([...f.store.selection]).toEqual(["docs/img/raw"]);
+    expect(c.shown).toEqual([]);
+    // a folder is a row, not a document: no mode is asked for
+    expect(editing.chosenMode).toBe("view");
+    expect(c.opened).toEqual(expect.arrayContaining(["docs", "docs/img"]));
+  });
+
+  it("the plain mock, where every folder is listed, selects the file and shows its document", async () => {
+    const show = vi.fn();
+    const f = await setup("never", (api) => ({
+      ...api,
+      showDocument: (path) => {
+        if (path !== null) show(path);
+        return api.showDocument(path);
+      },
+    }));
+    f.store.beginNew("file", "docs");
+    f.store.typeName("draft.md");
+    editing.chosenMode = "view";
+    await f.store.commitEdit();
+    expect([...f.store.selection]).toEqual(["docs/draft.md"]);
+    expect(show).toHaveBeenCalledWith("docs/draft.md");
+    expect(editing.chosenMode).toBe("edit");
   });
 });
 

@@ -922,6 +922,8 @@ export function createMockApi(): Api & {
     newEntry: (dir, name, kind) => {
       try {
         const path = project.create(dir, name, kind);
+        // a new file is empty text on disk: `edit_source` must find it
+        if (kind === "file" && !editing.probe.files.has(path)) editing.probe.files.set(path, "");
         refreshTree();
         return ok(path);
       } catch (e) {

@@ -19,7 +19,7 @@
   import MarkdownBody from "./MarkdownBody.svelte";
   import ModeSwitch from "../editing/ModeSwitch.svelte";
   import { SHEET_FORMATS } from "../config/formats";
-  import { chooseMode, editKindOf } from "../editing/choose";
+  import { chooseMode, editKindOf, openRemembered } from "../editing/choose";
   import { editing } from "../editing/session.svelte";
   import { ui } from "../shell/ui.svelte";
 
@@ -134,6 +134,13 @@
       if (editing.path !== null && editing.path !== shown) editing.release();
       void documents.show(path);
     });
+  });
+
+  // the mode the person chose in this window (View | Edit | Source) opens the new document too: the page is
+  // ready, the editor follows when the document allows it (an explicit choice of View opens nothing)
+  $effect(() => {
+    const ready = documents.view;
+    if (ready !== null) untrack(() => openRemembered());
   });
 
   // the editor setting changed: the references on the page say again what a click does
