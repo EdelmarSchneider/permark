@@ -103,6 +103,8 @@ beforeEach(async () => {
   });
   // the keys are commands now: the window's listener runs them, as in the app
   stopKeys = installWindowKeys();
+  // the window is new: no mode was chosen in it, so the next document opens in View
+  editing.chosenMode = "view";
   component = mount(DocumentArea, { target, props: { workspace, document: null, store } });
   flushSync();
 });
