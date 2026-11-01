@@ -124,6 +124,12 @@ export class DocumentController {
   #seq = 0;
   #shown: string | null = null;
   #painted: DocumentView | null = null;
+  /** Path the host's ids were painted for (`null`: never painted, so a reload may trust `host.ids()`). */
+  #blocksOf: string | null = null;
+  /** A paint ran before the page existed. Attaching draws that view; it was not recorded as painted. */
+  #paintWaiting = false;
+  #embeds: EmbedLookup = () => undefined;
+  #transform: BlockTransform = (blocks) => blocks;
   /** The open of the shown document that has not finished. */
   #pending: Promise<void> | null = null;
   #intent: (Place & { line: number | null }) | null = null;
@@ -243,6 +249,8 @@ export class DocumentController {
     this.#seq += 1;
     this.#shown = null;
     this.#painted = null;
+    this.#blocksOf = null;
+    this.#paintWaiting = false;
     this.#intent = null;
     this.#viaTrail = null;
     this.#anchor = null;
@@ -265,24 +273,29 @@ export class DocumentController {
       void this.#api.closeDocument();
       return;
     }
-    // the same document: whoever asked second waits for the open that is on its way
-    if (path === this.#shown && this.state.status !== "failed") return this.#pending ?? undefined;
-    this.#leave();
-    const intent = this.#intent?.path === path ? this.#intent : null;
-    this.#intent = null;
-    const viaTrail = this.#viaTrail === path;
-    this.#viaTrail = null;
-    const anchor = intent?.anchor ?? (viaTrail ? (this.trail.here?.anchor ?? null) : null);
-    if (!viaTrail) this.trail.visit({ path, anchor });
-    this.#anchor = anchor;
-    this.#line = intent?.line ?? null;
-    // a line asked for an earlier document is not asked again when a viewer shows up later
-    this.lineRequest = null;
-    if (this.#notePage !== null && this.#notePage !== path) this.#clearNote();
-    this.#shown = path;
-    // a single file: the tab and the window title name the file shown (the backend holds it; nothing else follows)
-    if (this.singleFile) void this.#api.showDocument(path);
-    if (this.#workspace?.kind === "project") recentFiles.visit(path);
+    // the same document: whoever asked second waits for the open that is on its way. Already on screen: nothing to do.
+    // Still another file, and nothing is opening this one: do not finish. Open it again.
+    if (path === this.#shown && this.state.status !== "failed") {
+      if (this.#pending !== null) return this.#pending;
+      if (this.view?.path === path) return;
+    } else {
+      this.#leave();
+      const intent = this.#intent?.path === path ? this.#intent : null;
+      this.#intent = null;
+      const viaTrail = this.#viaTrail === path;
+      this.#viaTrail = null;
+      const anchor = intent?.anchor ?? (viaTrail ? (this.trail.here?.anchor ?? null) : null);
+      if (!viaTrail) this.trail.visit({ path, anchor });
+      this.#anchor = anchor;
+      this.#line = intent?.line ?? null;
+      // a line asked for an earlier document is not asked again when a viewer shows up later
+      this.lineRequest = null;
+      if (this.#notePage !== null && this.#notePage !== path) this.#clearNote();
+      this.#shown = path;
+      // a single file: the tab and the window title name the file shown (the backend holds it; nothing else follows)
+      if (this.singleFile) void this.#api.showDocument(path);
+      if (this.#workspace?.kind === "project") recentFiles.visit(path);
+    }
     this.#painted = null;
     const opening = this.#open(path, true);
     this.#pending = opening;
@@ -293,8 +306,11 @@ export class DocumentController {
   /** `own`: the person's own save is what is read again (their lines do not glow). */
   async #open(path: string, fresh: boolean, own = false): Promise<void> {
     const seq = ++this.#seq;
+    const onScreen = this.view?.path ?? null;
     if (fresh) this.state = { status: "loading", path, view: this.view };
-    const known = fresh ? [] : this.host.ids();
+    // ids on screen belong to that file. A different file must not be told it already holds them.
+    const otherFile = onScreen !== path || (this.#blocksOf !== null && this.#blocksOf !== path);
+    const known = fresh || otherFile ? [] : this.host.ids();
     const result = await this.#api.openDocument(path, known);
     if (seq !== this.#seq) return;
     if (!result.ok) {
@@ -361,6 +377,8 @@ export class DocumentController {
     });
     // a new page is empty: whatever was painted before has to be painted again
     this.#painted = null;
+    this.#blocksOf = null;
+    if (this.#paintWaiting) this.paint(this.#embeds, this.#transform);
   }
 
   detachBody(): void {
@@ -368,21 +386,32 @@ export class DocumentController {
     this.host.detach();
     this.decorator.dispose();
     this.#painted = null;
+    this.#blocksOf = null;
+    this.#paintWaiting = false;
     this.#headings = [];
   }
 
   /** Puts the document in the DOM when its view is new. Called by the body when the state changes. */
   paint(embeds: EmbedLookup, transform: BlockTransform = (blocks) => blocks): void {
+    this.#embeds = embeds;
+    this.#transform = transform;
     this.decorator.setEmbeds(embeds);
     const s = this.state;
     if (s.status !== "ready") return;
     const view = s.view;
     const body = view.body;
     if (body.kind !== "markdown") return;
+    // no page yet: do not record this view as painted. attachBody draws it.
+    if (this.host.container === null) {
+      this.#paintWaiting = true;
+      return;
+    }
     const again = this.#repaint && this.#painted === view;
     this.#repaint = false;
+    this.#paintWaiting = false;
     if (this.#painted === view && !again) return;
     this.#painted = view;
+    this.#blocksOf = view.path;
     this.decorator.setDocument(view.path);
     const blocks = transform(body.blocks, view);
     // the blocks of a page that is there are updated, not built again (the place stays)
