@@ -53,4 +53,9 @@ rightViews: RightViews | null,
 /**
  * Long lines wrap in the text viewer and the source editors (`wrap_lines`; absent = on).
  */
-wrapLines: boolean, };
+wrapLines: boolean, 
+/**
+ * Folder under the document's folder for pasted pictures (`image_folder`). Absent = `img`.
+ * Empty = beside the document.
+ */
+imageFolder: string, };

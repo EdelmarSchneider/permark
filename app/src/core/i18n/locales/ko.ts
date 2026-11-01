@@ -528,6 +528,8 @@ export default {
   "images.big": "{name} 파일의 크기는 {size}MB입니다. 그래도 문서 옆에 저장할까요?",
   "images.saveAnyway": "저장",
   "images.tooLarge": "{name} 파일은 {limit}MB보다 커서 저장하지 않았습니다.",
+  "images.saved": "{name} 파일을 문서 옆에 저장했습니다.",
+  "images.savedIn": "{name} 파일을 {folder}에 저장했습니다.",
   "wordCount.words.one": "단어 {n}개",
   "wordCount.words.other": "단어 {n}개",
   "wordCount.characters.one": "문자 {n}자",
@@ -543,6 +545,9 @@ export default {
   // ---- editing
   "settings.editMode": "편집 모드",
   "settings.editModeHint": "Ctrl+E로 여는 Markdown 편집기입니다.",
+  "settings.imageFolder": "이미지 폴더",
+  "settings.imageFolderHint":
+    "붙여 넣은 그림은 문서 옆의 이 폴더에 저장됩니다. 비워 두면 문서 옆에 저장됩니다.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "폴더 열기...",
   "cmd.openFile": "파일 열기...",

@@ -12,7 +12,7 @@
   import type { Fence } from "./source/fence";
   import DiagramPreview from "./DiagramPreview.svelte";
   import { diagramPanel } from "./diagramPanel.svelte";
-  import { pictureFiles } from "./pictures";
+  import { pictureFiles, pictureLink } from "./pictures";
 
   type Props = {
     session: EditingSession;
@@ -113,7 +113,7 @@
   async function insertPictures(files: File[], at: number): Promise<void> {
     const paths = await pictures(pictureFiles(files));
     if (paths.length === 0 || !source) return;
-    source.insert(paths.map((p) => `![](${p})`).join("\n"), at);
+    source.insert(paths.map((p) => `![](${pictureLink(content.path, p)})`).join("\n"), at);
   }
 </script>
 

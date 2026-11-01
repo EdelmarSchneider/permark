@@ -25,6 +25,7 @@ pub use lines::LineEdit;
 
 use crate::document::{DocScope, MAX_TEXT_BYTES};
 use crate::error::{ErrorKind, IpcError};
+use crate::fileops::check_name;
 use crate::format::config::{ignore_matches, IgnoreMatches, RowValue};
 use crate::format::{
     segments, Body, ConfigEdit, EditRefusal, FormatId, FormatRegistry, OutlineItem, Segment,
@@ -347,11 +348,20 @@ impl Editor<'_> {
         Err(IpcError::new(ErrorKind::Exists).subject(path))
     }
 
-    /// Saves pasted | dropped picture bytes next to the document `doc` as `<doc-stem>-<n>.<ext>`.
+    /// Saves pasted | dropped picture bytes as `<doc-stem>-<n>.<ext>`.
+    ///
+    /// `folder` empty: in the document's folder. Otherwise that one path segment under it (`img` -> `notes/img/`).
     ///
     /// # Errors
-    /// Unknown type | bytes not of that type (`unsupported`) | over 50 MB (`tooLarge`) | outside | IO.
-    pub fn write_asset(&self, doc: &str, ext: &str, bytes: &[u8]) -> Result<String, IpcError> {
+    /// Unknown type | bytes not of that type (`unsupported`) | over 50 MB (`tooLarge`) | a folder segment
+    /// `check_name` refuses | outside | IO.
+    pub fn write_asset(
+        &self,
+        doc: &str,
+        ext: &str,
+        bytes: &[u8],
+        folder: &str,
+    ) -> Result<String, IpcError> {
         let kind = asset_kind(ext).ok_or_else(|| {
             IpcError::new(ErrorKind::Unsupported)
                 .subject(doc)
@@ -365,11 +375,24 @@ impl Editor<'_> {
                 .subject(doc)
                 .detail("content"));
         }
+        let folder = folder.trim();
+        if !folder.is_empty() {
+            check_name(folder).map_err(|problem| {
+                IpcError::new(ErrorKind::InvalidData)
+                    .subject(doc)
+                    .detail(problem.as_str())
+            })?;
+        }
         let parsed = VaultPath::parse(doc)?;
         let (stem, _) = split_name(parsed.name().unwrap_or("image"));
         let parent = parsed.parent().unwrap_or_else(VaultPath::root);
+        let dir = if folder.is_empty() {
+            parent
+        } else {
+            parent.join_name(folder)
+        };
         for n in 1..=9999_u32 {
-            let target = parent.join_name(&format!("{stem}-{n}.{}", kind.ext()));
+            let target = dir.join_name(&format!("{stem}-{n}.{}", kind.ext()));
             let target = target.as_str().to_owned();
             let (_, abs) = self.scope.resolve_new(&target)?;
             if abs.exists() {

@@ -547,6 +547,8 @@ export default {
   "images.big": "{name} ist {size} MB groß. Trotzdem neben dem Dokument speichern?",
   "images.saveAnyway": "Speichern",
   "images.tooLarge": "{name} ist größer als {limit} MB und wurde nicht gespeichert.",
+  "images.saved": "{name} wurde neben dem Dokument gespeichert.",
+  "images.savedIn": "{name} wurde in {folder} gespeichert.",
   "wordCount.words.one": "{n} Wort",
   "wordCount.words.other": "{n} Wörter",
   "wordCount.characters.one": "{n} Zeichen",
@@ -563,6 +565,9 @@ export default {
   // ---- editing
   "settings.editMode": "Bearbeitungsmodus",
   "settings.editModeHint": "Der Editor, den Strg+E für Markdown öffnet.",
+  "settings.imageFolder": "Bilderordner",
+  "settings.imageFolderHint":
+    "Eingefügte Bilder werden in diesem Ordner neben dem Dokument gespeichert. Leer lassen, um sie neben dem Dokument zu speichern.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Ordner öffnen ...",
   "cmd.openFile": "Datei öffnen ...",

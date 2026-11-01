@@ -545,6 +545,8 @@ export default {
   "images.big": "{name} è di {size} MB. Salvarla comunque accanto al documento?",
   "images.saveAnyway": "Salvala",
   "images.tooLarge": "{name} supera i {limit} MB e non è stata salvata.",
+  "images.saved": "{name} è stato salvato accanto al documento.",
+  "images.savedIn": "{name} è stato salvato in {folder}.",
   "wordCount.words.one": "{n} parola",
   "wordCount.words.other": "{n} parole",
   "wordCount.characters.one": "{n} carattere",
@@ -561,6 +563,9 @@ export default {
   // ---- editing
   "settings.editMode": "Modalità di modifica",
   "settings.editModeHint": "L'editor che Ctrl+E apre per il Markdown.",
+  "settings.imageFolder": "Cartella delle immagini",
+  "settings.imageFolderHint":
+    "Le immagini incollate vengono salvate in questa cartella, accanto al documento. Lasciala vuota per salvarle accanto al documento.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Apri cartella...",
   "cmd.openFile": "Apri file...",

@@ -129,6 +129,8 @@ export class WindowStore {
   editor = $state("");
   /** Where the notes are (setting; empty = the default folder). */
   notesFolder = $state("");
+  /** Folder under the document for pasted pictures (empty = beside the document). */
+  imageFolder = $state("img");
   /** What the app starts on. */
   startIn = $state<StartIn>("welcome");
   /** Where opening a folder | file goes: a new tab, this tab, a new window. */
@@ -164,6 +166,7 @@ export class WindowStore {
         this.gitBackend = e.settings.gitBackend;
         this.editor = e.settings.editor;
         this.notesFolder = e.settings.notesFolder;
+        this.imageFolder = e.settings.imageFolder;
         this.startIn = e.settings.startIn;
         this.openIn = e.settings.openIn;
         this.keymap = e.settings.keymap;
@@ -189,6 +192,7 @@ export class WindowStore {
       this.gitBackend = info.settings.gitBackend;
       this.editor = info.settings.editor;
       this.notesFolder = info.settings.notesFolder;
+      this.imageFolder = info.settings.imageFolder;
       this.startIn = info.settings.startIn;
       this.openIn = info.settings.openIn;
       this.keymap = info.settings.keymap;

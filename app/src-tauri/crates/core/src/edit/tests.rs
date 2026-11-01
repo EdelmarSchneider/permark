@@ -351,6 +351,7 @@ fn pictures_are_saved_next_to_the_document_with_the_next_free_number() {
             "notes/my doc.md",
             "image/png".rsplit('/').next().unwrap(),
             png,
+            "",
         )
         .unwrap();
     assert_eq!(path, "notes/my doc-2.png");
@@ -360,22 +361,56 @@ fn pictures_are_saved_next_to_the_document_with_the_next_free_number() {
 }
 
 #[test]
+fn pictures_go_in_the_folder_under_the_document_and_a_bad_segment_is_refused() {
+    let fx = Fx::new();
+    fx.write("notes/ideia.md", b"x");
+    let png = b"\x89PNG\r\n\x1a\nDATA";
+    let path = fx
+        .editor()
+        .write_asset("notes/ideia.md", "png", png, "img")
+        .unwrap();
+    assert_eq!(path, "notes/img/ideia-1.png");
+    assert_eq!(fx.read("notes/img/ideia-1.png"), png);
+    let again = fx
+        .editor()
+        .write_asset("notes/ideia.md", "png", png, "img")
+        .unwrap();
+    assert_eq!(again, "notes/img/ideia-2.png");
+    let e = fx
+        .editor()
+        .write_asset("notes/ideia.md", "png", png, "../x")
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::InvalidData);
+    let e = fx
+        .editor()
+        .write_asset("notes/ideia.md", "png", png, "a/b")
+        .unwrap_err();
+    assert_eq!(e.kind, ErrorKind::InvalidData);
+}
+
+#[test]
 fn pictures_of_the_wrong_kind_or_too_large_are_refused() {
     let fx = Fx::new();
     fx.write("d.md", b"x");
-    let e = fx.editor().write_asset("d.md", "exe", b"MZ").unwrap_err();
+    let e = fx
+        .editor()
+        .write_asset("d.md", "exe", b"MZ", "")
+        .unwrap_err();
     assert_eq!(e.kind, ErrorKind::Unsupported);
     let e = fx
         .editor()
-        .write_asset("d.md", "png", b"GIF89a")
+        .write_asset("d.md", "png", b"GIF89a", "")
         .unwrap_err();
     assert_eq!(e.kind, ErrorKind::Unsupported);
     let big = vec![0_u8; usize::try_from(MAX_ASSET_BYTES).unwrap() + 1];
-    let e = fx.editor().write_asset("d.md", "png", &big).unwrap_err();
+    let e = fx
+        .editor()
+        .write_asset("d.md", "png", &big, "")
+        .unwrap_err();
     assert_eq!(e.kind, ErrorKind::TooLarge);
     let e = fx
         .editor()
-        .write_asset("../d.md", "png", b"\x89PNG\r\n\x1a\n")
+        .write_asset("../d.md", "png", b"\x89PNG\r\n\x1a\n", "")
         .unwrap_err();
     assert_eq!(e.kind, ErrorKind::PathEscape);
 }
@@ -417,7 +452,7 @@ fn a_single_file_workspace_edits_the_files_of_its_folder_and_puts_pictures_besid
     assert!(editor
         .save("../only.md", &source.hash, &[edit(1, 0, &["x"])])
         .is_err());
-    let pic = editor.write_asset("only.md", "gif", b"GIF89a").unwrap();
+    let pic = editor.write_asset("only.md", "gif", b"GIF89a", "").unwrap();
     assert_eq!(pic, "only-1.gif");
     assert!(dir.path().join("only-1.gif").exists());
 }

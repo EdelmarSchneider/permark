@@ -545,6 +545,8 @@ export default {
   "images.big": "{name} は {size} MB あります。それでもドキュメントの隣に保存しますか？",
   "images.saveAnyway": "保存する",
   "images.tooLarge": "{name} は {limit} MB を超えているため、保存されませんでした。",
+  "images.saved": "{name} をドキュメントの隣に保存しました。",
+  "images.savedIn": "{name} を {folder} に保存しました。",
   "wordCount.words.one": "{n} 語",
   "wordCount.words.other": "{n} 語",
   "wordCount.characters.one": "{n} 文字",
@@ -561,6 +563,9 @@ export default {
   // ---- editing
   "settings.editMode": "既定の編集モード",
   "settings.editModeHint": "Markdown で Ctrl+E を押したときに開くエディターです。",
+  "settings.imageFolder": "画像フォルダー",
+  "settings.imageFolderHint":
+    "貼り付けた画像は、ドキュメントの隣のこのフォルダーに保存されます。空にすると、ドキュメントの隣に保存されます。",
   // ---- search, commands, keyboard
   "cmd.openFolder": "フォルダーを開く...",
   "cmd.openFile": "ファイルを開く...",

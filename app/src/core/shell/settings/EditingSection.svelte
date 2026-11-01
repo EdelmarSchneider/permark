@@ -31,6 +31,7 @@
 
   let templateProblem = $state<ApiError | null>(null);
   let editorProblem = $state<ApiError | null>(null);
+  let imageFolderProblem = $state<ApiError | null>(null);
   /** The choice the person made in the editor list; until then the one the saved command is. */
   let chosen = $state<string | null>(null);
   const mode = $derived(chosen ?? presetOf(store.editor));
@@ -41,6 +42,10 @@
 
   async function setTemplate(value: string): Promise<void> {
     templateProblem = await store.trySetting({ key: "referenceTemplate", value });
+  }
+
+  async function setImageFolder(value: string): Promise<void> {
+    imageFolderProblem = await store.trySetting({ key: "imageFolder", value });
   }
 
   async function setEditor(command: string): Promise<void> {
@@ -66,6 +71,30 @@
     options={MODES.map((o) => ({ value: o.value, label: t(o.label) }))}
     onchange={(value) => void store.changeSetting({ key: "editMode", value })}
   />
+</SettingRow>
+
+<SettingRow
+  label={t("settings.imageFolder")}
+  labelFor="set-image-folder"
+  hint={t("settings.imageFolderHint")}
+  wide
+>
+  <input
+    id="set-image-folder"
+    class="field-input"
+    type="text"
+    spellcheck="false"
+    autocomplete="off"
+    value={store.imageFolder}
+    placeholder="img"
+    aria-invalid={imageFolderProblem !== null}
+    onchange={(e) => void setImageFolder(e.currentTarget.value)}
+  />
+  {#snippet note()}
+    {#if imageFolderProblem}
+      <span class="problem" role="alert">{t(problemKey(reasonCode(imageFolderProblem)))}</span>
+    {/if}
+  {/snippet}
 </SettingRow>
 
 <SettingRow

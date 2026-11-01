@@ -82,6 +82,7 @@ function defaultSettings(): AppSettings {
     plugins: {},
     rightViews: null,
     wrapLines: true,
+    imageFolder: "img",
   };
 }
 
@@ -147,6 +148,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       return { ...settings, rightViews: change.value };
     case "wrapLines":
       return { ...settings, wrapLines: change.value };
+    case "imageFolder":
+      return { ...settings, imageFolder: change.value.trim() };
     default:
       return change satisfies never;
   }

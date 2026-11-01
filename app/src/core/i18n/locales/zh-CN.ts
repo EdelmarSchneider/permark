@@ -517,6 +517,8 @@ export default {
   "images.big": "{name} 有 {size} MB。仍要保存到文档旁边吗？",
   "images.saveAnyway": "保存",
   "images.tooLarge": "{name} 大于 {limit} MB，未保存。",
+  "images.saved": "已将 {name} 保存到文档旁边。",
+  "images.savedIn": "已将 {name} 保存到 {folder}。",
   "wordCount.words.one": "{n} 个字词",
   "wordCount.words.other": "{n} 个字词",
   "wordCount.characters.one": "{n} 个字符",
@@ -532,6 +534,8 @@ export default {
   // ---- editing
   "settings.editMode": "编辑模式",
   "settings.editModeHint": "Ctrl+E 为 Markdown 打开的编辑器。",
+  "settings.imageFolder": "图片文件夹",
+  "settings.imageFolderHint": "粘贴的图片会保存在文档旁的这个文件夹里。留空则保存在文档旁边。",
   // ---- search, commands, keyboard
   "cmd.openFolder": "打开文件夹...",
   "cmd.openFile": "打开文件...",
