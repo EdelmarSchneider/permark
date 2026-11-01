@@ -1,7 +1,8 @@
-# Agent files: local only, never pushed (app/AGENTS.md, app/CLAUDE.md, app/.claude/: working copies of the coding directives)
+# Agent files: local only, never pushed (app/AGENTS.md, app/CLAUDE.md, app/.claude/: working copies of the coding directives; .grok/: local Grok harness)
 AGENTS.md
 CLAUDE.md
 .claude/
+.grok/
 HANDOFF.md
 .playwright-mcp/
 
