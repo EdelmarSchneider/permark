@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clipboardPictures } from "./pictures";
+import { clipboardPictures, pictureDisplayUrl } from "./pictures";
 
 function picture(name: string, type: string, bytes: number[]): File {
   return new File([new Uint8Array(bytes)], name, { type });
@@ -70,5 +70,36 @@ describe("clipboardPictures", () => {
       picture("a.svg", "image/svg+xml", [1]),
     ];
     expect(clipboardPictures({ files, items: [] })).toEqual(files);
+  });
+});
+
+describe("pictureDisplayUrl", () => {
+  const asset = (path: string): string => `asset:${path}`;
+
+  it("resolves a picture next to the document and one in a subfolder", () => {
+    expect(pictureDisplayUrl("docs/note.md", "a.png", asset)).toBe("asset:docs/a.png");
+    expect(pictureDisplayUrl("docs/note.md", "img/a%20b.png", asset)).toBe(
+      "asset:docs/img/a b.png",
+    );
+  });
+
+  it("keeps a remote address and a data address", () => {
+    expect(pictureDisplayUrl("docs/note.md", "https://example.com/a.png", asset)).toBe(
+      "https://example.com/a.png",
+    );
+    expect(pictureDisplayUrl("docs/note.md", "data:image/png,xx", asset)).toBe("data:image/png,xx");
+    expect(pictureDisplayUrl("docs/note.md", "blob:https://x/1", asset)).toBe("blob:https://x/1");
+  });
+
+  it("reads a pm-asset path and a project-root path", () => {
+    expect(pictureDisplayUrl("docs/note.md", "pm-asset:docs/img/a%20b.png", asset)).toBe(
+      "asset:docs/img/a b.png",
+    );
+    expect(pictureDisplayUrl("docs/note.md", "/img/a.png", asset)).toBe("asset:img/a.png");
+  });
+
+  it("leaves a path that climbs out of the project", () => {
+    expect(pictureDisplayUrl("docs/note.md", "../../x.png", asset)).toBe("../../x.png");
+    expect(pictureDisplayUrl("docs/note.md", "", asset)).toBe("");
   });
 });

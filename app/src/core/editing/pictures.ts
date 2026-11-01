@@ -1,5 +1,8 @@
 // Pictures pasted | dropped into an editor: which files count, the clipboard read, their type, the size rules,
-// the link written.
+// the link written, the address Edit paints (the markdown path stays relative).
+
+import { assetPathOf } from "../doc/enhance";
+import { resolveLink } from "./source/complete";
 
 /** Asks first above this size. */
 export const ASK_ABOVE = 5 * 1024 * 1024;
@@ -58,4 +61,27 @@ export function pictureLink(doc: string, saved: string): string {
   const name = saved.split("/").at(-1) ?? saved;
   const encoded = name.replace(/ /g, "%20").replace(/[()<>]/g, encodeURIComponent);
   return docDir === savedDir ? encoded : saved.replace(/ /g, "%20");
+}
+
+/** A scheme or a protocol-relative address: the browser loads it. `pm-asset:` is not one of these. */
+const REMOTE = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
+
+/**
+ * Address for an `<img>` in Edit. `src` stays the markdown path on the node.
+ * A local path (and `pm-asset:`) becomes `asset(vaultPath)`. `http`, `data:`, `blob:` stay.
+ * A path that climbs out of the project stays as written.
+ */
+export function pictureDisplayUrl(
+  doc: string,
+  src: string,
+  asset: (vaultPath: string) => string,
+): string {
+  const trimmed = src.trim();
+  if (trimmed === "") return "";
+  const fromAsset = assetPathOf(trimmed);
+  if (fromAsset !== null) return fromAsset === "" ? trimmed : asset(fromAsset);
+  if (REMOTE.test(trimmed)) return trimmed;
+  // a leading `/` is the project root, the same rule as the reading view
+  const vault = resolveLink(trimmed.startsWith("/") ? "_.md" : doc, trimmed);
+  return vault === null || vault === "" ? trimmed : asset(vault);
 }

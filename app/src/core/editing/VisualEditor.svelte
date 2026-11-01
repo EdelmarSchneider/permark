@@ -13,7 +13,8 @@
   import { ui } from "../shell/ui.svelte";
   import EditorToolbar from "./EditorToolbar.svelte";
   import { frontMatterSyntax } from "../config/frontMatter";
-  import { pictureFiles, pictureLink } from "./pictures";
+  import { documents } from "../doc/document.svelte";
+  import { pictureDisplayUrl, pictureFiles, pictureLink } from "./pictures";
   import { baseName, pictureType } from "../explorer/importModel";
   import { relativeLink } from "./source/complete";
   import type { Content, EditingSession } from "./session.svelte";
@@ -252,6 +253,10 @@
           slashKey: (key) => slashKeyed(key),
           pictures: (files, at) => void insertPictures(files, at),
           followLink: (href) => void followLink(href),
+          displaySrc: (src) =>
+            pictureDisplayUrl(content.path, src, (path) =>
+              api.assetUrl(documents.workspaceId ?? 0, path, null),
+            ),
         }),
       });
       if (gone) {
@@ -403,7 +408,7 @@
       tr = tr.insert(pos, node);
       pos += node.nodeSize;
     }
-    if (saved.length > 0) view.dispatch(tr);
+    if (saved.length > 0) view.dispatch(tr.scrollIntoView());
   }
 
   async function followLink(href: string): Promise<void> {
@@ -554,6 +559,15 @@
   .host :global(.ProseMirror) {
     outline: none;
     min-height: 40vh;
+  }
+  .host :global(.pm-editor img) {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-card);
+  }
+  .host :global(.pm-editor img.ProseMirror-selectednode) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
   .host :global(.pm-locked) {
     margin: var(--sp-3) 0;
