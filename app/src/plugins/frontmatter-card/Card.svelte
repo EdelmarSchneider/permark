@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The properties card: front matter as a grid of keys and values. Lists are chips, dates are written for the
+  // The properties card: front matter as rows of keys and values. Lists are chips, dates are written for the
   // reader. Text the plugin could not read as properties shows as it is.
   import { language, t } from "../../core/i18n";
   import type { FrontMatterProps } from "../../core/plugins/props";
@@ -50,22 +50,26 @@
   }
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 10px 24px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
     margin: 0;
   }
   .field {
+    display: grid;
+    grid-template-columns: minmax(110px, 26%) minmax(0, 1fr);
+    gap: var(--sp-3);
+    align-items: baseline;
     min-width: 0;
   }
   dt {
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    min-width: 0;
+    overflow-wrap: anywhere;
     color: var(--muted);
+    font-family: var(--font-code);
+    font-size: 0.95em;
   }
   dd {
-    margin: 2px 0 0;
+    margin: 0;
     min-width: 0;
     overflow-wrap: anywhere;
   }
@@ -86,5 +90,10 @@
     white-space: pre-wrap;
     font: 12.5px/1.5 var(--font-code);
     color: var(--muted);
+  }
+  @media (max-width: 560px) {
+    .field {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 </style>
