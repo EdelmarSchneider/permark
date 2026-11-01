@@ -15,6 +15,30 @@ fn applied(text: &str, change: &SettingChange) -> String {
 }
 
 #[test]
+fn image_folder_defaults_to_img_and_an_empty_value_stays_empty() {
+    assert_eq!(AppSettings::from_doc(&doc("")).image_folder, "img");
+    let set = applied("", &SettingChange::ImageFolder("pics".to_owned()));
+    assert_eq!(AppSettings::from_doc(&doc(&set)).image_folder, "pics");
+    let cleared = applied(&set, &SettingChange::ImageFolder(String::new()));
+    assert!(cleared.contains("image_folder"));
+    assert_eq!(AppSettings::from_doc(&doc(&cleared)).image_folder, "");
+    assert_eq!(
+        AppSettings::from_doc(&doc("image_folder = \"a/b\"\n")).image_folder,
+        "img"
+    );
+    assert!(SettingChange::ImageFolder("a/b".to_owned())
+        .validate()
+        .is_err());
+    assert!(SettingChange::ImageFolder("..".to_owned())
+        .validate()
+        .is_err());
+    assert!(SettingChange::ImageFolder(String::new()).validate().is_ok());
+    assert!(SettingChange::ImageFolder("  ".to_owned())
+        .validate()
+        .is_ok());
+}
+
+#[test]
 fn defaults_when_empty() {
     let s = AppSettings::from_doc(&doc(""));
     assert_eq!(s, AppSettings::default());

@@ -5,6 +5,7 @@
   import { apiErrorText } from "../errors";
   import { baseName } from "../explorer/importModel";
   import { t } from "../i18n";
+  import { windowStore } from "../window.svelte";
   import ConflictView from "./ConflictView.svelte";
   import { ASK_ABOVE, REFUSE_ABOVE, extensionOf } from "./pictures";
   import type { EditingSession } from "./session.svelte";
@@ -51,10 +52,11 @@
     });
   }
 
-  /** Saves pictures next to the document and names each saved file; resolves to the saved paths. */
+  /** Saves pictures under the image folder (or beside the document) and names each; resolves to the paths. */
   async function pictures(files: File[]): Promise<string[]> {
     const doc = session.path;
     if (doc === null) return [];
+    const folder = windowStore.imageFolder.trim();
     const saved: string[] = [];
     for (const file of files) {
       const ext = extensionOf(file);
@@ -65,10 +67,11 @@
       }
       if (file.size > ASK_ABOVE && !(await askBig(file))) continue;
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const result = await api.editWriteAsset(doc, ext, bytes);
+      const result = await api.editWriteAsset(doc, ext, bytes, folder);
       if (result.ok) {
         saved.push(result.value);
-        note(t("images.saved", { name: baseName(result.value) }));
+        const name = baseName(result.value);
+        note(folder === "" ? t("images.saved", { name }) : t("images.savedIn", { name, folder }));
       } else note(apiErrorText(result.error));
     }
     return saved;

@@ -54,13 +54,28 @@ export function clipboardPictures(data: PasteClipboard | null): File[] {
   return fromFiles.concat(extra);
 }
 
-/** The link to a picture saved next to the document: its name, spaces and brackets encoded. */
+/** Markdown link of a saved picture, relative to the document. Spaces and `()<>` are encoded. `..` is not. */
 export function pictureLink(doc: string, saved: string): string {
-  const docDir = doc.split("/").slice(0, -1).join("/");
-  const savedDir = saved.split("/").slice(0, -1).join("/");
-  const name = saved.split("/").at(-1) ?? saved;
-  const encoded = name.replace(/ /g, "%20").replace(/[()<>]/g, encodeURIComponent);
-  return docDir === savedDir ? encoded : saved.replace(/ /g, "%20");
+  const from = doc.split("/").slice(0, -1);
+  const to = saved.split("/");
+  let i = 0;
+  while (i < from.length && i < to.length - 1 && from[i] === to[i]) i += 1;
+  const up = from.slice(i).map(() => "..");
+  const rest = to.slice(i);
+  return [...up, ...rest].map(encodeSegment).join("/");
+}
+
+/** `encodeURIComponent` leaves `()` alone; a markdown destination cannot. */
+const ESCAPE: Record<string, string> = {
+  " ": "%20",
+  "(": "%28",
+  ")": "%29",
+  "<": "%3C",
+  ">": "%3E",
+};
+
+function encodeSegment(segment: string): string {
+  return segment === ".." ? segment : segment.replace(/[ ()<>]/g, (ch) => ESCAPE[ch] ?? ch);
 }
 
 /** A scheme or a protocol-relative address: the browser loads it. `pm-asset:` is not one of these. */

@@ -529,6 +529,7 @@ const en = {
   "images.saveAnyway": "Save it",
   "images.tooLarge": "{name} is larger than {limit} MB and was not saved.",
   "images.saved": "Saved {name} next to the document.",
+  "images.savedIn": "Saved {name} in {folder}.",
   "wordCount.words.one": "{n} word",
   "wordCount.words.other": "{n} words",
   "wordCount.characters.one": "{n} character",
@@ -544,6 +545,9 @@ const en = {
   // ---- editing
   "settings.editMode": "Editing mode",
   "settings.editModeHint": "The editor Ctrl+E opens for Markdown.",
+  "settings.imageFolder": "Image folder",
+  "settings.imageFolderHint":
+    "Pasted pictures are saved in this folder, next to the document. Leave it empty to save them beside the document.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Open folder...",
   "cmd.openFile": "Open file...",

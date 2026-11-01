@@ -554,6 +554,7 @@ export default {
   "images.saveAnyway": "L'enregistrer",
   "images.tooLarge": "{name} dépasse {limit} Mo et n'a pas été enregistré.",
   "images.saved": "{name} a été enregistré à côté du document.",
+  "images.savedIn": "{name} a été enregistré dans {folder}.",
   "wordCount.words.one": "{n} mot",
   "wordCount.words.other": "{n} mots",
   "wordCount.characters.one": "{n} caractère",
@@ -570,6 +571,9 @@ export default {
   // ---- editing
   "settings.editMode": "Mode d'édition",
   "settings.editModeHint": "L'éditeur qu'ouvre Ctrl+E pour le Markdown.",
+  "settings.imageFolder": "Dossier d'images",
+  "settings.imageFolderHint":
+    "Les images collées sont enregistrées dans ce dossier, à côté du document. Laissez vide pour les enregistrer à côté du document.",
 
   // ---- search, commands, keyboard
   "cmd.openFolder": "Ouvrir un dossier...",

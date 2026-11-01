@@ -540,6 +540,7 @@ export default {
   "images.saveAnyway": "Salvar",
   "images.tooLarge": "{name} tem mais de {limit} MB e não foi salva.",
   "images.saved": "{name} foi salvo ao lado do documento.",
+  "images.savedIn": "{name} foi salvo em {folder}.",
   "wordCount.words.one": "{n} palavra",
   "wordCount.words.other": "{n} palavras",
   "wordCount.characters.one": "{n} caractere",
@@ -556,6 +557,9 @@ export default {
   // ---- editing
   "settings.editMode": "Modo de edição",
   "settings.editModeHint": "O editor que Ctrl+E abre para Markdown.",
+  "settings.imageFolder": "Pasta de imagens",
+  "settings.imageFolderHint":
+    "As imagens coladas são salvas nesta pasta, ao lado do documento. Deixe em branco para salvá-las ao lado do documento.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Abrir pasta...",
   "cmd.openFile": "Abrir arquivo...",

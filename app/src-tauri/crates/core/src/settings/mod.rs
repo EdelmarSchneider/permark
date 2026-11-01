@@ -19,6 +19,7 @@ pub use project::{
 };
 
 use crate::error::IpcError;
+use crate::fileops::{check_name, NameProblem};
 use crate::fsx::write_atomic;
 use crate::plugins::PluginId;
 use crate::state::AppDirs;
@@ -282,6 +283,9 @@ pub struct AppSettings {
     pub right_views: Option<RightViews>,
     /// Long lines wrap in the text viewer and the source editors (`wrap_lines`; absent = on).
     pub wrap_lines: bool,
+    /// Folder under the document's folder for pasted pictures (`image_folder`). Absent = `img`.
+    /// Empty = beside the document.
+    pub image_folder: String,
     /// Raw `[plugins.<id>]` tables: each plugin owns its schema.
     #[serde(skip)]
     #[ts(skip)]
@@ -307,6 +311,7 @@ impl Default for AppSettings {
             plugins: BTreeMap::new(),
             right_views: None,
             wrap_lines: true,
+            image_folder: "img".to_owned(),
             plugin_tables: BTreeMap::new(),
         }
     }
@@ -346,6 +351,8 @@ pub enum SettingChange {
     /// The right column's arrangement, written whole; `None` = back to the default (table removed).
     RightViews(Option<RightViews>),
     WrapLines(bool),
+    /// One path segment under the document's folder. Empty = beside the document.
+    ImageFolder(String),
 }
 
 impl SettingChange {
@@ -369,6 +376,7 @@ impl SettingChange {
             Self::PluginEnabled { plugin, .. } => format!("plugins.{plugin}.enabled"),
             Self::RightViews(_) => "right_views".to_owned(),
             Self::WrapLines(_) => "wrap_lines".to_owned(),
+            Self::ImageFolder(_) => "image_folder".to_owned(),
         }
     }
 }
@@ -431,6 +439,10 @@ impl SettingChange {
             Self::RightViews(Some(views)) if !valid_right_views(views) => {
                 Err(invalid("rightViews"))
             }
+            Self::ImageFolder(text) => match image_folder_problem(text) {
+                Some(reason) => Err(invalid(reason)),
+                None => Ok(()),
+            },
             Self::Keymap { command, combo } => {
                 if !valid_command_id(command) {
                     Err(invalid("command"))
@@ -625,6 +637,7 @@ impl AppSettings {
                 .get("wrap_lines")
                 .and_then(Item::as_bool)
                 .unwrap_or(true),
+            image_folder: image_folder_of(str_of(doc, "image_folder")),
             plugin_tables,
         }
     }
@@ -688,7 +701,33 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
         }
         SettingChange::RightViews(views) => set_right_views(root, views.as_ref()),
         SettingChange::WrapLines(on) => set_keeping_decor(root, "wrap_lines", (*on).into()),
+        // empty stays in the file: removing the key would read back as the default `img`
+        SettingChange::ImageFolder(v) => set_keeping_decor(root, "image_folder", v.trim().into()),
     }
+}
+
+/// Absent or not a single path segment: `img`. A stored empty string stays empty (beside the document).
+fn image_folder_of(stored: Option<&str>) -> String {
+    match stored {
+        None => "img".to_owned(),
+        Some(text) => {
+            let name = text.trim();
+            if name.is_empty() || check_name(name).is_ok() {
+                name.to_owned()
+            } else {
+                "img".to_owned()
+            }
+        }
+    }
+}
+
+/// Why `text` cannot be the image folder, after trim. `None`: empty or a single segment.
+fn image_folder_problem(text: &str) -> Option<&'static str> {
+    let name = text.trim();
+    if name.is_empty() {
+        return None;
+    }
+    check_name(name).err().map(NameProblem::as_str)
 }
 
 /// Writes | removes `[right_views]` whole; an existing table keeps its place (and its header comment).

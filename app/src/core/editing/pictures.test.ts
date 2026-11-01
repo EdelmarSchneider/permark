@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clipboardPictures, pictureDisplayUrl } from "./pictures";
+import { clipboardPictures, pictureDisplayUrl, pictureLink } from "./pictures";
 
 function picture(name: string, type: string, bytes: number[]): File {
   return new File([new Uint8Array(bytes)], name, { type });
@@ -101,5 +101,24 @@ describe("pictureDisplayUrl", () => {
   it("leaves a path that climbs out of the project", () => {
     expect(pictureDisplayUrl("docs/note.md", "../../x.png", asset)).toBe("../../x.png");
     expect(pictureDisplayUrl("docs/note.md", "", asset)).toBe("");
+  });
+});
+
+describe("pictureLink", () => {
+  it("names a picture saved beside the document", () => {
+    expect(pictureLink("notes/ideia.md", "notes/ideia-1.png")).toBe("ideia-1.png");
+    expect(pictureLink("notes/my doc.md", "notes/my doc-2.png")).toBe("my%20doc-2.png");
+    expect(pictureLink("notes/ideia.md", "notes/(a).png")).toBe("%28a%29.png");
+  });
+
+  it("links a picture in a folder under the document", () => {
+    expect(pictureLink("notes/ideia.md", "notes/img/ideia-1.png")).toBe("img/ideia-1.png");
+    expect(pictureLink("notes/ideia.md", "notes/img/a b.png")).toBe("img/a%20b.png");
+    expect(pictureLink("notes/ideia.md", "notes/img/a<b>.png")).toBe("img/a%3Cb%3E.png");
+    expect(pictureLink("ideia.md", "img/ideia-1.png")).toBe("img/ideia-1.png");
+  });
+
+  it("climbs to a picture outside the document's folder", () => {
+    expect(pictureLink("notes/sub/doc.md", "notes/img/x.png")).toBe("../img/x.png");
   });
 });

@@ -562,6 +562,7 @@ export default {
   "images.saveAnyway": "Salveaz-o",
   "images.tooLarge": "{name} are peste {limit} MB, așa că nu a fost salvată.",
   "images.saved": "{name} a fost salvat lângă document.",
+  "images.savedIn": "{name} a fost salvat în {folder}.",
   "wordCount.words.one": "{n} cuvânt",
   "wordCount.words.few": "{n} cuvinte",
   "wordCount.words.other": "{n} de cuvinte",
@@ -581,6 +582,9 @@ export default {
   // ---- editing
   "settings.editMode": "Mod de editare",
   "settings.editModeHint": "Editorul pe care Ctrl+E îl deschide pentru Markdown.",
+  "settings.imageFolder": "Dosar de imagini",
+  "settings.imageFolderHint":
+    "Imaginile lipite sunt salvate în acest dosar, lângă document. Lasă gol ca să le salvezi lângă document.",
 
   // ---- search, commands, keyboard
   "cmd.openFolder": "Deschide un dosar...",

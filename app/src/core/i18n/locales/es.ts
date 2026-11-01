@@ -542,6 +542,7 @@ export default {
   "images.saveAnyway": "Guardarla",
   "images.tooLarge": "{name} supera los {limit} MB y no se guardó.",
   "images.saved": "Se guardó {name} junto al documento.",
+  "images.savedIn": "Se guardó {name} en {folder}.",
   "wordCount.words.one": "{n} palabra",
   "wordCount.words.other": "{n} palabras",
   "wordCount.characters.one": "{n} carácter",
@@ -558,6 +559,9 @@ export default {
   // ---- editing
   "settings.editMode": "Modo de edición",
   "settings.editModeHint": "El editor que Ctrl+E abre para Markdown.",
+  "settings.imageFolder": "Carpeta de imágenes",
+  "settings.imageFolderHint":
+    "Las imágenes pegadas se guardan en esta carpeta, junto al documento. Déjala vacía para guardarlas junto al documento.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Abrir carpeta...",
   "cmd.openFile": "Abrir archivo...",

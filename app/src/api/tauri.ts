@@ -168,10 +168,14 @@ export const tauriApi: Api = {
   editSegments: (text) => call("edit_segments", { text }),
   editSave: (path, seenHash, edits) => call("edit_save", { path, seenHash, edits }),
   editSaveAs: (path, text, exact) => call("edit_save_as", { path, text, exact }),
-  editWriteAsset: async (doc, ext, bytes) => {
+  editWriteAsset: async (doc, ext, bytes, folder) => {
     try {
       const value = await invoke<string>("edit_write_asset", bytes, {
-        headers: { "pm-doc": encodeURIComponent(doc), "pm-ext": encodeURIComponent(ext) },
+        headers: {
+          "pm-doc": encodeURIComponent(doc),
+          "pm-ext": encodeURIComponent(ext),
+          "pm-folder": encodeURIComponent(folder),
+        },
       });
       return { ok: true, value };
     } catch (error) {

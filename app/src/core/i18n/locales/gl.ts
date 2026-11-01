@@ -543,6 +543,7 @@ export default {
   "images.saveAnyway": "Gardala",
   "images.tooLarge": "{name} ocupa máis de {limit} MB e non se gardou.",
   "images.saved": "Gardouse {name} xunto ao documento.",
+  "images.savedIn": "Gardouse {name} en {folder}.",
   "wordCount.words.one": "{n} palabra",
   "wordCount.words.other": "{n} palabras",
   "wordCount.characters.one": "{n} carácter",
@@ -559,6 +560,9 @@ export default {
   // ---- editing
   "settings.editMode": "Modo de edición",
   "settings.editModeHint": "O editor que abre Ctrl+E para Markdown.",
+  "settings.imageFolder": "Cartafol de imaxes",
+  "settings.imageFolderHint":
+    "As imaxes pegadas gárdanse neste cartafol, xunto ao documento. Déixeo baleiro para gardalas xunto ao documento.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Abrir cartafol...",
   "cmd.openFile": "Abrir ficheiro...",

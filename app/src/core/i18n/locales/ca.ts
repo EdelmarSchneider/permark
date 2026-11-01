@@ -548,6 +548,7 @@ export default {
   "images.saveAnyway": "Desa-la",
   "images.tooLarge": "{name} supera els {limit} MB i no s'ha desat.",
   "images.saved": "S'ha desat {name} al costat del document.",
+  "images.savedIn": "S'ha desat {name} a {folder}.",
   "wordCount.words.one": "{n} paraula",
   "wordCount.words.other": "{n} paraules",
   "wordCount.characters.one": "{n} caràcter",
@@ -564,6 +565,9 @@ export default {
   // ---- editing
   "settings.editMode": "Mode d'edició",
   "settings.editModeHint": "L'editor que Ctrl+E obre per al Markdown.",
+  "settings.imageFolder": "Carpeta d'imatges",
+  "settings.imageFolderHint":
+    "Les imatges enganxades es desen en aquesta carpeta, al costat del document. Deixeu-la buida per desar-les al costat del document.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Obre una carpeta...",
   "cmd.openFile": "Obre un fitxer...",

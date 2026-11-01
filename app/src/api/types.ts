@@ -942,8 +942,13 @@ export interface Api {
   editSave(path: string, seenHash: string, edits: LineEdit[]): Promise<Result<SaveOutcome>>;
   /** The person's text as a new file next to `path` (`exact`: at `path`, when free). Resolves to its path. */
   editSaveAs(path: string, text: string, exact: boolean): Promise<Result<string>>;
-  /** Picture bytes saved next to `doc`; resolves to the picture's path. */
-  editWriteAsset(doc: string, ext: string, bytes: Uint8Array): Promise<Result<string>>;
+  /** Picture bytes saved under `folder` next to `doc` (empty = beside the document). Resolves to the path. */
+  editWriteAsset(
+    doc: string,
+    ext: string,
+    bytes: Uint8Array,
+    folder: string,
+  ): Promise<Result<string>>;
   /** The bytes of a picture file dropped onto an editor (absolute path). */
   readPicture(path: string): Promise<Result<Uint8Array<ArrayBuffer>>>;
   /** A picture on the web, fetched now because the person asked (`https` only, picture types, <= 20 MB). */

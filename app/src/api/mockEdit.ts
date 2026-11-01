@@ -143,10 +143,16 @@ export function createMockEditing(linkTargets: () => string[]): {
       files.set(target, text);
       return ok(target);
     },
-    editWriteAsset: (doc, ext) => {
-      const dot = doc.lastIndexOf(".");
-      const stem = dot > 0 ? doc.slice(0, dot) : doc;
-      return ok(`${stem}-1.${ext === "jpeg" ? "jpg" : ext}`);
+    editWriteAsset: (doc, ext, _bytes, folder) => {
+      const slash = doc.lastIndexOf("/");
+      const dir = slash >= 0 ? doc.slice(0, slash) : "";
+      const file = slash >= 0 ? doc.slice(slash + 1) : doc;
+      const dot = file.lastIndexOf(".");
+      const stem = dot > 0 ? file.slice(0, dot) : file;
+      const name = `${stem}-1.${ext === "jpeg" ? "jpg" : ext}`;
+      const trimmed = folder.trim();
+      const parts = trimmed === "" ? [dir, name] : [dir, trimmed, name];
+      return ok(parts.filter((part) => part !== "").join("/"));
     },
     editSetUnsaved: (path) => {
       probe.unsaved = path;

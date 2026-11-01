@@ -1041,8 +1041,8 @@ pub fn edit_save_as(
     })
 }
 
-/// Picture bytes (raw body; headers `pm-doc`: document path, percent-encoded; `pm-ext`: type) saved next to the
-/// document. Returns the picture's path.
+/// Picture bytes (raw body; headers `pm-doc`: document path, percent-encoded; `pm-ext`: type; `pm-folder`: one
+/// path segment, percent-encoded, missing = `img`, empty = beside the document). Returns the picture's path.
 #[tauri::command]
 pub async fn edit_write_asset(
     handle: AppHandle,
@@ -1062,10 +1062,16 @@ pub async fn edit_write_asset(
     };
     let doc = header("pm-doc")?;
     let ext = header("pm-ext")?;
+    // missing header: the default folder. An empty header saves beside the document.
+    let folder = request
+        .headers()
+        .get("pm-folder")
+        .and_then(|v| v.to_str().ok())
+        .map_or_else(|| "img".to_owned(), permark_core::links::percent_decode);
     let bytes = bytes.clone();
     tauri::async_runtime::spawn_blocking(move || {
         with_editor(&handle, &window, |editor, _| {
-            editor.write_asset(&doc, &ext, &bytes)
+            editor.write_asset(&doc, &ext, &bytes, &folder)
         })
     })
     .await
