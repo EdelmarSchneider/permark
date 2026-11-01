@@ -81,6 +81,27 @@ describe("Edit-mode commands", () => {
     expect(markdown()).toBe("1. words");
   });
 
+  it("Edit mode draws a real checkbox for a task item, named by its task, and a click flips it", () => {
+    load("- [ ] a\n- [x] b\n");
+    const boxes = Array.from(
+      core.view.dom.querySelectorAll("li[data-item-type=task] input[type=checkbox]"),
+    ) as HTMLInputElement[];
+    expect(boxes.length).toBe(2);
+    const [first, done] = boxes;
+    expect(first?.checked).toBe(false);
+    expect(done?.checked).toBe(true);
+    expect(first?.getAttribute("aria-label")).toBe("a");
+    const items = Array.from(core.view.dom.querySelectorAll("li[data-item-type=task]"));
+    expect(items.map((li) => li.classList.contains("task-list-item"))).toEqual([true, true]);
+    expect(items[1]?.classList.contains("is-done")).toBe(true);
+    first?.click();
+    expect(markdown()).toBe("- [x] a\n- [x] b");
+    expect(boxes[0]?.checked).toBe(true);
+    // a plain bullet item keeps no box
+    load("- plain\n");
+    expect(core.view.dom.querySelectorAll("li input[type=checkbox]").length).toBe(0);
+  });
+
   it("toggles marks, makes and removes links, inserts a table and a rule", () => {
     load("plain text\n");
     const view = core.view;

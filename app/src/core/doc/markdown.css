@@ -428,6 +428,13 @@
   list-style: none;
   padding-left: 0.2em;
 }
+/* Edit mode: `taskItemView` writes the same classes on `li[data-item-type=task]`, so the box rules below
+   style its checkbox too. The editor's `ul` has no class of its own, so the bullet dots are cut by looking
+   at the items it holds. */
+.md ul:has(> li[data-item-type="task"]) {
+  list-style: none;
+  padding-left: 0.2em;
+}
 /* block layout with an absolutely placed checkbox: a flex row would split mixed content (text, links, code) into
    separate flex items with a gap between each of them */
 .md .task-list-item {
