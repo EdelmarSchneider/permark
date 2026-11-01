@@ -11,9 +11,6 @@ HANDOFF.md
 # SDD pipeline + grounding substrate: local only, never pushed (plan 2026-11-01-permark-sdd-gitflow-pipeline)
 .opencode/
 
-# Runtime project registry (the app writes it, tests have written it): local state, not source
-.permark/
-
 # Build output
 node_modules/
 /app/dist/
