@@ -3,6 +3,8 @@ AGENTS.md
 CLAUDE.md
 .claude/
 .grok/
+# PerMark state for this checkout
+.permark/
 HANDOFF.md
 .playwright-mcp/
 
