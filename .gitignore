@@ -3,8 +3,8 @@ AGENTS.md
 CLAUDE.md
 .claude/
 .grok/
-# PerMark state for this checkout
-.permark/
+# PerMark state for this checkout only (a bare `.permark/` would also hide fixture dirs)
+/.permark/
 HANDOFF.md
 .playwright-mcp/
 
