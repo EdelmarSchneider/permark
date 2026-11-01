@@ -3,6 +3,7 @@
 // and sends actions. UI modes are tagged unions; actions are methods called from event handlers.
 
 import { confirmLeave } from "../editing/guard";
+import { editing } from "../editing/session.svelte";
 import { DEFAULT_REFERENCE_TEMPLATE, formatReference } from "../doc/reference";
 import {
   type Api,
@@ -26,6 +27,7 @@ import {
   ancestorsOf,
   applyDelta,
   canDrop,
+  depthOf,
   movesInto,
   nameOf,
   parentOf,
@@ -345,16 +347,42 @@ export class ExplorerStore {
   }
 
   async toggle(path: string): Promise<void> {
-    const open = !this.expanded.has(path);
+    if (this.expanded.has(path)) {
+      const next = new Set(this.expanded);
+      next.delete(path);
+      this.expanded = next;
+      this.#remember();
+      return;
+    }
+    await this.#openFolders([path]);
+  }
+
+  /**
+   * The one way a folder opens: mark it expanded AND ask the backend, which is what makes its
+   * children enter the list (`unlisted` counts drop, rows arrive). Expanding without asking leaves
+   * rows the store cannot select, so every expansion comes through here. The folders above each path
+   * go first: a folder the list does not have yet is only reachable once its parent is opened.
+   */
+  async #openFolders(paths: readonly string[]): Promise<void> {
+    const chain = new Set<string>();
+    for (const p of paths) {
+      if (p !== "") chain.add(p);
+      for (const a of ancestorsOf(p)) chain.add(a);
+    }
+    const closed = Array.from(chain)
+      .filter((p) => !this.expanded.has(p))
+      .sort((a, b) => depthOf(a) - depthOf(b));
+    if (closed.length === 0) return;
     const next = new Set(this.expanded);
-    if (open) next.add(path);
-    else next.delete(path);
+    for (const p of closed) next.add(p);
     this.expanded = next;
     this.#remember();
-    const node = this.nodes.find((n) => n.path === path);
-    if (open && node?.kind.type === "dir" && node.kind.unlisted !== null) {
-      const result = await this.#api.treeOpenFolder(path);
-      if (!result.ok) this.#host.fail(result.error);
+    for (const p of closed) {
+      const node = this.nodes.find((n) => n.path === p);
+      if (node?.kind.type === "dir" && node.kind.unlisted !== null) {
+        const result = await this.#api.treeOpenFolder(p);
+        if (!result.ok) this.#host.fail(result.error);
+      }
     }
   }
 
@@ -467,11 +495,12 @@ export class ExplorerStore {
 
   // ---- open / reveal ---------------------------------------------------------------------------------------------
 
-  /** Enter | double click | click on a file: a folder toggles, a file is shown. */
-  async activate(path: string): Promise<void> {
+  /** Enter | double click | click on a file: a folder toggles, a file is shown. `inList` false is for
+   *  a path the backend has just created and has not listed yet (its row may still be on its way). */
+  async activate(path: string, inList = true): Promise<void> {
     const node = this.nodes.find((n) => n.path === path);
-    if (node === undefined) return;
-    if (node.kind.type === "dir") {
+    if (inList && node === undefined) return;
+    if (node?.kind.type === "dir") {
       await this.toggle(path);
       return;
     }
@@ -498,20 +527,24 @@ export class ExplorerStore {
     if (this.#active !== null) this.reveal(this.#active);
   }
 
-  /** Opens the folders above `path`, selects it, scrolls to it. */
+  /** Opens the folders above `path`, selects it, scrolls to it. A row the list does not have yet is
+   *  kept as the path to select, and joins the selection when its delta arrives (as `placed` does). */
   reveal(path: string): void {
-    const next = new Set(this.expanded);
-    for (const folder of ancestorsOf(path)) next.add(folder);
+    void this.#openFolders(ancestorsOf(path));
     const root = rootOf(path);
     if (root !== "" && this.collapsedRoots.has(root)) {
       const roots = new Set(this.collapsedRoots);
       roots.delete(root);
       this.collapsedRoots = roots;
     }
-    this.expanded = next;
-    this.selection = new Set([path]);
-    this.#anchor = path;
-    this.focus = path;
+    const alive = new Set(this.nodes.map((n) => n.path));
+    if (alive.has(path)) {
+      this.selection = new Set([path]);
+      this.#anchor = path;
+      this.focus = path;
+    } else {
+      this.#toSelect.add(path);
+    }
     this.#reveal(path);
   }
 
@@ -524,14 +557,11 @@ export class ExplorerStore {
     this.#reveal(target);
   }
 
-  /** A new file | folder: the field opens inside `dir` (the folder is opened). */
+  /** A new file | folder: the field opens inside `dir` (the folder is opened, at the store and at the
+   *  backend, so the row that arrives can be selected). */
   beginNew(kind: NewKind, dir?: string): void {
     const base = dir ?? this.#folderForNew();
-    if (base !== "" && !this.expanded.has(base)) {
-      const next = new Set(this.expanded);
-      next.add(base);
-      this.expanded = next;
-    }
+    if (base !== "") void this.#openFolders([base]);
     this.edit = {
       mode: "new",
       kind,
@@ -582,13 +612,23 @@ export class ExplorerStore {
       await this.requestMove([{ from: edit.path, to }], true);
       return;
     }
-    const result = await this.#api.newEntry(edit.dir, edit.value, edit.kind);
+    const dir = edit.dir;
+    const kind = edit.kind;
+    const result = await this.#api.newEntry(dir, edit.value, kind);
     if (!result.ok) {
       this.#fieldFailure(result.error);
       return;
     }
     this.edit = { mode: "none" };
-    this.reveal(result.value);
+    const path = result.value;
+    await this.#openFolders([dir]);
+    this.reveal(path);
+    // a new file is what the person wants to work on: it opens in the editor (a folder stays a row),
+    // through the window's own show path and the mode the editing session applies when it arrives
+    if (kind === "file") {
+      editing.chooseNext("edit");
+      await this.activate(path, false);
+    }
   }
 
   /** A refusal about the name stays in the field; anything else is told to the window. */
@@ -841,9 +881,12 @@ export class ExplorerStore {
   #selectArrived(alive: ReadonlySet<string>): void {
     if (this.#toSelect.size === 0) return;
     const arrived = Array.from(this.#toSelect).filter((p) => alive.has(p));
-    if (arrived.length === 0) return;
+    const first = arrived[0];
+    if (first === undefined) return;
     for (const path of arrived) this.#toSelect.delete(path);
     this.selection = new Set([...this.selection, ...arrived]);
+    this.#anchor = first;
+    this.#reveal(first);
   }
 
   /** A folder row that is closed now (a worktree root collapsed, or a folder not open). */
@@ -863,14 +906,7 @@ export class ExplorerStore {
       this.collapsedRoots = roots;
       return;
     }
-    const next = new Set(this.expanded);
-    next.add(path);
-    this.expanded = next;
-    const node = this.nodes.find((n) => n.path === path);
-    if (node?.kind.type === "dir" && node.kind.unlisted !== null) {
-      const result = await this.#api.treeOpenFolder(path);
-      if (!result.ok) this.#host.fail(result.error);
-    }
+    await this.#openFolders([path]);
   }
 
   #clearAuto(): void {

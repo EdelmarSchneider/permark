@@ -151,6 +151,13 @@ export class EditingSession {
     return this.#used ? this.lastEdit : preference;
   }
 
+  /** The mode the next document that opens in this window asks for (a file the person creates opens
+   *  in the editor). Nothing is opened here: `openRemembered` in choose.ts applies it to the document
+   *  that arrives, and the read-only gate keeps a file that cannot be edited in View. */
+  chooseNext(mode: EditMode): void {
+    this.chosenMode = mode;
+  }
+
   get unsaved(): boolean {
     return isUnsaved(this.state);
   }
