@@ -553,6 +553,7 @@ export default {
   "images.big": "{name} fait {size} Mo. L'enregistrer quand même à côté du document ?",
   "images.saveAnyway": "L'enregistrer",
   "images.tooLarge": "{name} dépasse {limit} Mo et n'a pas été enregistré.",
+  "images.saved": "{name} a été enregistré à côté du document.",
   "wordCount.words.one": "{n} mot",
   "wordCount.words.other": "{n} mots",
   "wordCount.characters.one": "{n} caractère",

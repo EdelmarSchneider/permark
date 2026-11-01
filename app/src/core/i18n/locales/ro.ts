@@ -561,6 +561,7 @@ export default {
   "images.big": "{name} are {size} MB. O salvezi oricum lângă document?",
   "images.saveAnyway": "Salveaz-o",
   "images.tooLarge": "{name} are peste {limit} MB, așa că nu a fost salvată.",
+  "images.saved": "{name} a fost salvat lângă document.",
   "wordCount.words.one": "{n} cuvânt",
   "wordCount.words.few": "{n} cuvinte",
   "wordCount.words.other": "{n} de cuvinte",

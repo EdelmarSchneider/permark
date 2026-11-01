@@ -542,6 +542,7 @@ export default {
   "images.big": "{name} ocupa {size} MB. Gardala xunto ao documento de todos os xeitos?",
   "images.saveAnyway": "Gardala",
   "images.tooLarge": "{name} ocupa máis de {limit} MB e non se gardou.",
+  "images.saved": "Gardouse {name} xunto ao documento.",
   "wordCount.words.one": "{n} palabra",
   "wordCount.words.other": "{n} palabras",
   "wordCount.characters.one": "{n} carácter",

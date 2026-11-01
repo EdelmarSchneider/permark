@@ -517,6 +517,7 @@ export default {
   "images.big": "{name} 有 {size} MB。仍要保存到文档旁边吗？",
   "images.saveAnyway": "保存",
   "images.tooLarge": "{name} 大于 {limit} MB，未保存。",
+  "images.saved": "已将 {name} 保存到文档旁边。",
   "wordCount.words.one": "{n} 个字词",
   "wordCount.words.other": "{n} 个字词",
   "wordCount.characters.one": "{n} 个字符",

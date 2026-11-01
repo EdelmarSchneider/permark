@@ -34,6 +34,7 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
+import { clipboardPictures } from "../pictures";
 import { configLanguage } from "./configLang";
 import { fenceAround, type Fence } from "./fence";
 import { completionSources, type CompletionHost } from "./complete";
@@ -264,9 +265,7 @@ export function createSource(options: {
         }),
         EditorView.domEventHandlers({
           paste: (event, v) => {
-            const files = Array.from(event.clipboardData?.files ?? []).filter((f) =>
-              f.type.startsWith("image/"),
-            );
+            const files = clipboardPictures(event.clipboardData);
             if (files.length === 0) return false;
             event.preventDefault();
             host.pictures(files, v.state.selection.main.head);

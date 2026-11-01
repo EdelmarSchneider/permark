@@ -528,6 +528,7 @@ const en = {
   "images.big": "{name} is {size} MB. Save it next to the document anyway?",
   "images.saveAnyway": "Save it",
   "images.tooLarge": "{name} is larger than {limit} MB and was not saved.",
+  "images.saved": "Saved {name} next to the document.",
   "wordCount.words.one": "{n} word",
   "wordCount.words.other": "{n} words",
   "wordCount.characters.one": "{n} character",

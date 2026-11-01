@@ -545,6 +545,7 @@ export default {
   "images.big": "{name} è di {size} MB. Salvarla comunque accanto al documento?",
   "images.saveAnyway": "Salvala",
   "images.tooLarge": "{name} supera i {limit} MB e non è stata salvata.",
+  "images.saved": "{name} è stato salvato accanto al documento.",
   "wordCount.words.one": "{n} parola",
   "wordCount.words.other": "{n} parole",
   "wordCount.characters.one": "{n} carattere",

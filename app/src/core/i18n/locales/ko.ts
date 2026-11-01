@@ -528,6 +528,7 @@ export default {
   "images.big": "{name} 파일의 크기는 {size}MB입니다. 그래도 문서 옆에 저장할까요?",
   "images.saveAnyway": "저장",
   "images.tooLarge": "{name} 파일은 {limit}MB보다 커서 저장하지 않았습니다.",
+  "images.saved": "{name} 파일을 문서 옆에 저장했습니다.",
   "wordCount.words.one": "단어 {n}개",
   "wordCount.words.other": "단어 {n}개",
   "wordCount.characters.one": "문자 {n}자",

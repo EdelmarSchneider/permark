@@ -547,6 +547,7 @@ export default {
   "images.big": "{name} ocupa {size} MB. Voleu desar-la igualment al costat del document?",
   "images.saveAnyway": "Desa-la",
   "images.tooLarge": "{name} supera els {limit} MB i no s'ha desat.",
+  "images.saved": "S'ha desat {name} al costat del document.",
   "wordCount.words.one": "{n} paraula",
   "wordCount.words.other": "{n} paraules",
   "wordCount.characters.one": "{n} caràcter",

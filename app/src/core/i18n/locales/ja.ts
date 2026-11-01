@@ -545,6 +545,7 @@ export default {
   "images.big": "{name} は {size} MB あります。それでもドキュメントの隣に保存しますか？",
   "images.saveAnyway": "保存する",
   "images.tooLarge": "{name} は {limit} MB を超えているため、保存されませんでした。",
+  "images.saved": "{name} をドキュメントの隣に保存しました。",
   "wordCount.words.one": "{n} 語",
   "wordCount.words.other": "{n} 語",
   "wordCount.characters.one": "{n} 文字",

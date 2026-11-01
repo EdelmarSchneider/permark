@@ -5,6 +5,7 @@ import { liftListItem } from "@milkdown/kit/prose/schema-list";
 import { Plugin, PluginKey, type EditorState } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { $prose } from "@milkdown/kit/utils";
+import { clipboardPictures } from "../pictures";
 import { run, type Command } from "./commands";
 import type { Core } from "./core";
 
@@ -154,7 +155,7 @@ export function appPlugins(host: PluginHost) {
           props: {
             handleKeyDown: (view, event) => keys(host, view, event),
             handlePaste: (view, event) => {
-              const files = imagesOf(event.clipboardData);
+              const files = clipboardPictures(event.clipboardData);
               if (files.length === 0) return false;
               host.pictures(files, view.state.selection.from);
               return true;
