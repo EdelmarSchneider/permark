@@ -2,6 +2,7 @@
 //! that key's default); written surgically via `toml_edit` (only the changed key's bytes; comments, order, unknown
 //! keys survive).
 
+mod characters;
 mod installer;
 mod project;
 
@@ -13,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use toml_edit::{DocumentMut, Item, Table, Value};
 use ts_rs::TS;
 
+pub use characters::{CharacterEntry, CharacterGroup, CharactersError};
 pub use installer::installer_language;
 pub use project::{
     ProjectConfig, ProjectConfigFile, ProjectSettingChange, ProjectSettings, TreeConfig, TreeShow,
@@ -23,6 +25,7 @@ use crate::fileops::{check_name, NameProblem};
 use crate::fsx::write_atomic;
 use crate::plugins::PluginId;
 use crate::state::AppDirs;
+use crate::tree::extension_of;
 
 /// Settings files larger than this are not settings (refused, defaults used).
 pub(crate) const MAX_SETTINGS_BYTES: u64 = 1024 * 1024;
@@ -286,6 +289,13 @@ pub struct AppSettings {
     /// Folder under the document's folder for pasted pictures (`image_folder`). Absent = `img`.
     /// Empty = beside the document.
     pub image_folder: String,
+    /// File under the profile folder with the picker groups (`characters_file`). Absent = `characters.toml`.
+    /// Empty = the built-in groups only.
+    pub characters_file: String,
+    /// Character groups the emoji + symbol pickers show: the built-ins, replaced whole by the file.
+    pub characters: Vec<CharacterGroup>,
+    /// Path of the groups file the groups came from ("" = the built-ins only).
+    pub characters_path: String,
     /// Raw `[plugins.<id>]` tables: each plugin owns its schema.
     #[serde(skip)]
     #[ts(skip)]
@@ -312,6 +322,9 @@ impl Default for AppSettings {
             right_views: None,
             wrap_lines: true,
             image_folder: "img".to_owned(),
+            characters_file: characters::DEFAULT_FILE_NAME.to_owned(),
+            characters: characters::defaults(),
+            characters_path: String::new(),
             plugin_tables: BTreeMap::new(),
         }
     }
@@ -353,6 +366,8 @@ pub enum SettingChange {
     WrapLines(bool),
     /// One path segment under the document's folder. Empty = beside the document.
     ImageFolder(String),
+    /// File under the profile folder with the picker groups. Empty = the built-in groups only.
+    CharactersFile(String),
 }
 
 impl SettingChange {
@@ -377,6 +392,7 @@ impl SettingChange {
             Self::RightViews(_) => "right_views".to_owned(),
             Self::WrapLines(_) => "wrap_lines".to_owned(),
             Self::ImageFolder(_) => "image_folder".to_owned(),
+            Self::CharactersFile(_) => "characters_file".to_owned(),
         }
     }
 }
@@ -440,6 +456,10 @@ impl SettingChange {
                 Err(invalid("rightViews"))
             }
             Self::ImageFolder(text) => match image_folder_problem(text) {
+                Some(reason) => Err(invalid(reason)),
+                None => Ok(()),
+            },
+            Self::CharactersFile(text) => match characters_file_problem(text) {
                 Some(reason) => Err(invalid(reason)),
                 None => Ok(()),
             },
@@ -638,6 +658,10 @@ impl AppSettings {
                 .and_then(Item::as_bool)
                 .unwrap_or(true),
             image_folder: image_folder_of(str_of(doc, "image_folder")),
+            characters_file: characters_file_of(str_of(doc, "characters_file")),
+            // the groups ride on the profile file: SettingsFile attaches them (`attach_characters`)
+            characters: Vec::new(),
+            characters_path: String::new(),
             plugin_tables,
         }
     }
@@ -703,6 +727,10 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
         SettingChange::WrapLines(on) => set_keeping_decor(root, "wrap_lines", (*on).into()),
         // empty stays in the file: removing the key would read back as the default `img`
         SettingChange::ImageFolder(v) => set_keeping_decor(root, "image_folder", v.trim().into()),
+        // empty stays in the file: removing the key would read back as the default groups file
+        SettingChange::CharactersFile(v) => {
+            set_keeping_decor(root, "characters_file", v.trim().into());
+        }
     }
 }
 
@@ -728,6 +756,35 @@ fn image_folder_problem(text: &str) -> Option<&'static str> {
         return None;
     }
     check_name(name).err().map(NameProblem::as_str)
+}
+
+/// Absent: `characters.toml`. A stored empty string stays empty (the built-in groups only). A hand-edited value
+/// the validator refuses reads as the default name.
+fn characters_file_of(stored: Option<&str>) -> String {
+    match stored {
+        None => characters::DEFAULT_FILE_NAME.to_owned(),
+        Some(text) => {
+            let name = text.trim();
+            if characters_file_problem(name).is_none() {
+                name.to_owned()
+            } else {
+                characters::DEFAULT_FILE_NAME.to_owned()
+            }
+        }
+    }
+}
+
+/// Why `text` cannot be the groups file, after trim. `None`: empty (the built-in groups only) | a name a file
+/// system accepts whose extension is `.toml` (any case).
+fn characters_file_problem(text: &str) -> Option<&'static str> {
+    let name = text.trim();
+    if name.is_empty() {
+        return None;
+    }
+    if let Some(problem) = check_name(name).err() {
+        return Some(problem.as_str());
+    }
+    (extension_of(name).as_deref() != Some("toml")).then_some("tomlOnly")
 }
 
 /// Writes | removes `[right_views]` whole; an existing table keeps its place (and its header comment).
@@ -837,6 +894,7 @@ pub fn render(doc: &DocumentMut, original: &str) -> String {
 #[derive(Debug, Clone)]
 pub struct SettingsFile {
     path: PathBuf,
+    profile: PathBuf,
 }
 
 impl SettingsFile {
@@ -844,6 +902,7 @@ impl SettingsFile {
     pub fn app(dirs: &AppDirs) -> Self {
         Self {
             path: dirs.profile.join("settings.toml"),
+            profile: dirs.profile.clone(),
         }
     }
 
@@ -852,10 +911,35 @@ impl SettingsFile {
         &self.path
     }
 
+    /// Attaches the emoji | symbol groups (and the resolved file path) to settings read from disk.
+    /// A missing | unreadable | invalid characters file falls back to the built-in defaults.
+    fn attach_characters(&self, settings: AppSettings) -> AppSettings {
+        let characters = match characters::load(&self.profile, &settings.characters_file) {
+            Ok(groups) => groups,
+            Err(_) => characters::defaults(),
+        };
+        let characters_path = if settings.characters_file.is_empty() {
+            String::new()
+        } else {
+            self.profile
+                .join(&settings.characters_file)
+                .display()
+                .to_string()
+        };
+        AppSettings {
+            characters,
+            characters_path,
+            ..settings
+        }
+    }
+
     /// Current settings (defaults when missing | unreadable).
     #[must_use]
     pub fn load(&self) -> AppSettings {
-        read_doc(&self.path).map_or_else(AppSettings::default, |doc| AppSettings::from_doc(&doc))
+        self.attach_characters(
+            read_doc(&self.path)
+                .map_or_else(AppSettings::default, |doc| AppSettings::from_doc(&doc)),
+        )
     }
 
     /// Applies one change to the file on disk (read fresh: hand edits kept) and returns the new settings.
@@ -866,7 +950,7 @@ impl SettingsFile {
     pub fn apply(&self, change: &SettingChange) -> Result<AppSettings, SettingsError> {
         change.validate()?;
         let doc = edit_file(&self.path, |doc| apply_change(doc, change))?;
-        Ok(AppSettings::from_doc(&doc))
+        Ok(self.attach_characters(AppSettings::from_doc(&doc)))
     }
 
     /// First start: the language the installer recorded becomes the `language` setting, once. Nothing happens when
@@ -931,7 +1015,7 @@ impl SettingsFile {
                 apply_change(doc, change);
             }
         })?;
-        Ok(Some(AppSettings::from_doc(&doc)))
+        Ok(Some(self.attach_characters(AppSettings::from_doc(&doc))))
     }
 }
 

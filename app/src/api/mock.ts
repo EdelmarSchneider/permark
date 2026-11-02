@@ -3,6 +3,8 @@
 
 import { DEFAULT_FILTER } from "../core/explorer/filter";
 import { opensAsText } from "../core/explorer/importModel";
+import type { CharacterEntry } from "./generated/CharacterEntry";
+import type { CharacterGroup } from "./generated/CharacterGroup";
 import type { Context } from "./generated/Context";
 import type { ErrorKind } from "./generated/ErrorKind";
 import type { WindowView } from "./generated/WindowView";
@@ -64,6 +66,33 @@ const WSL_ROOT = /^[\\/]{2}(?:[?.][\\/]unc[\\/])?wsl(?:\$|\.localhost)(?:[\\/]|$
 
 const ok = <T>(value: T): Promise<Result<T>> => Promise.resolve({ ok: true, value });
 
+/** The groups file of the mock profile (as the backend joins `AppDirs.profile` with the name). */
+const MOCK_CHARACTERS_PATH = "C:/Users/demo/AppData/Roaming/PerMark/characters.toml";
+
+/** The picker groups, a sample of each group the backend ships as built-ins (same names it searches by). */
+function mockCharacters(): CharacterGroup[] {
+  const emoji: CharacterEntry[] = [
+    { char: "😀", names: ["grinning face"] },
+    { char: "👍", names: ["thumbs up", "yes"] },
+    { char: "✅", names: ["check mark", "done", "checked"] },
+  ];
+  const greek: CharacterEntry[] = [
+    { char: "α", names: ["alpha"] },
+    { char: "π", names: ["pi"] },
+    { char: "Σ", names: ["capital sigma", "Sigma", "sum"] },
+  ];
+  const arrows: CharacterEntry[] = [
+    { char: "→", names: ["right arrow", "yields", "implies"] },
+    { char: "←", names: ["left arrow", "leftwards arrow"] },
+    { char: "⇔", names: ["left right double arrow", "if and only if", "iff"] },
+  ];
+  return [
+    { name: "emoji", entries: emoji },
+    { name: "greek", entries: greek },
+    { name: "arrows", entries: arrows },
+  ];
+}
+
 function defaultSettings(): AppSettings {
   return {
     language: "system",
@@ -83,6 +112,9 @@ function defaultSettings(): AppSettings {
     rightViews: null,
     wrapLines: true,
     imageFolder: "img",
+    charactersFile: "characters.toml",
+    characters: mockCharacters(),
+    charactersPath: MOCK_CHARACTERS_PATH,
   };
 }
 
@@ -150,6 +182,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       return { ...settings, wrapLines: change.value };
     case "imageFolder":
       return { ...settings, imageFolder: change.value.trim() };
+    case "charactersFile":
+      return { ...settings, charactersFile: change.value.trim() };
     default:
       return change satisfies never;
   }
