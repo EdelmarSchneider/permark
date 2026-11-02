@@ -531,6 +531,17 @@ export default {
   "toolbar.language": "言語",
   "toolbar.image": "画像",
   "toolbar.rule": "水平線",
+  "toolbar.emoji": "絵文字",
+  "toolbar.symbols": "記号",
+  "picker.search": "名前を検索…",
+  "picker.empty": "検索に一致する名前はありません",
+  "picker.group.emoji": "絵文字",
+  "picker.group.greek": "ギリシャ文字",
+  "picker.group.operators": "演算子",
+  "picker.group.relations": "関係記号",
+  "picker.group.arrows": "矢印",
+  "picker.group.units": "単位",
+  "picker.group.scripts": "上付き・下付き",
   "slash.label": "ブロックを挿入",
   "link.label": "リンク",
   "link.target": "リンク先（ファイルまたは Web アドレス）",
@@ -566,6 +577,9 @@ export default {
   "settings.imageFolder": "画像フォルダー",
   "settings.imageFolderHint":
     "貼り付けた画像は、ドキュメントの隣のこのフォルダーに保存されます。空にすると、ドキュメントの隣に保存されます。",
+  "settings.charactersFile": "記号グループのファイル",
+  "settings.charactersFileHint":
+    "ピッカーが表示するグループをまとめたファイル（プロファイルフォルダー内）。空欄なら characters.toml を使います。",
   // ---- search, commands, keyboard
   "cmd.openFolder": "フォルダーを開く...",
   "cmd.openFile": "ファイルを開く...",

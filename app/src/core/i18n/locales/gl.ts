@@ -528,6 +528,17 @@ export default {
   "toolbar.language": "Linguaxe",
   "toolbar.image": "Imaxe",
   "toolbar.rule": "Liña horizontal",
+  "toolbar.emoji": "Emoxis",
+  "toolbar.symbols": "Símbolos",
+  "picker.search": "Buscar polo nome…",
+  "picker.empty": "Ningún nome coincide coa busca",
+  "picker.group.emoji": "Emoxis",
+  "picker.group.greek": "Grego",
+  "picker.group.operators": "Operadores",
+  "picker.group.relations": "Relacións",
+  "picker.group.arrows": "Flechas",
+  "picker.group.units": "Unidades",
+  "picker.group.scripts": "Subíndices e superíndices",
   "slash.label": "Inserir un bloque",
   "link.label": "Ligazón",
   "link.target": "Ligazón a (ficheiro ou enderezo web)",
@@ -563,6 +574,9 @@ export default {
   "settings.imageFolder": "Cartafol de imaxes",
   "settings.imageFolderHint":
     "As imaxes pegadas gárdanse neste cartafol, xunto ao documento. Déixeo baleiro para gardalas xunto ao documento.",
+  "settings.charactersFile": "Ficheiro de grupos de símbolos",
+  "settings.charactersFileHint":
+    "O ficheiro do cartafol do perfil cos grupos que amosan os selectores. Déixao baleiro para usar characters.toml.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Abrir cartafol...",
   "cmd.openFile": "Abrir ficheiro...",

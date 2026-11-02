@@ -533,6 +533,17 @@ export default {
   "toolbar.language": "Llenguatge",
   "toolbar.image": "Imatge",
   "toolbar.rule": "Línia horitzontal",
+  "toolbar.emoji": "Emojis",
+  "toolbar.symbols": "Símbols",
+  "picker.search": "Cerca pel nom…",
+  "picker.empty": "Cap nom coincideix amb la cerca",
+  "picker.group.emoji": "Emojis",
+  "picker.group.greek": "Grec",
+  "picker.group.operators": "Operadors",
+  "picker.group.relations": "Relacions",
+  "picker.group.arrows": "Fletxes",
+  "picker.group.units": "Unitats",
+  "picker.group.scripts": "Subíndexs i superíndexs",
   "slash.label": "Insereix un bloc",
   "link.label": "Enllaç",
   "link.target": "Enllaç a (fitxer o adreça web)",
@@ -568,6 +579,9 @@ export default {
   "settings.imageFolder": "Carpeta d'imatges",
   "settings.imageFolderHint":
     "Les imatges enganxades es desen en aquesta carpeta, al costat del document. Deixeu-la buida per desar-les al costat del document.",
+  "settings.charactersFile": "Fitxer de grups de símbols",
+  "settings.charactersFileHint":
+    "El fitxer de la carpeta del perfil amb els grups que mostren els selectors. Deixa'l buit per fer servir characters.toml.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Obre una carpeta...",
   "cmd.openFile": "Obre un fitxer...",

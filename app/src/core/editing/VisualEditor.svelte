@@ -12,6 +12,7 @@
   import "../doc/markdown.css";
   import { ui } from "../shell/ui.svelte";
   import EditorToolbar from "./EditorToolbar.svelte";
+  import CharacterPicker from "./visual/CharacterPicker.svelte";
   import { frontMatterSyntax } from "../config/frontMatter";
   import { documents } from "../doc/document.svelte";
   import { pictureDisplayUrl, pictureFiles, pictureLink } from "./pictures";
@@ -19,6 +20,7 @@
   import { relativeLink } from "./source/complete";
   import type { Content, EditingSession } from "./session.svelte";
   import type { Built, Command, Composed, Core, Format, LockReason, SlashState } from "./visual";
+  import type { PickerKind } from "./visual/characters";
 
   type Props = {
     session: EditingSession;
@@ -44,7 +46,8 @@
   type Popover =
     | { kind: "none" }
     | { kind: "link"; href: string; missing: boolean }
-    | { kind: "image"; src: string; alt: string };
+    | { kind: "image"; src: string; alt: string }
+    | { kind: "picker"; picker: PickerKind };
   let popover = $state<Popover>({ kind: "none" });
   let targets = $state.raw<string[]>([]);
 
@@ -361,6 +364,11 @@
     void loadTargets();
   }
 
+  /** The emoji | symbols picker: the popup the toolbar buttons open, riding the same popover state. */
+  function openPicker(picker: PickerKind): void {
+    popover = { kind: "picker", picker };
+  }
+
   async function checkLink(href: string): Promise<void> {
     if (href === "" || /^[a-z]+:/i.test(href) || href.startsWith("#")) return;
     const result = await api.resolveLinks(content.path, [href]);
@@ -377,6 +385,12 @@
   function applyImage(src: string, alt: string): void {
     popover = { kind: "none" };
     if (src.trim() !== "") runCommand({ kind: "image", src: src.trim(), alt });
+  }
+
+  /** A character picked: insert at the caret and hand the keyboard back to the editor. */
+  function applyCharacter(character: string): void {
+    popover = { kind: "none" };
+    runCommand({ kind: "text", text: character });
   }
 
   /** The picture button's file dialog: each chosen picture is copied next to the document, like a paste. */
@@ -427,7 +441,14 @@
 
 <div class="visual" data-drop-editor>
   {#if format && ready && ui.focus === "off"}
-    <EditorToolbar {format} run={runCommand} link={openLink} image={openImage} />
+    <EditorToolbar
+      {format}
+      run={runCommand}
+      link={openLink}
+      image={openImage}
+      emoji={() => openPicker("emoji")}
+      symbols={() => openPicker("symbols")}
+    />
   {/if}
   {#if popover.kind === "link"}
     {@const current = popover}
@@ -509,6 +530,16 @@
         {t("common.cancel")}
       </button>
     </form>
+  {:else if popover.kind === "picker"}
+    {@const current = popover}
+    <div class="popover popover--picker">
+      <CharacterPicker
+        kind={current.picker}
+        apply={applyCharacter}
+        close={() => (popover = { kind: "none" })}
+        popoverKey={onPopoverKey}
+      />
+    </div>
   {/if}
   <datalist id="pm-link-targets">
     {#each targets as target (target)}<option value={target}></option>{/each}
@@ -629,6 +660,10 @@
     border-radius: var(--radius-card);
     background: var(--surface);
     box-shadow: var(--shadow-pop);
+  }
+  .popover--picker {
+    display: block;
+    padding: 0;
   }
   .field {
     flex: 1;

@@ -527,6 +527,17 @@ export default {
   "toolbar.language": "Lenguaje",
   "toolbar.image": "Imagen",
   "toolbar.rule": "Línea horizontal",
+  "toolbar.emoji": "Emojis",
+  "toolbar.symbols": "Símbolos",
+  "picker.search": "Buscar por nombre…",
+  "picker.empty": "Ningún nombre coincide con la búsqueda",
+  "picker.group.emoji": "Emojis",
+  "picker.group.greek": "Griego",
+  "picker.group.operators": "Operadores",
+  "picker.group.relations": "Relaciones",
+  "picker.group.arrows": "Flechas",
+  "picker.group.units": "Unidades",
+  "picker.group.scripts": "Subíndices y superíndices",
   "slash.label": "Insertar un bloque",
   "link.label": "Enlace",
   "link.target": "Enlace a (archivo o dirección web)",
@@ -562,6 +573,9 @@ export default {
   "settings.imageFolder": "Carpeta de imágenes",
   "settings.imageFolderHint":
     "Las imágenes pegadas se guardan en esta carpeta, junto al documento. Déjala vacía para guardarlas junto al documento.",
+  "settings.charactersFile": "Archivo de grupos de símbolos",
+  "settings.charactersFileHint":
+    "El archivo de la carpeta de perfil con los grupos que muestran los selectores. Déjalo vacío para usar characters.toml.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Abrir carpeta...",
   "cmd.openFile": "Abrir archivo...",

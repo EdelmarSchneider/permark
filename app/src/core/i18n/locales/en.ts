@@ -514,6 +514,17 @@ const en = {
   "toolbar.language": "Language",
   "toolbar.image": "Image",
   "toolbar.rule": "Horizontal rule",
+  "toolbar.emoji": "Emoji",
+  "toolbar.symbols": "Symbols",
+  "picker.search": "Search by name…",
+  "picker.empty": "No name matches that search",
+  "picker.group.emoji": "Emoji",
+  "picker.group.greek": "Greek",
+  "picker.group.operators": "Operators",
+  "picker.group.relations": "Relations",
+  "picker.group.arrows": "Arrows",
+  "picker.group.units": "Units",
+  "picker.group.scripts": "Sub/superscripts",
   "slash.label": "Insert a block",
   "link.label": "Link",
   "link.target": "Link to (file or web address)",
@@ -548,6 +559,9 @@ const en = {
   "settings.imageFolder": "Image folder",
   "settings.imageFolderHint":
     "Pasted pictures are saved in this folder, next to the document. Leave it empty to save them beside the document.",
+  "settings.charactersFile": "Symbol groups file",
+  "settings.charactersFileHint":
+    "The file under the profile folder with the groups the pickers show. Leave it empty to use characters.toml.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Open folder...",
   "cmd.openFile": "Open file...",

@@ -533,6 +533,17 @@ export default {
   "toolbar.language": "Sprache",
   "toolbar.image": "Bild",
   "toolbar.rule": "Trennlinie",
+  "toolbar.emoji": "Emoji",
+  "toolbar.symbols": "Symbole",
+  "picker.search": "Nach Namen suchen…",
+  "picker.empty": "Kein Name passt zu dieser Suche",
+  "picker.group.emoji": "Emoji",
+  "picker.group.greek": "Griechisch",
+  "picker.group.operators": "Operatoren",
+  "picker.group.relations": "Relationen",
+  "picker.group.arrows": "Pfeile",
+  "picker.group.units": "Einheiten",
+  "picker.group.scripts": "Hoch- und Tiefstellungen",
   "slash.label": "Block einfügen",
   "link.label": "Link",
   "link.target": "Link zu (Datei oder Webadresse)",
@@ -568,6 +579,9 @@ export default {
   "settings.imageFolder": "Bilderordner",
   "settings.imageFolderHint":
     "Eingefügte Bilder werden in diesem Ordner neben dem Dokument gespeichert. Leer lassen, um sie neben dem Dokument zu speichern.",
+  "settings.charactersFile": "Datei für Symbolgruppen",
+  "settings.charactersFileHint":
+    "Die Datei im Profilordner mit den Gruppen der Auswahlmenüs. Leer lassen, um characters.toml zu verwenden.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Ordner öffnen ...",
   "cmd.openFile": "Datei öffnen ...",

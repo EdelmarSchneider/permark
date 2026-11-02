@@ -110,7 +110,9 @@ export type Command =
   | { kind: "quote" | "rule" | "codeBlock" }
   | { kind: "language"; language: string }
   | { kind: "table" | "addRow" | "addColumn" | "deleteRow" | "deleteColumn" | "deleteTable" }
-  | { kind: "image"; src: string; alt: string };
+  | { kind: "image"; src: string; alt: string }
+  /** Plain text to insert at the caret (a picker's character). */
+  | { kind: "text"; text: string };
 
 function act<T>(core: Core, key: CmdKey<T>, payload?: T): boolean {
   return core.editor.action(callCommand(key, payload));
@@ -178,6 +180,13 @@ export function run(core: Core, command: Command): boolean {
       return deleteColumn(view.state, view.dispatch);
     case "deleteTable":
       return deleteTable(view.state, view.dispatch);
+    case "text": {
+      if (command.text === "") return false;
+      const tr = view.state.tr.insertText(command.text);
+      if (!tr.docChanged) return false;
+      view.dispatch(tr.scrollIntoView());
+      return true;
+    }
     case "image":
       return act(core, insertImageCommand.key, { src: command.src, alt: command.alt, title: "" });
     default:
