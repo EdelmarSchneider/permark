@@ -5,6 +5,20 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-01
+
+### Added
+- **Pictures you paste.** In Edit and in Source, a picture you paste is saved in a folder next to the document, and the link in the file stays relative. **Settings > Editing > Image folder** names that folder; it starts as `img`. Leave it empty to save the picture beside the document. Edit draws a local picture as soon as it is in the file. A web address stays as written. <!-- f: pictures-in-documents, edit-mode, settings -->
+- **Emoji and symbols.** The visual editor toolbar has **Emoji** and **Symbols**. Each opens a picker you can search: emoji by name, and symbols in groups (Greek, operators, relations, arrows, units, scripts). A click inserts the character where you are typing, and you can keep typing. The buttons stay off while the document is locked. The groups come from `characters.toml` in your profile folder. When that file is missing, PerMark uses its own list. Adding, removing, or regrouping an entry is an edit to that file. <!-- f: edit-mode -->
+
+### Fixed
+- In Comfortable and Wide, a table, a diagram, or a lone image stays inside the column of the text. Words in a cell wrap, including a long word. A table that still cannot fit scrolls inside its own frame. Pictures and diagrams shrink to the column and do not grow past it. <!-- f: view-mode -->
+- In the reading view, each property at the top of a document is one row: the name on the left, the value across the rest. Before, a long value sat in a narrow cell. <!-- f: frontmatter-card -->
+- A file you create in the file list is selected, and the document opens in Edit. <!-- f: explorer, file-operations, edit-mode -->
+- **View**, **Edit**, and **Source** stay as you left them when you open another file. A new window still opens in View, and a file that cannot be edited stays in View. <!-- f: edit-mode -->
+- In Edit, a task shows a checkbox you can click, as it does when you are reading. Before, it showed a bullet and nothing you could check. <!-- f: edit-mode -->
+- When you open another file in the folder, the page settles on that file. The file you were reading does not stay on screen while the new one is still opening. <!-- f: view-mode -->
+
 ## [0.7.1] - 2026-10-26
 
 ### Added
