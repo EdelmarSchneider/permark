@@ -5,7 +5,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.8.0] - 2026-11-01
+## [0.8.0] - 2026-11-02
 
 ### Added
 - **Pictures you paste.** In Edit and in Source, a picture you paste is saved in a folder next to the document, and the link in the file stays relative. **Settings > Editing > Image folder** names that folder; it starts as `img`. Leave it empty to save the picture beside the document. Edit draws a local picture as soon as it is in the file. A web address stays as written. <!-- f: pictures-in-documents, edit-mode, settings -->
