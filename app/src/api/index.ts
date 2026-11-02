@@ -14,6 +14,8 @@ export type { LanguagePref } from "./generated/LanguagePref";
 export type { StartIn } from "./generated/StartIn";
 export type { ThemePref } from "./generated/ThemePref";
 export type { Tone } from "./generated/Tone";
+export type { CharacterEntry } from "./generated/CharacterEntry";
+export type { CharacterGroup } from "./generated/CharacterGroup";
 
 export const api: Api =
   import.meta.env.MODE === "mock" ? (await import("./mock")).mockApi : tauriApi;

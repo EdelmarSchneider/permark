@@ -104,15 +104,20 @@ function remoteChip(source: Element, url: string): HTMLElement {
 /** Longest accessible name of a task checkbox (a long item is cut; the item itself is read next anyway). */
 const TASK_NAME_MAX = 120;
 
+/** One line, cut long, from the text pieces of a task (the pieces must already drop nested lists). */
+export function taskLabel(pieces: string[]): string {
+  const line = pieces.join(" ").replace(/\s+/g, " ").trim();
+  return line.length > TASK_NAME_MAX ? `${line.slice(0, TASK_NAME_MAX - 1).trimEnd()}…` : line;
+}
+
 /** The text of a task item without its nested lists, on one line. */
 export function taskName(item: Element): string {
-  let text = "";
+  const pieces: string[] = [];
   for (const node of item.childNodes) {
     if (node instanceof Element && (node.localName === "ul" || node.localName === "ol")) continue;
-    text += node.textContent ?? "";
+    pieces.push(node.textContent ?? "");
   }
-  const line = text.replace(/\s+/g, " ").trim();
-  return line.length > TASK_NAME_MAX ? `${line.slice(0, TASK_NAME_MAX - 1).trimEnd()}…` : line;
+  return taskLabel(pieces);
 }
 
 function enhanceOne(element: HTMLElement, env: EnhanceEnv): HTMLElement {

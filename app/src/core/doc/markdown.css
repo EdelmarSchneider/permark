@@ -28,21 +28,8 @@
   contain-intrinsic-size: auto 80px;
 }
 
-/* Breakout: tables, diagrams, display math and lone images take the width their content needs, never below the
-   text measure and never above the pane. Top level only, centred on the column, so find highlights and the
-   scroll anchor follow the block itself. A fenced block is not one of these: it stays in the column and
-   scrolls inside itself. */
-.md-body > .table-wrap,
-.md-body > .diagram,
-.md-body > .pm-wide {
-  width: max-content;
-  min-width: 100%;
-  max-width: 100%;
-  max-width: 100cqw;
-  position: relative;
-  left: 50%;
-  transform: translateX(-50%);
-}
+/* Tables, diagrams, and lone images stay in the column with the prose. A wide table still scrolls inside its
+   wrapper; a wide image or diagram scales down to the column and does not scale up. */
 
 .md h1,
 .md h2,
@@ -389,6 +376,12 @@
   font-weight: 600;
   font-size: 0.92em;
 }
+/* Reading view only: the visual editor matches `.md th` / `.md td` and has no `.doc-column`. A long token wraps
+   in the cell. The 5em floor stays on the shared rule, so a table that still cannot fit scrolls in `.table-wrap`. */
+.doc-column .md th,
+.doc-column .md td {
+  overflow-wrap: anywhere;
+}
 .md tbody tr:nth-child(even) {
   background: var(--zebra);
 }
@@ -432,6 +425,13 @@
 
 /* task lists */
 .md .contains-task-list {
+  list-style: none;
+  padding-left: 0.2em;
+}
+/* Edit mode: `taskItemView` writes the same classes on `li[data-item-type=task]`, so the box rules below
+   style its checkbox too. The editor's `ul` has no class of its own, so the bullet dots are cut by looking
+   at the items it holds. */
+.md ul:has(> li[data-item-type="task"]) {
   list-style: none;
   padding-left: 0.2em;
 }

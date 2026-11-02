@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import "./jsdomShims";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { TextSelection } from "@milkdown/kit/prose/state";
+import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import { formatOf, run } from "./commands";
-import { createCore, type Core } from "./core";
+import { LOCKED, createCore, type Core } from "./core";
 
 let core: Core;
 
@@ -81,6 +81,27 @@ describe("Edit-mode commands", () => {
     expect(markdown()).toBe("1. words");
   });
 
+  it("Edit mode draws a real checkbox for a task item, named by its task, and a click flips it", () => {
+    load("- [ ] a\n- [x] b\n");
+    const boxes = Array.from(
+      core.view.dom.querySelectorAll("li[data-item-type=task] input[type=checkbox]"),
+    ) as HTMLInputElement[];
+    expect(boxes.length).toBe(2);
+    const [first, done] = boxes;
+    expect(first?.checked).toBe(false);
+    expect(done?.checked).toBe(true);
+    expect(first?.getAttribute("aria-label")).toBe("a");
+    const items = Array.from(core.view.dom.querySelectorAll("li[data-item-type=task]"));
+    expect(items.map((li) => li.classList.contains("task-list-item"))).toEqual([true, true]);
+    expect(items[1]?.classList.contains("is-done")).toBe(true);
+    first?.click();
+    expect(markdown()).toBe("- [x] a\n- [x] b");
+    expect(boxes[0]?.checked).toBe(true);
+    // a plain bullet item keeps no box
+    load("- plain\n");
+    expect(core.view.dom.querySelectorAll("li input[type=checkbox]").length).toBe(0);
+  });
+
   it("toggles marks, makes and removes links, inserts a table and a rule", () => {
     load("plain text\n");
     const view = core.view;
@@ -107,5 +128,27 @@ describe("Edit-mode commands", () => {
     expect(formatOf(core.view.state).language).toBe("js");
     run(core, { kind: "language", language: "ts" });
     expect(markdown()).toBe("```ts\nlet a = 1;\n```");
+  });
+
+  it("inserts a picked character at the caret, and refuses on a locked block", () => {
+    load("one two\n");
+    caretAfter("one ");
+    expect(run(core, { kind: "text", text: "→" })).toBe(true);
+    expect(markdown()).toBe("one →two");
+    expect(run(core, { kind: "text", text: "" })).toBe(false);
+    expect(markdown()).toBe("one →two");
+    // the caret on a locked atom: the same command does nothing
+    const view = core.view;
+    const locked = view.state.schema.nodes[LOCKED]?.create({
+      source: "<b>x</b>",
+      kind: "html",
+      reason: "html",
+    });
+    if (!locked) throw new Error("no locked node in the schema");
+    view.dispatch(view.state.tr.replaceWith(0, view.state.doc.content.size, locked));
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, 0)));
+    expect(formatOf(view.state).locked).toBe(true);
+    expect(run(core, { kind: "text", text: "→" })).toBe(false);
+    expect(markdown()).toBe("<b>x</b>");
   });
 });

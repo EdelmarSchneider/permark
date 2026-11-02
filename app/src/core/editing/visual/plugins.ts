@@ -1,10 +1,12 @@
 // The ProseMirror plugins of Edit mode that are the app's own: change and selection reports, keys (save, mode,
 // AltGr-safe headings, lists), the slash menu's state, pasted | dropped pictures, links that never navigate.
 
+import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import { liftListItem } from "@milkdown/kit/prose/schema-list";
 import { Plugin, PluginKey, type EditorState } from "@milkdown/kit/prose/state";
-import type { EditorView } from "@milkdown/kit/prose/view";
+import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $prose } from "@milkdown/kit/utils";
+import { clipboardPictures } from "../pictures";
 import { run, type Command } from "./commands";
 import type { Core } from "./core";
 
@@ -23,6 +25,8 @@ export type PluginHost = {
   slashKey(key: "up" | "down" | "enter" | "escape"): boolean;
   pictures(files: File[], at: number): void;
   followLink(href: string): void;
+  /** `<img src>` for a markdown picture path. The node keeps the markdown path. */
+  displaySrc(src: string): string;
 };
 
 /** `/` typed alone at the start of an empty paragraph: what follows it filters the menu. */
@@ -134,6 +138,35 @@ function imagesOf(data: DataTransfer | null): File[] {
   return Array.from(data?.files ?? []).filter((file) => file.type.startsWith("image/"));
 }
 
+/** Paints a picture from `displaySrc`. The markdown `src` is not the DOM address, and the DOM must not write it back. */
+function imageView(displaySrc: (src: string) => string): NodeViewConstructor {
+  return (node) => {
+    const img = document.createElement("img");
+    let current = node;
+    const paint = (next: PMNode): void => {
+      img.alt = String(next.attrs.alt ?? "");
+      const title = String(next.attrs.title ?? "");
+      if (title === "") img.removeAttribute("title");
+      else img.title = title;
+      const shown = displaySrc(String(next.attrs.src ?? ""));
+      if (img.getAttribute("src") !== shown) img.setAttribute("src", shown);
+    };
+    paint(node);
+    return {
+      dom: img,
+      update: (next) => {
+        if (next.type !== current.type) return false;
+        current = next;
+        paint(next);
+        return true;
+      },
+      ignoreMutation: () => true,
+      selectNode: () => img.classList.add("ProseMirror-selectednode"),
+      deselectNode: () => img.classList.remove("ProseMirror-selectednode"),
+    };
+  };
+}
+
 export function appPlugins(host: PluginHost) {
   return [
     $prose(
@@ -152,9 +185,10 @@ export function appPlugins(host: PluginHost) {
             },
           },
           props: {
+            nodeViews: { image: imageView((src) => host.displaySrc(src)) },
             handleKeyDown: (view, event) => keys(host, view, event),
             handlePaste: (view, event) => {
-              const files = imagesOf(event.clipboardData);
+              const files = clipboardPictures(event.clipboardData);
               if (files.length === 0) return false;
               host.pictures(files, view.state.selection.from);
               return true;

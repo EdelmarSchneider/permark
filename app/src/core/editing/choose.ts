@@ -35,3 +35,18 @@ export function chooseMode(mode: EditMode, at?: number): void {
     void editing.enter(mode, shown, editKindOf(view), documents.savePolicy, at);
   } else void editing.switchTo(mode, at);
 }
+
+/**
+ * Opens the document the window shows in the mode chosen in this window (a file switch keeps the choice; View
+ * needs nothing). An editor opens only when the document allows it, and never twice on the same document.
+ */
+export function openRemembered(): void {
+  const mode = editing.chosenMode;
+  const shown = documents.path;
+  const view = documents.view;
+  if (mode === "view" || shown === null || view === null) return;
+  // the editor is already on this document
+  if (editing.path === shown) return;
+  if (editBlockedReason() !== null) return;
+  void editing.enter(mode, shown, editKindOf(view), documents.savePolicy);
+}

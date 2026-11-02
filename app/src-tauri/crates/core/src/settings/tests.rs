@@ -15,8 +15,33 @@ fn applied(text: &str, change: &SettingChange) -> String {
 }
 
 #[test]
+fn image_folder_defaults_to_img_and_an_empty_value_stays_empty() {
+    assert_eq!(AppSettings::from_doc(&doc("")).image_folder, "img");
+    let set = applied("", &SettingChange::ImageFolder("pics".to_owned()));
+    assert_eq!(AppSettings::from_doc(&doc(&set)).image_folder, "pics");
+    let cleared = applied(&set, &SettingChange::ImageFolder(String::new()));
+    assert!(cleared.contains("image_folder"));
+    assert_eq!(AppSettings::from_doc(&doc(&cleared)).image_folder, "");
+    assert_eq!(
+        AppSettings::from_doc(&doc("image_folder = \"a/b\"\n")).image_folder,
+        "img"
+    );
+    assert!(SettingChange::ImageFolder("a/b".to_owned())
+        .validate()
+        .is_err());
+    assert!(SettingChange::ImageFolder("..".to_owned())
+        .validate()
+        .is_err());
+    assert!(SettingChange::ImageFolder(String::new()).validate().is_ok());
+    assert!(SettingChange::ImageFolder("  ".to_owned())
+        .validate()
+        .is_ok());
+}
+
+#[test]
 fn defaults_when_empty() {
-    let s = AppSettings::from_doc(&doc(""));
+    let mut s = AppSettings::from_doc(&doc(""));
+    s.characters = AppSettings::default().characters;
     assert_eq!(s, AppSettings::default());
     assert_eq!(
         (s.language, s.theme, s.tone, s.start_in),
@@ -169,6 +194,12 @@ fn setting_change_wire_format() {
         serde_json::from_str(r#"{"key":"pluginEnabled","value":{"plugin":"git","enabled":null}}"#)
             .unwrap();
     assert_eq!(change.key(), "plugins.git.enabled");
+    let change: SettingChange =
+        serde_json::from_str(r#"{"key":"charactersFile","value":"chars.toml"}"#).unwrap();
+    assert_eq!(
+        change,
+        SettingChange::CharactersFile("chars.toml".to_owned())
+    );
     for bad in [
         r#"{"key":"language","value":"xx"}"#,
         r#"{"key":"pluginEnabled","value":{"plugin":"Bad","enabled":true}}"#,
@@ -182,7 +213,9 @@ fn setting_change_wire_format() {
 fn settings_file_apply_reads_fresh_and_keeps_hand_edits() {
     let base = tempfile::tempdir().unwrap();
     let file = SettingsFile::app(&AppDirs::under(base.path()));
-    assert_eq!(file.load(), AppSettings::default());
+    let mut got = file.load();
+    got.characters_path = AppSettings::default().characters_path;
+    assert_eq!(got, AppSettings::default());
     file.apply(&SettingChange::Theme(ThemePref::Dark)).unwrap();
     // hand edit between two changes
     let text = std::fs::read_to_string(file.path()).unwrap();
@@ -199,7 +232,9 @@ fn a_corrupt_settings_file_is_kept_aside_not_overwritten() {
     let file = SettingsFile::app(&AppDirs::under(base.path()));
     std::fs::create_dir_all(file.path().parent().unwrap()).unwrap();
     std::fs::write(file.path(), "theme = \"dark\n[[[").unwrap();
-    assert_eq!(file.load(), AppSettings::default());
+    let mut got = file.load();
+    got.characters_path = AppSettings::default().characters_path;
+    assert_eq!(got, AppSettings::default());
     file.apply(&SettingChange::Theme(ThemePref::Light)).unwrap();
     let names: Vec<String> = std::fs::read_dir(file.path().parent().unwrap())
         .unwrap()
@@ -306,7 +341,9 @@ fn reference_template_and_editor_round_trip_and_reset() {
         !text.contains("editor") && !text.contains("reference_template"),
         "{text}"
     );
-    assert_eq!(AppSettings::from_doc(&doc(&text)), AppSettings::default());
+    let mut s = AppSettings::from_doc(&doc(&text));
+    s.characters = AppSettings::default().characters;
+    assert_eq!(s, AppSettings::default());
 }
 
 #[test]
@@ -1286,4 +1323,105 @@ fn the_arrangement_change_wire_format() {
         serde_json::from_str::<SettingChange>(r#"{"key":"rightViews"}"#).unwrap(),
         SettingChange::RightViews(None)
     );
+}
+
+// ---- characters file (issue #38: emoji + symbol pickers) -------------------------------------------------
+
+/// A written groups file, both table spellings, a name that needs trimming.
+const GROUPS_MINE: &str = "[[groups]]\nname = \"mine\"\n[[groups.entries]]\nchar = \"★\"\nnames = [\"star\", \" ★ \"]\n\n[[groups]]\nname = \"inline\"\nentries = [{ char = \"→\", names = [\"right arrow\"] }]\n";
+
+#[test]
+fn the_groups_file_parses_from_the_profile_with_the_built_ins_as_fallback() {
+    let dir = tempfile::tempdir().unwrap();
+    let profile = dir.path().join("profile");
+    fs::create_dir_all(&profile).unwrap();
+    // empty name | missing file = the built-ins
+    assert_eq!(
+        characters::load(&profile, "").unwrap(),
+        characters::defaults()
+    );
+    assert_eq!(
+        characters::load(&profile, "characters.toml").unwrap(),
+        characters::defaults()
+    );
+    // a file that is not TOML: the typed error, never a silent default
+    fs::write(profile.join("bad.toml"), "name = [[[").unwrap();
+    assert!(matches!(
+        characters::load(&profile, "bad.toml"),
+        Err(CharactersError::Unreadable { .. })
+    ));
+    // a written file: both spellings parse, names are trimmed
+    fs::write(profile.join("chars.toml"), GROUPS_MINE).unwrap();
+    let groups = characters::load(&profile, "chars.toml").unwrap();
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].name, "mine");
+    assert_eq!(groups[0].entries.len(), 1);
+    assert_eq!(groups[0].entries[0].char, "★");
+    assert_eq!(groups[0].entries[0].names, ["star", "★"]);
+    assert_eq!(groups[1].name, "inline");
+    assert_eq!(groups[1].entries[0].char, "→");
+    // the built-ins are groups of the same shape
+    let built = characters::defaults();
+    assert!(built.iter().all(|group| {
+        !group.name.is_empty()
+            && !group.entries.is_empty()
+            && group.entries.iter().all(|entry| !entry.char.is_empty())
+    }));
+    assert!(built.iter().any(|group| group.name == "greek"));
+    assert!(built.iter().any(|group| group.name == "emoji"));
+}
+
+#[test]
+fn characters_file_is_validated_written_and_read_back() {
+    for bad in ["a/b", "..", "chars.json", "con.toml"] {
+        assert!(
+            SettingChange::CharactersFile(bad.to_owned())
+                .validate()
+                .is_err(),
+            "{bad}"
+        );
+    }
+    assert!(SettingChange::CharactersFile(String::new())
+        .validate()
+        .is_ok());
+    assert!(SettingChange::CharactersFile("  ".to_owned())
+        .validate()
+        .is_ok());
+    assert!(SettingChange::CharactersFile("my chars.TOML".to_owned())
+        .validate()
+        .is_ok());
+    assert_eq!(
+        SettingChange::CharactersFile("chars.toml".to_owned()).key(),
+        "characters_file"
+    );
+    // through the file: the named groups and their path ride on the settings
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    fs::write(dir.path().join("profile").join("chars.toml"), GROUPS_MINE).unwrap();
+    let s = file
+        .apply(&SettingChange::CharactersFile("chars.toml".to_owned()))
+        .unwrap();
+    assert_eq!(s.characters_file, "chars.toml");
+    assert_eq!(s.characters.len(), 2);
+    assert_eq!(s.characters[0].entries[0].char, "★");
+    assert_eq!(
+        s.characters_path,
+        dir.path()
+            .join("profile")
+            .join("chars.toml")
+            .display()
+            .to_string()
+    );
+    let again = file.load();
+    assert_eq!(again.characters, s.characters);
+    assert_eq!(again.characters_path, s.characters_path);
+    // empty = the built-ins only, and the empty stays in the file
+    let cleared = file
+        .apply(&SettingChange::CharactersFile(String::new()))
+        .unwrap();
+    assert_eq!(cleared.characters_file, "");
+    assert_eq!(cleared.characters, characters::defaults());
+    assert_eq!(cleared.characters_path, "");
+    let text = fs::read_to_string(file.path()).unwrap();
+    assert!(text.contains("characters_file = \"\""), "{text:?}");
 }

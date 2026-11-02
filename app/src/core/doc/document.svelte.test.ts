@@ -89,6 +89,46 @@ async function chooseEditor(fx: Fx): Promise<void> {
 
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
+/** Holds every `openDocument` until the test releases it. The real read runs on release. */
+function holdOpens(api: Mock): {
+  calls: { path: string; known: string[] }[];
+  release(index: number): void;
+  releaseAll(): void;
+  restore(): void;
+} {
+  const real = api.openDocument.bind(api);
+  const calls: { path: string; known: string[]; done: boolean; go: () => void }[] = [];
+  const spy = vi.spyOn(api, "openDocument").mockImplementation((path, known) => {
+    const entry = { path, known: [...known], done: false, go: () => {} };
+    const promise = new Promise<Awaited<ReturnType<Mock["openDocument"]>>>((resolve) => {
+      entry.go = () => {
+        if (entry.done) return;
+        entry.done = true;
+        resolve(real(path, known));
+      };
+    });
+    calls.push(entry);
+    return promise;
+  });
+  return {
+    calls,
+    release: (index) => calls[index]?.go(),
+    releaseAll: () => {
+      for (const entry of calls) entry.go();
+    },
+    restore: () => spy.mockRestore(),
+  };
+}
+
+/** A page the controller can paint into. */
+function page(): { container: HTMLElement; scroller: HTMLElement } {
+  const scroller = document.createElement("div");
+  const container = document.createElement("div");
+  scroller.append(container);
+  document.body.append(scroller);
+  return { container, scroller };
+}
+
 async function open(fx: Fx, path: string): Promise<void> {
   await fx.api.showDocument(path);
   await tick();
@@ -151,6 +191,43 @@ describe("opening", () => {
     expect(fx.doc.view?.path).toBe("docs/guide.md");
   });
 
+  it("does not finish show while another file is on screen and nothing is opening it", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const held = holdOpens(fx.api);
+    try {
+      const first = fx.doc.show("docs/guide.md");
+      fx.doc.onChanged({
+        window: "main",
+        path: "docs/guide.md",
+        change: "changed",
+        version: "v2",
+      });
+      // the first read is superseded; the change's read is still held
+      held.release(0);
+      await first;
+      expect(fx.doc.state.status).toBe("loading");
+      expect(fx.doc.view?.path).toBe("README.md");
+
+      let settled = false;
+      const again = fx.doc.show("docs/guide.md").then(() => {
+        settled = true;
+      });
+      await tick();
+      // still the previous file, and this ask has not given up
+      expect(settled).toBe(false);
+      expect(fx.doc.view?.path).toBe("README.md");
+      held.releaseAll();
+      await again;
+      expect(settled).toBe(true);
+      expect(fx.doc.state.status).toBe("ready");
+      expect(fx.doc.view?.path).toBe("docs/guide.md");
+    } finally {
+      held.releaseAll();
+      held.restore();
+    }
+  });
+
   it("a newer open wins over a slower one", async () => {
     const fx = await setup();
     const slow = vi.spyOn(fx.api, "openDocument");
@@ -175,6 +252,24 @@ describe("opening", () => {
     await fx.doc.show(null);
     expect(fx.doc.state.status).toBe("empty");
     expect(fx.api.probe.shown.path).toBeNull();
+  });
+
+  it("a paint before the page is attached does not stick", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    try {
+      fx.doc.paint(() => undefined);
+      expect(container.querySelector("[data-b]")).toBeNull();
+      fx.doc.attachBody(container, scroller);
+      // a paint that found no page must not count: attaching draws the ready view
+      expect(container.querySelector("[data-b]")).not.toBeNull();
+      const drawn = container.querySelectorAll("[data-b]").length;
+      fx.doc.paint(() => undefined);
+      expect(container.querySelectorAll("[data-b]").length).toBe(drawn);
+    } finally {
+      scroller.remove();
+    }
   });
 
   it("another workspace starts a new session", async () => {
@@ -203,6 +298,36 @@ describe("changes on disk", () => {
       true,
     );
     expect(fx.doc.state.status === "ready" && fx.doc.state.fresh).toBe(false);
+  });
+
+  it("a change during a switch does not send the file on screen as blocks already held", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    fx.doc.paint(() => undefined);
+    const shown = fx.doc.host.ids();
+    expect(shown.length).toBeGreaterThan(0);
+    const held = holdOpens(fx.api);
+    try {
+      const opening = fx.doc.show("docs/guide.md");
+      fx.doc.onChanged({
+        window: "main",
+        path: "docs/guide.md",
+        change: "changed",
+        version: "v2",
+      });
+      const bad = held.calls.filter((call) => call.known.some((id) => shown.includes(id)));
+      expect(bad).toEqual([]);
+      held.releaseAll();
+      await opening;
+      await tick();
+      expect(fx.doc.view?.path).toBe("docs/guide.md");
+    } finally {
+      held.releaseAll();
+      held.restore();
+      scroller.remove();
+    }
   });
 
   it("ignores changes of other documents", async () => {

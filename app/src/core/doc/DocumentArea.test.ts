@@ -103,6 +103,8 @@ beforeEach(async () => {
   });
   // the keys are commands now: the window's listener runs them, as in the app
   stopKeys = installWindowKeys();
+  // the window is new: no mode was chosen in it, so the next document opens in View
+  editing.chosenMode = "view";
   component = mount(DocumentArea, { target, props: { workspace, document: null, store } });
   flushSync();
 });
@@ -499,7 +501,7 @@ describe("editing", () => {
     expect(target.querySelector(".reading")?.hasAttribute("hidden")).toBe(false);
   });
 
-  it("the picture button chooses pictures in a file dialog and puts each next to the document", async () => {
+  it("the picture button chooses pictures in a file dialog and puts each in the image folder", async () => {
     await import("../editing/visual/jsdomShims");
     await show("notes/ideas.md");
     await until(() => modeButton("Edit") !== undefined, "mode switch");
@@ -516,7 +518,7 @@ describe("editing", () => {
     choose?.click();
     await until(() => editing.state.s === "dirty", "picture inserted");
     expect(target.querySelector("form.popover")).toBeNull();
-    expect(editing.text).toContain("![](ideas-1.png)");
+    expect(editing.text).toContain("![](img/ideas-1.png)");
   });
 
   it("the diagram preview panel is off; its button puts it beside the editor, never over the text", async () => {

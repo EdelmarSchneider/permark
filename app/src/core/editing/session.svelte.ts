@@ -81,6 +81,9 @@ export class EditingSession {
   mode = $state<EditMode>("view");
   /** The last editing mode (Ctrl+E goes back to it). */
   lastEdit = $state<"edit" | "source">("edit");
+  /** The mode the person chose in this window (View | Edit | Source). A file switch does not reset it, so the
+   * next document opens in it; nothing is stored, so a new window starts in View. */
+  chosenMode = $state<EditMode>("view");
   state = $state.raw<DocState>({ s: "closed" });
   content = $state.raw<Content | null>(null);
   /** The disk's version during a conflict. */
@@ -148,6 +151,13 @@ export class EditingSession {
     return this.#used ? this.lastEdit : preference;
   }
 
+  /** The mode the next document that opens in this window asks for (a file the person creates opens
+   *  in the editor). Nothing is opened here: `openRemembered` in choose.ts applies it to the document
+   *  that arrives, and the read-only gate keeps a file that cannot be edited in View. */
+  chooseNext(mode: EditMode): void {
+    this.chosenMode = mode;
+  }
+
   get unsaved(): boolean {
     return isUnsaved(this.state);
   }
@@ -195,6 +205,7 @@ export class EditingSession {
     this.state = { s: "loading" };
     this.mode = wanted;
     this.lastEdit = wanted;
+    this.chosenMode = wanted;
     this.#used = true;
     this.#unguard = setLeaveGuard((leave) => this.confirmLeave(leave));
     await this.#load(line);
@@ -255,12 +266,14 @@ export class EditingSession {
     this.content = { path: this.#path, text, segments, line, seq: ++this.#seq };
     this.mode = mode;
     this.lastEdit = mode;
+    this.chosenMode = mode;
   }
 
   /** Goes back to View once nothing is unsaved (scrolls the page to where the editor was). */
   #toView(): void {
     const line = this.#editor?.topLine() ?? 1;
     this.#close();
+    this.chosenMode = "view";
     this.#hooks?.showReadingLine(line);
   }
 

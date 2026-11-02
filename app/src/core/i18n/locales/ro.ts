@@ -547,6 +547,17 @@ export default {
   "toolbar.language": "Limbaj",
   "toolbar.image": "Imagine",
   "toolbar.rule": "Linie orizontală",
+  "toolbar.emoji": "Emoji",
+  "toolbar.symbols": "Simboluri",
+  "picker.search": "Caută după nume…",
+  "picker.empty": "Niciun nume nu se potrivește cu căutarea",
+  "picker.group.emoji": "Emoji",
+  "picker.group.greek": "Greacă",
+  "picker.group.operators": "Operatori",
+  "picker.group.relations": "Relații",
+  "picker.group.arrows": "Săgeți",
+  "picker.group.units": "Unități",
+  "picker.group.scripts": "Indici și exponenți",
   "slash.label": "Inserează un bloc",
   "link.label": "Link",
   "link.target": "Link către (fișier sau adresă web)",
@@ -561,6 +572,8 @@ export default {
   "images.big": "{name} are {size} MB. O salvezi oricum lângă document?",
   "images.saveAnyway": "Salveaz-o",
   "images.tooLarge": "{name} are peste {limit} MB, așa că nu a fost salvată.",
+  "images.saved": "{name} a fost salvat lângă document.",
+  "images.savedIn": "{name} a fost salvat în {folder}.",
   "wordCount.words.one": "{n} cuvânt",
   "wordCount.words.few": "{n} cuvinte",
   "wordCount.words.other": "{n} de cuvinte",
@@ -580,6 +593,12 @@ export default {
   // ---- editing
   "settings.editMode": "Mod de editare",
   "settings.editModeHint": "Editorul pe care Ctrl+E îl deschide pentru Markdown.",
+  "settings.imageFolder": "Dosar de imagini",
+  "settings.imageFolderHint":
+    "Imaginile lipite sunt salvate în acest dosar, lângă document. Lasă gol ca să le salvezi lângă document.",
+  "settings.charactersFile": "Fișierul cu grupurile de simboluri",
+  "settings.charactersFileHint":
+    "Fișierul din folderul de profil cu grupurile afișate de selectoare. Lasă-l gol pentru a folosi characters.toml.",
 
   // ---- search, commands, keyboard
   "cmd.openFolder": "Deschide un dosar...",

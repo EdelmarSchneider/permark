@@ -1,6 +1,6 @@
 <script lang="ts">
   // Edit-mode toolbar: block type, marks, link, lists with indent | outdent, quote, table, code block + language,
-  // image, rule. Shows what the selection is; does nothing on a locked block.
+  // image, emoji, symbols, rule. Shows what the selection is; does nothing on a locked block.
   import Bold from "@lucide/svelte/icons/bold";
   import Code from "@lucide/svelte/icons/code";
   import Image from "@lucide/svelte/icons/image";
@@ -13,6 +13,8 @@
   import ListOrdered from "@lucide/svelte/icons/list-ordered";
   import Minus from "@lucide/svelte/icons/minus";
   import Quote from "@lucide/svelte/icons/quote";
+  import Sigma from "@lucide/svelte/icons/sigma";
+  import Smile from "@lucide/svelte/icons/smile";
   import SquareCode from "@lucide/svelte/icons/square-code";
   import Strikethrough from "@lucide/svelte/icons/strikethrough";
   import Table from "@lucide/svelte/icons/table";
@@ -24,8 +26,10 @@
     run: (command: Command) => void;
     link: () => void;
     image: () => void;
+    emoji: () => void;
+    symbols: () => void;
   };
-  let { format, run, link, image }: Props = $props();
+  let { format, run, link, image, emoji, symbols }: Props = $props();
 
   const BLOCKS: { value: BlockType; label: MessageKey }[] = [
     { value: "paragraph", label: "toolbar.paragraph" },
@@ -252,6 +256,22 @@
     aria-label={t("toolbar.image")}
     disabled={format.locked}
     onclick={image}><Image size={15} /></button
+  >
+  <button
+    type="button"
+    class="icon-btn"
+    title={t("toolbar.emoji")}
+    aria-label={t("toolbar.emoji")}
+    disabled={format.locked}
+    onclick={emoji}><Smile size={15} /></button
+  >
+  <button
+    type="button"
+    class="icon-btn"
+    title={t("toolbar.symbols")}
+    aria-label={t("toolbar.symbols")}
+    disabled={format.locked}
+    onclick={symbols}><Sigma size={15} /></button
   >
   <button
     type="button"
