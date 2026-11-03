@@ -673,9 +673,8 @@ fn a_folder_gone_before_its_files_were_news_is_reported_as_a_folder() {
     ] {
         let f = make(&["lib/x.md"], false);
         if knows {
-            f.watcher.knows_tree(Box::new(|path| {
-                (path == "lib").then_some(PathHold::ClosedDir)
-            }));
+            f.watcher
+                .knows_tree(Box::new(|path| (path == "lib").then_some(PathHold::Dir)));
         }
         fs::remove_dir_all(f.dir.path().join("lib")).unwrap();
         f.watcher.inject(Pending {

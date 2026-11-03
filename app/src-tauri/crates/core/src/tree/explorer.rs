@@ -606,6 +606,16 @@ impl Explorer {
             .and_then(|model| model.node(&key_of(path)))
             .map(|n| matches!(n.kind, NodeKind::Dir { .. }))
     }
+
+    /// An ignored directory the person opened: `ignored` and `Dir { unlisted: None }`. Never walks.
+    /// A container is listed with nothing unlisted and is not ignored, so it is not this. Not [`Self::holds`].
+    #[must_use]
+    pub fn opened_ignored(&self, path: &str) -> bool {
+        lock(&self.model)
+            .as_ref()
+            .and_then(|model| model.node(&key_of(path)))
+            .is_some_and(|n| n.ignored && matches!(n.kind, NodeKind::Dir { unlisted: None }))
+    }
 }
 
 /// `.gitignore` | `.ignore` changed: what the walk read from ignore files is stale.
