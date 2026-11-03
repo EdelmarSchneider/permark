@@ -60,15 +60,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
-name = "arbitrary"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bc62ac97cc33321f50863d514c3bc38a453947a8f9e781137e47c7401020aed"
-dependencies = [
- "derive_arbitrary",
-]
-
-[[package]]
 name = "arraydeque"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -509,6 +500,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
+name = "cfg_aliases"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
+
+[[package]]
 name = "chrono"
 version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -822,17 +819,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e9de72ce2ad1f90dc62fa25f0f430ef85eb4b0d8fa0be4f30373bc40a21d28e"
 dependencies = [
  "serde_core",
-]
-
-[[package]]
-name = "derive_arbitrary"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b034bd7d5f032402a2479444dcc6f74e36a03f31854d41680fb240ef682a1ac"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.9",
 ]
 
 [[package]]
@@ -1462,8 +1448,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi 6.0.0",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -2551,6 +2539,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
+name = "nix"
+version = "0.31.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+dependencies = [
+ "bitflags 2.13.2",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
+]
+
+[[package]]
 name = "notify"
 version = "8.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2944,7 +2944,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "permark"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
  "permark-plugin-agent",
@@ -2996,7 +2996,7 @@ dependencies = [
 
 [[package]]
 name = "permark-core"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "ammonia",
  "comrak",
@@ -3022,7 +3022,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-agent"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "chrono",
  "dunce",
@@ -3039,7 +3039,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-broken-links"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3051,7 +3051,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-comments"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3063,7 +3063,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-convert"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "csv",
  "permark-core",
@@ -3079,35 +3079,35 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-fmt-dotenv"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-fmt-ignore"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-fmt-ini"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-fmt-properties"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-fmt-toml"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
  "toml_edit 0.25.17+spec-1.1.0",
@@ -3115,7 +3115,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-fmt-toon"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
  "serde",
@@ -3125,21 +3125,21 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-fmt-yaml"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-follow"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-frontmatter-card"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
  "toml_edit 0.25.17+spec-1.1.0",
@@ -3147,7 +3147,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-git"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "dirs",
  "dunce",
@@ -3164,21 +3164,21 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-highlight"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-json-view"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-live-feed"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
  "serde",
@@ -3189,35 +3189,35 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-math"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-md-family"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-media"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-mermaid"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-notes"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "chrono",
  "dirs",
@@ -3231,21 +3231,21 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-plantuml"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-prompt-blocks"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-quiet"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3257,7 +3257,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-review"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "dunce",
  "git2",
@@ -3272,7 +3272,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-shell-integration"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3286,7 +3286,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-tags"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3299,14 +3299,14 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-text-view"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-plugin-token-count"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "base64 0.22.1",
  "permark-core",
@@ -3321,7 +3321,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-unread"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "dunce",
  "permark-core",
@@ -3333,7 +3333,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-updates"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
  "serde",
@@ -3343,7 +3343,7 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-word-count"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
  "serde",
@@ -3352,14 +3352,14 @@ dependencies = [
 
 [[package]]
 name = "permark-plugin-xml-view"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "permark-core",
 ]
 
 [[package]]
 name = "permark-shell"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "static_vcruntime",
  "windows",
@@ -4826,11 +4826,11 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-updater"
-version = "2.14.0"
+version = "2.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7259989d4fe11b2bf51f7d671642249b1837c4ae2da1430dc713ae38f98ceeec"
+checksum = "d957abbcb3f9f6c76d22a3a0f012f30880640d0bccb5634d2b12a9937e4c872b"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "dirs",
  "flate2",
  "futures-util",
@@ -5384,6 +5384,12 @@ name = "typed-arena"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
+
+[[package]]
+name = "typed-path"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ce898823d8cd0f028662d2f349694b1af0a5cc9be83f1d213a00d3147445e1e"
 
 [[package]]
 name = "typeid"
@@ -6491,14 +6497,18 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "4.6.1"
+version = "9.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1"
+checksum = "00fb4744e923442ecadfd3f85f51a5d24e03bf43d53813b81ebb4c91d02baa62"
 dependencies = [
- "arbitrary",
  "crc32fast",
+ "getrandom 0.4.3",
  "indexmap 2.14.2",
+ "libc",
  "memchr",
+ "nix",
+ "typed-path",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
