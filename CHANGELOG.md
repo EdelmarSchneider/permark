@@ -5,6 +5,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-03
+
+### Fixed
+- On Windows, installing an update unpacks the download with a fixed zip reader. The previous one could be tricked by a bad archive. <!-- f: updates -->
+
 ## [0.8.0] - 2026-11-02
 
 ### Added
