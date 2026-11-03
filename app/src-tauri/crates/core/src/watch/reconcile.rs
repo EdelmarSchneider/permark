@@ -62,6 +62,9 @@ pub(crate) struct Env<'a> {
     pub ignorers: &'a [(String, Arc<Ignorer>)],
     /// What was at a project path before the watch knew anything of it: `Some(is_folder)` | `None` (unknown).
     pub known: &'a dyn Fn(&str) -> Option<bool>,
+    /// Whether this project path is an opened directory (`NodeKind::Dir { unlisted: None }`). Not `known`: a closed
+    /// ignored or large directory is known and is not opened.
+    pub opened: &'a dyn Fn(&str) -> bool,
 }
 
 impl Env<'_> {
@@ -84,8 +87,16 @@ impl Env<'_> {
         if rel.starts_with(".git/") || rel.contains("/.git/") {
             return false;
         }
-        self.ignorer_for(&key_of(path))
-            .is_some_and(|ignorer| ignorer.rel_ignored(rel, is_dir))
+        let ignored = self
+            .ignorer_for(&key_of(path))
+            .is_some_and(|ignorer| ignorer.rel_ignored(rel, is_dir));
+        if !ignored {
+            return false;
+        }
+        // a direct child of an opened folder is news (a new ignored dir stays closed). The project root is not a
+        // node, so a new ignored entry there stays dropped. Children of a closed dir stay dropped.
+        let parent = path.rsplit_once('/').map_or("", |(parent, _)| parent);
+        !(self.opened)(parent)
     }
 
     /// Whether this hint may change which folders are nested repositories (own `.git` came or went, a repository

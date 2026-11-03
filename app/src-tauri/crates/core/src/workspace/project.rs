@@ -29,8 +29,10 @@ use crate::settings::{
     AppSettings, ProjectConfig, ProjectConfigFile, ProjectSettingChange, SettingsError,
 };
 use crate::state::{AppDirs, ProjectId, StateData, StateLocation, StateStore};
-use crate::tree::Explorer;
-use crate::watch::{FsBatch, LiveStatus, OwnWrites, StatusHook, Subscription, WatchHub, Watcher};
+use crate::tree::{Explorer, NodeKind};
+use crate::watch::{
+    FsBatch, LiveStatus, OwnWrites, PathHold, StatusHook, Subscription, WatchHub, Watcher,
+};
 
 /// Process-wide services every workspace uses.
 pub struct CoreEnv {
@@ -311,7 +313,23 @@ fn start_watcher(
     );
     watcher.knows_tree(Box::new({
         let explorer = Arc::clone(explorer);
-        move |path| explorer.holds(path)
+        move |path| {
+            // `holds` never walks, and it is true for a closed dir. Opened is a listed dir with nothing unlisted.
+            // `listed` only after a node was found, so this lookup does not start a walk.
+            let folder = explorer.holds(path)?;
+            if !folder {
+                return Some(PathHold::File);
+            }
+            let opened = matches!(
+                explorer.listed(path),
+                Some(NodeKind::Dir { unlisted: None })
+            );
+            Some(if opened {
+                PathHold::OpenedDir
+            } else {
+                PathHold::ClosedDir
+            })
+        }
     }));
     // the tree is known before anything goes away (a window would list it now anyway; a core without one too)
     let explorer = Arc::clone(explorer);
