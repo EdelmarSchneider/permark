@@ -184,7 +184,7 @@ export default {
   "filter.docsAndAssetsHint": "Documentos más imágenes, audio, video, JSON, YAML, TOML, XML y CSV",
   "filter.everything": "Todo",
   "filter.everythingHint":
-    "Todos los tipos de archivo. Los archivos ignorados y ocultos tienen sus propios interruptores abajo.",
+    "Todos los tipos de archivo. Todo incluye los archivos ignorados por Git y los archivos ocultos. Los interruptores de abajo pueden apagar uno u otro.",
   "filter.custom": "Personalizado",
   "filter.categories": "Tipos de archivo",
   "filter.advanced": "Patrones",

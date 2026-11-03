@@ -67,8 +67,21 @@ struct Shared {
     tree: OnceLock<PathLookup>,
 }
 
-/// What the project's tree holds at a project path: `Some(is_folder)` | `None` (nothing).
-pub type PathLookup = Box<dyn Fn(&str) -> Option<bool> + Send + Sync>;
+/// What the tree holds at a project path, once it is built. `None` from the lookup: no node (or the tree is not built).
+///
+/// [`PathHold::OpenedIgnored`] is an ignored directory the person opened. A container and a normal folder are
+/// [`PathHold::Dir`]: still folders for `known`, not a reason to let an ignored child through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathHold {
+    File,
+    /// Any other directory: closed ignored, large, a normal folder, or a container.
+    Dir,
+    /// `node.ignored` and `NodeKind::Dir { unlisted: None }`.
+    OpenedIgnored,
+}
+
+/// What the project's tree holds at a project path.
+pub type PathLookup = Box<dyn Fn(&str) -> Option<PathHold> + Send + Sync>;
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -319,8 +332,9 @@ impl Watcher {
         }
     }
 
-    /// Where the watch learns what was there before it began: a file or folder that goes away without ever having
-    /// been news is then reported as what it was. Set once.
+    /// Where the watch learns what was there before it began, and which ignored directories are opened
+    /// ([`PathHold::OpenedIgnored`], not every folder and not a container). A file or folder that goes away without
+    /// ever having been news is then reported as what it was. Set once.
     pub fn knows_tree(&self, lookup: PathLookup) {
         let _ = self.shared.tree.set(lookup);
     }
@@ -567,16 +581,25 @@ fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
         }
     }
     let known = |path: &str| {
+        shared.own.moved_from(path).or_else(|| {
+            shared
+                .tree
+                .get()
+                .and_then(|tree| tree(path).map(|hold| !matches!(hold, PathHold::File)))
+        })
+    };
+    let opened_ignored = |path: &str| {
         shared
-            .own
-            .moved_from(path)
-            .or_else(|| shared.tree.get().and_then(|tree| tree(path)))
+            .tree
+            .get()
+            .is_some_and(|tree| matches!(tree(path), Some(PathHold::OpenedIgnored)))
     };
     let env = Env {
         vault: &shared.vault,
         sigs: &shared.sigs,
         ignorers: &shared.ignorers,
         known: &known,
+        opened_ignored: &opened_ignored,
     };
     let mut done = reconcile(&env, pending);
     // a nested project came, went or moved: the changes above were decided with what was known before (a project

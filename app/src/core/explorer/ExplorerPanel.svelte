@@ -24,6 +24,7 @@
   import Badge from "../shell/Badge.svelte";
   import ContextMenu from "./ContextMenu.svelte";
   import FilterPopover from "./FilterPopover.svelte";
+  import { withShow } from "./filter";
   import { WorktreeIcon, iconOf, projectIcon } from "./icons";
   import { EdgeScroll } from "./edgeScroll";
   import { dropBlock, nameOf, parentOf, rowKey, topmost, type Row } from "./list";
@@ -919,7 +920,7 @@
         <button
           type="button"
           class="link"
-          onclick={() => void store.setFilter({ ...store.filter, show: "everything" })}
+          onclick={() => void store.setFilter(withShow(store.filter, "everything"))}
         >
           {t("filter.showAll")}
         </button>

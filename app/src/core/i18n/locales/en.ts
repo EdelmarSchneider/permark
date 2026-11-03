@@ -179,7 +179,7 @@ const en = {
   "filter.docsAndAssetsHint": "Documents plus images, audio, video, JSON, YAML, TOML, XML and CSV",
   "filter.everything": "Everything",
   "filter.everythingHint":
-    "All file types. Ignored and hidden files have their own switches below.",
+    "All file types. Everything includes files ignored by git and hidden files. The switches below can turn either off.",
   "filter.custom": "Custom",
   "filter.categories": "File types",
   "filter.advanced": "Patterns",

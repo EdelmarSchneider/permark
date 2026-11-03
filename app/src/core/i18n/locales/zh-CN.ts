@@ -178,7 +178,8 @@ export default {
   "filter.docsAndAssets": "文档和资源",
   "filter.docsAndAssetsHint": "文档，外加图片、音频、视频、JSON、YAML、TOML、XML 和 CSV",
   "filter.everything": "全部",
-  "filter.everythingHint": "所有文件类型。被忽略的文件和隐藏文件在下方有各自的开关。",
+  "filter.everythingHint":
+    "所有文件类型。全部包括被 Git 忽略的文件和隐藏文件。下方的开关可以分别关闭其中任何一项。",
   "filter.custom": "自定义",
   "filter.categories": "文件类型",
   "filter.advanced": "模式",

@@ -186,7 +186,7 @@ export default {
     "Documents i, a més, imatges, àudio, vídeo, JSON, YAML, TOML, XML i CSV",
   "filter.everything": "Tot",
   "filter.everythingHint":
-    "Tots els tipus de fitxer. Els fitxers ignorats i els ocults tenen els seus propis interruptors més avall.",
+    "Tots els tipus de fitxer. Tot inclou els fitxers ignorats per Git i els fitxers ocults. Els interruptors de més avall poden apagar-ne un o l'altre.",
   "filter.custom": "Personalitzat",
   "filter.categories": "Tipus de fitxer",
   "filter.advanced": "Patrons",

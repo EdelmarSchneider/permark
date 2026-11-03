@@ -168,6 +168,20 @@ describe("the list", () => {
     expect(row(root, ".github").className).toContain("is-dim");
   });
 
+  it("Show all selects Everything, so ignored and hidden files come on", async () => {
+    const { root, store } = await render();
+    const showAll = root.querySelector<HTMLButtonElement>(".foot button");
+    expect(showAll?.textContent).toBe("Show all");
+    expect(store.filter.show).toBe("docs-and-assets");
+    expect(store.filter.showIgnored).toBe(false);
+    expect(store.filter.showHidden).toBe(false);
+    showAll?.click();
+    await vi.waitFor(() => expect(store.filter.show).toBe("everything"));
+    expect(store.filter.showIgnored).toBe(true);
+    expect(store.filter.showHidden).toBe(true);
+    expect(store.filter.hideEmptyDirs).toBe(true);
+  });
+
   it("keeps the header and the counts line on one line, the full text in their tooltip", async () => {
     // a long translation (Japanese) is cut short with an ellipsis instead of wrapping a lone letter
     const { root } = await render();

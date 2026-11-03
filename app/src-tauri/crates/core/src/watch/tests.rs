@@ -674,7 +674,7 @@ fn a_folder_gone_before_its_files_were_news_is_reported_as_a_folder() {
         let f = make(&["lib/x.md"], false);
         if knows {
             f.watcher
-                .knows_tree(Box::new(|path| (path == "lib").then_some(true)));
+                .knows_tree(Box::new(|path| (path == "lib").then_some(PathHold::Dir)));
         }
         fs::remove_dir_all(f.dir.path().join("lib")).unwrap();
         f.watcher.inject(Pending {
@@ -1194,6 +1194,103 @@ fn nested_projects_coming_and_going_while_open_update_tree_index_and_watch() {
         "{heard:?}"
     );
     assert!(!listed("hubs/b/z.md"));
+}
+
+#[test]
+fn a_new_direct_child_of_an_opened_ignored_folder_is_listed_and_a_deeper_one_is_not() {
+    use crate::tree::{NodeKind, Unlisted};
+    let base_dir = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let root = Root::open(project.path()).unwrap();
+    let base = root.path().to_path_buf();
+    let put = |rel: &str, text: &str| {
+        let path = base.join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    };
+    fs::create_dir_all(base.join("data")).unwrap();
+    fs::create_dir_all(base.join("sealed")).unwrap();
+    put(".gitignore", "data/\nsealed/\n");
+    put("readme.md", "# R\n");
+    let seen: Seen = Arc::default();
+    let env = project_env(base_dir.path(), &seen, Arc::new(Recorder::default()));
+    let core = ProjectCore::open(root, &env);
+    let listed = |path: &str| core.explorer().listed(path);
+    let closed_ignored = |path: &str| {
+        matches!(
+            listed(path),
+            Some(NodeKind::Dir {
+                unlisted: Some(Unlisted::Ignored)
+            })
+        )
+    };
+    let until = |what: &str, ok: &dyn Fn() -> bool| {
+        let started = Instant::now();
+        while !ok() {
+            assert!(
+                started.elapsed() < Duration::from_secs(20),
+                "timed out: {what}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    until("both ignored folders are closed", &|| {
+        closed_ignored("data") && closed_ignored("sealed")
+    });
+    settle(&seen);
+    core.explorer().open_folder("data").unwrap();
+    assert!(matches!(
+        listed("data"),
+        Some(NodeKind::Dir { unlisted: None })
+    ));
+    assert!(
+        closed_ignored("sealed"),
+        "the other ignored folder stays closed"
+    );
+    seen.lock().unwrap().clear();
+
+    // `data` is opened: a new dir is listed closed, a new file is listed, the dir's own child is not.
+    // `sealed` was never opened: a new child is not news and is not listed.
+    fs::create_dir_all(base.join("data/work/train")).unwrap();
+    put("data/work/train/a.md", "a");
+    put("data/work/train/b.md", "b");
+    put("data/note.md", "n");
+    put("sealed/hid.md", "h");
+    until("the opened folder lists its new dir and file", &|| {
+        closed_ignored("data/work") && matches!(listed("data/note.md"), Some(NodeKind::File { .. }))
+    });
+    let heard = quiet_for(&seen, 600);
+    assert!(
+        matches!(listed("data"), Some(NodeKind::Dir { unlisted: None })),
+        "opening data survives the creates"
+    );
+    assert!(closed_ignored("data/work"), "{:?}", listed("data/work"));
+    assert!(matches!(
+        listed("data/note.md"),
+        Some(NodeKind::File { .. })
+    ));
+    for absent in [
+        "data/work/train",
+        "data/work/train/a.md",
+        "data/work/train/b.md",
+        "sealed/hid.md",
+    ] {
+        assert!(listed(absent).is_none(), "{absent} listed");
+        assert!(
+            !heard
+                .iter()
+                .any(|c| c.path == absent || c.path.starts_with(&format!("{absent}/"))),
+            "{absent} was news: {heard:?}"
+        );
+    }
+    assert!(
+        heard.iter().any(|c| c.path == "data/work" && c.is_dir),
+        "the new dir came through the watch: {heard:?}"
+    );
+    assert!(
+        heard.iter().any(|c| c.path == "data/note.md"),
+        "the new file came through the watch: {heard:?}"
+    );
 }
 
 // ---- verifier: rescan storms -----------------------------------------------------------------------------------------

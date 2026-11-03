@@ -270,6 +270,56 @@ describe("filter helpers", () => {
     expect(withShow(custom, "documents").show).toBe("documents");
   });
 
+  it("selecting Everything turns ignored and hidden files on, including a second time", () => {
+    const on = withShow({ ...DEFAULT_FILTER, hideEmptyDirs: false }, "everything");
+    expect(on.show).toBe("everything");
+    expect(on.showIgnored).toBe(true);
+    expect(on.showHidden).toBe(true);
+    expect(on.hideEmptyDirs).toBe(false);
+
+    const again = withShow({ ...on, showIgnored: false }, "everything");
+    expect(again.show).toBe("everything");
+    expect(again.showIgnored).toBe(true);
+    expect(again.showHidden).toBe(true);
+    expect(again.hideEmptyDirs).toBe(false);
+  });
+
+  it("documents and docs-and-assets leave the show flags and empty folders as they were", () => {
+    expect(DEFAULT_FILTER.show).toBe("docs-and-assets");
+    expect(DEFAULT_FILTER.showIgnored).toBe(false);
+    expect(DEFAULT_FILTER.showHidden).toBe(false);
+
+    const docs = withShow(DEFAULT_FILTER, "documents");
+    expect(docs.show).toBe("documents");
+    expect(docs.showIgnored).toBe(false);
+    expect(docs.showHidden).toBe(false);
+    expect(docs.hideEmptyDirs).toBe(true);
+
+    const kept = withShow(
+      {
+        ...DEFAULT_FILTER,
+        show: "everything",
+        showIgnored: true,
+        showHidden: true,
+        hideEmptyDirs: false,
+      },
+      "documents",
+    );
+    expect(kept.show).toBe("documents");
+    expect(kept.showIgnored).toBe(true);
+    expect(kept.showHidden).toBe(true);
+    expect(kept.hideEmptyDirs).toBe(false);
+
+    const assets = withShow(
+      { ...DEFAULT_FILTER, showIgnored: true, showHidden: false, hideEmptyDirs: false },
+      "docs-and-assets",
+    );
+    expect(assets.show).toBe("docs-and-assets");
+    expect(assets.showIgnored).toBe(true);
+    expect(assets.showHidden).toBe(false);
+    expect(assets.hideEmptyDirs).toBe(false);
+  });
+
   it("a remembered filter is checked field by field", () => {
     expect(normalizeFilter(filterToJson(DEFAULT_FILTER))).toEqual(DEFAULT_FILTER);
     expect(normalizeFilter(null)).toBeNull();
