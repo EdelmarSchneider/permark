@@ -180,7 +180,7 @@ export default {
   "filter.docsAndAssetsHint": "문서와 이미지, 오디오, 비디오, JSON, YAML, TOML, XML, CSV",
   "filter.everything": "모든 파일",
   "filter.everythingHint":
-    "모든 파일 형식입니다. 무시된 파일과 숨김 파일은 아래에 있는 별도 스위치로 설정합니다.",
+    "모든 파일 형식입니다. 모든 파일에는 Git에서 무시하는 파일과 숨김 파일이 포함됩니다. 아래 스위치로 각각을 끌 수 있습니다.",
   "filter.custom": "사용자 지정",
   "filter.categories": "파일 형식",
   "filter.advanced": "패턴",

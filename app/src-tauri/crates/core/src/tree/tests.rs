@@ -270,6 +270,86 @@ fn presets_choose_categories() {
 }
 
 #[test]
+fn everything_turns_ignored_and_hidden_on() {
+    let base = TreeFilter {
+        hide_empty_dirs: false,
+        ..TreeFilter::default()
+    };
+    assert_eq!(base.show, FilterShow::DocsAndAssets);
+    assert!(!base.show_ignored);
+    assert!(!base.show_hidden);
+
+    let on = base.with_show(FilterShow::Everything);
+    assert_eq!(on.show, FilterShow::Everything);
+    assert!(on.show_ignored);
+    assert!(on.show_hidden);
+    assert!(!on.hide_empty_dirs);
+
+    let again = TreeFilter {
+        show_ignored: false,
+        ..on.clone()
+    }
+    .with_show(FilterShow::Everything);
+    assert_eq!(again.show, FilterShow::Everything);
+    assert!(again.show_ignored);
+    assert!(again.show_hidden);
+    assert!(!again.hide_empty_dirs);
+
+    let docs = on.with_show(FilterShow::Documents);
+    assert_eq!(docs.show, FilterShow::Documents);
+    assert!(docs.show_ignored);
+    assert!(docs.show_hidden);
+    assert!(!docs.hide_empty_dirs);
+
+    let assets = TreeFilter {
+        show_ignored: true,
+        hide_empty_dirs: false,
+        ..TreeFilter::default()
+    }
+    .with_show(FilterShow::DocsAndAssets);
+    assert_eq!(assets.show, FilterShow::DocsAndAssets);
+    assert!(assets.show_ignored);
+    assert!(!assets.show_hidden);
+    assert!(!assets.hide_empty_dirs);
+
+    let config = |show, include: &[&str], exclude: &[&str]| TreeConfig {
+        show,
+        include: include.iter().map(|s| (*s).to_owned()).collect(),
+        exclude: exclude.iter().map(|s| (*s).to_owned()).collect(),
+    };
+    let from_everything = TreeFilter::from_config(&config(Some(TreeShow::Everything), &[], &[]));
+    assert_eq!(from_everything.show, FilterShow::Everything);
+    assert!(from_everything.show_ignored);
+    assert!(from_everything.show_hidden);
+
+    let forced_custom =
+        TreeFilter::from_config(&config(Some(TreeShow::Everything), &["*.log"], &[]));
+    assert_eq!(forced_custom.show, FilterShow::Custom);
+    assert!(!forced_custom.show_ignored);
+    assert!(!forced_custom.show_hidden);
+
+    let from_docs = TreeFilter::from_config(&config(Some(TreeShow::Documents), &[], &[]));
+    assert_eq!(from_docs.show, FilterShow::Documents);
+    assert!(!from_docs.show_ignored);
+    assert!(!from_docs.show_hidden);
+
+    let from_assets = TreeFilter::from_config(&config(Some(TreeShow::DocsAndAssets), &[], &[]));
+    assert_eq!(from_assets.show, FilterShow::DocsAndAssets);
+    assert!(!from_assets.show_ignored);
+    assert!(!from_assets.show_hidden);
+
+    let from_custom = TreeFilter::from_config(&config(Some(TreeShow::Custom), &[], &[]));
+    assert_eq!(from_custom.show, FilterShow::Custom);
+    assert!(!from_custom.show_ignored);
+    assert!(!from_custom.show_hidden);
+
+    let app_default = TreeFilter::default();
+    assert_eq!(app_default.show, FilterShow::DocsAndAssets);
+    assert!(!app_default.show_ignored);
+    assert!(!app_default.show_hidden);
+}
+
+#[test]
 fn custom_filter_uses_its_categories_and_switching_keeps_the_previous_preset() {
     let f = fixture(&["a.md", "c.json", "d.png"]);
     let filter = TreeFilter::default().with_show(FilterShow::Custom);

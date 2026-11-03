@@ -194,7 +194,7 @@ export default {
   "filter.docsAndAssetsHint": "Documente, plus imagini, audio, video, JSON, YAML, TOML, XML și CSV",
   "filter.everything": "Tot",
   "filter.everythingHint":
-    "Toate tipurile de fișiere. Fișierele ignorate și cele ascunse au propriile comutatoare mai jos.",
+    "Toate tipurile de fișiere. Tot include fișierele ignorate de git și fișierele ascunse. Comutatoarele de mai jos pot opri oricare dintre ele.",
   "filter.custom": "Personalizat",
   "filter.categories": "Tipuri de fișiere",
   "filter.advanced": "Modele",

@@ -185,7 +185,7 @@ export default {
   "filter.docsAndAssetsHint": "ドキュメントに加えて、画像、音声、動画、JSON、YAML、TOML、XML、CSV",
   "filter.everything": "すべて",
   "filter.everythingHint":
-    "すべての種類のファイル。無視されたファイルと隠しファイルは、下にある個別のスイッチで切り替えます。",
+    "すべての種類のファイル。すべてに、git で無視されたファイルと隠しファイルが含まれます。下のスイッチでそれぞれをオフにできます。",
   "filter.custom": "カスタム",
   "filter.categories": "ファイルの種類",
   "filter.advanced": "パターン",

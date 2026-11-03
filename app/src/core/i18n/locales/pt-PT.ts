@@ -187,7 +187,7 @@ export default {
     "Documentos e ainda imagens, áudio, vídeo, JSON, YAML, TOML, XML e CSV",
   "filter.everything": "Tudo",
   "filter.everythingHint":
-    "Todos os tipos de ficheiro. Os ficheiros ignorados e ocultos têm opções próprias abaixo.",
+    "Todos os tipos de ficheiro. Tudo inclui ficheiros ignorados pelo Git e ficheiros ocultos. As opções abaixo podem desligar um ou outro.",
   "filter.custom": "Personalizado",
   "filter.categories": "Tipos de ficheiro",
   "filter.advanced": "Padrões",
