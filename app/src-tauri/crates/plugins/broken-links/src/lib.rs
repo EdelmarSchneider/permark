@@ -9,6 +9,10 @@ mod tests;
 mod types;
 
 use std::borrow::Cow;
+use std::collections::HashSet;
+use std::io;
+use std::ops::Range;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -16,17 +20,23 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use permark_core::conditions::Requirement;
-use permark_core::document::DocScope;
-use permark_core::paths::{Vault, WORKTREE_PREFIX};
+use permark_core::document::{DocScope, Documents};
+use permark_core::fileops::replacement_href;
+use permark_core::fsx;
+use permark_core::links::{local_target, parse, Form};
+use permark_core::paths::{Vault, VaultPath, WORKTREE_PREFIX};
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
     PluginScope, RpcRegistration, Running,
 };
 use permark_core::tree::Explorer;
-use permark_core::watch::{FsBatch, Subscription};
+use permark_core::watch::{FsBatch, OwnWrites, Subscription};
 
 pub use check::{candidates, root_of, Checker, MAX_DOC_BYTES};
-pub use types::{BrokenDoc, BrokenLink, BrokenReport, BrokenRoot, BrokenSummary};
+pub use types::{
+    BrokenDoc, BrokenLink, BrokenReport, BrokenRoot, BrokenSummary, RepairArgs, RepairRefusal,
+    RepairResult,
+};
 
 const ID: PluginId = PluginId::of("broken-links");
 /// The most links a report lists (the count is complete past it).
@@ -335,6 +345,172 @@ impl Drop for BrokenLinksService {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    static BEFORE_SECOND_READ: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        std::cell::RefCell::new(None);
+}
+
+/// A test changes the file after the repair plan is made and before the bytes are read again.
+#[cfg(test)]
+pub(crate) fn before_second_read(hook: impl FnOnce() + 'static) {
+    BEFORE_SECOND_READ.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
+
+#[cfg(test)]
+fn take_before_second_read() -> Option<Box<dyn FnOnce()>> {
+    BEFORE_SECOND_READ.with(|slot| slot.borrow_mut().take())
+}
+
+/// Drops a hook the call never reached, so the next call on this thread does not run it.
+#[cfg(test)]
+struct ClearBeforeSecondRead;
+
+#[cfg(test)]
+impl Drop for ClearBeforeSecondRead {
+    fn drop(&mut self) {
+        let _unused = take_before_second_read();
+    }
+}
+
+#[cfg(test)]
+fn run_before_second_read() {
+    if let Some(hook) = take_before_second_read() {
+        hook();
+    }
+}
+
+fn refused(reason: RepairRefusal) -> RepairResult {
+    RepairResult::Refused { reason }
+}
+
+fn document_is_unsaved(documents: &Documents, path: &str) -> bool {
+    VaultPath::parse(path).is_ok_and(|parsed| documents.unsaved_keys().contains(&parsed.key()))
+}
+
+/// Names `candidates` looks up. Asking for `name.md` as well is a superset when the basename already ends in `.md`.
+fn keyed_names(doc: &str, href: &str) -> HashSet<String> {
+    let Some(target) = local_target(doc, href) else {
+        return HashSet::new();
+    };
+    let Some(name) = target.rsplit('/').next().filter(|name| !name.is_empty()) else {
+        return HashSet::new();
+    };
+    let mut names = HashSet::with_capacity(2);
+    names.insert(name.to_owned());
+    names.insert(format!("{name}.md"));
+    names
+}
+
+fn one_destination(
+    text: &str,
+    line: u32,
+    href: &str,
+) -> Result<(Range<usize>, Form), RepairRefusal> {
+    let mut matched = parse(text)
+        .into_iter()
+        .filter(|dest| u32::try_from(dest.line).ok() == Some(line) && dest.inner(text) == href);
+    let Some(dest) = matched.next() else {
+        return Err(RepairRefusal::Mismatch);
+    };
+    if matched.next().is_some() {
+        return Err(RepairRefusal::Mismatch);
+    }
+    Ok((dest.range, dest.form))
+}
+
+fn target_is_candidate(explorer: &Explorer, doc: &str, href: &str, target: &str) -> bool {
+    let by_key = explorer.files_keyed(&keyed_names(doc, href));
+    candidates(doc, href, &by_key)
+        .iter()
+        .any(|path| path == target)
+}
+
+/// Raw bytes, not a text decode (newlines stay as stored). Larger than the checker reads: left alone.
+fn read_raw(abs: &Path) -> Result<Vec<u8>, RepairRefusal> {
+    let meta = match std::fs::metadata(abs) {
+        Ok(meta) => meta,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Err(RepairRefusal::Missing);
+        }
+        Err(_) => return Err(RepairRefusal::Unreadable),
+    };
+    if !meta.is_file() || meta.len() > MAX_DOC_BYTES {
+        return Err(RepairRefusal::Unreadable);
+    }
+    match std::fs::read(abs) {
+        Ok(bytes) if u64::try_from(bytes.len()).unwrap_or(u64::MAX) <= MAX_DOC_BYTES => Ok(bytes),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Err(RepairRefusal::Missing),
+        Ok(_) | Err(_) => Err(RepairRefusal::Unreadable),
+    }
+}
+
+fn splice(text: &str, range: Range<usize>, token: &str) -> Option<String> {
+    let head = text.get(..range.start)?;
+    let tail = text.get(range.end..)?;
+    let mut out = String::with_capacity(head.len() + token.len() + tail.len());
+    out.push_str(head);
+    out.push_str(token);
+    out.push_str(tail);
+    Some(out)
+}
+
+/// Rewrites the one destination. A refusal writes nothing. No move journal and no second scan: the watch sees the
+/// write.
+fn repair(
+    documents: &Documents,
+    explorer: &Explorer,
+    own: &OwnWrites,
+    args: &RepairArgs,
+) -> RepairResult {
+    #[cfg(test)]
+    let _clear_hook = ClearBeforeSecondRead;
+    if document_is_unsaved(documents, &args.path) {
+        return refused(RepairRefusal::Unsaved);
+    }
+    let Ok((_, abs)) = documents.scope().resolve(&args.path) else {
+        return refused(RepairRefusal::Unreadable);
+    };
+    let bytes = match read_raw(&abs) {
+        Ok(bytes) => bytes,
+        Err(reason) => return refused(reason),
+    };
+    let seen = fsx::hash(&bytes);
+    let Ok(text) = std::str::from_utf8(&bytes) else {
+        return refused(RepairRefusal::NotUtf8);
+    };
+    let (range, form) = match one_destination(text, args.line, &args.href) {
+        Ok(found) => found,
+        Err(reason) => return refused(reason),
+    };
+    if !target_is_candidate(explorer, &args.path, &args.href, &args.target) {
+        return refused(RepairRefusal::NotCandidate);
+    }
+    let Some(token) = replacement_href(&args.path, &args.href, form, &args.target) else {
+        return refused(RepairRefusal::NoReplacement);
+    };
+    #[cfg(test)]
+    run_before_second_read();
+    let again = match read_raw(&abs) {
+        Ok(bytes) => bytes,
+        Err(reason) => return refused(reason),
+    };
+    if fsx::hash(&again) != seen {
+        return refused(RepairRefusal::Changed);
+    }
+    let Some(new_text) = splice(text, range, &token) else {
+        return refused(RepairRefusal::Mismatch);
+    };
+    let new_bytes = new_text.into_bytes();
+    let new_hash = fsx::hash(&new_bytes);
+    own.expect_write(&args.path, new_hash);
+    if fsx::write_atomic(&abs, &new_bytes).is_err() {
+        own.retract_write(&args.path, new_hash);
+        return refused(RepairRefusal::WriteFailed);
+    }
+    RepairResult::Wrote { href: token }
+}
+
 impl Plugin for BrokenLinksPlugin {
     fn manifest(&self) -> &Manifest {
         &self.manifest
@@ -368,6 +544,13 @@ impl Plugin for BrokenLinksPlugin {
         let mut registrations = Vec::new();
         let s = Arc::clone(&service);
         registrations.extend(cx.rpc("list", typed(move |_: NoArgs, _| Ok(s.report()))));
+        let documents = Arc::clone(&project.documents);
+        let explorer = Arc::clone(&project.explorer);
+        let own = Arc::clone(&project.own);
+        registrations.extend(cx.rpc(
+            "repair",
+            typed(move |args: RepairArgs, _| Ok(repair(&documents, &explorer, &own, &args))),
+        ));
         Ok(Box::new(BrokenLinksRunning {
             subscription: Some(subscription),
             registrations,

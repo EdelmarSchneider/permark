@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -97,6 +97,29 @@ impl Harness {
                 },
             )
             .unwrap()
+    }
+
+    fn repair(&self, path: &str, line: u32, href: &str, target: &str) -> Value {
+        self.core()
+            .rpc()
+            .call(
+                "broken-links",
+                "repair",
+                &RpcCall {
+                    window: "w".to_owned(),
+                    args: json!({
+                        "path": path,
+                        "line": line,
+                        "href": href,
+                        "target": target,
+                    }),
+                },
+            )
+            .unwrap()
+    }
+
+    fn bytes(&self, rel: &str) -> Vec<u8> {
+        std::fs::read(self.root().join(rel)).unwrap()
     }
 
     /// `doc:line:written` for every broken link, in order.
@@ -614,6 +637,129 @@ fn candidates_are_same_root_files_of_that_name_and_md_only_when_it_was_left_out(
         ["notes/plan.md"],
         "query and anchor do not change the name"
     );
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one story: write, suffix, changed bytes, unsaved, other root
+fn repair_writes_the_one_destination_and_skips_changed_unsaved_and_other_root() {
+    const HREF: &str = "old/plan.md?q=1#section";
+    let mut h = Harness::new();
+    let note = format!("[one]({HREF})\r\n[two]({HREF})\r\n");
+    let plain = format!("[x]({HREF})\n");
+    h.write("a/note.md", &note);
+    h.write("b/plan.md", "# plan\n");
+    h.write("c/note.md", &plain);
+    h.write("d/note.md", &plain);
+    h.write("e/note.md", &plain);
+    h.write("g/note.md", &plain);
+    h.write("same.md", "[a](old/plan.md) [b](old/plan.md)\n");
+    // a path `root_of` treats as another root; the opened folder's repair must not take it
+    h.write("@wt/other/plan.md", "# other\n");
+    let bad = b"[x](old/plan.md?q=1#section)\n\xff";
+    std::fs::write(h.root().join("bad.md"), bad).unwrap();
+    h.open();
+    assert_eq!(
+        h.broken(),
+        [
+            "a/note.md:1:old/plan.md?q=1#section",
+            "a/note.md:2:old/plan.md?q=1#section",
+            "bad.md:1:old/plan.md?q=1#section",
+            "c/note.md:1:old/plan.md?q=1#section",
+            "d/note.md:1:old/plan.md?q=1#section",
+            "e/note.md:1:old/plan.md?q=1#section",
+            "g/note.md:1:old/plan.md?q=1#section",
+            "same.md:1:old/plan.md",
+            "same.md:1:old/plan.md",
+        ],
+        "list behavior before a repair"
+    );
+
+    let wrote = h.repair("a/note.md", 1, HREF, "b/plan.md");
+    assert_eq!(
+        wrote,
+        json!({"outcome": "wrote", "href": "../b/plan.md?q=1#section"})
+    );
+    let expected = format!("[one](../b/plan.md?q=1#section)\r\n[two]({HREF})\r\n");
+    assert_eq!(
+        h.bytes("a/note.md"),
+        expected.as_bytes(),
+        "one destination, suffix kept, the other copy and CRLF stay"
+    );
+
+    let edited = b"edited while the plan was open\n";
+    std::fs::write(h.root().join("c/note.md"), edited).unwrap();
+    assert_eq!(
+        h.repair("c/note.md", 1, HREF, "b/plan.md"),
+        json!({"outcome": "refused", "reason": "mismatch"}),
+        "the href is gone: the file changed under the plan"
+    );
+    assert_eq!(h.bytes("c/note.md"), edited);
+
+    let changed = h.root().join("g/note.md");
+    before_second_read({
+        let changed = changed.clone();
+        move || {
+            std::fs::write(&changed, b"changed by someone else\n").unwrap();
+        }
+    });
+    assert_eq!(
+        h.repair("g/note.md", 1, HREF, "b/plan.md"),
+        json!({"outcome": "refused", "reason": "changed"}),
+        "bytes changed after they were read"
+    );
+    assert_eq!(h.bytes("g/note.md"), b"changed by someone else\n");
+
+    h.core()
+        .documents()
+        .set_unsaved("w", Some("d/note.md".to_owned()));
+    assert_eq!(
+        h.repair("d/note.md", 1, HREF, "b/plan.md"),
+        json!({"outcome": "refused", "reason": "unsaved"})
+    );
+    assert_eq!(h.bytes("d/note.md"), plain.as_bytes());
+
+    let names: HashSet<String> = ["plan.md".to_owned()].into();
+    let known = h.core().explorer().files_keyed(&names);
+    let mut plans = known.get(&key_of("plan.md")).cloned().unwrap_or_default();
+    plans.sort();
+    assert!(
+        plans.iter().any(|path| path == "@wt/other/plan.md")
+            && plans.iter().any(|path| path == "b/plan.md"),
+        "the other root is known, and so is the same-root file: {plans:?}"
+    );
+    assert_eq!(
+        h.repair("e/note.md", 1, HREF, "@wt/other/plan.md"),
+        json!({"outcome": "refused", "reason": "notCandidate"}),
+        "a target in another root is not a candidate"
+    );
+    assert_eq!(h.bytes("e/note.md"), plain.as_bytes());
+    assert_eq!(h.bytes("@wt/other/plan.md"), b"# other\n");
+
+    let same = h.bytes("same.md");
+    assert_eq!(
+        h.repair("same.md", 1, "old/plan.md", "b/plan.md"),
+        json!({"outcome": "refused", "reason": "mismatch"}),
+        "two copies on the line: neither is rewritten"
+    );
+    assert_eq!(h.bytes("same.md"), same);
+
+    assert_eq!(
+        h.repair("bad.md", 1, HREF, "b/plan.md"),
+        json!({"outcome": "refused", "reason": "notUtf8"})
+    );
+    assert_eq!(h.bytes("bad.md"), bad);
+
+    wait_until("the checker follows the write", || {
+        h.broken()
+            == [
+                "a/note.md:2:old/plan.md?q=1#section",
+                "bad.md:1:old/plan.md?q=1#section",
+                "d/note.md:1:old/plan.md?q=1#section",
+                "e/note.md:1:old/plan.md?q=1#section",
+                "same.md:1:old/plan.md",
+                "same.md:1:old/plan.md",
+            ]
+    });
 }
 
 #[test]

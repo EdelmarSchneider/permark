@@ -1,6 +1,6 @@
 //! What the broken-links plugin tells the UI (ts-rs exported).
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// One link that leads nowhere.
@@ -63,4 +63,58 @@ pub struct BrokenSummary {
     pub total: u32,
     /// The opened folder alone.
     pub current: u32,
+}
+
+/// One destination to point at one chosen file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export)]
+pub struct RepairArgs {
+    /// Project path of the document.
+    pub path: String,
+    /// 1-based line of the destination.
+    pub line: u32,
+    /// The destination as written, inner text.
+    pub href: String,
+    /// The chosen file, a project path.
+    pub target: String,
+}
+
+/// Why `repair` wrote nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum RepairRefusal {
+    /// Open with unsaved edits.
+    Unsaved,
+    /// The document could not be read.
+    Unreadable,
+    /// Not utf-8, so it was left alone.
+    NotUtf8,
+    /// The file is gone.
+    Missing,
+    /// The destination is not that one href on that line.
+    Mismatch,
+    /// The chosen path is not a same-root candidate.
+    NotCandidate,
+    /// The destination cannot be rewritten.
+    NoReplacement,
+    /// The bytes changed after they were read.
+    Changed,
+    /// The new bytes could not be written.
+    WriteFailed,
+}
+
+/// Whether the one destination was rewritten.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "outcome", rename_all = "camelCase")]
+#[ts(export)]
+pub enum RepairResult {
+    Wrote {
+        /// The destination as written now.
+        href: String,
+    },
+    Refused {
+        reason: RepairRefusal,
+    },
 }

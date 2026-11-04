@@ -344,6 +344,7 @@ export function createMockPlugins(
       return null;
     },
     "review.basis": () => basis,
+    "broken-links.repair": () => ({ outcome: "refused", reason: "unsaved" }),
   };
 
   return {
