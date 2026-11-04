@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { InstallState } from "./generated/InstallState";
 import type { LocalAiState } from "./generated/LocalAiState";
-import { createMockLocalAi, MOCK_CATALOG, MOCK_DEFAULT_STORE } from "./mockLocalAi";
+import { createMockLocalAi, MOCK_CATALOG, MOCK_DEFAULT_STORE, MOCK_MACHINE } from "./mockLocalAi";
 import { MockPluginError } from "./mockOrganizing";
 import type { AppPluginEventName } from "./types";
 
@@ -247,5 +247,64 @@ describe("local AI mock store", () => {
     expect(gone.models.every((m) => m.state.kind === "storeUnavailable")).toBe(true);
     expect(refusal(() => h["local-ai.get"]({ model: GERMAN })).kind).toBe("unavailable");
     expect(refusal(() => h["local-ai.revealStore"]({})).kind).toBe("unavailable");
+  });
+});
+
+describe("local AI mock machine", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("answers the profile and a fit per model: runs well, slow, not recommended", () => {
+    const { h } = setup();
+    const info = h["local-ai.machine"]({});
+    expect(info.profile).toEqual(MOCK_MACHINE);
+    expect(Object.keys(info.fits).sort()).toEqual(MOCK_CATALOG.models.map((m) => m.id).sort());
+    expect(info.fits[EMBED]).toBe("runsWell");
+    expect(info.fits[WHISPER]).toBe("runsWell");
+    expect(info.fits[E2B]).toBe("slowCpuOnly");
+    expect(info.fits[LFM]).toBe("slowCpuOnly");
+    expect(info.fits[E4B]).toBe("notRecommended");
+    expect(info.budget).toBeNull();
+  });
+
+  it("warns when a second big model is assigned, and stops when it is unassigned", () => {
+    const { h } = setup();
+    h["local-ai.acceptLicense"]({ model: LFM });
+    h["local-ai.get"]({ model: LFM });
+    vi.advanceTimersByTime(400 * 12);
+    h["local-ai.assign"]({ task: "assistant", model: LFM });
+    const ramRec = (id: string) => MOCK_CATALOG.models.find((m) => m.id === id)?.needs.ramRec ?? 0;
+    const warned = h["local-ai.machine"]({}).budget;
+    expect(warned).toEqual({
+      needed: ramRec(EMBED) + ramRec(E2B) + ramRec(LFM),
+      available: 2 * 1_073_741_824 + Math.floor((6 * 1_073_741_824) / 5) * 3,
+    });
+    if (warned === null) throw new Error("no warning");
+    expect(warned.needed).toBeGreaterThan(warned.available);
+    h["local-ai.assign"]({ task: "assistant", model: null });
+    expect(h["local-ai.machine"]({}).budget).toBeNull();
+  });
+
+  it("counts a model assigned to two tasks once; unknown memory gives unknown fits, no warning", () => {
+    const { h, probe } = setup();
+    h["local-ai.assign"]({ task: "translation", model: E2B });
+    expect(h["local-ai.machine"]({}).budget).toBeNull();
+    probe.machine = { ...MOCK_MACHINE, ramTotal: null, gpus: [] };
+    const info = h["local-ai.machine"]({});
+    expect(new Set(Object.values(info.fits))).toEqual(new Set(["unknown"]));
+    expect(info.budget).toBeNull();
+  });
+
+  it("unified memory runs well what the RAM covers", () => {
+    const { h, probe } = setup();
+    probe.machine = {
+      ...MOCK_MACHINE,
+      ramTotal: 16 * 1_073_741_824,
+      gpus: [
+        { name: "Apple M2", dedicatedVram: null, shared: null, unified: true, software: false },
+      ],
+      os: "macos",
+    };
+    expect(new Set(Object.values(h["local-ai.machine"]({}).fits))).toEqual(new Set(["runsWell"]));
   });
 });

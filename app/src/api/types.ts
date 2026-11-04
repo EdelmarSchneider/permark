@@ -15,6 +15,7 @@ import type { LocalAiCatalog } from "./generated/LocalAiCatalog";
 import type { AiTaskInfo } from "./generated/AiTaskInfo";
 import type { AiTask } from "./generated/AiTask";
 import type { LocalAiState } from "./generated/LocalAiState";
+import type { MachineInfo } from "./generated/MachineInfo";
 import type { StoreMode } from "./generated/StoreMode";
 import type { StoreMove } from "./generated/StoreMove";
 import type { ModelProgress } from "./generated/ModelProgress";
@@ -671,6 +672,8 @@ export interface PluginMethods {
   "local-ai.cancelMove": { args: Record<string, never>; result: LocalAiState };
   /** Shows the store folder in the file manager (`unavailable` / `store` while it does not exist). */
   "local-ai.revealStore": { args: Record<string, never>; result: null };
+  /** This computer (read on the first call, kept ~30 s), a fit hint per catalog model, the budget warning. */
+  "local-ai.machine": { args: Record<string, never>; result: MachineInfo };
   "fmt-toon.toJson": { args: { text: string }; result: string };
   "convert.analyze": {
     args: { job: number; source: ConvertSource; from?: string };

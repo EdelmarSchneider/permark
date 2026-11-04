@@ -5,6 +5,8 @@
 // Store: default folder; a chosen one (refused inside | holding a mock project); move by timer steps (cancel, fail
 // fixture `probe.failMove`) | keep (each folder keeps its own models). A chosen folder whose name has "unplugged" in
 // it is gone (store unavailable) - the unavailable fixture for dev:mock.
+// Machine: a 6 GiB laptop with a 2 GiB graphics card (`MOCK_MACHINE`): small models run well, mid ones slow, the
+// largest not recommended; assigning a second big model (LFM3 beside Gemma 4 E2B) raises the budget warning.
 
 import TASKS from "../plugins/local-ai/tasks.json";
 import { accepts } from "../plugins/local-ai/tasks";
@@ -16,6 +18,10 @@ import type { GetBlock } from "./generated/GetBlock";
 import type { InstallState } from "./generated/InstallState";
 import type { LocalAiCatalog } from "./generated/LocalAiCatalog";
 import type { LocalAiState } from "./generated/LocalAiState";
+import type { MachineInfo } from "./generated/MachineInfo";
+import type { MachineProfile } from "./generated/MachineProfile";
+import type { ModelFit } from "./generated/ModelFit";
+import type { ModelNeeds } from "./generated/ModelNeeds";
 import type { ModelLicense } from "./generated/ModelLicense";
 import type { ModelStatus } from "./generated/ModelStatus";
 import type { StoreMode } from "./generated/StoreMode";
@@ -40,6 +46,7 @@ type LocalAiMethods = Pick<
   | "local-ai.setStore"
   | "local-ai.cancelMove"
   | "local-ai.revealStore"
+  | "local-ai.machine"
 >;
 
 const APACHE: ModelLicense = {
@@ -182,6 +189,53 @@ export const MOCK_CATALOG: LocalAiCatalog = {
   ],
 };
 
+/** This computer in the mock: 6 GiB RAM, a 2 GiB card beside the integrated one, the software renderer. */
+export const MOCK_MACHINE: MachineProfile = {
+  ramTotal: 6 * GIB,
+  ramAvailable: 2.5 * GIB,
+  cpuLogical: 8,
+  gpus: [
+    {
+      name: "Intel(R) Iris(R) Xe Graphics",
+      dedicatedVram: 128 * MIB,
+      shared: 3 * GIB,
+      unified: false,
+      software: false,
+    },
+    {
+      name: "NVIDIA GeForce MX450",
+      dedicatedVram: 2 * GIB,
+      shared: 3 * GIB,
+      unified: false,
+      software: false,
+    },
+    {
+      name: "Microsoft Basic Render Driver",
+      dedicatedVram: 0,
+      shared: 3 * GIB,
+      unified: false,
+      software: true,
+    },
+  ],
+  os: "windows",
+};
+
+/** Largest memory of a real adapter (`null`: none known); as `MachineProfile::best_vram`. */
+function bestVram(machine: MachineProfile): number | null {
+  const known = machine.gpus
+    .filter((g) => !g.software)
+    .flatMap((g) => (g.dedicatedVram === null ? [] : [g.dedicatedVram]));
+  return known.length === 0 ? null : Math.max(...known);
+}
+
+/** Fit hint, same rules as `fit.rs` (see its module doc). */
+function fitOf(needs: ModelNeeds, machine: MachineProfile): ModelFit {
+  if ((bestVram(machine) ?? -1) >= needs.vramRec) return "runsWell";
+  if (machine.ramTotal === null) return "unknown";
+  if (machine.ramTotal < needs.ramRec) return "notRecommended";
+  return machine.gpus.some((g) => g.unified && !g.software) ? "runsWell" : "slowCpuOnly";
+}
+
 /** Free space of the mock disk: the largest model does not fit. */
 export const MOCK_FREE_SPACE = 4 * GIB;
 /** Room kept free beyond a download (as the real engine). */
@@ -198,6 +252,8 @@ export type LocalAiProbe = {
   failNext: DownloadError | null;
   /** The next store move ends in this failure (`null`: it succeeds). */
   failMove: DownloadError | null;
+  /** This computer as `local-ai.machine` reads it. */
+  machine: MachineProfile;
   /** Stops the download + move timers (tests). */
   stopAll(): void;
 };
@@ -268,6 +324,7 @@ export function createMockLocalAi(
     freeSpace: MOCK_FREE_SPACE,
     failNext: null,
     failMove: null,
+    machine: structuredClone(MOCK_MACHINE),
     stopAll: () => {
       if (timer !== null) clearInterval(timer);
       timer = null;
@@ -506,6 +563,22 @@ export function createMockLocalAi(
     return state();
   }
 
+  /** Profile, fits, budget (`fit.rs` rules: assigned models' `ramRec` vs best VRAM + 60 % of RAM). */
+  function machine(): MachineInfo {
+    const profile = structuredClone(probe.machine);
+    const fits = Object.fromEntries(models.map((m) => [m.id, fitOf(m.needs, profile)]));
+    const assigned = new Set(
+      state().assignments.flatMap((a) => (a.model === null ? [] : [a.model])),
+    );
+    const needed = [...assigned].reduce((sum, id) => sum + modelOf(id).needs.ramRec, 0);
+    const room =
+      profile.ramTotal === null
+        ? null
+        : (bestVram(profile) ?? 0) + Math.floor(profile.ramTotal / 5) * 3;
+    const budget = room !== null && needed > room ? { needed, available: room } : null;
+    return { profile, fits, budget };
+  }
+
   const handlers: {
     [M in keyof LocalAiMethods]: (args: LocalAiMethods[M]["args"]) => LocalAiMethods[M]["result"];
   } = {
@@ -605,6 +678,7 @@ export function createMockLocalAi(
       if (!available()) throw new MockPluginError("unavailable", "store");
       return null;
     },
+    "local-ai.machine": () => machine(),
   };
   /** Bytes "Remove data" frees (the plugins page asks while the plugin is off). */
   function dataBytes(): number {

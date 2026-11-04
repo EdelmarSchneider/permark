@@ -3438,6 +3438,8 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "ts-rs",
+ "windows",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -17,6 +17,11 @@ sha2.workspace = true
 thiserror.workspace = true
 ts-rs.workspace = true
 
+# Machine profile (`src/machine/`): memory via Win32, graphics adapters via DXGI.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_SystemInformation"] }
+windows = { workspace = true, features = ["Win32_Graphics_Dxgi"] }
+
 [dev-dependencies]
 tempfile.workspace = true
 

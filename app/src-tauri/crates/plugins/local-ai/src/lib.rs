@@ -7,8 +7,9 @@
 //!
 //! RPC for the windows: `catalog`, `tasks`, `state`, `get`, `update`, `acceptLicense`, `cancel`, `deletePart`,
 //! `remove`, `assign`, `setToken`, `clearToken`, `setStore`, `cancelMove` (install calls answer the new
-//! [`LocalAiState`]), `revealStore`. Events (app scope): `state` (whole state after every change), `progress` (one
-//! model, throttled by the engine), `move` (store move, ~10/s).
+//! [`LocalAiState`]), `revealStore`, `machine` ([`fit::MachineInfo`]: profile read on first call, fit hints,
+//! budget). Events (app scope): `state` (whole state after every change), `progress` (one model, throttled by the
+//! engine), `move` (store move, ~10/s).
 //!
 //! "Remove data" (plugin off): core deletes the plugin's namespace (state + default store); [`Plugin::remove_data`]
 //! first removes the model folders of a chosen store (ONLY `<lineage>/<version>/` of known lineages there),
@@ -16,7 +17,9 @@
 
 pub mod catalog;
 pub mod engine;
+pub mod fit;
 pub mod installs;
+pub mod machine;
 mod relocate;
 pub mod state;
 mod store;
@@ -247,6 +250,21 @@ impl Plugin for LocalAi {
             },
         );
         rpc.extend(register(cx, &installs));
+        // read on the first call only (dormant start)
+        let machine = machine::Machine::new(machine::detect);
+        let (c, i) = (Arc::clone(catalog), Arc::clone(&installs));
+        rpc.extend(cx.rpc(
+            "machine",
+            typed(move |_: NoArgs, _| {
+                let assigned: Vec<String> = i
+                    .state()
+                    .assignments
+                    .into_iter()
+                    .filter_map(|a| a.model)
+                    .collect();
+                Ok::<_, IpcError>(fit::advise(&c, machine.profile(), &assigned))
+            }),
+        ));
         Ok(Box::new(Started {
             _rpc: rpc,
             installs,

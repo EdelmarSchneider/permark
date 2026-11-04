@@ -63,6 +63,8 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock", "s
 interprocess = "2.4.4"
 widestring = "1.2.1"
 winreg = "0.56.0"
+# same version as tauri's (one copy in the lock); COM interfaces windows-sys lacks (DXGI)
+windows = { version = "0.62.2", default-features = false }
 rustix = { version = "1.1.5", features = ["process", "fs"] }
 windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",

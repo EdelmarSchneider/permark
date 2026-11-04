@@ -115,6 +115,35 @@ fn starting_and_answering_creates_nothing_on_disk() {
     assert_eq!(entries(h.tmp.path()), Vec::<String>::new());
 }
 
+/// AC-9: the machine RPC answers the profile, a fit per catalog model, no budget warning (nothing assigned); it
+/// reads only (no file | folder).
+#[test]
+fn the_machine_rpc_advises_on_every_model_and_creates_nothing() {
+    let mut h = Harness::start();
+    let info = h.call("machine").unwrap();
+    assert_eq!(info["profile"]["os"], std::env::consts::OS);
+    let fits = info["fits"].as_object().unwrap();
+    let ids: BTreeSet<&str> = fits.keys().map(String::as_str).collect();
+    let catalog: BTreeSet<&str> = catalog::bundled()
+        .unwrap()
+        .models
+        .iter()
+        .map(|m| m.id.as_str())
+        .collect();
+    assert_eq!(ids, catalog);
+    for fit in fits.values() {
+        assert!(
+            ["runsWell", "slowCpuOnly", "notRecommended", "unknown"]
+                .contains(&fit.as_str().unwrap()),
+            "{fit}"
+        );
+    }
+    assert_eq!(info["budget"], Value::Null);
+    h.running = None;
+    assert!(h.call("machine").is_err());
+    assert_eq!(entries(h.tmp.path()), Vec::<String>::new());
+}
+
 /// Off -> nothing left: the RPC goes with the running plugin.
 #[test]
 fn stopping_removes_the_rpc() {
