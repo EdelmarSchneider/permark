@@ -434,7 +434,12 @@ export function createMockApi(): Api & {
     emit("context-changed", { window: "main", context: context() });
   }
 
-  const shell = createMockShell({ settings: () => settings, changed: announceShell });
+  const shell = createMockShell({
+    settings: () => settings,
+    changed: announceShell,
+    // read when asked (the local AI mock is made below)
+    dataBytes: (plugin) => (plugin === "local-ai" ? localAi.dataBytes() : null),
+  });
   const windowThemes: ("light" | "dark" | null)[] = [];
   const pickedFrom: (string | null)[] = [];
 
@@ -456,6 +461,7 @@ export function createMockApi(): Api & {
     "notes:intent": new Set(),
     "local-ai:state": new Set(),
     "local-ai:progress": new Set(),
+    "local-ai:move": new Set(),
   };
   const distribution = createMockDistribution((event, payload) => {
     for (const handler of appListeners[event]) handler(payload);
@@ -468,9 +474,12 @@ export function createMockApi(): Api & {
     rootNow,
   );
   const convert = createMockConvert((path) => editing.probe.files.get(path) ?? null);
-  const localAi = createMockLocalAi((event, payload) => {
-    for (const handler of appListeners[event]) handler(payload);
-  });
+  const localAi = createMockLocalAi(
+    (event, payload) => {
+      for (const handler of appListeners[event]) handler(payload);
+    },
+    () => [rootNow()],
+  );
   const plugins = createMockPlugins(
     emitPlugin,
     () => mockView("docs/guide.md", [], true)?.hash ?? "0",

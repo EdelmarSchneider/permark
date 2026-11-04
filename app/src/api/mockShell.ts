@@ -86,7 +86,7 @@ export const MOCK_MANIFESTS: readonly Manifest[] = [
 const ok = <T>(value: T): Promise<Result<T>> => Promise.resolve({ ok: true, value });
 
 function refusal<T>(
-  command: "project_config_set" | "plugin_remove_data" | "plugin_set_project",
+  command: "project_config_set" | "plugin_remove_data" | "plugin_data_bytes" | "plugin_set_project",
   kind: "unavailable" | "invalidData" | "unsupported",
   subject: string,
   detail: string | null = null,
@@ -134,7 +134,12 @@ function listProblem(change: ProjectSettingChange): string | null {
 export type MockShell = ReturnType<typeof createMockShell>;
 
 /** `changed`: tells the window the plugins | the window list moved. */
-export function createMockShell(deps: { settings: () => AppSettings; changed: () => void }) {
+export function createMockShell(deps: {
+  settings: () => AppSettings;
+  changed: () => void;
+  /** Bytes a plugin's "Remove data" frees (`null`: nothing to tell). */
+  dataBytes?: (plugin: string) => number | null;
+}) {
   let project = emptyProject();
   /** The folders PerMark was initialized in (the real thing is a `.permark/` folder on disk). */
   const initializedPaths = new Set<string>();
@@ -280,6 +285,11 @@ export function createMockShell(deps: { settings: () => AppSettings; changed: ()
         }
         removed.push(plugin);
         return ok(null);
+      },
+      pluginDataBytes: (plugin: string) => {
+        if (!MOCK_MANIFESTS.some((m) => m.id === plugin))
+          return refusal<number | null>("plugin_data_bytes", "unsupported", plugin);
+        return ok(removed.includes(plugin) ? null : (deps.dataBytes?.(plugin) ?? null));
       },
     },
   };

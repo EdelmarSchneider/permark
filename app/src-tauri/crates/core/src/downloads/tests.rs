@@ -1442,3 +1442,21 @@ fn only_sources_marked_so_accept_a_credential() {
     ask(&web, &a, None, Some(&token())).unwrap();
     assert!(!web.asked()[0].authorized);
 }
+
+#[test]
+fn adopt_records_files_put_in_place_and_refuses_missing_or_resized_ones() {
+    let (_tmp, root) = store();
+    let body = data(1000, 3);
+    let run = start(&root, Arc::new(ScriptedTransport::new()));
+    let u = unit("m", vec![pin("model.gguf", &body)]);
+    let dir = root.join("models");
+    assert_eq!(run.downloads.adopt(&u), Err(DownloadError::Integrity));
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("model.gguf"), &body[..999]).unwrap();
+    assert_eq!(run.downloads.adopt(&u), Err(DownloadError::Integrity));
+    assert!(!run.downloads.is_installed(&u));
+    fs::write(dir.join("model.gguf"), &body).unwrap();
+    run.downloads.adopt(&u).unwrap();
+    assert!(run.downloads.is_installed(&u));
+    assert_eq!(names(&dir), ["m.installed.json", "model.gguf"]);
+}

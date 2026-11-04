@@ -19,7 +19,10 @@ use ts_rs::TS;
 
 pub use enable::{on_ids, resolve_enabled, EnableInputs, Enablement, OffReason};
 pub use facts::{ProjectFacts, RepoHandle, RepoReader};
-pub use files::{ChangeListener, FolderScan, WindowFiles, WindowFilesApi};
+pub use files::{
+    nesting, ChangeListener, FolderReveal, FolderRevealApi, FolderScan, Nesting, ProjectPlaces,
+    ProjectPlacesApi, WindowFiles, WindowFilesApi,
+};
 pub use registry::{PluginRegistry, RegistryError};
 pub use rpc::{typed, GoneHandler, NoArgs, RpcCall, RpcHandler, RpcRegistration, RpcTable};
 pub use services::{ServiceLease, Services};
@@ -153,6 +156,19 @@ pub trait Plugin: Send + Sync {
     /// before the project is built and before `start`. Must be quick (file reads only).
     fn roots(&self, _root: &Root) -> Vec<(String, PathBuf)> {
         Vec::new()
+    }
+    /// Bytes "Remove data" frees that the person is told about first (downloaded models), read from `app` (the app
+    /// state store) while the plugin is off. `None`: nothing worth telling (small state files only).
+    fn data_bytes(&self, _app: &StateStore) -> Option<u64> {
+        None
+    }
+    /// "Remove data" (plugin off everywhere), before core deletes the plugin's namespaces: removes what the plugin
+    /// keeps OUTSIDE them (a folder the person chose), ONLY its own files there.
+    ///
+    /// # Errors
+    /// The removal failed (core then deletes nothing).
+    fn remove_data(&self, _app: &StateStore) -> Result<(), crate::error::IpcError> {
+        Ok(())
     }
 }
 

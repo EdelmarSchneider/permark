@@ -53,7 +53,7 @@ pub struct Shell {
     /// The updater's IO, handed to the plugin `updates` for the app's whole run.
     _updater: Option<ServiceLease>,
     /// The files of a window's workspace, for App-scope plugins (the converter).
-    _files: ServiceLease,
+    _files: Vec<ServiceLease>,
     /// The downloads network + credential store (`DownloadKit`), for plugins fetching pinned files.
     _downloads: ServiceLease,
 }

@@ -4,4 +4,4 @@ import type { DownloadError } from "./DownloadError";
 /**
  * Where one model stands.
  */
-export type InstallState = { "kind": "notInstalled" } | { "kind": "queued" } | { "kind": "downloading", done: number, total: number, } | { "kind": "verifying", done: number, total: number, } | { "kind": "paused", done: number, total: number, } | { "kind": "installed", catalogVersion: number, } | { "kind": "updateAvailable", installedVersion: number, } | { "kind": "failed", error: DownloadError, };
+export type InstallState = { "kind": "notInstalled" } | { "kind": "queued" } | { "kind": "downloading", done: number, total: number, } | { "kind": "verifying", done: number, total: number, } | { "kind": "paused", done: number, total: number, } | { "kind": "installed", catalogVersion: number, } | { "kind": "updateAvailable", installedVersion: number, } | { "kind": "failed", error: DownloadError, } | { "kind": "storeUnavailable" };

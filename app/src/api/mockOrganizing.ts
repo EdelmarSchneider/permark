@@ -46,6 +46,7 @@ export class MockPluginError extends Error {
       | "unavailable"
       | "notFound"
       | "invalidData"
+      | "invalidPath"
       | "denied"
       | "exists"
       | "invalidName"

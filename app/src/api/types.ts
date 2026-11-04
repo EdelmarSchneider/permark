@@ -15,6 +15,8 @@ import type { LocalAiCatalog } from "./generated/LocalAiCatalog";
 import type { AiTaskInfo } from "./generated/AiTaskInfo";
 import type { AiTask } from "./generated/AiTask";
 import type { LocalAiState } from "./generated/LocalAiState";
+import type { StoreMode } from "./generated/StoreMode";
+import type { StoreMove } from "./generated/StoreMove";
 import type { ModelProgress } from "./generated/ModelProgress";
 import type { FolderBadge } from "./generated/FolderBadge";
 import type { FolderBadges } from "./generated/FolderBadges";
@@ -473,6 +475,7 @@ export interface Commands {
   plugins_list: { args: Record<string, never>; result: PluginInfo[] };
   plugin_set_project: { args: { plugin: string; enabled: boolean | null }; result: null };
   plugin_remove_data: { args: { plugin: string }; result: null };
+  plugin_data_bytes: { args: { plugin: string }; result: number | null };
   window_close: { args: Record<string, never>; result: null };
   window_close_answer: { args: { answer: CloseAnswer }; result: null };
   view_saved: { args: { saved: boolean }; result: null };
@@ -659,6 +662,15 @@ export interface PluginMethods {
   /** The token is never sent back: the state says only whether one is set. */
   "local-ai.setToken": { args: { token: string }; result: LocalAiState };
   "local-ai.clearToken": { args: Record<string, never>; result: LocalAiState };
+  /**
+   * Store folder (`path: null` = the default). Refused: `invalidPath` / `notAbsolute`, `denied` / `insideProject` |
+   * `insideStore`, `conflict` / `downloading` | `moving` | `modeRequired` (installed models: pass `mode`).
+   */
+  "local-ai.setStore": { args: { path: string | null; mode?: StoreMode }; result: LocalAiState };
+  /** Stops a running store move (copies removed, the old folder stays in use). */
+  "local-ai.cancelMove": { args: Record<string, never>; result: LocalAiState };
+  /** Shows the store folder in the file manager (`unavailable` / `store` while it does not exist). */
+  "local-ai.revealStore": { args: Record<string, never>; result: null };
   "fmt-toon.toJson": { args: { text: string }; result: string };
   "convert.analyze": {
     args: { job: number; source: ConvertSource; from?: string };
@@ -713,6 +725,8 @@ export interface AppPluginEvents {
   "local-ai:state": LocalAiState;
   /** One model's download progress (throttled). */
   "local-ai:progress": ModelProgress;
+  /** Store move progress (throttled); its end comes as `local-ai:state`. */
+  "local-ai:move": Extract<StoreMove, { kind: "moving" }>;
 }
 export type AppPluginEventName = keyof AppPluginEvents;
 export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };
@@ -1054,6 +1068,8 @@ export interface Api {
   pluginSetProject(plugin: string, enabled: boolean | null): Promise<Result<null>>;
   /** Deletes what a plugin keeps; refused while it is on. */
   pluginRemoveData(plugin: string): Promise<Result<null>>;
+  /** Bytes "Remove data" would free that the plugin reports (downloaded models); `null`: nothing worth telling. */
+  pluginDataBytes(plugin: string): Promise<Result<number | null>>;
   /** Asks this window to close (one prompt when tabs hold unsaved edits: `close-requested`). */
   windowClose(): Promise<Result<null>>;
   /** The answer to the window close prompt. */

@@ -533,6 +533,25 @@ impl Downloads {
         unit::is_installed(&self.shared.store, unit)
     }
 
+    /// Records `unit` installed from files the caller put in its folder (a store move: copied + sha256-verified by the
+    /// caller): every file checked for its pinned size, then the manifest written (LAST), under the store lock.
+    ///
+    /// # Errors
+    /// `Busy` (running here | another instance holds the store), `Integrity` (a file missing | of another size),
+    /// `Disk` (incl. a unit folder that is a link).
+    pub fn adopt(&self, unit: &Unit) -> Result<(), DownloadError> {
+        let store = &self.shared.store;
+        let dir = unit.dir_in(store).map_err(|e| DownloadError::disk(&e))?;
+        let complete = unit.assets().iter().all(|a| {
+            std::fs::symlink_metadata(dir.join(a.name()))
+                .is_ok_and(|m| m.is_file() && m.len() == a.bytes())
+        });
+        if !complete {
+            return Err(DownloadError::Integrity);
+        }
+        self.while_quiet(unit, false, || unit::write_manifest(store, unit))
+    }
+
     /// Startup cleanup in the folders of `units`: removes a part without meta, a meta without part, a pair matching
     /// no pin of `units` (or longer than it), a linked part; lists the valid parts as paused (NEVER restarted).
     /// Scratch names ([`crate::fsx::is_scratch_name`]) + folders untouched. Call before queueing.

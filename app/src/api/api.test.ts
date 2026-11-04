@@ -104,6 +104,19 @@ describe("mock backend", () => {
     expect(reset.ok && reset.value.plugins).toEqual({});
     expect(seen).toEqual(["tone", "pluginEnabled", "pluginEnabled"]);
   });
+
+  it("tells the bytes Remove data frees: local AI models, none after removal", async () => {
+    const mock = createMockApi();
+    const before = await mock.pluginDataBytes("local-ai");
+    expect(before.ok && before.value).toBeGreaterThan(0);
+    const other = await mock.pluginDataBytes("git");
+    expect(other.ok && other.value).toBeNull();
+    expect((await mock.pluginDataBytes("nope")).ok).toBe(false);
+    await mock.settingsSet({ key: "pluginEnabled", value: { plugin: "local-ai", enabled: false } });
+    expect((await mock.pluginRemoveData("local-ai")).ok).toBe(true);
+    const after = await mock.pluginDataBytes("local-ai");
+    expect(after.ok && after.value).toBeNull();
+  });
 });
 
 describe("asIpcError (adversarial)", () => {

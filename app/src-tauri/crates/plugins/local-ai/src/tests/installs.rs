@@ -26,18 +26,18 @@ use crate::installs::{Installs, ModelFor};
 use crate::tasks::Task;
 use crate::{plugin_with, state, ID};
 
-const EMBED: &str = "embeddinggemma-2-q8_0";
-const LFM: &str = "lfm3-1.7b-q4_k_m";
-const E2B: &str = "gemma-4-e2b-it-q4_0";
+pub(super) const EMBED: &str = "embeddinggemma-2-q8_0";
+pub(super) const LFM: &str = "lfm3-1.7b-q4_k_m";
+pub(super) const E2B: &str = "gemma-4-e2b-it-q4_0";
 
 /// Bytes of one test file (differ per model, file, version).
-fn body(model: &str, path: &str, version: u32) -> Vec<u8> {
+pub(super) fn body(model: &str, path: &str, version: u32) -> Vec<u8> {
     format!("{model}|{path}|v{version};")
         .repeat(40)
         .into_bytes()
 }
 
-fn hex(bytes: &[u8]) -> String {
+pub(super) fn hex(bytes: &[u8]) -> String {
     use std::fmt::Write;
     bytes.iter().fold(String::new(), |mut out, b| {
         let _ = write!(out, "{b:02x}");
@@ -46,7 +46,7 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 /// The bundled catalog at `version` with tiny files (+ `edit` on its JSON).
-fn catalog(version: u32, edit: impl FnOnce(&mut Value)) -> Catalog {
+pub(super) fn catalog(version: u32, edit: impl FnOnce(&mut Value)) -> Catalog {
     let mut value: Value = serde_json::from_str(include_str!("../catalog.json")).unwrap();
     for model in value["models"].as_array_mut().unwrap() {
         let id = model["id"].as_str().unwrap().to_owned();
@@ -62,7 +62,7 @@ fn catalog(version: u32, edit: impl FnOnce(&mut Value)) -> Catalog {
     Catalog::parse(&value.to_string()).unwrap()
 }
 
-fn url(catalog: &Catalog, model: &str, file: usize) -> String {
+pub(super) fn url(catalog: &Catalog, model: &str, file: usize) -> String {
     let m = catalog.model(model).unwrap();
     format!(
         "https://huggingface.co/{}/resolve/{}/{}",
@@ -71,7 +71,7 @@ fn url(catalog: &Catalog, model: &str, file: usize) -> String {
 }
 
 /// Answers every file of `catalog` with its body.
-fn serving(catalog: &Catalog) -> ScriptedTransport {
+pub(super) fn serving(catalog: &Catalog) -> ScriptedTransport {
     let mut transport = ScriptedTransport::new();
     for m in &catalog.models {
         for (at, f) in m.files.iter().enumerate() {
@@ -83,16 +83,16 @@ fn serving(catalog: &Catalog) -> ScriptedTransport {
 }
 
 /// Transport that holds requests for one address until opened.
-struct Held {
-    inner: ScriptedTransport,
-    url: String,
-    open: Mutex<bool>,
-    wake: Condvar,
-    reached: AtomicBool,
+pub(super) struct Held {
+    pub(super) inner: ScriptedTransport,
+    pub(super) url: String,
+    pub(super) open: Mutex<bool>,
+    pub(super) wake: Condvar,
+    pub(super) reached: AtomicBool,
 }
 
 impl Held {
-    fn release(&self) {
+    pub(super) fn release(&self) {
         *self.open.lock().unwrap() = true;
         self.wake.notify_all();
     }
@@ -112,46 +112,85 @@ impl Transport for Held {
 }
 
 #[derive(Default)]
-struct Events(Mutex<Vec<(String, Value)>>);
+pub(super) struct Events(
+    pub(super) Mutex<Vec<(String, Value)>>,
+    /// Closed: a `local-ai:move` event waits on the emitting thread until opened (a move held mid-copy).
+    pub(super) Gate,
+);
+
+#[derive(Default)]
+pub(super) struct Gate {
+    closed: Mutex<bool>,
+    wake: Condvar,
+    pub(super) reached: AtomicBool,
+}
+
+impl Gate {
+    pub(super) fn close(&self) {
+        *self.closed.lock().unwrap() = true;
+    }
+
+    pub(super) fn open(&self) {
+        *self.closed.lock().unwrap() = false;
+        self.wake.notify_all();
+    }
+
+    fn pass(&self) {
+        self.reached.store(true, Ordering::SeqCst);
+        let mut closed = self.closed.lock().unwrap();
+        while *closed {
+            closed = self.wake.wait(closed).unwrap();
+        }
+    }
+}
 
 impl EventSink for Events {
     fn emit(&self, event: CoreEvent) {
         if let CoreEvent::Plugin { name, payload } = event {
+            if name == "local-ai:move" {
+                self.1.pass();
+            }
             self.0.lock().unwrap().push((name, payload));
         }
     }
 }
 
 /// One profile across plugin restarts.
-struct Lab {
-    tmp: tempfile::TempDir,
+pub(super) struct Lab {
+    pub(super) tmp: tempfile::TempDir,
     secrets: Arc<MemorySecrets>,
 }
 
-struct Run {
+pub(super) struct Run {
     rpc: Arc<RpcTable>,
-    events: Arc<Events>,
+    pub(super) events: Arc<Events>,
     _kit: ServiceLease,
+    _leases: Vec<ServiceLease>,
     running: Option<Box<dyn Running>>,
 }
 
 impl Lab {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             tmp: tempfile::tempdir().unwrap(),
             secrets: Arc::new(MemorySecrets::default()),
         }
     }
 
-    fn store(&self) -> StateStore {
+    pub(super) fn store(&self) -> StateStore {
         StateStore::app(&AppDirs::under(self.tmp.path()))
     }
 
-    fn models_dir(&self) -> PathBuf {
+    pub(super) fn models_dir(&self) -> PathBuf {
         self.store().plugin_dir(&ID).join("models")
     }
 
-    fn cx(&self, rpc: &Arc<RpcTable>, services: &Arc<Services>, events: &Arc<Events>) -> PluginCx {
+    pub(super) fn cx(
+        &self,
+        rpc: &Arc<RpcTable>,
+        services: &Arc<Services>,
+        events: &Arc<Events>,
+    ) -> PluginCx {
         PluginCx::new(
             ID,
             CxWorkspace::App,
@@ -168,16 +207,27 @@ impl Lab {
         ))
     }
 
-    fn kit(&self, transport: Arc<dyn Transport>) -> DownloadKit {
+    pub(super) fn kit(&self, transport: Arc<dyn Transport>) -> DownloadKit {
         DownloadKit {
             transport,
             secrets: Arc::clone(&self.secrets) as _,
         }
     }
 
-    fn start(&self, catalog: Catalog, transport: Arc<dyn Transport>) -> Run {
+    pub(super) fn start(&self, catalog: Catalog, transport: Arc<dyn Transport>) -> Run {
+        self.start_with(catalog, transport, |_| Vec::new())
+    }
+
+    /// [`Lab::start`] with more app services (`provide` keeps their leases for the run).
+    pub(super) fn start_with(
+        &self,
+        catalog: Catalog,
+        transport: Arc<dyn Transport>,
+        provide: impl FnOnce(&Arc<Services>) -> Vec<ServiceLease>,
+    ) -> Run {
         let rpc = RpcTable::new();
         let services = Services::new();
+        let leases = provide(&services);
         let kit = services.provide(Arc::new(self.kit(transport)));
         let events = Arc::new(Events::default());
         let running = plugin_with(catalog)
@@ -187,13 +237,14 @@ impl Lab {
             rpc,
             events,
             _kit: kit,
+            _leases: leases,
             running: Some(running),
         }
     }
 }
 
 impl Run {
-    fn call(&self, method: &str, args: Value) -> Result<Value, IpcError> {
+    pub(super) fn call(&self, method: &str, args: Value) -> Result<Value, IpcError> {
         self.rpc.call(
             "local-ai",
             method,
@@ -204,11 +255,11 @@ impl Run {
         )
     }
 
-    fn state(&self) -> Value {
+    pub(super) fn state(&self) -> Value {
         self.call("state", json!({})).unwrap()
     }
 
-    fn model(&self, id: &str) -> Value {
+    pub(super) fn model(&self, id: &str) -> Value {
         let state = self.state();
         state["models"]
             .as_array()
@@ -219,7 +270,7 @@ impl Run {
             .unwrap()
     }
 
-    fn wait(&self, id: &str, kind: &str) -> Value {
+    pub(super) fn wait(&self, id: &str, kind: &str) -> Value {
         let start = Instant::now();
         loop {
             let model = self.model(id);
@@ -231,7 +282,7 @@ impl Run {
         }
     }
 
-    fn assigned(&self, task: &str) -> Value {
+    pub(super) fn assigned(&self, task: &str) -> Value {
         let state = self.state();
         state["assignments"]
             .as_array()
@@ -242,7 +293,7 @@ impl Run {
             .clone()
     }
 
-    fn event_names(&self) -> Vec<String> {
+    pub(super) fn event_names(&self) -> Vec<String> {
         self.events
             .0
             .lock()
@@ -252,26 +303,26 @@ impl Run {
             .collect()
     }
 
-    fn stop(&mut self) {
+    pub(super) fn stop(&mut self) {
         self.running = None;
     }
 }
 
-fn model_args(id: &str) -> Value {
+pub(super) fn model_args(id: &str) -> Value {
     json!({ "model": id })
 }
 
-fn refused(result: Result<Value, IpcError>, kind: ErrorKind, detail: &str) {
+pub(super) fn refused(result: Result<Value, IpcError>, kind: ErrorKind, detail: &str) {
     let error = result.unwrap_err();
     assert_eq!(error.kind, kind, "{error:?}");
     assert_eq!(error.detail.as_deref(), Some(detail), "{error:?}");
 }
 
-fn version_dir(lab: &Lab, lineage: &str, version: u32) -> PathBuf {
+pub(super) fn version_dir(lab: &Lab, lineage: &str, version: u32) -> PathBuf {
     lab.models_dir().join(lineage).join(version.to_string())
 }
 
-fn files_in(dir: &Path) -> Vec<String> {
+pub(super) fn files_in(dir: &Path) -> Vec<String> {
     let mut names = entries(dir);
     names.sort();
     names
@@ -291,7 +342,9 @@ fn the_state_query_on_a_fresh_profile_creates_nothing() {
         .unwrap()
         .iter()
         .all(|m| m["state"]["kind"] == "notInstalled" && m["installedVersion"].is_null()));
-    assert_eq!(state["storeIsDefault"], true);
+    assert_eq!(state["store"]["isDefault"], true);
+    assert_eq!(state["store"]["available"], true);
+    assert_eq!(state["storeMove"], Value::Null);
     assert_eq!(state["tokenSet"], false);
     assert_eq!(
         state["assignments"].as_array().unwrap().len(),
@@ -605,6 +658,7 @@ fn model_for_answers_the_assigned_installed_model() {
         lab.models_dir(),
         cx.state_file(state::FILE),
         cx.events().clone(),
+        crate::StoreLinks::default(),
     );
     assert_eq!(installs.model_for(Task::Dictation), ModelFor::NoModel);
     installs.get("whisper-large-v3-turbo-q5_0").unwrap();
@@ -638,10 +692,15 @@ fn the_state_survives_a_restart() {
     run.wait(LFM, "installed");
     run.call("assign", json!({"task": "assistant", "model": LFM}))
         .unwrap();
-    let before = run.state();
+    // free space moves with the rest of the disk
+    let without_free = |mut state: Value| {
+        state["store"]["freeBytes"] = Value::Null;
+        state
+    };
+    let before = without_free(run.state());
     run.stop();
     let run = lab.start(cat.clone(), Arc::new(serving(&cat)));
-    assert_eq!(run.state(), before);
+    assert_eq!(without_free(run.state()), before);
     assert_eq!(run.assigned("assistant"), LFM);
 }
 

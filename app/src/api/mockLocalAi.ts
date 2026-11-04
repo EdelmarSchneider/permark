@@ -2,6 +2,9 @@
 // shapes as the real plugin), the task list, installs (timer-driven downloads, terms, token, assignments). In memory.
 // Fixtures cover every install state: installed, update available, too large for the mock disk, terms to accept,
 // paused at 42 %, gated (token), failed (trying again fails its check), long German name with CJK languages (small).
+// Store: default folder; a chosen one (refused inside | holding a mock project); move by timer steps (cancel, fail
+// fixture `probe.failMove`) | keep (each folder keeps its own models). A chosen folder whose name has "unplugged" in
+// it is gone (store unavailable) - the unavailable fixture for dev:mock.
 
 import TASKS from "../plugins/local-ai/tasks.json";
 import { accepts } from "../plugins/local-ai/tasks";
@@ -15,6 +18,8 @@ import type { LocalAiCatalog } from "./generated/LocalAiCatalog";
 import type { LocalAiState } from "./generated/LocalAiState";
 import type { ModelLicense } from "./generated/ModelLicense";
 import type { ModelStatus } from "./generated/ModelStatus";
+import type { StoreMode } from "./generated/StoreMode";
+import type { StoreMove } from "./generated/StoreMove";
 import { MockPluginError } from "./mockOrganizing";
 import type { AppPluginEventName, AppPluginEvents, PluginMethods } from "./types";
 
@@ -32,6 +37,9 @@ type LocalAiMethods = Pick<
   | "local-ai.assign"
   | "local-ai.setToken"
   | "local-ai.clearToken"
+  | "local-ai.setStore"
+  | "local-ai.cancelMove"
+  | "local-ai.revealStore"
 >;
 
 const APACHE: ModelLicense = {
@@ -188,9 +196,26 @@ export type LocalAiProbe = {
   freeSpace: number;
   /** The next download ends in this failure (`null`: per fixture). */
   failNext: DownloadError | null;
-  /** Stops the download timer (tests). */
+  /** The next store move ends in this failure (`null`: it succeeds). */
+  failMove: DownloadError | null;
+  /** Stops the download + move timers (tests). */
   stopAll(): void;
 };
+
+/** Default store of the mock profile. */
+export const MOCK_DEFAULT_STORE =
+  "C:\\Users\\mock\\AppData\\Roaming\\PerMark\\plugins\\local-ai\\models";
+
+/** Path as compared: `/` separators, no trailing one, case folded (Windows-like mock). */
+function keyOf(path: string): string {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+/** One folder is the other or inside it, either way. */
+function overlap(a: string, b: string): boolean {
+  const [x, y] = [keyOf(a), keyOf(b)];
+  return x === y || x.startsWith(`${y}/`) || y.startsWith(`${x}/`);
+}
 
 /** In-memory activity of one model (absent = look at what is installed). */
 type Live =
@@ -204,16 +229,24 @@ const FLAKY = "embeddinggemma-300m-q4_0";
 
 export function createMockLocalAi(
   emit: <E extends AppPluginEventName>(event: E, payload: AppPluginEvents[E]) => void = () => {},
+  /** Open + recent project folders (a store must stay clear of them). */
+  projectFolders: () => string[] = () => [],
 ) {
   // the shared fixture is the Rust table (parity test); JSON import is typed structurally
   const tasks = TASKS.tasks as AiTaskInfo[];
   const models = MOCK_CATALOG.models;
   const byId = new Map(models.map((m) => [m.id, m]));
-  /** Lineage -> installed version. */
-  const installed = new Map<string, number>([
+  /** Lineage -> installed version, of the store in use. */
+  let installed = new Map<string, number>([
     ["embeddinggemma-2", 1],
     ["gemma-4-e2b-it", 1],
   ]);
+  /** Store key -> what it holds (the one in use included). */
+  const shelves = new Map<string, Map<string, number>>([[keyOf(MOCK_DEFAULT_STORE), installed]]);
+  /** Chosen store (`null`: the default). */
+  let chosen: string | null = null;
+  let storeMove: StoreMove | null = null;
+  let moveTimer: ReturnType<typeof setInterval> | null = null;
   const live = new Map<string, Live>([
     [WHISPER, { kind: "paused", done: Math.round(574_041_195 * 0.42) }],
     [FLAKY, { kind: "failed", done: 83_400_000, error: { kind: "offline" } }],
@@ -234,11 +267,30 @@ export function createMockLocalAi(
     stepMs: 400,
     freeSpace: MOCK_FREE_SPACE,
     failNext: null,
+    failMove: null,
     stopAll: () => {
       if (timer !== null) clearInterval(timer);
       timer = null;
+      stopMove();
     },
   };
+
+  function stopMove(): void {
+    if (moveTimer !== null) clearInterval(moveTimer);
+    moveTimer = null;
+  }
+
+  function storePath(): string {
+    return chosen ?? MOCK_DEFAULT_STORE;
+  }
+
+  function available(): boolean {
+    return chosen === null || !keyOf(chosen).includes("unplugged");
+  }
+
+  function bytesOf(lineage: string): number {
+    return models.find((m) => m.lineage === lineage)?.bytes ?? 0;
+  }
 
   function modelOf(id: string): CatalogModel {
     const found = byId.get(id);
@@ -264,7 +316,8 @@ export function createMockLocalAi(
     if (now?.kind === "paused") return { kind: "paused", done: now.done, total };
     if (now?.kind === "failed") return { kind: "failed", error: now.error };
     const version = installed.get(m.lineage);
-    if (version === undefined) return { kind: "notInstalled" };
+    if (version === undefined)
+      return available() ? { kind: "notInstalled" } : { kind: "storeUnavailable" };
     return version < m.catalogVersion
       ? { kind: "updateAvailable", installedVersion: version }
       : { kind: "installed", catalogVersion: version };
@@ -287,8 +340,15 @@ export function createMockLocalAi(
         const m = models.find((x) => x.lineage === lineage && installed.has(x.lineage));
         return { task, model: m?.id ?? null };
       }),
-      store: "C:\\Users\\mock\\AppData\\Roaming\\PerMark\\plugins\\local-ai\\models",
-      storeIsDefault: true,
+      store: {
+        path: storePath(),
+        isDefault: chosen === null,
+        available: available(),
+        freeBytes: available() ? probe.freeSpace : null,
+        usedBytes: [...installed.keys()].reduce((sum, lineage) => sum + bytesOf(lineage), 0),
+        partialBytes: [...live.values()].reduce((sum, now) => sum + now.done, 0),
+      },
+      storeMove: storeMove === null ? null : { ...storeMove },
       tokenSet,
       acceptedLicenses: [...accepted],
     };
@@ -367,8 +427,79 @@ export function createMockLocalAi(
     if (queue.length === 0) probe.stopAll();
   }
 
+  function notMoving(): void {
+    if (storeMove?.kind === "moving") throw new MockPluginError("conflict", "store", "moving");
+  }
+
+  /** Uses `to` (`null`: the default) from now on; its own models listed, the old store's activity forgotten. */
+  function switchTo(to: string | null): void {
+    chosen = to;
+    const key = keyOf(storePath());
+    installed = shelves.get(key) ?? new Map<string, number>();
+    shelves.set(key, installed);
+    live.clear();
+  }
+
+  /** One move step: +10 %; done -> the new store in use (fails with `probe.failMove`). */
+  function moveStep(to: string | null): void {
+    if (storeMove?.kind !== "moving") {
+      stopMove();
+      return;
+    }
+    if (storeMove.done < storeMove.total) {
+      storeMove.done = Math.min(storeMove.total, storeMove.done + Math.ceil(storeMove.total / 10));
+      emit("local-ai:move", { ...storeMove });
+      return;
+    }
+    stopMove();
+    const failure = probe.failMove;
+    probe.failMove = null;
+    if (failure !== null) {
+      storeMove = { kind: "failed", to: storeMove.to, error: failure };
+    } else {
+      const moved = installed;
+      shelves.delete(keyOf(storePath()));
+      storeMove = null;
+      switchTo(to);
+      for (const [lineage, version] of moved) installed.set(lineage, version);
+    }
+    announce();
+  }
+
+  function setStore(path: string | null, mode: StoreMode | undefined): LocalAiState {
+    notMoving();
+    if (path !== null && !/^([A-Za-z]:[\\/]|\/)/.test(path))
+      throw new MockPluginError("invalidPath", path, "notAbsolute");
+    const to = path === null || keyOf(path) === keyOf(MOCK_DEFAULT_STORE) ? null : path;
+    if (keyOf(to ?? MOCK_DEFAULT_STORE) === keyOf(storePath())) return state();
+    if (to !== null) {
+      if (overlap(to, storePath()) || overlap(to, MOCK_DEFAULT_STORE))
+        throw new MockPluginError("denied", to, "insideStore");
+      if (projectFolders().some((project) => overlap(to, project)))
+        throw new MockPluginError("denied", to, "insideProject");
+    }
+    const running = [...live].find(([, now]) => now.kind === "queued" || now.kind === "running");
+    if (running !== undefined) throw new MockPluginError("conflict", running[0], "downloading");
+    const target = to ?? MOCK_DEFAULT_STORE;
+    const has = available() && installed.size > 0;
+    if (has && mode === undefined) throw new MockPluginError("conflict", target, "modeRequired");
+    if (!has || mode === "keep") {
+      switchTo(to);
+      storeMove = null;
+    } else {
+      const total = [...installed.keys()].reduce((sum, lineage) => sum + bytesOf(lineage), 0);
+      storeMove = { kind: "moving", to: target, done: 0, total };
+      stopMove();
+      moveTimer = setInterval(() => moveStep(to), probe.stepMs);
+    }
+    announce();
+    return state();
+  }
+
   function get(id: string): LocalAiState {
     const m = modelOf(id);
+    notMoving();
+    if (!available()) throw new MockPluginError("unavailable", "store");
     const block = blockedOf(m);
     if (block !== null) throw new MockPluginError("denied", id, block);
     if (!busy(id) && installed.get(m.lineage) !== m.catalogVersion) start(m);
@@ -412,6 +543,7 @@ export function createMockLocalAi(
     "local-ai.deletePart": ({ model }) => {
       probe.calls.push(`deletePart ${model}`);
       modelOf(model);
+      notMoving();
       stopped(model, false);
       announce();
       return state();
@@ -419,6 +551,7 @@ export function createMockLocalAi(
     "local-ai.remove": ({ model }) => {
       probe.calls.push(`remove ${model}`);
       const m = modelOf(model);
+      notMoving();
       if (busy(model)) throw new MockPluginError("conflict", model, "downloading");
       installed.delete(m.lineage);
       live.delete(model);
@@ -454,6 +587,29 @@ export function createMockLocalAi(
       announce();
       return state();
     },
+    "local-ai.setStore": ({ path, mode }) => {
+      probe.calls.push(`setStore ${path ?? "-"} ${mode ?? "-"}`);
+      return setStore(path, mode);
+    },
+    "local-ai.cancelMove": () => {
+      probe.calls.push("cancelMove");
+      if (storeMove?.kind === "moving") {
+        stopMove();
+        storeMove = null;
+        announce();
+      }
+      return state();
+    },
+    "local-ai.revealStore": () => {
+      probe.calls.push(`revealStore ${storePath()}`);
+      if (!available()) throw new MockPluginError("unavailable", "store");
+      return null;
+    },
   };
-  return { handlers, probe };
+  /** Bytes "Remove data" frees (the plugins page asks while the plugin is off). */
+  function dataBytes(): number {
+    const now = state().store;
+    return now.usedBytes + now.partialBytes;
+  }
+  return { handlers, probe, dataBytes };
 }
