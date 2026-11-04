@@ -1,8 +1,7 @@
 //! Pictures on the web, fetched only when the person asks (`permark_core::remote` holds the rules): the HTTP client
-//! (`ureq` over rustls with the operating system's certificates, no redirects followed by the client, no cookies, only
-//! public addresses connected to) and the commands of the reading view.
+//! (the app's shared agent, `downloads_http::agent`: OS certificates, no redirects, no cookies, only public addresses
+//! connected to) and the commands of the reading view.
 
-use std::fmt;
 use std::io::Read;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -11,49 +10,8 @@ use permark_core::error::IpcError;
 use permark_core::remote::{self, Answer, Http, NoAnswer, PicturesChoice};
 use permark_core::state::Loaded;
 use permark_core::workspace::ProjectCore;
-use ureq::config::Config;
-use ureq::http::Uri;
-use ureq::unversioned::resolver::{DefaultResolver, ResolvedSocketAddrs, Resolver};
-use ureq::unversioned::transport::{DefaultConnector, NextTimeout};
 
-/// Marks the refusal of [`PublicOnly`] inside a `ureq` error.
-#[derive(Debug)]
-struct LocalAddress;
-
-impl fmt::Display for LocalAddress {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("the name resolves to an address that is not public")
-    }
-}
-
-impl std::error::Error for LocalAddress {}
-
-/// ureq's own resolver, refusing a host with any address that is not public (`remote::is_public`). ureq connects only
-/// to the addresses returned here, so the address checked is the address connected to (no DNS rebinding window); each
-/// new connection is resolved and checked, and a reused connection was checked when it opened (redirect hops included). The system proxy's own address is the person's setup and is
-/// not checked; through a proxy the proxy resolves the picture's host, so only `remote::check_url` applies there.
-///
-/// Uses ureq's `unversioned` API (`Resolver`, `DefaultResolver`, `DefaultConnector`, `Agent::with_parts`), which does
-/// not follow semver: a ureq update may need this adjusted (the tests below fail if the check stops working).
-#[derive(Debug, Default)]
-struct PublicOnly(DefaultResolver);
-
-impl Resolver for PublicOnly {
-    fn resolve(
-        &self,
-        uri: &Uri,
-        config: &Config,
-        timeout: NextTimeout,
-    ) -> Result<ResolvedSocketAddrs, ureq::Error> {
-        let addrs = self.0.resolve(uri, config, timeout)?;
-        let proxy = config.proxy().is_some_and(|proxy| proxy.uri() == uri);
-        if proxy || addrs.iter().all(|addr| remote::is_public(addr.ip())) {
-            Ok(addrs)
-        } else {
-            Err(ureq::Error::Other(Box::new(LocalAddress)))
-        }
-    }
-}
+use crate::downloads_http::{agent, refused_local, Patience};
 
 struct Ureq {
     agent: OnceLock<ureq::Agent>,
@@ -62,27 +20,12 @@ struct Ureq {
 impl Ureq {
     fn agent(&self) -> &ureq::Agent {
         self.agent
-            .get_or_init(|| agent(ureq::Proxy::try_from_env()))
+            .get_or_init(|| agent(ureq::Proxy::try_from_env(), PATIENCE))
     }
 }
 
-/// The client: rustls with the operating system's certificates, no redirects, no cookies, timeouts, [`PublicOnly`];
-/// `proxy` = the system proxy in the app (`HTTPS_PROXY` | `ALL_PROXY`, `NO_PROXY`).
-fn agent(proxy: Option<ureq::Proxy>) -> ureq::Agent {
-    let tls = ureq::tls::TlsConfig::builder()
-        .root_certs(ureq::tls::RootCerts::PlatformVerifier)
-        .build();
-    let config = ureq::Agent::config_builder()
-        .tls_config(tls)
-        .proxy(proxy)
-        .max_redirects(0)
-        .http_status_as_error(false)
-        .timeout_connect(Some(Duration::from_secs(15)))
-        .timeout_global(Some(Duration::from_secs(30)))
-        .build();
-    // ureq `unversioned` API (see `PublicOnly`): may need adjusting on ureq updates
-    ureq::Agent::with_parts(config, DefaultConnector::default(), PublicOnly::default())
-}
+/// Whole request within 30 s (pictures are small).
+const PATIENCE: Patience = Patience::Total(Duration::from_secs(30));
 
 impl Http for Ureq {
     fn get(&self, url: &str, limit: u64) -> Result<Answer, NoAnswer> {
@@ -94,9 +37,12 @@ impl Http for Ureq {
                 "image/avif,image/webp,image/png,image/jpeg,image/gif,image/bmp",
             )
             .call()
-            .map_err(|error| match error {
-                ureq::Error::Other(inner) if inner.is::<LocalAddress>() => NoAnswer::LocalAddress,
-                _ => NoAnswer::Offline,
+            .map_err(|error| {
+                if refused_local(&error) {
+                    NoAnswer::LocalAddress
+                } else {
+                    NoAnswer::Offline
+                }
             })?;
         let header = |name: &str| {
             response
@@ -171,11 +117,11 @@ mod tests {
 
     use permark_core::remote::{Http, NoAnswer};
 
-    use super::{agent, Ureq};
+    use super::{agent, Ureq, PATIENCE};
 
     fn client(proxy: Option<ureq::Proxy>) -> Ureq {
         Ureq {
-            agent: OnceLock::from(agent(proxy)),
+            agent: OnceLock::from(agent(proxy, PATIENCE)),
         }
     }
 

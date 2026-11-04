@@ -435,7 +435,11 @@ impl Transport for Trickle {
 
 #[test]
 fn part_and_meta_names_are_not_scratch_names() {
-    for name in ["model.gguf.part", "model.gguf.part.meta", "m.installed.json"] {
+    for name in [
+        "model.gguf.part",
+        "model.gguf.part.meta",
+        "m.installed.json",
+    ] {
         assert!(!crate::fsx::is_scratch_name(name), "{name}");
     }
 }
@@ -510,7 +514,8 @@ fn the_sources_credential_goes_to_the_first_host_only() {
     let secrets = Arc::new(MemorySecrets::default());
     secrets.set(&Source::HUGGING_FACE, token()).unwrap();
     let run = start_with(&root, web.clone(), Some(secrets), plenty);
-    run.downloads.enqueue(unit("m", vec![pin("model.gguf", &body)]));
+    run.downloads
+        .enqueue(unit("m", vec![pin("model.gguf", &body)]));
     assert_eq!(run.end("m").1, Update::Done);
     let auth: Vec<bool> = web.asked().iter().map(|a| a.authorized).collect();
     assert_eq!(auth, [true, false]);
@@ -541,7 +546,10 @@ fn a_dropped_transfer_resumes_by_range_after_a_restart_and_a_rehash() {
     );
     let meta = fs::read_to_string(dir.join("model.gguf.part.meta")).unwrap();
     assert!(meta.contains(&url_of("model.gguf")), "{meta}");
-    assert!(!meta.contains("X-Sig") && !meta.contains("cdn-lfs"), "{meta}");
+    assert!(
+        !meta.contains("X-Sig") && !meta.contains("cdn-lfs"),
+        "{meta}"
+    );
     // app restart: a new engine on the same store
     let run = start(&root, web.clone());
     run.downloads.enqueue(u);
@@ -669,13 +677,17 @@ fn bytes_beyond_the_pin_are_never_kept() {
         ),
         // not announced: reading stops at the pinned size, the pin decides
         (unannounced(&body), Update::Done),
-        (unannounced(&other), Update::Failed(DownloadError::Integrity)),
+        (
+            unannounced(&other),
+            Update::Failed(DownloadError::Integrity),
+        ),
     ];
     for (answer, want) in cases {
         let (_tmp, root) = store();
         let web = Arc::new(ScriptedTransport::new().answer(&url_of("model.gguf"), answer));
         let run = start(&root, web);
-        run.downloads.enqueue(unit("m", vec![pin("model.gguf", &body)]));
+        run.downloads
+            .enqueue(unit("m", vec![pin("model.gguf", &body)]));
         let done = want == Update::Done;
         assert_eq!(run.end("m").1, want);
         let dir = root.join("models");
@@ -892,11 +904,14 @@ fn a_multi_file_unit_is_installed_only_after_every_file_verifies() {
         );
         assert!(!run.downloads.is_installed(&u));
     }
-    assert_eq!(names(&dir), ["model.gguf"], "verified file kept, no manifest");
-    // the verified file is checked again, not fetched again
-    let web = Arc::new(
-        ScriptedTransport::new().answer(&url_of("tokenizer.json"), Scripted::ok(&vocab)),
+    assert_eq!(
+        names(&dir),
+        ["model.gguf"],
+        "verified file kept, no manifest"
     );
+    // the verified file is checked again, not fetched again
+    let web =
+        Arc::new(ScriptedTransport::new().answer(&url_of("tokenizer.json"), Scripted::ok(&vocab)));
     let run = start(&root, web.clone());
     run.downloads.enqueue(u.clone());
     let (progress, end) = run.end("qwen");

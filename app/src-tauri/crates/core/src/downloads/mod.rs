@@ -260,6 +260,35 @@ pub struct Paused {
     pub total: u64,
 }
 
+/// The app's real network + credential store, offered as an app service (`services.get::<DownloadKit>()`, app crate
+/// provides it): a plugin builds its own [`Downloads`] over its store root with [`DownloadKit::downloads`].
+#[derive(Clone)]
+pub struct DownloadKit {
+    pub transport: Arc<dyn Transport>,
+    pub secrets: Arc<dyn SecretStore>,
+}
+
+impl std::fmt::Debug for DownloadKit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DownloadKit").finish_non_exhaustive()
+    }
+}
+
+impl DownloadKit {
+    /// Engine over `store` with this kit's transport + credentials ([`Downloads::new`]).
+    ///
+    /// # Errors
+    /// The worker thread could not start.
+    pub fn downloads(&self, store: PathBuf, listener: Listener) -> io::Result<Downloads> {
+        Downloads::new(
+            store,
+            Arc::clone(&self.transport),
+            Some(Arc::clone(&self.secrets)),
+            listener,
+        )
+    }
+}
+
 /// Free bytes on the volume of a path (seam: tests inject a full disk).
 type FreeSpace = fn(&Path) -> io::Result<u64>;
 
@@ -600,11 +629,7 @@ impl Shared {
             return Ok(());
         }
         let dir = unit.dir_in(&self.store);
-        let remaining: u64 = unit
-            .assets()
-            .iter()
-            .map(|a| part::remaining(&dir, a))
-            .sum();
+        let remaining: u64 = unit.assets().iter().map(|a| part::remaining(&dir, a)).sum();
         if remaining > 0 {
             let needed = remaining.saturating_add(MARGIN.max(remaining / 100));
             let free = (self.free_space)(&dir).map_err(|e| DownloadError::disk(&e))?;

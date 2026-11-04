@@ -68,11 +68,14 @@ impl Unit {
 
     /// Folder of the unit's files in `store`.
     pub(super) fn dir_in(&self, store: &Path) -> PathBuf {
-        self.folder.iter().fold(store.to_path_buf(), |p, s| p.join(s))
+        self.folder
+            .iter()
+            .fold(store.to_path_buf(), |p, s| p.join(s))
     }
 
     fn manifest_path(&self, store: &Path) -> PathBuf {
-        self.dir_in(store).join(format!("{}.installed.json", self.id))
+        self.dir_in(store)
+            .join(format!("{}.installed.json", self.id))
     }
 
     fn manifest(&self) -> Manifest {

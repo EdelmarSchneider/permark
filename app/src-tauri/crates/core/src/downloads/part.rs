@@ -135,7 +135,13 @@ impl Fetch<'_> {
 
     /// GET from byte `from` (`0`: whole file), redirects + allowlist in [`open`].
     fn ask(&self, asset: &Asset, from: u64) -> Result<Response, DownloadError> {
-        open(self.transport, asset, (from > 0).then_some(from), self.secret).map(|o| o.response)
+        open(
+            self.transport,
+            asset,
+            (from > 0).then_some(from),
+            self.secret,
+        )
+        .map(|o| o.response)
     }
 }
 
@@ -208,7 +214,15 @@ fn transfer(
     };
     let mut file = open_part(asset, files, done)?;
     if let Some(mut body) = body {
-        stream(cx, asset, &mut *body, &mut file, &mut hasher, &mut done, meter)?;
+        stream(
+            cx,
+            asset,
+            &mut *body,
+            &mut file,
+            &mut hasher,
+            &mut done,
+            meter,
+        )?;
     }
     meter.tick(done, Phase::Verifying, true);
     if done != asset.bytes() || hasher.finalize().as_slice() != asset.sha256() {
@@ -287,8 +301,7 @@ fn request(
         response = cx.ask(asset, 0)?;
     }
     if response.status == 206 {
-        let (start, total) =
-            content_range(&response).ok_or(DownloadError::Http { status: 206 })?;
+        let (start, total) = content_range(&response).ok_or(DownloadError::Http { status: 206 })?;
         if total.is_some_and(|t| t != asset.bytes()) {
             return Err(DownloadError::Integrity);
         }
