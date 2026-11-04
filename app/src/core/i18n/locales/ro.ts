@@ -1957,6 +1957,9 @@ export default {
   "plugin.token-count.name": "Numărul de tokeni",
   "plugin.token-count.about":
     "Tokenii unui document, ai unei selecții sau ai unei secțiuni, după tokenizerul ales; exact acolo unde tokenizerul este public, aproximativ (și marcat ca atare) unde nu este.",
+  "plugin.local-ai.name": "AI local",
+  "plugin.local-ai.about":
+    "Modele AI mici care rulează pe acest computer, offline, pentru a ajuta PerMark să corecteze, să traducă și să găsească după sens. Nu se descarcă nimic până nu ceri.",
 
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} rând",

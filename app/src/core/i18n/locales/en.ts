@@ -1820,6 +1820,9 @@ const en = {
   "plugin.token-count.name": "Token count",
   "plugin.token-count.about":
     "Tokens of a document, a selection or a section by the tokenizer you choose; exact where the tokenizer is public, approximate (and marked) where it is not.",
+  "plugin.local-ai.name": "Local AI",
+  "plugin.local-ai.about":
+    "Small AI models that run on this computer, offline, to help PerMark correct, translate and find by meaning. Nothing is downloaded until you ask.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} row",
   "config.table.rows.other": "{n} rows",

@@ -1870,6 +1870,9 @@ export default {
   "plugin.token-count.name": "トークン数",
   "plugin.token-count.about":
     "選んだトークナイザーで数えた、ドキュメント、選択範囲、セクションのトークン数。トークナイザーが公開されていれば正確に、公開されていなければ概算で（印付きで）表示します。",
+  "plugin.local-ai.name": "ローカル AI",
+  "plugin.local-ai.about":
+    "このコンピューター上でオフラインで動く小さな AI モデルです。PerMark の校正、翻訳、意味による検索を助けます。求められるまで何もダウンロードしません。",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} 行",
   "config.table.rows.other": "{n} 行",

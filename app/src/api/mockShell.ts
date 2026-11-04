@@ -48,6 +48,7 @@ export const MOCK_MANIFESTS: readonly Manifest[] = [
   manifest("md-family", "role", "app"),
   manifest("word-count", "analysis", "app"),
   manifest("token-count", "analysis", "app"),
+  manifest("local-ai", "feature", "app"),
   manifest("prompt-blocks", "embed", "app"),
   manifest("frontmatter-card", "embed", "app"),
   manifest("highlight", "embed", "app"),

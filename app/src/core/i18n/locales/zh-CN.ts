@@ -1768,6 +1768,9 @@ export default {
   "plugin.token-count.name": "Token 计数",
   "plugin.token-count.about":
     "按所选分词器统计文档、所选内容或章节的 token；分词器公开时为精确值，否则为近似值（并会标明）。",
+  "plugin.local-ai.name": "本地 AI",
+  "plugin.local-ai.about":
+    "在这台电脑上离线运行的小型 AI 模型，帮助 PerMark 校对、翻译和按含义查找。在你要求之前，不会下载任何内容。",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} 行",
   "config.table.rows.other": "{n} 行",

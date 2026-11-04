@@ -270,7 +270,7 @@ describe("the plugins page", () => {
 
   it("every plugin is listed once, grouped by kind, with its switch on", async () => {
     await pluginsPage();
-    expect(target.querySelectorAll(".plugin")).toHaveLength(34);
+    expect(target.querySelectorAll(".plugin")).toHaveLength(35);
     const groups = Array.from(target.querySelectorAll("section.group h3")).map(
       (h) => h.textContent,
     );

@@ -11,6 +11,8 @@ import type { ShellState } from "./generated/ShellState";
 import type { UpdateState } from "./generated/UpdateState";
 import type { CountResult } from "./generated/CountResult";
 import type { TokenCountState } from "./generated/TokenCountState";
+import type { LocalAiCatalog } from "./generated/LocalAiCatalog";
+import type { AiTaskInfo } from "./generated/AiTaskInfo";
 import type { FolderBadge } from "./generated/FolderBadge";
 import type { FolderBadges } from "./generated/FolderBadges";
 import type { FolderJob } from "./generated/FolderJob";
@@ -637,6 +639,8 @@ export interface PluginMethods {
     args: { tokenizers: string[]; text: string; parts?: [number, number][] };
     result: CountResult[];
   };
+  "local-ai.catalog": { args: Record<string, never>; result: LocalAiCatalog };
+  "local-ai.tasks": { args: Record<string, never>; result: AiTaskInfo[] };
   "fmt-toon.toJson": { args: { text: string }; result: string };
   "convert.analyze": {
     args: { job: number; source: ConvertSource; from?: string };

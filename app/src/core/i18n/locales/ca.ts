@@ -1879,6 +1879,9 @@ export default {
   "plugin.token-count.name": "Recompte de tokens",
   "plugin.token-count.about":
     "Tokens d'un document, d'una selecció o d'una secció segons el tokenitzador que trieu; exactes quan el tokenitzador és públic, aproximats (i marcats) quan no ho és.",
+  "plugin.local-ai.name": "IA local",
+  "plugin.local-ai.about":
+    "Models d'IA petits que funcionen en aquest ordinador, sense connexió, perquè PerMark ajudi a corregir, traduir i trobar pel significat. No es baixa res fins que ho demaneu.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} fila",
   "config.table.rows.other": "{n} files",
