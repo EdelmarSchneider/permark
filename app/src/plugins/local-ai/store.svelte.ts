@@ -4,6 +4,7 @@
 
 import { api as defaultApi, type Api, type ApiError, type Result, type Unlisten } from "../../api";
 import type { CatalogModel } from "../../api/generated/CatalogModel";
+import type { InstallState } from "../../api/generated/InstallState";
 import type { LocalAiCatalog } from "../../api/generated/LocalAiCatalog";
 import type { LocalAiState } from "../../api/generated/LocalAiState";
 import type { MachineInfo } from "../../api/generated/MachineInfo";
@@ -24,6 +25,29 @@ export type Load =
   | { status: "ready" }
   | { status: "failed"; error: ApiError };
 
+/** A download moment the page announces: start, each quarter, done, failure (never every tick). */
+export type Milestone = { model: string; step: "started" | 25 | 50 | 75 | "done" | "failed" };
+
+const RUNNING: ReadonlySet<InstallState["kind"]> = new Set(["queued", "downloading", "verifying"]);
+const QUARTERS = [null, 25, 50, 75] as const;
+
+/** Quarter a download has reached (0..3; `null`: not downloading). */
+function quarter(state: InstallState): number | null {
+  if (state.kind !== "downloading" || state.total <= 0) return null;
+  return Math.min(3, Math.floor((state.done / state.total) * 4));
+}
+
+/** What one model's change from `before` to `after` tells the person (`null`: nothing worth saying). */
+export function milestoneOf(before: InstallState, after: InstallState): Milestone["step"] | null {
+  const was = RUNNING.has(before.kind);
+  if (after.kind === "failed") return before.kind === "failed" ? null : "failed";
+  if (after.kind === "installed") return was ? "done" : null;
+  if (!RUNNING.has(after.kind)) return null;
+  if (!was) return "started";
+  const [from, to] = [quarter(before), quarter(after)];
+  return from !== null && to !== null && to > from ? (QUARTERS[to] ?? null) : null;
+}
+
 /** Assignments in one string: a change asks this computer's budget again. */
 function assignmentKey(state: LocalAiState): string {
   return state.assignments.map((a) => `${a.task}=${a.model ?? ""}`).join(",");
@@ -36,6 +60,8 @@ export class LocalAiStore {
   /** This computer, fits, budget warning (`null` until asked by a card). */
   machine = $state.raw<MachineInfo | null>(null);
   load = $state.raw<Load>({ status: "idle" });
+  /** Latest download milestone (the Models card's live region). */
+  milestone = $state.raw<Milestone | null>(null);
   readonly #api: Api;
   readonly #client: PluginClient;
   /** Pages open (one per window in practice). */
@@ -77,6 +103,7 @@ export class LocalAiStore {
     this.state = null;
     this.catalog = null;
     this.machine = null;
+    this.milestone = null;
     this.load = { status: "idle" };
   }
 
@@ -173,6 +200,7 @@ export class LocalAiStore {
 
   #apply(state: LocalAiState): void {
     const before = this.state;
+    this.#note(before, state);
     this.state = state;
     // the budget follows the assignments (the backend reckons it)
     if (
@@ -185,12 +213,24 @@ export class LocalAiStore {
   #progress(progress: ModelProgress): void {
     const state = this.state;
     if (state === null) return;
-    this.state = {
+    const next = {
       ...state,
       models: state.models.map((m) =>
         m.model === progress.model ? { ...m, state: progress.state } : m,
       ),
     };
+    this.#note(state, next);
+    this.state = next;
+  }
+
+  /** Keeps the last milestone between two states (the first read announces nothing). */
+  #note(before: LocalAiState | null, after: LocalAiState): void {
+    if (before === null) return;
+    for (const now of after.models) {
+      const was = before.models.find((m) => m.model === now.model);
+      const step = was === undefined ? null : milestoneOf(was.state, now.state);
+      if (step !== null) this.milestone = { model: now.model, step };
+    }
   }
 
   #moving(move: Extract<StoreMove, { kind: "moving" }>): void {

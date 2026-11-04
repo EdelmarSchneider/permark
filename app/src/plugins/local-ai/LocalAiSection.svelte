@@ -1,11 +1,12 @@
 <script lang="ts">
-  // Settings > Local AI: what each job uses, then (later units) the models, this computer, the storage, the token.
+  // Settings > Local AI: what each job uses, the models, then (later units) this computer, the storage, the token.
   // Opening it reads the state; it never starts a download. Opened from the palette: the keyboard lands on the first
   // control.
   import { tick, untrack } from "svelte";
   import { t } from "../../core/i18n";
   import { ui } from "../../core/shell/ui.svelte";
   import JobsCard from "./JobsCard.svelte";
+  import ModelsCard from "./ModelsCard.svelte";
   import { LOCAL_AI_PAGE, localAi } from "./store.svelte";
   import { errorText } from "./words";
 
@@ -44,7 +45,8 @@
   {:else if load.status === "ready"}
     <p class="intro">{t("localAi.intro")}</p>
     <JobsCard />
-    <!-- Models, This computer, Storage, Token cards: later units, in this order -->
+    <ModelsCard />
+    <!-- This computer, Storage, Token cards: later units, in this order -->
   {:else}
     <p class="quiet">{t("app.loading")}</p>
   {/if}

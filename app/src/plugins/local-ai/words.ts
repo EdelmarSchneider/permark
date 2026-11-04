@@ -2,6 +2,7 @@
 // person reads "Search by meaning", "Runs slowly here", "3.4 GB".
 
 import type { ApiError } from "../../api";
+import type { DownloadError } from "../../api/generated/DownloadError";
 import type { ModelFit } from "../../api/generated/ModelFit";
 import { apiErrorText } from "../../core/errors";
 import { language, t, tn, type MessageKey } from "../../core/i18n";
@@ -114,6 +115,39 @@ export function sizeText(bytes: number): string {
     unit: giga ? "gigabyte" : "megabyte",
     maximumFractionDigits: giga ? 1 : 0,
   }).format(bytes / (giga ? 1e9 : 1e6));
+}
+
+/** A share of a download: "42%" (rounded down: 100% only when it is all there). */
+export function percentText(done: number, total: number): string {
+  const share = total > 0 ? Math.floor((Math.min(done, total) / total) * 100) / 100 : 0;
+  return new Intl.NumberFormat(language.locale, { style: "percent" }).format(share);
+}
+
+/** Why a download stopped, in words. */
+export function downloadErrorText(error: DownloadError): string {
+  switch (error.kind) {
+    case "offline":
+      return t("localAi.dl.failed.offline");
+    case "http":
+      return t("localAi.dl.failed.http", { status: error.status });
+    case "hostNotAllowed":
+      return t("localAi.dl.failed.hostNotAllowed");
+    case "integrity":
+      return t("localAi.dl.failed.integrity");
+    case "noSpace":
+      return t("localAi.dl.failed.noSpace", {
+        needed: sizeText(error.needed),
+        free: sizeText(error.free),
+      });
+    case "disk":
+      return t("localAi.dl.failed.disk");
+    case "cancelled":
+      return t("localAi.dl.failed.cancelled");
+    case "busy":
+      return t("localAi.dl.failed.busy");
+    default:
+      return error satisfies never;
+  }
 }
 
 /** A refusal's reason (backend detail | subject) -> its own words; anything else -> the general error text. */

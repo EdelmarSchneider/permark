@@ -156,15 +156,15 @@ describe("what each job uses", () => {
 
   it("warns, in words and with an icon, when the assigned models need more memory than this computer has", async () => {
     await openPage();
-    expect(target.querySelector('[role="status"]')).toBeNull();
+    expect(target.querySelector('.budget[role="status"]')).toBeNull();
     if (component) await unmount(component);
     component = null;
     localAi.stop();
     probe.machine = { ...structuredClone(MOCK_MACHINE), ramTotal: 1 * GIB, gpus: [] };
     target.replaceChildren();
     await openPage();
-    await until(() => target.querySelector('[role="status"]') !== null, "the warning shows");
-    const warning = target.querySelector('[role="status"]');
+    await until(() => target.querySelector('.budget[role="status"]') !== null, "the warning shows");
+    const warning = target.querySelector('.budget[role="status"]');
     expect(warning?.textContent).toMatch(/memory/);
     expect(warning?.querySelector("svg")).not.toBeNull();
   });
