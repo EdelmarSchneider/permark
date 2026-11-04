@@ -290,6 +290,7 @@ fn outline(data: &Value) -> String {
     let mut out = Header::new("outline")
         .kv("path", s(data, "path"))
         .kv("kind", kind)
+        .opt("records", u(data, "records"))
         .opt("lines", u(data, "lines"))
         .opt("spec", data.get("spec").and_then(Value::as_str))
         .flag(
@@ -398,6 +399,8 @@ fn read(data: &Value) -> String {
     let mut out = Header::new("read")
         .kv("path", s(data, "path"))
         .opt("at", (!at.is_empty()).then_some(at))
+        .opt("index", u(data, "index"))
+        .opt("line", u(data, "line"))
         .opt("lines", range(data.get("lines")))
         .line();
     out.push('\n');

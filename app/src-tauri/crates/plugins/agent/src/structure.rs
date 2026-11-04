@@ -3,7 +3,7 @@
 //! Text leaves as the file holds it; `.aiignore` and the hidden paths keep whole files away (`guard.rs`).
 
 use permark_core::format::config::SheetKind;
-use permark_core::format::{ext_of, sections, FormatRegistry, Sheet};
+use permark_core::format::{ext_of, records, sections, FormatRegistry, Sheet};
 use permark_core::tokens::{estimate, Counted};
 use serde_json::{json, Value};
 
@@ -14,6 +14,7 @@ use crate::ToolError;
 enum Kind {
     Markdown,
     Json,
+    JsonLines,
     Text,
 }
 
@@ -27,6 +28,7 @@ fn kind_of(path: &str) -> Kind {
     match ext_of(path).as_deref() {
         Some("md" | "markdown" | "mdown" | "mkd" | "mdx" | "mdc") => Kind::Markdown,
         Some("json" | "jsonc" | "json5") => Kind::Json,
+        Some("jsonl" | "ndjson" | "jsonlines") => Kind::JsonLines,
         _ => Kind::Text,
     }
 }
@@ -280,6 +282,10 @@ pub fn outline(
                 .collect();
             json!({ "path": path, "kind": "json", "valid": valid, "lines": lines, "items": items })
         }
+        Kind::JsonLines => {
+            let count = records(text).len();
+            json!({ "path": path, "kind": "jsonl", "records": count, "lines": lines, "items": [] })
+        }
         Kind::Text => json!({ "path": path, "kind": "text", "lines": lines, "items": [] }),
     };
     sizer.name_tokenizer(&mut answer);
@@ -325,6 +331,34 @@ pub fn section_size(
 #[must_use]
 pub fn file_size(text: &str) -> u64 {
     estimate(text)
+}
+
+/// `R12` / `r12`: the 1-based record index. Anything else is not this form (`R0`, `R`, `R12a`).
+fn record_index(at: &str) -> Option<u32> {
+    let rest = at.strip_prefix(['R', 'r'])?;
+    if rest.is_empty() || !rest.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    rest.parse::<u32>().ok().filter(|n| *n >= 1)
+}
+
+/// The record `at` names, when `path` is JSON Lines and `at` is `R<index>`.
+/// `Err(NotFound)` is out of range. `None`: `at` is not that form.
+fn json_line(path: &str, text: &str, at: &str) -> Option<Result<Value, ToolError>> {
+    if kind_of(path) != Kind::JsonLines {
+        return None;
+    }
+    let index = record_index(at)?;
+    let Some(record) = records(text).into_iter().find(|r| r.index == index) else {
+        return Some(Err(ToolError::NotFound(at.to_owned())));
+    };
+    Some(Ok(json!({
+        "path": path,
+        "at": at,
+        "index": record.index,
+        "line": record.line,
+        "text": record.text,
+    })))
 }
 
 /// Lines asked by `at`: `L12-L40` (also `12-40`) | `L12` (from line 12 on) | `L12:301` (from character 301 of line 12
@@ -411,6 +445,11 @@ pub fn read(
 ) -> Result<Value, ToolError> {
     let total = line_count(text);
     let at = at.map(str::trim).filter(|a| !a.is_empty());
+    if let Some(at) = at {
+        if let Some(answer) = json_line(path, text, at) {
+            return answer;
+        }
+    }
     let config = sheet_of(formats, path, text);
     let (from, to, column) = match at {
         None => (1, total, 1),
@@ -426,7 +465,7 @@ pub fn read(
                             json_parts(text).into_iter().map(|(p, _)| p).collect();
                         parts.iter().find(|p| p.at == at).map(|p| (p.from, p.to))
                     }
-                    Kind::Text => None,
+                    Kind::JsonLines | Kind::Text => None,
                 };
                 let (a, b) = found.ok_or_else(|| ToolError::NotFound(at.to_owned()))?;
                 (a, b, 1)
@@ -559,6 +598,8 @@ mod tests {
     fn json_outline_and_read_by_key() {
         let text = "{\n  \"name\": \"x\",\n  \"auth\": {\n    \"token\": \"t-1\"\n  },\n  \"list\": [1, 2]\n}\n";
         let value = outline(&FormatRegistry::core(), "a.json", text, None);
+        assert_eq!(value["kind"], "json");
+        assert!(value.get("records").is_none(), "a .json outline stays key paths");
         let items = value["items"].as_array().unwrap();
         assert_eq!(items.len(), 3);
         assert_eq!(items[1]["at"], "auth");
@@ -568,6 +609,114 @@ mod tests {
         assert_eq!(
             auth["text"],
             "  \"auth\": {\n    \"token\": \"t-1\"\n  },\n"
+        );
+        assert!(matches!(
+            read(&FormatRegistry::core(), "a.json", text, Some("R1")),
+            Err(ToolError::NotFound(_))
+        ));
+        // lines of JSON in a .json file stay one JSON value, not records
+        let lines = "{\"a\":1}\n{\"b\":2}\n";
+        let as_json = outline(&FormatRegistry::core(), "rows.json", lines, None);
+        assert_eq!(as_json["kind"], "json");
+        assert!(as_json.get("records").is_none());
+    }
+
+    #[test]
+    fn json_lines_outline_is_a_count() {
+        let text = "\n{\"a\":1}\r\n \t\nnot json\n";
+        for path in ["session.jsonl", "session.NDJSON", "session.JsonLines"] {
+            let value = outline(&FormatRegistry::core(), path, text, None);
+            assert_eq!(value["kind"], "jsonl", "{path}");
+            assert_eq!(value["records"], 2, "{path}");
+            assert_eq!(value["items"], json!([]), "{path}");
+            assert!(value.get("valid").is_none(), "{path}: no validity flag");
+            let shown = crate::render::render("outline", &value);
+            assert!(
+                shown.contains("kind=jsonl") && shown.contains("records=2"),
+                "{shown}"
+            );
+        }
+        let empty = outline(&FormatRegistry::core(), "empty.jsonl", "", None);
+        assert_eq!(empty["records"], 0);
+        assert_eq!(empty["items"], json!([]));
+        let plain = outline(&FormatRegistry::core(), "notes.txt", text, None);
+        assert_eq!(plain["kind"], "text");
+        assert!(plain.get("records").is_none());
+    }
+
+    #[test]
+    fn read_one_json_lines_record_by_index() {
+        let text = "\n{\"a\":1}\r\n \t\nnot json\n";
+        let one = read(
+            &FormatRegistry::core(),
+            "session.jsonl",
+            text,
+            Some("R1"),
+        )
+        .unwrap();
+        assert_eq!(one["index"], 1);
+        assert_eq!(one["line"], 2);
+        assert_eq!(one["text"], "{\"a\":1}");
+        let shown = crate::render::render("read", &one);
+        assert!(shown.contains("index=1") && shown.contains("line=2"), "{shown}");
+        assert!(shown.contains("{\"a\":1}"), "{shown}");
+        let raw = read(
+            &FormatRegistry::core(),
+            "session.jsonl",
+            text,
+            Some("r2"),
+        )
+        .unwrap();
+        assert_eq!(raw["index"], 2);
+        assert_eq!(raw["line"], 4);
+        assert_eq!(raw["text"], "not json");
+        assert_eq!(
+            read(&FormatRegistry::core(), "session.jsonl", text, Some("R9")).unwrap_err(),
+            ToolError::NotFound("R9".to_owned())
+        );
+        assert!(matches!(
+            read(&FormatRegistry::core(), "session.jsonl", text, Some("R0")),
+            Err(ToolError::NotFound(_))
+        ));
+        // line forms stay; a missing `at` still reads the file
+        let line = read(
+            &FormatRegistry::core(),
+            "session.jsonl",
+            text,
+            Some("L2-L2"),
+        )
+        .unwrap();
+        assert_eq!(line["text"], "{\"a\":1}\r\n");
+        assert!(line.get("index").is_none());
+        let from = read(
+            &FormatRegistry::core(),
+            "session.jsonl",
+            text,
+            Some("L2"),
+        )
+        .unwrap();
+        assert!(from["text"].as_str().unwrap().starts_with("{\"a\":1}\r\n"));
+        assert!(from.get("index").is_none());
+        let all = read(&FormatRegistry::core(), "session.jsonl", text, None).unwrap();
+        assert!(all.get("index").is_none());
+        assert!(all["text"].as_str().unwrap().contains("not json"));
+        assert!(matches!(
+            read(&FormatRegistry::core(), "notes.txt", text, Some("R1")),
+            Err(ToolError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn a_json_lines_file_over_the_read_cap_stays_too_large() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("big.jsonl");
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len(crate::tools::MAX_READ_BYTES + 1)
+            .unwrap();
+        assert_eq!(
+            crate::tools::read_text(&path).unwrap_err(),
+            ToolError::Invalid("too large".to_owned())
         );
     }
 

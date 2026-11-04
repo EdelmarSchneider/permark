@@ -5,6 +5,7 @@
 mod analysis;
 pub mod config;
 mod contrib;
+mod json_lines;
 mod markdown;
 mod registry;
 mod viewers;
@@ -22,13 +23,14 @@ pub use contrib::{
     Contributions, Field, FieldValue, FrontMatterParser, FrontMatterSyntax, KeyRole,
     MarkdownFeature, MarkdownFeatures, PromptBlocks, RoleMatch, RoleRule, DEFAULT_PROMPT_TAGS,
 };
+pub use json_lines::{records, JsonLineRecord};
 pub use markdown::{
     sections, segments, units, LockReason, MarkdownFormat, Section, Segment, SegmentKind, TextUnit,
 };
 pub use registry::FormatRegistry;
 pub use viewers::{media_of, MediaFormat, TextViewer, MEDIA_EXTENSIONS};
 
-/// Identity of a format (`markdown | text | json | xml | media`).
+/// Identity of a format (`markdown | text | json | jsonl | xml | media`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct FormatId(pub &'static str);
@@ -37,6 +39,7 @@ impl FormatId {
     pub const MARKDOWN: Self = Self("markdown");
     pub const TEXT: Self = Self("text");
     pub const JSON: Self = Self("json");
+    pub const JSONL: Self = Self("jsonl");
     pub const XML: Self = Self("xml");
     pub const MEDIA: Self = Self("media");
     pub const TOML: Self = Self("toml");
