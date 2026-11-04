@@ -479,6 +479,54 @@ impl<'a> Planner<'a> {
     }
 }
 
+/// The destination token that points from `doc` at `target`, written as `inner` was (`form`).
+///
+/// `None` when the two paths are not in the same root. `#anchor`, `?query`, angle brackets, percent-encoding,
+/// `\` or `/`, a leading `./` and a missing `.md` stay as `inner` wrote them.
+#[must_use]
+pub fn replacement_href(doc: &str, inner: &str, form: Form, target: &str) -> Option<String> {
+    // an HTML value with an entity, or space around it, is not rewritten (same as a move)
+    if form == Form::Html && (inner.contains('&') || inner.trim() != inner) {
+        return None;
+    }
+    let (path_raw, suffix) = split_suffix(inner);
+    let path = if form == Form::Html {
+        path_raw.to_owned()
+    } else {
+        unescape(path_raw)
+    };
+    if path.is_empty()
+        || path.starts_with("//")
+        || path.starts_with("\\\\")
+        || scheme_of(&path).is_some()
+        || path.as_bytes().get(1) == Some(&b':')
+    {
+        return None;
+    }
+    let decoded = percent_decode(&path).replace('\\', "/");
+    let root_relative = decoded.starts_with('/');
+    let bare = decoded.trim_end_matches('/');
+    // the link left `.md` out, so an `.md` file is written without it
+    let written = if !bare.is_empty() && !is_md(bare) && is_md(target) {
+        strip_md(target).to_owned()
+    } else {
+        target.to_owned()
+    };
+    let (doc_root, doc_inner) = split_root(doc);
+    let (target_root, target_inner) = split_root(&written);
+    if doc_root != target_root {
+        return None;
+    }
+    let rel = if root_relative {
+        format!("/{target_inner}")
+    } else {
+        let mut dir = segments(doc_inner);
+        dir.pop();
+        relative_path(&dir, &segments(target_inner))
+    };
+    Some(render_path(&rel, suffix, style_of(form, &path, &decoded)))
+}
+
 /// Applies edits (sorted, not overlapping) to the text they were made from.
 pub(crate) fn apply_edits(text: &str, edits: &[LinkEdit]) -> String {
     let mut out = String::with_capacity(text.len());

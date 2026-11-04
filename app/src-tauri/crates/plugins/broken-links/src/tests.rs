@@ -1,11 +1,11 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use permark_core::conditions::Distribution;
 use permark_core::events::{CoreEvent, EventSink};
-use permark_core::paths::Root;
+use permark_core::paths::{key_of, Root};
 use permark_core::plugins::{PluginId, PluginRegistry, RpcCall};
 use permark_core::settings::AppSettings;
 use permark_core::state::AppDirs;
@@ -467,6 +467,153 @@ fn the_cap_keeps_the_opened_folders_links_before_a_worktrees() {
     assert!(report.truncated);
     assert_eq!(report.current, 2);
     assert_eq!(report.roots, [root("", 2), root("@wt/big", 600)]);
+}
+
+/// `key_of(file name)` -> project paths, the shape `files_keyed` returns.
+fn by_name(pairs: &[(&str, &[&str])]) -> HashMap<String, Vec<String>> {
+    pairs
+        .iter()
+        .map(|(name, paths)| {
+            (
+                key_of(name),
+                paths.iter().copied().map(str::to_owned).collect(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one story: one, several, zero, other root, .md only when omitted
+fn candidates_are_same_root_files_of_that_name_and_md_only_when_it_was_left_out() {
+    assert_eq!(
+        candidates(
+            "a/note.md",
+            "old/plan.md",
+            &by_name(&[("plan.md", &["notes/plan.md", "@wt/other/plan.md"])])
+        ),
+        ["notes/plan.md"],
+        "one same-root match; the other root is not a candidate"
+    );
+    assert_eq!(
+        candidates(
+            "a/note.md",
+            "old/plan.md",
+            &by_name(&[(
+                "plan.md",
+                &["z/plan.md", "m/plan.md", "@wt/other/x/plan.md"]
+            )])
+        ),
+        ["m/plan.md", "z/plan.md"],
+        "several, in path order"
+    );
+    assert!(
+        candidates(
+            "a/note.md",
+            "old/plan.md",
+            &by_name(&[("other.md", &["notes/other.md"])])
+        )
+        .is_empty(),
+        "zero"
+    );
+    assert!(
+        candidates(
+            "a/note.md",
+            "old/plan.md",
+            &by_name(&[("plan.md", &["@wt/other/plan.md"])])
+        )
+        .is_empty(),
+        "the only match is another root"
+    );
+    assert_eq!(
+        candidates(
+            "@wt/feature/a/note.md",
+            "old/plan.md",
+            &by_name(&[(
+                "plan.md",
+                &[
+                    "notes/plan.md",
+                    "@wt/feature/c/plan.md",
+                    "@wt/other/plan.md"
+                ]
+            )])
+        ),
+        ["@wt/feature/c/plan.md"],
+        "a worktree matches only itself"
+    );
+    assert_eq!(
+        candidates(
+            "a/note.md",
+            "old/plan",
+            &by_name(&[
+                ("plan", &["notes/plan"]),
+                ("plan.md", &["notes/plan.md", "c/plan.md"]),
+                ("plan.md.md", &["notes/plan.md.md"]),
+            ])
+        ),
+        ["c/plan.md", "notes/plan", "notes/plan.md"],
+        "a basename without .md also asks for that name plus .md"
+    );
+    assert_eq!(
+        candidates(
+            "a/note.md",
+            "old/plan.md",
+            &by_name(&[
+                ("plan", &["notes/plan"]),
+                ("plan.md", &["notes/plan.md"]),
+                ("plan.md.md", &["notes/plan.md.md"]),
+            ])
+        ),
+        ["notes/plan.md"],
+        ".md is not added when the basename already ends in it"
+    );
+    assert_eq!(
+        candidates(
+            "a/note.md",
+            "pics/shot.png",
+            &by_name(&[
+                ("shot.png", &["img/shot.png"]),
+                ("shot.png.md", &["img/shot.png.md"]),
+                ("shot.md", &["img/shot.md"]),
+            ])
+        ),
+        ["img/shot.png", "img/shot.png.md"],
+        "another extension is not stripped; .md is added only as a suffix"
+    );
+    assert_eq!(
+        candidates(
+            "a/note.md",
+            "old/docs/",
+            &by_name(&[
+                ("README.md", &["docs/README.md"]),
+                ("index.md", &["docs/index.md"]),
+                ("docs.md", &["ref/docs.md"]),
+            ])
+        ),
+        ["ref/docs.md"],
+        "a folder link is not another folder's readme"
+    );
+    assert!(
+        candidates("a/note.md", "#top", &HashMap::new()).is_empty(),
+        "a pure anchor names no file"
+    );
+    assert!(
+        candidates(
+            "a/note.md",
+            "https://example.com/plan.md",
+            &by_name(&[("plan.md", &["notes/plan.md"])])
+        )
+        .is_empty(),
+        "a scheme names no file"
+    );
+    assert_eq!(
+        candidates(
+            "a/note.md",
+            "old/plan.md?q=1#section",
+            &by_name(&[("plan.md", &["notes/plan.md"])])
+        ),
+        ["notes/plan.md"],
+        "query and anchor do not change the name"
+    );
 }
 
 #[test]

@@ -11,7 +11,7 @@ use unicode_normalization::UnicodeNormalization;
 use super::ignore::{named, Entry, Frames, Ignorer};
 use super::{category_of, NodeKind, RootKind, Unlisted, LARGE_FOLDER};
 use crate::fsx::is_scratch_name;
-use crate::paths::{fold, WORKTREE_PREFIX};
+use crate::paths::{fold, key_of as path_key, WORKTREE_PREFIX};
 
 /// Folders deeper than this are listed unopened.
 pub(crate) const MAX_DEPTH: usize = 100;
@@ -303,6 +303,26 @@ impl TreeModel {
                     .entry(node.name.clone())
                     .or_default()
                     .push(node.path.clone());
+            }
+        }
+        found
+    }
+
+    /// Listed files (not ignored) by `paths::key_of` of the name: key -> project paths, every root.
+    pub(crate) fn files_keyed(
+        &self,
+        names: &std::collections::HashSet<String>,
+    ) -> HashMap<String, Vec<String>> {
+        let keys: std::collections::HashSet<String> =
+            names.iter().map(|name| path_key(name)).collect();
+        let mut found: HashMap<String, Vec<String>> = HashMap::new();
+        for node in self.nodes.values() {
+            if node.is_dir() || node.ignored {
+                continue;
+            }
+            let key = path_key(&node.name);
+            if keys.contains(&key) {
+                found.entry(key).or_default().push(node.path.clone());
             }
         }
         found

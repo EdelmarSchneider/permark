@@ -25,7 +25,7 @@ use permark_core::plugins::{
 use permark_core::tree::Explorer;
 use permark_core::watch::{FsBatch, Subscription};
 
-pub use check::{root_of, Checker, MAX_DOC_BYTES};
+pub use check::{candidates, root_of, Checker, MAX_DOC_BYTES};
 pub use types::{BrokenDoc, BrokenLink, BrokenReport, BrokenRoot, BrokenSummary};
 
 const ID: PluginId = PluginId::of("broken-links");

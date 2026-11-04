@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use super::*;
 use crate::events::{CoreEvent, Recorder};
-use crate::paths::{Root, Vault};
+use crate::paths::{key_of, Root, Vault, CASE_INSENSITIVE};
 use crate::settings::{ProjectConfig, TreeConfig, TreeShow};
 use crate::watch::{Change, ChangeKind, FsBatch};
 
@@ -1328,6 +1328,82 @@ fn documents_lists_markdown_outside_ignored_folders() {
         })
     );
     assert_eq!(f.explorer.listed("nope.md"), None);
+}
+
+#[test]
+fn files_keyed_folds_the_name_in_every_root_and_files_named_stays_exact() {
+    let main = tempfile::tempdir().unwrap();
+    let wt = tempfile::tempdir().unwrap();
+    for rel in [
+        "notes/Plan.md",
+        "other/plan.md",
+        "pic/shot.png",
+        "hidden/plan.md",
+        "nest/plan.md",
+        "folder/plan.md/",
+        ".gitignore",
+    ] {
+        write(main.path(), rel);
+    }
+    write(wt.path(), "plan.md");
+    fs::write(main.path().join(".gitignore"), "nest/\nhidden/plan.md\n").unwrap();
+    let vault = Vault::new(Root::open(main.path()).unwrap())
+        .with_worktrees([("w".to_owned(), wt.path().to_path_buf())]);
+    let explorer = Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        Arc::new(Recorder::default()),
+        None,
+    );
+    let asked: HashSet<String> = ["plan.md", "Plan.md", "shot.png"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    let exact = explorer.files_named(&asked);
+    let mut lower = exact.get("plan.md").cloned().unwrap_or_default();
+    lower.sort();
+    assert_eq!(
+        lower,
+        ["@wt/w/plan.md".to_owned(), "other/plan.md".to_owned()],
+        "exact name, every root; ignored files and directories stay out"
+    );
+    let mut titled = exact.get("Plan.md").cloned().unwrap_or_default();
+    titled.sort();
+    assert_eq!(titled, ["notes/Plan.md".to_owned()]);
+    let mut shots = exact.get("shot.png").cloned().unwrap_or_default();
+    shots.sort();
+    assert_eq!(shots, ["pic/shot.png".to_owned()]);
+
+    let keyed = explorer.files_keyed(&asked);
+    let mut plans = keyed.get(&key_of("plan.md")).cloned().unwrap_or_default();
+    plans.sort();
+    if CASE_INSENSITIVE {
+        assert_eq!(
+            plans,
+            [
+                "@wt/w/plan.md".to_owned(),
+                "notes/Plan.md".to_owned(),
+                "other/plan.md".to_owned(),
+            ]
+        );
+    } else {
+        assert_eq!(
+            plans,
+            ["@wt/w/plan.md".to_owned(), "other/plan.md".to_owned()]
+        );
+        let mut titled = keyed.get(&key_of("Plan.md")).cloned().unwrap_or_default();
+        titled.sort();
+        assert_eq!(titled, ["notes/Plan.md".to_owned()]);
+    }
+    let mut shots = keyed.get(&key_of("shot.png")).cloned().unwrap_or_default();
+    shots.sort();
+    assert_eq!(shots, ["pic/shot.png".to_owned()]);
+    assert!(
+        keyed.values().flatten().all(|path| {
+            !path.contains("hidden") && !path.contains("nest") && !path.contains("folder")
+        }),
+        "{keyed:?}"
+    );
 }
 
 // ---- scan + linked files --------------------------------------------------------------------------------------------

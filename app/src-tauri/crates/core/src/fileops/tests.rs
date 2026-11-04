@@ -232,6 +232,76 @@ fn backslash_separators_and_missing_extensions_are_kept() {
 }
 
 #[test]
+fn a_repair_token_keeps_the_suffix_and_the_written_style_and_refuses_another_root() {
+    use crate::links::Form;
+    let doc = "a/note.md";
+    let target = "b/plan.md";
+    assert_eq!(
+        replacement_href(doc, "old/plan.md#section", Form::Bare, target),
+        Some("../b/plan.md#section".to_owned())
+    );
+    assert_eq!(
+        replacement_href(doc, "old/plan.md?q=1", Form::Bare, target),
+        Some("../b/plan.md?q=1".to_owned())
+    );
+    assert_eq!(
+        replacement_href(doc, "old/plan.md?q=1#section", Form::Bare, target),
+        Some("../b/plan.md?q=1#section".to_owned())
+    );
+    assert_eq!(
+        replacement_href(doc, "old/plan#section", Form::Bare, target),
+        Some("../b/plan#section".to_owned()),
+        "a missing .md stays missing"
+    );
+    assert_eq!(
+        replacement_href(doc, "pics/shot.png", Form::Bare, "img/shot.png"),
+        Some("../img/shot.png".to_owned())
+    );
+    assert_eq!(
+        replacement_href(doc, "old/plan.md#s", Form::Angle, target),
+        Some("<../b/plan.md#s>".to_owned())
+    );
+    assert_eq!(
+        replacement_href(doc, "old/my%20plan.md", Form::Bare, "b/my plan.md"),
+        Some("../b/my%20plan.md".to_owned())
+    );
+    assert_eq!(
+        replacement_href("a.md", "sub\\b.md", Form::Bare, "other/b.md"),
+        Some("other\\b.md".to_owned())
+    );
+    assert_eq!(
+        replacement_href(doc, "./plan.md", Form::Bare, "a/plan.md"),
+        Some("./plan.md".to_owned())
+    );
+    assert_eq!(
+        replacement_href(doc, "old/plan.md#s", Form::Bare, "@wt/other/b/plan.md"),
+        None
+    );
+    assert_eq!(
+        replacement_href("@wt/mine/a/note.md", "old/plan.md", Form::Bare, "b/plan.md"),
+        None
+    );
+    assert_eq!(
+        replacement_href(
+            "@wt/mine/a/note.md",
+            "old/plan.md",
+            Form::Bare,
+            "@wt/other/b/plan.md"
+        ),
+        None
+    );
+    assert_eq!(
+        replacement_href(
+            "@wt/mine/a/note.md",
+            "old/plan.md#section",
+            Form::Bare,
+            "@wt/mine/b/plan.md"
+        ),
+        Some("../b/plan.md#section".to_owned())
+    );
+}
+
+#[test]
 fn code_front_matter_math_broken_external_and_anchor_links_are_left_alone() {
     let text = "---\nlink: b.md\n---\n`[c](b.md)` ```b.md``` \n\n```\n[d](b.md)\n```\n\n$[m](b.md)$ [gone](missing.md) [web](https://b.md) [mail](mailto:b.md) [self](#b.md)\n";
     let f = fx(&[("a.md", text), ("b.md", ""), ("z/", "")]);
