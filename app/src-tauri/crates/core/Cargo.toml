@@ -17,6 +17,7 @@ thiserror.workspace = true
 dunce.workspace = true
 unicode-normalization.workspace = true
 xxhash-rust.workspace = true
+sha2.workspace = true
 toml_edit.workspace = true
 dirs.workspace = true
 interprocess.workspace = true

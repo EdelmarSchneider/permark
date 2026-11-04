@@ -32,6 +32,30 @@ pub(super) fn move_replace_write_through(from: &Path, to: &Path) -> io::Result<(
     }
 }
 
+/// `GetDiskFreeSpaceExW(folder)`: bytes free for the calling user (quotas counted).
+// Documented FFI: no std wrapper for free space. The argument is a NUL-terminated wide string owned by this function
+// and alive for the whole call; the out value is a local `u64`; the two totals not asked are null (allowed).
+#[allow(unsafe_code)]
+pub(super) fn free_space(folder: &Path) -> io::Result<u64> {
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+    let folder = wide(&extended(folder))?;
+    let mut free: u64 = 0;
+    // SAFETY: `folder` is a live NUL-terminated buffer; `free` is a live writable u64; null totals are documented.
+    let ok = unsafe {
+        GetDiskFreeSpaceExW(
+            folder.as_ptr(),
+            &raw mut free,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    if ok == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(free)
+    }
+}
+
 /// `(volume serial, file index)` of `path`; a link | junction is opened itself (`OPEN_REPARSE_POINT`). The handle
 /// (no access asked, every share mode) lives for this call only: never in the way of a rename.
 // Documented FFI: GetFileInformationByHandle has no stable std wrapper (`MetadataExt::file_index` is unstable). The

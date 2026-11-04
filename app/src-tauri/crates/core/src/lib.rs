@@ -5,6 +5,7 @@ pub mod app_info;
 pub mod conditions;
 pub mod desktop;
 pub mod document;
+pub mod downloads;
 pub mod edit;
 pub mod error;
 pub mod events;
