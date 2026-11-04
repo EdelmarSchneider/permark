@@ -116,6 +116,9 @@ pub struct License {
     pub restriction: Option<String>,
     /// Person accepts before the first byte.
     pub needs_acceptance: bool,
+    /// Version of the terms text (e.g. `v1.0`); required when `needs_acceptance`: a new revision asks again.
+    #[serde(default)]
+    pub revision: Option<String>,
 }
 
 /// How an embedding model is used.
@@ -194,6 +197,8 @@ pub enum CatalogError {
     NoFiles(String),
     #[error("model {0}: id | lineage is not a plain folder name")]
     Folder(String),
+    #[error("model {0}: terms to accept need a revision")]
+    License(String),
 }
 
 impl Catalog {
@@ -249,6 +254,15 @@ pub fn validate(catalog: &Catalog) -> Result<(), CatalogError> {
         }
         if model.files.is_empty() {
             return Err(CatalogError::NoFiles(id()));
+        }
+        let license = &model.license;
+        if license.needs_acceptance
+            && license
+                .revision
+                .as_deref()
+                .is_none_or(|r| r.trim().is_empty())
+        {
+            return Err(CatalogError::License(id()));
         }
         for file in &model.files {
             if file.bytes == 0 || !is_hex(&file.sha256, 64) {

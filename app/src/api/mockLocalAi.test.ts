@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { InstallState } from "./generated/InstallState";
 import type { LocalAiState } from "./generated/LocalAiState";
-import { createMockLocalAi, MOCK_CATALOG, MOCK_DEFAULT_STORE, MOCK_MACHINE } from "./mockLocalAi";
+import {
+  createMockLocalAi,
+  MOCK_CATALOG,
+  MOCK_DEFAULT_STORE,
+  MOCK_MACHINE,
+  MOCK_PROFILE,
+} from "./mockLocalAi";
 import { MockPluginError } from "./mockOrganizing";
 import type { AppPluginEventName } from "./types";
 
@@ -121,6 +127,15 @@ describe("local AI mock installs", () => {
     expect(after.models.find((m) => m.model === LFM)?.blocked).toBeNull();
     h["local-ai.get"]({ model: LFM });
     expect(now(LFM)).toEqual({ kind: "queued" });
+    const terms = MOCK_CATALOG.models.filter((m) => m.license.needsAcceptance);
+    expect(terms.every((m) => m.license.revision !== null)).toBe(true);
+  });
+
+  it("refuses a token longer than 1 KiB", () => {
+    const { h } = setup();
+    const long = refusal(() => h["local-ai.setToken"]({ token: "x".repeat(1025) }));
+    expect([long.kind, long.detail]).toEqual(["invalidData", "tooLong"]);
+    expect(h["local-ai.setToken"]({ token: "x".repeat(1024) }).tokenSet).toBe(true);
   });
 
   it("fails what does not fit the disk, and a retry that fails its check", () => {
@@ -167,7 +182,12 @@ describe("local AI mock store", () => {
   it("starts on the default store with its bytes", () => {
     const { h, dataBytes } = setup();
     const { store, storeMove } = h["local-ai.state"]({});
-    expect(store).toMatchObject({ path: MOCK_DEFAULT_STORE, isDefault: true, available: true });
+    expect(store).toMatchObject({
+      path: MOCK_DEFAULT_STORE,
+      isDefault: true,
+      available: true,
+      unavailableReason: null,
+    });
     expect(store.usedBytes).toBe(309_855_456 + 3_398_849_248);
     expect(store.partialBytes).toBeGreaterThan(0);
     expect(store.freeBytes).toBeGreaterThan(0);
@@ -182,6 +202,7 @@ describe("local AI mock store", () => {
     expect(refusal(set("D:/Work/Notes/models")).detail).toBe("insideProject");
     expect(refusal(set("D:/work")).detail).toBe("insideProject");
     expect(refusal(set(`${MOCK_DEFAULT_STORE}/sub`)).detail).toBe("insideStore");
+    expect(refusal(set(`${MOCK_PROFILE}/plugins/notes`)).detail).toBe("insideAppData");
     h["local-ai.get"]({ model: GERMAN });
     const busy = refusal(set("E:/Models"));
     expect([busy.kind, busy.detail]).toEqual(["conflict", "downloading"]);
@@ -243,10 +264,27 @@ describe("local AI mock store", () => {
     h["local-ai.revealStore"]({});
     expect(probe.calls).toContain(`revealStore ${MOCK_DEFAULT_STORE}`);
     const gone = h["local-ai.setStore"]({ path: "F:/Unplugged drive", mode: "keep" });
-    expect(gone.store).toMatchObject({ available: false, freeBytes: null });
+    expect(gone.store).toMatchObject({
+      available: false,
+      unavailableReason: "missing",
+      freeBytes: null,
+    });
     expect(gone.models.every((m) => m.state.kind === "storeUnavailable")).toBe(true);
     expect(refusal(() => h["local-ai.get"]({ model: GERMAN })).kind).toBe("unavailable");
     expect(refusal(() => h["local-ai.revealStore"]({})).kind).toBe("unavailable");
+  });
+
+  it("a store a project opened since overlaps is unavailable with that reason", () => {
+    const projects: string[] = [];
+    const h = createMockLocalAi(
+      () => {},
+      () => projects,
+    ).handlers;
+    h["local-ai.setStore"]({ path: "E:/Models", mode: "keep" });
+    projects.push("E:/");
+    const state = h["local-ai.state"]({});
+    expect(state.store).toMatchObject({ available: false, unavailableReason: "insideProject" });
+    expect(state.models.every((m) => m.state.kind === "storeUnavailable")).toBe(true);
   });
 });
 

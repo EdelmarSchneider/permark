@@ -8,19 +8,22 @@ use permark_core::downloads::Unit;
 use permark_core::state::StateData;
 use serde::{Deserialize, Serialize};
 
-use crate::catalog::{install_folder, unit_of, CatalogError, Model, ModelFile};
+use crate::catalog::{install_folder, unit_of, CatalogError, License, Model, ModelFile};
 use crate::tasks::Task;
 
 /// File name in the plugin's namespace.
 pub const FILE: &str = "state.json";
 
-/// Terms the person accepted before a download (AC-4): one record per license address.
+/// Terms the person accepted before a download (AC-4): one record per license address + terms revision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Acceptance {
     /// Model the person was getting.
     pub model: String,
     pub license_url: String,
+    /// Catalog's terms revision accepted (`None`: a record made before revisions; asked again).
+    #[serde(default)]
+    pub revision: Option<String>,
     /// Unix time, ms.
     pub accepted_at: u64,
 }
@@ -64,12 +67,16 @@ impl Installed {
     }
 }
 
-/// An old version whose removal failed (file held open): removed again when the store next starts.
+/// An old version whose removal failed (file held open | store busy): removed again by the next action that writes
+/// to the store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Stale {
     pub lineage: String,
     pub installed: Installed,
+    /// Store holding it (`None`: a record made before stores were named = the store in use).
+    #[serde(default)]
+    pub store: Option<PathBuf>,
 }
 
 /// The plugin state.
@@ -96,10 +103,12 @@ impl StateData for PluginState {
 }
 
 impl PluginState {
-    /// Terms at `url` already accepted (for any model).
+    /// Terms `license` already accepted (for any model) at its catalog revision.
     #[must_use]
-    pub fn accepted(&self, url: &str) -> bool {
-        self.acceptances.iter().any(|a| a.license_url == url)
+    pub fn accepted(&self, license: &License) -> bool {
+        self.acceptances
+            .iter()
+            .any(|a| a.license_url == license.url && a.revision == license.revision)
     }
 
     /// Drops the tasks assigned to `lineage`.

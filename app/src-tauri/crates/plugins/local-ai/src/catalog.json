@@ -29,7 +29,8 @@
         "spdx": "Apache-2.0",
         "url": "https://www.apache.org/licenses/LICENSE-2.0",
         "restriction": null,
-        "needsAcceptance": false
+        "needsAcceptance": false,
+        "revision": null
       },
       "gated": false,
       "capabilities": ["embed"],
@@ -78,7 +79,8 @@
         "spdx": "Apache-2.0",
         "url": "https://ai.google.dev/gemma/docs/gemma_4_license",
         "restriction": null,
-        "needsAcceptance": false
+        "needsAcceptance": false,
+        "revision": null
       },
       "gated": false,
       "capabilities": ["chat", "tools", "transcribe", "vision"],
@@ -122,7 +124,8 @@
         "spdx": "Apache-2.0",
         "url": "https://ai.google.dev/gemma/docs/gemma_4_license",
         "restriction": null,
-        "needsAcceptance": false
+        "needsAcceptance": false,
+        "revision": null
       },
       "gated": false,
       "capabilities": ["chat", "tools", "transcribe", "vision"],
@@ -159,7 +162,8 @@
         "spdx": null,
         "url": "https://www.liquid.ai/lfm-license",
         "restriction": "Free for organizations under $10M annual revenue",
-        "needsAcceptance": true
+        "needsAcceptance": true,
+        "revision": "v1.0"
       },
       "gated": false,
       "capabilities": ["chat", "tools"],
@@ -196,7 +200,8 @@
         "spdx": "MIT",
         "url": "https://opensource.org/license/mit",
         "restriction": null,
-        "needsAcceptance": false
+        "needsAcceptance": false,
+        "revision": null
       },
       "gated": false,
       "capabilities": ["transcribe"],

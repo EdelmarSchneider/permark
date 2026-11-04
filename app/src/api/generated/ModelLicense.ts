@@ -11,4 +11,8 @@ restriction: string | null,
 /**
  * Person accepts before the first byte.
  */
-needsAcceptance: boolean, };
+needsAcceptance: boolean, 
+/**
+ * Version of the terms text (e.g. `v1.0`); required when `needs_acceptance`: a new revision asks again.
+ */
+revision: string | null, };

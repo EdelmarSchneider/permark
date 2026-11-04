@@ -23,6 +23,7 @@ import type { MachineProfile } from "./generated/MachineProfile";
 import type { ModelFit } from "./generated/ModelFit";
 import type { ModelNeeds } from "./generated/ModelNeeds";
 import type { ModelLicense } from "./generated/ModelLicense";
+import type { StoreUnavailableReason } from "./generated/StoreUnavailableReason";
 import type { ModelStatus } from "./generated/ModelStatus";
 import type { StoreMode } from "./generated/StoreMode";
 import type { StoreMove } from "./generated/StoreMove";
@@ -55,6 +56,7 @@ const APACHE: ModelLicense = {
   url: "https://www.apache.org/licenses/LICENSE-2.0",
   restriction: null,
   needsAcceptance: false,
+  revision: null,
 };
 const MIB = 1_048_576;
 const GIB = 1_073_741_824;
@@ -131,6 +133,7 @@ export const MOCK_CATALOG: LocalAiCatalog = {
         url: "https://www.liquid.ai/lfm-license",
         restriction: "Free for organizations under $10M annual revenue",
         needsAcceptance: true,
+        revision: "v1.0",
       },
       languages: ["en", "ar", "zh", "fr", "de", "it", "ja", "ko", "pt", "es", "vi", "th", "id"],
     }),
@@ -149,6 +152,7 @@ export const MOCK_CATALOG: LocalAiCatalog = {
         url: "https://opensource.org/license/mit",
         restriction: null,
         needsAcceptance: false,
+        revision: null,
       },
     }),
     // mock-only fixtures
@@ -167,6 +171,7 @@ export const MOCK_CATALOG: LocalAiCatalog = {
         url: "https://ai.google.dev/gemma/terms",
         restriction: null,
         needsAcceptance: false,
+        revision: null,
       },
     }),
     model({
@@ -259,8 +264,11 @@ export type LocalAiProbe = {
 };
 
 /** Default store of the mock profile. */
-export const MOCK_DEFAULT_STORE =
-  "C:\\Users\\mock\\AppData\\Roaming\\PerMark\\plugins\\local-ai\\models";
+/** The app's profile folder (a chosen store never lands inside it). */
+export const MOCK_PROFILE = "C:\\Users\\mock\\AppData\\Roaming\\PerMark";
+export const MOCK_DEFAULT_STORE = `${MOCK_PROFILE}\\plugins\\local-ai\\models`;
+/** Longest Hugging Face token taken (as the plugin). */
+const TOKEN_LIMIT = 1024;
 
 /** Path as compared: `/` separators, no trailing one, case folded (Windows-like mock). */
 function keyOf(path: string): string {
@@ -313,7 +321,8 @@ export function createMockLocalAi(
     ["semanticIndex", "embeddinggemma-2"],
     ["correction", "gemma-4-e2b-it"],
   ]);
-  const accepted = new Set<string>();
+  /** License address -> terms revision accepted. */
+  const accepted = new Map<string, string | null>();
   let tokenSet = false;
   /** Waiting downloads; the first one runs (one at a time, as the real engine). */
   const queue: string[] = [];
@@ -341,8 +350,17 @@ export function createMockLocalAi(
     return chosen ?? MOCK_DEFAULT_STORE;
   }
 
+  /** Why the chosen store cannot be used now (`null`: usable). */
+  function unavailableReason(): StoreUnavailableReason | null {
+    if (chosen === null) return null;
+    if (keyOf(chosen).includes("unplugged")) return "missing";
+    const store = chosen;
+    if (projectFolders().some((project) => overlap(store, project))) return "insideProject";
+    return null;
+  }
+
   function available(): boolean {
-    return chosen === null || !keyOf(chosen).includes("unplugged");
+    return unavailableReason() === null;
   }
 
   function bytesOf(lineage: string): number {
@@ -358,7 +376,8 @@ export function createMockLocalAi(
   function blockedOf(m: CatalogModel): GetBlock | null {
     if (m.withdrawn) return "withdrawn";
     if (m.gated && !tokenSet) return "token";
-    if (m.license.needsAcceptance && !accepted.has(m.license.url)) return "license";
+    if (m.license.needsAcceptance && accepted.get(m.license.url) !== m.license.revision)
+      return "license";
     return null;
   }
 
@@ -401,13 +420,14 @@ export function createMockLocalAi(
         path: storePath(),
         isDefault: chosen === null,
         available: available(),
+        unavailableReason: unavailableReason(),
         freeBytes: available() ? probe.freeSpace : null,
         usedBytes: [...installed.keys()].reduce((sum, lineage) => sum + bytesOf(lineage), 0),
         partialBytes: [...live.values()].reduce((sum, now) => sum + now.done, 0),
       },
       storeMove: storeMove === null ? null : { ...storeMove },
       tokenSet,
-      acceptedLicenses: [...accepted],
+      acceptedLicenses: [...accepted.keys()],
     };
   }
 
@@ -532,6 +552,7 @@ export function createMockLocalAi(
     if (to !== null) {
       if (overlap(to, storePath()) || overlap(to, MOCK_DEFAULT_STORE))
         throw new MockPluginError("denied", to, "insideStore");
+      if (overlap(to, MOCK_PROFILE)) throw new MockPluginError("denied", to, "insideAppData");
       if (projectFolders().some((project) => overlap(to, project)))
         throw new MockPluginError("denied", to, "insideProject");
     }
@@ -600,7 +621,7 @@ export function createMockLocalAi(
     "local-ai.acceptLicense": ({ model }) => {
       probe.calls.push(`acceptLicense ${model}`);
       const m = modelOf(model);
-      if (m.license.needsAcceptance) accepted.add(m.license.url);
+      if (m.license.needsAcceptance) accepted.set(m.license.url, m.license.revision);
       announce();
       return state();
     },
@@ -650,6 +671,8 @@ export function createMockLocalAi(
     "local-ai.setToken": ({ token }) => {
       probe.calls.push("setToken");
       if (token.trim() === "") throw new MockPluginError("invalidData", "credentials", "empty");
+      if (new TextEncoder().encode(token.trim()).length > TOKEN_LIMIT)
+        throw new MockPluginError("invalidData", "credentials", "tooLong");
       tokenSet = true;
       announce();
       return state();

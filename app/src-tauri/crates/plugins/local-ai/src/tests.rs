@@ -262,6 +262,7 @@ fn licenses_that_ask_for_acceptance_say_so() {
     let catalog = catalog::bundled().unwrap();
     let lfm = catalog.model("lfm3-1.7b-q4_k_m").unwrap();
     assert!(lfm.license.needs_acceptance);
+    assert_eq!(lfm.license.revision.as_deref(), Some("v1.0"));
     assert!(lfm.license.restriction.is_some());
     for id in ["gemma-4-e2b-it-q4_0", "embeddinggemma-2-q8_0"] {
         let model = catalog.model(id).unwrap();
@@ -340,6 +341,16 @@ fn validation_refuses_broken_entries() {
         edited(|v| v["models"][0]["extra"] = json!(1)),
         Err(CatalogError::Parse(_))
     ));
+    // S5: terms to accept carry a revision
+    for revision in [Value::Null, json!(" ")] {
+        assert!(matches!(
+            edited(|v| {
+                v["models"][0]["license"]["needsAcceptance"] = json!(true);
+                v["models"][0]["license"]["revision"] = revision;
+            }),
+            Err(CatalogError::License(_))
+        ));
+    }
 }
 
 /// A gated model needs nothing beyond `gated: true`.

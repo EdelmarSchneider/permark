@@ -741,3 +741,109 @@ fn turning_off_stops_downloads() {
         .join(format!("{E2B}.installed.json"))
         .exists());
 }
+
+/// S5: acceptance is per terms revision: a record of no | another revision asks again; accepting replaces it.
+#[test]
+fn a_new_terms_revision_is_asked_again() {
+    let lab = Lab::new();
+    let cat = catalog(1, |_| {});
+    let url = cat.model(LFM).unwrap().license.url.clone();
+    lab.store()
+        .plugin_file::<state::PluginState>(&ID, state::FILE)
+        .save(&state::PluginState {
+            acceptances: vec![state::Acceptance {
+                model: LFM.to_owned(),
+                license_url: url.clone(),
+                revision: None,
+                accepted_at: 1,
+            }],
+            ..state::PluginState::default()
+        })
+        .unwrap();
+    let mut run = lab.start(cat.clone(), Arc::new(serving(&cat)));
+    assert_eq!(run.model(LFM)["blocked"], "license");
+    run.call("acceptLicense", model_args(LFM)).unwrap();
+    assert!(run.model(LFM)["blocked"].is_null());
+    run.stop();
+
+    let v2 = catalog(1, |v| {
+        for m in v["models"].as_array_mut().unwrap() {
+            if m["id"] == LFM {
+                m["license"]["revision"] = json!("v2.0");
+            }
+        }
+    });
+    let run = lab.start(v2.clone(), Arc::new(serving(&v2)));
+    assert_eq!(run.model(LFM)["blocked"], "license");
+    run.call("acceptLicense", model_args(LFM)).unwrap();
+    assert!(run.model(LFM)["blocked"].is_null());
+    let saved: Value = serde_json::from_slice(
+        &std::fs::read(lab.store().plugin_dir(&ID).join(state::FILE)).unwrap(),
+    )
+    .unwrap();
+    let records = saved["data"]["acceptances"].as_array().unwrap();
+    assert_eq!(records.len(), 1, "{records:?}");
+    assert_eq!(records[0]["licenseUrl"], url.as_str());
+    assert_eq!(records[0]["revision"], "v2.0");
+}
+
+/// S6: a token longer than 1 KiB is refused (never stored).
+#[test]
+fn an_overlong_token_is_refused() {
+    let lab = Lab::new();
+    let cat = catalog(1, |v| v["models"][0]["gated"] = json!(true));
+    let run = lab.start(cat.clone(), Arc::new(serving(&cat)));
+    refused(
+        run.call("setToken", json!({ "token": "x".repeat(1025) })),
+        ErrorKind::InvalidData,
+        "tooLong",
+    );
+    assert_eq!(run.state()["tokenSet"], false);
+    let after = run
+        .call("setToken", json!({ "token": "x".repeat(1024) }))
+        .unwrap();
+    assert_eq!(after["tokenSet"], true);
+}
+
+/// Stale: an old version whose removal fails (file held open) after an update is recorded, kept by queries, and
+/// removed by the next action that writes to the store.
+#[cfg(windows)]
+#[test]
+fn an_old_version_that_cannot_be_removed_goes_at_the_next_action() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let lab = Lab::new();
+    let v1 = catalog(1, |_| {});
+    let mut run = lab.start(v1.clone(), Arc::new(serving(&v1)));
+    run.call("get", model_args(EMBED)).unwrap();
+    run.wait(EMBED, "installed");
+    run.stop();
+    let old = version_dir(&lab, "embeddinggemma-2", 1);
+    let path = &v1.model(EMBED).unwrap().files[0].path;
+    let name = path.rsplit('/').next().unwrap();
+    let held = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(old.join(name))
+        .unwrap();
+    let v2 = catalog(2, |_| {});
+    let run = lab.start(v2.clone(), Arc::new(serving(&v2)));
+    run.call("update", model_args(EMBED)).unwrap();
+    let model = run.wait(EMBED, "installed");
+    assert_eq!(model["installedVersion"], 2);
+    let stale = || -> usize {
+        let saved: Value = serde_json::from_slice(
+            &std::fs::read(lab.store().plugin_dir(&ID).join(state::FILE)).unwrap(),
+        )
+        .unwrap();
+        saved["data"]["stale"].as_array().map_or(0, Vec::len)
+    };
+    assert_eq!(stale(), 1);
+    drop(held);
+    run.state();
+    assert!(old.join(name).is_file(), "a query removes nothing");
+    run.call("get", model_args("whisper-large-v3-turbo-q5_0"))
+        .unwrap();
+    run.wait("whisper-large-v3-turbo-q5_0", "installed");
+    assert!(!old.exists());
+    assert_eq!(stale(), 0);
+}

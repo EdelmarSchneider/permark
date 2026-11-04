@@ -2,8 +2,11 @@
 //! [`Downloads`] per store), terms acceptance, Hugging Face token, task assignments, [`Installs::model_for`].
 //!
 //! Lazy: no engine, folder, thread, request until a call needs one. The store folder is made by the first download
-//! only; a state query reads (never creates). Startup of a store that exists: [`Downloads::sweep`] lists the paused
-//! parts (NEVER restarted) and retries removals of old versions that failed.
+//! only; a state query reads (never creates, never removes). Startup of a store that exists: [`Downloads::sweep`]
+//! lists the paused parts (NEVER restarted). Tidy ([`crate::store::tidy`] under [`Downloads::while_idle`]) ONLY on a
+//! person's action that writes to the store (get | update | delete part | remove | store move): leftover version
+//! folders of known lineages that hold no install | part, scratch copies of a stopped move, then old versions whose
+//! removal failed (`stale`).
 //!
 //! Per model (activity first, else what is on disk):
 //! `notInstalled -get-> queued -> downloading <-> verifying -> installed`; `downloading -cancel-> paused -get->
@@ -12,18 +15,15 @@
 //!
 //! Locks: the engine calls the listener with none of its locks held; this module NEVER holds its own lock while it
 //! calls the engine (`cancel` | `delete_part` | `remove` | `enqueue` may call the listener on the caller's thread)
-//! and NEVER drops an engine under it (drop joins the engine's worker, whose listener takes the lock).
+//! and NEVER drops an engine under it (drop joins the engine's worker, whose listener takes the lock). Disk reads
+//! (installed checks, free space, project overlap) run on a copy taken under the lock, never under it.
 //!
-//! Store (AC-7): default `<profile>/plugins/local-ai/models/` | a folder the person chose (never inside | holding an
-//! open | recent project, the current | default store). A chosen store that is gone (drive unplugged):
-//! `storeUnavailable`, never `notInstalled`; nothing created there. Change refused while a download runs; installed
-//! models -> `move` (background copy, [`crate::relocate`]; old store in use until the copies are verified; its parts
-//! dropped after) | `keep` (old files stay on disk, unlisted). Store start removes orphan version folders
-//! ([`crate::store::remove_orphans`]): versions of a catalog lineage that are neither the catalog's (installed |
-//! partial) nor recorded (installed | stale).
+//! Store (AC-7, [`moves`]): default `<profile>/plugins/local-ai/models/` | a folder the person chose. A chosen store
+//! that is gone (drive unplugged) | overlaps a project opened since: `storeUnavailable`, never `notInstalled`;
+//! nothing created there.
 
 use std::collections::{BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::thread::JoinHandle;
@@ -34,20 +34,21 @@ use permark_core::downloads::{
     Update,
 };
 use permark_core::fsx;
-use permark_core::plugins::{nesting, FolderRevealApi, Nesting, PluginEvents, ProjectPlacesApi};
+use permark_core::plugins::{FolderRevealApi, PluginEvents, ProjectPlacesApi};
 use permark_core::state::{StateError, StateFile};
 use permark_core::{ErrorKind, IpcError};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::catalog::{Catalog, CatalogError, Model, ModelFile};
-use crate::relocate::{self, Item};
 use crate::state::{Acceptance, Installed, PluginState, Stale};
-use crate::store::{prune, remove_orphans, version_dir};
+use crate::store::{prune, tidy, version_dir};
 use crate::tasks::Task;
 
-/// Room kept free beyond a move (as the download engine).
-const MOVE_MARGIN: u64 = 64 << 20;
+mod moves;
+
+/// Longest Hugging Face token taken, bytes (real ones: < 100).
+const TOKEN_LIMIT: usize = 1024;
 
 /// Where one model stands.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -167,8 +168,10 @@ pub struct StoreStatus {
     /// Store folder (the default one may not exist yet).
     pub path: String,
     pub is_default: bool,
-    /// `false`: a chosen folder that is gone (models then `storeUnavailable`).
+    /// `false`: a chosen folder that is gone | overlaps a project now (models then `storeUnavailable`).
     pub available: bool,
+    /// Why it is not available (`None`: available).
+    pub unavailable_reason: Option<UnavailableReason>,
     /// Free bytes on its volume (`None`: unknown | unavailable).
     #[ts(type = "number | null")]
     pub free_bytes: Option<u64>,
@@ -178,6 +181,17 @@ pub struct StoreStatus {
     /// Bytes of downloads kept to resume (paused | running | failed).
     #[ts(type = "number")]
     pub partial_bytes: u64,
+}
+
+/// Why the chosen store cannot be used now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, rename = "StoreUnavailableReason")]
+pub enum UnavailableReason {
+    /// The folder is gone (drive unplugged | folder removed).
+    Missing,
+    /// A project opened since is inside | holds it.
+    InsideProject,
 }
 
 /// A store move (event `local-ai:move` while it runs).
@@ -256,6 +270,8 @@ pub enum InstallError {
     NoUpdate(String),
     #[error("empty token")]
     EmptyToken,
+    #[error("token longer than {TOKEN_LIMIT} bytes")]
+    TokenTooLong,
     #[error("the model folder is not available")]
     StoreUnavailable,
     #[error("store {0}: not an absolute path")]
@@ -264,6 +280,8 @@ pub enum InstallError {
     InsideProject(String),
     #[error("store {0}: inside or holding a model folder")]
     InsideStore(String),
+    #[error("store {0}: inside or holding the app's data folder")]
+    InsideAppData(String),
     #[error("store {0}: installed models need move or keep")]
     ModeRequired(String),
     #[error("the model folder is moving")]
@@ -296,12 +314,16 @@ impl From<InstallError> for IpcError {
             InstallError::EmptyToken => IpcError::new(ErrorKind::InvalidData)
                 .subject("credentials")
                 .detail("empty"),
+            InstallError::TokenTooLong => IpcError::new(ErrorKind::InvalidData)
+                .subject("credentials")
+                .detail("tooLong"),
             InstallError::StoreUnavailable => {
                 IpcError::new(ErrorKind::Unavailable).subject("store")
             }
             InstallError::NotAbsolute(path) => model(ErrorKind::InvalidPath, path, "notAbsolute"),
             InstallError::InsideProject(path) => model(ErrorKind::Denied, path, "insideProject"),
             InstallError::InsideStore(path) => model(ErrorKind::Denied, path, "insideStore"),
+            InstallError::InsideAppData(path) => model(ErrorKind::Denied, path, "insideAppData"),
             InstallError::ModeRequired(path) => model(ErrorKind::Conflict, path, "modeRequired"),
             InstallError::Moving => model(ErrorKind::Conflict, "store".to_owned(), "moving"),
             InstallError::Folder(path, e) => IpcError::new(ErrorKind::Io)
@@ -349,6 +371,8 @@ struct Inner {
     moving: Option<Mover>,
     /// Last move that failed: target + why.
     move_failed: Option<(PathBuf, DownloadError)>,
+    /// A store change is being decided (set together with the download check, under this lock): Get refused.
+    changing: bool,
 }
 
 /// App services the store choice uses (`None`: the app offers none; tests).
@@ -356,6 +380,8 @@ struct Inner {
 pub struct StoreLinks {
     pub places: Option<ProjectPlacesApi>,
     pub reveal: Option<FolderRevealApi>,
+    /// The app's profile folder: a chosen store never lands inside | holds it (only the default store lives there).
+    pub profile: Option<PathBuf>,
 }
 
 /// Installs of one plugin instance.
@@ -371,6 +397,8 @@ pub struct Installs {
     starting: Mutex<()>,
     /// Thread of the running | last store move.
     mover: Mutex<Option<JoinHandle<()>>>,
+    /// Token set, as read once from the credential store (`None`: not read yet); kept by set | clear.
+    token: Mutex<Option<bool>>,
     me: Weak<Self>,
 }
 
@@ -383,7 +411,7 @@ fn now_ms() -> u64 {
 impl Installs {
     /// Installs over `catalog`; state read from `file` (nothing written, nothing created).
     #[must_use]
-    pub fn new(
+    pub(crate) fn new(
         catalog: Arc<Catalog>,
         kit: Option<Arc<DownloadKit>>,
         default_store: PathBuf,
@@ -408,9 +436,11 @@ impl Installs {
                 engine: None,
                 moving: None,
                 move_failed: None,
+                changing: false,
             }),
             starting: Mutex::new(()),
             mover: Mutex::new(None),
+            token: Mutex::new(None),
             me: me.clone(),
         })
     }
@@ -432,9 +462,22 @@ impl Installs {
             .unwrap_or_else(|| self.default_store.clone())
     }
 
-    /// A chosen store folder that is gone (the default one is made by the first download).
-    fn available(state: &PluginState) -> bool {
-        state.store.as_ref().is_none_or(|store| store.is_dir())
+    /// Why the store of `state` cannot be used now (`None`: usable; the default one is made by the first download).
+    /// Disk read: NEVER call under the lock.
+    fn unavailable(&self, state: &PluginState) -> Option<UnavailableReason> {
+        let store = state.store.as_ref()?;
+        if !store.is_dir() {
+            Some(UnavailableReason::Missing)
+        } else if self
+            .links
+            .places
+            .as_ref()
+            .is_some_and(|places| places.0.overlaps(store))
+        {
+            Some(UnavailableReason::InsideProject)
+        } else {
+            None
+        }
     }
 
     /// Catalog lineages (the folders the store start may clean).
@@ -462,30 +505,22 @@ impl Installs {
                 .any(|s| s.lineage == lineage && s.installed.catalog_version == version)
     }
 
-    /// The engine of the current store, started on first need (orphan cleanup + sweep only when the store folder
-    /// exists).
+    /// The engine of the current store, started on first need (sweep only when the store folder exists; nothing
+    /// removed beyond the engine's own part cleanup).
     ///
     /// # Errors
     /// [`InstallError::NoDownloads`]: the app offers no download service; [`InstallError::StoreUnavailable`].
     fn engine(&self) -> Result<Arc<Downloads>, InstallError> {
         let kit = self.kit.as_ref().ok_or(InstallError::NoDownloads)?;
         let _starting = self.starting.lock().unwrap_or_else(PoisonError::into_inner);
-        let (store, units, stale, recorded) = {
-            let inner = self.inner();
-            if !Self::available(&inner.state) {
-                return Err(InstallError::StoreUnavailable);
-            }
-            let store = self.store_of(&inner.state);
-            if let Some(engine) = inner.engine.as_ref().filter(|e| e.store() == store) {
-                return Ok(Arc::clone(engine));
-            }
-            (
-                store,
-                self.known_units(&inner.state),
-                inner.state.stale.clone(),
-                inner.state.clone(),
-            )
-        };
+        let state = self.inner().state.clone();
+        if self.unavailable(&state).is_some() {
+            return Err(InstallError::StoreUnavailable);
+        }
+        let store = self.store_of(&state);
+        if let Some(engine) = self.inner().engine.as_ref().filter(|e| e.store() == store) {
+            return Ok(Arc::clone(engine));
+        }
         let me = self.me.clone();
         let engine = Arc::new(kit.downloads(
             store.clone(),
@@ -495,61 +530,75 @@ impl Installs {
                 }
             }),
         ));
-        let mut paused = Vec::new();
-        let mut removed = Vec::new();
-        if store.is_dir() {
-            remove_orphans(&store, &self.lineages(), |lineage, version| {
-                self.known_version(&recorded, lineage, version)
-            });
-            paused = engine.sweep(&units).unwrap_or_default();
-            for old in &stale {
-                if let Ok(unit) = old.installed.unit(&old.lineage) {
-                    if engine.remove(&unit).is_ok() {
-                        prune(&store, &old.lineage, old.installed.catalog_version);
-                        removed.push(old.clone());
-                    }
-                }
-            }
-        }
+        let paused = if store.is_dir() {
+            engine.sweep(&self.known_units(&state)).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        // kept bytes per model: its parts + the files of the unit already complete
+        let found: Vec<(String, u64)> = self
+            .catalog
+            .models
+            .iter()
+            .filter_map(|model| {
+                let mut parts = paused.iter().filter(|p| p.unit == model.id).peekable();
+                parts.peek()?;
+                let partial: u64 = parts.map(|p| p.done).sum();
+                let complete = model.unit().map_or(0, |u| engine.present_bytes(&u));
+                Some((model.id.clone(), partial + complete))
+            })
+            .collect();
         let mut inner = self.inner();
-        for model in &self.catalog.models {
-            let mut parts = paused.iter().filter(|p| p.unit == model.id).peekable();
-            if parts.peek().is_none() || inner.live.contains_key(&model.id) {
-                continue;
-            }
-            let partial: u64 = parts.map(|p| p.done).sum();
-            // files of the unit already complete count as done
-            let dir = version_dir(&store, &model.lineage, model.catalog_version);
-            let complete: u64 = model
-                .files
-                .iter()
-                .filter(|f| {
-                    let name = f.path.rsplit('/').next().unwrap_or(&f.path);
-                    std::fs::symlink_metadata(dir.join(name))
-                        .is_ok_and(|m| m.is_file() && m.len() == f.bytes)
-                })
-                .map(|f| f.bytes)
-                .sum();
-            inner.live.insert(
-                model.id.clone(),
-                Live {
-                    activity: Activity::Paused,
-                    done: partial + complete,
-                },
-            );
-        }
-        if !removed.is_empty() {
-            let mut next = inner.state.clone();
-            next.stale.retain(|s| !removed.contains(s));
-            // best effort: kept in memory, written with the next change
-            if self.save(&next).is_ok() {
-                inner.state = next;
-            }
+        for (id, done) in found {
+            inner.live.entry(id).or_insert(Live {
+                activity: Activity::Paused,
+                done,
+            });
         }
         let previous = inner.engine.replace(Arc::clone(&engine));
         drop(inner);
         drop(previous);
         Ok(engine)
+    }
+
+    /// Tidy of the current store before a person's action writes to it (M1 rules, [`crate::store::tidy`]): only
+    /// while this engine is idle and no other app instance holds the store; then the old versions whose removal
+    /// failed are tried again (in their own store). Best effort.
+    fn tidy(&self, engine: &Downloads) {
+        let state = self.inner().state.clone();
+        let store = engine.store();
+        if store.is_dir() {
+            let _ = engine.while_idle(|| {
+                tidy(store, &self.lineages(), |lineage, version| {
+                    self.known_version(&state, lineage, version)
+                });
+            });
+        }
+        let mut removed = Vec::new();
+        for old in &state.stale {
+            let place = old.store.as_deref().unwrap_or(store);
+            let Ok(unit) = old.installed.unit(&old.lineage) else {
+                continue;
+            };
+            let gone = if place == store {
+                engine.remove(&unit).is_ok()
+            } else {
+                // another store (a move's old copy): an engine of its own, never started (no worker)
+                place.is_dir()
+                    && self.kit.as_ref().is_some_and(|kit| {
+                        kit.downloads(place.to_path_buf(), Arc::new(|_, _| {}))
+                            .remove(&unit)
+                            .is_ok()
+                    })
+            };
+            if gone {
+                prune(place, &old.lineage, old.installed.catalog_version);
+                removed.push(old.clone());
+            }
+        }
+        if !removed.is_empty() {
+            let _ = self.change(|s| s.stale.retain(|x| !removed.contains(x)));
+        }
     }
 
     /// Engine already started (listener: never starts one).
@@ -603,12 +652,21 @@ impl Installs {
             .cloned()
     }
 
+    /// A token is set (asked only when a gated model is listed; read once, then kept by set | clear).
     fn token_set(&self) -> bool {
-        self.catalog.models.iter().any(|m| m.gated)
-            && self
-                .kit
+        if !self.catalog.models.iter().any(|m| m.gated) {
+            return false;
+        }
+        let mut token = self.token.lock().unwrap_or_else(PoisonError::into_inner);
+        *token.get_or_insert_with(|| {
+            self.kit
                 .as_ref()
                 .is_some_and(|kit| kit.secrets.is_set(&Source::HUGGING_FACE).unwrap_or(false))
+        })
+    }
+
+    fn token_known(&self, set: bool) {
+        *self.token.lock().unwrap_or_else(PoisonError::into_inner) = Some(set);
     }
 
     fn blocked(model: &Model, state: &PluginState, token_set: bool) -> Option<GetBlock> {
@@ -616,7 +674,7 @@ impl Installs {
             Some(GetBlock::Withdrawn)
         } else if model.gated && !token_set {
             Some(GetBlock::Token)
-        } else if model.license.needs_acceptance && !state.accepted(&model.license.url) {
+        } else if model.license.needs_acceptance && !state.accepted(&model.license) {
             Some(GetBlock::License)
         } else {
             None
@@ -660,14 +718,29 @@ impl Installs {
 
     fn snapshot(&self, engine: Option<&Downloads>) -> LocalAiState {
         let token_set = self.token_set();
-        let inner = self.inner();
-        let state = &inner.state;
-        let available = Self::available(state);
+        let (state, live, store_move) = {
+            let inner = self.inner();
+            let store_move = match (&inner.moving, &inner.move_failed) {
+                (Some(m), _) => Some(StoreMove::Moving {
+                    to: m.to.display().to_string(),
+                    done: m.done,
+                    total: m.total,
+                }),
+                (None, Some((to, error))) => Some(StoreMove::Failed {
+                    to: to.display().to_string(),
+                    error: error.clone(),
+                }),
+                (None, None) => None,
+            };
+            (inner.state.clone(), inner.live.clone(), store_move)
+        };
+        let unavailable = self.unavailable(&state);
+        let available = unavailable.is_none();
         let usable: Vec<Option<Installed>> = self
             .catalog
             .models
             .iter()
-            .map(|m| Self::usable(engine, state, m))
+            .map(|m| Self::usable(engine, &state, m))
             .collect();
         let models = self
             .catalog
@@ -676,9 +749,9 @@ impl Installs {
             .zip(&usable)
             .map(|(m, u)| ModelStatus {
                 model: m.id.clone(),
-                state: Self::install_state(inner.live.get(&m.id), m, u.as_ref(), available),
+                state: Self::install_state(live.get(&m.id), m, u.as_ref(), available),
                 installed_version: u.as_ref().map(|i| i.catalog_version),
-                blocked: Self::blocked(m, state, token_set),
+                blocked: Self::blocked(m, &state, token_set),
             })
             .collect();
         let assignments = Task::ALL
@@ -695,31 +768,18 @@ impl Installs {
                 }),
             })
             .collect();
-        let store = self.store_of(state);
+        let store = self.store_of(&state);
         let used_bytes = usable
             .iter()
             .flatten()
             .flat_map(|i| &i.files)
             .map(|f| f.bytes)
             .sum();
-        let partial_bytes = inner
-            .live
+        let partial_bytes = live
             .values()
             .filter(|l| l.activity != Activity::Discarding)
             .map(|l| l.done)
             .sum();
-        let store_move = match (&inner.moving, &inner.move_failed) {
-            (Some(m), _) => Some(StoreMove::Moving {
-                to: m.to.display().to_string(),
-                done: m.done,
-                total: m.total,
-            }),
-            (None, Some((to, error))) => Some(StoreMove::Failed {
-                to: to.display().to_string(),
-                error: error.clone(),
-            }),
-            (None, None) => None,
-        };
         LocalAiState {
             models,
             assignments,
@@ -727,6 +787,7 @@ impl Installs {
                 path: store.display().to_string(),
                 is_default: state.store.is_none(),
                 available,
+                unavailable_reason: unavailable,
                 free_bytes: available.then(|| fsx::free_space(&store).ok()).flatten(),
                 used_bytes,
                 partial_bytes,
@@ -842,6 +903,7 @@ impl Installs {
                     s.stale.push(Stale {
                         lineage: model.lineage.clone(),
                         installed: old,
+                        store: Some(engine.store().to_path_buf()),
                     });
                 });
             }
@@ -867,13 +929,25 @@ impl Installs {
         }
         let engine = self.engine()?;
         let unit = model.unit()?;
+        let installed = engine.is_installed(&unit);
+        if !installed {
+            self.tidy(&engine);
+        }
         let queue = {
             let mut inner = self.inner();
+            // a store change began | ended since the engine was taken: never queued into the old store
+            let same_store = inner
+                .engine
+                .as_ref()
+                .is_some_and(|e| Arc::ptr_eq(e, &engine));
+            if inner.moving.is_some() || inner.changing || !same_store {
+                return Err(InstallError::Moving);
+            }
             let busy = inner
                 .live
                 .get(id)
                 .is_some_and(|l| matches!(l.activity, Activity::Queued | Activity::Running(_)));
-            let queue = !busy && !engine.is_installed(&unit);
+            let queue = !busy && !installed;
             if queue {
                 let done = inner.live.get(id).map_or(0, |l| l.done);
                 inner.live.insert(
@@ -900,11 +974,9 @@ impl Installs {
     pub fn update(&self, id: &str) -> Result<LocalAiState, InstallError> {
         let model = self.model(id)?;
         let engine = self.engine()?;
-        let older = {
-            let inner = self.inner();
-            Self::usable(Some(&engine), &inner.state, model)
-                .is_some_and(|i| i.catalog_version < model.catalog_version)
-        };
+        let state = self.inner().state.clone();
+        let older = Self::usable(Some(&engine), &state, model)
+            .is_some_and(|i| i.catalog_version < model.catalog_version);
         if !older {
             return Err(InstallError::NoUpdate(id.to_owned()));
         }
@@ -919,10 +991,13 @@ impl Installs {
         let model = self.model(id)?;
         if model.license.needs_acceptance {
             self.change(|s| {
-                if !s.accepted(&model.license.url) {
+                if !s.accepted(&model.license) {
+                    // an older revision's record of these terms: replaced
+                    s.acceptances.retain(|a| a.license_url != model.license.url);
                     s.acceptances.push(Acceptance {
                         model: id.to_owned(),
                         license_url: model.license.url.clone(),
+                        revision: model.license.revision.clone(),
                         accepted_at: now_ms(),
                     });
                 }
@@ -952,6 +1027,7 @@ impl Installs {
         self.not_moving()?;
         let engine = self.engine()?;
         let unit = model.unit()?;
+        self.tidy(&engine);
         {
             let mut inner = self.inner();
             let active = inner
@@ -997,6 +1073,7 @@ impl Installs {
             }
             inner.state.installed.get(&model.lineage).cloned()
         };
+        self.tidy(&engine);
         engine.remove(&unit)?;
         prune(engine.store(), &model.lineage, model.catalog_version);
         if let Some(old) = recorded.filter(|r| r.catalog_version != model.catalog_version) {
@@ -1029,7 +1106,8 @@ impl Installs {
             return Err(InstallError::Incompatible(id.to_owned()));
         }
         let engine = self.engine()?;
-        let usable = Self::usable(Some(&engine), &self.inner().state, model).is_some();
+        let state = self.inner().state.clone();
+        let usable = Self::usable(Some(&engine), &state, model).is_some();
         if !usable {
             return Err(InstallError::NotInstalled(id.to_owned()));
         }
@@ -1050,7 +1128,11 @@ impl Installs {
         if token.is_empty() {
             return Err(InstallError::EmptyToken);
         }
+        if token.len() > TOKEN_LIMIT {
+            return Err(InstallError::TokenTooLong);
+        }
         kit.secrets.set(&Source::HUGGING_FACE, Secret::new(token))?;
+        self.token_known(true);
         self.announce();
         Ok(self.state())
     }
@@ -1062,6 +1144,7 @@ impl Installs {
     pub fn clear_token(&self) -> Result<LocalAiState, InstallError> {
         let kit = self.kit.as_ref().ok_or(InstallError::NoDownloads)?;
         kit.secrets.clear(&Source::HUGGING_FACE)?;
+        self.token_known(false);
         self.announce();
         Ok(self.state())
     }
@@ -1072,8 +1155,8 @@ impl Installs {
         let Ok(engine) = self.engine() else {
             return ModelFor::NoModel;
         };
-        let inner = self.inner();
-        let Some(lineage) = inner.state.assignments.get(&task) else {
+        let state = self.inner().state.clone();
+        let Some(lineage) = state.assignments.get(&task) else {
             return ModelFor::NoModel;
         };
         let found = self
@@ -1081,7 +1164,7 @@ impl Installs {
             .models
             .iter()
             .filter(|m| &m.lineage == lineage)
-            .find_map(|m| Self::usable(Some(&engine), &inner.state, m));
+            .find_map(|m| Self::usable(Some(&engine), &state, m));
         match found {
             Some(installed) => ModelFor::Assigned(AssignedModel {
                 dir: version_dir(engine.store(), lineage, installed.catalog_version),
@@ -1092,6 +1175,25 @@ impl Installs {
             }),
             None => ModelFor::NoModel,
         }
+    }
+
+    /// Catalog ids of the models assigned to tasks, from the state alone (no engine started, no disk read): the
+    /// machine budget.
+    #[must_use]
+    pub fn assigned_ids(&self) -> Vec<String> {
+        let inner = self.inner();
+        inner
+            .state
+            .assignments
+            .values()
+            .filter_map(|lineage| {
+                self.catalog
+                    .models
+                    .iter()
+                    .find(|m| &m.lineage == lineage)
+                    .map(|m| m.id.clone())
+            })
+            .collect()
     }
 
     /// Stops a store move (copies removed, old store kept) + every download, joins both (plugin off); parts kept.
@@ -1115,270 +1217,10 @@ impl Installs {
     }
 
     fn not_moving(&self) -> Result<(), InstallError> {
-        if self.inner().moving.is_some() {
+        let inner = self.inner();
+        if inner.moving.is_some() || inner.changing {
             return Err(InstallError::Moving);
         }
         Ok(())
-    }
-
-    /// Installed versions listed in the current store (none when it is unavailable | no download service).
-    fn installed_here(&self) -> Vec<Item> {
-        let Ok(engine) = self.engine() else {
-            return Vec::new();
-        };
-        let inner = self.inner();
-        let mut items: Vec<Item> = Vec::new();
-        for model in &self.catalog.models {
-            if items.iter().any(|i| i.lineage == model.lineage) {
-                continue;
-            }
-            if let Some(installed) = Self::usable(Some(&engine), &inner.state, model) {
-                items.push(Item {
-                    lineage: model.lineage.clone(),
-                    installed,
-                });
-            }
-        }
-        items
-    }
-
-    /// Store choice (AC-7): `path` = a folder the person picked (`None` | the default folder: the default). Same
-    /// folder: nothing. Installed models need `mode` ([`StoreMode::Move`]: background copy, [`crate::relocate`]).
-    ///
-    /// # Errors
-    /// [`InstallError::Moving`], [`InstallError::NotAbsolute`], [`InstallError::InsideStore`] (inside | holding the
-    /// current | default store), [`InstallError::InsideProject`], [`InstallError::Downloading`] (one queued |
-    /// running), [`InstallError::ModeRequired`], `NoSpace` (move), [`InstallError::Folder`] (cannot be made), state
-    /// write.
-    pub fn set_store(
-        &self,
-        path: Option<&str>,
-        mode: Option<StoreMode>,
-    ) -> Result<LocalAiState, InstallError> {
-        self.not_moving()?;
-        let current = self.store_of(&self.inner().state);
-        let target: Option<PathBuf> = match path {
-            None => None,
-            Some(text) => {
-                let target = PathBuf::from(text);
-                if !target.is_absolute() {
-                    return Err(InstallError::NotAbsolute(text.to_owned()));
-                }
-                (nesting(&target, &self.default_store) != Nesting::Same).then_some(target)
-            }
-        };
-        let to = target.clone().unwrap_or_else(|| self.default_store.clone());
-        if nesting(&to, &current) == Nesting::Same {
-            return Ok(self.state());
-        }
-        if let Some(chosen) = &target {
-            let shown = chosen.display().to_string();
-            if [&current, &self.default_store]
-                .iter()
-                .any(|store| nesting(chosen, store) != Nesting::Apart)
-            {
-                return Err(InstallError::InsideStore(shown));
-            }
-            if self
-                .links
-                .places
-                .as_ref()
-                .is_some_and(|places| places.0.overlaps(chosen))
-            {
-                return Err(InstallError::InsideProject(shown));
-            }
-        }
-        self.no_download()?;
-        let items = self.installed_here();
-        let mode = match (items.is_empty(), mode) {
-            (true, _) => StoreMode::Keep,
-            (false, Some(mode)) => mode,
-            (false, None) => return Err(InstallError::ModeRequired(to.display().to_string())),
-        };
-        if mode == StoreMode::Move {
-            let total: u64 = items.iter().map(Item::bytes).sum();
-            let needed = total.saturating_add(MOVE_MARGIN.max(total / 100));
-            let free = fsx::free_space(&to).map_err(|e| DownloadError::disk(&e))?;
-            if free < needed {
-                return Err(DownloadError::NoSpace { needed, free }.into());
-            }
-        }
-        if target.is_some() {
-            std::fs::create_dir_all(&to)
-                .map_err(|e| InstallError::Folder(to.display().to_string(), e))?;
-        }
-        match mode {
-            StoreMode::Keep => self.switch(target)?,
-            StoreMode::Move => self.start_move(current, target, to, items)?,
-        }
-        self.announce();
-        Ok(self.state())
-    }
-
-    /// Refused while a download is queued | running.
-    fn no_download(&self) -> Result<(), InstallError> {
-        let inner = self.inner();
-        let active = inner
-            .live
-            .iter()
-            .find(|(_, l)| matches!(l.activity, Activity::Queued | Activity::Running(_)));
-        match active {
-            Some((id, _)) => Err(InstallError::Downloading(id.clone())),
-            None => Ok(()),
-        }
-    }
-
-    /// Uses store `target` from now on (state written first); activity of the old store forgotten.
-    fn switch(&self, target: Option<PathBuf>) -> Result<(), InstallError> {
-        let old = {
-            let mut inner = self.inner();
-            let mut next = inner.state.clone();
-            next.store = target;
-            self.save(&next)?;
-            inner.state = next;
-            inner.live.clear();
-            inner.move_failed = None;
-            inner.engine.take()
-        };
-        // dropped with no lock held (it joins its worker, if any)
-        drop(old);
-        Ok(())
-    }
-
-    fn start_move(
-        &self,
-        from: PathBuf,
-        target: Option<PathBuf>,
-        to: PathBuf,
-        items: Vec<Item>,
-    ) -> Result<(), InstallError> {
-        let kit = self.kit.as_ref().ok_or(InstallError::NoDownloads)?;
-        let installs = self.me.upgrade().ok_or(InstallError::NoDownloads)?;
-        let cancel = Arc::new(AtomicBool::new(false));
-        {
-            let mut inner = self.inner();
-            if inner.moving.is_some() {
-                return Err(InstallError::Moving);
-            }
-            inner.moving = Some(Mover {
-                to: to.clone(),
-                cancel: Arc::clone(&cancel),
-                done: 0,
-                total: items.iter().map(Item::bytes).sum(),
-            });
-            inner.move_failed = None;
-        }
-        // copies are told by the move itself: the target engine's listener hears nothing
-        let copier = kit.downloads(to, Arc::new(|_, _| {}));
-        let mut slot = self.mover.lock().unwrap_or_else(PoisonError::into_inner);
-        // the last move ended (it cleared `moving` before this one could start)
-        if let Some(previous) = slot.take() {
-            let _ = previous.join();
-        }
-        let spawned = std::thread::Builder::new()
-            .name("local-ai-move".into())
-            .spawn(move || installs.run_move(&from, target, &copier, &items, &cancel));
-        match spawned {
-            Ok(handle) => {
-                *slot = Some(handle);
-                Ok(())
-            }
-            Err(error) => {
-                drop(slot);
-                self.inner().moving = None;
-                Err(DownloadError::disk(&error).into())
-            }
-        }
-    }
-
-    /// The move thread: copy + check, then the new store in use and the old copies removed (parts of the old store
-    /// too: unreachable once it is not in use). Failure | cancel: copies removed, old store stays.
-    fn run_move(
-        &self,
-        from: &Path,
-        target: Option<PathBuf>,
-        copier: &Downloads,
-        items: &[Item],
-        cancel: &AtomicBool,
-    ) {
-        let mut report = |done: u64, total: u64| {
-            let to = {
-                let mut inner = self.inner();
-                let Some(mover) = inner.moving.as_mut() else {
-                    return;
-                };
-                mover.done = done;
-                mover.to.display().to_string()
-            };
-            if let Ok(payload) = serde_json::to_value(StoreMove::Moving { to, done, total }) {
-                self.events.emit("move", payload);
-            }
-        };
-        let outcome = relocate::copy_all(from, items, copier, cancel, &mut report);
-        let switched = outcome.and_then(|()| {
-            let old = self.engine().ok();
-            match self.switch(target) {
-                Ok(()) => Ok(old),
-                Err(error) => {
-                    relocate::discard(items, copier);
-                    Err(DownloadError::Disk {
-                        detail: error.to_string(),
-                    })
-                }
-            }
-        });
-        match switched {
-            Ok(old) => {
-                if let Some(old) = old {
-                    for item in items {
-                        if let Ok(unit) = item.installed.unit(&item.lineage) {
-                            let _ = old.remove(&unit);
-                        }
-                        prune(from, &item.lineage, item.installed.catalog_version);
-                    }
-                    for model in &self.catalog.models {
-                        if let Ok(unit) = model.unit() {
-                            let _ = old.delete_part(&unit);
-                        }
-                        prune(from, &model.lineage, model.catalog_version);
-                    }
-                }
-                self.inner().moving = None;
-            }
-            Err(error) => {
-                let mut inner = self.inner();
-                let to = inner.moving.take().map(|m| m.to);
-                if error != DownloadError::Cancelled {
-                    inner.move_failed = to.map(|to| (to, error));
-                }
-            }
-        }
-        self.announce();
-    }
-
-    /// Stops a running store move (copies removed, old store kept). None running: nothing.
-    #[must_use]
-    pub fn cancel_move(&self) -> LocalAiState {
-        if let Some(mover) = &self.inner().moving {
-            mover.cancel.store(true, Ordering::Relaxed);
-        }
-        self.snapshot(self.current_engine().as_deref())
-    }
-
-    /// Shows the current store folder in the file manager (only the plugin's own store).
-    ///
-    /// # Errors
-    /// [`InstallError::StoreUnavailable`] (gone | not made yet), no reveal service, the system refused.
-    pub fn reveal_store(&self) -> Result<(), IpcError> {
-        let store = self.store_of(&self.inner().state);
-        if !store.is_dir() {
-            return Err(InstallError::StoreUnavailable.into());
-        }
-        let reveal = self
-            .links
-            .reveal
-            .as_ref()
-            .ok_or_else(|| IpcError::new(ErrorKind::Unavailable).subject("reveal"))?;
-        reveal.0.reveal(&store)
     }
 }

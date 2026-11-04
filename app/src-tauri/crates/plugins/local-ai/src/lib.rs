@@ -21,7 +21,7 @@ pub mod fit;
 pub mod installs;
 pub mod machine;
 mod relocate;
-pub mod state;
+pub(crate) mod state;
 mod store;
 pub mod tasks;
 
@@ -44,6 +44,7 @@ pub use catalog::{Capability, Catalog, CatalogError, CatalogInfo, ModelInfo};
 pub use installs::{
     AssignedModel, GetBlock, InstallError, InstallState, Installs, LocalAiState, ModelFor,
     ModelProgress, ModelStatus, StoreLinks, StoreMode, StoreMove, StoreStatus, TaskAssignment,
+    UnavailableReason,
 };
 pub use tasks::{Task, TaskInfo};
 
@@ -247,6 +248,7 @@ impl Plugin for LocalAi {
                     .app()
                     .and_then(|app| app.services.get::<FolderRevealApi>())
                     .map(|api| (*api).clone()),
+                profile: cx.store().map(|store| store.app_dir().to_path_buf()),
             },
         );
         rpc.extend(register(cx, &installs));
@@ -256,12 +258,8 @@ impl Plugin for LocalAi {
         rpc.extend(cx.rpc(
             "machine",
             typed(move |_: NoArgs, _| {
-                let assigned: Vec<String> = i
-                    .state()
-                    .assignments
-                    .into_iter()
-                    .filter_map(|a| a.model)
-                    .collect();
+                // state alone: no engine started, no store read
+                let assigned = i.assigned_ids();
                 Ok::<_, IpcError>(fit::advise(&c, machine.profile(), &assigned))
             }),
         ));
