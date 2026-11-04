@@ -21,6 +21,7 @@ fn formats() -> FormatRegistry {
             .formats(vec![
                 Arc::new(MediaFormat),
                 Arc::new(TextViewer::json()),
+                Arc::new(TextViewer::json_lines()),
                 Arc::new(TextViewer::plain()),
             ])
             .roles(vec![RoleRule {
@@ -271,6 +272,53 @@ fn a_very_long_line_is_cut_inside_no_character() {
         fsx::hash(text.as_bytes()),
         "the chunks join to the very text"
     );
+}
+
+#[test]
+fn a_large_json_lines_file_stays_jsonl_and_other_large_files_stay_text() {
+    let p = project();
+    for path in ["small.jsonl", "small.ndjson", "small.jsonlines"] {
+        p.write(path, b"{\"a\":1}\n");
+        let view = p.open("w", path).unwrap();
+        assert_eq!(view.format, FormatId::JSONL, "{path}");
+        assert!(
+            matches!(&view.body, Body::Text { partial: None, text, .. } if text == "{\"a\":1}\n"),
+            "{path}"
+        );
+    }
+    p.write("small.json", b"{}");
+    assert_eq!(p.open("w", "small.json").unwrap().format, FormatId::JSON);
+    let text = numbered(500_000);
+    assert!(text.len() as u64 > MAX_TEXT_BYTES);
+    for path in ["rows.jsonl", "rows.NDJSON", "rows.JsonLines"] {
+        p.write(path, text.as_bytes());
+        let view = p.open("w", path).unwrap();
+        assert_eq!(view.format, FormatId::JSONL, "{path}");
+        match &view.body {
+            Body::Text {
+                text: first,
+                partial: Some(partial),
+                ..
+            } => {
+                assert!(first.starts_with("line 0000000\n"), "{path}");
+                assert_eq!(partial.loaded, first.len() as u64);
+                assert_eq!(partial.total, text.len() as u64);
+            }
+            other => panic!("{path}: {other:?}"),
+        }
+    }
+    p.write("rows.txt", text.as_bytes());
+    let text_view = p.open("w", "rows.txt").unwrap();
+    assert_eq!(text_view.format, FormatId::TEXT);
+    assert!(matches!(
+        text_view.body,
+        Body::Text {
+            partial: Some(_),
+            ..
+        }
+    ));
+    p.write("rows.md", text.as_bytes());
+    assert_eq!(p.open("w", "rows.md").unwrap().format, FormatId::TEXT);
 }
 
 #[test]

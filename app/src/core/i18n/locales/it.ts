@@ -390,6 +390,11 @@ export default {
   "structured.tree": "Albero",
   "structured.source": "Sorgente",
   "structured.invalid": "Non è valido, quindi è mostrato come testo.",
+  "jsonl.empty": "Nessun record in questo file.",
+  "jsonl.invalid": "La riga {line} non è un solo valore JSON (interrotta al carattere {at}).",
+  "jsonl.jump": "Vai al record",
+  "jsonl.go": "Vai",
+  "json.interpret": "Interpreta le sequenze",
   "text.plainBecauseLong":
     "File lungo: mostrato come testo semplice, vengono disegnate solo le righe visibili.",
   "text.partial":

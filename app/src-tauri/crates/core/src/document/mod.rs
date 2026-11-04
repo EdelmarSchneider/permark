@@ -493,11 +493,21 @@ impl Documents {
 }
 
 /// The start of a file over the size limit (`Large text`), or why it is not shown.
+///
+/// Format is still the default `text` here (`open` has not picked one). A JSON Lines name keeps `jsonl` so the
+/// records viewer gets the first chunk. Every other file stays `text`.
 fn large_into(view: &mut DocumentView, abs: &std::path::Path) -> Result<(), IpcError> {
     view.editable = read_only("tooLarge");
+    // `ext_of` is already lower case. This does not ask the format registry: nothing has been picked yet.
+    let json_lines = crate::format::ext_of(&view.name)
+        .is_some_and(|ext| matches!(ext.as_str(), "jsonl" | "ndjson" | "jsonlines"));
     view.body = match large::first(abs, view.size)? {
         large::Start::Text(chunk, partial) => {
-            view.format = crate::format::FormatId::TEXT;
+            view.format = if json_lines {
+                crate::format::FormatId::JSONL
+            } else {
+                crate::format::FormatId::TEXT
+            };
             Body::Text {
                 text: chunk.text,
                 language: crate::format::ext_of(&view.name),

@@ -390,6 +390,11 @@ export default {
   "structured.tree": "ツリー",
   "structured.source": "ソース",
   "structured.invalid": "有効ではないため、テキストとして表示しています。",
+  "jsonl.empty": "このファイルにはレコードがありません。",
+  "jsonl.invalid": "行 {line} は 1 つの JSON 値ではありません（文字 {at} で停止）。",
+  "jsonl.jump": "レコードへ移動",
+  "jsonl.go": "移動",
+  "json.interpret": "エスケープを解釈",
   "text.plainBecauseLong":
     "長いファイルのため、プレーンテキストで表示しています。描画されるのは表示中の行だけです。",
   "text.partial":

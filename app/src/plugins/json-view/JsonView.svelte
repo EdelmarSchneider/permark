@@ -7,4 +7,4 @@
   const text = $derived(view.body.kind === "text" ? view.body.text : "");
 </script>
 
-<StructuredText {text} parse={parseJson} />
+<StructuredText {text} parse={parseJson} strings />

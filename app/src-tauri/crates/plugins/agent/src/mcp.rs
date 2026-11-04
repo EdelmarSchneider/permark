@@ -98,7 +98,7 @@ pub fn tool_list() -> Vec<Tool> {
         .annotate(reading.clone()),
         Tool::new(
             "outline",
-            "Parts of a file before reading it (headings | JSON keys | config parts) with lines and size_tok.",
+            "Parts of a file before reading it (headings | JSON keys | config parts | JSON Lines record count) with lines and size_tok.",
             schema(json!({ "type": "object", "properties": {
                 "path": path(),
                 "links": { "type": "boolean", "description": "Also documents linking here and where its links lead." }
@@ -107,7 +107,7 @@ pub fn tool_list() -> Vec<Tool> {
         .annotate(reading.clone()),
         Tool::new(
             "read",
-            "Text of one part of a file: `at` = heading path `A > B`, `#anchor`, key path, lines `L10-L40` | `L10` (from line 10 on); no `at` = whole file.",
+            "Text of one part of a file: `at` = heading path `A > B`, `#anchor`, key path, JSON Lines record `R12`, lines `L10-L40` | `L10` (from line 10 on); no `at` = whole file.",
             schema(json!({ "type": "object", "properties": {
                 "path": path(),
                 "at": text("Part to read.")

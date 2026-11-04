@@ -93,6 +93,7 @@ fn category_table() {
         (".gitignore", Category::Config),
         (".aiignore", Category::Config),
         ("data.JSON", Category::Data),
+        ("rows.jsonlines", Category::Data),
         ("rows.csv", Category::Data),
         ("pic.png", Category::Image),
         ("logo.SVG", Category::Image),

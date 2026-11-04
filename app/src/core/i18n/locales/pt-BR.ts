@@ -386,6 +386,11 @@ export default {
   "structured.tree": "Árvore",
   "structured.source": "Código-fonte",
   "structured.invalid": "Isto não é válido, por isso aparece como texto.",
+  "jsonl.empty": "Este arquivo não tem registros.",
+  "jsonl.invalid": "A linha {line} não é um valor JSON (parou no caractere {at}).",
+  "jsonl.jump": "Ir para o registro",
+  "jsonl.go": "Ir",
+  "json.interpret": "Interpretar escapes",
   "text.plainBecauseLong":
     "Arquivo longo: mostrado como texto simples, apenas as linhas visíveis são desenhadas.",
   "text.partial":

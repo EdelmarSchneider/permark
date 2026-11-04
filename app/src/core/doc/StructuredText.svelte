@@ -8,11 +8,14 @@
   type Props = {
     text: string;
     parse: (text: string) => { ok: true; root: TreeNode } | { ok: false };
+    strings?: boolean;
   };
-  let { text, parse }: Props = $props();
+  let { text, parse, strings = false }: Props = $props();
 
   type Mode = "tree" | "source";
   let chosen = $state<Mode>("tree");
+  /** String values as interpreted text. Starts off; not kept across a remount. */
+  let plain = $state(false);
 
   const parsed = $derived(parse(text));
   const mode = $derived<Mode>(parsed.ok ? chosen : "source");
@@ -34,13 +37,23 @@
           </button>
         {/each}
       </div>
+      {#if strings}
+        <button
+          type="button"
+          class="interpret"
+          aria-pressed={plain}
+          onclick={() => (plain = !plain)}
+        >
+          {t("json.interpret")}
+        </button>
+      {/if}
     {:else}
       <span class="note">{t("structured.invalid")}</span>
     {/if}
   </div>
   {#if mode === "tree" && parsed.ok}
     <div class="tree" role="tree" aria-label={t("structured.tree")}>
-      <TreeRow node={parsed.root} depth={0} open />
+      <TreeRow node={parsed.root} depth={0} open {plain} />
     </div>
   {:else}
     <pre class="source"><code>{text}</code></pre>
@@ -78,6 +91,22 @@
     border-right: 0;
   }
   .segment[aria-checked="true"] {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-weight: 600;
+  }
+  .interpret {
+    height: 24px;
+    margin-left: 12px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+    background: var(--bg);
+    color: var(--text);
+    font-size: var(--fs-ui-sm);
+    cursor: pointer;
+  }
+  .interpret[aria-pressed="true"] {
     background: var(--accent-soft);
     color: var(--accent-text);
     font-weight: 600;

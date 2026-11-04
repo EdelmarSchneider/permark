@@ -25,3 +25,17 @@ export type TreeNode = {
 
 /** Children shown at a time under one node (a long list offers "show more"). */
 export const CHUNK = 200;
+
+/**
+ * Text after the label. Off, or not a string: the stored spelling. On, a string summary is the text
+ * `JSON.parse` returns, and only when that result is a string. Keys are labels, not this.
+ */
+export function shownSummary(node: TreeNode, plain: boolean): string {
+  if (!plain || node.kind !== "string") return node.summary;
+  try {
+    const value: unknown = JSON.parse(node.summary);
+    return typeof value === "string" ? value : node.summary;
+  } catch {
+    return node.summary;
+  }
+}
