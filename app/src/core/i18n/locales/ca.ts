@@ -1103,6 +1103,18 @@ export default {
   "brokenLinks.open": "Obre {path} a la línia {line}",
   "brokenLinks.truncated": "Es mostren els primers 500 de {n} enllaços trencats.",
   "brokenLinks.show": "Mostra els enllaços trencats",
+  "brokenLinks.repair": "Repara",
+  "brokenLinks.pick": "Tria el fitxer",
+  "brokenLinks.refused.unsaved": "No s'ha reparat: aquest document té canvis sense desar.",
+  "brokenLinks.refused.unreadable": "No s'ha reparat: no s'ha pogut llegir aquest document.",
+  "brokenLinks.refused.notUtf8": "No s'ha reparat: aquest document no és UTF-8.",
+  "brokenLinks.refused.missing": "No s'ha reparat: aquest document ja no hi és.",
+  "brokenLinks.refused.mismatch": "No s'ha reparat: aquest enllaç no és en aquesta línia.",
+  "brokenLinks.refused.notCandidate":
+    "No s'ha reparat: aquest fitxer no correspon a aquest enllaç.",
+  "brokenLinks.refused.noReplacement": "No s'ha reparat: aquest enllaç no es pot reescriure.",
+  "brokenLinks.refused.changed": "No s'ha reparat: el document ha canviat.",
+  "brokenLinks.refused.writeFailed": "No s'ha reparat: no s'ha pogut desar el text nou.",
 
   // ---- notes
   "cmd.notesCopy": "Copia el text de la nota",

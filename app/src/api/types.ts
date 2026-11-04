@@ -166,6 +166,9 @@ import type { BrokenDoc } from "./generated/BrokenDoc";
 import type { BrokenLink } from "./generated/BrokenLink";
 import type { BrokenReport } from "./generated/BrokenReport";
 import type { BrokenSummary } from "./generated/BrokenSummary";
+import type { RepairArgs } from "./generated/RepairArgs";
+import type { RepairRefusal } from "./generated/RepairRefusal";
+import type { RepairResult } from "./generated/RepairResult";
 import type { By } from "./generated/By";
 import type { CommentScope } from "./generated/CommentScope";
 import type { CommentView } from "./generated/CommentView";
@@ -556,6 +559,7 @@ export interface PluginMethods {
   "quiet.rules": { args: Record<string, never>; result: QuietMarks };
   "quiet.set": { args: { paths: string[]; interest: Interest }; result: QuietMarks };
   "broken-links.list": { args: Record<string, never>; result: BrokenReport };
+  "broken-links.repair": { args: RepairArgs; result: RepairResult };
   "notes.folder": { args: Record<string, never>; result: FolderInfo };
   "notes.createFolder": { args: Record<string, never>; result: FolderInfo };
   "notes.list": { args: Record<string, never>; result: NoteList };
@@ -749,6 +753,9 @@ export type {
   BrokenLink,
   BrokenReport,
   BrokenSummary,
+  RepairArgs,
+  RepairRefusal,
+  RepairResult,
   By,
   CommentScope,
   CommentView,

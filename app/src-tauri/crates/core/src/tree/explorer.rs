@@ -567,6 +567,15 @@ impl Explorer {
             .map_or_else(HashMap::new, |model| model.files_named(names))
     }
 
+    /// Listed files (not ignored) whose name matches `paths::key_of` of one of `names`: key -> project paths, every root.
+    #[must_use]
+    pub fn files_keyed(&self, names: &HashSet<String>) -> HashMap<String, Vec<String>> {
+        let guard = self.model();
+        guard
+            .as_ref()
+            .map_or_else(HashMap::new, |model| model.files_keyed(names))
+    }
+
     /// Whether a project path is listed (folder or file), and what.
     #[must_use]
     pub fn listed(&self, path: &str) -> Option<NodeKind> {

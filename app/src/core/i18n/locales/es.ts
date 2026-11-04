@@ -1093,6 +1093,17 @@ export default {
   "brokenLinks.open": "Abrir {path} en la línea {line}",
   "brokenLinks.truncated": "Se muestran los primeros 500 de {n} enlaces rotos.",
   "brokenLinks.show": "Mostrar los enlaces rotos",
+  "brokenLinks.repair": "Reparar",
+  "brokenLinks.pick": "Elige el archivo",
+  "brokenLinks.refused.unsaved": "No se reparó: este documento tiene cambios sin guardar.",
+  "brokenLinks.refused.unreadable": "No se reparó: no se pudo leer este documento.",
+  "brokenLinks.refused.notUtf8": "No se reparó: este documento no está en UTF-8.",
+  "brokenLinks.refused.missing": "No se reparó: este documento ya no está.",
+  "brokenLinks.refused.mismatch": "No se reparó: ese enlace no está en esta línea.",
+  "brokenLinks.refused.notCandidate": "No se reparó: ese archivo no corresponde a este enlace.",
+  "brokenLinks.refused.noReplacement": "No se reparó: este enlace no se puede reescribir.",
+  "brokenLinks.refused.changed": "No se reparó: el documento cambió.",
+  "brokenLinks.refused.writeFailed": "No se reparó: no se pudo guardar el texto nuevo.",
 
   // ---- notes
   "cmd.notesCopy": "Copiar el texto de la nota",

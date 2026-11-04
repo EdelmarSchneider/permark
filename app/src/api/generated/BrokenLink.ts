@@ -11,4 +11,12 @@ line: number,
 /**
  * The destination as written, shortened when very long.
  */
-written: string, };
+written: string, 
+/**
+ * The destination inner text, not shortened. Repair sends this, not `written`.
+ */
+href: string, 
+/**
+ * Same-root project paths this destination could name. Empty when there are none.
+ */
+candidates: Array<string>, };

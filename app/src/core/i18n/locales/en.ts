@@ -1073,6 +1073,17 @@ const en = {
   "brokenLinks.open": "Open {path} at line {line}",
   "brokenLinks.truncated": "Showing the first 500 of {n} broken links.",
   "brokenLinks.show": "Show the broken links",
+  "brokenLinks.repair": "Repair",
+  "brokenLinks.pick": "Choose the file",
+  "brokenLinks.refused.unsaved": "Not repaired: this document has unsaved edits.",
+  "brokenLinks.refused.unreadable": "Not repaired: this document could not be read.",
+  "brokenLinks.refused.notUtf8": "Not repaired: this document is not UTF-8.",
+  "brokenLinks.refused.missing": "Not repaired: this document is gone.",
+  "brokenLinks.refused.mismatch": "Not repaired: that link is not on this line.",
+  "brokenLinks.refused.notCandidate": "Not repaired: that file is not a match for this link.",
+  "brokenLinks.refused.noReplacement": "Not repaired: this link cannot be rewritten.",
+  "brokenLinks.refused.changed": "Not repaired: the document changed.",
+  "brokenLinks.refused.writeFailed": "Not repaired: the new text could not be saved.",
 
   // ---- notes
   "cmd.notesCopy": "Copy the note's text",

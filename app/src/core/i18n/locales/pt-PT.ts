@@ -1104,6 +1104,17 @@ export default {
   "brokenLinks.open": "Abrir {path} na linha {line}",
   "brokenLinks.truncated": "A mostrar as primeiras 500 de {n} ligações quebradas.",
   "brokenLinks.show": "Mostrar as ligações quebradas",
+  "brokenLinks.repair": "Reparar",
+  "brokenLinks.pick": "Escolha o ficheiro",
+  "brokenLinks.refused.unsaved": "Não reparado: este documento tem edições por guardar.",
+  "brokenLinks.refused.unreadable": "Não reparado: não foi possível ler este documento.",
+  "brokenLinks.refused.notUtf8": "Não reparado: este documento não está em UTF-8.",
+  "brokenLinks.refused.missing": "Não reparado: este documento já não existe.",
+  "brokenLinks.refused.mismatch": "Não reparado: essa ligação não está nesta linha.",
+  "brokenLinks.refused.notCandidate": "Não reparado: esse ficheiro não serve para esta ligação.",
+  "brokenLinks.refused.noReplacement": "Não reparado: esta ligação não pode ser reescrita.",
+  "brokenLinks.refused.changed": "Não reparado: o documento mudou.",
+  "brokenLinks.refused.writeFailed": "Não reparado: o novo texto não pôde ser guardado.",
 
   // ---- notes
   "cmd.notesCopy": "Copiar o texto da nota",

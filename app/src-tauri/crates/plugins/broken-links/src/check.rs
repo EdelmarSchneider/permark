@@ -26,8 +26,8 @@ pub struct LinkRec {
     pub line: u32,
     /// The destination as it is written, shortened when very long.
     pub written: String,
-    /// The whole destination, to resolve it again.
-    href: String,
+    /// The whole destination, to resolve it again. The list sends this, not the shortened label.
+    pub(super) href: String,
     /// Key of the project path the destination names (no disk): what makes it worth resolving again.
     target: Option<String>,
     pub broken: bool,
@@ -51,6 +51,53 @@ pub fn root_of(path: &str) -> &str {
     };
     let name = rest.split('/').next().unwrap_or(rest);
     &path[..WORKTREE_PREFIX.len() + name.len()]
+}
+
+/// Whether `name` already ends in `.md` (ASCII case).
+fn ends_with_md(name: &str) -> bool {
+    name.get(name.len().saturating_sub(3)..)
+        .is_some_and(|suffix| suffix.eq_ignore_ascii_case(".md"))
+}
+
+/// Same-root files whose name is the last segment of the path `href` names in `doc`.
+///
+/// `by_key` maps `paths::key_of` of a file name to project paths (every root). Directories and ignored files are
+/// already absent: this does not walk the disk. When that segment does not already end in `.md`, `segment.md` is
+/// asked for too. A pure anchor or a scheme has none. Paths come back in project-path order.
+#[must_use]
+pub fn candidates<S: std::hash::BuildHasher>(
+    doc: &str,
+    href: &str,
+    by_key: &HashMap<String, Vec<String>, S>,
+) -> Vec<String> {
+    let Some(target) = local_target(doc, href) else {
+        return Vec::new();
+    };
+    let name = target.rsplit('/').next().unwrap_or(target.as_str());
+    if name.is_empty() {
+        return Vec::new();
+    }
+    let mut keys = vec![key_of(name)];
+    if !ends_with_md(name) {
+        let with_md = key_of(&format!("{name}.md"));
+        if with_md != keys[0] {
+            keys.push(with_md);
+        }
+    }
+    let root = root_of(doc);
+    let mut found = Vec::new();
+    for key in keys {
+        if let Some(paths) = by_key.get(&key) {
+            for path in paths {
+                if root_of(path) == root {
+                    found.push(path.clone());
+                }
+            }
+        }
+    }
+    found.sort();
+    found.dedup();
+    found
 }
 
 fn is_document(path: &str) -> bool {

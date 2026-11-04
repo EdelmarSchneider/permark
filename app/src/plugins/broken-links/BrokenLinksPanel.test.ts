@@ -50,7 +50,12 @@ afterEach(async () => {
   mock.probe.project.files.delete("docs/bad.md");
   mock.probe.project.files.delete("@wt/feature/docs/bad.md");
   mock.probe.project.files.delete("@wt/a-very-long-worktree-name-for-the-layout/x.md");
+  mock.probe.project.files.delete("@wt/other/missing.md");
   mock.probe.project.files.delete("docs/many.md");
+  mock.probe.project.files.delete("notes/missing.md");
+  mock.probe.project.files.delete("extra/missing.md");
+  mock.probe.plugins.repairs.length = 0;
+  mock.probe.plugins.refuseNext(null);
   mock.probe.project.worktrees.length = 0;
   brokenLinks.report = null;
   vi.restoreAllMocks();
@@ -180,6 +185,93 @@ describe("the Broken links tab", () => {
     expect(navigate).toHaveBeenCalledWith("docs/bad.md", null, 3);
     target.querySelector<HTMLElement>(".doc")?.click();
     expect(navigate).toHaveBeenLastCalledWith("docs/bad.md", null);
+  });
+
+  it("repairs the one matching file, and says why when the write is refused", async () => {
+    mock.probe.project.add("docs/bad.md", "[gone](missing.md)\n");
+    mock.probe.project.add("notes/missing.md", "# here\n");
+    mock.probe.project.add("@wt/other/missing.md", "# other\n");
+    stop = brokenLinks.start();
+    component = mount(Panel, { target });
+    flushSync();
+    await until(() => target.querySelector(".repair") !== null, "Repair");
+    expect(target.querySelector(".pick")).toBeNull();
+    const navigate = vi.spyOn(documents, "navigate").mockImplementation(() => {});
+    const lists = (): number =>
+      mock.probe.plugins.calls.filter((name) => name === "broken-links.list").length;
+    const before = lists();
+    mock.probe.plugins.refuseNext("unsaved");
+    target.querySelector<HTMLButtonElement>(".repair")?.click();
+    expect(navigate).not.toHaveBeenCalled();
+    await until(() => target.textContent?.includes("unsaved edits") === true, "the refusal");
+    expect(lists()).toBe(before);
+    expect(mock.probe.plugins.repairs.at(-1)).toEqual({
+      path: "docs/bad.md",
+      line: 1,
+      href: "missing.md",
+      target: "notes/missing.md",
+    });
+    target.querySelector<HTMLButtonElement>(".repair")?.click();
+    await until(() => lists() === before + 1, "reloaded after the write");
+    expect(target.textContent).not.toContain("unsaved edits");
+    expect(mock.probe.plugins.repairs.at(-1)).toEqual({
+      path: "docs/bad.md",
+      line: 1,
+      href: "missing.md",
+      target: "notes/missing.md",
+    });
+    target.querySelector<HTMLButtonElement>(".link")?.click();
+    expect(navigate).toHaveBeenCalledWith("docs/bad.md", null, 1);
+  });
+
+  it("asks which file when several match, and does not repair until one is picked", async () => {
+    mock.probe.project.add("docs/bad.md", "[gone](missing.md)\n");
+    mock.probe.project.add("notes/missing.md", "# a\n");
+    mock.probe.project.add("extra/missing.md", "# b\n");
+    stop = brokenLinks.start();
+    component = mount(Panel, { target });
+    flushSync();
+    await until(() => target.querySelector(".pick") !== null, "the picker");
+    expect(target.querySelector(".repair")).toBeNull();
+    const select = target.querySelector<HTMLSelectElement>(".pick");
+    expect(Array.from(select?.options ?? []).map((option) => option.value)).toEqual([
+      "",
+      "extra/missing.md",
+      "notes/missing.md",
+    ]);
+    expect(mock.probe.plugins.repairs).toEqual([]);
+    const navigate = vi.spyOn(documents, "navigate").mockImplementation(() => {});
+    target.querySelector<HTMLElement>(".link")?.click();
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(mock.probe.plugins.repairs).toEqual([]);
+    if (select) {
+      select.value = "";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    expect(mock.probe.plugins.repairs).toEqual([]);
+    if (select) {
+      select.value = "notes/missing.md";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    await until(() => mock.probe.plugins.repairs.length === 1, "the pick");
+    expect(mock.probe.plugins.repairs[0]).toEqual({
+      path: "docs/bad.md",
+      line: 1,
+      href: "missing.md",
+      target: "notes/missing.md",
+    });
+  });
+
+  it("shows no repair control when nothing in this folder matches", async () => {
+    mock.probe.project.add("docs/bad.md", "[gone](missing.md)\n");
+    mock.probe.project.add("@wt/other/missing.md", "# other\n");
+    stop = brokenLinks.start();
+    component = mount(Panel, { target });
+    flushSync();
+    await until(() => target.querySelector(".link") !== null, "the list");
+    expect(target.querySelector(".repair")).toBeNull();
+    expect(target.querySelector(".pick")).toBeNull();
+    expect(mock.probe.plugins.repairs).toEqual([]);
   });
 });
 
