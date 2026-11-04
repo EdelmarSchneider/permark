@@ -14,7 +14,7 @@
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
-use permark_core::downloads::{Asset, Source};
+use permark_core::downloads::{Asset, Source, Unit};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -48,7 +48,7 @@ pub enum Capability {
 }
 
 /// Part a file plays in a model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FileRole {
     Weights,
@@ -59,8 +59,8 @@ pub enum FileRole {
     Voice,
 }
 
-/// One pinned file of a model.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+/// One pinned file of a model (also kept in the plugin state for an installed version).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ModelFile {
     /// Path in the repo at `commit`.
@@ -192,6 +192,8 @@ pub enum CatalogError {
     Capabilities(String),
     #[error("model {0}: no files")]
     NoFiles(String),
+    #[error("model {0}: id | lineage is not a plain folder name")]
+    Folder(String),
 }
 
 impl Catalog {
@@ -253,7 +255,7 @@ pub fn validate(catalog: &Catalog) -> Result<(), CatalogError> {
                 return Err(CatalogError::Pin(id(), file.path.clone()));
             }
         }
-        model.assets()?;
+        model.unit()?;
         let covered = |cap: &Capability| model.files.iter().any(|f| f.required_for.contains(cap));
         let declared = |cap: &Capability| model.capabilities.contains(cap);
         if !model.capabilities.iter().all(covered)
@@ -280,24 +282,69 @@ impl Model {
     /// # Errors
     /// [`CatalogError::Pin`] | [`CatalogError::Address`].
     pub fn assets(&self) -> Result<Vec<Asset>, CatalogError> {
-        self.files
-            .iter()
-            .map(|file| {
-                let sha256 = sha256_of(&file.sha256)
-                    .ok_or_else(|| CatalogError::Pin(self.id.clone(), file.path.clone()))?;
-                let name = file.path.rsplit('/').next().unwrap_or(&file.path);
-                Asset::new(
-                    Source::HUGGING_FACE,
-                    format!("/{}/resolve/{}/{}", self.repo, self.commit, file.path),
-                    name,
-                    file.bytes,
-                    sha256,
-                )
-                .map(|asset| asset.with_revision(self.commit.clone()))
-                .map_err(|_| CatalogError::Address(self.id.clone(), file.path.clone()))
-            })
-            .collect()
+        assets_of(&self.id, &self.repo, &self.commit, &self.files)
     }
+
+    /// Install unit of this version: id = model id, folder `<lineage>/<catalog_version>` (D-2).
+    ///
+    /// # Errors
+    /// [`CatalogError::Pin`] | [`CatalogError::Address`] | [`CatalogError::Folder`].
+    pub fn unit(&self) -> Result<Unit, CatalogError> {
+        unit_of(
+            &self.id,
+            &install_folder(&self.lineage, self.catalog_version),
+            &self.repo,
+            &self.commit,
+            &self.files,
+        )
+    }
+}
+
+/// Store folder of one installed version, relative (`/`-separated).
+#[must_use]
+pub fn install_folder(lineage: &str, catalog_version: u32) -> String {
+    format!("{lineage}/{catalog_version}")
+}
+
+/// Install unit `id` of `files` pinned at `repo` + `commit`, in store folder `folder`.
+///
+/// # Errors
+/// [`CatalogError::Pin`] | [`CatalogError::Address`] | [`CatalogError::Folder`].
+pub fn unit_of(
+    id: &str,
+    folder: &str,
+    repo: &str,
+    commit: &str,
+    files: &[ModelFile],
+) -> Result<Unit, CatalogError> {
+    Unit::new(id, folder, assets_of(id, repo, commit, files)?)
+        .map_err(|_| CatalogError::Folder(id.to_owned()))
+}
+
+/// Download pins of `files` (stored under the file name; revision = commit).
+fn assets_of(
+    id: &str,
+    repo: &str,
+    commit: &str,
+    files: &[ModelFile],
+) -> Result<Vec<Asset>, CatalogError> {
+    files
+        .iter()
+        .map(|file| {
+            let sha256 = sha256_of(&file.sha256)
+                .ok_or_else(|| CatalogError::Pin(id.to_owned(), file.path.clone()))?;
+            let name = file.path.rsplit('/').next().unwrap_or(&file.path);
+            Asset::new(
+                Source::HUGGING_FACE,
+                format!("/{repo}/resolve/{commit}/{}", file.path),
+                name,
+                file.bytes,
+                sha256,
+            )
+            .map(|asset| asset.with_revision(commit.to_owned()))
+            .map_err(|_| CatalogError::Address(id.to_owned(), file.path.clone()))
+        })
+        .collect()
 }
 
 fn is_hex(text: &str, len: usize) -> bool {

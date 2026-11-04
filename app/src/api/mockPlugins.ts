@@ -375,7 +375,7 @@ export function createMockPlugins(
           error: {
             kind: "backend",
             command: "plugin_call",
-            error: { kind: error.kind, subject: error.subject, detail: null },
+            error: { kind: error.kind, subject: error.subject, detail: error.detail },
           },
         });
       }

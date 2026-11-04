@@ -454,6 +454,8 @@ export function createMockApi(): Api & {
     "token-count:folder": new Set(),
     "token-count:folders": new Set(),
     "notes:intent": new Set(),
+    "local-ai:state": new Set(),
+    "local-ai:progress": new Set(),
   };
   const distribution = createMockDistribution((event, payload) => {
     for (const handler of appListeners[event]) handler(payload);
@@ -466,7 +468,9 @@ export function createMockApi(): Api & {
     rootNow,
   );
   const convert = createMockConvert((path) => editing.probe.files.get(path) ?? null);
-  const localAi = createMockLocalAi();
+  const localAi = createMockLocalAi((event, payload) => {
+    for (const handler of appListeners[event]) handler(payload);
+  });
   const plugins = createMockPlugins(
     emitPlugin,
     () => mockView("docs/guide.md", [], true)?.hash ?? "0",

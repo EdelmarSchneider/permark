@@ -50,8 +50,10 @@ export class MockPluginError extends Error {
       | "exists"
       | "invalidName"
       | "intoItself"
-      | "conflict",
+      | "conflict"
+      | "unsupported",
     readonly subject: string | null = null,
+    readonly detail: string | null = null,
   ) {
     super(kind);
   }

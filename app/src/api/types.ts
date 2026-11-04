@@ -13,6 +13,9 @@ import type { CountResult } from "./generated/CountResult";
 import type { TokenCountState } from "./generated/TokenCountState";
 import type { LocalAiCatalog } from "./generated/LocalAiCatalog";
 import type { AiTaskInfo } from "./generated/AiTaskInfo";
+import type { AiTask } from "./generated/AiTask";
+import type { LocalAiState } from "./generated/LocalAiState";
+import type { ModelProgress } from "./generated/ModelProgress";
 import type { FolderBadge } from "./generated/FolderBadge";
 import type { FolderBadges } from "./generated/FolderBadges";
 import type { FolderJob } from "./generated/FolderJob";
@@ -641,6 +644,21 @@ export interface PluginMethods {
   };
   "local-ai.catalog": { args: Record<string, never>; result: LocalAiCatalog };
   "local-ai.tasks": { args: Record<string, never>; result: AiTaskInfo[] };
+  "local-ai.state": { args: Record<string, never>; result: LocalAiState };
+  /** Get: refused (`denied`, detail `license` | `token` | `withdrawn`) while the model is blocked. */
+  "local-ai.get": { args: { model: string }; result: LocalAiState };
+  /** Get of the newer version beside the installed one (`conflict` / `noUpdate` when none is older). */
+  "local-ai.update": { args: { model: string }; result: LocalAiState };
+  "local-ai.acceptLicense": { args: { model: string }; result: LocalAiState };
+  "local-ai.cancel": { args: { model: string }; result: LocalAiState };
+  "local-ai.deletePart": { args: { model: string }; result: LocalAiState };
+  /** Deletes the installed files; tasks using the model are unassigned (`conflict` / `downloading` while it runs). */
+  "local-ai.remove": { args: { model: string }; result: LocalAiState };
+  /** `model: null` unassigns; refused: `unsupported` / `incompatible`, `conflict` / `notInstalled`. */
+  "local-ai.assign": { args: { task: AiTask; model: string | null }; result: LocalAiState };
+  /** The token is never sent back: the state says only whether one is set. */
+  "local-ai.setToken": { args: { token: string }; result: LocalAiState };
+  "local-ai.clearToken": { args: Record<string, never>; result: LocalAiState };
   "fmt-toon.toJson": { args: { text: string }; result: string };
   "convert.analyze": {
     args: { job: number; source: ConvertSource; from?: string };
@@ -691,6 +709,10 @@ export interface AppPluginEvents {
   "token-count:folders": FolderBadges;
   /** Something asked the Notes tab to show a note | a new note: the Notes tab takes it (`notes.takeIntent`). */
   "notes:intent": null;
+  /** Local AI installs changed (a download finished | failed, terms accepted, assignment, token). */
+  "local-ai:state": LocalAiState;
+  /** One model's download progress (throttled). */
+  "local-ai:progress": ModelProgress;
 }
 export type AppPluginEventName = keyof AppPluginEvents;
 export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };
