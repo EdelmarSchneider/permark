@@ -240,6 +240,15 @@ describe("the Broken links tab", () => {
       "notes/missing.md",
     ]);
     expect(mock.probe.plugins.repairs).toEqual([]);
+    const navigate = vi.spyOn(documents, "navigate").mockImplementation(() => {});
+    target.querySelector<HTMLElement>(".link")?.click();
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(mock.probe.plugins.repairs).toEqual([]);
+    if (select) {
+      select.value = "";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    expect(mock.probe.plugins.repairs).toEqual([]);
     if (select) {
       select.value = "notes/missing.md";
       select.dispatchEvent(new Event("change", { bubbles: true }));

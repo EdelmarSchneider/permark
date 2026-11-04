@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use permark_core::conditions::Distribution;
 use permark_core::events::{CoreEvent, EventSink};
-use permark_core::paths::{key_of, Root};
+use permark_core::paths::{key_of, Root, CASE_INSENSITIVE};
 use permark_core::plugins::{PluginId, PluginRegistry, RpcCall};
 use permark_core::settings::AppSettings;
 use permark_core::state::AppDirs;
@@ -793,6 +793,553 @@ fn repair_writes_the_one_destination_and_skips_changed_unsaved_and_other_root() 
                 "same.md:1:old/plan.md",
                 "same.md:1:old/plan.md",
             ]
+    });
+}
+
+fn line_of(text: &str, marker: &str) -> u32 {
+    let at = text
+        .find(marker)
+        .unwrap_or_else(|| panic!("marker not in the note: {marker}"));
+    u32::try_from(text[..at].bytes().filter(|b| *b == b'\n').count() + 1).unwrap()
+}
+
+fn candidates_at(report: &Value, path: &str, line: u32, href: &str) -> Vec<String> {
+    let doc = report["docs"]
+        .as_array()
+        .and_then(|docs| docs.iter().find(|doc| doc["path"] == path))
+        .unwrap_or_else(|| panic!("no document {path}"));
+    let row = doc["links"]
+        .as_array()
+        .and_then(|links| {
+            links
+                .iter()
+                .find(|row| row["line"] == line && row["href"] == href)
+        })
+        .unwrap_or_else(|| panic!("no {href} on line {line} of {path}: {doc}"));
+    let mut paths = row["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // one note: the near misses refuse, then each chosen span is the only bytes that move
+fn adversarial_repair_rejects_near_misses_and_rewrites_only_the_chosen_span() {
+    let note = "\u{feff}---\n\
+link: old/front.md\n\
+---\n\
+\n\
+pré [bom](old/plan.md#sec?x=1) pós\n\
+\n\
+[short](old/plan) [long](old/plan.md)\n\
+\n\
+[title](old/plan.md \"keep me\")\n\
+\n\
+[cased](old/Plan.MD)\n\
+\n\
+[angle](<old/My Notes (1).md>)\n\
+\n\
+[pct](old/my%20plan.md)\n\
+\n\
+[png](pics/shot.png)\n\
+\n\
+![pic](pics/shot.png)\n\
+\n\
+[miss](gone/missing)\n\
+\n\
+[near](old/planx)\n\
+\n\
+[mark](old/plan.markdown)\n\
+\n\
+[dot](./plan.md)\n\
+\n\
+[win](sub\\plan.md)\n\
+\n\
+[root](/old/plan.md)\n\
+\n\
+<a href=\"old/plan.md\">html</a>\n\
+\n\
+[ref]: old/plan.md\n\
+\n\
+[stay](old/plan.md)\n\
+\n\
+`[code](old/inlined.md)`\n\
+\n\
+```\n\
+[fence](old/fenced.md)\n\
+```\n\
+\n\
+$[math](old/math.md)$\n\
+\n\
+[web](https://example.com/plan.md) [mail](mailto:a@b.md) [hash](#plan.md)\n\
+"
+    .replace('\n', "\r\n");
+    let mut h = Harness::new();
+    h.write(".gitignore", "hidden/\nsecret/plan.md\n");
+    for (path, text) in [
+        ("notes/Plan.md", "# plan\n"),
+        ("other/plan.md", "# other\n"),
+        ("hidden/plan.md", "# hidden\n"),
+        ("secret/plan.md", "# secret\n"),
+        ("notes/plan.md.md", "# double\n"),
+        ("notes/planning.md", "# fuzzy\n"),
+        ("notes/plan.md.txt", "nope\n"),
+        ("notes/xplan.md", "# x\n"),
+        ("notes/plan.markdown", "# markdown\n"),
+        ("img/shot.png", "png\n"),
+        ("img/shot.md", "# not the png\n"),
+        ("img/shot.png.md", "# suffix\n"),
+        ("other/shot.PNG", "PNG\n"),
+        ("docs/missing/README.md", "# readme\n"),
+        ("docs/missing/index.md", "# index\n"),
+        ("b/my plan.md", "# space\n"),
+        ("decoy/my%20plan.md", "# encoded name\n"),
+        ("weird/My Notes (1).md", "# weird\n"),
+        ("real/fenced.md", "# fence\n"),
+        ("real/inlined.md", "# inline\n"),
+        ("real/math.md", "# math\n"),
+        ("real/front.md", "# front\n"),
+        ("a/note.md", note.as_str()),
+    ] {
+        h.write(path, text);
+    }
+    std::fs::create_dir_all(h.root().join("folder").join("plan.md")).unwrap();
+    h.open();
+    let report = h.report();
+    // `key_of` folds case only where the OS ignores it. `notes/Plan.md` is a hit on Windows and macOS.
+    let plans = if CASE_INSENSITIVE {
+        vec!["notes/Plan.md".to_owned(), "other/plan.md".to_owned()]
+    } else {
+        vec!["other/plan.md".to_owned()]
+    };
+    for (marker, href) in [
+        ("[bom]", "old/plan.md#sec?x=1"),
+        ("[short]", "old/plan"),
+        ("[long]", "old/plan.md"),
+        ("[title]", "old/plan.md"),
+        ("[dot]", "./plan.md"),
+        ("[win]", "sub\\plan.md"),
+        ("[root]", "/old/plan.md"),
+        ("<a href", "old/plan.md"),
+        ("[ref]", "old/plan.md"),
+        ("[stay]", "old/plan.md"),
+    ] {
+        assert_eq!(
+            candidates_at(&report, "a/note.md", line_of(&note, marker), href),
+            plans,
+            "{marker} must not take a near miss, an ignored file, or a directory"
+        );
+    }
+    let cased = if CASE_INSENSITIVE {
+        plans.clone()
+    } else {
+        Vec::new()
+    };
+    assert_eq!(
+        candidates_at(
+            &report,
+            "a/note.md",
+            line_of(&note, "[cased]"),
+            "old/Plan.MD"
+        ),
+        cased,
+        "Plan.MD matches plan.md only where the OS ignores case"
+    );
+    let mut shots = vec!["img/shot.png".to_owned(), "img/shot.png.md".to_owned()];
+    if CASE_INSENSITIVE {
+        shots.push("other/shot.PNG".to_owned());
+    }
+    shots.sort();
+    assert_eq!(
+        candidates_at(
+            &report,
+            "a/note.md",
+            line_of(&note, "[png]"),
+            "pics/shot.png"
+        ),
+        shots,
+        "shot.png does not match shot.md; the other case counts only where the OS ignores case"
+    );
+    assert_eq!(
+        candidates_at(
+            &report,
+            "a/note.md",
+            line_of(&note, "![pic]"),
+            "pics/shot.png"
+        ),
+        shots
+    );
+    assert_eq!(
+        candidates_at(
+            &report,
+            "a/note.md",
+            line_of(&note, "[angle]"),
+            "old/My Notes (1).md"
+        ),
+        ["weird/My Notes (1).md"]
+    );
+    assert_eq!(
+        candidates_at(
+            &report,
+            "a/note.md",
+            line_of(&note, "[pct]"),
+            "old/my%20plan.md"
+        ),
+        ["b/my plan.md"],
+        "the encoded href names the decoded file, not a file whose name is the escape"
+    );
+    assert_eq!(
+        candidates_at(
+            &report,
+            "a/note.md",
+            line_of(&note, "[mark]"),
+            "old/plan.markdown"
+        ),
+        ["notes/plan.markdown"],
+        "a different extension is not a stem match"
+    );
+    assert!(
+        candidates_at(
+            &report,
+            "a/note.md",
+            line_of(&note, "[miss]"),
+            "gone/missing"
+        )
+        .is_empty(),
+        "a folder's README or index is not a candidate"
+    );
+    assert!(
+        candidates_at(&report, "a/note.md", line_of(&note, "[near]"), "old/planx").is_empty(),
+        "planx is not plan"
+    );
+    for href in [
+        "old/front.md",
+        "old/inlined.md",
+        "old/fenced.md",
+        "old/math.md",
+        "https://example.com/plan.md",
+        "mailto:a@b.md",
+        "#plan.md",
+    ] {
+        assert!(
+            !report["docs"].as_array().unwrap().iter().any(|doc| {
+                doc["links"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|link| link["href"] == href)
+            }),
+            "{href} is not a broken link of this note"
+        );
+    }
+
+    let original = h.bytes("a/note.md");
+    assert_eq!(original, note.as_bytes());
+    let refuse = |line: u32, href: &str, target: &str, reason: &str| {
+        assert_eq!(
+            h.repair("a/note.md", line, href, target),
+            json!({"outcome": "refused", "reason": reason}),
+            "line {line} {href} -> {target}"
+        );
+        assert_eq!(h.bytes("a/note.md"), original, "a refusal wrote");
+    };
+    let plan_line = line_of(&note, "[bom]");
+    for target in [
+        "hidden/plan.md",
+        "secret/plan.md",
+        "folder/plan.md",
+        "notes/plan.md.md",
+        "notes/planning.md",
+        "notes/xplan.md",
+        "notes/plan.md.txt",
+        "docs/missing/README.md",
+        "docs/missing/index.md",
+        "decoy/my%20plan.md",
+        "../notes/Plan.md",
+        "",
+    ] {
+        refuse(plan_line, "old/plan.md#sec?x=1", target, "notCandidate");
+    }
+    refuse(
+        line_of(&note, "[png]"),
+        "pics/shot.png",
+        "img/shot.md",
+        "notCandidate",
+    );
+    refuse(
+        line_of(&note, "[miss]"),
+        "gone/missing",
+        "docs/missing/README.md",
+        "notCandidate",
+    );
+    refuse(0, "old/plan.md#sec?x=1", "notes/Plan.md", "mismatch");
+    refuse(999, "old/plan.md#sec?x=1", "notes/Plan.md", "mismatch");
+    refuse(
+        line_of(&note, "[fence]"),
+        "old/fenced.md",
+        "real/fenced.md",
+        "mismatch",
+    );
+    refuse(
+        line_of(&note, "[code]"),
+        "old/inlined.md",
+        "real/inlined.md",
+        "mismatch",
+    );
+    refuse(
+        line_of(&note, "[math]"),
+        "old/math.md",
+        "real/math.md",
+        "mismatch",
+    );
+    refuse(
+        line_of(&note, "link:"),
+        "old/front.md",
+        "real/front.md",
+        "mismatch",
+    );
+    let schemes = line_of(&note, "[web]");
+    refuse(
+        schemes,
+        "https://example.com/plan.md",
+        "notes/Plan.md",
+        "notCandidate",
+    );
+    refuse(schemes, "mailto:a@b.md", "notes/Plan.md", "notCandidate");
+    refuse(schemes, "#plan.md", "notes/Plan.md", "notCandidate");
+    if !CASE_INSENSITIVE {
+        refuse(
+            plan_line,
+            "old/plan.md#sec?x=1",
+            "notes/Plan.md",
+            "notCandidate",
+        );
+        refuse(
+            line_of(&note, "[cased]"),
+            "old/Plan.MD",
+            "other/plan.md",
+            "notCandidate",
+        );
+        refuse(
+            line_of(&note, "![pic]"),
+            "pics/shot.png",
+            "other/shot.PNG",
+            "notCandidate",
+        );
+    }
+
+    let mut expect = note.clone();
+    let rewrite = |expect: &mut String,
+                   marker: &str,
+                   href: &str,
+                   target: &str,
+                   new_href: &str,
+                   old_span: &str,
+                   new_span: &str| {
+        assert_eq!(
+            h.repair("a/note.md", line_of(expect, marker), href, target),
+            json!({"outcome": "wrote", "href": new_href}),
+            "{marker}"
+        );
+        assert_eq!(expect.matches(old_span).count(), 1, "{old_span}");
+        *expect = expect.replacen(old_span, new_span, 1);
+        assert_eq!(h.bytes("a/note.md"), expect.as_bytes(), "{marker}");
+    };
+    let (bom_target, bom_href) = if CASE_INSENSITIVE {
+        ("notes/Plan.md", "../notes/Plan.md#sec?x=1")
+    } else {
+        ("other/plan.md", "../other/plan.md#sec?x=1")
+    };
+    rewrite(
+        &mut expect,
+        "[bom]",
+        "old/plan.md#sec?x=1",
+        bom_target,
+        bom_href,
+        "pré [bom](old/plan.md#sec?x=1) pós",
+        &format!("pré [bom]({bom_href}) pós"),
+    );
+    rewrite(
+        &mut expect,
+        "[short]",
+        "old/plan",
+        "other/plan.md",
+        "../other/plan",
+        "[short](old/plan)",
+        "[short](../other/plan)",
+    );
+    rewrite(
+        &mut expect,
+        "[title]",
+        "old/plan.md",
+        "other/plan.md",
+        "../other/plan.md",
+        "[title](old/plan.md \"keep me\")",
+        "[title](../other/plan.md \"keep me\")",
+    );
+    rewrite(
+        &mut expect,
+        "[long]",
+        "old/plan.md",
+        "other/plan.md",
+        "../other/plan.md",
+        "[long](old/plan.md)",
+        "[long](../other/plan.md)",
+    );
+    if CASE_INSENSITIVE {
+        rewrite(
+            &mut expect,
+            "[cased]",
+            "old/Plan.MD",
+            "other/plan.md",
+            "../other/plan.md",
+            "[cased](old/Plan.MD)",
+            "[cased](../other/plan.md)",
+        );
+    }
+    rewrite(
+        &mut expect,
+        "[angle]",
+        "old/My Notes (1).md",
+        "weird/My Notes (1).md",
+        "<../weird/My Notes (1).md>",
+        "[angle](<old/My Notes (1).md>)",
+        "[angle](<../weird/My Notes (1).md>)",
+    );
+    rewrite(
+        &mut expect,
+        "[pct]",
+        "old/my%20plan.md",
+        "b/my plan.md",
+        "../b/my%20plan.md",
+        "[pct](old/my%20plan.md)",
+        "[pct](../b/my%20plan.md)",
+    );
+    rewrite(
+        &mut expect,
+        "[png]",
+        "pics/shot.png",
+        "img/shot.png",
+        "../img/shot.png",
+        "[png](pics/shot.png)",
+        "[png](../img/shot.png)",
+    );
+    if CASE_INSENSITIVE {
+        rewrite(
+            &mut expect,
+            "![pic]",
+            "pics/shot.png",
+            "other/shot.PNG",
+            "../other/shot.PNG",
+            "![pic](pics/shot.png)",
+            "![pic](../other/shot.PNG)",
+        );
+    }
+    rewrite(
+        &mut expect,
+        "[mark]",
+        "old/plan.markdown",
+        "notes/plan.markdown",
+        "../notes/plan.markdown",
+        "[mark](old/plan.markdown)",
+        "[mark](../notes/plan.markdown)",
+    );
+    rewrite(
+        &mut expect,
+        "[dot]",
+        "./plan.md",
+        "other/plan.md",
+        "../other/plan.md",
+        "[dot](./plan.md)",
+        "[dot](../other/plan.md)",
+    );
+    rewrite(
+        &mut expect,
+        "[win]",
+        "sub\\plan.md",
+        "other/plan.md",
+        "../other/plan.md",
+        "[win](sub\\plan.md)",
+        "[win](../other/plan.md)",
+    );
+    rewrite(
+        &mut expect,
+        "[root]",
+        "/old/plan.md",
+        "other/plan.md",
+        "/other/plan.md",
+        "[root](/old/plan.md)",
+        "[root](/other/plan.md)",
+    );
+    rewrite(
+        &mut expect,
+        "<a href",
+        "old/plan.md",
+        "other/plan.md",
+        "../other/plan.md",
+        "<a href=\"old/plan.md\">",
+        "<a href=\"../other/plan.md\">",
+    );
+    rewrite(
+        &mut expect,
+        "[ref]",
+        "old/plan.md",
+        "other/plan.md",
+        "../other/plan.md",
+        "[ref]: old/plan.md",
+        "[ref]: ../other/plan.md",
+    );
+    assert_eq!(
+        h.repair(
+            "a/note.md",
+            line_of(&note, "[bom]"),
+            "old/plan.md#sec?x=1",
+            "notes/Plan.md"
+        ),
+        json!({"outcome": "refused", "reason": "mismatch"}),
+        "the same call again does not write a second time"
+    );
+    assert_eq!(
+        h.repair(
+            "a/note.md",
+            line_of(&note, "[stay]"),
+            "old/plan.md",
+            "hidden/plan.md"
+        ),
+        json!({"outcome": "refused", "reason": "notCandidate"}),
+        "a later refusal still does not take the ignored file"
+    );
+    assert_eq!(h.bytes("a/note.md"), expect.as_bytes());
+    assert!(
+        expect.contains("[stay](old/plan.md)"),
+        "the copy that was not chosen is still the old href"
+    );
+    let mut still_broken = Vec::new();
+    if !CASE_INSENSITIVE {
+        still_broken.push(format!(
+            "a/note.md:{}:old/Plan.MD",
+            line_of(&note, "[cased]")
+        ));
+        still_broken.push(format!(
+            "a/note.md:{}:pics/shot.png",
+            line_of(&note, "![pic]")
+        ));
+    }
+    still_broken.push(format!(
+        "a/note.md:{}:gone/missing",
+        line_of(&note, "[miss]")
+    ));
+    still_broken.push(format!("a/note.md:{}:old/planx", line_of(&note, "[near]")));
+    still_broken.push(format!(
+        "a/note.md:{}:old/plan.md",
+        line_of(&note, "[stay]")
+    ));
+    wait_until("the checker drops every link that now resolves", || {
+        h.broken() == still_broken
     });
 }
 
