@@ -21,6 +21,8 @@ import type {
   PluginMethod,
   PluginMethods,
   ProjectsView,
+  RepairArgs,
+  RepairRefusal,
   Result,
   SinceVisit,
   UnreadList,
@@ -55,6 +57,10 @@ export type MockPluginProbe = {
   agent: AgentProbe;
   /** Announces a plugin event as the backend would. */
   announce<E extends PluginEventName>(event: E, data: PluginEvents[E]): void;
+  /** Repair calls, oldest first. */
+  repairs: RepairArgs[];
+  /** The next repair returns this refusal and writes nothing (`null` clears one still waiting). */
+  refuseNext(reason: RepairRefusal | null): void;
 };
 
 function ghost(id: string, html: string): Block {
@@ -255,6 +261,8 @@ export function createMockPlugins(
 
   const agent = createMockAgent(emit);
   const members = createMockGitMembers({ view: projectsView, emit, baseline: () => baseline });
+  const repairs: RepairArgs[] = [];
+  let nextRefusal: RepairRefusal | null = null;
   const handlers: Handlers = {
     ...organizing.handlers,
     ...agent.handlers,
@@ -344,7 +352,13 @@ export function createMockPlugins(
       return null;
     },
     "review.basis": () => basis,
-    "broken-links.repair": () => ({ outcome: "refused", reason: "unsaved" }),
+    "broken-links.repair": (args) => {
+      repairs.push(args);
+      const reason = nextRefusal;
+      nextRefusal = null;
+      if (reason !== null) return { outcome: "refused", reason };
+      return { outcome: "wrote", href: args.target };
+    },
   };
 
   return {
@@ -385,6 +399,10 @@ export function createMockPlugins(
       notes: notes.probe,
       agent: agent.probe,
       announce: emit,
+      repairs,
+      refuseNext: (reason) => {
+        nextRefusal = reason;
+      },
     },
   };
 }

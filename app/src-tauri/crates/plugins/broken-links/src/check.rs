@@ -26,8 +26,8 @@ pub struct LinkRec {
     pub line: u32,
     /// The destination as it is written, shortened when very long.
     pub written: String,
-    /// The whole destination, to resolve it again.
-    href: String,
+    /// The whole destination, to resolve it again. The list sends this, not the shortened label.
+    pub(super) href: String,
     /// Key of the project path the destination names (no disk): what makes it worth resolving again.
     target: Option<String>,
     pub broken: bool,

@@ -43,8 +43,8 @@ describe("the broken links store", () => {
       {
         path: "docs/bad.md",
         links: [
-          { line: 5, written: "missing.md" },
-          { line: 5, written: "img/none.png" },
+          { line: 5, written: "missing.md", href: "missing.md", candidates: [] },
+          { line: 5, written: "img/none.png", href: "img/none.png", candidates: [] },
         ],
       },
     ]);

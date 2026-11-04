@@ -1108,6 +1108,18 @@ export default {
   "brokenLinks.open": "{path} bei Zeile {line} öffnen",
   "brokenLinks.truncated": "Die ersten 500 von {n} defekten Links werden angezeigt.",
   "brokenLinks.show": "Defekte Links anzeigen",
+  "brokenLinks.repair": "Reparieren",
+  "brokenLinks.pick": "Datei wählen",
+  "brokenLinks.refused.unsaved": "Nicht repariert: dieses Dokument hat ungespeicherte Änderungen.",
+  "brokenLinks.refused.unreadable": "Nicht repariert: dieses Dokument konnte nicht gelesen werden.",
+  "brokenLinks.refused.notUtf8": "Nicht repariert: dieses Dokument ist nicht UTF-8.",
+  "brokenLinks.refused.missing": "Nicht repariert: dieses Dokument ist nicht mehr da.",
+  "brokenLinks.refused.mismatch": "Nicht repariert: dieser Link steht nicht in dieser Zeile.",
+  "brokenLinks.refused.notCandidate": "Nicht repariert: diese Datei passt nicht zu diesem Link.",
+  "brokenLinks.refused.noReplacement": "Nicht repariert: dieser Link lässt sich nicht umschreiben.",
+  "brokenLinks.refused.changed": "Nicht repariert: das Dokument wurde geändert.",
+  "brokenLinks.refused.writeFailed":
+    "Nicht repariert: der neue Text konnte nicht gespeichert werden.",
 
   // ---- notes
   "cmd.notesCopy": "Text der Notiz kopieren",

@@ -1076,6 +1076,17 @@ export default {
   "brokenLinks.open": "{path}의 {line}번째 줄 열기",
   "brokenLinks.truncated": "끊어진 링크 {n}개 중 처음 500개를 표시합니다.",
   "brokenLinks.show": "끊어진 링크 표시",
+  "brokenLinks.repair": "고치기",
+  "brokenLinks.pick": "파일 선택",
+  "brokenLinks.refused.unsaved": "고치지 않았습니다. 이 문서에 저장하지 않은 편집이 있습니다.",
+  "brokenLinks.refused.unreadable": "고치지 않았습니다. 이 문서를 읽을 수 없습니다.",
+  "brokenLinks.refused.notUtf8": "고치지 않았습니다. 이 문서는 UTF-8이 아닙니다.",
+  "brokenLinks.refused.missing": "고치지 않았습니다. 이 문서가 없습니다.",
+  "brokenLinks.refused.mismatch": "고치지 않았습니다. 그 링크가 이 줄에 없습니다.",
+  "brokenLinks.refused.notCandidate": "고치지 않았습니다. 그 파일이 이 링크와 맞지 않습니다.",
+  "brokenLinks.refused.noReplacement": "고치지 않았습니다. 이 링크는 다시 쓸 수 없습니다.",
+  "brokenLinks.refused.changed": "고치지 않았습니다. 문서가 바뀌었습니다.",
+  "brokenLinks.refused.writeFailed": "고치지 않았습니다. 새 텍스트를 저장할 수 없습니다.",
 
   // ---- notes
   "cmd.notesCopy": "메모 텍스트 복사",

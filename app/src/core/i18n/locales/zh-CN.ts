@@ -1050,6 +1050,17 @@ export default {
   "brokenLinks.open": "在第 {line} 行打开 {path}",
   "brokenLinks.truncated": "显示 {n} 个失效链接中的前 500 个。",
   "brokenLinks.show": "显示失效链接",
+  "brokenLinks.repair": "修复",
+  "brokenLinks.pick": "选择文件",
+  "brokenLinks.refused.unsaved": "未修复：此文档有未保存的编辑。",
+  "brokenLinks.refused.unreadable": "未修复：无法读取此文档。",
+  "brokenLinks.refused.notUtf8": "未修复：此文档不是 UTF-8。",
+  "brokenLinks.refused.missing": "未修复：此文档已不在。",
+  "brokenLinks.refused.mismatch": "未修复：该链接不在这一行。",
+  "brokenLinks.refused.notCandidate": "未修复：该文件与此链接不匹配。",
+  "brokenLinks.refused.noReplacement": "未修复：无法改写此链接。",
+  "brokenLinks.refused.changed": "未修复：文档已更改。",
+  "brokenLinks.refused.writeFailed": "未修复：无法保存新文本。",
 
   // ---- notes
   "cmd.notesCopy": "复制笔记文本",

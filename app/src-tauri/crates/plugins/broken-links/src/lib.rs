@@ -9,7 +9,7 @@ mod tests;
 mod types;
 
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::ops::Range;
 use std::path::Path;
@@ -100,9 +100,17 @@ fn summary_of(checker: &Checker, ready: bool) -> BrokenSummary {
     }
 }
 
+/// `paths::key_of` of a file name -> project paths. The shape `Explorer::files_keyed` returns.
+type FilesByKey = HashMap<String, Vec<String>>;
+
 /// The report: the opened folder first (its documents and its count), then each worktree in the vault's order, then
 /// any other root; so the list cap cuts a worktree's links before the opened folder's.
-fn report_of(checker: &Checker, ready: bool, vault: &Vault) -> BrokenReport {
+fn report_of(
+    checker: &Checker,
+    ready: bool,
+    vault: &Vault,
+    files: &dyn Fn(&HashSet<String>) -> FilesByKey,
+) -> BrokenReport {
     let worktrees: Vec<String> = vault
         .worktrees()
         .iter()
@@ -121,24 +129,37 @@ fn report_of(checker: &Checker, ready: bool, vault: &Vault) -> BrokenReport {
     let mut broken: Vec<(&str, Vec<&check::LinkRec>)> = checker.broken().into_iter().collect();
     // stable: by root, then by path as before
     broken.sort_by_key(|(path, _)| rank(root_of(path)));
-    let mut docs = Vec::new();
+    let mut chosen = Vec::new();
     let mut listed = 0usize;
     for (path, links) in broken {
         if listed >= MAX_LISTED {
             break;
         }
-        let links: Vec<BrokenLink> = links
-            .iter()
-            .take(MAX_LISTED - listed)
-            .map(|l| BrokenLink {
-                line: l.line,
-                written: l.written.clone(),
-            })
-            .collect();
-        listed += links.len();
+        let take: Vec<&check::LinkRec> = links.into_iter().take(MAX_LISTED - listed).collect();
+        listed += take.len();
+        chosen.push((path, take));
+    }
+    let mut names = HashSet::new();
+    for (path, links) in &chosen {
+        for link in links {
+            names.extend(keyed_names(path, &link.href));
+        }
+    }
+    // The tree is already indexed: one lookup, not another walk of the documents.
+    let by_key = files(&names);
+    let mut docs = Vec::new();
+    for (path, links) in chosen {
         docs.push(BrokenDoc {
             path: path.to_owned(),
-            links,
+            links: links
+                .iter()
+                .map(|link| BrokenLink {
+                    line: link.line,
+                    written: link.written.clone(),
+                    href: link.href.clone(),
+                    candidates: candidates(path, &link.href, &by_key),
+                })
+                .collect(),
         });
     }
     let by_root = checker.totals_by_root();
@@ -307,7 +328,9 @@ impl BrokenLinksService {
             .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        report_of(&state.checker, state.ready, &self.shared.vault)
+        report_of(&state.checker, state.ready, &self.shared.vault, &|names| {
+            self.shared.explorer.files_keyed(names)
+        })
     }
 
     /// Waits until the first scan is done (tests).

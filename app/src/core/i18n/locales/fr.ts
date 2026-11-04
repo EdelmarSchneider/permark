@@ -1122,6 +1122,17 @@ export default {
   "brokenLinks.open": "Ouvrir {path} à la ligne {line}",
   "brokenLinks.truncated": "Affichage des 500 premiers liens rompus sur {n}.",
   "brokenLinks.show": "Afficher les liens rompus",
+  "brokenLinks.repair": "Réparer",
+  "brokenLinks.pick": "Choisissez le fichier",
+  "brokenLinks.refused.unsaved": "Pas réparé : ce document a des modifications non enregistrées.",
+  "brokenLinks.refused.unreadable": "Pas réparé : ce document n'a pas pu être lu.",
+  "brokenLinks.refused.notUtf8": "Pas réparé : ce document n'est pas en UTF-8.",
+  "brokenLinks.refused.missing": "Pas réparé : ce document n'est plus là.",
+  "brokenLinks.refused.mismatch": "Pas réparé : ce lien n'est pas sur cette ligne.",
+  "brokenLinks.refused.notCandidate": "Pas réparé : ce fichier ne correspond pas à ce lien.",
+  "brokenLinks.refused.noReplacement": "Pas réparé : ce lien ne peut pas être réécrit.",
+  "brokenLinks.refused.changed": "Pas réparé : le document a changé.",
+  "brokenLinks.refused.writeFailed": "Pas réparé : le nouveau texte n'a pas pu être enregistré.",
 
   // ---- notes
   "cmd.notesCopy": "Copier le texte de la note",

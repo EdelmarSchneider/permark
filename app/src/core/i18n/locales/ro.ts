@@ -1154,6 +1154,17 @@ export default {
   "brokenLinks.open": "Deschide {path} la rândul {line}",
   "brokenLinks.truncated": "Se afișează primele 500 de linkuri nefuncționale din {n}.",
   "brokenLinks.show": "Arată linkurile nefuncționale",
+  "brokenLinks.repair": "Repară",
+  "brokenLinks.pick": "Alege fișierul",
+  "brokenLinks.refused.unsaved": "Nereparat: acest document are modificări nesalvate.",
+  "brokenLinks.refused.unreadable": "Nereparat: acest document nu a putut fi citit.",
+  "brokenLinks.refused.notUtf8": "Nereparat: acest document nu este UTF-8.",
+  "brokenLinks.refused.missing": "Nereparat: acest document nu mai este.",
+  "brokenLinks.refused.mismatch": "Nereparat: linkul nu este pe acest rând.",
+  "brokenLinks.refused.notCandidate": "Nereparat: fișierul nu corespunde acestui link.",
+  "brokenLinks.refused.noReplacement": "Nereparat: acest link nu poate fi rescris.",
+  "brokenLinks.refused.changed": "Nereparat: documentul s-a schimbat.",
+  "brokenLinks.refused.writeFailed": "Nereparat: textul nou nu a putut fi salvat.",
 
   // ---- notes
   "cmd.notesCopy": "Copiază textul notei",

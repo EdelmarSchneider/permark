@@ -12,6 +12,10 @@ pub struct BrokenLink {
     pub line: u32,
     /// The destination as written, shortened when very long.
     pub written: String,
+    /// The destination inner text, not shortened. Repair sends this, not `written`.
+    pub href: String,
+    /// Same-root project paths this destination could name. Empty when there are none.
+    pub candidates: Vec<String>,
 }
 
 /// The broken links of one document.

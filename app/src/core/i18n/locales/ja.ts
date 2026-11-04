@@ -1103,6 +1103,17 @@ export default {
   "brokenLinks.open": "{path} の {line} 行目を開く",
   "brokenLinks.truncated": "{n} 個のリンク切れのうち、最初の 500 個を表示しています。",
   "brokenLinks.show": "リンク切れを表示",
+  "brokenLinks.repair": "修復",
+  "brokenLinks.pick": "ファイルを選ぶ",
+  "brokenLinks.refused.unsaved": "修復しませんでした。このドキュメントには未保存の編集があります。",
+  "brokenLinks.refused.unreadable": "修復しませんでした。このドキュメントを読み取れませんでした。",
+  "brokenLinks.refused.notUtf8": "修復しませんでした。このドキュメントは UTF-8 ではありません。",
+  "brokenLinks.refused.missing": "修復しませんでした。このドキュメントはもうありません。",
+  "brokenLinks.refused.mismatch": "修復しませんでした。そのリンクはこの行にありません。",
+  "brokenLinks.refused.notCandidate": "修復しませんでした。そのファイルはこのリンクに合いません。",
+  "brokenLinks.refused.noReplacement": "修復しませんでした。このリンクは書き換えられません。",
+  "brokenLinks.refused.changed": "修復しませんでした。ドキュメントが変わりました。",
+  "brokenLinks.refused.writeFailed": "修復しませんでした。新しいテキストを保存できませんでした。",
 
   // ---- notes
   "cmd.notesCopy": "メモのテキストをコピー",

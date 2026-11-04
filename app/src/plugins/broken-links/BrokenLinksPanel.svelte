@@ -1,12 +1,13 @@
 <script lang="ts">
   // The Broken links tab: the Markdown links that lead nowhere, by document. A row shows the line and the destination as
-  // it is written; a click opens the document at that line. The count is the opened folder's; when a linked worktree
-  // has broken links too, each root gets its own section so none is mistaken for the other.
+  // it is written; a click opens the document at that line. One same-root file offers Repair; several offer a pick
+  // and nothing is written until one is chosen; none offers no control. The count is the opened folder's; when a
+  // linked worktree has broken links too, each root gets its own section so none is mistaken for the other.
   import { documents } from "../../core/doc/document.svelte";
-  import { t, tn } from "../../core/i18n";
+  import { t, tn, type MessageKey } from "../../core/i18n";
   import { brokenLinks } from "./store.svelte";
 
-  import type { BrokenDoc } from "../../api";
+  import type { BrokenDoc, BrokenLink, RepairRefusal } from "../../api";
 
   /** The prefix of a linked worktree's paths (`@wt/<name>/…`). */
   const WORKTREE = "@wt/";
@@ -44,6 +45,59 @@
     return at < 0
       ? { name: own, folder: "" }
       : { name: own.slice(at + 1), folder: own.slice(0, at) };
+  }
+
+  let refused = $state.raw<ReadonlyMap<string, RepairRefusal>>(new Map());
+
+  function rowId(path: string, link: BrokenLink): string {
+    return `${path}\0${link.line}\0${link.href}`;
+  }
+
+  function refusalKey(reason: RepairRefusal): MessageKey {
+    switch (reason) {
+      case "unsaved":
+        return "brokenLinks.refused.unsaved";
+      case "unreadable":
+        return "brokenLinks.refused.unreadable";
+      case "notUtf8":
+        return "brokenLinks.refused.notUtf8";
+      case "missing":
+        return "brokenLinks.refused.missing";
+      case "mismatch":
+        return "brokenLinks.refused.mismatch";
+      case "notCandidate":
+        return "brokenLinks.refused.notCandidate";
+      case "noReplacement":
+        return "brokenLinks.refused.noReplacement";
+      case "changed":
+        return "brokenLinks.refused.changed";
+      case "writeFailed":
+        return "brokenLinks.refused.writeFailed";
+      default: {
+        const exhaustive = reason satisfies never;
+        return exhaustive;
+      }
+    }
+  }
+
+  async function repair(path: string, link: BrokenLink, target: string): Promise<void> {
+    const id = rowId(path, link);
+    const result = await brokenLinks.repair({ path, line: link.line, href: link.href, target });
+    if (result === null) return;
+    const next = new Map(refused);
+    switch (result.outcome) {
+      case "wrote":
+        next.delete(id);
+        break;
+      case "refused":
+        next.set(id, result.reason);
+        break;
+      default: {
+        const exhaustive = result satisfies never;
+        return exhaustive;
+      }
+    }
+    refused = next;
   }
 </script>
 
@@ -84,17 +138,48 @@
             <span class="n">{doc.links.length}</span>
           </svelte:element>
           <ul>
-            {#each doc.links as link (`${link.line}:${link.written}`)}
+            {#each doc.links as link (`${link.line}:${link.href}`)}
+              {@const only = link.candidates.length === 1 ? link.candidates[0] : undefined}
+              {@const reason = refused.get(rowId(doc.path, link))}
               <li>
-                <button
-                  type="button"
-                  class="link"
-                  title={t("brokenLinks.open", { path: doc.path, line: link.line })}
-                  onclick={() => documents.navigate(doc.path, null, link.line)}
-                >
-                  <span class="line">{link.line}</span>
-                  <span class="written">{link.written}</span>
-                </button>
+                <div class="row">
+                  <button
+                    type="button"
+                    class="link"
+                    title={t("brokenLinks.open", { path: doc.path, line: link.line })}
+                    onclick={() => documents.navigate(doc.path, null, link.line)}
+                  >
+                    <span class="line">{link.line}</span>
+                    <span class="written">{link.written}</span>
+                  </button>
+                  {#if only}
+                    <button
+                      type="button"
+                      class="repair"
+                      onclick={() => {
+                        if (only !== undefined) void repair(doc.path, link, only);
+                      }}
+                    >
+                      {t("brokenLinks.repair")}
+                    </button>
+                  {:else if link.candidates.length > 1}
+                    <select
+                      class="pick"
+                      aria-label={t("brokenLinks.pick")}
+                      onchange={(event) => {
+                        const chosen = event.currentTarget.value;
+                        event.currentTarget.value = "";
+                        if (chosen !== "") void repair(doc.path, link, chosen);
+                      }}
+                    >
+                      <option value="">{t("brokenLinks.pick")}</option>
+                      {#each link.candidates as target (target)}
+                        <option value={target}>{target}</option>
+                      {/each}
+                    </select>
+                  {/if}
+                </div>
+                {#if reason}<p class="refusal">{t(refusalKey(reason))}</p>{/if}
               </li>
             {/each}
           </ul>
@@ -222,10 +307,15 @@
     padding: 0;
     list-style: none;
   }
+  .row {
+    display: flex;
+    align-items: center;
+  }
   .link {
     display: flex;
+    flex: 1;
     gap: var(--sp-2);
-    width: 100%;
+    min-width: 0;
     padding: 3px var(--sp-3);
     border: 0;
     background: transparent;
@@ -250,5 +340,34 @@
     font-family: var(--font-code);
     font-size: var(--fs-ui-xs);
     overflow-wrap: anywhere;
+  }
+  .repair {
+    flex: none;
+    margin: 2px var(--sp-2) 2px 0;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: var(--fs-ui-xs);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .repair:hover {
+    background: var(--hover);
+  }
+  .pick {
+    flex: none;
+    max-width: 50%;
+    margin: 2px var(--sp-2) 2px 0;
+    color: var(--text);
+    font: inherit;
+    font-size: var(--fs-ui-xs);
+  }
+  .refusal {
+    margin: 0 var(--sp-3) var(--sp-1);
+    color: var(--git-deleted-text);
+    font-size: var(--fs-ui-xs);
   }
 </style>

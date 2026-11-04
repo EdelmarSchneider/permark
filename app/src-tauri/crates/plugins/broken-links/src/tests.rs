@@ -185,6 +185,36 @@ fn what_is_missing_is_listed_with_its_line_and_what_exists_is_not() {
 }
 
 #[test]
+fn a_listed_row_names_the_same_root_file_and_keeps_the_full_href() {
+    let mut h = Harness::new();
+    let long = format!("{}gone.md", "sub/".repeat(80));
+    h.write("docs/a.md", &format!("[one](missing.md)\n[two]({long})\n"));
+    h.write("notes/missing.md", "# here\n");
+    h.write("@wt/other/missing.md", "# elsewhere\n");
+    h.open();
+    let report = h.report();
+    let docs = report["docs"].as_array().unwrap();
+    assert_eq!(docs.len(), 1, "{report}");
+    assert_eq!(docs[0]["path"], "docs/a.md");
+    let links = docs[0]["links"].as_array().unwrap();
+    assert_eq!(links[0]["line"], 1);
+    assert_eq!(links[0]["written"], "missing.md");
+    assert_eq!(links[0]["href"], "missing.md");
+    assert_eq!(
+        links[0]["candidates"],
+        json!(["notes/missing.md"]),
+        "the other root is known to the tree and is not a candidate"
+    );
+    assert_eq!(links[1]["href"], long);
+    assert_ne!(
+        links[1]["written"], long,
+        "a shortened label is not the href"
+    );
+    assert!(links[1]["written"].as_str().unwrap().ends_with('…'));
+    assert!(links[1]["candidates"].as_array().unwrap().is_empty());
+}
+
+#[test]
 fn the_list_follows_the_project_without_a_new_scan() {
     let mut h = Harness::new();
     h.write(
@@ -421,6 +451,10 @@ fn root(prefix: &str, total: u32) -> BrokenRoot {
     }
 }
 
+fn no_files(_: &HashSet<String>) -> HashMap<String, Vec<String>> {
+    HashMap::new()
+}
+
 #[test]
 fn the_opened_folder_is_counted_apart_from_its_linked_worktrees() {
     // issue #62: the panel showed opened root + every worktree as the folder's count
@@ -434,7 +468,7 @@ fn the_opened_folder_is_counted_apart_from_its_linked_worktrees() {
     );
     roots.add(&mut checker, "@wt/feature/docs/b.md", "[z](nope.md)\n");
     let vault = roots.vault();
-    let report = report_of(&checker, true, &vault);
+    let report = report_of(&checker, true, &vault, &no_files);
     assert_eq!(report.current, 1, "only the opened folder");
     assert_eq!(report.total, 4, "every root, as before");
     assert_eq!(
@@ -461,11 +495,11 @@ fn a_folder_without_worktrees_reports_one_root_and_nothing_before_the_first_scan
     let roots = Roots::new(&[]);
     let mut checker = Checker::new();
     assert_eq!(
-        report_of(&checker, false, &roots.vault()).roots,
+        report_of(&checker, false, &roots.vault(), &no_files).roots,
         [root("", 0)]
     );
     roots.add(&mut checker, "a.md", "[x](gone.md)\n");
-    let report = report_of(&checker, false, &roots.vault());
+    let report = report_of(&checker, false, &roots.vault(), &no_files);
     assert!(!report.ready);
     assert_eq!((report.current, report.total), (1, 1));
     assert_eq!(report.roots, [root("", 1)]);
@@ -482,7 +516,7 @@ fn the_cap_keeps_the_opened_folders_links_before_a_worktrees() {
     // `@` sorts before letters: by path alone the worktree would fill the list
     roots.add(&mut checker, "@wt/big/aaa.md", &many);
     roots.add(&mut checker, "zzz.md", "[a](gone-a.md) [b](gone-b.md)\n");
-    let report = report_of(&checker, true, &roots.vault());
+    let report = report_of(&checker, true, &roots.vault(), &no_files);
     assert_eq!(report.docs[0].path, "zzz.md");
     assert_eq!(report.docs[0].links.len(), 2);
     let listed: usize = report.docs.iter().map(|d| d.links.len()).sum();
