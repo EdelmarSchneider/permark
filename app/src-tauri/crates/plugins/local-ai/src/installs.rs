@@ -40,7 +40,7 @@ use permark_core::{ErrorKind, IpcError};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::catalog::{Catalog, CatalogError, Model};
+use crate::catalog::{Catalog, CatalogError, Model, ModelFile};
 use crate::relocate::{self, Item};
 use crate::state::{Acceptance, Installed, PluginState, Stale};
 use crate::store::{prune, remove_orphans, version_dir};
@@ -226,6 +226,8 @@ pub struct AssignedModel {
     pub catalog_version: u32,
     /// Folder holding its files.
     pub dir: PathBuf,
+    /// Pinned files of this installed version (stored under their file names in `dir`).
+    pub files: Vec<ModelFile>,
 }
 
 /// Answer of [`Installs::model_for`].
@@ -1086,6 +1088,7 @@ impl Installs {
                 id: installed.model,
                 lineage: lineage.clone(),
                 catalog_version: installed.catalog_version,
+                files: installed.files,
             }),
             None => ModelFor::NoModel,
         }

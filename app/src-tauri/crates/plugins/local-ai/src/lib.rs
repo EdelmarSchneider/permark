@@ -15,6 +15,7 @@
 //! [`Plugin::data_bytes`] tells the bytes to be freed (models + parts of the current store).
 
 pub mod catalog;
+pub mod engine;
 pub mod installs;
 mod relocate;
 pub mod state;
