@@ -393,6 +393,7 @@ export default {
   "jsonl.invalid": "La línea {line} no es un valor JSON (se detuvo en el carácter {at}).",
   "jsonl.jump": "Ir al registro",
   "jsonl.go": "Ir",
+  "json.interpret": "Interpretar escapes",
   "text.plainBecauseLong":
     "Archivo largo: se muestra como texto sin formato; solo se dibujan las líneas visibles.",
   "text.partial":

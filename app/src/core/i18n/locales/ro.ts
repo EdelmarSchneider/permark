@@ -406,6 +406,7 @@ export default {
   "jsonl.invalid": "Linia {line} nu este o singură valoare JSON (oprire la caracterul {at}).",
   "jsonl.jump": "Mergi la înregistrare",
   "jsonl.go": "Mergi",
+  "json.interpret": "Interpretează secvențele",
   "text.plainBecauseLong":
     "Fișier lung: este afișat ca text simplu și se desenează doar rândurile vizibile.",
   "text.partial":

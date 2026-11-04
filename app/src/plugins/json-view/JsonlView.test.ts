@@ -359,4 +359,41 @@ describe("a JSON Lines file", () => {
     await until(() => target.querySelector("[data-record='3001']") !== null, "record 3001");
     expect(target.querySelector("[data-record='1']")).toBeNull();
   });
+
+  it("shows a string as its JSON spelling, then interpreted, and leaves Source as the file", () => {
+    const text = '{"note":"a\\n\\"b"}\n';
+    const spelling = JSON.stringify('a\n"b');
+    show(viewOf(text));
+    const summary = (): string => {
+      const el = target.querySelector(".kind-string");
+      if (!(el instanceof HTMLElement)) throw new Error("no string");
+      return el.textContent ?? "";
+    };
+    const button = (): HTMLButtonElement => modeButton("Interpret escapes");
+    expect(button().getAttribute("aria-pressed")).toBe("false");
+    expect(summary()).toBe(spelling);
+    expect(target.querySelector(".label")?.textContent).toBe("note");
+
+    button().click();
+    flushSync();
+    expect(button().getAttribute("aria-pressed")).toBe("true");
+    expect(button().textContent).toBe("Interpret escapes");
+    expect(summary()).toBe('a\n"b');
+    expect(target.querySelector(".label")?.textContent).toBe("note");
+
+    button().click();
+    flushSync();
+    expect(button().getAttribute("aria-pressed")).toBe("false");
+    expect(summary()).toBe(spelling);
+
+    button().click();
+    flushSync();
+    choose("Source");
+    expect(target.querySelector(".source")?.textContent).toBe(text);
+    expect(target.querySelector(".source")?.textContent).toContain("\\n");
+    expect(button().getAttribute("aria-pressed")).toBe("true");
+    choose("Tree");
+    expect(summary()).toBe('a\n"b');
+    expect(button().getAttribute("aria-pressed")).toBe("true");
+  });
 });

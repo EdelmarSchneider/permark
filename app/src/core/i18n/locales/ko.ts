@@ -384,6 +384,7 @@ export default {
   "jsonl.invalid": "{line}행은 JSON 값 하나가 아닙니다({at}번째 문자에서 멈춤).",
   "jsonl.jump": "레코드로 이동",
   "jsonl.go": "이동",
+  "json.interpret": "이스케이프 해석",
   "text.plainBecauseLong": "긴 파일이라 일반 텍스트로 표시하며, 화면에 보이는 줄만 그립니다.",
   "text.partial": "{total}MB 중 처음 {held}MB를 표시합니다. 나머지는 스크롤하면 로드됩니다.",
   "text.loadingMore": "더 로드하는 중…",

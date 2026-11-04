@@ -40,6 +40,8 @@
   const source = $derived(heldText(held.lines, held.open));
 
   let chosen = $state<Mode>("tree");
+  /** String values as interpreted text. Starts off; not kept across a remount. */
+  let plain = $state(false);
   let query = $state("");
   let top = $state(0);
   let visible = $state(BUFFER * 2);
@@ -267,6 +269,9 @@
         </button>
       {/each}
     </div>
+    <button type="button" class="interpret" aria-pressed={plain} onclick={() => (plain = !plain)}>
+      {t("json.interpret")}
+    </button>
     <form
       class="jump"
       onsubmit={(event) => {
@@ -306,7 +311,7 @@
             <span class="index">{item.index}</span>
             {#if item.parsed.ok}
               <div class="tree" role="tree">
-                <TreeRow node={item.parsed.root} depth={0} open />
+                <TreeRow node={item.parsed.root} depth={0} open {plain} />
               </div>
             {:else}
               <p class="fail">{t("jsonl.invalid", { line: item.line, at: item.parsed.at + 1 })}</p>
@@ -389,7 +394,8 @@
     color: var(--text);
     font: inherit;
   }
-  .jump button {
+  .jump button,
+  .interpret {
     height: 24px;
     padding: 0 10px;
     border: 1px solid var(--border);
@@ -398,6 +404,11 @@
     color: var(--text);
     font-size: var(--fs-ui-sm);
     cursor: pointer;
+  }
+  .interpret[aria-pressed="true"] {
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-weight: 600;
   }
   .virtual {
     position: relative;

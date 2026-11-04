@@ -394,6 +394,7 @@ export default {
   "jsonl.invalid": "Zeile {line} ist kein einzelner JSON-Wert (angehalten bei Zeichen {at}).",
   "jsonl.jump": "Zu Datensatz",
   "jsonl.go": "Springen",
+  "json.interpret": "Escape-Zeichen auflösen",
   "text.plainBecauseLong":
     "Lange Datei: als reiner Text gezeigt, nur die sichtbaren Zeilen werden gezeichnet.",
   "text.partial":

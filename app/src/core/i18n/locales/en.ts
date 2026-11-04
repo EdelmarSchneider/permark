@@ -384,6 +384,7 @@ const en = {
   "jsonl.invalid": "Line {line} is not one JSON value (stopped at character {at}).",
   "jsonl.jump": "Go to record",
   "jsonl.go": "Go",
+  "json.interpret": "Interpret escapes",
   "text.plainBecauseLong": "A long file: shown as plain text, only the lines in view are drawn.",
   "text.partial": "Showing the first {held} MB of {total} MB. The rest loads as you scroll.",
   "text.loadingMore": "Loading more…",

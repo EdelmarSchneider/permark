@@ -394,6 +394,7 @@ export default {
   "jsonl.invalid": "La línia {line} no és un valor JSON (s'ha aturat al caràcter {at}).",
   "jsonl.jump": "Ves al registre",
   "jsonl.go": "Ves",
+  "json.interpret": "Interpretar els escapes",
   "text.plainBecauseLong":
     "Fitxer llarg: es mostra com a text sense format i només es dibuixen les línies visibles.",
   "text.partial":
