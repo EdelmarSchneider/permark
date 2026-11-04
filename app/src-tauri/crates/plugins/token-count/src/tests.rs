@@ -7,13 +7,13 @@
     clippy::single_match_else
 )]
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use permark_core::conditions::{Context, Distribution};
+use permark_core::downloads::{MemorySecrets, Scripted, ScriptedTransport, Transport};
 use permark_core::events::{CoreEvent, EventSink};
 use permark_core::plugins::{AppServices, CxWorkspace, RpcCall, RpcTable, Services};
 use permark_core::settings::{AppSettings, ProjectConfig};
@@ -49,29 +49,30 @@ pub(crate) fn rank_file() -> Vec<u8> {
     out
 }
 
+/// Path of the test pins at [`SOURCE`].
+pub(crate) const TEST_PATH: &str = "/encodings/test.tiktoken";
+/// Address of the test pins.
+pub(crate) const TEST_URL: &str =
+    "https://openaipublic.blob.core.windows.net/encodings/test.tiktoken";
+
 pub(crate) fn pin_of(body: &[u8]) -> Pin {
     Pin {
-        url: "test://vocab".to_owned(),
+        path: TEST_PATH.to_owned(),
         bytes: body.len() as u64,
         sha256: Sha256::digest(body).into(),
     }
 }
 
-/// Serves `body`, counting the calls.
-pub(crate) struct Source {
-    pub(crate) body: Vec<u8>,
-    pub(crate) calls: AtomicUsize,
+/// A network serving `body` at [`TEST_URL`] (it records every request).
+pub(crate) fn serving(body: &[u8]) -> Arc<ScriptedTransport> {
+    Arc::new(ScriptedTransport::new().answer(TEST_URL, Scripted::ok(body)))
 }
 
-impl Fetch for Source {
-    fn get(&self, _url: &str, sink: &mut dyn FnMut(&[u8]) -> bool) -> Result<(), FetchError> {
-        self.calls.fetch_add(1, Ordering::SeqCst);
-        for chunk in self.body.chunks(500) {
-            if !sink(chunk) {
-                break;
-            }
-        }
-        Ok(())
+/// The app's download service over `transport`.
+pub(crate) fn kit_of(transport: Arc<dyn Transport>) -> DownloadKit {
+    DownloadKit {
+        transport,
+        secrets: Arc::new(MemorySecrets::default()),
     }
 }
 
@@ -82,7 +83,8 @@ struct Harness {
     services: Arc<Services>,
     settings: Arc<RwLock<AppSettings>>,
     events: Arc<Events>,
-    source: Arc<Source>,
+    source: Arc<ScriptedTransport>,
+    _kit: ServiceLease,
     running: Option<Box<dyn Running>>,
 }
 
@@ -91,12 +93,10 @@ impl Harness {
         let tmp = tempfile::tempdir().unwrap();
         let dirs = AppDirs::under(tmp.path());
         let body = rank_file();
-        let source = Arc::new(Source {
-            body: body.clone(),
-            calls: AtomicUsize::new(0),
-        });
+        let source = serving(&body);
         let rpc = RpcTable::new();
         let services = Services::new();
+        let kit = services.provide(Arc::new(kit_of(Arc::clone(&source) as Arc<dyn Transport>)));
         let settings = Arc::new(RwLock::new(AppSettings::default()));
         let events = Arc::new(Events::default());
         let store = StateStore::app(&dirs);
@@ -114,10 +114,7 @@ impl Harness {
             Arc::clone(&services),
             Arc::clone(&settings),
         ));
-        let plugin = plugin_with(
-            Arc::clone(&source) as Arc<dyn Fetch>,
-            [pin_of(&body), pin_of(&body)],
-        );
+        let plugin = plugin_with([pin_of(&body), pin_of(&body)]);
         let running = plugin.start(&cx).unwrap();
         Self {
             _tmp: tmp,
@@ -127,6 +124,7 @@ impl Harness {
             settings,
             events,
             source,
+            _kit: kit,
             running: Some(running),
         }
     }
@@ -193,30 +191,27 @@ fn starting_fetches_nothing_and_writes_nothing() {
     h.call("state", json!({})).unwrap();
     h.stop();
     h.running = Some(
-        plugin_with(
-            Arc::clone(&h.source) as Arc<dyn Fetch>,
-            [pin_of(b"x"), pin_of(b"x")],
-        )
-        .start(
-            &PluginCx::new(
-                ID,
-                CxWorkspace::App,
-                StateStore::app(&h.dirs).plugin_dir(&ID),
-                None,
-                Context::welcome(Distribution::Direct),
-                Arc::clone(&h.events) as Arc<dyn EventSink>,
+        plugin_with([pin_of(b"x"), pin_of(b"x")])
+            .start(
+                &PluginCx::new(
+                    ID,
+                    CxWorkspace::App,
+                    StateStore::app(&h.dirs).plugin_dir(&ID),
+                    None,
+                    Context::welcome(Distribution::Direct),
+                    Arc::clone(&h.events) as Arc<dyn EventSink>,
+                )
+                .with_store(StateStore::app(&h.dirs))
+                .with_app(AppServices::new(
+                    Arc::clone(&h.rpc),
+                    Arc::clone(&h.services),
+                    Arc::clone(&h.settings),
+                )),
             )
-            .with_store(StateStore::app(&h.dirs))
-            .with_app(AppServices::new(
-                Arc::clone(&h.rpc),
-                Arc::clone(&h.services),
-                Arc::clone(&h.settings),
-            )),
-        )
-        .unwrap(),
+            .unwrap(),
     );
     h.stop();
-    assert_eq!(h.source.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(h.source.asked().len(), 0);
     assert_eq!(
         files_under(&h.dirs.profile),
         Vec::<std::path::PathBuf>::new()
@@ -238,7 +233,7 @@ fn estimates_count_with_no_vocabulary_and_no_network() {
     assert_eq!(out[0]["status"], "ok");
     assert_eq!(out[0]["whole"], 3);
     assert!(out[1]["whole"].as_u64().unwrap() >= 1);
-    assert_eq!(h.source.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(h.source.asked().len(), 0);
 }
 
 #[test]
@@ -248,11 +243,11 @@ fn an_exact_tokenizer_is_unavailable_until_its_vocabulary_is_downloaded() {
     let out = h.call("count", args.clone()).unwrap();
     assert_eq!(out[0]["status"], "unavailable");
     assert_eq!(out[0]["reason"], "noVocab");
-    assert_eq!(h.source.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(h.source.asked().len(), 0);
 
     h.call("download", json!({ "tokenizer": "o200k" })).unwrap();
     h.wait_state("o200k", "ready");
-    assert_eq!(h.source.calls.load(Ordering::SeqCst), 1);
+    assert_eq!(h.source.asked().len(), 1);
     let out = h.call("count", args).unwrap();
     assert_eq!(out[0]["status"], "ok");
     // "hello" and " world" are tokens of the small vocabulary: two
@@ -311,7 +306,7 @@ fn bad_arguments_are_typed_errors() {
         let error = h.call(method, args.clone()).unwrap_err();
         assert_eq!(error.kind, ErrorKind::InvalidData, "{method} {args}");
     }
-    assert_eq!(h.source.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(h.source.asked().len(), 0);
 }
 
 #[test]
@@ -336,12 +331,10 @@ impl Harness {
     /// A second start over the same folders (the same profile).
     fn start_in(other: &Harness) -> Harness {
         let body = rank_file();
-        let source = Arc::new(Source {
-            body: body.clone(),
-            calls: AtomicUsize::new(0),
-        });
+        let source = serving(&body);
         let rpc = RpcTable::new();
         let services = Services::new();
+        let kit = services.provide(Arc::new(kit_of(Arc::clone(&source) as Arc<dyn Transport>)));
         let settings = Arc::new(RwLock::new(AppSettings::default()));
         let events = Arc::new(Events::default());
         let store = StateStore::app(&other.dirs);
@@ -359,12 +352,9 @@ impl Harness {
             Arc::clone(&services),
             Arc::clone(&settings),
         ));
-        let running = plugin_with(
-            Arc::clone(&source) as Arc<dyn Fetch>,
-            [pin_of(&body), pin_of(&body)],
-        )
-        .start(&cx)
-        .unwrap();
+        let running = plugin_with([pin_of(&body), pin_of(&body)])
+            .start(&cx)
+            .unwrap();
         Harness {
             _tmp: tempfile::tempdir().unwrap(),
             dirs: other.dirs.clone(),
@@ -373,6 +363,7 @@ impl Harness {
             settings,
             events,
             source,
+            _kit: kit,
             running: Some(running),
         }
     }

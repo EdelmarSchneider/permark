@@ -16,9 +16,7 @@ serde_json.workspace = true
 ts-rs.workspace = true
 xxhash-rust.workspace = true
 base64 = "0.22"
-sha2 = "0.10"
-# The one network call of the plugin: the vocabulary download the person confirmed. Blocking, no async runtime.
-ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
+sha2.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

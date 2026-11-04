@@ -54,6 +54,8 @@ pub struct Shell {
     _updater: Option<ServiceLease>,
     /// The files of a window's workspace, for App-scope plugins (the converter).
     _files: ServiceLease,
+    /// The downloads network + credential store (`DownloadKit`), for plugins fetching pinned files.
+    _downloads: ServiceLease,
 }
 
 /// The file manager entries go with their plugin (off = leaves nothing behind); quitting the app leaves them.
@@ -114,6 +116,7 @@ impl Shell {
         #[cfg(not(feature = "plugin-updates"))]
         let updater = None;
         let files = crate::files::provide(&env, &handle);
+        let downloads = crate::downloads_http::provide(&env);
         env.apply_app_plugins();
         let app_store = StateStore::app(dirs);
         Self {
@@ -132,6 +135,7 @@ impl Shell {
             server: Mutex::new(None),
             _updater: updater,
             _files: files,
+            _downloads: downloads,
         }
     }
 
