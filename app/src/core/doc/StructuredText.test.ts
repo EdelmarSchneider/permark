@@ -96,13 +96,17 @@ describe("StructuredText strings", () => {
 
     interpret()?.click();
     flushSync();
-    const source = [...target.querySelectorAll("button")].find((button) => button.textContent === "Source");
+    const source = [...target.querySelectorAll("button")].find(
+      (button) => button.textContent === "Source",
+    );
     source?.click();
     flushSync();
     expect(target.querySelector(".source")?.textContent).toBe(text);
     expect(target.querySelector(".source")?.textContent).toContain("\\n");
     expect(interpret()?.getAttribute("aria-pressed")).toBe("true");
-    const tree = [...target.querySelectorAll("button")].find((button) => button.textContent === "Tree");
+    const tree = [...target.querySelectorAll("button")].find(
+      (button) => button.textContent === "Tree",
+    );
     tree?.click();
     flushSync();
     expect(summary("string")).toBe(decoded);

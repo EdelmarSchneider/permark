@@ -5,7 +5,7 @@ function node(kind: TreeNode["kind"], summary: string): TreeNode {
   return { label: null, kind, summary, children: null };
 }
 
-const decoded = "a\n\t\r\"\\\u0001";
+const decoded = 'a\n\t\r"\\\u0001';
 const spelling = JSON.stringify(decoded);
 
 describe("shownSummary", () => {
