@@ -180,7 +180,8 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// What the windows are told of a download failure (the `VocabFailure` type stays as before the engine).
 fn failure_of(error: &DownloadError) -> VocabFailure {
     match error {
-        // a refused host | address reads as "cannot reach the source"
+        // a refused host | address reads as "cannot reach the source"; `Cancelled` never reaches here (`heard` turns
+        // it into `Event::Canceled` first), listed only to keep the match exhaustive
         DownloadError::Offline | DownloadError::HostNotAllowed | DownloadError::Cancelled => {
             VocabFailure::Offline
         }
@@ -215,7 +216,8 @@ impl VocabStore {
         let store = Arc::new_cyclic(|weak: &Weak<Self>| {
             // the engine tells the store, which holds the engine: a weak link keeps them from holding each other
             let heard = weak.clone();
-            let downloads = kit.and_then(|kit| {
+            // no thread | folder | request until the first download
+            let downloads = kit.map(|kit| {
                 kit.downloads(
                     dir.clone(),
                     Arc::new(move |id, update| {
@@ -224,7 +226,6 @@ impl VocabStore {
                         }
                     }),
                 )
-                .ok()
             });
             Self {
                 dir,

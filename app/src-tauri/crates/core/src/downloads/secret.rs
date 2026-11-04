@@ -22,6 +22,19 @@ impl Secret {
     pub fn expose(&self) -> &str {
         &self.0
     }
+
+    /// Value fit for an HTTP header: no control character (CR | LF | NUL | ...: header injection). Every
+    /// [`SecretStore::set`] checks it first.
+    ///
+    /// # Errors
+    /// [`SecretError::InvalidValue`].
+    pub fn check(&self) -> Result<(), SecretError> {
+        if self.0.chars().any(char::is_control) {
+            Err(SecretError::InvalidValue)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl std::fmt::Debug for Secret {
@@ -35,6 +48,9 @@ impl std::fmt::Debug for Secret {
 pub enum SecretError {
     #[error("credential store unavailable: {0}")]
     Unavailable(String),
+    /// Value refused before storing: holds a control character ([`Secret::check`]).
+    #[error("credential value holds control characters")]
+    InvalidValue,
 }
 
 impl From<SecretError> for IpcError {
@@ -43,6 +59,9 @@ impl From<SecretError> for IpcError {
             SecretError::Unavailable(detail) => IpcError::new(ErrorKind::Unavailable)
                 .subject("credentials")
                 .detail(detail),
+            SecretError::InvalidValue => IpcError::new(ErrorKind::InvalidData)
+                .subject("credentials")
+                .detail("value"),
         }
     }
 }
@@ -53,8 +72,10 @@ pub trait SecretStore: Send + Sync {
     /// [`SecretError`]: store unreachable.
     fn get(&self, source: &Source) -> Result<Option<Secret>, SecretError>;
 
+    /// Stores `secret` after [`Secret::check`] (MUST: impls call it first).
+    ///
     /// # Errors
-    /// [`SecretError`]: store unreachable | refused.
+    /// [`SecretError`]: value refused (`InvalidValue`), store unreachable | refused.
     fn set(&self, source: &Source, secret: Secret) -> Result<(), SecretError>;
 
     /// Removes the credential (absent: no error).
@@ -92,6 +113,7 @@ impl SecretStore for MemorySecrets {
     }
 
     fn set(&self, source: &Source, secret: Secret) -> Result<(), SecretError> {
+        secret.check()?;
         self.with(|map| map.insert(source.key(), secret));
         Ok(())
     }

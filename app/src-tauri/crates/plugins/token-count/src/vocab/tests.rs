@@ -509,16 +509,14 @@ fn stale_part_files_are_removed_at_start() {
     fs::write(dir.path().join("cl100k_base.tiktoken.part"), b"half").unwrap();
     let kit = kit_of(scripted(vec![Scripted::ok(&body).cut_after(100)]));
     let (tx, rx) = std::sync::mpsc::channel();
-    let engine = kit
-        .downloads(
-            dir.path().to_path_buf(),
-            Arc::new(move |_, update| {
-                if !matches!(update, Update::Progress(_)) {
-                    let _ = tx.send(update.clone());
-                }
-            }),
-        )
-        .unwrap();
+    let engine = kit.downloads(
+        dir.path().to_path_buf(),
+        Arc::new(move |_, update| {
+            if !matches!(update, Update::Progress(_)) {
+                let _ = tx.send(update.clone());
+            }
+        }),
+    );
     engine.enqueue(unit_of(Encoding::O200k, &pin_of(&body)).unwrap());
     assert_eq!(
         rx.recv_timeout(Duration::from_secs(10)).unwrap(),

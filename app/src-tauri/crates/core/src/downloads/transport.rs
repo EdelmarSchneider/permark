@@ -1,12 +1,13 @@
 //! The network as downloads see it: one GET per hop over [`Transport`]; redirects followed here by hand under the
-//! source's allowlist. Credential only to the source's first host; resolved (signed) addresses returned to the caller,
+//! source's allowlist. Credential only to the source's first origin; resolved (signed) addresses never leave [`open`],
 //! NEVER stored (resume resolves again).
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, Read};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 
-use super::{host_of, Asset, DownloadError, Secret, Source};
+use super::{origin_of, Asset, DownloadError, Secret, Source};
 use crate::remote::{check_url, next_url, MAX_REDIRECTS};
 
 /// One GET.
@@ -48,45 +49,39 @@ pub trait Transport: Send + Sync {
     fn get(&self, request: &Request<'_>) -> Result<Response, DownloadError>;
 }
 
-/// A `200` | `206` answer at the end of the redirect chain. `url` = resolved address: caller-only, NEVER persisted.
-#[derive(Debug)]
-pub struct Opened {
-    pub url: String,
-    pub response: Response,
-}
-
 /// Asks for `asset` (from byte `from` when resuming), following up to [`MAX_REDIRECTS`] redirects by hand: every hop
 /// passes [`check_url`] (`https`, public host) + the source's host suffixes. `secret` goes ONLY to a hop on the
-/// source's first host (never to a CDN redirect host).
+/// source's first origin (host + port; never to a CDN redirect host), and only for a source that accepts one.
+/// `cancel` checked before every hop. The `200` | `206` answer is returned; resolved (signed) addresses stay here.
 ///
 /// # Errors
 /// `HostNotAllowed` (a hop off `https` | off the allowlist | to a non-public address), `Http { status }` (status other
 /// than 200 | 206 | redirect, a redirect without `Location`, more than [`MAX_REDIRECTS`] redirects: last status),
-/// `Offline`.
-pub fn open(
+/// `Offline`, `Cancelled`.
+pub(crate) fn open(
     transport: &dyn Transport,
     asset: &Asset,
     from: Option<u64>,
     secret: Option<&Secret>,
-) -> Result<Opened, DownloadError> {
+    cancel: &AtomicBool,
+) -> Result<Response, DownloadError> {
     let source = asset.source();
-    let first = source.first_host();
+    let first = source.first_origin();
+    let secret = secret.filter(|_| source.accepts_credential());
     let mut current = allowed(source, asset.url())?;
     let mut last = 0;
     for _ in 0..=MAX_REDIRECTS {
-        let on_first = host_of(&current).is_some_and(|host| host == first);
+        if cancel.load(Ordering::Relaxed) {
+            return Err(DownloadError::Cancelled);
+        }
+        let on_first = first.is_some() && origin_of(&current) == first;
         let response = transport.get(&Request {
             url: &current,
             from,
             auth: secret.filter(|_| on_first),
         })?;
         match response.status {
-            200 | 206 => {
-                return Ok(Opened {
-                    url: current,
-                    response,
-                })
-            }
+            200 | 206 => return Ok(response),
             status @ (301 | 302 | 303 | 307 | 308) => {
                 last = status;
                 let location = response
@@ -103,11 +98,12 @@ pub fn open(
     Err(DownloadError::Http { status: last })
 }
 
-/// `url` passes [`check_url`] and its host is under one of the source's suffixes.
+/// `url` passes [`check_url`], its host is plain ([`origin_of`]: no escapes | backslashes) and under one of the
+/// source's suffixes.
 fn allowed(source: &Source, url: String) -> Result<String, DownloadError> {
     check_url(&url).map_err(|_| DownloadError::HostNotAllowed)?;
-    match host_of(&url) {
-        Some(host) if source.allows(&host) => Ok(url),
+    match origin_of(&url) {
+        Some((host, _)) if source.allows(&host) => Ok(url),
         _ => Err(DownloadError::HostNotAllowed),
     }
 }

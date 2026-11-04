@@ -252,6 +252,7 @@ impl SecretStore for Keychain {
     }
 
     fn set(&self, source: &Source, secret: Secret) -> Result<(), SecretError> {
+        secret.check()?;
         Self::entry(source)?
             .set_password(secret.expose())
             .map_err(|error| unavailable(&error))

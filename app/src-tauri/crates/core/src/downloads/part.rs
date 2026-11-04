@@ -133,15 +133,15 @@ impl Fetch<'_> {
         }
     }
 
-    /// GET from byte `from` (`0`: whole file), redirects + allowlist in [`open`].
+    /// GET from byte `from` (`0`: whole file), redirects + allowlist + cancel per hop in [`open`].
     fn ask(&self, asset: &Asset, from: u64) -> Result<Response, DownloadError> {
         open(
             self.transport,
             asset,
             (from > 0).then_some(from),
             self.secret,
+            self.cancel,
         )
-        .map(|o| o.response)
     }
 }
 
@@ -161,8 +161,9 @@ fn resumable(files: &Files, asset: &Asset) -> Option<u64> {
     (PartMeta::read(&files.meta)? == PartMeta::of(asset) && len <= asset.bytes()).then_some(len)
 }
 
+/// Length of a regular file at `path` (a link | junction | folder: `None`; links never followed).
 fn file_len(path: &Path) -> Option<u64> {
-    std::fs::metadata(path)
+    std::fs::symlink_metadata(path)
         .ok()
         .filter(std::fs::Metadata::is_file)
         .map(|m| m.len())
@@ -236,22 +237,21 @@ fn transfer(
     Ok(())
 }
 
-/// Part cut to `done` bytes (the ones hashed), opened at its end. `0` -> fresh part + meta (meta first: a crash in
-/// between leaves a meta without part, swept).
+/// Part cut to `done` bytes (the ones hashed, a regular file per [`resumable`]), opened at its end. `0` -> fresh meta
+/// and part (meta first: a crash in between leaves a meta without part, swept); the fresh part is made new (a link |
+/// a folder in its place: refused, never followed).
 fn open_part(asset: &Asset, files: &Files, done: u64) -> Result<File, DownloadError> {
     let disk = |e: io::Error| DownloadError::disk(&e);
+    let mut options = OpenOptions::new();
+    options.write(true);
     if done == 0 {
         discard(files).map_err(disk)?;
         let meta =
             serde_json::to_vec(&PartMeta::of(asset)).map_err(|e| disk(io::Error::other(e)))?;
         fsx::write_atomic(&files.meta, &meta).map_err(disk)?;
+        options.create_new(true);
     }
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&files.part)
-        .map_err(disk)?;
+    let mut file = options.open(&files.part).map_err(disk)?;
     file.set_len(done).map_err(disk)?;
     file.seek(SeekFrom::Start(done)).map_err(disk)?;
     Ok(file)
@@ -282,9 +282,9 @@ fn hash_file(
     }
 }
 
-/// Asks from `done`. `206` must start at `done` (another start -> asked again from 0, once) and total the pinned
-/// size; `200` -> restarted from 0 (`done` + `hasher` reset; the part is cut to `done` when opened). A length other
-/// than the bytes still due -> `Integrity`.
+/// Asks from `done`. `206` must start at `done` (another start | `416` to the range -> asked again from 0, once) and
+/// total the pinned size; `200` -> restarted from 0 (`done` + `hasher` reset; the part is cut to `done` when opened).
+/// A length other than the bytes still due -> `Integrity`.
 fn request(
     cx: &Fetch<'_>,
     asset: &Asset,
@@ -295,7 +295,14 @@ fn request(
         *hasher = Sha256::new();
         *done = 0;
     };
-    let mut response = cx.ask(asset, *done)?;
+    let mut response = match cx.ask(asset, *done) {
+        // range not satisfiable (the source's file changed under the same pin, or a server quirk): from 0
+        Err(DownloadError::Http { status: 416 }) if *done > 0 => {
+            restart(hasher, done);
+            cx.ask(asset, 0)?
+        }
+        other => other?,
+    };
     if *done > 0 && response.status == 206 && content_range(&response).map(|r| r.0) != Some(*done) {
         restart(hasher, done);
         response = cx.ask(asset, 0)?;
@@ -379,16 +386,33 @@ pub(super) fn discard_all(dir: &Path, assets: &[Asset]) -> io::Result<()> {
     assets.iter().try_for_each(|a| discard(&Files::of(dir, a)))
 }
 
-/// Removes the file at `path` (absent: fine), retrying transient Windows locks.
+/// Removes the file | link at `path` (link only, never its target), retrying transient Windows locks. Absent | a real
+/// folder (not the store's: left): fine.
 pub(super) fn remove_if_there(path: &Path) -> io::Result<()> {
-    match fsx::retry(&fsx::RETRY_DELAYS, || std::fs::remove_file(path)) {
+    let meta = match std::fs::symlink_metadata(path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        other => other?,
+    };
+    if meta.is_dir() {
+        return Ok(());
+    }
+    // a Windows folder link | junction goes with `remove_dir` (the link itself)
+    #[cfg(windows)]
+    let remove = if std::os::windows::fs::FileTypeExt::is_symlink_dir(&meta.file_type()) {
+        std::fs::remove_dir
+    } else {
+        std::fs::remove_file
+    };
+    #[cfg(not(windows))]
+    let remove = std::fs::remove_file;
+    match fsx::retry(&fsx::RETRY_DELAYS, || remove(path)) {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
         other => other,
     }
 }
 
 /// Sweep of `dir`: valid parts of `assets` -> `(index in assets, bytes there)`; removed: a part without meta, a meta
-/// without part, a pair no asset pins (or longer than its pin). Scratch names untouched.
+/// without part, a pair no asset pins (or longer than its pin), a linked part. Scratch names + folders untouched.
 pub(super) fn sweep(dir: &Path, assets: &[&Asset]) -> io::Result<Vec<(usize, u64)>> {
     let entries = match std::fs::read_dir(dir) {
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -396,7 +420,12 @@ pub(super) fn sweep(dir: &Path, assets: &[&Asset]) -> io::Result<Vec<(usize, u64
     };
     let mut bases: Vec<String> = Vec::new();
     for entry in entries {
-        let name = entry?.file_name();
+        let entry = entry?;
+        // a real folder named like a part: not ours (links are: removed below)
+        if entry.file_type()?.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
         let Some(name) = name.to_str() else {
             continue;
         };

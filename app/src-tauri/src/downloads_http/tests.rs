@@ -181,6 +181,17 @@ fn keychain_errors_never_carry_the_value() {
     assert!(!format!("{error:?}").contains("tok-123"));
 }
 
+#[test]
+fn the_keychain_refuses_a_value_with_line_breaks_before_touching_the_store() {
+    const SOURCE: Source = Source::new("permark-test", "https://example.org", &["example.org"]);
+    for bad in ["tok\r\nX-Evil: 1", "tok\n", "tok\0"] {
+        assert_eq!(
+            Keychain.set(&SOURCE, Secret::new(bad)),
+            Err(permark_core::downloads::SecretError::InvalidValue)
+        );
+    }
+}
+
 /// Real OS credential store, run by hand: `cargo test -p permark downloads_http -- --ignored`. CI machines have no
 /// unlocked keychain | Secret Service session.
 #[test]

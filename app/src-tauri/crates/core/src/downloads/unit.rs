@@ -27,7 +27,7 @@ impl Unit {
     ///
     /// # Errors
     /// [`InvalidAsset::Unit`]: id | folder segment not a plain name, no assets, two assets of one name
-    /// (case-insensitive), an asset name ending `.part` | `.part.meta`.
+    /// (case-insensitive), an asset name ending `.part` | `.part.meta` | equal to the manifest `<id>.installed.json`.
     pub fn new(
         id: impl Into<String>,
         folder: &str,
@@ -42,9 +42,10 @@ impl Unit {
         let mut names: Vec<String> = assets.iter().map(|a| a.name().to_lowercase()).collect();
         names.sort_unstable();
         let twins = names.windows(2).any(|w| w[0] == w[1]);
-        let temp_named = names
-            .iter()
-            .any(|n| [".part", ".part.meta"].iter().any(|temp| n.ends_with(temp)));
+        let manifest = format!("{}.installed.json", id.to_lowercase());
+        let temp_named = names.iter().any(|n| {
+            *n == manifest || [".part", ".part.meta"].iter().any(|temp| n.ends_with(temp))
+        });
         if !plain_name(&id)
             || !folder.iter().all(|s| plain_name(s))
             || assets.is_empty()
@@ -66,16 +67,39 @@ impl Unit {
         &self.assets
     }
 
-    /// Folder of the unit's files in `store`.
-    pub(super) fn dir_in(&self, store: &Path) -> PathBuf {
+    /// Folder of the unit's files in `store` (no disk check).
+    pub(super) fn path_in(&self, store: &Path) -> PathBuf {
         self.folder
             .iter()
             .fold(store.to_path_buf(), |p, s| p.join(s))
     }
 
-    fn manifest_path(&self, store: &Path) -> PathBuf {
-        self.dir_in(store)
-            .join(format!("{}.installed.json", self.id))
+    /// [`Unit::path_in`], refused when a folder below `store` on the way is a link | junction | file (nothing written
+    /// | removed through a link). Folders not made yet: fine (made real by the download).
+    ///
+    /// # Errors
+    /// `InvalidInput` (a link | file on the way), other IO errors reading the folders.
+    pub(super) fn dir_in(&self, store: &Path) -> io::Result<PathBuf> {
+        let mut dir = store.to_path_buf();
+        for segment in &self.folder {
+            dir.push(segment);
+            match std::fs::symlink_metadata(&dir) {
+                Ok(meta) if meta.is_dir() => {}
+                Ok(_) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "unit folder is a link or a file",
+                    ))
+                }
+                Err(e) if e.kind() == io::ErrorKind::NotFound => break,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(self.path_in(store))
+    }
+
+    fn manifest_path(&self, dir: &Path) -> PathBuf {
+        dir.join(format!("{}.installed.json", self.id))
     }
 
     fn manifest(&self) -> Manifest {
@@ -112,26 +136,29 @@ struct Pinned {
 /// Writes the manifest (atomic): call ONLY after every file verified.
 pub(super) fn write_manifest(store: &Path, unit: &Unit) -> io::Result<()> {
     let bytes = serde_json::to_vec_pretty(&unit.manifest()).map_err(io::Error::other)?;
-    fsx::write_atomic(&unit.manifest_path(store), &bytes)
+    fsx::write_atomic(&unit.manifest_path(&unit.dir_in(store)?), &bytes)
 }
 
-/// Manifest lists exactly `unit`'s pins and every file has its pinned size.
+/// Manifest lists exactly `unit`'s pins and every file (not a link) has its pinned size; linked unit folder: no.
 pub(super) fn is_installed(store: &Path, unit: &Unit) -> bool {
-    let dir = unit.dir_in(store);
-    let listed = fsx::read_bytes(&unit.manifest_path(store), MANIFEST_LIMIT)
+    let Ok(dir) = unit.dir_in(store) else {
+        return false;
+    };
+    let listed = fsx::read_bytes(&unit.manifest_path(&dir), MANIFEST_LIMIT)
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Manifest>(&bytes).ok())
         .is_some_and(|m| m == unit.manifest());
     listed
         && unit.assets.iter().all(|a| {
-            std::fs::metadata(dir.join(a.name())).is_ok_and(|m| m.is_file() && m.len() == a.bytes())
+            std::fs::symlink_metadata(dir.join(a.name()))
+                .is_ok_and(|m| m.is_file() && m.len() == a.bytes())
         })
 }
 
 /// Manifest first (no longer installed), then files + parts.
 pub(super) fn remove(store: &Path, unit: &Unit) -> io::Result<()> {
-    remove_if_there(&unit.manifest_path(store))?;
-    let dir = unit.dir_in(store);
+    let dir = unit.dir_in(store)?;
+    remove_if_there(&unit.manifest_path(&dir))?;
     for asset in &unit.assets {
         let files = Files::of(&dir, asset);
         for path in [&files.target, &files.part, &files.meta] {

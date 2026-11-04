@@ -27,9 +27,8 @@ use crate::state::shared_write::{lock_within, FileLock};
 
 pub use error::DownloadError;
 pub use secret::{MemorySecrets, Secret, SecretError, SecretStore};
-pub use transport::{
-    open, Asked, Opened, Request, Response, Scripted, ScriptedTransport, Transport,
-};
+use transport::open;
+pub use transport::{Asked, Request, Response, Scripted, ScriptedTransport, Transport};
 pub use unit::Unit;
 
 /// Where pinned files come from: a fixed `https` base (no free URLs from callers) + host suffixes every hop of a
@@ -39,26 +38,48 @@ pub struct Source {
     key: &'static str,
     base: &'static str,
     hosts: &'static [&'static str],
+    credential: bool,
 }
 
 impl Source {
-    /// Hugging Face: `https://huggingface.co`; its CDN redirects stay under `huggingface.co` | `hf.co`.
+    /// Hugging Face: `https://huggingface.co`; its CDN redirects stay under `huggingface.co` | `hf.co`. Accepts a
+    /// credential (token for gated models).
     pub const HUGGING_FACE: Self = Self::new(
         "huggingface",
         "https://huggingface.co",
         &["huggingface.co", "hf.co"],
-    );
+    )
+    .with_credential();
 
     /// A source: `key` names it (credential slot), `base` = `https://host` (no path, no trailing `/`), `hosts` =
     /// allowed host suffixes (a host matches itself | any subdomain). A base outside `hosts` | not `https` is refused
-    /// at request time ([`DownloadError::HostNotAllowed`]).
+    /// at request time ([`DownloadError::HostNotAllowed`]). No credential: the credential store is never read for it
+    /// (no OS keychain prompt); see [`Source::with_credential`].
     #[must_use]
     pub const fn new(
         key: &'static str,
         base: &'static str,
         hosts: &'static [&'static str],
     ) -> Self {
-        Self { key, base, hosts }
+        Self {
+            key,
+            base,
+            hosts,
+            credential: false,
+        }
+    }
+
+    /// Same source, its credential (slot [`Source::key`]) read + sent to the first host.
+    #[must_use]
+    pub const fn with_credential(mut self) -> Self {
+        self.credential = true;
+        self
+    }
+
+    /// Whether a credential is read + sent for this source.
+    #[must_use]
+    pub const fn accepts_credential(&self) -> bool {
+        self.credential
     }
 
     /// Credential slot name (`SecretStore` key).
@@ -72,9 +93,9 @@ impl Source {
         format!("{}{path}", self.base)
     }
 
-    /// Host of the base, lowercase: the only host a credential is sent to.
-    fn first_host(&self) -> String {
-        host_of(self.base).unwrap_or_default()
+    /// Host + port of the base: the only origin a credential is sent to.
+    fn first_origin(&self) -> Option<(String, u16)> {
+        origin_of(self.base)
     }
 
     /// `host` equals an allowed suffix or is a subdomain of one (case-insensitive, one trailing dot ignored).
@@ -89,16 +110,25 @@ impl Source {
     }
 }
 
-/// Lowercase host (no port, no trailing dot) of an `https://` address; `None` when not `https://`.
-fn host_of(url: &str) -> Option<String> {
+/// Lowercase host (one trailing dot dropped) + port (none: 443) of an `https://` address. `None`: not `https://`, a
+/// host holding anything but ASCII letters | digits | `-` | `.` (escapes, backslashes, bracketed IP literals), a port
+/// not all digits.
+fn origin_of(url: &str) -> Option<(String, u16)> {
     let rest = url
         .get(..8)
         .filter(|s| s.eq_ignore_ascii_case("https://"))
         .map(|_| &url[8..])?;
     let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
-    let host = crate::remote::host_part(authority);
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((host, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => {
+            (host, port.parse().ok()?)
+        }
+        Some(_) => return None,
+        None => (authority, 443),
+    };
     let host = host.strip_suffix('.').unwrap_or(host);
-    Some(host.to_ascii_lowercase())
+    let plain = |b: u8| b.is_ascii_alphanumeric() || b == b'-' || b == b'.';
+    (!host.is_empty() && host.bytes().all(plain)).then(|| (host.to_ascii_lowercase(), port))
 }
 
 /// Why an [`Asset`] cannot be built (a bug in the pin, never person input).
@@ -107,22 +137,37 @@ pub enum InvalidAsset {
     /// Path not `/...`, or holding `..`, `\`, `?`, `#`, whitespace, control characters.
     #[error("invalid asset path")]
     Path,
-    /// Name empty, a path, `.`-leading (scratch names are hidden + swept), or holding control characters.
+    /// Name not a plain name on every system: empty, a path, `.`-leading (scratch names are hidden + swept), ending in
+    /// `.` | space, holding `<>:"|?*` | control characters, a Windows device name (`CON`, `NUL.txt`, `COM1`, ...).
     #[error("invalid asset file name")]
     Name,
     /// Unit id | folder segment not a plain name, no files, two files of one name (case-insensitive), a file name
-    /// ending `.part` | `.part.meta` (the store's own temp names).
+    /// ending `.part` | `.part.meta` (the store's own temp names) | named `<unit id>.installed.json` (its manifest).
     #[error("invalid install unit")]
     Unit,
 }
 
-/// Plain file | folder name: not empty, not `.`-leading (refuses `.` + `..` too), no separator | drive colon | control
-/// character.
+/// Plain file | folder name on every system: not empty, not `.`-leading (refuses `.` + `..` too), not ending in `.` |
+/// space, no separator | drive colon | `<>"|?*` | control character, not a Windows device name (`CON`, `PRN`, `AUX`,
+/// `NUL`, `COM0-9`, `LPT0-9`, `CONIN$`, `CONOUT$`; with any extension, any case).
 fn plain_name(name: &str) -> bool {
+    const DEVICES: [&str; 6] = ["con", "prn", "aux", "nul", "conin$", "conout$"];
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end()
+        .to_ascii_lowercase();
+    let numbered = stem.len() == 4
+        && (stem.starts_with("com") || stem.starts_with("lpt"))
+        && stem.as_bytes().get(3).is_some_and(u8::is_ascii_digit);
     !(name.is_empty()
         || name.starts_with('.')
-        || name.contains(['/', '\\', ':'])
-        || name.chars().any(char::is_control))
+        || name.ends_with(['.', ' '])
+        || name.contains(['/', '\\', ':', '<', '>', '"', '|', '?', '*'])
+        || name.chars().any(char::is_control)
+        || numbered
+        || DEVICES.contains(&stem.as_str()))
 }
 
 /// One pinned file: where it comes from, what it must be, what it is called in the store.
@@ -276,10 +321,8 @@ impl std::fmt::Debug for DownloadKit {
 
 impl DownloadKit {
     /// Engine over `store` with this kit's transport + credentials ([`Downloads::new`]).
-    ///
-    /// # Errors
-    /// The worker thread could not start.
-    pub fn downloads(&self, store: PathBuf, listener: Listener) -> io::Result<Downloads> {
+    #[must_use]
+    pub fn downloads(&self, store: PathBuf, listener: Listener) -> Downloads {
         Downloads::new(
             store,
             Arc::clone(&self.transport),
@@ -291,16 +334,35 @@ impl DownloadKit {
 
 /// Free bytes on the volume of a path (seam: tests inject a full disk).
 type FreeSpace = fn(&Path) -> io::Result<u64>;
+/// Store lock within a wait ([`lock_within`]; seam: tests inject a system without locks).
+type StoreLocker = fn(&Path, Duration) -> io::Result<Option<FileLock>>;
+
+/// System hooks of the engine (real ones: [`Seams::SYSTEM`]).
+#[derive(Clone, Copy)]
+struct Seams {
+    free_space: FreeSpace,
+    lock: StoreLocker,
+}
+
+impl Seams {
+    const SYSTEM: Self = Self {
+        free_space: crate::fsx::free_space,
+        lock: lock_within,
+    };
+}
 
 /// Least room kept free beyond the remaining bytes (also at least 1 % of them).
 const MARGIN: u64 = 64 << 20;
-/// Worker's wait per try for a store lock another instance holds (cancel | shutdown heard in between).
+/// Worker's wait between tries for a store lock another instance holds (enqueue | cancel | shutdown wake it sooner).
 const LOCK_POLL: Duration = Duration::from_millis(200);
+/// Unit refused: no store lock to be had on this system (no lock folder | file system without locks). Downloading
+/// unlocked could let a second instance write the same part.
+const NO_LOCK: &str = "store lock unavailable";
 
-/// Verified-download engine over one store folder (caller's root: plugin cache | profile data). One worker thread,
-/// one unit at a time, FIFO. Store lock ([`lock_within`] on the root) held per running unit: on a store another app
-/// instance downloads into, queued units wait their turn and cleanup calls answer [`DownloadError::Busy`].
-/// Drop = [`Downloads::shutdown`].
+/// Verified-download engine over one store folder (caller's root: plugin cache | profile data). One worker thread
+/// (started by the first [`Downloads::enqueue`]), one unit at a time, FIFO. Store lock ([`lock_within`] on the root)
+/// held per running unit: on a store another app instance downloads into, queued units wait their turn and cleanup
+/// calls answer [`DownloadError::Busy`]. Drop = [`Downloads::shutdown`].
 pub struct Downloads {
     shared: Arc<Shared>,
     worker: Mutex<Option<JoinHandle<()>>>,
@@ -311,20 +373,16 @@ struct Shared {
     transport: Arc<dyn Transport>,
     secrets: Option<Arc<dyn SecretStore>>,
     listener: Listener,
-    free_space: FreeSpace,
+    seams: Seams,
     queue: Mutex<Queue>,
     wake: Condvar,
-}
-
-/// Store lock of the worker (`None` inside: no lock to be had on this system; runs unlocked). Released on drop.
-struct StoreLock {
-    _held: Option<FileLock>,
 }
 
 #[derive(Default)]
 struct Queue {
     waiting: VecDeque<Unit>,
-    /// Set ONLY while the worker holds the store lock.
+    /// Running unit; set + cleared under the queue mutex together with the store lock it holds, so cleanup calls
+    /// read "this worker holds the store" exactly while it does.
     active: Option<Active>,
     stopping: bool,
 }
@@ -334,6 +392,8 @@ struct Active {
     cancel: Arc<AtomicBool>,
     /// `delete_part` asked meanwhile: worker removes the parts once the unit stops.
     discard: bool,
+    /// Store lock, released when the unit stops (`None`: none to be had; the unit is refused, [`NO_LOCK`]).
+    _lock: Option<FileLock>,
 }
 
 impl std::fmt::Debug for Downloads {
@@ -345,44 +405,39 @@ impl std::fmt::Debug for Downloads {
 }
 
 impl Downloads {
-    /// Engine over `store` (made on the first download). `secrets`: per-source credential, handed to [`open`] (first
-    /// host only); store unreachable -> asked without one. Nothing touches the network until [`Downloads::enqueue`].
-    ///
-    /// # Errors
-    /// The worker thread could not start.
+    /// Engine over `store`: MUST be a folder dedicated to this engine (sweep + remove act on its unit folders; no
+    /// worker thread, folder, request until [`Downloads::enqueue`]). `secrets`: per-source credential, read ONLY for a
+    /// source that accepts one ([`Source::with_credential`]) and sent to its first host only; store unreachable ->
+    /// asked without one.
+    #[must_use]
     pub fn new(
         store: PathBuf,
         transport: Arc<dyn Transport>,
         secrets: Option<Arc<dyn SecretStore>>,
         listener: Listener,
-    ) -> io::Result<Self> {
-        Self::spawn(store, transport, secrets, listener, crate::fsx::free_space)
+    ) -> Self {
+        Self::with_seams(store, transport, secrets, listener, Seams::SYSTEM)
     }
 
-    fn spawn(
+    fn with_seams(
         store: PathBuf,
         transport: Arc<dyn Transport>,
         secrets: Option<Arc<dyn SecretStore>>,
         listener: Listener,
-        free_space: FreeSpace,
-    ) -> io::Result<Self> {
-        let shared = Arc::new(Shared {
-            store,
-            transport,
-            secrets,
-            listener,
-            free_space,
-            queue: Mutex::new(Queue::default()),
-            wake: Condvar::new(),
-        });
-        let worker = Arc::clone(&shared);
-        let handle = std::thread::Builder::new()
-            .name("downloads".into())
-            .spawn(move || worker.work())?;
-        Ok(Self {
-            shared,
-            worker: Mutex::new(Some(handle)),
-        })
+        seams: Seams,
+    ) -> Self {
+        Self {
+            shared: Arc::new(Shared {
+                store,
+                transport,
+                secrets,
+                listener,
+                seams,
+                queue: Mutex::new(Queue::default()),
+                wake: Condvar::new(),
+            }),
+            worker: Mutex::new(None),
+        }
     }
 
     #[must_use]
@@ -390,21 +445,52 @@ impl Downloads {
         &self.shared.store
     }
 
-    /// Queues `unit` (FIFO). Already queued | running | shutting down: nothing. Already installed: `Done` at its turn.
-    pub fn enqueue(&self, unit: Unit) {
-        let mut queue = self.shared.queue();
-        let known = queue.active.as_ref().is_some_and(|a| a.id == unit.id())
-            || queue.waiting.iter().any(|u| u.id() == unit.id());
-        if queue.stopping || known {
-            return;
-        }
-        queue.waiting.push_back(unit);
-        drop(queue);
-        self.shared.wake.notify_all();
+    /// Worker thread started (test seam).
+    #[cfg(test)]
+    fn started(&self) -> bool {
+        self.worker
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some()
     }
 
-    /// Stops unit `id`: running -> stops before its next read (part kept); queued -> dropped. Both answer
-    /// `Failed(Cancelled)`.
+    /// Queues `unit` (FIFO); the first call starts the worker thread. Already queued | running | shutting down:
+    /// nothing. Already installed: `Done` at its turn. Thread cannot start: `Failed(Disk)`.
+    pub fn enqueue(&self, unit: Unit) {
+        // worker slot first, queue inside: `shutdown` (queue, then slot) never sees a worker started after it
+        let mut worker = self.worker.lock().unwrap_or_else(PoisonError::into_inner);
+        {
+            let mut queue = self.shared.queue();
+            let known = queue.active.as_ref().is_some_and(|a| a.id == unit.id())
+                || queue.waiting.iter().any(|u| u.id() == unit.id());
+            if queue.stopping || known {
+                return;
+            }
+            queue.waiting.push_back(unit);
+        }
+        self.shared.wake.notify_all();
+        if worker.is_some() {
+            return;
+        }
+        let shared = Arc::clone(&self.shared);
+        match std::thread::Builder::new()
+            .name("downloads".into())
+            .spawn(move || shared.work())
+        {
+            Ok(handle) => *worker = Some(handle),
+            Err(error) => {
+                drop(worker);
+                // no worker yet: the queue holds only this unit (unless a cancel took it, already told)
+                let unit = self.shared.queue().waiting.pop_back();
+                if let Some(unit) = unit {
+                    (self.shared.listener)(unit.id(), &Update::Failed(DownloadError::disk(&error)));
+                }
+            }
+        }
+    }
+
+    /// Stops unit `id`: running -> stops before its next read | redirect hop (part kept); queued -> dropped. Both
+    /// answer `Failed(Cancelled)`. Latency bound: see [`Downloads::shutdown`].
     pub fn cancel(&self, id: &str) {
         let dropped = {
             let mut queue = self.shared.queue();
@@ -425,48 +511,53 @@ impl Downloads {
     /// removes them (`Failed(Cancelled)`); queued -> dropped first.
     ///
     /// # Errors
-    /// `Busy` (another instance holds the store), `Disk`.
+    /// `Busy` (another instance holds the store), `Disk` (incl. a unit folder that is a link).
     pub fn delete_part(&self, unit: &Unit) -> Result<(), DownloadError> {
-        let dir = unit.dir_in(&self.shared.store);
-        self.while_quiet(unit, true, || part::discard_all(&dir, unit.assets()))
+        let store = &self.shared.store;
+        self.while_quiet(unit, true, || {
+            part::discard_all(&unit.dir_in(store)?, unit.assets())
+        })
     }
 
     /// Uninstalls `unit`: manifest first (no longer installed), then its files + parts; Windows locks retried.
     ///
     /// # Errors
-    /// `Busy` (running here | another instance holds the store), `Disk`.
+    /// `Busy` (running here | another instance holds the store), `Disk` (incl. a unit folder that is a link).
     pub fn remove(&self, unit: &Unit) -> Result<(), DownloadError> {
         self.while_quiet(unit, false, || unit::remove(&self.shared.store, unit))
     }
 
-    /// Manifest present, listing exactly `unit`'s pins, every file of its pinned size.
+    /// Manifest present, listing exactly `unit`'s pins, every file of its pinned size (a linked unit folder: no).
     #[must_use]
     pub fn is_installed(&self, unit: &Unit) -> bool {
         unit::is_installed(&self.shared.store, unit)
     }
 
     /// Startup cleanup in the folders of `units`: removes a part without meta, a meta without part, a pair matching
-    /// no pin of `units` (or longer than it); lists the valid parts as paused (NEVER restarted). Scratch names
-    /// ([`crate::fsx::is_scratch_name`]) untouched. Call before queueing.
+    /// no pin of `units` (or longer than it), a linked part; lists the valid parts as paused (NEVER restarted).
+    /// Scratch names ([`crate::fsx::is_scratch_name`]) + folders untouched. Call before queueing.
     ///
     /// # Errors
-    /// `Busy` (units queued | running here, or another instance holds the store), `Disk`.
+    /// `Busy` (units queued | running here, or another instance holds the store), `Disk` (incl. a unit folder that is
+    /// a link).
     pub fn sweep(&self, units: &[Unit]) -> Result<Vec<Paused>, DownloadError> {
         let queue = self.shared.queue();
         if queue.active.is_some() || !queue.waiting.is_empty() {
             return Err(DownloadError::Busy);
         }
+        let store = &self.shared.store;
         let lock =
-            lock_within(&self.shared.store, Duration::ZERO).map_err(|_| DownloadError::Busy)?;
+            (self.shared.seams.lock)(store, Duration::ZERO).map_err(|_| DownloadError::Busy)?;
         let mut paused = Vec::new();
         let mut seen: Vec<PathBuf> = Vec::new();
-        for dir in units.iter().map(|u| u.dir_in(&self.shared.store)) {
+        for first in units {
+            let dir = first.dir_in(store).map_err(|e| DownloadError::disk(&e))?;
             if seen.contains(&dir) {
                 continue;
             }
             let pins: Vec<(&Unit, &Asset)> = units
                 .iter()
-                .filter(|u| u.dir_in(&self.shared.store) == dir)
+                .filter(|u| u.path_in(store) == dir)
                 .flat_map(|u| u.assets().iter().map(move |a| (u, a)))
                 .collect();
             let assets: Vec<&Asset> = pins.iter().map(|(_, a)| *a).collect();
@@ -485,6 +576,9 @@ impl Downloads {
     }
 
     /// Stops the worker: queue dropped, running unit cancelled (part kept), thread joined. Idempotent.
+    ///
+    /// Latency: cancel is checked before every body read and every redirect hop; one blocked transport call is not
+    /// interrupted. Bound with the app transport: connect timeout (15 s) | one idle wait (`DOWNLOAD_IDLE`, 10 s).
     pub fn shutdown(&self) {
         {
             let mut queue = self.shared.queue();
@@ -525,10 +619,12 @@ impl Downloads {
             return Ok(());
         }
         let dropped = queue.drop_waiting(unit.id());
+        // another unit active: this worker holds the store lock (taken + released under this mutex) and writes only
+        // that unit's files
         let result = if queue.active.is_some() {
             op().map_err(|e| DownloadError::disk(&e))
         } else {
-            match lock_within(&self.shared.store, Duration::ZERO) {
+            match (self.shared.seams.lock)(&self.shared.store, Duration::ZERO) {
                 Ok(lock) => {
                     let done = op().map_err(|e| DownloadError::disk(&e));
                     drop(lock);
@@ -565,18 +661,17 @@ impl Shared {
         self.queue.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Worker loop: store lock -> next unit -> run -> report. Ends on shutdown.
+    /// Worker loop: next unit (with the store lock) -> run -> release -> report. Ends on shutdown.
     fn work(&self) {
-        while let Some(lock) = self.turn() {
-            let Some((unit, cancel)) = self.begin() else {
-                continue;
+        while let Some((unit, cancel, locked)) = self.next() {
+            let result = if locked {
+                self.run(&unit, &cancel)
+            } else {
+                Err(DownloadError::Disk {
+                    detail: NO_LOCK.to_owned(),
+                })
             };
-            let result = self.run(&unit, &cancel);
-            let discard = self.queue().active.take().is_some_and(|a| a.discard);
-            if discard {
-                let _ = part::discard_all(&unit.dir_in(&self.store), unit.assets());
-            }
-            drop(lock);
+            self.finish(&unit);
             let update = match result {
                 Ok(()) => Update::Done,
                 Err(error) => Update::Failed(error),
@@ -585,42 +680,53 @@ impl Shared {
         }
     }
 
-    /// Waits for queued work, then for the store lock (another instance downloading: tried again each
-    /// [`LOCK_POLL`]). `None`: shutting down.
-    fn turn(&self) -> Option<StoreLock> {
+    /// Waits for queued work + the store lock (another instance downloading: tried again each [`LOCK_POLL`] | wake),
+    /// then makes the first unit active with the lock, both under the queue mutex. `(unit, cancel, locked)`; `None`:
+    /// shutting down.
+    fn next(&self) -> Option<(Unit, Arc<AtomicBool>, bool)> {
+        let mut queue = self.queue();
         loop {
-            {
-                let mut queue = self.queue();
-                while queue.waiting.is_empty() && !queue.stopping {
-                    queue = self
-                        .wake
-                        .wait(queue)
-                        .unwrap_or_else(PoisonError::into_inner);
-                }
-                if queue.stopping {
-                    return None;
-                }
+            while queue.waiting.is_empty() && !queue.stopping {
+                queue = self
+                    .wake
+                    .wait(queue)
+                    .unwrap_or_else(PoisonError::into_inner);
             }
-            if let Ok(lock) = lock_within(&self.store, LOCK_POLL) {
-                return Some(StoreLock { _held: lock });
+            if queue.stopping {
+                return None;
             }
+            if let Ok(lock) = (self.seams.lock)(&self.store, Duration::ZERO) {
+                let Some(unit) = queue.waiting.pop_front() else {
+                    continue;
+                };
+                let cancel = Arc::new(AtomicBool::new(false));
+                let locked = lock.is_some();
+                queue.active = Some(Active {
+                    id: unit.id().to_owned(),
+                    cancel: Arc::clone(&cancel),
+                    discard: false,
+                    _lock: lock,
+                });
+                return Some((unit, cancel, locked));
+            }
+            queue = self
+                .wake
+                .wait_timeout(queue, LOCK_POLL)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
         }
     }
 
-    /// Next unit made active (`None`: queue emptied while waiting for the lock | stopping).
-    fn begin(&self) -> Option<(Unit, Arc<AtomicBool>)> {
+    /// Unit stopped: parts removed when `delete_part` asked, then active cleared + store lock released, under the
+    /// queue mutex.
+    fn finish(&self, unit: &Unit) {
         let mut queue = self.queue();
-        if queue.stopping {
-            return None;
+        if queue.active.as_ref().is_some_and(|a| a.discard) {
+            if let Ok(dir) = unit.dir_in(&self.store) {
+                let _ = part::discard_all(&dir, unit.assets());
+            }
         }
-        let unit = queue.waiting.pop_front()?;
-        let cancel = Arc::new(AtomicBool::new(false));
-        queue.active = Some(Active {
-            id: unit.id().to_owned(),
-            cancel: Arc::clone(&cancel),
-            discard: false,
-        });
-        Some((unit, cancel))
+        queue.active = None;
     }
 
     /// One unit: installed -> done; free space; every file fetched + verified; manifest LAST.
@@ -628,11 +734,13 @@ impl Shared {
         if unit::is_installed(&self.store, unit) {
             return Ok(());
         }
-        let dir = unit.dir_in(&self.store);
+        let dir = unit
+            .dir_in(&self.store)
+            .map_err(|e| DownloadError::disk(&e))?;
         let remaining: u64 = unit.assets().iter().map(|a| part::remaining(&dir, a)).sum();
         if remaining > 0 {
             let needed = remaining.saturating_add(MARGIN.max(remaining / 100));
-            let free = (self.free_space)(&dir).map_err(|e| DownloadError::disk(&e))?;
+            let free = (self.seams.free_space)(&dir).map_err(|e| DownloadError::disk(&e))?;
             if free < needed {
                 return Err(DownloadError::NoSpace { needed, free });
             }
@@ -642,10 +750,11 @@ impl Shared {
         let total = unit.assets().iter().map(Asset::bytes).sum();
         let mut meter = part::Meter::new(total, &emit);
         for asset in unit.assets() {
-            // credential store unreachable: asked without one (public files still come)
+            // read ONLY for a source that takes one (no keychain prompt otherwise); store unreachable: asked without
             let secret = self
                 .secrets
                 .as_ref()
+                .filter(|_| asset.source().accepts_credential())
                 .and_then(|s| s.get(asset.source()).ok().flatten());
             let cx = part::Fetch {
                 transport: &*self.transport,

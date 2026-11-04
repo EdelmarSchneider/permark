@@ -22,15 +22,20 @@ fn token() -> Secret {
     Secret::new("hf_secret_token")
 }
 
-fn body(opened: Opened) -> Vec<u8> {
+fn body(response: Response) -> Vec<u8> {
     let mut out = Vec::new();
-    opened
-        .response
-        .body
-        .take(1024)
-        .read_to_end(&mut out)
-        .unwrap();
+    response.body.take(1024).read_to_end(&mut out).unwrap();
     out
+}
+
+/// [`open`], never cancelled.
+fn ask(
+    web: &dyn Transport,
+    asset: &Asset,
+    from: Option<u64>,
+    secret: Option<&Secret>,
+) -> Result<Response, DownloadError> {
+    open(web, asset, from, secret, &AtomicBool::new(false))
 }
 
 #[test]
@@ -65,9 +70,8 @@ fn asset_builds_its_url_from_the_source_only() {
 #[test]
 fn direct_answer_carries_auth_to_the_first_host() {
     let web = ScriptedTransport::new().answer(START, Scripted::ok(b"hello"));
-    let opened = open(&web, &asset(), None, Some(&token())).unwrap();
-    assert_eq!(opened.url, START);
-    assert_eq!(opened.response.status, 200);
+    let opened = ask(&web, &asset(), None, Some(&token())).unwrap();
+    assert_eq!(opened.status, 200);
     assert_eq!(body(opened), b"hello");
     assert_eq!(
         web.asked(),
@@ -84,14 +88,9 @@ fn redirect_to_an_allowed_cdn_host_is_followed_without_auth() {
     let web = ScriptedTransport::new()
         .answer(START, Scripted::redirect(302, CDN))
         .answer(CDN, Scripted::partial(2, 5, b"llo"));
-    let opened = open(&web, &asset(), Some(2), Some(&token())).unwrap();
-    // signed address handed to the caller only
-    assert_eq!(opened.url, CDN);
-    assert_eq!(opened.response.status, 206);
-    assert_eq!(
-        opened.response.content_range.as_deref(),
-        Some("bytes 2-4/5")
-    );
+    let opened = ask(&web, &asset(), Some(2), Some(&token())).unwrap();
+    assert_eq!(opened.status, 206);
+    assert_eq!(opened.content_range.as_deref(), Some("bytes 2-4/5"));
     let asked = web.asked();
     assert_eq!(asked.len(), 2);
     assert!(asked[0].authorized);
@@ -112,7 +111,7 @@ fn relative_redirect_on_the_first_host_keeps_auth() {
         )
         .answer(moved, Scripted::redirect(302, CDN))
         .answer(CDN, Scripted::ok(b"hello"));
-    open(&web, &asset(), None, Some(&token())).unwrap();
+    ask(&web, &asset(), None, Some(&token())).unwrap();
     let auth: Vec<bool> = web.asked().iter().map(|a| a.authorized).collect();
     assert_eq!(auth, [true, true, false]);
 }
@@ -123,7 +122,7 @@ fn subdomain_of_the_first_host_gets_no_auth() {
     let web = ScriptedTransport::new()
         .answer(START, Scripted::redirect(302, cdn))
         .answer(cdn, Scripted::ok(b"hello"));
-    open(&web, &asset(), None, Some(&token())).unwrap();
+    ask(&web, &asset(), None, Some(&token())).unwrap();
     assert!(!web.asked()[1].authorized);
 }
 
@@ -143,7 +142,7 @@ fn hops_off_https_or_off_the_allowlist_are_refused_before_asking() {
             .answer(START, Scripted::redirect(302, location))
             .answer(location, Scripted::ok(b"hello"));
         assert_eq!(
-            open(&web, &asset(), None, Some(&token())).unwrap_err(),
+            ask(&web, &asset(), None, Some(&token())).unwrap_err(),
             DownloadError::HostNotAllowed,
             "{location}"
         );
@@ -159,7 +158,7 @@ fn a_source_base_outside_its_allowlist_is_refused() {
         let a = Asset::new(source, "/x", "x", 1, [0; 32]).unwrap();
         let web = ScriptedTransport::new();
         assert_eq!(
-            open(&web, &a, None, None).unwrap_err(),
+            ask(&web, &a, None, None).unwrap_err(),
             DownloadError::HostNotAllowed
         );
         assert_eq!(web.asked(), []);
@@ -174,7 +173,7 @@ fn too_many_redirects_stop_with_the_last_status() {
         web = web.answer(&hop(n), Scripted::redirect(301, &hop(n + 1)));
     }
     assert_eq!(
-        open(&web, &asset(), None, None).unwrap_err(),
+        ask(&web, &asset(), None, None).unwrap_err(),
         DownloadError::Http { status: 301 }
     );
     assert_eq!(web.asked().len(), crate::remote::MAX_REDIRECTS + 1);
@@ -184,18 +183,18 @@ fn too_many_redirects_stop_with_the_last_status() {
 fn other_statuses_and_no_answer_are_typed() {
     let web = ScriptedTransport::new().answer(START, Scripted::status(401));
     assert_eq!(
-        open(&web, &asset(), None, None).unwrap_err(),
+        ask(&web, &asset(), None, None).unwrap_err(),
         DownloadError::Http { status: 401 }
     );
     let web = ScriptedTransport::new().answer(START, Scripted::status(302));
     assert_eq!(
-        open(&web, &asset(), None, None).unwrap_err(),
+        ask(&web, &asset(), None, None).unwrap_err(),
         DownloadError::Http { status: 302 },
         "redirect without Location"
     );
     let web = ScriptedTransport::new();
     assert_eq!(
-        open(&web, &asset(), None, None).unwrap_err(),
+        ask(&web, &asset(), None, None).unwrap_err(),
         DownloadError::Offline
     );
 }
@@ -203,7 +202,7 @@ fn other_statuses_and_no_answer_are_typed() {
 #[test]
 fn no_secret_means_no_auth_anywhere() {
     let web = ScriptedTransport::new().answer(START, Scripted::ok(b"hello"));
-    open(&web, &asset(), None, None).unwrap();
+    ask(&web, &asset(), None, None).unwrap();
     assert!(!web.asked()[0].authorized);
 }
 
@@ -212,16 +211,13 @@ fn scripted_answers_repeat_the_last_and_cut_bodies_fail() {
     let web = ScriptedTransport::new()
         .answer(START, Scripted::ok(b"hello").cut_after(2))
         .answer(START, Scripted::partial(2, 5, b"llo"));
-    let first = open(&web, &asset(), None, None).unwrap();
+    let first = ask(&web, &asset(), None, None).unwrap();
     let mut out = Vec::new();
-    let failed = first.response.body.take(16).read_to_end(&mut out);
+    let failed = first.body.take(16).read_to_end(&mut out);
     assert_eq!(out, b"he");
     assert_eq!(failed.unwrap_err().kind(), std::io::ErrorKind::TimedOut);
     for _ in 0..2 {
-        assert_eq!(
-            open(&web, &asset(), Some(2), None).unwrap().response.status,
-            206
-        );
+        assert_eq!(ask(&web, &asset(), Some(2), None).unwrap().status, 206);
     }
 }
 
@@ -360,12 +356,25 @@ fn start_with(
     secrets: Option<Arc<dyn SecretStore>>,
     free: FreeSpace,
 ) -> Run {
+    let seams = Seams {
+        free_space: free,
+        ..Seams::SYSTEM
+    };
+    start_seams(root, web, secrets, seams)
+}
+
+fn start_seams(
+    root: &Path,
+    web: Arc<dyn Transport>,
+    secrets: Option<Arc<dyn SecretStore>>,
+    seams: Seams,
+) -> Run {
     let (tx, events) = mpsc::channel();
     let listener: Listener = Arc::new(move |id: &str, update: &Update| {
         let _ = tx.send((id.to_owned(), update.clone()));
     });
     Run {
-        downloads: Downloads::spawn(root.to_path_buf(), web, secrets, listener, free).unwrap(),
+        downloads: Downloads::with_seams(root.to_path_buf(), web, secrets, listener, seams),
         events,
     }
 }
@@ -398,23 +407,40 @@ impl Run {
     }
 }
 
-/// Answers `200` with a body trickling out one byte per 2 ms (a slow transfer to cancel).
-struct Trickle(Vec<u8>);
+/// Answers `200` with `body`, `step` bytes per read after `pause` (slow: a transfer to cancel; fast: many reads).
+struct Trickle {
+    body: Vec<u8>,
+    step: usize,
+    pause: Duration,
+}
+
+impl Trickle {
+    /// One byte per 2 ms.
+    fn slow(body: Vec<u8>) -> Self {
+        Self {
+            body,
+            step: 1,
+            pause: Duration::from_millis(2),
+        }
+    }
+}
 
 struct TrickleBody {
     bytes: Vec<u8>,
     at: usize,
+    step: usize,
+    pause: Duration,
 }
 
 impl Read for TrickleBody {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        std::thread::sleep(Duration::from_millis(2));
-        if self.at >= self.bytes.len() || buf.is_empty() {
-            return Ok(0);
+        if !self.pause.is_zero() {
+            std::thread::sleep(self.pause);
         }
-        buf[0] = self.bytes[self.at];
-        self.at += 1;
-        Ok(1)
+        let n = self.step.min(buf.len()).min(self.bytes.len() - self.at);
+        buf[..n].copy_from_slice(&self.bytes[self.at..self.at + n]);
+        self.at += n;
+        Ok(n)
     }
 }
 
@@ -424,10 +450,12 @@ impl Transport for Trickle {
             status: 200,
             location: None,
             content_range: None,
-            content_length: Some(self.0.len() as u64),
+            content_length: Some(self.body.len() as u64),
             body: Box::new(TrickleBody {
-                bytes: self.0.clone(),
+                bytes: self.body.clone(),
                 at: 0,
+                step: self.step,
+                pause: self.pause,
             }),
         })
     }
@@ -718,7 +746,7 @@ fn a_sha256_mismatch_leaves_nothing() {
 fn cancel_stops_promptly_keeps_the_part_and_delete_part_removes_it() {
     let (_tmp, root) = store();
     let body = data(5_000, 12);
-    let run = start(&root, Arc::new(Trickle(body.clone())));
+    let run = start(&root, Arc::new(Trickle::slow(body.clone())));
     let u = unit("m", vec![pin("model.gguf", &body)]);
     let dir = root.join("models");
     run.downloads.enqueue(u.clone());
@@ -938,4 +966,479 @@ fn busy_maps_to_unavailable() {
         IpcError::from(DownloadError::Busy).kind,
         ErrorKind::Unavailable
     );
+}
+
+// ---- review fixes (U5) ----
+
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::Mutex;
+
+#[test]
+fn a_fresh_engine_starts_no_thread_makes_no_folder_and_asks_nothing() {
+    let (_tmp, root) = store();
+    let web = Arc::new(ScriptedTransport::new());
+    let run = start(&root, web.clone());
+    let u = unit("m", vec![pin("model.gguf", b"hello")]);
+    assert!(!run.downloads.is_installed(&u));
+    run.downloads.cancel("m");
+    assert_eq!(run.downloads.sweep(std::slice::from_ref(&u)), Ok(vec![]));
+    run.downloads.delete_part(&u).unwrap();
+    run.downloads.remove(&u).unwrap();
+    assert!(!run.downloads.started(), "worker starts on first enqueue");
+    assert!(!root.exists());
+    assert_eq!(web.asked(), []);
+    run.downloads.enqueue(u);
+    assert!(run.downloads.started());
+    assert_eq!(run.end("m").1, Update::Failed(DownloadError::Offline));
+}
+
+#[test]
+fn cleanup_of_another_unit_is_never_busy_while_this_engine_works() {
+    let (_tmp, root) = store();
+    let mut web = ScriptedTransport::new();
+    let mut units = Vec::new();
+    for n in 0..40 {
+        let name = format!("f{n}.bin");
+        let body = data(64, u8::try_from(n).unwrap());
+        web = web.answer(&url_of(&name), Scripted::ok(&body));
+        units.push(unit(&format!("u{n}"), vec![pin(&name, &body)]));
+    }
+    let other = unit("other", vec![pin("other.bin", b"x")]);
+    let run = start(&root, Arc::new(web));
+    let stop = AtomicBool::new(false);
+    let busy = AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            while !stop.load(Ordering::Relaxed) {
+                for result in [
+                    run.downloads.remove(&other),
+                    run.downloads.delete_part(&other),
+                ] {
+                    if result == Err(DownloadError::Busy) {
+                        busy.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+            }
+        });
+        for u in &units {
+            run.downloads.enqueue(u.clone());
+        }
+        let mut done = 0;
+        while done < units.len() {
+            if let (_, Update::Done) = run.events.recv_timeout(WAIT).unwrap() {
+                done += 1;
+            }
+        }
+        stop.store(true, Ordering::Relaxed);
+    });
+    assert_eq!(
+        busy.load(Ordering::Relaxed),
+        0,
+        "own worker never answers Busy"
+    );
+}
+
+#[test]
+fn dropping_the_engine_mid_download_joins_the_worker_and_keeps_the_part() {
+    let (_tmp, root) = store();
+    let body = data(5_000, 20);
+    let run = start(&root, Arc::new(Trickle::slow(body.clone())));
+    run.downloads
+        .enqueue(unit("m", vec![pin("model.gguf", &body)]));
+    run.until_past("m", 10);
+    let Run { downloads, events } = run;
+    let asked = Instant::now();
+    drop(downloads);
+    assert!(asked.elapsed() < Duration::from_secs(2), "prompt");
+    // joined: the last update was already told
+    let mut last = None;
+    while let Ok((_, update)) = events.try_recv() {
+        last = Some(update);
+    }
+    assert_eq!(last, Some(Update::Failed(DownloadError::Cancelled)));
+    let dir = root.join("models");
+    assert_eq!(names(&dir), ["model.gguf.part", "model.gguf.part.meta"]);
+}
+
+#[test]
+fn a_listener_dropping_the_last_handle_on_the_worker_neither_deadlocks_nor_panics() {
+    let (_tmp, root) = store();
+    let body = data(1_000, 21);
+    let web: Arc<dyn Transport> =
+        Arc::new(ScriptedTransport::new().answer(&url_of("model.gguf"), Scripted::ok(&body)));
+    let slot: Arc<Mutex<Option<Downloads>>> = Arc::new(Mutex::new(None));
+    let (tx, rx) = mpsc::channel();
+    let held = Arc::clone(&slot);
+    let listener: Listener = Arc::new(move |_: &str, update: &Update| {
+        if *update == Update::Done {
+            let last = held.lock().unwrap().take();
+            drop(last);
+            let _ = tx.send(std::thread::current().name().map(str::to_owned));
+        }
+    });
+    let downloads = Downloads::new(root.clone(), web, None, listener);
+    *slot.lock().unwrap() = Some(downloads);
+    if let Some(downloads) = slot.lock().unwrap().as_ref() {
+        downloads.enqueue(unit("m", vec![pin("model.gguf", &body)]));
+    }
+    let thread = rx.recv_timeout(WAIT).expect("listener returned");
+    assert_eq!(thread.as_deref(), Some("downloads"));
+    assert!(slot.lock().unwrap().is_none());
+}
+
+#[test]
+fn progress_of_a_fast_transfer_is_throttled() {
+    let (_tmp, root) = store();
+    let body = data(1 << 20, 22);
+    let fast = Trickle {
+        body: body.clone(),
+        step: 1024,
+        pause: Duration::ZERO,
+    };
+    let run = start(&root, Arc::new(fast));
+    run.downloads
+        .enqueue(unit("m", vec![pin("model.gguf", &body)]));
+    let (progress, end) = run.end("m");
+    assert_eq!(end, Update::Done);
+    // 1024 reads; forced: downloading start + verifying end
+    assert!(progress.len() < 40, "{} updates", progress.len());
+}
+
+/// Counts credential reads.
+#[derive(Default)]
+struct CountingSecrets {
+    inner: MemorySecrets,
+    gets: AtomicUsize,
+}
+
+impl SecretStore for CountingSecrets {
+    fn get(&self, source: &Source) -> Result<Option<Secret>, SecretError> {
+        self.gets.fetch_add(1, Ordering::Relaxed);
+        self.inner.get(source)
+    }
+    fn set(&self, source: &Source, secret: Secret) -> Result<(), SecretError> {
+        self.inner.set(source, secret)
+    }
+    fn clear(&self, source: &Source) -> Result<(), SecretError> {
+        self.inner.clear(source)
+    }
+}
+
+#[test]
+fn a_source_without_credentials_never_reads_the_credential_store() {
+    const PUBLIC: Source = Source::new("public", "https://huggingface.co", &["huggingface.co"]);
+    let (_tmp, root) = store();
+    let body = data(100, 23);
+    let web = Arc::new(ScriptedTransport::new().answer(&url_of("model.gguf"), Scripted::ok(&body)));
+    let secrets = Arc::new(CountingSecrets::default());
+    secrets.set(&PUBLIC, token()).unwrap();
+    let run = start_with(&root, web.clone(), Some(secrets.clone()), plenty);
+    let asset = Asset::new(
+        PUBLIC,
+        "/org/repo/resolve/0123abc/model.gguf",
+        "model.gguf",
+        100,
+        sha(&body),
+    )
+    .unwrap();
+    run.downloads
+        .enqueue(Unit::new("m", "models", vec![asset]).unwrap());
+    assert_eq!(run.end("m").1, Update::Done);
+    assert_eq!(secrets.gets.load(Ordering::Relaxed), 0);
+    assert!(!web.asked()[0].authorized);
+}
+
+/// Answers the first hop only after the test let it go (a cancel arriving between hops).
+struct Gate {
+    inner: ScriptedTransport,
+    asked: mpsc::SyncSender<()>,
+    go: Mutex<Receiver<()>>,
+}
+
+impl Transport for Gate {
+    fn get(&self, request: &Request<'_>) -> Result<Response, DownloadError> {
+        let answer = self.inner.get(request);
+        if request.url == url_of("model.gguf") {
+            let _ = self.asked.send(());
+            let _ = self.go.lock().unwrap().recv_timeout(WAIT);
+        }
+        answer
+    }
+}
+
+#[test]
+fn a_cancel_between_redirect_hops_asks_no_further() {
+    let (_tmp, root) = store();
+    let body = data(100, 24);
+    let (asked, on_asked) = mpsc::sync_channel(1);
+    let (let_go, go) = mpsc::channel();
+    let web = Arc::new(Gate {
+        inner: ScriptedTransport::new()
+            .answer(&url_of("model.gguf"), Scripted::redirect(302, CDN))
+            .answer(CDN, Scripted::ok(&body)),
+        asked,
+        go: Mutex::new(go),
+    });
+    let run = start(&root, web.clone());
+    run.downloads
+        .enqueue(unit("m", vec![pin("model.gguf", &body)]));
+    on_asked.recv_timeout(WAIT).unwrap();
+    run.downloads.cancel("m");
+    let_go.send(()).unwrap();
+    assert_eq!(run.end("m").1, Update::Failed(DownloadError::Cancelled));
+    assert_eq!(web.inner.asked().len(), 1, "CDN never asked");
+}
+
+#[test]
+fn range_not_satisfiable_on_resume_restarts_from_zero_once() {
+    let body = data(100_000, 25);
+    let r = resume_with(
+        &body,
+        50_000,
+        vec![Scripted::status(416), Scripted::ok(&body)],
+    );
+    assert_eq!(r.end, Update::Done);
+    assert_eq!(fs::read(r.dir.join("model.gguf")).unwrap(), body);
+    let froms: Vec<_> = r.asked.iter().map(|a| a.from).collect();
+    assert_eq!(froms, [None, Some(50_000), None]);
+}
+
+#[test]
+fn a_206_without_a_usable_range_is_typed_and_keeps_the_part() {
+    let body = data(100_000, 26);
+    for range in ["bytes */100000", "bytes abc", "pages 1-2/3"] {
+        let mut odd = Scripted::partial(50_000, 100_000, &body[50_000..]);
+        odd.content_range = Some(range.to_owned());
+        let r = resume_with(&body, 50_000, vec![odd]);
+        assert_eq!(
+            r.end,
+            Update::Failed(DownloadError::Http { status: 206 }),
+            "{range}"
+        );
+        assert_eq!(
+            names(&r.dir),
+            ["model.gguf.part", "model.gguf.part.meta"],
+            "{range}"
+        );
+        assert_eq!(
+            fs::metadata(r.dir.join("model.gguf.part")).unwrap().len(),
+            50_000
+        );
+    }
+}
+
+#[test]
+fn the_credential_goes_only_to_the_first_hosts_https_port() {
+    for (hop, auth) in [
+        ("https://huggingface.co:8443/org/x", false),
+        ("https://huggingface.co:443/org/x", true),
+        ("https://HuggingFace.co./org/x", true),
+    ] {
+        let web = ScriptedTransport::new()
+            .answer(START, Scripted::redirect(302, hop))
+            .answer(hop, Scripted::ok(b"hello"));
+        ask(&web, &asset(), None, Some(&token())).unwrap();
+        assert_eq!(web.asked()[1].authorized, auth, "{hop}");
+    }
+}
+
+#[test]
+fn hosts_with_backslashes_or_escapes_are_refused_before_asking() {
+    for location in [
+        "https://evil.com\\.hf.co/x",
+        "https://evil%2Ecom.hf.co/x",
+        "https://cdn-lfs.hf.co%2F.evil.com/x",
+        "https://cdn-lfs.hf.co:x/x",
+    ] {
+        let web = ScriptedTransport::new()
+            .answer(START, Scripted::redirect(302, location))
+            .answer(location, Scripted::ok(b"hello"));
+        assert_eq!(
+            ask(&web, &asset(), None, Some(&token())).unwrap_err(),
+            DownloadError::HostNotAllowed,
+            "{location}"
+        );
+        assert_eq!(web.asked().len(), 1, "{location}: never asked");
+    }
+}
+
+#[test]
+fn reserved_and_unsafe_windows_names_are_refused() {
+    let bad_name = |n: &str| Asset::new(Source::HUGGING_FACE, "/x", n, 1, [0; 32]).unwrap_err();
+    for n in [
+        "CON",
+        "con.txt",
+        "Nul.tar.gz",
+        "aux",
+        "PRN.x",
+        "COM1",
+        "lpt9.bin",
+        "conin$",
+        "a.",
+        "a ",
+        "a<b",
+        "a>b",
+        "a\"b",
+        "a|b",
+        "a?b",
+        "a*b",
+    ] {
+        assert_eq!(bad_name(n), InvalidAsset::Name, "{n}");
+    }
+    for ok in ["console.txt", "com10", "lpt", "a.b", "nul_x"] {
+        assert!(
+            Asset::new(Source::HUGGING_FACE, "/x", ok, 1, [0; 32]).is_ok(),
+            "{ok}"
+        );
+    }
+    let a = || pin("model.gguf", b"x");
+    for id in ["CON", "a.", "a?"] {
+        assert_eq!(
+            Unit::new(id, "", vec![a()]).unwrap_err(),
+            InvalidAsset::Unit,
+            "{id}"
+        );
+    }
+    assert_eq!(
+        Unit::new("m", "nul/x", vec![a()]).unwrap_err(),
+        InvalidAsset::Unit
+    );
+    for name in ["m.installed.json", "M.Installed.JSON"] {
+        assert_eq!(
+            Unit::new("m", "", vec![pin(name, b"x")]).unwrap_err(),
+            InvalidAsset::Unit,
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn sweep_skips_a_folder_named_like_a_part() {
+    let (_tmp, root) = store();
+    let dir = root.join("models");
+    fs::create_dir_all(dir.join("x.bin.part")).unwrap();
+    fs::create_dir_all(dir.join("y.bin.part.meta")).unwrap();
+    let run = start(&root, Arc::new(ScriptedTransport::new()));
+    let u = unit("m", vec![pin("x.bin", b"x"), pin("y.bin", b"y")]);
+    assert_eq!(run.downloads.sweep(&[u]), Ok(vec![]));
+    assert_eq!(names(&dir), ["x.bin.part", "y.bin.part.meta"]);
+}
+
+#[test]
+fn secret_values_with_line_breaks_or_nul_are_refused() {
+    let store = MemorySecrets::default();
+    for bad in ["a\r\nX-Evil: 1", "a\nb", "a\rb", "a\0b"] {
+        assert!(
+            store.set(&Source::HUGGING_FACE, Secret::new(bad)).is_err(),
+            "{bad:?}"
+        );
+    }
+    assert!(store.get(&Source::HUGGING_FACE).unwrap().is_none());
+}
+
+/// Folder | file link at `link` -> `target`; `false`: links cannot be made here (Windows without the privilege).
+fn link(target: &Path, link: &Path, dir: bool) -> bool {
+    #[cfg(unix)]
+    {
+        let _ = dir;
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+    #[cfg(windows)]
+    {
+        if dir {
+            std::os::windows::fs::symlink_dir(target, link).is_ok()
+        } else {
+            std::os::windows::fs::symlink_file(target, link).is_ok()
+        }
+    }
+}
+
+#[test]
+fn a_linked_unit_folder_is_refused() {
+    let (_tmp, root) = store();
+    let elsewhere = root.join("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    if !link(&elsewhere, &root.join("models"), true) {
+        eprintln!("skipped: no symlinks here");
+        return;
+    }
+    let body = data(100, 27);
+    let web = Arc::new(ScriptedTransport::new().answer(&url_of("model.gguf"), Scripted::ok(&body)));
+    let run = start(&root, web.clone());
+    let u = unit("m", vec![pin("model.gguf", &body)]);
+    run.downloads.enqueue(u.clone());
+    assert!(matches!(
+        run.end("m").1,
+        Update::Failed(DownloadError::Disk { .. })
+    ));
+    assert_eq!(web.asked(), []);
+    assert_eq!(names(&elsewhere), Vec::<String>::new());
+    assert!(run.downloads.sweep(std::slice::from_ref(&u)).is_err());
+    assert!(run.downloads.remove(&u).is_err());
+}
+
+#[test]
+fn a_linked_part_with_a_valid_meta_is_discarded_not_resumed() {
+    let (_tmp, root) = store();
+    let dir = root.join("models");
+    fs::create_dir_all(&dir).unwrap();
+    let body = data(1_000, 28);
+    let asset = pin("model.gguf", &body);
+    let outside = root.join("outside.bin");
+    fs::write(&outside, &body[..500]).unwrap();
+    if !link(&outside, &dir.join("model.gguf.part"), false) {
+        eprintln!("skipped: no symlinks here");
+        return;
+    }
+    fs::write(
+        dir.join("model.gguf.part.meta"),
+        serde_json::to_vec(&part::PartMeta::of(&asset)).unwrap(),
+    )
+    .unwrap();
+    let run = start(&root, Arc::new(ScriptedTransport::new()));
+    assert_eq!(run.downloads.sweep(&[unit("m", vec![asset])]), Ok(vec![]));
+    assert_eq!(names(&dir), Vec::<String>::new());
+    assert_eq!(
+        fs::read(&outside).unwrap(),
+        &body[..500],
+        "target untouched"
+    );
+}
+
+#[test]
+fn without_a_store_lock_a_download_is_refused_before_anything_is_asked_or_made() {
+    #[allow(clippy::unnecessary_wraps)]
+    fn no_lock(_: &Path, _: Duration) -> std::io::Result<Option<FileLock>> {
+        Ok(None)
+    }
+    let (_tmp, root) = store();
+    let web = Arc::new(ScriptedTransport::new().answer(&url_of("model.gguf"), Scripted::ok(b"x")));
+    let seams = Seams {
+        free_space: plenty,
+        lock: no_lock,
+    };
+    let run = start_seams(&root, web.clone(), None, seams);
+    run.downloads
+        .enqueue(unit("m", vec![pin("model.gguf", b"x")]));
+    assert_eq!(
+        run.end("m").1,
+        Update::Failed(DownloadError::Disk {
+            detail: "store lock unavailable".into()
+        })
+    );
+    assert_eq!(web.asked(), []);
+    assert!(!root.exists());
+}
+
+#[test]
+fn only_sources_marked_so_accept_a_credential() {
+    assert!(Source::HUGGING_FACE.accepts_credential());
+    let plain = Source::new("x", "https://huggingface.co", &["huggingface.co"]);
+    assert!(!plain.accepts_credential());
+    assert!(plain.with_credential().accepts_credential());
+    // `open` never sends one for a source without
+    let a = Asset::new(plain, "/x", "x", 1, [0; 32]).unwrap();
+    let web = ScriptedTransport::new().answer("https://huggingface.co/x", Scripted::ok(b"x"));
+    ask(&web, &a, None, Some(&token())).unwrap();
+    assert!(!web.asked()[0].authorized);
 }
