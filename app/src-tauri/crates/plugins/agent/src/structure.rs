@@ -599,7 +599,10 @@ mod tests {
         let text = "{\n  \"name\": \"x\",\n  \"auth\": {\n    \"token\": \"t-1\"\n  },\n  \"list\": [1, 2]\n}\n";
         let value = outline(&FormatRegistry::core(), "a.json", text, None);
         assert_eq!(value["kind"], "json");
-        assert!(value.get("records").is_none(), "a .json outline stays key paths");
+        assert!(
+            value.get("records").is_none(),
+            "a .json outline stays key paths"
+        );
         let items = value["items"].as_array().unwrap();
         assert_eq!(items.len(), 3);
         assert_eq!(items[1]["at"], "auth");
@@ -647,26 +650,17 @@ mod tests {
     #[test]
     fn read_one_json_lines_record_by_index() {
         let text = "\n{\"a\":1}\r\n \t\nnot json\n";
-        let one = read(
-            &FormatRegistry::core(),
-            "session.jsonl",
-            text,
-            Some("R1"),
-        )
-        .unwrap();
+        let one = read(&FormatRegistry::core(), "session.jsonl", text, Some("R1")).unwrap();
         assert_eq!(one["index"], 1);
         assert_eq!(one["line"], 2);
         assert_eq!(one["text"], "{\"a\":1}");
         let shown = crate::render::render("read", &one);
-        assert!(shown.contains("index=1") && shown.contains("line=2"), "{shown}");
+        assert!(
+            shown.contains("index=1") && shown.contains("line=2"),
+            "{shown}"
+        );
         assert!(shown.contains("{\"a\":1}"), "{shown}");
-        let raw = read(
-            &FormatRegistry::core(),
-            "session.jsonl",
-            text,
-            Some("r2"),
-        )
-        .unwrap();
+        let raw = read(&FormatRegistry::core(), "session.jsonl", text, Some("r2")).unwrap();
         assert_eq!(raw["index"], 2);
         assert_eq!(raw["line"], 4);
         assert_eq!(raw["text"], "not json");
@@ -688,13 +682,7 @@ mod tests {
         .unwrap();
         assert_eq!(line["text"], "{\"a\":1}\r\n");
         assert!(line.get("index").is_none());
-        let from = read(
-            &FormatRegistry::core(),
-            "session.jsonl",
-            text,
-            Some("L2"),
-        )
-        .unwrap();
+        let from = read(&FormatRegistry::core(), "session.jsonl", text, Some("L2")).unwrap();
         assert!(from["text"].as_str().unwrap().starts_with("{\"a\":1}\r\n"));
         assert!(from.get("index").is_none());
         let all = read(&FormatRegistry::core(), "session.jsonl", text, None).unwrap();

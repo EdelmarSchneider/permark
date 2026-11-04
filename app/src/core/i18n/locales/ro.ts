@@ -402,6 +402,10 @@ export default {
   "structured.tree": "Arbore",
   "structured.source": "Sursă",
   "structured.invalid": "Conținutul nu este valid, așa că este afișat ca text.",
+  "jsonl.empty": "Nicio înregistrare în acest fișier.",
+  "jsonl.invalid": "Linia {line} nu este o singură valoare JSON (oprire la caracterul {at}).",
+  "jsonl.jump": "Mergi la înregistrare",
+  "jsonl.go": "Mergi",
   "text.plainBecauseLong":
     "Fișier lung: este afișat ca text simplu și se desenează doar rândurile vizibile.",
   "text.partial":

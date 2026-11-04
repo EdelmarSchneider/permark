@@ -390,6 +390,10 @@ export default {
   "structured.tree": "Arbre",
   "structured.source": "Codi font",
   "structured.invalid": "No és vàlid, així que es mostra com a text.",
+  "jsonl.empty": "Aquest fitxer no té registres.",
+  "jsonl.invalid": "La línia {line} no és un valor JSON (s'ha aturat al caràcter {at}).",
+  "jsonl.jump": "Ves al registre",
+  "jsonl.go": "Ves",
   "text.plainBecauseLong":
     "Fitxer llarg: es mostra com a text sense format i només es dibuixen les línies visibles.",
   "text.partial":

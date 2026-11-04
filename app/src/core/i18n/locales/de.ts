@@ -390,6 +390,10 @@ export default {
   "structured.tree": "Baum",
   "structured.source": "Quelltext",
   "structured.invalid": "Das ist nicht gültig und wird deshalb als Text gezeigt.",
+  "jsonl.empty": "Keine Datensätze in dieser Datei.",
+  "jsonl.invalid": "Zeile {line} ist kein einzelner JSON-Wert (angehalten bei Zeichen {at}).",
+  "jsonl.jump": "Zu Datensatz",
+  "jsonl.go": "Springen",
   "text.plainBecauseLong":
     "Lange Datei: als reiner Text gezeigt, nur die sichtbaren Zeilen werden gezeichnet.",
   "text.partial":

@@ -397,6 +397,10 @@ export default {
   "structured.tree": "Arborescence",
   "structured.source": "Source",
   "structured.invalid": "Ce contenu n'est pas valide, il est donc affiché comme du texte.",
+  "jsonl.empty": "Aucun enregistrement dans ce fichier.",
+  "jsonl.invalid": "La ligne {line} n'est pas une seule valeur JSON (arrêt au caractère {at}).",
+  "jsonl.jump": "Aller à l'enregistrement",
+  "jsonl.go": "Aller",
   "text.plainBecauseLong":
     "Fichier long : affiché en texte brut ; seules les lignes visibles sont rendues.",
   "text.partial":
