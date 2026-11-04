@@ -36,6 +36,9 @@ pub enum DownloadError {
     /// Person stopped it; part kept for resume.
     #[error("cancelled")]
     Cancelled,
+    /// Another PerMark instance holds the store (its downloads run there): cleanup refused now; queued downloads wait.
+    #[error("store busy")]
+    Busy,
 }
 
 impl DownloadError {
@@ -61,6 +64,7 @@ impl From<DownloadError> for IpcError {
                 .detail(format!("no space: {needed} needed, {free} free")),
             DownloadError::Disk { detail } => IpcError::new(ErrorKind::Io).detail(detail),
             DownloadError::Cancelled => IpcError::new(ErrorKind::Superseded).detail("cancelled"),
+            DownloadError::Busy => IpcError::new(ErrorKind::Unavailable).detail("busy"),
         }
     }
 }

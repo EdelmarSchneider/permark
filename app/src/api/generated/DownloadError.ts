@@ -3,4 +3,4 @@
 /**
  * Why a download stopped.
  */
-export type DownloadError = { "kind": "offline" } | { "kind": "http", status: number, } | { "kind": "hostNotAllowed" } | { "kind": "integrity" } | { "kind": "noSpace", needed: number, free: number, } | { "kind": "disk", detail: string, } | { "kind": "cancelled" };
+export type DownloadError = { "kind": "offline" } | { "kind": "http", status: number, } | { "kind": "hostNotAllowed" } | { "kind": "integrity" } | { "kind": "noSpace", needed: number, free: number, } | { "kind": "disk", detail: string, } | { "kind": "cancelled" } | { "kind": "busy" };
