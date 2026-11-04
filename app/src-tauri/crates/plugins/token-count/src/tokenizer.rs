@@ -21,16 +21,12 @@ impl Encoding {
         }
     }
 
-    /// The official public address.
+    /// Path of the official file at its source ([`crate::vocab::SOURCE`]).
     #[must_use]
-    pub fn url(self) -> &'static str {
+    pub fn path(self) -> &'static str {
         match self {
-            Self::O200k => {
-                "https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"
-            }
-            Self::Cl100k => {
-                "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
-            }
+            Self::O200k => "/encodings/o200k_base.tiktoken",
+            Self::Cl100k => "/encodings/cl100k_base.tiktoken",
         }
     }
 
@@ -192,10 +188,8 @@ mod tests {
         for encoding in Encoding::ALL {
             assert_eq!(encoding.sha256().len(), 64);
             assert!(encoding.sha256().bytes().all(|b| b.is_ascii_hexdigit()));
-            assert!(encoding
-                .url()
-                .starts_with("https://openaipublic.blob.core.windows.net/encodings/"));
-            assert!(encoding.url().ends_with(encoding.file()));
+            assert!(encoding.path().starts_with("/encodings/"));
+            assert!(encoding.path().ends_with(encoding.file()));
             assert!(encoding.bytes() > 1_000_000);
         }
     }

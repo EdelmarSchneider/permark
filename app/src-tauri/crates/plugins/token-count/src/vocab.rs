@@ -1,23 +1,23 @@
 //! The vocabulary store: the rank files of the exact encodings in the app cache, and the download that puts them there.
 //!
-//! A file is only ever the official one: its size and SHA-256 are pinned in code and checked when it arrives and again
-//! when it is loaded. Nothing here touches the network until [`VocabStore::download`] is called, and the plugin calls
-//! that only for a download the person confirmed.
+//! A file is only ever the official one: its size and SHA-256 are pinned in code and checked when it arrives (core
+//! `downloads` engine) and again when it is loaded. Nothing here touches the network until [`VocabStore::download`] is
+//! called, and the plugin calls that only for a download the person confirmed.
+//!
+//! Presence = file of the pinned size (hash checked on load), NOT the engine's install manifest: files downloaded
+//! before the engine have none and are never fetched again. No partial file outlives a download that did not finish
+//! (cancel, failure, shutdown, app start) — as before the engine.
 
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
+use permark_core::downloads::{Asset, DownloadError, DownloadKit, Downloads, Source, Unit, Update};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use ts_rs::TS;
 
 use crate::bpe::{Bpe, Ranks};
-use crate::fetch::{Fetch, FetchError};
 use crate::tokenizer::Encoding;
 
 /// Why a vocabulary is not there.
@@ -95,10 +95,11 @@ impl VocabState {
     }
 }
 
-/// What the official file must be.
+/// What the official file must be: its path at [`SOURCE`], size and SHA-256.
 #[derive(Debug, Clone)]
 pub struct Pin {
-    pub url: String,
+    /// Path at [`SOURCE`] (`/encodings/<file>`).
+    pub path: String,
     pub bytes: u64,
     pub sha256: [u8; 32],
 }
@@ -117,11 +118,31 @@ impl Pin {
     #[must_use]
     pub fn official(encoding: Encoding) -> Self {
         Self {
-            url: encoding.url().to_owned(),
+            path: encoding.path().to_owned(),
             bytes: encoding.bytes(),
             sha256: hex32(encoding.sha256()),
         }
     }
+}
+
+/// Where the rank files come from: the public blob store of `OpenAI`; a redirect to any other host is refused.
+pub const SOURCE: Source = Source::new(
+    "openai-public",
+    "https://openaipublic.blob.core.windows.net",
+    &["openaipublic.blob.core.windows.net"],
+);
+
+/// Install unit of `encoding` (id = encoding id, file = its cache name, store root). `None`: a bad pin (a bug).
+fn unit_of(encoding: Encoding, pin: &Pin) -> Option<Unit> {
+    let asset = Asset::new(
+        SOURCE,
+        pin.path.clone(),
+        encoding.file(),
+        pin.bytes,
+        pin.sha256,
+    )
+    .ok()?;
+    Unit::new(encoding.id(), "", vec![asset]).ok()
 }
 
 /// Why a vocabulary cannot be used now.
@@ -136,15 +157,16 @@ pub type Listener = Arc<dyn Fn(&[VocabState; 2]) + Send + Sync>;
 
 struct Inner {
     states: [VocabState; 2],
-    cancels: [Option<Arc<AtomicBool>>; 2],
     loaded: [Option<Arc<Bpe>>; 2],
-    threads: Vec<JoinHandle<()>>,
 }
 
 pub struct VocabStore {
     dir: PathBuf,
     pins: [Pin; 2],
-    fetch: Arc<dyn Fetch>,
+    /// Engine over `dir` (`None`: the app offers no download service -> a download fails `Offline`).
+    downloads: Option<Downloads>,
+    /// One unit per encoding (`Encoding::index` order).
+    units: [Option<Unit>; 2],
     listener: Listener,
     inner: Mutex<Inner>,
     /// One parse at a time.
@@ -155,61 +177,70 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// A file being downloaded: removed again unless it was kept.
-struct PartFile {
-    path: PathBuf,
-    keep: bool,
-}
-
-impl Drop for PartFile {
-    fn drop(&mut self) {
-        if !self.keep {
-            let _ = fs::remove_file(&self.path);
+/// What the windows are told of a download failure (the `VocabFailure` type stays as before the engine).
+fn failure_of(error: &DownloadError) -> VocabFailure {
+    match error {
+        // a refused host | address reads as "cannot reach the source"
+        DownloadError::Offline | DownloadError::HostNotAllowed | DownloadError::Cancelled => {
+            VocabFailure::Offline
+        }
+        DownloadError::Http { status } => VocabFailure::Http { status: *status },
+        DownloadError::Integrity => VocabFailure::Hash,
+        DownloadError::NoSpace { .. } | DownloadError::Disk { .. } | DownloadError::Busy => {
+            VocabFailure::Disk
         }
     }
 }
 
-/// How a download job ended, apart from success.
-enum Stop {
-    Canceled,
-    Failed(VocabFailure),
-}
-
-/// The least time between two progress announcements.
-const PROGRESS_EVERY: Duration = Duration::from_millis(100);
-
 impl VocabStore {
-    /// The store over the cache folder `dir`. A file of the pinned size counts as there (its hash is checked when it is
-    /// loaded); stale `.part` files are removed. Nothing is created or fetched.
+    /// The store over the cache folder `dir`, downloading through `kit` (the app's service). A file of the pinned size
+    /// counts as there (its hash is checked when it is loaded); partial downloads left over are removed. Nothing is
+    /// created or fetched.
     #[must_use]
     pub fn new(
         dir: PathBuf,
         pins: [Pin; 2],
-        fetch: Arc<dyn Fetch>,
+        kit: Option<&DownloadKit>,
         listener: Listener,
     ) -> Arc<Self> {
         let mut states = [VocabState::Absent, VocabState::Absent];
         for encoding in Encoding::ALL {
-            let _ = fs::remove_file(dir.join(format!("{}.part", encoding.file())));
             let there = fs::metadata(dir.join(encoding.file()))
                 .is_ok_and(|m| m.is_file() && m.len() == pins[encoding.index()].bytes);
             if there {
                 states[encoding.index()] = states[encoding.index()].next(Event::Found);
             }
         }
-        Arc::new(Self {
-            dir,
-            pins,
-            fetch,
-            listener,
-            inner: Mutex::new(Inner {
-                states,
-                cancels: [None, None],
-                loaded: [None, None],
-                threads: Vec::new(),
-            }),
-            loading: Mutex::new(()),
-        })
+        let units = Encoding::ALL.map(|encoding| unit_of(encoding, &pins[encoding.index()]));
+        let store = Arc::new_cyclic(|weak: &Weak<Self>| {
+            // the engine tells the store, which holds the engine: a weak link keeps them from holding each other
+            let heard = weak.clone();
+            let downloads = kit.and_then(|kit| {
+                kit.downloads(
+                    dir.clone(),
+                    Arc::new(move |id, update| {
+                        if let Some(store) = heard.upgrade() {
+                            store.heard(id, update);
+                        }
+                    }),
+                )
+                .ok()
+            });
+            Self {
+                dir,
+                pins,
+                downloads,
+                units,
+                listener,
+                inner: Mutex::new(Inner {
+                    states,
+                    loaded: [None, None],
+                }),
+                loading: Mutex::new(()),
+            }
+        });
+        store.remove_leftovers();
+        store
     }
 
     #[must_use]
@@ -225,6 +256,14 @@ impl VocabStore {
     #[must_use]
     pub fn states(&self) -> [VocabState; 2] {
         lock(&self.inner).states.clone()
+    }
+
+    /// Engine + unit of `encoding` (`None`: no download service | a bad pin).
+    fn engine(&self, encoding: Encoding) -> Option<(&Downloads, &Unit)> {
+        Some((
+            self.downloads.as_ref()?,
+            self.units[encoding.index()].as_ref()?,
+        ))
     }
 
     /// Applies an event; tells the listener when the state changed. Returns whether it changed.
@@ -243,40 +282,74 @@ impl VocabStore {
         true
     }
 
-    /// Starts the download of `encoding` on a thread of its own. Does nothing while one runs or the file is there.
-    pub fn download(self: &Arc<Self>, encoding: Encoding) {
-        let total = self.pins[encoding.index()].bytes;
-        let cancel = Arc::new(AtomicBool::new(false));
-        let snapshot = {
-            let mut inner = lock(&self.inner);
-            let at = encoding.index();
-            if !matches!(
-                inner.states[at],
-                VocabState::Absent | VocabState::Failed { .. }
-            ) {
-                return;
-            }
-            inner.cancels[at] = Some(Arc::clone(&cancel));
-            inner.states[at] = inner.states[at].next(Event::Started { total });
-            inner.states.clone()
+    /// Engine news of unit `id`. A download that did not finish leaves no partial file (removed before it is told).
+    fn heard(&self, id: &str, update: &Update) {
+        let Some(encoding) = Encoding::ALL
+            .into_iter()
+            .find(|e| self.units[e.index()].as_ref().is_some_and(|u| u.id() == id))
+        else {
+            return;
         };
-        (self.listener)(&snapshot);
-        let store = Arc::clone(self);
-        let spawned = std::thread::Builder::new()
-            .name("permark-token-vocab".to_owned())
-            .spawn(move || store.run_download(encoding, &cancel));
-        if let Ok(handle) = spawned {
-            lock(&self.inner).threads.push(handle);
-        } else {
-            lock(&self.inner).cancels[encoding.index()] = None;
-            self.apply(encoding, Event::Failed(VocabFailure::Disk));
+        let event = match update {
+            Update::Progress(progress) => Event::Progress {
+                done: progress.done,
+                total: progress.total,
+            },
+            Update::Done => Event::Finished,
+            Update::Failed(error) => {
+                self.delete_part(encoding);
+                match error {
+                    DownloadError::Cancelled => Event::Canceled,
+                    other => Event::Failed(failure_of(other)),
+                }
+            }
+        };
+        self.apply(encoding, event);
+    }
+
+    fn delete_part(&self, encoding: Encoding) {
+        if let Some((downloads, unit)) = self.engine(encoding) {
+            let _ = downloads.delete_part(unit);
         }
     }
 
-    /// Asks a running download to stop; its file is removed.
+    /// Start: partial downloads of an earlier run are removed (never resumed), as before the engine.
+    fn remove_leftovers(&self) {
+        let Some(downloads) = self.downloads.as_ref().filter(|_| self.dir.is_dir()) else {
+            return;
+        };
+        let units: Vec<Unit> = self.units.iter().flatten().cloned().collect();
+        let Ok(paused) = downloads.sweep(&units) else {
+            return;
+        };
+        for unit in units
+            .iter()
+            .filter(|u| paused.iter().any(|p| p.unit == u.id()))
+        {
+            let _ = downloads.delete_part(unit);
+        }
+    }
+
+    /// Queues the download of `encoding` (one runs at a time). Does nothing while it runs | is queued | the file is
+    /// there.
+    pub fn download(&self, encoding: Encoding) {
+        let total = self.pins[encoding.index()].bytes;
+        // `Started` fits only `Absent` | `Failed`: the check and the move are one step
+        if !self.apply(encoding, Event::Started { total }) {
+            return;
+        }
+        match self.engine(encoding) {
+            Some((downloads, unit)) => downloads.enqueue(unit.clone()),
+            None => {
+                self.apply(encoding, Event::Failed(VocabFailure::Offline));
+            }
+        }
+    }
+
+    /// Asks a running | queued download to stop; its partial file is removed.
     pub fn cancel(&self, encoding: Encoding) {
-        if let Some(flag) = &lock(&self.inner).cancels[encoding.index()] {
-            flag.store(true, Ordering::Relaxed);
+        if let Some((downloads, unit)) = self.engine(encoding) {
+            downloads.cancel(unit.id());
         }
     }
 
@@ -293,29 +366,41 @@ impl VocabStore {
         }
         let _parse = lock(&self.loading);
         lock(&self.inner).loaded[encoding.index()] = None;
+        self.discard(encoding)?;
+        self.apply(encoding, Event::Removed);
+        Ok(())
+    }
+
+    /// Deletes the cached file of `encoding` (absent: fine), then the engine's record + parts of it.
+    fn discard(&self, encoding: Encoding) -> std::io::Result<()> {
         match fs::remove_file(self.dir.join(encoding.file())) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e),
         }
-        self.apply(encoding, Event::Removed);
+        if let Some((downloads, unit)) = self.engine(encoding) {
+            let _ = downloads.remove(unit);
+        }
         Ok(())
     }
 
-    /// Stops every download and waits for the threads (teardown).
+    /// Stops every download and waits for the engine (teardown); nothing partial is left.
     pub fn shutdown(&self) {
-        let threads = {
-            let mut inner = lock(&self.inner);
-            for flag in inner.cancels.iter().flatten() {
-                flag.store(true, Ordering::Relaxed);
-            }
-            std::mem::take(&mut inner.threads)
-        };
-        for thread in threads {
-            let _ = thread.join();
+        if let Some(downloads) = &self.downloads {
+            downloads.shutdown();
         }
-        let mut inner = lock(&self.inner);
-        inner.loaded = [None, None];
+        for encoding in Encoding::ALL {
+            let downloading = matches!(
+                lock(&self.inner).states[encoding.index()],
+                VocabState::Downloading { .. }
+            );
+            // queued ones are dropped unannounced by the engine
+            if downloading {
+                self.delete_part(encoding);
+                self.apply(encoding, Event::Canceled);
+            }
+        }
+        lock(&self.inner).loaded = [None, None];
     }
 
     /// The tables of `encoding`, loaded (and verified) on first use.
@@ -350,85 +435,10 @@ impl VocabStore {
             lock(&self.inner).loaded[at] = Some(Arc::clone(&bpe));
             Ok(bpe)
         } else {
-            let _ = fs::remove_file(&path);
+            let _ = self.discard(encoding);
             self.apply(encoding, Event::Failed(VocabFailure::Hash));
             Err(Unavailable::NoVocab)
         }
-    }
-
-    fn run_download(&self, encoding: Encoding, cancel: &AtomicBool) {
-        let event = match self.fetch_and_keep(encoding, cancel) {
-            Ok(()) => Event::Finished,
-            Err(Stop::Canceled) => Event::Canceled,
-            Err(Stop::Failed(reason)) => Event::Failed(reason),
-        };
-        lock(&self.inner).cancels[encoding.index()] = None;
-        self.apply(encoding, event);
-    }
-
-    fn fetch_and_keep(&self, encoding: Encoding, cancel: &AtomicBool) -> Result<(), Stop> {
-        let pin = &self.pins[encoding.index()];
-        let disk = |_| Stop::Failed(VocabFailure::Disk);
-        fs::create_dir_all(&self.dir).map_err(disk)?;
-        let mut part = PartFile {
-            path: self.dir.join(format!("{}.part", encoding.file())),
-            keep: false,
-        };
-        let mut out = File::create(&part.path).map_err(disk)?;
-        let mut hasher = Sha256::new();
-        let mut done = 0_u64;
-        let mut last = Instant::now();
-        let mut stop: Option<Stop> = None;
-        let fetched = self.fetch.get(&pin.url, &mut |chunk| {
-            if cancel.load(Ordering::Relaxed) {
-                stop = Some(Stop::Canceled);
-                return false;
-            }
-            done += chunk.len() as u64;
-            if done > pin.bytes {
-                stop = Some(Stop::Failed(VocabFailure::Hash));
-                return false;
-            }
-            hasher.update(chunk);
-            if out.write_all(chunk).is_err() {
-                stop = Some(Stop::Failed(VocabFailure::Disk));
-                return false;
-            }
-            if last.elapsed() >= PROGRESS_EVERY {
-                last = Instant::now();
-                self.apply(
-                    encoding,
-                    Event::Progress {
-                        done,
-                        total: pin.bytes,
-                    },
-                );
-            }
-            true
-        });
-        if let Some(stop) = stop {
-            return Err(stop);
-        }
-        match fetched {
-            Err(FetchError::Offline) => return Err(Stop::Failed(VocabFailure::Offline)),
-            Err(FetchError::Status(status)) => {
-                return Err(Stop::Failed(VocabFailure::Http { status }))
-            }
-            Ok(()) => {}
-        }
-        if cancel.load(Ordering::Relaxed) {
-            return Err(Stop::Canceled);
-        }
-        if done != pin.bytes || hasher.finalize()[..] != pin.sha256 {
-            return Err(Stop::Failed(VocabFailure::Hash));
-        }
-        out.sync_all().map_err(disk)?;
-        drop(out);
-        let target = self.dir.join(encoding.file());
-        let _ = fs::remove_file(&target);
-        fs::rename(&part.path, &target).map_err(disk)?;
-        part.keep = true;
-        Ok(())
     }
 }
 

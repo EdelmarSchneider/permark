@@ -29,10 +29,10 @@ use permark_core::IpcError;
 use serde_json::{json, Value};
 
 use super::*;
-use crate::tests::{pin_of, rank_file, Events, Source};
+use crate::tests::{kit_of, pin_of, rank_file, serving, Events};
 use crate::tokenizer::Encoding;
 use crate::vocab::{Pin, VocabState};
-use crate::{plugin_with, Fetch, ID};
+use crate::{plugin_with, ID};
 
 const WINDOW: &str = "main";
 
@@ -209,16 +209,13 @@ impl Rig {
         });
         let cx = cx_for(&dirs, &events, &rpc, &services, &settings);
         let body = rank_file();
-        let source = Arc::new(Source {
-            body: body.clone(),
-            calls: AtomicUsize::new(0),
-        });
+        let kit = kit_of(serving(&body));
         let store = StateStore::app(&dirs);
         let cache = store.cache_dir().join("plugins").join(ID.as_str());
         let vocab = VocabStore::new(
             cache.clone(),
             [pin_of(&body), pin_of(&body)],
-            source as Arc<dyn Fetch>,
+            Some(&kit),
             Arc::new(|_| {}),
         );
         let folders = Folders::new(
@@ -1261,14 +1258,10 @@ fn start_plugin(
 ) -> Box<dyn Running> {
     let cx = cx_for(full_dirs, events, rpc, services, settings);
     let body = rank_file();
-    let source = Arc::new(Source {
-        body: body.clone(),
-        calls: AtomicUsize::new(0),
-    });
+    // the plugin builds its engine at start: the service may go after it
+    let _kit = services.provide(Arc::new(kit_of(serving(&body))));
     let pins: [Pin; 2] = [pin_of(&body), pin_of(&body)];
-    plugin_with(source as Arc<dyn Fetch>, pins)
-        .start(&cx)
-        .unwrap()
+    plugin_with(pins).start(&cx).unwrap()
 }
 
 impl Full {
