@@ -43,7 +43,8 @@ async function open(): Promise<void> {
     "the project shows",
   );
   await until(
-    () => contributions.visible("settingsPage", conditions.current).length === 1,
+    () =>
+      contributions.visible("settingsPage", conditions.current).some((p) => p.id === AGENT_PAGE),
     "the agent section is contributed",
   );
   await until(() => agent.status !== null, "the agent status is known");
@@ -94,7 +95,9 @@ describe("Settings > AI agents", () => {
     await until(() => navLabels().includes("AI agents"), "nav item");
     const labels = navLabels();
     expect(labels.indexOf("AI agents")).toBe(labels.indexOf("Editing") + 1);
-    expect(labels.indexOf("Integration")).toBe(labels.indexOf("AI agents") + 1);
+    // Local AI (order 35) sits between the agents and Integration
+    expect(labels.indexOf("Local AI")).toBe(labels.indexOf("AI agents") + 1);
+    expect(labels.indexOf("Integration")).toBe(labels.indexOf("Local AI") + 1);
     ui.showSettingsSection("integration");
     flushSync();
     await until(() => target.querySelectorAll("section.group").length >= 2, "integration cards");
