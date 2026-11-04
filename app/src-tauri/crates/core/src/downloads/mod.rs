@@ -29,7 +29,7 @@ pub use error::DownloadError;
 pub use secret::{MemorySecrets, Secret, SecretError, SecretStore};
 use transport::open;
 pub use transport::{Asked, Request, Response, Scripted, ScriptedTransport, Transport};
-pub use unit::Unit;
+pub use unit::{Unit, MANIFEST_SUFFIX};
 
 /// Where pinned files come from: a fixed `https` base (no free URLs from callers) + host suffixes every hop of a
 /// redirect chain must match. Defined in code (pins are covered by the app signature).
@@ -531,6 +531,45 @@ impl Downloads {
     #[must_use]
     pub fn is_installed(&self, unit: &Unit) -> bool {
         unit::is_installed(&self.shared.store, unit)
+    }
+
+    /// Records `unit` installed from files the caller put in its folder (a store move: copied + sha256-verified by the
+    /// caller): every file checked for its pinned size, then the manifest written (LAST), under the store lock.
+    ///
+    /// # Errors
+    /// `Busy` (running here | another instance holds the store), `Integrity` (a file missing | of another size),
+    /// `Disk` (incl. a unit folder that is a link).
+    pub fn adopt(&self, unit: &Unit) -> Result<(), DownloadError> {
+        let store = &self.shared.store;
+        unit.dir_in(store).map_err(|e| DownloadError::disk(&e))?;
+        if unit::present_bytes(store, unit) != unit.bytes() {
+            return Err(DownloadError::Integrity);
+        }
+        self.while_quiet(unit, false, || unit::write_manifest(store, unit))
+    }
+
+    /// Bytes of `unit`'s files present in full (each a file, not a link, of its pinned size; parts not counted).
+    #[must_use]
+    pub fn present_bytes(&self, unit: &Unit) -> u64 {
+        unit::present_bytes(&self.shared.store, unit)
+    }
+
+    /// Runs `op` with the store to itself: nothing queued | running here and the store lock free now (no other app
+    /// instance writes it), held while `op` runs. For cleanup a caller does in the store beside the engine's own.
+    ///
+    /// # Errors
+    /// `Busy` (units queued | running here, or another instance holds the store).
+    pub fn while_idle<T>(&self, op: impl FnOnce() -> T) -> Result<T, DownloadError> {
+        let queue = self.shared.queue();
+        if queue.active.is_some() || !queue.waiting.is_empty() {
+            return Err(DownloadError::Busy);
+        }
+        let lock = (self.shared.seams.lock)(&self.shared.store, Duration::ZERO)
+            .map_err(|_| DownloadError::Busy)?;
+        let done = op();
+        drop(lock);
+        drop(queue);
+        Ok(done)
     }
 
     /// Startup cleanup in the folders of `units`: removes a part without meta, a meta without part, a pair matching

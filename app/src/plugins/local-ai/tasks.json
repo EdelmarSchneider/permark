@@ -1,0 +1,30 @@
+{
+  "tasks": [
+    { "task": "correction", "needs": [["chat"]] },
+    { "task": "translation", "needs": [["translate"], ["chat"]] },
+    { "task": "semanticIndex", "needs": [["embed"]] },
+    { "task": "readAloud", "needs": [["speak"]] },
+    { "task": "dictation", "needs": [["transcribe"]] },
+    { "task": "assistant", "needs": [["chat", "tools"]] }
+  ],
+  "cases": [
+    { "name": "embedder", "capabilities": ["embed"], "fits": ["semanticIndex"] },
+    { "name": "chat only", "capabilities": ["chat"], "fits": ["correction", "translation"] },
+    {
+      "name": "chat with tools",
+      "capabilities": ["chat", "tools"],
+      "fits": ["correction", "translation", "assistant"]
+    },
+    { "name": "tools without chat", "capabilities": ["tools"], "fits": [] },
+    { "name": "translator", "capabilities": ["translate"], "fits": ["translation"] },
+    { "name": "speech to text", "capabilities": ["transcribe"], "fits": ["dictation"] },
+    { "name": "voice", "capabilities": ["speak"], "fits": ["readAloud"] },
+    {
+      "name": "multimodal chat",
+      "capabilities": ["chat", "tools", "transcribe", "vision"],
+      "fits": ["correction", "translation", "dictation", "assistant"]
+    },
+    { "name": "vision only", "capabilities": ["vision"], "fits": [] },
+    { "name": "nothing", "capabilities": [], "fits": [] }
+  ]
+}

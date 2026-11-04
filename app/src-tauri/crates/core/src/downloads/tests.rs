@@ -1442,3 +1442,43 @@ fn only_sources_marked_so_accept_a_credential() {
     ask(&web, &a, None, Some(&token())).unwrap();
     assert!(!web.asked()[0].authorized);
 }
+
+#[test]
+fn adopt_records_files_put_in_place_and_refuses_missing_or_resized_ones() {
+    let (_tmp, root) = store();
+    let body = data(1000, 3);
+    let run = start(&root, Arc::new(ScriptedTransport::new()));
+    let u = unit("m", vec![pin("model.gguf", &body)]);
+    let dir = root.join("models");
+    assert_eq!(run.downloads.adopt(&u), Err(DownloadError::Integrity));
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("model.gguf"), &body[..999]).unwrap();
+    assert_eq!(run.downloads.adopt(&u), Err(DownloadError::Integrity));
+    assert!(!run.downloads.is_installed(&u));
+    fs::write(dir.join("model.gguf"), &body).unwrap();
+    run.downloads.adopt(&u).unwrap();
+    assert!(run.downloads.is_installed(&u));
+    assert_eq!(names(&dir), ["m.installed.json", "model.gguf"]);
+}
+
+#[test]
+fn while_idle_runs_only_with_the_store_to_itself_and_present_bytes_counts_complete_files() {
+    let (_tmp, root) = store();
+    let body = data(1000, 4);
+    let other = data(500, 5);
+    let run = start(&root, Arc::new(ScriptedTransport::new()));
+    let u = unit("m", vec![pin("model.gguf", &body), pin("tok.json", &other)]);
+    assert_eq!(run.downloads.present_bytes(&u), 0);
+    let dir = u.dir_in(&root).unwrap();
+    assert_eq!(dir, root.join("models"));
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("model.gguf"), &body).unwrap();
+    fs::write(dir.join("tok.json"), &other[..10]).unwrap();
+    assert_eq!(run.downloads.present_bytes(&u), 1000);
+    assert!(format!("m{MANIFEST_SUFFIX}").ends_with(".installed.json"));
+    assert_eq!(run.downloads.while_idle(|| 7), Ok(7));
+    let held = lock_within(&root, Duration::from_secs(5)).unwrap();
+    assert_eq!(run.downloads.while_idle(|| 7), Err(DownloadError::Busy));
+    drop(held);
+    assert_eq!(run.downloads.while_idle(|| 8), Ok(8));
+}

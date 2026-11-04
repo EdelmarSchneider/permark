@@ -1907,6 +1907,9 @@ export default {
   "plugin.token-count.name": "Nombre de jetons",
   "plugin.token-count.about":
     "Jetons d'un document, d'une sélection ou d'une section selon le tokeniseur choisi ; exact quand le tokeniseur est public, approximatif (et signalé) sinon.",
+  "plugin.local-ai.name": "IA locale",
+  "plugin.local-ai.about":
+    "Petits modèles d'IA qui fonctionnent sur cet ordinateur, hors ligne, pour aider PerMark à corriger, traduire et trouver par le sens. Rien n'est téléchargé tant que vous ne le demandez pas.",
 
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} ligne",

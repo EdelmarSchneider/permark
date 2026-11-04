@@ -1821,6 +1821,9 @@ export default {
   "plugin.token-count.name": "토큰 수",
   "plugin.token-count.about":
     "선택한 토크나이저로 문서, 선택 영역 또는 섹션의 토큰을 셉니다. 토크나이저가 공개된 경우 정확하게, 그렇지 않으면 근사치로(표시와 함께) 셉니다.",
+  "plugin.local-ai.name": "로컬 AI",
+  "plugin.local-ai.about":
+    "이 컴퓨터에서 오프라인으로 실행되는 작은 AI 모델로, PerMark가 교정하고 번역하고 의미로 찾도록 돕습니다. 요청하기 전에는 아무것도 내려받지 않습니다.",
   // ---- TOON data and the converter
   "config.table.rows.one": "행 {n}개",
   "config.table.rows.other": "행 {n}개",

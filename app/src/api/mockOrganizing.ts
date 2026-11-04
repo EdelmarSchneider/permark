@@ -46,12 +46,15 @@ export class MockPluginError extends Error {
       | "unavailable"
       | "notFound"
       | "invalidData"
+      | "invalidPath"
       | "denied"
       | "exists"
       | "invalidName"
       | "intoItself"
-      | "conflict",
+      | "conflict"
+      | "unsupported",
     readonly subject: string | null = null,
+    readonly detail: string | null = null,
   ) {
     super(kind);
   }

@@ -1886,6 +1886,9 @@ export default {
   "plugin.token-count.name": "Token-Zählung",
   "plugin.token-count.about":
     "Token eines Dokuments, einer Auswahl oder eines Abschnitts nach dem gewählten Tokenizer; exakt, wenn der Tokenizer öffentlich ist, sonst als Näherung (und markiert).",
+  "plugin.local-ai.name": "Lokale KI",
+  "plugin.local-ai.about":
+    "Kleine KI-Modelle, die offline auf diesem Computer laufen und PerMark beim Korrigieren, Übersetzen und Finden nach Bedeutung helfen. Es wird nichts heruntergeladen, bis du darum bittest.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} Zeile",
   "config.table.rows.other": "{n} Zeilen",

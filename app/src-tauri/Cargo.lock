@@ -3202,6 +3202,7 @@ dependencies = [
  "permark-plugin-highlight",
  "permark-plugin-json-view",
  "permark-plugin-live-feed",
+ "permark-plugin-local-ai",
  "permark-plugin-math",
  "permark-plugin-md-family",
  "permark-plugin-media",
@@ -3424,6 +3425,21 @@ dependencies = [
  "serde_json",
  "tempfile",
  "ts-rs",
+]
+
+[[package]]
+name = "permark-plugin-local-ai"
+version = "0.8.1"
+dependencies = [
+ "permark-core",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.21",
+ "ts-rs",
+ "windows",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "models": [
+    {
+      "id": "embeddinggemma-2-q8_0",
+      "lineage": "embeddinggemma-2",
+      "catalogVersion": 1,
+      "name": "EmbeddingGemma 2",
+      "family": "EmbeddingGemma",
+      "publisher": "ggml-org",
+      "repo": "ggml-org/embeddinggemma-2-GGUF",
+      "commit": "6ea3e3a309d12a4779cfda98b8c19800d2d5da71",
+      "files": [
+        {
+          "path": "embeddinggemma-2-Q8_0.gguf",
+          "role": "weights",
+          "requiredFor": ["embed"],
+          "bytes": 309855456,
+          "sha256": "2188ac1deca4b77dffefd603c2776a9d76d9d74ec01841392982ebb840b09135"
+        }
+      ],
+      "quant": "Q8_0",
+      "params": 270000000,
+      "contextLen": 8192,
+      "minEngine": { "engine": "llama.cpp", "version": null },
+      "needs": { "ramMin": 372244480, "ramRec": 640679936, "vramRec": 640679936 },
+      "license": {
+        "name": "Apache 2.0",
+        "spdx": "Apache-2.0",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0",
+        "restriction": null,
+        "needsAcceptance": false,
+        "revision": null
+      },
+      "gated": false,
+      "capabilities": ["embed"],
+      "languages": ["mul"],
+      "embedding": {
+        "dims": 768,
+        "mrlDims": [512, 256, 128],
+        "pooling": "mean",
+        "prefixProfile": "embeddinggemma-2"
+      },
+      "promptProfile": null,
+      "withdrawn": false
+    },
+    {
+      "id": "gemma-4-e2b-it-q4_0",
+      "lineage": "gemma-4-e2b-it",
+      "catalogVersion": 1,
+      "name": "Gemma 4 E2B",
+      "family": "Gemma 4",
+      "publisher": "ggml-org",
+      "repo": "ggml-org/gemma-4-E2B-it-GGUF",
+      "commit": "6938c58e698502037401a5f19f6905f2fb2f7dee",
+      "files": [
+        {
+          "path": "gemma-4-E2B-it-Q4_0.gguf",
+          "role": "weights",
+          "requiredFor": ["chat", "tools", "transcribe", "vision"],
+          "bytes": 2841481184,
+          "sha256": "8e30dff3ac4c8434c49a7036fa15564bdbb6044e42bf04550bf1a096ad7e6a52"
+        },
+        {
+          "path": "mmproj-gemma-4-E2B-it-Q8_0.gguf",
+          "role": "mmproj",
+          "requiredFor": ["transcribe", "vision"],
+          "bytes": 557368064,
+          "sha256": "9406f99c16d68cda4f1f0552192dcc99021ea1fc6d2fd50b1dc3ccf30d04b292"
+        }
+      ],
+      "quant": "Q4_0",
+      "params": 5100000000,
+      "contextLen": 131072,
+      "minEngine": { "engine": "llama.cpp", "version": null },
+      "needs": { "ramMin": 4078960640, "ramRec": 5152702464, "vramRec": 5152702464 },
+      "license": {
+        "name": "Apache 2.0",
+        "spdx": "Apache-2.0",
+        "url": "https://ai.google.dev/gemma/docs/gemma_4_license",
+        "restriction": null,
+        "needsAcceptance": false,
+        "revision": null
+      },
+      "gated": false,
+      "capabilities": ["chat", "tools", "transcribe", "vision"],
+      "languages": ["mul"],
+      "embedding": null,
+      "promptProfile": "gemma-4",
+      "withdrawn": false
+    },
+    {
+      "id": "gemma-4-e4b-it-q4_0",
+      "lineage": "gemma-4-e4b-it",
+      "catalogVersion": 1,
+      "name": "Gemma 4 E4B",
+      "family": "Gemma 4",
+      "publisher": "ggml-org",
+      "repo": "ggml-org/gemma-4-E4B-it-GGUF",
+      "commit": "a69f018d7678a2b9f5e705f8903d6fb29b9b25dc",
+      "files": [
+        {
+          "path": "gemma-4-E4B-it-Q4_0.gguf",
+          "role": "weights",
+          "requiredFor": ["chat", "tools", "transcribe", "vision"],
+          "bytes": 4590807392,
+          "sha256": "a555b900214b477d8880e7832e0b8925e139b0159640036b09fe472b6f2097f2"
+        },
+        {
+          "path": "mmproj-gemma-4-E4B-it-Q8_0.gguf",
+          "role": "mmproj",
+          "requiredFor": ["transcribe", "vision"],
+          "bytes": 559874816,
+          "sha256": "197f49a93027f9843772bd24a6a9e0be2a32a788de5a3def330e9c585d86edd1"
+        }
+      ],
+      "quant": "Q4_0",
+      "params": 8000000000,
+      "contextLen": 131072,
+      "minEngine": { "engine": "llama.cpp", "version": null },
+      "needs": { "ramMin": 6181355520, "ramRec": 7255097344, "vramRec": 7255097344 },
+      "license": {
+        "name": "Apache 2.0",
+        "spdx": "Apache-2.0",
+        "url": "https://ai.google.dev/gemma/docs/gemma_4_license",
+        "restriction": null,
+        "needsAcceptance": false,
+        "revision": null
+      },
+      "gated": false,
+      "capabilities": ["chat", "tools", "transcribe", "vision"],
+      "languages": ["mul"],
+      "embedding": null,
+      "promptProfile": "gemma-4",
+      "withdrawn": false
+    },
+    {
+      "id": "lfm3-1.7b-q4_k_m",
+      "lineage": "lfm3-1.7b",
+      "catalogVersion": 1,
+      "name": "LFM3 1.7B",
+      "family": "LFM3",
+      "publisher": "LiquidAI",
+      "repo": "LiquidAI/LFM3-1.7B-GGUF",
+      "commit": "cd0c74c575b5c416f3011b5b4c298077f26ca8c2",
+      "files": [
+        {
+          "path": "LFM3-1.7B-Q4_K_M.gguf",
+          "role": "weights",
+          "requiredFor": ["chat", "tools"],
+          "bytes": 1099627808,
+          "sha256": "3793e1e6e2266919d6e015287221b41100175a98eddaba92e111aed3b05c93c4"
+        }
+      ],
+      "quant": "Q4_K_M",
+      "params": 1700000000,
+      "contextLen": 262144,
+      "minEngine": { "engine": "llama.cpp", "version": "b11960" },
+      "needs": { "ramMin": 1320157184, "ramRec": 2393899008, "vramRec": 2393899008 },
+      "license": {
+        "name": "LFM Open License v1.0",
+        "spdx": null,
+        "url": "https://www.liquid.ai/lfm-license",
+        "restriction": "Free for organizations under $10M annual revenue",
+        "needsAcceptance": true,
+        "revision": "v1.0"
+      },
+      "gated": false,
+      "capabilities": ["chat", "tools"],
+      "languages": ["en", "ar", "zh", "fr", "de", "it", "ja", "ko", "pt", "es", "vi", "th", "id", "hi", "ru", "pl"],
+      "embedding": null,
+      "promptProfile": "lfm3",
+      "withdrawn": false
+    },
+    {
+      "id": "whisper-large-v3-turbo-q5_0",
+      "lineage": "whisper-large-v3-turbo",
+      "catalogVersion": 1,
+      "name": "Whisper large-v3-turbo",
+      "family": "Whisper",
+      "publisher": "ggerganov",
+      "repo": "ggerganov/whisper.cpp",
+      "commit": "5359861c739e955e79d9a303bcbc70fb988958b1",
+      "files": [
+        {
+          "path": "ggml-large-v3-turbo-q5_0.bin",
+          "role": "weights",
+          "requiredFor": ["transcribe"],
+          "bytes": 574041195,
+          "sha256": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
+        }
+      ],
+      "quant": "q5_0",
+      "params": 809000000,
+      "contextLen": 448,
+      "minEngine": { "engine": "whisper.cpp", "version": "v1.7.0" },
+      "needs": { "ramMin": 688914432, "ramRec": 957349888, "vramRec": 957349888 },
+      "license": {
+        "name": "MIT",
+        "spdx": "MIT",
+        "url": "https://opensource.org/license/mit",
+        "restriction": null,
+        "needsAcceptance": false,
+        "revision": null
+      },
+      "gated": false,
+      "capabilities": ["transcribe"],
+      "languages": ["mul"],
+      "embedding": null,
+      "promptProfile": null,
+      "withdrawn": false
+    }
+  ]
+}

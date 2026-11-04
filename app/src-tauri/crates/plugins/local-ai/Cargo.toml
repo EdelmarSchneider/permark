@@ -1,0 +1,29 @@
+[package]
+name = "permark-plugin-local-ai"
+description = "PerMark plugin local-ai: a curated catalog of small models that run on this computer, for PerMark's own features (dormant until the person asks)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Depends on `permark-core` only.
+[dependencies]
+permark-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+ts-rs.workspace = true
+
+# Machine profile (`src/machine/`): memory via Win32, graphics adapters via DXGI.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_System_SystemInformation"] }
+windows = { workspace = true, features = ["Win32_Graphics_Dxgi"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

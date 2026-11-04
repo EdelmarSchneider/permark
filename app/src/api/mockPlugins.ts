@@ -9,6 +9,7 @@ import type { createMockNotes, NotesProbe } from "./mockNotes";
 import type { createMockDistribution } from "./mockDistribution";
 import type { createMockTokens } from "./mockTokens";
 import type { createMockConvert } from "./mockConvert";
+import type { createMockLocalAi } from "./mockLocalAi";
 import type { ReviewChange } from "./generated/ReviewChange";
 import { createMockGitMembers, type GitMembersProbe } from "./mockGitMembers";
 import type {
@@ -125,7 +126,8 @@ export function createMockPlugins(
   notes: ReturnType<typeof createMockNotes>,
   distribution: ReturnType<typeof createMockDistribution>["handlers"] &
     ReturnType<typeof createMockTokens>["handlers"] &
-    ReturnType<typeof createMockConvert>["handlers"],
+    ReturnType<typeof createMockConvert>["handlers"] &
+    ReturnType<typeof createMockLocalAi>["handlers"],
   projectsView: () => ProjectsView | null = () => null,
 ): {
   call<M extends PluginMethod>(
@@ -373,7 +375,7 @@ export function createMockPlugins(
           error: {
             kind: "backend",
             command: "plugin_call",
-            error: { kind: error.kind, subject: error.subject, detail: null },
+            error: { kind: error.kind, subject: error.subject, detail: error.detail },
           },
         });
       }

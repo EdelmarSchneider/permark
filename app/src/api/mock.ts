@@ -20,6 +20,7 @@ import {
 import { createMockConfig } from "./mockConfig";
 import { createMockDistribution, type DistributionProbe } from "./mockDistribution";
 import { createMockTokens, type TokensProbe } from "./mockTokens";
+import { createMockLocalAi } from "./mockLocalAi";
 import { createMockConvert, type ConvertProbe } from "./mockConvert";
 import { createMockEditing, type MockEditProbe } from "./mockEdit";
 import { createMockImport, type ImportProbe } from "./mockImport";
@@ -433,7 +434,12 @@ export function createMockApi(): Api & {
     emit("context-changed", { window: "main", context: context() });
   }
 
-  const shell = createMockShell({ settings: () => settings, changed: announceShell });
+  const shell = createMockShell({
+    settings: () => settings,
+    changed: announceShell,
+    // read when asked (the local AI mock is made below)
+    dataBytes: (plugin) => (plugin === "local-ai" ? localAi.dataBytes() : null),
+  });
   const windowThemes: ("light" | "dark" | null)[] = [];
   const pickedFrom: (string | null)[] = [];
 
@@ -453,6 +459,9 @@ export function createMockApi(): Api & {
     "token-count:folder": new Set(),
     "token-count:folders": new Set(),
     "notes:intent": new Set(),
+    "local-ai:state": new Set(),
+    "local-ai:progress": new Set(),
+    "local-ai:move": new Set(),
   };
   const distribution = createMockDistribution((event, payload) => {
     for (const handler of appListeners[event]) handler(payload);
@@ -465,12 +474,18 @@ export function createMockApi(): Api & {
     rootNow,
   );
   const convert = createMockConvert((path) => editing.probe.files.get(path) ?? null);
+  const localAi = createMockLocalAi(
+    (event, payload) => {
+      for (const handler of appListeners[event]) handler(payload);
+    },
+    () => [rootNow()],
+  );
   const plugins = createMockPlugins(
     emitPlugin,
     () => mockView("docs/guide.md", [], true)?.hash ?? "0",
     organizing,
     notes,
-    { ...distribution.handlers, ...tokens.handlers, ...convert.handlers },
+    { ...distribution.handlers, ...tokens.handlers, ...convert.handlers, ...localAi.handlers },
     // read when asked (the projects mock is made just below)
     () => projects.probe.viewOf(rootNow()),
   );

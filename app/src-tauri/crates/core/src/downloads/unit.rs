@@ -14,6 +14,9 @@ use crate::fsx;
 /// Manifest size read back (a few pins).
 const MANIFEST_LIMIT: u64 = 1 << 20;
 
+/// Name ending of a unit's install manifest (`<id>.installed.json`): a folder holding one is an install.
+pub const MANIFEST_SUFFIX: &str = ".installed.json";
+
 /// Files installed together under `<store>/<folder>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unit {
@@ -42,7 +45,7 @@ impl Unit {
         let mut names: Vec<String> = assets.iter().map(|a| a.name().to_lowercase()).collect();
         names.sort_unstable();
         let twins = names.windows(2).any(|w| w[0] == w[1]);
-        let manifest = format!("{}.installed.json", id.to_lowercase());
+        let manifest = format!("{}{MANIFEST_SUFFIX}", id.to_lowercase());
         let temp_named = names.iter().any(|n| {
             *n == manifest || [".part", ".part.meta"].iter().any(|temp| n.ends_with(temp))
         });
@@ -79,7 +82,7 @@ impl Unit {
     ///
     /// # Errors
     /// `InvalidInput` (a link | file on the way), other IO errors reading the folders.
-    pub(super) fn dir_in(&self, store: &Path) -> io::Result<PathBuf> {
+    pub fn dir_in(&self, store: &Path) -> io::Result<PathBuf> {
         let mut dir = store.to_path_buf();
         for segment in &self.folder {
             dir.push(segment);
@@ -98,8 +101,13 @@ impl Unit {
         Ok(self.path_in(store))
     }
 
+    /// Bytes of every asset.
+    pub(super) fn bytes(&self) -> u64 {
+        self.assets.iter().map(Asset::bytes).sum()
+    }
+
     fn manifest_path(&self, dir: &Path) -> PathBuf {
-        dir.join(format!("{}.installed.json", self.id))
+        dir.join(format!("{}{MANIFEST_SUFFIX}", self.id))
     }
 
     fn manifest(&self) -> Manifest {
@@ -139,6 +147,21 @@ pub(super) fn write_manifest(store: &Path, unit: &Unit) -> io::Result<()> {
     fsx::write_atomic(&unit.manifest_path(&unit.dir_in(store)?), &bytes)
 }
 
+/// Bytes of `unit`'s files present in full (a file, not a link, of its pinned size); linked unit folder: 0.
+pub(super) fn present_bytes(store: &Path, unit: &Unit) -> u64 {
+    let Ok(dir) = unit.dir_in(store) else {
+        return 0;
+    };
+    unit.assets
+        .iter()
+        .filter(|a| {
+            std::fs::symlink_metadata(dir.join(a.name()))
+                .is_ok_and(|m| m.is_file() && m.len() == a.bytes())
+        })
+        .map(Asset::bytes)
+        .sum()
+}
+
 /// Manifest lists exactly `unit`'s pins and every file (not a link) has its pinned size; linked unit folder: no.
 pub(super) fn is_installed(store: &Path, unit: &Unit) -> bool {
     let Ok(dir) = unit.dir_in(store) else {
@@ -148,11 +171,7 @@ pub(super) fn is_installed(store: &Path, unit: &Unit) -> bool {
         .ok()
         .and_then(|bytes| serde_json::from_slice::<Manifest>(&bytes).ok())
         .is_some_and(|m| m == unit.manifest());
-    listed
-        && unit.assets.iter().all(|a| {
-            std::fs::symlink_metadata(dir.join(a.name()))
-                .is_ok_and(|m| m.is_file() && m.len() == a.bytes())
-        })
+    listed && present_bytes(store, unit) == unit.bytes()
 }
 
 /// Manifest first (no longer installed), then files + parts.

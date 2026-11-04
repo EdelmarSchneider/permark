@@ -1868,6 +1868,9 @@ export default {
   "plugin.token-count.name": "Conteggio dei token",
   "plugin.token-count.about":
     "Token di un documento, una selezione o una sezione secondo il tokenizzatore scelto; esatto quando il tokenizzatore è pubblico, approssimato (e segnalato) quando non lo è.",
+  "plugin.local-ai.name": "IA locale",
+  "plugin.local-ai.about":
+    "Piccoli modelli di IA che funzionano su questo computer, offline, per aiutare PerMark a correggere, tradurre e trovare per significato. Non viene scaricato nulla finché non lo chiedi.",
   // ---- TOON data and the converter
   "config.table.rows.one": "{n} riga",
   "config.table.rows.other": "{n} righe",

@@ -247,6 +247,7 @@ export const tauriApi: Api = {
   pluginsList: () => call("plugins_list", {}),
   pluginSetProject: (plugin, enabled) => call("plugin_set_project", { plugin, enabled }),
   pluginRemoveData: (plugin) => call("plugin_remove_data", { plugin }),
+  pluginDataBytes: (plugin) => call("plugin_data_bytes", { plugin }),
   windowClose: () => call("window_close", {}),
   windowCloseAnswer: (answer) => call("window_close_answer", { answer }),
   viewSaved: (saved) => call("view_saved", { saved }),
