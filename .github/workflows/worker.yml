@@ -45,6 +45,11 @@ env:
   VULKAN_SHA256: 81f474711e9042f4cd22b31b2f7a8870db2e428b21586fb43dd80150be97310d
   # LunarG apt signing key (primary key fingerprint), checked before the key is trusted for its repo only.
   LUNARG_KEY_FPR: 03F5D621A3710FA95A93D89BAA8452080E383F7E
+  # No network code in the worker: llama.cpp links OpenSSL (`LLAMA_OPENSSL`, default ON, for its own model
+  # downloads) whenever the build machine has it (the Windows runner does), and the worker then needs
+  # libssl/libcrypto DLLs that end users don't have. llama-cpp-sys-2 forwards `CMAKE_*` variables to CMake.
+  CMAKE_DISABLE_FIND_PACKAGE_OpenSSL: "TRUE"
+  CMAKE_DISABLE_FIND_PACKAGE_CURL: "TRUE"
 
 jobs:
   draft:
@@ -244,6 +249,18 @@ jobs:
           ls -la "$dest"
 
       # The worker starts, finds its libraries and says hello on its protocol line (stdin closed: it exits).
+      # No network libraries in what we ship (worker has no network: D-5).
+      - name: Check no network libraries
+        if: env.RUN_THIS == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/worker"
+          if grep -l -a -i -E "libssl|libcrypto|libcurl|ssleay|libeay" -- *; then
+            echo "A shipped file references a network library (listed above)."
+            exit 1
+          fi
+
       - name: Check the worker starts
         if: env.RUN_THIS == 'true'
         shell: bash
@@ -252,7 +269,11 @@ jobs:
           cd "$RUNNER_TEMP/worker"
           exe=./permark-llm-worker
           [ "$RUNNER_OS" = "Windows" ] && exe=./permark-llm-worker.exe
-          hello=$("$exe" < /dev/null 2> "$RUNNER_TEMP/worker.log" | head -n 1) || true
+          # Only system folders on PATH (as when the app starts it): a library the runner has but users lack
+          # (e.g. OpenSSL) makes this fail here instead of on the person's computer.
+          path=/usr/bin:/bin
+          [ "$RUNNER_OS" = "Windows" ] && path=/c/Windows/System32:/c/Windows
+          hello=$(/usr/bin/env PATH="$path" "$exe" < /dev/null 2> "$RUNNER_TEMP/worker.log" | head -n 1) || true
           tail -n 20 "$RUNNER_TEMP/worker.log"
           echo "$hello"
           echo "$hello" | jq -e '.proto == 1 and (.caps.capabilities | index("chat"))' > /dev/null
