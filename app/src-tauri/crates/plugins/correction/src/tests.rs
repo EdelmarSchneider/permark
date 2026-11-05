@@ -300,19 +300,15 @@ fn requests_carry_the_prompt_greedy_sampling_and_the_answer_cap() {
     let requests = lab.fake.requests.lock().unwrap();
     let request = &requests[0];
     let roles: Vec<Role> = request.messages.iter().map(|m| m.role).collect();
-    assert_eq!(
-        roles,
-        [
-            Role::System,
-            Role::User,
-            Role::Assistant,
-            Role::User,
-            Role::Assistant,
-            Role::User
-        ]
-    );
+    let mut want = vec![Role::System];
+    for _ in prompt::FEW_SHOT {
+        want.extend([Role::User, Role::Assistant]);
+    }
+    want.push(Role::User);
+    assert_eq!(roles, want);
     assert_eq!(request.messages[0].content, prompt::SYSTEM);
-    assert_eq!(request.messages[5].content, text);
+    assert_eq!(request.messages[want.len() - 1].content, text);
+    // the first two examples keep a marker (D-3)
     assert!(request.messages[1..5]
         .iter()
         .all(|m| m.content.contains("⟦1⟧")));
