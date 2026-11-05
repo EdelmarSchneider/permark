@@ -388,6 +388,51 @@ describe("pictures dropped from the system", () => {
   });
 });
 
+describe("edits handed to the editor on screen (correction)", () => {
+  const edit = { from: 0, to: 1, insert: "X", expect: "#" };
+
+  it("scope, apply, reveal and composing go to the editor", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    const applied: unknown[] = [];
+    const revealed: unknown[] = [];
+    editor.scope = (kind) => (kind === "document" ? { from: 0, to: 9 } : null);
+    editor.apply = (edits) => applied.push(edits) > 0;
+    editor.reveal = (range) => revealed.push(range);
+    editor.composing = () => false;
+    expect(session.scope("document")).toEqual({ from: 0, to: 9 });
+    expect(session.scope("selection")).toBeNull();
+    expect(session.apply([edit])).toBe(true);
+    expect(applied).toEqual([[edit]]);
+    session.reveal({ from: 2, to: 4 });
+    expect(revealed).toEqual([{ from: 2, to: 4 }]);
+    expect(session.composing()).toBe(false);
+  });
+
+  it("an editor composing text (IME) takes no edit", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    const applied: unknown[] = [];
+    editor.apply = (edits) => applied.push(edits) > 0;
+    editor.composing = () => true;
+    expect(session.composing()).toBe(true);
+    expect(session.apply([edit])).toBe(false);
+    expect(applied).toEqual([]);
+  });
+
+  it("an editor without them (or none on screen) gives safe answers", async () => {
+    const { session } = setup();
+    expect(session.scope("document")).toBeNull();
+    expect(session.apply([edit])).toBe(false);
+    expect(session.composing()).toBe(false);
+    await open(session);
+    expect(session.scope("paragraph")).toBeNull();
+    expect(session.apply([edit])).toBe(false);
+    session.reveal({ from: 0, to: 1 });
+    expect(session.composing()).toBe(false);
+  });
+});
+
 describe("the mode the person chose", () => {
   it("survives letting go of the document, and a new window starts in View", async () => {
     const { api, session } = setup();

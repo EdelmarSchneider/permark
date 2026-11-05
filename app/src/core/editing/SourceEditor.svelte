@@ -78,6 +78,10 @@
           const at = made.view.posAtCoords(point) ?? made.view.state.selection.main.head;
           void insertPictures(files, at);
         },
+        scope: (kind) => made.scope(kind),
+        apply: (edits) => made.apply(edits),
+        reveal: (range) => made.reveal(range),
+        composing: () => made.composing(),
       });
     });
     return () => {

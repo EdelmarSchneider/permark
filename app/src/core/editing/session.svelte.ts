@@ -29,6 +29,15 @@ export type EditMode = "view" | "edit" | "source";
  * (other text: Source only). */
 export type EditKind = "markdown" | "sheet" | "text";
 
+/** What a whole-text edit works on: the selection, the Markdown block around the caret, or all of it. */
+export type EditScope = "selection" | "paragraph" | "document";
+
+/** A range of the edit text (UTF-16 offsets, `from <= to`). */
+export type TextRange = { from: number; to: number };
+
+/** Replace `from..to` with `insert`, only while that range still reads `expect`. */
+export type TextEdit = TextRange & { insert: string; expect: string };
+
 /** What an editor on screen offers the session. */
 export type ActiveEditor = {
   kind: "edit" | "source";
@@ -43,6 +52,15 @@ export type ActiveEditor = {
   focus(): void;
   /** Puts pictures dropped at a point of the window into the text (the editors that take pictures). */
   pictures?(files: File[], point: { x: number; y: number }): void;
+  /** The range `kind` covers now; `null`: none (empty selection, caret outside a prose block). */
+  scope?(kind: EditScope): TextRange | null;
+  /** All `edits` (ranges of the text now, not overlapping) in one undo step; `false` and no change when any range no
+   *  longer reads its `expect`. Only `insert` goes in: nothing else of the text changes. */
+  apply?(edits: readonly TextEdit[]): boolean;
+  /** Shows `range` (Source: selected + scrolled into view). */
+  reveal?(range: TextRange): void;
+  /** Text is being composed (IME): edits wait. */
+  composing?(): boolean;
 };
 
 /** What an editor mounts with. `line`: put this line at the top. */
@@ -334,6 +352,29 @@ export class EditingSession {
     if (!editor?.pictures) return false;
     editor.pictures(files, point);
     return true;
+  }
+
+  /** The range `kind` covers in the editor on screen (`null`: none, or no editor offers it). */
+  scope(kind: EditScope): TextRange | null {
+    return this.#editor?.scope?.(kind) ?? null;
+  }
+
+  /** Puts `edits` into the editor on screen in one undo step. `false` (nothing changed): no editor takes them, it is
+   *  composing text, or a range no longer reads what was expected. */
+  apply(edits: readonly TextEdit[]): boolean {
+    const editor = this.#editor;
+    if (!editor?.apply || editor.composing?.() === true) return false;
+    return editor.apply(edits);
+  }
+
+  /** Shows `range` in the editor on screen. */
+  reveal(range: TextRange): void {
+    this.#editor?.reveal?.(range);
+  }
+
+  /** The editor on screen is composing text (IME). */
+  composing(): boolean {
+    return this.#editor?.composing?.() ?? false;
   }
 
   /** The editor's text changed (checked shortly after, against the base). */

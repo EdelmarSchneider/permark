@@ -1,14 +1,33 @@
+<script lang="ts" module>
+  import { conditions } from "../conditions/context.svelte";
+  import { contributions } from "../plugins/instance.svelte";
+  import type { ContributionOf } from "../plugins/registry.svelte";
+  import type { EditMode } from "./session.svelte";
+
+  /** The plugins' edit actions shown with the mode switch in `mode` (none in View); the header counts them. */
+  export function shownEditActions(mode: EditMode): ContributionOf<"editAction">[] {
+    if (mode === "view") return [];
+    return contributions
+      .visible("editAction", conditions.current)
+      .filter((action) => action.when?.() ?? true);
+  }
+</script>
+
 <script lang="ts">
   // View | Edit | Source, Save and the unsaved dot. Edit only for Markdown; a document that cannot be edited
-  // says why. `compact` (a narrow header): icons only, the words stay as label + tooltip.
+  // says why. `compact` (a narrow header): icons only, the words stay as label + tooltip. While editing, the
+  // plugins' edit actions (icon buttons, each opening its menu below it) come after the diagram toggle.
   import Code from "@lucide/svelte/icons/code";
   import Eye from "@lucide/svelte/icons/eye";
   import Pencil from "@lucide/svelte/icons/pencil";
   import Save from "@lucide/svelte/icons/save";
   import Workflow from "@lucide/svelte/icons/workflow";
+  import { keyHint } from "../commands/hint";
+  import ContextMenu from "../explorer/ContextMenu.svelte";
+  import type { MenuEntry } from "../explorer/menu";
   import { t, type MessageKey } from "../i18n";
   import { diagramPanel } from "./diagramPanel.svelte";
-  import type { EditMode, EditingSession } from "./session.svelte";
+  import type { EditingSession } from "./session.svelte";
 
   type Props = {
     session: EditingSession;
@@ -31,6 +50,49 @@
 
   const why = $derived(readOnly === null ? null : t(WHY[readOnly] ?? "edit.disabled.noViewer"));
   const editing = $derived(session.mode !== "view");
+  const actions = $derived(shownEditActions(session.mode));
+
+  type Action = ContributionOf<"editAction">;
+  type Open = {
+    key: string;
+    x: number;
+    y: number;
+    anchor: HTMLElement;
+    label: string;
+    entries: MenuEntry[];
+  };
+  let menu = $state.raw<Open | null>(null);
+  /** The open menu while its action is still shown (back in View: gone). */
+  const shownMenu = $derived(
+    menu !== null && actions.some((action) => keyOf(action) === menu?.key) ? menu : null,
+  );
+
+  function keyOf(action: Action): string {
+    return action.owner + action.id;
+  }
+
+  function tip(action: Action): string {
+    const keys = action.command === undefined ? null : keyHint(action.command);
+    return keys === null ? t(action.label) : `${t(action.label)} (${keys})`;
+  }
+
+  /** Opens the action's menu below its button; a second press closes it. */
+  function toggle(action: Action, button: HTMLElement): void {
+    const key = keyOf(action);
+    if (shownMenu?.key === key) {
+      menu = null;
+      return;
+    }
+    const box = button.getBoundingClientRect();
+    menu = {
+      key,
+      x: box.left,
+      y: box.bottom + 4,
+      anchor: button,
+      label: t(action.label),
+      entries: action.entries(),
+    };
+  }
 </script>
 
 <div class="modes" class:compact role="group" aria-label={t("mode.label")}>
@@ -78,6 +140,30 @@
   >
     <Workflow size={15} />
   </button>
+{/if}
+{#each actions as action (keyOf(action))}
+  {@const Icon = action.icon}
+  <button
+    type="button"
+    class="icon-btn"
+    title={tip(action)}
+    aria-label={t(action.label)}
+    aria-haspopup="menu"
+    aria-expanded={shownMenu?.key === keyOf(action)}
+    onclick={(event) => toggle(action, event.currentTarget)}
+  >
+    <Icon size={15} />
+  </button>
+{/each}
+{#if shownMenu}
+  <ContextMenu
+    x={shownMenu.x}
+    y={shownMenu.y}
+    entries={shownMenu.entries}
+    close={() => (menu = null)}
+    label={shownMenu.label}
+    anchor={shownMenu.anchor}
+  />
 {/if}
 {#if editing && session.policy.kind === "explicit"}
   {@const label = session.state.s === "saving" ? t("edit.saving") : t("edit.save")}
