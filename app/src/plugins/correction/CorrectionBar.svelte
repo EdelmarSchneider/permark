@@ -3,8 +3,9 @@
   // stands (getting the model ready + progress, checking part i of n, the count) + "3 / 12" + previous | next; row 2:
   // the current suggestion in its text (removed | added words marked), notes (parts left as they were, suggestions the
   // text no longer matches), a failure with Try again + Local AI settings; row 3: Accept | Reject, all of them, Done,
-  // Cancel. The excerpt stays on the suggestion's line. Keys inside the bar: A | R, Shift+A | Shift+R, Esc (Done, back
-  // to the editor).
+  // Cancel. The excerpt = the store's cut (its block, word edges, `…`). One polite live region: the phase, then the count
+  // + the current suggestion. A focused button turned off -> the keyboard to Cancel (running) | Done. Keys inside the
+  // bar: A | R, Shift+A | Shift+R, Esc (Done, back to the editor).
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronUp from "@lucide/svelte/icons/chevron-up";
   import { isTypingTarget } from "../../core/commands/dispatch";
@@ -20,13 +21,42 @@
   const busy = $derived(review !== null && running(review.status));
   const count = $derived(review?.suggestions.length ?? 0);
   const current = $derived(review?.suggestions[review.at] ?? null);
-  /** The excerpt around the current suggestion, kept on its own line. */
-  const onLine = $derived({
-    before: current?.before.slice(current.before.lastIndexOf("\n") + 1) ?? "",
-    after: current?.after.split("\n")[0] ?? "",
+  /** What the live region says: the phase (not each part checked; a failure speaks as an alert), the current step. */
+  const announced = $derived.by(() => {
+    if (review === null) return "";
+    const quiet = review.status.kind === "checking" || review.status.kind === "failed";
+    const phase = quiet ? "" : headline(review.status, count, review.discarded);
+    const step = current === null ? "" : spoken(current, review.at, count);
+    return [phase, step].filter((part) => part !== "").join(" ");
   });
 
   let bar: HTMLElement | undefined = $state();
+  /** The bar's button that has the keyboard (null: the keyboard went elsewhere). */
+  let focused: HTMLButtonElement | null = null;
+
+  function onfocusin(event: FocusEvent): void {
+    focused = event.target instanceof HTMLButtonElement ? event.target : null;
+  }
+
+  function onfocusout(event: FocusEvent): void {
+    const next = event.relatedTarget;
+    if (next instanceof Node && !bar?.contains(next)) focused = null;
+  }
+
+  // the focused button turned off | went away (Accept with no suggestion, Cancel at the run's end): the keyboard
+  // stays in the bar, on Cancel while running, else Done
+  $effect(() => {
+    void [current, busy, count];
+    const el = bar;
+    const was = focused;
+    if (!el || was === null || (el.contains(was) && !was.disabled)) return;
+    const active = document.activeElement;
+    if (active !== was && active !== document.body && active !== null) return;
+    const to =
+      el.querySelector<HTMLElement>('[data-action="cancel"]') ??
+      el.querySelector<HTMLElement>('[data-action="done"]');
+    to?.focus();
+  });
 
   // Mod+Alt+K while reviewing: the keyboard to Accept (none: the bar's first button)
   let asked = correction.focusRequest;
@@ -92,6 +122,8 @@
     data-correction
     bind:this={bar}
     {onkeydown}
+    {onfocusin}
+    {onfocusout}
   >
     {#if review === null}
       <div class="row">
@@ -103,9 +135,8 @@
       </div>
     {:else}
       <div class="row">
-        <span class="status" role="status" aria-live="polite"
-          >{headline(review.status, count, review.discarded)}</span
-        >
+        <p class="sr-only" role="status" aria-live="polite">{announced}</p>
+        <span class="status">{headline(review.status, count, review.discarded)}</span>
         {#if review.status.kind === "loading"}
           <progress max={1} value={review.status.progress} aria-label={t("correction.loading")}
           ></progress>
@@ -132,11 +163,10 @@
         {/if}
       </div>
       {#if current !== null}
-        <p class="excerpt" aria-live="polite">
-          <span class="sr-only">{spoken(current, review.at, count)}</span>
+        <p class="excerpt">
           <span aria-hidden="true"
-            >{onLine.before}<del>{current.original}</del><ins>{current.insert}</ins
-            >{onLine.after}</span
+            >{current.before}<del>{current.original}</del><ins>{current.insert}</ins
+            >{current.after}</span
           >
         </p>
       {/if}

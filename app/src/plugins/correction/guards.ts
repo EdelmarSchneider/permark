@@ -11,6 +11,13 @@ export const MAX_CHANGE_RATIO = 0.3;
 export const RATIO_MIN_WORDS = 8;
 /** Changed words past which a shorter piece is a rewrite. */
 export const MAX_CHANGED_WORDS = 3;
+/**
+ * Pieces of at most this many words (a heading, a label): more than half of the words changed into text that does not
+ * look alike = a rewrite | translation ("Una casa blanca" -> "A white house"); a typo fix stays ("# Introdution").
+ */
+export const SHORT_WORDS = 3;
+/** Character similarity (1 - edit distance / longer length) under which a changed short word is a different word. */
+export const MIN_WORD_SIMILARITY = 0.5;
 /** Output | input length (markers out) must stay in this range... */
 export const MIN_LENGTH_RATIO = 0.8;
 export const MAX_LENGTH_RATIO = 1.25;
@@ -110,15 +117,40 @@ function shares(text: string): number[] {
 function overEdit(d: WordDiff): boolean {
   const words = d.a.filter((t) => t.word).length;
   let changed = 0;
+  let unlike = 0;
   for (const op of d.ops) {
     if (op.kind !== "change") continue;
-    const removed = d.a.slice(op.a, op.a + op.remove).filter((t) => t.word).length;
-    const added = d.b.slice(op.b, op.b + op.add).filter((t) => t.word).length;
-    changed += Math.max(removed, added);
+    const removed = d.a.slice(op.a, op.a + op.remove);
+    const added = d.b.slice(op.b, op.b + op.add);
+    const count = Math.max(
+      removed.filter((t) => t.word).length,
+      added.filter((t) => t.word).length,
+    );
+    changed += count;
+    const text = (tokens: typeof removed) => tokens.map((t) => t.text).join("");
+    if (similarity(text(removed), text(added)) < MIN_WORD_SIMILARITY) unlike += count;
   }
-  return words >= RATIO_MIN_WORDS
-    ? changed / words > MAX_CHANGE_RATIO
-    : changed > MAX_CHANGED_WORDS;
+  if (words >= RATIO_MIN_WORDS) return changed / words > MAX_CHANGE_RATIO;
+  if (words <= SHORT_WORDS) return unlike > words / 2;
+  return changed > MAX_CHANGED_WORDS;
+}
+
+// 1 - Levenshtein distance / longer length, over code points (1 = same, 0 = nothing alike)
+function similarity(a: string, b: string): number {
+  const x = [...a.normalize("NFC").toLowerCase()];
+  const y = [...b.normalize("NFC").toLowerCase()];
+  const longer = Math.max(x.length, y.length);
+  if (longer === 0) return 1;
+  let row = Array.from({ length: y.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= x.length; i += 1) {
+    const next = [i];
+    for (let j = 1; j <= y.length; j += 1) {
+      const cost = x[i - 1] === y[j - 1] ? 0 : 1;
+      next.push(Math.min((row[j] ?? 0) + 1, (next[j - 1] ?? 0) + 1, (row[j - 1] ?? 0) + cost));
+    }
+    row = next;
+  }
+  return 1 - (row[y.length] ?? longer) / longer;
 }
 
 // heading | list item: a final period the model added is left out (the suggestion dropped when nothing else is left)

@@ -360,9 +360,10 @@ impl Shared {
                 state.warm = session;
                 None
             };
-            self.emit(&job.run, phase);
             state.running = None;
             drop(state);
+            // after the unlock: a sink never runs under the state lock
+            self.emit(&job.run, phase);
             drop(closing);
         }
     }

@@ -4,7 +4,8 @@
 // discarded answers only counted. Offsets follow the text: own edits shift what follows exactly; any other change
 // (typing, the other editor) -> prefix/suffix diff, suggestions | pieces touching it dropped (counted), the rest shifted.
 // Accept = one checked `session.apply` (expect = original): refused while composing -> retried shortly; refused else
-// -> dropped (counted). Accept all = one apply (one undo step). File switch | conflict | View -> review closed.
+// -> dropped (counted). Accept all = one apply (one undo step); a batch refused (Edit mode: a locked block, …) ->
+// each edit alone, only the refused ones dropped. File switch | conflict | View -> review closed.
 
 import { untrack } from "svelte";
 import { api as defaultApi, type Api, type ApiError, type Unlisten } from "../../api";
@@ -157,7 +158,8 @@ export class CorrectionStore {
         const conflict = this.#session.state.s === "conflict";
         untrack(() => this.left(path, mode, conflict));
       });
-      // the editor's text changed (after the change check)
+      // the editor's text changed (after the change check): an external source (the editor), not state mirrored
+      // here; `sync` reads it untracked
       $effect(() => {
         void this.#session.text;
         untrack(() => this.sync());
@@ -422,12 +424,24 @@ export class CorrectionStore {
       insert,
       expect: original,
     }));
+    const stale = chosen.filter((s) => !fits.includes(s));
     if (edits.length > 0 && this.#session.apply(edits)) {
-      this.#applied(fits, chosen.length - fits.length);
+      this.#applied(fits, stale);
       return;
     }
     if (edits.length > 0 && this.#session.composing()) {
       this.#wait(keys);
+      return;
+    }
+    // a batch refused: one edit the editor does not take this way must not cost the others
+    if (fits.length > 1) {
+      if (stale.length > 0)
+        this.#settle(
+          review.suggestions.filter((s) => !stale.includes(s)),
+          stale.length,
+        );
+      for (const s of fits)
+        if (this.review?.suggestions.some((f) => f.key === s.key)) this.#put([s.key]);
       return;
     }
     // the editor refused (the text moved on, a block it does not edit this way): never applied blind
@@ -437,8 +451,9 @@ export class CorrectionStore {
     );
   }
 
-  /** `done` went in: they leave the list, what follows them moves by the length change. */
-  #applied(done: readonly Found[], stale: number): void {
+  /** `done` went in: they leave the list, what follows them moves by the length change; `stale` (no longer read as
+   *  found) leave it too, counted. */
+  #applied(done: readonly Found[], stale: readonly Found[]): void {
     const review = this.review;
     if (review === null) return;
     const sorted = [...done].sort((a, b) => a.from - b.from);
@@ -453,8 +468,8 @@ export class CorrectionStore {
       text = text.slice(0, s.from) + s.insert + text.slice(s.to);
     this.#known = text;
     for (const [id, piece] of this.#pieces) this.#pieces.set(id, move(piece));
-    const gone = new Set(done.map((s) => s.key));
-    this.#settle(review.suggestions.filter((s) => !gone.has(s.key)).map(move), stale);
+    const gone = new Set([...done, ...stale].map((s) => s.key));
+    this.#settle(review.suggestions.filter((s) => !gone.has(s.key)).map(move), stale.length);
     // the editor may write the block its own way (Edit mode): what differs is a change like any other
     this.sync();
   }

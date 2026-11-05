@@ -12,6 +12,8 @@ type Fake = Session & {
   text: string;
   composingNow: boolean;
   refuse: boolean;
+  /** Refuses any batch holding an edit whose `expect` is this (a block the editor does not edit this way). */
+  locked: string | null;
   selection: TextRange | null;
   applied: TextEdit[][];
   revealed: TextRange[];
@@ -27,6 +29,7 @@ function fakeSession(initial: string): Fake {
     text: initial,
     composingNow: false,
     refuse: false,
+    locked: null,
     selection: null,
     applied: [],
     revealed: [],
@@ -39,6 +42,7 @@ function fakeSession(initial: string): Fake {
     },
     apply: (edits) => {
       if (fake.composingNow || fake.refuse) return false;
+      if (edits.some((e) => e.expect === fake.locked)) return false;
       const sorted = checkEdits(edits, fake.text.length, (f, t) => fake.text.slice(f, t));
       if (sorted === null) return false;
       fake.applied.push([...edits]);
@@ -264,6 +268,42 @@ describe("the review", () => {
     expect(suggestions()).toHaveLength(2);
     expect(store.review?.outdated).toBe(1);
     expect(session.text).toBe(DOC);
+  });
+
+  it("accept all: an edit the editor refuses drops only that one, the others go in", async () => {
+    await reviewed();
+    session.locked = "teh";
+    store.acceptAll();
+    expect(session.text).toBe(
+      "I have a cat.\n\n```\nteh code\n```\n\nShe receives mail from teh office.\n",
+    );
+    expect(suggestions()).toEqual([]);
+    expect(store.review?.outdated).toBe(1);
+    // refused in the middle: the rest go in, the review ends
+    session.text = DOC;
+    session.locked = "recieve";
+    await reviewed();
+    store.acceptAll();
+    expect(session.text).toBe(
+      "I have a cat.\n\n```\nteh code\n```\n\nShe recieve mail from the office.\n",
+    );
+    expect(store.state.kind).toBe("closed");
+  });
+
+  it("accept all: a suggestion whose text no longer reads as found leaves the list and is counted", async () => {
+    await reviewed();
+    const review = store.review;
+    if (review === null) throw new Error("no review");
+    store.state = {
+      ...review,
+      suggestions: review.suggestions.map((s, i) => (i === 1 ? { ...s, original: "zzz" } : s)),
+    };
+    store.acceptAll();
+    expect(session.applied).toHaveLength(1);
+    expect(session.text).toContain("I have a cat.");
+    expect(session.text).toContain("from the office.");
+    expect(suggestions()).toEqual([]);
+    expect(store.review?.outdated).toBe(1);
   });
 
   it("while text is composed (IME) the accept waits, then goes in", async () => {

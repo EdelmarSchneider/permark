@@ -42,6 +42,12 @@ describe("what a correction works on in the Source editor", () => {
     });
     const item = DOC.indexOf("item won");
     expect(scopeIn(state(DOC, item + 2), "paragraph")).toEqual({ from: item, to: item + 8 });
+    // a task item's text is a `Task`, no `Paragraph`
+    const tasks = "- [ ] Teh task\n";
+    expect(scopeIn(state(tasks, tasks.indexOf("task")), "paragraph")).toEqual({
+      from: 2,
+      to: tasks.length - 1,
+    });
   });
 
   it("paragraph: no prose block at the caret (blank line, code, front matter) = nothing", () => {

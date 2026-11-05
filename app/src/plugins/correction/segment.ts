@@ -9,10 +9,16 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { yamlFrontmatter } from "@codemirror/lang-yaml";
 import { frontMatterSyntax } from "../../core/config/frontMatter";
 
-const PARSER = yamlFrontmatter({ content: markdown({ base: markdownLanguage }) }).language.parser;
+type Parser = ReturnType<typeof yamlFrontmatter>["language"]["parser"];
+type Node = ReturnType<Parser["parse"]>["topNode"];
 
-type Tree = ReturnType<typeof PARSER.parse>;
-type Node = Tree["topNode"];
+/** Built on the first `pieces` (never at app start: the plugin stays dormant until a run). */
+let parser: Parser | null = null;
+
+function markdownParser(): Parser {
+  parser ??= yamlFrontmatter({ content: markdown({ base: markdownLanguage }) }).language.parser;
+  return parser;
+}
 
 /** Chars per piece (~400 tokens) for alphabetic text. */
 export const CHAR_BUDGET = 1200;
@@ -70,21 +76,22 @@ const HIDDEN_TEXT = [
 
 /** Pieces of `doc` to correct, in document order; `scope` limits them (UTF-16 offsets; default whole document). */
 export function pieces(doc: string, scope?: Scope): Piece[] {
-  const tree = PARSER.parse(doc);
+  const tree = markdownParser().parse(doc);
   const skipUntil = frontMatterEnd(doc);
   const out: Piece[] = [];
-  let inMath = false;
+  /** End of the `$$` display math being skipped. */
+  let mathEnd = 0;
   tree.iterate({
     enter(ref) {
       if (ref.name === "Frontmatter") return false;
       if (!isProse(ref.name)) return undefined;
-      if (ref.from < skipUntil) return false;
+      if (ref.from < skipUntil || ref.from < mathEnd) return false;
       const node = ref.node;
-      // `$$` display math the grammar sees as paragraphs (may hold blank lines)
-      const head = doc.slice(node.from, node.to);
-      if (inMath || (ref.name === "Paragraph" && head.startsWith("$$"))) {
-        const closes = head.indexOf("$$", inMath ? 0 : 2) >= 0;
-        inMath = !closes;
+      // `$$` display math the grammar sees as paragraphs (may hold blank lines) up to its closing `$$`; unclosed ->
+      // only its own paragraph
+      if (ref.name === "Paragraph" && doc.startsWith("$$", node.from)) {
+        const close = doc.indexOf("$$", node.from + 2);
+        mathEnd = close < 0 ? node.to : close + 2;
         return false;
       }
       const content = trim(doc, contentRange(doc, node));

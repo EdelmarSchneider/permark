@@ -22,8 +22,8 @@ const S1 = {
   to: 5,
   original: "has",
   insert: "have",
-  before: "# Title\n\nI ",
-  after: " a cat.\nNext line",
+  before: "I ",
+  after: " a cat.\nNext line…",
 };
 const S2 = { ...S1, key: 2, from: 40, to: 43, original: "teh", insert: "the", before: "x " };
 
@@ -101,13 +101,14 @@ describe("the correction bar", () => {
     expect(said()).toContain("1 / 2");
     expect(target.querySelector("del")?.textContent).toBe("has");
     expect(target.querySelector("ins")?.textContent).toBe("have");
-    // the excerpt stays on the suggestion's line
+    // the excerpt as the store cut it (its block, word edges)
     expect(target.querySelector("del")?.closest('[aria-hidden="true"]')?.textContent).toBe(
-      "I hashave a cat.",
+      "I hashave a cat.\nNext line…",
     );
-    expect(target.querySelector(".sr-only")?.textContent).toBe(
-      "Suggestion 1 of 2: replace “has” with “have”",
-    );
+    // one live region: the current step, not every part checked
+    const live = target.querySelectorAll("[aria-live]");
+    expect(live).toHaveLength(1);
+    expect(live[0]?.textContent?.trim()).toBe("Suggestion 1 of 2: replace “has” with “have”");
     expect(button("accept")?.disabled).toBe(false);
     expect(button("acceptAll")?.disabled).toBe(true);
     expect(button("rejectAll")?.disabled).toBe(true);
@@ -167,6 +168,27 @@ describe("the correction bar", () => {
     key({ key: "a", ctrlKey: true });
     key({ key: "Escape" });
     expect(calls).toEqual(["accept", "reject", "acceptAll", "rejectAll", "done"]);
+  });
+
+  it("one live region: the phase, then the count and the current step at the end", () => {
+    show(review({ status: { kind: "loading", progress: 0.2 } }));
+    expect(target.querySelectorAll("[aria-live]")).toHaveLength(1);
+    expect(target.querySelector("[aria-live]")?.textContent).toContain("Getting the model ready…");
+    show(review({ suggestions: [S1, S2] }));
+    const live = target.querySelector("[aria-live]")?.textContent ?? "";
+    expect(live).toContain("2 suggestions");
+    expect(live).toContain("Suggestion 1 of 2");
+  });
+
+  it("the focused button turned off: the keyboard goes to Cancel while running, else Done", () => {
+    show(review({ status: { kind: "checking", part: 1, parts: 2 }, suggestions: [S1] }));
+    button("accept")?.focus();
+    show(review({ status: { kind: "checking", part: 2, parts: 2 }, suggestions: [] }));
+    expect(document.activeElement).toBe(button("cancel"));
+    show(review({ suggestions: [S1] }));
+    button("reject")?.focus();
+    show(review({ suggestions: [], outdated: 1 }));
+    expect(document.activeElement).toBe(button("done"));
   });
 
   it("asked for the keyboard (Mod+Alt+K in review): Accept takes it", () => {

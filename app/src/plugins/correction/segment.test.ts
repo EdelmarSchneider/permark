@@ -103,6 +103,14 @@ describe("pieces", () => {
     }
   });
 
+  it("skips `$$` math only up to its closing `$$`; an unclosed one hides only its own paragraph", () => {
+    expect(texts(pieces("$$\na\n\nb\n$$\n\nTeh after."))).toEqual(["Teh after."]);
+    expect(texts(pieces("$$\nx = 1\n\nTeh text after.\n\nMore teh."))).toEqual([
+      "Teh text after.",
+      "More teh.",
+    ]);
+  });
+
   it("skips TOML front matter and unclosed YAML front matter like the editor", () => {
     expect(texts(pieces("+++\ntitle = 'teh'\n+++\n\nBody teh."))).toEqual(["Body teh."]);
     expect(pieces("---\ntitle: teh\n\nstill front matter")).toEqual([]);

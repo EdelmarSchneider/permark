@@ -72,6 +72,18 @@ describe("judge", () => {
     expect(reason(judge(short, only(short), "A big dog lay up."))).toBe("overEdit");
   });
 
+  it("discards a short piece (<= 3 words) with most words changed into unlike words (a translation in one script)", () => {
+    const heading = "# Einleitung";
+    expect(reason(judge(heading, only(heading), "Introduction"))).toBe("overEdit");
+    const typo = "# Introdution";
+    expect(reason(judge(typo, only(typo), "Introduction"))).toBe("ok");
+    const three = "Una casa blanca";
+    expect(reason(judge(three, only(three), "A white house"))).toBe("overEdit");
+    expect(reason(judge(three, only(three), "Una caza blanca"))).toBe("ok");
+    const two = "# Teh title";
+    expect(reason(judge(two, only(two), "The title"))).toBe("ok");
+  });
+
   it("discards dropped | added text by length ratio", () => {
     const doc = "This sentence is complete and has a clear ending.";
     expect(reason(judge(doc, only(doc), "This sentence is complete."))).toBe("length");
