@@ -4,14 +4,13 @@
 //!   running one). Start answers at once; the test runs on its own thread, phases go out as event `local-ai:test`
 //!   ([`ModelTest`]).
 //! - Flow: worker files missing -> queued through [`WorkerFiles`] (phase `engine`, download bytes) -> load through
-//!   [`Runtime::load`] (memory guard inside; phase `loading`) -> run (phase `running`): chat model = [`PROMPT`]
+//!   [`ModelHost`] (memory guard inside; phase `loading`) -> run (phase `running`): chat model = [`PROMPT`]
 //!   streamed (<= [`MAX_TOKENS`]), embedding-only model = one vector of [`EMBED_TEXT`] -> `done` with timings.
 //! - The session is ALWAYS unloaded (done | failed | cancelled) before the last event goes out.
 //! - Cancel ([`Tester::cancel`]): stops the engine download (part kept) | the load (worker killed) | the run.
 //! - Device: load uses `Device::Auto` (GPU when the model fits); result `gpu` = the session really runs on it
-//!   ([`Engine::on_gpu`]). Memory = the engine's estimate (lower bound: file bytes).
-//! - Worker files verified, then gone at load (`Io`, files no longer installed) = taken by security software (D-14)
-//!   -> `Blocked`; a refused spawn is `Blocked` in the proxy already.
+//!   ([`crate::host::ModelSession::on_gpu`]). Memory = the engine's estimate (lower bound: file bytes).
+//! - Load, unload, `Blocked` (D-14) + engine error codes: [`crate::host`].
 //! - Dormant: nothing runs | is created before a start; plugin off ([`Tester::shutdown`]) cancels + joins.
 //! - Tests: `src/tests/testrun.rs` (shares the installs lab).
 
@@ -27,14 +26,14 @@ use permark_core::{ErrorKind, IpcError};
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::catalog::{Catalog, Model};
+use crate::catalog::Model;
 use crate::engine::files::{FilesError, WorkerFiles};
 use crate::engine::{
-    self, CancelToken, Capability, ChatMessage, ChatRequest, Device, EmbedRole, Engine,
-    EngineError, Finish, GenEvent, LoadOpts, Role, SessionId,
+    CancelToken, Capability, ChatMessage, ChatRequest, EmbedRole, Engine, EngineError, Finish,
+    GenEvent, Role, SessionId,
 };
-use crate::installs::{AssignedModel, InstallError, Installs};
-use crate::runtime::Runtime;
+use crate::host::{engine_ipc, ModelHost};
+use crate::installs::{AssignedModel, InstallError};
 
 /// Chat test prompt.
 pub const PROMPT: &str = "Say hello in one short sentence.";
@@ -154,9 +153,8 @@ pub enum TestError {
 }
 
 impl From<TestError> for IpcError {
-    /// Engine | files errors: subject `engine`, `detail` = stable code (`outOfMemory`, `notAvailable`, `crashed`,
-    /// `blocked`, `engineTooOld`, `unsupported`, `corrupt`, `notLoaded`, `cancelled`, `badPin`, `io`); engine text |
-    /// worker log NEVER sent (may hold paths).
+    /// Engine | files errors: subject `engine`, `detail` = stable code (`notAvailable`, `badPin` + [`engine_ipc`]);
+    /// engine text | worker log NEVER sent (may hold paths).
     fn from(error: TestError) -> Self {
         let engine = |kind, detail: &str| IpcError::new(kind).subject("engine").detail(detail);
         match error {
@@ -173,17 +171,7 @@ impl From<TestError> for IpcError {
             }
             TestError::Files(FilesError::BadPin) => engine(ErrorKind::Internal, "badPin"),
             TestError::Download(e) => IpcError::from(e).subject("engine"),
-            TestError::Engine(e) => match e {
-                EngineError::OutOfMemory => engine(ErrorKind::Unavailable, "outOfMemory"),
-                EngineError::Unsupported { .. } => engine(ErrorKind::Unsupported, "unsupported"),
-                EngineError::Corrupt => engine(ErrorKind::InvalidData, "corrupt"),
-                EngineError::Cancelled => engine(ErrorKind::Superseded, "cancelled"),
-                EngineError::EngineCrashed => engine(ErrorKind::Unavailable, "crashed"),
-                EngineError::EngineTooOld { .. } => engine(ErrorKind::Unsupported, "engineTooOld"),
-                EngineError::NotLoaded => engine(ErrorKind::Unavailable, "notLoaded"),
-                EngineError::Blocked => engine(ErrorKind::Denied, "blocked"),
-                EngineError::Io(_) => engine(ErrorKind::Io, "io"),
-            },
+            TestError::Engine(e) => engine_ipc(&e),
         }
     }
 }
@@ -222,25 +210,11 @@ enum Kind {
     Embed,
 }
 
-/// Session unloaded when dropped (every way out of a test).
-struct Loaded<'a> {
-    runtime: &'a Runtime,
-    session: SessionId,
-}
-
-impl Drop for Loaded<'_> {
-    fn drop(&mut self) {
-        self.runtime.unload(self.session);
-    }
-}
-
 /// What a test needs of the plugin instance.
 pub struct TestParts {
-    pub installs: Arc<Installs>,
-    pub catalog: Arc<Catalog>,
-    pub runtime: Arc<Runtime>,
-    pub files: Arc<WorkerFiles>,
-    /// Same as the one given to `files` ([`EngineNews::listener`]).
+    /// Installs, catalog, runtime, worker files; load -> [`crate::host::ModelSession`] (unloaded on every way out).
+    pub host: Arc<ModelHost>,
+    /// Same as the one given to the host's worker files ([`EngineNews::listener`]).
     pub news: Arc<EngineNews>,
     pub events: PluginEvents,
 }
@@ -278,9 +252,9 @@ impl Tester {
         if running.is_some() {
             return Err(TestError::Busy);
         }
-        let parts = &self.shared.parts;
-        let installed = parts.installs.installed_model(id)?;
-        let model = parts
+        let host = &self.shared.parts.host;
+        let installed = host.installs.installed_model(id)?;
+        let model = host
             .catalog
             .model(id)
             .ok_or_else(|| InstallError::UnknownModel(id.to_owned()))?
@@ -371,24 +345,7 @@ impl Shared {
         kind: Kind,
         cancel: &CancelToken,
     ) -> Result<TestResult, TestError> {
-        let TestParts {
-            catalog,
-            runtime,
-            files,
-            ..
-        } = &self.parts;
         self.ensure_engine(&model.id, cancel)?;
-        let model_files = engine::model_files(installed, catalog);
-        let opts = LoadOpts {
-            context_len: model.context_len.min(TEST_CONTEXT),
-            device: Device::Auto,
-            threads: None,
-        };
-        let memory_bytes = runtime
-            .engine()
-            .estimate_memory(&model_files, &opts)
-            .ok()
-            .map(|m| m.ram.saturating_add(m.vram));
         self.emit(&model.id, TestPhase::Loading { progress: 0.0 });
         let sent = Cell::new(0.0f32);
         let progress = |value: f32| {
@@ -398,34 +355,19 @@ impl Shared {
             }
         };
         let started = Instant::now();
-        let session = runtime
-            .load(
-                &installed.lineage,
-                &model.needs,
-                model_files,
-                opts,
-                &progress,
-                cancel,
-            )
-            .map_err(|e| match e {
-                // verified files gone at spawn time = taken by security software (D-14)
-                EngineError::Io(_) if !files.is_installed() => EngineError::Blocked,
-                e => e,
-            })?;
-        let loaded = Loaded {
-            runtime: runtime.as_ref(),
-            session,
-        };
+        let loaded = self
+            .parts
+            .host
+            .load(model, installed, TEST_CONTEXT, &progress, cancel)?;
         let load_ms = millis(started.elapsed());
         self.emit(&model.id, TestPhase::Running);
-        let caps = runtime.engine().caps();
-        let gpu = runtime.engine().on_gpu(loaded.session);
+        let caps = loaded.engine().caps();
         let started = Instant::now();
         let output = match kind {
-            Kind::Chat => chat(runtime.engine(), loaded.session, cancel, started)?,
+            Kind::Chat => chat(loaded.engine(), loaded.id(), cancel, started)?,
             Kind::Embed => {
-                let embeddings = runtime.engine().embed(
-                    loaded.session,
+                let embeddings = loaded.engine().embed(
+                    loaded.id(),
                     &[EMBED_TEXT],
                     EmbedRole::Document,
                     None,
@@ -438,6 +380,7 @@ impl Shared {
             }
         };
         let run_ms = millis(started.elapsed());
+        let (gpu, memory_bytes) = (loaded.on_gpu(), loaded.memory_bytes());
         drop(loaded);
         Ok(TestResult {
             load_ms,
@@ -451,7 +394,8 @@ impl Shared {
 
     /// Worker files installed now, else downloaded (phase `engine`); cancel stops the download (part kept).
     fn ensure_engine(&self, model: &str, cancel: &CancelToken) -> Result<(), TestError> {
-        let TestParts { files, news, .. } = &self.parts;
+        let TestParts { host, news, .. } = &self.parts;
+        let files: &WorkerFiles = &host.files;
         if files.is_installed() {
             return Ok(());
         }
@@ -472,7 +416,7 @@ impl Shared {
     ) -> Result<(), TestError> {
         loop {
             if cancel.is_cancelled() {
-                self.parts.files.cancel();
+                self.parts.host.files.cancel();
                 return Err(DownloadError::Cancelled.into());
             }
             match updates.recv_timeout(POLL) {

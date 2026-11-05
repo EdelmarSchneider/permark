@@ -17,6 +17,7 @@ use crate::engine::files::tests::{pin, url, EXE, LIB};
 use crate::engine::files::{self, WorkerFiles, WorkerPin};
 use crate::engine::tests::Workers;
 use crate::engine::{EngineError, FakeEngine};
+use crate::host::ModelHost;
 use crate::installs::Installs;
 use crate::machine::MachineProfile;
 use crate::runtime::Runtime;
@@ -47,12 +48,14 @@ fn engine_files() -> ScriptedTransport {
         .answer(&url(&pin.files[1]), Scripted::ok(LIB))
 }
 
-struct Bench {
-    lab: Lab,
+/// Plugin parts over [`Workers`] (shared with `tests/host.rs`).
+pub(super) struct Bench {
+    pub(super) lab: Lab,
     events: Arc<Events>,
-    installs: Arc<Installs>,
-    runtime: Arc<Runtime>,
-    workers: Workers,
+    pub(super) installs: Arc<Installs>,
+    pub(super) runtime: Arc<Runtime>,
+    pub(super) workers: Workers,
+    pub(super) host: Arc<ModelHost>,
     tester: Tester,
 }
 
@@ -86,11 +89,14 @@ impl Bench {
             cx.state_dir.join(files::DIR),
             news.listener(),
         ));
-        let tester = Tester::new(TestParts {
-            installs: Arc::clone(&installs),
-            catalog: Arc::new(cat),
-            runtime: Arc::clone(&runtime),
+        let host = Arc::new(ModelHost::new(
+            Arc::clone(&installs),
+            Arc::new(cat),
+            Arc::clone(&runtime),
             files,
+        ));
+        let tester = Tester::new(TestParts {
+            host: Arc::clone(&host),
             news,
             events: cx.events().clone(),
         });
@@ -100,16 +106,17 @@ impl Bench {
             installs,
             runtime,
             workers,
+            host,
             tester,
         }
     }
 
-    fn fake(make: fn() -> FakeEngine) -> Self {
+    pub(super) fn fake(make: fn() -> FakeEngine) -> Self {
         Self::new(make, plenty, Some(pin()), Arc::new(engine_files()))
     }
 
     /// `id` downloaded + installed (download no longer running).
-    fn install(&self, id: &str) {
+    pub(super) fn install(&self, id: &str) {
         self.installs.get(id).unwrap();
         let start = Instant::now();
         while !self
@@ -187,7 +194,7 @@ impl Bench {
     }
 
     /// Every worker that started is gone, no session left.
-    fn unloaded(&self) {
+    pub(super) fn unloaded(&self) {
         assert_eq!(self.workers.kills(), self.workers.launched());
         assert_eq!(self.runtime.loaded(), Vec::<String>::new());
     }

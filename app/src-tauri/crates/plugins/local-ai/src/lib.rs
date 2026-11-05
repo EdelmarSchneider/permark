@@ -18,11 +18,15 @@
 //!
 //! Engine ([`runtime`]): worker files in `<plugin data>/engine/` ([`engine::files`]), one [`runtime::Runtime`]
 //! (sessions unloaded before a model's files are removed | moved; every worker ended at plugin off).
+//!
+//! Model service ([`host`]): app service [`ModelHost`] (`services.get::<ModelHost>()`) while on, for PerMark
+//! features (e.g. plugin `correction`); withdrawn first at plugin off.
 
 pub mod catalog;
 pub mod engine;
 pub mod fit;
 pub mod guard;
+pub mod host;
 pub mod installs;
 pub mod machine;
 mod relocate;
@@ -41,7 +45,7 @@ use permark_core::conditions::Requirement;
 use permark_core::downloads::DownloadKit;
 use permark_core::plugins::{
     typed, FolderRevealApi, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
-    PluginScope, ProjectPlacesApi, RpcRegistration, Running,
+    PluginScope, ProjectPlacesApi, RpcRegistration, Running, ServiceLease,
 };
 use permark_core::state::StateStore;
 use permark_core::{ErrorKind, IpcError};
@@ -52,6 +56,7 @@ use crate::runtime::{Runtime, WorkerLog};
 use crate::testrun::{EngineNews, TestParts, Tester};
 
 pub use catalog::{Capability, Catalog, CatalogError, CatalogInfo, ModelInfo};
+pub use host::{engine_ipc, HostError, ModelHost, ModelSession};
 pub use installs::{
     AssignedModel, GetBlock, InstallError, InstallState, Installs, LocalAiState, ModelFor,
     ModelProgress, ModelStatus, StoreLinks, StoreMode, StoreMove, StoreStatus, TaskAssignment,
@@ -94,6 +99,8 @@ struct LocalAi {
 }
 
 struct Started {
+    /// [`ModelHost`] offered to the app (`None`: no app services).
+    service: Option<ServiceLease>,
     _rpc: Vec<RpcRegistration>,
     installs: Arc<Installs>,
     runtime: Arc<Runtime>,
@@ -105,8 +112,9 @@ impl Running for Started {}
 
 impl Drop for Started {
     fn drop(&mut self) {
-        // off (before any data removal): the test ends, every engine worker ends, downloads stop (parts kept),
-        // threads joined
+        // off (before any data removal): model service withdrawn, the test ends, every engine worker ends,
+        // downloads stop (parts kept), threads joined
+        drop(self.service.take());
         self.tester.shutdown();
         self.runtime.release_all();
         self.worker_files.shutdown();
@@ -296,11 +304,15 @@ impl Plugin for LocalAi {
                 Ok::<_, IpcError>(fit::advise(&c, machine.profile(), &assigned))
             }),
         ));
+        let host = Arc::new(ModelHost::new(
+            Arc::clone(&installs),
+            Arc::clone(catalog),
+            Arc::clone(&runtime),
+            Arc::clone(&worker_files),
+        ));
+        let service = cx.app().map(|app| app.services.provide(Arc::clone(&host)));
         let tester = Arc::new(Tester::new(TestParts {
-            installs: Arc::clone(&installs),
-            catalog: Arc::clone(catalog),
-            runtime: Arc::clone(&runtime),
-            files: Arc::clone(&worker_files),
+            host,
             news,
             events: cx.events().clone(),
         }));
@@ -321,6 +333,7 @@ impl Plugin for LocalAi {
             }),
         ));
         Ok(Box::new(Started {
+            service,
             _rpc: rpc,
             installs,
             runtime,
