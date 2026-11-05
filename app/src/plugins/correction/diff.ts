@@ -92,8 +92,7 @@ export function suggest(doc: string, at: number, d: WordDiff): Suggestion[] {
       to,
       original,
       insert,
-      before: context(doc, from - CONTEXT_CHARS, from),
-      after: context(doc, to, to + CONTEXT_CHARS),
+      ...around(doc, from, to),
     });
   }
   return out;
@@ -127,6 +126,14 @@ function offsetOf(tokens: readonly Token[], index: number): number {
 }
 
 // slice that never starts | ends inside a surrogate pair
+/** The `CONTEXT_CHARS` of `doc` on each side of `from..to` (a suggestion's excerpt; never half a surrogate pair). */
+export function around(doc: string, from: number, to: number): { before: string; after: string } {
+  return {
+    before: context(doc, from - CONTEXT_CHARS, from),
+    after: context(doc, to, to + CONTEXT_CHARS),
+  };
+}
+
 function context(doc: string, from: number, to: number): string {
   let start = Math.max(0, from);
   let end = Math.min(doc.length, to);

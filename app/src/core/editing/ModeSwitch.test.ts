@@ -4,6 +4,7 @@
 import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "../../api/mock";
+import type { MenuEntry } from "../explorer/menu";
 import { contributions } from "../plugins/instance.svelte";
 import ModeSwitch from "./ModeSwitch.svelte";
 import { EditingSession } from "./session.svelte";
@@ -16,12 +17,14 @@ let session: EditingSession;
 let target: HTMLElement;
 const run = vi.fn();
 let offered = true;
+let entries: () => MenuEntry[] = () => [{ kind: "item", label: "Fix the selection", run }];
 
 beforeEach(() => {
   session = new EditingSession(createMockApi());
   target = document.createElement("div");
   document.body.append(target);
   offered = true;
+  entries = () => [{ kind: "item", label: "Fix the selection", run }];
   remove = contributions.register({
     owner: "core",
     requires: { needs: [], prefers: [] },
@@ -30,7 +33,7 @@ beforeEach(() => {
     label: "app.name",
     icon: Icon,
     when: () => offered,
-    entries: () => [{ kind: "item", label: "Fix the selection", run }],
+    entries: () => entries(),
   });
   component = mount(ModeSwitch, {
     target,
@@ -81,6 +84,18 @@ describe("edit actions with the mode switch", () => {
     flushSync();
     expect(run).toHaveBeenCalledOnce();
     expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it("the keyboard starts on the first item that can act now", () => {
+    entries = () => [
+      { kind: "item", label: "Fix the selection", disabled: true, run },
+      { kind: "item", label: "Fix the paragraph", run },
+    ];
+    session.mode = "source";
+    flushSync();
+    button()?.click();
+    flushSync();
+    expect(document.activeElement?.textContent?.trim()).toBe("Fix the paragraph");
   });
 
   it("a second click on the button closes its menu", () => {

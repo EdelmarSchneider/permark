@@ -420,6 +420,19 @@ describe("edits handed to the editor on screen (correction)", () => {
     expect(applied).toEqual([]);
   });
 
+  it("current = the editor's text now, before the change check catches up", async () => {
+    const { session } = setup();
+    const { editor, content } = await open(session);
+    editor.set("typed just now");
+    session.changed();
+    expect(session.text).toBe(content.text);
+    expect(session.current()).toBe("typed just now");
+    let focused = 0;
+    editor.focus = () => (focused += 1);
+    session.focus();
+    expect(focused).toBe(1);
+  });
+
   it("an editor without them (or none on screen) gives safe answers", async () => {
     const { session } = setup();
     expect(session.scope("document")).toBeNull();

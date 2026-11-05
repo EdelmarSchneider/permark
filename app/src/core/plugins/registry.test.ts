@@ -160,6 +160,7 @@ describe("plugin host", () => {
       "broken-links",
       "comments",
       "convert",
+      "correction",
       "fmt-dotenv",
       "fmt-ignore",
       "fmt-ini",

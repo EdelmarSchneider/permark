@@ -354,6 +354,11 @@ export class EditingSession {
     return true;
   }
 
+  /** The text of the editor on screen now (`text` lags it by the change check); none: the last known text. */
+  current(): string {
+    return this.#editor?.text() ?? this.text;
+  }
+
   /** The range `kind` covers in the editor on screen (`null`: none, or no editor offers it). */
   scope(kind: EditScope): TextRange | null {
     return this.#editor?.scope?.(kind) ?? null;
@@ -375,6 +380,11 @@ export class EditingSession {
   /** The editor on screen is composing text (IME). */
   composing(): boolean {
     return this.#editor?.composing?.() ?? false;
+  }
+
+  /** Gives the keyboard to the editor on screen (none: nothing happens). */
+  focus(): void {
+    this.#editor?.focus();
   }
 
   /** The editor's text changed (checked shortly after, against the base). */

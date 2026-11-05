@@ -60,6 +60,8 @@
     anchor: HTMLElement;
     label: string;
     entries: MenuEntry[];
+    /** The keyboard starts on the first item that can act now. */
+    start: number;
   };
   let menu = $state.raw<Open | null>(null);
   /** The open menu while its action is still shown (back in View: gone). */
@@ -84,13 +86,15 @@
       return;
     }
     const box = button.getBoundingClientRect();
+    const entries = action.entries();
     menu = {
       key,
       x: box.left,
       y: box.bottom + 4,
       anchor: button,
       label: t(action.label),
-      entries: action.entries(),
+      entries,
+      start: entries.findIndex((entry) => entry.kind === "item" && entry.disabled !== true),
     };
   }
 </script>
@@ -163,6 +167,7 @@
     close={() => (menu = null)}
     label={shownMenu.label}
     anchor={shownMenu.anchor}
+    start={shownMenu.start}
   />
 {/if}
 {#if editing && session.policy.kind === "explicit"}

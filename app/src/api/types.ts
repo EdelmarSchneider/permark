@@ -20,6 +20,9 @@ import type { StoreMode } from "./generated/StoreMode";
 import type { StoreMove } from "./generated/StoreMove";
 import type { ModelProgress } from "./generated/ModelProgress";
 import type { ModelTest } from "./generated/ModelTest";
+import type { CorrectionPiece } from "./generated/CorrectionPiece";
+import type { CorrectionRun } from "./generated/CorrectionRun";
+import type { CorrectionStatus } from "./generated/CorrectionStatus";
 import type { FolderBadge } from "./generated/FolderBadge";
 import type { FolderBadges } from "./generated/FolderBadges";
 import type { FolderJob } from "./generated/FolderJob";
@@ -682,6 +685,12 @@ export interface PluginMethods {
   "local-ai.testModel": { args: { model: string }; result: null };
   /** Stops the running test (engine download, load or run); its end comes as `local-ai:test` `cancelled`. */
   "local-ai.cancelTest": { args: Record<string, never>; result: null };
+  /** A model is assigned to job "correction" (state only: nothing loads). */
+  "correction.status": { args: Record<string, never>; result: CorrectionStatus };
+  /** Starts run `run` over `pieces` (a new run stops the old one); news come as `correction:run`. */
+  "correction.run": { args: { run: string; pieces: CorrectionPiece[] }; result: null };
+  /** Stops run `run`; its end comes as `correction:run` `cancelled`. */
+  "correction.cancel": { args: { run: string }; result: null };
   "fmt-toon.toJson": { args: { text: string }; result: string };
   "convert.analyze": {
     args: { job: number; source: ConvertSource; from?: string };
@@ -744,6 +753,9 @@ export interface AppPluginEvents {
    * `unsupported` | `corrupt` | `notLoaded`; kind `io`: detail `io`) | `cancelled`.
    */
   "local-ai:test": ModelTest;
+  /** One correction run's news (`loading` -> `piece` per piece -> `done` | `cancelled` | `failed`); windows keep
+   *  their own run id. */
+  "correction:run": CorrectionRun;
 }
 export type AppPluginEventName = keyof AppPluginEvents;
 export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };
