@@ -492,7 +492,7 @@ impl Shared {
     }
 }
 
-/// [`PROMPT`] streamed; speed over the time since `started`.
+/// [`PROMPT`] streamed; speed = writing speed after the first token (see below).
 fn chat(
     engine: &dyn Engine,
     session: SessionId,
@@ -509,12 +509,14 @@ fn chat(
     };
     let mut answer = String::new();
     let mut deltas = 0u32;
+    let mut first = None;
     let mut end = None;
     engine.generate(
         session,
         &request,
         &mut |event| match event {
             GenEvent::Delta(text) => {
+                first.get_or_insert_with(Instant::now);
                 deltas = deltas.saturating_add(1);
                 answer.push_str(&text);
             }
@@ -528,9 +530,15 @@ fn chat(
         Some((usage, _)) if usage.completion > 0 => usage.completion,
         _ => deltas,
     };
+    // writing speed: tokens after the first one over the time since it (prompt reading + first-run warm-up, e.g.
+    // GPU shader setup, would make a short test look slow); fewer than 2 tokens -> overall time
+    let tokens_per_second = match first {
+        Some(at) if deltas > 1 => per_second(deltas - 1, at.elapsed()),
+        _ => per_second(tokens, started.elapsed()),
+    };
     Ok(TestOutput::Chat {
         tokens,
-        tokens_per_second: per_second(tokens, started.elapsed()),
+        tokens_per_second,
         answer: answer.trim().chars().take(ANSWER_CAP).collect(),
     })
 }

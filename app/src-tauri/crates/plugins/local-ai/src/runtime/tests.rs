@@ -264,9 +264,11 @@ fn smoke_the_real_worker_on_cpu() {
         ram_rec: 1,
         vram_rec: 1,
     };
+    // `PERMARK_SMOKE_DEVICE=auto` -> GPU build on its GPU (ONLY with the owner's go: it uses the GPU)
+    let auto = std::env::var("PERMARK_SMOKE_DEVICE").is_ok_and(|d| d == "auto");
     let cpu = LoadOpts {
         context_len: 2048,
-        device: Device::Cpu,
+        device: if auto { Device::Auto } else { Device::Cpu },
         threads: None,
     };
     let files = |path: &PathBuf| ModelFiles {
@@ -277,7 +279,7 @@ fn smoke_the_real_worker_on_cpu() {
     };
     let caps = runtime.engine().caps();
     println!("caps: {caps:?}");
-    assert!(!caps.gpu, "CPU-only build expected here");
+    assert!(auto || !caps.gpu, "CPU-only build expected here");
     // refused: engine floor from the catalog (before any load) | not a GGUF file (damaged: the only load failure
     // telling the person to get the model again)
     let mut too_new = files(&embed);
@@ -365,9 +367,10 @@ fn smoke_chat(runtime: &Runtime, chat: &std::path::Path, log: &std::path::Path) 
         ram_rec: 1,
         vram_rec: 1,
     };
+    let auto = std::env::var("PERMARK_SMOKE_DEVICE").is_ok_and(|d| d == "auto");
     let cpu = LoadOpts {
         context_len: 2048,
-        device: Device::Cpu,
+        device: if auto { Device::Auto } else { Device::Cpu },
         threads: None,
     };
     let name = std::env::var("PERMARK_SMOKE_PROFILE").unwrap_or_else(|_| "gemma-4".into());
@@ -394,6 +397,7 @@ fn smoke_chat(runtime: &Runtime, chat: &std::path::Path, log: &std::path::Path) 
         )
         .unwrap_or_else(|e| panic!("load: {e:?}\n{}", saved_log(log)));
     let load = started.elapsed();
+    println!("chat on gpu: {:?}", runtime.engine().on_gpu(session));
     let ask = |content: &str, constraint| {
         let request = ChatRequest {
             messages: vec![ChatMessage {
