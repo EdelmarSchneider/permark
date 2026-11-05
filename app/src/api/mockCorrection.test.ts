@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CorrectionRun } from "./generated/CorrectionRun";
 import { createMockApi } from "./mock";
 import { mockCorrect } from "./mockCorrection";
+import { MOCK_ENGINE_BYTES } from "./mockLocalAi";
 
 let mock: ReturnType<typeof createMockApi>;
 let news: CorrectionRun[] = [];
@@ -10,6 +11,7 @@ beforeEach(async () => {
   vi.useFakeTimers();
   mock = createMockApi();
   mock.probe.correction.stepMs = 10;
+  mock.probe.localAi.engineInstalled = true;
   news = [];
   await mock.onAppPlugin("correction:run", (n) => void news.push(n));
 });
@@ -61,6 +63,31 @@ describe("mock correction", () => {
       id: 1,
       result: { kind: "discarded", reason: "tooLong" },
     });
+  });
+
+  it("engine not installed yet: the run gets it first (bytes), then loads; the next run doesn't", async () => {
+    mock.probe.localAi.engineInstalled = false;
+    await mock.pluginCall("correction.run", { run: "r1", pieces: [{ id: 0, text: "teh" }] });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(phases("r1")).toEqual([
+      "engine",
+      "engine",
+      "engine",
+      "loading",
+      "loading",
+      "loading",
+      "piece",
+      "done",
+    ]);
+    expect(news[2]?.phase).toEqual({
+      kind: "engine",
+      receivedBytes: MOCK_ENGINE_BYTES,
+      totalBytes: MOCK_ENGINE_BYTES,
+    });
+    expect(mock.probe.localAi.engineInstalled).toBe(true);
+    await mock.pluginCall("correction.run", { run: "r2", pieces: [{ id: 0, text: "teh" }] });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(phases("r2")[0]).toBe("loading");
   });
 
   it("cancel | a new run stops the old one; a failure ends it", async () => {

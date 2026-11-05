@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-// The correction bar per state: nothing before a run, "nothing to check", getting the model ready (progress, Cancel),
+// The correction bar per state: nothing before a run, "nothing to check", getting the AI engine (first run: sizes,
+// Cancel), getting the model ready (progress, Cancel),
 // checking (part i of n, the suggestion with its removed | added words and what a screen reader hears), the end
 // (count, no mistakes, notes), stopped, failed (its words, Try again, Local AI settings); the keys inside the bar.
 import { flushSync, mount, unmount } from "svelte";
@@ -95,6 +96,20 @@ describe("the correction bar", () => {
     expect(button("acceptAll")?.disabled).toBe(true);
   });
 
+  it("getting the AI engine (first run only): its size progress and Cancel", () => {
+    show(review({ status: { kind: "engine", receivedBytes: 12e6, totalBytes: 48e6 } }));
+    expect(said()).toContain("Getting the AI engine (first time only)");
+    expect(said()).toContain("12 MB of 48 MB");
+    const progress = target.querySelector("progress");
+    expect(progress?.max).toBe(48e6);
+    expect(progress?.value).toBe(12e6);
+    expect(target.querySelector('[role="status"]')?.textContent).toContain(
+      "Getting the AI engine (first time only)",
+    );
+    expect(button("cancel")).not.toBeNull();
+    expect(button("accept")?.disabled).toBe(true);
+  });
+
   it("checking: part i of n, the suggestion in its text, all-at-once waits for the end", () => {
     show(review({ status: { kind: "checking", part: 2, parts: 3 }, suggestions: [S1, S2], at: 0 }));
     expect(said()).toContain("Checking part 2 of 3…");
@@ -149,9 +164,10 @@ describe("the correction bar", () => {
     expect(retry).toHaveBeenCalledOnce();
     expect(open).toHaveBeenCalledWith("local-ai.page", "content");
     show(review({ status: { kind: "failed", error: error("engine", "notAvailable") } }));
-    expect(said()).toContain("Get it with Test on the Local AI page.");
-    show(review({ status: { kind: "failed", error: error("engine", "outOfMemory") } }));
+    expect(said()).toContain("The AI engine isn't available for this computer yet.");
     expect(said()).not.toContain("Get it with Test");
+    show(review({ status: { kind: "failed", error: error("engine", "outOfMemory") } }));
+    expect(said()).not.toContain("isn't available for this computer");
   });
 
   it("keys inside the bar: A, R, Shift+A, Shift+R, Esc; never while composing", () => {

@@ -3,7 +3,7 @@
 //!
 //! - One run at a time: a new run cancels the running one (person re-triggered); it ends `cancelled`.
 //! - Flow on one worker thread: session = warm one (still the assigned model, still loaded) | opened through
-//!   [`Models::open`] (phase `loading`) -> per piece in order: too long for the context -> `tooLong`; else greedy
+//!   [`Models::open`] (engine missing | outdated -> fetched first, phase `engine`; then phase `loading`) -> per piece in order: too long for the context -> `tooLong`; else greedy
 //!   answer ([`prompt`]); `Finish::Length` -> `length`, `<|channel>` in the answer (thinking leak) -> `thinking`, else
 //!   `output`. Cancel between pieces + inside generate. End: `done` | `cancelled` | `failed` (stable [`IpcError`]).
 //! - Warm session: kept after a run, unloaded after [`IDLE`] without a run, at plugin off ([`Corrector::shutdown`]:
@@ -20,7 +20,7 @@ use std::time::Duration;
 use permark_core::plugins::PluginEvents;
 use permark_core::{ErrorKind, IpcError};
 use permark_plugin_local_ai::engine::{CancelToken, ChatRequest, EngineError, Finish, GenEvent};
-use permark_plugin_local_ai::engine_ipc;
+use permark_plugin_local_ai::{engine_ipc, HostProgress};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -78,6 +78,13 @@ pub struct RunNews {
 )]
 #[ts(export, rename = "CorrectionPhase")]
 pub enum RunPhase {
+    /// AI engine downloading (first run only | after an engine update), bytes.
+    Engine {
+        #[ts(type = "number")]
+        received_bytes: u64,
+        #[ts(type = "number")]
+        total_bytes: u64,
+    },
     /// Model loading, 0..=1 (not sent when a warm session serves the run).
     Loading {
         progress: f32,
@@ -132,13 +139,14 @@ pub trait Models: Send + Sync {
     /// A model is assigned to correction (state alone: nothing loaded).
     fn available(&self) -> bool;
 
-    /// Loads the assigned model with a [`CONTEXT`] window; `progress` 0..=1.
+    /// Loads the assigned model with a [`CONTEXT`] window, the engine fetched first when missing; `progress` as
+    /// `ModelHost::open` (engine bytes, then loading from 0).
     ///
     /// # Errors
-    /// Stable model service codes (no model, engine not installed, engine failures).
+    /// Stable model service codes (no model, no engine for this computer, download | engine failures).
     fn open(
         &self,
-        progress: &dyn Fn(f32),
+        progress: &dyn Fn(HostProgress),
         cancel: &CancelToken,
     ) -> Result<Box<dyn Session>, IpcError>;
 }
@@ -404,12 +412,21 @@ impl Shared {
     }
 
     fn open(&self, run: &str, cancel: &CancelToken) -> Result<Box<dyn Session>, IpcError> {
-        self.emit(run, RunPhase::Loading { progress: 0.0 });
-        let sent = Cell::new(0.0f32);
-        let progress = |value: f32| {
-            if value.is_finite() && value - sent.get() >= PROGRESS_STEP {
-                sent.set(value);
-                self.emit(run, RunPhase::Loading { progress: value });
+        // load progress: the first value, then steps of at least PROGRESS_STEP
+        let sent = Cell::new(None::<f32>);
+        let progress = |news: HostProgress| match news {
+            HostProgress::Engine { received, total } => self.emit(
+                run,
+                RunPhase::Engine {
+                    received_bytes: received,
+                    total_bytes: total,
+                },
+            ),
+            HostProgress::Loading(value) => {
+                if value.is_finite() && sent.get().is_none_or(|s| value - s >= PROGRESS_STEP) {
+                    sent.set(Some(value));
+                    self.emit(run, RunPhase::Loading { progress: value });
+                }
             }
         };
         self.models.open(&progress, cancel)

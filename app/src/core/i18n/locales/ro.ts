@@ -2621,8 +2621,6 @@ export default {
   "correction.failed": "Textul nu a putut fi verificat.",
   "correction.failed.noModel":
     "Modelul ales pentru corectare nu este disponibil. Alege unul pe pagina AI local.",
-  "correction.failed.noEngine":
-    "Motorul AI nu este încă pe acest computer. Obține-l cu Testează pe pagina AI local.",
   "correction.discarded.one": "{n} parte a rămas cum era, pentru că modelul a schimbat prea mult.",
   "correction.discarded.other":
     "{n} de părți au rămas cum erau, pentru că modelul a schimbat prea mult.",

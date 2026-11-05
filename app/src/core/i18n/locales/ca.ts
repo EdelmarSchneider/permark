@@ -2520,8 +2520,6 @@ export default {
   "correction.failed": "No s'ha pogut revisar el text.",
   "correction.failed.noModel":
     "El model triat per a la correcció no està disponible. Trieu-ne un a la pàgina IA local.",
-  "correction.failed.noEngine":
-    "El motor d'IA encara no és en aquest ordinador. Obteniu-lo amb Prova a la pàgina IA local.",
   "correction.discarded.one":
     "{n} part s'ha deixat com estava perquè el model hi canviava massa coses.",
   "correction.discarded.other":

@@ -2525,8 +2525,6 @@ export default {
   "correction.failed": "Der Text konnte nicht geprüft werden.",
   "correction.failed.noModel":
     "Das für die Korrektur gewählte Modell ist nicht verfügbar. Auf der Seite „Lokale KI“ ein Modell wählen.",
-  "correction.failed.noEngine":
-    "Die KI-Engine ist noch nicht auf diesem Computer. Sie kommt mit „Testen“ auf der Seite „Lokale KI“.",
   "correction.discarded.one": "{n} Teil blieb unverändert, weil das Modell zu viel geändert hat.",
   "correction.discarded.other":
     "{n} Teile blieben unverändert, weil das Modell zu viel geändert hat.",

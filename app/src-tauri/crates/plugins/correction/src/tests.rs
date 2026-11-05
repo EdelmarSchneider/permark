@@ -1,5 +1,6 @@
 //! Correction runs over `local-ai`'s in-process [`FakeEngine`] (echoes the last user turn word by word, paced for
-//! cancel; [`RAMBLE`] in a piece -> answer cut at its cap): dormant status, phase order, discards (length, thinking,
+//! cancel; [`RAMBLE`] in a piece -> answer cut at its cap): dormant status, phase order (engine fetch first when
+//! missing), discards (length, thinking,
 //! too long), answer cap + sampling, cancel, new run cancels the old one, warm session (idle unload, reassignment),
 //! plugin off (no thread, nothing loaded), plugin RPC without the model service.
 
@@ -17,7 +18,7 @@ use permark_plugin_local_ai::engine::{
     CancelToken, ChatRequest, Device, Engine, EngineError, FakeEngine, FileRole, Finish, GenEvent,
     LoadOpts, ModelFiles, Role, SessionId, Usage,
 };
-use permark_plugin_local_ai::{HostError, Task};
+use permark_plugin_local_ai::{HostError, HostProgress, Task};
 use serde_json::{json, Value};
 
 use crate::prompt;
@@ -84,6 +85,10 @@ struct Fake {
     serving: Arc<AtomicBool>,
     opens: AtomicUsize,
     requests: Arc<Mutex<Vec<ChatRequest>>>,
+    /// Engine files missing: bytes the next open fetches first (as `ModelHost`), then installed.
+    engine_missing: Mutex<Option<u64>>,
+    /// The engine fetch never ends before a cancel.
+    engine_held: AtomicBool,
 }
 
 impl Fake {
@@ -94,6 +99,8 @@ impl Fake {
             serving: Arc::new(AtomicBool::new(true)),
             opens: AtomicUsize::new(0),
             requests: Arc::default(),
+            engine_missing: Mutex::new(None),
+            engine_held: AtomicBool::new(false),
         })
     }
 
@@ -109,12 +116,26 @@ impl Models for Fake {
 
     fn open(
         &self,
-        progress: &dyn Fn(f32),
+        progress: &dyn Fn(HostProgress),
         cancel: &CancelToken,
     ) -> Result<Box<dyn Session>, IpcError> {
         if !self.available() {
             return Err(HostError::NoModel(Task::Correction).into());
         }
+        let missing = *self.engine_missing.lock().unwrap();
+        if let Some(total) = missing {
+            progress(HostProgress::Engine { received: 0, total });
+            if self.engine_held.load(Ordering::Relaxed) {
+                wait(|| cancel.is_cancelled().then_some(()));
+                return Err(permark_plugin_local_ai::engine_ipc(&EngineError::Cancelled));
+            }
+            progress(HostProgress::Engine {
+                received: total,
+                total,
+            });
+            *self.engine_missing.lock().unwrap() = None;
+        }
+        progress(HostProgress::Loading(0.0));
         self.opens.fetch_add(1, Ordering::Relaxed);
         self.serving.store(true, Ordering::Relaxed);
         let files = ModelFiles {
@@ -133,7 +154,12 @@ impl Models for Fake {
         };
         let id = self
             .engine
-            .load(files, opts, progress, cancel)
+            .load(
+                files,
+                opts,
+                &|value| progress(HostProgress::Loading(value)),
+                cancel,
+            )
             .map_err(|e| permark_plugin_local_ai::engine_ipc(&e))?;
         Ok(Box::new(FakeSession {
             engine: Arc::clone(&self.engine),
@@ -290,6 +316,41 @@ fn a_run_streams_loading_then_each_piece_in_order_then_done() {
     assert_eq!(lab.fake.opens(), 1);
 }
 
+/// AC-8 (bugfix-local-ai-unrunnable-models): engine missing -> its download first (bytes), then loading -> pieces ->
+/// done; the next open fetches nothing.
+#[test]
+fn a_run_gets_a_missing_engine_before_loading() {
+    let lab = Lab::new(FakeEngine::new());
+    *lab.fake.engine_missing.lock().unwrap() = Some(48 << 20);
+    lab.run("r1", &["One."]);
+    let phases = lab.events.ended("r1");
+    let mut seen = kinds(&phases);
+    seen.dedup();
+    assert_eq!(seen, ["engine", "loading", "piece", "done"]);
+    assert_eq!(
+        phases[0],
+        json!({ "kind": "engine", "receivedBytes": 0, "totalBytes": 48 << 20 })
+    );
+    assert_eq!(phases[1]["receivedBytes"], 48 << 20);
+    assert_eq!(phases[2], json!({ "kind": "loading", "progress": 0.0 }));
+    assert_eq!(lab.fake.opens(), 1);
+}
+
+/// AC-8: cancel while the engine downloads -> `cancelled`, nothing loaded.
+#[test]
+fn cancel_during_the_engine_download_ends_cancelled() {
+    let lab = Lab::new(FakeEngine::new());
+    *lab.fake.engine_missing.lock().unwrap() = Some(1000);
+    lab.fake.engine_held.store(true, Ordering::Relaxed);
+    lab.run("r1", &["One."]);
+    wait(|| (!lab.events.phases("r1").is_empty()).then_some(()));
+    lab.corrector.cancel("r1");
+    let phases = lab.events.ended("r1");
+    assert_eq!(kinds(&phases), ["engine", "cancelled"]);
+    assert_eq!(lab.fake.opens(), 0);
+    assert_eq!(lab.loaded(), 0);
+}
+
 /// D-1 + D-2: system rules + 2 few-shot turns + raw piece; greedy, fixed seed; cap = ceil(1.3 x tokens) + 32.
 #[test]
 fn requests_carry_the_prompt_greedy_sampling_and_the_answer_cap() {
@@ -417,8 +478,8 @@ fn a_run_without_a_model_fails_no_model() {
     lab.fake.assigned.store(false, Ordering::Relaxed);
     lab.run("r1", &["Text."]);
     let phases = lab.events.ended("r1");
-    assert_eq!(kinds(&phases), ["loading", "failed"]);
-    let error = &phases[1]["error"];
+    assert_eq!(kinds(&phases), ["failed"]);
+    let error = &phases[0]["error"];
     assert_eq!(
         (&error["kind"], &error["subject"], &error["detail"]),
         (&json!("unavailable"), &json!("model"), &json!("noModel"))

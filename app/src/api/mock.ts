@@ -495,6 +495,7 @@ export function createMockApi(): Api & {
       localAi.handlers["local-ai.state"]({}).assignments.some(
         (a) => a.task === "correction" && a.model !== null,
       ),
+    localAi.probe,
   );
   const plugins = createMockPlugins(
     emitPlugin,

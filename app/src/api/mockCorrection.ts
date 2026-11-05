@@ -1,11 +1,13 @@
-// What the correction plugin answers in the mock backend. Timer-driven runs (`stepMs` per phase): loading 0 -> 50 ->
-// 100 %, one `piece` per piece (a fixed "correction": common English misspellings fixed, case kept; pieces over
+// What the correction plugin answers in the mock backend. Timer-driven runs (`stepMs` per phase): mock engine not
+// installed (mock local-ai `engineInstalled`) -> `engine` 0 -> 50 -> 100 % of its bytes first (then installed, as
+// `ModelHost::open`), loading 0 -> 50 -> 100 %, one `piece` per piece (a fixed "correction": common English misspellings fixed, case kept; pieces over
 // `TOO_LONG` chars -> `discarded` tooLong), then `done` | `probe.failRun`. A new run stops the old one (cancelled), as
 // the plugin. Status: `probe.available` when set, else whether mock local-ai has a model on job "correction".
 
 import type { CorrectionPhase } from "./generated/CorrectionPhase";
 import type { CorrectionPiece } from "./generated/CorrectionPiece";
 import type { IpcError } from "./generated/IpcError";
+import { MOCK_ENGINE_BYTES } from "./mockLocalAi";
 import type { AppPluginEventName, AppPluginEvents, PluginMethods } from "./types";
 
 type CorrectionMethods = Pick<
@@ -55,6 +57,8 @@ export function createMockCorrection(
   emit: <E extends AppPluginEventName>(event: E, payload: AppPluginEvents[E]) => void = () => {},
   /** Mock local-ai has a model on job "correction". */
   assigned: () => boolean = () => true,
+  /** Mock local-ai's engine files (a run gets them when missing). */
+  engine: { engineInstalled: boolean } = { engineInstalled: true },
 ) {
   let current: { run: string; next: CorrectionPhase[] } | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -82,6 +86,8 @@ export function createMockCorrection(
       stopTimer();
       current = null;
     }
+    if (phase.kind === "engine" && phase.receivedBytes === phase.totalBytes)
+      engine.engineInstalled = true;
     emit("correction:run", { run, phase });
   }
 
@@ -95,6 +101,13 @@ export function createMockCorrection(
 
   function start(run: string, pieces: readonly CorrectionPiece[]): null {
     stop();
+    const fetch = engine.engineInstalled
+      ? []
+      : [0, 0.5, 1].map((part): CorrectionPhase => ({
+          kind: "engine",
+          receivedBytes: Math.round(MOCK_ENGINE_BYTES * part),
+          totalBytes: MOCK_ENGINE_BYTES,
+        }));
     const loading = [0, 0.5, 1].map((progress): CorrectionPhase => ({ kind: "loading", progress }));
     const failure = probe.failRun;
     probe.failRun = null;
@@ -108,7 +121,7 @@ export function createMockCorrection(
     }));
     const end: CorrectionPhase[] =
       failure === null ? [...answers, { kind: "done" }] : [{ kind: "failed", error: failure }];
-    current = { run, next: [...loading, ...end] };
+    current = { run, next: [...fetch, ...loading, ...end] };
     timer = setInterval(step, probe.stepMs);
     return null;
   }

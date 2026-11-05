@@ -5,4 +5,4 @@ import type { IpcError } from "./IpcError";
 /**
  * Where a run stands; `done` | `cancelled` | `failed` end it.
  */
-export type CorrectionPhase = { "kind": "loading", progress: number, } | { "kind": "piece", id: number, result: CorrectionPieceResult, } | { "kind": "done" } | { "kind": "cancelled" } | { "kind": "failed", error: IpcError, };
+export type CorrectionPhase = { "kind": "engine", receivedBytes: number, totalBytes: number, } | { "kind": "loading", progress: number, } | { "kind": "piece", id: number, result: CorrectionPieceResult, } | { "kind": "done" } | { "kind": "cancelled" } | { "kind": "failed", error: IpcError, };

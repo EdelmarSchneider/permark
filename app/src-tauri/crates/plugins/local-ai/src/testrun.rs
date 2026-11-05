@@ -3,8 +3,8 @@
 //! - One test at a time per plugin instance: a second start while one runs -> [`TestError::Busy`] (never cancels the
 //!   running one). Start answers at once; the test runs on its own thread, phases go out as event `local-ai:test`
 //!   ([`ModelTest`]).
-//! - Flow: worker files missing -> queued through [`WorkerFiles`] (phase `engine`, download bytes) -> load through
-//!   [`ModelHost`] (memory guard inside; phase `loading`) -> run (phase `running`): chat model = [`PROMPT`]
+//! - Flow: [`ModelHost`] open (same path as features): worker files missing -> fetched (phase `engine`, download
+//!   bytes) -> load (memory guard inside; phase `loading`) -> run (phase `running`): chat model = [`PROMPT`]
 //!   streamed (<= [`MAX_TOKENS`]), embedding-only model = one vector of [`EMBED_TEXT`] -> `done` with timings.
 //! - The session is ALWAYS unloaded (done | failed | cancelled) before the last event goes out.
 //! - Cancel ([`Tester::cancel`]): stops the engine download (part kept) | the load (worker killed) | the run.
@@ -15,24 +15,22 @@
 //! - Tests: `src/tests/testrun.rs` (shares the installs lab).
 
 use std::cell::Cell;
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use permark_core::downloads::{DownloadError, Listener, Progress, Update};
+use permark_core::downloads::DownloadError;
 use permark_core::plugins::PluginEvents;
 use permark_core::{ErrorKind, IpcError};
 use serde::Serialize;
 use ts_rs::TS;
 
 use crate::catalog::Model;
-use crate::engine::files::{FilesError, WorkerFiles};
 use crate::engine::{
     CancelToken, Capability, ChatMessage, ChatRequest, EmbedRole, Engine, EngineError, Finish,
     GenEvent, Role, SessionId,
 };
-use crate::host::{engine_ipc, ModelHost};
+use crate::host::{engine_ipc, HostError, HostProgress, ModelHost};
 use crate::installs::{AssignedModel, InstallError};
 
 /// Chat test prompt.
@@ -45,8 +43,6 @@ pub const EMBED_TEXT: &str = "PerMark checks that this model works.";
 const TEST_CONTEXT: u32 = 2048;
 /// Answer kept for the result, chars.
 const ANSWER_CAP: usize = 400;
-/// Cancel check interval while the engine downloads.
-const POLL: Duration = Duration::from_millis(50);
 /// Smallest load progress step sent.
 const PROGRESS_STEP: f32 = 0.01;
 
@@ -144,62 +140,26 @@ pub enum TestError {
     NoTest(String),
     #[error(transparent)]
     Install(#[from] InstallError),
+    /// Engine fetch | load ([`ModelHost`] codes).
     #[error(transparent)]
-    Files(#[from] FilesError),
-    #[error(transparent)]
-    Download(#[from] DownloadError),
+    Host(#[from] HostError),
     #[error(transparent)]
     Engine(#[from] EngineError),
 }
 
 impl From<TestError> for IpcError {
-    /// Engine | files errors: subject `engine`, `detail` = stable code (`notAvailable`, `badPin` + [`engine_ipc`]);
-    /// engine text | worker log NEVER sent (may hold paths).
+    /// Engine | files errors: [`HostError`] codes + [`engine_ipc`]; engine text | worker log NEVER sent (may hold
+    /// paths).
     fn from(error: TestError) -> Self {
-        let engine = |kind, detail: &str| IpcError::new(kind).subject("engine").detail(detail);
         match error {
             TestError::Busy => IpcError::new(ErrorKind::Conflict).detail("testRunning"),
             TestError::NoTest(id) => IpcError::new(ErrorKind::Unsupported)
                 .subject(id)
                 .detail("noTest"),
             TestError::Install(e) => e.into(),
-            TestError::Files(FilesError::NotAvailable) => {
-                engine(ErrorKind::Unavailable, "notAvailable")
-            }
-            TestError::Files(FilesError::NoDownloads) => {
-                IpcError::new(ErrorKind::Unavailable).subject("downloads")
-            }
-            TestError::Files(FilesError::BadPin) => engine(ErrorKind::Internal, "badPin"),
-            TestError::Download(e) => IpcError::from(e).subject("engine"),
+            TestError::Host(e) => e.into(),
             TestError::Engine(e) => engine_ipc(&e),
         }
-    }
-}
-
-/// Worker-unit download updates -> the running test (the [`WorkerFiles`] listener; nobody listening -> dropped).
-#[derive(Default)]
-pub struct EngineNews(Mutex<Option<Sender<Update>>>);
-
-impl EngineNews {
-    /// Listener for [`WorkerFiles::new`].
-    #[must_use]
-    pub fn listener(self: &Arc<Self>) -> Listener {
-        let news = Arc::clone(self);
-        Arc::new(move |_, update| {
-            if let Some(tx) = lock(&news.0).as_ref() {
-                let _ = tx.send(update.clone());
-            }
-        })
-    }
-
-    fn open(&self) -> Receiver<Update> {
-        let (tx, rx) = mpsc::channel();
-        *lock(&self.0) = Some(tx);
-        rx
-    }
-
-    fn close(&self) {
-        *lock(&self.0) = None;
     }
 }
 
@@ -212,10 +172,8 @@ enum Kind {
 
 /// What a test needs of the plugin instance.
 pub struct TestParts {
-    /// Installs, catalog, runtime, worker files; load -> [`crate::host::ModelSession`] (unloaded on every way out).
+    /// Installs, catalog, runtime, worker files; open -> [`crate::host::ModelSession`] (unloaded on every way out).
     pub host: Arc<ModelHost>,
-    /// Same as the one given to the host's worker files ([`EngineNews::listener`]).
-    pub news: Arc<EngineNews>,
     pub events: PluginEvents,
 }
 
@@ -336,7 +294,10 @@ impl Shared {
             Err(_) if cancel.is_cancelled() => TestPhase::Cancelled,
             Err(
                 TestError::Engine(EngineError::Cancelled)
-                | TestError::Download(DownloadError::Cancelled),
+                | TestError::Host(
+                    HostError::Engine(EngineError::Cancelled)
+                    | HostError::Download(DownloadError::Cancelled),
+                ),
             ) => TestPhase::Cancelled,
             Err(e) => TestPhase::Failed { error: e.into() },
         }
@@ -349,21 +310,32 @@ impl Shared {
         kind: Kind,
         cancel: &CancelToken,
     ) -> Result<TestResult, TestError> {
-        self.ensure_engine(&model.id, cancel)?;
-        self.emit(&model.id, TestPhase::Loading { progress: 0.0 });
-        let sent = Cell::new(0.0f32);
-        let progress = |value: f32| {
-            if value.is_finite() && value - sent.get() >= PROGRESS_STEP {
-                sent.set(value);
-                self.emit(&model.id, TestPhase::Loading { progress: value });
+        // load progress: the first value, then steps of at least PROGRESS_STEP
+        let sent = Cell::new(None::<f32>);
+        let started = Cell::new(Instant::now());
+        let progress = |news: HostProgress| match news {
+            HostProgress::Engine { received, total } => self.emit(
+                &model.id,
+                TestPhase::Engine {
+                    received_bytes: received,
+                    total_bytes: total,
+                },
+            ),
+            HostProgress::Loading(value) => {
+                if sent.get().is_none() {
+                    started.set(Instant::now());
+                }
+                if value.is_finite() && sent.get().is_none_or(|s| value - s >= PROGRESS_STEP) {
+                    sent.set(Some(value));
+                    self.emit(&model.id, TestPhase::Loading { progress: value });
+                }
             }
         };
-        let started = Instant::now();
-        let loaded = self
-            .parts
-            .host
-            .load(model, installed, TEST_CONTEXT, &progress, cancel)?;
-        let load_ms = millis(started.elapsed());
+        let loaded =
+            self.parts
+                .host
+                .open_model(model, installed, TEST_CONTEXT, &progress, cancel)?;
+        let load_ms = millis(started.get().elapsed());
         self.emit(&model.id, TestPhase::Running);
         let caps = loaded.engine().caps();
         let started = Instant::now();
@@ -394,49 +366,6 @@ impl Shared {
             engine_version: caps.version,
             output,
         })
-    }
-
-    /// Worker files installed now, else downloaded (phase `engine`); cancel stops the download (part kept).
-    fn ensure_engine(&self, model: &str, cancel: &CancelToken) -> Result<(), TestError> {
-        let TestParts { host, news, .. } = &self.parts;
-        let files: &WorkerFiles = &host.files;
-        if files.is_installed() {
-            return Ok(());
-        }
-        let updates = news.open();
-        let result = files
-            .enqueue()
-            .map_err(TestError::from)
-            .and_then(|()| self.follow(model, &updates, cancel));
-        news.close();
-        result
-    }
-
-    fn follow(
-        &self,
-        model: &str,
-        updates: &Receiver<Update>,
-        cancel: &CancelToken,
-    ) -> Result<(), TestError> {
-        loop {
-            if cancel.is_cancelled() {
-                self.parts.host.files.cancel();
-                return Err(DownloadError::Cancelled.into());
-            }
-            match updates.recv_timeout(POLL) {
-                Ok(Update::Progress(Progress { done, total, .. })) => self.emit(
-                    model,
-                    TestPhase::Engine {
-                        received_bytes: done,
-                        total_bytes: total,
-                    },
-                ),
-                Ok(Update::Done) => return Ok(()),
-                Ok(Update::Failed(error)) => return Err(error.into()),
-                Err(RecvTimeoutError::Timeout) => {}
-                Err(RecvTimeoutError::Disconnected) => return Err(DownloadError::Cancelled.into()),
-            }
-        }
     }
 }
 

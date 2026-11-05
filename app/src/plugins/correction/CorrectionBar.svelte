@@ -1,6 +1,7 @@
 <script lang="ts">
   // The strip under the header while a correction runs | is reviewed (nothing before a run). Row 1: where the run
-  // stands (getting the model ready + progress, checking part i of n, the count) + "3 / 12" + previous | next; row 2:
+  // stands (getting the AI engine the first time + its size progress, getting the model ready + progress, checking
+  // part i of n, the count) + "3 / 12" + previous | next; row 2:
   // the current suggestion in its text (removed | added words marked), notes (parts left as they were, suggestions the
   // text no longer matches), a failure with Try again + Local AI settings; row 3: Accept | Reject, all of them, Done,
   // Cancel. The excerpt = the store's cut (its block, word edges, `…`). One polite live region: the phase, then the count
@@ -9,7 +10,7 @@
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronUp from "@lucide/svelte/icons/chevron-up";
   import { isTypingTarget } from "../../core/commands/dispatch";
-  import { t, tn } from "../../core/i18n";
+  import { sizeText, t, tn } from "../../core/i18n";
   import { ui } from "../../core/shell/ui.svelte";
   import { LOCAL_AI_PAGE } from "../local-ai/store.svelte";
   import { percentText } from "../local-ai/words";
@@ -71,6 +72,8 @@
 
   function headline(status: RunStatus, found: number, discarded: number): string {
     switch (status.kind) {
+      case "engine":
+        return t("localAi.test.engine");
       case "loading":
         return t("correction.loading");
       case "checking":
@@ -137,7 +140,20 @@
       <div class="row">
         <p class="sr-only" role="status" aria-live="polite">{announced}</p>
         <span class="status">{headline(review.status, count, review.discarded)}</span>
-        {#if review.status.kind === "loading"}
+        {#if review.status.kind === "engine"}
+          {@const { receivedBytes, totalBytes } = review.status}
+          <progress
+            max={totalBytes > 0 ? totalBytes : 1}
+            value={receivedBytes}
+            aria-label={t("localAi.test.engine")}
+          ></progress>
+          <span class="quiet"
+            >{t("localAi.dl.progress", {
+              done: sizeText(receivedBytes),
+              total: sizeText(totalBytes),
+            })}</span
+          >
+        {:else if review.status.kind === "loading"}
           <progress max={1} value={review.status.progress} aria-label={t("correction.loading")}
           ></progress>
           <span class="quiet">{percentText(review.status.progress, 1)}</span>

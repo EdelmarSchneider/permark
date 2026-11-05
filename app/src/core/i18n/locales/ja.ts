@@ -2507,8 +2507,6 @@ export default {
   "correction.failed": "テキストを確認できませんでした。",
   "correction.failed.noModel":
     "校正用に選んだモデルが使えません。「ローカル AI」ページでモデルを選んでください。",
-  "correction.failed.noEngine":
-    "AI エンジンがまだこのコンピューターにありません。「ローカル AI」ページの「テスト」で取得してください。",
   "correction.discarded.one": "モデルの変更が多すぎたため、{n} 個の部分をそのままにしました。",
   "correction.discarded.other": "モデルの変更が多すぎたため、{n} 個の部分をそのままにしました。",
   "correction.outdated.one": "テキストが変わったため、{n} 件の提案は使えなくなりました。",

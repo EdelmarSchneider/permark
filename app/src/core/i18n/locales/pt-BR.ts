@@ -2483,8 +2483,6 @@ export default {
   "correction.failed": "Não foi possível verificar o texto.",
   "correction.failed.noModel":
     "O modelo escolhido para correção não está disponível. Escolha um na página IA local.",
-  "correction.failed.noEngine":
-    "O mecanismo de IA ainda não está neste computador. Obtenha-o com Testar na página IA local.",
   "correction.discarded.one": "{n} parte ficou como estava porque o modelo mudou demais.",
   "correction.discarded.other": "{n} partes ficaram como estavam porque o modelo mudou demais.",
   "correction.outdated.one": "{n} sugestão não vale mais porque o texto mudou.",

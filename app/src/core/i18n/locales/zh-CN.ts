@@ -2363,7 +2363,6 @@ export default {
   "correction.stopped.other": "已停止。目前找到 {n} 条建议。",
   "correction.failed": "无法检查文本。",
   "correction.failed.noModel": "为校对选择的模型不可用。请在“本地 AI”页面选择一个模型。",
-  "correction.failed.noEngine": "这台电脑上还没有 AI 引擎。请在“本地 AI”页面用“测试”获取。",
   "correction.discarded.one": "模型改动过多，{n} 个部分保持原样。",
   "correction.discarded.other": "模型改动过多，{n} 个部分保持原样。",
   "correction.outdated.one": "文本已更改，{n} 条建议不再适用。",

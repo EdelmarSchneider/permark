@@ -2446,8 +2446,6 @@ export default {
   "correction.failed": "텍스트를 확인하지 못했습니다.",
   "correction.failed.noModel":
     "교정용으로 선택한 모델을 사용할 수 없습니다. 로컬 AI 페이지에서 모델을 선택하세요.",
-  "correction.failed.noEngine":
-    "AI 엔진이 아직 이 컴퓨터에 없습니다. 로컬 AI 페이지의 테스트로 받으세요.",
   "correction.discarded.one": "모델이 너무 많이 바꿔서 {n}개 부분을 그대로 두었습니다.",
   "correction.discarded.other": "모델이 너무 많이 바꿔서 {n}개 부분을 그대로 두었습니다.",
   "correction.outdated.one": "텍스트가 바뀌어 제안 {n}개를 더 이상 적용할 수 없습니다.",

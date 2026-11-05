@@ -2444,8 +2444,6 @@ const en = {
   "correction.failed": "The text couldn't be checked.",
   "correction.failed.noModel":
     "The model chosen for correction isn't available. Choose one on the Local AI page.",
-  "correction.failed.noEngine":
-    "The AI engine isn't on this computer yet. Get it with Test on the Local AI page.",
   "correction.discarded.one": "{n} part was left as it was because the model changed too much.",
   "correction.discarded.other":
     "{n} parts were left as they were because the model changed too much.",

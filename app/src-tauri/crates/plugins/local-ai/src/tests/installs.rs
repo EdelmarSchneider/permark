@@ -1083,9 +1083,10 @@ fn never_loads(pinned: &Arc<Installs>, cat: &Catalog, cx: &PluginCx) {
     use crate::engine::files::{WorkerFiles, PINS};
     use crate::engine::tests::Workers;
     use crate::engine::{CancelToken, EngineError, FakeEngine};
+    use crate::host::EngineNews;
     use crate::host::{HostError, ModelHost};
     use crate::runtime::Runtime;
-    use crate::testrun::{EngineNews, TestError, TestParts, Tester};
+    use crate::testrun::{TestError, TestParts, Tester};
 
     let workers = Workers::default();
     let runtime = Arc::new(Runtime::with_launch(
@@ -1104,6 +1105,7 @@ fn never_loads(pinned: &Arc<Installs>, cat: &Catalog, cx: &PluginCx) {
         Arc::new(cat.clone()),
         runtime,
         files,
+        news,
     ));
     let error = host
         .open(Task::Correction, 4096, &|_| {}, &CancelToken::new())
@@ -1119,7 +1121,6 @@ fn never_loads(pinned: &Arc<Installs>, cat: &Catalog, cx: &PluginCx) {
     );
     let tester = Tester::new(TestParts {
         host,
-        news,
         events: cx.events().clone(),
     });
     assert!(matches!(

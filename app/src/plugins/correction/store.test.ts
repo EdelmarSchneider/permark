@@ -143,6 +143,9 @@ describe("a correction run", () => {
 
   it("hears only its own run; progress and parts follow the news", async () => {
     await store.correct("document");
+    news({ kind: "engine", receivedBytes: 10, totalBytes: 40 });
+    expect(store.review?.status).toEqual({ kind: "engine", receivedBytes: 10, totalBytes: 40 });
+    expect(store.running).toBe(true);
     news({ kind: "loading", progress: 0.5 });
     expect(store.review?.status).toEqual({ kind: "loading", progress: 0.5 });
     news({ kind: "loading", progress: 0.9 }, "another-window");

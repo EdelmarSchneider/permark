@@ -2,9 +2,11 @@
 //! (lease dropped first at plugin off). Features NEVER call [`Runtime::load`] themselves.
 //!
 //! - [`ModelHost::open`]: model assigned to a [`Task`] ([`Installs::model_for`]) + runs on the pinned worker (else
-//!   `engineTooOld` | `unsupported`, nothing started) + engine files installed NOW (never downloaded here: missing
-//!   -> [`HostError::NoEngine`], the Local AI page's Test fetches them) -> load through
-//!   [`Runtime::load`] (memory guard inside; `Device::Auto`; context capped at the model's maximum).
+//!   `engineTooOld` | `unsupported`, nothing started) -> engine files of the current pin installed, else fetched
+//!   first through [`WorkerFiles`] ([`HostProgress::Engine`]; cancel stops the download, part kept; no pin ->
+//!   `notAvailable`) -> [`HostProgress::Loading`] from 0 -> load through [`Runtime::load`] (memory guard inside;
+//!   `Device::Auto`; context capped at the model's maximum). Tester ("Test model") takes the same path
+//!   (`ModelHost::open_model`): ONE engine fetch.
 //! - [`ModelSession`]: RAII, Drop unloads (worker exits). Plugin off | model removed | store change unloads it under
 //!   the holder too (its load token cancelled, calls then fail `notLoaded`).
 //! - Dormant: building one creates | spawns nothing; [`ModelHost::is_assigned`] + [`ModelHost::serves`] read the
@@ -13,12 +15,15 @@
 //!   text | worker log NEVER sent, may hold paths).
 //! - Tests: `src/tests/host.rs`.
 
-use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
+use permark_core::downloads::{DownloadError, Listener, Progress, Update};
 use permark_core::{ErrorKind, IpcError};
 
 use crate::catalog::{Catalog, EngineNeed, Model};
-use crate::engine::files::WorkerFiles;
+use crate::engine::files::{FilesError, WorkerFiles};
 use crate::engine::{self, CancelToken, Device, Engine, EngineError, LoadOpts, SessionId};
 use crate::installs::{AssignedModel, Installs, ModelFor};
 use crate::runtime::Runtime;
@@ -30,21 +35,70 @@ pub enum HostError {
     /// No installed model assigned to the task.
     #[error("no model assigned to {0:?}")]
     NoModel(Task),
-    /// Engine files not installed (no worker for this computer | not fetched yet).
-    #[error("the model engine is not installed")]
-    NoEngine,
+    /// Engine files cannot be fetched (no worker for this computer, bad pin, no download service).
+    #[error(transparent)]
+    Files(#[from] FilesError),
+    /// Engine download failed | was cancelled.
+    #[error(transparent)]
+    Download(#[from] DownloadError),
     #[error(transparent)]
     Engine(#[from] EngineError),
 }
 
+/// What an open reports while it works.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum HostProgress {
+    /// Engine files downloading (first open only | after a pin change), bytes.
+    Engine { received: u64, total: u64 },
+    /// Model loading, 0..=1 (starts with 0 once the engine is there).
+    Loading(f32),
+}
+
+/// Cancel check interval while the engine downloads.
+const POLL: Duration = Duration::from_millis(50);
+
+/// Worker-unit download updates -> every open waiting on them (the [`WorkerFiles`] listener; nobody waiting ->
+/// dropped).
+#[derive(Default)]
+pub struct EngineNews(Mutex<Vec<Sender<Update>>>);
+
+impl EngineNews {
+    /// Listener for [`WorkerFiles::new`].
+    #[must_use]
+    pub fn listener(self: &Arc<Self>) -> Listener {
+        let news = Arc::clone(self);
+        // a waiter gone (its open ended) -> its sender dropped here
+        Arc::new(move |_, update| news.waiters().retain(|tx| tx.send(update.clone()).is_ok()))
+    }
+
+    fn waiters(&self) -> MutexGuard<'_, Vec<Sender<Update>>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn open(&self) -> Receiver<Update> {
+        let (tx, rx) = mpsc::channel();
+        self.waiters().push(tx);
+        rx
+    }
+}
+
 impl From<HostError> for IpcError {
-    /// `noModel`: subject `model`; engine: subject `engine`, `detail` = stable code (see [`engine_ipc`]).
+    /// `noModel`: subject `model`; engine | files: subject `engine`, `detail` = stable code (`notAvailable`, `badPin`
+    /// + [`engine_ipc`]; download cancelled = `cancelled`); other download errors: own codes, subject `engine`.
     fn from(error: HostError) -> Self {
         match error {
             HostError::NoModel(_) => IpcError::new(ErrorKind::Unavailable)
                 .subject("model")
                 .detail("noModel"),
-            HostError::NoEngine => engine_code(ErrorKind::Unavailable, "notAvailable"),
+            HostError::Files(FilesError::NotAvailable) => {
+                engine_code(ErrorKind::Unavailable, "notAvailable")
+            }
+            HostError::Files(FilesError::NoDownloads) => {
+                IpcError::new(ErrorKind::Unavailable).subject("downloads")
+            }
+            HostError::Files(FilesError::BadPin) => engine_code(ErrorKind::Internal, "badPin"),
+            HostError::Download(DownloadError::Cancelled) => engine_ipc(&EngineError::Cancelled),
+            HostError::Download(e) => IpcError::from(e).subject("engine"),
             HostError::Engine(e) => engine_ipc(&e),
         }
     }
@@ -128,6 +182,8 @@ pub struct ModelHost {
     pub(crate) catalog: Arc<Catalog>,
     pub(crate) runtime: Arc<Runtime>,
     pub(crate) files: Arc<WorkerFiles>,
+    /// Same as the one given to `files` ([`EngineNews::listener`]).
+    news: Arc<EngineNews>,
 }
 
 impl ModelHost {
@@ -138,12 +194,14 @@ impl ModelHost {
         catalog: Arc<Catalog>,
         runtime: Arc<Runtime>,
         files: Arc<WorkerFiles>,
+        news: Arc<EngineNews>,
     ) -> Self {
         Self {
             installs,
             catalog,
             runtime,
             files,
+            news,
         }
     }
 
@@ -176,17 +234,17 @@ impl ModelHost {
     }
 
     /// Loads the model assigned to `task` with a context of `context_len` tokens (model maximum when smaller);
-    /// `progress` gets 0.0..=1.0.
+    /// engine fetched first when missing (rules: module doc).
     ///
     /// # Errors
-    /// [`HostError::NoModel`] | [`HostError::NoEngine`] (nothing fetched) | [`HostError::Engine`]
-    /// (`EngineTooOld` | `Unsupported`: the pinned worker cannot run it; `OutOfMemory` from the guard, `Cancelled`,
-    /// load errors).
+    /// [`HostError::NoModel`] | [`HostError::Files`] (`NotAvailable`: no worker for this computer) |
+    /// [`HostError::Download`] (`Cancelled` on cancel) | [`HostError::Engine`] (`EngineTooOld` | `Unsupported`: the
+    /// pinned worker cannot run it; `OutOfMemory` from the guard, `Cancelled`, load errors).
     pub fn open(
         &self,
         task: Task,
         context_len: u32,
-        progress: &dyn Fn(f32),
+        progress: &dyn Fn(HostProgress),
         cancel: &CancelToken,
     ) -> Result<ModelSession, HostError> {
         let ModelFor::Assigned(installed) = self.installs.model_for(task) else {
@@ -196,17 +254,61 @@ impl ModelHost {
             .catalog
             .model(&installed.id)
             .ok_or(HostError::NoModel(task))?;
+        self.open_model(model, &installed, context_len, progress, cancel)
+    }
+
+    /// [`ModelHost::open`] of `installed` (version of catalog `model`), whatever the assignments.
+    pub(crate) fn open_model(
+        &self,
+        model: &Model,
+        installed: &AssignedModel,
+        context_len: u32,
+        progress: &dyn Fn(HostProgress),
+        cancel: &CancelToken,
+    ) -> Result<ModelSession, HostError> {
         if let Some(refusal) = self.refusal(model) {
             return Err(refusal.into());
         }
-        if !self.files.is_installed() {
-            return Err(HostError::NoEngine);
-        }
-        Ok(self.load(model, &installed, context_len, progress, cancel)?)
+        self.ensure_engine(progress, cancel)?;
+        progress(HostProgress::Loading(0.0));
+        let loading = |value| progress(HostProgress::Loading(value));
+        Ok(self.load(model, installed, context_len, &loading, cancel)?)
     }
 
-    /// Loads `installed` (version of catalog `model`); engine files expected installed (Test fetches them first).
-    pub(crate) fn load(
+    /// Worker files of the current pin installed now, else queued + followed to the end (`Engine` progress).
+    fn ensure_engine(
+        &self,
+        progress: &dyn Fn(HostProgress),
+        cancel: &CancelToken,
+    ) -> Result<(), HostError> {
+        if self.files.is_installed() {
+            return Ok(());
+        }
+        // listening before the enqueue: an install finished meanwhile still answers `Done`
+        let updates = self.news.open();
+        self.files.enqueue()?;
+        loop {
+            if cancel.is_cancelled() {
+                self.files.cancel();
+                return Err(DownloadError::Cancelled.into());
+            }
+            match updates.recv_timeout(POLL) {
+                Ok(Update::Progress(Progress { done, total, .. })) => {
+                    progress(HostProgress::Engine {
+                        received: done,
+                        total,
+                    });
+                }
+                Ok(Update::Done) => return Ok(()),
+                Ok(Update::Failed(error)) => return Err(error.into()),
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => return Err(DownloadError::Cancelled.into()),
+            }
+        }
+    }
+
+    /// Loads `installed` (version of catalog `model`); engine files installed ([`ModelHost::open_model`]).
+    fn load(
         &self,
         model: &Model,
         installed: &AssignedModel,
