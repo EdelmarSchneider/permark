@@ -13,6 +13,8 @@ use crate::engine::{files, CancelToken, FakeEngine};
 use crate::host::{HostError, ModelHost, ModelSession};
 use crate::tasks::Task;
 
+const E4B: &str = "gemma-4-e4b-it-q4_0";
+
 fn open(bench: &Bench, context_len: u32) -> Result<ModelSession, HostError> {
     bench
         .host
@@ -130,4 +132,27 @@ fn the_plugin_offers_the_model_host_while_on() {
     drop(host);
     run.stop();
     assert!(services.get::<ModelHost>().is_none(), "gone after off");
+}
+
+/// Warm sessions of a feature (plugin `correction`): `serves` = the session still carries the model assigned to the
+/// task (state alone); reassigning | unassigning ends it.
+#[test]
+fn serves_follows_the_assignment() {
+    let bench = Bench::fake(FakeEngine::new);
+    bench.install(E2B);
+    bench.install(E4B);
+    bench.installs.assign(Task::Correction, Some(E2B)).unwrap();
+    bench.host.files.enqueue().unwrap();
+    let start = Instant::now();
+    while !bench.host.files.is_installed() {
+        assert!(start.elapsed() < Duration::from_secs(10), "engine files");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let session = open(&bench, 512).unwrap();
+    assert!(bench.host.serves(&session, Task::Correction));
+    assert!(!bench.host.serves(&session, Task::Translation));
+    bench.installs.assign(Task::Correction, Some(E4B)).unwrap();
+    assert!(!bench.host.serves(&session, Task::Correction));
+    bench.installs.assign(Task::Correction, None).unwrap();
+    assert!(!bench.host.serves(&session, Task::Correction));
 }

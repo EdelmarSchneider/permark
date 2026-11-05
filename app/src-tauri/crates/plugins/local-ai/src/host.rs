@@ -6,7 +6,8 @@
 //!   [`Runtime::load`] (memory guard inside; `Device::Auto`; context capped at the model's maximum).
 //! - [`ModelSession`]: RAII, Drop unloads (worker exits). Plugin off | model removed | store change unloads it under
 //!   the holder too (its load token cancelled, calls then fail `notLoaded`).
-//! - Dormant: building one creates | spawns nothing; [`ModelHost::is_assigned`] reads the state alone.
+//! - Dormant: building one creates | spawns nothing; [`ModelHost::is_assigned`] + [`ModelHost::serves`] read the
+//!   state alone.
 //! - Errors toward IPC: [`HostError`] -> [`IpcError`]; engine failures through [`engine_ipc`] (stable codes; engine
 //!   text | worker log NEVER sent, may hold paths).
 //! - Tests: `src/tests/host.rs`.
@@ -73,6 +74,8 @@ pub fn engine_ipc(error: &EngineError) -> IpcError {
 pub struct ModelSession {
     runtime: Arc<Runtime>,
     id: SessionId,
+    /// Lineage of the loaded model ([`ModelHost::serves`]).
+    lineage: String,
     on_gpu: bool,
     memory_bytes: Option<u64>,
 }
@@ -141,6 +144,13 @@ impl ModelHost {
             runtime,
             files,
         }
+    }
+
+    /// `session` still carries the model assigned to `task` (lineage; state alone): a feature keeping a session warm
+    /// drops it when the person assigns another model (a version update | removal unloads it already).
+    #[must_use]
+    pub fn serves(&self, session: &ModelSession, task: Task) -> bool {
+        self.installs.assigned_lineage(task).as_deref() == Some(session.lineage.as_str())
     }
 
     /// A model is assigned to `task` (state alone: no engine started, no disk read; the model may since be gone ->
@@ -216,6 +226,7 @@ impl ModelHost {
         Ok(ModelSession {
             runtime: Arc::clone(&self.runtime),
             id,
+            lineage: installed.lineage.clone(),
             on_gpu,
             memory_bytes,
         })
