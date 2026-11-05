@@ -2233,6 +2233,10 @@ const en = {
   "localAi.tasks.noneAvailable": "No model for this yet. Get one under Models.",
   "localAi.tasks.budget":
     "Together, these models need about {needed} of memory, but this computer has about {available} for them. They may run slowly.",
+  "localAi.tasks.comingSoon":
+    "Coming soon. No model for this job works with this version of PerMark yet.",
+  "localAi.tasks.notUsable": "{name} can't run with this version of PerMark yet.",
+  "localAi.tasks.notUsableOption": "{name} (can't run yet)",
   "localAi.noModelOption": "Not assigned",
   "localAi.task.correction": "Correction",
   "localAi.task.correction.hint": "Suggests spelling and grammar fixes",
@@ -2291,6 +2295,9 @@ const en = {
   "localAi.models.details.source": "Source",
   "localAi.models.details.size": "Download size",
   "localAi.models.details.restriction": "Who may use it",
+  "localAi.models.comingSoon": "Coming soon",
+  "localAi.models.needs.newer": "Needs a newer version of the AI engine.",
+  "localAi.models.needs.missing": "Needs an AI engine that PerMark doesn't have yet.",
   "localAi.dl.waiting": "Waiting…",
   "localAi.dl.cancelLabel": "Cancel getting {name}",
   "localAi.dl.progress": "{done} of {total}",

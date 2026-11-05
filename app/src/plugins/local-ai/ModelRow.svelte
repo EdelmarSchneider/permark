@@ -3,7 +3,9 @@
   // can do, its languages, how it runs here (words + icon, never color alone). Then what its state allows: Get (or
   // the terms first, inline), progress + Cancel, Paused + Resume | Delete partial, the failure + Try again, Ready +
   // Remove (inline confirm naming the jobs that lose it), Update, Test (chat | embedding models; off while any test runs;
-  // the panel is `TestPanel`). Details: format, revision, source, who may use it.
+  // the panel is `TestPanel`). Details: format, revision, source, who may use it. A model the AI engine cannot run
+  // (`engineNeed`): "Coming soon" + why in words, no Get | Test | Update; a part kept -> Delete partial, installed
+  // earlier -> Remove; Details stay.
   import CircleCheck from "@lucide/svelte/icons/circle-check";
   import CircleQuestionMark from "@lucide/svelte/icons/circle-question-mark";
   import CircleX from "@lucide/svelte/icons/circle-x";
@@ -25,6 +27,7 @@
     capabilityKey,
     downloadErrorText,
     errorText,
+    engineNeedKey,
     fitKey,
     languagesText,
     percentText,
@@ -61,7 +64,17 @@
   const remaining = $derived(
     status.state.kind === "paused" ? status.state.total - status.state.done : model.bytes,
   );
+  /** What the AI engine lacks to run it (`null`: runs here). */
+  const need = $derived(status.engineNeed);
+  /** A download runs (its progress + Cancel stay shown whatever the engine). */
+  const busy = $derived(
+    status.state.kind === "queued" ||
+      status.state.kind === "downloading" ||
+      status.state.kind === "verifying",
+  );
   const hold = $derived.by((): Hold | null => {
+    // nothing to start: the row says why instead
+    if (need !== null) return null;
     if (status.state.kind === "storeUnavailable") return { kind: "store" };
     if (status.blocked === "withdrawn") return { kind: "withdrawn" };
     if (status.blocked === "token") return { kind: "token" };
@@ -186,6 +199,30 @@
   }
 </script>
 
+{#snippet deletePartButton()}
+  <button
+    type="button"
+    class="btn btn--sm btn--ghost"
+    data-action="deletePart"
+    aria-label={t("localAi.dl.deletePartialLabel", { name })}
+    onclick={() => void act(() => localAi.deletePart(model.id)).then(() => focusAction(null))}
+    >{t("localAi.dl.deletePartial")}</button
+  >
+{/snippet}
+
+{#snippet removeButton()}
+  <button
+    type="button"
+    class="btn btn--sm btn--ghost"
+    data-action="remove"
+    aria-expanded={panel.kind === "remove"}
+    aria-controls={`${id}-remove`}
+    aria-label={t("localAi.models.removeLabel", { name })}
+    onclick={() => void openPanel({ kind: "remove" }, "remove")}
+    >{t("localAi.models.remove")}</button
+  >
+{/snippet}
+
 <li class="model" data-model={model.id} bind:this={row}>
   <div class="head">
     <div class="text">
@@ -204,7 +241,8 @@
         <span>{abilities}</span>
         <span>{t("localAi.models.languages", { list: languagesText(model.languages) })}</span>
       </p>
-      {#if fit !== null}
+      <!-- no fit hint while the engine cannot run it: "runs well" would say otherwise -->
+      {#if fit !== null && need === null}
         {@const Icon = fitIcon(fit)}
         <p class="fit fit--{fit}">
           <Icon size={14} aria-hidden="true" />
@@ -214,7 +252,14 @@
     </div>
 
     <div class="actions">
-      {#if status.state.kind === "notInstalled" || status.state.kind === "storeUnavailable"}
+      {#if need !== null && !busy}
+        <span class="state" data-state="comingSoon">{t("localAi.models.comingSoon")}</span>
+        {#if status.state.kind === "paused"}
+          {@render deletePartButton()}
+        {:else if status.state.kind === "installed" || status.state.kind === "updateAvailable"}
+          {@render removeButton()}
+        {/if}
+      {:else if status.state.kind === "notInstalled" || status.state.kind === "storeUnavailable"}
         {#if termsFirst && hold === null}
           <button
             type="button"
@@ -287,14 +332,7 @@
           aria-label={t("localAi.dl.resumeLabel", { name })}
           onclick={start}>{t("localAi.dl.resume")}</button
         >
-        <button
-          type="button"
-          class="btn btn--sm btn--ghost"
-          data-action="deletePart"
-          aria-label={t("localAi.dl.deletePartialLabel", { name })}
-          onclick={() => void act(() => localAi.deletePart(model.id)).then(() => focusAction(null))}
-          >{t("localAi.dl.deletePartial")}</button
-        >
+        {@render deletePartButton()}
       {:else if status.state.kind === "failed"}
         <button
           type="button"
@@ -337,21 +375,14 @@
             {t("localAi.test.button")}
           </button>
         {/if}
-        <button
-          type="button"
-          class="btn btn--sm btn--ghost"
-          data-action="remove"
-          aria-expanded={panel.kind === "remove"}
-          aria-controls={`${id}-remove`}
-          aria-label={t("localAi.models.removeLabel", { name })}
-          onclick={() => void openPanel({ kind: "remove" }, "remove")}
-          >{t("localAi.models.remove")}</button
-        >
+        {@render removeButton()}
       {/if}
     </div>
   </div>
 
-  {#if hold !== null}
+  {#if need !== null}
+    <p class="hold" id={`${id}-need`}>{t(engineNeedKey(need))}</p>
+  {:else if hold !== null}
     <p class="hold" id={`${id}-hold`}>{holdText(hold)}</p>
   {/if}
   {#if status.state.kind === "failed"}

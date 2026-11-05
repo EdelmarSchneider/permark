@@ -55,7 +55,7 @@ use crate::engine::files::{self, WorkerFiles};
 use crate::runtime::{Runtime, WorkerLog};
 use crate::testrun::{EngineNews, TestParts, Tester};
 
-pub use catalog::{Capability, Catalog, CatalogError, CatalogInfo, ModelInfo};
+pub use catalog::{Capability, Catalog, CatalogError, CatalogInfo, EngineNeed, ModelInfo};
 pub use host::{engine_ipc, HostError, ModelHost, ModelSession};
 pub use installs::{
     AssignedModel, GetBlock, InstallError, InstallState, Installs, LocalAiState, ModelFor,
@@ -290,6 +290,7 @@ impl Plugin for LocalAi {
                     .map(|api| (*api).clone()),
                 profile: cx.store().map(|store| store.app_dir().to_path_buf()),
             },
+            worker_files.pin(),
             Some(Arc::clone(&runtime)),
         );
         rpc.extend(register(cx, &installs));

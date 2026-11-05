@@ -2269,6 +2269,10 @@ export default {
   "localAi.tasks.noneAvailable": "Ainda não há modelo para isto. Baixe um em Modelos.",
   "localAi.tasks.budget":
     "Juntos, estes modelos precisam de cerca de {needed} de memória, mas este computador tem cerca de {available} para eles. Podem ficar lentos.",
+  "localAi.tasks.comingSoon":
+    "Em breve. Nenhum modelo para esta tarefa funciona ainda com esta versão do PerMark.",
+  "localAi.tasks.notUsable": "{name} ainda não funciona com esta versão do PerMark.",
+  "localAi.tasks.notUsableOption": "{name} (ainda não funciona)",
   "localAi.noModelOption": "Não atribuído",
   "localAi.task.correction": "Correção",
   "localAi.task.correction.hint": "Sugere correções de ortografia e gramática",
@@ -2328,6 +2332,9 @@ export default {
   "localAi.models.details.source": "Origem",
   "localAi.models.details.size": "Tamanho do download",
   "localAi.models.details.restriction": "Quem pode usar",
+  "localAi.models.comingSoon": "Em breve",
+  "localAi.models.needs.newer": "Precisa de uma versão mais nova do motor de IA.",
+  "localAi.models.needs.missing": "Precisa de um motor de IA que o PerMark ainda não tem.",
   "localAi.dl.waiting": "Aguardando…",
   "localAi.dl.cancelLabel": "Cancelar o download de {name}",
   "localAi.dl.progress": "{done} de {total}",

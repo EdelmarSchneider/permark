@@ -30,6 +30,8 @@ pub(crate) fn pin() -> &'static WorkerPin {
         Box::leak(vec![file("worker.exe", EXE), file("ggml.dll", LIB)].into_boxed_slice());
     Box::leak(Box::new(WorkerPin {
         tag: "worker-v0.0.1",
+        engine: Engine::LlamaCpp,
+        build: "b11429",
         platform: "test-x86_64",
         variant: Variant::Vulkan,
         exe: "worker.exe",
@@ -86,6 +88,41 @@ fn every_pin_makes_a_unit_holding_its_worker() {
         ..*pin()
     };
     assert_eq!(unit_of(&no_exe).err(), Some(FilesError::BadPin));
+}
+
+/// AC-1: every pin names the engine it ships (worker-v0.1.4 = llama.cpp b11429).
+#[test]
+fn every_pin_names_the_engine_build_it_ships() {
+    for pin in PINS {
+        assert_eq!(pin.engine, Engine::LlamaCpp, "{pin:?}");
+        assert_eq!((pin.tag, pin.build), ("worker-v0.1.4", "b11429"), "{pin:?}");
+    }
+}
+
+/// AC-2: runs = same family + build at least the documented one (undocumented: runs); no pin: nothing runs.
+#[test]
+fn a_pin_runs_its_family_up_to_its_build() {
+    let min = |engine, version: Option<&str>| MinEngine {
+        engine,
+        version: version.map(str::to_owned),
+    };
+    let pin = pin();
+    assert_eq!(pin.lacks(&min(Engine::LlamaCpp, None)), None);
+    assert_eq!(pin.lacks(&min(Engine::LlamaCpp, Some("b11429"))), None);
+    assert_eq!(pin.lacks(&min(Engine::LlamaCpp, Some("b100"))), None);
+    assert_eq!(
+        pin.lacks(&min(Engine::LlamaCpp, Some("b11452"))),
+        Some(EngineNeed::Newer)
+    );
+    assert_eq!(
+        pin.lacks(&min(Engine::WhisperCpp, Some("v1.7.0"))),
+        Some(EngineNeed::Missing)
+    );
+    assert_eq!(
+        engine_need(None, &min(Engine::LlamaCpp, None)),
+        Some(EngineNeed::Missing)
+    );
+    assert_eq!(engine_need(Some(pin), &min(Engine::LlamaCpp, None)), None);
 }
 
 #[test]

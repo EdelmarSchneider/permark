@@ -1,8 +1,9 @@
 //! Model service for PerMark's own features: app service `services.get::<ModelHost>()` while the plugin is on
 //! (lease dropped first at plugin off). Features NEVER call [`Runtime::load`] themselves.
 //!
-//! - [`ModelHost::open`]: model assigned to a [`Task`] ([`Installs::model_for`]) + engine files installed NOW (never
-//!   downloaded here: missing -> [`HostError::NoEngine`], the Local AI page's Test fetches them) -> load through
+//! - [`ModelHost::open`]: model assigned to a [`Task`] ([`Installs::model_for`]) + runs on the pinned worker (else
+//!   `engineTooOld` | `unsupported`, nothing started) + engine files installed NOW (never downloaded here: missing
+//!   -> [`HostError::NoEngine`], the Local AI page's Test fetches them) -> load through
 //!   [`Runtime::load`] (memory guard inside; `Device::Auto`; context capped at the model's maximum).
 //! - [`ModelSession`]: RAII, Drop unloads (worker exits). Plugin off | model removed | store change unloads it under
 //!   the holder too (its load token cancelled, calls then fail `notLoaded`).
@@ -16,7 +17,7 @@ use std::sync::Arc;
 
 use permark_core::{ErrorKind, IpcError};
 
-use crate::catalog::{Catalog, Model};
+use crate::catalog::{Catalog, EngineNeed, Model};
 use crate::engine::files::WorkerFiles;
 use crate::engine::{self, CancelToken, Device, Engine, EngineError, LoadOpts, SessionId};
 use crate::installs::{AssignedModel, Installs, ModelFor};
@@ -160,12 +161,27 @@ impl ModelHost {
         self.installs.is_assigned(task)
     }
 
+    /// The pinned worker cannot run `model`: the engine error a load would end with (no pin: `None`, the engine path
+    /// answers `notAvailable`).
+    pub(crate) fn refusal(&self, model: &Model) -> Option<EngineError> {
+        let pin = self.files.pin()?;
+        pin.lacks(&model.min_engine).map(|need| match need {
+            EngineNeed::Newer => EngineError::EngineTooOld {
+                needed: model.min_engine.version.clone().unwrap_or_default(),
+            },
+            EngineNeed::Missing => EngineError::Unsupported {
+                what: "engine".to_owned(),
+            },
+        })
+    }
+
     /// Loads the model assigned to `task` with a context of `context_len` tokens (model maximum when smaller);
     /// `progress` gets 0.0..=1.0.
     ///
     /// # Errors
     /// [`HostError::NoModel`] | [`HostError::NoEngine`] (nothing fetched) | [`HostError::Engine`]
-    /// (`OutOfMemory` from the guard, `Cancelled`, load errors).
+    /// (`EngineTooOld` | `Unsupported`: the pinned worker cannot run it; `OutOfMemory` from the guard, `Cancelled`,
+    /// load errors).
     pub fn open(
         &self,
         task: Task,
@@ -180,6 +196,9 @@ impl ModelHost {
             .catalog
             .model(&installed.id)
             .ok_or(HostError::NoModel(task))?;
+        if let Some(refusal) = self.refusal(model) {
+            return Err(refusal.into());
+        }
         if !self.files.is_installed() {
             return Err(HostError::NoEngine);
         }

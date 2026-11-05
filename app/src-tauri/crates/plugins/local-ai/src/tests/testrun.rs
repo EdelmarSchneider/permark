@@ -80,6 +80,8 @@ impl Bench {
             cx.state_file(state::FILE),
             cx.events().clone(),
             crate::StoreLinks::default(),
+            // models judged on the test pin; `pin` = the worker files (none: no worker for this computer)
+            Some(crate::engine::files::tests::pin()),
             Some(Arc::clone(&runtime)),
         );
         let news = Arc::new(EngineNews::default());

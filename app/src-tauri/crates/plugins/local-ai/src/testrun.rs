@@ -246,7 +246,8 @@ impl Tester {
     /// Starts a test of installed model `id` (phases as events).
     ///
     /// # Errors
-    /// [`TestError::Busy`], [`TestError::NoTest`], unknown | not installed model ([`TestError::Install`]).
+    /// [`TestError::Busy`], [`TestError::NoTest`], unknown | not installed model ([`TestError::Install`]), the pinned
+    /// worker cannot run it ([`TestError::Engine`]: `EngineTooOld` | `Unsupported`).
     pub fn start(&self, id: &str) -> Result<(), TestError> {
         let mut running = lock(&self.shared.running);
         if running.is_some() {
@@ -266,6 +267,9 @@ impl Tester {
         } else {
             return Err(TestError::NoTest(id.to_owned()));
         };
+        if let Some(refusal) = host.refusal(&model) {
+            return Err(refusal.into());
+        }
         let token = CancelToken::new();
         // the last test released `running` as its final step: joining it waits for nothing
         if let Some(done) = lock(&self.thread).take() {

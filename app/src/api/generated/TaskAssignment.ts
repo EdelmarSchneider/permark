@@ -2,6 +2,7 @@
 import type { AiTask } from "./AiTask";
 
 /**
- * Model chosen for one task (`model` = catalog id; `None`: not assigned | assigned model gone).
+ * Model chosen for one task (`model` = catalog id; `None`: not assigned | assigned model gone; a model the engine
+ * cannot run stays here, its `engineNeed` tells).
  */
 export type TaskAssignment = { task: AiTask, model: string | null, };

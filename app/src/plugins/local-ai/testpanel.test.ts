@@ -12,7 +12,7 @@ vi.mock("../../api", async () => {
 });
 
 const { api } = await import("../../api");
-const { MOCK_MACHINE } = await import("../../api/mockLocalAi");
+const { MOCK_ENGINE_PIN, MOCK_MACHINE } = await import("../../api/mockLocalAi");
 const { localAi } = await import("./store.svelte");
 const { testErrorText } = await import("./words");
 const { default: LocalAiSection } = await import("./LocalAiSection.svelte");
@@ -23,6 +23,8 @@ const probe = mock.probe.localAi;
 const EMBED = "embeddinggemma-2-q8_0";
 const CHAT = "gemma-4-e2b-it-q4_0";
 const NOT_HERE = "lfm3-1.7b-q4_k_m";
+/** A later llama.cpp worker: the installed EmbeddingGemma 2 runs (the pinned one cannot). */
+const NEWER = { engine: "llama.cpp", build: "b11960" } as const;
 
 let target: HTMLElement;
 let component: Record<string, unknown> | null = null;
@@ -84,6 +86,7 @@ beforeEach(() => {
   probe.stepMs = 60;
   probe.engineInstalled = false;
   probe.failTest = null;
+  probe.engine = NEWER;
 });
 
 afterEach(async () => {
@@ -103,6 +106,13 @@ describe("the Test button", () => {
     expect(action(CHAT, "test")).not.toBeNull();
     expect(action(NOT_HERE, "test")).toBeNull();
     expect(panel(EMBED)).toBeNull();
+  });
+
+  it("is not on an installed model the AI engine cannot run", async () => {
+    probe.engine = { ...MOCK_ENGINE_PIN };
+    await openPage();
+    expect(action(EMBED, "test")).toBeNull();
+    expect(action(CHAT, "test")).not.toBeNull();
   });
 
   it("is off on every model while one test runs", async () => {

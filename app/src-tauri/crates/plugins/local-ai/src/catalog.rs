@@ -70,6 +70,28 @@ pub struct MinEngine {
     pub version: Option<String>,
 }
 
+/// What the engine this app ships lacks to run a model (state `engineNeed`; `None` there: it runs).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, rename = "EngineNeed")]
+pub enum EngineNeed {
+    /// Same engine family, a newer build than the pinned one.
+    Newer,
+    /// An engine family PerMark does not ship (whisper.cpp) | no engine for this computer.
+    Missing,
+}
+
+impl EngineNeed {
+    /// Stable code toward IPC (`detail`).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Newer => "newerEngine",
+            Self::Missing => "missingEngine",
+        }
+    }
+}
+
 /// Memory a model wants, bytes (rule: module doc).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

@@ -9,6 +9,9 @@
 // largest not recommended; assigning a second big model (LFM3 beside Gemma 4 E2B) raises the budget warning.
 // Test model: timer steps (`stepMs`): engine download on the first test only, loading, running, then done with
 // plausible numbers (chat: answer + tokens/s; embedding: dims) | `probe.failTest`; one test at a time; cancel ends it.
+// Engine (`probe.engine`, as the real pin: llama.cpp b11429): EmbeddingGemma 2 + LFM3 need a newer build, Whisper an
+// engine PerMark lacks -> `engineNeed`, Get | assign | Test refused. So the fixtures show them too: EmbeddingGemma 2
+// installed + assigned (not usable), LFM3 terms, Whisper paused. A newer `probe.engine` makes them runnable.
 
 import TASKS from "../plugins/local-ai/tasks.json";
 import { accepts } from "../plugins/local-ai/tasks";
@@ -16,6 +19,7 @@ import type { AiTask } from "./generated/AiTask";
 import type { AiTaskInfo } from "./generated/AiTaskInfo";
 import type { CatalogModel } from "./generated/CatalogModel";
 import type { DownloadError } from "./generated/DownloadError";
+import type { EngineNeed } from "./generated/EngineNeed";
 import type { GetBlock } from "./generated/GetBlock";
 import type { InstallState } from "./generated/InstallState";
 import type { IpcError } from "./generated/IpcError";
@@ -248,6 +252,34 @@ function fitOf(needs: ModelNeeds, machine: MachineProfile): ModelFit {
   return machine.gpus.some((g) => g.unified && !g.software) ? "runsWell" : "slowCpuOnly";
 }
 
+/** Engine family a worker | model uses. */
+type MockEngine = "llama.cpp" | "whisper.cpp";
+
+/** Oldest engine reading a model's files (`catalog.json` `minEngine`; models absent here: any llama.cpp build). */
+export const MOCK_MIN_ENGINE: Readonly<
+  Record<string, { engine: MockEngine; version: string | null }>
+> = {
+  "embeddinggemma-2-q8_0": { engine: "llama.cpp", version: "b11452" },
+  "gemma-4-e2b-it-q4_0": { engine: "llama.cpp", version: null },
+  "gemma-4-e4b-it-q4_0": { engine: "llama.cpp", version: null },
+  "lfm3-1.7b-q4_k_m": { engine: "llama.cpp", version: "b11960" },
+  "whisper-large-v3-turbo-q5_0": { engine: "whisper.cpp", version: "v1.7.0" },
+};
+
+/** Engine this app ships (as `engine::files::PINS`: worker-v0.1.4 = llama.cpp b11429). */
+export const MOCK_ENGINE_PIN: { readonly engine: MockEngine; readonly build: string } = {
+  engine: "llama.cpp",
+  build: "b11429",
+};
+
+/** Release `have` reads files needing `needed` (llama.cpp `b<N>`; other spellings: the load decides), as
+ *  `permark_engine::engine_at_least`. */
+function engineAtLeast(have: string, needed: string): boolean {
+  const build = (tag: string): number | null => (/^b\d+$/.test(tag) ? Number(tag.slice(1)) : null);
+  const [h, n] = [build(have), build(needed)];
+  return h === null || n === null || h >= n;
+}
+
 /** Free space of the mock disk: the largest model does not fit. */
 export const MOCK_FREE_SPACE = 4 * GIB;
 /** Room kept free beyond a download (as the real engine). */
@@ -270,6 +302,8 @@ export type LocalAiProbe = {
   failTest: IpcError | null;
   /** The model engine is on this computer (`false`: the next test downloads it first). */
   engineInstalled: boolean;
+  /** Engine this app ships for this computer (as `WorkerPin` engine + build; `null`: none, nothing runs). */
+  engine: { engine: MockEngine; build: string } | null;
   /** Stops the download + move + test timers (tests). */
   stopAll(): void;
 };
@@ -351,6 +385,7 @@ export function createMockLocalAi(
     machine: structuredClone(MOCK_MACHINE),
     failTest: null,
     engineInstalled: false,
+    engine: { ...MOCK_ENGINE_PIN },
     stopAll: () => {
       if (timer !== null) clearInterval(timer);
       timer = null;
@@ -407,6 +442,25 @@ export function createMockLocalAi(
     return null;
   }
 
+  /** What the shipped engine lacks to run `m` (`null`: runs), as `files::engine_need`. */
+  function engineNeedOf(m: CatalogModel): EngineNeed | null {
+    const pin = probe.engine;
+    const min = MOCK_MIN_ENGINE[m.id] ?? { engine: "llama.cpp", version: null };
+    if (pin === null || pin.engine !== min.engine) return "missing";
+    return min.version === null || engineAtLeast(pin.build, min.version) ? null : "newer";
+  }
+
+  /** Refuses a model the shipped engine cannot run (Get, assign: `newerEngine` | `missingEngine`). */
+  function runnable(m: CatalogModel): void {
+    const need = engineNeedOf(m);
+    if (need !== null)
+      throw new MockPluginError(
+        "unsupported",
+        m.id,
+        need === "newer" ? "newerEngine" : "missingEngine",
+      );
+  }
+
   function installState(m: CatalogModel): InstallState {
     const now = live.get(m.id);
     const total = m.bytes;
@@ -431,6 +485,7 @@ export function createMockLocalAi(
       state: installState(m),
       installedVersion: installed.get(m.lineage) ?? null,
       blocked: blockedOf(m),
+      engineNeed: engineNeedOf(m),
     };
   }
 
@@ -602,6 +657,7 @@ export function createMockLocalAi(
 
   function get(id: string): LocalAiState {
     const m = modelOf(id);
+    runnable(m);
     notMoving();
     if (!available()) throw new MockPluginError("unavailable", "store");
     const block = blockedOf(m);
@@ -663,13 +719,22 @@ export function createMockLocalAi(
     emit("local-ai:test", { model, phase });
   }
 
-  /** Starts a test of installed `id` (as `testrun.rs`: busy, not installed, nothing to test refused). */
+  /** Starts a test of installed `id` (as `testrun.rs`: busy, not installed, nothing to test, an engine that cannot
+   *  run it refused). */
   function startTest(id: string): null {
     const m = modelOf(id);
     if (test !== null) throw new MockPluginError("conflict", null, "testRunning");
     if (!installed.has(m.lineage)) throw new MockPluginError("conflict", id, "notInstalled");
     if (!m.capabilities.includes("chat") && !m.capabilities.includes("embed"))
       throw new MockPluginError("unsupported", id, "noTest");
+    // no engine for this computer: the run fails `notAvailable` (as `ModelHost::refusal`)
+    const need = probe.engine === null ? null : engineNeedOf(m);
+    if (need !== null)
+      throw new MockPluginError(
+        "unsupported",
+        "engine",
+        need === "newer" ? "engineTooOld" : "unsupported",
+      );
     const engine: ModelTestPhase[] = probe.engineInstalled
       ? []
       : [0, 0.25, 0.5, 0.75, 1].map((part): ModelTestPhase => ({
@@ -765,6 +830,7 @@ export function createMockLocalAi(
         const m = modelOf(model);
         if (!accepts(task, m.capabilities))
           throw new MockPluginError("unsupported", model, "incompatible");
+        runnable(m);
         if (!installed.has(m.lineage)) throw new MockPluginError("conflict", model, "notInstalled");
         assignments.set(task, m.lineage);
       }

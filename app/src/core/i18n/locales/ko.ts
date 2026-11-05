@@ -2235,6 +2235,10 @@ export default {
   "localAi.tasks.noneAvailable": "아직 이 작업에 맞는 모델이 없습니다. 모델에서 받으세요.",
   "localAi.tasks.budget":
     "이 모델들을 합치면 약 {needed}의 메모리가 필요하지만 이 컴퓨터에서 쓸 수 있는 양은 약 {available}입니다. 느리게 실행될 수 있습니다.",
+  "localAi.tasks.comingSoon":
+    "곧 제공. 이 작업에 맞는 모델이 아직 이 버전의 PerMark에서 실행되지 않습니다.",
+  "localAi.tasks.notUsable": "{name}은(는) 아직 이 버전의 PerMark에서 실행되지 않습니다.",
+  "localAi.tasks.notUsableOption": "{name} (아직 실행 불가)",
   "localAi.noModelOption": "할당 안 됨",
   "localAi.task.correction": "교정",
   "localAi.task.correction.hint": "맞춤법과 문법 수정을 제안합니다",
@@ -2294,6 +2298,9 @@ export default {
   "localAi.models.details.source": "출처",
   "localAi.models.details.size": "다운로드 크기",
   "localAi.models.details.restriction": "사용할 수 있는 사람",
+  "localAi.models.comingSoon": "곧 제공",
+  "localAi.models.needs.newer": "더 새로운 버전의 AI 엔진이 필요합니다.",
+  "localAi.models.needs.missing": "PerMark에 아직 없는 AI 엔진이 필요합니다.",
   "localAi.dl.waiting": "대기 중…",
   "localAi.dl.cancelLabel": "{name} 받기 취소",
   "localAi.dl.progress": "{done} / {total}",
