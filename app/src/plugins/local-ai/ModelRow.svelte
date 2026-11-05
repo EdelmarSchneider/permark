@@ -15,7 +15,7 @@
   import type { ModelFit } from "../../api/generated/ModelFit";
   import type { ModelStatus } from "../../api/generated/ModelStatus";
   import { apiErrorText } from "../../core/errors";
-  import { language, t, tn } from "../../core/i18n";
+  import { language, sizeText, t, tn } from "../../core/i18n";
   import { localAi } from "./store.svelte";
   import type { AiTask } from "./tasks";
   import {
@@ -25,7 +25,6 @@
     fitKey,
     languagesText,
     percentText,
-    sizeText,
     taskKey,
   } from "./words";
 

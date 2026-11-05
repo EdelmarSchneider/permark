@@ -5,7 +5,7 @@ import type { ApiError } from "../../api";
 import type { DownloadError } from "../../api/generated/DownloadError";
 import type { ModelFit } from "../../api/generated/ModelFit";
 import { apiErrorText } from "../../core/errors";
-import { language, t, tn, type MessageKey } from "../../core/i18n";
+import { language, sizeText, t, tn, type MessageKey } from "../../core/i18n";
 import type { AiTask, ModelCapability } from "./tasks";
 
 /** Languages named before "and N more". */
@@ -107,14 +107,14 @@ export function languagesText(codes: readonly string[]): string {
   return new Intl.ListFormat(locale, { type: "conjunction" }).format(parts);
 }
 
-/** A download | memory size: "310 MB", "3.4 GB" (decimal units, as stores and disks show them). */
-export function sizeText(bytes: number): string {
-  const giga = bytes >= 1e9;
+/** A memory size: "6 GB", "128 MB" (binary units with the familiar names, as systems show memory: 16 GiB -> 16 GB). */
+export function memoryText(bytes: number): string {
+  const giga = bytes >= 2 ** 30;
   return new Intl.NumberFormat(language.locale, {
     style: "unit",
     unit: giga ? "gigabyte" : "megabyte",
     maximumFractionDigits: giga ? 1 : 0,
-  }).format(bytes / (giga ? 1e9 : 1e6));
+  }).format(bytes / (giga ? 2 ** 30 : 2 ** 20));
 }
 
 /** A share of a download: "42%" (rounded down: 100% only when it is all there). */
@@ -171,6 +171,18 @@ function reasonKey(reason: string | null): MessageKey | null {
       return "localAi.err.withdrawn";
     case "noUpdate":
       return "localAi.err.noUpdate";
+    case "notAbsolute":
+      return "localAi.err.notAbsolute";
+    case "insideProject":
+      return "localAi.err.insideProject";
+    case "insideStore":
+      return "localAi.err.insideStore";
+    case "insideAppData":
+      return "localAi.err.insideAppData";
+    case "empty":
+      return "localAi.err.tokenEmpty";
+    case "tooLong":
+      return "localAi.err.tokenTooLong";
     default:
       return null;
   }
@@ -183,4 +195,13 @@ export function errorText(error: ApiError): string {
     reasonKey(error.error.detail) ??
     (error.error.kind === "unavailable" ? reasonKey(error.error.subject) : null);
   return key === null ? apiErrorText(error) : t(key);
+}
+
+/** A store change refused until the person says what happens to the installed models (move | keep). */
+export function asksMoveOrKeep(error: ApiError): boolean {
+  return (
+    error.kind === "backend" &&
+    error.error.kind === "conflict" &&
+    error.error.detail === "modeRequired"
+  );
 }

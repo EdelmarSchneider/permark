@@ -1,16 +1,22 @@
 <script lang="ts">
-  // Settings > Local AI: what each job uses, the models, then (later units) this computer, the storage, the token.
+  // Settings > Local AI: what each job uses, the models, this computer, the storage, the Hugging Face token (only while
+  // a listed model needs one).
   // Opening it reads the state; it never starts a download. Opened from the palette: the keyboard lands on the first
   // control.
   import { tick, untrack } from "svelte";
   import { t } from "../../core/i18n";
   import { ui } from "../../core/shell/ui.svelte";
   import JobsCard from "./JobsCard.svelte";
+  import MachineCard from "./MachineCard.svelte";
   import ModelsCard from "./ModelsCard.svelte";
+  import StorageCard from "./StorageCard.svelte";
   import { LOCAL_AI_PAGE, localAi } from "./store.svelte";
+  import TokenCard from "./TokenCard.svelte";
   import { errorText } from "./words";
 
   const load = $derived(localAi.load);
+  /** The token card shows only while a listed model needs a Hugging Face token. */
+  const gated = $derived(localAi.catalog?.models.some((m) => m.gated) ?? false);
   let section: HTMLElement | undefined = $state();
 
   // follows the backend while the page shows
@@ -46,7 +52,11 @@
     <p class="intro">{t("localAi.intro")}</p>
     <JobsCard />
     <ModelsCard />
-    <!-- This computer, Storage, Token cards: later units, in this order -->
+    <MachineCard />
+    <StorageCard />
+    {#if gated}
+      <TokenCard />
+    {/if}
   {:else}
     <p class="quiet">{t("app.loading")}</p>
   {/if}

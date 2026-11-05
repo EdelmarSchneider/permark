@@ -3,12 +3,12 @@
   // No such model: the select is off and the row says so. Assigned models needing more memory than this computer has
   // for them: a warning in words (icon beside, never color alone).
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
-  import { t } from "../../core/i18n";
+  import { sizeText, t } from "../../core/i18n";
   import Card from "../../core/shell/settings/Card.svelte";
   import SettingRow from "../../core/shell/settings/SettingRow.svelte";
   import { localAi } from "./store.svelte";
   import { TASKS, type AiTask } from "./tasks";
-  import { errorText, sizeText, taskHintKey, taskKey } from "./words";
+  import { errorText, taskHintKey, taskKey } from "./words";
 
   const id = $props.id();
   const rows = $derived(

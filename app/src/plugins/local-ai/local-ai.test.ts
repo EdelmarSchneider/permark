@@ -13,10 +13,10 @@ const { api } = await import("../../api");
 const { ContributionRegistry, PluginHost, pluginLoaders } =
   await import("../../core/plugins/registry.svelte");
 const { ui } = await import("../../core/shell/ui.svelte");
-const { language } = await import("../../core/i18n");
+const { language, sizeText } = await import("../../core/i18n");
 const { MOCK_MACHINE } = await import("../../api/mockLocalAi");
 const { localAi, LOCAL_AI_PAGE } = await import("./store.svelte");
-const { languagesText, sizeText, errorText } = await import("./words");
+const { languagesText, errorText } = await import("./words");
 const { default: LocalAiSection } = await import("./LocalAiSection.svelte");
 
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
