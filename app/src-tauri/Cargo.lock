@@ -3315,6 +3315,7 @@ dependencies = [
  "permark-plugin-broken-links",
  "permark-plugin-comments",
  "permark-plugin-convert",
+ "permark-plugin-correction",
  "permark-plugin-fmt-dotenv",
  "permark-plugin-fmt-ignore",
  "permark-plugin-fmt-ini",
@@ -3454,6 +3455,18 @@ dependencies = [
  "toml_edit 0.25.17+spec-1.1.0",
  "ts-rs",
  "yaml-rust2",
+]
+
+[[package]]
+name = "permark-plugin-correction"
+version = "0.8.1"
+dependencies = [
+ "permark-core",
+ "permark-plugin-local-ai",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ts-rs",
 ]
 
 [[package]]

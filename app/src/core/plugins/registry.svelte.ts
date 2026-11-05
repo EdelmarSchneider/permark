@@ -6,6 +6,7 @@ import type { Manifest } from "../../api/generated/Manifest";
 import type { PluginId } from "../../api/generated/PluginId";
 import type { Block, Context, DocumentView, ProjectRow } from "../../api";
 import { available, type Requirement } from "../conditions/available";
+import type { MenuEntry } from "../explorer/menu";
 import type { MessageKey } from "../i18n";
 import type { PluginPageId } from "../shell/ui.svelte";
 import type {
@@ -258,6 +259,20 @@ export type Contribution = Owned &
         run: (source: string, language: string) => void;
       }
     | { kind: "frontMatterCard"; id: string; view: LazyComponent<FrontMatterProps> }
+    /**
+     * An icon button with the mode switch while the document is edited (Edit | Source): opens a menu of `entries` below
+     * it (correct the selection | paragraph | document). `when` reactive (absent = true); `command`: the command whose
+     * keys the tooltip shows after `label`.
+     */
+    | {
+        kind: "editAction";
+        id: string;
+        label: MessageKey;
+        icon: Component<{ size?: number }>;
+        when?: () => boolean;
+        command?: string;
+        entries: () => MenuEntry[];
+      }
   );
 
 export type ContributionKind = Contribution["kind"];

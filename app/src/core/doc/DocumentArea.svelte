@@ -17,7 +17,7 @@
   import { editExtra } from "./headerFit";
   import ImageZoom from "./ImageZoom.svelte";
   import MarkdownBody from "./MarkdownBody.svelte";
-  import ModeSwitch from "../editing/ModeSwitch.svelte";
+  import ModeSwitch, { shownEditActions } from "../editing/ModeSwitch.svelte";
   import { SHEET_FORMATS } from "../config/formats";
   import { chooseMode, editKindOf, openRemembered } from "../editing/choose";
   import { editing } from "../editing/session.svelte";
@@ -243,6 +243,7 @@
           extra={editExtra(
             editing.mode !== "view" && editing.policy.kind === "explicit",
             editing.mode === "source" && editing.kind === "markdown",
+            shownEditActions(editing.mode).length,
           )}
         />
         {#each bars as bar (bar.owner + bar.id)}

@@ -2,5 +2,6 @@
 
 export { buildDoc, compose, type Built, type Composed } from "./compose";
 export { createCore, LOCKED, type Core, type LockReason, type LockedHost } from "./core";
+export { applyEdits, blockOf, scopeIn } from "./edits";
 export { formatOf, run, type BlockType, type Command, type Format } from "./commands";
 export { appPlugins, slashAt, type PluginHost, type SlashState } from "./plugins";

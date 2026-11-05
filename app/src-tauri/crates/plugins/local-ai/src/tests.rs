@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use super::*;
 use crate::catalog::{FileRole, PUBLISHERS};
 
+mod host;
 mod installs;
 mod store;
 mod testrun;

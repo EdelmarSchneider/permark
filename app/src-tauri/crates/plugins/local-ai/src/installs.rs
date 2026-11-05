@@ -1210,6 +1210,17 @@ impl Installs {
             .collect()
     }
 
+    /// A model is assigned to `task`, from the state alone (no engine started, no disk read): dormant checks.
+    #[must_use]
+    pub fn is_assigned(&self, task: Task) -> bool {
+        self.inner().state.assignments.contains_key(&task)
+    }
+
+    /// Lineage assigned to `task`, from the state alone ([`crate::ModelHost::serves`]).
+    pub(crate) fn assigned_lineage(&self, task: Task) -> Option<String> {
+        self.inner().state.assignments.get(&task).cloned()
+    }
+
     /// Stops a store move (copies removed, old store kept) + every download, joins both (plugin off); parts kept.
     pub fn shutdown(&self) {
         if let Some(mover) = &self.inner().moving {

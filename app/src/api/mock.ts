@@ -21,6 +21,7 @@ import { createMockConfig } from "./mockConfig";
 import { createMockDistribution, type DistributionProbe } from "./mockDistribution";
 import { createMockTokens, type TokensProbe } from "./mockTokens";
 import { createMockLocalAi, type LocalAiProbe } from "./mockLocalAi";
+import { createMockCorrection, type CorrectionProbe } from "./mockCorrection";
 import { createMockConvert, type ConvertProbe } from "./mockConvert";
 import { createMockEditing, type MockEditProbe } from "./mockEdit";
 import { createMockImport, type ImportProbe } from "./mockImport";
@@ -222,6 +223,8 @@ export type MockProbe = {
   convert: ConvertProbe;
   /** Local AI: calls made, disk space, this computer, download + move timers. */
   localAi: LocalAiProbe;
+  /** Correction: calls made, the status answer, a failure for the next run, the run timer. */
+  correction: CorrectionProbe;
   /** Drop into project: what lies outside, the plans and applies, a hold to keep one running. */
   imports: ImportProbe;
   /** Picture files read for a drop on an editor, by path. */
@@ -465,6 +468,7 @@ export function createMockApi(): Api & {
     "local-ai:progress": new Set(),
     "local-ai:move": new Set(),
     "local-ai:test": new Set(),
+    "correction:run": new Set(),
   };
   const distribution = createMockDistribution((event, payload) => {
     for (const handler of appListeners[event]) handler(payload);
@@ -483,12 +487,27 @@ export function createMockApi(): Api & {
     },
     () => [rootNow()],
   );
+  const correction = createMockCorrection(
+    (event, payload) => {
+      for (const handler of appListeners[event]) handler(payload);
+    },
+    () =>
+      localAi.handlers["local-ai.state"]({}).assignments.some(
+        (a) => a.task === "correction" && a.model !== null,
+      ),
+  );
   const plugins = createMockPlugins(
     emitPlugin,
     () => mockView("docs/guide.md", [], true)?.hash ?? "0",
     organizing,
     notes,
-    { ...distribution.handlers, ...tokens.handlers, ...convert.handlers, ...localAi.handlers },
+    {
+      ...distribution.handlers,
+      ...tokens.handlers,
+      ...convert.handlers,
+      ...localAi.handlers,
+      ...correction.handlers,
+    },
     // read when asked (the projects mock is made just below)
     () => projects.probe.viewOf(rootNow()),
   );
@@ -520,6 +539,7 @@ export function createMockApi(): Api & {
     tokens: tokens.probe,
     convert: convert.probe,
     localAi: localAi.probe,
+    correction: correction.probe,
     imports: importing.probe,
     pictures: [],
     liveOff: (off) => {

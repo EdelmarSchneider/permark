@@ -116,17 +116,13 @@ impl LlamaEngine {
         })
     }
 
-    /// GPU with the most memory (D-7: one device, no adapter picker).
+    /// The GPU to run on (D-7: one device, no adapter picker): see [`gpu_rank`].
     fn gpu(&self) -> Option<&LlamaBackendDevice> {
         self.devices
             .iter()
-            .filter(|d| {
-                matches!(
-                    d.device_type,
-                    LlamaBackendDeviceType::Gpu | LlamaBackendDeviceType::IntegratedGpu
-                )
-            })
-            .max_by_key(|d| d.memory_total)
+            .filter_map(|d| gpu_rank(d.device_type, d.memory_total).map(|rank| (rank, d)))
+            .max_by_key(|(rank, _)| *rank)
+            .map(|(_, d)| d)
     }
 
     /// Runs `f` on the loaded session `id`.
@@ -180,6 +176,17 @@ fn context_params(n_ctx: u32, threads: i32, cpu: bool) -> LlamaContextParams {
         .with_n_threads(threads)
         .with_n_threads_batch(threads)
         .with_op_offload(!cpu)
+}
+
+/// Preference of a device as the GPU to run on: a dedicated GPU always before an integrated one (an iGPU reports
+/// shared system RAM as its memory, e.g. 48 GB on a desktop with a 16 GB card), then the most memory; not a GPU ->
+/// `None`.
+fn gpu_rank(kind: LlamaBackendDeviceType, memory: usize) -> Option<(bool, usize)> {
+    match kind {
+        LlamaBackendDeviceType::Gpu => Some((true, memory)),
+        LlamaBackendDeviceType::IntegratedGpu => Some((false, memory)),
+        _ => None,
+    }
 }
 
 /// Half the logical CPUs (~ physical cores), at least 1.
@@ -635,4 +642,34 @@ fn take_utf8(bytes: &mut Vec<u8>) -> String {
     let text = String::from_utf8_lossy(&bytes[..valid]).into_owned();
     bytes.drain(..valid);
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{gpu_rank, LlamaBackendDeviceType as Kind};
+
+    #[test]
+    fn a_dedicated_gpu_wins_over_an_integrated_one_with_more_memory() {
+        let pick = |devices: &[(Kind, usize)]| {
+            devices
+                .iter()
+                .enumerate()
+                .filter_map(|(i, &(kind, memory))| gpu_rank(kind, memory).map(|rank| (rank, i)))
+                .max_by_key(|(rank, _)| *rank)
+                .map(|(_, i)| i)
+        };
+        // iGPU first in enumeration order, reporting shared RAM (the bug: picked over a 16 GB card)
+        let igpu_then_card = [
+            (Kind::IntegratedGpu, 48 << 30),
+            (Kind::Gpu, 16 << 30),
+            (Kind::Cpu, 64 << 30),
+        ];
+        assert_eq!(pick(&igpu_then_card), Some(1));
+        assert_eq!(
+            pick(&[(Kind::Gpu, 8 << 30), (Kind::Gpu, 16 << 30)]),
+            Some(1)
+        );
+        assert_eq!(pick(&[(Kind::IntegratedGpu, 8 << 30)]), Some(0));
+        assert_eq!(pick(&[(Kind::Cpu, 8 << 30), (Kind::Accelerator, 1)]), None);
+    }
 }

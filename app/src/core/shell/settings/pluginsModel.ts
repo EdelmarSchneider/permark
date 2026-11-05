@@ -21,6 +21,7 @@ export const KNOWN_PLUGINS = [
   "word-count",
   "token-count",
   "local-ai",
+  "correction",
   "prompt-blocks",
   "frontmatter-card",
   "highlight",

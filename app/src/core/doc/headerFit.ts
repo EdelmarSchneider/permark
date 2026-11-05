@@ -13,9 +13,11 @@ export const FOLD_AT = 460;
 /** Extra width of the Save button and of the diagram toggle (Source of Markdown). */
 export const SAVE_PX = 70;
 export const DIAGRAM_PX = 30;
+/** Extra width of each edit action button (a plugin's `editAction`, Edit | Source). */
+export const ACTION_PX = 30;
 
-/** The level for a header `width` px wide; `extra` = px of edit controls shown (Save, diagram toggle). A width not
- *  measured yet (0, not finite) = `full`, so the first frame never flashes the compact row. */
+/** The level for a header `width` px wide; `extra` = px of edit controls shown (Save, diagram toggle, edit actions).
+ *  A width not measured yet (0, not finite) = `full`, so the first frame never flashes the compact row. */
 export function headerFit(width: number, extra: number): HeaderFit {
   if (!Number.isFinite(width) || width <= 0) return "full";
   const more = Number.isFinite(extra) && extra > 0 ? extra : 0;
@@ -24,7 +26,7 @@ export function headerFit(width: number, extra: number): HeaderFit {
   return "compact";
 }
 
-/** The px the edit controls add to the header in this state. */
-export function editExtra(save: boolean, diagram: boolean): number {
-  return (save ? SAVE_PX : 0) + (diagram ? DIAGRAM_PX : 0);
+/** The px the edit controls add to the header in this state (`actions`: edit action buttons shown). */
+export function editExtra(save: boolean, diagram: boolean, actions = 0): number {
+  return (save ? SAVE_PX : 0) + (diagram ? DIAGRAM_PX : 0) + Math.max(0, actions) * ACTION_PX;
 }

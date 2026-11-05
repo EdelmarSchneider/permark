@@ -2412,6 +2412,48 @@ const en = {
   "localAi.test.retryLabel": "Test {name} again",
   "localAi.test.cancelled": "Test stopped.",
   "localAi.test.closeLabel": "Close the test of {name}",
+  // ---- correction (plugin `correction`)
+  "plugin.correction.name": "Correction",
+  "plugin.correction.about":
+    "Fixes spelling, grammar and punctuation with a small AI model on this computer. Every change is shown for review before it goes in, and the text never leaves the computer.",
+  "correction.action": "Correct spelling and grammar",
+  "correction.command": "Correct spelling and grammar",
+  "correction.commandDocument": "Correct spelling and grammar in the whole document",
+  "correction.scope.selection": "Selection",
+  "correction.scope.paragraph": "This paragraph",
+  "correction.scope.document": "Whole document",
+  "correction.next": "Next suggestion",
+  "correction.prev": "Previous suggestion",
+  "correction.bar": "Spelling and grammar suggestions",
+  "correction.position": "{i} / {n}",
+  "correction.loading": "Getting the model ready…",
+  "correction.checking": "Checking part {i} of {n}…",
+  "correction.found.one": "{n} suggestion",
+  "correction.found.other": "{n} suggestions",
+  "correction.clean": "No mistakes found.",
+  "correction.nothing": "There's no text to check here.",
+  "correction.stopped.one": "Stopped. {n} suggestion found so far.",
+  "correction.stopped.other": "Stopped. {n} suggestions found so far.",
+  "correction.failed": "The text couldn't be checked.",
+  "correction.failed.noModel":
+    "The model chosen for correction isn't available. Choose one on the Local AI page.",
+  "correction.failed.noEngine":
+    "The AI engine isn't on this computer yet. Get it with Test on the Local AI page.",
+  "correction.discarded.one": "{n} part was left as it was because the model changed too much.",
+  "correction.discarded.other":
+    "{n} parts were left as they were because the model changed too much.",
+  "correction.outdated.one": "{n} suggestion no longer applies because the text changed.",
+  "correction.outdated.other": "{n} suggestions no longer apply because the text changed.",
+  "correction.sr.replace": "Suggestion {i} of {n}: replace “{a}” with “{b}”",
+  "correction.sr.insert": "Suggestion {i} of {n}: add “{b}”",
+  "correction.sr.remove": "Suggestion {i} of {n}: remove “{a}”",
+  "correction.accept": "Accept",
+  "correction.reject": "Reject",
+  "correction.acceptAll": "Accept all",
+  "correction.rejectAll": "Reject all",
+  "correction.done": "Done",
+  "correction.retry": "Try again",
+  "correction.openSettings": "Open Local AI settings",
 } as const;
 
 export default en;

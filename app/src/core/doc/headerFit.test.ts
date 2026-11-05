@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { DIAGRAM_PX, editExtra, FOLD_AT, FULL_AT, headerFit, SAVE_PX } from "./headerFit";
+import {
+  ACTION_PX,
+  DIAGRAM_PX,
+  editExtra,
+  FOLD_AT,
+  FULL_AT,
+  headerFit,
+  SAVE_PX,
+} from "./headerFit";
 import { PAGE_MIN } from "../shell/layout";
 
 describe("what fits the document header", () => {
@@ -22,6 +30,13 @@ describe("what fits the document header", () => {
     expect(headerFit(FULL_AT + save, save)).toBe("full");
     expect(headerFit(FOLD_AT, save)).toBe("compact");
     expect(headerFit(FOLD_AT + save, save)).toBe("fold");
+  });
+
+  it("each edit action button (a plugin's, with the mode switch) counts too", () => {
+    expect(editExtra(false, false, 2)).toBe(2 * ACTION_PX);
+    expect(editExtra(true, true, 1)).toBe(SAVE_PX + DIAGRAM_PX + ACTION_PX);
+    expect(editExtra(true, false, -1)).toBe(SAVE_PX);
+    expect(headerFit(FULL_AT + SAVE_PX, editExtra(true, false, 1))).toBe("fold");
   });
 
   it("a width not measured yet reads as full; garbage extra counts as none", () => {
