@@ -9,24 +9,28 @@
 //!   word.
 //! - tokens = whitespace-separated words; [`FakeEngine::crash`] -> sessions lost, calls answer `EngineCrashed` until
 //!   next `load` (worker restart).
+//! - [`FakeEngine::paced`]: after each streamed item (delta, segment, chunk) waits up to `pace` for cancel
+//!   -> cancel across a worker pipe lands deterministically in tests.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use permark_core::fsx;
 use serde_json::json;
 
 use super::{
-    CancelToken, ChatRequest, Device, EmbedRole, EmbeddingFingerprint, Embeddings, Engine,
-    EngineCaps, EngineError, Finish, GenEvent, LoadOpts, MemoryEstimate, ModelFiles, PcmChunk,
-    Role, Segment, SessionId, Usage,
+    CancelToken, Capability, ChatRequest, Device, EmbedRole, EmbeddingFingerprint, Embeddings,
+    Engine, EngineCaps, EngineError, FileRole, Finish, GenEvent, LoadOpts, MemoryEstimate,
+    ModelFiles, PcmChunk, Role, Segment, SessionId, Usage,
 };
-use crate::catalog::{Capability, FileRole};
 
 /// See module doc.
 #[derive(Debug)]
 pub struct FakeEngine {
     caps: EngineCaps,
+    pace: Option<Duration>,
     inner: Mutex<Inner>,
 }
 
@@ -83,7 +87,23 @@ impl FakeEngine {
                 gpu,
                 version: "fake-1".to_owned(),
             },
+            pace: None,
             inner: Mutex::new(Inner::default()),
+        }
+    }
+
+    /// Waits up to `pace` for cancel after each streamed item (see module doc).
+    #[must_use]
+    pub fn paced(mut self, pace: Duration) -> Self {
+        self.pace = Some(pace);
+        self
+    }
+
+    fn pause(&self, cancel: &CancelToken) {
+        let Some(pace) = self.pace else { return };
+        let start = Instant::now();
+        while !cancel.is_cancelled() && start.elapsed() < pace {
+            thread::sleep(Duration::from_millis(1));
         }
     }
 
@@ -183,9 +203,6 @@ impl Engine for FakeEngine {
             .any(|(role, _)| *role == FileRole::Weights)
         {
             return Err(EngineError::Corrupt);
-        }
-        if matches!(opts.device, Device::Gpu(_)) && !self.caps.gpu {
-            return Err(unsupported("gpu"));
         }
         for step in 0..=4u8 {
             if cancel.is_cancelled() {
@@ -330,6 +347,7 @@ impl Engine for FakeEngine {
                 format!(" {word}")
             }));
             completion += 1;
+            self.pause(cancel);
         }
         sink(done(completion, Finish::Stop));
         Ok(())
@@ -356,6 +374,7 @@ impl Engine for FakeEngine {
                 t1_ms: n * 1000 + len,
                 text: format!("{lang} second {n}"),
             });
+            self.pause(cancel);
         }
         Ok(())
     }
@@ -379,6 +398,7 @@ impl Engine for FakeEngine {
                 rate: SPEECH_RATE,
                 samples: vec![0.0; (SPEECH_RATE / 10) as usize],
             });
+            self.pause(cancel);
         }
         Ok(())
     }

@@ -3261,6 +3261,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "permark-engine"
+version = "0.8.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ts-rs",
+]
+
+[[package]]
 name = "permark-plugin-agent"
 version = "0.8.1"
 dependencies = [
@@ -3432,6 +3441,7 @@ name = "permark-plugin-local-ai"
 version = "0.8.1"
 dependencies = [
  "permark-core",
+ "permark-engine",
  "serde",
  "serde_json",
  "sha2 0.10.9",

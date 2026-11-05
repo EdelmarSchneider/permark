@@ -1,0 +1,22 @@
+[package]
+name = "permark-engine"
+description = "PerMark model engine contract: the Engine trait, its worker wire protocol (JSON lines over stdio) and the host proxy."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Shared by the app (host) and the engine worker: serde only. NEVER depend on `permark-core` | `tauri` here.
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+# TS mirror of `Capability` (plugin `local-ai` turns it on).
+ts-rs = { workspace = true, optional = true }
+
+[features]
+ts = ["dep:ts-rs"]
+
+[lints]
+workspace = true

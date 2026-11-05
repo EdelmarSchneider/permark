@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/plugins/*", "crates/shell-ext"]
+members = ["crates/core", "crates/engine", "crates/plugins/*", "crates/shell-ext"]
 resolver = "2"
 
 # Version source = app/package.json; written here by `npm run version:sync`.
@@ -12,6 +12,7 @@ authors = ["Edelmar Schneider"]
 
 [workspace.dependencies]
 permark-core = { path = "crates/core" }
+permark-engine = { path = "crates/engine" }
 permark-plugin-frontmatter-card = { path = "crates/plugins/frontmatter-card" }
 permark-plugin-follow = { path = "crates/plugins/follow" }
 permark-plugin-git = { path = "crates/plugins/git" }

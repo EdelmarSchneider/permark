@@ -678,7 +678,7 @@ fn model_for_answers_the_assigned_installed_model() {
     assert_eq!(model.dir, version_dir(&lab, &model.lineage, 1));
     assert!(model.dir.is_dir());
     // AC-10: the engine finds every file of the installed version
-    let files = crate::engine::ModelFiles::of(&model, &cat);
+    let files = crate::engine::model_files(&model, &cat);
     assert_eq!(files.files.len(), model.files.len());
     assert!(files.files.iter().all(|(_, path)| path.is_file()));
     assert_eq!(installs.model_for(Task::Correction), ModelFor::NoModel);

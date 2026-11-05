@@ -26,38 +26,8 @@ pub const PUBLISHERS: [&str; 4] = ["google", "LiquidAI", "ggml-org", "ggerganov"
 
 const BUNDLED: &str = include_str!("catalog.json");
 
-/// What a model can do (stable names: stored in assignments, shared with TS).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export, rename = "ModelCapability")]
-pub enum Capability {
-    /// Text -> vectors (find by meaning).
-    Embed,
-    /// Follows instructions in a conversation (correct, rewrite, translate, answer).
-    Chat,
-    /// Calls tools from a conversation.
-    Tools,
-    /// Dedicated translator.
-    Translate,
-    /// Speech -> text.
-    Transcribe,
-    /// Text -> speech.
-    Speak,
-    /// Reads pictures.
-    Vision,
-}
-
-/// Part a file plays in a model.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum FileRole {
-    Weights,
-    /// Multimodal projector (pictures, audio).
-    Mmproj,
-    /// Multi-token prediction draft (speed-up).
-    Mtp,
-    Voice,
-}
+/// What a model can do + part a file plays: engine contract types, catalog JSON names (camelCase).
+pub use permark_engine::{Capability, FileRole};
 
 /// One pinned file of a model (also kept in the plugin state for an installed version).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
