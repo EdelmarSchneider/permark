@@ -8,6 +8,7 @@
 //!   not asked.
 //! - worker gone (EOF | bad line | write failure) -> `EngineCrashed`, session forgotten; next `load` = fresh worker.
 //! - host session ids own (unique per proxy); worker ids stay on the wire.
+//! - launch refused (`PermissionDenied`) -> `Blocked`; other launch failures -> `Io`.
 
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
@@ -203,7 +204,10 @@ impl WorkerEngine {
     }
 
     fn start(&self, cancel: &CancelToken) -> Result<Worker, EngineError> {
-        let pipes = (self.launch)().map_err(|e| EngineError::Io(e.to_string()))?;
+        let pipes = (self.launch)().map_err(|e| match e.kind() {
+            io::ErrorKind::PermissionDenied => EngineError::Blocked,
+            _ => EngineError::Io(e.to_string()),
+        })?;
         let mut worker = Worker::start(pipes);
         let hello = worker.hello(cancel)?;
         *lock(&self.caps) = Some(hello.caps);

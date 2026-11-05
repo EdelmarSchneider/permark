@@ -135,6 +135,17 @@ impl WorkerLog {
     }
 }
 
+/// Spawn failure of a resolved (installed, verified) worker: missing | refused now = taken by security software
+/// (D-14) -> `PermissionDenied` (the proxy answers [`EngineError::Blocked`]).
+fn blocked(error: io::Error) -> io::Error {
+    match error.kind() {
+        io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied => {
+            io::Error::new(io::ErrorKind::PermissionDenied, error)
+        }
+        _ => error,
+    }
+}
+
 /// Launch of the pinned worker: spawned piped in its folder, stderr drained into `log`.
 fn worker_launch(files: Arc<WorkerFiles>, log: Arc<WorkerLog>) -> Launch {
     Box::new(move || {
@@ -148,7 +159,7 @@ fn worker_launch(files: Arc<WorkerFiles>, log: Arc<WorkerLog>) -> Launch {
             stdout,
             stderr,
             mut child,
-        } = process::spawn_piped(&exe, &[], &cwd)?;
+        } = process::spawn_piped(&exe, &[], &cwd).map_err(blocked)?;
         // no drain thread: dropping `child` kills the worker
         log.drain(stderr)?;
         Ok(WorkerPipes {

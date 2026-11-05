@@ -12,8 +12,8 @@ use sha2::{Digest, Sha256};
 
 use super::*;
 
-const EXE: &[u8] = b"pretend worker program";
-const LIB: &[u8] = b"pretend ggml library bytes";
+pub(crate) const EXE: &[u8] = b"pretend worker program";
+pub(crate) const LIB: &[u8] = b"pretend ggml library bytes";
 
 fn file(name: &'static str, body: &[u8]) -> WorkerFile {
     WorkerFile {
@@ -25,7 +25,7 @@ fn file(name: &'static str, body: &[u8]) -> WorkerFile {
 }
 
 /// Pin of a test unit: worker + one library.
-fn pin() -> &'static WorkerPin {
+pub(crate) fn pin() -> &'static WorkerPin {
     let files: &'static [WorkerFile] =
         Box::leak(vec![file("worker.exe", EXE), file("ggml.dll", LIB)].into_boxed_slice());
     Box::leak(Box::new(WorkerPin {
@@ -37,7 +37,7 @@ fn pin() -> &'static WorkerPin {
     }))
 }
 
-fn url(file: &WorkerFile) -> String {
+pub(crate) fn url(file: &WorkerFile) -> String {
     format!("https://github.com{}", file.path)
 }
 

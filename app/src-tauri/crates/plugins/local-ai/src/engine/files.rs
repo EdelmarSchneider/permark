@@ -275,4 +275,4 @@ pub fn bytes(store: &Path) -> u64 {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

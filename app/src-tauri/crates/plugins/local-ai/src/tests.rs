@@ -14,6 +14,7 @@ use crate::catalog::{FileRole, PUBLISHERS};
 
 mod installs;
 mod store;
+mod testrun;
 
 /// Shared with vitest (`app/src/plugins/local-ai/tasks.test.ts`): both mirrors give the same answers.
 const TASKS_FIXTURE: &str = include_str!("../../../../../src/plugins/local-ai/tasks.json");

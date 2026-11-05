@@ -19,6 +19,7 @@ import type { MachineInfo } from "./generated/MachineInfo";
 import type { StoreMode } from "./generated/StoreMode";
 import type { StoreMove } from "./generated/StoreMove";
 import type { ModelProgress } from "./generated/ModelProgress";
+import type { ModelTest } from "./generated/ModelTest";
 import type { FolderBadge } from "./generated/FolderBadge";
 import type { FolderBadges } from "./generated/FolderBadges";
 import type { FolderJob } from "./generated/FolderJob";
@@ -674,6 +675,13 @@ export interface PluginMethods {
   "local-ai.revealStore": { args: Record<string, never>; result: null };
   /** This computer (read on the first call, kept ~30 s), a fit hint per catalog model, the budget warning. */
   "local-ai.machine": { args: Record<string, never>; result: MachineInfo };
+  /**
+   * Starts "Test model" of an installed model (answers at once; phases come as `local-ai:test`). Refused: `conflict` /
+   * `testRunning` (one test at a time), `conflict` / `notInstalled`, `unsupported` / `noTest` (speech-only model).
+   */
+  "local-ai.testModel": { args: { model: string }; result: null };
+  /** Stops the running test (engine download, load or run); its end comes as `local-ai:test` `cancelled`. */
+  "local-ai.cancelTest": { args: Record<string, never>; result: null };
   "fmt-toon.toJson": { args: { text: string }; result: string };
   "convert.analyze": {
     args: { job: number; source: ConvertSource; from?: string };
@@ -730,6 +738,12 @@ export interface AppPluginEvents {
   "local-ai:progress": ModelProgress;
   /** Store move progress (throttled); its end comes as `local-ai:state`. */
   "local-ai:move": Extract<StoreMove, { kind: "moving" }>;
+  /**
+   * One model test's phase: `engine` (engine download, first test only) -> `loading` -> `running` -> `done` |
+   * `failed` (error subject `engine`, detail `outOfMemory` | `notAvailable` | `crashed` | `blocked` | `engineTooOld` |
+   * `unsupported` | `corrupt` | `notLoaded`) | `cancelled`.
+   */
+  "local-ai:test": ModelTest;
 }
 export type AppPluginEventName = keyof AppPluginEvents;
 export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };

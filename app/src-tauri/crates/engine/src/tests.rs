@@ -196,6 +196,11 @@ fn caps_come_from_a_hello_and_a_failed_launch_is_io() {
     let failing = WorkerEngine::new(Box::new(|| Err(io::Error::other("no worker"))));
     assert_eq!(load(&failing), Err(EngineError::Io("no worker".into())));
     assert_eq!(failing.caps(), EngineCaps::default());
+    // D-14: the system refusing to start the worker = blocked (security software)
+    let refused = WorkerEngine::new(Box::new(|| {
+        Err(io::Error::from(io::ErrorKind::PermissionDenied))
+    }));
+    assert_eq!(load(&refused), Err(EngineError::Blocked));
 }
 
 #[test]
@@ -229,4 +234,8 @@ fn errors_read_as_plain_english() {
         "This is not supported here: gpu."
     );
     assert_eq!(EngineError::Cancelled.to_string(), "Stopped.");
+    assert_eq!(
+        EngineError::Blocked.to_string(),
+        "The model engine could not start: security software may have blocked it."
+    );
 }

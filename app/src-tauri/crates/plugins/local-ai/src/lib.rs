@@ -8,8 +8,9 @@
 //! RPC for the windows: `catalog`, `tasks`, `state`, `get`, `update`, `acceptLicense`, `cancel`, `deletePart`,
 //! `remove`, `assign`, `setToken`, `clearToken`, `setStore`, `cancelMove` (install calls answer the new
 //! [`LocalAiState`]), `revealStore`, `machine` ([`fit::MachineInfo`]: profile read on first call, fit hints,
-//! budget). Events (app scope): `state` (whole state after every change), `progress` (one model, throttled by the
-//! engine), `move` (store move, ~10/s).
+//! budget), `testModel` + `cancelTest` ([`testrun`], answer `null`). Events (app scope): `state` (whole state after
+//! every change), `progress` (one model, throttled by the engine), `move` (store move, ~10/s), `test`
+//! ([`testrun::ModelTest`]: one test's phases).
 //!
 //! "Remove data" (plugin off): core deletes the plugin's namespace (state + default store); [`Plugin::remove_data`]
 //! first removes the model folders of a chosen store (ONLY `<lineage>/<version>/` of known lineages there),
@@ -29,6 +30,7 @@ pub mod runtime;
 pub(crate) mod state;
 mod store;
 pub mod tasks;
+pub mod testrun;
 
 use std::collections::BTreeSet;
 
@@ -47,6 +49,7 @@ use serde::Deserialize;
 
 use crate::engine::files::{self, WorkerFiles};
 use crate::runtime::{Runtime, WorkerLog};
+use crate::testrun::{EngineNews, TestParts, Tester};
 
 pub use catalog::{Capability, Catalog, CatalogError, CatalogInfo, ModelInfo};
 pub use installs::{
@@ -95,13 +98,16 @@ struct Started {
     installs: Arc<Installs>,
     runtime: Arc<Runtime>,
     worker_files: Arc<WorkerFiles>,
+    tester: Arc<Tester>,
 }
 
 impl Running for Started {}
 
 impl Drop for Started {
     fn drop(&mut self) {
-        // off (before any data removal): every engine worker ends, downloads stop (parts kept), threads joined
+        // off (before any data removal): the test ends, every engine worker ends, downloads stop (parts kept),
+        // threads joined
+        self.tester.shutdown();
         self.runtime.release_all();
         self.worker_files.shutdown();
         self.installs.shutdown();
@@ -249,10 +255,11 @@ impl Plugin for LocalAi {
         // no download service in this app: install calls answer `unavailable`
         let kit = cx.app().and_then(|app| app.services.get::<DownloadKit>());
         // nothing created | spawned until a load (dormant)
+        let news = Arc::new(EngineNews::default());
         let worker_files = Arc::new(WorkerFiles::new(
             kit.as_deref(),
             cx.state_dir.join(files::DIR),
-            Arc::new(|_, _| {}),
+            news.listener(),
         ));
         let runtime = Arc::new(Runtime::new(
             Arc::clone(&worker_files),
@@ -289,11 +296,36 @@ impl Plugin for LocalAi {
                 Ok::<_, IpcError>(fit::advise(&c, machine.profile(), &assigned))
             }),
         ));
+        let tester = Arc::new(Tester::new(TestParts {
+            installs: Arc::clone(&installs),
+            catalog: Arc::clone(catalog),
+            runtime: Arc::clone(&runtime),
+            files: Arc::clone(&worker_files),
+            news,
+            events: cx.events().clone(),
+        }));
+        let t = Arc::clone(&tester);
+        rpc.extend(cx.rpc(
+            "testModel",
+            typed(move |args: ModelArgs, _| {
+                t.start(&args.model)?;
+                Ok::<_, IpcError>(())
+            }),
+        ));
+        let t = Arc::clone(&tester);
+        rpc.extend(cx.rpc(
+            "cancelTest",
+            typed(move |_: NoArgs, _| {
+                t.cancel();
+                Ok::<_, IpcError>(())
+            }),
+        ));
         Ok(Box::new(Started {
             _rpc: rpc,
             installs,
             runtime,
             worker_files,
+            tester,
         }))
     }
 

@@ -396,6 +396,8 @@ pub enum EngineError {
     /// Session unknown (never loaded | unloaded | lost in a crash).
     NotLoaded,
     Io(String),
+    /// The system refused to start the worker (host side only; D-14: security software | quarantine).
+    Blocked,
 }
 
 impl fmt::Display for EngineError {
@@ -411,6 +413,9 @@ impl fmt::Display for EngineError {
             }
             Self::NotLoaded => f.write_str("The model is not loaded."),
             Self::Io(e) => write!(f, "The model files could not be read: {e}"),
+            Self::Blocked => f.write_str(
+                "The model engine could not start: security software may have blocked it.",
+            ),
         }
     }
 }
