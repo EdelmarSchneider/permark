@@ -191,8 +191,17 @@ jobs:
 
       # llama.cpp is built by cmake (crate llama-cpp-sys-2); no network in the worker (LLAMA_CURL is off there).
       - name: Build the worker
-        if: env.RUN_THIS == 'true'
+        if: env.RUN_THIS == 'true' && runner.os != 'Windows'
         shell: bash
+        run: >-
+          cargo build --release --manifest-path app/src-tauri/Cargo.toml -p permark-engine
+          --bin permark-llm-worker --features ${{ matrix.features }}
+
+      # pwsh, not bash: Git Bash puts its own `link` (coreutils) ahead of MSVC's `link.exe` on PATH, and with the
+      # developer environment set rustc takes `link.exe` from PATH.
+      - name: Build the worker (Windows)
+        if: env.RUN_THIS == 'true' && runner.os == 'Windows'
+        shell: pwsh
         run: >-
           cargo build --release --manifest-path app/src-tauri/Cargo.toml -p permark-engine
           --bin permark-llm-worker --features ${{ matrix.features }}
