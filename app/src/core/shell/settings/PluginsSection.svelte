@@ -6,7 +6,7 @@
   import { remedyAction } from "../../commands/remedy";
   import { conditions } from "../../conditions/context.svelte";
   import { reasonKey, remedyKey } from "../../conditions/guidance";
-  import { t, type MessageKey } from "../../i18n";
+  import { sizeText, t, type MessageKey } from "../../i18n";
   import { api } from "../../../api";
   import { apiErrorText } from "../../errors";
   import type { WindowStore } from "../../window.svelte";
@@ -53,8 +53,8 @@
   const infos = $derived(listing.status === "ready" ? listing.plugins : []);
   const groups = $derived(grouped(infos));
   const inProject = $derived(conditions.current.workspace === "project");
-  /** The plugin whose "Remove data" is being confirmed. */
-  let confirming = $state<string | null>(null);
+  /** The plugin whose "Remove data" is being confirmed, with the bytes it frees (`null`: not known). */
+  let confirming = $state<{ id: string; bytes: number | null } | null>(null);
 
   function nameOf(id: string): string {
     const key = nameKey(id);
@@ -84,6 +84,20 @@
     const result = await api.pluginSetProject(info.manifest.id, choiceValue(choice));
     if (!result.ok) store.notifyFileOpFailed(result.error);
     await pluginsStore.load();
+  }
+
+  /** Asks the question; the bytes the removal frees join it once the backend tells them. */
+  async function askRemove(id: string): Promise<void> {
+    confirming = { id, bytes: null };
+    const result = await api.pluginDataBytes(id);
+    if (confirming?.id === id && result.ok) confirming = { id, bytes: result.value };
+  }
+
+  function removeQuestion(id: string, bytes: number | null): string {
+    const name = nameOf(id);
+    return bytes !== null && bytes > 0
+      ? t("plugins.removeConfirmBytes", { name, size: sizeText(bytes) })
+      : t("plugins.removeConfirm", { name });
   }
 
   async function removeData(info: PluginInfo): Promise<void> {
@@ -154,11 +168,11 @@
               {/if}
             </div>
             <div class="control">
-              {#if canRemoveData(info) && confirming !== id}
+              {#if canRemoveData(info) && confirming?.id !== id}
                 <button
                   type="button"
                   class="btn btn--ghost btn--sm"
-                  onclick={() => (confirming = id)}
+                  onclick={() => void askRemove(id)}
                 >
                   {t("plugins.removeData")}
                 </button>
@@ -172,9 +186,9 @@
                 onchange={(e) => void setApp(info, e.currentTarget.checked)}
               />
             </div>
-            {#if canRemoveData(info) && confirming === id}
+            {#if canRemoveData(info) && confirming?.id === id}
               <div class="confirm" role="group" aria-label={t("plugins.removeData")}>
-                <span>{t("plugins.removeConfirm", { name: nameOf(id) })}</span>
+                <span>{removeQuestion(id, confirming.bytes)}</span>
                 <button type="button" class="btn btn--sm" onclick={() => void removeData(info)}>
                   {t("plugins.removeYes")}
                 </button>

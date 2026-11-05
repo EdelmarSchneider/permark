@@ -5,6 +5,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Local AI models.** **Settings > Local AI** lists small AI models that can run on this computer, offline: EmbeddingGemma 2, Gemma 4 E2B and E4B, LFM3 1.7B and Whisper large-v3-turbo. Nothing is downloaded until you ask. You can get a model, cancel, resume after a restart, update or remove it, and accept its terms first when it has any. Each PerMark job (correction, translation, search by meaning, read aloud, dictation, assistant) can be given one of the installed models that can do it. The page shows your computer's memory and graphics card, says how well each model will run on it, and warns when the chosen models need more memory together than you have. You can choose where models are kept, outside your projects, and move them there. The features that use these models come in later versions. <!-- f: local-ai, settings -->
+
+### Changed
+- **Remove data** in **Settings > Plugins** now says how much space it frees. <!-- f: settings -->
+
 ## [0.8.1] - 2026-11-03
 
 ### Fixed

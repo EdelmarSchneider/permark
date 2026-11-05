@@ -20,7 +20,7 @@ import {
 import { createMockConfig } from "./mockConfig";
 import { createMockDistribution, type DistributionProbe } from "./mockDistribution";
 import { createMockTokens, type TokensProbe } from "./mockTokens";
-import { createMockLocalAi } from "./mockLocalAi";
+import { createMockLocalAi, type LocalAiProbe } from "./mockLocalAi";
 import { createMockConvert, type ConvertProbe } from "./mockConvert";
 import { createMockEditing, type MockEditProbe } from "./mockEdit";
 import { createMockImport, type ImportProbe } from "./mockImport";
@@ -220,6 +220,8 @@ export type MockProbe = {
   tokens: TokensProbe;
   /** The converter: the next answer, calls, saved files. */
   convert: ConvertProbe;
+  /** Local AI: calls made, disk space, this computer, download + move timers. */
+  localAi: LocalAiProbe;
   /** Drop into project: what lies outside, the plans and applies, a hold to keep one running. */
   imports: ImportProbe;
   /** Picture files read for a drop on an editor, by path. */
@@ -516,6 +518,7 @@ export function createMockApi(): Api & {
     distribution: distribution.probe,
     tokens: tokens.probe,
     convert: convert.probe,
+    localAi: localAi.probe,
     imports: importing.probe,
     pictures: [],
     liveOff: (off) => {

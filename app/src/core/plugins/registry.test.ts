@@ -149,6 +149,7 @@ describe("plugin host", () => {
       "highlight",
       "json-view",
       "live-feed",
+      "local-ai",
       "math",
       "media",
       "mermaid",
