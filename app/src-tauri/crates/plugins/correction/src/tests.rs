@@ -480,3 +480,5 @@ fn the_plugin_without_the_model_service_is_unavailable() {
     drop(running);
     assert!(call("status", json!({})).is_err(), "RPC gone after off");
 }
+
+mod eval;

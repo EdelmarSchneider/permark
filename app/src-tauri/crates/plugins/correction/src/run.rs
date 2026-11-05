@@ -416,7 +416,7 @@ impl Shared {
 
     /// Every piece in order (stops early on cancel).
     fn pieces(&self, job: &Job, session: &dyn Session) -> Result<(), EngineError> {
-        let preamble = tokens(session.count_tokens(&prompt::preamble())?);
+        let preamble = preamble_tokens(session)?;
         for piece in &job.pieces {
             if job.cancel.is_cancelled() {
                 return Ok(());
@@ -440,8 +440,16 @@ fn tokens(count: usize) -> u32 {
     u32::try_from(count).unwrap_or(u32::MAX)
 }
 
-/// One piece; `None`: cancelled during the answer.
-fn correct(
+/// Tokens of the prompt before the piece ([`prompt::preamble`]), counted once per run.
+///
+/// # Errors
+/// Engine failure.
+pub(crate) fn preamble_tokens(session: &dyn Session) -> Result<u32, EngineError> {
+    Ok(tokens(session.count_tokens(&prompt::preamble())?))
+}
+
+/// One piece (production path, also run by the eval set `tests/eval.rs`); `None`: cancelled during the answer.
+pub(crate) fn correct(
     session: &dyn Session,
     preamble: u32,
     text: &str,

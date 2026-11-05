@@ -3465,6 +3465,7 @@ dependencies = [
  "permark-plugin-local-ai",
  "serde",
  "serde_json",
+ "tempfile",
  "ts-rs",
 ]
 
