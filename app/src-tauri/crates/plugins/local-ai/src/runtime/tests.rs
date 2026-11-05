@@ -449,4 +449,8 @@ fn smoke_chat(runtime: &Runtime, chat: &std::path::Path, log: &std::path::Path) 
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
     assert!(parsed["ok"].is_boolean(), "{json}");
     runtime.unload(session);
+    // `PERMARK_SMOKE_PRINT_LOG` -> worker stderr (offload, graph splits) for performance checks
+    if std::env::var_os("PERMARK_SMOKE_PRINT_LOG").is_some() {
+        println!("--- worker log ---\n{}", saved_log(log));
+    }
 }
