@@ -18,7 +18,7 @@
   import { pictureDisplayUrl, pictureFiles, pictureLink } from "./pictures";
   import { baseName, pictureType } from "../explorer/importModel";
   import { relativeLink } from "./source/complete";
-  import type { Content, EditingSession } from "./session.svelte";
+  import type { Content, EditingSession, TextRange } from "./session.svelte";
   import type { Built, Command, Composed, Core, Format, LockReason, SlashState } from "./visual";
   import type { PickerKind } from "./visual/characters";
 
@@ -142,6 +142,16 @@
       scroller.scrollTop +=
         element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 48;
     }
+  }
+
+  /** Scrolls the block holding the start of `range` into view. */
+  function reveal(range: TextRange): void {
+    const now = composed();
+    if (!core || !mod || !now) return;
+    const index = mod.blockOf(now, range.from, range.from);
+    const node = index === null ? null : core.view.state.doc.maybeChild(index);
+    const line = node ? now.lines.get(node) : undefined;
+    if (line !== undefined) scrollToLine(line);
   }
 
   /** A diagram drawn in a locked block; the front matter as properties that can be edited. */
@@ -296,6 +306,17 @@
             view.posAtCoords({ left: point.x, top: point.y })?.pos ?? view.state.selection.from;
           void insertPictures(files, at);
         },
+        scope: (kind) => {
+          const now = composed();
+          return core && mod && now ? mod.scopeIn(core.view.state, now, kind) : null;
+        },
+        apply: (edits) => {
+          const now = composed();
+          if (!core || !mod || !now || core.view.composing) return false;
+          return mod.applyEdits(core, now, edits);
+        },
+        reveal: (range) => reveal(range),
+        composing: () => core?.view.composing ?? false,
       });
     })().catch((error: unknown) => {
       // the visual editor could not be made: the document opens in Source instead

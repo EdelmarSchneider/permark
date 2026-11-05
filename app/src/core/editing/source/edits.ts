@@ -5,6 +5,7 @@ import { isolateHistory } from "@codemirror/commands";
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import type { EditorState, TransactionSpec } from "@codemirror/state";
 import type { EditScope, TextEdit, TextRange } from "../session.svelte";
+import { checkEdits } from "../textEdits";
 
 /** Markdown blocks that are prose (a list item's | quote's text is a `Paragraph` inside it). */
 const PROSE = /^(Paragraph|ATXHeading[1-6]|SetextHeading[12])$/;
@@ -39,17 +40,10 @@ function blockAt(state: EditorState, pos: number): TextRange | null {
   return null;
 }
 
-/** One transaction (its own undo step) putting in every edit; `null` when any range is out of the text, backwards,
- *  overlapping another or no longer reads its `expect` (all or nothing). */
+/** One transaction (its own undo step) putting in every edit; `null` when the edits do not pass `checkEdits`. */
 export function editsSpec(state: EditorState, edits: readonly TextEdit[]): TransactionSpec | null {
-  if (edits.length === 0) return null;
-  const sorted = [...edits].sort((a, b) => a.from - b.from);
-  let end = 0;
-  for (const edit of sorted) {
-    if (edit.from < end || edit.to < edit.from || edit.to > state.doc.length) return null;
-    if (state.sliceDoc(edit.from, edit.to) !== edit.expect) return null;
-    end = edit.to;
-  }
+  const sorted = checkEdits(edits, state.doc.length, (from, to) => state.sliceDoc(from, to));
+  if (sorted === null) return null;
   return {
     changes: sorted.map(({ from, to, insert }) => ({ from, to, insert })),
     annotations: isolateHistory.of("full"),
