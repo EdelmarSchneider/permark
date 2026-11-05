@@ -69,6 +69,21 @@ function retype(n: number, text: string): PMNode {
   return view.state.doc;
 }
 
+/** Replaces the first `find` in a text node of the document with `by`. */
+function replaceText(find: string, by: string): PMNode {
+  const view = core.view;
+  let at = -1;
+  view.state.doc.descendants((node, pos) => {
+    if (at >= 0) return false;
+    const i = node.isText ? (node.text ?? "").indexOf(find) : -1;
+    if (i >= 0) at = pos + i;
+    return true;
+  });
+  if (at < 0) throw new Error(`no ${find}`);
+  view.dispatch(view.state.tr.insertText(by, at, at + find.length));
+  return view.state.doc;
+}
+
 /** Every corpus document is built in a real editor: slow machines need more than the default 5 s. */
 const CORPUS_MS = 30_000;
 
@@ -187,6 +202,87 @@ describe("compose", () => {
     });
     view.dispatch(view.state.tr.setBlockType(pos + 1, pos + 2, heading, { level: 2 }));
     expect(compose(core, built, view.state.doc).text).toBe("a\n\n\n\n## b\n\n\n\nc\n");
+  });
+
+  describe("adjacent edited blocks keep the separator between them", () => {
+    it("two paragraphs", async () => {
+      const built = await load("a teh\n\n\n\nb teh\n\nc\n");
+      replaceText("a teh", "a the");
+      const composed = compose(core, built, replaceText("b teh", "b the"));
+      expect(composed.text).toBe("a the\n\n\n\nb the\n\nc\n");
+      expect(composed.changed).toBe(2);
+    });
+
+    it("a list and a table", async () => {
+      const text = "Intro\n\n- one teh\n- two\n\n\n\n| a | b |\n| - | - |\n| teh | x |\n\nEnd\n";
+      const built = await load(text);
+      replaceText("one teh", "one the");
+      const composed = compose(core, built, replaceText("teh", "the"));
+      expect(composed.text.startsWith("Intro\n\n")).toBe(true);
+      expect(composed.text.endsWith("\n\nEnd\n")).toBe(true);
+      expect(composed.text).toMatch(/one the\n[-*+] two\n\n\n\n\|/);
+      expect(composed.text).not.toContain("teh");
+      expect(composed.changed).toBe(2);
+    });
+
+    it("a front matter card and the block after it", async () => {
+      const text = "---\ntitle: teh\n---\n\n\n\nBody teh.\n\nEnd\n";
+      const built = await load(text, [
+        { lineStart: 1, lineEnd: 3, kind: "frontMatter", lock: "frontMatter" },
+        { lineStart: 7, lineEnd: 7, kind: "paragraph", lock: null },
+        { lineStart: 9, lineEnd: 9, kind: "paragraph", lock: null },
+      ]);
+      const view = core.view;
+      const card = view.state.doc.firstChild;
+      if (card === null) throw new Error("no card");
+      view.dispatch(
+        view.state.tr.setNodeMarkup(0, undefined, {
+          ...card.attrs,
+          source: "---\ntitle: the\n---",
+        }),
+      );
+      const composed = compose(core, built, replaceText("Body teh.", "Body the."));
+      expect(composed.text).toBe("---\ntitle: the\n---\n\n\n\nBody the.\n\nEnd\n");
+      expect(composed.changed).toBe(2);
+    });
+  });
+
+  describe("a different number of blocks: separators fall back as before", () => {
+    const text = "a\n\n\n\nb c\n\n\n\nd\n";
+
+    it("one block split into two", async () => {
+      const built = await load(text);
+      const view = core.view;
+      let at = -1;
+      view.state.doc.descendants((node, pos) => {
+        if (node.isText && node.text === "b c") at = pos;
+      });
+      // "b c" -> "b" | "c"
+      view.dispatch(view.state.tr.split(at + 1).delete(at + 3, at + 4));
+      const composed = compose(core, built, view.state.doc);
+      expect(composed.text).toBe("a\n\nb\n\nc\n\nd\n");
+      expect(composed.changed).toBe(3);
+    });
+
+    it("two blocks merged", async () => {
+      const built = await load(text);
+      const view = core.view;
+      const second = view.state.doc.child(0).nodeSize + view.state.doc.child(1).nodeSize;
+      view.dispatch(view.state.tr.join(second));
+      const composed = compose(core, built, view.state.doc);
+      expect(composed.text).toBe("a\n\nb cd\n");
+      expect(composed.changed).toBe(3);
+    });
+
+    it("a block deleted and its neighbour edited", async () => {
+      const built = await load(text);
+      const view = core.view;
+      const first = view.state.doc.child(0).nodeSize;
+      view.dispatch(view.state.tr.delete(first, first + view.state.doc.child(1).nodeSize));
+      const composed = compose(core, built, replaceText("d", "D"));
+      expect(composed.text).toBe("a\n\nD\n");
+      expect(composed.changed).toBe(3);
+    });
   });
 
   it("keeps two lists apart when a list is written next to one with the same marker", async () => {
