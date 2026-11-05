@@ -133,8 +133,7 @@ jobs:
           ref: ${{ env.TAG }}
           persist-credentials: false
 
-      # Short target dir: the Vulkan shader generator (a cmake ExternalProject deep inside the llama-cpp-sys-2 build
-      # dir) failed under MSBuild with the default `app/src-tauri/target` (path length).
+      # Short target dir: keeps the deep llama-cpp-sys-2 build paths well under Windows MAX_PATH.
       - name: Set the target dir
         if: env.RUN_THIS == 'true'
         shell: bash
@@ -158,6 +157,24 @@ jobs:
           & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
           Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\${env:VULKAN_VERSION}"
           Add-Content $env:GITHUB_PATH "C:\VulkanSDK\${env:VULKAN_VERSION}\bin"
+
+      # Ninja instead of the Visual Studio generator (as llama.cpp's own Windows builds): under MSBuild the Vulkan
+      # shader generator (a cmake ExternalProject) ran its install step while its configure step was still running and
+      # failed ("Not a file: .../vulkan-shaders-gen-build/cmake_install.cmake"). Ninja needs the MSVC developer
+      # environment (cl, link, ninja on PATH), exported here for the later steps.
+      - name: Use Ninja with the MSVC developer environment (Windows)
+        if: env.RUN_THIS == 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          Import-Module "$vs\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments "-arch=x64 -host_arch=x64"
+          Get-Command ninja, cl | Format-Table Name, Source
+          foreach ($name in "PATH", "INCLUDE", "LIB", "LIBPATH", "VCToolsInstallDir", "VCINSTALLDIR", "WindowsSdkDir", "WindowsSDKVersion", "UCRTVersion", "UniversalCRTSdkDir") {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if ($value) { Add-Content $env:GITHUB_ENV "$name=$value" }
+          }
+          Add-Content $env:GITHUB_ENV "CMAKE_GENERATOR=Ninja"
 
       - name: Install the Vulkan SDK (Linux)
         if: env.RUN_THIS == 'true' && matrix.variant == 'vulkan' && runner.os == 'Linux'
