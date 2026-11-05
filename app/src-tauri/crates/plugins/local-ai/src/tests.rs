@@ -14,6 +14,7 @@ use crate::catalog::{FileRole, PUBLISHERS};
 
 mod installs;
 mod store;
+mod testrun;
 
 /// Shared with vitest (`app/src/plugins/local-ai/tasks.test.ts`): both mirrors give the same answers.
 const TASKS_FIXTURE: &str = include_str!("../../../../../src/plugins/local-ai/tasks.json");
@@ -76,7 +77,7 @@ impl Harness {
 }
 
 /// Every entry under `dir` (recursive), relative.
-fn entries(dir: &std::path::Path) -> Vec<String> {
+pub(crate) fn entries(dir: &std::path::Path) -> Vec<String> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(next) = stack.pop() {
@@ -285,6 +286,37 @@ fn the_embedder_says_how_it_embeds() {
         .all(|m| m.capabilities.contains(&Capability::Embed)));
 }
 
+/// Prompt formats = catalog data (engine crate rule): every named profile exists; engine floors per vendored build.
+#[test]
+fn every_model_names_prompt_data_the_catalog_holds() {
+    let catalog = catalog::bundled().unwrap();
+    for model in &catalog.models {
+        if let Some(name) = &model.prompt_profile {
+            let profile = catalog.prompt_profiles.get(name).unwrap();
+            assert!(
+                !profile.generation.is_empty() && !profile.stop.is_empty(),
+                "{name}"
+            );
+        }
+        if let Some(e) = &model.embedding {
+            let prefixes = catalog.prefix_profiles.get(&e.prefix_profile).unwrap();
+            assert!(!prefixes.query.is_empty() && !prefixes.document.is_empty());
+        }
+    }
+    // model card (google/embeddinggemma-2 config_sentence_transformers.json)
+    let gemma = &catalog.prefix_profiles["embeddinggemma-2"];
+    assert_eq!(gemma.query, "task: search result | query: ");
+    assert_eq!(gemma.document, "title: none | text: ");
+    assert!(matches!(
+        edited(|v| v["models"][1]["promptProfile"] = json!("nope")),
+        Err(CatalogError::Profile(_))
+    ));
+    assert!(matches!(
+        edited(|v| v["models"][0]["embedding"]["prefixProfile"] = json!("nope")),
+        Err(CatalogError::Profile(_))
+    ));
+}
+
 /// The bundled file with one edit (`edit` gets the JSON of the first model).
 fn edited(edit: impl FnOnce(&mut Value)) -> Result<Catalog, CatalogError> {
     let mut value: Value = serde_json::from_str(include_str!("catalog.json")).unwrap();
@@ -397,4 +429,19 @@ fn every_task_but_read_aloud_has_a_bundled_model() {
         // no voice model in the initial catalog (OS voices first, epic D-6)
         assert_eq!(any, task != Task::ReadAloud, "{task:?}");
     }
+}
+
+/// AC-6: "Remove data" tells the engine files too (plugin off: read from the profile).
+#[test]
+fn data_bytes_count_the_engine_files() {
+    let tmp = tempfile::tempdir().unwrap();
+    let app = StateStore::app(&AppDirs::under(tmp.path()));
+    let before = plugin().data_bytes(&app).unwrap();
+    let unit = app
+        .plugin_dir(&ID)
+        .join(engine::files::DIR)
+        .join("worker-v0.0.1-test-cpu");
+    std::fs::create_dir_all(&unit).unwrap();
+    std::fs::write(unit.join("worker.exe"), [0u8; 1234]).unwrap();
+    assert_eq!(plugin().data_bytes(&app).unwrap(), before + 1234);
 }

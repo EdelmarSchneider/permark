@@ -37,7 +37,7 @@ impl Drop for Changing<'_> {
 
 impl Installs {
     /// Marks a store change under the lock Get decides under: refused while moving | another change | a download is
-    /// queued | running.
+    /// queued | running. Marked -> every engine session unloaded (D-11).
     fn begin_change(&self) -> Result<Changing<'_>, InstallError> {
         let mut inner = self.inner();
         if inner.moving.is_some() || inner.changing {
@@ -51,6 +51,11 @@ impl Installs {
             return Err(InstallError::Downloading(id.clone()));
         }
         inner.changing = true;
+        drop(inner);
+        // Windows: loaded models' files are mapped (locked) -> unloaded before the store moves
+        if let Some(runtime) = &self.runtime {
+            runtime.release_all();
+        }
         Ok(Changing(self))
     }
 

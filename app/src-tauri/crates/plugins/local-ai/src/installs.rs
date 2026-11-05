@@ -41,6 +41,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::catalog::{Catalog, CatalogError, Model, ModelFile};
+use crate::runtime::Runtime;
 use crate::state::{Acceptance, Installed, PluginState, Stale};
 use crate::store::{prune, tidy, version_dir};
 use crate::tasks::Task;
@@ -392,6 +393,8 @@ pub struct Installs {
     file: Option<StateFile<PluginState>>,
     events: PluginEvents,
     links: StoreLinks,
+    /// Engine host: sessions of a model unloaded before its files are removed | moved (D-11; `None`: tests).
+    runtime: Option<Arc<Runtime>>,
     inner: Mutex<Inner>,
     /// One engine start (sweep) at a time.
     starting: Mutex<()>,
@@ -418,6 +421,7 @@ impl Installs {
         file: Option<StateFile<PluginState>>,
         events: PluginEvents,
         links: StoreLinks,
+        runtime: Option<Arc<Runtime>>,
     ) -> Arc<Self> {
         let state = file
             .as_ref()
@@ -430,6 +434,7 @@ impl Installs {
             file,
             events,
             links,
+            runtime,
             inner: Mutex::new(Inner {
                 state,
                 live: HashMap::new(),
@@ -1073,6 +1078,10 @@ impl Installs {
             }
             inner.state.installed.get(&model.lineage).cloned()
         };
+        // Windows: a loaded model's files are mapped (locked) -> unloaded first
+        if let Some(runtime) = &self.runtime {
+            runtime.release(&model.lineage);
+        }
         self.tidy(&engine);
         engine.remove(&unit)?;
         prune(engine.store(), &model.lineage, model.catalog_version);
@@ -1152,29 +1161,34 @@ impl Installs {
     /// The installed model assigned to `task` (AC-8), for PerMark's own features.
     #[must_use]
     pub fn model_for(&self, task: Task) -> ModelFor {
-        let Ok(engine) = self.engine() else {
+        let Some(lineage) = self.inner().state.assignments.get(&task).cloned() else {
             return ModelFor::NoModel;
         };
-        let state = self.inner().state.clone();
-        let Some(lineage) = state.assignments.get(&task) else {
-            return ModelFor::NoModel;
-        };
-        let found = self
-            .catalog
+        self.catalog
             .models
             .iter()
-            .filter(|m| &m.lineage == lineage)
-            .find_map(|m| Self::usable(Some(&engine), &state, m));
-        match found {
-            Some(installed) => ModelFor::Assigned(AssignedModel {
-                dir: version_dir(engine.store(), lineage, installed.catalog_version),
-                id: installed.model,
-                lineage: lineage.clone(),
-                catalog_version: installed.catalog_version,
-                files: installed.files,
-            }),
-            None => ModelFor::NoModel,
-        }
+            .filter(|m| m.lineage == lineage)
+            .find_map(|m| self.installed_model(&m.id).ok())
+            .map_or(ModelFor::NoModel, ModelFor::Assigned)
+    }
+
+    /// The version of `id`'s lineage usable now (catalog version on disk, else the recorded one on disk).
+    ///
+    /// # Errors
+    /// Unknown model, [`InstallError::NotInstalled`], no download service | store unavailable.
+    pub fn installed_model(&self, id: &str) -> Result<AssignedModel, InstallError> {
+        let model = self.model(id)?;
+        let engine = self.engine()?;
+        let state = self.inner().state.clone();
+        let installed = Self::usable(Some(&engine), &state, model)
+            .ok_or_else(|| InstallError::NotInstalled(id.to_owned()))?;
+        Ok(AssignedModel {
+            dir: version_dir(engine.store(), &model.lineage, installed.catalog_version),
+            id: installed.model,
+            lineage: model.lineage.clone(),
+            catalog_version: installed.catalog_version,
+            files: installed.files,
+        })
     }
 
     /// Catalog ids of the models assigned to tasks, from the state alone (no engine started, no disk read): the

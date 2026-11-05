@@ -7,6 +7,8 @@
 // it is gone (store unavailable) - the unavailable fixture for dev:mock.
 // Machine: a 6 GiB laptop with a 2 GiB graphics card (`MOCK_MACHINE`): small models run well, mid ones slow, the
 // largest not recommended; assigning a second big model (LFM3 beside Gemma 4 E2B) raises the budget warning.
+// Test model: timer steps (`stepMs`): engine download on the first test only, loading, running, then done with
+// plausible numbers (chat: answer + tokens/s; embedding: dims) | `probe.failTest`; one test at a time; cancel ends it.
 
 import TASKS from "../plugins/local-ai/tasks.json";
 import { accepts } from "../plugins/local-ai/tasks";
@@ -16,6 +18,7 @@ import type { CatalogModel } from "./generated/CatalogModel";
 import type { DownloadError } from "./generated/DownloadError";
 import type { GetBlock } from "./generated/GetBlock";
 import type { InstallState } from "./generated/InstallState";
+import type { IpcError } from "./generated/IpcError";
 import type { LocalAiCatalog } from "./generated/LocalAiCatalog";
 import type { LocalAiState } from "./generated/LocalAiState";
 import type { MachineInfo } from "./generated/MachineInfo";
@@ -23,6 +26,8 @@ import type { MachineProfile } from "./generated/MachineProfile";
 import type { ModelFit } from "./generated/ModelFit";
 import type { ModelNeeds } from "./generated/ModelNeeds";
 import type { ModelLicense } from "./generated/ModelLicense";
+import type { ModelTestPhase } from "./generated/ModelTestPhase";
+import type { ModelTestResult } from "./generated/ModelTestResult";
 import type { StoreUnavailableReason } from "./generated/StoreUnavailableReason";
 import type { ModelStatus } from "./generated/ModelStatus";
 import type { StoreMode } from "./generated/StoreMode";
@@ -48,6 +53,8 @@ type LocalAiMethods = Pick<
   | "local-ai.cancelMove"
   | "local-ai.revealStore"
   | "local-ai.machine"
+  | "local-ai.testModel"
+  | "local-ai.cancelTest"
 >;
 
 const APACHE: ModelLicense = {
@@ -259,7 +266,11 @@ export type LocalAiProbe = {
   failMove: DownloadError | null;
   /** This computer as `local-ai.machine` reads it. */
   machine: MachineProfile;
-  /** Stops the download + move timers (tests). */
+  /** The next model test ends in this failure (`null`: it succeeds). */
+  failTest: IpcError | null;
+  /** The model engine is on this computer (`false`: the next test downloads it first). */
+  engineInstalled: boolean;
+  /** Stops the download + move + test timers (tests). */
   stopAll(): void;
 };
 
@@ -289,6 +300,10 @@ type Live =
   | { kind: "failed"; done: number; error: DownloadError };
 
 const WHISPER = "whisper-large-v3-turbo-q5_0";
+/** Bytes of the mock model engine (worker files). */
+export const MOCK_ENGINE_BYTES = 48 * MIB;
+/** Mock engine release. */
+const MOCK_ENGINE_VERSION = "worker-v0.1.0";
 const FLAKY = "embeddinggemma-300m-q4_0";
 
 export function createMockLocalAi(
@@ -334,12 +349,23 @@ export function createMockLocalAi(
     failNext: null,
     failMove: null,
     machine: structuredClone(MOCK_MACHINE),
+    failTest: null,
+    engineInstalled: false,
     stopAll: () => {
       if (timer !== null) clearInterval(timer);
       timer = null;
       stopMove();
+      stopTest();
     },
   };
+  /** Running model test: its model + what comes next (`null`: none runs). */
+  let test: { model: string; next: ModelTestPhase[] } | null = null;
+  let testTimer: ReturnType<typeof setInterval> | null = null;
+
+  function stopTest(): void {
+    if (testTimer !== null) clearInterval(testTimer);
+    testTimer = null;
+  }
 
   function stopMove(): void {
     if (moveTimer !== null) clearInterval(moveTimer);
@@ -600,6 +626,83 @@ export function createMockLocalAi(
     return { profile, fits, budget };
   }
 
+  /** What a finished test of `m` measured (chat: a short answer; embedding: one vector). */
+  function testResult(m: CatalogModel): ModelTestResult {
+    const chat = m.capabilities.includes("chat");
+    return {
+      loadMs: chat ? 1800 : 600,
+      runMs: chat ? 1400 : 40,
+      gpu: true,
+      memoryBytes: m.bytes,
+      engineVersion: MOCK_ENGINE_VERSION,
+      output: chat
+        ? {
+            kind: "chat",
+            tokens: 12,
+            tokensPerSecond: 12 / 1.4,
+            answer: "Hello! Nice to meet you.",
+          }
+        : { kind: "embed", dims: 768 },
+    };
+  }
+
+  /** One test step: the next phase out; the last one (done | failed) ends the test. */
+  function testStep(): void {
+    const phase = test?.next.shift();
+    if (test === null || phase === undefined) {
+      stopTest();
+      return;
+    }
+    const model = test.model;
+    if (phase.kind === "engine" && phase.receivedBytes === phase.totalBytes)
+      probe.engineInstalled = true;
+    if (test.next.length === 0) {
+      stopTest();
+      test = null;
+    }
+    emit("local-ai:test", { model, phase });
+  }
+
+  /** Starts a test of installed `id` (as `testrun.rs`: busy, not installed, nothing to test refused). */
+  function startTest(id: string): null {
+    const m = modelOf(id);
+    if (test !== null) throw new MockPluginError("conflict", null, "testRunning");
+    if (!installed.has(m.lineage)) throw new MockPluginError("conflict", id, "notInstalled");
+    if (!m.capabilities.includes("chat") && !m.capabilities.includes("embed"))
+      throw new MockPluginError("unsupported", id, "noTest");
+    const engine: ModelTestPhase[] = probe.engineInstalled
+      ? []
+      : [0, 0.25, 0.5, 0.75, 1].map((part): ModelTestPhase => ({
+          kind: "engine",
+          receivedBytes: Math.round(MOCK_ENGINE_BYTES * part),
+          totalBytes: MOCK_ENGINE_BYTES,
+        }));
+    const loading = [0, 0.25, 0.5, 0.75, 1].map((progress): ModelTestPhase => ({
+      kind: "loading",
+      progress,
+    }));
+    const failure = probe.failTest;
+    probe.failTest = null;
+    const end: ModelTestPhase =
+      failure === null
+        ? { kind: "done", result: testResult(m) }
+        : { kind: "failed", error: failure };
+    test = { model: id, next: [...engine, ...loading, { kind: "running" }, end] };
+    stopTest();
+    testTimer = setInterval(testStep, probe.stepMs);
+    return null;
+  }
+
+  /** Ends the running test (engine part kept: the next test starts over in the mock). */
+  function cancelTest(): null {
+    if (test === null) return null;
+    const model = test.model;
+    stopTest();
+    test = null;
+    emit("local-ai:test", { model, phase: { kind: "cancelled" } });
+    return null;
+  }
+
   const handlers: {
     [M in keyof LocalAiMethods]: (args: LocalAiMethods[M]["args"]) => LocalAiMethods[M]["result"];
   } = {
@@ -702,6 +805,14 @@ export function createMockLocalAi(
       return null;
     },
     "local-ai.machine": () => machine(),
+    "local-ai.testModel": ({ model }) => {
+      probe.calls.push(`testModel ${model}`);
+      return startTest(model);
+    },
+    "local-ai.cancelTest": () => {
+      probe.calls.push("cancelTest");
+      return cancelTest();
+    },
   };
   /** Bytes "Remove data" frees (the plugins page asks while the plugin is off). */
   function dataBytes(): number {

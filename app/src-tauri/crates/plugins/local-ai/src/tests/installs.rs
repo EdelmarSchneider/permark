@@ -659,6 +659,7 @@ fn model_for_answers_the_assigned_installed_model() {
         cx.state_file(state::FILE),
         cx.events().clone(),
         crate::StoreLinks::default(),
+        None,
     );
     assert_eq!(installs.model_for(Task::Dictation), ModelFor::NoModel);
     installs.get("whisper-large-v3-turbo-q5_0").unwrap();
@@ -678,10 +679,105 @@ fn model_for_answers_the_assigned_installed_model() {
     assert_eq!(model.dir, version_dir(&lab, &model.lineage, 1));
     assert!(model.dir.is_dir());
     // AC-10: the engine finds every file of the installed version
-    let files = crate::engine::ModelFiles::of(&model, &cat);
+    let files = crate::engine::model_files(&model, &cat);
     assert_eq!(files.files.len(), model.files.len());
     assert!(files.files.iter().all(|(_, path)| path.is_file()));
     assert_eq!(installs.model_for(Task::Correction), ModelFor::NoModel);
+    installs.shutdown();
+}
+
+/// D-11 (Windows mmap lock): remove unloads the sessions of that model's lineage first; a store change unloads
+/// every session. `installed_model` answers the usable version by id.
+#[test]
+fn remove_and_store_change_unload_the_engine_sessions_first() {
+    use crate::catalog::Needs;
+    use crate::engine::tests::Workers;
+    use crate::engine::{CancelToken, Device, FakeEngine, LoadOpts};
+    use crate::machine::MachineProfile;
+    use crate::runtime::Runtime;
+
+    fn plenty() -> MachineProfile {
+        MachineProfile {
+            ram_available: Some(64 << 30),
+            ..MachineProfile::unknown()
+        }
+    }
+    let lab = Lab::new();
+    let cat = catalog(1, |_| {});
+    let rpc = RpcTable::new();
+    let services = Services::new();
+    let events = Arc::new(Events::default());
+    let cx = lab.cx(&rpc, &services, &events);
+    let workers = Workers::default();
+    let runtime = Arc::new(Runtime::with_launch(
+        workers.launch(FakeEngine::new),
+        plenty,
+    ));
+    let installs = Installs::new(
+        Arc::new(cat.clone()),
+        Some(Arc::new(lab.kit(Arc::new(serving(&cat))))),
+        lab.models_dir(),
+        cx.state_file(state::FILE),
+        cx.events().clone(),
+        crate::StoreLinks::default(),
+        Some(Arc::clone(&runtime)),
+    );
+    let id = "whisper-large-v3-turbo-q5_0";
+    assert!(matches!(
+        installs.installed_model(id),
+        Err(crate::InstallError::NotInstalled(_))
+    ));
+    installs.get(id).unwrap();
+    let start = Instant::now();
+    // installed + the download no longer running (remove refuses a running one)
+    let installed = || {
+        installs
+            .state()
+            .models
+            .iter()
+            .any(|m| m.model == id && matches!(m.state, crate::InstallState::Installed { .. }))
+    };
+    while !installed() {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let model = installs.installed_model(id).unwrap();
+    assert_eq!(model.id, id);
+    assert_eq!(model.dir, version_dir(&lab, &model.lineage, 1));
+    let needs = Needs {
+        ram_min: 1,
+        ram_rec: 1,
+        vram_rec: 1,
+    };
+    let opts = LoadOpts {
+        context_len: 512,
+        device: Device::Cpu,
+        threads: Some(1),
+    };
+    let load = |lineage: &str| {
+        runtime
+            .load(
+                lineage,
+                &needs,
+                crate::engine::model_files(&model, &cat),
+                opts,
+                &|_| {},
+                &CancelToken::new(),
+            )
+            .unwrap()
+    };
+    load(&model.lineage);
+    load("other");
+    installs.remove(id).unwrap();
+    assert_eq!(workers.kills(), 1, "this model's worker ended");
+    assert_eq!(runtime.loaded(), ["other"]);
+    assert!(!model.dir.exists());
+    let elsewhere = lab.tmp.path().join("elsewhere");
+    installs
+        .set_store(Some(&elsewhere.display().to_string()), None)
+        .unwrap();
+    assert_eq!(workers.kills(), 2, "store change: every worker ended");
+    assert_eq!(runtime.loaded(), Vec::<String>::new());
     installs.shutdown();
 }
 

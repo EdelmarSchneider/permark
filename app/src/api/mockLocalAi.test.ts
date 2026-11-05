@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { InstallState } from "./generated/InstallState";
 import type { LocalAiState } from "./generated/LocalAiState";
+import type { ModelTest } from "./generated/ModelTest";
 import {
   createMockLocalAi,
   MOCK_CATALOG,
@@ -344,5 +345,78 @@ describe("local AI mock machine", () => {
       os: "macos",
     };
     expect(new Set(Object.values(h["local-ai.machine"]({}).fits))).toEqual(new Set(["runsWell"]));
+  });
+});
+
+describe("local AI mock model test", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function isTest(payload: unknown): payload is ModelTest {
+    return (
+      typeof payload === "object" && payload !== null && "model" in payload && "phase" in payload
+    );
+  }
+
+  /** Test events so far, in order. */
+  function tests(events: { name: AppPluginEventName; payload: unknown }[]): ModelTest[] {
+    return events.flatMap((e) =>
+      e.name === "local-ai:test" && isTest(e.payload) ? [e.payload] : [],
+    );
+  }
+
+  function kinds(events: { name: AppPluginEventName; payload: unknown }[]): string[] {
+    return tests(events)
+      .map((t) => t.phase.kind)
+      .filter((k, i, all) => k !== all[i - 1]);
+  }
+
+  it("gets the engine on the first test, loads, runs, and ends with plausible numbers", () => {
+    const { h, events, probe } = setup();
+    expect(h["local-ai.testModel"]({ model: E2B })).toBeNull();
+    vi.advanceTimersByTime(400 * 20);
+    expect(kinds(events)).toEqual(["engine", "loading", "running", "done"]);
+    const last = tests(events).at(-1);
+    expect(last?.model).toBe(E2B);
+    if (last?.phase.kind !== "done") throw new Error(last?.phase.kind);
+    expect(last.phase.result.output).toMatchObject({ kind: "chat", tokens: 12 });
+    expect(last.phase.result.gpu).toBe(true);
+    expect(probe.engineInstalled).toBe(true);
+    events.length = 0;
+    h["local-ai.testModel"]({ model: EMBED });
+    vi.advanceTimersByTime(400 * 20);
+    expect(kinds(events)).toEqual(["loading", "running", "done"]);
+    const embed = tests(events).at(-1)?.phase;
+    if (embed?.kind !== "done") throw new Error(embed?.kind);
+    expect(embed.result.output).toEqual({ kind: "embed", dims: 768 });
+  });
+
+  it("runs one test at a time; cancel ends it; refuses what cannot be tested", () => {
+    const { h, events, probe } = setup();
+    h["local-ai.testModel"]({ model: E2B });
+    vi.advanceTimersByTime(400 * 2);
+    expect(refusal(() => h["local-ai.testModel"]({ model: EMBED })).detail).toBe("testRunning");
+    h["local-ai.cancelTest"]({});
+    expect(tests(events).at(-1)?.phase).toEqual({ kind: "cancelled" });
+    const count = events.length;
+    vi.advanceTimersByTime(400 * 20);
+    expect(events.length).toBe(count);
+    expect(probe.engineInstalled).toBe(false);
+    expect(refusal(() => h["local-ai.testModel"]({ model: LFM })).detail).toBe("notInstalled");
+    expect(refusal(() => h["local-ai.testModel"]({ model: "nope" })).kind).toBe("notFound");
+    expect(h["local-ai.cancelTest"]({})).toBeNull();
+  });
+
+  it("ends in the failure asked by the probe", () => {
+    const { h, events, probe } = setup();
+    probe.engineInstalled = true;
+    probe.failTest = { kind: "unavailable", subject: "engine", detail: "outOfMemory" };
+    h["local-ai.testModel"]({ model: EMBED });
+    vi.advanceTimersByTime(400 * 20);
+    expect(kinds(events)).toEqual(["loading", "running", "failed"]);
+    expect(tests(events).at(-1)?.phase).toEqual({
+      kind: "failed",
+      error: { kind: "unavailable", subject: "engine", detail: "outOfMemory" },
+    });
   });
 });

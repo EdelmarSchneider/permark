@@ -2445,4 +2445,38 @@ export default {
   "localAi.token.save": "Guardar",
   "localAi.token.clear": "Limpar",
   "localAi.token.clearLabel": "Limpar o token do Hugging Face",
+  "localAi.err.testRunning": "Já está a decorrer outro teste. Tente novamente quando terminar.",
+  "localAi.err.noTest": "Este modelo ainda não pode ser testado.",
+  "localAi.test.button": "Testar",
+  "localAi.test.buttonLabel": "Testar {name} neste computador",
+  "localAi.test.panelLabel": "Teste de {name}",
+  "localAi.test.starting": "A iniciar o teste…",
+  "localAi.test.engine": "A transferir o motor de IA (só da primeira vez)",
+  "localAi.test.loading": "A carregar o modelo",
+  "localAi.test.running": "A fazer um teste rápido",
+  "localAi.test.cancelLabel": "Parar o teste de {name}",
+  "localAi.test.done": "Funciona neste computador",
+  "localAi.test.gpu": "Corre na placa gráfica",
+  "localAi.test.cpu": "Corre no processador",
+  "localAi.test.loadTime": "Carregado em {time}",
+  "localAi.test.speed": "{speed} tokens por segundo",
+  "localAi.test.answer": "A resposta do modelo:",
+  "localAi.test.embedReady": "Pronto para encontrar texto pelo sentido",
+  "localAi.test.embedTime": "Leu um exemplo em {time}",
+  "localAi.test.memory": "Usa cerca de {size} de memória",
+  "localAi.test.failed": "O teste não funcionou.",
+  "localAi.test.failed.outOfMemory":
+    "Não há memória livre suficiente neste momento. Feche outras aplicações e tente novamente, ou escolha um modelo mais pequeno.",
+  "localAi.test.failed.notAvailable":
+    "O motor de IA ainda não está disponível para este computador.",
+  "localAi.test.failed.crashed": "O motor de IA parou inesperadamente.",
+  "localAi.test.failed.blocked":
+    "Um software de segurança deste computador bloqueou o motor de IA.",
+  "localAi.test.failed.needsNewer":
+    "Este modelo precisa de uma versão mais recente do motor de IA.",
+  "localAi.test.failed.corrupt":
+    "Os ficheiros do modelo estão danificados. Remova o modelo e transfira-o novamente.",
+  "localAi.test.retryLabel": "Testar {name} novamente",
+  "localAi.test.cancelled": "Teste interrompido.",
+  "localAi.test.closeLabel": "Fechar o teste de {name}",
 } satisfies Messages;

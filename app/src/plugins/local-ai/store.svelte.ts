@@ -1,6 +1,7 @@
 // Local AI as the settings page sees it: the installs (state), the catalog (names, sizes, what each model can do), this
 // computer (read once per page open, when a card needs it), and the person's actions. Nothing is read while the page
-// is closed (the plugin is on but dormant); nothing here starts a download by itself: only `get` | `update` do.
+// is closed (the plugin is on but dormant); nothing here starts a download by itself: only `get` | `update` | `test`
+// (the engine, first time only) do.
 
 import { api as defaultApi, type Api, type ApiError, type Result, type Unlisten } from "../../api";
 import type { CatalogModel } from "../../api/generated/CatalogModel";
@@ -9,6 +10,8 @@ import type { LocalAiCatalog } from "../../api/generated/LocalAiCatalog";
 import type { LocalAiState } from "../../api/generated/LocalAiState";
 import type { MachineInfo } from "../../api/generated/MachineInfo";
 import type { ModelProgress } from "../../api/generated/ModelProgress";
+import type { ModelTest } from "../../api/generated/ModelTest";
+import type { ModelTestPhase } from "../../api/generated/ModelTestPhase";
 import type { StoreMode } from "../../api/generated/StoreMode";
 import type { StoreMove } from "../../api/generated/StoreMove";
 import { pluginClient, type PluginClient } from "../../core/plugins/client";
@@ -48,6 +51,18 @@ export function milestoneOf(before: InstallState, after: InstallState): Mileston
   return from !== null && to !== null && to > from ? (QUARTERS[to] ?? null) : null;
 }
 
+/** Where a test stands as the page shows it: `starting` = asked, no news yet; `failed` = the run failed | the backend
+ *  refused to start it. */
+export type TestStep =
+  | { kind: "starting" }
+  | Exclude<ModelTestPhase, { kind: "failed" }>
+  | { kind: "failed"; error: ApiError };
+
+/** The test the page shows (one at a time, any model). */
+export type ModelTestView = { model: string; step: TestStep };
+
+const TEST_ENDED: ReadonlySet<TestStep["kind"]> = new Set(["done", "failed", "cancelled"]);
+
 /** Assignments in one string: a change asks this computer's budget again. */
 function assignmentKey(state: LocalAiState): string {
   return state.assignments.map((a) => `${a.task}=${a.model ?? ""}`).join(",");
@@ -62,6 +77,8 @@ export class LocalAiStore {
   load = $state.raw<Load>({ status: "idle" });
   /** Latest download milestone (the Models card's live region). */
   milestone = $state.raw<Milestone | null>(null);
+  /** The running | last ended test, until closed (`null`: none shown). */
+  modelTest = $state.raw<ModelTestView | null>(null);
   readonly #api: Api;
   readonly #client: PluginClient;
   /** Pages open (one per window in practice). */
@@ -91,6 +108,8 @@ export class LocalAiStore {
       if (this.#opened === 0) {
         this.#unlisten();
         this.#machineAsked = false;
+        // no news while closed: a shown test would go stale (a running one ends by itself, then unloads)
+        this.modelTest = null;
       }
     };
   }
@@ -104,6 +123,7 @@ export class LocalAiStore {
     this.catalog = null;
     this.machine = null;
     this.milestone = null;
+    this.modelTest = null;
     this.load = { status: "idle" };
   }
 
@@ -117,6 +137,11 @@ export class LocalAiStore {
     if (this.#machineAsked) return;
     this.#machineAsked = true;
     void this.#readMachine();
+  }
+
+  /** A test runs (any model): Test is off everywhere. */
+  get testing(): boolean {
+    return this.modelTest !== null && !TEST_ENDED.has(this.modelTest.step.kind);
   }
 
   modelOf(id: string): CatalogModel | null {
@@ -187,6 +212,26 @@ export class LocalAiStore {
     return this.#took(await this.#client.call("local-ai.cancelMove", {}));
   }
 
+  /** "Test model": phases come as `local-ai:test`; a refusal shows as the failed step. */
+  async test(model: string): Promise<Result<null>> {
+    this.modelTest = { model, step: { kind: "starting" } };
+    const result = await this.#client.call("local-ai.testModel", { model });
+    const now = this.modelTest;
+    if (!result.ok && now !== null && now.model === model && now.step.kind === "starting")
+      this.modelTest = { model, step: { kind: "failed", error: result.error } };
+    return result;
+  }
+
+  /** Stops the running test; its end comes as `cancelled`. */
+  cancelTest(): Promise<Result<null>> {
+    return this.#client.call("local-ai.cancelTest", {});
+  }
+
+  /** The person closes an ended test. */
+  closeTest(): void {
+    if (!this.testing) this.modelTest = null;
+  }
+
   revealStore(): Promise<Result<null>> {
     return this.#client.call("local-ai.revealStore", {});
   }
@@ -231,6 +276,15 @@ export class LocalAiStore {
       const step = was === undefined ? null : milestoneOf(was.state, now.state);
       if (step !== null) this.milestone = { model: now.model, step };
     }
+  }
+
+  #tested(news: ModelTest): void {
+    const { model, phase } = news;
+    const step: TestStep =
+      phase.kind === "failed"
+        ? { kind: "failed", error: { kind: "backend", command: "plugin_call", error: phase.error } }
+        : phase;
+    this.modelTest = { model, step };
   }
 
   #moving(move: Extract<StoreMove, { kind: "moving" }>): void {
@@ -281,6 +335,7 @@ export class LocalAiStore {
     keep(this.#api.onAppPlugin("local-ai:state", (state) => this.#apply(state)));
     keep(this.#api.onAppPlugin("local-ai:progress", (progress) => this.#progress(progress)));
     keep(this.#api.onAppPlugin("local-ai:move", (move) => this.#moving(move)));
+    keep(this.#api.onAppPlugin("local-ai:test", (news) => this.#tested(news)));
   }
 
   #unlisten(): void {

@@ -464,6 +464,7 @@ export function createMockApi(): Api & {
     "local-ai:state": new Set(),
     "local-ai:progress": new Set(),
     "local-ai:move": new Set(),
+    "local-ai:test": new Set(),
   };
   const distribution = createMockDistribution((event, payload) => {
     for (const handler of appListeners[event]) handler(payload);
