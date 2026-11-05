@@ -8,7 +8,8 @@ name: Model engine worker
 # Its own tag and workflow (not `v*`): the Vulkan build is slow and the worker only changes when llama.cpp is bumped.
 # The release is never marked "latest", so the app updater (which reads the latest release) never sees it.
 #
-# Flow: `draft` finds or makes the release (a draft) -> the four `build` jobs build, check the worker starts, and upload
+# Flow: `draft` finds or makes the release (a draft) -> the four `build` jobs (read-only token) build, check the worker
+# starts and keep the files as an artifact -> `upload` (write token) uploads
 # every file as its own asset (no archives: each file is pinned by itself) plus a `pins-<platform>-<variant>.json`
 # listing {asset, name, bytes, sha256}, the input for the pin table -> `publish` makes the release public.
 #
@@ -40,6 +41,10 @@ env:
   TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   # Vulkan SDK on Windows: the version llama.cpp's own release workflow pins (at the vendored build).
   VULKAN_VERSION: 1.4.357.0
+  # sha256 of vulkansdk-windows-X64-1.4.357.0.exe (LunarG: sdk.lunarg.com/sdk/sha/<version>/windows/<file>.txt).
+  VULKAN_SHA256: 81f474711e9042f4cd22b31b2f7a8870db2e428b21586fb43dd80150be97310d
+  # LunarG apt signing key (primary key fingerprint), checked before the key is trusted for its repo only.
+  LUNARG_KEY_FPR: 03F5D621A3710FA95A93D89BAA8452080E383F7E
 
 jobs:
   draft:
@@ -56,6 +61,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.TAG }}
+          persist-credentials: false
 
       - name: Find or draft the release
         id: release
@@ -90,8 +96,10 @@ jobs:
     needs: draft
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    # Read only: cargo build scripts, cmake and the Vulkan SDK installer run here. The files go to the `upload` job as
+    # an artifact; only that job can write to the release.
     permissions:
-      contents: write
+      contents: read
     env:
       RUN_THIS: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, matrix.platform) }}
     strategy:
@@ -123,6 +131,15 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.TAG }}
+          persist-credentials: false
+
+      # Short target dir: the Vulkan shader generator (a cmake ExternalProject deep inside the llama-cpp-sys-2 build
+      # dir) failed under MSBuild with the default `app/src-tauri/target` (path length).
+      - name: Set the target dir
+        if: env.RUN_THIS == 'true'
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then echo "CARGO_TARGET_DIR=C:/t" >> "$GITHUB_ENV"; else echo "CARGO_TARGET_DIR=$RUNNER_TEMP/t" >> "$GITHUB_ENV"; fi
 
       # The toolchain app/rust-toolchain.toml pins; rustup reads the file from the working directory.
       - name: Install Rust (pinned)
@@ -136,6 +153,8 @@ jobs:
         shell: pwsh
         run: |
           curl.exe -o $env:RUNNER_TEMP/VulkanSDK-Installer.exe -L "https://sdk.lunarg.com/sdk/download/${env:VULKAN_VERSION}/windows/vulkansdk-windows-X64-${env:VULKAN_VERSION}.exe"
+          $sum = (Get-FileHash -Algorithm SHA256 "$env:RUNNER_TEMP\VulkanSDK-Installer.exe").Hash.ToLower()
+          if ($sum -ne $env:VULKAN_SHA256) { throw "Vulkan SDK installer sha256 $sum, expected $env:VULKAN_SHA256" }
           & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
           Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\${env:VULKAN_VERSION}"
           Add-Content $env:GITHUB_PATH "C:\VulkanSDK\${env:VULKAN_VERSION}\bin"
@@ -143,8 +162,13 @@ jobs:
       - name: Install the Vulkan SDK (Linux)
         if: env.RUN_THIS == 'true' && matrix.variant == 'vulkan' && runner.os == 'Linux'
         run: |
-          wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+          set -euo pipefail
+          wget -qO "$RUNNER_TEMP/lunarg.asc" https://packages.lunarg.com/lunarg-signing-key-pub.asc
+          fpr=$(gpg --show-keys --with-colons "$RUNNER_TEMP/lunarg.asc" | awk -F: '/^fpr/ { print $10; exit }')
+          [ "$fpr" = "$LUNARG_KEY_FPR" ] || { echo "LunarG key fingerprint $fpr, expected $LUNARG_KEY_FPR"; exit 1; }
+          gpg --dearmor < "$RUNNER_TEMP/lunarg.asc" | sudo tee /usr/share/keyrings/lunarg.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/lunarg.gpg] https://packages.lunarg.com/vulkan jammy main" |
+            sudo tee /etc/apt/sources.list.d/lunarg-vulkan-jammy.list > /dev/null
           sudo apt-get update -y
           sudo apt-get install -y build-essential vulkan-sdk
 
@@ -163,7 +187,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          target=app/src-tauri/target/release
+          target="$CARGO_TARGET_DIR/release"
           out=$(ls -dt "$target"/build/llama-cpp-sys-2-*/out | head -n 1)
           dest="$RUNNER_TEMP/worker"
           mkdir -p "$dest"
@@ -227,34 +251,73 @@ jobs:
             > "$RUNNER_TEMP/pins-$PLATFORM-$VARIANT.json"
           cat "$RUNNER_TEMP/pins-$PLATFORM-$VARIANT.json"
 
-      # Each file as its own asset, named `<platform>-<variant>-<file>`; a rebuild replaces the assets of the same name.
-      - name: Upload the files
+      # Handed to the `upload` job (the only one with write access): the files + the pins, under `<platform>-<variant>`.
+      - name: Keep the files
         if: env.RUN_THIS == 'true'
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ID: ${{ needs.draft.outputs.id }}
           PREFIX: ${{ matrix.platform }}-${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/out/$PREFIX"
+          cp "$RUNNER_TEMP"/worker/* "$RUNNER_TEMP/pins-$PREFIX.json" "$RUNNER_TEMP/out/$PREFIX/"
+
+      - name: Upload the files as an artifact
+        if: env.RUN_THIS == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: worker-${{ matrix.platform }}-${{ matrix.variant }}
+          path: ${{ runner.temp }}/out
+          if-no-files-found: error
+          retention-days: 3
+
+  # Each file as its own release asset, named `<platform>-<variant>-<file>`, plus `pins-<platform>-<variant>.json`; a
+  # rebuild replaces the assets of the same name. Runs for the platforms that built (one failing platform does not
+  # block the others' assets; `publish` still waits for all).
+  upload:
+    name: Upload the files
+    needs: [draft, build]
+    if: always() && needs.draft.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ID: ${{ needs.draft.outputs.id }}
+    steps:
+      - name: Download the artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: worker-*
+          path: ${{ runner.temp }}/in
+          merge-multiple: true
+
+      - name: Upload the release assets
+        shell: bash
         run: |
           set -euo pipefail
           gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$ID/assets?per_page=100" > "$RUNNER_TEMP/assets.json"
           upload() {
             old=$(jq -r --arg name "$2" '.[] | select(.name == $name) | .id' "$RUNNER_TEMP/assets.json")
             if [ -n "$old" ]; then gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$old"; fi
-            curl -fsS -X POST \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary "@$1" \
-              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$ID/assets?name=$2" |
+            curl -fsS -X POST               -H "Authorization: Bearer $GH_TOKEN"               -H "Accept: application/vnd.github+json"               -H "Content-Type: application/octet-stream"               --data-binary "@$1"               "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$ID/assets?name=$2" |
               jq -r .browser_download_url
           }
-          for f in "$RUNNER_TEMP"/worker/*; do upload "$f" "$PREFIX-$(basename "$f")"; done
-          upload "$RUNNER_TEMP/pins-$PREFIX.json" "pins-$PREFIX.json"
+          shopt -s nullglob
+          for dir in "$RUNNER_TEMP"/in/*/; do
+            prefix=$(basename "$dir")
+            for f in "$dir"*; do
+              case "$(basename "$f")" in
+                pins-*.json) upload "$f" "$(basename "$f")" ;;
+                *) upload "$f" "$prefix-$(basename "$f")" ;;
+              esac
+            done
+          done
 
   publish:
     name: Publish the release
-    needs: [draft, build]
+    needs: [draft, build, upload]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
