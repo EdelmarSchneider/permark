@@ -77,6 +77,12 @@ pub fn fit(needs: &Needs, profile: &MachineProfile) -> Fit {
     }
 }
 
+/// Share of RAM total models may use (the rest kept for the system + PerMark): 60 %.
+#[must_use]
+pub(crate) const fn ram_share(total: u64) -> u64 {
+    total / 5 * 3
+}
+
 /// Warning when the models wanting `assigned` exceed this computer's budget (rules: module doc).
 #[must_use]
 pub fn budget<'a>(
@@ -87,7 +93,10 @@ pub fn budget<'a>(
     let needed = assigned
         .into_iter()
         .fold(0u64, |sum, n| sum.saturating_add(n.ram_rec));
-    let available = profile.best_vram().unwrap_or(0).saturating_add(ram / 5 * 3);
+    let available = profile
+        .best_vram()
+        .unwrap_or(0)
+        .saturating_add(ram_share(ram));
     (needed > available).then_some(BudgetWarning { needed, available })
 }
 

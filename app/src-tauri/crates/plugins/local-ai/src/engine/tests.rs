@@ -32,23 +32,21 @@ impl Write for Dying {
     }
 }
 
-/// [`WorkerEngine`] whose workers = `serve(make())` threads.
-struct Rig {
-    engine: WorkerEngine,
+/// Workers = `serve(make())` threads: launch counts, kill counts, kill switch of the latest (plugin tests building
+/// their own host share it).
+#[derive(Clone, Default)]
+pub(crate) struct Workers {
     launched: Arc<AtomicUsize>,
     kills: Arc<AtomicUsize>,
     /// Kill switch of the latest worker.
     last: Arc<Mutex<Option<Arc<AtomicBool>>>>,
 }
 
-impl Rig {
-    fn new(make: fn() -> FakeEngine) -> Self {
-        let launched = Arc::new(AtomicUsize::new(0));
-        let kills = Arc::new(AtomicUsize::new(0));
-        let last = Arc::new(Mutex::new(None));
-        let (counted, killed, latest) =
-            (Arc::clone(&launched), Arc::clone(&kills), Arc::clone(&last));
-        let engine = WorkerEngine::new(Box::new(move || {
+impl Workers {
+    /// Launch of one `serve(make())` worker over OS pipes.
+    pub(crate) fn launch(&self, make: fn() -> FakeEngine) -> Launch {
+        let rig = self.clone();
+        Box::new(move || {
             let (worker_in, to_worker) = io::pipe()?;
             let (from_worker, worker_out) = io::pipe()?;
             let dead = Arc::new(AtomicBool::new(false));
@@ -57,9 +55,9 @@ impl Rig {
                 dead: Arc::clone(&dead),
             };
             std::thread::spawn(move || serve(BufReader::new(worker_in), out, &make()));
-            counted.fetch_add(1, Ordering::Relaxed);
-            *latest.lock().unwrap() = Some(Arc::clone(&dead));
-            let killed = Arc::clone(&killed);
+            rig.launched.fetch_add(1, Ordering::Relaxed);
+            *rig.last.lock().unwrap() = Some(Arc::clone(&dead));
+            let killed = Arc::clone(&rig.kills);
             Ok(WorkerPipes {
                 to_worker: Box::new(to_worker),
                 from_worker: Box::new(BufReader::new(from_worker)),
@@ -68,17 +66,11 @@ impl Rig {
                     killed.fetch_add(1, Ordering::Relaxed);
                 }),
             })
-        }));
-        Self {
-            engine,
-            launched,
-            kills,
-            last,
-        }
+        })
     }
 
     /// The latest worker dies (its next write fails).
-    fn crash(&self) {
+    pub(crate) fn crash(&self) {
         self.last
             .lock()
             .unwrap()
@@ -87,12 +79,40 @@ impl Rig {
             .store(true, Ordering::Relaxed);
     }
 
-    fn kills(&self) -> usize {
+    pub(crate) fn kills(&self) -> usize {
         self.kills.load(Ordering::Relaxed)
     }
 
-    fn launched(&self) -> usize {
+    pub(crate) fn launched(&self) -> usize {
         self.launched.load(Ordering::Relaxed)
+    }
+}
+
+/// [`WorkerEngine`] over [`Workers`].
+struct Rig {
+    engine: WorkerEngine,
+    workers: Workers,
+}
+
+impl Rig {
+    fn new(make: fn() -> FakeEngine) -> Self {
+        let workers = Workers::default();
+        Self {
+            engine: WorkerEngine::new(workers.launch(make)),
+            workers,
+        }
+    }
+
+    fn crash(&self) {
+        self.workers.crash();
+    }
+
+    fn kills(&self) -> usize {
+        self.workers.kills()
+    }
+
+    fn launched(&self) -> usize {
+        self.workers.launched()
     }
 }
 
@@ -630,9 +650,9 @@ fn unload_and_drop_end_the_workers() {
     assert_eq!(rig.kills(), 1);
     rig.engine.unload(a);
     assert_eq!(rig.kills(), 1, "unknown session -> nothing");
-    let Rig { engine, kills, .. } = rig;
+    let Rig { engine, workers } = rig;
     drop(engine);
-    assert_eq!(kills.load(Ordering::Relaxed), 2);
+    assert_eq!(workers.kills(), 2);
 }
 
 /// Worker proxy estimate = host-side lower bound: file bytes, no worker started.

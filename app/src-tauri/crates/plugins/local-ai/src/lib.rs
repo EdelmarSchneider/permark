@@ -13,14 +13,19 @@
 //!
 //! "Remove data" (plugin off): core deletes the plugin's namespace (state + default store); [`Plugin::remove_data`]
 //! first removes the model folders of a chosen store (ONLY `<lineage>/<version>/` of known lineages there),
-//! [`Plugin::data_bytes`] tells the bytes to be freed (models + parts of the current store).
+//! [`Plugin::data_bytes`] tells the bytes to be freed (models + parts of the current store + engine files).
+//!
+//! Engine ([`runtime`]): worker files in `<plugin data>/engine/` ([`engine::files`]), one [`runtime::Runtime`]
+//! (sessions unloaded before a model's files are removed | moved; every worker ended at plugin off).
 
 pub mod catalog;
 pub mod engine;
 pub mod fit;
+pub mod guard;
 pub mod installs;
 pub mod machine;
 mod relocate;
+pub mod runtime;
 pub(crate) mod state;
 mod store;
 pub mod tasks;
@@ -39,6 +44,9 @@ use permark_core::plugins::{
 use permark_core::state::StateStore;
 use permark_core::{ErrorKind, IpcError};
 use serde::Deserialize;
+
+use crate::engine::files::{self, WorkerFiles};
+use crate::runtime::{Runtime, WorkerLog};
 
 pub use catalog::{Capability, Catalog, CatalogError, CatalogInfo, ModelInfo};
 pub use installs::{
@@ -85,16 +93,23 @@ struct LocalAi {
 struct Started {
     _rpc: Vec<RpcRegistration>,
     installs: Arc<Installs>,
+    runtime: Arc<Runtime>,
+    worker_files: Arc<WorkerFiles>,
 }
 
 impl Running for Started {}
 
 impl Drop for Started {
     fn drop(&mut self) {
-        // off: downloads stop (parts kept) and the worker is joined
+        // off (before any data removal): every engine worker ends, downloads stop (parts kept), threads joined
+        self.runtime.release_all();
+        self.worker_files.shutdown();
         self.installs.shutdown();
     }
 }
+
+/// Engine worker log in the plugin's data folder.
+const WORKER_LOG: &str = "worker.log";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -233,6 +248,16 @@ impl Plugin for LocalAi {
         ));
         // no download service in this app: install calls answer `unavailable`
         let kit = cx.app().and_then(|app| app.services.get::<DownloadKit>());
+        // nothing created | spawned until a load (dormant)
+        let worker_files = Arc::new(WorkerFiles::new(
+            kit.as_deref(),
+            cx.state_dir.join(files::DIR),
+            Arc::new(|_, _| {}),
+        ));
+        let runtime = Arc::new(Runtime::new(
+            Arc::clone(&worker_files),
+            Arc::new(WorkerLog::new(cx.state_dir.join(WORKER_LOG))),
+        ));
         let installs = Installs::new(
             Arc::clone(catalog),
             kit,
@@ -250,6 +275,7 @@ impl Plugin for LocalAi {
                     .map(|api| (*api).clone()),
                 profile: cx.store().map(|store| store.app_dir().to_path_buf()),
             },
+            Some(Arc::clone(&runtime)),
         );
         rpc.extend(register(cx, &installs));
         // read on the first call only (dormant start)
@@ -266,12 +292,15 @@ impl Plugin for LocalAi {
         Ok(Box::new(Started {
             _rpc: rpc,
             installs,
+            runtime,
+            worker_files,
         }))
     }
 
     fn data_bytes(&self, app: &StateStore) -> Option<u64> {
         let (kept, store) = Self::kept(app);
-        Some(store::bytes(&store, &self.own_lineages(&kept)))
+        let engine = files::bytes(&app.plugin_dir(&ID).join(files::DIR));
+        Some(store::bytes(&store, &self.own_lineages(&kept)) + engine)
     }
 
     /// A chosen store: its model folders (the default one lives in the namespace core deletes next). A chosen store

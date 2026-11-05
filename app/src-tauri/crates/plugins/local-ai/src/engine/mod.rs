@@ -1,8 +1,9 @@
 //! Engine seam in the plugin: contract + worker protocol + host proxy = crate `permark-engine` (re-exported here;
-//! rules in its crate doc). Plugin side: [`model_files`] (installed version -> files) + [`FakeEngine`] (tests of
-//! future features).
+//! rules in its crate doc). Plugin side: [`model_files`] (installed version -> files), [`files`] (pinned worker
+//! program), [`FakeEngine`] (tests of future features).
 
 mod fake;
+pub mod files;
 
 pub use permark_engine::*;
 
@@ -34,4 +35,4 @@ pub fn model_files(model: &AssignedModel, catalog: &Catalog) -> ModelFiles {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
