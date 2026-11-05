@@ -14,9 +14,29 @@ serde.workspace = true
 serde_json.workspace = true
 # TS mirror of `Capability` (plugin `local-ai` turns it on).
 ts-rs = { workspace = true, optional = true }
+# Worker side only (feature `llama`): llama.cpp vendored + built with cmake (`common`: JSON schema -> grammar, fit to
+# GPU memory). Pinned exactly: `llama::LLAMA_CPP` (vendored build tag) + worker pins follow it.
+llama-cpp-2 = { version = "=0.1.161", default-features = false, features = ["common"], optional = true }
+# Worker binary: protocol on a duplicate of fd 1 (fd 1 -> stderr), hard exit.
+libc = { version = "0.2.191", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, optional = true, features = ["Win32_System_Console"] }
 
 [features]
 ts = ["dep:ts-rs"]
+# `LlamaEngine` + worker binary. NEVER in default | workspace gates (cmake build).
+llama = ["dep:llama-cpp-2", "dep:libc", "dep:windows-sys"]
+# Release worker: ggml + backends as shared libs, best CPU variant picked at run time, GPU backend libs loaded when
+# their system driver is present (D-6).
+dynamic-backends = ["llama", "llama-cpp-2/dynamic-backends"]
+vulkan = ["llama", "llama-cpp-2/vulkan"]
+metal = ["llama", "llama-cpp-2/metal"]
+
+[[bin]]
+name = "permark-llm-worker"
+path = "src/bin/worker.rs"
+required-features = ["llama"]
 
 [lints]
 workspace = true

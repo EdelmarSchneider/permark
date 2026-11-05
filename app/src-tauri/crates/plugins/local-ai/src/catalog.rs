@@ -10,8 +10,15 @@
 //!   `ram_rec`.
 //! - `languages` BCP-47; `mul` = many languages (100+, per model card).
 //! - gated model: `gated: true` only (token from the person, `downloads::SecretStore`).
+//! - prompt formats = data (engine crate rule): `promptProfiles` (chat markup, by `promptProfile`) + `prefixProfiles`
+//!   (embedding task prefixes, by `embedding.prefixProfile`); every name a model uses exists. Sources: GGUF
+//!   `tokenizer.chat_template` at the pinned commit (HF API `?expand[]=gguf`): `gemma-4` = `<|turn>{role}` ..
+//!   `<turn|>`, role `model`, text `| trim`, thinking off; `lfm3` = `ChatML` + `<think></think>` (thinking off).
+//!   `embeddinggemma-2` = `google/embeddinggemma-2` `config_sentence_transformers.json` prompts `query` | `document` |
+//!   `SentenceSimilarity`. BOS never in the data (tokenizer adds it).
+//! - `minEngine.version` = first llama.cpp build reading the architecture (`gemma-embedding2` b11452, `lfm3` b11960).
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::OnceLock;
 
 use permark_core::downloads::{Asset, Source, Unit};
@@ -28,6 +35,8 @@ const BUNDLED: &str = include_str!("catalog.json");
 
 /// What a model can do + part a file plays: engine contract types, catalog JSON names (camelCase).
 pub use permark_engine::{Capability, FileRole};
+/// Prompt formats: engine contract types, catalog JSON names (camelCase).
+pub use permark_engine::{Prefixes, PromptProfile};
 
 /// One pinned file of a model (also kept in the plugin state for an installed version).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -140,6 +149,10 @@ pub struct Model {
 pub struct Catalog {
     pub schema_version: u32,
     pub models: Vec<Model>,
+    /// Chat markup by name (`Model::prompt_profile`).
+    pub prompt_profiles: BTreeMap<String, PromptProfile>,
+    /// Embedding task prefixes by name (`Embedding::prefix_profile`).
+    pub prefix_profiles: BTreeMap<String, Prefixes>,
 }
 
 /// Why a catalog is refused.
@@ -169,6 +182,8 @@ pub enum CatalogError {
     Folder(String),
     #[error("model {0}: terms to accept need a revision")]
     License(String),
+    #[error("model {0}: prompt | prefix profile not in the catalog")]
+    Profile(String),
 }
 
 impl Catalog {
@@ -240,6 +255,17 @@ pub fn validate(catalog: &Catalog) -> Result<(), CatalogError> {
             }
         }
         model.unit()?;
+        let prompt_known = model
+            .prompt_profile
+            .as_ref()
+            .is_none_or(|p| catalog.prompt_profiles.contains_key(p));
+        let prefix_known = model
+            .embedding
+            .as_ref()
+            .is_none_or(|e| catalog.prefix_profiles.contains_key(&e.prefix_profile));
+        if !prompt_known || !prefix_known {
+            return Err(CatalogError::Profile(id()));
+        }
         let covered = |cap: &Capability| model.files.iter().any(|f| f.required_for.contains(cap));
         let declared = |cap: &Capability| model.capabilities.contains(cap);
         if !model.capabilities.iter().all(covered)

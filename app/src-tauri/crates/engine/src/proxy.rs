@@ -12,7 +12,6 @@
 
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
-use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -23,8 +22,8 @@ use serde::de::DeserializeOwned;
 
 use crate::wire::{Hello, Probe, Request, Response, PROTO};
 use crate::{
-    CancelToken, ChatRequest, EmbedRole, Embeddings, Engine, EngineCaps, EngineError, FileRole,
-    Finish, GenEvent, LoadOpts, MemoryEstimate, ModelFiles, PcmChunk, Segment, SessionId, Usage,
+    CancelToken, ChatRequest, EmbedRole, Embeddings, Engine, EngineCaps, EngineError, Finish,
+    GenEvent, LoadOpts, MemoryEstimate, ModelFiles, PcmChunk, Segment, SessionId, Usage,
 };
 
 /// Cancel | worker-death check interval while a call waits.
@@ -78,7 +77,7 @@ enum Step<T> {
     Done(T),
 }
 
-fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -278,20 +277,7 @@ impl Engine for WorkerEngine {
         model: &ModelFiles,
         _opts: &LoadOpts,
     ) -> Result<MemoryEstimate, EngineError> {
-        if !model
-            .files
-            .iter()
-            .any(|(role, _)| *role == FileRole::Weights)
-        {
-            return Err(EngineError::Corrupt);
-        }
-        let mut ram = 0u64;
-        for (_, path) in &model.files {
-            ram += Path::metadata(path)
-                .map_err(|e| EngineError::Io(e.to_string()))?
-                .len();
-        }
-        Ok(MemoryEstimate { ram, vram: 0 })
+        model.file_bytes()
     }
 
     fn load(

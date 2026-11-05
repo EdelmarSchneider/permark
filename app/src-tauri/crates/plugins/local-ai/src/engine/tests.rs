@@ -132,6 +132,7 @@ fn files(id: &str, prefix: Option<&str>) -> ModelFiles {
         catalog_version: 3,
         files: vec![(FileRole::Weights, PathBuf::from("w.gguf"))],
         prefix_profile: prefix.map(str::to_owned),
+        ..ModelFiles::default()
     }
 }
 
@@ -704,4 +705,21 @@ fn model_files_come_from_the_installed_version() {
         files.prefix_profile.as_deref(),
         model.embedding.as_ref().map(|e| e.prefix_profile.as_str())
     );
+    let name = files.prefix_profile.as_ref().unwrap();
+    assert_eq!(files.prefixes.as_ref(), catalog.prefix_profiles.get(name));
+    assert_eq!(files.prompt, None);
+    assert_eq!(files.min_engine, model.min_engine.version);
+    // chat model: its markup crosses the wire with the files
+    let chat = catalog.model("lfm3-1.7b-q4_k_m").unwrap();
+    let assigned = AssignedModel {
+        id: chat.id.clone(),
+        lineage: chat.lineage.clone(),
+        catalog_version: 1,
+        dir,
+        files: chat.files.clone(),
+    };
+    let files = model_files(&assigned, catalog);
+    assert_eq!(files.prompt.as_ref(), catalog.prompt_profiles.get("lfm3"));
+    assert_eq!(files.min_engine.as_deref(), Some("b11960"));
+    assert_eq!(files.prefixes, None);
 }

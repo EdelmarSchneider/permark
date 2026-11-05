@@ -15,18 +15,22 @@
 //! - missing capability (engine | model) -> [`EngineError::Unsupported`], never a silent fallback.
 //! - every type crossing the wire = serde; non-finite floats (NaN) NEVER sent (JSON has none).
 
+#[cfg(feature = "llama")]
+pub mod llama;
+mod prompt;
 mod proxy;
 mod serve;
 pub mod wire;
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub use prompt::{Piece, Prefixes, PromptProfile, StopScan, Turn};
 pub use proxy::{Launch, WorkerEngine, WorkerPipes};
 pub use serve::serve;
 
@@ -194,7 +198,7 @@ pub struct MemoryEstimate {
 pub struct SessionId(pub u64);
 
 /// An installed model's files, ready for [`Engine::load`].
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ModelFiles {
     pub model_id: String,
     pub catalog_version: u32,
@@ -202,6 +206,43 @@ pub struct ModelFiles {
     pub files: Vec<(FileRole, PathBuf)>,
     /// Catalog embedding prefix set (embed models), carried into [`EmbeddingFingerprint`].
     pub prefix_profile: Option<String>,
+    /// The prefixes of `prefix_profile` (catalog `prefixProfiles`).
+    #[serde(default)]
+    pub prefixes: Option<Prefixes>,
+    /// Chat markup (chat models; catalog `promptProfiles`); `None` -> `generate` unsupported.
+    #[serde(default)]
+    pub prompt: Option<PromptProfile>,
+    /// Oldest engine release reading the files (catalog `minEngine.version` of this engine family).
+    #[serde(default)]
+    pub min_engine: Option<String>,
+}
+
+impl ModelFiles {
+    /// The weights file.
+    #[must_use]
+    pub fn weights(&self) -> Option<&Path> {
+        self.files
+            .iter()
+            .find(|(role, _)| *role == FileRole::Weights)
+            .map(|(_, path)| path.as_path())
+    }
+
+    /// Memory lower bound = file bytes, all in RAM (`vram` 0: the engine places layers at load).
+    ///
+    /// # Errors
+    /// [`EngineError::Corrupt`] (no weights) | [`EngineError::Io`].
+    pub fn file_bytes(&self) -> Result<MemoryEstimate, EngineError> {
+        if self.weights().is_none() {
+            return Err(EngineError::Corrupt);
+        }
+        let mut ram = 0u64;
+        for (_, path) in &self.files {
+            ram += Path::metadata(path)
+                .map_err(|e| EngineError::Io(e.to_string()))?
+                .len();
+        }
+        Ok(MemoryEstimate { ram, vram: 0 })
+    }
 }
 
 /// How to load.
@@ -263,6 +304,57 @@ pub enum EmbedRole {
 pub struct Embeddings {
     pub vectors: Vec<Vec<f32>>,
     pub fingerprint: EmbeddingFingerprint,
+}
+
+/// Matryoshka shape of a model vector: first `dims` values (`None`: all), then L2 length 1 when `normalize`.
+///
+/// # Errors
+/// [`EngineError::Unsupported`]: `dims` 0 | above the model's; [`EngineError::Corrupt`]: a non-finite value.
+pub fn matryoshka(
+    vector: &[f32],
+    dims: Option<u32>,
+    normalize: bool,
+) -> Result<Vec<f32>, EngineError> {
+    let len = match dims {
+        None => vector.len(),
+        Some(d) => usize::try_from(d)
+            .ok()
+            .filter(|&d| d > 0 && d <= vector.len())
+            .ok_or_else(|| EngineError::Unsupported {
+                what: format!("{d} dimensions"),
+            })?,
+    };
+    let mut out = vector[..len].to_vec();
+    if out.iter().any(|v| !v.is_finite()) {
+        return Err(EngineError::Corrupt);
+    }
+    if normalize {
+        let norm = out
+            .iter()
+            .map(|v| f64::from(*v).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        if norm > 0.0 {
+            for v in &mut out {
+                #[allow(clippy::cast_possible_truncation)] // unit-length values, f32 range
+                {
+                    *v = (f64::from(*v) / norm) as f32;
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Engine release `have` reads files needing `needed` (llama.cpp tags `b<N>`); either spelled otherwise -> `true`
+/// (the load decides).
+#[must_use]
+pub fn engine_at_least(have: &str, needed: &str) -> bool {
+    let build = |tag: &str| tag.strip_prefix('b').and_then(|n| n.parse::<u32>().ok());
+    match (build(have), build(needed)) {
+        (Some(have), Some(needed)) => have >= needed,
+        _ => true,
+    }
 }
 
 /// Identity of an embedding space: vectors with different fingerprints NEVER compared (index rebuild).

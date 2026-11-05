@@ -16,6 +16,7 @@ fn files() -> ModelFiles {
         catalog_version: 1,
         files: vec![(FileRole::Weights, PathBuf::from("w.gguf"))],
         prefix_profile: Some("gemma".into()),
+        ..ModelFiles::default()
     }
 }
 
@@ -238,4 +239,143 @@ fn errors_read_as_plain_english() {
         EngineError::Blocked.to_string(),
         "The model engine could not start: security software may have blocked it."
     );
+}
+
+fn profile() -> PromptProfile {
+    let turn = |role: &str| Turn {
+        prefix: format!(
+            "<|turn>{role}
+"
+        ),
+        suffix: "<turn|>
+"
+        .into(),
+    };
+    PromptProfile {
+        system: turn("system"),
+        user: turn("user"),
+        assistant: turn("model"),
+        generation: "<|turn>model
+"
+        .into(),
+        stop: vec!["<turn|>".into()],
+        trim: true,
+    }
+}
+
+fn message(role: Role, content: &str) -> ChatMessage {
+    ChatMessage {
+        role,
+        content: content.into(),
+    }
+}
+
+#[test]
+fn a_prompt_profile_renders_markup_apart_from_message_text() {
+    let profile = profile();
+    let messages = [
+        message(Role::System, " Be brief. "),
+        message(Role::User, "Hi <turn|>"),
+    ];
+    let pieces = profile.render(&messages).unwrap();
+    let text: String = pieces.iter().map(|p| p.text).collect();
+    assert_eq!(
+        text,
+        "<|turn>system
+Be brief.<turn|>
+<|turn>user
+Hi <turn|><turn|>
+<|turn>model
+"
+    );
+    // person's text never parsed as markup (no turn injection)
+    let content: Vec<&str> = pieces
+        .iter()
+        .filter(|p| !p.markup)
+        .map(|p| p.text)
+        .collect();
+    assert_eq!(content, ["Be brief.", "Hi <turn|>"]);
+    assert!(matches!(
+        profile.render(&[message(Role::Tool, "{}")]),
+        Err(EngineError::Unsupported { .. })
+    ));
+}
+
+#[test]
+fn stop_strings_cut_the_stream_across_chunks() {
+    let stops = vec!["<end>".to_owned(), String::new()];
+    let mut scan = StopScan::new(&stops);
+    assert_eq!(
+        scan.push("Hello <e"),
+        ("Hello ".into(), false),
+        "maybe a stop: held"
+    );
+    assert_eq!(scan.push("x"), ("<ex".into(), false), "not a stop: out");
+    assert_eq!(scan.push(" a<en"), (" a".into(), false));
+    assert_eq!(scan.push("d>rest"), (String::new(), true));
+    let mut open = StopScan::new(&stops);
+    assert_eq!(open.push("é<"), ("é".into(), false));
+    assert_eq!(open.finish(), "<");
+}
+
+#[test]
+fn prefixes_follow_the_role() {
+    let prefixes = Prefixes {
+        query: "q: ".into(),
+        document: "d: ".into(),
+        symmetric: "s: ".into(),
+    };
+    assert_eq!(prefixes.of(EmbedRole::Query), "q: ");
+    assert_eq!(prefixes.of(EmbedRole::Document), "d: ");
+    assert_eq!(prefixes.of(EmbedRole::Symmetric), "s: ");
+}
+
+#[test]
+fn matryoshka_truncates_then_renormalizes() {
+    let v = [3.0, 4.0, 12.0];
+    assert_eq!(matryoshka(&v, Some(2), true).unwrap(), [0.6, 0.8]);
+    assert_eq!(matryoshka(&v, None, false).unwrap(), v);
+    let full = matryoshka(&v, None, true).unwrap();
+    let norm: f32 = full.iter().map(|x| x * x).sum();
+    assert!((norm - 1.0).abs() < 1e-6);
+    for dims in [0, 4] {
+        assert!(matches!(
+            matryoshka(&v, Some(dims), true),
+            Err(EngineError::Unsupported { .. })
+        ));
+    }
+    assert_eq!(
+        matryoshka(&[f32::NAN], None, true),
+        Err(EngineError::Corrupt)
+    );
+}
+
+#[test]
+fn engine_builds_compare_by_number() {
+    assert!(engine_at_least("b11960", "b11452"));
+    assert!(engine_at_least("b11452", "b11452"));
+    assert!(!engine_at_least("b11429", "b11960"));
+    assert!(
+        engine_at_least("dev", "b11960"),
+        "unknown spelling: load decides"
+    );
+}
+
+#[test]
+fn model_files_without_prompt_data_still_parse() {
+    // PROTO 1 peers before prompt data: missing fields = none
+    let old = json!({
+        "model_id": "m",
+        "catalog_version": 1,
+        "files": [["weights", "w.gguf"]],
+        "prefix_profile": null
+    });
+    let files: ModelFiles = serde_json::from_value(old).unwrap();
+    assert_eq!(files.prompt, None);
+    assert_eq!(files.prefixes, None);
+    assert_eq!(files.min_engine, None);
+    let mut full = files.clone();
+    full.prompt = Some(profile());
+    let back: ModelFiles = serde_json::from_str(&serde_json::to_string(&full).unwrap()).unwrap();
+    assert_eq!(back, full);
 }
