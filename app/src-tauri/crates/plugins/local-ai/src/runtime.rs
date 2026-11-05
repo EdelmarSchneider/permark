@@ -6,8 +6,11 @@
 //!   thread), the log file is written when a worker's stderr ends.
 //! - Loads serialized (one at a time) with the memory guard ([`guard::check`]) on a profile read now.
 //! - [`Runtime::release`] (D-11, Windows mmap lock): every session of a lineage unloaded (= its workers exit) before
-//!   its files are removed | moved. [`Runtime::release_all`] on store change + plugin off.
-//! - Worker stop: stdin closed (+ `unload` exit message), [`STOP_GRACE`] for its own exit, then kill + wait.
+//!   its files are removed | moved; a load of it in flight is cancelled (its token) + waited for (no session missed).
+//!   The token a released session was loaded with is cancelled too (its owner's work, e.g. a model test, stops).
+//!   [`Runtime::release_all`] on store change + plugin off.
+//! - Worker stop: stdin closed (+ `unload` exit message): the worker hard-exits on stdin EOF (even mid-load);
+//!   [`STOP_GRACE`] only for a wedged one, then kill + wait.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, BufRead, BufReader, Read};
@@ -30,8 +33,6 @@ use crate::machine::MachineProfile;
 pub const STOP_GRACE: Duration = Duration::from_secs(2);
 /// Worker output kept for the log file, bytes.
 const LOG_CAP: usize = 256 << 10;
-/// Worker output kept in memory (crash messages), bytes.
-const TAIL_CAP: usize = 8 << 10;
 /// Longest stderr line taken at once (a longer one is split).
 const LINE_CAP: u64 = 4 << 10;
 
@@ -40,7 +41,7 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// Workers' stderr: last [`LOG_CAP`] bytes in memory, saved (atomic) to the log file each time a worker's stderr
-/// ends (exit | crash); [`WorkerLog::tail`] = last [`TAIL_CAP`] bytes (crash messages).
+/// ends (exit | crash).
 pub struct WorkerLog {
     path: PathBuf,
     inner: Mutex<Lines>,
@@ -73,25 +74,6 @@ impl WorkerLog {
             };
             inner.bytes -= old.len() + 1;
         }
-    }
-
-    /// Last worker lines within [`TAIL_CAP`] bytes (newest last).
-    #[must_use]
-    pub fn tail(&self) -> String {
-        let inner = lock(&self.inner);
-        let mut bytes = 0;
-        let mut kept: Vec<&str> = inner
-            .lines
-            .iter()
-            .rev()
-            .take_while(|l| {
-                bytes += l.len() + 1;
-                bytes <= TAIL_CAP
-            })
-            .map(String::as_str)
-            .collect();
-        kept.reverse();
-        kept.join("\n")
     }
 
     /// Writes the kept lines to the log file (best effort: a diagnostic only).
@@ -135,17 +117,6 @@ impl WorkerLog {
     }
 }
 
-/// Spawn failure of a resolved (installed, verified) worker: missing | refused now = taken by security software
-/// (D-14) -> `PermissionDenied` (the proxy answers [`EngineError::Blocked`]).
-fn blocked(error: io::Error) -> io::Error {
-    match error.kind() {
-        io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied => {
-            io::Error::new(io::ErrorKind::PermissionDenied, error)
-        }
-        _ => error,
-    }
-}
-
 /// Launch of the pinned worker: spawned piped in its folder, stderr drained into `log`.
 fn worker_launch(files: Arc<WorkerFiles>, log: Arc<WorkerLog>) -> Launch {
     Box::new(move || {
@@ -159,7 +130,7 @@ fn worker_launch(files: Arc<WorkerFiles>, log: Arc<WorkerLog>) -> Launch {
             stdout,
             stderr,
             mut child,
-        } = process::spawn_piped(&exe, &[], &cwd).map_err(blocked)?;
+        } = process::spawn_piped(&exe, &[], &cwd)?;
         // no drain thread: dropping `child` kills the worker
         log.drain(stderr)?;
         Ok(WorkerPipes {
@@ -175,36 +146,32 @@ fn worker_launch(files: Arc<WorkerFiles>, log: Arc<WorkerLog>) -> Launch {
 /// Engine host of one plugin instance (rules: module doc).
 pub struct Runtime {
     engine: WorkerEngine,
-    /// Session -> lineage of its model.
-    sessions: Mutex<HashMap<SessionId, String>>,
-    /// One load at a time (guard reads memory with no other load in flight).
+    /// Session -> lineage of its model + the token it was loaded with.
+    sessions: Mutex<HashMap<SessionId, (String, CancelToken)>>,
+    /// Loads asked for and not ended (lineage, token): [`Runtime::release`] cancels them.
+    pending: Mutex<Vec<(String, CancelToken)>>,
+    /// One load at a time (guard reads memory with no other load in flight); held by a release while it waits.
     loading: Mutex<()>,
     /// Memory now (guard input).
     machine: fn() -> MachineProfile,
-    log: Arc<WorkerLog>,
 }
 
 impl Runtime {
     /// Runtime over the pinned worker of `files`; stderr into `log`.
     #[must_use]
     pub fn new(files: Arc<WorkerFiles>, log: Arc<WorkerLog>) -> Self {
-        let launch = worker_launch(files, Arc::clone(&log));
-        Self::with_launch(launch, crate::machine::detect, log)
+        Self::with_launch(worker_launch(files, log), crate::machine::detect)
     }
 
     /// Runtime over `launch` with memory read by `machine` (tests).
     #[must_use]
-    pub fn with_launch(
-        launch: Launch,
-        machine: fn() -> MachineProfile,
-        log: Arc<WorkerLog>,
-    ) -> Self {
+    pub fn with_launch(launch: Launch, machine: fn() -> MachineProfile) -> Self {
         Self {
             engine: WorkerEngine::new(launch),
             sessions: Mutex::new(HashMap::new()),
+            pending: Mutex::new(Vec::new()),
             loading: Mutex::new(()),
             machine,
-            log,
         }
     }
 
@@ -217,7 +184,8 @@ impl Runtime {
     /// Loads `model` of `lineage` after the memory guard on `needs`.
     ///
     /// # Errors
-    /// [`EngineError::OutOfMemory`] (guard, no worker started) | the engine's load errors.
+    /// [`EngineError::OutOfMemory`] (guard, no worker started) | [`EngineError::Cancelled`] (`cancel` | released
+    /// meanwhile) | the engine's load errors.
     pub fn load(
         &self,
         lineage: &str,
@@ -227,11 +195,18 @@ impl Runtime {
         progress: &dyn Fn(f32),
         cancel: &CancelToken,
     ) -> Result<SessionId, EngineError> {
-        let _one = lock(&self.loading);
-        guard::check(needs, &(self.machine)())?;
-        let session = self.engine.load(model, opts, progress, cancel)?;
-        lock(&self.sessions).insert(session, lineage.to_owned());
-        Ok(session)
+        lock(&self.pending).push((lineage.to_owned(), cancel.clone()));
+        let loaded = {
+            let _one = lock(&self.loading);
+            let loaded = guard::check(needs, &(self.machine)())
+                .and_then(|()| self.engine.load(model, opts, progress, cancel));
+            if let Ok(session) = loaded {
+                lock(&self.sessions).insert(session, (lineage.to_owned(), cancel.clone()));
+            }
+            loaded
+        };
+        lock(&self.pending).retain(|(_, token)| !std::ptr::eq(token.flag(), cancel.flag()));
+        loaded
     }
 
     /// Unloads `session` (its worker exits).
@@ -250,37 +225,43 @@ impl Runtime {
         self.unload_where(|_| true);
     }
 
+    /// Picked loads in flight cancelled + waited for, then picked sessions unloaded (their tokens cancelled).
     fn unload_where(&self, pick: impl Fn(&str) -> bool) {
-        let picked: Vec<SessionId> = {
-            let mut sessions = lock(&self.sessions);
-            let picked = sessions
-                .iter()
-                .filter(|(_, l)| pick(l))
-                .map(|(s, _)| *s)
-                .collect::<Vec<_>>();
-            for s in &picked {
-                sessions.remove(s);
+        for (lineage, token) in lock(&self.pending).iter() {
+            if pick(lineage) {
+                token.cancel();
             }
+        }
+        // in-flight load ended (its session, if any, listed below); no new load until done
+        let _wait = lock(&self.loading);
+        let picked: Vec<(SessionId, CancelToken)> = {
+            let mut sessions = lock(&self.sessions);
+            let picked: Vec<SessionId> = sessions
+                .iter()
+                .filter(|(_, (l, _))| pick(l))
+                .map(|(s, _)| *s)
+                .collect();
             picked
+                .into_iter()
+                .filter_map(|s| sessions.remove(&s).map(|(_, token)| (s, token)))
+                .collect()
         };
-        for session in picked {
+        for (session, token) in picked {
+            token.cancel();
             self.engine.unload(session);
         }
     }
 
     /// Lineages with a loaded session (sorted, once each).
-    #[must_use]
-    pub fn loaded(&self) -> Vec<String> {
-        let mut lineages: Vec<String> = lock(&self.sessions).values().cloned().collect();
+    #[cfg(test)]
+    pub(crate) fn loaded(&self) -> Vec<String> {
+        let mut lineages: Vec<String> = lock(&self.sessions)
+            .values()
+            .map(|(l, _)| l.clone())
+            .collect();
         lineages.sort();
         lineages.dedup();
         lineages
-    }
-
-    /// Last worker output (crash messages).
-    #[must_use]
-    pub fn log_tail(&self) -> String {
-        self.log.tail()
     }
 }
 

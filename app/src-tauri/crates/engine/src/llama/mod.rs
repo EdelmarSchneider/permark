@@ -4,7 +4,10 @@
 //! - text only: Chat + Embed (tokenize | count | context length on any model); transcribe | synthesize | tool calls
 //!   -> `Unsupported` (D-1, D-9).
 //! - devices (D-7): `Cpu` = no GPU device, 0 layers, no op offload; `Auto` = the GPU with most memory (none -> CPU),
-//!   split none, `fit_params` picks layers -> no fit = `OutOfMemory`.
+//!   split none, `fit_params` picks layers -> no fit = `OutOfMemory`; [`Engine::on_gpu`] = layers placed on the GPU.
+//! - load errors: not a GGUF file (magic) -> `Corrupt`; any other llama.cpp failure (cause not told: unknown
+//!   architecture, read error, allocation) -> `Io` with a FIXED code (no path, no llama text; reason in the worker
+//!   log, written by llama.cpp) -> NEVER tells the person to delete a fine model.
 //! - catalog `min_engine` above [`LLAMA_CPP`] -> `EngineTooOld` before any load (unknown architectures never parsed).
 //! - load on a scoped thread (llama progress callback must be `'static`): progress polled + forwarded here; cancel
 //!   aborts the load (callback answers `false`).
@@ -49,8 +52,10 @@ pub const LLAMA_CPP: &str = "b11429";
 
 /// Free memory kept per GPU when fitting layers (llama.cpp `--fit-target` default).
 const FIT_MARGIN: usize = 1 << 30;
-/// `fit_params` log level (warnings and up).
-const FIT_LOG_WARN: i32 = 3;
+/// `fit_params` log level (warnings and up); bindgen type (C enum: u32 on unix, i32 on MSVC).
+const FIT_LOG_WARN: llama_cpp_sys_2::ggml_log_level = llama_cpp_sys_2::GGML_LOG_LEVEL_WARN;
+/// First bytes of every GGUF file.
+const GGUF_MAGIC: &[u8; 4] = b"GGUF";
 /// Generation batch, tokens.
 const GEN_BATCH: u32 = 512;
 /// Candidates kept before top-p (llama.cpp default).
@@ -76,6 +81,8 @@ struct Session {
     threads: i32,
     /// No GPU in use (no op offload).
     cpu: bool,
+    /// Layers placed on the GPU.
+    gpu_layers: bool,
     context: Option<(Kind, LlamaContext<'static>)>,
 }
 
@@ -195,7 +202,30 @@ fn internal(e: impl std::fmt::Display) -> EngineError {
     EngineError::Io(e.to_string())
 }
 
-/// Loads `path` with `gpu` (`None`: CPU only); runs on the load thread (params never cross threads).
+/// Fixed-code failure (no path | library text crosses the wire); `detail` -> worker log (stderr).
+fn failed(code: &str, detail: &dyn std::fmt::Display) -> EngineError {
+    eprintln!("permark-llm-worker: {code}: {detail}");
+    EngineError::Io(code.to_owned())
+}
+
+/// `path` starts like a GGUF file (else damaged | another kind of file).
+fn check_gguf(path: &Path) -> Result<(), EngineError> {
+    let mut magic = [0u8; 4];
+    std::fs::File::open(path)
+        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut magic))
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::UnexpectedEof => EngineError::Corrupt,
+            _ => failed("model file unreadable", &e),
+        })?;
+    if &magic == GGUF_MAGIC {
+        Ok(())
+    } else {
+        Err(EngineError::Corrupt)
+    }
+}
+
+/// Loads `path` with `gpu` (`None`: CPU only) -> model + layers on the GPU; runs on the load thread (params never
+/// cross threads).
 fn load_model(
     backend: &LlamaBackend,
     path: &Path,
@@ -204,11 +234,11 @@ fn load_model(
     threads: i32,
     progress: Arc<AtomicU32>,
     cancel: CancelToken,
-) -> Result<LlamaModel, EngineError> {
+) -> Result<(LlamaModel, bool), EngineError> {
     let c_path = path
         .to_str()
         .and_then(|p| CString::new(p).ok())
-        .ok_or_else(|| EngineError::Io("model path not readable".into()))?;
+        .ok_or_else(|| failed("model path not readable", &"not UTF-8 | NUL"))?;
     let params = LlamaModelParams::default().with_progress_callback(move |value| {
         progress.store(value.to_bits(), Ordering::Relaxed);
         !cancel.is_cancelled()
@@ -230,11 +260,14 @@ fn load_model(
             .fit_params(&c_path, &mut cparams, &mut margins, n_ctx, FIT_LOG_WARN)
             .map_err(|e| match e {
                 FitError::Failure => EngineError::OutOfMemory,
-                FitError::Error => EngineError::Corrupt,
+                FitError::Error => failed("model fit failed", &e),
             })?;
     }
-    // llama.cpp cannot tell damaged files from unknown ones (catalog `min_engine` caught those before)
-    LlamaModel::load_from_file(backend, path, &params).map_err(|_| EngineError::Corrupt)
+    let on_gpu = gpu.is_some() && params.n_gpu_layers() != 0;
+    // cause not told by llama.cpp (catalog `min_engine` caught known-new architectures before)
+    LlamaModel::load_from_file(backend, path, &params)
+        .map(|model| (model, on_gpu))
+        .map_err(|e| failed("model load failed", &e))
 }
 
 impl Engine for LlamaEngine {
@@ -279,8 +312,9 @@ impl Engine for LlamaEngine {
         }
         let path = model.weights().ok_or(EngineError::Corrupt)?.to_path_buf();
         if !path.is_file() {
-            return Err(EngineError::Io(format!("{} not found", path.display())));
+            return Err(failed("model file missing", &path.display()));
         }
+        check_gguf(&path)?;
         let threads = opts
             .threads
             .and_then(|t| i32::try_from(t).ok())
@@ -313,7 +347,7 @@ impl Engine for LlamaEngine {
             Ok(result) => result,
             Err(_) => Err(EngineError::EngineCrashed),
         };
-        let llama = match loaded {
+        let (llama, gpu_layers) = match loaded {
             Err(_) if cancel.is_cancelled() => return Err(EngineError::Cancelled),
             other => other?,
         };
@@ -332,9 +366,14 @@ impl Engine for LlamaEngine {
             n_ctx,
             threads,
             cpu: gpu.is_none(),
+            gpu_layers,
             context: None,
         });
         Ok(id)
+    }
+
+    fn on_gpu(&self, session: SessionId) -> bool {
+        self.with(session, |s| Ok(s.gpu_layers)).unwrap_or(false)
     }
 
     fn unload(&self, session: SessionId) {

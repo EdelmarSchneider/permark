@@ -209,6 +209,7 @@ function engineKey(detail: string | null): MessageKey | null {
     case "notAvailable":
       return "localAi.test.failed.notAvailable";
     case "crashed":
+    case "notLoaded":
       return "localAi.test.failed.crashed";
     case "blocked":
       return "localAi.test.failed.blocked";

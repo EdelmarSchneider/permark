@@ -7,6 +7,7 @@
 //!   Constraint accepted, not applied.
 //! - transcribe: one segment per started second (`"<lang> second <n>"`); synthesize: one 100 ms silent chunk per
 //!   word.
+//! - on GPU = caps `gpu` + device not `Cpu`.
 //! - tokens = whitespace-separated words; [`FakeEngine::crash`] -> sessions lost, calls answer `EngineCrashed` until
 //!   next `load` (worker restart).
 //! - [`FakeEngine::paced`]: after each streamed item (delta, segment, chunk) waits up to `pace` for cancel
@@ -45,6 +46,8 @@ struct Inner {
 struct Loaded {
     model: ModelFiles,
     context_len: u32,
+    /// GPU in caps + device not `Cpu`.
+    gpu: bool,
 }
 
 const SPEECH_RATE: u32 = 24_000;
@@ -219,9 +222,14 @@ impl Engine for FakeEngine {
             Loaded {
                 model,
                 context_len: opts.context_len,
+                gpu: self.caps.gpu && opts.device != Device::Cpu,
             },
         );
         Ok(id)
+    }
+
+    fn on_gpu(&self, session: SessionId) -> bool {
+        self.with(session, |loaded| loaded.gpu).unwrap_or(false)
     }
 
     fn unload(&self, session: SessionId) {

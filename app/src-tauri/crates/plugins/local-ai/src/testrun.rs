@@ -8,8 +8,10 @@
 //!   streamed (<= [`MAX_TOKENS`]), embedding-only model = one vector of [`EMBED_TEXT`] -> `done` with timings.
 //! - The session is ALWAYS unloaded (done | failed | cancelled) before the last event goes out.
 //! - Cancel ([`Tester::cancel`]): stops the engine download (part kept) | the load (worker killed) | the run.
-//! - Device: the contract tells only whether a GPU backend is usable (`gpu`); load uses `Device::Auto` (GPU when the
-//!   model fits). Memory = the engine's estimate (lower bound: file bytes).
+//! - Device: load uses `Device::Auto` (GPU when the model fits); result `gpu` = the session really runs on it
+//!   ([`Engine::on_gpu`]). Memory = the engine's estimate (lower bound: file bytes).
+//! - Worker files verified, then gone at load (`Io`, files no longer installed) = taken by security software (D-14)
+//!   -> `Blocked`; a refused spawn is `Blocked` in the proxy already.
 //! - Dormant: nothing runs | is created before a start; plugin off ([`Tester::shutdown`]) cancels + joins.
 //! - Tests: `src/tests/testrun.rs` (shares the installs lab).
 
@@ -103,7 +105,7 @@ pub struct TestResult {
     pub load_ms: u64,
     #[ts(type = "number")]
     pub run_ms: u64,
-    /// A GPU backend was usable (load picks it when the model fits).
+    /// The model ran (partly) on the graphics card (layers placed there at load).
     pub gpu: bool,
     /// Engine estimate of the loaded model, bytes (lower bound); `None`: unknown.
     #[ts(type = "number | null")]
@@ -153,8 +155,8 @@ pub enum TestError {
 
 impl From<TestError> for IpcError {
     /// Engine | files errors: subject `engine`, `detail` = stable code (`outOfMemory`, `notAvailable`, `crashed`,
-    /// `blocked`, `engineTooOld`, `unsupported`, `corrupt`, `notLoaded`, `cancelled`, `badPin`); worker log NEVER
-    /// sent (may hold paths).
+    /// `blocked`, `engineTooOld`, `unsupported`, `corrupt`, `notLoaded`, `cancelled`, `badPin`, `io`); engine text |
+    /// worker log NEVER sent (may hold paths).
     fn from(error: TestError) -> Self {
         let engine = |kind, detail: &str| IpcError::new(kind).subject("engine").detail(detail);
         match error {
@@ -180,9 +182,7 @@ impl From<TestError> for IpcError {
                 EngineError::EngineTooOld { .. } => engine(ErrorKind::Unsupported, "engineTooOld"),
                 EngineError::NotLoaded => engine(ErrorKind::Unavailable, "notLoaded"),
                 EngineError::Blocked => engine(ErrorKind::Denied, "blocked"),
-                EngineError::Io(detail) => IpcError::new(ErrorKind::Io)
-                    .subject("engine")
-                    .detail(detail),
+                EngineError::Io(_) => engine(ErrorKind::Io, "io"),
             },
         }
     }
@@ -419,6 +419,7 @@ impl Shared {
         let load_ms = millis(started.elapsed());
         self.emit(&model.id, TestPhase::Running);
         let caps = runtime.engine().caps();
+        let gpu = runtime.engine().on_gpu(loaded.session);
         let started = Instant::now();
         let output = match kind {
             Kind::Chat => chat(runtime.engine(), loaded.session, cancel, started)?,
@@ -441,7 +442,7 @@ impl Shared {
         Ok(TestResult {
             load_ms,
             run_ms,
-            gpu: caps.gpu,
+            gpu,
             memory_bytes,
             engine_version: caps.version,
             output,

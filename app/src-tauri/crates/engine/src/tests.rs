@@ -1,6 +1,6 @@
 //! Wire + proxy edges with scripted workers (contract cases over a real `serve`: plugin `local-ai` engine tests).
 
-use std::io::{self, Cursor};
+use std::io::{self, BufRead, BufReader, Cursor, Read};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -40,13 +40,20 @@ fn hello(proto: u32) -> String {
 
 /// Worker whose stdout = `script`, then EOF; counts kills.
 fn scripted(script: String) -> (WorkerEngine, Arc<AtomicUsize>) {
+    scripted_out(move || Box::new(Cursor::new(script.clone().into_bytes())))
+}
+
+/// Worker whose stdout = `out()`; counts kills.
+fn scripted_out(
+    out: impl Fn() -> Box<dyn BufRead + Send> + Send + Sync + 'static,
+) -> (WorkerEngine, Arc<AtomicUsize>) {
     let kills = Arc::new(AtomicUsize::new(0));
     let counted = Arc::clone(&kills);
     let engine = WorkerEngine::new(Box::new(move || {
         let counted = Arc::clone(&counted);
         Ok(WorkerPipes {
             to_worker: Box::new(io::sink()),
-            from_worker: Box::new(Cursor::new(script.clone().into_bytes())),
+            from_worker: out(),
             kill: Box::new(move || {
                 counted.fetch_add(1, Ordering::Relaxed);
             }),
@@ -109,6 +116,7 @@ fn requests_and_responses_round_trip_as_json_lines() {
         Response::Progress { value: 0.5 },
         Response::Loaded {
             session: SessionId(7),
+            gpu: true,
         },
         Response::Gen {
             event: GenEvent::ToolCall {
@@ -163,6 +171,40 @@ fn a_hello_with_another_protocol_is_an_engine_too_old() {
         Err(EngineError::EngineTooOld { .. })
     ));
     assert_eq!(engine.caps(), EngineCaps::default());
+}
+
+/// PROTO 1 load answer without `gpu` (older worker) still parses: CPU.
+#[test]
+fn a_load_answer_without_gpu_means_cpu() {
+    let (engine, _) = scripted(hello(PROTO) + r#"{"re":"loaded","session":4}"# + "\n");
+    let session = load(&engine).unwrap();
+    assert!(!engine.on_gpu(session));
+    assert!(!engine.on_gpu(SessionId(99)), "unknown session");
+    let (engine, _) = scripted(hello(PROTO) + r#"{"re":"loaded","session":4,"gpu":true}"# + "\n");
+    let session = load(&engine).unwrap();
+    assert!(engine.on_gpu(session));
+}
+
+/// Worker line over the cap (even valid JSON) | a newline-free flood -> `EngineCrashed` + killed; host reads at
+/// most one capped line (the flood never ends: an unbounded reader would never answer).
+#[test]
+fn an_over_long_worker_line_is_a_crash() {
+    let cap = usize::try_from(proxy::LINE_CAP).unwrap();
+    let padded = format!(
+        "{{\"re\":\"progress\",\"value\":0.5,\"pad\":\"{}\"}}\n",
+        "a".repeat(cap)
+    );
+    let (engine, kills) =
+        scripted(hello(PROTO) + &padded + r#"{"re":"loaded","session":1}"# + "\n");
+    assert_eq!(load(&engine), Err(EngineError::EngineCrashed));
+    assert_eq!(kills.load(Ordering::Relaxed), 1);
+    let (flood, kills) = scripted_out(|| {
+        Box::new(BufReader::new(
+            Cursor::new(hello(PROTO).into_bytes()).chain(io::repeat(b'a')),
+        ))
+    });
+    assert_eq!(load(&flood), Err(EngineError::EngineCrashed));
+    assert_eq!(kills.load(Ordering::Relaxed), 1);
 }
 
 /// AC-3: stdout ends mid-call -> `EngineCrashed`, worker killed.

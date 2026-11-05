@@ -6,7 +6,7 @@ import type { ModelTestOutput } from "./ModelTestOutput";
  */
 export type ModelTestResult = { loadMs: number, runMs: number, 
 /**
- * A GPU backend was usable (load picks it when the model fits).
+ * The model ran (partly) on the graphics card (layers placed there at load).
  */
 gpu: boolean, 
 /**

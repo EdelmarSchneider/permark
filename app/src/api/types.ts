@@ -741,7 +741,7 @@ export interface AppPluginEvents {
   /**
    * One model test's phase: `engine` (engine download, first test only) -> `loading` -> `running` -> `done` |
    * `failed` (error subject `engine`, detail `outOfMemory` | `notAvailable` | `crashed` | `blocked` | `engineTooOld` |
-   * `unsupported` | `corrupt` | `notLoaded`) | `cancelled`.
+   * `unsupported` | `corrupt` | `notLoaded`; kind `io`: detail `io`) | `cancelled`.
    */
   "local-ai:test": ModelTest;
 }

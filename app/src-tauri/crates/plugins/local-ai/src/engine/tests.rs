@@ -2,7 +2,7 @@
 //! per "worker"; no process, no model).
 
 use std::cell::RefCell;
-use std::io::{self, BufReader, PipeWriter, Write};
+use std::io::{self, BufRead, BufReader, PipeWriter, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -54,7 +54,7 @@ impl Workers {
                 inner: worker_out,
                 dead: Arc::clone(&dead),
             };
-            std::thread::spawn(move || serve(BufReader::new(worker_in), out, &make()));
+            std::thread::spawn(move || serve(BufReader::new(worker_in), out, &make(), || {}));
             rig.launched.fetch_add(1, Ordering::Relaxed);
             *rig.last.lock().unwrap() = Some(Arc::clone(&dead));
             let killed = Arc::clone(&rig.kills);
@@ -501,6 +501,72 @@ fn cancel_during_load_kills_the_worker() {
     );
     assert_eq!(seen.into_inner(), [0.0]);
     assert_eq!((rig.launched(), rig.kills()), (1, 1));
+}
+
+/// D-10: stdin EOF (host gone) reaches `on_host_gone` at once, while a call still runs (worker: hard exit).
+#[test]
+fn the_worker_loop_reports_the_host_gone_mid_call() {
+    let (worker_in, mut to_worker) = io::pipe().unwrap();
+    let (from_worker, worker_out) = io::pipe().unwrap();
+    let (gone, gone_rx) = std::sync::mpsc::channel();
+    let serving = std::thread::spawn(move || {
+        serve(BufReader::new(worker_in), worker_out, &paced(), move || {
+            let _ = gone.send(());
+        })
+    });
+    let mut lines = BufReader::new(from_worker).lines();
+    let mut send = |request: &crate::engine::wire::Request| {
+        let mut line = serde_json::to_vec(request).unwrap();
+        line.push(b'\n');
+        to_worker.write_all(&line).unwrap();
+    };
+    send(&crate::engine::wire::Request::Load {
+        model: files("m", None),
+        opts: opts(),
+    });
+    let session = loop {
+        let line = lines.next().unwrap().unwrap();
+        if let Ok(crate::engine::wire::Response::Loaded { session, .. }) =
+            serde_json::from_str(&line)
+        {
+            break session;
+        }
+    };
+    send(&crate::engine::wire::Request::Generate {
+        session,
+        request: user("one two three"),
+    });
+    // first delta out = the paced call now waits (10 s) for a cancel that never comes
+    assert!(lines.next().unwrap().unwrap().contains("Delta"));
+    drop(send);
+    drop(to_worker);
+    gone_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("host gone reported while the call runs");
+    assert!(!serving.is_finished(), "the call itself still runs");
+}
+
+/// D-7: the session tells whether it runs on a GPU (Auto + GPU in caps), also across the worker pipe.
+#[test]
+fn a_session_tells_whether_it_runs_on_the_gpu() {
+    for engine in both(FakeEngine::new) {
+        let auto = loaded(engine.as_ref());
+        assert!(engine.on_gpu(auto));
+        let cpu = LoadOpts {
+            device: Device::Cpu,
+            ..opts()
+        };
+        let session = engine
+            .load(files("m", None), cpu, &|_| {}, &CancelToken::new())
+            .unwrap();
+        assert!(!engine.on_gpu(session));
+        engine.unload(auto);
+        assert!(!engine.on_gpu(auto), "unloaded");
+    }
+    for engine in both(|| FakeEngine::with_caps(vec![Capability::Chat], false)) {
+        let session = loaded(engine.as_ref());
+        assert!(!engine.on_gpu(session), "no GPU in caps");
+    }
 }
 
 /// AC-10: a capability the engine lacks -> Unsupported, never a fallback.

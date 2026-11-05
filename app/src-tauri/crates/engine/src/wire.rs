@@ -97,6 +97,9 @@ pub enum Response {
     },
     Loaded {
         session: SessionId,
+        /// [`crate::Engine::on_gpu`] (absent from older PROTO 1 workers -> `false`).
+        #[serde(default)]
+        gpu: bool,
     },
     Memory {
         estimate: MemoryEstimate,

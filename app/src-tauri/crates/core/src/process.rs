@@ -83,12 +83,6 @@ pub struct PipedChild {
 }
 
 impl PipedChild {
-    /// OS process id.
-    #[must_use]
-    pub fn id(&self) -> u32 {
-        self.child.id()
-    }
-
     /// Waits up to `grace` for the child to end by itself (caller closed its stdin | asked it to exit), then kills
     /// it; reaped either way.
     ///

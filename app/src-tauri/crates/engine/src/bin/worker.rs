@@ -5,7 +5,9 @@
 //!   protocol). Logs = stderr (the host keeps a capped tail).
 //! - end (stdin EOF | `Unload` | host gone): IMMEDIATE hard exit, NEVER `std::process::exit` (runs C++ static
 //!   destructors + DLL detach: GPU drivers may hang there).
+//! - stdin EOF (host gone, even mid-load): the protocol reader thread hard-exits at once.
 //! - no socket, no network, no file besides the model + its own folder (AC-2).
+//! - libraries only from its own folder + the system (see [`harden_loading`]).
 
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter};
@@ -14,6 +16,8 @@ use permark_engine::llama::LlamaEngine;
 use permark_engine::serve;
 
 fn main() {
+    // still single-threaded: nothing has read the environment | loaded a backend yet
+    harden_loading();
     let protocol = match protocol_out() {
         Ok(file) => file,
         Err(e) => {
@@ -32,11 +36,40 @@ fn main() {
         BufReader::new(io::stdin()),
         BufWriter::new(protocol),
         &engine,
+        || hard_exit(0),
     ) {
         Ok(()) => 0,
         Err(_) => 1,
     };
     hard_exit(code)
+}
+
+/// Library loading limited to the worker's own (pinned) folder + the system:
+/// - `GGML_BACKEND_PATH` removed: ggml would load that file as an extra backend (code from outside the pinned unit).
+///   Other `GGML_*` | `LLAMA_*` variables only tune the engine and come from the same user as the app: kept.
+/// - Windows: DLL search = application folder + System32 (no current folder, no `PATH`): a planted DLL with a
+///   backend's dependency name never loads.
+fn harden_loading() {
+    std::env::remove_var("GGML_BACKEND_PATH");
+    #[cfg(windows)]
+    #[allow(unsafe_code)]
+    // SAFETY: process-wide loader flag set with constant, valid flags before any other thread | backend load; result
+    // checked (failure = older loader rules, logged).
+    unsafe {
+        use windows_sys::Win32::System::LibraryLoader::{
+            SetDefaultDllDirectories, LOAD_LIBRARY_SEARCH_APPLICATION_DIR,
+            LOAD_LIBRARY_SEARCH_SYSTEM32,
+        };
+        if SetDefaultDllDirectories(
+            LOAD_LIBRARY_SEARCH_APPLICATION_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32,
+        ) == 0
+        {
+            eprintln!(
+                "permark-llm-worker: library search not limited: {}",
+                io::Error::last_os_error()
+            );
+        }
+    }
 }
 
 /// Protocol writer = the original stdout; stdout itself now goes to stderr.

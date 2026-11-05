@@ -4,6 +4,8 @@
 //!   running call's token, others -> main loop (each with a fresh token).
 //! - returns on stdin EOF | [`Request::Unload`] (Ok) | write failure (Err). Reader thread may outlive the call: the
 //!   worker binary hard-exits right after.
+//! - stdin EOF | read error (host gone): the reader thread calls `on_host_gone` AT ONCE, even while a call runs
+//!   (worker: hard exit, D-10 -> cancel during load | plugin off never waits for llama.cpp).
 
 use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
@@ -15,7 +17,8 @@ use serde::Serialize;
 use crate::wire::{Hello, Request, Response, PROTO};
 use crate::{CancelToken, Engine, EngineError};
 
-/// Speaks the protocol on `reader` | `writer` for `engine` until the host is gone or unloads.
+/// Speaks the protocol on `reader` | `writer` for `engine` until the host is gone or unloads; `on_host_gone` runs
+/// on the reader thread when `reader` ends | fails (tests: no-op).
 ///
 /// # Errors
 /// Writing to `writer` failed (host gone).
@@ -23,6 +26,7 @@ pub fn serve(
     reader: impl BufRead + Send + 'static,
     writer: impl Write,
     engine: &dyn Engine,
+    on_host_gone: impl FnOnce() + Send + 'static,
 ) -> io::Result<()> {
     let out = Out {
         writer: RefCell::new(writer),
@@ -34,7 +38,11 @@ pub fn serve(
     });
     out.result()?;
     let (tx, rx) = mpsc::channel();
-    thread::spawn(move || read_requests(reader, &tx));
+    thread::spawn(move || {
+        if read_requests(reader, &tx) {
+            on_host_gone();
+        }
+    });
     for (request, cancel) in rx {
         if !answer(&out, engine, request, &cancel) {
             break;
@@ -44,11 +52,15 @@ pub fn serve(
     out.result()
 }
 
-/// Reader thread: forwards requests (bad line -> `Err` text), handles `Cancel` itself.
-fn read_requests(reader: impl BufRead, tx: &mpsc::Sender<(Result<Request, String>, CancelToken)>) {
+/// Reader thread: forwards requests (bad line -> `Err` text), handles `Cancel` itself. `true`: host gone (EOF | read
+/// error); `false`: main loop ended first.
+fn read_requests(
+    reader: impl BufRead,
+    tx: &mpsc::Sender<(Result<Request, String>, CancelToken)>,
+) -> bool {
     let mut current = CancelToken::new();
     for line in reader.lines() {
-        let Ok(line) = line else { return };
+        let Ok(line) = line else { return true };
         if line.trim().is_empty() {
             continue;
         }
@@ -59,9 +71,10 @@ fn read_requests(reader: impl BufRead, tx: &mpsc::Sender<(Result<Request, String
         }
         current = CancelToken::new();
         if tx.send((request, current.clone())).is_err() {
-            return;
+            return false;
         }
     }
+    true
 }
 
 /// Lines to the host; first write error kept (later lines dropped).
@@ -125,7 +138,10 @@ fn answer<W: Write>(
                 &|value| stream(Response::Progress { value }),
                 cancel,
             )
-            .map(|session| Response::Loaded { session }),
+            .map(|session| Response::Loaded {
+                session,
+                gpu: engine.on_gpu(session),
+            }),
         Ok(Request::Tokenize { session, text }) => engine
             .tokenize(session, &text)
             .map(|ids| Response::Tokens { ids }),

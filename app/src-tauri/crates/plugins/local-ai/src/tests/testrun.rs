@@ -19,7 +19,7 @@ use crate::engine::tests::Workers;
 use crate::engine::{EngineError, FakeEngine};
 use crate::installs::Installs;
 use crate::machine::MachineProfile;
-use crate::runtime::{Runtime, WorkerLog};
+use crate::runtime::Runtime;
 use crate::testrun::{EngineNews, TestError, TestParts, Tester, PROMPT};
 use crate::{state, InstallState};
 
@@ -69,11 +69,7 @@ impl Bench {
         let events = Arc::new(Events::default());
         let cx = lab.cx(&rpc, &services, &events);
         let workers = Workers::default();
-        let runtime = Arc::new(Runtime::with_launch(
-            workers.launch(make),
-            machine,
-            Arc::new(WorkerLog::new(lab.tmp.path().join("worker.log"))),
-        ));
+        let runtime = Arc::new(Runtime::with_launch(workers.launch(make), machine));
         let installs = Installs::new(
             Arc::new(cat.clone()),
             Some(Arc::new(lab.kit(Arc::new(serving(&cat))))),
@@ -424,12 +420,23 @@ fn engine_errors_map_to_stable_codes() {
         (EngineError::Corrupt, ErrorKind::InvalidData, "corrupt"),
         (EngineError::NotLoaded, ErrorKind::Unavailable, "notLoaded"),
         (EngineError::Cancelled, ErrorKind::Superseded, "cancelled"),
+        // engine text may hold profile paths: never sent
+        (
+            EngineError::Io(r"C:\Users\someone\AppData\model.gguf not found".into()),
+            ErrorKind::Io,
+            "io",
+        ),
     ];
     for (error, kind, detail) in cases {
         let ipc = IpcError::from(TestError::Engine(error));
         assert_eq!(ipc.kind, kind);
         assert_eq!(ipc.subject.as_deref(), Some("engine"));
         assert_eq!(ipc.detail.as_deref(), Some(detail));
+        let sent = serde_json::to_string(&ipc).unwrap();
+        assert!(
+            !sent.contains("someone") && !sent.contains("gguf"),
+            "{sent}"
+        );
     }
     let not_available = IpcError::from(TestError::Files(files::FilesError::NotAvailable));
     assert_eq!(

@@ -694,7 +694,7 @@ fn remove_and_store_change_unload_the_engine_sessions_first() {
     use crate::engine::tests::Workers;
     use crate::engine::{CancelToken, Device, FakeEngine, LoadOpts};
     use crate::machine::MachineProfile;
-    use crate::runtime::{Runtime, WorkerLog};
+    use crate::runtime::Runtime;
 
     fn plenty() -> MachineProfile {
         MachineProfile {
@@ -712,7 +712,6 @@ fn remove_and_store_change_unload_the_engine_sessions_first() {
     let runtime = Arc::new(Runtime::with_launch(
         workers.launch(FakeEngine::new),
         plenty,
-        Arc::new(WorkerLog::new(lab.tmp.path().join("worker.log"))),
     ));
     let installs = Installs::new(
         Arc::new(cat.clone()),

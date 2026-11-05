@@ -62,6 +62,9 @@ pub trait Engine: Send + Sync {
         cancel: &CancelToken,
     ) -> Result<SessionId, EngineError>;
 
+    /// Session runs (partly) on a GPU: layers placed there at load. Unknown session -> `false`.
+    fn on_gpu(&self, session: SessionId) -> bool;
+
     /// Frees the session (worker exit); unknown session -> nothing.
     fn unload(&self, session: SessionId);
 

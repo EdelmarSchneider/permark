@@ -2,8 +2,10 @@
 //!
 //! - one worker per loaded session: `load` launches one, reads [`Hello`] (proto != [`PROTO`] -> `EngineTooOld`),
 //!   sends `Load`; `unload` sends `Unload`, closes stdin, kills. Drop = every worker gone.
-//! - per worker: reader thread pushes stdout lines into a channel; calls poll it ([`POLL`]) + check the cancel
-//!   token -> `Cancel` sent once (load: kill instead -> `Cancelled`).
+//! - per worker: reader thread pushes stdout lines into a bounded channel ([`LINES_QUEUE`]); calls poll it ([`POLL`])
+//!   + check the cancel token -> `Cancel` sent once (load: kill instead -> `Cancelled`).
+//! - worker line > [`LINE_CAP`] | not UTF-8 | without its newline -> reader stops = worker gone (host memory bounded:
+//!   one line + queue).
 //! - token cancelled before a call -> answered host-side (`Cancelled`; `generate`: `Done` + `Cancelled`), worker
 //!   not asked.
 //! - worker gone (EOF | bad line | write failure) -> `EngineCrashed`, session forgotten; next `load` = fresh worker.
@@ -11,7 +13,7 @@
 //! - launch refused (`PermissionDenied`) -> `Blocked`; other launch failures -> `Io`.
 
 use std::collections::HashMap;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -30,6 +32,10 @@ use crate::{
 const POLL: Duration = Duration::from_millis(50);
 /// Worker silent this long before its [`Hello`] -> treated as crashed.
 const HELLO_WAIT: Duration = Duration::from_secs(30);
+/// Longest worker line, bytes (largest real answer: an embeddings batch, far below).
+pub(crate) const LINE_CAP: u64 = 16 << 20;
+/// Worker lines read ahead of the waiting call (reader blocks past it).
+const LINES_QUEUE: usize = 8;
 
 /// A started worker's stdio + how to stop it.
 pub struct WorkerPipes {
@@ -50,7 +56,14 @@ pub struct WorkerEngine {
     /// From the last [`Hello`].
     caps: Mutex<Option<EngineCaps>>,
     next: AtomicU64,
-    workers: Mutex<HashMap<SessionId, Arc<Mutex<Worker>>>>,
+    workers: Mutex<HashMap<SessionId, Arc<Hosted>>>,
+}
+
+/// A loaded session's worker + what its load answered.
+struct Hosted {
+    /// Layers on a GPU.
+    gpu: bool,
+    worker: Mutex<Worker>,
 }
 
 /// One running worker holding one session.
@@ -88,13 +101,25 @@ impl Worker {
             from_worker,
             kill,
         } = pipes;
-        let (tx, lines) = mpsc::channel();
-        thread::spawn(move || {
-            for line in from_worker.lines() {
-                let Ok(line) = line else { return };
-                if tx.send(line).is_err() {
-                    return;
-                }
+        let (tx, lines) = mpsc::sync_channel(LINES_QUEUE);
+        let mut from_worker = from_worker;
+        thread::spawn(move || loop {
+            let mut line = Vec::new();
+            match from_worker
+                .by_ref()
+                .take(LINE_CAP)
+                .read_until(b'\n', &mut line)
+            {
+                Ok(0) | Err(_) => return,
+                // over the cap | cut off: worker broken
+                Ok(_) if line.pop() != Some(b'\n') => return,
+                Ok(_) => {}
+            }
+            let Ok(line) = String::from_utf8(line) else {
+                return;
+            };
+            if tx.send(line).is_err() {
+                return;
             }
         });
         Self {
@@ -228,7 +253,7 @@ impl WorkerEngine {
             return Err(EngineError::Cancelled);
         }
         let result = {
-            let mut guard = lock(&worker);
+            let mut guard = lock(&worker.worker);
             let request = request(guard.session);
             guard.call(&request, cancel, OnCancel::Forward, step)
         };
@@ -292,7 +317,8 @@ impl Engine for WorkerEngine {
         }
         // failure | cancel below drops (= kills) the worker
         let mut worker = self.start(cancel)?;
-        worker.session = worker.call(
+        let gpu;
+        (worker.session, gpu) = worker.call(
             &Request::Load { model, opts },
             cancel,
             OnCancel::Abort,
@@ -301,20 +327,28 @@ impl Engine for WorkerEngine {
                     progress(value);
                     Ok(Step::More)
                 }
-                Response::Loaded { session } => Ok(Step::Done(session)),
+                Response::Loaded { session, gpu } => Ok(Step::Done((session, gpu))),
                 _ => unexpected(),
             },
         )?;
         let id = SessionId(self.next.fetch_add(1, Ordering::Relaxed) + 1);
-        lock(&self.workers).insert(id, Arc::new(Mutex::new(worker)));
+        let hosted = Hosted {
+            gpu,
+            worker: Mutex::new(worker),
+        };
+        lock(&self.workers).insert(id, Arc::new(hosted));
         Ok(id)
     }
 
+    fn on_gpu(&self, session: SessionId) -> bool {
+        lock(&self.workers).get(&session).is_some_and(|w| w.gpu)
+    }
+
     fn unload(&self, session: SessionId) {
-        let Some(worker) = lock(&self.workers).remove(&session) else {
+        let Some(hosted) = lock(&self.workers).remove(&session) else {
             return;
         };
-        let mut worker = lock(&worker);
+        let mut worker = lock(&hosted.worker);
         let request = Request::Unload {
             session: worker.session,
         };

@@ -231,6 +231,8 @@ describe("failure words", () => {
     expect(testErrorText(engine("unavailable", "outOfMemory"))).toMatch(/Not enough free memory/);
     expect(testErrorText(engine("unavailable", "notAvailable"))).toMatch(/isn't available/);
     expect(testErrorText(engine("unavailable", "crashed"))).toMatch(/stopped unexpectedly/);
+    // session lost (worker gone) reads like a crash
+    expect(testErrorText(engine("unavailable", "notLoaded"))).toMatch(/stopped unexpectedly/);
     expect(testErrorText(engine("denied", "blocked"))).toMatch(/Security software/);
     const newer = testErrorText(engine("unsupported", "engineTooOld"));
     expect(newer).toMatch(/newer version of the AI engine/);

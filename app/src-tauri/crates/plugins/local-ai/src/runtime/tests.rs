@@ -57,13 +57,9 @@ fn opts() -> LoadOpts {
     }
 }
 
-fn rig(machine: fn() -> MachineProfile, log: PathBuf) -> (Runtime, Workers) {
+fn rig(machine: fn() -> MachineProfile) -> (Runtime, Workers) {
     let workers = Workers::default();
-    let runtime = Runtime::with_launch(
-        workers.launch(FakeEngine::new),
-        machine,
-        Arc::new(WorkerLog::new(log)),
-    );
+    let runtime = Runtime::with_launch(workers.launch(FakeEngine::new), machine);
     (runtime, workers)
 }
 
@@ -82,7 +78,7 @@ fn load(runtime: &Runtime, lineage: &str) -> Result<SessionId, EngineError> {
 #[test]
 fn a_new_runtime_is_dormant() {
     let tmp = tempfile::tempdir().unwrap();
-    let (runtime, workers) = rig(plenty, tmp.path().join("worker.log"));
+    let (runtime, workers) = rig(plenty);
     let real = Runtime::new(
         Arc::new(WorkerFiles::new(
             None,
@@ -114,8 +110,7 @@ fn a_missing_worker_fails_the_load() {
 /// AC-5: too little memory -> refused before any worker starts.
 #[test]
 fn the_guard_refuses_before_a_worker_starts() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (runtime, workers) = rig(scarce, tmp.path().join("worker.log"));
+    let (runtime, workers) = rig(scarce);
     assert_eq!(load(&runtime, "a"), Err(EngineError::OutOfMemory));
     assert_eq!(workers.launched(), 0);
 }
@@ -123,8 +118,7 @@ fn the_guard_refuses_before_a_worker_starts() {
 /// D-11: release(lineage) unloads that lineage's sessions only (their workers end); others keep working.
 #[test]
 fn release_unloads_every_session_of_a_lineage() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (runtime, workers) = rig(plenty, tmp.path().join("worker.log"));
+    let (runtime, workers) = rig(plenty);
     let a1 = load(&runtime, "a").unwrap();
     let a2 = load(&runtime, "a").unwrap();
     let b = load(&runtime, "b").unwrap();
@@ -146,11 +140,67 @@ fn release_unloads_every_session_of_a_lineage() {
     assert_eq!(workers.kills(), 3);
 }
 
+/// D-11: a release while a load of that lineage runs cancels it (token) and waits for its end: no worker | session
+/// left behind (Windows: files still mapped). A released session's token is cancelled too (its owner stops).
+#[test]
+fn release_cancels_and_waits_for_a_load_in_flight() {
+    let (runtime, workers) = rig(plenty);
+    let runtime = Arc::new(runtime);
+    let other = CancelToken::new();
+    let b = runtime
+        .load("b", &needs(), model("b"), opts(), &|_| {}, &other)
+        .unwrap();
+    let reached = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let loading = {
+        let (runtime, reached) = (Arc::clone(&runtime), Arc::clone(&reached));
+        std::thread::spawn(move || {
+            let cancel = CancelToken::new();
+            // load held in its progress callback until cancelled (bounded)
+            let progress = |_: f32| {
+                reached.store(true, std::sync::atomic::Ordering::SeqCst);
+                let started = Instant::now();
+                while !cancel.is_cancelled() && started.elapsed() < Duration::from_secs(10) {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            };
+            runtime.load("a", &needs(), model("a"), opts(), &progress, &cancel)
+        })
+    };
+    let started = Instant::now();
+    while !reached.load(std::sync::atomic::Ordering::SeqCst) {
+        assert!(started.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    runtime.release("a");
+    // release returned: the load already ended, its worker gone
+    assert_eq!(workers.launched(), 2);
+    assert_eq!(
+        workers.kills(),
+        1,
+        "the loading worker ended before release returned"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "cancelled, not waited out"
+    );
+    assert_eq!(loading.join().unwrap(), Err(EngineError::Cancelled));
+    assert_eq!(runtime.loaded(), ["b"]);
+    assert!(!other.is_cancelled());
+    runtime.release("b");
+    assert!(
+        other.is_cancelled(),
+        "released session: its token cancelled"
+    );
+    assert_eq!(
+        runtime.engine().count_tokens(b, "x"),
+        Err(EngineError::NotLoaded)
+    );
+}
+
 /// Plugin off: dropping the runtime ends every worker.
 #[test]
 fn drop_ends_every_worker() {
-    let tmp = tempfile::tempdir().unwrap();
-    let (runtime, workers) = rig(plenty, tmp.path().join("worker.log"));
+    let (runtime, workers) = rig(plenty);
     load(&runtime, "a").unwrap();
     load(&runtime, "b").unwrap();
     drop(runtime);
@@ -168,13 +218,10 @@ fn the_log_keeps_capped_lines_and_saves_them_when_a_worker_ends() {
         log.add(&line);
     }
     log.add("last words");
-    let tail = log.tail();
-    assert!(tail.ends_with("\nlast words"), "newest last");
-    assert!(tail.len() <= TAIL_CAP, "{}", tail.len());
     assert!(!path.exists(), "nothing written while workers run");
     log.save();
     let on_disk = std::fs::read_to_string(&path).unwrap();
-    assert!(on_disk.len() <= LOG_CAP && on_disk.ends_with("last words\n"));
+    assert!(on_disk.len() <= LOG_CAP && on_disk.ends_with("\nlast words\n"));
 
     // drained from a stream: CRLF trimmed, saved at its end
     let drained = Arc::new(WorkerLog::new(tmp.path().join("drained.log")));
@@ -188,7 +235,6 @@ fn the_log_keeps_capped_lines_and_saves_them_when_a_worker_ends() {
         assert!(started.elapsed() < Duration::from_secs(10));
         std::thread::sleep(Duration::from_millis(5));
     }
-    assert_eq!(drained.tail(), "loading\ncrashed: bad tensor");
 }
 
 /// U5 smoke, run by hand on CPU only: the REAL worker (`PERMARK_WORKER` = release `permark-llm-worker`, debug
@@ -204,13 +250,14 @@ fn smoke_the_real_worker_on_cpu() {
         panic!("set PERMARK_WORKER and PERMARK_SMOKE_GGUF");
     };
     let tmp = tempfile::tempdir().unwrap();
+    let log = tmp.path().join("worker.log");
     let runtime = Runtime::new(
         Arc::new(WorkerFiles::new(
             None,
             tmp.path().join(files::DIR),
             Arc::new(|_, _| {}),
         )),
-        Arc::new(WorkerLog::new(tmp.path().join("worker.log"))),
+        Arc::new(WorkerLog::new(log.clone())),
     );
     let small = Needs {
         ram_min: 1,
@@ -231,14 +278,16 @@ fn smoke_the_real_worker_on_cpu() {
     let caps = runtime.engine().caps();
     println!("caps: {caps:?}");
     assert!(!caps.gpu, "CPU-only build expected here");
-    // engine floor from the catalog: refused before any load
+    // refused: engine floor from the catalog (before any load) | not a GGUF file (damaged: the only load failure
+    // telling the person to get the model again)
     let mut too_new = files(&embed);
     too_new.min_engine = Some("b99999".into());
-    let refused = runtime.load("smoke", &small, too_new, cpu, &|_| {}, &CancelToken::new());
-    assert!(
-        matches!(refused, Err(EngineError::EngineTooOld { .. })),
-        "{refused:?}"
-    );
+    let junk = tmp.path().join("junk.gguf");
+    std::fs::write(&junk, b"not a model at all").unwrap();
+    for (model, want) in [(too_new, "EngineTooOld"), (files(&junk), "Corrupt")] {
+        let refused = runtime.load("smoke", &small, model, cpu, &|_| {}, &CancelToken::new());
+        assert!(format!("{refused:?}").contains(want), "{refused:?}");
+    }
 
     let started = Instant::now();
     let steps = std::sync::Mutex::new(0u32);
@@ -252,7 +301,7 @@ fn smoke_the_real_worker_on_cpu() {
             &progress,
             &CancelToken::new(),
         )
-        .unwrap_or_else(|e| panic!("load: {e:?}\n{}", runtime.log_tail()));
+        .unwrap_or_else(|e| panic!("load: {e:?}\n{}", saved_log(&log)));
     let load = started.elapsed();
     let started = Instant::now();
     let out = runtime
@@ -292,12 +341,24 @@ fn smoke_the_real_worker_on_cpu() {
     assert_eq!(runtime.loaded(), Vec::<String>::new());
 
     if let Some(chat) = env("PERMARK_SMOKE_CHAT_GGUF") {
-        smoke_chat(&runtime, &chat);
+        smoke_chat(&runtime, &chat, &log);
     }
 }
 
+/// Worker log once saved (the failed worker's stderr ended), for a smoke failure message.
+fn saved_log(log: &std::path::Path) -> String {
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(5) {
+        if let Ok(text) = std::fs::read_to_string(log) {
+            return text;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    String::from("(no worker log)")
+}
+
 /// Chat half of [`smoke_the_real_worker_on_cpu`]: plain answer + JSON-schema answer, greedy.
-fn smoke_chat(runtime: &Runtime, chat: &std::path::Path) {
+fn smoke_chat(runtime: &Runtime, chat: &std::path::Path, log: &std::path::Path) {
     use crate::engine::{ChatMessage, ChatRequest, Constraint, GenEvent, Role, Sampling};
     let small = Needs {
         ram_min: 1,
@@ -331,7 +392,7 @@ fn smoke_chat(runtime: &Runtime, chat: &std::path::Path) {
             &|_| {},
             &CancelToken::new(),
         )
-        .unwrap_or_else(|e| panic!("load: {e:?}\n{}", runtime.log_tail()));
+        .unwrap_or_else(|e| panic!("load: {e:?}\n{}", saved_log(log)));
     let load = started.elapsed();
     let ask = |content: &str, constraint| {
         let request = ChatRequest {
