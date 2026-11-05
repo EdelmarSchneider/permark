@@ -1,0 +1,274 @@
+name: Model engine worker
+
+# Pushing a `worker-v*` tag builds PerMark's model engine worker (`permark-llm-worker`, crate permark-engine, feature
+# `llama`) for every platform and publishes it as its own GitHub release. The app never downloads it by itself: the
+# Local AI page fetches the files of this computer's platform when the person tests or uses a model, and checks each
+# file against the size and sha256 pinned in the app (app/src-tauri/crates/plugins/local-ai/src/engine/files.rs).
+#
+# Its own tag and workflow (not `v*`): the Vulkan build is slow and the worker only changes when llama.cpp is bumped.
+# The release is never marked "latest", so the app updater (which reads the latest release) never sees it.
+#
+# Flow: `draft` finds or makes the release (a draft) -> the four `build` jobs build, check the worker starts, and upload
+# every file as its own asset (no archives: each file is pinned by itself) plus a `pins-<platform>-<variant>.json`
+# listing {asset, name, bytes, sha256}, the input for the pin table -> `publish` makes the release public.
+#
+# One flat folder per platform: the worker, the llama/ggml libraries and the ggml backends (`dynamic-backends`: the
+# best CPU variant is picked at run time; the GPU backend loads only when the system has its driver, else CPU works).
+# Windows ships the Visual C++ runtime DLLs next to the worker (app-local): the llama/ggml DLLs share C++ objects, so a
+# static C runtime (one heap per DLL) is not safe here.
+#
+# No Rust cache, as in release.yml: a tag run only sees caches of its own tag or of develop.
+
+on:
+  push:
+    tags: ["worker-v*"]
+  # Rebuild some platforms of an existing worker release without moving its tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing worker tag to build (e.g. worker-v0.1.0)"
+        required: true
+      platforms:
+        description: "Comma-separated platforms to build: windows-x86_64, linux-x86_64, macos-aarch64, macos-x86_64 (or all)"
+        required: true
+        default: all
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  # Vulkan SDK on Windows: the version llama.cpp's own release workflow pins (at the vendored build).
+  VULKAN_VERSION: 1.4.357.0
+
+jobs:
+  draft:
+    name: Draft the release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      id: ${{ steps.release.outputs.id }}
+    steps:
+      # Fails when the tag does not exist, so no release can make a new tag.
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Find or draft the release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY: |
+            The model engine PerMark uses to run local AI models (llama.cpp), one set of files per platform.
+
+            You don't need to download anything here: PerMark fetches the files for your computer when you first test
+            or use a model on its Local AI page, and checks every file before using it.
+        run: |
+          # Drafts too (the by-tag endpoint skips them).
+          id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+            jq -r --arg tag "$TAG" '.[] | select(.tag_name == $tag) | .id')
+          if ! [[ "$id" =~ ^[0-9]*$ ]]; then
+            echo "More than one release has the tag $TAG: $id"
+            exit 1
+          fi
+          if [ -z "$id" ]; then
+            id=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$TAG" -f name="PerMark model engine ${TAG#worker-}" -f body="$(printf '%s' "$BODY")" \
+              -F draft=true -F prerelease=false -f make_latest=false --jq .id)
+            echo "Drafted release $id for $TAG."
+          else
+            echo "Found release $id for $TAG."
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.platform }}-${{ matrix.variant }})
+    needs: draft
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    env:
+      RUN_THIS: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, matrix.platform) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # `platform` = the app's spelling (`<os>-<arch>`, engine/files.rs `platform()`).
+          - runner: windows-latest
+            platform: windows-x86_64
+            variant: vulkan
+            features: llama,dynamic-backends,vulkan
+          # Ubuntu 22.04: the oldest glibc the worker then needs (2.35).
+          - runner: ubuntu-22.04
+            platform: linux-x86_64
+            variant: vulkan
+            features: llama,dynamic-backends,vulkan
+          - runner: macos-26
+            platform: macos-aarch64
+            variant: metal
+            features: llama,dynamic-backends,metal
+          # llama.cpp has no Metal on Intel Macs: CPU only.
+          - runner: macos-15-intel
+            platform: macos-x86_64
+            variant: cpu
+            features: llama,dynamic-backends
+    steps:
+      - name: Checkout
+        if: env.RUN_THIS == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TAG }}
+
+      # The toolchain app/rust-toolchain.toml pins; rustup reads the file from the working directory.
+      - name: Install Rust (pinned)
+        if: env.RUN_THIS == 'true'
+        working-directory: app
+        run: rustup toolchain install
+
+      # Same steps as llama.cpp's release workflow.
+      - name: Install the Vulkan SDK (Windows)
+        if: env.RUN_THIS == 'true' && matrix.variant == 'vulkan' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          curl.exe -o $env:RUNNER_TEMP/VulkanSDK-Installer.exe -L "https://sdk.lunarg.com/sdk/download/${env:VULKAN_VERSION}/windows/vulkansdk-windows-X64-${env:VULKAN_VERSION}.exe"
+          & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
+          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\${env:VULKAN_VERSION}"
+          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\${env:VULKAN_VERSION}\bin"
+
+      - name: Install the Vulkan SDK (Linux)
+        if: env.RUN_THIS == 'true' && matrix.variant == 'vulkan' && runner.os == 'Linux'
+        run: |
+          wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list https://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential vulkan-sdk
+
+      # llama.cpp is built by cmake (crate llama-cpp-sys-2); no network in the worker (LLAMA_CURL is off there).
+      - name: Build the worker
+        if: env.RUN_THIS == 'true'
+        shell: bash
+        run: >-
+          cargo build --release --manifest-path app/src-tauri/Cargo.toml -p permark-engine
+          --bin permark-llm-worker --features ${{ matrix.features }}
+
+      # One flat folder: the worker, the llama/ggml libraries (under their load names: no version symlinks) and the
+      # backends. Windows adds the Visual C++ runtime DLLs (app-local).
+      - name: Collect the files
+        if: env.RUN_THIS == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          target=app/src-tauri/target/release
+          out=$(ls -dt "$target"/build/llama-cpp-sys-2-*/out | head -n 1)
+          dest="$RUNNER_TEMP/worker"
+          mkdir -p "$dest"
+          case "$RUNNER_OS" in
+            Windows)
+              cp "$target/permark-llm-worker.exe" "$out"/bin/*.dll "$out"/backends/*.dll "$dest/"
+              vs=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property installationPath)
+              crt=$(ls -d "$vs"/VC/Redist/MSVC/*/x64/Microsoft.VC*.CRT | sort | tail -n 1)
+              cp "$crt"/msvcp140*.dll "$crt"/vcruntime140*.dll "$dest/"
+              ;;
+            Linux)
+              cp "$target/permark-llm-worker" "$dest/"
+              for f in "$out"/lib/*.so* "$out"/backends/*.so; do
+                [ -L "$f" ] && continue
+                name=$(objdump -p "$f" | awk '/SONAME/ { print $2 }')
+                cp "$f" "$dest/${name:-$(basename "$f")}"
+              done
+              ;;
+            macOS)
+              cp "$target/permark-llm-worker" "$dest/"
+              for f in "$out"/lib/*.dylib "$out"/backends/*.so "$out"/backends/*.dylib; do
+                [ -e "$f" ] && [ ! -L "$f" ] || continue
+                id=$(otool -D "$f" | sed -n 2p)
+                cp "$f" "$dest/$(basename "${id:-$f}")"
+              done
+              ;;
+          esac
+          ls -la "$dest"
+
+      # The worker starts, finds its libraries and says hello on its protocol line (stdin closed: it exits).
+      - name: Check the worker starts
+        if: env.RUN_THIS == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/worker"
+          exe=./permark-llm-worker
+          [ "$RUNNER_OS" = "Windows" ] && exe=./permark-llm-worker.exe
+          hello=$("$exe" < /dev/null 2> "$RUNNER_TEMP/worker.log" | head -n 1) || true
+          tail -n 20 "$RUNNER_TEMP/worker.log"
+          echo "$hello"
+          echo "$hello" | jq -e '.proto == 1 and (.caps.capabilities | index("chat"))' > /dev/null
+
+      - name: Write the pins
+        if: env.RUN_THIS == 'true'
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/worker"
+          exe=permark-llm-worker
+          [ "$RUNNER_OS" = "Windows" ] && exe=permark-llm-worker.exe
+          for f in *; do
+            if command -v sha256sum > /dev/null; then sum=$(sha256sum "$f" | cut -d' ' -f1); else sum=$(shasum -a 256 "$f" | cut -d' ' -f1); fi
+            jq -n --arg asset "$PLATFORM-$VARIANT-$f" --arg name "$f" --argjson bytes "$(wc -c < "$f" | tr -d ' ')" \
+              --arg sha256 "$sum" '{asset: $asset, name: $name, bytes: $bytes, sha256: $sha256}'
+          done | jq -s --arg tag "$TAG" --arg platform "$PLATFORM" --arg variant "$VARIANT" --arg exe "$exe" \
+            '{tag: $tag, platform: $platform, variant: $variant, exe: $exe, files: .}' \
+            > "$RUNNER_TEMP/pins-$PLATFORM-$VARIANT.json"
+          cat "$RUNNER_TEMP/pins-$PLATFORM-$VARIANT.json"
+
+      # Each file as its own asset, named `<platform>-<variant>-<file>`; a rebuild replaces the assets of the same name.
+      - name: Upload the files
+        if: env.RUN_THIS == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ID: ${{ needs.draft.outputs.id }}
+          PREFIX: ${{ matrix.platform }}-${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$ID/assets?per_page=100" > "$RUNNER_TEMP/assets.json"
+          upload() {
+            old=$(jq -r --arg name "$2" '.[] | select(.name == $name) | .id' "$RUNNER_TEMP/assets.json")
+            if [ -n "$old" ]; then gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$old"; fi
+            curl -fsS -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$1" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$ID/assets?name=$2" |
+              jq -r .browser_download_url
+          }
+          for f in "$RUNNER_TEMP"/worker/*; do upload "$f" "$PREFIX-$(basename "$f")"; done
+          upload "$RUNNER_TEMP/pins-$PREFIX.json" "pins-$PREFIX.json"
+
+  publish:
+    name: Publish the release
+    needs: [draft, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ID: ${{ needs.draft.outputs.id }}
+    steps:
+      # Never "latest": that stays the app's release (the updater reads it). A rebuild of a public release leaves it.
+      - name: Publish the release
+        shell: bash
+        run: |
+          if [ "$(gh api "repos/$GITHUB_REPOSITORY/releases/$ID" --jq .draft)" = "true" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$ID" -F draft=false -f make_latest=false --jq .html_url
+          else
+            echo "Already public."
+          fi
