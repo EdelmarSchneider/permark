@@ -136,7 +136,13 @@ fn touch_with_same_bytes_is_unchanged() {
 fn racy_entry_reported_changed_even_with_equal_stat() {
     let dir = tempfile::tempdir().unwrap();
     let d = dir.path();
-    write(d, "fresh.md", b"one", None); // mtime = now -> racy
+    // mtime just before the check -> racy (explicit: no timing dependence)
+    write(
+        d,
+        "fresh.md",
+        b"one",
+        Some(SystemTime::now() - Duration::from_millis(500)),
+    );
     write(d, "old.md", b"two", Some(old_time()));
     let first = run(None, FP, scan_of(d, &["fresh.md", "old.md"], false));
     assert!(first.next.files[&key_of("fresh.md")].racy);
@@ -273,6 +279,35 @@ fn large_file_compared_by_stat_without_reading() {
 }
 
 #[test]
+fn unknown_or_future_mtime_is_never_trusted() {
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    write(d, "zero.md", b"z", Some(old_time()));
+    write(
+        d,
+        "future.md",
+        b"f",
+        Some(SystemTime::now() + Duration::from_hours(1)),
+    );
+    let scan = || Scan {
+        files: vec![
+            ScanFile {
+                modified_ms: 0, // stat failed
+                ..file_of(d, "zero.md")
+            },
+            file_of(d, "future.md"),
+        ],
+        ..Scan::default()
+    };
+    let first = run(None, FP, scan());
+    assert!(first.next.files.values().all(|e| e.racy));
+    let second = run(Some(&first.next), FP, scan());
+    assert!(
+        matches!(second.freshness, Freshness::Stale { ref changed, .. } if *changed == owned(&["future.md", "zero.md"]))
+    );
+}
+
+#[test]
 fn unreadable_candidate_is_changed_without_hash() {
     let dir = tempfile::tempdir().unwrap();
     let d = dir.path();
@@ -286,11 +321,16 @@ fn unreadable_candidate_is_changed_without_hash() {
         }],
         ..Scan::default()
     };
-    let second = run(Some(&first.next), FP, gone);
+    let second = run(Some(&first.next), FP, gone.clone());
     assert_eq!(second.hashed, 0);
     assert_eq!(second.next.files[&key_of("a.md")].hash, None);
     assert!(
         matches!(second.freshness, Freshness::Stale { ref changed, .. } if *changed == owned(&["a.md"]))
+    );
+    // same stat, still unverified -> retried, reported changed again
+    let third = run(Some(&second.next), FP, gone);
+    assert!(
+        matches!(third.freshness, Freshness::Stale { ref changed, .. } if *changed == owned(&["a.md"]))
     );
 }
 
