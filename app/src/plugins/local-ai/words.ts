@@ -1,5 +1,5 @@
-// Plain words of the Local AI page: jobs, what a model can do, languages, fit hints, sizes, refusals. No jargon: the
-// person reads "Search by meaning", "Runs slowly here", "3.4 GB".
+// Plain words of the Local AI page: jobs, what a model can do, languages, fit hints, sizes, test results, refusals. No
+// jargon: the person reads "Search by meaning", "Runs slowly here", "3.4 GB".
 
 import type { ApiError } from "../../api";
 import type { DownloadError } from "../../api/generated/DownloadError";
@@ -183,6 +183,10 @@ function reasonKey(reason: string | null): MessageKey | null {
       return "localAi.err.tokenEmpty";
     case "tooLong":
       return "localAi.err.tokenTooLong";
+    case "testRunning":
+      return "localAi.err.testRunning";
+    case "noTest":
+      return "localAi.err.noTest";
     default:
       return null;
   }
@@ -195,6 +199,56 @@ export function errorText(error: ApiError): string {
     reasonKey(error.error.detail) ??
     (error.error.kind === "unavailable" ? reasonKey(error.error.subject) : null);
   return key === null ? apiErrorText(error) : t(key);
+}
+
+/** Why the model engine failed a test (backend `detail` code of subject `engine`) -> its own words. */
+function engineKey(detail: string | null): MessageKey | null {
+  switch (detail) {
+    case "outOfMemory":
+      return "localAi.test.failed.outOfMemory";
+    case "notAvailable":
+      return "localAi.test.failed.notAvailable";
+    case "crashed":
+      return "localAi.test.failed.crashed";
+    case "blocked":
+      return "localAi.test.failed.blocked";
+    case "engineTooOld":
+    case "unsupported":
+      return "localAi.test.failed.needsNewer";
+    case "corrupt":
+      return "localAi.test.failed.corrupt";
+    default:
+      return null;
+  }
+}
+
+/** Why "Test model" failed | was refused, in words (engine failures first, then the page's refusal words). */
+export function testErrorText(error: ApiError): string {
+  const key =
+    error.kind === "backend" && error.error.subject === "engine"
+      ? engineKey(error.error.detail)
+      : null;
+  return key === null ? errorText(error) : t(key);
+}
+
+/** A short duration: "0.6 seconds", "1.8 seconds" (one decimal, the current language's unit words). */
+export function secondsText(ms: number): string {
+  return new Intl.NumberFormat(language.locale, {
+    style: "unit",
+    unit: "second",
+    unitDisplay: "long",
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(ms / 1000);
+}
+
+/** How fast a model writes: "8.6 tokens a second". */
+export function speedText(tokensPerSecond: number): string {
+  const speed = new Intl.NumberFormat(language.locale, {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(tokensPerSecond);
+  return t("localAi.test.speed", { speed });
 }
 
 /** A store change refused until the person says what happens to the installed models (move | keep). */

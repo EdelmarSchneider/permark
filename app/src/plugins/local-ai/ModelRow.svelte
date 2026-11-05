@@ -2,10 +2,12 @@
   // One model of the Models card. Line 1: name, size, terms (opened in the browser, never in the app); line 2: what it
   // can do, its languages, how it runs here (words + icon, never color alone). Then what its state allows: Get (or
   // the terms first, inline), progress + Cancel, Paused + Resume | Delete partial, the failure + Try again, Ready +
-  // Remove (inline confirm naming the jobs that lose it), Update. Details: format, revision, source, who may use it.
+  // Remove (inline confirm naming the jobs that lose it), Update, Test (chat | embedding models; off while any test runs;
+  // the panel is `TestPanel`). Details: format, revision, source, who may use it.
   import CircleCheck from "@lucide/svelte/icons/circle-check";
   import CircleQuestionMark from "@lucide/svelte/icons/circle-question-mark";
   import CircleX from "@lucide/svelte/icons/circle-x";
+  import FlaskConical from "@lucide/svelte/icons/flask-conical";
   import Snail from "@lucide/svelte/icons/snail";
   import { tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
@@ -18,6 +20,7 @@
   import { language, sizeText, t, tn } from "../../core/i18n";
   import { localAi } from "./store.svelte";
   import type { AiTask } from "./tasks";
+  import TestPanel from "./TestPanel.svelte";
   import {
     capabilityKey,
     downloadErrorText,
@@ -65,6 +68,11 @@
     if (free !== null && remaining > free) return { kind: "noSpace", needed: remaining, free };
     return null;
   });
+  /** Test runs a short prompt | one embedding: other models have nothing to test yet. */
+  const testable = $derived(
+    model.capabilities.includes("chat") || model.capabilities.includes("embed"),
+  );
+  const shownTest = $derived(localAi.modelTest?.model === model.id ? localAi.modelTest : null);
   /** Get first shows the terms. */
   const termsFirst = $derived(status.blocked === "license");
 
@@ -316,6 +324,19 @@
             {t("localAi.models.ready")}
           </span>
         {/if}
+        {#if testable}
+          <button
+            type="button"
+            class="btn btn--sm btn--ghost"
+            data-action="test"
+            disabled={localAi.testing}
+            aria-label={t("localAi.test.buttonLabel", { name })}
+            onclick={() => void localAi.test(model.id)}
+          >
+            <FlaskConical size={14} aria-hidden="true" />
+            {t("localAi.test.button")}
+          </button>
+        {/if}
         <button
           type="button"
           class="btn btn--sm btn--ghost"
@@ -338,6 +359,17 @@
   {/if}
   {#if failure !== null}
     <p class="problem" role="alert">{failure}</p>
+  {/if}
+
+  {#if shownTest !== null}
+    <TestPanel
+      {model}
+      view={shownTest}
+      onclose={() => {
+        localAi.closeTest();
+        void focusAction("test");
+      }}
+    />
   {/if}
 
   {#if panel.kind === "terms"}
