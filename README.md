@@ -154,6 +154,12 @@ Markdown leads, and many files around it open too: config files as clean sheets,
   system has for them. Programs and scripts are never run from a click.
 - **Token count**: how many tokens a document, a section or a folder takes. Exact for OpenAI's tokenizers,
   marked as approximate for Claude and Gemini. It asks before it downloads a tokenizer's vocabulary.
+- **Local AI, on your computer (optional).** **Settings → Local AI** offers a short list of small AI models that run offline,
+  on your graphics card when you have one. Nothing is downloaded until you choose a model, and **Test** shows how well it runs.
+  The models work only for PerMark's own features.
+- **Correct spelling and grammar.** In Edit or Source, the spell-check button next to the mode switch (or `Ctrl+Alt+K`) checks
+  the selection, the paragraph or the whole document with the local model you chose. Each suggestion is underlined in the text,
+  and nothing changes until you accept it. Code, links and front matter are never touched.
 - **Your editor, at the line.** A path like `src/main.rs:42` that names a file of the project is a link: it opens your own
   editor at that line.
 
@@ -174,14 +180,15 @@ through PerMark. Details in [Use with an AI agent](#use-with-an-ai-agent).
 
 **"Does it go online?"**<br>
 No account, no telemetry, no tracking. PerMark goes online only to check for its own updates (installer versions; the Store and
-snap update it instead), and when you ask: a picture from the web, or the optional token-count vocabulary. Your documents never
+snap update it instead), and when you ask: a picture from the web, the optional token-count vocabulary, or a local AI model and the engine that runs it. Your documents never
 leave your computer through PerMark. An AI agent you connect is a separate program: what it sends online is up to that agent.
 The Windows installers may also download Microsoft's WebView2 component while they install, if your computer does not have it.
 
 ## What PerMark is not
 
 - **Not a code editor.** No completion, refactoring, build, run or debug. Real code work opens in your own editor.
-- **Not an agent.** It does not run, host or replace your AI. It shows what your AI writes, and you decide what stays.
+- **Not an agent.** It does not run, host or replace your AI agents. It shows what your AI writes, and you decide what stays. The small
+  local models it can use work only for PerMark's own features, such as correcting your text.
 - **Not tested by hand on macOS or Linux.** PerMark 0.6 was tested by hand on Windows; the macOS and Linux builds are checked automatically.
 
 ## Why Markdown
@@ -421,6 +428,11 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 ## What's new and ideas being explored
 
 **PerMark 0.6** rebuilt the whole program. Every release is in the [CHANGELOG](CHANGELOG.md).
+
+- **0.9.0:** small AI models that run on your computer, offline, and spelling and grammar correction with them.
+- **0.8.0:** pictures you paste are saved next to the document, emoji and symbols in the editor, and View, Edit or Source stays as you left it.
+- **0.7.1:** seven more interface languages (Japanese, Korean, French, European Portuguese, Catalan, Galician and Romanian).
+- **0.7.0:** projects inside a folder, each with its own git and reading state, and a place in Settings for AI agents.
 
 - **0.6.2:** a Notes button next to Settings, keys to hide and show the side bars, files dropped from your file manager copy into the project or open as
   tabs, **Move to window** for a tab, and every plugin on from the start.
