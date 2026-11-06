@@ -90,7 +90,7 @@ fn every_pin_makes_a_unit_holding_its_worker() {
     assert_eq!(unit_of(&no_exe).err(), Some(FilesError::BadPin));
 }
 
-/// AC-1: every pin names the engine it ships (worker-v0.1.5 = llama.cpp b11429).
+/// Every pin names the engine it ships (worker-v0.1.5 = llama.cpp b11429).
 #[test]
 fn every_pin_names_the_engine_build_it_ships() {
     // one release for every platform; its llama.cpp build = `LLAMA_CPP` of the engine crate (bump both together)
