@@ -5,7 +5,9 @@
 // (typing, the other editor) -> prefix/suffix diff, suggestions | pieces touching it dropped (counted), the rest shifted.
 // Accept = one checked `session.apply` (expect = original): refused while composing -> retried shortly; refused else
 // -> dropped (counted). Accept all = one apply (one undo step); a batch refused (Edit mode: a locked block, …) ->
-// each edit alone, only the refused ones dropped. File switch | conflict | View -> review closed.
+// each edit alone, only the refused ones dropped. File switch | conflict | View -> review closed. Every pending
+// suggestion is marked in the text (`session.marks`, each time the list | current one changes; closed -> none); a click
+// on a mark makes it current, the caret left where the person put it (typing safety).
 
 import { untrack } from "svelte";
 import { api as defaultApi, type Api, type ApiError, type Unlisten } from "../../api";
@@ -34,6 +36,8 @@ export type Session = Pick<
   | "scope"
   | "apply"
   | "reveal"
+  | "marks"
+  | "markAt"
   | "composing"
   | "focus"
 >;
@@ -94,7 +98,7 @@ function newRunId(): string {
 }
 
 export class CorrectionStore {
-  state = $state.raw<CorrectionState>(CLOSED);
+  #state = $state.raw<CorrectionState>(CLOSED);
   /** A model is assigned to job "correction" (dormant until then). */
   available = $state(false);
   /** Bumped when the keyboard should go to the bar's first action (Accept). */
@@ -120,10 +124,22 @@ export class CorrectionStore {
   #waiting: number[] = [];
   #retry: ReturnType<typeof setTimeout> | null = null;
   #tries = 0;
+  /** The list + current index last marked in the text (same list, same index -> not marked again). */
+  #marked: { list: readonly Found[]; at: number | null } = { list: [], at: null };
 
   constructor(api: Api = defaultApi, session: Session = editing) {
     this.#api = api;
     this.#session = session;
+  }
+
+  get state(): CorrectionState {
+    return this.#state;
+  }
+
+  /** Every change of the state marks the text anew. */
+  set state(next: CorrectionState) {
+    this.#state = next;
+    this.#mark();
   }
 
   get review(): ({ kind: "review" } & Review) | null {
@@ -219,10 +235,14 @@ export class CorrectionStore {
 
   // ---- runs --------------------------------------------------------------------------------------------------
 
-  /** Mod+Alt+K: in review with suggestions -> the keyboard to Accept; else corrects the selection | paragraph. */
+  /** Mod+Alt+K: in review with suggestions -> the one marked at the caret current (if any), the keyboard to Accept;
+   *  else corrects the selection | paragraph. */
   correctHere(): Promise<void> {
     const review = this.review;
     if (review !== null && review.suggestions.length > 0) {
+      const at = this.#session.markAt();
+      const marked = at === null ? undefined : this.#marked.list[at];
+      if (marked) this.pick(marked.key);
       this.focusRequest += 1;
       this.#reveal();
       return Promise.resolve();
@@ -304,6 +324,23 @@ export class CorrectionStore {
     const n = review.suggestions.length;
     this.state = { ...review, at: (review.at + step + n) % n };
     this.#reveal();
+  }
+
+  /** The suggestion of `key` becomes current (a click on its mark); the caret stays where it is. */
+  pick(key: number): void {
+    this.sync();
+    const review = this.review;
+    const at = review?.suggestions.findIndex((s) => s.key === key) ?? -1;
+    if (review === null || at < 0 || at === review.at) return;
+    this.state = { ...review, at };
+  }
+
+  /** The current suggestion selected in the text (the bar's excerpt), the keyboard to the editor. */
+  show(): void {
+    this.sync();
+    if (this.review?.suggestions[this.review.at] === undefined) return;
+    this.#reveal();
+    this.#session.focus();
   }
 
   accept(): void {
@@ -500,6 +537,26 @@ export class CorrectionStore {
     const suggestions = left.map((s) => ({ ...s, ...around(text, s.from, s.to) }));
     this.state = { ...review, suggestions, at, outdated: review.outdated + dropped };
     if (removed && left.length > 0) this.#reveal();
+  }
+
+  /** Marks the pending suggestions in the text (none outside a review). */
+  #mark(): void {
+    const review = this.review;
+    const list = review?.suggestions ?? [];
+    const at = review === null || list.length === 0 ? null : review.at;
+    const last = this.#marked;
+    if ((list === last.list || (list.length === 0 && last.list.length === 0)) && at === last.at)
+      return;
+    this.#marked = { list, at };
+    const keys = list.map((s) => s.key);
+    this.#session.marks(
+      list.map(({ from, to }) => ({ from, to })),
+      at,
+      (index) => {
+        const key = keys[index];
+        if (key !== undefined) this.pick(key);
+      },
+    );
   }
 
   #reveal(): void {

@@ -2526,4 +2526,5 @@ export default {
   "correction.done": "Concluído",
   "correction.retry": "Tentar novamente",
   "correction.openSettings": "Abrir as definições de IA local",
+  "correction.show": "Mostrar no texto",
 } satisfies Messages;

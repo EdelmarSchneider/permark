@@ -2520,4 +2520,5 @@ export default {
   "correction.done": "Fatto",
   "correction.retry": "Riprova",
   "correction.openSettings": "Apri impostazioni IA locale",
+  "correction.show": "Mostra nel testo",
 } satisfies Messages;

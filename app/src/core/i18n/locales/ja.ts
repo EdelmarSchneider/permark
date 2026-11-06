@@ -2521,4 +2521,5 @@ export default {
   "correction.done": "完了",
   "correction.retry": "再試行",
   "correction.openSettings": "ローカル AI の設定を開く",
+  "correction.show": "本文で表示",
 } satisfies Messages;

@@ -213,4 +213,16 @@ describe("the correction bar", () => {
     flushSync();
     expect(document.activeElement).toBe(button("accept"));
   });
+
+  it("the excerpt shows the suggestion in the text: click | Enter, named for screen readers", () => {
+    const shown = vi.spyOn(correction, "show").mockImplementation(() => {});
+    show(review({ suggestions: [S1, S2], at: 1 }));
+    const excerpt = button("show");
+    expect(excerpt?.tagName).toBe("BUTTON");
+    expect(excerpt?.getAttribute("aria-label")).toBe("Show in the text");
+    excerpt?.click();
+    expect(shown).toHaveBeenCalledTimes(1);
+    // the bar's keys do not act on it (Enter is the button's own)
+    expect(key({ key: "Enter" }, excerpt).defaultPrevented).toBe(false);
+  });
 });

@@ -2536,4 +2536,5 @@ export default {
   "correction.done": "Fet",
   "correction.retry": "Torna-ho a provar",
   "correction.openSettings": "Obre la configuració de la IA local",
+  "correction.show": "Mostra-ho al text",
 } satisfies Messages;

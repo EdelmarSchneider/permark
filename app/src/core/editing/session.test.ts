@@ -433,6 +433,32 @@ describe("edits handed to the editor on screen (correction)", () => {
     expect(focused).toBe(1);
   });
 
+  it("marks go to the editor on screen and to the next one; an empty list clears them", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    const seen: unknown[] = [];
+    editor.marks = (ranges, current) => seen.push([ranges, current]);
+    editor.markAt = () => 1;
+    const pick = (): void => {};
+    session.marks([{ from: 0, to: 1 }], 0, pick);
+    expect(seen).toEqual([[[{ from: 0, to: 1 }], 0]]);
+    expect(session.markAt()).toBe(1);
+    // Edit <-> Source: the editor made next shows them too
+    await session.switchTo("edit");
+    const next = fakeEditor(session.content?.text ?? "");
+    const again: unknown[] = [];
+    next.marks = (ranges, current) => again.push([ranges, current]);
+    session.attach(session.content?.seq ?? -1, next);
+    expect(again).toEqual([[[{ from: 0, to: 1 }], 0]]);
+    session.marks([], null, pick);
+    expect(again.at(-1)).toEqual([[], null]);
+    const third = fakeEditor("");
+    const none: unknown[] = [];
+    third.marks = (ranges) => none.push(ranges);
+    session.attach(session.content?.seq ?? -1, third);
+    expect(none).toEqual([]);
+  });
+
   it("an editor without them (or none on screen) gives safe answers", async () => {
     const { session } = setup();
     expect(session.scope("document")).toBeNull();
@@ -442,6 +468,8 @@ describe("edits handed to the editor on screen (correction)", () => {
     expect(session.scope("paragraph")).toBeNull();
     expect(session.apply([edit])).toBe(false);
     session.reveal({ from: 0, to: 1 });
+    session.marks([{ from: 0, to: 1 }], 0, () => {});
+    expect(session.markAt()).toBeNull();
     expect(session.composing()).toBe(false);
   });
 });

@@ -144,10 +144,10 @@
     }
   }
 
-  /** Scrolls the block holding the start of `range` into view. */
+  /** Selects `range` and scrolls it into view; not found in its block: the block scrolled into view. */
   function reveal(range: TextRange): void {
     const now = composed();
-    if (!core || !mod || !now) return;
+    if (!core || !mod || !now || mod.selectRange(core.view, now, range)) return;
     const index = mod.blockOf(now, range.from, range.from);
     const node = index === null ? null : core.view.state.doc.maybeChild(index);
     const line = node ? now.lines.get(node) : undefined;
@@ -316,6 +316,11 @@
           return mod.applyEdits(core, now, edits);
         },
         reveal: (range) => reveal(range),
+        marks: (ranges, current, pick) => {
+          const now = composed();
+          if (core && mod && now) mod.setMarks(core.view, now, ranges, current, pick);
+        },
+        markAt: () => (core && mod ? mod.markAt(core.view.state) : null),
         composing: () => core?.view.composing ?? false,
       });
     })().catch((error: unknown) => {

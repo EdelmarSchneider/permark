@@ -2460,4 +2460,5 @@ export default {
   "correction.done": "완료",
   "correction.retry": "다시 시도",
   "correction.openSettings": "로컬 AI 설정 열기",
+  "correction.show": "본문에서 보기",
 } satisfies Messages;

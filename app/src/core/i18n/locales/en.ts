@@ -2459,6 +2459,7 @@ const en = {
   "correction.done": "Done",
   "correction.retry": "Try again",
   "correction.openSettings": "Open Local AI settings",
+  "correction.show": "Show in the text",
 } as const;
 
 export default en;

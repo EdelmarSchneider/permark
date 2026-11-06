@@ -57,10 +57,22 @@ export type ActiveEditor = {
   /** All `edits` (ranges of the text now, not overlapping) in one undo step; `false` and no change when any range no
    *  longer reads its `expect`. Only `insert` goes in: nothing else of the text changes. */
   apply?(edits: readonly TextEdit[]): boolean;
-  /** Shows `range` (Source: selected + scrolled into view). */
+  /** Selects `range` and scrolls it into view (Edit: the block scrolled into view when the range is not found in it). */
   reveal?(range: TextRange): void;
+  /** Marks `ranges` in the text (decoration only), `current` distinct; a click on one -> `pick(its index)`. Marks follow
+   *  edits until the next call; an empty list clears them. */
+  marks?(ranges: readonly TextRange[], current: number | null, pick: (index: number) => void): void;
+  /** Index (in the last `marks`) of the mark holding the caret; `null`: none. */
+  markAt?(): number | null;
   /** Text is being composed (IME): edits wait. */
   composing?(): boolean;
+};
+
+/** The last `marks` handed to the editors. */
+type Marks = {
+  ranges: readonly TextRange[];
+  current: number | null;
+  pick: (index: number) => void;
 };
 
 /** What an editor mounts with. `line`: put this line at the top. */
@@ -134,6 +146,8 @@ export class EditingSession {
   #waiting: ((ok: boolean) => void)[] = [];
   #unguard: (() => void) | null = null;
   #loadedSegments: Segment[] | null = null;
+  /** Marks shown now: the editor made next (Edit <-> Source) shows them too. */
+  #marks: Marks | null = null;
 
   constructor(api: Api = defaultApi) {
     this.#api = api;
@@ -303,6 +317,7 @@ export class EditingSession {
     this.text = "";
     this.selection = "";
     this.#loadedSegments = null;
+    this.#marks = null;
     this.#clearTimers();
   }
 
@@ -336,6 +351,8 @@ export class EditingSession {
     if (this.content?.seq !== seq) return () => {};
     this.#editor = editor;
     this.text = editor.text();
+    const marks = this.#marks;
+    if (marks !== null) editor.marks?.(marks.ranges, marks.current, marks.pick);
     return () => {
       if (this.#editor === editor) this.#editor = null;
     };
@@ -375,6 +392,17 @@ export class EditingSession {
   /** Shows `range` in the editor on screen. */
   reveal(range: TextRange): void {
     this.#editor?.reveal?.(range);
+  }
+
+  /** Marks `ranges` in the editor on screen and in the next one made for this document (an empty list clears them). */
+  marks(ranges: readonly TextRange[], current: number | null, pick: (index: number) => void): void {
+    this.#marks = ranges.length === 0 ? null : { ranges, current, pick };
+    this.#editor?.marks?.(ranges, current, pick);
+  }
+
+  /** Index of the mark holding the caret in the editor on screen (`null`: none, or no editor offers it). */
+  markAt(): number | null {
+    return this.#editor?.markAt?.() ?? null;
   }
 
   /** The editor on screen is composing text (IME). */
