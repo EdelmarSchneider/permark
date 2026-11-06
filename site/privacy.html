@@ -36,7 +36,7 @@
           <p class="legal__updated">Last updated October 20, 2026. This page covers PerMark, the desktop app, in every build: the versions from GitHub, the Microsoft Store and the snap. It also covers this website.</p>
 
           <h2>In short</h2>
-          <p>PerMark has no account, no telemetry and no tracking. It goes online only to check for its own updates (in the versions you download from GitHub; the Microsoft Store and the snap update PerMark for it), and when you ask: a picture from the web, or the optional vocabulary of the Token count plugin. Your documents do not leave your computer through PerMark. An AI agent you connect is a separate program: what it sends online is up to that agent.</p>
+          <p>PerMark has no account, no telemetry and no tracking. It goes online only to check for its own updates (in the versions you download from GitHub; the Microsoft Store and the snap update PerMark for it), and when you ask: a picture from the web, the optional vocabulary of the Token count plugin, or a local AI model and the engine that runs it. Your documents do not leave your computer through PerMark. An AI agent you connect is a separate program: what it sends online is up to that agent.</p>
 
           <h2>What PerMark does not do</h2>
           <ul>
@@ -88,6 +88,20 @@
                   <td role="cell" data-label="Where it goes"><code>openaipublic.<wbr>blob.<wbr>core.<wbr>windows.<wbr>net</code> (3.6 MB or 1.7 MB, depending on the tokenizer)</td>
                   <td role="cell" data-label="Which builds">All builds</td>
                   <td role="cell" data-label="Does it ask you?">Yes. Nothing downloads until you click. Each vocabulary downloads once and is kept</td>
+                </tr>
+                <tr role="row">
+                  <td role="cell" data-label="What">A local AI model (Local AI plugin)</td>
+                  <td role="cell" data-label="When">Only when you click <strong>Get</strong> for a model in <strong>Settings → Local AI</strong> (the button shows the size). Nothing downloads when PerMark starts, and the models then run offline</td>
+                  <td role="cell" data-label="Where it goes"><code>huggingface.<wbr>co</code> and its download servers (<code>hf.<wbr>co</code>), from 0.3 GB to 4.6 GB depending on the model. If you add a Hugging Face token for a model that needs one, it is sent only there</td>
+                  <td role="cell" data-label="Which builds">All builds</td>
+                  <td role="cell" data-label="Does it ask you?">Yes. Nothing downloads until you click. Each file is checked before use</td>
+                </tr>
+                <tr role="row">
+                  <td role="cell" data-label="What">The AI engine that runs local models</td>
+                  <td role="cell" data-label="When">The first time you test or use a local model (for example to correct a text), and again after an update that brings a newer engine</td>
+                  <td role="cell" data-label="Where it goes">PerMark's own releases on <code>github.<wbr>com</code> and its download servers (<code>githubusercontent.<wbr>com</code>), about 20 MB to 80 MB depending on your system</td>
+                  <td role="cell" data-label="Which builds">All builds</td>
+                  <td role="cell" data-label="Does it ask you?">Only after you ask for a model to run. Each file is checked before use. The engine itself never goes online</td>
                 </tr>
                 <tr role="row">
                   <td role="cell" data-label="What">A picture from the web</td>

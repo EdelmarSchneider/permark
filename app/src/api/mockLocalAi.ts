@@ -266,7 +266,7 @@ export const MOCK_MIN_ENGINE: Readonly<
   "whisper-large-v3-turbo-q5_0": { engine: "whisper.cpp", version: "v1.7.0" },
 };
 
-/** Engine this app ships (as `engine::files::PINS`: worker-v0.1.4 = llama.cpp b11429). */
+/** Engine this app ships (as `engine::files::PINS`: worker-v0.1.5 = llama.cpp b11429). */
 export const MOCK_ENGINE_PIN: { readonly engine: MockEngine; readonly build: string } = {
   engine: "llama.cpp",
   build: "b11429",
