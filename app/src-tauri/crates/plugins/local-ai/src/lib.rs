@@ -52,11 +52,12 @@ use permark_core::{ErrorKind, IpcError};
 use serde::Deserialize;
 
 use crate::engine::files::{self, WorkerFiles};
+use crate::host::EngineNews;
 use crate::runtime::{Runtime, WorkerLog};
-use crate::testrun::{EngineNews, TestParts, Tester};
+use crate::testrun::{TestParts, Tester};
 
-pub use catalog::{Capability, Catalog, CatalogError, CatalogInfo, ModelInfo};
-pub use host::{engine_ipc, HostError, ModelHost, ModelSession};
+pub use catalog::{Capability, Catalog, CatalogError, CatalogInfo, EngineNeed, ModelInfo};
+pub use host::{engine_ipc, HostError, HostProgress, ModelHost, ModelSession};
 pub use installs::{
     AssignedModel, GetBlock, InstallError, InstallState, Installs, LocalAiState, ModelFor,
     ModelProgress, ModelStatus, StoreLinks, StoreMode, StoreMove, StoreStatus, TaskAssignment,
@@ -290,6 +291,7 @@ impl Plugin for LocalAi {
                     .map(|api| (*api).clone()),
                 profile: cx.store().map(|store| store.app_dir().to_path_buf()),
             },
+            worker_files.pin(),
             Some(Arc::clone(&runtime)),
         );
         rpc.extend(register(cx, &installs));
@@ -309,11 +311,11 @@ impl Plugin for LocalAi {
             Arc::clone(catalog),
             Arc::clone(&runtime),
             Arc::clone(&worker_files),
+            news,
         ));
         let service = cx.app().map(|app| app.services.provide(Arc::clone(&host)));
         let tester = Arc::new(Tester::new(TestParts {
             host,
-            news,
             events: cx.events().clone(),
         }));
         let t = Arc::clone(&tester);

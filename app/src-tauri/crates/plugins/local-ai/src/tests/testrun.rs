@@ -17,16 +17,17 @@ use crate::engine::files::tests::{pin, url, EXE, LIB};
 use crate::engine::files::{self, WorkerFiles, WorkerPin};
 use crate::engine::tests::Workers;
 use crate::engine::{EngineError, FakeEngine};
-use crate::host::ModelHost;
+use crate::host::EngineNews;
+use crate::host::{HostError, ModelHost};
 use crate::installs::Installs;
 use crate::machine::MachineProfile;
 use crate::runtime::Runtime;
-use crate::testrun::{EngineNews, TestError, TestParts, Tester, PROMPT};
+use crate::testrun::{TestError, TestParts, Tester, PROMPT};
 use crate::{state, InstallState};
 
 const WHISPER: &str = "whisper-large-v3-turbo-q5_0";
 
-fn plenty() -> MachineProfile {
+pub(super) fn plenty() -> MachineProfile {
     MachineProfile {
         ram_available: Some(64 << 30),
         ..MachineProfile::unknown()
@@ -41,7 +42,7 @@ fn scarce() -> MachineProfile {
 }
 
 /// Worker unit of [`pin`] served.
-fn engine_files() -> ScriptedTransport {
+pub(super) fn engine_files() -> ScriptedTransport {
     let pin = pin();
     ScriptedTransport::new()
         .answer(&url(&pin.files[0]), Scripted::ok(EXE))
@@ -60,7 +61,7 @@ pub(super) struct Bench {
 }
 
 impl Bench {
-    fn new(
+    pub(super) fn new(
         make: fn() -> FakeEngine,
         machine: fn() -> MachineProfile,
         pin: Option<&'static WorkerPin>,
@@ -80,6 +81,8 @@ impl Bench {
             cx.state_file(state::FILE),
             cx.events().clone(),
             crate::StoreLinks::default(),
+            // models judged on the test pin; `pin` = the worker files (none: no worker for this computer)
+            Some(crate::engine::files::tests::pin()),
             Some(Arc::clone(&runtime)),
         );
         let news = Arc::new(EngineNews::default());
@@ -94,10 +97,10 @@ impl Bench {
             Arc::new(cat),
             Arc::clone(&runtime),
             files,
+            news,
         ));
         let tester = Tester::new(TestParts {
             host: Arc::clone(&host),
-            news,
             events: cx.events().clone(),
         });
         Self {
@@ -445,7 +448,9 @@ fn engine_errors_map_to_stable_codes() {
             "{sent}"
         );
     }
-    let not_available = IpcError::from(TestError::Files(files::FilesError::NotAvailable));
+    let not_available = IpcError::from(TestError::Host(HostError::Files(
+        files::FilesError::NotAvailable,
+    )));
     assert_eq!(
         (not_available.kind, not_available.detail.as_deref()),
         (ErrorKind::Unavailable, Some("notAvailable"))

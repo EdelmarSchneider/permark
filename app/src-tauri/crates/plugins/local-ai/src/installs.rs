@@ -40,7 +40,8 @@ use permark_core::{ErrorKind, IpcError};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::catalog::{Catalog, CatalogError, Model, ModelFile};
+use crate::catalog::{Catalog, CatalogError, EngineNeed, Model, ModelFile};
+use crate::engine::files::{engine_need, WorkerPin};
 use crate::runtime::Runtime;
 use crate::state::{Acceptance, Installed, PluginState, Stale};
 use crate::store::{prune, tidy, version_dir};
@@ -131,9 +132,13 @@ pub struct ModelStatus {
     pub installed_version: Option<u32>,
     /// Why Get is refused now (`None`: Get works).
     pub blocked: Option<GetBlock>,
+    /// What the engine this app ships lacks to run it (`None`: runs): no Get, no Test, not assignable; an earlier
+    /// install stays listed (remove only) + an assignment to it is kept (shown not usable).
+    pub engine_need: Option<EngineNeed>,
 }
 
-/// Model chosen for one task (`model` = catalog id; `None`: not assigned | assigned model gone).
+/// Model chosen for one task (`model` = catalog id; `None`: not assigned | assigned model gone; a model the engine
+/// cannot run stays here, its `engineNeed` tells).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, rename = "TaskAssignment")]
@@ -267,6 +272,8 @@ pub enum InstallError {
     NotInstalled(String),
     #[error("model {0} cannot take this task")]
     Incompatible(String),
+    #[error("model {model}: the engine cannot run it ({})", need.as_str())]
+    EngineNeeded { model: String, need: EngineNeed },
     #[error("model {0} has no update")]
     NoUpdate(String),
     #[error("empty token")]
@@ -311,6 +318,9 @@ impl From<InstallError> for IpcError {
             InstallError::Downloading(id) => model(ErrorKind::Conflict, id, "downloading"),
             InstallError::NotInstalled(id) => model(ErrorKind::Conflict, id, "notInstalled"),
             InstallError::Incompatible(id) => model(ErrorKind::Unsupported, id, "incompatible"),
+            InstallError::EngineNeeded { model: id, need } => {
+                model(ErrorKind::Unsupported, id, need.as_str())
+            }
             InstallError::NoUpdate(id) => model(ErrorKind::Conflict, id, "noUpdate"),
             InstallError::EmptyToken => IpcError::new(ErrorKind::InvalidData)
                 .subject("credentials")
@@ -393,6 +403,8 @@ pub struct Installs {
     file: Option<StateFile<PluginState>>,
     events: PluginEvents,
     links: StoreLinks,
+    /// Worker this app ships for this computer (`None`: none, nothing runs): which models are offered.
+    pin: Option<&'static WorkerPin>,
     /// Engine host: sessions of a model unloaded before its files are removed | moved (D-11; `None`: tests).
     runtime: Option<Arc<Runtime>>,
     inner: Mutex<Inner>,
@@ -412,8 +424,9 @@ fn now_ms() -> u64 {
 }
 
 impl Installs {
-    /// Installs over `catalog`; state read from `file` (nothing written, nothing created).
+    /// Installs over `catalog`, models judged on `pin`; state read from `file` (nothing written, nothing created).
     #[must_use]
+    #[allow(clippy::too_many_arguments)] // the plugin start hands its parts over once
     pub(crate) fn new(
         catalog: Arc<Catalog>,
         kit: Option<Arc<DownloadKit>>,
@@ -421,6 +434,7 @@ impl Installs {
         file: Option<StateFile<PluginState>>,
         events: PluginEvents,
         links: StoreLinks,
+        pin: Option<&'static WorkerPin>,
         runtime: Option<Arc<Runtime>>,
     ) -> Arc<Self> {
         let state = file
@@ -434,6 +448,7 @@ impl Installs {
             file,
             events,
             links,
+            pin,
             runtime,
             inner: Mutex::new(Inner {
                 state,
@@ -458,6 +473,25 @@ impl Installs {
         self.catalog
             .model(id)
             .ok_or_else(|| InstallError::UnknownModel(id.to_owned()))
+    }
+
+    /// What the shipped engine lacks to run `model` (`None`: runs).
+    fn engine_need(&self, model: &Model) -> Option<EngineNeed> {
+        engine_need(self.pin, &model.min_engine)
+    }
+
+    /// `model` runs on the shipped engine.
+    ///
+    /// # Errors
+    /// [`InstallError::EngineNeeded`].
+    fn runnable(&self, model: &Model) -> Result<(), InstallError> {
+        match self.engine_need(model) {
+            Some(need) => Err(InstallError::EngineNeeded {
+                model: model.id.clone(),
+                need,
+            }),
+            None => Ok(()),
+        }
     }
 
     fn store_of(&self, state: &PluginState) -> PathBuf {
@@ -757,6 +791,7 @@ impl Installs {
                 state: Self::install_state(live.get(&m.id), m, u.as_ref(), available),
                 installed_version: u.as_ref().map(|i| i.catalog_version),
                 blocked: Self::blocked(m, &state, token_set),
+                engine_need: self.engine_need(m),
             })
             .collect();
         let assignments = Task::ALL
@@ -917,13 +952,14 @@ impl Installs {
         self.announce();
     }
 
-    /// Get (AC-3): queues the catalog version of `id`. Refused: terms not accepted, gated without token, withdrawn.
-    /// Already installed | queued | running: nothing.
+    /// Get (AC-3): queues the catalog version of `id`. Refused: the shipped engine cannot run it, terms not
+    /// accepted, gated without token, withdrawn. Already installed | queued | running: nothing.
     ///
     /// # Errors
     /// [`InstallError`].
     pub fn get(&self, id: &str) -> Result<LocalAiState, InstallError> {
         let model = self.model(id)?;
+        self.runnable(model)?;
         self.not_moving()?;
         let token_set = self.token_set();
         if let Some(block) = Self::blocked(model, &self.inner().state, token_set) {
@@ -1098,10 +1134,11 @@ impl Installs {
         Ok(self.snapshot(Some(&engine)))
     }
 
-    /// Assigns `model` (installed, compatible) to `task`; `None` unassigns.
+    /// Assigns `model` (installed, compatible, runs on the shipped engine) to `task`; `None` unassigns.
     ///
     /// # Errors
-    /// Unknown model, [`InstallError::Incompatible`], [`InstallError::NotInstalled`], state write.
+    /// Unknown model, [`InstallError::Incompatible`], [`InstallError::EngineNeeded`], [`InstallError::NotInstalled`],
+    /// state write.
     pub fn assign(&self, task: Task, model: Option<&str>) -> Result<LocalAiState, InstallError> {
         let Some(id) = model else {
             self.change(|s| {
@@ -1114,6 +1151,7 @@ impl Installs {
         if !task.accepts(&model.capabilities) {
             return Err(InstallError::Incompatible(id.to_owned()));
         }
+        self.runnable(model)?;
         let engine = self.engine()?;
         let state = self.inner().state.clone();
         let usable = Self::usable(Some(&engine), &state, model).is_some();

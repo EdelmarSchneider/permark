@@ -2302,6 +2302,10 @@ export default {
   "localAi.tasks.noneAvailable": "Encara no hi ha cap model per a això. Obteniu-ne un a Models.",
   "localAi.tasks.budget":
     "Junts, aquests models necessiten uns {needed} de memòria, però aquest ordinador en té uns {available} per a ells. Poden anar lents.",
+  "localAi.tasks.comingSoon":
+    "Aviat. Encara cap model per a aquesta tasca funciona amb aquesta versió de PerMark.",
+  "localAi.tasks.notUsable": "{name} encara no funciona amb aquesta versió de PerMark.",
+  "localAi.tasks.notUsableOption": "{name} (encara no funciona)",
   "localAi.noModelOption": "Sense assignar",
   "localAi.task.correction": "Correcció",
   "localAi.task.correction.hint": "Suggereix correccions d'ortografia i gramàtica",
@@ -2362,6 +2366,9 @@ export default {
   "localAi.models.details.source": "Origen",
   "localAi.models.details.size": "Mida de la baixada",
   "localAi.models.details.restriction": "Qui el pot fer servir",
+  "localAi.models.comingSoon": "Aviat",
+  "localAi.models.needs.newer": "Necessita una versió més nova del motor d'IA.",
+  "localAi.models.needs.missing": "Necessita un motor d'IA que PerMark encara no té.",
   "localAi.dl.waiting": "En espera…",
   "localAi.dl.cancelLabel": "Cancel·la la baixada de {name}",
   "localAi.dl.progress": "{done} de {total}",
@@ -2513,8 +2520,6 @@ export default {
   "correction.failed": "No s'ha pogut revisar el text.",
   "correction.failed.noModel":
     "El model triat per a la correcció no està disponible. Trieu-ne un a la pàgina IA local.",
-  "correction.failed.noEngine":
-    "El motor d'IA encara no és en aquest ordinador. Obteniu-lo amb Prova a la pàgina IA local.",
   "correction.discarded.one":
     "{n} part s'ha deixat com estava perquè el model hi canviava massa coses.",
   "correction.discarded.other":

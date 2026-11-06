@@ -5,6 +5,7 @@
 
 import { api as defaultApi, type Api, type ApiError, type Result, type Unlisten } from "../../api";
 import type { CatalogModel } from "../../api/generated/CatalogModel";
+import type { EngineNeed } from "../../api/generated/EngineNeed";
 import type { InstallState } from "../../api/generated/InstallState";
 import type { LocalAiCatalog } from "../../api/generated/LocalAiCatalog";
 import type { LocalAiState } from "../../api/generated/LocalAiState";
@@ -153,14 +154,30 @@ export class LocalAiStore {
     return this.state?.assignments.find((a) => a.task === task)?.model ?? null;
   }
 
-  /** Models on this computer that can do `task`, catalog order. */
+  /** What the shipped engine lacks to run `id` (`null`: runs | unknown model). */
+  engineNeedOf(id: string): EngineNeed | null {
+    return this.state?.models.find((m) => m.model === id)?.engineNeed ?? null;
+  }
+
+  /** Models on this computer that can do `task` and run here, catalog order. */
   choicesFor(task: AiTask): CatalogModel[] {
     const models = this.state?.models ?? [];
     return models.flatMap((status) => {
       const model = this.modelOf(status.model);
-      return status.installedVersion !== null && model !== null && accepts(task, model.capabilities)
+      return status.installedVersion !== null &&
+        status.engineNeed === null &&
+        model !== null &&
+        accepts(task, model.capabilities)
         ? [model]
         : [];
+    });
+  }
+
+  /** A catalog model that runs here can do `task` (on this computer or not); else the job is "coming soon". */
+  offersFor(task: AiTask): boolean {
+    return (this.state?.models ?? []).some((status) => {
+      const model = this.modelOf(status.model);
+      return status.engineNeed === null && model !== null && accepts(task, model.capabilities);
     });
   }
 

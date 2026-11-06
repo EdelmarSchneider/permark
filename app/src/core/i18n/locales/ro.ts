@@ -2405,6 +2405,10 @@ export default {
   "localAi.tasks.noneAvailable": "Încă nu există un model pentru asta. Obține unul la Modele.",
   "localAi.tasks.budget":
     "Împreună, aceste modele au nevoie de circa {needed} de memorie, dar acest computer are circa {available} pentru ele. Pot rula încet.",
+  "localAi.tasks.comingSoon":
+    "În curând. Niciun model pentru această sarcină nu funcționează încă cu această versiune de PerMark.",
+  "localAi.tasks.notUsable": "{name} nu funcționează încă cu această versiune de PerMark.",
+  "localAi.tasks.notUsableOption": "{name} (nu funcționează încă)",
   "localAi.noModelOption": "Neatribuit",
   "localAi.task.correction": "Corectare",
   "localAi.task.correction.hint": "Sugerează corecturi de ortografie și gramatică",
@@ -2463,6 +2467,9 @@ export default {
   "localAi.models.details.source": "Sursă",
   "localAi.models.details.size": "Mărimea descărcării",
   "localAi.models.details.restriction": "Cine îl poate folosi",
+  "localAi.models.comingSoon": "În curând",
+  "localAi.models.needs.newer": "Are nevoie de o versiune mai nouă a motorului AI.",
+  "localAi.models.needs.missing": "Are nevoie de un motor AI pe care PerMark încă nu îl are.",
   "localAi.dl.waiting": "În așteptare…",
   "localAi.dl.cancelLabel": "Anulează descărcarea {name}",
   "localAi.dl.progress": "{done} din {total}",
@@ -2614,8 +2621,6 @@ export default {
   "correction.failed": "Textul nu a putut fi verificat.",
   "correction.failed.noModel":
     "Modelul ales pentru corectare nu este disponibil. Alege unul pe pagina AI local.",
-  "correction.failed.noEngine":
-    "Motorul AI nu este încă pe acest computer. Obține-l cu Testează pe pagina AI local.",
   "correction.discarded.one": "{n} parte a rămas cum era, pentru că modelul a schimbat prea mult.",
   "correction.discarded.other":
     "{n} de părți au rămas cum erau, pentru că modelul a schimbat prea mult.",

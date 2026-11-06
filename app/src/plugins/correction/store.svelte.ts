@@ -42,6 +42,7 @@ export type Session = Pick<
 export type Found = Suggestion & { key: number };
 
 export type RunStatus =
+  | { kind: "engine"; receivedBytes: number; totalBytes: number }
   | { kind: "loading"; progress: number }
   | { kind: "checking"; part: number; parts: number }
   | { kind: "finished" }
@@ -70,7 +71,7 @@ const COMPOSE_TRIES = 50;
 const CLOSED: CorrectionState = { kind: "closed" };
 
 export function running(status: RunStatus): boolean {
-  return status.kind === "loading" || status.kind === "checking";
+  return status.kind === "engine" || status.kind === "loading" || status.kind === "checking";
 }
 
 /** The range of `before` that differs from `after` (`to`: end in `before`) and the length change. */
@@ -186,6 +187,13 @@ export class CorrectionStore {
     if (this.#run === null || news.run !== this.#run) return;
     const phase = news.phase;
     switch (phase.kind) {
+      case "engine":
+        this.#status({
+          kind: "engine",
+          receivedBytes: phase.receivedBytes,
+          totalBytes: phase.totalBytes,
+        });
+        return;
       case "loading":
         this.#status({ kind: "loading", progress: phase.progress });
         return;

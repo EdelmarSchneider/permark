@@ -12,7 +12,7 @@ vi.mock("../../api", async () => {
 });
 
 const { api } = await import("../../api");
-const { MOCK_MACHINE } = await import("../../api/mockLocalAi");
+const { MOCK_ENGINE_PIN, MOCK_MACHINE } = await import("../../api/mockLocalAi");
 const { localAi, milestoneOf } = await import("./store.svelte");
 const { default: LocalAiSection } = await import("./LocalAiSection.svelte");
 
@@ -28,6 +28,9 @@ const GATED = "gemma-3-270m-it-q8_0";
 const FLAKY = "embeddinggemma-300m-q4_0";
 const LONG = "fachtext-uebersetzer-q4_0";
 const LONG_NAME = "Übersetzungsmodell für wissenschaftliche Fachtexte";
+/** A later llama.cpp worker (runs EmbeddingGemma 2 + LFM3); a speech worker (runs Whisper). */
+const NEWER = { engine: "llama.cpp", build: "b11960" } as const;
+const SPEECH = { engine: "whisper.cpp", build: "v1.7.0" } as const;
 
 let target: HTMLElement;
 let component: Record<string, unknown> | null = null;
@@ -88,6 +91,7 @@ beforeEach(() => {
   document.body.append(target);
   probe.machine = structuredClone(MOCK_MACHINE);
   probe.stepMs = 30;
+  probe.engine = { ...MOCK_ENGINE_PIN };
 });
 
 afterEach(async () => {
@@ -126,7 +130,7 @@ describe("the list", () => {
     const fit = row(GEMMA_E4B).querySelector(".fit");
     expect(fit?.textContent?.trim()).toBe("Too big for this computer");
     expect(fit?.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
-    expect(row(EMBED).querySelector(".fit")?.textContent?.trim()).toBe("Runs well here");
+    expect(row(FLAKY).querySelector(".fit")?.textContent?.trim()).toBe("Runs well here");
   });
 
   it("opens the terms in the browser, never in the app", async () => {
@@ -221,6 +225,7 @@ describe("getting a model", () => {
   });
 
   it("asks to accept the terms inline before getting", async () => {
+    probe.engine = NEWER;
     await openPage();
     expect(action(LFM, "get")).toBeNull();
     const opener = press(LFM, "terms");
@@ -251,6 +256,7 @@ describe("getting a model", () => {
   });
 
   it("Cancel keeps the part (Paused), Resume goes on, Delete partial drops it", async () => {
+    probe.engine = SPEECH;
     await openPage();
     expect(text(WHISPER)).toContain("Paused at 42%");
     expect(action(WHISPER, "get")?.getAttribute("aria-label")).toBe(
@@ -298,8 +304,40 @@ describe("getting a model", () => {
   });
 });
 
+describe("a model the AI engine cannot run", () => {
+  it("says Coming soon and why in words, offers no Get, keeps Details", async () => {
+    await openPage();
+    expect(text(LFM)).toContain("Coming soon");
+    expect(text(LFM)).toContain("Needs a newer version of the AI engine.");
+    expect(action(LFM, "get")).toBeNull();
+    expect(action(LFM, "terms")).toBeNull();
+    expect(row(LFM).querySelector(".fit"), "no fit hint for what cannot run").toBeNull();
+    expect(row(LFM).querySelector("details summary")?.getAttribute("aria-label")).toBe(
+      "Details of LFM3 1.7B",
+    );
+    expect(text(WHISPER)).toContain("Needs an AI engine that PerMark doesn't have yet.");
+    expect(action(WHISPER, "get")).toBeNull();
+    // installed earlier: listed, Remove only (no Test, no Ready)
+    expect(text(EMBED)).toContain("Coming soon");
+    expect(text(EMBED)).not.toContain("Ready");
+    expect(action(EMBED, "test")).toBeNull();
+    expect(action(EMBED, "remove")).not.toBeNull();
+    expect(text(GEMMA_E4B)).not.toContain("Coming soon");
+  });
+
+  it("is offered as soon as the engine runs it", async () => {
+    probe.engine = NEWER;
+    await openPage();
+    expect(text(LFM)).not.toContain("Coming soon");
+    // Get | Resume, or the terms first (earlier tests of this file may have accepted them)
+    expect(action(LFM, "get") ?? action(LFM, "terms")).not.toBeNull();
+    expect(text(WHISPER)).toContain("Coming soon");
+  });
+});
+
 describe("removing a model", () => {
   it("confirms inline, naming the size and the jobs that lose it; focus follows", async () => {
+    probe.engine = NEWER;
     await openPage();
     expect(text(EMBED)).toContain("Ready");
     const opener = press(EMBED, "remove");

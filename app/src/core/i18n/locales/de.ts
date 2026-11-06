@@ -2309,6 +2309,10 @@ export default {
   "localAi.tasks.noneAvailable": "Noch kein Modell dafür. Unter „Modelle“ erhältlich.",
   "localAi.tasks.budget":
     "Zusammen brauchen diese Modelle etwa {needed} Arbeitsspeicher, dieser Computer hat aber nur etwa {available} für sie. Sie laufen eventuell langsam.",
+  "localAi.tasks.comingSoon":
+    "Demnächst. Noch läuft kein Modell für diese Aufgabe mit dieser Version von PerMark.",
+  "localAi.tasks.notUsable": "{name} läuft noch nicht mit dieser Version von PerMark.",
+  "localAi.tasks.notUsableOption": "{name} (läuft noch nicht)",
   "localAi.noModelOption": "Nicht zugewiesen",
   "localAi.task.correction": "Korrektur",
   "localAi.task.correction.hint": "Schlägt Rechtschreib- und Grammatikkorrekturen vor",
@@ -2368,6 +2372,9 @@ export default {
   "localAi.models.details.source": "Quelle",
   "localAi.models.details.size": "Downloadgröße",
   "localAi.models.details.restriction": "Wer es nutzen darf",
+  "localAi.models.comingSoon": "Demnächst",
+  "localAi.models.needs.newer": "Braucht eine neuere Version der KI-Engine.",
+  "localAi.models.needs.missing": "Braucht eine KI-Engine, die PerMark noch nicht hat.",
   "localAi.dl.waiting": "Wartet…",
   "localAi.dl.cancelLabel": "Laden von {name} abbrechen",
   "localAi.dl.progress": "{done} von {total}",
@@ -2518,8 +2525,6 @@ export default {
   "correction.failed": "Der Text konnte nicht geprüft werden.",
   "correction.failed.noModel":
     "Das für die Korrektur gewählte Modell ist nicht verfügbar. Auf der Seite „Lokale KI“ ein Modell wählen.",
-  "correction.failed.noEngine":
-    "Die KI-Engine ist noch nicht auf diesem Computer. Sie kommt mit „Testen“ auf der Seite „Lokale KI“.",
   "correction.discarded.one": "{n} Teil blieb unverändert, weil das Modell zu viel geändert hat.",
   "correction.discarded.other":
     "{n} Teile blieben unverändert, weil das Modell zu viel geändert hat.",

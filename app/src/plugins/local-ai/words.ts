@@ -3,6 +3,7 @@
 
 import type { ApiError } from "../../api";
 import type { DownloadError } from "../../api/generated/DownloadError";
+import type { EngineNeed } from "../../api/generated/EngineNeed";
 import type { ModelFit } from "../../api/generated/ModelFit";
 import { apiErrorText } from "../../core/errors";
 import { language, sizeText, t, tn, type MessageKey } from "../../core/i18n";
@@ -68,6 +69,18 @@ export function capabilityKey(capability: ModelCapability): MessageKey {
       return "localAi.cap.vision";
     default:
       return capability satisfies never;
+  }
+}
+
+/** What the AI engine lacks to run a model (row note | refusal). */
+export function engineNeedKey(need: EngineNeed): MessageKey {
+  switch (need) {
+    case "newer":
+      return "localAi.models.needs.newer";
+    case "missing":
+      return "localAi.models.needs.missing";
+    default:
+      return need satisfies never;
   }
 }
 
@@ -171,6 +184,10 @@ function reasonKey(reason: string | null): MessageKey | null {
       return "localAi.err.withdrawn";
     case "noUpdate":
       return "localAi.err.noUpdate";
+    case "newerEngine":
+      return engineNeedKey("newer");
+    case "missingEngine":
+      return engineNeedKey("missing");
     case "notAbsolute":
       return "localAi.err.notAbsolute";
     case "insideProject":

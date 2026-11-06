@@ -1,7 +1,9 @@
 <script lang="ts">
-  // "What each job uses": one select per job, offering the models on this computer that can do it (or Not assigned).
-  // No such model: the select is off and the row says so. Assigned models needing more memory than this computer has
-  // for them: a warning in words (icon beside, never color alone).
+  // "What each job uses": one select per job, offering the models on this computer that can do it and run here (or Not
+  // assigned). No such model: the select is off and the row says so ("coming soon" when no model of the catalog runs
+  // here for it). An assigned model the AI engine cannot run stays chosen (never changed silently), named as not
+  // usable in its option + the row hint. Assigned models needing more memory than this computer has for them: a
+  // warning in words (icon beside, never color alone).
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import { sizeText, t } from "../../core/i18n";
   import Card from "../../core/shell/settings/Card.svelte";
@@ -12,12 +14,25 @@
 
   const id = $props.id();
   const rows = $derived(
-    TASKS.map((task) => ({
-      task,
-      choices: localAi.choicesFor(task),
-      model: localAi.assigned(task),
-    })),
+    TASKS.map((task) => {
+      const model = localAi.assigned(task);
+      const unusable =
+        model !== null && localAi.engineNeedOf(model) !== null ? localAi.modelOf(model) : null;
+      return {
+        task,
+        choices: localAi.choicesFor(task),
+        model,
+        unusable,
+        soon: !localAi.offersFor(task),
+      };
+    }),
   );
+
+  function hintOf(row: (typeof rows)[number]): string {
+    if (row.unusable !== null) return t("localAi.tasks.notUsable", { name: row.unusable.name });
+    if (row.choices.length > 0) return t(taskHintKey(row.task));
+    return t(row.soon ? "localAi.tasks.comingSoon" : "localAi.tasks.noneAvailable");
+  }
   /** The first job that can be changed takes the keyboard when the page is opened from the palette. */
   const first = $derived(rows.find((row) => row.choices.length > 0)?.task ?? null);
   const budget = $derived(localAi.machine?.budget ?? null);
@@ -38,12 +53,9 @@
   <h3 id={`${id}-title`}>{t("localAi.tasks.title")}</h3>
   <Card>
     {#each rows as row (row.task)}
-      {@const none = row.choices.length === 0}
-      <SettingRow
-        label={t(taskKey(row.task))}
-        hint={none ? t("localAi.tasks.noneAvailable") : t(taskHintKey(row.task))}
-        labelFor={`${id}-${row.task}`}
-      >
+      {@const none = row.choices.length === 0 && row.unusable === null}
+      <!-- an unusable choice keeps the select on: the person can still unassign it -->
+      <SettingRow label={t(taskKey(row.task))} hint={hintOf(row)} labelFor={`${id}-${row.task}`}>
         <select
           id={`${id}-${row.task}`}
           class="field-select"
@@ -54,6 +66,11 @@
           onchange={(e) => void choose(row.task, e.currentTarget)}
         >
           <option value="">{t("localAi.noModelOption")}</option>
+          {#if row.unusable !== null}
+            <option value={row.unusable.id}
+              >{t("localAi.tasks.notUsableOption", { name: row.unusable.name })}</option
+            >
+          {/if}
           {#each row.choices as model (model.id)}
             <option value={model.id}>{model.name}</option>
           {/each}

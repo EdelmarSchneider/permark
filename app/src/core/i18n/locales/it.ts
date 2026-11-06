@@ -2289,6 +2289,10 @@ export default {
   "localAi.tasks.noneAvailable": "Ancora nessun modello per questo. Scaricane uno in Modelli.",
   "localAi.tasks.budget":
     "Insieme, questi modelli richiedono circa {needed} di memoria, ma questo computer ne ha circa {available} per loro. Potrebbero essere lenti.",
+  "localAi.tasks.comingSoon":
+    "Prossimamente. Nessun modello per questa attività funziona ancora con questa versione di PerMark.",
+  "localAi.tasks.notUsable": "{name} non funziona ancora con questa versione di PerMark.",
+  "localAi.tasks.notUsableOption": "{name} (non funziona ancora)",
   "localAi.noModelOption": "Non assegnato",
   "localAi.task.correction": "Correzione",
   "localAi.task.correction.hint": "Suggerisce correzioni di ortografia e grammatica",
@@ -2348,6 +2352,9 @@ export default {
   "localAi.models.details.source": "Origine",
   "localAi.models.details.size": "Dimensione del download",
   "localAi.models.details.restriction": "Chi può usarlo",
+  "localAi.models.comingSoon": "Prossimamente",
+  "localAi.models.needs.newer": "Richiede una versione più recente del motore IA.",
+  "localAi.models.needs.missing": "Richiede un motore IA che PerMark non ha ancora.",
   "localAi.dl.waiting": "In attesa…",
   "localAi.dl.cancelLabel": "Annulla il download di {name}",
   "localAi.dl.progress": "{done} di {total}",
@@ -2497,8 +2504,6 @@ export default {
   "correction.failed": "Non è stato possibile controllare il testo.",
   "correction.failed.noModel":
     "Il modello scelto per la correzione non è disponibile. Scegline uno nella pagina IA locale.",
-  "correction.failed.noEngine":
-    "Il motore IA non è ancora su questo computer. Ottienilo con Prova nella pagina IA locale.",
   "correction.discarded.one":
     "{n} parte è stata lasciata com'era perché il modello la cambiava troppo.",
   "correction.discarded.other":

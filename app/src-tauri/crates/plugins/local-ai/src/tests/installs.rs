@@ -22,6 +22,7 @@ use sha2::{Digest, Sha256};
 
 use super::entries;
 use crate::catalog::Catalog;
+use crate::engine::files::WorkerPin;
 use crate::installs::{Installs, ModelFor};
 use crate::tasks::Task;
 use crate::{plugin_with, state, ID};
@@ -29,6 +30,7 @@ use crate::{plugin_with, state, ID};
 pub(super) const EMBED: &str = "embeddinggemma-2-q8_0";
 pub(super) const LFM: &str = "lfm3-1.7b-q4_k_m";
 pub(super) const E2B: &str = "gemma-4-e2b-it-q4_0";
+pub(super) const WHISPER: &str = "whisper-large-v3-turbo-q5_0";
 
 /// Bytes of one test file (differ per model, file, version).
 pub(super) fn body(model: &str, path: &str, version: u32) -> Vec<u8> {
@@ -45,12 +47,14 @@ pub(super) fn hex(bytes: &[u8]) -> String {
     })
 }
 
-/// The bundled catalog at `version` with tiny files (+ `edit` on its JSON).
+/// The bundled catalog at `version` with tiny files, every model on any llama.cpp build (install tests; real floors:
+/// [`shipped_engines`]) (+ `edit` on its JSON).
 pub(super) fn catalog(version: u32, edit: impl FnOnce(&mut Value)) -> Catalog {
     let mut value: Value = serde_json::from_str(include_str!("../catalog.json")).unwrap();
     for model in value["models"].as_array_mut().unwrap() {
         let id = model["id"].as_str().unwrap().to_owned();
         model["catalogVersion"] = json!(version);
+        model["minEngine"] = json!({ "engine": "llama.cpp", "version": null });
         model["commit"] = json!(format!("{version:040x}"));
         for file in model["files"].as_array_mut().unwrap() {
             let bytes = body(&id, file["path"].as_str().unwrap(), version);
@@ -60,6 +64,19 @@ pub(super) fn catalog(version: u32, edit: impl FnOnce(&mut Value)) -> Catalog {
     }
     edit(&mut value);
     Catalog::parse(&value.to_string()).unwrap()
+}
+
+/// `edit` for [`catalog`]: the bundled engine floors back.
+pub(super) fn shipped_engines(value: &mut Value) {
+    let bundled: Value = serde_json::from_str(include_str!("../catalog.json")).unwrap();
+    for (model, real) in value["models"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .zip(bundled["models"].as_array().unwrap())
+    {
+        model["minEngine"] = real["minEngine"].clone();
+    }
 }
 
 pub(super) fn url(catalog: &Catalog, model: &str, file: usize) -> String {
@@ -659,6 +676,7 @@ fn model_for_answers_the_assigned_installed_model() {
         cx.state_file(state::FILE),
         cx.events().clone(),
         crate::StoreLinks::default(),
+        Some(crate::engine::files::tests::pin()),
         None,
     );
     assert_eq!(installs.model_for(Task::Dictation), ModelFor::NoModel);
@@ -720,6 +738,7 @@ fn remove_and_store_change_unload_the_engine_sessions_first() {
         cx.state_file(state::FILE),
         cx.events().clone(),
         crate::StoreLinks::default(),
+        Some(crate::engine::files::tests::pin()),
         Some(Arc::clone(&runtime)),
     );
     let id = "whisper-large-v3-turbo-q5_0";
@@ -942,4 +961,171 @@ fn an_old_version_that_cannot_be_removed_goes_at_the_next_action() {
     run.wait("whisper-large-v3-turbo-q5_0", "installed");
     assert!(!old.exists());
     assert_eq!(stale(), 0);
+}
+
+/// Bugfix unrunnable models AC-2/AC-3: the pinned engine (llama.cpp b11429) runs Gemma 4 only; the others are listed
+/// with what the engine lacks, Get + assign refused (typed), nothing created.
+#[test]
+fn models_the_pinned_engine_cannot_run_are_listed_with_what_it_lacks() {
+    let lab = Lab::new();
+    let cat = catalog(1, shipped_engines);
+    let run = lab.start(cat.clone(), Arc::new(serving(&cat)));
+    let need = |id: &str| run.model(id)["engineNeed"].clone();
+    assert_eq!(need(E2B), Value::Null);
+    assert_eq!(need("gemma-4-e4b-it-q4_0"), Value::Null);
+    assert_eq!(need(EMBED), "newer");
+    assert_eq!(need(LFM), "newer");
+    assert_eq!(need(WHISPER), "missing");
+    run.call("acceptLicense", model_args(LFM)).unwrap();
+    refused(
+        run.call("get", model_args(LFM)),
+        ErrorKind::Unsupported,
+        "newerEngine",
+    );
+    refused(
+        run.call("get", model_args(WHISPER)),
+        ErrorKind::Unsupported,
+        "missingEngine",
+    );
+    refused(
+        run.call("assign", json!({"task": "semanticIndex", "model": EMBED})),
+        ErrorKind::Unsupported,
+        "newerEngine",
+    );
+    assert_eq!(run.model(LFM)["state"]["kind"], "notInstalled");
+    assert!(!lab.models_dir().exists(), "nothing created");
+}
+
+fn plenty() -> crate::machine::MachineProfile {
+    crate::machine::MachineProfile {
+        ram_available: Some(64 << 30),
+        ..crate::machine::MachineProfile::unknown()
+    }
+}
+
+/// Bugfix AC-6: a newer pin runs the same catalog with no other change. AC-4: a model installed under it stays
+/// listed (installed, assignment kept) once the pin is older again, but is not assignable, not loaded, not tested.
+#[test]
+fn a_newer_pin_runs_them_and_an_earlier_install_stays_but_never_loads() {
+    use crate::catalog::EngineNeed;
+    use crate::engine::files::PINS;
+
+    static NEWER: WorkerPin = WorkerPin {
+        build: "b11960",
+        ..PINS[0]
+    };
+    let lab = Lab::new();
+    let cat = catalog(1, shipped_engines);
+    let rpc = RpcTable::new();
+    let services = Services::new();
+    let events = Arc::new(Events::default());
+    let cx = lab.cx(&rpc, &services, &events);
+    let installs_on = |pin: &'static WorkerPin| {
+        Installs::new(
+            Arc::new(cat.clone()),
+            Some(Arc::new(lab.kit(Arc::new(serving(&cat))))),
+            lab.models_dir(),
+            cx.state_file(state::FILE),
+            cx.events().clone(),
+            crate::StoreLinks::default(),
+            Some(pin),
+            None,
+        )
+    };
+    let need = |installs: &Installs, id: &str| {
+        installs
+            .state()
+            .models
+            .into_iter()
+            .find(|m| m.model == id)
+            .unwrap()
+            .engine_need
+    };
+    let newer = installs_on(&NEWER);
+    assert_eq!(need(&newer, LFM), None);
+    assert_eq!(need(&newer, EMBED), None);
+    assert_eq!(need(&newer, WHISPER), Some(EngineNeed::Missing));
+    newer.accept_license(LFM).unwrap();
+    newer.get(LFM).unwrap();
+    let start = Instant::now();
+    while newer.assign(Task::Correction, Some(LFM)).is_err() {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    newer.shutdown();
+    drop(newer);
+
+    let pinned = installs_on(&PINS[0]);
+    let state = pinned.state();
+    let lfm = state.models.iter().find(|m| m.model == LFM).unwrap();
+    assert!(matches!(lfm.state, crate::InstallState::Installed { .. }));
+    assert_eq!(lfm.engine_need, Some(EngineNeed::Newer));
+    let correction = state
+        .assignments
+        .iter()
+        .find(|a| a.task == Task::Correction)
+        .unwrap();
+    assert_eq!(correction.model.as_deref(), Some(LFM), "choice kept");
+    assert!(matches!(
+        pinned.assign(Task::Assistant, Some(LFM)),
+        Err(crate::InstallError::EngineNeeded {
+            need: EngineNeed::Newer,
+            ..
+        })
+    ));
+
+    never_loads(&pinned, &cat, &cx);
+    pinned.shutdown();
+}
+
+/// AC-4: `pinned`'s assigned model needs a newer engine: open + test refuse it typed, no worker started.
+fn never_loads(pinned: &Arc<Installs>, cat: &Catalog, cx: &PluginCx) {
+    use crate::engine::files::{WorkerFiles, PINS};
+    use crate::engine::tests::Workers;
+    use crate::engine::{CancelToken, EngineError, FakeEngine};
+    use crate::host::EngineNews;
+    use crate::host::{HostError, ModelHost};
+    use crate::runtime::Runtime;
+    use crate::testrun::{TestError, TestParts, Tester};
+
+    let workers = Workers::default();
+    let runtime = Arc::new(Runtime::with_launch(
+        workers.launch(FakeEngine::new),
+        plenty,
+    ));
+    let news = Arc::new(EngineNews::default());
+    let files = Arc::new(WorkerFiles::with_pin(
+        Some(&PINS[0]),
+        None,
+        cx.state_dir.join(crate::engine::files::DIR),
+        news.listener(),
+    ));
+    let host = Arc::new(ModelHost::new(
+        Arc::clone(pinned),
+        Arc::new(cat.clone()),
+        runtime,
+        files,
+        news,
+    ));
+    let error = host
+        .open(Task::Correction, 4096, &|_| {}, &CancelToken::new())
+        .unwrap_err();
+    assert!(
+        matches!(&error, HostError::Engine(EngineError::EngineTooOld { needed }) if needed == "b11960"),
+        "{error:?}"
+    );
+    let ipc = IpcError::from(error);
+    assert_eq!(
+        (ipc.kind, ipc.detail.as_deref()),
+        (ErrorKind::Unsupported, Some("engineTooOld"))
+    );
+    let tester = Tester::new(TestParts {
+        host,
+        events: cx.events().clone(),
+    });
+    assert!(matches!(
+        tester.start(LFM),
+        Err(TestError::Engine(EngineError::EngineTooOld { .. }))
+    ));
+    assert_eq!(workers.launched(), 0, "never loaded");
 }

@@ -3,7 +3,8 @@
 //! guards, review bar).
 //!
 //! Rust side is thin: prompt data ([`prompt`]), model call + piece results stream ([`run`]). Depends on `local-ai`
-//! (model service `ModelHost`, looked up per call: never loads | downloads by itself).
+//! (model service `ModelHost`, looked up per call: loads only through it; a run fetches a missing engine through it,
+//! phase `engine`).
 //!
 //! On by default but dormant: start registers the RPC only (no thread, no load); the window hides the command until
 //! `status` says a model is assigned.
@@ -24,7 +25,7 @@ use permark_core::plugins::{
 };
 use permark_core::IpcError;
 use permark_plugin_local_ai::engine::{CancelToken, ChatRequest, EngineError, GenEvent};
-use permark_plugin_local_ai::{HostError, ModelHost, ModelSession, Task};
+use permark_plugin_local_ai::{HostError, HostProgress, ModelHost, ModelSession, Task};
 use serde::Deserialize;
 
 pub use run::{
@@ -138,7 +139,7 @@ impl Models for Hosted {
 
     fn open(
         &self,
-        progress: &dyn Fn(f32),
+        progress: &dyn Fn(HostProgress),
         cancel: &CancelToken,
     ) -> Result<Box<dyn Session>, IpcError> {
         let host = self.host().ok_or(HostError::NoModel(Task::Correction))?;

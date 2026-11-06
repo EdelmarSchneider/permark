@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// the bundled catalog itself: the mock's engine floors must match it
+import CATALOG from "../../src-tauri/crates/plugins/local-ai/src/catalog.json";
 import type { InstallState } from "./generated/InstallState";
 import type { LocalAiState } from "./generated/LocalAiState";
 import type { ModelTest } from "./generated/ModelTest";
@@ -8,6 +10,7 @@ import {
   MOCK_CATALOG,
   MOCK_DEFAULT_STORE,
   MOCK_MACHINE,
+  MOCK_MIN_ENGINE,
   MOCK_PROFILE,
 } from "./mockLocalAi";
 import { MockPluginError } from "./mockOrganizing";
@@ -23,6 +26,9 @@ const FLAKY = "embeddinggemma-300m-q4_0";
 const GERMAN = "fachtext-uebersetzer-q4_0";
 
 const PROJECT = "D:/Work/Notes";
+/** A later llama.cpp worker (runs EmbeddingGemma 2 + LFM3); a speech worker (runs Whisper). */
+const NEWER = { engine: "llama.cpp", build: "b11960" } as const;
+const SPEECH = { engine: "whisper.cpp", build: "v1.7.0" } as const;
 
 function setup() {
   const events: { name: AppPluginEventName; payload: unknown }[] = [];
@@ -90,7 +96,7 @@ describe("local AI mock installs", () => {
   });
 
   it("cancel keeps the part (paused); get resumes; delete part drops it", () => {
-    const { h, now } = setup();
+    const { h, now, probe } = setup();
     h["local-ai.get"]({ model: GERMAN });
     vi.advanceTimersByTime(400 * 4);
     h["local-ai.cancel"]({ model: GERMAN });
@@ -100,6 +106,7 @@ describe("local AI mock installs", () => {
     expect(now(GERMAN)).toEqual(paused);
     h["local-ai.deletePart"]({ model: GERMAN });
     expect(now(GERMAN)).toEqual({ kind: "notInstalled" });
+    probe.engine = SPEECH;
     h["local-ai.get"]({ model: WHISPER });
     vi.advanceTimersByTime(400 * 12);
     expect(now(WHISPER)).toEqual({ kind: "installed", catalogVersion: 1 });
@@ -119,7 +126,8 @@ describe("local AI mock installs", () => {
   });
 
   it("asks for the terms before the first byte, once", () => {
-    const { h, now } = setup();
+    const { h, now, probe } = setup();
+    probe.engine = NEWER;
     const error = refusal(() => h["local-ai.get"]({ model: LFM }));
     expect([error.kind, error.detail]).toEqual(["denied", "license"]);
     expect(now(LFM)).toEqual({ kind: "notInstalled" });
@@ -149,7 +157,8 @@ describe("local AI mock installs", () => {
   });
 
   it("updates beside the old version; remove unassigns; assign checks install + fit", () => {
-    const { h, now } = setup();
+    const { h, now, probe } = setup();
+    probe.engine = NEWER;
     h["local-ai.update"]({ model: E2B });
     const during = h["local-ai.state"]({}).models.find((m) => m.model === E2B);
     expect(during?.installedVersion).toBe(1);
@@ -173,6 +182,54 @@ describe("local AI mock installs", () => {
     expect(
       h["local-ai.state"]({}).assignments.find((a) => a.task === "semanticIndex")?.model,
     ).toBeNull();
+  });
+});
+
+describe("local AI mock engine", () => {
+  it("knows the engine floors of the bundled catalog", () => {
+    const floors = Object.fromEntries(CATALOG.models.map((m) => [m.id, m.minEngine]));
+    const mirrored = Object.fromEntries(Object.keys(floors).map((id) => [id, MOCK_MIN_ENGINE[id]]));
+    expect(mirrored).toEqual(floors);
+  });
+
+  it("offers only what the pinned engine runs; refuses Get, assign, Test of the rest", () => {
+    const { h, now } = setup();
+    const needs = () =>
+      Object.fromEntries(h["local-ai.state"]({}).models.map((m) => [m.model, m.engineNeed]));
+    expect(needs()).toMatchObject({
+      [E2B]: null,
+      [E4B]: null,
+      [EMBED]: "newer",
+      [LFM]: "newer",
+      [WHISPER]: "missing",
+      [GERMAN]: null,
+    });
+    h["local-ai.acceptLicense"]({ model: LFM });
+    const get = refusal(() => h["local-ai.get"]({ model: LFM }));
+    expect([get.kind, get.subject, get.detail]).toEqual(["unsupported", LFM, "newerEngine"]);
+    expect(refusal(() => h["local-ai.get"]({ model: WHISPER })).detail).toBe("missingEngine");
+    expect(now(LFM)).toEqual({ kind: "notInstalled" });
+    // installed earlier: listed, assignment kept, never assigned again nor tested
+    expect(now(EMBED)).toEqual({ kind: "installed", catalogVersion: 1 });
+    const state = h["local-ai.state"]({});
+    expect(state.assignments.find((a) => a.task === "semanticIndex")?.model).toBe(EMBED);
+    const assign = refusal(() => h["local-ai.assign"]({ task: "semanticIndex", model: EMBED }));
+    expect(assign.detail).toBe("newerEngine");
+    const test = refusal(() => h["local-ai.testModel"]({ model: EMBED }));
+    expect([test.kind, test.subject, test.detail]).toEqual([
+      "unsupported",
+      "engine",
+      "engineTooOld",
+    ]);
+    // a later pin: the same models run, nothing else changed
+    const { h: later, probe } = setup();
+    probe.engine = NEWER;
+    const after = Object.fromEntries(
+      later["local-ai.state"]({}).models.map((m) => [m.model, m.engineNeed]),
+    );
+    expect(after).toMatchObject({ [EMBED]: null, [LFM]: null, [WHISPER]: "missing" });
+    probe.engine = null;
+    expect(later["local-ai.state"]({}).models.every((m) => m.engineNeed === "missing")).toBe(true);
   });
 });
 
@@ -307,7 +364,8 @@ describe("local AI mock machine", () => {
   });
 
   it("warns when a second big model is assigned, and stops when it is unassigned", () => {
-    const { h } = setup();
+    const { h, probe } = setup();
+    probe.engine = NEWER;
     h["local-ai.acceptLicense"]({ model: LFM });
     h["local-ai.get"]({ model: LFM });
     vi.advanceTimersByTime(400 * 12);
@@ -373,6 +431,7 @@ describe("local AI mock model test", () => {
 
   it("gets the engine on the first test, loads, runs, and ends with plausible numbers", () => {
     const { h, events, probe } = setup();
+    probe.engine = NEWER;
     expect(h["local-ai.testModel"]({ model: E2B })).toBeNull();
     vi.advanceTimersByTime(400 * 20);
     expect(kinds(events)).toEqual(["engine", "loading", "running", "done"]);
@@ -409,6 +468,7 @@ describe("local AI mock model test", () => {
 
   it("ends in the failure asked by the probe", () => {
     const { h, events, probe } = setup();
+    probe.engine = NEWER;
     probe.engineInstalled = true;
     probe.failTest = { kind: "unavailable", subject: "engine", detail: "outOfMemory" };
     h["local-ai.testModel"]({ model: EMBED });

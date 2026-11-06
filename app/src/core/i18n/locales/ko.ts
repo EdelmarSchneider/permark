@@ -2235,6 +2235,10 @@ export default {
   "localAi.tasks.noneAvailable": "아직 이 작업에 맞는 모델이 없습니다. 모델에서 받으세요.",
   "localAi.tasks.budget":
     "이 모델들을 합치면 약 {needed}의 메모리가 필요하지만 이 컴퓨터에서 쓸 수 있는 양은 약 {available}입니다. 느리게 실행될 수 있습니다.",
+  "localAi.tasks.comingSoon":
+    "곧 제공. 이 작업에 맞는 모델이 아직 이 버전의 PerMark에서 실행되지 않습니다.",
+  "localAi.tasks.notUsable": "{name}은(는) 아직 이 버전의 PerMark에서 실행되지 않습니다.",
+  "localAi.tasks.notUsableOption": "{name} (아직 실행 불가)",
   "localAi.noModelOption": "할당 안 됨",
   "localAi.task.correction": "교정",
   "localAi.task.correction.hint": "맞춤법과 문법 수정을 제안합니다",
@@ -2294,6 +2298,9 @@ export default {
   "localAi.models.details.source": "출처",
   "localAi.models.details.size": "다운로드 크기",
   "localAi.models.details.restriction": "사용할 수 있는 사람",
+  "localAi.models.comingSoon": "곧 제공",
+  "localAi.models.needs.newer": "더 새로운 버전의 AI 엔진이 필요합니다.",
+  "localAi.models.needs.missing": "PerMark에 아직 없는 AI 엔진이 필요합니다.",
   "localAi.dl.waiting": "대기 중…",
   "localAi.dl.cancelLabel": "{name} 받기 취소",
   "localAi.dl.progress": "{done} / {total}",
@@ -2439,8 +2446,6 @@ export default {
   "correction.failed": "텍스트를 확인하지 못했습니다.",
   "correction.failed.noModel":
     "교정용으로 선택한 모델을 사용할 수 없습니다. 로컬 AI 페이지에서 모델을 선택하세요.",
-  "correction.failed.noEngine":
-    "AI 엔진이 아직 이 컴퓨터에 없습니다. 로컬 AI 페이지의 테스트로 받으세요.",
   "correction.discarded.one": "모델이 너무 많이 바꿔서 {n}개 부분을 그대로 두었습니다.",
   "correction.discarded.other": "모델이 너무 많이 바꿔서 {n}개 부분을 그대로 두었습니다.",
   "correction.outdated.one": "텍스트가 바뀌어 제안 {n}개를 더 이상 적용할 수 없습니다.",

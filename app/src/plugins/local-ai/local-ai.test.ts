@@ -122,18 +122,18 @@ describe("what each job uses", () => {
   it("offers only installed models that can do the job, and Not assigned", async () => {
     await openPage();
     expect(options("correction")).toEqual(["Not assigned", "Gemma 4 E2B"]);
-    expect(options("semanticIndex")).toEqual(["Not assigned", "EmbeddingGemma 2"]);
-    expect(select("semanticIndex").value).toBe("embeddinggemma-2-q8_0");
     const label = target.querySelector(`label[for="${select("correction").id}"]`);
     expect(label?.textContent).toBe("Correction");
   });
 
-  it("disables the job when no installed model can do it, and says why", async () => {
+  it("disables the job when no model runs it here yet, and says Coming soon", async () => {
     await openPage();
     const readAloud = select("readAloud");
     expect(readAloud.disabled).toBe(true);
     expect(options("readAloud")).toEqual(["Not assigned"]);
-    expect(target.textContent).toContain("No model for this yet");
+    expect(target.textContent).toContain(
+      "Coming soon. No model for this job works with this version of PerMark yet.",
+    );
   });
 
   it("assigns through the backend and shows the new choice", async () => {
@@ -175,6 +175,25 @@ describe("what each job uses", () => {
     await tick();
     await until(() => document.activeElement === select("correction"), "focus on the first job");
   });
+
+  // last: it unassigns the mock's fixture
+  it("keeps a choice the AI engine cannot run, says so, and lets the person unassign it", async () => {
+    await openPage();
+    const semantic = select("semanticIndex");
+    expect(semantic.value).toBe("embeddinggemma-2-q8_0");
+    expect(semantic.disabled).toBe(false);
+    expect(options("semanticIndex")).toEqual(["Not assigned", "EmbeddingGemma 2 (can't run yet)"]);
+    expect(target.textContent).toContain(
+      "EmbeddingGemma 2 can't run with this version of PerMark yet.",
+    );
+    expect(probe.calls.some((c) => c.startsWith("assign"))).toBe(false);
+    semantic.value = "";
+    semantic.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => localAi.assigned("semanticIndex") === null, "unassigned");
+    flushSync();
+    expect(select("semanticIndex").disabled).toBe(true);
+    expect(options("semanticIndex")).toEqual(["Not assigned"]);
+  });
 });
 
 describe("plain words", () => {
@@ -197,5 +216,12 @@ describe("plain words", () => {
         error: { kind: "unsupported", subject: "x", detail: "incompatible" },
       }),
     ).toBe("This model can't do this job.");
+    expect(
+      errorText({
+        kind: "backend",
+        command: "plugin_call",
+        error: { kind: "unsupported", subject: "x", detail: "newerEngine" },
+      }),
+    ).toBe("Needs a newer version of the AI engine.");
   });
 });

@@ -2290,6 +2290,10 @@ export default {
   "localAi.tasks.noneAvailable": "まだ対応するモデルがありません。「モデル」から入手してください。",
   "localAi.tasks.budget":
     "これらのモデルを合わせると約 {needed} のメモリが必要ですが、このコンピューターで使えるのは約 {available} です。動作が遅くなる場合があります。",
+  "localAi.tasks.comingSoon":
+    "近日対応。この作業に使えるモデルは、このバージョンの PerMark ではまだ動きません。",
+  "localAi.tasks.notUsable": "{name} はこのバージョンの PerMark ではまだ動きません。",
+  "localAi.tasks.notUsableOption": "{name}（まだ動きません）",
   "localAi.noModelOption": "未割り当て",
   "localAi.task.correction": "校正",
   "localAi.task.correction.hint": "スペルや文法の修正を提案します",
@@ -2350,6 +2354,9 @@ export default {
   "localAi.models.details.source": "入手元",
   "localAi.models.details.size": "ダウンロードサイズ",
   "localAi.models.details.restriction": "利用できる人",
+  "localAi.models.comingSoon": "近日対応",
+  "localAi.models.needs.newer": "新しいバージョンの AI エンジンが必要です。",
+  "localAi.models.needs.missing": "PerMark にまだない AI エンジンが必要です。",
   "localAi.dl.waiting": "待機中…",
   "localAi.dl.cancelLabel": "{name} の入手をキャンセル",
   "localAi.dl.progress": "{done} / {total}",
@@ -2500,8 +2507,6 @@ export default {
   "correction.failed": "テキストを確認できませんでした。",
   "correction.failed.noModel":
     "校正用に選んだモデルが使えません。「ローカル AI」ページでモデルを選んでください。",
-  "correction.failed.noEngine":
-    "AI エンジンがまだこのコンピューターにありません。「ローカル AI」ページの「テスト」で取得してください。",
   "correction.discarded.one": "モデルの変更が多すぎたため、{n} 個の部分をそのままにしました。",
   "correction.discarded.other": "モデルの変更が多すぎたため、{n} 個の部分をそのままにしました。",
   "correction.outdated.one": "テキストが変わったため、{n} 件の提案は使えなくなりました。",
