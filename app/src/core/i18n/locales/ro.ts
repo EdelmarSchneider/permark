@@ -2639,4 +2639,5 @@ export default {
   "correction.done": "Gata",
   "correction.retry": "Încearcă din nou",
   "correction.openSettings": "Deschide setările AI local",
+  "correction.show": "Arată în text",
 } satisfies Messages & FewForms;

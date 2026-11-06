@@ -2568,4 +2568,5 @@ export default {
   "correction.done": "Terminé",
   "correction.retry": "Réessayer",
   "correction.openSettings": "Ouvrir les paramètres d'IA locale",
+  "correction.show": "Afficher dans le texte",
 } satisfies Messages;

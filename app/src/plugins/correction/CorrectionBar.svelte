@@ -4,7 +4,8 @@
   // part i of n, the count) + "3 / 12" + previous | next; row 2:
   // the current suggestion in its text (removed | added words marked), notes (parts left as they were, suggestions the
   // text no longer matches), a failure with Try again + Local AI settings; row 3: Accept | Reject, all of them, Done,
-  // Cancel. The excerpt = the store's cut (its block, word edges, `…`). One polite live region: the phase, then the count
+  // Cancel. The excerpt = the store's cut (its block, word edges, `…`), a button: click | Enter -> the word selected in
+  // the text. One polite live region: the phase, then the count
   // + the current suggestion. A focused button turned off -> the keyboard to Cancel (running) | Done. Keys inside the
   // bar: A | R, Shift+A | Shift+R, Esc (Done, back to the editor).
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
@@ -179,12 +180,19 @@
         {/if}
       </div>
       {#if current !== null}
-        <p class="excerpt">
+        <button
+          type="button"
+          class="excerpt"
+          data-action="show"
+          title={t("correction.show")}
+          aria-label={t("correction.show")}
+          onclick={() => correction.show()}
+        >
           <span aria-hidden="true"
             >{current.before}<del>{current.original}</del><ins>{current.insert}</ins
             >{current.after}</span
           >
-        </p>
+        </button>
       {/if}
       {#if review.discarded > 0}
         <p class="quiet">{tn("correction.discarded", review.discarded)}</p>
@@ -307,6 +315,14 @@
   }
   .excerpt {
     display: -webkit-box;
+    margin: 0 calc(-1 * var(--sp-1));
+    padding: 0 var(--sp-1);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
     overflow: hidden;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
@@ -315,6 +331,9 @@
     font-size: var(--fs-ui);
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+  }
+  .excerpt:hover {
+    background: var(--hover);
   }
   del {
     background: var(--review-del-bg);

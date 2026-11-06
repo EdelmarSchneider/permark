@@ -18,6 +18,11 @@ type Fake = Session & {
   applied: TextEdit[][];
   revealed: TextRange[];
   focused: number;
+  /** Every `marks` call: the ranges + the current index. */
+  marked: { ranges: TextRange[]; current: number | null }[];
+  pick: (index: number) => void;
+  /** What `markAt` answers (the mark under the caret). */
+  caretMark: number | null;
   type(at: number, insert: string, remove?: number): void;
 };
 
@@ -34,6 +39,9 @@ function fakeSession(initial: string): Fake {
     applied: [],
     revealed: [],
     focused: 0,
+    marked: [],
+    pick: () => {},
+    caretMark: null,
     current: () => fake.text,
     scope: (kind: EditScope) => {
       if (kind === "document") return { from: 0, to: fake.text.length };
@@ -51,6 +59,11 @@ function fakeSession(initial: string): Fake {
       return true;
     },
     reveal: (range) => void fake.revealed.push(range),
+    marks: (ranges, current, pick) => {
+      fake.marked.push({ ranges: [...ranges], current });
+      fake.pick = pick;
+    },
+    markAt: () => fake.caretMark,
     composing: () => fake.composingNow,
     focus: () => void (fake.focused += 1),
     type: (at, insert, remove = 0) => {
@@ -355,6 +368,89 @@ describe("the review", () => {
     await store.correctHere();
     expect(store.focusRequest).toBe(before + 1);
     expect(sent).toHaveLength(1);
+  });
+});
+
+describe("marks in the text", () => {
+  const lastMarks = () => session.marked.at(-1);
+
+  it("every pending suggestion marked, the current one known; steps move it; nothing while closed", async () => {
+    await store.correct("document");
+    // progress news alone does not mark again
+    const before = session.marked.length;
+    news({ kind: "loading", progress: 0.5 });
+    expect(session.marked).toHaveLength(before);
+    answer(0, (t) => t.replace("has", "have"));
+    answer(1, (t) => t.replace("recieve", "receives").replace("teh", "the"));
+    expect(lastMarks()).toEqual({
+      ranges: [
+        { from: 2, to: 5 },
+        { from: 36, to: 43 },
+        { from: 54, to: 57 },
+      ],
+      current: 0,
+    });
+    store.go(1);
+    expect(lastMarks()?.current).toBe(1);
+    store.accept();
+    expect(lastMarks()).toEqual({
+      ranges: [
+        { from: 2, to: 5 },
+        { from: 55, to: 58 },
+      ],
+      current: 1,
+    });
+    store.done();
+    expect(lastMarks()).toEqual({ ranges: [], current: null });
+  });
+
+  it("accept all, reject all, View and the plugin going off clear them", async () => {
+    await reviewed();
+    store.acceptAll();
+    expect(lastMarks()).toEqual({ ranges: [], current: null });
+    session.text = DOC;
+    await reviewed();
+    store.rejectAll();
+    expect(lastMarks()).toEqual({ ranges: [], current: null });
+    await reviewed();
+    store.left("docs/a.md", "view", false);
+    expect(lastMarks()).toEqual({ ranges: [], current: null });
+    await reviewed();
+    const stop = store.start();
+    stop();
+    expect(lastMarks()).toEqual({ ranges: [], current: null });
+  });
+
+  it("a click on a mark makes it current without moving the caret", async () => {
+    await reviewed();
+    const revealed = session.revealed.length;
+    session.pick(2);
+    expect(store.review?.at).toBe(2);
+    expect(lastMarks()?.current).toBe(2);
+    expect(session.revealed).toHaveLength(revealed);
+    // a pick from the marks of an older list follows the suggestion, not the index
+    session.pick(0);
+    const older = session.pick;
+    store.reject();
+    older(2);
+    expect(store.review?.suggestions[store.review.at]?.original).toBe("teh");
+  });
+
+  it("Mod+Alt+K on a marked word makes it current and shows it", async () => {
+    await reviewed();
+    session.caretMark = 1;
+    await store.correctHere();
+    expect(store.review?.at).toBe(1);
+    expect(session.revealed.at(-1)).toEqual({ from: 36, to: 43 });
+  });
+
+  it("show: the current suggestion selected in the text, the keyboard to the editor", async () => {
+    await reviewed();
+    store.go(1);
+    const focused = session.focused;
+    store.show();
+    expect(session.revealed.at(-1)).toEqual({ from: 36, to: 43 });
+    expect(session.focused).toBe(focused + 1);
   });
 });
 

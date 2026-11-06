@@ -2497,4 +2497,5 @@ export default {
   "correction.done": "Concluir",
   "correction.retry": "Tentar de novo",
   "correction.openSettings": "Abrir configurações de IA local",
+  "correction.show": "Mostrar no texto",
 } satisfies Messages;

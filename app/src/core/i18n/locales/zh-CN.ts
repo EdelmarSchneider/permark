@@ -2377,4 +2377,5 @@ export default {
   "correction.done": "完成",
   "correction.retry": "重试",
   "correction.openSettings": "打开本地 AI 设置",
+  "correction.show": "在文本中显示",
 } satisfies Messages;

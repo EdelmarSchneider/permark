@@ -2,12 +2,14 @@
 import "./jsdomShims";
 import { undo } from "@milkdown/kit/prose/history";
 import { AllSelection, TextSelection } from "@milkdown/kit/prose/state";
+import { $prose } from "@milkdown/kit/utils";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Segment } from "../../../api/generated/Segment";
 import type { TextEdit } from "../session.svelte";
 import { buildDoc, compose, type Built, type Composed } from "./compose";
 import { createCore, type Core } from "./core";
-import { applyEdits, blockOf, scopeIn } from "./edits";
+import { applyEdits, blockOf, docRange, scopeIn, selectRange } from "./edits";
+import { markAt, marksPlugin, setMarks } from "./marks";
 
 let core: Core;
 let built: Built;
@@ -15,7 +17,7 @@ let built: Built;
 beforeAll(async () => {
   const host = document.createElement("div");
   document.body.append(host);
-  core = await createCore({ host });
+  core = await createCore({ host, plugins: [$prose(() => marksPlugin())] });
 });
 
 afterAll(async () => {
@@ -209,5 +211,148 @@ describe("checked edits in the Edit-mode editor", () => {
     // a paragraph turned into a heading
     expect(applyEdits(core, now(), [fix(text, "A list:", "# A list:")])).toBe(false);
     expect(core.view.state.doc).toBe(before);
+  });
+});
+
+/** Composed-text range of the `nth` (0-based) `word` in `text`. */
+function wordAt(text: string, word: string, nth = 0): { from: number; to: number } {
+  let from = -1;
+  for (let i = 0; i <= nth; i++) from = text.indexOf(word, from + 1);
+  if (from < 0) throw new Error(`no ${word}`);
+  return { from, to: from + word.length };
+}
+
+const docText = (r: { from: number; to: number } | null): string | null =>
+  r === null ? null : core.view.state.doc.textBetween(r.from, r.to);
+
+// "teh" five times: bold, link text, link target (not shown), escaped emphasis, plain
+const MIXED =
+  "Intro line.\n\nSome **bold teh** and [teh link](teh.md) with \\*teh\\* here teh.\n\n- teh item\n";
+
+describe("text offsets -> document positions in the Edit-mode editor", () => {
+  it("finds each word inside its block through bold, links and escapes", async () => {
+    await load(MIXED);
+    const composed = now();
+    const doc = core.view.state.doc;
+    const words = [0, 1, 3, 4].map((nth) => docRange(doc, composed, wordAt(MIXED, "teh", nth)));
+    expect(words.map(docText)).toEqual(["teh", "teh", "teh", "teh"]);
+    // each one its own place, in order: bold, link text, escaped, plain
+    const froms = words.map((r) => r?.from ?? -1);
+    expect([...froms].sort((a, b) => a - b)).toEqual(froms);
+    expect(new Set(froms).size).toBe(4);
+    const bold = words[0]?.from ?? -1;
+    expect(
+      doc
+        .resolve(bold + 1)
+        .marks()
+        .map((m) => m.type.name),
+    ).toContain("strong");
+    const linked = words[1]?.from ?? -1;
+    expect(
+      doc
+        .resolve(linked + 1)
+        .marks()
+        .map((m) => m.type.name),
+    ).toContain("link");
+    // in a list item's paragraph
+    expect(docText(docRange(doc, composed, wordAt(MIXED, "teh", 5)))).toBe("teh");
+    expect(docText(docRange(doc, composed, wordAt(MIXED, "Intro")))).toBe("Intro");
+  });
+
+  it("an insertion point sits right after the text before it", async () => {
+    await load(MIXED);
+    const at = MIXED.indexOf(" here");
+    const found = docRange(core.view.state.doc, now(), { from: at, to: at });
+    expect(found).not.toBeNull();
+    const pos = found?.from ?? -1;
+    expect(found?.to).toBe(pos);
+    expect(core.view.state.doc.textBetween(pos - 4, pos + 5)).toBe("teh* here");
+  });
+
+  it("nothing for a range between blocks, in a locked block, or with markup inside", async () => {
+    const text = "One **two** three.\n\nMath $x_1$ here.\n";
+    await load(text);
+    const composed = now();
+    const doc = core.view.state.doc;
+    const gap = text.indexOf("\n\n");
+    expect(docRange(doc, composed, { from: gap, to: gap + 1 })).toBeNull();
+    expect(docRange(doc, composed, wordAt(text, "Math"))).toBeNull();
+    expect(docRange(doc, composed, wordAt(text, "**two**"))).toBeNull();
+  });
+
+  it("reveal selects the exact word", async () => {
+    await load(MIXED);
+    expect(selectRange(core.view, now(), wordAt(MIXED, "teh", 3))).toBe(true);
+    const { from, to } = core.view.state.selection;
+    expect(core.view.state.doc.textBetween(from, to)).toBe("teh");
+    expect(docRange(core.view.state.doc, now(), wordAt(MIXED, "teh", 3))).toEqual({ from, to });
+    // not found (a locked block): nothing selected, the caller scrolls the block instead
+    const text = "Math $x_1$ here.\n";
+    await load(text);
+    const before = core.view.state.selection;
+    expect(selectRange(core.view, now(), wordAt(text, "here"))).toBe(false);
+    expect(core.view.state.selection.eq(before)).toBe(true);
+  });
+});
+
+const marks = (): string[] =>
+  Array.from(core.view.dom.querySelectorAll(".correction-mark")).map((el) =>
+    el.classList.contains("correction-mark--insert")
+      ? `^${el.getAttribute("data-correction-mark")}`
+      : `${el.textContent}${el.classList.contains("correction-mark--current") ? "*" : ""}`,
+  );
+
+describe("correction marks in the Edit-mode editor", () => {
+  it("one decoration per found range, the current one distinct; an empty list clears them", async () => {
+    await load(MIXED);
+    const at = MIXED.indexOf(" here");
+    setMarks(
+      core.view,
+      now(),
+      [
+        wordAt(MIXED, "teh", 0),
+        wordAt(MIXED, "teh", 3),
+        { from: at, to: at },
+        wordAt(MIXED, "Intro"),
+      ],
+      1,
+      () => {},
+    );
+    expect(marks()).toEqual(["Intro", "teh", "teh*", "^2"]);
+    expect(
+      core.view.dom.querySelector(".correction-mark--insert")?.getAttribute("aria-hidden"),
+    ).toBe("true");
+    setMarks(core.view, now(), [], null, () => {});
+    expect(marks()).toEqual([]);
+  });
+
+  it("marks follow typing before them and are not part of the undo history", async () => {
+    await load(MIXED);
+    const view = core.view;
+    setMarks(view, now(), [wordAt(MIXED, "teh", 4)], 0, () => {});
+    view.dispatch(view.state.tr.insertText("Very ", posOf("Some")));
+    expect(marks()).toEqual(["teh*"]);
+    expect(undo(view.state, view.dispatch)).toBe(true);
+    expect(now().text).toBe(MIXED);
+    expect(marks()).toEqual(["teh*"]);
+  });
+
+  it("a click on a mark picks it (the caret is left alone); the mark under the caret", async () => {
+    await load(MIXED);
+    const picked: number[] = [];
+    const view = core.view;
+    setMarks(view, now(), [wordAt(MIXED, "teh", 0), wordAt(MIXED, "teh", 4)], 0, (i) =>
+      picked.push(i),
+    );
+    const caret = posOf("Intro") + 2;
+    select(caret);
+    const second = view.dom.querySelectorAll(".correction-mark")[1];
+    second?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(picked).toEqual([1]);
+    expect(view.state.selection.from).toBe(caret);
+    expect(markAt(view.state)).toBeNull();
+    const plain = docRange(view.state.doc, now(), wordAt(MIXED, "teh", 4));
+    select((plain?.from ?? 0) + 1);
+    expect(markAt(view.state)).toBe(1);
   });
 });

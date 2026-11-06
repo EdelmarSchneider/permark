@@ -2540,4 +2540,5 @@ export default {
   "correction.done": "Fertig",
   "correction.retry": "Erneut versuchen",
   "correction.openSettings": "Einstellungen für lokale KI öffnen",
+  "correction.show": "Im Text zeigen",
 } satisfies Messages;

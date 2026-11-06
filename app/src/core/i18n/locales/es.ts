@@ -2504,4 +2504,5 @@ export default {
   "correction.done": "Listo",
   "correction.retry": "Intentar de nuevo",
   "correction.openSettings": "Abrir ajustes de IA local",
+  "correction.show": "Mostrar en el texto",
 } satisfies Messages;

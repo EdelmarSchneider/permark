@@ -2508,4 +2508,5 @@ export default {
   "correction.done": "Feito",
   "correction.retry": "Tentar de novo",
   "correction.openSettings": "Abrir a configuración da IA local",
+  "correction.show": "Amosar no texto",
 } satisfies Messages;

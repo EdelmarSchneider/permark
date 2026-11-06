@@ -2,10 +2,13 @@
 // session's edit text); a scope covers whole top-level blocks. An edit goes into its block's Markdown, the block is
 // read again by the editor (`classify`: the same checks as at load) and its node replaced; every other node stays
 // the same object, so `compose` keeps its bytes. Only the touched block is written by the editor (as typing would).
+// Text offsets -> document positions (`docRange`: reveal, correction marks): the range's text found in its block's
+// shown text (markup left out) where the text around it matches best.
 
 import { closeHistory } from "@milkdown/kit/prose/history";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
-import type { EditorState, Transaction } from "@milkdown/kit/prose/state";
+import { TextSelection, type EditorState, type Transaction } from "@milkdown/kit/prose/state";
+import type { EditorView } from "@milkdown/kit/prose/view";
 import type { EditScope, TextEdit, TextRange } from "../session.svelte";
 import { checkEdits } from "../textEdits";
 import { blocksUsingReferences, classify } from "./classify";
@@ -16,6 +19,92 @@ import { LOCKED, type Core } from "./core";
 export function blockOf(composed: Composed, from: number, to: number): number | null {
   const index = composed.ranges.findIndex((r) => r !== null && r.from <= from && to <= r.to);
   return index < 0 ? null : index;
+}
+
+/** Context chars compared on each side of a candidate (`docRange`). */
+const CONTEXT = 24;
+/** Markup chars left out of both sides before contexts are compared (an escaped one is shown as itself). */
+const MARKUP = /[\\*_~`[\]()#>|]/g;
+
+/** A block's shown text (its text nodes; `\n` between textblocks and for inline leaves) and each char's position. */
+function shownText(node: PMNode, start: number): { text: string; at: number[] } {
+  let text = "";
+  const at: number[] = [];
+  node.descendants((child, pos) => {
+    const here = start + 1 + pos;
+    if (child.isText) {
+      const own = child.text ?? "";
+      for (let i = 0; i < own.length; i++) at.push(here + i);
+      text += own;
+      return false;
+    }
+    if (child.isLeaf || (child.isTextblock && text !== "")) {
+      text += "\n";
+      at.push(here);
+    }
+    return true;
+  });
+  return { text, at };
+}
+
+function commonTail(markdown: string, shown: string): number {
+  const a = markdown.replace(MARKUP, "");
+  const b = shown.replace(MARKUP, "");
+  let n = 0;
+  while (n < a.length && n < b.length && a[a.length - 1 - n] === b[b.length - 1 - n]) n += 1;
+  return n;
+}
+
+function commonHead(markdown: string, shown: string): number {
+  const a = markdown.replace(MARKUP, "");
+  const b = shown.replace(MARKUP, "");
+  let n = 0;
+  while (n < a.length && n < b.length && a[n] === b[n]) n += 1;
+  return n;
+}
+
+/** Document positions of `range` (offsets of `composed.text`): its text in the shown text of its block, at the place
+ *  whose text before | after matches the Markdown around the range best (ties: nearest the expected spot). An empty
+ *  range: an insertion point. `null`: outside | across blocks, a locked block, or not shown as such (markup inside). */
+export function docRange(doc: PMNode, composed: Composed, range: TextRange): TextRange | null {
+  const index = blockOf(composed, range.from, range.to);
+  const block = index === null ? null : composed.ranges[index];
+  const node = index === null ? null : doc.maybeChild(index);
+  if (index === null || !block || !node || node.type.name === LOCKED) return null;
+  let start = 0;
+  for (let i = 0; i < index; i++) start += doc.child(i).nodeSize;
+  const shown = shownText(node, start);
+  const markdown = composed.text.slice(block.from, block.to);
+  const rel = range.from - block.from;
+  const needle = composed.text.slice(range.from, range.to);
+  const before = markdown.slice(Math.max(0, rel - CONTEXT), rel);
+  const after = markdown.slice(rel + needle.length, rel + needle.length + CONTEXT);
+  const expected = (rel * shown.text.length) / Math.max(1, markdown.length);
+  let best: { at: number; score: number; off: number } | null = null;
+  for (let at = shown.text.indexOf(needle); at >= 0; at = shown.text.indexOf(needle, at + 1)) {
+    const score =
+      commonTail(before, shown.text.slice(Math.max(0, at - CONTEXT), at)) +
+      commonHead(after, shown.text.slice(at + needle.length, at + needle.length + CONTEXT));
+    const off = Math.abs(at - expected);
+    if (best === null || score > best.score || (score === best.score && off < best.off)) {
+      best = { at, score, off };
+    }
+    if (at >= shown.text.length) break;
+  }
+  if (best === null) return null;
+  const from = shown.at[best.at] ?? (shown.at[best.at - 1] ?? start) + 1;
+  if (needle === "") return { from, to: from };
+  const last = shown.at[best.at + needle.length - 1];
+  return last === undefined ? null : { from, to: last + 1 };
+}
+
+/** Selects `range` (see `docRange`) and scrolls it into view; `false` (nothing done) when it is not found. */
+export function selectRange(view: EditorView, composed: Composed, range: TextRange): boolean {
+  const found = docRange(view.state.doc, composed, range);
+  if (found === null) return false;
+  const selection = TextSelection.create(view.state.doc, found.from, found.to);
+  view.dispatch(view.state.tr.setSelection(selection).scrollIntoView());
+  return true;
 }
 
 /** From the first written block of `first..last` (document indexes) to the end of the last one. */
