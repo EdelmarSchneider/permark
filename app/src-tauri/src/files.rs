@@ -1,18 +1,23 @@
 //! The files of a window's workspace for App-scope plugins (the converter): read under a cap, write a new file next
 //! to one. Each call goes through the window's own editor (its scope, its boundary, its own-write announcements).
+//! Also the project folders (open + recent) a plugin's own folder must stay clear of, and showing a plugin's folder in
+//! the file manager.
 
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use permark_core::paths::VaultPath;
 use permark_core::plugins::{
-    ChangeListener, FolderScan, ServiceLease, WindowFiles, WindowFilesApi,
+    ChangeListener, FolderReveal, FolderRevealApi, FolderScan, ProjectPlaces, ProjectPlacesApi,
+    ServiceLease, WindowFiles, WindowFilesApi,
 };
 use permark_core::tree::ScanFile;
 use permark_core::watch::Subscription;
 use permark_core::workspace::{CoreEnv, ProjectCore, Workspace};
 use permark_core::{ErrorKind, IpcError};
 use tauri::{AppHandle, Manager};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::commands::with_editor;
 
@@ -91,10 +96,48 @@ impl WindowFiles for ShellFiles {
     }
 }
 
-/// Offers the service for the app's whole run.
-pub fn provide(env: &CoreEnv, handle: &AppHandle) -> ServiceLease {
-    env.services()
-        .provide(Arc::new(WindowFilesApi(Arc::new(ShellFiles {
-            handle: handle.clone(),
-        }))))
+impl ProjectPlaces for ShellFiles {
+    fn folders(&self) -> Vec<PathBuf> {
+        let shell = crate::shell::state(&self.handle);
+        let open = shell
+            .registry
+            .cores()
+            .into_iter()
+            .map(|core| core.root().path().to_path_buf());
+        let recent = shell
+            .recent
+            .list()
+            .into_iter()
+            .map(|folder| PathBuf::from(folder.path));
+        open.chain(recent).collect()
+    }
+}
+
+impl FolderReveal for ShellFiles {
+    fn reveal(&self, folder: &Path) -> Result<(), IpcError> {
+        if !folder.is_dir() {
+            return Err(IpcError::new(ErrorKind::NotFound).subject(folder.display().to_string()));
+        }
+        self.handle
+            .opener()
+            .reveal_item_in_dir(folder)
+            .map_err(|e| {
+                IpcError::new(ErrorKind::Io)
+                    .subject(folder.display().to_string())
+                    .detail(e.to_string())
+            })
+    }
+}
+
+/// Offers the services for the app's whole run (window files, project places, folder reveal).
+pub fn provide(env: &CoreEnv, handle: &AppHandle) -> Vec<ServiceLease> {
+    let files = Arc::new(ShellFiles {
+        handle: handle.clone(),
+    });
+    let services = env.services();
+    vec![
+        services.provide(Arc::new(WindowFilesApi(Arc::clone(&files) as _))),
+        services.provide(Arc::new(ProjectPlacesApi(Arc::clone(&files) as _))),
+        services.provide(Arc::new(FolderRevealApi(files))),
+    ]
 }

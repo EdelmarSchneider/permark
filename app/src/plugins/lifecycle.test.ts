@@ -149,7 +149,7 @@ describe("the organizing plugins", () => {
       "treeBadge",
     ]);
     expect(await kinds("quiet")).toEqual(["command", "treeBadge", "treeMenu"]);
-    expect(await kinds("broken-links")).toEqual(["command", "panel"]);
+    expect(await kinds("broken-links")).toEqual(["command", "panel", "shortcut"]);
   });
 
   it("switching off puts back the tab that was open and the search the tags narrowed", async () => {
@@ -181,6 +181,9 @@ describe("the organizing plugins", () => {
     }
     const keys = registry.of("shortcut").map((s) => s.keys);
     expect(new Set(keys).size, "no two commands share a default key").toBe(keys.length);
+    expect(registry.of("shortcut").find((s) => s.command === "brokenLinks.show")?.keys).toBe(
+      "Mod+Shift+b",
+    );
   });
 });
 

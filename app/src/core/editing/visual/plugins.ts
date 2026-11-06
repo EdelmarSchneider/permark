@@ -1,5 +1,6 @@
 // The ProseMirror plugins of Edit mode that are the app's own: change and selection reports, keys (save, mode,
-// AltGr-safe headings, lists), the slash menu's state, pasted | dropped pictures, links that never navigate.
+// AltGr-safe headings, lists), the slash menu's state, pasted | dropped pictures, links that never navigate, the
+// correction marks (`marks.ts`).
 
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import { liftListItem } from "@milkdown/kit/prose/schema-list";
@@ -9,6 +10,7 @@ import { $prose } from "@milkdown/kit/utils";
 import { clipboardPictures } from "../pictures";
 import { run, type Command } from "./commands";
 import type { Core } from "./core";
+import { marksPlugin } from "./marks";
 
 /** What the plugins ask of the editor that owns them. */
 export type PluginHost = {
@@ -169,6 +171,7 @@ function imageView(displaySrc: (src: string) => string): NodeViewConstructor {
 
 export function appPlugins(host: PluginHost) {
   return [
+    $prose(() => marksPlugin()),
     $prose(
       () =>
         new Plugin({

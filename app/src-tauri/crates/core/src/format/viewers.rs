@@ -36,6 +36,18 @@ impl TextViewer {
         }
     }
 
+    /// JSON Lines: one value per line (`.jsonl`, `.ndjson`, `.jsonlines`). Not [`Self::json`].
+    #[must_use]
+    pub const fn json_lines() -> Self {
+        Self {
+            id: FormatId::JSONL,
+            extensions: &["jsonl", "ndjson", "jsonlines"],
+            fallback: false,
+            // the extension is the language hint; the file is not one JSON value
+            language: None,
+        }
+    }
+
     #[must_use]
     pub const fn xml() -> Self {
         Self {
@@ -195,5 +207,28 @@ mod tests {
             Claim::Strong
         );
         assert_eq!(TextViewer::plain().claims("any", None, b""), Claim::Weak);
+    }
+
+    #[test]
+    fn json_lines_claims_its_extensions_and_json_does_not() {
+        let lines = TextViewer::json_lines();
+        assert_eq!(lines.id(), FormatId::JSONL);
+        for (name, ext) in [
+            ("a.jsonl", "jsonl"),
+            ("a.ndjson", "ndjson"),
+            ("a.jsonlines", "jsonlines"),
+        ] {
+            assert_eq!(lines.claims(name, Some(ext), b""), Claim::Strong, "{name}");
+        }
+        assert_eq!(lines.claims("a.json", Some("json"), b""), Claim::No);
+        assert_eq!(lines.claims("a.jsonc", Some("jsonc"), b""), Claim::No);
+        let json = TextViewer::json();
+        assert_eq!(json.claims("a.jsonl", Some("jsonl"), b""), Claim::No);
+        assert_eq!(json.claims("a.ndjson", Some("ndjson"), b""), Claim::No);
+        assert_eq!(
+            json.claims("a.jsonlines", Some("jsonlines"), b""),
+            Claim::No
+        );
+        assert_eq!(json.claims("a.json", Some("json"), b""), Claim::Strong);
     }
 }

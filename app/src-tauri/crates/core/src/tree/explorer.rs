@@ -567,6 +567,15 @@ impl Explorer {
             .map_or_else(HashMap::new, |model| model.files_named(names))
     }
 
+    /// Listed files (not ignored) whose name matches `paths::key_of` of one of `names`: key -> project paths, every root.
+    #[must_use]
+    pub fn files_keyed(&self, names: &HashSet<String>) -> HashMap<String, Vec<String>> {
+        let guard = self.model();
+        guard
+            .as_ref()
+            .map_or_else(HashMap::new, |model| model.files_keyed(names))
+    }
+
     /// Whether a project path is listed (folder or file), and what.
     #[must_use]
     pub fn listed(&self, path: &str) -> Option<NodeKind> {
@@ -605,6 +614,16 @@ impl Explorer {
             .as_ref()
             .and_then(|model| model.node(&key_of(path)))
             .map(|n| matches!(n.kind, NodeKind::Dir { .. }))
+    }
+
+    /// An ignored directory the person opened: `ignored` and `Dir { unlisted: None }`. Never walks.
+    /// A container is listed with nothing unlisted and is not ignored, so it is not this. Not [`Self::holds`].
+    #[must_use]
+    pub fn opened_ignored(&self, path: &str) -> bool {
+        lock(&self.model)
+            .as_ref()
+            .and_then(|model| model.node(&key_of(path)))
+            .is_some_and(|n| n.ignored && matches!(n.kind, NodeKind::Dir { unlisted: None }))
     }
 }
 

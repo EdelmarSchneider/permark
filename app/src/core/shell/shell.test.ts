@@ -4,6 +4,7 @@
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MOCK_FOLDER } from "../../api/mock";
+import { sizeText } from "../i18n";
 
 vi.mock("../../api", async () => {
   const { createMockApi } = await import("../../api/mock");
@@ -270,7 +271,7 @@ describe("the plugins page", () => {
 
   it("every plugin is listed once, grouped by kind, with its switch on", async () => {
     await pluginsPage();
-    expect(target.querySelectorAll(".plugin")).toHaveLength(34);
+    expect(target.querySelectorAll(".plugin")).toHaveLength(36);
     const groups = Array.from(target.querySelectorAll("section.group h3")).map(
       (h) => h.textContent,
     );
@@ -329,6 +330,35 @@ describe("the plugins page", () => {
       text: "Removed the data of Tags and descriptions.",
     });
     await store.changeSetting({ key: "pluginEnabled", value: { plugin: "tags", enabled: null } });
+  });
+
+  it("the question says how much space removing the data frees, when the plugin knows", async () => {
+    await pluginsPage();
+    const bytes = await mock.pluginDataBytes("local-ai");
+    expect(bytes.ok && (bytes.value ?? 0) > 0).toBe(true);
+    const size = sizeText(bytes.ok ? (bytes.value ?? 0) : 0);
+    switchOf("Local AI").click();
+    await until(
+      () => row("Local AI").textContent?.includes("Remove data") === true,
+      "off, with the way to remove its data",
+    );
+    Array.from(row("Local AI").querySelectorAll("button"))
+      .find((b) => b.textContent?.trim() === "Remove data")
+      ?.click();
+    await until(
+      () => row("Local AI").textContent?.includes(`This frees ${size}.`) === true,
+      "the bytes join the question",
+    );
+    expect(row("Local AI").textContent).toContain(
+      `Remove the data of Local AI? This frees ${size}.`,
+    );
+    byText("button", "Cancel").click();
+    await tick();
+    expect(mock.probe.shell.removed).not.toContain("local-ai");
+    await store.changeSetting({
+      key: "pluginEnabled",
+      value: { plugin: "local-ai", enabled: null },
+    });
   });
 
   it("a plugin of the project can be turned off for this project alone", async () => {

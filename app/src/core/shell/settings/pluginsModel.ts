@@ -20,6 +20,8 @@ export const KNOWN_PLUGINS = [
   "md-family",
   "word-count",
   "token-count",
+  "local-ai",
+  "correction",
   "prompt-blocks",
   "frontmatter-card",
   "highlight",

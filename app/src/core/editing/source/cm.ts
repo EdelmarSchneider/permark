@@ -39,6 +39,9 @@ import { configLanguage } from "./configLang";
 import { fenceAround, type Fence } from "./fence";
 import { completionSources, type CompletionHost } from "./complete";
 import { toggleBold } from "./bold";
+import { editsSpec, scopeIn } from "./edits";
+import { correctionMarks, markAt, marksEffect } from "./marks";
+import type { EditScope, TextEdit, TextRange } from "../session.svelte";
 
 export type SourceHost = CompletionHost & {
   changed(): void;
@@ -164,7 +167,18 @@ export type SourceView = {
   insert(text: string, at?: number): void;
   /** Long lines wrap (the setting) or scroll sideways. */
   setWrap(on: boolean): void;
-  /** Selects the next match of `query` after the selection; false when none. */
+  /** The range `kind` covers now (`ActiveEditor.scope`). */
+  scope(kind: EditScope): TextRange | null;
+  /** Checked edits in one undo step; `false` (no change) while composing or when a range moved on. */
+  apply(edits: readonly TextEdit[]): boolean;
+  /** Selects `range` and scrolls it into view. */
+  reveal(range: TextRange): void;
+  /** Correction marks (`ActiveEditor.marks`); an empty list clears them. */
+  marks(ranges: readonly TextRange[], current: number | null, pick: (index: number) => void): void;
+  /** Index of the mark holding the caret (`ActiveEditor.markAt`). */
+  markAt(): number | null;
+  /** Text is being composed (IME). */
+  composing(): boolean;
   destroy(): void;
 };
 
@@ -241,6 +255,7 @@ export function createSource(options: {
         highlightActiveLine(),
         drawSelection(),
         history(),
+        correctionMarks(),
         bracketMatching(),
         wrapping.of(options.wrap === false ? [] : EditorView.lineWrapping),
         language.of(loaded instanceof Promise ? [] : loaded),
@@ -318,6 +333,27 @@ export function createSource(options: {
     },
     setWrap: (on) =>
       view.dispatch({ effects: wrapping.reconfigure(on ? EditorView.lineWrapping : []) }),
+    scope: (kind) => scopeIn(view.state, kind),
+    apply: (edits) => {
+      if (view.composing) return false;
+      const spec = editsSpec(view.state, edits);
+      if (spec === null) return false;
+      view.dispatch(spec);
+      return true;
+    },
+    reveal: (range) => {
+      const length = view.state.doc.length;
+      const from = Math.min(Math.max(range.from, 0), length);
+      const to = Math.min(Math.max(range.to, from), length);
+      view.dispatch({
+        selection: EditorSelection.range(from, to),
+        effects: EditorView.scrollIntoView(EditorSelection.range(from, to), { y: "center" }),
+      });
+    },
+    marks: (ranges, current, pick) =>
+      view.dispatch({ effects: marksEffect(view.state, ranges, current, pick) }),
+    markAt: () => markAt(view.state),
+    composing: () => view.composing,
     destroy: () => view.destroy(),
   };
 }

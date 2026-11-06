@@ -7,6 +7,7 @@
 
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import type { Segment } from "../../../api/generated/Segment";
+import type { TextRange } from "../session.svelte";
 import { blocksUsingReferences, classify } from "./classify";
 import { LOCKED, type Core, type LockReason } from "./core";
 
@@ -132,6 +133,8 @@ export type Composed = {
   changed: number;
   /** Line (1-based) where each top-level node starts in `text` (same order as the document). */
   lines: Map<PMNode, number>;
+  /** Range of each top-level node in `text`, by its index in the document (`null`: an empty paragraph, not written). */
+  ranges: (TextRange | null)[];
 };
 
 const isEmptyParagraph = (node: PMNode): boolean =>
@@ -208,8 +211,12 @@ function keepListsApart(chunks: Chunk[]): void {
 /** The text of `doc` (see the header). */
 export function compose(core: Core, built: Built, doc: PMNode): Composed {
   const nodes: PMNode[] = [];
-  doc.forEach((node) => {
-    if (!isEmptyParagraph(node)) nodes.push(node);
+  /** Document index of each node in `nodes`. */
+  const indexes: number[] = [];
+  doc.forEach((node, _, index) => {
+    if (isEmptyParagraph(node)) return;
+    nodes.push(node);
+    indexes.push(index);
   });
   const claimed = new Set<number>();
   const chunks: Chunk[] = nodes.map((node) => {
@@ -248,18 +255,30 @@ export function compose(core: Core, built: Built, doc: PMNode): Composed {
       lastOrigin = j;
     }
   }
-  // a new node in the place of exactly one unclaimed block adopts it (separators)
+  // a run of new nodes in the place of as many unclaimed blocks adopts them in order (separators)
   const n = built.sources.length;
-  chunks.forEach((chunk, i) => {
-    if (chunk.origin !== null) return;
-    const before = i === 0 ? -1 : chunks[i - 1]?.origin;
-    const after = i === chunks.length - 1 ? n : chunks[i + 1]?.origin;
-    if (before === null || before === undefined || after === null || after === undefined) return;
-    if (after - before === 2 && !claimed.has(before + 1)) {
-      claimed.add(before + 1);
-      chunk.origin = before + 1;
+  for (let i = 0; i < chunks.length;) {
+    if (chunks[i]?.origin !== null) {
+      i += 1;
+      continue;
     }
-  });
+    let end = i;
+    while (end < chunks.length && chunks[end]?.origin === null) end += 1;
+    const before = i === 0 ? -1 : chunks[i - 1]?.origin;
+    const after = end === chunks.length ? n : chunks[end]?.origin;
+    if (
+      typeof before === "number" &&
+      typeof after === "number" &&
+      after - before - 1 === end - i &&
+      chunks.slice(i, end).every((_, k) => !claimed.has(before + 1 + k))
+    ) {
+      chunks.slice(i, end).forEach((chunk, k) => {
+        claimed.add(before + 1 + k);
+        chunk.origin = before + 1 + k;
+      });
+    }
+    i = end;
+  }
   // texts of changed nodes
   for (const chunk of chunks) {
     if (chunk.kept) continue;
@@ -287,8 +306,9 @@ export function compose(core: Core, built: Built, doc: PMNode): Composed {
   };
 
   const lines = new Map<PMNode, number>();
+  const ranges: (TextRange | null)[] = Array.from({ length: doc.childCount }, () => null);
   if (chunks.length === 0) {
-    return { text: n === 0 ? built.text : (built.separators[n] ?? ""), changed: n, lines };
+    return { text: n === 0 ? built.text : (built.separators[n] ?? ""), changed: n, lines, ranges };
   }
   const leading = n === 0 ? "" : (built.separators[0] ?? "");
   const trailing = n === 0 ? built.text : (built.separators[n] ?? "");
@@ -301,12 +321,13 @@ export function compose(core: Core, built: Built, doc: PMNode): Composed {
       line += countBreaks(sep);
     }
     lines.set(chunk.node, line);
+    ranges[indexes[i] ?? 0] = { from: text.length, to: text.length + chunk.text.length };
     text += chunk.text;
     line += countBreaks(chunk.text);
   });
   text += trailing;
   const changed = chunks.filter((c) => !c.kept).length + (n - claimed.size);
-  return { text, changed, lines };
+  return { text, changed, lines, ranges };
 }
 
 function countBreaks(text: string): number {

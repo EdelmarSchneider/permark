@@ -11,7 +11,6 @@
 mod bpe;
 mod counter;
 mod estimate;
-mod fetch;
 mod folder;
 mod tokenizer;
 mod vocab;
@@ -20,6 +19,7 @@ use std::borrow::Cow;
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 
 use permark_core::conditions::Requirement;
+use permark_core::downloads::DownloadKit;
 use permark_core::plugins::{
     typed, Manifest, Plugin, PluginCx, PluginError, PluginEvents, PluginId, PluginKind,
     PluginScope, RpcRegistration, Running, ServiceLease,
@@ -32,13 +32,12 @@ use ts_rs::TS;
 
 pub use counter::{line_starts, lines_of, Counter};
 pub use estimate::{chars4, estimate};
-pub use fetch::{Fetch, FetchError, UreqFetch};
 pub use folder::{
     FolderBadge, FolderBadges, FolderFailure, FolderJob, FolderRefusal, FolderSkip, FolderSkipped,
     FolderSummary, FolderTopFile, FolderTypeRow, Folders,
 };
 pub use tokenizer::{effective, Encoding, Tokenizer};
-pub use vocab::{Pin, Unavailable, VocabFailure, VocabState, VocabStore};
+pub use vocab::{Pin, Unavailable, VocabFailure, VocabState, VocabStore, SOURCE};
 
 const ID: PluginId = PluginId::of("token-count");
 
@@ -160,21 +159,18 @@ fn state_of(vocab: &[VocabState; 2], store: &VocabStore, prefs: &Prefs) -> Token
     }
 }
 
-/// The plugin with the real network source for the vocabularies.
+/// The plugin with the official vocabularies (downloaded through the app's `DownloadKit` service).
 #[must_use]
 pub fn plugin() -> Arc<dyn Plugin> {
-    plugin_with(
-        Arc::new(UreqFetch::new()),
-        [
-            Pin::official(Encoding::O200k),
-            Pin::official(Encoding::Cl100k),
-        ],
-    )
+    plugin_with([
+        Pin::official(Encoding::O200k),
+        Pin::official(Encoding::Cl100k),
+    ])
 }
 
-/// The plugin with another source and other pins (tests).
+/// The plugin with other pins (tests).
 #[must_use]
-pub fn plugin_with(fetch: Arc<dyn Fetch>, pins: [Pin; 2]) -> Arc<dyn Plugin> {
+pub fn plugin_with(pins: [Pin; 2]) -> Arc<dyn Plugin> {
     Arc::new(TokenCount {
         manifest: Manifest {
             id: ID,
@@ -184,14 +180,12 @@ pub fn plugin_with(fetch: Arc<dyn Fetch>, pins: [Pin; 2]) -> Arc<dyn Plugin> {
             depends_on: Cow::Borrowed(&[]),
             default_enabled: true,
         },
-        fetch,
         pins,
     })
 }
 
 struct TokenCount {
     manifest: Manifest,
-    fetch: Arc<dyn Fetch>,
     pins: [Pin; 2],
 }
 
@@ -383,12 +377,9 @@ impl Plugin for TokenCount {
                 shared.announce();
             }
         });
-        let vocab = VocabStore::new(
-            dir.clone(),
-            self.pins.clone(),
-            Arc::clone(&self.fetch),
-            listener,
-        );
+        // no download service in this app: the vocabularies cannot be downloaded (a download fails `offline`)
+        let kit = app.services.get::<DownloadKit>();
+        let vocab = VocabStore::new(dir.clone(), self.pins.clone(), kit.as_deref(), listener);
         let counter = Counter::new(Arc::clone(&vocab));
         let shared = Arc::new(Shared {
             store: Arc::clone(&vocab),

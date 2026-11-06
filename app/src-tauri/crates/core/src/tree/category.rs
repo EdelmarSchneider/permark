@@ -70,7 +70,19 @@ const CONFIG: &[&str] = &[
     "editorconfig",
 ];
 const DATA: &[&str] = &[
-    "json", "jsonc", "json5", "jsonl", "ndjson", "csv", "tsv", "xml", "xsd", "xsl", "xslt", "rss",
+    "json",
+    "jsonc",
+    "json5",
+    "jsonl",
+    "ndjson",
+    "jsonlines",
+    "csv",
+    "tsv",
+    "xml",
+    "xsd",
+    "xsl",
+    "xslt",
+    "rss",
     "atom",
 ];
 const IMAGE: &[&str] = &[

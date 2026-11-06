@@ -256,6 +256,46 @@ pub fn write_atomic_checked(
     result
 }
 
+/// Moves `from` over `to` durably (Windows: `MoveFileExW` replace + write-through; Unix: rename + folder fsync),
+/// retrying transient locks ([`RETRY_DELAYS`]). Both on one volume (a finished download next to its part).
+///
+/// # Errors
+/// IO failure (source missing, target locked past the retries, other volume); target untouched.
+pub fn replace_file(from: &Path, to: &Path) -> io::Result<()> {
+    retry(&RETRY_DELAYS, || rename_durably(from, to))
+}
+
+/// Bytes free for this user on the volume holding `path`; a path not made yet answers for its nearest existing
+/// folder (a store root before its first download).
+///
+/// # Errors
+/// No existing ancestor | the system refused.
+pub fn free_space(path: &Path) -> io::Result<u64> {
+    let existing = path
+        .ancestors()
+        .find(|p| !p.as_os_str().is_empty() && p.exists())
+        .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))?;
+    let folder = if existing.is_dir() {
+        existing
+    } else {
+        existing.parent().unwrap_or_else(|| Path::new("."))
+    };
+    #[cfg(windows)]
+    {
+        win::free_space(folder)
+    }
+    #[cfg(unix)]
+    {
+        let stat = rustix::fs::statvfs(folder)?;
+        Ok(stat.f_bavail.saturating_mul(stat.f_frsize))
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = folder;
+        Err(io::Error::from(io::ErrorKind::Unsupported))
+    }
+}
+
 fn rename_durably(from: &Path, to: &Path) -> io::Result<()> {
     #[cfg(windows)]
     {
@@ -465,5 +505,35 @@ mod tests {
         assert_ne!(hash(b"abc"), hash(b"abd"));
         assert_eq!(hash(b"").hex().len(), 16);
         assert_eq!(serde_json::to_string(&hash(b"")).unwrap().len(), 18);
+    }
+
+    #[test]
+    fn free_space_answers_for_a_folder_a_file_and_a_folder_not_made_yet() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("João store");
+        std::fs::create_dir(&folder).unwrap();
+        let free = free_space(&folder).unwrap();
+        assert!(free > 0);
+        let file = folder.join("a.bin");
+        std::fs::write(&file, b"x").unwrap();
+        assert!(free_space(&file).unwrap() > 0);
+        // a store root not created yet: its nearest existing folder answers
+        assert!(free_space(&folder.join("not").join("yet")).unwrap() > 0);
+    }
+
+    #[test]
+    fn replace_file_moves_over_an_existing_target_and_leaves_no_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let from = dir.path().join("model ação.gguf.part");
+        let to = dir.path().join("model ação.gguf");
+        std::fs::write(&from, b"new").unwrap();
+        replace_file(&from, &to).unwrap();
+        assert_eq!(std::fs::read(&to).unwrap(), b"new");
+        std::fs::write(&from, b"newer").unwrap();
+        replace_file(&from, &to).unwrap();
+        assert_eq!(std::fs::read(&to).unwrap(), b"newer");
+        assert_eq!(names_in(dir.path()), ["model ação.gguf"]);
+        assert!(replace_file(&from, &to).is_err(), "source gone");
+        assert_eq!(std::fs::read(&to).unwrap(), b"newer");
     }
 }

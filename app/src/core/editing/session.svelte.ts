@@ -29,6 +29,15 @@ export type EditMode = "view" | "edit" | "source";
  * (other text: Source only). */
 export type EditKind = "markdown" | "sheet" | "text";
 
+/** What a whole-text edit works on: the selection, the Markdown block around the caret, or all of it. */
+export type EditScope = "selection" | "paragraph" | "document";
+
+/** A range of the edit text (UTF-16 offsets, `from <= to`). */
+export type TextRange = { from: number; to: number };
+
+/** Replace `from..to` with `insert`, only while that range still reads `expect`. */
+export type TextEdit = TextRange & { insert: string; expect: string };
+
 /** What an editor on screen offers the session. */
 export type ActiveEditor = {
   kind: "edit" | "source";
@@ -43,6 +52,27 @@ export type ActiveEditor = {
   focus(): void;
   /** Puts pictures dropped at a point of the window into the text (the editors that take pictures). */
   pictures?(files: File[], point: { x: number; y: number }): void;
+  /** The range `kind` covers now; `null`: none (empty selection, caret outside a prose block). */
+  scope?(kind: EditScope): TextRange | null;
+  /** All `edits` (ranges of the text now, not overlapping) in one undo step; `false` and no change when any range no
+   *  longer reads its `expect`. Only `insert` goes in: nothing else of the text changes. */
+  apply?(edits: readonly TextEdit[]): boolean;
+  /** Selects `range` and scrolls it into view (Edit: the block scrolled into view when the range is not found in it). */
+  reveal?(range: TextRange): void;
+  /** Marks `ranges` in the text (decoration only), `current` distinct; a click on one -> `pick(its index)`. Marks follow
+   *  edits until the next call; an empty list clears them. */
+  marks?(ranges: readonly TextRange[], current: number | null, pick: (index: number) => void): void;
+  /** Index (in the last `marks`) of the mark holding the caret; `null`: none. */
+  markAt?(): number | null;
+  /** Text is being composed (IME): edits wait. */
+  composing?(): boolean;
+};
+
+/** The last `marks` handed to the editors. */
+type Marks = {
+  ranges: readonly TextRange[];
+  current: number | null;
+  pick: (index: number) => void;
 };
 
 /** What an editor mounts with. `line`: put this line at the top. */
@@ -116,6 +146,8 @@ export class EditingSession {
   #waiting: ((ok: boolean) => void)[] = [];
   #unguard: (() => void) | null = null;
   #loadedSegments: Segment[] | null = null;
+  /** Marks shown now: the editor made next (Edit <-> Source) shows them too. */
+  #marks: Marks | null = null;
 
   constructor(api: Api = defaultApi) {
     this.#api = api;
@@ -285,6 +317,7 @@ export class EditingSession {
     this.text = "";
     this.selection = "";
     this.#loadedSegments = null;
+    this.#marks = null;
     this.#clearTimers();
   }
 
@@ -318,6 +351,8 @@ export class EditingSession {
     if (this.content?.seq !== seq) return () => {};
     this.#editor = editor;
     this.text = editor.text();
+    const marks = this.#marks;
+    if (marks !== null) editor.marks?.(marks.ranges, marks.current, marks.pick);
     return () => {
       if (this.#editor === editor) this.#editor = null;
     };
@@ -334,6 +369,50 @@ export class EditingSession {
     if (!editor?.pictures) return false;
     editor.pictures(files, point);
     return true;
+  }
+
+  /** The text of the editor on screen now (`text` lags it by the change check); none: the last known text. */
+  current(): string {
+    return this.#editor?.text() ?? this.text;
+  }
+
+  /** The range `kind` covers in the editor on screen (`null`: none, or no editor offers it). */
+  scope(kind: EditScope): TextRange | null {
+    return this.#editor?.scope?.(kind) ?? null;
+  }
+
+  /** Puts `edits` into the editor on screen in one undo step. `false` (nothing changed): no editor takes them, it is
+   *  composing text, or a range no longer reads what was expected. */
+  apply(edits: readonly TextEdit[]): boolean {
+    const editor = this.#editor;
+    if (!editor?.apply || editor.composing?.() === true) return false;
+    return editor.apply(edits);
+  }
+
+  /** Shows `range` in the editor on screen. */
+  reveal(range: TextRange): void {
+    this.#editor?.reveal?.(range);
+  }
+
+  /** Marks `ranges` in the editor on screen and in the next one made for this document (an empty list clears them). */
+  marks(ranges: readonly TextRange[], current: number | null, pick: (index: number) => void): void {
+    this.#marks = ranges.length === 0 ? null : { ranges, current, pick };
+    this.#editor?.marks?.(ranges, current, pick);
+  }
+
+  /** Index of the mark holding the caret in the editor on screen (`null`: none, or no editor offers it). */
+  markAt(): number | null {
+    return this.#editor?.markAt?.() ?? null;
+  }
+
+  /** The editor on screen is composing text (IME). */
+  composing(): boolean {
+    return this.#editor?.composing?.() ?? false;
+  }
+
+  /** Gives the keyboard to the editor on screen (none: nothing happens). */
+  focus(): void {
+    this.#editor?.focus();
   }
 
   /** The editor's text changed (checked shortly after, against the base). */

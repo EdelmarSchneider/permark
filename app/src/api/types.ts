@@ -11,6 +11,18 @@ import type { ShellState } from "./generated/ShellState";
 import type { UpdateState } from "./generated/UpdateState";
 import type { CountResult } from "./generated/CountResult";
 import type { TokenCountState } from "./generated/TokenCountState";
+import type { LocalAiCatalog } from "./generated/LocalAiCatalog";
+import type { AiTaskInfo } from "./generated/AiTaskInfo";
+import type { AiTask } from "./generated/AiTask";
+import type { LocalAiState } from "./generated/LocalAiState";
+import type { MachineInfo } from "./generated/MachineInfo";
+import type { StoreMode } from "./generated/StoreMode";
+import type { StoreMove } from "./generated/StoreMove";
+import type { ModelProgress } from "./generated/ModelProgress";
+import type { ModelTest } from "./generated/ModelTest";
+import type { CorrectionPiece } from "./generated/CorrectionPiece";
+import type { CorrectionRun } from "./generated/CorrectionRun";
+import type { CorrectionStatus } from "./generated/CorrectionStatus";
 import type { FolderBadge } from "./generated/FolderBadge";
 import type { FolderBadges } from "./generated/FolderBadges";
 import type { FolderJob } from "./generated/FolderJob";
@@ -166,6 +178,9 @@ import type { BrokenDoc } from "./generated/BrokenDoc";
 import type { BrokenLink } from "./generated/BrokenLink";
 import type { BrokenReport } from "./generated/BrokenReport";
 import type { BrokenSummary } from "./generated/BrokenSummary";
+import type { RepairArgs } from "./generated/RepairArgs";
+import type { RepairRefusal } from "./generated/RepairRefusal";
+import type { RepairResult } from "./generated/RepairResult";
 import type { By } from "./generated/By";
 import type { CommentScope } from "./generated/CommentScope";
 import type { CommentView } from "./generated/CommentView";
@@ -465,6 +480,7 @@ export interface Commands {
   plugins_list: { args: Record<string, never>; result: PluginInfo[] };
   plugin_set_project: { args: { plugin: string; enabled: boolean | null }; result: null };
   plugin_remove_data: { args: { plugin: string }; result: null };
+  plugin_data_bytes: { args: { plugin: string }; result: number | null };
   window_close: { args: Record<string, never>; result: null };
   window_close_answer: { args: { answer: CloseAnswer }; result: null };
   view_saved: { args: { saved: boolean }; result: null };
@@ -556,6 +572,7 @@ export interface PluginMethods {
   "quiet.rules": { args: Record<string, never>; result: QuietMarks };
   "quiet.set": { args: { paths: string[]; interest: Interest }; result: QuietMarks };
   "broken-links.list": { args: Record<string, never>; result: BrokenReport };
+  "broken-links.repair": { args: RepairArgs; result: RepairResult };
   "notes.folder": { args: Record<string, never>; result: FolderInfo };
   "notes.createFolder": { args: Record<string, never>; result: FolderInfo };
   "notes.list": { args: Record<string, never>; result: NoteList };
@@ -633,6 +650,47 @@ export interface PluginMethods {
     args: { tokenizers: string[]; text: string; parts?: [number, number][] };
     result: CountResult[];
   };
+  "local-ai.catalog": { args: Record<string, never>; result: LocalAiCatalog };
+  "local-ai.tasks": { args: Record<string, never>; result: AiTaskInfo[] };
+  "local-ai.state": { args: Record<string, never>; result: LocalAiState };
+  /** Get: refused (`denied`, detail `license` | `token` | `withdrawn`) while the model is blocked. */
+  "local-ai.get": { args: { model: string }; result: LocalAiState };
+  /** Get of the newer version beside the installed one (`conflict` / `noUpdate` when none is older). */
+  "local-ai.update": { args: { model: string }; result: LocalAiState };
+  "local-ai.acceptLicense": { args: { model: string }; result: LocalAiState };
+  "local-ai.cancel": { args: { model: string }; result: LocalAiState };
+  "local-ai.deletePart": { args: { model: string }; result: LocalAiState };
+  /** Deletes the installed files; tasks using the model are unassigned (`conflict` / `downloading` while it runs). */
+  "local-ai.remove": { args: { model: string }; result: LocalAiState };
+  /** `model: null` unassigns; refused: `unsupported` / `incompatible`, `conflict` / `notInstalled`. */
+  "local-ai.assign": { args: { task: AiTask; model: string | null }; result: LocalAiState };
+  /** The token is never sent back: the state says only whether one is set. */
+  "local-ai.setToken": { args: { token: string }; result: LocalAiState };
+  "local-ai.clearToken": { args: Record<string, never>; result: LocalAiState };
+  /**
+   * Store folder (`path: null` = the default). Refused: `invalidPath` / `notAbsolute`, `denied` / `insideProject` |
+   * `insideStore`, `conflict` / `downloading` | `moving` | `modeRequired` (installed models: pass `mode`).
+   */
+  "local-ai.setStore": { args: { path: string | null; mode?: StoreMode }; result: LocalAiState };
+  /** Stops a running store move (copies removed, the old folder stays in use). */
+  "local-ai.cancelMove": { args: Record<string, never>; result: LocalAiState };
+  /** Shows the store folder in the file manager (`unavailable` / `store` while it does not exist). */
+  "local-ai.revealStore": { args: Record<string, never>; result: null };
+  /** This computer (read on the first call, kept ~30 s), a fit hint per catalog model, the budget warning. */
+  "local-ai.machine": { args: Record<string, never>; result: MachineInfo };
+  /**
+   * Starts "Test model" of an installed model (answers at once; phases come as `local-ai:test`). Refused: `conflict` /
+   * `testRunning` (one test at a time), `conflict` / `notInstalled`, `unsupported` / `noTest` (speech-only model).
+   */
+  "local-ai.testModel": { args: { model: string }; result: null };
+  /** Stops the running test (engine download, load or run); its end comes as `local-ai:test` `cancelled`. */
+  "local-ai.cancelTest": { args: Record<string, never>; result: null };
+  /** A model is assigned to job "correction" (state only: nothing loads). */
+  "correction.status": { args: Record<string, never>; result: CorrectionStatus };
+  /** Starts run `run` over `pieces` (a new run stops the old one); news come as `correction:run`. */
+  "correction.run": { args: { run: string; pieces: CorrectionPiece[] }; result: null };
+  /** Stops run `run`; its end comes as `correction:run` `cancelled`. */
+  "correction.cancel": { args: { run: string }; result: null };
   "fmt-toon.toJson": { args: { text: string }; result: string };
   "convert.analyze": {
     args: { job: number; source: ConvertSource; from?: string };
@@ -683,6 +741,21 @@ export interface AppPluginEvents {
   "token-count:folders": FolderBadges;
   /** Something asked the Notes tab to show a note | a new note: the Notes tab takes it (`notes.takeIntent`). */
   "notes:intent": null;
+  /** Local AI installs changed (a download finished | failed, terms accepted, assignment, token). */
+  "local-ai:state": LocalAiState;
+  /** One model's download progress (throttled). */
+  "local-ai:progress": ModelProgress;
+  /** Store move progress (throttled); its end comes as `local-ai:state`. */
+  "local-ai:move": Extract<StoreMove, { kind: "moving" }>;
+  /**
+   * One model test's phase: `engine` (engine download, first test only) -> `loading` -> `running` -> `done` |
+   * `failed` (error subject `engine`, detail `outOfMemory` | `notAvailable` | `crashed` | `blocked` | `engineTooOld` |
+   * `unsupported` | `corrupt` | `notLoaded`; kind `io`: detail `io`) | `cancelled`.
+   */
+  "local-ai:test": ModelTest;
+  /** One correction run's news (`loading` -> `piece` per piece -> `done` | `cancelled` | `failed`); windows keep
+   *  their own run id. */
+  "correction:run": CorrectionRun;
 }
 export type AppPluginEventName = keyof AppPluginEvents;
 export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };
@@ -749,6 +822,9 @@ export type {
   BrokenLink,
   BrokenReport,
   BrokenSummary,
+  RepairArgs,
+  RepairRefusal,
+  RepairResult,
   By,
   CommentScope,
   CommentView,
@@ -1021,6 +1097,8 @@ export interface Api {
   pluginSetProject(plugin: string, enabled: boolean | null): Promise<Result<null>>;
   /** Deletes what a plugin keeps; refused while it is on. */
   pluginRemoveData(plugin: string): Promise<Result<null>>;
+  /** Bytes "Remove data" would free that the plugin reports (downloaded models); `null`: nothing worth telling. */
+  pluginDataBytes(plugin: string): Promise<Result<number | null>>;
   /** Asks this window to close (one prompt when tabs hold unsaved edits: `close-requested`). */
   windowClose(): Promise<Result<null>>;
   /** The answer to the window close prompt. */

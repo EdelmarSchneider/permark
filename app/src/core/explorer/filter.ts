@@ -44,8 +44,11 @@ export const DEFAULT_FILTER: TreeFilter = {
   showIgnored: false,
 };
 
-/** Switching to custom keeps what the previous preset showed, so the list does not jump. */
+/** Custom keeps the previous preset's categories, so the list does not jump. Everything turns ignored and hidden files on, including when it is already selected. */
 export function withShow(filter: TreeFilter, show: FilterShow): TreeFilter {
+  if (show === "everything") {
+    return { ...filter, show, showIgnored: true, showHidden: true };
+  }
   if (show === filter.show) return filter;
   const categories =
     show === "custom" && filter.show !== "custom" ? categoriesOf(filter.show) : filter.categories;

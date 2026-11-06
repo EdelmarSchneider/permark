@@ -3,16 +3,17 @@
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import { t } from "../i18n";
   import TreeRow from "./TreeRow.svelte";
-  import { CHUNK, type TreeNode } from "./tree";
+  import { CHUNK, shownSummary, type TreeNode } from "./tree";
 
-  type Props = { node: TreeNode; depth: number; open?: boolean };
-  let { node, depth, open = false }: Props = $props();
+  type Props = { node: TreeNode; depth: number; open?: boolean; plain?: boolean };
+  let { node, depth, open = false, plain = false }: Props = $props();
 
   /** The person's choice; until then the row follows `open`. */
   let choice = $state<boolean | null>(null);
   let shown = $state(CHUNK);
 
   const isOpen = $derived(node.children !== null && (choice ?? open));
+  const summary = $derived(shownSummary(node, plain));
   // made when the row is open (the first time, and again after a close: cheap, and a big file keeps no copy)
   const children = $derived(isOpen && node.children !== null ? node.children() : []);
 
@@ -26,19 +27,19 @@
     <button type="button" class="head" aria-expanded={isOpen} onclick={toggle}>
       <ChevronRight class={["chevron", isOpen && "is-open"]} size={13} />
       {#if node.label !== null}<span class="label">{node.label}</span>{/if}
-      <span class="summary kind-{node.kind}">{node.summary}</span>
+      <span class="summary kind-{node.kind}">{summary}</span>
     </button>
   {:else}
     <div class="head leaf">
       <span class="chevron-gap"></span>
       {#if node.label !== null}<span class="label">{node.label}</span>{/if}
-      <span class="summary kind-{node.kind}">{node.summary}</span>
+      <span class="summary kind-{node.kind}">{summary}</span>
     </div>
   {/if}
   {#if isOpen}
     <div class="children">
       {#each children.slice(0, shown) as child, at (at)}
-        <TreeRow node={child} depth={depth + 1} />
+        <TreeRow node={child} depth={depth + 1} {plain} />
       {/each}
       {#if children.length > shown}
         <button type="button" class="more" onclick={() => (shown += CHUNK)}>

@@ -46,12 +46,15 @@ export class MockPluginError extends Error {
       | "unavailable"
       | "notFound"
       | "invalidData"
+      | "invalidPath"
       | "denied"
       | "exists"
       | "invalidName"
       | "intoItself"
-      | "conflict",
+      | "conflict"
+      | "unsupported",
     readonly subject: string | null = null,
+    readonly detail: string | null = null,
   ) {
     super(kind);
   }
@@ -231,6 +234,28 @@ export function createMockOrganizing(
     const known = project.worktrees.map((name) => `@wt/${name}`);
     const rootOf = (path: string): string =>
       path.startsWith("@wt/") ? path.split("/").slice(0, 2).join("/") : "";
+    const fileName = (path: string): string => {
+      const at = path.lastIndexOf("/");
+      return at < 0 ? path : path.slice(at + 1);
+    };
+    // Same-root files whose name is the last segment the href names, plus `.md` when that segment left it out.
+    const candidatesFor = (doc: string, href: string): string[] => {
+      const named = targetOf(doc, href);
+      if (named === null || named.startsWith("\0")) return [];
+      const name = fileName(named);
+      if (name === "") return [];
+      const folded = name.toLowerCase();
+      const want = new Set([folded]);
+      if (!folded.endsWith(".md")) want.add(`${folded}.md`);
+      const root = rootOf(doc);
+      const found: string[] = [];
+      for (const file of project.files.keys()) {
+        if (rootOf(file) !== root) continue;
+        if (want.has(fileName(file).toLowerCase())) found.push(file);
+      }
+      found.sort();
+      return found;
+    };
     const rank = (root: string): number => {
       if (root === "") return 0;
       const at = known.indexOf(root);
@@ -241,7 +266,7 @@ export function createMockOrganizing(
     const roots = new Map<string, number>([["", 0], ...known.map((k): [string, number] => [k, 0])]);
     for (const path of paths) {
       const root = rootOf(path);
-      const links: { line: number; written: string }[] = [];
+      const links: PluginMethods["broken-links.list"]["result"]["docs"][number]["links"] = [];
       (project.files.get(path) ?? "").split("\n").forEach((line, at) => {
         for (const m of line.matchAll(/\]\(([^)\s]+)\)/g)) {
           const href = m[1] ?? "";
@@ -249,7 +274,12 @@ export function createMockOrganizing(
           if (target === null) continue;
           const exists = project.files.has(target) || project.dirs.has(target.replace(/\/$/, ""));
           if (!exists && !project.files.has(`${target}.md`))
-            links.push({ line: at + 1, written: href });
+            links.push({
+              line: at + 1,
+              written: href,
+              href,
+              candidates: candidatesFor(path, href),
+            });
         }
       });
       total += links.length;

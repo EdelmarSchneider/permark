@@ -47,3 +47,13 @@ export function tn(base: PluralKey, count: number, params?: Params): string {
 export function t(key: MessageKey, params?: Params): string {
   return fill(language.table[key], params);
 }
+
+/** A download | disk size: "310 MB", "3.4 GB" (decimal units, as stores and disks show them). */
+export function sizeText(bytes: number): string {
+  const giga = bytes >= 1e9;
+  return new Intl.NumberFormat(language.locale, {
+    style: "unit",
+    unit: giga ? "gigabyte" : "megabyte",
+    maximumFractionDigits: giga ? 1 : 0,
+  }).format(bytes / (giga ? 1e9 : 1e6));
+}

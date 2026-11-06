@@ -130,12 +130,37 @@ describe("plugin host", () => {
     expect(h.registry.of("command")).toHaveLength(1);
   });
 
+  it("an edit action (button with the mode switch) goes with its plugin", async () => {
+    const run = (): void => {};
+    const module = definePlugin({
+      manifest: { id: "fixer", kind: "feature", dependsOn: [] },
+      activate(cx) {
+        return cx.contribute({
+          kind: "editAction",
+          id: "fixer.menu",
+          label: "app.name",
+          icon: Stub,
+          entries: () => [{ kind: "item", label: "Fix", run }],
+          requires: { needs: [], prefers: [] },
+        });
+      },
+    });
+    const h = host({ fixer: module });
+    await h.enable("fixer");
+    const [action] = h.registry.visible("editAction", neutralContext());
+    expect(action?.id).toBe("fixer.menu");
+    expect(action?.entries()).toEqual([{ kind: "item", label: "Fix", run }]);
+    expect(h.disable("fixer")).toBe(0);
+    expect(h.registry.of("editAction")).toHaveLength(0);
+  });
+
   it("the lazy module map is keyed by folder name: the plugins that have a UI", () => {
     expect(Object.keys(pluginLoaders()).sort()).toEqual([
       "agent",
       "broken-links",
       "comments",
       "convert",
+      "correction",
       "fmt-dotenv",
       "fmt-ignore",
       "fmt-ini",
@@ -149,6 +174,7 @@ describe("plugin host", () => {
       "highlight",
       "json-view",
       "live-feed",
+      "local-ai",
       "math",
       "media",
       "mermaid",

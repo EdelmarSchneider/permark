@@ -71,6 +71,7 @@ fn preset_categories(show: FilterShow) -> Vec<Category> {
 
 impl TreeFilter {
     /// The filter a project asks for in `[tree]`. Patterns turn a preset into `Custom` with that preset's categories.
+    /// `Everything` turns ignored and hidden files on. A pattern that forces `Custom` leaves both off.
     #[must_use]
     pub fn from_config(config: &TreeConfig) -> Self {
         let show = match config.show {
@@ -86,17 +87,25 @@ impl TreeFilter {
             .chain(config.exclude.iter().map(|p| format!("-{p}")))
             .collect();
         let custom = show == FilterShow::Custom || !patterns.is_empty();
+        let returned = if custom { FilterShow::Custom } else { show };
+        let reveal = returned == FilterShow::Everything;
         Self {
-            show: if custom { FilterShow::Custom } else { show },
+            show: returned,
             categories: preset_categories(show),
             patterns: patterns.join(" "),
+            show_ignored: reveal,
+            show_hidden: reveal,
             ..Self::default()
         }
     }
 
-    /// Switching to `Custom` keeps what the previous preset showed.
+    /// Custom keeps the previous preset's categories. Everything turns ignored and hidden files on, including a second selection.
     #[must_use]
     pub fn with_show(mut self, show: FilterShow) -> Self {
+        if show == FilterShow::Everything {
+            self.show_ignored = true;
+            self.show_hidden = true;
+        }
         if show == FilterShow::Custom && self.show != FilterShow::Custom {
             self.categories = preset_categories(self.show);
         }

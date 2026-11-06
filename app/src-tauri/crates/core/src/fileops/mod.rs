@@ -35,6 +35,7 @@ pub use import::{
     ImportPlan, ImportProgress, ImportRefusal, ImportRefused,
 };
 pub use names::{check_name, new_file_name, NameProblem};
+pub use plan::replacement_href;
 
 use self::ops::{
     announced_pairs, check_deletes, check_moves, execute_moves, io_error, is_protected, locate,

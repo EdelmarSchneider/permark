@@ -388,6 +388,92 @@ describe("pictures dropped from the system", () => {
   });
 });
 
+describe("edits handed to the editor on screen (correction)", () => {
+  const edit = { from: 0, to: 1, insert: "X", expect: "#" };
+
+  it("scope, apply, reveal and composing go to the editor", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    const applied: unknown[] = [];
+    const revealed: unknown[] = [];
+    editor.scope = (kind) => (kind === "document" ? { from: 0, to: 9 } : null);
+    editor.apply = (edits) => applied.push(edits) > 0;
+    editor.reveal = (range) => revealed.push(range);
+    editor.composing = () => false;
+    expect(session.scope("document")).toEqual({ from: 0, to: 9 });
+    expect(session.scope("selection")).toBeNull();
+    expect(session.apply([edit])).toBe(true);
+    expect(applied).toEqual([[edit]]);
+    session.reveal({ from: 2, to: 4 });
+    expect(revealed).toEqual([{ from: 2, to: 4 }]);
+    expect(session.composing()).toBe(false);
+  });
+
+  it("an editor composing text (IME) takes no edit", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    const applied: unknown[] = [];
+    editor.apply = (edits) => applied.push(edits) > 0;
+    editor.composing = () => true;
+    expect(session.composing()).toBe(true);
+    expect(session.apply([edit])).toBe(false);
+    expect(applied).toEqual([]);
+  });
+
+  it("current = the editor's text now, before the change check catches up", async () => {
+    const { session } = setup();
+    const { editor, content } = await open(session);
+    editor.set("typed just now");
+    session.changed();
+    expect(session.text).toBe(content.text);
+    expect(session.current()).toBe("typed just now");
+    let focused = 0;
+    editor.focus = () => (focused += 1);
+    session.focus();
+    expect(focused).toBe(1);
+  });
+
+  it("marks go to the editor on screen and to the next one; an empty list clears them", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    const seen: unknown[] = [];
+    editor.marks = (ranges, current) => seen.push([ranges, current]);
+    editor.markAt = () => 1;
+    const pick = (): void => {};
+    session.marks([{ from: 0, to: 1 }], 0, pick);
+    expect(seen).toEqual([[[{ from: 0, to: 1 }], 0]]);
+    expect(session.markAt()).toBe(1);
+    // Edit <-> Source: the editor made next shows them too
+    await session.switchTo("edit");
+    const next = fakeEditor(session.content?.text ?? "");
+    const again: unknown[] = [];
+    next.marks = (ranges, current) => again.push([ranges, current]);
+    session.attach(session.content?.seq ?? -1, next);
+    expect(again).toEqual([[[{ from: 0, to: 1 }], 0]]);
+    session.marks([], null, pick);
+    expect(again.at(-1)).toEqual([[], null]);
+    const third = fakeEditor("");
+    const none: unknown[] = [];
+    third.marks = (ranges) => none.push(ranges);
+    session.attach(session.content?.seq ?? -1, third);
+    expect(none).toEqual([]);
+  });
+
+  it("an editor without them (or none on screen) gives safe answers", async () => {
+    const { session } = setup();
+    expect(session.scope("document")).toBeNull();
+    expect(session.apply([edit])).toBe(false);
+    expect(session.composing()).toBe(false);
+    await open(session);
+    expect(session.scope("paragraph")).toBeNull();
+    expect(session.apply([edit])).toBe(false);
+    session.reveal({ from: 0, to: 1 });
+    session.marks([{ from: 0, to: 1 }], 0, () => {});
+    expect(session.markAt()).toBeNull();
+    expect(session.composing()).toBe(false);
+  });
+});
+
 describe("the mode the person chose", () => {
   it("survives letting go of the document, and a new window starts in View", async () => {
     const { api, session } = setup();

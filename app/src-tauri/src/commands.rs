@@ -1535,8 +1535,22 @@ pub fn plugin_remove_data(handle: AppHandle, plugin: String) -> Result<(), IpcEr
         return Err(IpcError::new(ErrorKind::Unavailable).subject(plugin));
     }
     let roots: Vec<_> = cores.iter().map(|core| core.root().clone()).collect();
+    // what the plugin keeps outside its namespaces first (it reads where from its own state, deleted next)
+    if let Some(found) = shell.env.registry.get(&id) {
+        found.remove_data(&shell.app_store)?;
+    }
     permark_core::state::remove_plugin_data_everywhere(&shell.env.dirs, &id, &roots)?;
     Ok(())
+}
+
+/// Bytes "Remove data" would free that the plugin reports (downloaded models; `None`: nothing worth telling).
+#[tauri::command(async)]
+pub fn plugin_data_bytes(handle: AppHandle, plugin: String) -> Result<Option<u64>, IpcError> {
+    let shell = state(&handle);
+    let found = PluginId::parse(&plugin)
+        .and_then(|id| shell.env.registry.get(&id))
+        .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject(plugin.clone()))?;
+    Ok(found.data_bytes(&shell.app_store))
 }
 
 commands![
@@ -1627,6 +1641,7 @@ commands![
     plugins_list,
     plugin_set_project,
     plugin_remove_data,
+    plugin_data_bytes,
     window_close,
     window_close_answer,
     view_saved,

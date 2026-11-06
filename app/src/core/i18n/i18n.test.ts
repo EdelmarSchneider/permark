@@ -24,6 +24,12 @@ describe("t", () => {
     expect(t("app.name")).toBe("PerMark");
   });
 
+  it("says Everything includes files ignored by git and hidden files", () => {
+    expect(t("filter.everythingHint")).toBe(
+      "All file types. Everything includes files ignored by git and hidden files. The switches below can turn either off.",
+    );
+  });
+
   it("fills placeholders", () => {
     expect(t("status.version", { version: "1.2.3" })).toBe("Version 1.2.3");
   });

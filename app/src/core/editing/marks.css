@@ -1,0 +1,31 @@
+/* Correction suggestions in the editors (`marks.ts`): every one under a wavy line, the current one on a tint with a
+   solid, thicker line (not color alone); an insertion = a caret-width bar. Theme tokens only. */
+.correction-mark {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
+.correction-mark--current {
+  border-radius: 2px;
+  background: var(--accent-soft);
+  text-decoration-style: solid;
+  text-decoration-thickness: 2px;
+}
+.correction-mark--insert {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin: 0 1px;
+  border-radius: 1px;
+  background: var(--accent-muted);
+  vertical-align: text-bottom;
+  text-decoration: none;
+}
+.correction-mark--insert.correction-mark--current {
+  width: 3px;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}

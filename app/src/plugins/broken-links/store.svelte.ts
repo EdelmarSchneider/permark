@@ -1,6 +1,6 @@
 // Broken links: the list the backend keeps true (a worker follows the project's changes). This mirrors it for the tab.
 
-import type { BrokenReport } from "../../api";
+import type { BrokenReport, RepairArgs, RepairResult } from "../../api";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
 
 /** The events of a burst become one reload. */
@@ -69,6 +69,15 @@ export class BrokenLinksStore {
     const root = this.#root();
     const result = await this.#client.call("broken-links.list", {});
     if (this.#root() === root && result.ok) this.report = result.value;
+  }
+
+  /** Points one destination at `target`. A write reloads the list; a refusal is the caller's to show. */
+  async repair(args: RepairArgs): Promise<RepairResult | null> {
+    const root = this.#root();
+    const result = await this.#client.call("broken-links.repair", args);
+    if (this.#root() !== root || !result.ok) return null;
+    if (result.value.outcome === "wrote") await this.load();
+    return result.value;
   }
 }
 

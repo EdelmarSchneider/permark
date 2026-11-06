@@ -30,7 +30,9 @@ use crate::settings::{
 };
 use crate::state::{AppDirs, ProjectId, StateData, StateLocation, StateStore};
 use crate::tree::Explorer;
-use crate::watch::{FsBatch, LiveStatus, OwnWrites, StatusHook, Subscription, WatchHub, Watcher};
+use crate::watch::{
+    FsBatch, LiveStatus, OwnWrites, PathHold, StatusHook, Subscription, WatchHub, Watcher,
+};
 
 /// Process-wide services every workspace uses.
 pub struct CoreEnv {
@@ -311,7 +313,19 @@ fn start_watcher(
     );
     watcher.knows_tree(Box::new({
         let explorer = Arc::clone(explorer);
-        move |path| explorer.holds(path)
+        move |path| {
+            // `holds` never walks. It is true for every directory, including a container. Only an opened ignored
+            // dir lets a new ignored child through.
+            let folder = explorer.holds(path)?;
+            if !folder {
+                return Some(PathHold::File);
+            }
+            Some(if explorer.opened_ignored(path) {
+                PathHold::OpenedIgnored
+            } else {
+                PathHold::Dir
+            })
+        }
     }));
     // the tree is known before anything goes away (a window would list it now anyway; a core without one too)
     let explorer = Arc::clone(explorer);

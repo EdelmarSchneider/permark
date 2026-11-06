@@ -39,6 +39,10 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_word_count::plugin());
     #[cfg(feature = "plugin-token-count")]
     plugins.push(permark_plugin_token_count::plugin());
+    #[cfg(feature = "plugin-local-ai")]
+    plugins.push(permark_plugin_local_ai::plugin());
+    #[cfg(feature = "plugin-correction")]
+    plugins.push(permark_plugin_correction::plugin());
     #[cfg(feature = "plugin-prompt-blocks")]
     plugins.push(permark_plugin_prompt_blocks::plugin());
     #[cfg(feature = "plugin-frontmatter-card")]
@@ -128,6 +132,8 @@ mod tests {
             "comments",
             "broken-links",
             "notes",
+            "local-ai",
+            "correction",
             "md-family",
             "prompt-blocks",
             "frontmatter-card",

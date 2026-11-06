@@ -1,10 +1,10 @@
 [workspace]
-members = ["crates/core", "crates/plugins/*", "crates/shell-ext"]
+members = ["crates/core", "crates/engine", "crates/plugins/*", "crates/shell-ext"]
 resolver = "2"
 
 # Version source = app/package.json; written here by `npm run version:sync`.
 [workspace.package]
-version = "0.8.1"
+version = "0.9.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/EdelmarSchneider/permark"
@@ -12,6 +12,7 @@ authors = ["Edelmar Schneider"]
 
 [workspace.dependencies]
 permark-core = { path = "crates/core" }
+permark-engine = { path = "crates/engine" }
 permark-plugin-frontmatter-card = { path = "crates/plugins/frontmatter-card" }
 permark-plugin-follow = { path = "crates/plugins/follow" }
 permark-plugin-git = { path = "crates/plugins/git" }
@@ -35,6 +36,8 @@ permark-plugin-tags = { path = "crates/plugins/tags" }
 permark-plugin-unread = { path = "crates/plugins/unread" }
 permark-plugin-word-count = { path = "crates/plugins/word-count" }
 permark-plugin-token-count = { path = "crates/plugins/token-count" }
+permark-plugin-local-ai = { path = "crates/plugins/local-ai" }
+permark-plugin-correction = { path = "crates/plugins/correction" }
 permark-plugin-xml-view = { path = "crates/plugins/xml-view" }
 permark-plugin-fmt-toml = { path = "crates/plugins/fmt-toml" }
 permark-plugin-fmt-yaml = { path = "crates/plugins/fmt-yaml" }
@@ -55,13 +58,16 @@ thiserror = "2.0.21"
 dunce = "1.0.5"
 unicode-normalization = "0.1.25"
 xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
+sha2 = "0.10"
 toml_edit = "0.25.17"
 dirs = "7.0.0"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 interprocess = "2.4.4"
 widestring = "1.2.1"
 winreg = "0.56.0"
-rustix = { version = "1.1.5", features = ["process"] }
+# same version as tauri's (one copy in the lock); COM interfaces windows-sys lacks (DXGI)
+windows = { version = "0.62.2", default-features = false }
+rustix = { version = "1.1.5", features = ["process", "fs"] }
 windows-sys = { version = "0.61.2", features = [
   "Win32_Foundation",
   "Win32_System_JobObjects",
@@ -128,7 +134,7 @@ name = "permark_lib"
 # default = the direct build; `store` = the Microsoft Store build (`--no-default-features --features store`): the
 # store updates the app and the package declares the file manager entries.
 default = ["common", "plugin-updates", "plugin-shell-integration"]
-common = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-token-count", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore", "plugin-fmt-toon", "plugin-convert"]
+common = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-token-count", "plugin-local-ai", "plugin-correction", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore", "plugin-fmt-toon", "plugin-convert"]
 plugin-git = ["dep:permark-plugin-git"]
 plugin-live-feed = ["dep:permark-plugin-live-feed"]
 # follow needs the feed; review needs unread (a build without the dependency has no plugin that needs it)
@@ -138,6 +144,9 @@ plugin-review = ["dep:permark-plugin-review", "plugin-unread"]
 plugin-md-family = ["dep:permark-plugin-md-family"]
 plugin-word-count = ["dep:permark-plugin-word-count"]
 plugin-token-count = ["dep:permark-plugin-token-count"]
+plugin-local-ai = ["dep:permark-plugin-local-ai"]
+# correction runs on the model service of local-ai
+plugin-correction = ["dep:permark-plugin-correction", "plugin-local-ai"]
 plugin-prompt-blocks = ["dep:permark-plugin-prompt-blocks"]
 plugin-frontmatter-card = ["dep:permark-plugin-frontmatter-card"]
 plugin-highlight = ["dep:permark-plugin-highlight"]
@@ -179,6 +188,8 @@ permark-plugin-review = { workspace = true, optional = true }
 permark-plugin-md-family = { workspace = true, optional = true }
 permark-plugin-word-count = { workspace = true, optional = true }
 permark-plugin-token-count = { workspace = true, optional = true }
+permark-plugin-local-ai = { workspace = true, optional = true }
+permark-plugin-correction = { workspace = true, optional = true }
 permark-plugin-prompt-blocks = { workspace = true, optional = true }
 permark-plugin-frontmatter-card = { workspace = true, optional = true }
 permark-plugin-highlight = { workspace = true, optional = true }
@@ -215,8 +226,11 @@ tauri = { version = "2.12", features = ["unstable"] }
 tauri-plugin-dialog = "2.8.2"
 tauri-plugin-opener = "2.7"
 tauri-plugin-updater = { version = "2.14.1", optional = true }
-# web pictures the person asks for (same client as the token count download)
+# web pictures + verified downloads the person asks for (one agent builder: downloads_http.rs)
 ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
+# downloads credential (e.g. Hugging Face token) in the OS store: Windows Credential Manager, macOS Keychain, Secret Service
+# (zbus, pure-Rust crypto). `v1` = these three platform stores.
+keyring = { version = "4.2", default-features = false, features = ["v1"] }
 
 [dev-dependencies]
 tempfile.workspace = true

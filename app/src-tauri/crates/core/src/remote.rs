@@ -198,7 +198,7 @@ fn iana_global_2001(s: [u16; 8]) -> bool {
 }
 
 /// The host of an authority as written: `[v6]` with its brackets, else everything before a port.
-fn host_part(authority: &str) -> &str {
+pub(crate) fn host_part(authority: &str) -> &str {
     if authority.starts_with('[') {
         authority
             .find(']')
@@ -276,7 +276,7 @@ pub fn check_url(url: &str) -> Result<&str, IpcError> {
 }
 
 /// Where a redirect leads, from the address it came from: an absolute `https` address, `//host/...`, or `/path`.
-fn next_url(from: &str, location: &str) -> Result<String, IpcError> {
+pub(crate) fn next_url(from: &str, location: &str) -> Result<String, IpcError> {
     let location = location.trim();
     let target = if location.starts_with("//") {
         format!("https:{location}")

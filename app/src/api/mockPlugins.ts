@@ -9,6 +9,8 @@ import type { createMockNotes, NotesProbe } from "./mockNotes";
 import type { createMockDistribution } from "./mockDistribution";
 import type { createMockTokens } from "./mockTokens";
 import type { createMockConvert } from "./mockConvert";
+import type { createMockCorrection } from "./mockCorrection";
+import type { createMockLocalAi } from "./mockLocalAi";
 import type { ReviewChange } from "./generated/ReviewChange";
 import { createMockGitMembers, type GitMembersProbe } from "./mockGitMembers";
 import type {
@@ -21,6 +23,8 @@ import type {
   PluginMethod,
   PluginMethods,
   ProjectsView,
+  RepairArgs,
+  RepairRefusal,
   Result,
   SinceVisit,
   UnreadList,
@@ -55,6 +59,10 @@ export type MockPluginProbe = {
   agent: AgentProbe;
   /** Announces a plugin event as the backend would. */
   announce<E extends PluginEventName>(event: E, data: PluginEvents[E]): void;
+  /** Repair calls, oldest first. */
+  repairs: RepairArgs[];
+  /** The next repair returns this refusal and writes nothing (`null` clears one still waiting). */
+  refuseNext(reason: RepairRefusal | null): void;
 };
 
 function ghost(id: string, html: string): Block {
@@ -119,7 +127,9 @@ export function createMockPlugins(
   notes: ReturnType<typeof createMockNotes>,
   distribution: ReturnType<typeof createMockDistribution>["handlers"] &
     ReturnType<typeof createMockTokens>["handlers"] &
-    ReturnType<typeof createMockConvert>["handlers"],
+    ReturnType<typeof createMockConvert>["handlers"] &
+    ReturnType<typeof createMockLocalAi>["handlers"] &
+    ReturnType<typeof createMockCorrection>["handlers"],
   projectsView: () => ProjectsView | null = () => null,
 ): {
   call<M extends PluginMethod>(
@@ -255,6 +265,8 @@ export function createMockPlugins(
 
   const agent = createMockAgent(emit);
   const members = createMockGitMembers({ view: projectsView, emit, baseline: () => baseline });
+  const repairs: RepairArgs[] = [];
+  let nextRefusal: RepairRefusal | null = null;
   const handlers: Handlers = {
     ...organizing.handlers,
     ...agent.handlers,
@@ -344,6 +356,13 @@ export function createMockPlugins(
       return null;
     },
     "review.basis": () => basis,
+    "broken-links.repair": (args) => {
+      repairs.push(args);
+      const reason = nextRefusal;
+      nextRefusal = null;
+      if (reason !== null) return { outcome: "refused", reason };
+      return { outcome: "wrote", href: args.target };
+    },
   };
 
   return {
@@ -358,7 +377,7 @@ export function createMockPlugins(
           error: {
             kind: "backend",
             command: "plugin_call",
-            error: { kind: error.kind, subject: error.subject, detail: null },
+            error: { kind: error.kind, subject: error.subject, detail: error.detail },
           },
         });
       }
@@ -384,6 +403,10 @@ export function createMockPlugins(
       notes: notes.probe,
       agent: agent.probe,
       announce: emit,
+      repairs,
+      refuseNext: (reason) => {
+        nextRefusal = reason;
+      },
     },
   };
 }
