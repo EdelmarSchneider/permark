@@ -179,6 +179,8 @@ export type SourceView = {
   markAt(): number | null;
   /** Text is being composed (IME). */
   composing(): boolean;
+  /** Opens the find + replace panel (as Ctrl+F in the editor does). */
+  search(): void;
   destroy(): void;
 };
 
@@ -354,6 +356,7 @@ export function createSource(options: {
       view.dispatch({ effects: marksEffect(view.state, ranges, current, pick) }),
     markAt: () => markAt(view.state),
     composing: () => view.composing,
+    search: () => void openSearchPanel(view),
     destroy: () => view.destroy(),
   };
 }

@@ -2,6 +2,7 @@
 
 import { documents } from "../doc/document.svelte";
 import type { DocumentView } from "../../api";
+import { ui } from "../shell/ui.svelte";
 import { editing, type EditKind, type EditMode } from "./session.svelte";
 
 /** Why the open document cannot be edited (`null`: it can; no document on screen yet: `noViewer`). */
@@ -50,4 +51,17 @@ export function openRemembered(): void {
   if (editing.path === shown) return;
   if (editBlockedReason() !== null) return;
   void editing.enter(mode, shown, editKindOf(view), documents.savePolicy);
+}
+
+/** Find in page has something to search: the page, Edit's text, or Source (its own panel). */
+export function canFind(): boolean {
+  if (documents.path === null) return false;
+  return !editingNow() || editing.finder !== null || editing.mode === "source";
+}
+
+/** Find in page in the mode on screen: the find bar over the page | Edit's text; Source opens its own panel. */
+export function openFind(): void {
+  if (!canFind()) return;
+  if (editingNow() && editing.finder === null) editing.search();
+  else ui.openFind();
 }

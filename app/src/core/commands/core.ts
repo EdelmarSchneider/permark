@@ -6,7 +6,7 @@ import { documents } from "../doc/document.svelte";
 import { reading, WIDTHS } from "../doc/reading.svelte";
 import { webPictures } from "../doc/webPictures.svelte";
 import { toggleWrap } from "../doc/wrapLines";
-import { chooseMode, editBlockedReason, editingNow } from "../editing/choose";
+import { canFind, chooseMode, editBlockedReason, editingNow, openFind } from "../editing/choose";
 import { editing } from "../editing/session.svelte";
 import { diagramPanel } from "../editing/diagramPanel.svelte";
 import { copyPathOf, newInTree, revealInTree } from "../explorer/current";
@@ -209,8 +209,8 @@ const SPECS: readonly Spec[] = [
     label: "cmd.find",
     keys: ["Mod+f"],
     requires: READING,
-    when: readable,
-    run: () => ui.openFind(),
+    when: canFind,
+    run: () => openFind(),
   },
   {
     id: "doc.back",

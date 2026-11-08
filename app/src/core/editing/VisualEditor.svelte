@@ -60,6 +60,7 @@
   type Module = typeof import("./visual");
 
   let host: HTMLElement | undefined = $state();
+  let frame: HTMLElement | undefined = $state();
   let ready = $state(false);
   let format = $state.raw<Format | null>(null);
   let slash = $state.raw<SlashState | null>(null);
@@ -195,6 +196,33 @@
     const node = index === null ? null : core.view.state.doc.maybeChild(index);
     const line = node ? now.lines.get(node) : undefined;
     if (line !== undefined) scrollToLine(line);
+  }
+
+  /** The top edge of the text on screen: below the toolbar that stays at the top of the pane while it scrolls. */
+  function textEdge(): number {
+    const top = scroller.getBoundingClientRect().top;
+    const bar = frame?.querySelector(":scope > [role=toolbar]");
+    return bar ? Math.max(top, bar.getBoundingClientRect().bottom) : top;
+  }
+
+  /** The headings of the text in document order, inside quotes and lists too (the outline counts those). */
+  function headings(): HTMLElement[] {
+    const view = core?.view;
+    if (!view) return [];
+    const found: HTMLElement[] = [];
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name !== "heading") return !node.isTextblock;
+      const dom = view.nodeDOM(pos);
+      if (dom instanceof HTMLElement) found.push(dom);
+      return false;
+    });
+    return found;
+  }
+
+  /** Heading `index` a little below the top edge of the text, as View's jump to a heading leaves it. */
+  function showHeading(index: number): void {
+    const element = headings()[index];
+    if (element) scroller.scrollTop += element.getBoundingClientRect().top - textEdge() - 12;
   }
 
   /** View's render of `text` as the file at `path` (null: none to be had, locked blocks show their source). */
@@ -521,6 +549,12 @@
         markAt: () => (core && mod ? mod.markAt(core.view.state) : null),
         composing: () => core?.view.composing ?? false,
         lost: () => (composed()?.lost.length ?? 0) > 0,
+        find: loaded.editFinder(() => core?.view ?? null, scroller),
+        headingTops: () => {
+          const edge = textEdge();
+          return headings().map((element) => element.getBoundingClientRect().top - edge);
+        },
+        showHeading,
       });
     })().catch((error: unknown) => {
       // the visual editor could not be made: the document opens in Source instead
@@ -679,7 +713,7 @@
   }
 </script>
 
-<div class="visual" data-drop-editor>
+<div class="visual" data-drop-editor bind:this={frame}>
   {#if format && ready && ui.focus === "off"}
     <EditorToolbar
       {format}

@@ -11,6 +11,7 @@ import {
   type Result,
   type Segment,
 } from "../../api";
+import type { Finder } from "../doc/find";
 import { t } from "../i18n";
 import {
   isUnsaved,
@@ -70,6 +71,14 @@ export type ActiveEditor = {
   composing?(): boolean;
   /** Some block of the text would read back otherwise than shown (a formula | link as text): a save says so. */
   lost?(): boolean;
+  /** Find in page over the text (the page's find bar searches through it). */
+  find?: Finder;
+  /** Opens the editor's own find panel (Source). */
+  search?(): void;
+  /** Tops of the headings, px below the top edge of the text on screen, in document order (the outline). */
+  headingTops?(): number[];
+  /** Scrolls heading `index` (document order) to the top of the pane. */
+  showHeading?(index: number): void;
 };
 
 /** The last `marks` handed to the editors. */
@@ -129,6 +138,8 @@ export class EditingSession {
   kind = $state<EditKind>("text");
   /** First save of the session: the hint shows once. */
   firstSave = $state(true);
+  /** Find in page over the editor on screen (`null`: none offers it; Source has its own panel). */
+  finder = $state.raw<Finder | null>(null);
 
   #api: Api;
   #hooks: Hooks | null = null;
@@ -349,6 +360,7 @@ export class EditingSession {
     this.#seq += 1;
     this.#held += 1;
     this.#editor = null;
+    this.finder = null;
     this.content = null;
     this.disk = null;
     this.text = "";
@@ -388,11 +400,13 @@ export class EditingSession {
   attach(seq: number, editor: ActiveEditor): () => void {
     if (this.content?.seq !== seq) return () => {};
     this.#editor = editor;
+    this.finder = editor.find ?? null;
     this.text = editor.text();
     const marks = this.#marks;
     if (marks !== null) editor.marks?.(marks.ranges, marks.current, marks.pick);
     return () => {
       if (this.#editor === editor) this.#editor = null;
+      if (editor.find !== undefined && this.finder === editor.find) this.finder = null;
     };
   }
 
@@ -451,6 +465,21 @@ export class EditingSession {
   /** Gives the keyboard to the editor on screen (none: nothing happens). */
   focus(): void {
     this.#editor?.focus();
+  }
+
+  /** Opens the own find panel of the editor on screen (Source; others: nothing happens). */
+  search(): void {
+    this.#editor?.search?.();
+  }
+
+  /** Tops of the headings of the editor on screen (`[]`: none, or it does not tell). */
+  headingTops(): number[] {
+    return this.#editor?.headingTops?.() ?? [];
+  }
+
+  /** Scrolls the editor on screen to its heading `index` (one that cannot: nothing happens). */
+  showHeading(index: number): void {
+    this.#editor?.showHeading?.(index);
   }
 
   /** The editor's text changed (checked shortly after, against the base). */

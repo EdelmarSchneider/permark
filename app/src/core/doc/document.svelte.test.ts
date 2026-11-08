@@ -63,6 +63,8 @@ async function setup(path: string = MOCK_FOLDER): Promise<Fx> {
     editorSet: () => fx.editor.set,
     modKey: () => "Ctrl",
     chooseEditor: () => (fx.chose += 1),
+    editorHeadings: () => null,
+    showEditorHeading: () => false,
     openFolderWith: (folder, document) => fx.folders.push({ folder, document }),
   });
   doc.setWorkspace(workspace);
@@ -973,6 +975,51 @@ describe("where the reader is", () => {
       expect(first?.lineStart ?? 0).toBeGreaterThan(1);
       expect(scroller.scrollTop).toBe(0);
       expect(fx.doc.topLine()).toBe(1);
+    } finally {
+      rect.mockRestore();
+      scroller.remove();
+    }
+  });
+
+  it("an outline click keeps its heading current where the end of the page cannot scroll it up; at the bottom the last heading in view is current", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    fx.doc.paint(() => undefined);
+    const view = fx.doc.view;
+    const ids = view?.body.kind === "markdown" ? view.body.outline.map((item) => item.id) : [];
+    expect(ids).toHaveLength(7);
+    // jsdom has no layout: 1000 px of page in a 500 px pane, heading i at 300 + 100 i
+    let top = 0;
+    Object.defineProperty(scroller, "clientHeight", { value: 500, configurable: true });
+    Object.defineProperty(scroller, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      get: () => top,
+      set: (value: number) => (top = Math.max(0, Math.min(500, value))),
+    });
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const at = ids.indexOf(this.id);
+        return at < 0 ? new DOMRect(0, 0, 0, 0) : new DOMRect(0, 300 + 100 * at - top, 600, 30);
+      });
+    try {
+      // the page ends before heading 5 reaches the top: it stays the one clicked
+      fx.doc.goToHeading(5);
+      expect(top).toBe(500);
+      expect(fx.doc.currentHeading).toBe(5);
+      fx.doc.noteScroll();
+      expect(fx.doc.currentHeading).toBe(5);
+      // the reader scrolls: the heading at the top is current again
+      scroller.scrollTop = 420;
+      fx.doc.noteScroll();
+      expect(fx.doc.currentHeading).toBe(1);
+      // scrolled to the bottom: the last heading in view, not the one at the top
+      scroller.scrollTop = 500;
+      fx.doc.noteScroll();
+      expect(fx.doc.currentHeading).toBe(6);
     } finally {
       rect.mockRestore();
       scroller.remove();

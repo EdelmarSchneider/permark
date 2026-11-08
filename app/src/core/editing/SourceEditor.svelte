@@ -84,6 +84,7 @@
         marks: (ranges, current, pick) => made.marks(ranges, current, pick),
         markAt: () => made.markAt(),
         composing: () => made.composing(),
+        search: () => made.search(),
       });
     });
     return () => {

@@ -93,6 +93,11 @@ export type Hooks = {
   modKey(): string;
   /** Settings at the editor choice. */
   chooseEditor(): void;
+  /** Tops of the headings of the editor shown instead of the page (`headingTops` of the editor); `null`: the page
+   *  shows. */
+  editorHeadings(): number[] | null;
+  /** Scrolls the editor shown instead of the page to its heading `index`; `false`: the page shows. */
+  showEditorHeading(index: number): boolean;
   /** A folder opened as a project in a new tab, showing `document` (a path inside it) when given. */
   openFolderWith(folder: string, document: string | null): void;
 };
@@ -106,6 +111,8 @@ const NO_HOOKS: Hooks = {
   editorSet: () => false,
   modKey: () => "Ctrl",
   chooseEditor: () => {},
+  editorHeadings: () => null,
+  showEditorHeading: () => false,
   openFolderWith: () => {},
 };
 
@@ -142,6 +149,9 @@ export class DocumentController {
   /** A line to scroll to when the document in the making is shown (a search hit without a heading). */
   #line: number | null = null;
   #headings: (HTMLElement | null)[] = [];
+  /** A jump to a heading made it current, and the scroll position it left: it stays current until the reader scrolls
+   *  (near the end of a page the heading cannot reach the top, so the scroll alone would name an earlier one). */
+  #pinnedAt: number | null = null;
   #painters = new Set<() => void>();
   #updaters = new Set<(update: BlockUpdate) => void>();
   #textUpdaters = new Set<(update: TextUpdate) => void>();
@@ -272,6 +282,7 @@ export class DocumentController {
     this.#line = null;
     this.lineRequest = null;
     this.#headings = [];
+    this.#pinnedAt = null;
     this.currentHeading = -1;
     this.zoomed = null;
     this.state = { status: "empty" };
@@ -455,6 +466,7 @@ export class DocumentController {
       return;
     }
     this.#headings = [];
+    if (fresh) this.#pinnedAt = null;
     if (before !== null) this.#told(before, blocks);
     const seq = this.#seq;
     void applied.settled.then(() => {
@@ -522,7 +534,19 @@ export class DocumentController {
   noteScroll(): void {
     const scroller = this.host.scroller;
     if (this.#shown !== null && scroller) reading.remember(this.#shown, scroller.scrollTop);
+    // the scroll of the jump itself leaves the jumped-to heading current
+    const pinned = this.#pinnedAt;
+    if (pinned !== null && scroller && Math.abs(scroller.scrollTop - pinned) < 1) return;
+    this.#pinnedAt = null;
     this.currentHeading = this.#headingAtTop();
+  }
+
+  /** Heading `index` became current by a jump (an outline click, a link to it). */
+  #pin(index: number): void {
+    const scroller = this.host.scroller;
+    if (index < 0 || !scroller) return;
+    this.currentHeading = index;
+    this.#pinnedAt = scroller.scrollTop;
   }
 
   #headingAtTop(): number {
@@ -530,16 +554,34 @@ export class DocumentController {
     const view = this.view;
     if (!scroller || view?.body.kind !== "markdown") return -1;
     const outline = view.body.outline;
-    if (this.#headings.length !== outline.length) {
-      this.#headings = outline.map((item) => this.host.byAnchor(item.id));
+    // an editor shows the text instead of the page: its headings count (the hidden page has no places)
+    let tops = this.#hooks.editorHeadings();
+    if (tops === null) {
+      if (this.#headings.length !== outline.length) {
+        this.#headings = outline.map((item) => this.host.byAnchor(item.id));
+      }
+      const top = scroller.getBoundingClientRect().top;
+      // not yet built (a document still arriving in slices) counts as far below
+      tops = this.#headings.map((el) =>
+        el?.isConnected ? el.getBoundingClientRect().top - top : Infinity,
+      );
     }
-    const top = scroller.getBoundingClientRect().top;
-    const tops = this.#headings.map((el) =>
-      el?.isConnected ? el.getBoundingClientRect().top - top : Infinity,
-    );
-    // not yet built (a document still arriving in slices) counts as far below
-    // a heading within the first bit of the pane counts as reached (a jump leaves it a little below the edge)
-    return currentIndex(tops, 40);
+    // a heading within the first bit of the pane counts as reached (a jump leaves it a little below the edge); at the
+    // bottom of a page that scrolled, the headings below can never reach the top: the last one in view counts
+    const { scrollTop, clientHeight, scrollHeight } = scroller;
+    const bottom =
+      scrollTop > 0 && scrollHeight > clientHeight && scrollTop + clientHeight >= scrollHeight - 1;
+    const reached = currentIndex(tops, bottom ? clientHeight - 40 : 40);
+    return Math.min(reached, outline.length - 1);
+  }
+
+  /** An outline click: the editor on screen, else the page, brings heading `index` to the top. */
+  goToHeading(index: number): void {
+    const view = this.view;
+    const item = view?.body.kind === "markdown" ? view.body.outline[index] : undefined;
+    if (!item) return;
+    if (this.#hooks.showEditorHeading(index)) this.#pin(index);
+    else this.scrollToAnchor(item.id);
   }
 
   /** Reads the shown document again (after a save of this window: no event comes back for it). */
@@ -588,6 +630,8 @@ export class DocumentController {
     const delta = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
     scroller.scrollTop += delta;
     tint(el);
+    const view = this.view;
+    if (view?.body.kind === "markdown") this.#pin(view.body.outline.findIndex((h) => h.id === id));
     return true;
   }
 
