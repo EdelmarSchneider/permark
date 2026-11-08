@@ -121,7 +121,11 @@ const atoms = (): HTMLElement[] => [...core.view.dom.querySelectorAll<HTMLElemen
 
 const sourceAt = (n = 0): string => String(core.view.state.doc.nodeAt(atomAt(n))?.attrs.source);
 
-function press(target: Element, type: "mousedown" | "click", init: MouseEventInit = {}): void {
+function press(
+  target: Element,
+  type: "mousedown" | "click" | "auxclick",
+  init: MouseEventInit = {},
+): void {
   target.dispatchEvent(
     new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, ...init }),
   );
@@ -504,20 +508,24 @@ describe("reference-style links", () => {
     expect(atoms()[0]?.getAttribute("aria-label")).toBe("block: link");
   });
 
-  it("Ctrl+click follows the resolved href; a click opens the source", async () => {
+  it("Ctrl+click | a middle click follows the resolved href; a click opens the source", async () => {
     await load(LINKS);
     const anchor = anchors()[0];
     if (!anchor) throw new Error("no anchor");
     press(anchor, "click", { ctrlKey: true });
     expect(followed).toEqual(["https://example.com/guide"]);
     expect(atoms()[0]?.querySelector("input")).toBeNull();
+    // the middle button as Ctrl + click
+    press(anchor, "auxclick", { button: 1 });
+    const both = ["https://example.com/guide", "https://example.com/guide"];
+    expect(followed).toEqual(both);
     const field = openAtom(0);
     expect(field.value).toBe("[the guide][g]");
     type(field, "[the handbook][g]");
     expect(sourceAt(0)).toBe("[the handbook][g]");
     key(field, "Escape");
     expect(anchors()[0]?.textContent).toBe("the handbook");
-    expect(followed).toEqual(["https://example.com/guide"]);
+    expect(followed).toEqual(both);
   });
 
   it("labels match as the parser matches them: case and inner spaces aside", async () => {

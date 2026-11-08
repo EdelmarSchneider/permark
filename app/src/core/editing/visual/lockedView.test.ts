@@ -196,7 +196,7 @@ function caretInText(): void {
 
 function press(
   target: Element,
-  type: "mousedown" | "click",
+  type: "mousedown" | "click" | "auxclick",
   init: MouseEventInit = {},
 ): MouseEvent {
   const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, ...init });
@@ -279,6 +279,24 @@ describe("a block kept as written, at rest", () => {
     press(link, "click", { metaKey: true });
     expect(followed).toEqual(["https://example.com/", "https://example.com/"]);
     expect(core.view.dom.querySelector("textarea")).toBeNull();
+  });
+
+  it("a middle click on a link follows it as Ctrl | Cmd + click does; no click on a link asks for a new window", async () => {
+    await open();
+    const link = blocks()[1]?.querySelector("a");
+    if (!link) throw new Error("no link");
+    // the middle button: the web view would open the link in a window of its own
+    expect(press(link, "auxclick", { button: 1 }).defaultPrevented).toBe(true);
+    expect(followed).toEqual(["https://example.com/"]);
+    expect(core.view.dom.querySelector("textarea")).toBeNull();
+    // in the text: Shift | Ctrl + Shift + click would open a new window too
+    core.setDoc(core.parse("A [link](docs/a.md) here.\n"));
+    const inText = core.view.dom.querySelector("a[href]");
+    if (!inText) throw new Error("no link in the text");
+    expect(press(inText, "auxclick", { button: 1 }).defaultPrevented).toBe(true);
+    expect(press(inText, "click", { shiftKey: true }).defaultPrevented).toBe(true);
+    expect(press(inText, "click", { ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(true);
+    expect(followed).toEqual(["https://example.com/", "docs/a.md", "docs/a.md"]);
   });
 
   it("without a known look (the render failed) every locked block shows its source and the way to Source", async () => {
@@ -1002,6 +1020,7 @@ describe("safety and input", () => {
     if (!link) throw new Error("no link");
     expect(press(link, "click").defaultPrevented).toBe(true);
     expect(press(link, "click", { ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(press(link, "auxclick", { button: 1 }).defaultPrevented).toBe(true);
     expect(followed).toEqual([]);
   });
 

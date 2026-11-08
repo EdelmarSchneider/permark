@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { EditorView } from "@codemirror/view";
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceView } from "../../api";
@@ -219,6 +220,27 @@ describe("the page", () => {
     expect(documents.trail.canBack).toBe(true);
     // the keyboard is on the new page, not lost with the link
     expect(document.activeElement?.hasAttribute("data-scroller")).toBe(true);
+  });
+
+  it("a middle | Shift | Ctrl + Shift click on a link follows it here and never asks for a new window", async () => {
+    const follow = async (init: MouseEventInit, type = "click"): Promise<void> => {
+      await show("README.md");
+      await until(() => target.querySelector('a[href="docs/guide.md"]') !== null, "the link");
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, ...init });
+      target.querySelector('a[href="docs/guide.md"]')?.dispatchEvent(event);
+      expect(event.defaultPrevented, `${type} ${JSON.stringify(init)}`).toBe(true);
+      await until(() => documents.path === "docs/guide.md", "navigated");
+    };
+    await follow({ button: 1 }, "auxclick");
+    await follow({ shiftKey: true });
+    await follow({ ctrlKey: true, shiftKey: true });
+    // the right button's own menu, not a link's
+    await show("README.md");
+    await until(() => target.querySelector('a[href="docs/guide.md"]') !== null, "the link");
+    const right = new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 2 });
+    target.querySelector('a[href="docs/guide.md"]')?.dispatchEvent(right);
+    expect(right.defaultPrevented).toBe(false);
+    expect(documents.path).toBe("README.md");
   });
 
   it("opens web links in the browser and code references in the chosen editor", async () => {
@@ -1336,6 +1358,34 @@ describe("find in page and the outline in the editors", () => {
     } finally {
       rect.mockRestore();
     }
+  });
+
+  it("Source: the outline's current heading follows the page's scroll; an outline click scrolls to the heading line", async () => {
+    await edit();
+    modeButton("Source")?.click();
+    await until(() => target.querySelector(".cm-editor") !== null, "source editor");
+    const scroller = target.querySelector("[data-scroller]") as HTMLElement;
+    const cm = EditorView.findFromDOM(target.querySelector(".cm-editor") as HTMLElement);
+    const body = documents.view?.body;
+    if (!cm || body?.kind !== "markdown") throw new Error("no source editor");
+    const lines = body.outline.map((item) => item.line);
+    expect(lines).toHaveLength(7);
+    // jsdom has no layout: the editor's lines are 20 px tall here, the page scrolls the whole editor
+    const page = (): DOMRect => new DOMRect(0, -scroller.scrollTop, 600, 10_000);
+    cm.scrollDOM.getBoundingClientRect = page;
+    cm.contentDOM.getBoundingClientRect = page;
+    const lineTop = (line: number): number => (line - 1) * 20;
+    const block = cm.lineBlockAt.bind(cm);
+    cm.lineBlockAt = (pos) =>
+      Object.defineProperty(block(pos), "top", { value: lineTop(cm.state.doc.lineAt(pos).number) });
+    scroller.scrollTop = lineTop(lines[3] ?? 0);
+    scroller.dispatchEvent(new Event("scroll"));
+    await until(() => documents.currentHeading === 3, "the heading at the top of the page");
+    // the text starts below the editor's top by its padding
+    const padding = cm.documentTop + scroller.scrollTop;
+    documents.goToHeading(5);
+    expect(scroller.scrollTop).toBe(lineTop(lines[5] ?? 0) + padding - 12);
+    expect(documents.currentHeading).toBe(5);
   });
 });
 

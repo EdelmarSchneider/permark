@@ -759,15 +759,14 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       // the block opens; a link in it is not followed
       if (open()) event.preventDefault();
     });
-    dom.addEventListener(
-      "click",
-      (event) => {
-        // opened: a link in the preview is never followed (it is inert, but not every webview knows that)
-        const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
-        if (state.kind !== "idle" && link !== null && dom.contains(link)) event.preventDefault();
-      },
-      true,
-    );
+    // opened: a link in the preview is never followed (it is inert, but not every webview knows that), nor opened in
+    // a window of its own by the middle button
+    const inertLinks = (event: MouseEvent): void => {
+      const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (state.kind !== "idle" && link !== null && dom.contains(link)) event.preventDefault();
+    };
+    dom.addEventListener("click", inertLinks, true);
+    dom.addEventListener("auxclick", inertLinks, true);
     dom.addEventListener("keydown", (event) => {
       if (state.kind !== "properties" || event.key !== "Escape") return;
       // a field of the properties takes its own Escape (it puts its value back) and stops it
@@ -825,8 +824,9 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       stopEvent: (event) => {
         if (state.kind !== "idle") return true;
         if (isControl(dom, event.target)) return true;
-        // a click on a link goes on to the editor, which follows it on Ctrl | Cmd + click as in its own text
-        return event.type !== "click" && !event.type.startsWith("key");
+        // a click on a link goes on to the editor, which follows it on Ctrl | Cmd + click (or a middle click) as in
+        // its own text
+        return event.type !== "click" && event.type !== "auxclick" && !event.type.startsWith("key");
       },
       // View's hydration (embeds, a details toggled), the properties and the source box change this DOM, never the
       // document

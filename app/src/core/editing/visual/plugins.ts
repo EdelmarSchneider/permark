@@ -170,6 +170,16 @@ function imageView(displaySrc: (src: string) => string): NodeViewConstructor {
   };
 }
 
+/** A click on a link never navigates (nor opens a window: Shift | middle click); `follow`: the app follows it. */
+function linkClick(host: PluginHost, event: MouseEvent, follow: boolean): boolean {
+  const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+  // a click an opened block took (a link in its preview) follows nothing
+  if (!anchor || event.defaultPrevented) return false;
+  event.preventDefault();
+  if (follow) host.followLink(anchor.getAttribute("href") ?? "");
+  return true;
+}
+
 export function appPlugins(host: PluginHost) {
   return [
     $prose(() => marksPlugin()),
@@ -206,16 +216,10 @@ export function appPlugins(host: PluginHost) {
               return true;
             },
             handleDOMEvents: {
-              click: (_view, event) => {
-                const anchor =
-                  event.target instanceof Element ? event.target.closest("a[href]") : null;
-                // a click an opened block took (a link in its preview) follows nothing
-                if (!anchor || event.defaultPrevented) return false;
-                event.preventDefault();
-                if (event.ctrlKey || event.metaKey)
-                  host.followLink(anchor.getAttribute("href") ?? "");
-                return true;
-              },
+              click: (_view, event) => linkClick(host, event, event.ctrlKey || event.metaKey),
+              // the middle button opens a link as Ctrl | Cmd + click does: the web view would open it in a window
+              // of its own
+              auxclick: (_view, event) => event.button === 1 && linkClick(host, event, true),
             },
           },
           view: () => ({

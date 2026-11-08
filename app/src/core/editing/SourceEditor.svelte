@@ -87,6 +87,8 @@
         markAt: () => made.markAt(),
         composing: () => made.composing(),
         search: () => made.search(),
+        headingTops: () => made.headingTops(scroller.getBoundingClientRect().top),
+        showHeading: (index) => made.showHeading(index, scroller),
       });
     });
     return () => {
