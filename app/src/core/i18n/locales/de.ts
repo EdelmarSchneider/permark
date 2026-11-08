@@ -1520,9 +1520,9 @@ export default {
   "project.newConfirm": "Diesen Ordner verwenden",
   "project.newBack": "Anderen Ordner wählen…",
   "project.loadFailed": "Die Projekteinstellungen konnten nicht gelesen werden.",
-  "project.notInitialized": "PerMark ist in diesem Projekt nicht eingerichtet",
+  "project.notInitialized": "Dieser Ordner hat noch keine PerMark-Einstellungen",
   "project.notInitializedHint":
-    "Beim Einrichten entsteht ein Ordner .permark, in dem das Projekt Einstellungen für das Team ablegen kann.",
+    "Nach dem Einrichten hat dieser Ordner eigene Einstellungen, die alle teilen können, die daran arbeiten.",
   "project.patternPlaceholder": "Muster, zum Beispiel drafts/",
   "project.tree": "Explorer",
   "project.treeExclude": "Immer ausblenden",
@@ -1560,7 +1560,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "Unbekannter Platzhalter. Möglich sind {path}, {line} und {col}.",
   "settings.problem.noPath": "Der Befehl braucht {path}.",
-  "settings.problem.notInitialized": "PerMark ist in diesem Projekt nicht eingerichtet.",
+  "settings.problem.notInitialized": "Dieser Ordner hat noch keine PerMark-Einstellungen.",
   "settings.problem.other": "Dieser Wert wurde nicht angenommen.",
   "welcome.newProject": "Neues Projekt …",
   "welcome.newProjectHint": "Ordner wählen; PerMark richtet ihn als Projekt ein.",

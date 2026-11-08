@@ -16,6 +16,7 @@ function foldAligned(s: string): string[] {
 }
 
 const BOUNDARY = /[\s/\-_.]/;
+const MARK = /^\p{M}$/u;
 
 function range(start: number, length: number): number[] {
   return Array.from({ length }, (_, i) => start + i);
@@ -111,8 +112,10 @@ function matchOne(q: readonly string[], p: readonly string[]): Match | null {
 
 /** Scores `text` against `query`; `null` when the query does not match. */
 export function fuzzyMatch(query: string, text: string): Match | null {
-  const whole = foldAligned(query.trim());
-  if (whole.length === 0) return null;
+  // a mark written apart from its letter (decomposed text) goes, as it does in a letter written whole: the query has no
+  // positions to keep aligned (same rule as the backend's `Needle`)
+  const whole = foldAligned(query.trim()).filter((c) => !MARK.test(c));
+  if (whole.join("").trim() === "") return null;
   const p = foldAligned(text);
   const found = matchOne(whole, p);
   if (found) return found;

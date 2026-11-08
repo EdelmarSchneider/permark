@@ -68,7 +68,7 @@
       });
       source = made;
       made.scrollToLine(current.line);
-      made.view.focus();
+      if (current.focus) made.view.focus();
       detach = session.attach(current.seq, {
         kind: "source",
         text: () => made.text(),

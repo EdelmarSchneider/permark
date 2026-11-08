@@ -227,6 +227,28 @@ fn settings_file_apply_reads_fresh_and_keeps_hand_edits() {
 }
 
 #[test]
+fn a_settings_file_that_is_there_but_cannot_be_read_says_why_a_missing_one_does_not() {
+    let base = tempfile::tempdir().unwrap();
+    let file = SettingsFile::app(&AppDirs::under(base.path()));
+    assert!(file.read_failure().is_none(), "no file yet");
+    std::fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+    std::fs::write(file.path(), "theme = \"dark\"\n").unwrap();
+    assert!(file.read_failure().is_none());
+    let latin1 = b"theme = \"dark\"\n# caf\xe9\n";
+    std::fs::write(file.path(), latin1).unwrap();
+    assert!(matches!(
+        file.read_failure(),
+        Some(SettingsError::Unreadable {
+            why: Unreadable::NotText,
+            ..
+        })
+    ));
+    // the defaults run meanwhile, and the file stays as it is
+    assert_eq!(file.load().theme, AppSettings::default().theme);
+    assert_eq!(std::fs::read(file.path()).unwrap(), latin1);
+}
+
+#[test]
 fn a_settings_file_that_is_not_utf8_or_too_large_is_refused_never_set_aside() {
     let base = tempfile::tempdir().unwrap();
     let file = SettingsFile::app(&AppDirs::under(base.path()));

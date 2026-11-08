@@ -361,6 +361,39 @@ describe("the sidebar tabs", () => {
     flushSync();
     expect(ui.sidebar).toBe("files");
   });
+
+  it("are one Tab stop: arrows move between the tabs, Enter | Space (a click) selects", async () => {
+    component = mount(SidebarTabs, { target });
+    flushSync();
+    const list = target.querySelector<HTMLElement>('[role="tablist"]');
+    expect(list?.getAttribute("aria-label")).toBe("Sidebar views");
+    const tabs = (): HTMLElement[] => [...target.querySelectorAll<HTMLElement>('[role="tab"]')];
+    const [files, search] = tabs();
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1]);
+    files?.focus();
+    const press = (key: string): void => {
+      document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      flushSync();
+    };
+    press("ArrowRight");
+    expect(document.activeElement).toBe(search);
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0]);
+    // the focus moved, the view did not: the person selects it
+    expect(ui.sidebar).toBe("files");
+    press("ArrowRight");
+    expect(document.activeElement).toBe(files);
+    press("End");
+    expect(document.activeElement).toBe(search);
+    press("Home");
+    expect(document.activeElement).toBe(files);
+    press("ArrowLeft");
+    expect(document.activeElement).toBe(search);
+    search?.click();
+    flushSync();
+    expect(ui.sidebar).toBe("search");
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0]);
+    ui.showSidebar("files");
+  });
 });
 
 describe("the keyboard dialog", () => {

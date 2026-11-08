@@ -589,6 +589,15 @@ export class DocumentController {
     if (this.#shown !== null) void this.#open(this.#shown, false, true);
   }
 
+  /**
+   * The plugins changed, and with them how the backend reads documents (the front matter card, prompt boxes): the
+   * shown document is read again whole and drawn anew (a block can keep its id and look another way now), the
+   * reader at the place each scroll remembered (a page hidden behind an editor has no scroll to read now).
+   */
+  formatsChanged(): void {
+    if (this.#shown !== null) void this.#open(this.#shown, true);
+  }
+
   /** Line (1-based) of the first block at the top of the pane (1 when unknown). */
   topLine(): number {
     const view = this.view;

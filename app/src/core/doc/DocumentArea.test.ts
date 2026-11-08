@@ -47,6 +47,21 @@ const mock = api as unknown as ReturnType<typeof import("../../api/mock").create
 
 type Shown = Extract<WorkspaceView, { kind: "project" }>;
 
+/** The plugins that have a view and do not need a big library in this test. */
+const PLUGINS = [
+  "highlight",
+  "frontmatter-card",
+  "math",
+  "text-view",
+  "json-view",
+  "media",
+  "xml-view",
+  "fmt-toml",
+  "fmt-yaml",
+  "fmt-dotenv",
+  "fmt-ignore",
+] as const;
+
 let component: Record<string, unknown> | null = null;
 let stopKeys: (() => void) | null = null;
 let target: HTMLElement;
@@ -85,20 +100,7 @@ beforeEach(async () => {
   await store.start();
   reading.setWidth("comfortable");
   reading.setZoom(100);
-  // the plugins that have a view and do not need a big library in this test
-  syncPlugins([
-    "highlight",
-    "frontmatter-card",
-    "math",
-    "text-view",
-    "json-view",
-    "media",
-    "xml-view",
-    "fmt-toml",
-    "fmt-yaml",
-    "fmt-dotenv",
-    "fmt-ignore",
-  ]);
+  syncPlugins(PLUGINS);
   // the window shows what the backend says; the area follows
   stopFollowing = await mock.on("window-changed", (event) => {
     if (event.view.state === "showing") void documents.show(event.view.document);
@@ -493,6 +495,35 @@ describe("a document that changes under the reader", () => {
     expect(target.querySelectorAll(".md-body > *").length).toBeGreaterThan(5);
   });
 
+  it("a plugin switched on or off reads the page again and draws it anew, at the same place", async () => {
+    await show("README.md");
+    await until(() => target.querySelectorAll(".md-body > *").length > 5, "blocks");
+    const first = target.querySelector(".md-body > *");
+    const scroller = documents.host.scroller;
+    if (!scroller) throw new Error("no page");
+    scroller.scrollTop = 120;
+    documents.noteScroll();
+    const opens = vi.spyOn(mock, "openDocument");
+    try {
+      // the backend's formats changed with the plugins (the front matter card, prompt boxes)
+      mock.emit("plugins-changed", null);
+      await until(() => opens.mock.calls.length > 0, "read again");
+      // nothing held counts: blocks of the same id can look another way now
+      expect(opens.mock.calls[0]?.[1]).toEqual([]);
+      await until(
+        () =>
+          target.querySelector(".md-body > *") !== first &&
+          target.querySelectorAll(".md-body > *").length > 5,
+        "drawn anew",
+      );
+      await tick();
+      expect(scroller.scrollTop).toBe(120);
+      expect(documents.path).toBe("README.md");
+    } finally {
+      opens.mockRestore();
+    }
+  });
+
   it("follows a renamed document without a banner; the header names it again after the rename is undone", async () => {
     await show("docs/guide.md");
     await until(() => target.querySelectorAll(".md-body > *").length > 0, "blocks");
@@ -653,6 +684,67 @@ describe("editing", () => {
     await show("notes/todo.txt");
     await until(() => modeButton("Edit")?.disabled === true, "no visual editor for text");
     expect(modeButton("Source")?.disabled).toBe(false);
+  });
+
+  it("a plugin switched off and on while editing draws the blocks kept as written in their new look; the text stays", async () => {
+    await import("../editing/visual/jsdomShims");
+    await show("README.md");
+    await until(() => modeButton("Edit") !== undefined, "mode switch");
+    modeButton("Edit")?.click();
+    const front = (): HTMLElement | null =>
+      target.querySelector<HTMLElement>('.pm-editor .pm-locked[data-reason="frontMatter"]');
+    await until(() => front()?.dataset.look === "card", "View's card");
+    const text = editing.current();
+    const renders = vi.spyOn(mock, "configSheet");
+    try {
+      syncPlugins(PLUGINS.filter((id) => id !== "frontmatter-card"));
+      await until(() => front()?.dataset.look === "source", "no card: the source");
+      syncPlugins(PLUGINS);
+      await until(() => front()?.dataset.look === "card", "the card again");
+      // drawn from a fresh render of the text as it is, which nothing changed
+      expect(renders).toHaveBeenCalled();
+      expect(editing.current()).toBe(text);
+      expect(editing.unsaved).toBe(false);
+    } finally {
+      renders.mockRestore();
+    }
+  });
+
+  it("a document opened from the Explorer in an editor leaves the keyboard in the tree; Ctrl+E from there gives it to the editor", async () => {
+    await import("../editing/visual/jsdomShims");
+    // the Explorer's tree, a row focused as a click on it leaves it
+    const tree = document.createElement("div");
+    tree.setAttribute("role", "tree");
+    const row = document.createElement("div");
+    row.setAttribute("role", "treeitem");
+    row.tabIndex = -1;
+    tree.append(row);
+    document.body.append(tree);
+    const inEditor = (): boolean =>
+      target.querySelector(".cm-content")?.contains(document.activeElement) === true;
+    await show("docs/guide.md");
+    await until(() => modeButton("Source") !== undefined, "mode switch");
+    modeButton("Source")?.click();
+    await until(inEditor, "the editor has the keyboard");
+    row.focus();
+    await show("README.md");
+    await until(
+      () =>
+        editing.content?.path === "README.md" &&
+        target.querySelector(".cm-content")?.textContent?.includes("Reading showcase") === true,
+      "the next document in Source",
+    );
+    await tick();
+    expect(document.activeElement).toBe(row);
+    // Ctrl+E: View; Ctrl+E again, asked from the tree: the editor takes the keyboard
+    const ctrlE = (): void =>
+      void row.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "e", ctrlKey: true, bubbles: true, cancelable: true }),
+      );
+    ctrlE();
+    await until(() => target.querySelector(".cm-editor") === null, "View");
+    ctrlE();
+    await until(inEditor, "the editor has the keyboard again");
   });
 });
 

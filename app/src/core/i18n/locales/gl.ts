@@ -1505,9 +1505,9 @@ export default {
   "project.newConfirm": "Usar este cartafol",
   "project.newBack": "Escoller outro cartafol…",
   "project.loadFailed": "Non foi posíbel ler a configuración do proxecto.",
-  "project.notInitialized": "PerMark non está inicializado neste proxecto",
+  "project.notInitialized": "Este cartafol aínda non ten configuración de PerMark",
   "project.notInitializedHint":
-    "Ao inicializalo créase un cartafol .permark onde o proxecto pode gardar a configuración que comparte co seu equipo.",
+    "Inicialice PerMark para que este cartafol teña a súa propia configuración, que poden compartir todas as persoas que traballan nel.",
   "project.patternPlaceholder": "Padrón, por exemplo drafts/",
   "project.tree": "Explorador",
   "project.treeExclude": "Ocultar sempre",
@@ -1544,7 +1544,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "Marcador de posición descoñecido. Use {path}, {line} ou {col}.",
   "settings.problem.noPath": "A orde necesita {path}.",
-  "settings.problem.notInitialized": "PerMark non está inicializado neste proxecto.",
+  "settings.problem.notInitialized": "Este cartafol aínda non ten configuración de PerMark.",
   "settings.problem.other": "Non se aceptou este valor.",
   "welcome.newProject": "Novo proxecto…",
   "welcome.newProjectHint": "Escolla un cartafol; PerMark configúrao como proxecto.",

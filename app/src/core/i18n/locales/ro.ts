@@ -1574,9 +1574,9 @@ export default {
   "project.newConfirm": "Folosește acest dosar",
   "project.newBack": "Alege alt dosar…",
   "project.loadFailed": "Setările proiectului nu au putut fi citite.",
-  "project.notInitialized": "PerMark nu este inițializat în acest proiect",
+  "project.notInitialized": "Acest dosar nu are încă setări PerMark",
   "project.notInitializedHint":
-    "Inițializarea creează un dosar .permark în care proiectul își poate păstra setările de partajat cu echipa.",
+    "Inițializează PerMark pentru ca acest dosar să aibă setări proprii, pe care le pot partaja toți cei care lucrează în el.",
   "project.patternPlaceholder": "Model, de exemplu drafts/",
   "project.tree": "Explorator",
   "project.treeExclude": "Ascunde mereu",
@@ -1613,7 +1613,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "Variabilă necunoscută. Folosește {path}, {line} sau {col}.",
   "settings.problem.noPath": "Comanda are nevoie de {path}.",
-  "settings.problem.notInitialized": "PerMark nu este inițializat în acest proiect.",
+  "settings.problem.notInitialized": "Acest dosar nu are încă setări PerMark.",
   "settings.problem.other": "Această valoare nu a fost acceptată.",
   "welcome.newProject": "Proiect nou…",
   "welcome.newProjectHint": "Alege un dosar; PerMark îl configurează ca proiect.",

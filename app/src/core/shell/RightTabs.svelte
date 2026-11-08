@@ -12,8 +12,9 @@
 
 <script lang="ts">
   // The views of one group of the right column as tabs (Outline | Live changes): drawn by the column only when the
-  // group shows two views or more. Selecting shows a view, never hides it. One Tab stop: arrows move between the tabs,
-  // Enter | Space select; right click | Shift+F10 | the Menu key open the view's options.
+  // group shows two views or more; the sidebar's views (Files | Search | plugin panels) too. Selecting shows a view,
+  // never hides it. One Tab stop: arrows move between the tabs, Enter | Space select; right click | Shift+F10 | the Menu
+  // key open the view's options.
   import { t } from "../i18n";
 
   type Props = {
@@ -22,11 +23,15 @@
     onselect: (id: string) => void;
     /** The view's options at a point (`null`: under the tab). */
     onmenu?: (id: string, at: { x: number; y: number }, anchor: HTMLElement) => void;
+    /** The strip's name (default: the right panel's). */
+    label?: string;
+    /** Tabs that keep their labels: more make the strip crowded. */
+    roomy?: number;
   };
-  let { views, selected, onselect, onmenu }: Props = $props();
+  let { views, selected, onselect, onmenu, label, roomy = 2 }: Props = $props();
 
   /** Many tabs: the ones that are not open show their icon alone (the label is the tooltip). */
-  const crowded = $derived(views.length > 2);
+  const crowded = $derived(views.length > roomy);
   /** The tab that takes the Tab stop (the selected one until arrows move the focus). */
   let focused = $state<string | null>(null);
   const stop = $derived(
@@ -86,7 +91,7 @@
   class="tabs"
   class:crowded
   role="tablist"
-  aria-label={t("panel.tabs")}
+  aria-label={label ?? t("panel.tabs")}
   bind:this={strip}
   onkeydown={keydown}
   onfocusout={(event) => {

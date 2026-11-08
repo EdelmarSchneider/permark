@@ -79,6 +79,8 @@
   let mod: Module | null = null;
   let core: Core | null = null;
   let built: Built | null = null;
+  /** Draws the blocks kept as written again from a fresh render, the card loaded again (`null`: no editor yet). */
+  let redraw: (() => Promise<void>) | null = null;
   const composedOf = new WeakMap<PMNode, Composed>();
 
   /** How long Edit waits for View's render before it shows the document (blocks kept as written: their source). */
@@ -511,10 +513,16 @@
           loaded.relook(editor.view);
         });
       }
+      redraw = async () => {
+        card = await loadCard().catch(() => null);
+        if (gone) return;
+        await refreshLooks(current.path, book);
+        if (!gone) loaded.relook(editor.view, true);
+      };
       ready = true;
       refresh();
       scrollToLine(current.line);
-      made.view.focus();
+      if (current.focus) made.view.focus();
       detach = session.attach(current.seq, {
         kind: "edit",
         text: () => composed()?.text ?? current.text,
@@ -568,6 +576,7 @@
       ready = false;
       core = null;
       built = null;
+      redraw = null;
       if (made) void made.destroy();
       nearby?.stop();
     };
@@ -575,6 +584,17 @@
 
   /** View marks `{{variables}}` and `@file` references while the prompt-blocks plugin is on. */
   const promptText = $derived(conditions.current.plugins.includes("prompt-blocks"));
+  /** The plugins on, and the card one of them offers (it comes once its plugin's module is loaded). */
+  const pluginsOn = $derived(conditions.current.plugins.join(" "));
+  const cardOn = $derived(contributions.visible("frontMatterCard", conditions.current)[0]);
+
+  // a plugin came or went while editing: the blocks kept as written take View's new look (the backend renders with
+  // the formats now on); the text stays as it is
+  $effect(() => {
+    void pluginsOn;
+    void cardOn;
+    untrack(() => void redraw?.());
+  });
   /** What a code reference's tooltip offers depends on whether an editor is chosen. */
   const editorSet = $derived(documents.decorator.refSetup().editorSet);
 

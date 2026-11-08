@@ -47,6 +47,19 @@ describe("fuzzy match", () => {
     expect(runs.map((r) => r.text).join("")).toBe(text);
   });
 
+  it("an accented letter matches its base letter whatever its form, and nothing without it", () => {
+    // typed as one character, as a capital, or decomposed (the letter, then the combining tilde)
+    for (const q of ["ñ", "Ñ", "ñ"]) {
+      expect(fuzzyMatch(q, "notes/España.md"), q).not.toBeNull();
+      expect(fuzzyMatch(q, "España.md"), q).not.toBeNull();
+      expect(fuzzyMatch(q, "plan.md"), q).not.toBeNull();
+      expect(fuzzyMatch(q, "docs/guide.md"), q).toBeNull();
+      expect(fuzzyMatch(q, "README.md"), q).toBeNull();
+    }
+    expect(fuzzyMatch("aña", "España.md")?.positions).toEqual([3, 4, 5]);
+    expect(fuzzyMatch("̃", "España.md")).toBeNull();
+  });
+
   it("drops letters strewn over a text; word starts and runs still match", () => {
     expect(fuzzyMatch("guid", "docs/guide.md")).not.toBeNull();
     expect(fuzzyMatch("guid", "programming/build/rust-tauri.md")).toBeNull();

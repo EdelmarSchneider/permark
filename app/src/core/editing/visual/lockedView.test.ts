@@ -1112,11 +1112,26 @@ describe("typing while a block is selected", () => {
     );
   });
 
-  it("text right after the block takes the character at its start", async () => {
-    await openMath();
+  it("a new paragraph right after the block takes the character; the text after it stays as it is", async () => {
+    const built = await openMath();
     selectLocked(1);
     typeChar("x");
-    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "xEnd words."]);
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "x", "End words."]);
+    expect(compose(core, built, core.view.state.doc).text).toBe(
+      "Intro words.\n\n$$\na + b\n$$\n\n\n$$\nc\n$$\n\nx\n\nEnd words.\n",
+    );
+  });
+
+  it("an empty paragraph right after the block takes the character: no second one is made", async () => {
+    await openMath();
+    const view = core.view;
+    const after = lockedAt(1) + (view.state.doc.nodeAt(lockedAt(1))?.nodeSize ?? 0);
+    const paragraph = view.state.schema.nodes.paragraph;
+    if (!paragraph) throw new Error("no paragraph");
+    view.dispatch(view.state.tr.insert(after, paragraph.create()));
+    selectLocked(1);
+    typeChar("x");
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "x", "End words."]);
   });
 
   it("at the end of the document a new paragraph after the block takes it", async () => {
@@ -1134,19 +1149,20 @@ describe("typing while a block is selected", () => {
     const before = core.view.state.doc;
     key(core.view.dom, "b", { ctrlKey: true });
     expect(core.view.state.selection).toBeInstanceOf(NodeSelection);
+    expect(core.view.state.doc).toBe(before);
     key(core.view.dom, "x");
     const selection = core.view.state.selection;
     expect(selection).toBeInstanceOf(TextSelection);
-    expect(selection.$from.parent.textContent).toBe("End words.");
-    expect(selection.$from.parentOffset).toBe(0);
-    expect(core.view.state.doc).toBe(before);
+    expect(selection.$from.parent.type.name).toBe("paragraph");
+    expect(selection.$from.parent.textContent).toBe("");
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "", "End words."]);
   });
 
   it("a character typed with AltGr (Ctrl+Alt) goes after the block too", async () => {
     await openMath();
     selectLocked(1);
     typeChar("{", { ctrlKey: true, altKey: true });
-    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "{End words."]);
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "{", "End words."]);
   });
 
   it("an IME composition starts after the block", async () => {
@@ -1166,8 +1182,8 @@ describe("typing while a block is selected", () => {
   it("a paste goes after the block", async () => {
     await openMath();
     selectLocked(1);
-    core.view.pasteText("Pasted ", new PasteEvent());
-    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "Pasted End words."]);
+    core.view.pasteText("Pasted", new PasteEvent());
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "Pasted", "End words."]);
   });
 
   it("Backspace | Delete on a selected block still remove it", async () => {

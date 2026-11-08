@@ -1537,9 +1537,9 @@ export default {
   "project.newConfirm": "Utiliser ce dossier",
   "project.newBack": "Choisir un autre dossier…",
   "project.loadFailed": "Impossible de lire les paramètres du projet.",
-  "project.notInitialized": "PerMark n'est pas initialisé dans ce projet",
+  "project.notInitialized": "Ce dossier n'a pas encore de paramètres PerMark",
   "project.notInitializedHint":
-    "L'initialisation crée un dossier .permark où le projet peut conserver des paramètres à partager avec son équipe.",
+    "Initialisez PerMark pour donner à ce dossier ses propres paramètres, que tous ceux qui y travaillent peuvent partager.",
   "project.patternPlaceholder": "Motif, par exemple drafts/",
   "project.tree": "Explorateur",
   "project.treeExclude": "Toujours masquer",
@@ -1577,7 +1577,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "Espace réservé inconnu. Utilisez {path}, {line} ou {col}.",
   "settings.problem.noPath": "La commande doit contenir {path}.",
-  "settings.problem.notInitialized": "PerMark n'est pas initialisé dans ce projet.",
+  "settings.problem.notInitialized": "Ce dossier n'a pas encore de paramètres PerMark.",
   "settings.problem.other": "Cette valeur n'a pas été acceptée.",
   "welcome.newProject": "Nouveau projet…",
   "welcome.newProjectHint": "Choisissez un dossier ; PerMark le configure comme projet.",

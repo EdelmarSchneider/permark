@@ -991,6 +991,12 @@ impl SettingsFile {
         )
     }
 
+    /// Why the file is there but cannot be read (`load` gave the defaults then); `None`: read, or there is none.
+    #[must_use]
+    pub fn read_failure(&self) -> Option<SettingsError> {
+        read_settings_text(&self.path).err()
+    }
+
     /// Applies one change to the file on disk (read fresh: hand edits kept) and returns the new settings.
     /// A file that is not TOML is moved to `settings.toml.broken-<ms>` first (never silently overwritten).
     ///

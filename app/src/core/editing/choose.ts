@@ -50,7 +50,13 @@ export function openRemembered(): void {
   // the editor is already on this document
   if (editing.path === shown) return;
   if (editBlockedReason() !== null) return;
-  void editing.enter(mode, shown, editKindOf(view), documents.savePolicy);
+  void editing.enter(mode, shown, editKindOf(view), documents.savePolicy, undefined, !inTree());
+}
+
+/** The keyboard is in the Explorer's tree (a click | Enter on a row opened the document): it stays there, as it does
+ *  in View, so the tree's keys (F2, Delete) never reach the text. */
+function inTree(): boolean {
+  return globalThis.document?.activeElement?.closest('[role="tree"]') != null;
 }
 
 /** Find in page has something to search: the page, Edit's text, or Source (its own panel). */

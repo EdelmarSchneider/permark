@@ -236,6 +236,22 @@
     };
   });
 
+  // a plugin came or went: the backend reads documents with other formats, so the page is read again
+  $effect(() => {
+    let off: (() => void) | null = null;
+    let gone = false;
+    void api
+      .on("plugins-changed", () => documents.formatsChanged())
+      .then((stop) => {
+        if (gone) stop();
+        else off = stop;
+      });
+    return () => {
+      gone = true;
+      off?.();
+    };
+  });
+
   // Escape leaves focus mode first, and before the editors see it (the visual editor's key map takes Escape for
   // itself). Not while something innermost is open: a field, a menu, a dialog, an overlay, the image zoom, a pop-up of
   // an editor (completions, the Source find panel); the find bar closes first.
