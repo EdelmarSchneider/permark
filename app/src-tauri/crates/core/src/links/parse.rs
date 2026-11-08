@@ -2,8 +2,10 @@
 //!
 //! The parser (comrak) says where each inline link, image and HTML node sits (`sourcepos`); the destination inside
 //! such a node is located by reading the node's own text. Reference definitions are not in the tree: they are found
-//! by their line grammar outside code, HTML blocks and paragraphs. A destination whose text does not agree with what
-//! the parser resolved is dropped: a link that is not read with certainty is never edited.
+//! by their line grammar outside code, HTML blocks and paragraph text (definitions at the start of a paragraph are
+//! taken off it by the parser, which then reports the positions of the text left too high: see `AfterDefinitions`).
+//! A destination whose text does not agree with what the parser resolved is dropped: a link that is not read with
+//! certainty is never edited.
 //!
 //! With the prompt features on, the parser reads the text reading parses (prompt tags marked, front matter cut), so a
 //! link inside a prompt block is a link even with no blank line after its tag. Only whole lines differ there: each
@@ -12,7 +14,7 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-use comrak::nodes::{NodeValue, Sourcepos};
+use comrak::nodes::{AstNode, NodeValue, Sourcepos};
 use comrak::{parse_document, Arena, Options};
 
 use crate::format::{reading_text, MarkdownFeatures};
@@ -192,15 +194,23 @@ fn scan(body: &str, lines: &Lines) -> Vec<Dest> {
     let arena = Arena::new();
     let root = parse_document(&arena, body, &options());
     let mut dests: Vec<Dest> = Vec::new();
-    // line ranges where a definition cannot start: code, HTML, front matter, paragraphs
+    // line ranges where a definition cannot start: code, HTML, front matter, paragraph text
     let mut blocked: Vec<(usize, usize)> = Vec::new();
+    // the last paragraph seen, when it began with definitions: its inline nodes follow it in tree order
+    let mut raised: Option<AfterDefinitions> = None;
     for node in root.descendants() {
         let data = node.data();
         let pos = data.sourcepos;
+        let moved = raised.as_ref().filter(|p| p.holds(pos.start.line));
+        let range = match moved {
+            Some(paragraph) => paragraph.range_of(pos, lines, body.len()),
+            None => lines.range_of(pos, body.len()),
+        };
+        let moved = moved.is_some();
         match &data.value {
             NodeValue::Link(link) | NodeValue::Image(link) => {
                 let image = matches!(data.value, NodeValue::Image(_));
-                if let Some(range) = lines.range_of(pos, body.len()) {
+                if let Some(range) = range {
                     if let Some(dest) = shifted_inline_dest(body, &range, &link.url) {
                         dests.push(with_kind(
                             dest,
@@ -209,16 +219,27 @@ fn scan(body: &str, lines: &Lines) -> Vec<Dest> {
                     }
                 }
             }
-            NodeValue::HtmlBlock(_) | NodeValue::HtmlInline(_) => {
-                if let Some(range) = lines.range_of(pos, body.len()) {
+            NodeValue::HtmlInline(html) => {
+                // placed again: kept only where the bytes are the parser's
+                if let Some(range) =
+                    range.filter(|r| !moved || body.get(r.clone()) == Some(html.as_str()))
+                {
                     html_dests(&body[range.clone()], range.start, &mut dests);
                 }
-                if matches!(data.value, NodeValue::HtmlBlock(_)) {
-                    blocked.push((pos.start.line, pos.end.line));
-                }
             }
-            NodeValue::CodeBlock(_) | NodeValue::FrontMatter(_) | NodeValue::Paragraph => {
+            NodeValue::HtmlBlock(_) => {
+                if let Some(range) = range {
+                    html_dests(&body[range.clone()], range.start, &mut dests);
+                }
                 blocked.push((pos.start.line, pos.end.line));
+            }
+            NodeValue::CodeBlock(_) | NodeValue::FrontMatter(_) => {
+                blocked.push((pos.start.line, pos.end.line));
+            }
+            NodeValue::Paragraph => {
+                raised = AfterDefinitions::of(node, pos, body, lines);
+                let taken = raised.as_ref().map_or(0, |p| p.taken);
+                blocked.push((pos.start.line + taken, pos.end.line));
             }
             _ => {}
         }
@@ -227,6 +248,81 @@ fn scan(body: &str, lines: &Lines) -> Vec<Dest> {
     dests.sort_by_key(|d| d.range.start);
     dests.dedup_by(|a, b| a.range == b.range);
     dests
+}
+
+/// A paragraph that begins with reference definitions. The parser takes them off but keeps the paragraph's first line
+/// as the start of the text left, so it reports each inline position `taken` lines too high, with its column counted
+/// from where the text of that higher line starts. The definitions take whole lines, so the text left starts on line
+/// `first + taken`.
+struct AfterDefinitions {
+    /// First line of the paragraph: the first definition.
+    first: usize,
+    /// Lines the definitions take.
+    taken: usize,
+    /// Byte column where the paragraph text starts, for each of its lines.
+    starts: Vec<usize>,
+}
+
+impl AfterDefinitions {
+    /// `None` when the paragraph `node` (at `pos`) kept all of its lines.
+    fn of<'a>(node: &'a AstNode<'a>, pos: Sourcepos, body: &str, lines: &Lines) -> Option<Self> {
+        let first = pos.start.line;
+        let start = pos.start.column.checked_sub(1)?;
+        if body.as_bytes().get(lines.start_of(first)? + start) != Some(&b'[') {
+            return None; // a definition starts with its label
+        }
+        // the text left ends on the paragraph's last line: the lines it reports less are the definitions'
+        let last = node
+            .descendants()
+            .skip(1)
+            .map(|n| n.data().sourcepos.end.line)
+            .max()?;
+        let taken = pos.end.line.checked_sub(last)?;
+        if taken == 0 || taken > pos.end.line - first {
+            return None;
+        }
+        // before the text of the other lines: indentation, and quote marks inside a container
+        let top = node
+            .parent()
+            .is_some_and(|p| matches!(p.data().value, NodeValue::Document));
+        let marks: &[u8] = if top { b" \t" } else { b" \t>" };
+        let starts = (first + 1..=pos.end.line)
+            .map(|line| {
+                let content = lines.content_of(line, body)?;
+                Some(
+                    body.as_bytes()[content]
+                        .iter()
+                        .take_while(|b| marks.contains(b))
+                        .count(),
+                )
+            })
+            .collect::<Option<Vec<usize>>>()?;
+        Some(Self {
+            first,
+            taken,
+            starts: std::iter::once(start).chain(starts).collect(),
+        })
+    }
+
+    /// Whether a position the parser reports on `line` is in this paragraph's text.
+    fn holds(&self, line: usize) -> bool {
+        (self.first..self.first + self.starts.len() - self.taken).contains(&line)
+    }
+
+    /// Byte offset of a reported position: 1-based `line`, `column` bytes from the line start.
+    fn place(&self, line: usize, column: usize, lines: &Lines) -> Option<usize> {
+        let row = line.checked_sub(self.first)?;
+        let at = column.checked_sub(*self.starts.get(row)?)?;
+        let real = row + self.taken;
+        Some(lines.start_of(self.first + real)? + self.starts.get(real)? + at)
+    }
+
+    /// [`Lines::range_of`] for a node of this paragraph's text.
+    fn range_of(&self, pos: Sourcepos, lines: &Lines, len: usize) -> Option<Range<usize>> {
+        let start = self.place(pos.start.line, pos.start.column.checked_sub(1)?, lines)?;
+        let end = self.place(pos.end.line, pos.end.column, lines)?;
+        (start < end && end <= len).then_some(start..end)
+    }
 }
 
 fn with_kind(mut dest: Dest, kind: Kind) -> Dest {

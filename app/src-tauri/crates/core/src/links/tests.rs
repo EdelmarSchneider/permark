@@ -127,6 +127,56 @@ fn definitions_inside_code_are_left_alone() {
 }
 
 #[test]
+fn a_definition_right_before_paragraph_text_is_found_with_the_links_of_that_text() {
+    // the parser takes the definition off the paragraph but keeps the paragraph's first line as its start
+    let text = "[guide]: docs/guide.md\nSee the [guide] and [x](x.md) <a href=\"h.md\">h</a>.\n";
+    assert_eq!(
+        placed(text, &OFF),
+        [("docs/guide.md", 1), ("x.md", 2), ("h.md", 2)]
+    );
+    assert_eq!(kinds(text), [Kind::Definition, Kind::Inline, Kind::Html]);
+}
+
+#[test]
+fn several_definitions_right_before_paragraph_text_keep_exact_offsets_with_every_line_ending() {
+    for ending in ["\n", "\r\n", "\r"] {
+        let text = format!(
+            "\u{feff}[a]: a.md{ending}[b]: <b c.md> \"T\"{ending}See [x](x.md) `[c](code.md)`{ending}   more ![ü](ÿ.png){ending}"
+        );
+        assert_eq!(
+            placed(&text, &OFF),
+            [("a.md", 1), ("<b c.md>", 2), ("x.md", 3), ("ÿ.png", 4)],
+            "{ending:?}"
+        );
+    }
+}
+
+#[test]
+fn a_definition_right_before_text_in_a_quote_or_a_list_item_is_found() {
+    let text = "> [q]: q.md\n> quote [x](x.md)\nlazy [z](z.md)\n\n- [l]: l.md\n  item [y](y.md)\n";
+    assert_eq!(
+        placed(text, &OFF),
+        [
+            ("q.md", 1),
+            ("x.md", 2),
+            ("z.md", 3),
+            ("l.md", 5),
+            ("y.md", 6)
+        ]
+    );
+}
+
+#[test]
+fn a_later_line_is_text_and_links_after_a_two_line_definition_are_placed() {
+    // only the leading definitions leave the paragraph: a later line is never one
+    let text = "[a]: a.md\ntext\n[b]: not-a-definition.md\n";
+    assert_eq!(placed(text, &OFF), [("a.md", 1)]);
+    // a definition over two lines is not read here, but the links after it are still placed exactly
+    let text = "[a]:\n  a.md\nthen [x](x.md)\n";
+    assert_eq!(placed(text, &OFF), [("x.md", 3)]);
+}
+
+#[test]
 fn links_in_headings_lists_quotes_and_tables() {
     let text = "# Title [h](head.md)\n\n- item [l](list.md)\n  - nested [n](nested.md)\n\n> quote [q](quote.md)\n\n| a | b |\n|---|---|\n| [t](cell.md) | x |\n";
     assert_eq!(
@@ -251,6 +301,13 @@ fn offsets_inside_prompt_blocks_are_exact_with_a_bom_crlf_and_code_left_alone() 
 }
 
 #[test]
+fn a_definition_right_before_text_inside_a_prompt_block_is_found_with_the_prompt_features_on() {
+    let text =
+        "<context>\r\n[guide]: docs/guide.md\r\nSee the [guide] and [x](x.md).\r\n</context>\r\n";
+    assert_eq!(placed(text, &PROMPTS), [("docs/guide.md", 2), ("x.md", 3)]);
+}
+
+#[test]
 fn without_the_prompt_features_a_tag_line_opens_an_html_block_as_before() {
     let text = "<context>\n[a](a.md)\n</context>\n\n<context>\n\n[b](b.md)\n\n</context>\n";
     assert_eq!(placed(text, &OFF), [("b.md", 7)]);
@@ -345,6 +402,9 @@ fn every_link_reading_renders_is_one_parse_finds() {
         "\u{feff}---\r\nsee: \"[y](y.md)\"\r\n---\r\n<task>\r\n[x](x.md)\r\n```\r\n[f](fenced.md)\r\n```\r\n</task>\r\n",
         "<context>\r[lone](lone.md)\r</context>\r",
         "<context>\n[open](open.md)\n",
+        "[guide]: docs/guide.md\nSee the [guide] and [x](x.md).\n",
+        "> [a]: a.md\n> [b]: b.md\n> quote [a] [x](x.md) [b]\nlazy [z](z.md)\n\n- [l]: l.md\n  item [l][] [y](y.md)\n",
+        "<context>\r\n[guide]: docs/guide.md\r\nSee the [guide] and [x](x.md).\r\n</context>\r\n",
     ] {
         docs.push((format!("{text:?}"), text.to_owned()));
     }

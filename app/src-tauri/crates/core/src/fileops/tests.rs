@@ -1047,6 +1047,35 @@ fn links_inside_prompt_blocks_are_read_as_before_when_the_prompt_features_are_of
     assert_eq!(lines, [8]);
 }
 
+/// Definitions with paragraph text right after them (no blank line between): the parser takes them off the
+/// paragraph, so their lines are read apart from it.
+const DEFINITIONS_TEXT: &str = "[guide]: docs/guide.md\r\n[home]: README.md\r\nSee the [guide] or [the manual](docs/guide.md) and `[c](docs/guide.md)`.\r\n\r\n> [q]: <docs/guide.md> \"Quoted\"\r\n> quoted [guide][q]\r\n";
+
+#[test]
+fn a_definition_right_before_paragraph_text_follows_a_renamed_file_and_undo_is_exact() {
+    let f = fx(&[
+        ("README.md", DEFINITIONS_TEXT),
+        ("docs/guide.md", "# Guide\n"),
+    ]);
+    let plan = f
+        .ops
+        .plan_move(&[spec("docs/guide.md", "docs/manual.md")], true)
+        .unwrap();
+    let lines: Vec<u32> = plan.files[0].changes.iter().map(|c| c.line).collect();
+    assert_eq!(lines, [1, 3, 5]);
+    f.ops.apply_move(plan.plan_id, true).unwrap();
+    // the code span, the titles and the line endings stay
+    assert_eq!(
+        read(&f, "README.md"),
+        DEFINITIONS_TEXT
+            .replacen("[guide]: docs/guide.md", "[guide]: docs/manual.md", 1)
+            .replacen("(docs/guide.md)", "(docs/manual.md)", 1)
+            .replacen("<docs/guide.md>", "<docs/manual.md>", 1)
+    );
+    f.ops.undo().unwrap().unwrap();
+    assert_eq!(read(&f, "README.md"), DEFINITIONS_TEXT, "byte for byte");
+}
+
 #[test]
 fn undo_reports_what_changed_since_instead_of_overwriting_it() {
     let f = fx(&[("a.md", "[b](b.md)\n"), ("b.md", "")]);
