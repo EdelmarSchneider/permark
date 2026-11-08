@@ -4,6 +4,7 @@
   // plain text; Count again reads only what changed.
   import X from "@lucide/svelte/icons/x";
   import { language, t, tn } from "../../core/i18n";
+  import { dialogFocus } from "../../core/shell/dialogFocus";
   import { skipKey, skippedReasons, typeName, type Say } from "./folders";
   import { folders } from "./folders.svelte";
   import { infoOf } from "./tokenizers";
@@ -25,24 +26,6 @@
       Math.max(0.1, millis / 1000),
     );
   }
-
-  let dialog: HTMLElement | undefined = $state();
-
-  function onkeydown(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      folders.closeSummary();
-    }
-  }
-
-  // focus enters the dialog and returns where it was when the dialog goes
-  $effect(() => {
-    if (summary === null) return;
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialog?.focus();
-    return () => before?.focus();
-  });
 </script>
 
 {#if summary !== null}
@@ -53,14 +36,14 @@
       if (e.target === e.currentTarget) folders.closeSummary();
     }}
   >
+    <!-- the dialog itself takes the focus: its title is read first -->
     <div
-      bind:this={dialog}
       class="dialog"
       role="dialog"
       aria-modal="true"
       aria-labelledby="folder-summary-title"
       tabindex="-1"
-      {onkeydown}
+      use:dialogFocus={{ initial: (d) => d, onEscape: () => folders.closeSummary() }}
     >
       <header>
         <h2 id="folder-summary-title">

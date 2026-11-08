@@ -20,6 +20,7 @@
   import Terminal from "@lucide/svelte/icons/terminal";
   import { t, tn, type MessageKey } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
+  import { dialogFocus } from "../shell/dialogFocus";
   import { ui, type FinderPreset } from "../shell/ui.svelte";
   import { windowStore as store } from "../window.svelte";
   import { FinderStore, type FinderHost } from "./finderStore.svelte";
@@ -145,10 +146,6 @@
   function onkeydown(e: KeyboardEvent): void {
     if (e.isComposing || e.keyCode === 229) return;
     switch (e.key) {
-      case "Escape":
-        e.preventDefault();
-        ui.closeFinder();
-        break;
       case "ArrowDown":
         e.preventDefault();
         finder.move(1);
@@ -199,15 +196,7 @@
     finder.retry();
   });
 
-  // the field has the focus while the box lives; the focus goes back to where it was
-  $effect(() => {
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    input?.focus();
-    return () => {
-      finder.dispose();
-      before?.focus();
-    };
-  });
+  $effect(() => () => finder.dispose());
 
   // the row the keyboard is on stays in view
   $effect(() => {
@@ -238,7 +227,16 @@
     if (e.target === e.currentTarget) ui.closeFinder();
   }}
 >
-  <div class="box" role="dialog" aria-modal="true" aria-label={label} tabindex="-1" {onkeydown}>
+  <!-- the field has the focus while the box lives; Tab cycles the scopes -->
+  <div
+    class="box"
+    role="dialog"
+    aria-modal="true"
+    aria-label={label}
+    tabindex="-1"
+    use:dialogFocus={{ initial: "input", onEscape: () => ui.closeFinder(), trapTab: false }}
+    {onkeydown}
+  >
     {#if finder.scopes.length > 1}
       <div class="scopes" role="tablist" aria-label={t("finder.scopes")}>
         {#each finder.scopes as scope (scope)}

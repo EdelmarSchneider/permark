@@ -4,6 +4,7 @@
   // on the backdrop leaves the focus where it is, so no key reaches the editor behind. The window's shortcuts pass
   // while it is open (`core/commands/dispatch.ts`, `aria-modal`).
   import { t } from "../i18n";
+  import { dialogFocus } from "../shell/dialogFocus";
 
   type Choice = "save" | "discard" | "keepEditing";
   type Props = {
@@ -14,35 +15,6 @@
     answer: (choice: Choice) => void;
   };
   let { name, canSave, answer }: Props = $props();
-
-  let dialog: HTMLElement | undefined = $state();
-  let keep: HTMLButtonElement | undefined = $state();
-
-  function onkeydown(e: KeyboardEvent): void {
-    if (e.isComposing) return;
-    if (e.key === "Escape") {
-      e.preventDefault();
-      answer("keepEditing");
-      return;
-    }
-    if (e.key !== "Tab" || !dialog) return;
-    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>("button:not(:disabled)"));
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last?.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first?.focus();
-    }
-  }
-
-  // shown later than the page (the question comes from a leave): autofocus would not apply
-  $effect(() => {
-    keep?.focus();
-    return () => {};
-  });
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -52,14 +24,18 @@
     if (e.target === e.currentTarget) e.preventDefault();
   }}
 >
+  <!-- the answer decides where the focus goes next (Keep editing: the editor), so it is not given back here -->
   <div
-    bind:this={dialog}
     class="dialog"
     role="dialog"
     aria-modal="true"
     aria-labelledby="pm-unsaved-title"
     tabindex="-1"
-    {onkeydown}
+    use:dialogFocus={{
+      initial: "[data-initial]",
+      onEscape: () => answer("keepEditing"),
+      restoreFocus: false,
+    }}
   >
     <h2 id="pm-unsaved-title">{t("edit.unsavedTitle")}</h2>
     <p>{t("edit.unsavedText", { name })}</p>
@@ -72,7 +48,7 @@
       <button type="button" class="btn" onclick={() => answer("discard")}>
         {t("edit.discard")}
       </button>
-      <button bind:this={keep} type="button" class="btn" onclick={() => answer("keepEditing")}>
+      <button data-initial type="button" class="btn" onclick={() => answer("keepEditing")}>
         {t("edit.keepEditing")}
       </button>
     </div>

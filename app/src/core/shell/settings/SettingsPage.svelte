@@ -16,6 +16,7 @@
     type CoreSettingsSection,
     type SettingsSection,
   } from "../ui.svelte";
+  import { dialogFocus } from "../dialogFocus";
   import Card from "./Card.svelte";
   import EditingSection from "./EditingSection.svelte";
   import IntegrationSection from "./IntegrationSection.svelte";
@@ -63,29 +64,18 @@
 
   let page: HTMLElement | undefined = $state();
 
-  function onkeydown(e: KeyboardEvent): void {
-    if (e.key === "Escape" && !e.defaultPrevented) {
-      e.preventDefault();
-      // consent mode: Esc = Cancel (back to the Explorer, the strip still asks)
-      if (projects.choosing !== null) projects.cancelChoose();
-      else ui.closeSettingsPage();
-      return;
-    }
-    if (e.key !== "Tab" || !page) return;
-    const focusable = Array.from(
-      page.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]',
-      ),
-    ).filter((el) => el.offsetParent !== null);
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last?.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first?.focus();
-    }
+  function onEscape(): void {
+    // consent mode: Esc = Cancel (back to the Explorer, the strip still asks)
+    if (projects.choosing !== null) projects.cancelChoose();
+    else ui.closeSettingsPage();
+  }
+
+  /** Focus enters the page on what the section asks for (the Choose heading), else on the section list. */
+  function entry(dialog: HTMLElement): HTMLElement | null {
+    return (
+      dialog.querySelector<HTMLElement>("[data-autofocus]") ??
+      dialog.querySelector<HTMLElement>('[aria-current="page"]')
+    );
   }
 
   function onnavkey(e: KeyboardEvent): void {
@@ -104,17 +94,6 @@
       queueMicrotask(() => page?.querySelector<HTMLElement>('[aria-current="page"]')?.focus());
     }
   }
-
-  // focus enters the page on the section list (or on what the section asks for: the Choose heading); it goes back
-  // where it was when the page closes
-  $effect(() => {
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    (
-      page?.querySelector<HTMLElement>("[data-autofocus]") ??
-      page?.querySelector<HTMLElement>('[aria-current="page"]')
-    )?.focus();
-    return () => before?.focus();
-  });
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -126,7 +105,7 @@
     aria-label={t("settings.title")}
     tabindex="-1"
     bind:this={page}
-    {onkeydown}
+    use:dialogFocus={{ initial: entry, onEscape }}
   >
     <header class="bar">
       <h2>{t("settings.title")}</h2>

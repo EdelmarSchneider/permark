@@ -42,6 +42,18 @@ export default defineConfig({
     watch: { ignored: ["**/src-tauri/**", toolFolder] },
   },
 
+  // The editors and plugin views load on first use; without crawling them at start, the dev server discovers their
+  // packages only then, optimizes them and reloads the page, so the editor being opened is lost (dev:mock, probes).
+  optimizeDeps: {
+    entries: [
+      "index.html",
+      "src/**/*.svelte",
+      "src/**/*.ts",
+      "!src/**/*.test.ts",
+      "!src/**/testing/**",
+    ],
+  },
+
   // Fonts + icons ship as files (CSP font-src 'self'; no data: URLs).
   // The diagram engines (PlantUML ~3 MB, Mermaid's layout ~1.5 MB) are chunks of their own, loaded only when a
   // diagram comes near the screen: the size warning is about the main bundle, which stays small.
