@@ -10,6 +10,7 @@
   import { fuzzyMatch } from "../search/fuzzy";
   import { contributions } from "../plugins/instance.svelte";
   import type { WindowStore } from "../window.svelte";
+  import { dialogFocus } from "./dialogFocus";
   import { ui } from "./ui.svelte";
 
   type Props = { store: WindowStore };
@@ -22,8 +23,6 @@
 
   let capture = $state.raw<Capture>({ status: "idle" });
   let filter = $state("");
-  let dialog: HTMLElement | undefined = $state();
-  let search: HTMLInputElement | undefined = $state();
 
   const mac = $derived(conditions.current.platform === "mac");
   const entries = $derived(
@@ -91,26 +90,9 @@
     else capture = { status: "asking", command, combo, others };
   }
 
-  function onkeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape" && capture.status === "idle") {
-      event.preventDefault();
-      ui.closeKeyboard();
-      return;
-    }
-    if (event.key !== "Tab" || !dialog) return;
-    // focus stays inside the dialog
-    const focusable = Array.from(
-      dialog.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)"),
-    );
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last?.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first?.focus();
-    }
+  // while a key is asked about, Escape closes nothing (the question has its own Cancel)
+  function onEscape(): void {
+    if (capture.status === "idle") ui.closeKeyboard();
   }
 
   // while a key is awaited, every key press goes to the dialog (the app's own shortcuts included)
@@ -118,12 +100,6 @@
     if (capture.status !== "listening") return;
     window.addEventListener("keydown", onCapture, true);
     return () => window.removeEventListener("keydown", onCapture, true);
-  });
-
-  $effect(() => {
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    search?.focus();
-    return () => before?.focus();
   });
 </script>
 
@@ -135,18 +111,17 @@
   }}
 >
   <div
-    bind:this={dialog}
     class="dialog"
     role="dialog"
     aria-modal="true"
     aria-labelledby="keymap-title"
     tabindex="-1"
-    {onkeydown}
+    use:dialogFocus={{ initial: "[data-initial]", onEscape }}
   >
     <header>
       <h2 id="keymap-title">{t("keymap.title")}</h2>
       <input
-        bind:this={search}
+        data-initial
         type="search"
         class="filter"
         placeholder={t("keymap.search")}

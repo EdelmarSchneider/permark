@@ -212,6 +212,40 @@ describe("a count from request to summary", () => {
       ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await until(() => folders.summary === null, "closed");
   });
+
+  it("the summary dialog owns the keyboard: focus in, Tab stays inside, Escape closes, focus goes back", async () => {
+    await count("");
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    component = mount(FolderSummary, { target });
+    flushSync();
+    const dialog = target.querySelector<HTMLElement>("[role=dialog]");
+    if (!dialog) throw new Error("no dialog");
+    expect(document.activeElement).toBe(dialog);
+    const controls = [...dialog.querySelectorAll<HTMLElement>("button, summary")];
+    const first = controls[0];
+    const last = controls.at(-1);
+    if (!first || !last) throw new Error("no controls");
+    const key = (on: Element, name: string, shiftKey = false): KeyboardEvent => {
+      const event = new KeyboardEvent("keydown", {
+        key: name,
+        shiftKey,
+        bubbles: true,
+        cancelable: true,
+      });
+      on.dispatchEvent(event);
+      return event;
+    };
+    expect(key(dialog, "Tab", true).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(last);
+    expect(key(last, "Tab").defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(first);
+    key(first, "Escape");
+    flushSync();
+    expect(folders.summary).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
 });
 
 describe("the guard", () => {

@@ -4,6 +4,7 @@
   import type { FileGroup } from "../../api";
   import { t, type MessageKey } from "../i18n";
   import { defaultApp } from "./defaultApp.svelte";
+  import { dialogFocus } from "./dialogFocus";
 
   const NAMES: Readonly<Record<FileGroup, MessageKey>> = {
     markdown: "fileGroup.markdown",
@@ -18,36 +19,6 @@
 
   const question = $derived(defaultApp.question);
   const handoff = $derived(question.status === "asking" && question.view.mode.mode === "handoff");
-
-  let dialog: HTMLElement | undefined = $state();
-  let yes: HTMLButtonElement | undefined = $state();
-
-  function onkeydown(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      void defaultApp.answer(false);
-      return;
-    }
-    if (e.key !== "Tab" || !dialog) return;
-    const focusable = Array.from(
-      dialog.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)"),
-    );
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last?.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first?.focus();
-    }
-  }
-
-  $effect(() => {
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    yes?.focus();
-    return () => before?.focus();
-  });
 </script>
 
 {#if question.status === "asking"}
@@ -59,14 +30,13 @@
     }}
   >
     <div
-      bind:this={dialog}
       class="dialog"
       role="dialog"
       aria-modal="true"
       aria-labelledby="default-app-title"
       aria-describedby="default-app-body"
       tabindex="-1"
-      {onkeydown}
+      use:dialogFocus={{ initial: "[data-initial]", onEscape: () => void defaultApp.answer(false) }}
     >
       <h2 id="default-app-title">{t("defaultApp.askTitle")}</h2>
       <p id="default-app-body">{handoff ? t("defaultApp.askHandoff") : t("defaultApp.askBody")}</p>
@@ -89,7 +59,7 @@
           {t("defaultApp.notNow")}
         </button>
         <button
-          bind:this={yes}
+          data-initial
           type="button"
           class="btn btn--primary"
           disabled={question.chosen.length === 0}

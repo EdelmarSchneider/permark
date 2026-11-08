@@ -3,15 +3,13 @@
   // document): Save all | Discard | Cancel. Cancel | Escape | backdrop = nothing changes.
   import type { ClosingTab } from "../../api";
   import { t, tn } from "../i18n";
+  import { dialogFocus } from "./dialogFocus";
 
   type Props = {
     tabs: readonly ClosingTab[];
     answer: (choice: "saveAll" | "discard" | "cancel") => void;
   };
   let { tabs, answer }: Props = $props();
-
-  let dialog: HTMLElement | undefined = $state();
-  let save: HTMLButtonElement | undefined = $state();
 
   /** The file name of a document path (`/` or `\` separated). */
   function fileName(path: string): string {
@@ -22,33 +20,6 @@
         .at(-1) ?? path
     );
   }
-
-  function onkeydown(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      answer("cancel");
-      return;
-    }
-    if (e.key !== "Tab" || !dialog) return;
-    // focus stays inside the dialog
-    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>("button:not(:disabled)"));
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last?.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first?.focus();
-    }
-  }
-
-  // focus the default answer once shown; give focus back when closed
-  $effect(() => {
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    save?.focus();
-    return () => before?.focus();
-  });
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -58,8 +29,8 @@
     if (e.target === e.currentTarget) answer("cancel");
   }}
 >
+  <!-- the keyboard starts on the default answer (Save all) -->
   <div
-    bind:this={dialog}
     class="dialog"
     role="alertdialog"
     aria-modal="true"
@@ -67,7 +38,7 @@
     aria-describedby="close-window-body"
     tabindex="-1"
     data-close-window
-    {onkeydown}
+    use:dialogFocus={{ initial: "[data-initial]", onEscape: () => answer("cancel") }}
   >
     <h2 id="close-window-title">{t("closeWindow.title")}</h2>
     <p id="close-window-body">{tn("closeWindow.body", tabs.length)}</p>
@@ -88,12 +59,7 @@
       <button type="button" class="btn" onclick={() => answer("discard")}>
         {t("closeWindow.discard")}
       </button>
-      <button
-        bind:this={save}
-        type="button"
-        class="btn btn--primary"
-        onclick={() => answer("saveAll")}
-      >
+      <button data-initial type="button" class="btn btn--primary" onclick={() => answer("saveAll")}>
         {t("closeWindow.saveAll")}
       </button>
     </footer>

@@ -2,6 +2,7 @@
   // The guard of a folder count: a big folder asks first (how many files, how many bytes, about how long), a folder that
   // is too big says so and why. Enter = the answer in bold, Escape | Cancel | backdrop = no.
   import { language, t, tn } from "../../core/i18n";
+  import { dialogFocus } from "../../core/shell/dialogFocus";
   import { REFUSE_FILES, timeUnit } from "./folders";
   import { folders } from "./folders.svelte";
   import { formatMegabytes } from "./model";
@@ -21,44 +22,13 @@
       : tn("tokens.folder.minutes", n, { n: number(n) });
   });
 
-  let dialog: HTMLElement | undefined = $state();
-  let primary: HTMLButtonElement | undefined = $state();
-
   function no(): void {
     if (ask !== null) void folders.cancel();
     else void folders.dismiss();
   }
-
-  function onkeydown(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      no();
-      return;
-    }
-    if (e.key !== "Tab" || !dialog) return;
-    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>("button:not(:disabled)"));
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last?.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first?.focus();
-    }
-  }
-
-  // focus enters the dialog and returns where it was when the dialog goes
-  $effect(() => {
-    if (!open) return;
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    primary?.focus();
-    return () => before?.focus();
-  });
 </script>
 
-{#if ask !== null || refused !== null}
+{#if open}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div
     class="backdrop"
@@ -67,14 +37,13 @@
     }}
   >
     <div
-      bind:this={dialog}
       class="dialog"
       role="dialog"
       aria-modal="true"
       aria-labelledby="folder-guard-title"
       aria-describedby="folder-guard-body"
       tabindex="-1"
-      {onkeydown}
+      use:dialogFocus={{ initial: "[data-initial]", onEscape: no }}
     >
       {#if ask !== null}
         <h2 id="folder-guard-title">
@@ -93,7 +62,7 @@
         <footer>
           <button type="button" class="btn" onclick={no}>{t("common.cancel")}</button>
           <button
-            bind:this={primary}
+            data-initial
             type="button"
             class="btn btn--primary"
             onclick={() => void folders.confirm()}
@@ -112,7 +81,7 @@
           <p class="note">{t("tokens.folder.refused.hint")}</p>
         </div>
         <footer>
-          <button bind:this={primary} type="button" class="btn btn--primary" onclick={no}>
+          <button data-initial type="button" class="btn btn--primary" onclick={no}>
             {t("common.close")}
           </button>
         </footer>

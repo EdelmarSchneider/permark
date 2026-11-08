@@ -3,37 +3,10 @@
   // stray Enter writes nothing); Escape | it | backdrop = nothing is written. New project on a folder with files in it
   // (`fresh`): says why it asks in plain words, and the safe button goes back to choosing a folder.
   import { t } from "../i18n";
+  import { dialogFocus } from "./dialogFocus";
 
   type Props = { name: string; path: string; fresh?: boolean; answer: (yes: boolean) => void };
   let { name, path, fresh = false, answer }: Props = $props();
-
-  let dialog: HTMLElement | undefined = $state();
-  let cancel: HTMLButtonElement | undefined = $state();
-
-  function onkeydown(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      answer(false);
-      return;
-    }
-    if (e.key !== "Tab" || !dialog) return;
-    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>("button:not(:disabled)"));
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last?.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first?.focus();
-    }
-  }
-
-  $effect(() => {
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    cancel?.focus();
-    return () => before?.focus();
-  });
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -44,14 +17,13 @@
   }}
 >
   <div
-    bind:this={dialog}
     class="dialog"
     role="dialog"
     aria-modal="true"
     aria-labelledby="init-title"
     aria-describedby="init-body"
     tabindex="-1"
-    {onkeydown}
+    use:dialogFocus={{ initial: "[data-initial]", onEscape: () => answer(false) }}
   >
     <h2 id="init-title">
       {fresh ? t("project.newTitle", { name }) : t("project.initTitle", { name })}
@@ -72,7 +44,7 @@
       {/if}
     </div>
     <footer>
-      <button bind:this={cancel} type="button" class="btn" onclick={() => answer(false)}>
+      <button data-initial type="button" class="btn" onclick={() => answer(false)}>
         {fresh ? t("project.newBack") : t("common.cancel")}
       </button>
       <button type="button" class="btn btn--primary" onclick={() => answer(true)}>
