@@ -24,6 +24,7 @@ pub use contrib::{
     MarkdownFeature, MarkdownFeatures, PromptBlocks, RoleMatch, RoleRule, DEFAULT_PROMPT_TAGS,
 };
 pub use json_lines::{records, JsonLineRecord};
+pub(crate) use markdown::reading_text;
 pub use markdown::{
     at_refs, sections, segments, units, AtRef, LockReason, MarkdownFormat, Section, Segment,
     SegmentKind, TextUnit,

@@ -168,6 +168,12 @@ fn prepared<'t>(
     }
 }
 
+/// [`prepared`] with the front matter `text` opens with (`text` without a byte order mark): what reading parses, for
+/// scans that must see the document as reading does.
+pub(crate) fn reading_text<'t>(text: &'t str, features: &MarkdownFeatures) -> Cow<'t, str> {
+    prepared(text, frontmatter::find(text).as_ref(), features)
+}
+
 /// The tree of a [`prepared`] text; `None` when it is too deep to walk and hand on.
 fn parsed<'a>(arena: &'a Arena<'a>, prepared: &str, opts: &Options<'_>) -> Option<&'a AstNode<'a>> {
     let root = parse_document(arena, prepared, opts);

@@ -1010,6 +1010,43 @@ fn references_stay_as_written_when_the_prompt_features_are_off() {
     assert_eq!(read(&f, "README.md"), PROMPT_TEXT);
 }
 
+/// Prompt blocks with no blank line after their tags: without the prompt features the lines from the first tag to the
+/// blank line are one HTML block, and only the `href` after it is a destination.
+const BLOCK_TEXT: &str = "\u{feff}<context>\r\n- see [guide](docs/guide.md) and `[code](docs/guide.md)`\r\n</context>\r\n<rules>\r\n<example>\r\n[g]: docs/guide.md\r\n\r\n<a href=\"docs/guide.md\">g</a>\r\n</example>\r\n</rules>\r\n";
+
+#[test]
+fn links_inside_prompt_blocks_follow_a_moved_file_and_undo_is_exact() {
+    let f = fx_prompts(&[("README.md", BLOCK_TEXT), ("docs/guide.md", "# Guide\n")]);
+    let plan = f
+        .ops
+        .plan_move(&[spec("docs/guide.md", "docs/manual.md")], true)
+        .unwrap();
+    let lines: Vec<u32> = plan.files[0].changes.iter().map(|c| c.line).collect();
+    assert_eq!(lines, [2, 6, 8]);
+    f.ops.apply_move(plan.plan_id, true).unwrap();
+    // the code span, the tags, the byte order mark and the line endings stay
+    assert_eq!(
+        read(&f, "README.md"),
+        BLOCK_TEXT
+            .replacen("[guide](docs/guide.md)", "[guide](docs/manual.md)", 1)
+            .replacen("[g]: docs/guide.md", "[g]: docs/manual.md", 1)
+            .replacen("href=\"docs/guide.md\"", "href=\"docs/manual.md\"", 1)
+    );
+    f.ops.undo().unwrap().unwrap();
+    assert_eq!(read(&f, "README.md"), BLOCK_TEXT, "byte for byte");
+}
+
+#[test]
+fn links_inside_prompt_blocks_are_read_as_before_when_the_prompt_features_are_off() {
+    let f = fx(&[("README.md", BLOCK_TEXT), ("docs/guide.md", "# Guide\n")]);
+    let plan = f
+        .ops
+        .plan_move(&[spec("docs/guide.md", "docs/manual.md")], true)
+        .unwrap();
+    let lines: Vec<u32> = plan.files[0].changes.iter().map(|c| c.line).collect();
+    assert_eq!(lines, [8]);
+}
+
 #[test]
 fn undo_reports_what_changed_since_instead_of_overwriting_it() {
     let f = fx(&[("a.md", "[b](b.md)\n"), ("b.md", "")]);

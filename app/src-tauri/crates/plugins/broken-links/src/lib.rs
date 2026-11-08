@@ -22,6 +22,7 @@ use std::time::{Duration, Instant};
 use permark_core::conditions::Requirement;
 use permark_core::document::{DocScope, Documents};
 use permark_core::fileops::replacement_href;
+use permark_core::format::MarkdownFeatures;
 use permark_core::fsx;
 use permark_core::links::{local_target, parse, Form};
 use permark_core::paths::{Vault, VaultPath, WORKTREE_PREFIX};
@@ -67,11 +68,16 @@ struct State {
     ready: bool,
 }
 
+/// The Markdown features that are on for the project now: with the prompt features, links inside prompt blocks are
+/// links, as reading shows them.
+type Features = Arc<dyn Fn() -> MarkdownFeatures + Send + Sync>;
+
 struct Shared {
     vault: Vault,
     scope: DocScope,
     explorer: Arc<Explorer>,
     announce: Arc<dyn Fn(&BrokenSummary) + Send + Sync>,
+    features: Features,
     state: Mutex<State>,
     stop: AtomicBool,
 }
@@ -208,6 +214,7 @@ impl Shared {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .checker = Checker::new();
+        let features = (self.features)();
         let mut prefixes = vec![String::new()];
         prefixes.extend(
             self.vault
@@ -228,7 +235,7 @@ impl Shared {
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
                     .checker
-                    .read(&self.vault, path, &abs);
+                    .read(&self.vault, path, &abs, &features);
             }
         }
         self.state
@@ -244,11 +251,13 @@ impl Shared {
             return;
         }
         let mut changed = false;
+        let features = (self.features)();
         for batch in batches {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            changed |= state
-                .checker
-                .apply(&self.vault, batch, &|path| self.abs_of(path));
+            changed |=
+                state
+                    .checker
+                    .apply(&self.vault, batch, &|path| self.abs_of(path), &features);
         }
         if changed {
             (self.announce)(&self.summary());
@@ -287,12 +296,14 @@ impl BrokenLinksService {
         scope: DocScope,
         explorer: Arc<Explorer>,
         announce: Arc<dyn Fn(&BrokenSummary) + Send + Sync>,
+        features: Features,
     ) -> Self {
         let shared = Arc::new(Shared {
             vault,
             scope,
             explorer,
             announce,
+            features,
             state: Mutex::new(State {
                 checker: Checker::new(),
                 ready: false,
@@ -429,8 +440,9 @@ fn one_destination(
     text: &str,
     line: u32,
     href: &str,
+    features: &MarkdownFeatures,
 ) -> Result<(Range<usize>, Form), RepairRefusal> {
-    let mut matched = parse(text)
+    let mut matched = parse(text, features)
         .into_iter()
         .filter(|dest| u32::try_from(dest.line).ok() == Some(line) && dest.inner(text) == href);
     let Some(dest) = matched.next() else {
@@ -484,6 +496,7 @@ fn repair(
     documents: &Documents,
     explorer: &Explorer,
     own: &OwnWrites,
+    features: &MarkdownFeatures,
     args: &RepairArgs,
 ) -> RepairResult {
     #[cfg(test)]
@@ -502,7 +515,7 @@ fn repair(
     let Ok(text) = std::str::from_utf8(&bytes) else {
         return refused(RepairRefusal::NotUtf8);
     };
-    let (range, form) = match one_destination(text, args.line, &args.href) {
+    let (range, form) = match one_destination(text, args.line, &args.href, features) {
         Ok(found) => found,
         Err(reason) => return refused(reason),
     };
@@ -556,6 +569,10 @@ impl Plugin for BrokenLinksPlugin {
             });
         };
         let events = cx.events().clone();
+        let features: Features = {
+            let project = project.clone();
+            Arc::new(move || *project.formats().features())
+        };
         let service = Arc::new(BrokenLinksService::start(
             vault.clone(),
             project.documents.scope().clone(),
@@ -566,6 +583,7 @@ impl Plugin for BrokenLinksPlugin {
                     serde_json::to_value(summary).unwrap_or(serde_json::Value::Null),
                 );
             }),
+            Arc::clone(&features),
         ));
         let subscription = hub.subscribe({
             let service = Arc::clone(&service);
@@ -579,7 +597,9 @@ impl Plugin for BrokenLinksPlugin {
         let own = Arc::clone(&project.own);
         registrations.extend(cx.rpc(
             "repair",
-            typed(move |args: RepairArgs, _| Ok(repair(&documents, &explorer, &own, &args))),
+            typed(move |args: RepairArgs, _| {
+                Ok(repair(&documents, &explorer, &own, &features(), &args))
+            }),
         ));
         Ok(Box::new(BrokenLinksRunning {
             subscription: Some(subscription),

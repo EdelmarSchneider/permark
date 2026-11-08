@@ -15,6 +15,7 @@ use super::fuzzy::{fold_aligned, Needle};
 use super::prepare::{prepare, Sig};
 use super::*;
 use crate::events::{CoreEvent, Recorder};
+use crate::format::MarkdownFeatures;
 use crate::paths::{Root, Vault};
 use crate::settings::ProjectConfig;
 use crate::tree::{key_of, Category};
@@ -164,6 +165,7 @@ fn doc(index: &mut Bm25, path: &str, text: &str) -> Vec<u32> {
         },
         text,
         Category::Markdown,
+        &MarkdownFeatures::default(),
     );
     index.add(&prepared.path.clone(), prepared.sections)
 }
@@ -388,6 +390,7 @@ fn prepare_counts_field_weights_and_puts_the_file_name_in_the_first_section_only
         },
         text,
         Category::Markdown,
+        &MarkdownFeatures::default(),
     );
     assert_eq!(p.sections.len(), 2);
     let tf =
@@ -415,6 +418,7 @@ fn prepare_reads_link_targets_without_the_disk() {
         },
         text,
         Category::Markdown,
+        &MarkdownFeatures::default(),
     );
     let expect: Vec<String> = ["docs/img/a.png", "x/b.md", "docs/h.png", "docs/pics/r.png"]
         .iter()
@@ -424,6 +428,33 @@ fn prepare_reads_link_targets_without_the_disk() {
         assert!(p.links.contains(key), "{key} in {:?}", p.links);
     }
     assert!(!p.links.iter().any(|l| l.contains("x.org")));
+}
+
+#[test]
+fn prepare_reads_links_inside_prompt_blocks_while_the_prompt_features_are_on() {
+    use crate::format::{PromptBlocks, DEFAULT_PROMPT_TAGS};
+    let text = "<context>\n[d](docs/b.md)\n</context>\n";
+    let links = |features: &MarkdownFeatures| {
+        prepare(
+            "a.md",
+            Sig {
+                len: 1,
+                mtime_ms: 1,
+            },
+            text,
+            Category::Markdown,
+            features,
+        )
+        .links
+    };
+    assert!(links(&MarkdownFeatures::default()).is_empty());
+    let on = MarkdownFeatures {
+        prompt_blocks: Some(PromptBlocks {
+            tags: DEFAULT_PROMPT_TAGS,
+        }),
+        front_matter_card: None,
+    };
+    assert_eq!(links(&on), [key_of("docs/b.md")]);
 }
 
 #[test]
@@ -454,6 +485,7 @@ fn link_counts_make_the_linked_set_and_report_a_change_once() {
         },
         "![x](p.png)",
         Category::Markdown,
+        &MarkdownFeatures::default(),
     );
     let doc_b = prepare(
         "b.md",
@@ -463,6 +495,7 @@ fn link_counts_make_the_linked_set_and_report_a_change_once() {
         },
         "![x](p.png) [y](q.pdf)",
         Category::Markdown,
+        &MarkdownFeatures::default(),
     );
     index.upsert_doc(doc_a, Category::Markdown);
     assert_eq!(index.take_linked().unwrap().len(), 1);
@@ -482,6 +515,7 @@ fn link_counts_make_the_linked_set_and_report_a_change_once() {
         },
         "![x](p.png) more",
         Category::Markdown,
+        &MarkdownFeatures::default(),
     );
     index.upsert_doc(again, Category::Markdown);
     assert!(index.take_linked().is_none());

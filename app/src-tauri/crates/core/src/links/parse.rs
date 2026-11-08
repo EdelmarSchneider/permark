@@ -4,11 +4,18 @@
 //! such a node is located by reading the node's own text. Reference definitions are not in the tree: they are found
 //! by their line grammar outside code, HTML blocks and paragraphs. A destination whose text does not agree with what
 //! the parser resolved is dropped: a link that is not read with certainty is never edited.
+//!
+//! With the prompt features on, the parser reads the text reading parses (prompt tags marked, front matter cut), so a
+//! link inside a prompt block is a link even with no blank line after its tag. Only whole lines differ there: each
+//! destination is placed back on its line and column, and one whose bytes do not match the document's is dropped.
 
+use std::borrow::Cow;
 use std::ops::Range;
 
 use comrak::nodes::{NodeValue, Sourcepos};
 use comrak::{parse_document, Arena, Options};
+
+use crate::format::{reading_text, MarkdownFeatures};
 
 const BOM: &str = "\u{feff}";
 /// Most escaped pipes of one table row the column shift is searched for.
@@ -132,12 +139,56 @@ fn options() -> Options<'static> {
     options
 }
 
-/// Every destination of `text`, in text order.
+/// Every destination of `text`, in text order, as reading sees the links with `features` on.
 #[must_use]
-pub fn parse(text: &str) -> Vec<Dest> {
+pub fn parse(text: &str, features: &MarkdownFeatures) -> Vec<Dest> {
     let offset = if text.starts_with(BOM) { BOM.len() } else { 0 };
     let body = &text[offset..];
     let lines = Lines::new(body);
+    let source = match features.prompt_blocks {
+        Some(_) => reading_text(body, features),
+        None => Cow::Borrowed(body),
+    };
+    let mut dests = match source {
+        Cow::Owned(source) => {
+            placed_back(&source, body, &lines).unwrap_or_else(|| scan(body, &lines))
+        }
+        Cow::Borrowed(_) => scan(body, &lines),
+    };
+    for dest in &mut dests {
+        dest.line = lines.line_of(dest.range.start);
+        dest.range = dest.range.start + offset..dest.range.end + offset;
+    }
+    dests
+}
+
+/// The destinations of `source` (`body` with whole lines replaced) at their places in `body`: the same line, the same
+/// column. `None` when a replaced line lost a line break (the lines no longer pair up).
+fn placed_back(source: &str, body: &str, lines: &Lines) -> Option<Vec<Dest>> {
+    let own = Lines::new(source);
+    if own.starts.len() != lines.starts.len() {
+        return None;
+    }
+    let place = |at: usize| -> Option<usize> {
+        let line = own.line_of(at);
+        Some(at.checked_sub(own.start_of(line)?)? + lines.start_of(line)?)
+    };
+    let dests = scan(source, &own)
+        .into_iter()
+        .filter_map(|mut dest| {
+            let start = place(dest.range.start)?;
+            let end = place(dest.range.end.checked_sub(1)?)? + 1;
+            (body.get(start..end)? == source.get(dest.range.clone())?).then(|| {
+                dest.range = start..end;
+                dest
+            })
+        })
+        .collect();
+    Some(dests)
+}
+
+/// Every destination of `body` (no byte order mark; `lines` are its lines), in text order; lines are left unset.
+fn scan(body: &str, lines: &Lines) -> Vec<Dest> {
     let arena = Arena::new();
     let root = parse_document(&arena, body, &options());
     let mut dests: Vec<Dest> = Vec::new();
@@ -172,13 +223,9 @@ pub fn parse(text: &str) -> Vec<Dest> {
             _ => {}
         }
     }
-    definitions(body, &lines, &blocked, &mut dests);
+    definitions(body, lines, &blocked, &mut dests);
     dests.sort_by_key(|d| d.range.start);
     dests.dedup_by(|a, b| a.range == b.range);
-    for dest in &mut dests {
-        dest.range = dest.range.start + offset..dest.range.end + offset;
-        dest.line = lines.line_of(dest.range.start - offset);
-    }
     dests
 }
 

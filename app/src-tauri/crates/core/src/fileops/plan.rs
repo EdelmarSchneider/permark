@@ -390,7 +390,7 @@ impl<'a> Planner<'a> {
     pub(crate) fn edits_for(&self, doc: &str, text: &str) -> Vec<LinkEdit> {
         let doc_new = self.mover.map_or_same(doc);
         let mut edits = Vec::new();
-        for dest in parse(text) {
+        for dest in parse(text, &self.features) {
             let Some((new, target)) = self.rewrite(doc, &doc_new, text, &dest) else {
                 continue;
             };
