@@ -12,6 +12,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Paragraphs with inline math, footnote references or reference-style links can now be edited as normal text in Edit. Each formula, footnote number and link is drawn as in View; click it to change its source. <!-- f: editing, edit-mode -->
 - Edit also shows View's details in the text: links to missing files are underlined in red, code references look and open as in View (Ctrl or Cmd click), headings show their anchor on hover, and prompt files show their variable and file chips. <!-- f: editing, edit-mode -->
 - When the document you are reading or editing is renamed or moved, PerMark now follows it to its new name at the same place, and Back and Forward follow too. When prompt files are on, renaming or moving a file also updates `@path` references to it, and the preview counts them. <!-- f: file-ops, links -->
+- Renaming or moving a file now also updates links written right after a prompt tag such as `<context>`, and link definitions placed directly above a paragraph; broken-link checks and search see these links too, and read them again when prompt files are turned on or off. <!-- f: links, file-ops, search -->
 
 ### Fixed
 - In Edit, typing while a formula, diagram or other drawn block is selected (for example right after pressing Esc on it) no longer replaces the whole block: the text goes next to it. Two spaces typed in a row are saved as spaces instead of a non-breaking space. <!-- f: editing -->
