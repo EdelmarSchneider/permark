@@ -68,6 +68,13 @@ pub fn file_identity(path: &Path) -> Option<(u64, u64)> {
     }
 }
 
+/// Whether two paths name one file | folder (a case | normalization spelling of one name, a hard link). Unknown
+/// identity on either side answers `false`: a name that only compares equal is never taken for the same file.
+#[must_use]
+pub fn same_file(a: &Path, b: &Path) -> bool {
+    matches!((file_identity(a), file_identity(b)), (Some(x), Some(y)) if x == y)
+}
+
 /// Retry delays for transient Windows sharing | lock violations.
 pub const RETRY_DELAYS: [Duration; 3] = [
     Duration::from_millis(20),
@@ -186,12 +193,22 @@ pub fn is_scratch_name(name: &str) -> bool {
 /// Temp files of this process: two writes of one file never share a temp.
 static TEMP_COUNT: AtomicU64 = AtomicU64::new(0);
 
-/// Hidden temp next to `path`: `.<name>.<pid>.<n>.part`.
+/// Bytes of the target's name a temp name keeps: a name near the 255 limit of file systems still has a temp.
+const TEMP_NAME_KEEP: usize = 64;
+
+/// Hidden temp next to `path`: `.<name>.<pid>.<n>.part`, `<name>` cut to [`TEMP_NAME_KEEP`] bytes.
 fn temp_path(path: &Path) -> PathBuf {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
-    let name = path
+    let mut name = path
         .file_name()
         .map_or_else(|| "file".to_owned(), |n| n.to_string_lossy().into_owned());
+    if name.len() > TEMP_NAME_KEEP {
+        let mut end = TEMP_NAME_KEEP;
+        while !name.is_char_boundary(end) {
+            end -= 1;
+        }
+        name.truncate(end);
+    }
     let n = TEMP_COUNT.fetch_add(1, Ordering::Relaxed);
     dir.join(format!(".{name}.{}.{n}.part", std::process::id()))
 }
@@ -256,6 +273,19 @@ pub fn write_atomic_checked(
     result
 }
 
+/// [`write_atomic_checked`] as a compare-and-swap: `bytes` replace `path` only while it still holds the bytes hashed
+/// `seen` (checked right before each rename attempt). `Ok(false)`: the file changed or went meanwhile, untouched.
+///
+/// # Errors
+/// IO failure; temp removed, target untouched.
+pub fn write_atomic_if_unchanged(path: &Path, bytes: &[u8], seen: ContentHash) -> io::Result<bool> {
+    write_atomic_checked(path, bytes, || match std::fs::read(path) {
+        Ok(now) => Ok(hash(&now) == seen),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    })
+}
+
 /// Moves `from` over `to` durably (Windows: `MoveFileExW` replace + write-through; Unix: rename + folder fsync),
 /// retrying transient locks ([`RETRY_DELAYS`]). Both on one volume (a finished download next to its part).
 ///
@@ -305,17 +335,30 @@ fn rename_durably(from: &Path, to: &Path) -> io::Result<()> {
     {
         std::fs::rename(from, to)?;
         if let Some(dir) = to.parent() {
-            let dir = if dir.as_os_str().is_empty() {
-                Path::new(".")
-            } else {
-                dir
-            };
-            // folder flush: some file systems cannot; the rename happened anyway
-            if let Ok(folder) = std::fs::File::open(dir) {
-                let _ = folder.sync_all();
-            }
+            sync_folder(dir);
         }
         Ok(())
+    }
+}
+
+/// Flushes the entries of folder `dir` (names made, renamed, removed in it) to disk, best effort: some file systems
+/// cannot, and what was done in the folder happened anyway. Unix only: std opens no folder handle on Windows, where
+/// durable renames go through write-through instead.
+pub(crate) fn sync_folder(dir: &Path) {
+    #[cfg(not(windows))]
+    {
+        let dir = if dir.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            dir
+        };
+        if let Ok(folder) = std::fs::File::open(dir) {
+            let _ = folder.sync_all();
+        }
+    }
+    #[cfg(windows)]
+    {
+        let _ = dir;
     }
 }
 
@@ -384,6 +427,55 @@ mod tests {
         write_atomic(&path, b"two").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"two");
         assert_eq!(names_in(path.parent().unwrap()), ["ação 文.json"]);
+    }
+
+    #[test]
+    fn a_name_at_the_length_limit_gets_a_short_temp_that_is_still_scratch() {
+        let dir = tempfile::tempdir().unwrap();
+        let name = format!("{}.md", "n".repeat(247));
+        assert_eq!(name.len(), 250);
+        let path = dir.path().join(&name);
+        for long in [path.clone(), dir.path().join("\u{e9}".repeat(125))] {
+            let temp = temp_path(&long);
+            let temp = temp.file_name().unwrap().to_string_lossy().into_owned();
+            assert!(temp.len() <= 128 && is_scratch_name(&temp), "{temp}");
+        }
+        write_atomic(&path, b"one").unwrap();
+        write_atomic(&path, b"two").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"two");
+        assert_eq!(names_in(dir.path()), [name]);
+    }
+
+    #[test]
+    fn a_write_while_unchanged_refuses_a_file_that_changed_or_went() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.md");
+        let seen = hash(b"seen");
+        std::fs::write(&path, "theirs").unwrap();
+        assert!(!write_atomic_if_unchanged(&path, b"mine", seen).unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), b"theirs");
+        std::fs::remove_file(&path).unwrap();
+        assert!(!write_atomic_if_unchanged(&path, b"mine", seen).unwrap());
+        assert!(!path.exists());
+        std::fs::write(&path, "seen").unwrap();
+        assert!(write_atomic_if_unchanged(&path, b"mine", seen).unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), b"mine");
+        assert_eq!(names_in(dir.path()), ["a.md"]);
+    }
+
+    #[test]
+    fn two_names_are_the_same_file_only_when_the_volume_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.md");
+        let b = dir.path().join("b.md");
+        std::fs::write(&a, "a").unwrap();
+        std::fs::write(&b, "b").unwrap();
+        assert!(same_file(&a, &a));
+        assert!(!same_file(&a, &b));
+        assert!(!same_file(&a, &dir.path().join("missing.md")));
+        if crate::paths::CASE_INSENSITIVE {
+            assert!(same_file(&a, &dir.path().join("A.md")));
+        }
     }
 
     #[test]

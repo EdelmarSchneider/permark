@@ -1358,3 +1358,51 @@ fn closing_the_project_during_the_first_scan_is_prompt() {
         started.elapsed()
     );
 }
+
+/// Another program holds `path` without delete sharing (a rename over it waits), writes `text` through its handle as
+/// soon as the temp of an atomic write of `path` shows up, and lets go a moment later.
+#[cfg(windows)]
+fn slip_in_save(path: &std::path::Path, text: &'static str) -> std::thread::JoinHandle<()> {
+    use std::io::Write as _;
+    use std::os::windows::fs::OpenOptionsExt;
+    const SHARE_READ_WRITE: u32 = 0x1 | 0x2;
+    let mut held = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(SHARE_READ_WRITE)
+        .open(path)
+        .unwrap();
+    let dir = path.parent().unwrap().to_path_buf();
+    let prefix = format!(".{}.", path.file_name().unwrap().to_string_lossy());
+    std::thread::spawn(move || {
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(10) {
+            let temp = std::fs::read_dir(&dir).unwrap().flatten().any(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                name.starts_with(&prefix) && fsx::is_scratch_name(&name)
+            });
+            if temp {
+                break;
+            }
+            std::thread::yield_now();
+        }
+        held.set_len(0).unwrap();
+        held.write_all(text.as_bytes()).unwrap();
+        std::thread::sleep(Duration::from_millis(50));
+        drop(held);
+    })
+}
+
+#[cfg(windows)]
+#[test]
+fn a_repair_never_replaces_a_save_that_slips_in_before_its_write() {
+    let mut h = Harness::new();
+    h.write("a/note.md", "[x](old/plan.md)\n");
+    h.write("b/plan.md", "# plan\n");
+    h.open();
+    let writer = slip_in_save(&h.root().join("a/note.md"), "their save\n");
+    let result = h.repair("a/note.md", 1, "old/plan.md", "b/plan.md");
+    writer.join().unwrap();
+    assert_eq!(result, json!({"outcome": "refused", "reason": "changed"}));
+    assert_eq!(h.bytes("a/note.md"), b"their save\n");
+}

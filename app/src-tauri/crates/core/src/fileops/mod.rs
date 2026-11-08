@@ -44,7 +44,7 @@ use self::ops::{
 use self::plan::{apply_edits, invert_edits, mentions, split_root, DocPlan, Planner};
 use self::undo::{DocUndo, Entry, Journal, Op, UndoEdit, JOURNAL_FILE};
 use crate::error::{ErrorKind, IpcError};
-use crate::fsx::{hash, write_atomic, ContentHash};
+use crate::fsx::{hash, write_atomic_if_unchanged, ContentHash};
 use crate::paths::{Vault, VaultError, VaultPath};
 use crate::state::StateFile;
 use crate::tree::{Explorer, Renamed};
@@ -621,10 +621,18 @@ impl FileOps {
         let new_text = apply_edits(text, &doc.edits);
         let new_hash = hash(new_text.as_bytes());
         self.own.expect_write(&now_path, new_hash);
-        if write_atomic(&abs, new_text.as_bytes()).is_err() {
-            self.own.retract_write(&now_path, new_hash);
-            skipped.push(skip(SkipReason::WriteFailed));
-            return;
+        // a save that lands after the read above is never replaced: the rename waits for the bytes the edits are for
+        match write_atomic_if_unchanged(&abs, new_text.as_bytes(), doc.hash) {
+            Ok(true) => {}
+            written => {
+                self.own.retract_write(&now_path, new_hash);
+                skipped.push(skip(if written.is_ok() {
+                    SkipReason::Changed
+                } else {
+                    SkipReason::WriteFailed
+                }));
+                return;
+            }
         }
         *links += doc.edits.len();
         let mut causes: Vec<usize> = doc.edits.iter().flat_map(|e| e.causes.clone()).collect();
@@ -891,7 +899,8 @@ impl FileOps {
                 SkipReason::Unreadable
             }
         })?;
-        if hash(&bytes).hex() != doc.hash_after {
+        let seen = hash(&bytes);
+        if seen.hex() != doc.hash_after {
             return Err(SkipReason::Changed);
         }
         let text = std::str::from_utf8(&bytes).map_err(|_| SkipReason::NotUtf8)?;
@@ -910,11 +919,17 @@ impl FileOps {
         out.push_str(text.get(at..).ok_or(SkipReason::Changed)?);
         let new_hash: ContentHash = hash(out.as_bytes());
         self.own.expect_write(place, new_hash);
-        if write_atomic(&abs, out.as_bytes()).is_err() {
-            self.own.retract_write(place, new_hash);
-            return Err(SkipReason::WriteFailed);
+        match write_atomic_if_unchanged(&abs, out.as_bytes(), seen) {
+            Ok(true) => Ok(()),
+            written => {
+                self.own.retract_write(place, new_hash);
+                Err(if written.is_ok() {
+                    SkipReason::Changed
+                } else {
+                    SkipReason::WriteFailed
+                })
+            }
         }
-        Ok(())
     }
 
     fn undo_new(&self, path: &str, kind: UndoKind) -> UndoOutcome {

@@ -1571,3 +1571,94 @@ fn what_an_editor_of_this_run_is_typing_is_not_text_a_crash_left() {
         Some(LooseState::Unsaved)
     );
 }
+
+// ---- integrity: names that compare equal, text typed and not saved ---------------------------------------------------
+
+/// The Kelvin sign lowercases like `K` yet is its own name on disk: two files whose names fold the same.
+const KELVIN: &str = "\u{212a}.md";
+
+#[test]
+fn a_rename_never_replaces_another_note_whose_name_only_folds_the_same() {
+    let f = fx();
+    note(&f, "K.md", "mine", 10);
+    note(&f, KELVIN, "theirs", 10);
+    if std::fs::read_dir(&f.notes).unwrap().count() < 2 {
+        // this file system holds both names as one file
+        return;
+    }
+    assert_eq!(
+        f.service.rename("K.md", KELVIN).unwrap_err().kind,
+        ErrorKind::Exists
+    );
+    assert_eq!(
+        std::fs::read_to_string(f.notes.join("K.md")).unwrap(),
+        "mine"
+    );
+    assert_eq!(
+        std::fs::read_to_string(f.notes.join(KELVIN)).unwrap(),
+        "theirs"
+    );
+}
+
+#[test]
+fn a_loose_rename_never_replaces_another_file_whose_name_only_folds_the_same() {
+    let f = fx();
+    let dir = f.tmp.path().join("d");
+    let file = loose_file(&dir, "K.md", "mine");
+    loose_file(&dir, KELVIN, "theirs");
+    if std::fs::read_dir(&dir).unwrap().count() < 2 {
+        return;
+    }
+    let path = f.service.open_file(&file.display().to_string(), 1).unwrap();
+    assert_eq!(
+        f.service.rename(&path, KELVIN).unwrap_err().kind,
+        ErrorKind::Exists
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "mine");
+    assert_eq!(std::fs::read_to_string(dir.join(KELVIN)).unwrap(), "theirs");
+}
+
+#[test]
+fn text_typed_and_not_saved_comes_back_with_an_undone_delete() {
+    let f = fx();
+    note(&f, "a.md", "saved", 10);
+    f.service
+        .buffer("a.md", "h", Some("saved and typed"), 5)
+        .unwrap();
+    let deleted = f.service.delete(&["a.md".into()]).unwrap();
+    assert_eq!(f.service.recovered_text("a.md"), None);
+    let back = f.service.undo_delete(deleted.undo_id.unwrap()).unwrap();
+    assert_eq!(back, ["a.md"]);
+    assert_eq!(
+        std::fs::read_to_string(f.notes.join("a.md")).unwrap(),
+        "saved"
+    );
+    assert_eq!(
+        f.service.recovered_text("a.md").as_deref(),
+        Some("saved and typed")
+    );
+}
+
+#[test]
+fn a_note_with_text_typed_and_not_saved_is_kept_when_moved() {
+    let f = fx();
+    let project = f.tmp.path().join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    note(&f, "a.md", "saved", 10);
+    f.service
+        .buffer("a.md", "h", Some("saved and typed"), 5)
+        .unwrap();
+    let moved = f
+        .service
+        .move_to_project("a.md", &project.display().to_string(), "x.md")
+        .unwrap();
+    assert!(moved.kept && moved.undo_id.is_none());
+    assert_eq!(
+        std::fs::read_to_string(f.notes.join("a.md")).unwrap(),
+        "saved"
+    );
+    assert_eq!(
+        f.service.recovered_text("a.md").as_deref(),
+        Some("saved and typed")
+    );
+}

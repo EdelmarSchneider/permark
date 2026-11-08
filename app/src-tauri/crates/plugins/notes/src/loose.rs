@@ -410,7 +410,8 @@ impl NotesService {
             .file_name()
             .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
         if name != current {
-            if target.exists() && fold(&name) != fold(&current) {
+            // only the very same file (another case of its name) may be there already
+            if target.exists() && !fsx::same_file(old, &target) {
                 return Err(IpcError::new(ErrorKind::Exists).subject(name));
             }
             std::fs::rename(old, &target).map_err(|e| IpcError::io(&name, &e))?;

@@ -62,6 +62,8 @@ pub(crate) struct Cached {
 pub(crate) struct DeletedNote {
     pub name: String,
     pub bytes: Option<Vec<u8>>,
+    /// Text typed into the note and not in its file yet: it comes back with the note.
+    pub unsaved: Option<JournalEntry>,
     pub modified_ms: u64,
     pub pinned: bool,
     pub shared: bool,
@@ -565,6 +567,13 @@ impl NotesService {
         Err(IpcError::new(ErrorKind::Exists).subject(stem))
     }
 
+    /// The journal entry of a note when it holds text the file does not (typed, not saved yet).
+    pub(crate) fn unsaved_entry(ctx: &Ctx, name: &str, abs: &Path) -> Option<JournalEntry> {
+        ctx.journal
+            .load(name)
+            .filter(|entry| differs_from_file(entry, abs))
+    }
+
     /// Sends notes to the recycle bin. Their text is kept in memory for [`NotesService::undo_delete`].
     ///
     /// # Errors
@@ -586,6 +595,7 @@ impl NotesService {
             batch.push(DeletedNote {
                 modified_ms: Stamp::of_meta(&meta).modified_ms,
                 bytes,
+                unsaved: Self::unsaved_entry(&ctx, &name, &abs),
                 pinned,
                 shared,
                 name,
@@ -683,6 +693,13 @@ impl NotesService {
         let abs = dir.join(&name);
         write_new(&abs, bytes).map_err(|e| IpcError::io(&name, &e))?;
         set_modified(&abs, note.modified_ms);
+        if let Some(entry) = &note.unsaved {
+            // best effort: the note itself is back either way
+            let _ = ctx.journal.save(&JournalEntry {
+                key: name.clone(),
+                ..entry.clone()
+            });
+        }
         ctx.update(|state| {
             if note.pinned && !state.pins.contains(&name) {
                 state.pins.push(name.clone());
@@ -711,9 +728,9 @@ impl NotesService {
                 }
                 if name != old {
                     let target = dir.join(&name);
-                    // the same file under another case is a rename; any other existing file is in the way
-                    let same_file = fold(&name) == fold(&old);
-                    if target.exists() && !same_file {
+                    // only the very same file (another case of its name) may be there already; a name that merely
+                    // folds the same can be another file (a case-sensitive folder, a Unicode case pair)
+                    if target.exists() && !fsx::same_file(&abs, &target) {
                         return Err(IpcError::new(ErrorKind::Exists).subject(name));
                     }
                     std::fs::rename(&abs, &target).map_err(|e| IpcError::io(&name, &e))?;
