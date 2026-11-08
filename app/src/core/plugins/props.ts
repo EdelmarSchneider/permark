@@ -17,6 +17,16 @@ export type EmbedProps = {
   region?: string;
 };
 
+/**
+ * A stretch of a code block's text inside elements with these classes, outermost first (the highlighter's nesting,
+ * which decides the color: the innermost styled one wins). Offsets in the text, `to` exclusive; stretches never
+ * overlap.
+ */
+export type CodeSpan = { from: number; to: number; classes: readonly string[] };
+
+/** The token colors of a fenced block's text (`info`: the word after the fence); null: drawn plain. */
+export type CodeColorer = (source: string, info: string) => Promise<readonly CodeSpan[] | null>;
+
 /** The text selected in the page, and where it is (a plugin comments on it). */
 export type PageSelection = {
   /** The selected text as the reader shows it. */

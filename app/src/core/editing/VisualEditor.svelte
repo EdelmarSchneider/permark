@@ -7,11 +7,12 @@
   import { api, type Body } from "../../api";
   import type { FrontMatter } from "../../api/generated/FrontMatter";
   import { NearScreen, type BlockHooks } from "../doc/blocks";
-  import type { FrontMatterProps } from "../plugins/props";
+  import type { CodeColorer, FrontMatterProps } from "../plugins/props";
   import { apiErrorText } from "../errors";
   import { conditions } from "../conditions/context.svelte";
   import { t, type MessageKey } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
+  import type { ContributionOf } from "../plugins/registry.svelte";
   import "../doc/markdown.css";
   import { codeActionsFor } from "../doc/CodeActions.svelte";
   import { codeEmbed } from "../doc/decorate";
@@ -266,16 +267,25 @@
     };
   }
 
+  /** The embed that draws a code block of this language in the reading view (its language's, else any code's). */
+  function codeEmbedOf(language: string): ContributionOf<"embed"> | undefined {
+    const embeds = contributions.visible("embed", conditions.current);
+    return codeEmbed(language, (word) => embeds.find((e) => e.language === word));
+  }
+
   /**
-   * A code block's label as the reading view gives it: named by the embed that draws the block there (the one for
-   * its language, else the one for any code); right of it, the actions that take the language and Copy.
+   * A code block's label as the reading view gives it: named by the embed that draws the block there; right of it,
+   * the actions that take the language and Copy.
    */
   function codeLabel(language: string): CodeLabel | null {
-    const embeds = contributions.visible("embed", conditions.current);
-    const embed = codeEmbed(language, (word) => embeds.find((e) => e.language === word));
-    const text = embed?.label?.(language) ?? null;
+    const text = codeEmbedOf(language)?.label?.(language) ?? null;
     if (text === null) return null;
     return { text, buttons: codeActionsFor(language).length + 1 };
+  }
+
+  /** A code block's token colors from the same embed (none when no plugin colors code). */
+  function codeColors(language: string): Promise<CodeColorer> | null {
+    return codeEmbedOf(language)?.colors?.() ?? null;
   }
 
   function refresh(): void {
@@ -328,7 +338,7 @@
           blockLabel: (name) => t(NAMES[name]),
           openHint: t("edit.block.openHint"),
         },
-        code: { label: codeLabel },
+        code: { label: codeLabel, colors: codeColors },
         first: loaded.appPlugins({
           core: () => core,
           changed: () => {

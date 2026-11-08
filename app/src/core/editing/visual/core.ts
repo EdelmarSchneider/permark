@@ -3,10 +3,10 @@
 //
 // Added to the stock CommonMark + GFM schema: `pm_locked`, an atom holding a block the editor must not rewrite
 // (drawn as View draws it, `lockedView.ts`; View's prompt boxes around blocks, `promptBoxes.ts`), `taskItemView`, the
-// real checkbox of a task item, and the reading view's wrappers of code blocks (with their language) and tables
-// (`codeBlockView`, `tableView`). Left out: stock plugins that change a document by themselves (heading ids, list
-// renumbering, empty-line preservation). A no-break space is written as `&nbsp;`; link marks end at the link's edge;
-// the serializer writes the style below.
+// real checkbox of a task item, and the reading view's wrappers of code blocks (with their language and token colors,
+// `codeColors.ts`) and tables (`codeBlockView`, `tableView`). Left out: stock plugins that change a document by
+// themselves (heading ids, list renumbering, empty-line preservation). A no-break space is written as `&nbsp;`; link
+// marks end at the link's edge; the serializer writes the style below.
 
 import {
   Editor,
@@ -43,6 +43,8 @@ import { EditorState, Selection } from "@milkdown/kit/prose/state";
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $ctx, $node, $prose, $view } from "@milkdown/kit/utils";
 import { CODE_BLOCK, TABLE_WRAP, taskLabel } from "../../doc/enhance";
+import type { CodeColorer } from "../../plugins/props";
+import { codeColors } from "./codeColors";
 import {
   lockedHostCtx,
   lockedKeys,
@@ -60,8 +62,12 @@ const NO_BREAK_SPACE = String.fromCharCode(0xa0);
 /** A code block's label as the reading view's corner shows it: the text, and the buttons right of it there. */
 export type CodeLabel = { text: string; buttons: number };
 
-/** What a code block needs from the app to label itself like the reading view. */
-export type CodeHost = { label(language: string): CodeLabel | null };
+/** What a code block needs from the app to look like the reading view: its label and its token colors. */
+export type CodeHost = {
+  label(language: string): CodeLabel | null;
+  /** The reading view's token colors for code of this language (loaded on first use); absent | null: plain. */
+  colors?(language: string): Promise<CodeColorer> | null;
+};
 
 const plainCode: CodeHost = {
   label: (language) => (language === "" ? null : { text: language, buttons: 1 }),
@@ -329,6 +335,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
     .use(promptBoxes)
     .use(taskItemView)
     .use(codeBlockView)
+    .use($prose((ctx) => codeColors(() => ctx.get(codeHostCtx.key))))
     .use(tableView)
     .use((options.first ?? []).flat())
     .use([...commonmark, ...gfm].filter((plugin) => !LEFT_OUT.has(plugin)))
