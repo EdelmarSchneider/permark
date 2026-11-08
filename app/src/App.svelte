@@ -54,6 +54,10 @@
 
   /** What the window shows now; while opening, what stays on screen (its document included). */
   const shown = $derived(store.screen);
+  /** The room the right panel takes on screen (0: none): notices keep clear of it. */
+  const rightInset = $derived(
+    rightViews.drawn.length > 0 && !layout.rightOff && ui.focus !== "on" ? layout.right : 0,
+  );
 
   const openingName = $derived.by(() => {
     const view = store.view;
@@ -385,7 +389,7 @@
     cancel={() => dropFlow.cancelOpen()}
   />
 {/if}
-<Notices {store} />
+<Notices {store} {rightInset} />
 {#if dropFlow.hover !== null}
   <DropBadge badge={dropFlow.hover.badge} at={dropFlow.hover.at} />
 {/if}

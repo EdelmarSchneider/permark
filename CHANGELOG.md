@@ -6,6 +6,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- Notices now close by themselves after a few seconds (they wait while you point at them), at most three show at once, and they no longer cover the right panel. Deleting, renaming or moving a file shows an Undo button. <!-- f: shell, explorer -->
+- When a file changed on disk while you were editing, the bar now leads with **Show differences** and says plainly what each choice keeps or drops. <!-- f: editing -->
 - **Edit shows special blocks the way View does.** Formulas, diagrams, alerts, footnotes, HTML, prompt blocks and the properties at the top of a document used to appear in Edit as a dashed box with their raw text. They now look exactly as they do in View. Click one, or select it and press Enter, to edit its text right there, with a live preview below; press Esc or click elsewhere to see it drawn again. The text inside prompt blocks stays editable as usual, and the properties open their editable card. <!-- f: editing, edit-mode -->
 - Code blocks in Edit now have the same colors as in View, and the colors follow as you type. <!-- f: editing, edit-mode -->
 - Edit uses View's column width, follows the reading width and zoom settings, and shows inline HTML such as keyboard keys the way View does. The properties card shows dates as View does, and one-line lists such as `tags: [a, b]` (also in YAML config files) can be edited as lists. <!-- f: editing, edit-mode, settings -->
@@ -15,6 +17,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Renaming or moving a file now also updates links written right after a prompt tag such as `<context>`, and link definitions placed directly above a paragraph; broken-link checks and search see these links too, and read them again when prompt files are turned on or off. <!-- f: links, file-ops, search -->
 
 ### Fixed
+- Your own saves no longer show up as "changed since you last read", and that notice no longer pushes the page down. Discarding edits or going from Source back to View keeps your place. Quick open no longer lists files that only match a few scattered letters. <!-- f: review, search, editing -->
+- Find in page (Ctrl+F) now works in Edit: matches are highlighted, Enter or F3 moves between them, and Esc selects the current match. Before, the keys went into the document. The outline now follows the place you are at in Edit, and a heading you click in the outline stays highlighted, also near the end of the page. <!-- f: find, outline, editing -->
 - In Edit, typing while a formula, diagram or other drawn block is selected (for example right after pressing Esc on it) no longer replaces the whole block: the text goes next to it. Two spaces typed in a row are saved as spaces instead of a non-breaking space. <!-- f: editing -->
 - The question about unsaved changes now takes the keyboard: Esc keeps editing, and typing or shortcuts such as Ctrl+S and Ctrl+W no longer act on the document behind it. <!-- f: editing -->
 - In Edit, text ending in a space kept its escapes when saved, so an escaped bracket before a link or formula, or a `#`, `1.` or `-` typed at the start of a line, no longer turns into a link, heading or list in the file. If a save still holds something that may read differently, a short note says so. <!-- f: editing -->

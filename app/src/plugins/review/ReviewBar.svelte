@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The strip under the header: "Changed since you last read · 3 changes [Review]", and in review the tools of it:
+  // Over the top of the page: "Changed since you last read · 3 changes [Review]"; under the header, in review, its tools:
   // previous | next, Keep all, Revert all, Undo, what to compare with, Done. The keyboard follows the review: opened
   // (from the bar, the palette, a key) it lands on the bar's first control; closed (Done, Esc) it goes back to the
   // page when it had no place left.
@@ -61,11 +61,14 @@
 </script>
 
 {#if shown.status === "offer"}
-  <div class="bar" role="region" aria-label={t("review.bar")}>
-    <span>{tn("review.offer", shown.count)}</span>
-    <button type="button" class="btn btn--sm" onclick={() => void review.begin()}>
-      {t("review.review")}
-    </button>
+  <!-- the offer floats over the top of the page: appearing (a file changed outside) never pushes the text down -->
+  <div class="overlay">
+    <div class="bar floating" role="region" aria-label={t("review.bar")}>
+      <span>{tn("review.offer", shown.count)}</span>
+      <button type="button" class="btn btn--sm" onclick={() => void review.begin()}>
+        {t("review.review")}
+      </button>
+    </div>
   </div>
 {:else if shown.status === "reviewing"}
   {@const view = shown.view}
@@ -152,6 +155,21 @@
     border-bottom: 1px solid var(--border);
     background: color-mix(in srgb, var(--accent) 7%, var(--bg));
     font-size: var(--fs-ui-sm);
+  }
+  .overlay {
+    position: relative;
+    z-index: 6;
+    height: 0;
+  }
+  .floating {
+    position: absolute;
+    top: var(--sp-2);
+    right: var(--sp-4);
+    max-width: calc(100% - 2 * var(--sp-4));
+    padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-pop);
   }
   .spacer {
     flex: 1;

@@ -13,7 +13,9 @@
 
   const explorer = new ExplorerStore(api, {
     fail: (error) => store.notifyFileOpFailed(error),
-    note: (text) => store.notifyNote(text),
+    // one file-operation note with Undo at a time: its Undo is always the newest operation, the one Ctrl+Z takes back
+    note: (text, ...actions) =>
+      actions.length === 0 ? store.notifyNote(text) : store.notifyKeyed("fileOp", text, ...actions),
     view: () => store.label,
     linkUpdate: () => store.linkUpdate,
     openProject: (path) => void store.open(path),

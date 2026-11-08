@@ -1225,6 +1225,120 @@ describe("focus mode", () => {
   });
 });
 
+describe("find in page and the outline in the editors", () => {
+  const modeButton = (label: string): HTMLButtonElement | undefined =>
+    [...target.querySelectorAll<HTMLButtonElement>(".modes button")].find(
+      (b) => b.textContent?.trim() === label,
+    );
+  const bar = (): HTMLInputElement | null =>
+    target.querySelector<HTMLInputElement>("[role=search] input");
+  const count = (): string => target.querySelector("[role=search] .count")?.textContent ?? "";
+  const matches = (): Element[] => [...target.querySelectorAll(".ProseMirror .find-match")];
+  const key = (on: EventTarget, init: KeyboardEventInit): void => {
+    on.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+  };
+
+  async function edit(): Promise<HTMLElement> {
+    await import("../editing/visual/jsdomShims");
+    await show("README.md");
+    await until(() => modeButton("Edit") !== undefined, "mode switch");
+    modeButton("Edit")?.click();
+    await until(() => editing.finder !== null, "visual editor");
+    return target.querySelector(".ProseMirror") as HTMLElement;
+  }
+
+  it("Edit: Ctrl+F opens the find bar over the text; next | previous; Escape selects the match in the editor", async () => {
+    const editor = await edit();
+    const before = editing.current();
+    editor.focus();
+    key(editor, { key: "f", ctrlKey: true });
+    await tick();
+    const input = bar();
+    if (!input) throw new Error("no find bar");
+    expect(document.activeElement).toBe(input);
+    input.value = "keep";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await tick();
+    // painted over the text (the paragraph and the task item), the first one current
+    expect(matches().map((m) => m.textContent?.toLowerCase())).toEqual(["keep", "keep"]);
+    expect(count()).toBe("1 of 2");
+    expect(matches()[0]?.classList.contains("find-match--current")).toBe(true);
+    key(input, { key: "Enter" });
+    await tick();
+    expect(count()).toBe("2 of 2");
+    expect(matches()[1]?.classList.contains("find-match--current")).toBe(true);
+    key(input, { key: "F3" });
+    await tick();
+    expect(count()).toBe("1 of 2");
+    key(input, { key: "Enter", shiftKey: true });
+    await tick();
+    expect(count()).toBe("2 of 2");
+    // what was typed went to the bar, never into the text
+    expect(editing.current()).toBe(before);
+    expect(editing.unsaved).toBe(false);
+    key(input, { key: "Escape" });
+    await tick();
+    expect(bar()).toBeNull();
+    expect(ui.finding).toBe(false);
+    expect(matches()).toHaveLength(0);
+    // Escape in the bar closes only the bar: the editor holds the keyboard, the match selected
+    expect(editing.mode).toBe("edit");
+    expect(document.activeElement).toBe(editor);
+    expect(editing.selection).toBe("Keep");
+    // the header's find opens the bar in Edit too
+    target.querySelector<HTMLButtonElement>("button[aria-label='Find in page']")?.click();
+    await tick();
+    expect(bar()).not.toBeNull();
+  });
+
+  it("Source keeps its own search; a mode switch closes the bar and nothing opens later in View", async () => {
+    const editor = await edit();
+    key(editor, { key: "f", ctrlKey: true });
+    await tick();
+    expect(bar()).not.toBeNull();
+    modeButton("Source")?.click();
+    await until(() => target.querySelector(".cm-editor") !== null, "source editor");
+    await tick();
+    expect(bar()).toBeNull();
+    expect(ui.finding).toBe(false);
+    // the header's find in Source opens CodeMirror's panel, not the page's bar
+    target.querySelector<HTMLButtonElement>("button[aria-label='Find in page']")?.click();
+    await until(() => target.querySelector(".cm-search") !== null, "source search panel");
+    expect(ui.finding).toBe(false);
+    modeButton("View")?.click();
+    await until(() => target.querySelector(".cm-editor") === null, "back to View");
+    await tick();
+    expect(bar()).toBeNull();
+  });
+
+  it("Edit: the outline's current heading follows the editor's scroll; an outline click scrolls the editor", async () => {
+    await edit();
+    const scroller = target.querySelector("[data-scroller]") as HTMLElement;
+    const headings = [...target.querySelectorAll(".ProseMirror h1, .ProseMirror h2")];
+    expect(headings).toHaveLength(7);
+    // jsdom has no layout: heading i stands 100 px below the one before and moves with the scroll
+    const order = new Map<Element, number>(headings.map((h, i) => [h, i]));
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const at = order.get(this);
+        return at === undefined
+          ? new DOMRect(0, 0, 0, 0)
+          : new DOMRect(0, 100 * at - scroller.scrollTop + 5, 600, 30);
+      });
+    try {
+      scroller.scrollTop = 300;
+      scroller.dispatchEvent(new Event("scroll"));
+      await until(() => documents.currentHeading === 3, "the heading at the top of the editor");
+      documents.goToHeading(5);
+      expect(scroller.scrollTop).toBe(300 + (500 - 300 + 5) - 12);
+      expect(documents.currentHeading).toBe(5);
+    } finally {
+      rect.mockRestore();
+    }
+  });
+});
+
 describe("going back from an editor", () => {
   const modeButton = (label: string): HTMLButtonElement | undefined =>
     [...target.querySelectorAll<HTMLButtonElement>(".modes button")].find(

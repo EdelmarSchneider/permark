@@ -1,6 +1,7 @@
 <script lang="ts">
   // The file changed (or went away) on disk while the person edited it: nothing is overwritten. The banner says
-  // so and offers the three ways out; the differences (theirs -> mine) unfold below it.
+  // so and offers the ways out; the differences (theirs -> mine) unfold below it. Looking comes first (the primary
+  // button): each of the two ways that drop a version says in its label which one it drops, so none asks again.
   import { t } from "../i18n";
   import { diffRows, type DiffRow } from "./diffRows";
 
@@ -16,7 +17,6 @@
   let { theirs, deleted, mine, reload, keepMine, saveAsNew }: Props = $props();
 
   let open = $state(false);
-  let confirming = $state(false);
 
   const rows = $derived<DiffRow[]>(open && theirs !== null ? diffRows(theirs, mine) : []);
 </script>
@@ -28,36 +28,30 @@
       {deleted ? t("conflict.deletedText") : t("conflict.text")}
     </p>
     <div class="actions">
-      {#if confirming}
-        <span class="confirm">{t("conflict.reloadConfirm")}</span>
-        <button type="button" class="btn btn--sm btn--primary" onclick={reload}
-          >{t("conflict.discard")}</button
-        >
-        <button type="button" class="btn btn--sm" onclick={() => (confirming = false)}
-          >{t("common.cancel")}</button
-        >
-      {:else}
-        {#if !deleted}
-          <button type="button" class="btn btn--sm" onclick={() => (confirming = true)}>
-            {t("conflict.reload")}
-          </button>
-        {/if}
+      {#if deleted}
+        <!-- the file is gone: writing it back drops nothing -->
         <button type="button" class="btn btn--sm btn--primary" onclick={keepMine}>
-          {deleted ? t("conflict.recreate") : t("conflict.keepMine")}
+          {t("conflict.recreate")}
         </button>
         <button type="button" class="btn btn--sm" onclick={saveAsNew}
           >{t("conflict.saveAsNew")}</button
         >
-        {#if !deleted}
-          <button
-            type="button"
-            class="btn btn--sm btn--ghost"
-            aria-expanded={open}
-            onclick={() => (open = !open)}
-          >
-            {open ? t("conflict.hideDiff") : t("conflict.showDiff")}
-          </button>
-        {/if}
+      {:else}
+        <button
+          type="button"
+          class="btn btn--sm btn--primary"
+          aria-expanded={open}
+          onclick={() => (open = !open)}
+        >
+          {open ? t("conflict.hideDiff") : t("conflict.showDiff")}
+        </button>
+        <button type="button" class="btn btn--sm" onclick={keepMine}>
+          {t("conflict.keepMine")}
+        </button>
+        <button type="button" class="btn btn--sm" onclick={reload}>{t("conflict.reload")}</button>
+        <button type="button" class="btn btn--sm" onclick={saveAsNew}
+          >{t("conflict.saveAsNew")}</button
+        >
       {/if}
     </div>
   </div>
@@ -112,10 +106,6 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--sp-2);
-  }
-  .confirm {
-    font-size: var(--fs-ui-sm);
-    color: var(--muted);
   }
   .diff {
     max-height: 45vh;

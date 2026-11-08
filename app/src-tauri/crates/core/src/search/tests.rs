@@ -127,11 +127,23 @@ fn fuzzy_tiers_rank_name_prefix_over_substring_over_subsequence_over_path() {
 #[test]
 fn fuzzy_prefers_word_starts_and_runs_and_reports_positions() {
     let good = fuzzy("rp", "docs/retry-policy.md").unwrap();
-    let bad = fuzzy("rp", "docs/carxpool.md").unwrap();
-    assert!(good.score > bad.score);
+    let run = fuzzy("rp", "docs/rpc-notes.md").unwrap();
+    assert!(run.score > good.score);
     assert_eq!(good.positions, [5, 11]);
     let run = fuzzy("abc", "x/abcdef.md").unwrap();
     assert_eq!(run.positions, [2, 3, 4]);
+}
+
+#[test]
+fn fuzzy_drops_letters_strewn_over_a_path() {
+    // "guid": the guide; its letters scattered over another path are no match
+    assert!(fuzzy("guid", "docs/guide.md").is_some());
+    assert!(fuzzy("guid", "programming/build/rust-tauri.md").is_none());
+    assert!(fuzzy("rp", "docs/carxpool.md").is_none());
+    // word starts and runs still match out of order of the words
+    assert!(fuzzy("rt", "notes/rust-tauri.md").is_some());
+    assert!(fuzzy("rusttau", "notes/rust-tauri.md").is_some());
+    assert!(fuzzy("dgd", "docs/guide.md").is_some());
 }
 
 #[test]
