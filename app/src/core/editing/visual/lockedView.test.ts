@@ -8,23 +8,27 @@ import type { Body } from "../../../api/generated/Body";
 import type { FrontMatter } from "../../../api/generated/FrontMatter";
 import { buildDoc, compose, type Built } from "./compose";
 import { createCore, LOCKED, type Core, type LockedHost } from "./core";
-import { lockedLooks, type LockedRender } from "./lockedRender";
+import { LookBook, type LockedRender } from "./lockedRender";
 import { appPlugins, type PluginHost } from "./plugins";
 
 let core: Core;
+/** Looks a test sets by node; the rest come from the renders taken, as in the app. */
 let looks = new WeakMap<PMNode, LockedRender>();
+let book = new LookBook();
 const enhanced: HTMLElement[] = [];
 const neared: HTMLElement[] = [];
 const undone: HTMLElement[] = [];
 const followed: string[] = [];
 let refreshed: () => void = () => {};
+/** When a render asked for comes back (at once unless a test holds it). */
+let answer: () => Promise<void> = () => Promise.resolve();
 let opened: { source: string; replace: (source: string) => void }[] = [];
 
 const host: LockedHost = {
-  render: (node) => looks.get(node) ?? null,
+  render: (node) => looks.get(node) ?? book.get(node),
   refresh: () => {
     refreshed();
-    return Promise.resolve();
+    return answer();
   },
   blocks: {
     enhance: (element) => {
@@ -56,6 +60,8 @@ const host: LockedHost = {
   edit: () => {},
   sourceLabel: "Source of this block",
   sourceHint: "Esc to finish",
+  blockLabel: (name) => `block: ${name}`,
+  openHint: "Enter to edit",
 };
 
 const plugins: PluginHost = {
@@ -75,7 +81,12 @@ const plugins: PluginHost = {
 beforeAll(async () => {
   const target = document.createElement("div");
   document.body.append(target);
-  core = await createCore({ host: target, locked: host, first: appPlugins(plugins) });
+  core = await createCore({
+    host: target,
+    locked: host,
+    first: appPlugins(plugins),
+    label: "Document text",
+  });
 });
 
 afterAll(async () => {
@@ -86,6 +97,8 @@ beforeEach(() => {
   // a document of other nodes: the next one gets node views of its own
   core.setDoc(core.parse("Other text.\n"));
   looks = new WeakMap();
+  book = new LookBook();
+  answer = () => Promise.resolve();
   for (const list of [enhanced, neared, undone, followed]) list.length = 0;
   opened = [];
   refreshed = () => {};
@@ -149,10 +162,7 @@ const BODY: Body = {
 /** TEXT opened with View's looks known (null body: none known, as after a failed render). */
 async function open(body: Body | null = BODY): Promise<Built> {
   const built = await buildDoc(core, TEXT, SEGMENTS);
-  if (body !== null) {
-    const composed = compose(core, built, built.doc);
-    for (const [node, look] of lockedLooks(body, built.doc, composed)) looks.set(node, look);
-  }
+  if (body !== null) book.take(book.ask(), body, built.doc, compose(core, built, built.doc));
   core.setDoc(built.doc);
   return built;
 }
@@ -295,6 +305,7 @@ describe("the front matter", () => {
     press(card, "mousedown");
     press(card, "click");
     expect(opened.map((o) => o.source)).toEqual(["---\ntitle: A plan\n---"]);
+    expect(front.dataset.look).toBe("properties");
     expect(front.querySelector(".card-stub")).toBeNull();
     expect(front.querySelector(".sheet-stub input")).not.toBeNull();
     // a value set: the properties go on with the new source
@@ -432,6 +443,9 @@ function key(field: Element, name: string, init: KeyboardEventInit = {}): Keyboa
 
 const sourceAt = (n: number): string =>
   String(core.view.state.doc.nodeAt(lockedAt(n))?.attrs.source);
+
+/** The next frame: what the editor measures in it is done by then. */
+const frame = (): Promise<void> => new Promise((done) => requestAnimationFrame(() => done()));
 
 /** Lets the renders asked for settle (the test host answers at once). */
 async function settle(): Promise<void> {
@@ -650,8 +664,7 @@ const PROMPT_BODY: Body = {
 
 async function openPrompt(): Promise<Built> {
   const built = await buildDoc(core, PROMPT_TEXT, PROMPT_SEGMENTS);
-  const composed = compose(core, built, built.doc);
-  for (const [node, look] of lockedLooks(PROMPT_BODY, built.doc, composed)) looks.set(node, look);
+  book.take(book.ask(), PROMPT_BODY, built.doc, compose(core, built, built.doc));
   core.setDoc(built.doc);
   return built;
 }
@@ -702,6 +715,8 @@ describe("a prompt box", () => {
     open.getBoundingClientRect = () => new DOMRect(0, 100, 600, 40);
     close.getBoundingClientRect = () => new DOMRect(0, 251, 600, 9);
     caretInText();
+    core.view.dispatch(core.view.state.tr.insertText("!"));
+    await frame();
     expect(open.style.getPropertyValue("--prompt-box")).toBe("160px");
   });
 
@@ -765,6 +780,7 @@ describe("a prompt box", () => {
     vi.advanceTimersByTime(250);
     await settle();
     expect(inBox(tops()[1])).toBe(false);
+    await frame();
     expect(tops()[0]?.dataset.box).toBeUndefined();
   });
 
@@ -774,9 +790,264 @@ describe("a prompt box", () => {
     const at = lockedAt(2);
     view.dispatch(view.state.tr.delete(at, at + 1));
     expect(tops().some(inBox)).toBe(false);
+    await frame();
     expect(tops()[0]?.dataset.box).toBeUndefined();
     undo(view.state, view.dispatch);
     expect(inBox(tops()[1])).toBe(true);
+    await frame();
     expect(tops()[0]?.dataset.box).toBe("");
+  });
+});
+
+describe("a prompt box while typing elsewhere", () => {
+  it("typing outside the box finds no box again and measures nothing at once; the next frame measures once", async () => {
+    await openPrompt();
+    const open = tops()[0];
+    if (!open) throw new Error("no box");
+    const render = vi.spyOn(host, "render");
+    const measured = vi.spyOn(open, "getBoundingClientRect");
+    const view = core.view;
+    let end = -1;
+    view.state.doc.forEach((node, offset) => {
+      if (node.textContent === "After.") end = offset + node.nodeSize - 1;
+    });
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, end)));
+    view.dispatch(view.state.tr.insertText(" More."));
+    view.dispatch(view.state.tr.insertText("!"));
+    try {
+      expect(render).not.toHaveBeenCalled();
+      expect(measured).not.toHaveBeenCalled();
+      expect(inBox(tops()[1])).toBe(true);
+      expect(inBox(tops()[4])).toBe(false);
+      await frame();
+      expect(measured).toHaveBeenCalledTimes(1);
+      // a moved caret lays nothing out again
+      caretInText();
+      await frame();
+      expect(measured).toHaveBeenCalledTimes(1);
+    } finally {
+      render.mockRestore();
+    }
+  });
+});
+
+const NOTES_TEXT = ["Intro.", "", "[^a]: Note A.", "", "[^b]: Note B.", ""].join("\n");
+
+const NOTES_SEGMENTS = [
+  { lineStart: 1, lineEnd: 1, kind: "paragraph", lock: null },
+  { lineStart: 3, lineEnd: 3, kind: "footnote", lock: "footnote" },
+  { lineStart: 5, lineEnd: 5, kind: "footnote", lock: "footnote" },
+] as const;
+
+const note = (label: string, first: boolean): LockedRender => ({
+  kind: "footnote",
+  html: `<section class="footnotes"><ol><li id="fn-${label}"><p>Note ${label}.</p></li></ol></section>`,
+  first,
+});
+
+const REF_TEXT = ["See [the site][ref].", "", "[ref]: https://example.com/a", ""].join("\n");
+
+const REF_SEGMENTS = [
+  { lineStart: 1, lineEnd: 1, kind: "paragraph", lock: null },
+  { lineStart: 3, lineEnd: 3, kind: "raw", lock: "definition" },
+] as const;
+
+const linkTo = (href: string): LockedRender => ({
+  kind: "html",
+  html: `<p>See <a href="${href}">the site</a>.</p>`,
+});
+
+describe("blocks at rest follow View's look of the text around them", () => {
+  it("deleting the first footnote: the next one becomes the first, View's rule above it", async () => {
+    const built = await buildDoc(core, NOTES_TEXT, NOTES_SEGMENTS);
+    looks.set(built.doc.child(1), note("a", true));
+    looks.set(built.doc.child(2), note("b", false));
+    core.setDoc(built.doc);
+    expect(blocks()[1]?.dataset.notes).toBe("next");
+    const asked = vi.fn(() => {
+      const node = core.view.state.doc.nodeAt(lockedAt(0));
+      if (node) looks.set(node, note("b", true));
+    });
+    refreshed = asked;
+    const view = core.view;
+    const at = lockedAt(0);
+    view.dispatch(view.state.tr.delete(at, at + 1));
+    await settle();
+    expect(asked).toHaveBeenCalledTimes(1);
+    expect(blocks()).toHaveLength(1);
+    expect(blocks()[0]?.dataset.notes).toBe("first");
+  });
+
+  it("editing a link definition: the paragraph using it follows; a block whose look did not change stays as drawn", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const built = await buildDoc(core, REF_TEXT, REF_SEGMENTS);
+    const paragraph = built.doc.child(0);
+    expect(paragraph.type.name).toBe(LOCKED);
+    looks.set(paragraph, linkTo("https://example.com/a"));
+    looks.set(built.doc.child(1), { kind: "none" });
+    core.setDoc(built.doc);
+    const field = openBox(1);
+    refreshed = () => {
+      looks.set(core.view.state.doc.child(0), linkTo("https://example.com/b"));
+    };
+    type(field, "[ref]: https://example.com/b");
+    vi.advanceTimersByTime(250);
+    await settle();
+    expect(blocks()[0]?.querySelector("a")?.getAttribute("href")).toBe("https://example.com/b");
+    // the same look again: nothing drawn anew
+    const drawn = blocks()[0]?.querySelector("p");
+    type(field, "[ref]: https://example.com/b ");
+    vi.advanceTimersByTime(250);
+    await settle();
+    expect(blocks()[0]?.querySelector("p")).toBe(drawn);
+  });
+
+  it("undo after an edit was closed: the block shows View's look of its old source at once", async () => {
+    await open();
+    const field = openBox(1);
+    type(field, '<div class="note">\nOther words\n</div>');
+    key(field, "Escape");
+    await settle();
+    // no render of the new text came back: its source shows
+    expect(blocks()[1]?.dataset.look).toBe("source");
+    undo(core.view.state, core.view.dispatch);
+    expect(blocks()[1]?.dataset.look).toBe("view");
+    expect(blocks()[1]?.querySelector(":scope > .note")?.textContent).toContain("words");
+  });
+
+  it("a block brought back by undo with no look known: a render is asked for, its look comes with it", async () => {
+    await openMath();
+    const view = core.view;
+    const at = lockedAt(0);
+    view.dispatch(view.state.tr.delete(at, at + 1));
+    await settle();
+    const asked = vi.fn(() => {
+      const node = core.view.state.doc.nodeAt(lockedAt(0));
+      if (node && !looks.has(node)) looks.set(node, mathLook("a + b"));
+    });
+    refreshed = asked;
+    undo(view.state, view.dispatch);
+    await settle();
+    expect(asked).toHaveBeenCalledTimes(1);
+    expect(blocks()[0]?.dataset.look).toBe("view");
+    expect(blocks()[0]?.querySelector(".math")?.textContent).toBe("a + b");
+  });
+});
+
+describe("renders that come back late", () => {
+  it("an answer for a text since typed on never overwrites the preview", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await openMath();
+    const field = openBox(0);
+    const held: (() => void)[] = [];
+    answer = () => new Promise<void>((done) => void held.push(done));
+    refreshed = () => {
+      const node = core.view.state.doc.nodeAt(lockedAt(0));
+      if (node) looks.set(node, mathLook(String(node.attrs.source).split("\n")[1] ?? ""));
+    };
+    const preview = blocks()[0]?.querySelector(".pm-locked__preview");
+    type(field, "$$\nold\n$$");
+    vi.advanceTimersByTime(250);
+    expect(held).toHaveLength(1);
+    type(field, "$$\nnew\n$$");
+    held[0]?.();
+    await settle();
+    expect(preview?.querySelector(".math")?.textContent).toBe("a + b");
+    vi.advanceTimersByTime(250);
+    held[1]?.();
+    await settle();
+    expect(preview?.querySelector(".math")?.textContent).toBe("new");
+  });
+
+  it("a block gone with typing still to render, or with its render on the way: nothing comes after", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await openMath();
+    const asked = vi.fn();
+    refreshed = asked;
+    type(openBox(0), "$$\nx\n$$");
+    // another document opens
+    core.setDoc(core.parse("Other text.\n"));
+    vi.advanceTimersByTime(1000);
+    await settle();
+    expect(asked).not.toHaveBeenCalled();
+
+    await openMath();
+    const held: (() => void)[] = [];
+    answer = () => new Promise<void>((done) => void held.push(done));
+    type(openBox(0), "$$\ny\n$$");
+    vi.advanceTimersByTime(250);
+    expect(asked).toHaveBeenCalledTimes(1);
+    const preview = blocks()[0]?.querySelector(".pm-locked__preview");
+    const dispatch = vi.spyOn(core.view, "dispatch");
+    try {
+      core.setDoc(core.parse("Other text.\n"));
+      held[0]?.();
+      await settle();
+      vi.advanceTimersByTime(1000);
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(preview?.querySelector(".math")?.textContent).toBe("a + b");
+      expect(asked).toHaveBeenCalledTimes(1);
+    } finally {
+      dispatch.mockRestore();
+    }
+  });
+});
+
+describe("safety and input", () => {
+  it("while a block is open, a link in its preview is never followed (not every webview knows inert)", async () => {
+    await open();
+    openBox(1);
+    const link = blocks()[1]?.querySelector(".pm-locked__preview a[href]");
+    if (!link) throw new Error("no link");
+    expect(press(link, "click").defaultPrevented).toBe(true);
+    expect(press(link, "click", { ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(followed).toEqual([]);
+  });
+
+  it("a key the IME takes (key code 229) is never one of the box's own", async () => {
+    await openMath();
+    const field = openBox(0);
+    field.setSelectionRange(0, 0);
+    expect(key(field, "ArrowUp", { keyCode: 229 }).defaultPrevented).toBe(false);
+    expect(key(field, "Escape", { keyCode: 229 }).defaultPrevented).toBe(false);
+    expect(blocks()[0]?.querySelector("textarea")).toBe(field);
+  });
+
+  it("a change of the block during a composition leaves the box's text alone; the composition's end puts it in", async () => {
+    await openMath();
+    const field = openBox(0);
+    field.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    type(field, "$$\na + b か\n$$", { isComposing: true });
+    const view = core.view;
+    const at = lockedAt(0);
+    const node = view.state.doc.nodeAt(at);
+    view.dispatch(
+      view.state.tr.setNodeMarkup(at, undefined, { ...node?.attrs, source: "$$\nq\n$$" }),
+    );
+    expect(field.value).toBe("$$\na + b か\n$$");
+    type(field, "$$\na + b 化\n$$", { isComposing: true });
+    field.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "化" }));
+    expect(sourceAt(0)).toBe("$$\na + b 化\n$$");
+    expect(field.value).toBe("$$\na + b 化\n$$");
+  });
+});
+
+describe("names for assistive technology", () => {
+  it("each block kept as written is a named group that says how to open it; the editor's text has a name", async () => {
+    expect(core.view.dom.getAttribute("aria-label")).toBe("Document text");
+    await open();
+    const [front, html, definition] = blocks();
+    for (const block of [front, html, definition]) {
+      expect(block?.getAttribute("role")).toBe("group");
+      expect(block?.getAttribute("aria-description")).toBe("Enter to edit");
+    }
+    expect(front?.getAttribute("aria-label")).toBe("block: properties");
+    expect(html?.getAttribute("aria-label")).toBe("block: html");
+    expect(definition?.getAttribute("aria-label")).toBe("block: other");
+    // opened: the box has its own name and hint
+    openBox(1);
+    expect(html?.hasAttribute("aria-description")).toBe(false);
+    await openMath();
+    expect(blocks()[0]?.getAttribute("aria-label")).toBe("block: formula");
   });
 });

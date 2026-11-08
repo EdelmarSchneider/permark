@@ -8,17 +8,26 @@
 
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import { closeHistory, redo, undo } from "@milkdown/kit/prose/history";
-import { NodeSelection, Plugin, Selection } from "@milkdown/kit/prose/state";
+import {
+  NodeSelection,
+  Plugin,
+  PluginKey,
+  Selection,
+  type Transaction,
+} from "@milkdown/kit/prose/state";
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $ctx, $node, $prose, $view } from "@milkdown/kit/utils";
 import type { FrontMatter } from "../../../api/generated/FrontMatter";
 import type { BlockHooks } from "../../doc/blocks";
-import type { LockedRender } from "./lockedRender";
+import { sameLook, type LockedRender } from "./lockedRender";
 
 export const LOCKED = "pm_locked";
 
 /** Meta of a transaction made when View's looks came back from a render (what depends on them is found again). */
 export const LOOKS_META = "pmLockedLooks";
+
+/** Meta of a transaction made from an opened block: the block renders its text again on its own pause. */
+const TYPED_META = "pmLockedTyped";
 
 /** The frame that paints a prompt box: under its open edge, stretched to its close edge (`promptBoxes.ts`). */
 const PROMPT_FRAME = "pm-prompt-frame";
@@ -45,6 +54,19 @@ export function reasonOf(node: PMNode): LockReason {
   return LOCK_REASONS.find((reason) => reason === node.attrs.reason) ?? "kind";
 }
 
+/** What a locked block is, by the name assistive technology gives it. */
+export type BlockName =
+  "properties" | "html" | "formula" | "footnote" | "diagram" | "alert" | "other";
+
+function nameOf(node: PMNode): BlockName {
+  const reason = reasonOf(node);
+  if (reason === "frontMatter") return "properties";
+  if (reason === "diagram" || reason === "footnote" || reason === "html") return reason;
+  if (reason === "math" || node.attrs.kind === "math") return "formula";
+  if (node.attrs.kind === "alert") return "alert";
+  return "other";
+}
+
 /** What a locked atom needs from the app to draw itself. */
 export type LockedHost = {
   /** View's look of this node (filled before its first paint); null: none known, the source shows. */
@@ -69,6 +91,10 @@ export type LockedHost = {
   sourceLabel: string;
   /** The short line under that box: how to finish. */
   sourceHint: string;
+  /** The name of a block at rest. */
+  blockLabel(name: BlockName): string;
+  /** How a block at rest is opened. */
+  openHint: string;
 };
 
 const noHost: LockedHost = {
@@ -82,6 +108,8 @@ const noHost: LockedHost = {
   edit: () => {},
   sourceLabel: "Source",
   sourceHint: "Esc",
+  blockLabel: (name) => name,
+  openHint: "Enter",
 };
 
 export const lockedHostCtx = $ctx<LockedHost, "pmLockedHost">(noHost, "pmLockedHost");
@@ -109,6 +137,116 @@ export const lockedNode = $node(LOCKED, () => ({
     },
   },
 }));
+
+/** Positions of the document, `from` to `to`. */
+export type Span = { from: number; to: number };
+
+/** A locked block among the top-level blocks `from` to `to` of `doc` (the editor keeps them at the top level). */
+function lockedIn(doc: PMNode, from: number, to: number): boolean {
+  let found = false;
+  doc.nodesBetween(from, Math.min(to, doc.content.size), (node) => {
+    if (node.type.name === LOCKED) found = true;
+    return false;
+  });
+  return found;
+}
+
+/**
+ * `tr` makes, removes or changes a locked block, or changes something that meets one of `spans` (positions in the
+ * document `tr` makes).
+ */
+export function touchesLocked(tr: Transaction, spans: readonly Span[] = []): boolean {
+  const maps = tr.mapping.maps;
+  for (let i = 0; i < maps.length; i++) {
+    const before = tr.docs[i];
+    const after = tr.docs[i + 1] ?? tr.doc;
+    const rest = tr.mapping.slice(i + 1);
+    let touched = false;
+    maps[i]?.forEach((oldStart, oldEnd, newStart, newEnd) => {
+      if (touched) return;
+      if ((before && lockedIn(before, oldStart, oldEnd)) || lockedIn(after, newStart, newEnd)) {
+        touched = true;
+        return;
+      }
+      const from = rest.map(newStart, -1);
+      const to = rest.map(newEnd, 1);
+      touched = spans.some((span) => from <= span.to && to >= span.from);
+    });
+    if (touched) return true;
+  }
+  return false;
+}
+
+/**
+ * The locked blocks of one editor (each repaints at rest when View's look of its node changed); `asked`: a render is
+ * asked for once the changes of this turn are in.
+ */
+type Painters = { repaint: Set<() => void>; asked: boolean };
+
+const paintersOf = new WeakMap<EditorView, Painters>();
+
+function painters(view: EditorView): Painters {
+  let found = paintersOf.get(view);
+  if (found === undefined) {
+    found = { repaint: new Set(), asked: false };
+    paintersOf.set(view, found);
+  }
+  return found;
+}
+
+/**
+ * View's looks came back from a render (or were taken from one that came late): every block at rest whose look changed
+ * repaints (a footnote that became the first gets the rule, a paragraph its new reference), and what depends on the
+ * looks (prompt boxes) is found again.
+ */
+export function relook(view: EditorView): void {
+  if (view.isDestroyed) return;
+  for (const repaint of painters(view).repaint) repaint();
+  view.dispatch(view.state.tr.setMeta(LOOKS_META, true));
+}
+
+/** The whole text rendered again, then the blocks repainted. */
+function rerender(view: EditorView, host: LockedHost): void {
+  void host.refresh().then(
+    () => relook(view),
+    () => {},
+  );
+}
+
+/** As `rerender`, once the changes of this turn are in (several in a row ask once). */
+function rerenderSoon(view: EditorView, host: LockedHost): void {
+  const at = painters(view);
+  if (at.asked) return;
+  at.asked = true;
+  queueMicrotask(() => {
+    at.asked = false;
+    if (!view.isDestroyed) rerender(view, host);
+  });
+}
+
+/**
+ * After a change of the locked blocks outside an opened one (a block made, removed, given back by undo | redo), the
+ * whole text is rendered again: View's look of a block can depend on the others (footnote order, references).
+ */
+export const lockedRelook = $prose((ctx) => {
+  const host = ctx.get(lockedHostCtx.key);
+  const key = new PluginKey<number>("pmLockedRelook");
+  return new Plugin<number>({
+    key,
+    state: {
+      init: () => 0,
+      apply: (tr, changes) =>
+        tr.docChanged && tr.getMeta(TYPED_META) !== true && touchesLocked(tr)
+          ? changes + 1
+          : changes,
+    },
+    view: () => ({
+      update: (view, previous) => {
+        if (key.getState(view.state) !== key.getState(previous)) rerenderSoon(view, host);
+      },
+    }),
+  });
+});
 
 /** Controls inside View's blocks (Copy, a diagram's buttons) and inside the properties: they keep their events. */
 const CONTROL = "button, input, select, textarea, label";
@@ -169,8 +307,11 @@ function frameOf(tag: string): HTMLElement {
   return frame;
 }
 
-/** What the block shows: View's blocks | View's card | a prompt box's edge | nothing | its source | its open source. */
-type Look = "view" | "card" | "prompt" | "none" | "source" | "open";
+/**
+ * What the block shows: View's blocks | View's card | a prompt box's edge | nothing | its source | its open source |
+ * the front matter's editable properties.
+ */
+type Look = "view" | "card" | "prompt" | "none" | "source" | "open" | "properties";
 
 /** The source opened in place: a text box above View's look of what it holds. */
 type Editing = {
@@ -184,6 +325,8 @@ type Editing = {
   composing: boolean;
   /** Time of the last edit put into the document since the box opened (null: none yet). */
   edited: number | null;
+  /** The node the last render that came back was of (null: none since the box opened). */
+  rendered: PMNode | null;
 };
 
 type State = { kind: "idle" } | { kind: "properties"; opened: string } | Editing;
@@ -337,11 +480,16 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       // which edge of a prompt box it is, opened or not (the box is laid out by it)
       if (render?.kind === "promptTag") dom.dataset.edge = render.edge;
       else delete dom.dataset.edge;
+      // one named thing to assistive technology; opened, its box | fields say how to finish
+      dom.setAttribute("role", "group");
+      dom.setAttribute("aria-label", host.blockLabel(nameOf(node)));
+      if (state.kind === "idle") dom.setAttribute("aria-description", host.openHint);
+      else dom.removeAttribute("aria-description");
       let look: Look;
       if (state.kind === "properties") {
         teardown = host.properties(dom, String(node.attrs.source), replace);
         dom.tabIndex = -1;
-        look = "card";
+        look = "properties";
       } else if (state.kind === "source") {
         editorLook(state);
         look = "open";
@@ -357,7 +505,9 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
     const replace = (next: string): void => {
       const at = getPos();
       if (at === undefined) return;
-      view.dispatch(view.state.tr.setNodeMarkup(at, undefined, { ...node.attrs, source: next }));
+      const tr = view.state.tr.setNodeMarkup(at, undefined, { ...node.attrs, source: next });
+      // rendered again once the properties close
+      view.dispatch(tr.setMeta(TYPED_META, true));
     };
 
     const select = (): void => {
@@ -366,21 +516,13 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, at)));
     };
 
-    /** View's looks came back from a render: the editor finds again what depends on them (prompt boxes). */
-    const looksBack = (): void => {
-      if (!gone) view.dispatch(view.state.tr.setMeta(LOOKS_META, true));
-    };
-
-    /** The source changed (an edit of the properties, undo): the look is rendered again. */
-    const rerender = (): void => {
-      void host.refresh().then(() => {
-        if (gone) return;
-        if (state.kind === "idle") {
-          render = host.render(node);
-          paint();
-        }
-        looksBack();
-      });
+    /** At rest: View's look of the node as known now, drawn when it differs from the one shown. */
+    const repaint = (): void => {
+      if (state.kind !== "idle") return;
+      const next = host.render(node);
+      if (next === render || (next !== null && render !== null && sameLook(next, render))) return;
+      render = next;
+      paint();
     };
 
     const outside = (event: Event): void => {
@@ -412,7 +554,7 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
         select();
         view.focus();
       }
-      if (changed) rerender();
+      if (changed) rerender(view, host);
     };
 
     // ---- the source in a text box ------------------------------------------------------------------------------
@@ -435,8 +577,9 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
           () => {
             // typed on meanwhile: the next pause renders again
             if (gone || state !== editing || node !== asked) return;
+            editing.rendered = node;
             showPreview(editing, host.render(node));
-            looksBack();
+            relook(view);
           },
           () => {},
         );
@@ -454,7 +597,7 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       // the first edit starts an undo step of its own: undo never joins it to an edit made before the box opened
       if (editing.edited === null) closeHistory(tr);
       editing.edited = tr.time;
-      view.dispatch(tr);
+      view.dispatch(tr.setMeta(TYPED_META, true));
       schedulePreview(editing);
     };
 
@@ -497,22 +640,26 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
         remove(at, editing, exit);
         return;
       }
-      // View's look of the new source when the preview has it already; else it is rendered again
+      // View's look of the new source when it is known already (the preview, a source seen before)
       const known = host.render(node);
       if (known !== null) render = known;
       paint();
       leave(exit);
-      if (known === null) rerender();
+      // the text the last render was of is not this one: rendered again (the others may look different with it)
+      if (editing.edited !== null && editing.rendered !== node) rerender(view, host);
     };
 
     const keyed = (editing: Editing, event: KeyboardEvent): void => {
-      if (event.isComposing || editing.composing) return;
+      // 229: a key the IME takes (some browsers say so before the composition starts)
+      if (event.isComposing || event.keyCode === 229 || editing.composing) return;
       const mod = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
       if (event.key === "Escape") closeSource(editing, "done");
       else if (mod && !event.altKey && (key === "z" || key === "y")) {
         // the editor's undo, not the box's own: the box shows the document's text at every step
-        (key === "y" || event.shiftKey ? redo : undo)(view.state, view.dispatch);
+        (key === "y" || event.shiftKey ? redo : undo)(view.state, (tr) =>
+          view.dispatch(tr.setMeta(TYPED_META, true)),
+        );
       } else if (!mod && !event.altKey && !event.shiftKey && leavesBox(editing.field, event.key)) {
         closeSource(editing, event.key === "ArrowUp" ? "before" : "after");
       } else return;
@@ -538,6 +685,7 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
         timer: undefined,
         composing: false,
         edited: null,
+        rendered: null,
       };
       field.addEventListener("input", () => {
         fit(field);
@@ -589,6 +737,15 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       // the block opens; a link in it is not followed
       if (open()) event.preventDefault();
     });
+    dom.addEventListener(
+      "click",
+      (event) => {
+        // opened: a link in the preview is never followed (it is inert, but not every webview knows that)
+        const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+        if (state.kind !== "idle" && link !== null && dom.contains(link)) event.preventDefault();
+      },
+      true,
+    );
     dom.addEventListener("keydown", (event) => {
       if (state.kind !== "properties" || event.key !== "Escape") return;
       // a field of the properties takes its own Escape (it puts its value back) and stops it
@@ -599,6 +756,7 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
     });
 
     openers.set(dom, open);
+    painters(view).repaint.add(repaint);
     paint();
 
     return {
@@ -609,8 +767,9 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
         node = next;
         if (!changed) return true;
         if (state.kind === "source") {
-          // the box stays (caret, composition): only a text it does not show yet goes in (undo, redo)
-          if (state.field.value !== String(next.attrs.source)) {
+          // the box stays (caret, composition): only a text it does not show yet goes in (undo, redo); during a
+          // composition the box keeps the person's text, and its end puts that text in (`compositionend`)
+          if (!state.composing && state.field.value !== String(next.attrs.source)) {
             showText(state.field, String(next.attrs.source));
             fit(state.field);
             schedulePreview(state);
@@ -623,11 +782,12 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
           dom.focus({ preventScroll: true });
           return true;
         }
+        // View's look of a source seen before at once (undo, redo); the render this change asks for brings the rest
         const known = host.render(next);
         if (known !== null) {
           render = known;
           paint();
-        } else rerender();
+        } else rerenderSoon(view, host);
         return true;
       },
       selectNode: () => {
@@ -651,6 +811,7 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       ignoreMutation: () => true,
       destroy: () => {
         gone = true;
+        painters(view).repaint.delete(repaint);
         document.removeEventListener("pointerdown", outside, true);
         teardown?.();
         teardown = null;

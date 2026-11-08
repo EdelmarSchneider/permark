@@ -6,7 +6,7 @@
   import type { Node as PMNode } from "@milkdown/kit/prose/model";
   import { api, type Body } from "../../api";
   import type { FrontMatter } from "../../api/generated/FrontMatter";
-  import type { BlockHooks } from "../doc/blocks";
+  import { NearScreen, type BlockHooks } from "../doc/blocks";
   import type { FrontMatterProps } from "../plugins/props";
   import { apiErrorText } from "../errors";
   import { conditions } from "../conditions/context.svelte";
@@ -25,6 +25,7 @@
   import { relativeLink } from "./source/complete";
   import type { Content, EditingSession, TextRange } from "./session.svelte";
   import type {
+    BlockName,
     Built,
     CodeLabel,
     Command,
@@ -32,7 +33,7 @@
     Core,
     Format,
     LockReason,
-    LockedRender,
+    LookBook,
     SlashState,
   } from "./visual";
   import type { PickerKind } from "./visual/characters";
@@ -70,8 +71,9 @@
   let core: Core | null = null;
   let built: Built | null = null;
   const composedOf = new WeakMap<PMNode, Composed>();
-  /** View's look of each locked block, by node (attrs feed the clipboard and node equality: the look stays out). */
-  const looks = new WeakMap<PMNode, LockedRender>();
+
+  /** How long Edit waits for View's render before it shows the document (blocks kept as written: their source). */
+  const FIRST_LOOKS_MS = 1500;
 
   const REASONS: Record<LockReason, MessageKey> = {
     frontMatter: "edit.locked.frontMatter",
@@ -85,6 +87,16 @@
     parse: "edit.locked.parse",
     reference: "edit.locked.reference",
     differs: "edit.locked.differs",
+  };
+
+  const NAMES: Record<BlockName, MessageKey> = {
+    properties: "doc.frontmatter",
+    html: "edit.block.html",
+    formula: "edit.block.formula",
+    footnote: "edit.block.footnote",
+    diagram: "edit.block.diagram",
+    alert: "edit.block.alert",
+    other: "edit.block.other",
   };
 
   type SlashItem = { id: string; label: MessageKey; command: Command | "image" };
@@ -185,14 +197,13 @@
   }
 
   /** View's look again for every locked block, from a render of the text as it is now. */
-  async function refreshLooks(path: string): Promise<void> {
+  async function refreshLooks(path: string, book: LookBook): Promise<void> {
     const now = composed();
     const doc = core?.view.state.doc;
-    const loaded = mod;
-    if (!now || !doc || !loaded) return;
+    if (!now || !doc) return;
+    const ticket = book.ask();
     const body = await viewOf(path, now.text);
-    if (body === null) return;
-    for (const [node, look] of loaded.lockedLooks(body, doc, now)) looks.set(node, look);
+    if (body !== null) book.take(ticket, body, doc, now);
   }
 
   /**
@@ -200,41 +211,16 @@
    * within a screen of the pane, as in View. `stop` undoes what is left.
    */
   function viewHooks(): { hooks: BlockHooks; stop: () => void } {
-    const undo = new Map<HTMLElement, () => void>();
-    const near = (element: HTMLElement): void => {
-      if (!undo.has(element)) undo.set(element, documents.decorator.near(element));
-    };
-    const observer =
-      typeof IntersectionObserver === "undefined"
-        ? null
-        : new IntersectionObserver(
-            (entries) => {
-              for (const entry of entries) {
-                if (!entry.isIntersecting || !(entry.target instanceof HTMLElement)) continue;
-                observer?.unobserve(entry.target);
-                near(entry.target);
-              }
-            },
-            { root: scroller, rootMargin: "100% 0px 100% 0px" },
-          );
+    const nearby = new NearScreen(scroller, (element) => documents.decorator.near(element));
     return {
       hooks: {
         enhance: documents.enhance,
         near: (element) => {
-          if (observer) observer.observe(element);
-          else near(element);
-          return () => {
-            observer?.unobserve(element);
-            undo.get(element)?.();
-            undo.delete(element);
-          };
+          nearby.watch(element);
+          return () => nearby.forget(element);
         },
       },
-      stop: () => {
-        observer?.disconnect();
-        for (const done of undo.values()) done();
-        undo.clear();
-      },
+      stop: () => nearby.stop(),
     };
   }
 
@@ -323,11 +309,14 @@
       mod = loaded;
       const hooks = viewHooks();
       nearby = hooks;
+      // View's look of each locked block (attrs feed the clipboard and node equality: the look stays out of them)
+      const book = new loaded.LookBook();
       made = await loaded.createCore({
         host: target,
+        label: t("edit.documentText"),
         locked: {
-          render: (node) => looks.get(node) ?? null,
-          refresh: () => refreshLooks(current.path),
+          render: (node) => book.get(node),
+          refresh: () => refreshLooks(current.path, book),
           blocks: hooks.hooks,
           card: (body, front) => mountCard(card, body, front),
           properties: propertiesCard,
@@ -336,6 +325,8 @@
           edit: (node) => void session.switchTo("source", lineOf(node)),
           sourceLabel: t("edit.blockSource"),
           sourceHint: t("edit.blockSourceHint"),
+          blockLabel: (name) => t(NAMES[name]),
+          openHint: t("edit.block.openHint"),
         },
         code: { label: codeLabel },
         first: loaded.appPlugins({
@@ -373,26 +364,50 @@
         await made.destroy();
         return;
       }
-      const doc = await loaded.buildDoc(made, current.text, current.segments ?? []);
-      // locked blocks draw View's look from their first paint: the render and the card come first
-      const body = doc.sources.some((s) => s.locked !== null)
-        ? await (early ?? viewOf(current.path, current.text))
+      const editor = made;
+      const doc = await loaded.buildDoc(editor, current.text, current.segments ?? []);
+      // locked blocks draw View's look from their first paint when the render and the card come in time; a render
+      // that comes later (a large document, a busy backend) brings it then, the blocks show their source until it does
+      const asked = doc.sources.some((s) => s.locked !== null)
+        ? (early ?? viewOf(current.path, current.text))
         : null;
-      if (body?.kind === "markdown" && body.frontMatter !== null) {
-        card = await loadCard().catch(() => null);
-      }
+      const ticket = book.ask();
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      const first =
+        asked === null
+          ? null
+          : await Promise.race([
+              asked,
+              new Promise<"late">((done) => {
+                deadline = setTimeout(() => done("late"), FIRST_LOOKS_MS);
+              }),
+            ]);
+      clearTimeout(deadline);
+      const body = first === "late" ? null : first;
+      const withCard = async (render: Body | null): Promise<void> => {
+        if (render?.kind === "markdown" && render.frontMatter !== null && card === null) {
+          card = await loadCard().catch(() => null);
+        }
+      };
+      await withCard(body);
       if (gone) {
-        await made.destroy();
+        await editor.destroy();
         return;
       }
-      if (body !== null) {
-        const now = loaded.compose(made, doc, doc.doc);
-        composedOf.set(doc.doc, now);
-        for (const [node, look] of loaded.lockedLooks(body, doc.doc, now)) looks.set(node, look);
-      }
+      const now = loaded.compose(editor, doc, doc.doc);
+      composedOf.set(doc.doc, now);
+      if (body !== null) book.take(ticket, body, doc.doc, now);
       built = doc;
-      core = made;
-      made.setDoc(doc.doc);
+      core = editor;
+      editor.setDoc(doc.doc);
+      if (first === "late" && asked !== null) {
+        void asked.then(async (late) => {
+          await withCard(late);
+          // a block changed meanwhile asked for a newer render: that one brings the looks
+          if (gone || late === null || !book.take(ticket, late, doc.doc, now)) return;
+          loaded.relook(editor.view);
+        });
+      }
       ready = true;
       refresh();
       scrollToLine(current.line);
@@ -748,6 +763,20 @@
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
+  /* a selected block at rest is one thing, shown by the outline: the browser's selection does not tint what View drew
+     (the editor marks its root so while a block is selected); the front matter card is never text to select */
+  .host
+    :global(
+      .ProseMirror-hideselection
+        .pm-locked:not([data-look="open"], [data-look="properties"])
+        *::selection
+    ) {
+    background: transparent;
+  }
+  .host :global(.pm-locked[data-look="card"]) {
+    -webkit-user-select: none;
+    user-select: none;
+  }
   .host :global(.pm-locked__bar) {
     display: flex;
     align-items: center;
@@ -775,7 +804,9 @@
   .host :global(.pm-locked[data-look="open"]) {
     margin-block: 0 1em;
   }
-  .host :global(.pm-locked[data-look="open"].ProseMirror-selectednode) {
+  /* opened, the box | the properties' own frame shows where the keys go: no selection outline around it too */
+  .host
+    :global(.pm-locked:is([data-look="open"], [data-look="properties"]).ProseMirror-selectednode) {
     outline: none;
   }
   .host :global(.pm-locked__editor) {

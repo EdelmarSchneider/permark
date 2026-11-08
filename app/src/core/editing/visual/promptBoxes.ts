@@ -5,10 +5,10 @@
 // edge, paints the box's border and background once (a box of blocks cannot be one element in the editor's DOM).
 
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
-import { Plugin, PluginKey } from "@milkdown/kit/prose/state";
+import { Plugin, PluginKey, type PluginView, type Transaction } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet, type EditorView } from "@milkdown/kit/prose/view";
 import { $prose } from "@milkdown/kit/utils";
-import { LOCKED, LOOKS_META, lockedHostCtx, type LockedHost } from "./lockedView";
+import { LOCKED, LOOKS_META, lockedHostCtx, touchesLocked, type LockedHost } from "./lockedView";
 
 /** Classes of the blocks inside a box: every one, and the last one (flush with the box's end). */
 const IN_BOX = "pm-prompt-in";
@@ -69,14 +69,16 @@ function boxesOf(doc: PMNode, edges: Map<number, Edge>): Boxes {
   if (boxes.length === 0) return { edges, boxes, decorations: DecorationSet.empty };
   boxes.sort((a, b) => a.open - b.open);
 
+  // the block right before a close edge is its box's last one (unless it is the open edge: an empty box)
+  const openOf = new Map(boxes.map((box) => [box.close, box.open]));
   const nodes: { pos: number; end: number }[] = [];
-  doc.forEach((node, pos) => nodes.push({ pos, end: pos + node.nodeSize }));
   const last = new Set<number>();
-  for (const box of boxes) {
-    const close = nodes.findIndex((n) => n.pos === box.close);
-    const before = nodes[close - 1];
-    if (before !== undefined && before.pos > box.open) last.add(before.pos);
-  }
+  doc.forEach((node, pos) => {
+    const open = openOf.get(pos);
+    const before = nodes.at(-1);
+    if (open !== undefined && before !== undefined && before.pos > open) last.add(before.pos);
+    nodes.push({ pos, end: pos + node.nodeSize });
+  });
   // boxes around a node: opens before it minus closes at or before it (boxes nest)
   const closes = boxes.map((b) => b.close).sort((a, b) => a - b);
   const decorations: Decoration[] = [];
@@ -96,13 +98,28 @@ function boxesOf(doc: PMNode, edges: Map<number, Edge>): Boxes {
   return { edges, boxes, decorations: DecorationSet.create(doc, decorations) };
 }
 
+/** `previous` moved along with the changes of `tr` (no box made, gone or changed). */
+function mapped(previous: Boxes, tr: Transaction): Boxes {
+  const map = (pos: number): number => tr.mapping.map(pos, 1);
+  const edges = new Map<number, Edge>();
+  for (const [pos, edge] of previous.edges) edges.set(map(pos), edge);
+  return {
+    edges,
+    boxes: previous.boxes.map((box) => ({ open: map(box.open), close: map(box.close) })),
+    decorations: previous.decorations.map(tr.mapping, tr.doc),
+  };
+}
+
 /**
- * Stretches each box's frame from its open edge to the bottom of its close edge, after every update and whenever the
- * editor's size changes (wrapping, pictures, View's embeds drawn); a box that is gone leaves no frame.
+ * Stretches each box's frame from its open edge to the bottom of its close edge: once when the document is shown,
+ * then in the next frame after a change of the document | boxes and whenever the editor's size changes (wrapping,
+ * pictures, View's embeds drawn), one measure for all of them; a box that is gone leaves no frame.
  */
-function frames(view: EditorView): { update: () => void; destroy: () => void } {
+function frames(view: EditorView): PluginView {
   let drawn = new Set<HTMLElement>();
+  let frame: number | null = null;
   const measure = (): void => {
+    frame = null;
     const now = new Set<HTMLElement>();
     for (const box of promptBoxesKey.getState(view.state)?.boxes ?? []) {
       const open = view.nodeDOM(box.open);
@@ -123,10 +140,27 @@ function frames(view: EditorView): { update: () => void; destroy: () => void } {
     }
     drawn = now;
   };
-  const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+  /** A measure in the next frame (none while there is no box to draw or take away). */
+  const later = (): void => {
+    if (frame !== null) return;
+    const boxes = promptBoxesKey.getState(view.state)?.boxes.length ?? 0;
+    if (boxes > 0 || drawn.size > 0) frame = requestAnimationFrame(measure);
+  };
+  const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(later);
   observer?.observe(view.dom);
+  // the first paint has the frames
   measure();
-  return { update: measure, destroy: () => observer?.disconnect() };
+  return {
+    update: (view, previous) => {
+      // a moved caret | selection lays nothing out again
+      const same = promptBoxesKey.getState(view.state) === promptBoxesKey.getState(previous);
+      if (view.state.doc !== previous.doc || !same) later();
+    },
+    destroy: () => {
+      observer?.disconnect();
+      if (frame !== null) cancelAnimationFrame(frame);
+    },
+  };
 }
 
 export const promptBoxes = $prose((ctx) => {
@@ -136,10 +170,13 @@ export const promptBoxes = $prose((ctx) => {
     state: {
       init: (_config, state) => boxesOf(state.doc, edgesOf(state.doc, host, new Map())),
       apply: (tr, previous) => {
-        if (!tr.docChanged && tr.getMeta(LOOKS_META) !== true) return previous;
-        const before = new Map<number, Edge>();
-        for (const [pos, edge] of previous.edges) before.set(tr.mapping.map(pos, 1), edge);
-        return boxesOf(tr.doc, edgesOf(tr.doc, host, before));
+        const looks = tr.getMeta(LOOKS_META) === true;
+        if (!tr.docChanged && !looks) return previous;
+        const moved = mapped(previous, tr);
+        // typing outside the boxes (the most common change) finds no box again
+        const spans = moved.boxes.map((box) => ({ from: box.open, to: box.close + 1 }));
+        if (!looks && !touchesLocked(tr, spans)) return moved;
+        return boxesOf(tr.doc, edgesOf(tr.doc, host, moved.edges));
       },
     },
     props: { decorations: (state) => promptBoxesKey.getState(state)?.decorations },

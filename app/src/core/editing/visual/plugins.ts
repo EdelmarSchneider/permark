@@ -207,7 +207,8 @@ export function appPlugins(host: PluginHost) {
               click: (_view, event) => {
                 const anchor =
                   event.target instanceof Element ? event.target.closest("a[href]") : null;
-                if (!anchor) return false;
+                // a click an opened block took (a link in its preview) follows nothing
+                if (!anchor || event.defaultPrevented) return false;
                 event.preventDefault();
                 if (event.ctrlKey || event.metaKey)
                   host.followLink(anchor.getAttribute("href") ?? "");

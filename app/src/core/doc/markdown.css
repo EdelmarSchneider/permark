@@ -346,11 +346,13 @@
   font-size: 0.9em;
   text-decoration-style: dotted;
 }
-.md-body dl dt {
+/* a description list of the document; the front matter card Edit draws in its body is the plugin's own markup, laid
+   out as View lays it out above the body */
+.md-body dl:where(:not(.pm-locked[data-look="card"] dl)) dt {
   font-weight: 600;
   margin-top: 0.6em;
 }
-.md-body dl dd {
+.md-body dl:where(:not(.pm-locked[data-look="card"] dl)) dd {
   margin: 0.15em 0 0 1.4em;
   color: var(--muted);
 }

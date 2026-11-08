@@ -134,6 +134,82 @@ export function lockedLooks(
   return looks;
 }
 
+/** `a` and `b` show the same (a repaint would draw the same blocks again). */
+export function sameLook(a: LockedRender, b: LockedRender): boolean {
+  switch (a.kind) {
+    case "html":
+      return b.kind === "html" && a.html === b.html;
+    case "footnote":
+      return b.kind === "footnote" && a.html === b.html && a.first === b.first;
+    case "frontMatter":
+      return (
+        b.kind === "frontMatter" && JSON.stringify(a.frontMatter) === JSON.stringify(b.frontMatter)
+      );
+    case "promptTag":
+      return b.kind === "promptTag" && a.tag === b.tag && a.edge === b.edge;
+    case "none":
+    case "source":
+      return b.kind === a.kind;
+    default:
+      return a satisfies never;
+  }
+}
+
+/** Sources whose look is kept for nodes made again (the oldest seen go first). */
+const KNOWN_SOURCES = 2000;
+
+/**
+ * View's looks of the locked blocks of one open document, from renders of its text. A look is kept by node and by the
+ * node's source: a node made again with a source seen before (undo, redo, a paste) shows that look at once, until a
+ * render of the text it is in gives its own. Only the answer to the latest render asked for is taken: an older one,
+ * slower to come, is of a text that is gone.
+ */
+export class LookBook {
+  #byNode = new WeakMap<PMNode, LockedRender>();
+  #bySource = new Map<string, LockedRender>();
+  #asked = 0;
+
+  /** The look of `node`; null: none known. */
+  get(node: PMNode): LockedRender | null {
+    return this.#byNode.get(node) ?? this.#bySource.get(String(node.attrs.source)) ?? null;
+  }
+
+  /** A render is asked for: the ticket its answer comes with. */
+  ask(): number {
+    this.#asked += 1;
+    return this.#asked;
+  }
+
+  /**
+   * The answer to the render of `ticket`: `body`, View's render of `composed.text` (the text of `doc`). False when a
+   * later render was asked for (its answer is the one taken).
+   */
+  take(ticket: number, body: Body, doc: PMNode, composed: Composed): boolean {
+    if (ticket !== this.#asked) return false;
+    // a source that looks two ways in this text (a tag line paired once only) lends no look
+    const seen = new Map<string, LockedRender | null>();
+    for (const [node, look] of lockedLooks(body, doc, composed)) {
+      this.#byNode.set(node, look);
+      if (look.kind === "source") continue;
+      const source = String(node.attrs.source);
+      const before = seen.get(source);
+      seen.set(
+        source,
+        before === undefined || (before !== null && sameLook(before, look)) ? look : null,
+      );
+    }
+    for (const [source, look] of seen) {
+      this.#bySource.delete(source);
+      if (look !== null) this.#bySource.set(source, look);
+    }
+    for (const oldest of this.#bySource.keys()) {
+      if (this.#bySource.size <= KNOWN_SOURCES) break;
+      this.#bySource.delete(oldest);
+    }
+    return true;
+  }
+}
+
 // ---- lines -> owners -----------------------------------------------------------------------------------------------
 
 /** Index of the first block ending at or after `line` (blocks are in text order and do not overlap). */

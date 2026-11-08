@@ -43,10 +43,17 @@ import { EditorState, Selection } from "@milkdown/kit/prose/state";
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $ctx, $node, $prose, $view } from "@milkdown/kit/utils";
 import { CODE_BLOCK, TABLE_WRAP, taskLabel } from "../../doc/enhance";
-import { lockedHostCtx, lockedKeys, lockedNode, lockedView, type LockedHost } from "./lockedView";
+import {
+  lockedHostCtx,
+  lockedKeys,
+  lockedNode,
+  lockedRelook,
+  lockedView,
+  type LockedHost,
+} from "./lockedView";
 import { promptBoxes } from "./promptBoxes";
 
-export { LOCKED, type LockReason, type LockedHost } from "./lockedView";
+export { LOCKED, relook, type BlockName, type LockReason, type LockedHost } from "./lockedView";
 
 const NO_BREAK_SPACE = String.fromCharCode(0xa0);
 
@@ -275,6 +282,8 @@ export type Core = {
 
 export type CoreOptions = {
   host: HTMLElement;
+  /** The accessible name of the editor's text. */
+  label?: string;
   locked?: LockedHost;
   code?: CodeHost;
   /** Before the stock plugins (keys and pastes seen first). */
@@ -299,7 +308,11 @@ export async function createCore(options: CoreOptions): Promise<Core> {
       // the blocks are the children of `.md-body`: the reading styles apply as they are
       ctx.update(editorViewOptionsCtx, (previous) => ({
         ...previous,
-        attributes: { class: "md-body pm-editor", spellcheck: "true" },
+        attributes: {
+          class: "md-body pm-editor",
+          spellcheck: "true",
+          ...(options.label === undefined ? {} : { "aria-label": options.label }),
+        },
       }));
       ctx.update(remarkStringifyOptionsCtx, (previous) => ({ ...previous, ...STRINGIFY_OPTIONS }));
       // text typed at the edge of a link stays out of it
@@ -312,6 +325,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
     .use(lockedNode)
     .use(lockedView)
     .use(lockedKeys)
+    .use(lockedRelook)
     .use(promptBoxes)
     .use(taskItemView)
     .use(codeBlockView)

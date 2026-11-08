@@ -461,6 +461,14 @@ export default {
   "edit.editInSource": "Im Quelltext bearbeiten",
   "edit.blockSource": "Quelltext dieses Blocks",
   "edit.blockSourceHint": "Esc zum Beenden",
+  "edit.block.html": "HTML",
+  "edit.block.formula": "Formel",
+  "edit.block.footnote": "Fußnote",
+  "edit.block.diagram": "Diagramm",
+  "edit.block.alert": "Hinweis",
+  "edit.block.other": "Block bleibt wie geschrieben",
+  "edit.block.openHint": "Eingabetaste zum Bearbeiten",
+  "edit.documentText": "Dokumenttext",
   "edit.visualForMarkdown":
     "Der Bearbeitungsmodus ist für Markdown- und Einstellungsdateien; nutze Quelltext.",
   "edit.diagramNoPlugin":

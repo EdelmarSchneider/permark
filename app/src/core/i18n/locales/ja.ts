@@ -461,6 +461,14 @@ export default {
   "edit.editInSource": "ソースで編集",
   "edit.blockSource": "このブロックのソース",
   "edit.blockSourceHint": "Esc で終了",
+  "edit.block.html": "HTML",
+  "edit.block.formula": "数式",
+  "edit.block.footnote": "脚注",
+  "edit.block.diagram": "図",
+  "edit.block.alert": "注意書き",
+  "edit.block.other": "記述どおりに保持されるブロック",
+  "edit.block.openHint": "Enter で編集",
+  "edit.documentText": "文書のテキスト",
   "edit.visualForMarkdown":
     "編集モードは Markdown ファイルと設定ファイル用です。ソースモードを使用してください。",
   "edit.diagramNoPlugin":

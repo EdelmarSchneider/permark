@@ -1,14 +1,23 @@
 // @vitest-environment jsdom
 import "./jsdomShims";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import type { Block } from "../../../api/generated/Block";
 import type { Body } from "../../../api/generated/Body";
+import type { FrontMatter } from "../../../api/generated/FrontMatter";
 import type { Segment } from "../../../api/generated/Segment";
 import { createMockConfig } from "../../../api/mockConfig";
 import { createMockEditing } from "../../../api/mockEdit";
 import { buildDoc, compose } from "./compose";
 import { createCore, type Core } from "./core";
-import { lockedLooks, lockedRenders, type LineBlock, type LockedRender } from "./lockedRender";
+import {
+  LookBook,
+  lockedLooks,
+  lockedRenders,
+  sameLook,
+  type LineBlock,
+  type LockedRender,
+} from "./lockedRender";
 
 let core: Core;
 
@@ -400,5 +409,100 @@ describe("locked blocks look like View", () => {
     ).toEqual([{ kind: "html", html: pre }, null]);
     const text: Body = { kind: "text", text: "x", language: null };
     expect(lockedRenders(text, blocks)).toEqual([{ kind: "source" }, null]);
+  });
+
+  it("footnote | prompt box HTML not shaped as the sanitizer's (a comment, a stray close) is never cut", () => {
+    const notes = (inner: string): string =>
+      '<section class="footnotes" data-footnotes="">\n<ol>\n<li id="fn-1">\n<p>One</p>\n</li>\n' +
+      `${inner}</ol>\n</section>`;
+    for (const inner of ["<!-- -->\n", "</li>\n", '<!-- <li id="fn-1"> -->\n']) {
+      const renders = lockedRenders(markdown([block(1, 1, "section", notes(inner))]), [
+        line(1, "[^1]: One", "footnote"),
+      ]);
+      expect(renders[0], inner).toEqual({ kind: "source" });
+    }
+    const math = '<p><span data-math-style="display">x</span></p>';
+    const box = (inner: string): string =>
+      '<details class="prompt-block" data-tag="context" open=""><summary>context</summary>\n' +
+      `${math}\n${inner}</details>`;
+    const blocks = [
+      line(1, "<context>", "html"),
+      line(2, "$$\nx\n$$", "math"),
+      line(5, "</context>", "html"),
+    ];
+    for (const inner of ["<!-- </details> -->\n", "</li>\n", "</p>\n"]) {
+      const renders = lockedRenders(markdown([block(2, 4, "details", box(inner))]), blocks);
+      expect(renders[1], inner).toEqual({ kind: "source" });
+    }
+  });
+
+  it("a close line with attributes is no prompt tag (only a tag's name is ever shown)", () => {
+    const details =
+      '<details class="prompt-block" data-tag="x" open=""><summary>x</summary>\n<p>words</p>\n</details>';
+    const blocks = [
+      line(1, "<x>", "html"),
+      line(2, "words"),
+      line(3, "</x onmouseover=1>", "html"),
+    ];
+    const renders = lockedRenders(markdown([block(2, 2, "details", details)]), blocks);
+    expect(renders.some((r) => r?.kind === "promptTag")).toBe(false);
+  });
+});
+
+describe("the looks of an open document", () => {
+  const TEXT = "<div>\nOne\n</div>\n\nWords.\n";
+  const SEGMENTS: Segment[] = [
+    { lineStart: 1, lineEnd: 3, kind: "html", lock: "html" },
+    { lineStart: 5, lineEnd: 5, kind: "paragraph", lock: null },
+  ];
+  const render = (html: string): Body =>
+    markdown([block(1, 3, "html", html), block(5, 5, "p", "<p>Words.</p>")]);
+
+  async function opened(): Promise<{ doc: PMNode; composed: ReturnType<typeof compose> }> {
+    const built = await buildDoc(core, TEXT, SEGMENTS);
+    return { doc: built.doc, composed: compose(core, built, built.doc) };
+  }
+
+  it("only the answer to the latest render asked for is taken", async () => {
+    const { doc, composed } = await opened();
+    const book = new LookBook();
+    const older = book.ask();
+    const newer = book.ask();
+    expect(book.take(newer, render("<div>New</div>"), doc, composed)).toBe(true);
+    expect(book.take(older, render("<div>Old</div>"), doc, composed)).toBe(false);
+    expect(book.get(doc.child(0))).toEqual({ kind: "html", html: "<div>New</div>" });
+    expect(book.get(doc.child(1))).toBeNull();
+  });
+
+  it("a block made again with a source seen before (undo, redo) shows that look at once", async () => {
+    const { doc, composed } = await opened();
+    const book = new LookBook();
+    book.take(book.ask(), render("<div>One</div>"), doc, composed);
+    const node = doc.child(0);
+    const again = node.type.create({ ...node.attrs });
+    expect(again).not.toBe(node);
+    expect(book.get(again)).toEqual({ kind: "html", html: "<div>One</div>" });
+    expect(book.get(node.type.create({ ...node.attrs, source: "<div>\nTwo\n</div>" }))).toBeNull();
+    // a later render unsure of it: the node's own look follows; what was known of the source stays
+    book.take(book.ask(), markdown([block(1, 5, "div", "<div>One</div>")]), doc, composed);
+    expect(book.get(node)).toEqual({ kind: "source" });
+    expect(book.get(node.type.create({ ...node.attrs }))).toEqual({
+      kind: "html",
+      html: "<div>One</div>",
+    });
+  });
+
+  it("two looks are the same when they show the same", () => {
+    const front: FrontMatter = { syntax: "yaml", raw: "a: 1", fields: [] };
+    const html = (text: string): LockedRender => ({ kind: "html", html: text });
+    expect(sameLook(html("<p>a</p>"), html("<p>a</p>"))).toBe(true);
+    expect(sameLook(html("<p>a</p>"), html("<p>b</p>"))).toBe(false);
+    const note = (first: boolean): LockedRender => ({ kind: "footnote", html: "x", first });
+    expect(sameLook(note(true), note(false))).toBe(false);
+    const card = (): LockedRender => ({ kind: "frontMatter", frontMatter: { ...front } });
+    expect(sameLook(card(), card())).toBe(true);
+    expect(sameLook({ kind: "none" }, { kind: "source" })).toBe(false);
+    const edge = (edge: "open" | "close"): LockedRender => ({ kind: "promptTag", tag: "a", edge });
+    expect(sameLook(edge("open"), edge("close"))).toBe(false);
   });
 });

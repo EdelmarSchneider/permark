@@ -199,8 +199,43 @@ export async function sideOf(arg: SideArg): Promise<Side | null> {
 
   const top = root.getBoundingClientRect().top;
   const blocks: Side["blocks"] = [];
-  // a block Edit keeps as written and draws as View: the blocks it holds are View's, measured as View's are; View's
-  // front matter card sits above the body View's side measures; one that shows its source stays one locked block.
+
+  // the front matter card: above View's body, inside Edit's (a block kept as written); measured first on both sides,
+  // its rows by their place in the card
+  const card =
+    arg.mode === "view"
+      ? root.parentElement?.querySelector(":scope > section.card")
+      : root.querySelector(':scope > .pm-locked[data-look="card"] > section.card');
+  if (card instanceof HTMLElement) {
+    const r = card.getBoundingClientRect();
+    const items: Item[] = [];
+    for (const el of card.querySelectorAll("dt, dd, .chip, pre")) {
+      const e = el.getBoundingClientRect();
+      const type = `card-${el.classList.contains("chip") ? "chip" : el.localName}`;
+      items.push({
+        type,
+        label: type,
+        props: {
+          ...styleOf(el),
+          "offset-left": px(e.left - r.left),
+          "offset-top": px(e.top - r.top),
+          height: px(e.height),
+        },
+      });
+    }
+    blocks.push({
+      kind: "card",
+      key: `card:${textOf(card)}`,
+      top: r.top - top,
+      bottom: r.bottom - top,
+      props: { height: px(r.height), ...frameOf(card) },
+      items,
+      locked: null,
+    });
+  }
+
+  // a block Edit keeps as written and draws as View: the blocks it holds are View's, measured as View's are; the
+  // front matter card is measured above; one that shows its source stays one locked block.
   // A prompt box: the box itself (View's details | Edit's frame under its open tag line), its summary row, then the
   // blocks it holds (View's children | the editor's blocks between the tag lines); the close tag line is the box's edge.
   const shown: HTMLElement[] = [];

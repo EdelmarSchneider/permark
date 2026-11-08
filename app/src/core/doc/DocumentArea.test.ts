@@ -529,6 +529,34 @@ describe("editing", () => {
     expect(target.querySelector(".reading")?.hasAttribute("hidden")).toBe(false);
   });
 
+  it("Edit does not wait long for View's render: blocks kept as written show their source, then View's look", async () => {
+    await import("../editing/visual/jsdomShims");
+    await show("README.md");
+    await until(() => modeButton("Edit") !== undefined, "mode switch");
+    const render = mock.configSheet.bind(mock);
+    let release = (): void => {};
+    const held = new Promise<void>((done) => (release = done));
+    const slow = vi.spyOn(mock, "configSheet").mockImplementation(async (path, text) => {
+      await held;
+      return render(path, text);
+    });
+    const math = (): HTMLElement | null =>
+      target.querySelector<HTMLElement>('.pm-editor .pm-locked[data-kind="math"]');
+    try {
+      modeButton("Edit")?.click();
+      await until(() => math() !== null, "the editor before the render");
+      expect(math()?.dataset.look).toBe("source");
+      release();
+      await until(() => math()?.dataset.look === "view", "View's look");
+      await until(
+        () => target.querySelector('.pm-editor .pm-locked[data-look="card"]') !== null,
+        "View's card",
+      );
+    } finally {
+      slow.mockRestore();
+    }
+  });
+
   it("the picture button chooses pictures in a file dialog and puts each in the image folder", async () => {
     await import("../editing/visual/jsdomShims");
     await show("notes/ideas.md");
