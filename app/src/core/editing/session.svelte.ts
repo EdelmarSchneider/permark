@@ -237,7 +237,8 @@ export class EditingSession {
     this.state = { s: "loading" };
     this.mode = wanted;
     this.lastEdit = wanted;
-    this.chosenMode = wanted;
+    // a file without Edit opens in Source, yet the person's choice stays: the next file that has Edit opens in it
+    this.chosenMode = mode;
     this.#used = true;
     this.#unguard = setLeaveGuard((leave) => this.confirmLeave(leave));
     await this.#load(line);
@@ -254,8 +255,25 @@ export class EditingSession {
       this.#close();
       return;
     }
+    this.#fitKind(result.value);
     this.#mount(result.value, line);
     this.dispatch({ e: "loaded", base: { hash: result.value.hash, text: result.value.text } });
+  }
+
+  /**
+   * The file, not the caller, decides between the visual editor and the others: the backend gives a block map for
+   * Markdown only. The visual editor on other text, or the sheet on Markdown, would show (and save) it wrong.
+   */
+  #fitKind(source: EditSource): void {
+    const markdown = source.segments !== null;
+    if (markdown === (this.kind === "markdown")) return;
+    if (markdown) {
+      this.kind = "markdown";
+      return;
+    }
+    this.kind = "text";
+    this.mode = "source";
+    this.lastEdit = "source";
   }
 
   #mount(source: EditSource, line: number): void {

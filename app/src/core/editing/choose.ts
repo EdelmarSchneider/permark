@@ -4,9 +4,18 @@ import { documents } from "../doc/document.svelte";
 import type { DocumentView } from "../../api";
 import { editing, type EditKind, type EditMode } from "./session.svelte";
 
-/** Why the open document cannot be edited (`null`: it can; no document: `noViewer`). */
-export function editBlockedReason(): string | null {
+/**
+ * The view of the document the window shows, `null` until it is on screen: while another file loads, the page still
+ * holds the previous file's view, and an editor chosen from it would be the wrong kind for the new file.
+ */
+function shownView(): DocumentView | null {
   const view = documents.view;
+  return view !== null && view.path === documents.path ? view : null;
+}
+
+/** Why the open document cannot be edited (`null`: it can; no document on screen yet: `noViewer`). */
+export function editBlockedReason(): string | null {
+  const view = shownView();
   if (view === null) return "noViewer";
   return view.editable.editable === "readOnly" ? view.editable.reason : null;
 }
@@ -29,7 +38,7 @@ export function chooseMode(mode: EditMode, at?: number): void {
     void editing.switchTo("view");
     return;
   }
-  const view = documents.view;
+  const view = shownView();
   if (shown === null || view === null || editBlockedReason() !== null) return;
   if (editing.mode === "view" || editing.path !== shown) {
     void editing.enter(mode, shown, editKindOf(view), documents.savePolicy, at);
@@ -43,7 +52,7 @@ export function chooseMode(mode: EditMode, at?: number): void {
 export function openRemembered(): void {
   const mode = editing.chosenMode;
   const shown = documents.path;
-  const view = documents.view;
+  const view = shownView();
   if (mode === "view" || shown === null || view === null) return;
   // the editor is already on this document
   if (editing.path === shown) return;
