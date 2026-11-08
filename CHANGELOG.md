@@ -17,6 +17,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Renaming or moving a file now also updates links written right after a prompt tag such as `<context>`, and link definitions placed directly above a paragraph; broken-link checks and search see these links too, and read them again when prompt files are turned on or off. <!-- f: links, file-ops, search -->
 
 ### Fixed
+- Every dialog now keeps the keyboard inside while it is open: Tab stays in it, Esc closes it, and focus goes back to where you were. Before, some dialogs let Tab move to the page behind them. <!-- f: shell, accessibility -->
 - Your own saves no longer show up as "changed since you last read", and that notice no longer pushes the page down. Discarding edits or going from Source back to View keeps your place. Quick open no longer lists files that only match a few scattered letters. <!-- f: review, search, editing -->
 - Find in page (Ctrl+F) now works in Edit: matches are highlighted, Enter or F3 moves between them, and Esc selects the current match. Before, the keys went into the document. The outline now follows the place you are at in Edit, and a heading you click in the outline stays highlighted, also near the end of the page. <!-- f: find, outline, editing -->
 - In Edit, typing while a formula, diagram or other drawn block is selected (for example right after pressing Esc on it) no longer replaces the whole block: the text goes next to it. Two spaces typed in a row are saved as spaces instead of a non-breaking space. <!-- f: editing -->
