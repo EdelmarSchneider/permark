@@ -11,6 +11,7 @@ import {
   type Result,
   type Segment,
 } from "../../api";
+import { t } from "../i18n";
 import {
   isUnsaved,
   transition,
@@ -67,6 +68,8 @@ export type ActiveEditor = {
   markAt?(): number | null;
   /** Text is being composed (IME): edits wait. */
   composing?(): boolean;
+  /** Some block of the text would read back otherwise than shown (a formula | link as text): a save says so. */
+  lost?(): boolean;
 };
 
 /** The last `marks` handed to the editors. */
@@ -153,6 +156,8 @@ export class EditingSession {
   #loadedSegments: { text: string; segments: Segment[] } | null = null;
   /** Marks shown now: the editor made next (Edit <-> Source) shows them too. */
   #marks: Marks | null = null;
+  /** The last save wrote a text that reads back otherwise (`ActiveEditor.lost`). */
+  #lostSaved = false;
 
   constructor(api: Api = defaultApi) {
     this.#api = api;
@@ -350,6 +355,7 @@ export class EditingSession {
     this.selection = "";
     this.#loadedSegments = null;
     this.#marks = null;
+    this.#lostSaved = false;
     this.#clearTimers();
   }
 
@@ -563,6 +569,7 @@ export class EditingSession {
     const base = this.base;
     if (path === null || base === null) return;
     const text = this.#textNow();
+    const lost = editor?.lost?.() ?? false;
     let from = base;
     if (against === "disk") {
       const disk = await this.#api.editSource(path);
@@ -589,6 +596,7 @@ export class EditingSession {
           this.#hooks?.note(this.#hooks.savedText(changes, this.firstSave));
           this.firstSave = false;
         }
+        this.#sayLost(lost);
         this.dispatch({ e: "saved", base: { hash: outcome.hash, text } });
         // the editor typed on while saving: compare against the new base
         if (editor && editor.text() !== text) this.changed();
@@ -607,6 +615,7 @@ export class EditingSession {
     const path = this.#path;
     const held = this.#held;
     if (path === null) return;
+    const lost = this.#editor?.lost?.() ?? false;
     const result = await this.#api.editSaveAs(path, this.#textNow(), exact);
     if (this.#held !== held) return;
     if (!result.ok) {
@@ -614,8 +623,18 @@ export class EditingSession {
       this.dispatch({ e: "saveFailed", error: result.error.kind });
       return;
     }
+    this.#sayLost(lost);
     this.dispatch({ e: "savedAs", path: result.value, sameFile: exact });
     if (exact) this.#hooks?.saved();
+  }
+
+  /** The text just written reads back otherwise than the editor showed it: said on each explicit save, once while
+   *  autosave keeps writing such a text (it would speak every second). */
+  #sayLost(lost: boolean): void {
+    if (lost && (this.#policy.kind === "explicit" || !this.#lostSaved)) {
+      this.#hooks?.note(t("edit.savedReadsOtherwise"));
+    }
+    this.#lostSaved = lost;
   }
 
   #leave(leave: Leave): void {

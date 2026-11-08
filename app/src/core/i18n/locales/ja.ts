@@ -434,6 +434,8 @@ export default {
   "edit.savedBlocks.one": "保存しました。{n} 個のブロックが変更されました。",
   "edit.savedBlocks.other": "保存しました。{n} 個のブロックが変更されました。",
   "edit.firstSaveHint": "PerMark は変更したブロックだけを書き換えます。",
+  "edit.savedReadsOtherwise":
+    "このドキュメントの一部の数式やリンクは、保存後に表示が変わる場合があります。ソースで確認してください。",
   "source.find": "検索",
   "source.replace": "置換",
   "source.next": "次へ",

@@ -125,14 +125,24 @@ function afterPiece(piece: string, written: string): string {
   return written;
 }
 
+/** White space ending a text. */
+const TRAILING_SPACE = /\s+$/;
+
 /**
- * Milkdown's text writing (`text`) with every `$` escaped (Milkdown writes a text that ends in a space as it is,
- * without the escapes, `unsafe` below, any other text gets) and its start kept apart from a piece right before it.
+ * Milkdown's text writing (`text`) with the escapes any text gets (`unsafe`, `$` included) also in a text that ends
+ * in a space, and its start kept apart from a piece right before it. Milkdown writes such a text (one right before a
+ * mark | piece | line end) as it is: a `[s] ` there would read as a link wherever `s` is defined, a `# ` opening the
+ * line as a heading. Its trailing space stays as Milkdown writes it (no `&#x20;`).
  */
 export function escapingText(text: Handle | undefined): Handle {
   return (node: Text, parent, state, info) => {
     const written = text ? text(node, parent, state, info) : state.safe(node.value, info);
-    const escaped = written === node.value ? written.replace(/\$/g, "\\$") : written;
+    const tail = TRAILING_SPACE.exec(node.value)?.[0] ?? "";
+    const body = node.value.slice(0, node.value.length - tail.length);
+    const escaped =
+      written === node.value && tail !== "" && body !== ""
+        ? state.safe(body, { ...info, encode: [], after: tail + info.after }) + tail
+        : written;
     const siblings: readonly Nodes[] = parent?.children ?? [];
     const before = siblings[siblings.indexOf(node) - 1];
     return before?.type === "inlineSource" ? afterPiece(before.value, escaped) : escaped;

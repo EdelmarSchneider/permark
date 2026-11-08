@@ -636,6 +636,48 @@ describe("what is typed next to a piece reads back as typed", () => {
     typeAt(1, "[12:30]: ok ");
     expect(readsBack(built)).toBe("\\[12:30]: ok Note.");
   });
+
+  // a text ending in a space right before a piece | mark is its own text node: its `[` must stay escaped, or `[s]`
+  // reads as a link wherever `s` is defined
+  const NEXT: [string, string][] = [
+    ["a formula", "$x$"],
+    ["a reference", "[the site][s]"],
+    ["an emphasis", "*em*"],
+    ["a link", "[site](https://example.com)"],
+  ];
+  it.each(
+    NEXT.flatMap(([name, next]) => {
+      const cases: [string, string, string, string][] = [[name, next, "defined", DEFS]];
+      // without its definition a reference is text: no piece to type before
+      if (next !== "[the site][s]") cases.push([name, next, "not defined", "\n"]);
+      return cases;
+    }),
+  )("`[s] ` typed before %s (`%s`), `s` %s, keeps its escape", async (_, next, __, defs) => {
+    const built = await load(`Lead ${next} tail.${defs}`);
+    typeAt("Lead ".length + 1, "[s] ");
+    expect(readsBack(built)).toBe(`Lead \\[s] ${next} tail.`);
+  });
+
+  it.each(NEXT)(
+    "a block holding `\\[s] ` before %s opens editable and keeps it when edited elsewhere",
+    async (_, next) => {
+      const built = await load(`Lead \\[s] ${next} tail.${DEFS}`);
+      expect(built.sources[0]?.locked).toBeNull();
+      const end = core.view.state.doc.child(0).nodeSize - 1;
+      typeAt(end, " More.");
+      expect(readsBack(built)).toBe(`Lead \\[s] ${next} tail. More.`);
+    },
+  );
+
+  it.each([
+    ["# ", "\\# "],
+    ["1. ", "1\\. "],
+    ["- ", "\\- "],
+  ])("`%s` typed at the start of a text ending in a space stays text", async (typed, written) => {
+    const built = await load("Lead *em* tail.\n");
+    typeAt(1, typed);
+    expect(readsBack(built)).toBe(`${written}Lead *em* tail.`);
+  });
 });
 
 describe("pieces that do not read back", () => {

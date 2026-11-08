@@ -434,6 +434,8 @@ export default {
   "edit.savedBlocks.one": "Desat, {n} bloc canviat.",
   "edit.savedBlocks.other": "Desat, {n} blocs canviats.",
   "edit.firstSaveHint": "El PerMark només reescriu els blocs que heu canviat.",
+  "edit.savedReadsOtherwise":
+    "Algunes fórmules o enllaços d'aquest document es poden veure diferents després de desar. Reviseu-los al codi font.",
   "source.find": "Cerca",
   "source.replace": "Substitueix",
   "source.next": "Següent",

@@ -441,6 +441,8 @@ export default {
   "edit.savedBlocks.one": "Enregistré, {n} bloc modifié.",
   "edit.savedBlocks.other": "Enregistré, {n} blocs modifiés.",
   "edit.firstSaveHint": "PerMark ne réécrit que les blocs que vous avez modifiés.",
+  "edit.savedReadsOtherwise":
+    "Certaines formules ou certains liens de ce document peuvent s'afficher différemment après l'enregistrement. Vérifiez-les en mode Source.",
   "source.find": "Rechercher",
   "source.replace": "Remplacer",
   "source.next": "Suivant",

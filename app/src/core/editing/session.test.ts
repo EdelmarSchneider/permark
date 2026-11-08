@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "../../api/mock";
 import { mockHash, mockSegments } from "../../api/mockEdit";
+import { t } from "../i18n";
 import { confirmLeave } from "./guard";
 import { EditingSession, type ActiveEditor, type Hooks } from "./session.svelte";
 
@@ -156,6 +157,64 @@ describe("editing session", () => {
     expect(opened).toEqual(["docs/guide-mine.md"]);
     expect(api.probe.edit.files.get("docs/guide-mine.md")).toBe(content.text + "mine\n");
     expect(session.state.s).toBe("closed");
+  });
+
+  describe("a text that would not read back as the editor shows it", () => {
+    const LOST = t("edit.savedReadsOtherwise");
+
+    async function lossy(policy: "explicit" | "auto") {
+      const setUp = setup();
+      await setUp.session.enter(
+        "source",
+        "docs/guide.md",
+        "markdown",
+        policy === "auto" ? { kind: "auto", delayMs: 800 } : { kind: "explicit" },
+      );
+      const content = setUp.session.content;
+      if (!content) throw new Error("no content");
+      let lost = true;
+      const editor = { ...fakeEditor(content.text), lost: () => lost };
+      setUp.session.attach(content.seq, editor);
+      const type = async (text: string): Promise<void> => {
+        editor.set(text);
+        setUp.session.changed();
+        await settle();
+        await vi.advanceTimersByTimeAsync(1000);
+      };
+      return { ...setUp, content, type, setLost: (next: boolean) => (lost = next) };
+    }
+
+    it("is saved as written, and the save says so", async () => {
+      const { api, session, notes, content, type } = await lossy("explicit");
+      await type(content.text + "x\n");
+      session.save();
+      await settle();
+      expect(session.state.s).toBe("clean");
+      expect(api.probe.edit.files.get("docs/guide.md")).toBe(content.text + "x\n");
+      expect(notes).toEqual(["saved 1", LOST]);
+    });
+
+    it("autosave says so once while it lasts, again once it comes back", async () => {
+      const { notes, content, type, setLost } = await lossy("auto");
+      await type(content.text + "a\n");
+      await type(content.text + "ab\n");
+      expect(notes).toEqual([LOST]);
+      setLost(false);
+      await type(content.text + "abc\n");
+      expect(notes).toEqual([LOST]);
+      setLost(true);
+      await type(content.text + "abcd\n");
+      expect(notes).toEqual([LOST, LOST]);
+    });
+
+    it("says nothing when every block reads back", async () => {
+      const { session, notes, content, type, setLost } = await lossy("explicit");
+      setLost(false);
+      await type(content.text + "x\n");
+      session.save();
+      await settle();
+      expect(notes).toEqual(["saved 1"]);
+    });
   });
 
   it("asks before leaving unsaved edits: keep editing stays, discard leaves", async () => {

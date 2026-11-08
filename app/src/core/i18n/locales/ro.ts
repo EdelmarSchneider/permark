@@ -449,6 +449,8 @@ export default {
   "edit.savedBlocks.few": "Salvat, {n} blocuri modificate.",
   "edit.savedBlocks.other": "Salvat, {n} de blocuri modificate.",
   "edit.firstSaveHint": "PerMark rescrie doar blocurile pe care le-ai modificat.",
+  "edit.savedReadsOtherwise":
+    "Unele formule sau linkuri din acest document pot arăta diferit după salvare. Verifică-le în Sursă.",
   "source.find": "Găsește",
   "source.replace": "Înlocuiește",
   "source.next": "Următorul",

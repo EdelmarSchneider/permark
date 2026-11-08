@@ -432,6 +432,8 @@ export default {
   "edit.savedBlocks.one": "Gardado, {n} bloque cambiado.",
   "edit.savedBlocks.other": "Gardado, {n} bloques cambiados.",
   "edit.firstSaveHint": "PerMark só reescribe os bloques que cambiou.",
+  "edit.savedReadsOtherwise":
+    "Algunhas fórmulas ou ligazóns deste documento poden verse distintas despois de gardar. Revíseas en Fonte.",
   "source.find": "Atopar",
   "source.replace": "Substituír",
   "source.next": "Seguinte",
