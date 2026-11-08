@@ -1,16 +1,17 @@
 // Which blocks Edit mode may change. A block becomes an editable node only when the editor writes it back as the
 // same Markdown; else it is a locked atom keeping its bytes. In order:
 //  1. backend kind (front matter, HTML, math, footnotes, diagrams, definitions, alerts, ...) - `segment.lock`;
-//  2. content: inline math `$x$` (the editor reads `$a_b_c$` as emphasis), a BOM at the start (parser drops it);
+//  2. content: a BOM at the start (parser drops it);
 //  3. references: a block holding a link | footnote definition (the editor resolves and drops it), or using one
 //     defined elsewhere (alone, it reads as text and is written escaped);
-//  4. the editor's reading: exactly one top-level node;
+//  4. the editor's reading: exactly one top-level node, no inline math across lines (a formula is one piece of one line
+//     in the editor; container prefixes inside it would be lost);
 //  5. equivalence: S = block text, R = what the editor writes for its node; editable when tidy(S) == tidy(R) or both
 //     give the same mdast without positions and marker characters (`_` vs `*`, `*` vs `-` bullets, table pipes).
 // An editable block left untouched is saved with its own bytes (compose), so none of this changes a file by itself.
 
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
-import type { Core, LockReason, MdastNode } from "./core";
+import { INLINE_SOURCE, type Core, type LockReason, type MdastNode } from "./core";
 
 export const BOM = "﻿";
 
@@ -19,11 +20,6 @@ export type Verdict = { editable: true; node: PMNode } | { editable: false; reas
 /** LF line endings, no line break at the end. */
 export function tidy(text: string): string {
   return text.replace(/\r\n|\r/g, "\n").replace(/\n+$/, "");
-}
-
-/** Something that looks like inline math: `$x$`, `$a_b$`. */
-export function hasInlineMath(text: string): boolean {
-  return /\$[^\s$](?:[^$\n]*[^\s$\\])?\$/.test(text);
 }
 
 const REFERENCE_TYPES = new Set(["linkReference", "imageReference", "footnoteReference"]);
@@ -84,6 +80,16 @@ export function blocksUsingReferences(
   return found;
 }
 
+/** A formula in `doc` (read from a tidied text: LF line endings) spans a line break. */
+function mathAcrossLines(doc: PMNode): boolean {
+  let found = false;
+  doc.descendants((node) => {
+    if (node.type.name === INLINE_SOURCE && String(node.attrs.source).includes("\n")) found = true;
+    return !found;
+  });
+  return found;
+}
+
 function definesReference(core: Core, source: string): boolean {
   try {
     return holdsDefinition(core.parseRaw(source));
@@ -100,7 +106,6 @@ export function classify(
   usesReference: boolean,
 ): Verdict {
   if (backendLock !== null) return { editable: false, reason: backendLock };
-  if (hasInlineMath(text)) return { editable: false, reason: "math" };
   if (text.startsWith(BOM)) return { editable: false, reason: "parse" };
   const source = tidy(text);
   if (source.trim() === "") return { editable: false, reason: "parse" };
@@ -113,6 +118,7 @@ export function classify(
   try {
     doc = core.parse(source);
     if (doc.childCount !== 1) return { editable: false, reason: "parse" };
+    if (mathAcrossLines(doc)) return { editable: false, reason: "math" };
     written = core.serialize(doc);
   } catch {
     return { editable: false, reason: "parse" };

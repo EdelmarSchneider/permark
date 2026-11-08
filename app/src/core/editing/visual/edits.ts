@@ -3,7 +3,8 @@
 // read again by the editor (`classify`: the same checks as at load) and its node replaced; every other node stays
 // the same object, so `compose` keeps its bytes. Only the touched block is written by the editor (as typing would).
 // Text offsets -> document positions (`docRange`: reveal, correction marks): the range's text found in its block's
-// shown text (markup left out) where the text around it matches best.
+// shown text (markup left out) where the text around it matches best. An inline piece kept as written (a formula) is
+// not prose: no range in its source is found, no edit may change it.
 
 import { closeHistory } from "@milkdown/kit/prose/history";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
@@ -13,7 +14,7 @@ import type { EditScope, TextEdit, TextRange } from "../session.svelte";
 import { checkEdits } from "../textEdits";
 import { blocksUsingReferences, classify } from "./classify";
 import type { Composed } from "./compose";
-import { LOCKED, type Core } from "./core";
+import { INLINE_SOURCE, LOCKED, type Core } from "./core";
 
 /** Document index of the top-level node whose text holds `from..to` (`null`: between blocks | outside). */
 export function blockOf(composed: Composed, from: number, to: number): number | null {
@@ -47,6 +48,29 @@ function shownText(node: PMNode, start: number): { text: string; at: number[] } 
   return { text, at };
 }
 
+/** The sources of the inline pieces in `node`, in order. */
+function pieces(node: PMNode): string[] {
+  const found: string[] = [];
+  node.descendants((child) => {
+    if (child.type.name === INLINE_SOURCE) found.push(String(child.attrs.source));
+    return true;
+  });
+  return found;
+}
+
+/** Offsets of the inline pieces of `node` in `markdown`, its text (each written as its source, in order). */
+function pieceSpans(node: PMNode, markdown: string): TextRange[] {
+  const spans: TextRange[] = [];
+  let next = 0;
+  for (const source of pieces(node)) {
+    const at = markdown.indexOf(source, next);
+    if (at < 0) continue;
+    spans.push({ from: at, to: at + source.length });
+    next = at + source.length;
+  }
+  return spans;
+}
+
 function commonTail(markdown: string, shown: string): number {
   const a = markdown.replace(MARKUP, "");
   const b = shown.replace(MARKUP, "");
@@ -65,7 +89,8 @@ function commonHead(markdown: string, shown: string): number {
 
 /** Document positions of `range` (offsets of `composed.text`): its text in the shown text of its block, at the place
  *  whose text before | after matches the Markdown around the range best (ties: nearest the expected spot). An empty
- *  range: an insertion point. `null`: outside | across blocks, a locked block, or not shown as such (markup inside). */
+ *  range: an insertion point. `null`: outside | across blocks, a locked block, inside an inline piece's source, or not
+ *  shown as such (markup inside). */
 export function docRange(doc: PMNode, composed: Composed, range: TextRange): TextRange | null {
   const index = blockOf(composed, range.from, range.to);
   const block = index === null ? null : composed.ranges[index];
@@ -76,6 +101,8 @@ export function docRange(doc: PMNode, composed: Composed, range: TextRange): Tex
   const shown = shownText(node, start);
   const markdown = composed.text.slice(block.from, block.to);
   const rel = range.from - block.from;
+  const end = range.to - block.from;
+  if (pieceSpans(node, markdown).some((span) => rel < span.to && end > span.from)) return null;
   const needle = composed.text.slice(range.from, range.to);
   const before = markdown.slice(Math.max(0, rel - CONTEXT), rel);
   const after = markdown.slice(rel + needle.length, rel + needle.length + CONTEXT);
@@ -152,7 +179,8 @@ function startsAfter(composed: Composed, edits: readonly TextEdit[]): number[] {
 }
 
 /** One transaction (its own undo step) remaking each block `edits` touch; `null` when they do not pass `checkEdits`,
- *  one is outside a block | across two, or a block is locked | would read as something else. All or nothing. */
+ *  one is outside a block | across two, or a block is locked | would read as something else | would change an inline
+ *  piece. All or nothing. */
 export function editsTr(
   core: Core,
   state: EditorState,
@@ -189,7 +217,15 @@ export function editsTr(
       markdown = markdown.slice(0, from) + edit.insert + markdown.slice(edit.to - range.from);
     }
     const verdict = classify(core, markdown, null, usesReference.has(written.indexOf(index)));
-    if (!verdict.editable || verdict.node.type !== node.type) return null;
+    // a fix never changes a formula (its TeX is no prose)
+    const kept = JSON.stringify(pieces(node));
+    if (
+      !verdict.editable ||
+      verdict.node.type !== node.type ||
+      JSON.stringify(pieces(verdict.node)) !== kept
+    ) {
+      return null;
+    }
     replaced.push({ from: pos, to: pos + node.nodeSize, node: verdict.node });
   }
   const tr = state.tr;

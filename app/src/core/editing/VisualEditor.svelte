@@ -778,10 +778,58 @@
   .host
     :global(
       .ProseMirror-hideselection
-        .pm-locked:not([data-look="open"], [data-look="properties"])
+        :is(
+          .pm-locked:not([data-look="open"], [data-look="properties"]),
+          .pm-inline:not([data-look="open"])
+        )
         *::selection
     ) {
     background: transparent;
+  }
+  /* a piece of a line kept as written (a formula): one thing to select; opened, its field floats under it */
+  .host :global(.pm-inline) {
+    position: relative;
+  }
+  .host :global(.pm-inline.ProseMirror-selectednode) {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    border-radius: 2px;
+  }
+  .host :global(.pm-inline__box) {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 7;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    min-width: 16em;
+    padding: var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-pop);
+  }
+  .host :global(.pm-inline__field) {
+    height: 26px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
+    background: var(--bg);
+    color: var(--text);
+    font: var(--fs-code) / 1.4 var(--font-code);
+  }
+  .host :global(.pm-inline__field:focus) {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .host :global(.pm-inline__field[aria-invalid="true"]) {
+    border-color: var(--git-deleted-text);
+  }
+  .host :global(.pm-inline__hint) {
+    color: var(--muted);
+    font: var(--fs-ui-sm) / 1.4 var(--font-ui);
+    white-space: nowrap;
   }
   .host :global(.pm-locked[data-look="card"]) {
     -webkit-user-select: none;

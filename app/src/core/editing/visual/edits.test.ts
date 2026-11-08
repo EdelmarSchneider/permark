@@ -185,7 +185,7 @@ describe("checked edits in the Edit-mode editor", () => {
   });
 
   it("refuses an edit across two blocks, between blocks, or in a locked block", async () => {
-    const text = "One here.\n\nTwo there.\n\nMath $x_1$ here.\n";
+    const text = "One here.\n\nTwo there.\n\nMath $x_1\ny$ here.\n";
     await load(text);
     const before = core.view.state.doc;
     const across = text.indexOf("here.");
@@ -270,7 +270,7 @@ describe("text offsets -> document positions in the Edit-mode editor", () => {
   });
 
   it("nothing for a range between blocks, in a locked block, or with markup inside", async () => {
-    const text = "One **two** three.\n\nMath $x_1$ here.\n";
+    const text = "One **two** three.\n\nMath $x_1\ny$ here.\n";
     await load(text);
     const composed = now();
     const doc = core.view.state.doc;
@@ -287,7 +287,7 @@ describe("text offsets -> document positions in the Edit-mode editor", () => {
     expect(core.view.state.doc.textBetween(from, to)).toBe("teh");
     expect(docRange(core.view.state.doc, now(), wordAt(MIXED, "teh", 3))).toEqual({ from, to });
     // not found (a locked block): nothing selected, the caller scrolls the block instead
-    const text = "Math $x_1$ here.\n";
+    const text = "Math $x_1\ny$ here.\n";
     await load(text);
     const before = core.view.state.selection;
     expect(selectRange(core.view, now(), wordAt(text, "here"))).toBe(false);
@@ -354,5 +354,32 @@ describe("correction marks in the Edit-mode editor", () => {
     const plain = docRange(view.state.doc, now(), wordAt(MIXED, "teh", 4));
     select((plain?.from ?? 0) + 1);
     expect(markAt(view.state)).toBe(1);
+  });
+});
+
+describe("inline formulas in correction", () => {
+  const TEXT = "Teh energy $teh=mc^2$ of teh mass.\n";
+
+  it("marks the prose around a formula, never its TeX", async () => {
+    await load(TEXT);
+    // the first "teh" is the formula's: it is never taken for the word of the same text after it
+    setMarks(core.view, now(), [wordAt(TEXT, "teh", 0), wordAt(TEXT, "teh", 1)], null, () => {});
+    expect(marks()).toEqual(["teh"]);
+    const doc = core.view.state.doc;
+    expect(docRange(doc, now(), wordAt(TEXT, "teh", 0))).toBeNull();
+    expect(docText(docRange(doc, now(), wordAt(TEXT, "teh", 1)))).toBe("teh");
+    expect(docRange(doc, now(), wordAt(TEXT, "$teh=mc^2$"))).toBeNull();
+    expect(docText(docRange(doc, now(), wordAt(TEXT, "energy")))).toBe("energy");
+  });
+
+  it("a fix in the prose goes in and keeps the formula's bytes; one in the TeX is refused", async () => {
+    await load(TEXT);
+    expect(applyEdits(core, now(), [fix(TEXT, "teh", "the", 25)])).toBe(true);
+    const fixed = TEXT.replace("of teh", "of the");
+    expect(now().text).toBe(fixed);
+    const before = core.view.state.doc;
+    expect(applyEdits(core, now(), [fix(fixed, "teh", "the", 10)])).toBe(false);
+    expect(applyEdits(core, now(), [fix(fixed, "$teh=mc^2$", "teh")])).toBe(false);
+    expect(core.view.state.doc).toBe(before);
   });
 });

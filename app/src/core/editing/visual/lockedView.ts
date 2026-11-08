@@ -335,10 +335,15 @@ type State = { kind: "idle" } | { kind: "properties"; opened: string } | Editing
 type Exit = "done" | "outside" | "before" | "after";
 
 /** Pause in typing before the preview is rendered again (each render is one of the whole text). */
-const PREVIEW_MS = 250;
+export const PREVIEW_MS = 250;
 
-/** Opens the block under a node selection (Enter); false when it has nothing to open. */
+/** Opens the node under a node selection (Enter); false when it has nothing to open. */
 const openers = new WeakMap<Node, () => boolean>();
+
+/** Enter on the node drawn by `dom`, selected, calls `open` (`lockedKeys`). */
+export function opensOnEnter(dom: Node, open: () => boolean): void {
+  openers.set(dom, open);
+}
 
 /** Hints made so far: each box points at its own hint by id. */
 let hints = 0;
@@ -354,7 +359,7 @@ function fit(field: HTMLTextAreaElement): void {
 }
 
 /** `text` in the box, the caret at the end of what differs from the text it showed (an undo shows what it undid). */
-function showText(field: HTMLTextAreaElement, text: string): void {
+export function showText(field: HTMLTextAreaElement | HTMLInputElement, text: string): void {
   const old = field.value;
   let head = 0;
   while (head < old.length && head < text.length && old[head] === text[head]) head += 1;
@@ -755,7 +760,7 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       close(true);
     });
 
-    openers.set(dom, open);
+    opensOnEnter(dom, open);
     painters(view).repaint.add(repaint);
     paint();
 
@@ -820,7 +825,10 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
   };
 });
 
-/** Enter on a selected locked block opens it in place (its source | the front matter's properties). */
+/**
+ * Enter on a selected locked block opens it in place (its source | the front matter's properties); on any other
+ * selected node that registered an opener (`opensOnEnter`), that opener runs.
+ */
 export const lockedKeys = $prose(
   () =>
     new Plugin({
@@ -829,9 +837,7 @@ export const lockedKeys = $prose(
           if (event.key !== "Enter" || event.isComposing) return false;
           if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false;
           const selection = view.state.selection;
-          if (!(selection instanceof NodeSelection) || selection.node.type.name !== LOCKED) {
-            return false;
-          }
+          if (!(selection instanceof NodeSelection)) return false;
           const dom = view.nodeDOM(selection.from);
           return dom !== null && (openers.get(dom)?.() ?? false);
         },
