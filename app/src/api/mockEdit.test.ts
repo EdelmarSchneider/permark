@@ -5,7 +5,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 
-const { createMockApi } = await import("./mock");
+const { MOCK_FOLDER, createMockApi } = await import("./mock");
 const { MOCK_CRLF_BOM_DOC } = await import("./mockFs");
 type DocumentChanged = import("./types").DocumentChanged;
 type Result<T> = import("./types").Result<T>;
@@ -239,5 +239,19 @@ describe("mock editor failures on request", () => {
     });
     // another document is not touched by it
     expect(value(await api.editSource("notes/ideas.md")).path).toBe("notes/ideas.md");
+  });
+});
+
+describe("the unsaved flag", () => {
+  it("shows on the tab's chip at once: the windows hear it, as after the backend's registry refresh", async () => {
+    const api = createMockApi();
+    value(await api.openPath(MOCK_FOLDER, "thisTab"));
+    const chips: boolean[] = [];
+    await api.on("windows-changed", (event) =>
+      chips.push(event.windows[0]?.tabs[0]?.unsaved ?? false),
+    );
+    value(await api.editSetUnsaved("README.md"));
+    value(await api.editSetUnsaved(null));
+    expect(chips).toEqual([true, false]);
   });
 });

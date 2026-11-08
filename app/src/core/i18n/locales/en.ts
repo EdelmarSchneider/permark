@@ -135,6 +135,8 @@ const en = {
   "fileOps.nameReserved": "That name is reserved by the system",
   "fileOps.nameTooLong": "The name is too long",
   "fileOps.nameExists": "Something with this name is already here",
+  "fileOps.identityUnknown":
+    "PerMark can't tell whether these two names are the same file on this drive, so nothing was renamed.",
   "fileOps.files.one": "{n} file",
   "fileOps.files.other": "{n} files",
   "fileOps.items.one": "{n} item",

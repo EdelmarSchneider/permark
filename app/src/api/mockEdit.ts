@@ -139,6 +139,8 @@ export type MockEditHost = {
   saved: (path: string, hash: string) => void;
   /** A new file was written. */
   created: (path: string) => void;
+  /** The unsaved flag changed (the tab's chip shows it). */
+  unsaved: () => void;
 };
 
 /** A host of its own: the mock project's seed files, nothing else told. */
@@ -149,6 +151,7 @@ function standalone(): MockEditHost {
     linkTargets: () => [...files.keys()].sort(),
     saved: () => {},
     created: () => {},
+    unsaved: () => {},
   };
 }
 
@@ -276,6 +279,7 @@ export function createMockEditing(host: MockEditHost = standalone()): {
     },
     editSetUnsaved: (path) => {
       probe.unsaved = path;
+      host.unsaved();
       return ok(null);
     },
     editHeadings: (path) => {

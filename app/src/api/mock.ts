@@ -474,6 +474,10 @@ export function createMockApi(): Api & {
       project.add(path, project.files.get(path) ?? "");
       refreshTree();
     },
+    // the backend refreshes its window registry: every window hears the tab's chip with or without the dot
+    unsaved: () => {
+      if (view.state === "showing") announceTabs();
+    },
   });
   const notes = createMockNotes(noteFiles, () => {
     for (const handler of appListeners["notes:intent"]) handler(null);

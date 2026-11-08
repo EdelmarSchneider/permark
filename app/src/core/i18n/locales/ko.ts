@@ -136,6 +136,8 @@ export default {
   "fileOps.nameReserved": "시스템에서 예약된 이름입니다",
   "fileOps.nameTooLong": "이름이 너무 깁니다",
   "fileOps.nameExists": "이 이름의 항목이 이미 있습니다",
+  "fileOps.identityUnknown":
+    "PerMark가 이 드라이브에서 두 이름이 같은 파일인지 확인할 수 없어 이름을 바꾸지 않았습니다.",
   "fileOps.files.one": "파일 {n}개",
   "fileOps.files.other": "파일 {n}개",
   "fileOps.items.one": "항목 {n}개",

@@ -4,6 +4,7 @@
 // documents), not its every rule (the Rust side has those, with their tests).
 
 import { diffLists, nameOf, parentOf, renamedPath } from "../core/explorer/list";
+import { IDENTITY_UNKNOWN } from "./error";
 import { MOCK_EDIT_SOURCES, mockTextOf } from "./mockDocs";
 import { checkName, newFileName } from "./mockNames";
 import type {
@@ -130,6 +131,9 @@ export class MockProject {
   readonly kept = new Set<string>();
   /** Names of the linked worktrees of the vault, in its order (their files sit below `@wt/<name>/`). */
   readonly worktrees: string[] = [];
+  /** The drive gives no file ids (FAT, some network drives): a rename that only changes case cannot be proven to keep
+   *  one file (`fsx::same_file` answers Unknown), so it is refused. */
+  fileIdsUnknown = false;
   readonly #undo: (Op & { id: number })[] = [];
   #nextUndo = 1;
   readonly #plans = new Map<number, { moves: MoveSpec[]; docs: PlannedDoc[] }>();
@@ -252,6 +256,7 @@ export class MockProject {
       const parent = parentOf(m.to);
       if (parent !== "" && !this.#isDir(parent)) throw new MockRefusal("notFound", parent);
       if (!caseOnly && this.exists(m.to)) throw new MockRefusal("exists", m.to);
+      if (caseOnly && this.fileIdsUnknown) throw new MockRefusal("exists", m.to, IDENTITY_UNKNOWN);
     }
     moves.forEach((a, at) => {
       for (const b of moves.slice(at + 1)) {

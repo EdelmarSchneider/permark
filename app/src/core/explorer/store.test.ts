@@ -17,6 +17,7 @@ import type {
 import { ImportFlow } from "./importFlow.svelte";
 import { ancestorsOf, applyDelta } from "./list";
 import { editing } from "../editing/session.svelte";
+import { problemText } from "./names";
 import { ExplorerStore, type ExplorerHost } from "./store.svelte";
 
 type Mock = ReturnType<typeof createMockApi>;
@@ -672,6 +673,23 @@ describe("renaming", () => {
     await f.store.commitEdit();
     expect(f.store.edit.mode).toBe("none");
     expect(f.failures).toEqual([]);
+  });
+
+  it("a case-only rename on a drive that cannot prove one file keeps the field open with its own reason", async () => {
+    const f = await setup("never");
+    f.api.probe.project.fileIdsUnknown = true;
+    f.store.beginRename("README.md");
+    f.store.typeName("readme.md");
+    await f.store.commitEdit();
+    expect(f.store.edit).toMatchObject({ mode: "rename", problem: "identityUnknown" });
+    expect(problemText("identityUnknown")).toMatch(/same file/);
+    expect(f.api.probe.project.files.has("README.md")).toBe(true);
+    expect(f.failures).toEqual([]);
+    // a drive that can tell: the rename goes through
+    f.api.probe.project.fileIdsUnknown = false;
+    await f.store.commitEdit();
+    expect(f.store.edit.mode).toBe("none");
+    expect(f.api.probe.project.files.has("readme.md")).toBe(true);
   });
 
   it("escape cancels, and renaming to the same name does nothing", async () => {

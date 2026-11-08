@@ -87,7 +87,12 @@
   const current = $derived(documents.current);
   const visual = $derived(current !== null && editKindOf(current) !== "text");
   const readOnly = $derived(editBlockedReason());
-  const editingNow = $derived(editing.mode !== "view" && editing.path === documents.path);
+  const editingNow = $derived.by(() => {
+    // `documents.path` moves together with the document's state but is not reactive itself: the state is read too, so
+    // a page that catches up with the editor (it followed a renamed document) shows the editor again
+    void doc;
+    return editing.mode !== "view" && editing.path === documents.path;
+  });
 
   $effect(() => {
     documents.bind({
@@ -134,9 +139,14 @@
         editing.answer("keepEditing");
       }
       // the routes that ask first (a link, the tree, search) let go of the editor before the document moves
-      if (edited === null || edited === shown) void documents.show(shown);
-      // the backend moved this tab to another document without asking (an open from the system, a drop)
-      else if (same && editing.unsaved) void leaveFor(edited);
+      if (edited === null || edited === shown) {
+        void documents.show(shown);
+        return;
+      }
+      // the backend moved this tab to another document without asking (an open from the system, a drop); words typed
+      // a moment ago count as unsaved too
+      editing.sync();
+      if (same && editing.unsaved) void leaveFor(edited);
       else {
         editing.release();
         void documents.show(shown);
@@ -196,7 +206,10 @@
       .on("document-changed", (event) => {
         if (event.window !== store.label) return;
         editing.onDocumentChanged(event);
-        documents.onChanged(event);
+        // the edited document was renamed and its edits went with it: the page follows them (no "deleted" banner)
+        const moved = event.change === "deleted" ? event.movedTo : null;
+        if (moved !== null && editing.path === moved) documents.followMoved(moved);
+        else documents.onChanged(event);
       })
       .then((stop) => {
         if (gone) stop();
