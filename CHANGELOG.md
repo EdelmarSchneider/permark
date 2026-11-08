@@ -7,6 +7,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - **Edit shows special blocks the way View does.** Formulas, diagrams, alerts, footnotes, HTML, prompt blocks and the properties at the top of a document used to appear in Edit as a dashed box with their raw text. They now look exactly as they do in View. Click one, or select it and press Enter, to edit its text right there, with a live preview below; press Esc or click elsewhere to see it drawn again. The text inside prompt blocks stays editable as usual, and the properties open their editable card. <!-- f: editing, edit-mode -->
+- Code blocks in Edit now have the same colors as in View, and the colors follow as you type. <!-- f: editing, edit-mode -->
 
 ### Fixed
 - An edit in Edit mode now changes only what you changed. Before, editing a paragraph, heading or list rewrote the whole block in the editor's own style: brackets, dots and tildes got backslashes, `*` bullets became `-`, indentation and table padding were redone, and typing one letter in a list could add a blank line between every item. Untouched characters now stay exactly as they were in the file. <!-- f: editing -->
