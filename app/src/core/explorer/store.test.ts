@@ -604,6 +604,8 @@ describe("renaming", () => {
 
   it("with the setting 'ask' a move that changes links waits for the answer", async () => {
     const f = await setup("ask");
+    // the guide links the ideas; a second document does too
+    f.api.probe.project.add("notes/index.md", "See [the ideas](ideas.md).\n");
     f.store.select("notes/ideas.md", "single");
     f.store.beginRename();
     f.store.typeName("thoughts.md");
@@ -614,7 +616,10 @@ describe("renaming", () => {
     await f.store.answerDialog("update");
     expect(f.store.dialog.status).toBe("closed");
     expect(paths(f.store)).toContain("notes/thoughts.md");
-    expect(f.api.probe.project.files.get("README.md")).toContain("(notes/thoughts.md)");
+    expect(f.api.probe.project.files.get("docs/guide.md")).toContain(
+      "(../notes/thoughts.md#second-idea)",
+    );
+    expect(f.api.probe.project.files.get("notes/index.md")).toContain("(thoughts.md)");
     expect(f.notes.at(-1)).toMatch(/2 links updated/);
   });
 
@@ -622,7 +627,9 @@ describe("renaming", () => {
     const f = await setup("ask");
     await f.store.requestMove([{ from: "notes/ideas.md", to: "notes/a.md" }]);
     await f.store.answerDialog("move");
-    expect(f.api.probe.project.files.get("README.md")).toContain("(notes/ideas.md)");
+    expect(f.api.probe.project.files.get("docs/guide.md")).toContain(
+      "(../notes/ideas.md#second-idea)",
+    );
     await f.store.requestMove([{ from: "notes/todo.txt", to: "notes/b.txt" }]);
     expect(f.store.dialog.status).toBe("closed");
     await f.store.requestMove([{ from: "docs/guide.md", to: "docs/g.md" }]);
@@ -635,12 +642,16 @@ describe("renaming", () => {
     const always = await setup("always");
     await always.store.requestMove([{ from: "notes/ideas.md", to: "notes/i.md" }]);
     expect(always.store.dialog.status).toBe("closed");
-    expect(always.api.probe.project.files.get("README.md")).toContain("(notes/i.md)");
+    expect(always.api.probe.project.files.get("docs/guide.md")).toContain(
+      "(../notes/i.md#second-idea)",
+    );
     const never = await setup("never");
     const plan = vi.spyOn(never.api, "planMove");
     await never.store.requestMove([{ from: "notes/ideas.md", to: "notes/i.md" }]);
     expect(plan).toHaveBeenCalledWith([{ from: "notes/ideas.md", to: "notes/i.md" }], false);
-    expect(never.api.probe.project.files.get("README.md")).toContain("(notes/ideas.md)");
+    expect(never.api.probe.project.files.get("docs/guide.md")).toContain(
+      "(../notes/ideas.md#second-idea)",
+    );
   });
 
   it("a name that is taken or invalid keeps the field open with the reason", async () => {

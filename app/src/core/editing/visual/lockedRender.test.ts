@@ -32,7 +32,7 @@ afterAll(async () => {
 });
 
 const config = createMockConfig();
-const editing = createMockEditing(() => []).api;
+const editing = createMockEditing().api;
 
 /** A fixture document as the editor opens it (text + backend block map). */
 async function fixture(path: string): Promise<{ text: string; segments: Segment[] }> {

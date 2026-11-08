@@ -501,7 +501,7 @@ describe("copying", () => {
     await fx.doc.copyReference("{path}#{section}");
     expect(write).toHaveBeenLastCalledWith("docs/guide.md");
     await fx.doc.copyDocument();
-    expect(write).toHaveBeenLastCalledWith("# docs/guide.md\n");
+    expect(write).toHaveBeenLastCalledWith(fx.api.probe.project.files.get("docs/guide.md"));
   });
 
   it("tells when the clipboard refuses", async () => {

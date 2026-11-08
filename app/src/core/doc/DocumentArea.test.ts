@@ -876,7 +876,6 @@ describe("config files", () => {
     );
 
   async function open(path: string): Promise<void> {
-    mock.probe.project.files.set(path, "placeholder");
     await show(path);
     await until(() => target.querySelector(".sheet") !== null, `the sheet of ${path}`);
   }

@@ -47,6 +47,12 @@ const chips = (): string[] =>
   Array.from(target.querySelectorAll(".chips .chip .name")).map((n) => n.textContent ?? "");
 
 async function open(): Promise<void> {
+  // a project whose only tags are the ones a test gives: the showcase README's are taken out
+  const readme = mock.probe.project.files.get("README.md") ?? "";
+  mock.probe.project.files.set(
+    "README.md",
+    readme.replace("tags: [reading, markdown, demo]\n", ""),
+  );
   await mock.openPath(MOCK_FOLDER, "thisTab");
   if (!started) {
     await windowStore.start();
