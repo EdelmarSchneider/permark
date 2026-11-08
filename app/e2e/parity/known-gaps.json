@@ -1,0 +1,40 @@
+{
+  "gaps": [
+    {
+      "area": "code-colors",
+      "element": "pre",
+      "property": "token-colors",
+      "why": "View colors code with the highlighter; the visual editor shows code in one color."
+    },
+    {
+      "area": "fewer-locks",
+      "element": "locked(paragraph)",
+      "why": "A paragraph with a footnote reference, a reference link or inline math is kept as source in Edit."
+    },
+    {
+      "area": "locked-blocks",
+      "element": "locked(*)",
+      "why": "Blocks the visual editor cannot rewrite exactly (front matter, alerts, math, diagrams, HTML, footnotes) show their source instead of View's drawing."
+    },
+    {
+      "area": "inline-decorations",
+      "element": "anchor",
+      "why": "View puts a # link before each heading."
+    },
+    {
+      "area": "inline-decorations",
+      "element": "code-ref",
+      "why": "View marks a file reference in plain text as a code reference chip."
+    },
+    {
+      "area": "inline-decorations",
+      "element": "code(code-ref)",
+      "why": "View draws inline code that names a file as a code reference chip."
+    },
+    {
+      "area": "inline-decorations",
+      "element": "a(missing)",
+      "why": "View underlines a link to a missing file."
+    }
+  ]
+}

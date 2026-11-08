@@ -2,6 +2,7 @@
 
 import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { definePlugin } from "../../core/plugins/registry.svelte";
+import { fenceLabel } from "./languages";
 
 export default definePlugin({
   manifest: { id: "highlight", kind: "embed", dependsOn: [] },
@@ -12,6 +13,7 @@ export default definePlugin({
       language: "@code",
       requires: NO_REQUIREMENT,
       view: () => import("./CodeBlock.svelte"),
+      label: fenceLabel,
     });
   },
 });

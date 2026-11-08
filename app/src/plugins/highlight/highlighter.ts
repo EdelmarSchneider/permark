@@ -7,7 +7,7 @@
 // labelled as a guess; otherwise it stays plain. A wrong colouring is worse than none, so the bar is high.
 
 import type { HLJSApi, LanguageFn } from "highlight.js";
-import { fenceWord, grammarName, isPlainName, resolveLanguage } from "./languages";
+import { fenceLabel, fenceWord, grammarName, isPlainName, resolveLanguage } from "./languages";
 
 type Loader = () => Promise<LanguageFn>;
 
@@ -225,18 +225,18 @@ const PLAIN_OUTCOME: CodeOutcome = { html: null, label: null };
 export async function highlightFence(source: string, info: string): Promise<CodeOutcome> {
   const word = fenceWord(info);
   if (word !== "" && isPlainName(word)) return PLAIN_OUTCOME;
+  // the label Edit shows too (it cannot wait for a guess): the two must agree
+  const named = fenceLabel(info);
+  const label = named === null ? null : { name: named, auto: false };
   const resolved = resolveLanguage(word);
   if (resolved) {
     const ready = source.length <= MAX_HIGHLIGHT_CHARS && (await ensureLanguage(resolved.id));
-    return {
-      html: ready ? highlightLoaded(source, resolved.id) : null,
-      label: { name: resolved.name, auto: false },
-    };
+    return { html: ready ? highlightLoaded(source, resolved.id) : null, label };
   }
   const guess = await guessLanguage(source);
   if (guess) {
     const html = highlightLoaded(source, guess);
     if (html !== null) return { html, label: { name: grammarName(guess), auto: true } };
   }
-  return word === "" ? PLAIN_OUTCOME : { html: null, label: { name: word, auto: false } };
+  return label === null ? PLAIN_OUTCOME : { html: null, label };
 }

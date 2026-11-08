@@ -32,6 +32,18 @@
   --fs-code: 13.5px;
   --measure: 760px;
   --measure-wide: 1100px;
+  /* controls */
+  --icon-btn-sm: 24px;
+  /* code block corner (language label, the block's actions, Copy): the highlighter draws it in the reading view, Edit
+     places its own label by the same numbers */
+  --code-corner-top: 3px;
+  --code-corner-right: 6px;
+  --code-corner-gap: 2px;
+  --code-label-fs: 11px;
+  --code-label-lh: 1.3;
+  --code-label-gap: 6px;
+  --code-label-pad: 0 4px;
+  --code-label-radius: 4px;
   /* layout */
   --w-activity: 44px;
   --w-sidebar: 260px;

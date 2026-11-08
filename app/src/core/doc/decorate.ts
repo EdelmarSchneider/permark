@@ -12,6 +12,18 @@ export type LazyEmbed = () => Promise<{ default: Component<EmbedProps> }>;
 /** The embed for a language word (`mermaid`) or a reserved name (`@code`, `@math`), if a plugin brings one. */
 export type EmbedLookup = (language: string) => LazyEmbed | undefined;
 
+/**
+ * What draws a fenced code block of this info: the embed for its language, else the one for any code (`@code`).
+ * `find` maps a language word | reserved name to its embed (the reading view's loader, Edit's contribution).
+ */
+export function codeEmbed<T>(
+  info: string,
+  find: (language: string) => T | undefined,
+): T | undefined {
+  const language = info.toLowerCase();
+  return (language === "" ? undefined : find(language)) ?? find("@code");
+}
+
 /** The mark on an element that holds a code reference. */
 export const CODE_REF = "code-ref";
 
@@ -148,8 +160,7 @@ export class Decorator {
 
   #lookup(element: HTMLElement): LazyEmbed | undefined {
     if (element.hasAttribute("data-math-style")) return this.#embeds("@math");
-    const language = (element.getAttribute("data-info") ?? "").toLowerCase();
-    return (language === "" ? undefined : this.#embeds(language)) ?? this.#embeds("@code");
+    return codeEmbed(element.getAttribute("data-info") ?? "", this.#embeds);
   }
 
   #syncEmbeds(block: HTMLElement): void {

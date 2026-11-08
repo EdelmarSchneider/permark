@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import "./jsdomShims";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { TextSelection } from "@milkdown/kit/prose/state";
 import { buildDoc, compose } from "./compose";
 import { createCore, type Core } from "./core";
 
@@ -53,6 +54,16 @@ describe("the front matter as editable properties", () => {
     const composed = compose(core, built, core.view.state.doc);
     expect(composed.text).toBe(TEXT.replace("A plan", "A better plan"));
     expect(composed.changed).toBe(1);
+  });
+
+  it("a document that starts with the front matter opens with the caret in its first text, nothing selected", async () => {
+    const built = await buildDoc(core, TEXT, SEGMENTS);
+    core.setDoc(built.doc);
+    const { selection, doc } = core.view.state;
+    expect(selection).toBeInstanceOf(TextSelection);
+    expect(selection.empty).toBe(true);
+    expect(doc.resolve(selection.from).parent.textContent).toBe("Body words here.");
+    expect(document.querySelector(".ProseMirror-selectednode")).toBeNull();
   });
 
   it("a front matter block with no card keeps its source and the reason", async () => {

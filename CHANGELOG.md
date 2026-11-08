@@ -7,6 +7,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - Switching to another file while editing now opens the editor that fits that file. Before, a config file such as `pyproject.toml` could open in the Markdown editor, and a Markdown file in the sheet made for config files, with "This file can't be shown as a sheet", until PerMark was restarted. Opening a file that only has Source also no longer turns your choice of Edit into Source for the next files. <!-- f: editing -->
+- Edit now looks like View for lists, tables and code: list items keep View's spacing, tables have their frame and the same row height and stripes, and code blocks show their language and keep their spacing. Switching to Edit at the top of a page no longer selects the properties or scrolls past them, and the editing toolbar fits on one row. <!-- f: editing, edit-mode -->
 
 ## [0.9.0] - 2026-11-05
 

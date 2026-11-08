@@ -111,7 +111,7 @@ export type RunOptions = {
   log?: (line: string) => void;
 };
 
-async function launch(engine: Engine): Promise<Browser> {
+export async function launch(engine: Engine): Promise<Browser> {
   // Playwright's headless Chromium hides scroll bars by default: the scroll bar facts need them drawn
   switch (engine) {
     case "chromium":
@@ -129,7 +129,12 @@ async function launch(engine: Engine): Promise<Browser> {
   }
 }
 
-async function openApp(context: BrowserContext, url: string, errors: string[]): Promise<Page> {
+/** A page of the app at `url`, its fonts loaded and quiet; console | page errors go to `errors`. */
+export async function openApp(
+  context: BrowserContext,
+  url: string,
+  errors: string[],
+): Promise<Page> {
   const page = await context.newPage();
   // fake clock that flows like the real one, so pending timers can be run before an action (DRAIN_MS)
   await page.clock.install();

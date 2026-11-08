@@ -732,6 +732,28 @@ describe("where the reader is", () => {
     expect(reading.scrollOf("d0.md")).toBeNull();
     expect(reading.scrollOf("d59.md")).toBe(69);
   });
+
+  it("a page at its top reads from line 1, though the front matter is drawn above the first block", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    // every block on screen, below the pane's top edge
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 100, 600, 40));
+    try {
+      fx.doc.attachBody(container, scroller);
+      fx.doc.paint(() => undefined);
+      const view = fx.doc.view;
+      const first = view?.body.kind === "markdown" ? view.body.blocks[0] : undefined;
+      expect(first?.lineStart ?? 0).toBeGreaterThan(1);
+      expect(scroller.scrollTop).toBe(0);
+      expect(fx.doc.topLine()).toBe(1);
+    } finally {
+      rect.mockRestore();
+      scroller.remove();
+    }
+  });
 });
 
 // ---- verify B3: never run, never leave the folder (adversarial) ------------------------------------------------
