@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-08
+
 ### Changed
 - Notices now close by themselves after a few seconds (they wait while you point at them), at most three show at once, and they no longer cover the right panel. Deleting, renaming or moving a file shows an Undo button. <!-- f: shell, explorer -->
 - When a file changed on disk while you were editing, the bar now leads with **Show differences** and says plainly what each choice keeps or drops. <!-- f: editing -->
