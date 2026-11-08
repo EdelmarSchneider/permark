@@ -7,6 +7,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - **Edit shows special blocks the way View does.** Formulas, diagrams, alerts, footnotes, HTML, prompt blocks and the properties at the top of a document used to appear in Edit as a dashed box with their raw text. They now look exactly as they do in View. Click one, or select it and press Enter, to edit its text right there, with a live preview below; press Esc or click elsewhere to see it drawn again. The text inside prompt blocks stays editable as usual, and the properties open their editable card. <!-- f: editing, edit-mode -->
+- Code blocks in Edit now have the same colors as in View, and the colors follow as you type. <!-- f: editing, edit-mode -->
 
 ### Fixed
 - Renaming a file to the same name with different capital letters, or a different Unicode spelling, can no longer replace another file that already has that name on drives that tell them apart. When a drive cannot say whether two names are the same file, PerMark refuses instead of guessing. <!-- f: file-ops -->

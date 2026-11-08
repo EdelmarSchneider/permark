@@ -1,12 +1,6 @@
 {
   "gaps": [
     {
-      "area": "code-colors",
-      "element": "pre",
-      "property": "token-colors",
-      "why": "View colors code with the highlighter; the visual editor shows code in one color."
-    },
-    {
       "area": "inline-decorations",
       "element": "anchor",
       "why": "View puts a # link before each heading."

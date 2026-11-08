@@ -10,6 +10,7 @@ import type { MenuEntry } from "../explorer/menu";
 import type { MessageKey } from "../i18n";
 import type { PluginPageId } from "../shell/ui.svelte";
 import type {
+  CodeColorer,
   EmbedProps,
   FrontMatterProps,
   OutlineWatcherProps,
@@ -258,6 +259,11 @@ export type Contribution = Owned &
          * only button of its own. Lets Edit mode label its code blocks the same way; absent: Edit shows no label.
          */
         label?: (info: string) => string | null;
+        /**
+         * The token colors the embed gives code, for Edit mode's code blocks (loaded on first use, so the highlighter
+         * stays unloaded until a code block is edited); absent: Edit shows the code plain.
+         */
+        colors?: () => Promise<CodeColorer>;
       }
     /** A button next to Copy on a fenced code block whose language it takes (convert the block). */
     | {
