@@ -193,8 +193,18 @@ impl From<FsxError> for IpcError {
 /// # Errors
 /// `TooLarge` (checked before reading), `Io`.
 pub fn read_bytes(path: &Path, limit: u64) -> Result<Vec<u8>, FsxError> {
-    let bytes = retry(&RETRY_DELAYS, || {
+    read_limited(path, limit, false).map(|(bytes, _)| bytes)
+}
+
+/// [`read_bytes`]; `locate`: also the path of the file as opened ([`opened_path`]).
+fn read_limited(
+    path: &Path,
+    limit: u64,
+    locate: bool,
+) -> Result<(Vec<u8>, Option<PathBuf>), FsxError> {
+    let read = retry(&RETRY_DELAYS, || {
         let file = std::fs::File::open(path)?;
+        let opened = if locate { opened_path(&file) } else { None };
         let len = file.metadata()?.len();
         if len > limit {
             return Ok(None);
@@ -202,11 +212,11 @@ pub fn read_bytes(path: &Path, limit: u64) -> Result<Vec<u8>, FsxError> {
         let mut bytes = Vec::with_capacity(usize::try_from(len).unwrap_or(0));
         // `take`: a file growing while read never exceeds the limit
         file.take(limit.saturating_add(1)).read_to_end(&mut bytes)?;
-        Ok(Some(bytes))
+        Ok(Some((bytes, opened)))
     })
     .map_err(|e| FsxError::io(path, e))?;
     let shown = || path.display().to_string();
-    let bytes = bytes.ok_or_else(|| FsxError::TooLarge {
+    let (bytes, opened) = read.ok_or_else(|| FsxError::TooLarge {
         path: shown(),
         limit,
     })?;
@@ -216,7 +226,7 @@ pub fn read_bytes(path: &Path, limit: u64) -> Result<Vec<u8>, FsxError> {
             limit,
         });
     }
-    Ok(bytes)
+    Ok((bytes, opened))
 }
 
 /// Reads a text file of at most `limit` bytes.
@@ -226,6 +236,49 @@ pub fn read_bytes(path: &Path, limit: u64) -> Result<Vec<u8>, FsxError> {
 pub fn read_text(path: &Path, limit: u64) -> Result<Decoded, FsxError> {
     let bytes = read_bytes(path, limit)?;
     decode(&bytes).ok_or_else(|| FsxError::Binary(path.display().to_string()))
+}
+
+/// [`read_text`] plus where the file that was read really is: the path of the open handle, every link and junction
+/// on the way followed (`None`: the system cannot tell). A path checked against a boundary before the open can be
+/// swapped for a link before it; this one is the file the bytes came from.
+///
+/// # Errors
+/// See [`read_text`].
+pub fn read_text_opened(path: &Path, limit: u64) -> Result<(Decoded, Option<PathBuf>), FsxError> {
+    let (bytes, opened) = read_limited(path, limit, true)?;
+    let text = decode(&bytes).ok_or_else(|| FsxError::Binary(path.display().to_string()))?;
+    Ok((text, opened))
+}
+
+/// The path of an open file as the system knows it (Windows: may carry `\\?\`, see [`crate::paths::simplified`]).
+fn opened_path(file: &std::fs::File) -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        win::final_path(file).ok()
+    }
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        use std::os::fd::AsRawFd;
+        std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())).ok()
+    }
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        rustix::fs::getpath(file)
+            .ok()
+            .map(|p| PathBuf::from(std::ffi::OsStr::from_bytes(p.as_bytes())))
+    }
+    #[cfg(not(any(
+        windows,
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios"
+    )))]
+    {
+        let _ = file;
+        None
+    }
 }
 
 /// Scratch files of editors and tools (`*.tmp`, `*~`, `.#*`, `*.swp`, Vim's `4913`) and the hidden
@@ -699,6 +752,41 @@ mod tests {
         assert!(free_space(&file).unwrap() > 0);
         // a store root not created yet: its nearest existing folder answers
         assert!(free_space(&folder.join("not").join("yet")).unwrap() > 0);
+    }
+
+    /// The opened file's own path: a link (junction | symlink) on the way is followed to where the file really is.
+    #[test]
+    fn a_read_names_where_the_opened_file_really_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = crate::paths::canonicalize(dir.path()).unwrap();
+        let real = base.join("real ação");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::write(real.join("a.md"), "# A\n").unwrap();
+        let (text, opened) = read_text_opened(&real.join("a.md"), 1024).unwrap();
+        assert_eq!(text.text, "# A\n");
+        let opened = opened.expect("the system names the opened file");
+        assert_eq!(crate::paths::simplified(&opened), real.join("a.md"));
+        let link = base.join("link");
+        #[cfg(windows)]
+        let made = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&link)
+            .arg(&real)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(&real, &link).is_ok();
+        if made {
+            let (_, opened) = read_text_opened(&link.join("a.md"), 1024).unwrap();
+            assert_eq!(
+                crate::paths::simplified(&opened.unwrap()),
+                real.join("a.md")
+            );
+        }
+        assert!(matches!(
+            read_text_opened(&real.join("a.md"), 2),
+            Err(FsxError::TooLarge { .. })
+        ));
     }
 
     #[test]

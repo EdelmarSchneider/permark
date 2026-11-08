@@ -74,7 +74,8 @@ pub struct WindowContext {
     pub unsaved: bool,
 }
 
-fn cut_chars(text: &str, max: usize) -> (String, bool) {
+/// The first `max` characters of `text`, and whether some were left out.
+pub(crate) fn cut_chars(text: &str, max: usize) -> (String, bool) {
     match text.char_indices().nth(max) {
         Some((at, _)) => (text[..at].to_owned(), true),
         None => (text.to_owned(), false),
@@ -135,8 +136,9 @@ impl WindowContext {
         }
     }
 
-    /// One line for a prompt hook: `Viewing docs/plan.md › Rollout (lines 40-62), selected (lines 44-46): "...";
-    /// 2 open comments.` (the selection as a JSON string). `None` when no document is open.
+    /// One sentence for a prompt hook: `Viewing docs/plan.md › Rollout (lines 40-62), selected (lines 44-46); 2 open
+    /// comments.`, the selection (its start) in a zone below it like every text of a document. `None` when no
+    /// document is open.
     #[must_use]
     pub fn summary(&self, open_comments: usize) -> Option<String> {
         let doc = self.doc.as_deref()?;
@@ -159,10 +161,6 @@ impl WindowContext {
             if let Some((a, b)) = selection.lines {
                 let _ = write!(line, " (lines {a}-{b})");
             }
-            let (quote, cut) = cut_chars(&one_line(&selection.text), SUMMARY_QUOTE_CHARS);
-            let quoted =
-                serde_json::Value::String(format!("{quote}{}", if cut { "…" } else { "" }));
-            let _ = write!(line, ": {quoted}");
         }
         if self.unsaved {
             line.push_str(", unsaved");
@@ -175,6 +173,13 @@ impl WindowContext {
             );
         }
         line.push('.');
+        if let Some(selection) = &self.selection {
+            // fenced like every zone: no text of the selection can close it or pass for the sentence
+            let (quote, cut) = cut_chars(&selection.text, SUMMARY_QUOTE_CHARS);
+            line.push('\n');
+            crate::format::zone(&mut line, &format!("{quote}{}", if cut { "…" } else { "" }));
+            line.truncate(line.trim_end_matches('\n').len());
+        }
         Some(line)
     }
 }

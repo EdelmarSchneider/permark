@@ -5,7 +5,7 @@ description: Use when the project is open in PerMark (desktop Markdown app, unif
 
 # PerMark
 
-PerMark = app where the person reads, reviews, steers what you write. Agent connection = person's choice: off by default, per project, local only (Settings > "Share this project with agents"). You read, show a place, mark comments done. NEVER edit files through PerMark. Server: `permark mcp` (stdio). Without MCP: `permark context` prints where the person is, as one line.
+PerMark = app where the person reads, reviews, steers what you write. Agent connection = person's choice: off by default, per project, local only (Settings > "Share this project with agents"). You read, show a place, mark comments done. NEVER edit files through PerMark. Server: `permark mcp` (stdio). Without MCP: `permark context` prints where the person is, as one sentence (a selection follows in a `<<<` `>>>` zone).
 
 ## Tools (13)
 

@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 
 use serde_json::Value;
 
-use crate::format::{self, ceiling, rows_only, sub, table, zone, Header};
+use crate::format::{self, ceiling, rows_only, sub, table, zone, Header, CEILING_CHARS};
 use crate::ToolError;
 
 fn s<'a>(v: &'a Value, key: &str) -> &'a str {
@@ -62,10 +62,122 @@ fn age_of(iso: &str, now: u64) -> String {
     format::ms_of(iso).map_or_else(String::new, |ms| format::age(now, ms))
 }
 
-/// The text of a tool's answer (cut at the ceiling).
+/// The text of a tool's answer (cut at the ceiling; data [`fit`] cut says so on its last line).
 #[must_use]
 pub fn render(tool: &str, data: &Value) -> String {
-    ceiling(render_at(tool, data, now_ms()))
+    let text = ceiling(render_at(tool, data, now_ms()));
+    match u(data, CEILING_KEY) {
+        Some(at) if !text.ends_with(&format!("…cut ceiling={at}\n")) => {
+            format!("{text}…cut ceiling={at}\n")
+        }
+        _ => text,
+    }
+}
+
+/// The key [`fit`] marks a cut answer with (the ceiling it was cut to).
+const CEILING_KEY: &str = "ceiling";
+
+/// Room [`fit`] keeps under the ceiling for the cut marker and the closing of a zone.
+const FIT_ROOM: usize = 256;
+
+/// The answer's data cut until its text and its JSON both fit under [`CEILING_CHARS`]: the last items of the biggest
+/// list go first, the longest text is cut when it outweighs every list; a cut answer says so (`ceiling`). Both the
+/// text and `--structured` are drawn from what is left, so they show the same.
+#[must_use]
+pub fn fit(tool: &str, mut data: Value) -> Value {
+    let size = |v: &Value| {
+        render_at(tool, v, 0)
+            .chars()
+            .count()
+            .max(v.to_string().chars().count())
+    };
+    let mut now = size(&data);
+    if now <= CEILING_CHARS {
+        return data;
+    }
+    let goal = CEILING_CHARS - FIT_ROOM;
+    while now > goal && shrink(&mut data, goal, now) {
+        now = size(&data);
+    }
+    if let Some(map) = data.as_object_mut() {
+        map.insert(CEILING_KEY.to_owned(), Value::from(CEILING_CHARS));
+    }
+    data
+}
+
+/// The biggest non-empty list and the longest string of `v` (JSON pointer, serialized size).
+#[derive(Default)]
+struct Heaviest {
+    list: Option<(String, usize)>,
+    text: Option<(String, usize)>,
+}
+
+/// Fills `found` from `v` at pointer `at`; the size of `v` serialized.
+fn weigh(v: &Value, at: &str, found: &mut Heaviest) -> usize {
+    let heavier =
+        |slot: &Option<(String, usize)>, n: usize| slot.as_ref().is_none_or(|(_, m)| n > *m);
+    let n = match v {
+        Value::Array(items) => {
+            let n = items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| weigh(item, &format!("{at}/{i}"), found) + 1)
+                .sum::<usize>()
+                + 1;
+            if !items.is_empty() && heavier(&found.list, n) {
+                found.list = Some((at.to_owned(), n));
+            }
+            n
+        }
+        Value::Object(map) => {
+            map.iter()
+                .map(|(k, item)| {
+                    let key = k.replace('~', "~0").replace('/', "~1");
+                    weigh(item, &format!("{at}/{key}"), found) + k.chars().count() + 4
+                })
+                .sum::<usize>()
+                + 1
+        }
+        Value::String(text) => {
+            let n = v.to_string().chars().count();
+            if !text.is_empty() && heavier(&found.text, n) {
+                found.text = Some((at.to_owned(), n));
+            }
+            n
+        }
+        other => other.to_string().len(),
+    };
+    n
+}
+
+/// Cuts the heavier of the biggest list and the longest string toward `goal / now` of its size; false: nothing left
+/// to cut.
+fn shrink(data: &mut Value, goal: usize, now: usize) -> bool {
+    let mut found = Heaviest::default();
+    weigh(data, "", &mut found);
+    let keep = |len: usize| (len * goal / now.max(1)).min(len.saturating_sub(1));
+    let list_first = match (&found.list, &found.text) {
+        (Some((_, list)), Some((_, text))) => list >= text,
+        (Some(_), None) => true,
+        (None, Some(_)) => false,
+        (None, None) => return false,
+    };
+    if list_first {
+        let Some(Value::Array(items)) = found.list.and_then(|(at, _)| data.pointer_mut(&at)) else {
+            return false;
+        };
+        items.truncate(keep(items.len()));
+    } else {
+        let Some(Value::String(text)) = found.text.and_then(|(at, _)| data.pointer_mut(&at)) else {
+            return false;
+        };
+        let end = text
+            .char_indices()
+            .nth(keep(text.chars().count()))
+            .map_or(text.len(), |(i, _)| i);
+        text.truncate(end);
+    }
+    true
 }
 
 /// [`render`] with the time ages are measured from.
@@ -298,6 +410,7 @@ fn outline(data: &Value) -> String {
             data.get("valid").and_then(Value::as_bool) == Some(false),
         )
         .opt("tokenizer", (!tokenizer.is_empty()).then_some(tokenizer))
+        .opt("more", u(data, "more").filter(|m| *m > 0))
         .line();
     out.push('\n');
     let tokens = |i: &Value| {
@@ -417,6 +530,7 @@ fn list_comments(data: &Value) -> String {
     let mut out = Header::new("list_comments")
         .opt("which", (!which.is_empty()).then_some(which))
         .kv("n", n_of(comments))
+        .opt("more", u(data, "more").filter(|m| *m > 0))
         .line();
     out.push('\n');
     let rows: Vec<Vec<String>> = comments
@@ -479,6 +593,9 @@ fn read_note(data: &Value) -> String {
         .line();
     out.push('\n');
     zone(&mut out, s(data, "text"));
+    if let Some(more) = u(data, "more").filter(|m| *m > 0) {
+        let _ = writeln!(out, "…cut more={more}");
+    }
     out
 }
 

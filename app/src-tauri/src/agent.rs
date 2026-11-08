@@ -104,7 +104,8 @@ pub fn mcp(structured: bool) -> ExitCode {
     }
 }
 
-/// `permark context`: one line for a prompt hook, or nothing (the reason on standard error); always exit 0.
+/// `permark context`: one sentence for a prompt hook (a selection fenced below it), or nothing (the reason on
+/// standard error); always exit 0.
 #[must_use]
 pub fn context() -> ExitCode {
     match agent().and_then(|agent| agent.context_line()) {
