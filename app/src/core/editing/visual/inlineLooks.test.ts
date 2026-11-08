@@ -9,7 +9,7 @@ import { findTextRefs } from "../../doc/codeRefs";
 import type { CodeRefTarget } from "../../doc/decorate";
 import { buildDoc, compose } from "./compose";
 import { createCore, type Core } from "./core";
-import { LOOKS_DELAY_MS, type LooksHost } from "./inlineLooks";
+import { LOOKS_DELAY_MS, repaintLooks, type LooksHost } from "./inlineLooks";
 import { marksPlugin, setMarks } from "./marks";
 
 // counts the scans of plain text: a block that did not change is not read again
@@ -22,6 +22,8 @@ let core: Core;
 const files = new Set<string>();
 let prompt = false;
 let askedLinks: string[] = [];
+let askedRefs: string[] = [];
+let forgets = 0;
 let opened: CodeRefTarget[] = [];
 let filesChanged: (() => void) | null = null;
 
@@ -35,11 +37,17 @@ const host: LooksHost = {
       }),
     );
   },
-  codeRefs: (written) => Promise.resolve(written.map((w) => (files.has(w) ? [w] : []))),
+  codeRefs: (written) => {
+    askedRefs.push(...written);
+    return Promise.resolve(written.map((w) => (files.has(w) ? [w] : [])));
+  },
   promptText: () => prompt,
   refTitle: (paths, line) => `open ${paths.join(",")}:${line ?? ""}`,
   missingTitle: (path) => `not found ${path}`,
   openRef: (target) => opened.push(target),
+  forget: () => {
+    forgets += 1;
+  },
   onFiles: (changed) => {
     filesChanged = changed;
     return () => {
@@ -64,6 +72,8 @@ beforeEach(() => {
   for (const f of ["there.md", "src/main.rs", "src/lib.rs", "docs/guide.md"]) files.add(f);
   prompt = false;
   askedLinks = [];
+  askedRefs = [];
+  forgets = 0;
   opened = [];
 });
 
@@ -200,6 +210,21 @@ describe("code references", () => {
     // outside a reference, Ctrl + click is the editor's as before
     expect(click(dom().querySelector("p") ?? dom(), 2, true)).toBe(false);
   });
+
+  it("open the one clicked when two touch", async () => {
+    await load("Use `src/main.rs:12`src/lib.rs:4 now.");
+    const text = dom().querySelector("span.code-ref");
+    const code = dom().querySelector("code.code-ref");
+    if (!text || !code) throw new Error("no references");
+    // the position between them belongs to both
+    const between = after("src/main.rs:12");
+    expect(click(text, between, true)).toBe(true);
+    expect(click(code, between, true)).toBe(true);
+    expect(opened).toEqual([
+      { paths: ["src/lib.rs"], line: 4, col: null },
+      { paths: ["src/main.rs"], line: 12, col: null },
+    ]);
+  });
 });
 
 describe("heading anchors", () => {
@@ -240,6 +265,18 @@ describe("template variables and file references", () => {
     await load(TEXT);
     expect(dom().querySelector(".tvar, .at-ref")).toBeNull();
   });
+
+  it("come and go with prompt text switched while editing", async () => {
+    await load(TEXT);
+    prompt = true;
+    repaintLooks(core.view);
+    await settle();
+    expect(dom().querySelectorAll(".tvar, .at-ref")).toHaveLength(2);
+    prompt = false;
+    repaintLooks(core.view);
+    await settle();
+    expect(dom().querySelector(".tvar, .at-ref")).toBeNull();
+  });
 });
 
 describe("incremental work", () => {
@@ -254,5 +291,53 @@ describe("incremental work", () => {
     expect(askedLinks).toEqual([]);
     expect(dom().querySelectorAll(".code-ref")).toHaveLength(2);
     expect(dom().querySelectorAll(".is-missing")).toHaveLength(1);
+  });
+
+  it("does nothing when only the caret moves", async () => {
+    await load("See `src/main.rs:12` and [a](gone.md) and src/lib.rs:4 here");
+    const scans = vi.mocked(findTextRefs);
+    scans.mockClear();
+    const lookups = vi.spyOn(core.view, "domAtPos");
+    try {
+      for (const at of [2, 6, 9, 14]) {
+        const view = core.view;
+        view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at)));
+      }
+      await settle();
+      expect(lookups).not.toHaveBeenCalled();
+      expect(scans).not.toHaveBeenCalled();
+      expect(dom().querySelectorAll(".code-ref")).toHaveLength(2);
+    } finally {
+      lookups.mockRestore();
+    }
+  });
+
+  it("asks again once per burst of file changes", async () => {
+    await load("[a](gone.md) and src/lib.rs:4");
+    askedLinks = [];
+    askedRefs = [];
+    for (let i = 0; i < 3; i += 1) {
+      filesChanged?.();
+      await vi.advanceTimersByTimeAsync(LOOKS_DELAY_MS / 3);
+    }
+    await settle();
+    expect(forgets).toBe(1);
+    expect(askedLinks).toEqual(["gone.md"]);
+    expect(askedRefs).toEqual(["src/lib.rs"]);
+  });
+
+  it("waits for a composition to end before drawing what was typed", async () => {
+    await load("One plain\n\nTwo");
+    const composing = vi.spyOn(core.view, "composing", "get").mockReturnValue(true);
+    try {
+      typeAt(after("plain"), " src/lib.rs:4");
+      await settle();
+      expect(dom().querySelector(".code-ref")).toBeNull();
+      expect(askedRefs).toEqual([]);
+    } finally {
+      composing.mockRestore();
+    }
+    await settle();
+    expect(dom().querySelector("span.code-ref")?.textContent).toBe("src/lib.rs:4");
   });
 });

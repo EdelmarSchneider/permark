@@ -478,7 +478,7 @@ export default {
   "edit.block.other": "Bloc conservé tel quel",
   "edit.block.openHint": "Appuyez sur Entrée pour modifier",
   "edit.documentText": "Texte du document",
-  "edit.codeRefTitle": "{path}\n{mod}+clic pour ouvrir",
+  "edit.codeRefHint": "{title} ({mod}+clic)",
   "edit.codeRefTitleMany": "{count} fichiers correspondent. {mod}+clic pour en choisir un.",
   "edit.visualForMarkdown":
     "Le mode Édition est réservé aux fichiers Markdown et aux fichiers de configuration ; utilisez Source.",

@@ -471,7 +471,7 @@ export default {
   "edit.block.openHint": "Pulsa Intro para editar",
   "edit.documentText": "Texto del documento",
   "edit.visualForMarkdown": "El modo Editar es para archivos Markdown y de ajustes; usa Fuente.",
-  "edit.codeRefTitle": "{path}\n{mod}+clic para abrir",
+  "edit.codeRefHint": "{title} ({mod}+clic)",
   "edit.codeRefTitleMany": "{count} archivos coinciden. {mod}+clic para elegir uno.",
   "edit.diagramNoPlugin": "Activa el plugin Mermaid o PlantUML para ver el dibujo.",
   "edit.diagramPanel": "Vista previa del diagrama",

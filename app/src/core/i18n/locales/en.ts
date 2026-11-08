@@ -460,7 +460,7 @@ const en = {
   "edit.block.openHint": "Press Enter to edit",
   "edit.documentText": "Document text",
   "edit.visualForMarkdown": "Edit mode is for Markdown files and settings files; use Source.",
-  "edit.codeRefTitle": "{path}\n{mod}+click to open",
+  "edit.codeRefHint": "{title} ({mod}+click)",
   "edit.codeRefTitleMany": "{count} files match. {mod}+click to choose one.",
   "edit.diagramNoPlugin": "Turn on the Mermaid or PlantUML plugin to see the drawing.",
   "edit.diagramPanel": "Diagram preview",

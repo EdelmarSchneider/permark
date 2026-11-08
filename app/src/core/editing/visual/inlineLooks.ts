@@ -7,7 +7,8 @@
 // A block is read again only when it changed (what it holds is cached per node); its previous looks are mapped
 // through the edits until typing rests, then drawn again, never while a composition is open. What the backend must
 // answer (where a link leads, which files a reference names, whether an `@file` exists) is asked once per key, then
-// cached; a change of the project's files asks the known keys again and redraws only the blocks whose answers moved.
+// cached; a change of the project's files (once a burst of them rests) asks the known keys again and redraws only the
+// blocks whose answers moved. A transaction that neither edits nor carries looks (a caret move) costs nothing.
 
 import { DOMSerializer, type Mark, type Node as PMNode } from "@milkdown/kit/prose/model";
 import { Plugin, PluginKey, type Transaction } from "@milkdown/kit/prose/state";
@@ -38,6 +39,8 @@ export type LooksHost = {
   missingTitle(path: string): string;
   /** Ctrl | Cmd + click on a reference: opened as View's click opens it (`at`: where, for a menu of several files). */
   openRef(target: CodeRefTarget, at: { x: number; y: number }): void;
+  /** Forgets the link answers it remembers (the project's files changed): asked again, the backend answers. */
+  forget(): void;
   /** Runs `changed` when the project's files change. Returns what stops it. */
   onFiles(changed: () => void): () => void;
 };
@@ -49,6 +52,7 @@ export const noLooks: LooksHost = {
   refTitle: () => "",
   missingTitle: () => "",
   openRef: () => {},
+  forget: () => {},
   onFiles: () => () => {},
 };
 
@@ -99,7 +103,9 @@ type Meta =
       links: readonly (readonly [string, LinkTarget | null])[];
       refs: readonly (readonly [string, readonly string[] | null])[];
     }
-  | { kind: "files" };
+  | { kind: "files" }
+  /** What the host answers for every block changed (prompt text switched): all blocks are drawn again. */
+  | { kind: "repaint" };
 
 const looksKey = new PluginKey<Looks>("PM_INLINE_LOOKS");
 
@@ -309,8 +315,9 @@ function paint(looks: Looks, doc: PMNode, blocks: Map<number, PMNode>, host: Loo
   const drawn: Decoration[] = [];
   for (const [pos, block] of blocks) {
     const end = pos + block.nodeSize;
-    old.push(...looks.set.find(pos, end).filter((d) => d.from >= pos && d.to <= end));
-    drawn.push(...blockLooks(block, pos, host, looks.answers, ask));
+    // one by one: spreading a long document's decorations into a call would pass too many arguments
+    for (const d of looks.set.find(pos, end)) if (d.from >= pos && d.to <= end) old.push(d);
+    for (const d of blockLooks(block, pos, host, looks.answers, ask)) drawn.push(d);
   }
   return { ...looks, set: looks.set.remove(old).add(doc, drawn), ask };
 }
@@ -427,6 +434,14 @@ function markClasses(view: EditorView, before: Map<Element, string>): Map<Elemen
 
 // ---- the plugin -------------------------------------------------------------------------------------------------
 
+/** Draws every block again, at the next rest: what the host answers for the whole document changed. */
+export function repaintLooks(view: EditorView): void {
+  if (view.isDestroyed) return;
+  view.dispatch(
+    view.state.tr.setMeta(looksKey, { kind: "repaint" }).setMeta("addToHistory", false),
+  );
+}
+
 /** View's inline looks, with what `host` answers (read when a block is drawn). */
 export function inlineLooks(host: () => LooksHost): Plugin<Looks> {
   return new Plugin<Looks>({
@@ -434,6 +449,9 @@ export function inlineLooks(host: () => LooksHost): Plugin<Looks> {
     state: {
       init: (_config, state) => paint(EMPTY, state.doc, allBlocks(state.doc), host()),
       apply: (tr, value) => {
+        const meta: unknown = tr.getMeta(looksKey);
+        // the same state object: the view sees that nothing changed for the looks
+        if (!tr.docChanged && !isMeta(meta) && !value.fresh) return value;
         let looks: Looks = { ...value, fresh: false };
         if (tr.docChanged) {
           const map = (span: Span): Span => ({
@@ -446,7 +464,6 @@ export function inlineLooks(host: () => LooksHost): Plugin<Looks> {
             dirty: [...looks.dirty.map(map), ...changedSpans(tr)],
           };
         }
-        const meta: unknown = tr.getMeta(looksKey);
         if (!isMeta(meta)) return looks;
         switch (meta.kind) {
           case "paint":
@@ -462,6 +479,9 @@ export function inlineLooks(host: () => LooksHost): Plugin<Looks> {
                 refs: new Set([...looks.ask.refs, ...looks.answers.refs.keys()]),
               },
             };
+          case "repaint":
+            // drawn at the next rest, as typing is: never under an open composition
+            return { ...looks, dirty: [...looks.dirty, { from: 0, to: tr.doc.content.size }] };
           default:
             return meta satisfies never;
         }
@@ -470,15 +490,18 @@ export function inlineLooks(host: () => LooksHost): Plugin<Looks> {
     props: {
       decorations: (state) => looksKey.getState(state)?.set ?? null,
       markViews: { [LINK]: lookedMark, [CODE]: lookedMark },
-      handleClick: (view, pos, event) => {
+      handleClick: (view, _pos, event) => {
         if (!(event.ctrlKey || event.metaKey)) return false;
         const element =
           event.target instanceof Element ? event.target.closest(`.${CODE_REF}`) : null;
         if (element === null || !view.dom.contains(element)) return false;
+        // found by the element clicked: two references that touch share the position between them
+        const at = view.posAtDOM(element, 0);
         const set = looksKey.getState(view.state)?.set ?? DecorationSet.empty;
-        for (const decoration of set.find(pos, pos)) {
+        for (const decoration of set.find(at, at + 1)) {
           const look = lookOf(decoration.spec);
           if (look === null || look.look === "missing") continue;
+          if (decoration.from > at || decoration.to <= at) continue;
           host().openRef(look.target, { x: event.clientX, y: event.clientY });
           return true;
         }
@@ -487,6 +510,9 @@ export function inlineLooks(host: () => LooksHost): Plugin<Looks> {
     },
     view: (view) => {
       let timer: ReturnType<typeof setTimeout> | undefined;
+      let filesTimer: ReturnType<typeof setTimeout> | undefined;
+      /** Counts the changes of the project's files: what was asked before the last one may be out of date. */
+      let era = 0;
       let gone = false;
       let classes = markClasses(view, new Map());
       const asking = { links: new Set<string>(), refs: new Set<string>() };
@@ -508,15 +534,17 @@ export function inlineLooks(host: () => LooksHost): Plugin<Looks> {
         } else send(meta);
       };
       const askLinks = async (hrefs: string[]): Promise<void> => {
+        const asked = era;
         for (const href of hrefs) asking.links.add(href);
         let targets: readonly (LinkTarget | null)[] = [];
         try {
           targets = await host().links(hrefs);
         } catch {
           // not asked: these links keep the look they had
-        } finally {
-          for (const href of hrefs) asking.links.delete(href);
         }
+        // asked before the files changed: they are asked again
+        if (asked !== era) return;
+        for (const href of hrefs) asking.links.delete(href);
         deliver({
           kind: "answers",
           links: hrefs.map((h, at) => [h, targets[at] ?? null]),
@@ -524,15 +552,16 @@ export function inlineLooks(host: () => LooksHost): Plugin<Looks> {
         });
       };
       const askRefs = async (written: string[]): Promise<void> => {
+        const asked = era;
         for (const path of written) asking.refs.add(path);
         let files: readonly (readonly string[])[] | null = null;
         try {
           files = await host().codeRefs(written);
         } catch {
           // not asked: these references keep the look they had
-        } finally {
-          for (const path of written) asking.refs.delete(path);
         }
+        if (asked !== era) return;
+        for (const path of written) asking.refs.delete(path);
         deliver({
           kind: "answers",
           links: [],
@@ -553,14 +582,34 @@ export function inlineLooks(host: () => LooksHost): Plugin<Looks> {
         if (links.length > 0) void askLinks(links);
         if (refs.length > 0) void askRefs(refs);
       }
-      const stop = host().onFiles(() => deliver({ kind: "files" }));
+      const filesChanged = (): void => {
+        filesTimer = undefined;
+        era += 1;
+        asking.links.clear();
+        asking.refs.clear();
+        host().forget();
+        deliver({ kind: "files" });
+      };
+      // files change in bursts (a checkout, a folder copied in): everything is asked again once, when they rest
+      const stop = host().onFiles(() => {
+        clearTimeout(filesTimer);
+        filesTimer = setTimeout(filesChanged, LOOKS_DELAY_MS);
+      });
       schedule(0);
       return {
         update: (next, previous) => {
-          classes = markClasses(next, classes);
           const looks = looksKey.getState(next.state);
           if (!looks) return;
-          if (next.state.doc !== previous.doc) {
+          const docChanged = next.state.doc !== previous.doc;
+          // ProseMirror may draw a mark's element again (other decorations around it changed): it lost the class
+          if (
+            docChanged ||
+            looks.set !== looksKey.getState(previous)?.set ||
+            ![...classes.keys()].every((element) => element.isConnected)
+          ) {
+            classes = markClasses(next, classes);
+          }
+          if (docChanged) {
             schedule(looks.fresh ? 0 : LOOKS_DELAY_MS);
             return;
           }
@@ -570,6 +619,7 @@ export function inlineLooks(host: () => LooksHost): Plugin<Looks> {
         destroy: () => {
           gone = true;
           clearTimeout(timer);
+          clearTimeout(filesTimer);
           stop();
         },
       };

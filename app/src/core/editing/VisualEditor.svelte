@@ -2,7 +2,7 @@
   // Edit mode: Milkdown over the blocks of the text (loaded on first use). Untouched blocks keep their bytes
   // (compose); locked blocks look as View draws their lines (View's render of the text, asked for when the editor is
   // made), their source only where View's blocks cannot be matched. Toolbar, slash menu, link and picture popovers.
-  import { mount, unmount, type Component } from "svelte";
+  import { mount, unmount, untrack, type Component } from "svelte";
   import type { Node as PMNode } from "@milkdown/kit/prose/model";
   import { api, type Body } from "../../api";
   import type { FrontMatter } from "../../api/generated/FrontMatter";
@@ -15,8 +15,8 @@
   import type { ContributionOf } from "../plugins/registry.svelte";
   import "../doc/markdown.css";
   import { codeActionsFor } from "../doc/CodeActions.svelte";
-  import { codeEmbed, type CodeRefTarget } from "../doc/decorate";
-  import { refLabel } from "../doc/codeRefs";
+  import { codeEmbed, codeRefTitle, type CodeRefTarget } from "../doc/decorate";
+  import { inApp } from "../doc/codeRefs";
   import ContextMenu from "../explorer/ContextMenu.svelte";
   import type { MenuEntry } from "../explorer/menu";
   import { ui } from "../shell/ui.svelte";
@@ -300,32 +300,38 @@
    * Ctrl | Cmd + click opens a reference as View's click does. Files that come or go make links be looked up again.
    */
   function looksHost(path: string): LooksHost {
-    const modKey = (): string => documents.decorator.refSetup().mod;
     return {
       links: (hrefs) => documents.decorator.links.resolve(hrefs),
       codeRefs: async (written) => {
         const result = await api.resolveCodeRefs(path, [...written]);
         return result.ok ? result.value : null;
       },
-      promptText: () => conditions.current.plugins.includes("prompt-blocks"),
+      promptText: () => promptText,
       refTitle: (paths, line) => {
+        const { editorSet, mod } = documents.decorator.refSetup();
         const [first] = paths;
-        return paths.length === 1 && first !== undefined
-          ? t("edit.codeRefTitle", { path: refLabel(first, line), mod: modKey() })
-          : t("edit.codeRefTitleMany", { count: paths.length, mod: modKey() });
+        if (paths.length !== 1 || first === undefined) {
+          return t("edit.codeRefTitleMany", { count: paths.length, mod });
+        }
+        // Ctrl | Cmd + click here does what a click does in View: View's Ctrl | Cmd + click to the editor has no
+        // gesture left in Edit, so the tooltip does not offer it
+        const title = codeRefTitle(paths, line, { editorSet: editorSet && !inApp(first), mod });
+        return t("edit.codeRefHint", { title, mod });
       },
       missingTitle: (missing) => t("link.missing", { path: missing }),
       openRef: (target: CodeRefTarget, at) => {
         const entries = documents.codeRefChoices(target, false);
         if (entries !== null) refMenu = { ...at, entries };
       },
+      forget: () => documents.decorator.links.forget(),
       onFiles: (changed) => {
         let gone = false;
         let stop: (() => void) | null = null;
+        // the Explorer's tree events: files coming or going in folders it hides (hidden, ignored) refresh no link
+        // until the document opens again
         void api
           .on("tree-changed", ({ delta }) => {
             if (delta.added.length + delta.removed.length + delta.renamed.length === 0) return;
-            documents.decorator.links.forget();
             changed();
           })
           .then((unlisten) => {
@@ -524,6 +530,20 @@
       if (made) void made.destroy();
       nearby?.stop();
     };
+  });
+
+  /** View marks `{{variables}}` and `@file` references while the prompt-blocks plugin is on. */
+  const promptText = $derived(conditions.current.plugins.includes("prompt-blocks"));
+  /** What a code reference's tooltip offers depends on whether an editor is chosen. */
+  const editorSet = $derived(documents.decorator.refSetup().editorSet);
+
+  // prompt text switched or the editor setting changed while editing: the inline looks are drawn again
+  $effect(() => {
+    void promptText;
+    void editorSet;
+    untrack(() => {
+      if (core && mod) mod.repaintLooks(core.view);
+    });
   });
 
   // ---- slash menu -------------------------------------------------------------------------------------------

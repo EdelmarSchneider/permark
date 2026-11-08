@@ -451,7 +451,7 @@ export default {
   "edit.block.openHint": "按 Enter 编辑",
   "edit.documentText": "文档文本",
   "edit.visualForMarkdown": "编辑模式适用于 Markdown 文件和设置文件；请使用源码。",
-  "edit.codeRefTitle": "{path}\n{mod}+单击以打开",
+  "edit.codeRefHint": "{title}（{mod}+点击）",
   "edit.codeRefTitleMany": "有 {count} 个文件匹配。{mod}+单击以选择其一。",
   "edit.diagramNoPlugin": "开启 Mermaid 或 PlantUML 插件即可查看图形。",
   "edit.diagramPanel": "图表预览",

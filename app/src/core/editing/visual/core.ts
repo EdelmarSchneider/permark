@@ -4,11 +4,11 @@
 // Added to the stock CommonMark + GFM schema: `pm_locked`, an atom holding a block the editor must not rewrite
 // (drawn as View draws it, `lockedView.ts`; View's prompt boxes around blocks, `promptBoxes.ts`), `inline_source`, an
 // inline atom keeping a piece of a line as written (inline math, footnote references, reference-style links:
-// `inlineSource.ts`), `taskItemView`, the
-// real checkbox of a task item, and the reading view's wrappers of code blocks (with their language and token colors,
-// `codeColors.ts`) and tables (`codeBlockView`, `tableView`), and View's inline looks (`inlineLooks.ts`). Left out: stock plugins that change a document by
-// themselves (heading ids, list renumbering, empty-line preservation). A no-break space is written as `&nbsp;`; link
-// marks end at the link's edge; the serializer writes the style below.
+// `inlineSource.ts`), `taskItemView`, the real checkbox of a task item, the reading view's wrappers of code blocks
+// (with their language and token colors, `codeColors.ts`) and tables (`codeBlockView`, `tableView`), and View's inline
+// looks (`inlineLooks.ts`). Left out: stock plugins that change a document by themselves (heading ids, list
+// renumbering, empty-line preservation). A no-break space is written as `&nbsp;`; link marks end at the link's edge;
+// the serializer writes the style below.
 
 import {
   Editor,

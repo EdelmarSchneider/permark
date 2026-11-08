@@ -471,7 +471,7 @@ export default {
   "edit.block.other": "Bloc conservat tal com està escrit",
   "edit.block.openHint": "Prem Retorn per editar",
   "edit.documentText": "Text del document",
-  "edit.codeRefTitle": "{path}\n{mod}+clic per a obrir-lo",
+  "edit.codeRefHint": "{title} ({mod}+clic)",
   "edit.codeRefTitleMany": "Coincideixen {count} fitxers. {mod}+clic per a triar-ne un.",
   "edit.visualForMarkdown":
     "El mode Edició és per a fitxers Markdown i fitxers de configuració; feu servir Codi font.",
