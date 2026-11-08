@@ -880,6 +880,114 @@ fn undo_of_a_moved_document_with_rewritten_links_restores_both() {
     assert_eq!(read(&f, "docs/a.md"), original);
 }
 
+// ---- `@path` references (prompt text) -------------------------------------------------------------------------------
+
+/// [`fx`] with the prompt features on (the plugin that marks `@path` references in reading).
+fn fx_prompts(files: &[(&str, &str)]) -> Fx {
+    use crate::format::{Contributions, FormatRegistry, MarkdownFeature, PromptBlocks};
+    let Fx {
+        dir,
+        state,
+        ops,
+        explorer,
+        own,
+    } = fx(files);
+    let formats = FormatRegistry::build(&Contributions::default().markdown(vec![
+        MarkdownFeature::PromptBlocks(PromptBlocks {
+            tags: crate::format::DEFAULT_PROMPT_TAGS,
+        }),
+    ]));
+    Fx {
+        dir,
+        state,
+        ops: ops.with_formats(Arc::new(std::sync::RwLock::new(Arc::new(formats)))),
+        explorer,
+        own,
+    }
+}
+
+const PROMPT_TEXT: &str = "Read @docs/guide.md first.\r\n`@docs/guide.md` stays, [@docs/guide.md](other.md) too\r\n<context>\r\n- see @docs/guide.md.\r\n</context>\r\n";
+
+#[test]
+fn references_to_a_moved_file_are_rewritten_in_place_counted_and_undone() {
+    let f = fx_prompts(&[
+        ("README.md", PROMPT_TEXT),
+        ("docs/guide.md", "# Guide\n"),
+        ("other.md", ""),
+    ]);
+    let plan = f
+        .ops
+        .plan_move(&[spec("docs/guide.md", "docs/manual.md")], true)
+        .unwrap();
+    assert_eq!((plan.link_count, plan.file_count), (2, 1));
+    let changes: Vec<(u32, &str, &str)> = plan.files[0]
+        .changes
+        .iter()
+        .map(|c| (c.line, c.old.as_str(), c.new.as_str()))
+        .collect();
+    assert_eq!(
+        changes,
+        [
+            (1, "docs/guide.md", "docs/manual.md"),
+            (4, "docs/guide.md", "docs/manual.md")
+        ]
+    );
+    let outcome = f.ops.apply_move(plan.plan_id, true).unwrap();
+    assert_eq!((outcome.links, outcome.documents), (2, 1));
+    // only the two paths changed: code, the link's text, the line endings and every other byte stay
+    assert_eq!(
+        read(&f, "README.md"),
+        PROMPT_TEXT
+            .replacen("Read @docs/guide.md", "Read @docs/manual.md", 1)
+            .replacen("see @docs/guide.md.", "see @docs/manual.md.", 1)
+    );
+    f.ops.undo().unwrap().unwrap();
+    assert_eq!(read(&f, "README.md"), PROMPT_TEXT, "byte for byte");
+    assert!(exists(&f, "docs/guide.md"));
+}
+
+#[test]
+fn references_follow_a_moved_folder_and_stay_when_the_new_name_cannot_be_one() {
+    let text = "@docs/guide.md and @/docs/a.md\n";
+    let f = fx_prompts(&[
+        ("README.md", text),
+        ("docs/guide.md", ""),
+        ("docs/a.md", ""),
+    ]);
+    mv(&f, &[("docs", "handbook")]);
+    assert_eq!(
+        read(&f, "README.md"),
+        "@handbook/guide.md and @/handbook/a.md\n"
+    );
+    // a name with a space ends a reference: written in, the text would name another file
+    let f = fx_prompts(&[
+        ("README.md", text),
+        ("docs/guide.md", ""),
+        ("docs/a.md", ""),
+    ]);
+    let plan = f
+        .ops
+        .plan_move(&[spec("docs/guide.md", "docs/my guide.md")], true)
+        .unwrap();
+    assert_eq!(plan.link_count, 0);
+}
+
+#[test]
+fn references_stay_as_written_when_the_prompt_features_are_off() {
+    let f = fx(&[
+        ("README.md", PROMPT_TEXT),
+        ("docs/guide.md", ""),
+        ("other.md", ""),
+    ]);
+    let plan = f
+        .ops
+        .plan_move(&[spec("docs/guide.md", "docs/manual.md")], true)
+        .unwrap();
+    assert_eq!(plan.link_count, 0);
+    f.ops.apply_move(plan.plan_id, true).unwrap();
+    assert_eq!(read(&f, "README.md"), PROMPT_TEXT);
+}
+
 #[test]
 fn undo_reports_what_changed_since_instead_of_overwriting_it() {
     let f = fx(&[("a.md", "[b](b.md)\n"), ("b.md", "")]);

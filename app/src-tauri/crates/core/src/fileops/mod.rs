@@ -4,7 +4,8 @@
 //! * [`names`]: what a name may be;
 //! * [`ops`]: checks the file system side (nothing is overwritten, nothing leaves its root, delete goes to the
 //!   recycle bin) and does it, putting back what moved when a move fails half way;
-//! * [`plan`]: decides which links of which documents change, as exact byte edits;
+//! * [`plan`]: decides which links (and, with the prompt features on, `@path` references) of which documents change,
+//!   as exact byte edits;
 //! * [`undo`]: the journal;
 //! * [`FileOps`]: ties them together for a project: preview, apply (hash-guarded writes, own writes announced to the
 //!   watch, the tree synced at once) and undo.
@@ -23,7 +24,7 @@ use std::collections::VecDeque;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -44,6 +45,7 @@ use self::ops::{
 use self::plan::{apply_edits, invert_edits, mentions, split_root, DocPlan, Planner};
 use self::undo::{DocUndo, Entry, Journal, Op, UndoEdit, JOURNAL_FILE};
 use crate::error::{ErrorKind, IpcError};
+use crate::format::{FormatRegistry, MarkdownFeatures};
 use crate::fsx::{hash, write_atomic_if_unchanged, ContentHash, IDENTITY_UNKNOWN};
 use crate::paths::{Vault, VaultError, VaultPath};
 use crate::state::StateFile;
@@ -297,6 +299,8 @@ pub struct FileOps {
     imports: Mutex<import::Imports>,
     /// The project's activity journal (what the person did, undo included).
     activity: Option<Arc<crate::activity::ActivityLog>>,
+    /// The formats of the plugins that are on (shared with reading): which references reading marks as links.
+    formats: Option<Arc<RwLock<Arc<FormatRegistry>>>>,
 }
 
 impl std::fmt::Debug for FileOps {
@@ -321,7 +325,28 @@ impl FileOps {
             plans: Mutex::new(Plans::default()),
             imports: Mutex::new(import::Imports::default()),
             activity: None,
+            formats: None,
         }
+    }
+
+    /// Keeps the references reading marks (`@path`, with the prompt features on) working too; the registry is the one
+    /// the project swaps when its plugins change.
+    #[must_use]
+    pub fn with_formats(mut self, formats: Arc<RwLock<Arc<FormatRegistry>>>) -> Self {
+        self.formats = Some(formats);
+        self
+    }
+
+    /// The Markdown features that are on now (none without a registry).
+    fn features(&self) -> MarkdownFeatures {
+        self.formats
+            .as_ref()
+            .map_or_else(MarkdownFeatures::default, |formats| {
+                *formats
+                    .read()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .features()
+            })
     }
 
     /// Notes every operation (and undo) in the project's activity journal.
@@ -469,7 +494,7 @@ impl FileOps {
             return (Vec::new(), Vec::new(), Vec::new());
         };
         let root = split_root(first).0.trim_end_matches('/').to_owned();
-        let planner = Planner::new(&self.vault, pairs);
+        let planner = Planner::new(&self.vault, pairs).with_features(self.features());
         let mut docs = Vec::new();
         let mut skipped = Vec::new();
         // a fresh walk: documents in folders the tree leaves unlisted for their size are links to keep as well

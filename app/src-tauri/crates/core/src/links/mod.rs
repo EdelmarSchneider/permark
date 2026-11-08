@@ -6,6 +6,7 @@ mod resolve;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use parse::Lines;
 pub use parse::{parse, Dest, Form, Kind};
 pub use resolve::{join_relative, local_target, resolve, Target};
 

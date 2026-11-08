@@ -155,6 +155,33 @@ describe("mock file operations refuse what the backend refuses", () => {
     expect(outcome.skipped).toEqual([]);
   });
 
+  it("keeps @path references with the prompt features on: counted in the preview, rewritten, undone", async () => {
+    const api = createMockApi();
+    const text =
+      "Read @docs/guide.md first.\nNot me@docs/guide.md, @docs/guide.mdx or @docs/guide.md/x.\n";
+    api.probe.project.add("CLAUDE.md", text);
+    const move = [{ from: "docs/guide.md", to: "docs/manual.md" }];
+    const plan = value(await api.planMove(move, true));
+    expect(plan.files.find((f) => f.path === "CLAUDE.md")?.changes).toEqual([
+      { line: 1, old: "docs/guide.md", new: "docs/manual.md" },
+    ]);
+    value(await api.applyMove(plan.planId, true));
+    expect(api.probe.project.files.get("CLAUDE.md")).toBe(
+      text.replace("Read @docs/guide.md", "Read @docs/manual.md"),
+    );
+    value(await api.undoFileOp());
+    expect(api.probe.project.files.get("CLAUDE.md")).toBe(text);
+
+    value(
+      await api.settingsSet({
+        key: "pluginEnabled",
+        value: { plugin: "prompt-blocks", enabled: false },
+      }),
+    );
+    const off = value(await api.planMove(move, true));
+    expect(off.files.map((f) => f.path)).not.toContain("CLAUDE.md");
+  });
+
   it("rewrites only what the preview showed: a document changed since is skipped", async () => {
     const api = createMockApi();
     const plan = value(await api.planMove([{ from: "docs/guide.md", to: "docs/manual.md" }], true));

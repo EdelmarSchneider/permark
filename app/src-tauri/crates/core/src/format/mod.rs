@@ -25,7 +25,8 @@ pub use contrib::{
 };
 pub use json_lines::{records, JsonLineRecord};
 pub use markdown::{
-    sections, segments, units, LockReason, MarkdownFormat, Section, Segment, SegmentKind, TextUnit,
+    at_refs, sections, segments, units, AtRef, LockReason, MarkdownFormat, Section, Segment,
+    SegmentKind, TextUnit,
 };
 pub use registry::FormatRegistry;
 pub use viewers::{media_of, MediaFormat, TextViewer, MEDIA_EXTENSIONS};

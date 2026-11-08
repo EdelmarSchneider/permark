@@ -65,12 +65,12 @@ impl Dest {
 }
 
 /// Byte offsets of line starts (`\n`, `\r\n` and a lone `\r` end a line).
-struct Lines {
+pub(crate) struct Lines {
     starts: Vec<usize>,
 }
 
 impl Lines {
-    fn new(text: &str) -> Self {
+    pub(crate) fn new(text: &str) -> Self {
         let bytes = text.as_bytes();
         let mut starts = vec![0];
         let mut i = 0;
@@ -95,14 +95,14 @@ impl Lines {
     }
 
     /// Byte range of a node from its 1-based `sourcepos` (end column inclusive).
-    fn range_of(&self, pos: Sourcepos, len: usize) -> Option<Range<usize>> {
+    pub(crate) fn range_of(&self, pos: Sourcepos, len: usize) -> Option<Range<usize>> {
         let start = self.start_of(pos.start.line)? + pos.start.column.checked_sub(1)?;
         let end = self.start_of(pos.end.line)? + pos.end.column;
         (start < end && end <= len).then_some(start..end)
     }
 
     /// 1-based line of a byte offset.
-    fn line_of(&self, offset: usize) -> usize {
+    pub(crate) fn line_of(&self, offset: usize) -> usize {
         self.starts.partition_point(|s| *s <= offset).max(1)
     }
 

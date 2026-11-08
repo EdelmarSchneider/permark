@@ -463,12 +463,36 @@ describe("a document that changes under the reader", () => {
       window: "main",
       path: "README.md",
       change: "deleted",
-      movedTo: "docs/README.md",
+      movedTo: null,
     });
     await until(() => target.querySelector(".banner") !== null, "banner");
-    expect(target.querySelector(".banner")?.textContent).toContain("docs/README.md");
+    expect(target.querySelector(".banner button")).toBeNull();
     expect(target.querySelector(".md.is-tombstone")).not.toBeNull();
     expect(target.querySelectorAll(".md-body > *").length).toBeGreaterThan(5);
+  });
+
+  it("follows a renamed document without a banner; the header names it again after the rename is undone", async () => {
+    await show("docs/guide.md");
+    await until(() => target.querySelectorAll(".md-body > *").length > 0, "blocks");
+    const plan = await mock.planMove([{ from: "docs/guide.md", to: "docs/manual.md" }], true);
+    if (!plan.ok) throw new Error("no plan");
+    await mock.applyMove(plan.value.planId, true);
+    // the mock is shared by the tests of this file: the document goes back to its name whatever happens
+    let renamed = true;
+    try {
+      await until(() => documents.view?.path === "docs/manual.md", "the page on the new name");
+      await tick();
+      expect(target.querySelector(".crumb.current")?.textContent).toBe("manual.md");
+      expect(target.querySelector(".banner")).toBeNull();
+      await mock.undoFileOp();
+      renamed = false;
+      await until(() => documents.view?.path === "docs/guide.md", "the page on the old name");
+      await tick();
+      expect(target.querySelector(".crumb.current")?.textContent).toBe("guide.md");
+      expect(target.querySelector(".banner")).toBeNull();
+    } finally {
+      if (renamed) await mock.undoFileOp();
+    }
   });
 });
 
@@ -798,6 +822,29 @@ describe("another document comes while edits are unsaved", () => {
       expect(mock.probe.edit.files.has("docs/guide.md")).toBe(false);
     } finally {
       // the mock is shared by the tests of this file: the document goes back to its name
+      editing.release();
+      await mock.undoFileOp();
+    }
+  });
+
+  it("a clean editor goes with a renamed document, in the same mode, nothing marked unsaved", async () => {
+    await show("docs/guide.md");
+    await until(() => sourceButton() !== undefined, "mode switch");
+    sourceButton()?.click();
+    await until(() => editing.path === "docs/guide.md" && editing.state.s === "clean", "loaded");
+    const plan = await mock.planMove([{ from: "docs/guide.md", to: "docs/manual.md" }], true);
+    if (!plan.ok) throw new Error("no plan");
+    await mock.applyMove(plan.value.planId, true);
+    try {
+      await until(() => documents.view?.path === "docs/manual.md", "the page on the new name");
+      await until(
+        () => editing.path === "docs/manual.md" && editing.state.s === "clean",
+        "the editor on the new name",
+      );
+      expect(editing.mode).toBe("source");
+      expect(mock.probe.edit.unsaved).toBeNull();
+      expect(target.querySelector(".banner")).toBeNull();
+    } finally {
       editing.release();
       await mock.undoFileOp();
     }

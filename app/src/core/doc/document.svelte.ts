@@ -359,7 +359,7 @@ export class DocumentController {
     return () => this.#textUpdaters.delete(listener);
   }
 
-  /** The file changed on disk (or went away). */
+  /** The file changed on disk, was renamed | moved (the window goes with it), or went away. */
   onChanged(event: DocumentChanged): void {
     if (event.path !== this.#shown) return;
     switch (event.change) {
@@ -367,9 +367,13 @@ export class DocumentController {
         void this.#open(event.path, false);
         break;
       case "deleted": {
+        if (event.movedTo !== null) {
+          void this.followMoved(event.movedTo);
+          break;
+        }
         const s = this.state;
         if (s.status === "ready") {
-          this.state = { ...s, deleted: { movedTo: event.movedTo, at: Date.now() } };
+          this.state = { ...s, deleted: { movedTo: null, at: Date.now() } };
         }
         break;
       }
@@ -749,15 +753,16 @@ export class DocumentController {
   }
 
   /** Puts the window on `path`: a single file holds it here, a project's tab is told by the backend (which tells the
-   *  window back). */
-  async #place(path: string): Promise<void> {
+   *  window back). Whether it did. */
+  async #place(path: string): Promise<boolean> {
     if (this.singleFile) {
       // the window shows it (`DocumentArea` follows `singleDoc`)
       this.singleDoc = path;
-      return;
+      return true;
     }
     const result = await this.#api.showDocument(path);
     if (!result.ok) this.#hooks.fail(result.error);
+    return result.ok;
   }
 
   /** Puts the window back on `path` without asking: the person kept editing it when another document came. */
@@ -801,9 +806,21 @@ export class DocumentController {
     }
   }
 
-  /** Follows the document that took this one's place (renamed). */
-  followMoved(path: string): void {
-    this.navigate(path, null);
+  /**
+   * Follows the document that took this one's place (renamed | moved) to the same reading place. When the window cannot
+   * go there, it stays on the last version and the page says where the document went.
+   */
+  async followMoved(path: string): Promise<void> {
+    const from = this.#shown;
+    if (from === null || path === from) return;
+    // the place is read when the moved document is painted
+    const scroller = this.host.scroller;
+    if (scroller) reading.remember(path, scroller.scrollTop);
+    if ((await confirmLeave({ kind: "document", path })) && (await this.#place(path))) return;
+    const s = this.state;
+    if (this.#shown === from && s.status === "ready") {
+      this.state = { ...s, deleted: { movedTo: path, at: Date.now() } };
+    }
   }
 
   // ---- code references, web, the system --------------------------------------------------------------------

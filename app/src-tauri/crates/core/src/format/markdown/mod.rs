@@ -8,6 +8,7 @@ mod blocks;
 mod frontmatter;
 mod inline;
 mod prompt;
+mod refs;
 mod sanitize;
 mod sections;
 mod segments;
@@ -20,6 +21,7 @@ use std::collections::HashSet;
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{format_html, parse_document, Anchorizer, Arena, Options};
 
+pub use refs::{at_refs, AtRef};
 pub use sections::{sections, units, Section, TextUnit};
 pub use segments::{segments, LockReason, Segment, SegmentKind};
 

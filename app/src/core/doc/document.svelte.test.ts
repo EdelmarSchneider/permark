@@ -390,23 +390,67 @@ describe("changes on disk", () => {
     expect(seen).not.toHaveBeenCalled();
   });
 
-  it("keeps the last version when the file is deleted, and says where it went", async () => {
+  it("keeps the last version when the file is deleted", async () => {
     const fx = await setup();
     await open(fx, "README.md");
     const view = fx.doc.view;
+    fx.doc.onChanged({ window: "main", path: "README.md", change: "deleted", movedTo: null });
+    expect(fx.doc.state.status).toBe("ready");
+    expect(fx.doc.view).toBe(view);
+    expect(fx.doc.state.status === "ready" && fx.doc.state.deleted?.movedTo).toBeNull();
+    // the file is back: the deleted mark goes with the new version
+    fx.doc.onChanged({ window: "main", path: "README.md", change: "changed", version: "v3" });
+    await tick();
+    expect(fx.doc.state.status === "ready" && fx.doc.state.deleted).toBeNull();
+  });
+
+  it("follows a renamed document at the same reading place, and back when the rename is undone", async () => {
+    const fx = await setup();
+    await fx.api.on("document-changed", (event) => fx.doc.onChanged(event));
+    await open(fx, "docs/guide.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    try {
+      scroller.scrollTop = 240;
+      const plan = await fx.api.planMove([{ from: "docs/guide.md", to: "docs/manual.md" }], true);
+      if (!plan.ok) throw new Error("no plan");
+      await fx.api.applyMove(plan.value.planId, true);
+      await vi.waitFor(() => expect(fx.doc.view?.path).toBe("docs/manual.md"));
+      expect(fx.doc.state.status === "ready" && fx.doc.state.deleted).toBeNull();
+      expect(reading.scrollOf("docs/manual.md")).toBe(240);
+      await fx.api.undoFileOp();
+      await vi.waitFor(() => expect(fx.doc.view?.path).toBe("docs/guide.md"));
+      expect(fx.doc.state.status === "ready" && fx.doc.state.deleted).toBeNull();
+      expect(fx.failures).toEqual([]);
+    } finally {
+      scroller.remove();
+    }
+  });
+
+  it("stays on a renamed document it cannot follow, and says where it went", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    vi.spyOn(fx.api, "showDocument").mockResolvedValue({
+      ok: false,
+      error: {
+        kind: "backend",
+        command: "show_document",
+        error: { kind: "notFound", subject: null, detail: null },
+      },
+    });
     fx.doc.onChanged({
       window: "main",
       path: "README.md",
       change: "deleted",
       movedTo: "docs/README.md",
     });
-    expect(fx.doc.state.status).toBe("ready");
-    expect(fx.doc.view).toBe(view);
-    expect(fx.doc.state.status === "ready" && fx.doc.state.deleted?.movedTo).toBe("docs/README.md");
-    // the file is back: the deleted mark goes with the new version
-    fx.doc.onChanged({ window: "main", path: "README.md", change: "changed", version: "v3" });
-    await tick();
-    expect(fx.doc.state.status === "ready" && fx.doc.state.deleted).toBeNull();
+    await vi.waitFor(() =>
+      expect(fx.doc.state.status === "ready" && fx.doc.state.deleted?.movedTo).toBe(
+        "docs/README.md",
+      ),
+    );
+    expect(fx.doc.path).toBe("README.md");
+    expect(fx.failures).toHaveLength(1);
   });
 });
 
