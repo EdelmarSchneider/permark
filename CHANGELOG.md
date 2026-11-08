@@ -12,6 +12,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Edit also shows View's details in the text: links to missing files are underlined in red, code references look and open as in View (Ctrl or Cmd click), headings show their anchor on hover, and prompt files show their variable and file chips. <!-- f: editing, edit-mode -->
 
 ### Fixed
+- In Edit, text ending in a space kept its escapes when saved, so an escaped bracket before a link or formula, or a `#`, `1.` or `-` typed at the start of a line, no longer turns into a link, heading or list in the file. If a save still holds something that may read differently, a short note says so. <!-- f: editing -->
 - Text typed in the last moment before the file changed on disk, was deleted, or before Save all is no longer lost: it now leads to the usual conflict or unsaved-changes choice. <!-- f: editing -->
 - Renaming or moving a document while it has unsaved edits keeps them: the editor follows the file to its new name, and Keep mine saves there instead of recreating the old file. <!-- f: editing, file-ops -->
 - Renaming a file to the same name with different capital letters, or a different Unicode spelling, can no longer replace another file that already has that name on drives that tell them apart. When a drive cannot say whether two names are the same file, PerMark refuses instead of guessing. <!-- f: file-ops -->
