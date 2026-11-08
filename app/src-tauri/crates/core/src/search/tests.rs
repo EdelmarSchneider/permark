@@ -15,6 +15,7 @@ use super::fuzzy::{fold_aligned, Needle};
 use super::prepare::{prepare, Sig};
 use super::*;
 use crate::events::{CoreEvent, Recorder};
+use crate::format::MarkdownFeatures;
 use crate::paths::{Root, Vault};
 use crate::settings::ProjectConfig;
 use crate::tree::{key_of, Category};
@@ -176,6 +177,7 @@ fn doc(index: &mut Bm25, path: &str, text: &str) -> Vec<u32> {
         },
         text,
         Category::Markdown,
+        &MarkdownFeatures::default(),
     );
     index.add(&prepared.path.clone(), prepared.sections)
 }
@@ -400,6 +402,7 @@ fn prepare_counts_field_weights_and_puts_the_file_name_in_the_first_section_only
         },
         text,
         Category::Markdown,
+        &MarkdownFeatures::default(),
     );
     assert_eq!(p.sections.len(), 2);
     let tf =
@@ -427,6 +430,7 @@ fn prepare_reads_link_targets_without_the_disk() {
         },
         text,
         Category::Markdown,
+        &MarkdownFeatures::default(),
     );
     let expect: Vec<String> = ["docs/img/a.png", "x/b.md", "docs/h.png", "docs/pics/r.png"]
         .iter()
@@ -436,6 +440,33 @@ fn prepare_reads_link_targets_without_the_disk() {
         assert!(p.links.contains(key), "{key} in {:?}", p.links);
     }
     assert!(!p.links.iter().any(|l| l.contains("x.org")));
+}
+
+#[test]
+fn prepare_reads_links_inside_prompt_blocks_while_the_prompt_features_are_on() {
+    use crate::format::{PromptBlocks, DEFAULT_PROMPT_TAGS};
+    let text = "<context>\n[d](docs/b.md)\n</context>\n";
+    let links = |features: &MarkdownFeatures| {
+        prepare(
+            "a.md",
+            Sig {
+                len: 1,
+                mtime_ms: 1,
+            },
+            text,
+            Category::Markdown,
+            features,
+        )
+        .links
+    };
+    assert!(links(&MarkdownFeatures::default()).is_empty());
+    let on = MarkdownFeatures {
+        prompt_blocks: Some(PromptBlocks {
+            tags: DEFAULT_PROMPT_TAGS,
+        }),
+        front_matter_card: None,
+    };
+    assert_eq!(links(&on), [key_of("docs/b.md")]);
 }
 
 #[test]
@@ -466,6 +497,7 @@ fn link_counts_make_the_linked_set_and_report_a_change_once() {
         },
         "![x](p.png)",
         Category::Markdown,
+        &MarkdownFeatures::default(),
     );
     let doc_b = prepare(
         "b.md",
@@ -475,6 +507,7 @@ fn link_counts_make_the_linked_set_and_report_a_change_once() {
         },
         "![x](p.png) [y](q.pdf)",
         Category::Markdown,
+        &MarkdownFeatures::default(),
     );
     index.upsert_doc(doc_a, Category::Markdown);
     assert_eq!(index.take_linked().unwrap().len(), 1);
@@ -494,6 +527,7 @@ fn link_counts_make_the_linked_set_and_report_a_change_once() {
         },
         "![x](p.png) more",
         Category::Markdown,
+        &MarkdownFeatures::default(),
     );
     index.upsert_doc(again, Category::Markdown);
     assert!(index.take_linked().is_none());
@@ -1354,6 +1388,58 @@ fn config_files_are_found_by_their_keys_while_a_format_is_on_and_never_by_values
         "keys forgotten",
         Box::new(|| found("database_host").is_empty()),
     );
+}
+
+#[test]
+fn links_of_documents_are_read_again_when_the_prompt_features_change() {
+    use crate::format::{
+        Contributions, FormatRegistry, MarkdownFeature, PromptBlocks, DEFAULT_PROMPT_TAGS,
+    };
+    use std::sync::RwLock;
+
+    let dir = tempfile::tempdir().unwrap();
+    // no blank line after the tag: a link only while the prompt features are on
+    write(
+        dir.path(),
+        "a.md",
+        "<context>\n[b](docs/b.md)\n</context>\n",
+    );
+    write(dir.path(), "docs/b.md", "# b\n");
+    let vault = Vault::new(Root::open(dir.path()).unwrap());
+    let sink = Arc::new(Recorder::default());
+    let explorer = Arc::new(Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        sink.clone(),
+        None,
+    ));
+    let formats = Arc::new(RwLock::new(Arc::new(FormatRegistry::core())));
+    let index = SearchIndex::start_with(
+        vault,
+        explorer,
+        sink,
+        "root".to_owned(),
+        Arc::clone(&formats),
+    );
+    assert!(index.wait_ready(Duration::from_secs(60)));
+    let wait_for = |what: &str, want: &[&str]| {
+        let start = Instant::now();
+        while index.linking_to("docs/b.md") != want {
+            assert!(start.elapsed() < Duration::from_secs(20), "{what}");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    assert!(index.linking_to("docs/b.md").is_empty());
+    let prompts =
+        Contributions::default().markdown(vec![MarkdownFeature::PromptBlocks(PromptBlocks {
+            tags: DEFAULT_PROMPT_TAGS,
+        })]);
+    *formats.write().unwrap() = Arc::new(FormatRegistry::build(&prompts));
+    index.formats_changed();
+    wait_for("the link inside the prompt block", &["a.md"]);
+    *formats.write().unwrap() = Arc::new(FormatRegistry::core());
+    index.formats_changed();
+    wait_for("the link gone with the prompt features", &[]);
 }
 
 #[test]

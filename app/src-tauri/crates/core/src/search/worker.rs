@@ -13,6 +13,7 @@ use super::prepare::{head_tags, read_and_prepare, reads_content, Prepared, Sig};
 use super::{IndexPhase, IndexProgress, Shared};
 use crate::events::{CoreEvent, EventSink};
 use crate::format::FormatRegistry;
+use crate::links::same_links;
 use crate::paths::{Vault, VaultPath};
 use crate::tree::{category_of, Category, Explorer, ScanFile};
 use crate::watch::{Change, ChangeKind, FsBatch};
@@ -31,7 +32,8 @@ pub enum Msg {
         changes: Vec<Change>,
         reconcile: bool,
     },
-    /// The formats that are on changed: config files are read again.
+    /// The formats that are on changed: config files are read again, Markdown documents too when the Markdown
+    /// features that decide their links changed.
     FormatsChanged,
     Stop,
 }
@@ -74,6 +76,8 @@ impl Worker {
     }
 
     pub fn run(&self, rx: &Receiver<Msg>) {
+        // the Markdown features the documents' links were read with
+        let mut features = *self.formats().features();
         self.reconcile(true);
         loop {
             if self.stopped() {
@@ -105,7 +109,9 @@ impl Worker {
                         return;
                     }
                     Msg::FormatsChanged => {
-                        self.forget_config_content();
+                        let now = *self.formats().features();
+                        self.forget_content(!same_links(&features, &now));
+                        features = now;
                         reconcile = true;
                     }
                     Msg::Changes {
@@ -132,20 +138,24 @@ impl Worker {
         Arc::clone(&self.formats.read().unwrap_or_else(PoisonError::into_inner))
     }
 
-    /// Config files were indexed by the formats of that time: forget their content so the next pass reads them again.
-    fn forget_config_content(&self) {
+    /// Config files were indexed by the formats of that time, the links of Markdown documents by the Markdown features
+    /// of that time: forget the content of config files, and of Markdown documents too when `links` (those features
+    /// changed), so the next pass reads them again.
+    fn forget_content(&self, links: bool) {
         let mut index = self
             .shared
             .index
             .write()
             .unwrap_or_else(PoisonError::into_inner);
-        let config: Vec<String> = index
+        let stale: Vec<String> = index
             .files
             .iter()
-            .filter(|(_, f)| f.category == Category::Config)
+            .filter(|(_, f)| {
+                f.category == Category::Config || (links && f.category == Category::Markdown)
+            })
             .map(|(p, _)| p.clone())
             .collect();
-        for path in config {
+        for path in stale {
             index.drop_content(&path);
         }
     }

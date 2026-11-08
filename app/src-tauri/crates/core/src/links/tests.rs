@@ -1,14 +1,33 @@
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 
 use super::*;
+use crate::format::{
+    Body, DocEnv, Field, Format, FrontMatterSyntax, MarkdownFeatures, MarkdownFormat, PromptBlocks,
+    RenderCx, DEFAULT_PROMPT_TAGS,
+};
 use crate::paths::{Root, Vault, VaultPath};
 
+const OFF: MarkdownFeatures = MarkdownFeatures {
+    prompt_blocks: None,
+    front_matter_card: None,
+};
+const PROMPTS: MarkdownFeatures = MarkdownFeatures {
+    prompt_blocks: Some(PromptBlocks {
+        tags: DEFAULT_PROMPT_TAGS,
+    }),
+    front_matter_card: None,
+};
+
 fn raws(text: &str) -> Vec<String> {
-    parse(text).iter().map(|d| d.raw(text).to_owned()).collect()
+    parse(text, &OFF)
+        .iter()
+        .map(|d| d.raw(text).to_owned())
+        .collect()
 }
 
 fn kinds(text: &str) -> Vec<Kind> {
-    parse(text).iter().map(|d| d.kind).collect()
+    parse(text, &OFF).iter().map(|d| d.kind).collect()
 }
 
 // ---- parse: spec --------------------------------------------------------------------------------------------------------
@@ -18,7 +37,7 @@ fn inline_links_and_images_give_their_destination() {
     let text = "See [the guide](docs/guide.md) and ![logo](img/logo.png \"Logo\").\n";
     assert_eq!(raws(text), ["docs/guide.md", "img/logo.png"]);
     assert_eq!(kinds(text), [Kind::Inline, Kind::Image]);
-    let d = &parse(text)[0];
+    let d = &parse(text, &OFF)[0];
     assert_eq!(d.line, 1);
     assert_eq!(d.form, Form::Bare);
 }
@@ -30,8 +49,8 @@ fn anchors_queries_and_titles_stay_with_the_destination_token() {
         raws(text),
         ["x.md#sec", "y.md?q=1#z", "<my file.md>", "#only"]
     );
-    assert_eq!(parse(text)[2].form, Form::Angle);
-    assert_eq!(parse(text)[2].inner(text), "my file.md");
+    assert_eq!(parse(text, &OFF)[2].form, Form::Angle);
+    assert_eq!(parse(text, &OFF)[2].inner(text), "my file.md");
 }
 
 #[test]
@@ -108,6 +127,61 @@ fn definitions_inside_code_are_left_alone() {
 }
 
 #[test]
+fn a_definition_right_before_paragraph_text_is_found_with_the_links_of_that_text() {
+    // the parser takes the definition off the paragraph but keeps the paragraph's first line as its start
+    let text = "[guide]: docs/guide.md\nSee the [guide] and [x](x.md) <a href=\"h.md\">h</a>.\n";
+    assert_eq!(
+        placed(text, &OFF),
+        [("docs/guide.md", 1), ("x.md", 2), ("h.md", 2)]
+    );
+    assert_eq!(kinds(text), [Kind::Definition, Kind::Inline, Kind::Html]);
+}
+
+#[test]
+fn several_definitions_right_before_paragraph_text_keep_exact_offsets_with_every_line_ending() {
+    for ending in ["\n", "\r\n", "\r"] {
+        let text = format!(
+            "\u{feff}[a]: a.md{ending}[b]: <b c.md> \"T\"{ending}See [x](x.md) `[c](code.md)`{ending}   more ![ü](ÿ.png){ending}"
+        );
+        assert_eq!(
+            placed(&text, &OFF),
+            [("a.md", 1), ("<b c.md>", 2), ("x.md", 3), ("ÿ.png", 4)],
+            "{ending:?}"
+        );
+    }
+}
+
+#[test]
+fn a_definition_right_before_text_in_a_quote_or_a_list_item_is_found() {
+    let text = "> [q]: q.md\n> quote [x](x.md)\nlazy [z](z.md)\n\n- [l]: l.md\n  item [y](y.md)\n";
+    assert_eq!(
+        placed(text, &OFF),
+        [
+            ("q.md", 1),
+            ("x.md", 2),
+            ("z.md", 3),
+            ("l.md", 5),
+            ("y.md", 6)
+        ]
+    );
+}
+
+#[test]
+fn a_later_line_is_text_and_nothing_is_placed_after_a_definition_over_two_lines() {
+    // only the leading definitions leave the paragraph: a later line is never one
+    let text = "[a]: a.md\ntext\n[b]: not-a-definition.md\n";
+    assert_eq!(placed(text, &OFF), [("a.md", 1)]);
+    // the lines the parser took off are not all one-line definitions: what they hold is not known for sure, so no
+    // link of the paragraph is moved and none of those lines is taken as a definition
+    for text in [
+        "[a]:\n  a.md\nthen [x](x.md)\n",
+        "[a]: a.md\n  \"Title\"\nthen [x](x.md)\n",
+    ] {
+        assert_eq!(placed(text, &OFF), [], "{text:?}");
+    }
+}
+
+#[test]
 fn links_in_headings_lists_quotes_and_tables() {
     let text = "# Title [h](head.md)\n\n- item [l](list.md)\n  - nested [n](nested.md)\n\n> quote [q](quote.md)\n\n| a | b |\n|---|---|\n| [t](cell.md) | x |\n";
     assert_eq!(
@@ -120,7 +194,7 @@ fn links_in_headings_lists_quotes_and_tables() {
 fn an_escaped_pipe_does_not_split_a_table_cell_or_shift_the_links_after_it() {
     let text = "| a | b |\n|---|---|\n| [t](cell.md) | x \\| y \\| [e](esc.md) z |\n| 日本 \\| [j](jp.md) | [k](k.md) |\n";
     assert_eq!(raws(text), ["cell.md", "esc.md", "jp.md", "k.md"]);
-    let found = parse(text);
+    let found = parse(text, &OFF);
     for (d, want) in found.iter().zip(["cell.md", "esc.md", "jp.md", "k.md"]) {
         assert_eq!(d.raw(text), want);
     }
@@ -134,7 +208,7 @@ fn html_attributes_are_destinations_and_comments_are_not() {
         ["a/b.png", "c.md", "d.mp4", "p.png", "upper.md"]
     );
     assert!(kinds(text).iter().all(|k| *k == Kind::Html));
-    assert!(parse(text).iter().all(|d| d.form == Form::Html));
+    assert!(parse(text, &OFF).iter().all(|d| d.form == Form::Html));
 }
 
 #[test]
@@ -144,7 +218,7 @@ fn non_ascii_text_in_html_blocks_and_comments_does_not_panic() {
     let text = "中文\n\n<div>\n中文内容\n</div>\n\n<!-- 注释：<a href=\"隐藏.md\"> -->\n\n<img src=\"图片/logo.png\" alt=\"中文\">\n";
     assert_eq!(raws(text), ["图片/logo.png"]);
     assert!(kinds(text).iter().all(|k| *k == Kind::Html));
-    assert!(parse(text).iter().all(|d| d.form == Form::Html));
+    assert!(parse(text, &OFF).iter().all(|d| d.form == Form::Html));
 }
 
 #[test]
@@ -153,7 +227,7 @@ fn offsets_are_exact_with_multibyte_text_a_bom_and_every_line_ending() {
         let text = format!(
             "\u{feff}日本語 ação{ending}[ü](ünï/cødé.md){ending}{ending}![i](p.png){ending}{ending}[r]: ref.md{ending}"
         );
-        let found = parse(&text);
+        let found = parse(&text, &OFF);
         let raw: Vec<&str> = found.iter().map(|d| d.raw(&text)).collect();
         assert_eq!(raw, ["ünï/cødé.md", "p.png", "ref.md"], "{ending:?}");
         let lines: Vec<usize> = found.iter().map(|d| d.line).collect();
@@ -184,11 +258,355 @@ fn hostile_input_never_panics() {
         "- ".repeat(300) + "[a](b.md)",
     ];
     for text in nasty {
-        for d in parse(&text) {
-            assert!(
-                text.get(d.range.clone()).is_some(),
-                "range on char boundaries"
+        for features in [OFF, PROMPTS] {
+            for d in parse(&text, &features) {
+                assert!(
+                    text.get(d.range.clone()).is_some(),
+                    "range on char boundaries"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn text_after_a_definition_behind_a_tab_and_multibyte_text_never_panics() {
+    // the parser counts a tab as spaces: a column placed from a line that holds one can fall inside a character
+    for text in [
+        "> [a]: x\n\tx\nx é[l](y.md)\n",
+        "> [a]: x\n>\té [l](y.md)\n",
+        "- [a]: x.md\n\t日本 [l](y.md)\n",
+        "1. [a]: x.md\n \tü [l](y.md) é\n",
+        "> - [a]: x\n>\t\té [l](y.md)\n",
+    ] {
+        for features in [OFF, PROMPTS] {
+            for d in parse(text, &features) {
+                assert!(
+                    matches!(text.get(d.range.clone()), Some("x" | "x.md" | "y.md")),
+                    "{text:?}: {d:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn random_paragraphs_led_by_a_definition_never_panic_and_every_range_holds_a_destination() {
+    const PIECES: [&str; 30] = [
+        " ",
+        "  ",
+        "\t",
+        ">\t",
+        " \t",
+        ">",
+        "> ",
+        "- ",
+        "1. ",
+        "é",
+        "日本",
+        "ü ",
+        "\n",
+        "\r\n",
+        "\r",
+        "[l](y.md)",
+        "[é日](y.md)",
+        "![i](ü.png)",
+        "\n>\t",
+        "[c](<c d.md>)",
+        "<a href=\"h.md\">h</a>",
+        "[d]: d.md ",
+        "[e]: <e f.md> \"t\"",
+        "`",
+        "|",
+        "\\",
+        "[r][d]",
+        "<context>",
+        "</context>",
+        "text",
+    ];
+    const DESTS: [&str; 6] = ["y.md", "ü.png", "<c d.md>", "h.md", "d.md", "<e f.md>"];
+    const LEADS: [&str; 8] = [
+        "",
+        "> ",
+        "- ",
+        "1. ",
+        "\t",
+        ">\t",
+        "<context>\n",
+        "\u{feff}",
+    ];
+    // xorshift: the same texts on every run
+    let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
+    let mut pick = |n: usize| -> usize {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        usize::try_from(seed % u64::try_from(n).unwrap()).unwrap()
+    };
+    for _ in 0..500 {
+        let mut text = LEADS[pick(LEADS.len())].to_owned();
+        text.push_str("[d]: d.md");
+        text.push_str(["\n", "\r\n", "\r"][pick(3)]);
+        for _ in 0..pick(24) {
+            text.push_str(PIECES[pick(PIECES.len())]);
+        }
+        for features in [OFF, PROMPTS] {
+            for d in parse(&text, &features) {
+                assert!(
+                    text.get(d.range.clone())
+                        .is_some_and(|raw| DESTS.contains(&raw)),
+                    "{text:?}: {d:?}"
+                );
+            }
+        }
+    }
+}
+
+// ---- parse: prompt blocks -------------------------------------------------------------------------------------------
+
+/// The bytes each destination's range covers, with its line.
+fn placed<'t>(text: &'t str, features: &MarkdownFeatures) -> Vec<(&'t str, usize)> {
+    parse(text, features)
+        .iter()
+        .map(|d| (d.raw(text), d.line))
+        .collect()
+}
+
+fn no_card(_: FrontMatterSyntax, _: &str) -> Vec<Field> {
+    Vec::new()
+}
+
+#[test]
+fn links_inside_prompt_blocks_are_found_with_the_prompt_features_on() {
+    // no blank line after the tags: without the prompt features each tag line opens an HTML block
+    let text = "<context>\n[a](a.md) and ![i](i.png)\n</context>\n\n<rules>\n\n- [b](<b c.md>)\n\n</rules>\n<examples>\n<example>\n[ref]: r.md\n\n[r][ref] <a href=\"h.md\">h</a>\n</example>\n</examples>\n";
+    assert_eq!(
+        placed(text, &PROMPTS),
+        [
+            ("a.md", 2),
+            ("i.png", 2),
+            ("<b c.md>", 7),
+            ("r.md", 12),
+            ("h.md", 14)
+        ]
+    );
+}
+
+#[test]
+fn offsets_inside_prompt_blocks_are_exact_with_a_bom_crlf_and_code_left_alone() {
+    let text = "\u{feff}<task>\r\n<input>\r\n`[c](code.md)` [x](x.md) ü [y](ÿ.md)\r\n```\r\n[f](fenced.md)\r\n```\r\n</input>\r\n</task>\r\n";
+    assert_eq!(placed(text, &PROMPTS), [("x.md", 3), ("ÿ.md", 3)]);
+}
+
+#[test]
+fn a_definition_right_before_text_inside_a_prompt_block_is_found_with_the_prompt_features_on() {
+    let text =
+        "<context>\r\n[guide]: docs/guide.md\r\nSee the [guide] and [x](x.md).\r\n</context>\r\n";
+    assert_eq!(placed(text, &PROMPTS), [("docs/guide.md", 2), ("x.md", 3)]);
+}
+
+#[test]
+fn without_the_prompt_features_a_tag_line_opens_an_html_block_as_before() {
+    let text = "<context>\n[a](a.md)\n</context>\n\n<context>\n\n[b](b.md)\n\n</context>\n";
+    assert_eq!(placed(text, &OFF), [("b.md", 7)]);
+    assert_eq!(placed(text, &PROMPTS), [("a.md", 2), ("b.md", 7)]);
+}
+
+#[test]
+fn front_matter_holds_no_destination_with_the_prompt_features_on() {
+    let text = "---\r\n[d]: fm.md\r\nsee: \"[y](y.md)\"\r\n---\r\n<context>\r\n[z](z.md)\r\n</context>\r\n";
+    let card = MarkdownFeatures {
+        front_matter_card: Some(no_card),
+        ..PROMPTS
+    };
+    assert_eq!(placed(text, &OFF), []);
+    assert_eq!(placed(text, &PROMPTS), [("z.md", 6)]);
+    assert_eq!(placed(text, &card), [("z.md", 6)]);
+}
+
+/// Reading asks for no file: no `@path` reference becomes a link.
+struct NoFiles;
+
+impl DocEnv for NoFiles {
+    fn file_exists(&self, _: &str) -> bool {
+        false
+    }
+}
+
+#[test]
+fn a_lone_carriage_return_in_front_matter_cut_for_the_card_falls_back_to_the_text_as_written() {
+    // the card cuts the front matter to empty lines, where a lone `\r` is no line break any more: the lines no longer
+    // pair up, so the text is read as written, where a prompt tag line opens an HTML block
+    let text =
+        "---\r\nkey: a\rb\r\n---\r\n<context>\r\n[z](z.md)\r\n</context>\r\n\r\n[w](w.md)\r\n";
+    let card = MarkdownFeatures {
+        front_matter_card: Some(no_card),
+        ..PROMPTS
+    };
+    assert_eq!(placed(text, &PROMPTS), [("z.md", 6), ("w.md", 9)]);
+    assert_eq!(placed(text, &card), [("w.md", 9)]);
+    assert_eq!(placed(text, &card), placed(text, &OFF));
+}
+
+/// A destination as reading shows it: `("a", href)` for a link, `("img", project path)` for a picture.
+type Shown = (&'static str, String);
+
+/// The local destinations reading renders as `<a href>` (footnote marks left out) and `<img src>`, decoded, counted
+/// per occurrence.
+fn rendered(text: &str, features: &MarkdownFeatures) -> BTreeMap<Shown, usize> {
+    let known = HashSet::new();
+    let rendered = MarkdownFormat.render(
+        text.strip_prefix('\u{feff}').unwrap_or(text),
+        &RenderCx {
+            path: "doc.md",
+            env: &NoFiles,
+            features,
+            known: &known,
+        },
+    );
+    let Body::Markdown { blocks, .. } = rendered.body else {
+        panic!("not markdown");
+    };
+    let mut out = BTreeMap::new();
+    for block in blocks {
+        let html = block.html.unwrap_or_default();
+        for (open, attribute, kind) in [("<a ", "href=\"", "a"), ("<img ", "src=\"", "img")] {
+            for rest in html.split(open).skip(1) {
+                let tag = &rest[..rest.find('>').unwrap_or(rest.len())];
+                let Some((_, value)) = tag.split_once(attribute) else {
+                    continue;
+                };
+                let value = value[..value.find('"').unwrap()].replace("&amp;", "&");
+                // reading points a picture at its project file
+                let shown = match kind {
+                    "a" => (!tag.contains("data-footnote") && scheme_of(&value).is_none())
+                        .then(|| percent_decode(&value)),
+                    _ => value.strip_prefix("pm-asset:").map(percent_decode),
+                };
+                if let Some(value) = shown {
+                    *out.entry((kind, value)).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// What reading shows of `dest` when it is not a definition, read from the bytes of its range: `None` for a
+/// destination reading shows neither as a link nor as a picture (web, other HTML attributes).
+fn shown_as(text: &str, dest: &Dest) -> Option<Shown> {
+    let href = dest.inner(text);
+    if scheme_of(href).is_some() {
+        return None;
+    }
+    let link = || Some(("a", percent_decode(href)));
+    let picture = || local_target("doc.md", href).map(|path| ("img", path));
+    match dest.kind {
+        Kind::Inline | Kind::Definition => link(),
+        Kind::Image => picture(),
+        Kind::Html => {
+            let before = &text[..dest.range.start];
+            let tag = &before[before.rfind('<')?..];
+            if tag.starts_with("<a ") && tag.ends_with("href=\"") {
+                link()
+            } else if tag.starts_with("<img ") && tag.ends_with("src=\"") {
+                picture()
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// Every destination reading shows is one `parse` finds, as often and from the bytes of its range: links and pictures
+/// by occurrence; what is left is shown through references, each of a definition `parse` found, and every
+/// definition found is one reading uses.
+fn assert_same_links(name: &str, text: &str, features: &MarkdownFeatures) {
+    let shown = rendered(text, features);
+    let mut left = shown.clone();
+    let mut definitions = Vec::new();
+    for dest in parse(text, features) {
+        if dest.kind == Kind::Definition {
+            definitions.push(dest);
+            continue;
+        }
+        let Some(key) = shown_as(text, &dest) else {
+            continue;
+        };
+        let count = left.get_mut(&key);
+        assert!(
+            count.as_ref().is_some_and(|n| **n > 0),
+            "{name}: {key:?} is found more often than reading shows it"
+        );
+        if let Some(n) = count {
+            *n -= 1;
+        }
+    }
+    left.retain(|_, n| *n > 0);
+    let used = |dest: &Dest, (kind, value): &Shown| {
+        let href = dest.inner(text);
+        match *kind {
+            "a" => percent_decode(href) == *value,
+            _ => local_target("doc.md", href).as_ref() == Some(value),
+        }
+    };
+    for key in left.keys() {
+        assert!(
+            definitions.iter().any(|d| used(d, key)),
+            "{name}: {key:?} is shown by reading and not found"
+        );
+    }
+    for dest in definitions
+        .iter()
+        .filter(|d| scheme_of(d.inner(text)).is_none())
+    {
+        assert!(
+            shown.keys().any(|key| used(dest, key)),
+            "{name}: definition {:?} is found and not used by reading",
+            dest.inner(text)
+        );
+    }
+}
+
+#[test]
+fn every_link_reading_renders_is_one_parse_finds() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/api/fixtures");
+    let mut docs: Vec<(String, String)> = fs::read_dir(&dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|e| e == "md"))
+        .map(|path| {
+            (
+                path.display().to_string(),
+                fs::read_to_string(&path).unwrap(),
+            )
+        })
+        .collect();
+    assert!(docs.len() >= 3, "fixtures at {}", dir.display());
+    for text in [
+        "<context>\n[a](a.md) and ![i](i.png)\n</context>\n\n<rules>\n\n- [b](<b c.md>)\n\n</rules>\n",
+        "<examples>\n<example>\n[ref]: r.md\n\n[r][ref] <a href=\"h.md\">h</a> `[c](code.md)`\n</example>\n</examples>\n",
+        "\u{feff}---\r\nsee: \"[y](y.md)\"\r\n---\r\n<task>\r\n[x](x.md)\r\n```\r\n[f](fenced.md)\r\n```\r\n</task>\r\n",
+        "<context>\r[lone](lone.md)\r</context>\r",
+        "<context>\n[open](open.md)\n",
+        "[guide]: docs/guide.md\nSee the [guide] and [x](x.md).\n",
+        "> [a]: a.md\n> [b]: b.md\n> quote [a] [x](x.md) [b]\nlazy [z](z.md)\n\n- [l]: l.md\n  item [l][] [y](y.md)\n",
+        "<context>\r\n[guide]: docs/guide.md\r\nSee the [guide] and [x](x.md).\r\n</context>\r\n",
+        "[a](x.md) [b](x.md) ![p](img/p.png) <img alt=\"q\" src=\"q%20r.png\"> ![p2](<img/p.png>)\n\n[r][d] [s][d] ![t][d]\n\n[d]: x.md\n",
+    ] {
+        docs.push((format!("{text:?}"), text.to_owned()));
+    }
+    let card = MarkdownFeatures {
+        front_matter_card: Some(no_card),
+        ..PROMPTS
+    };
+    for (name, text) in &docs {
+        for features in [OFF, PROMPTS, card] {
+            let name = format!(
+                "{name} (prompt features on: {})",
+                features.prompt_blocks.is_some()
             );
+            assert_same_links(&name, text, &features);
         }
     }
 }

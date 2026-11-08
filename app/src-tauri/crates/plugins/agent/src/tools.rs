@@ -679,7 +679,7 @@ impl Tools {
             .collect();
         let mut outgoing: Vec<(String, bool)> = Vec::new();
         if let Ok(from) = permark_core::paths::VaultPath::parse(path) {
-            for dest in parse(text) {
+            for dest in parse(text, self.services.formats().features()) {
                 let found = match resolve(&self.vault, &from, dest.inner(text)) {
                     Target::Doc(p, _) | Target::Asset(p) | Target::Folder(p) => {
                         let shown = p.as_str().to_owned();
