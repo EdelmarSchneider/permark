@@ -1,8 +1,11 @@
-// `npm run ux:parity -- [--doc <path>]... [--theme light|dark] [--url <running mock url>] [--out <report.json>] [--all]`
-// Opens the mock showcase documents in View, then in Edit (light + dark), and compares computed styles and block
-// geometry. Exit 0 = every difference is a known gap, 1 = a difference not in `known-gaps.json`, 2 = usage | setup.
+// `npm run ux:parity -- [--doc <path>]... [--theme light|dark] [--url <running mock url> | --cdp <app url> |
+//   --app <exe|debug> [--project <dir>]] [--out <report.json>] [--all]`
+// Opens the showcase documents in View, then in Edit (light + dark), and compares computed styles and block geometry:
+// in the mock app (default) or in the real app (`--cdp`, `--app`). Exit 0 = every difference is a known gap, 1 = a
+// difference not in `known-gaps.json`, 2 = usage | setup.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import type { Page } from "@playwright/test";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +13,7 @@ import {
   compareSides,
   entryDiffs,
   groupDiffs,
+  openCardDiffs,
   parseKnownGaps,
   triage,
   type Diff,
@@ -32,6 +36,9 @@ const VIEW_ROOT = ".reading .md-body";
 const EDIT_ROOT = ".pm-editor";
 const VIEW_SIDE: SideArg = { root: VIEW_ROOT, mode: "view" };
 const EDIT_SIDE: SideArg = { root: EDIT_ROOT, mode: "edit" };
+/** Edit's front matter at rest (View's card) and opened for editing (its properties). */
+const CARD = `${EDIT_ROOT} > .pm-locked[data-look="card"]`;
+const OPEN_CARD = `${EDIT_ROOT} > .pm-locked[data-look="properties"]`;
 /** The header's mode switch: View, Edit, Source in this order. */
 const MODE = ".modes button.mode";
 const WAIT = 15_000;
@@ -40,24 +47,42 @@ const AT_REST_MS = 3_500;
 /** Longest value shown in the table (the JSON report keeps the whole value). */
 const CELL = 44;
 
-const USAGE = `usage: npm run ux:parity -- [--doc <path>]... [--theme light|dark] [--url <running mock url>]
-  [--out <report.json>] [--all]
+const USAGE = `usage: npm run ux:parity -- [--doc <path>]... [--theme light|dark] [--out <report.json>] [--all]
+  [--url <running mock url> | --cdp <app url> | --app <exe|debug> [--project <dir>]]
+  --url: a running dev:mock (default: one started for the run)
+  --cdp: a running PerMark started with WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>,
+         its project holding the documents (http://127.0.0.1:<port>)
+  --app: starts this build (debug: the debug build in CARGO_TARGET_DIR) on a temp copy of the fixture documents
+         (or on --project), compares, then closes it and deletes the copy
   --all: list the known gaps too (default: new differences only, known ones counted per area)`;
 
 type Args = {
   docs: string[];
   themes: Theme[];
   url?: string;
+  cdp?: string;
+  app?: string;
+  project?: string;
   out: string;
   all: boolean;
   /** Some documents | one theme only: a known gap not seen may just not have been looked at. */
   partial: boolean;
 };
 
+/** `debug`: the debug build where cargo puts it (the shared target folder when set). */
+function exeOf(value: string): string {
+  if (value !== "debug") return path.resolve(value);
+  const target = process.env["CARGO_TARGET_DIR"] ?? path.join(APP, "src-tauri", "target");
+  return path.join(target, "debug", process.platform === "win32" ? "permark.exe" : "permark");
+}
+
 function parseArgs(argv: string[]): Args {
   const docs: string[] = [];
   let themes = THEMES;
   let url: string | undefined;
+  let cdp: string | undefined;
+  let app: string | undefined;
+  let project: string | undefined;
   let out = path.join(tmpdir(), "permark-ux-parity", "report.json");
   let all = false;
   for (let i = 0; i < argv.length; i++) {
@@ -77,6 +102,16 @@ function parseArgs(argv: string[]): Args {
       case "--url":
         url = loopbackUrl(value());
         break;
+      case "--cdp":
+        cdp = loopbackUrl(`${value().replace(/\/+$/, "")}/`).replace(/\/$/, "");
+        break;
+      case "--app":
+        app = exeOf(value());
+        if (!existsSync(app)) throw new UsageError(`--app: no build at ${app}`);
+        break;
+      case "--project":
+        project = path.resolve(value());
+        break;
       case "--out":
         out = path.resolve(value());
         break;
@@ -87,10 +122,18 @@ function parseArgs(argv: string[]): Args {
         throw new UsageError(`unknown option ${a}`);
     }
   }
+  if ([url, cdp, app].filter((x) => x !== undefined).length > 1) {
+    throw new UsageError("--url, --cdp, --app: one at most");
+  }
+  if (project !== undefined && app === undefined)
+    throw new UsageError("--project: with --app only");
   return {
     docs: docs.length > 0 ? docs : DOCS,
     themes,
     ...(url ? { url } : {}),
+    ...(cdp ? { cdp } : {}),
+    ...(app ? { app } : {}),
+    ...(project ? { project } : {}),
     out,
     all,
     partial: docs.length > 0 || themes !== THEMES,
@@ -142,6 +185,7 @@ function table(groups: DiffGroup[], areaOf?: (g: DiffGroup) => string): string {
 async function loadBrowserSide() {
   try {
     return {
+      app: await import("../probe/app.ts"),
       run: await import("../probe/run.ts"),
       seed: await import("../probe/seed.ts"),
       server: await import("../probe/server.ts"),
@@ -154,17 +198,17 @@ async function loadBrowserSide() {
   }
 }
 
-/** Every document in every theme: View first, then Edit through the header's mode switch, then back to View. */
-async function compareAll(
-  { run, seed, snapshot }: Awaited<ReturnType<typeof loadBrowserSide>>,
-  url: string,
-  args: Args,
-  errors: string[],
-): Promise<Diff[]> {
-  const diffs: Diff[] = [];
-  const browser = await run.launch("chromium");
-  try {
-    for (const theme of args.themes) {
+type BrowserSide = Awaited<ReturnType<typeof loadBrowserSide>>;
+
+/** The app in one theme, its project open: `rest` lets its timers run (the mock's fake clock | real time). */
+type ThemePage = { page: Page; rest(ms: number): Promise<void>; close(): Promise<void> };
+type Target = { open(theme: Theme): Promise<ThemePage>; close(): Promise<void> };
+
+/** The mock app at `url`: one fresh headless page per theme. */
+async function mockTarget(side: BrowserSide, url: string, errors: string[]): Promise<Target> {
+  const browser = await side.run.launch("chromium");
+  return {
+    open: async (theme) => {
       const context = await browser.newContext({
         viewport: VIEWPORT,
         colorScheme: theme,
@@ -172,59 +216,159 @@ async function compareAll(
         reducedMotion: "reduce",
       });
       try {
-        const page = await run.openApp(context, url, errors);
-        // every block comes near the screen once, then the pane is back at the top and at rest: lazy embeds (math,
-        // diagrams) are drawn in both modes wherever they are, so both are compared fully drawn
-        const drawAll = async (): Promise<void> => {
-          const screens = await page.evaluate(snapshot.screensOf);
-          for (let screen = 1; screen < screens; screen++) {
-            await page.evaluate(snapshot.scrollToScreen, screen);
-            await seed.settle(page, 100);
-          }
-          await page.evaluate(snapshot.scrollToScreen, 0);
-          await page.clock.runFor(AT_REST_MS);
-          await seed.settle(page);
-        };
-        await seed.seed(page, "project", {});
-        for (const doc of args.docs) {
-          const where = { doc, theme };
-          await seed.seed(page, "doc", { path: doc });
-          await seed.settle(page);
-          await page.clock.runFor(AT_REST_MS);
-          await seed.settle(page);
-          await drawAll();
-          const view = await page.evaluate(snapshot.sideOf, VIEW_SIDE);
-          if (view === null) throw new Error(`${doc}: no reading view (${VIEW_ROOT})`);
-          const viewScroll = await page.evaluate(snapshot.scrollOf);
-          await page.locator(MODE).nth(1).click({ timeout: WAIT });
-          await page.locator(EDIT_ROOT).waitFor({ state: "visible", timeout: WAIT });
-          await seed.settle(page);
-          const entry = await page.evaluate(snapshot.entryOf);
-          await drawAll();
-          const edit = await page.evaluate(snapshot.sideOf, EDIT_SIDE);
-          if (edit === null) throw new Error(`${doc}: no visual editor (${EDIT_ROOT})`);
-          diffs.push(
-            ...entryDiffs(where, {
-              viewScroll,
-              editScroll: entry.scroll,
-              selected: entry.selected,
-              toolbarRows: entry.toolbarRows,
-            }),
-            ...compareSides(where, view, edit),
-          );
-          await page.locator(MODE).nth(0).click({ timeout: WAIT });
-          await page.locator(".reading:not([hidden])").waitFor({ state: "visible", timeout: WAIT });
-          await seed.settle(page);
-          console.log(`${theme} ${doc}: ${view.blocks.length} | ${edit.blocks.length} blocks`);
-        }
-      } finally {
+        const page = await side.run.openApp(context, url, errors);
+        await side.seed.seed(page, "project", {});
+        return { page, rest: (ms) => page.clock.runFor(ms), close: () => context.close() };
+      } catch (e) {
         await context.close();
+        throw e;
       }
+    },
+    close: () => browser.close(),
+  };
+}
+
+/** The real app at `cdpUrl`: its project view in each theme through its theme setting, put back when done. */
+async function realTarget(side: BrowserSide, cdpUrl: string, errors: string[]): Promise<Target> {
+  const app = await side.app.connectApp(cdpUrl, errors);
+  const { page } = app;
+  let before: string | null = null;
+  return {
+    open: async (theme) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      const was = await side.app.setTheme(page, theme, theme);
+      before ??= was;
+      await side.seed.settle(page);
+      return { page, rest: (ms) => page.waitForTimeout(ms), close: async () => {} };
+    },
+    close: async () => {
+      try {
+        if (before !== null) await side.app.setTheme(page, before, null);
+        await page.emulateMedia({ reducedMotion: null });
+      } finally {
+        await app.close();
+      }
+    },
+  };
+}
+
+/** Every document in every theme: View first, then Edit through the header's mode switch, then back to View. */
+async function compareAll(
+  { seed, snapshot }: BrowserSide,
+  target: Target,
+  args: Args,
+): Promise<{ diffs: Diff[]; viewport: { width: number; height: number } }> {
+  const diffs: Diff[] = [];
+  let viewport = VIEWPORT;
+  for (const theme of args.themes) {
+    const { page, rest, close } = await target.open(theme);
+    try {
+      viewport = await viewportOf(page);
+      // every block comes near the screen once, then the pane is back at the top and at rest: lazy embeds (math,
+      // diagrams) are drawn in both modes wherever they are, so both are compared fully drawn
+      const drawAll = async (): Promise<void> => {
+        const screens = await page.evaluate(snapshot.screensOf);
+        for (let screen = 1; screen < screens; screen++) {
+          await page.evaluate(snapshot.scrollToScreen, screen);
+          await seed.settle(page, 100);
+        }
+        await page.evaluate(snapshot.scrollToScreen, 0);
+        await rest(AT_REST_MS);
+        await seed.settle(page);
+      };
+      for (const doc of args.docs) {
+        const where = { doc, theme };
+        await seed.seed(page, "doc", { path: doc });
+        await seed.settle(page);
+        await rest(AT_REST_MS);
+        await seed.settle(page);
+        await drawAll();
+        const view = await page.evaluate(snapshot.sideOf, VIEW_SIDE);
+        if (view === null) throw new Error(`${doc}: no reading view (${VIEW_ROOT})`);
+        const viewCard = await page.evaluate(snapshot.cardOf, VIEW_SIDE);
+        const viewScroll = await page.evaluate(snapshot.scrollOf);
+        await page.locator(MODE).nth(1).click({ timeout: WAIT });
+        await page.locator(EDIT_ROOT).waitFor({ state: "visible", timeout: WAIT });
+        await seed.settle(page);
+        const entry = await page.evaluate(snapshot.entryOf);
+        await drawAll();
+        const edit = await page.evaluate(snapshot.sideOf, EDIT_SIDE);
+        if (edit === null) throw new Error(`${doc}: no visual editor (${EDIT_ROOT})`);
+        diffs.push(
+          ...entryDiffs(where, {
+            viewScroll,
+            editScroll: entry.scroll,
+            selected: entry.selected,
+            toolbarRows: entry.toolbarRows,
+          }),
+          ...compareSides(where, view, edit),
+        );
+        if (viewCard !== null) {
+          // the front matter opened for editing still reads as View's card
+          await page.locator(CARD).click({ timeout: WAIT });
+          const open = await page
+            .locator(`${OPEN_CARD} .sheet`)
+            .waitFor({ state: "visible", timeout: WAIT })
+            .then(() => page.evaluate(snapshot.cardOf, EDIT_SIDE))
+            .catch(() => null);
+          diffs.push(...openCardDiffs(where, viewCard, open));
+          await page.keyboard.press("Escape");
+          await seed.settle(page);
+        }
+        await page.locator(MODE).nth(0).click({ timeout: WAIT });
+        await page.locator(".reading:not([hidden])").waitFor({ state: "visible", timeout: WAIT });
+        await seed.settle(page);
+        console.log(`${theme} ${doc}: ${view.blocks.length} | ${edit.blocks.length} blocks`);
+      }
+    } finally {
+      await close();
     }
-  } finally {
-    await browser.close();
   }
-  return diffs;
+  return { diffs, viewport };
+}
+
+/** The app the run compares in, started for it when needed; `stop` undoes what was started. */
+async function targetOf(
+  side: BrowserSide,
+  args: Args,
+  errors: string[],
+): Promise<{ target: Target; where: string; stop(): void }> {
+  const started: (() => void)[] = [];
+  const stop = (): void => {
+    for (const undo of started.reverse()) undo();
+  };
+  try {
+    if (args.app !== undefined) {
+      let project = args.project;
+      if (project === undefined) {
+        const copy = side.app.fixtureProject(APP);
+        started.push(copy.remove);
+        project = copy.dir;
+      }
+      const app = await side.app.startApp(args.app, project);
+      started.push(app.stop);
+      const target = await realTarget(side, app.cdpUrl, errors);
+      return { target, where: `${args.app} ${project}`, stop };
+    }
+    if (args.cdp !== undefined) {
+      return { target: await realTarget(side, args.cdp, errors), where: args.cdp, stop };
+    }
+    let url = args.url;
+    if (url === undefined) {
+      const mock = await side.server.startMock(APP);
+      started.push(mock.stop);
+      url = mock.url;
+    }
+    return { target: await mockTarget(side, url, errors), where: url, stop };
+  } catch (e) {
+    stop();
+    throw e;
+  }
+}
+
+/** The view's size in CSS pixels (the real app's is its window's). */
+function viewportOf(page: Page): Promise<{ width: number; height: number }> {
+  return page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
 }
 
 async function main(): Promise<number> {
@@ -238,18 +382,23 @@ async function main(): Promise<number> {
   }
   let diffs: Diff[];
   let gaps: KnownGap[];
+  let viewport = VIEWPORT;
   const errors: string[] = [];
   const started = Date.now();
-  let url = args.url ?? "";
+  let url = "";
   try {
     gaps = parseKnownGaps(JSON.parse(readFileSync(path.join(HERE, "known-gaps.json"), "utf8")));
     const browserSide = await loadBrowserSide();
-    const mock = args.url === undefined ? await browserSide.server.startMock(APP) : null;
-    url = args.url ?? mock?.url ?? "";
+    const run = await targetOf(browserSide, args, errors);
+    url = run.where;
     try {
-      diffs = await compareAll(browserSide, url, args, errors);
+      ({ diffs, viewport } = await compareAll(browserSide, run.target, args));
     } finally {
-      mock?.stop();
+      try {
+        await run.target.close();
+      } finally {
+        run.stop();
+      }
     }
   } catch (e) {
     console.error(`parity failed: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
@@ -271,7 +420,7 @@ async function main(): Promise<number> {
     `${JSON.stringify(
       {
         url,
-        viewport: VIEWPORT,
+        viewport,
         docs: args.docs,
         themes: args.themes,
         seconds: Math.round((Date.now() - started) / 100) / 10,

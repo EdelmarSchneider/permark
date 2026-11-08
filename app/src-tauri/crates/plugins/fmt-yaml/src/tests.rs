@@ -138,8 +138,18 @@ fn compose_reads_as_cards() {
         sheet.row("services.web.ports").map(|r| &r.value),
         Some(RowValue::List { items }) if items.len() == 2 && items[0].text == "80:80"
     ));
+    // a list written on one line (`[db, cache]`) reads as the list it is, its items editable
     assert!(matches!(
         sheet.row("services.web.depends_on").map(|r| &r.value),
+        Some(RowValue::List { items }) if items.len() == 2 && items[1].text == "cache"
+    ));
+    assert!(matches!(
+        sheet.row("services.web.command").map(|r| &r.value),
+        Some(RowValue::List { items }) if items.len() == 3 && items[2].text == "daemon off;"
+    ));
+    // a mapping on one line stays as written
+    assert!(matches!(
+        sheet.row("volumes.data").map(|r| &r.value),
         Some(RowValue::Raw { reason, .. }) if reason == "flow"
     ));
     assert_eq!(
@@ -379,4 +389,51 @@ fn a_big_file_parses_quickly_and_one_over_the_limit_is_shown_as_text() {
     assert_eq!(rendered_notes(&text), ["bigConfig"]);
     assert_eq!(rendered_notes(&text.repeat(2)), ["bigConfig"]);
     assert_eq!(rendered_notes("a: 1\n"), Vec::<&str>::new());
+}
+
+#[test]
+fn a_list_on_one_line_takes_edits_of_its_items_and_nothing_else_moves() {
+    let text = "title: Notes\ntags: [reading, 'two words', \"q\"]  # kept\nupdated: 2026-10-19\n";
+    let sheet = format().sheet(text).expect("parses");
+    let Some(RowValue::List { items }) = sheet.row("tags").map(|r| &r.value) else {
+        panic!("tags: a list");
+    };
+    let texts: Vec<&str> = items.iter().map(|i| i.text.as_str()).collect();
+    assert_eq!(texts, ["reading", "two words", "q"]);
+    assert_eq!(
+        sheet.row("tags").and_then(|r| r.comment.clone()).as_deref(),
+        Some("kept")
+    );
+    let set = |path: &str, to: &str| {
+        format().edit(
+            text,
+            &ConfigEdit::Set {
+                path: path.to_owned(),
+                value: NewValue::Text {
+                    text: to.to_owned(),
+                },
+            },
+        )
+    };
+    let splice = set("tags[0]", "writing").expect("edits");
+    assert_eq!(splice.apply(text), text.replace("[reading,", "[writing,"));
+    let splice = set("tags[1]", "it's").expect("edits");
+    assert_eq!(splice.apply(text), text.replace("'two words'", "'it''s'"));
+    // a text that would split the list is refused, never written so
+    assert!(set("tags[0]", "a, b").is_err());
+    // nested, empty, a mapping in it or a tag before it: as written
+    for raw in [
+        "k: [a, [b]]\n",
+        "k: [a, {b: c}]\n",
+        "k: [a,, b]\n",
+        "k: []\n",
+        "k: [a: b]\n",
+        "k: !!set [a]\n",
+    ] {
+        let sheet = format().sheet(raw).expect("parses");
+        assert!(
+            matches!(sheet.row("k").map(|r| &r.value), Some(RowValue::Raw { .. })),
+            "{raw}"
+        );
+    }
 }

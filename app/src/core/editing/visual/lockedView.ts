@@ -83,6 +83,8 @@ export type LockedHost = {
   refresh(): Promise<void>;
   /** View's hooks for backend blocks: structure at once, embeds and links once near the screen. */
   blocks: BlockHooks;
+  /** View's element (backend HTML) for an HTML piece written in a line; null | absent: none known, its source shows. */
+  inline?(source: string): string | null;
   /** View's front matter card in `target`; null: no card on offer. Returns its teardown. */
   card(target: HTMLElement, frontMatter: FrontMatter): (() => void) | null;
   /** The front matter as editable properties in `target` (`replace` puts a new source in the node); null: none. */
@@ -213,6 +215,13 @@ export function relook(view: EditorView): void {
   view.dispatch(view.state.tr.setMeta(LOOKS_META, true));
 }
 
+/** `repaint` runs each time View's looks come back from a render (`relook`); returns the undo. */
+export function onRelook(view: EditorView, repaint: () => void): () => void {
+  const at = painters(view).repaint;
+  at.add(repaint);
+  return () => void at.delete(repaint);
+}
+
 /** The whole text rendered again, then the blocks repainted. */
 function rerender(view: EditorView, host: LockedHost): void {
   void host.refresh().then(
@@ -222,7 +231,7 @@ function rerender(view: EditorView, host: LockedHost): void {
 }
 
 /** As `rerender`, once the changes of this turn are in (several in a row ask once). */
-function rerenderSoon(view: EditorView, host: LockedHost): void {
+export function rerenderSoon(view: EditorView, host: LockedHost): void {
   const at = painters(view);
   if (at.asked) return;
   at.asked = true;

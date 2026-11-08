@@ -9,6 +9,7 @@ import {
   align,
   compareSides,
   entryDiffs,
+  openCardDiffs,
   groupDiffs,
   parseKnownGaps,
   same,
@@ -129,6 +130,20 @@ describe("entryDiffs", () => {
     expect(
       entryDiffs(ctx, { viewScroll: 10, editScroll: 11.5, selected: 0, toolbarRows: 1 }),
     ).toEqual([]);
+  });
+});
+
+describe("openCardDiffs", () => {
+  const view = { text: "tags reading markdown updated October 19, 2026", chips: 2 };
+
+  it("flags properties that read otherwise than View's card: raw values, a list as text, none shown", () => {
+    const raw = { text: "tags [reading, markdown] updated 2026-10-19", chips: 0 };
+    expect(openCardDiffs(ctx, view, raw).map((d) => [d.element, d.property])).toEqual([
+      ["card-open", "text"],
+      ["card-open", "chips"],
+    ]);
+    expect(openCardDiffs(ctx, view, null).map((d) => d.property)).toEqual(["shown"]);
+    expect(openCardDiffs(ctx, view, { ...view })).toEqual([]);
   });
 });
 

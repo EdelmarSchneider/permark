@@ -50,7 +50,7 @@
 
 {#if body?.kind === "sheet"}
   <div class="card">
-    <ConfigSheet sheet={body.sheet} editable={true} {commit} source={null} />
+    <ConfigSheet sheet={body.sheet} editable={true} {commit} source={null} card={true} />
   </div>
 {:else if failed}
   <pre class="raw" aria-label={t("config.noSheet")}>{source}</pre>

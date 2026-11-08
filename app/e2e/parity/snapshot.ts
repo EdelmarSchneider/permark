@@ -180,7 +180,11 @@ export async function sideOf(arg: SideArg): Promise<Side | null> {
           type = "a";
           if (el.classList.contains("is-missing")) flavor = "missing";
         }
-      } else if (tag === "span" && el.classList.contains("code-ref")) type = "code-ref";
+      } else if (["kbd", "sub", "mark"].includes(tag)) type = tag;
+      // HTML written in a line (a footnote's number is its own `sup`); ProseMirror's own break in an empty line is not
+      else if (tag === "sup" && !el.classList.contains("footnote-ref")) type = tag;
+      else if (tag === "br" && !el.classList.contains("ProseMirror-trailingBreak")) type = tag;
+      else if (tag === "span" && el.classList.contains("code-ref")) type = "code-ref";
       else if (tag === "span" && el.classList.contains("tvar")) type = "tvar";
       else if (tag === "img" && !el.classList.contains("ProseMirror-separator")) {
         type = "img";
@@ -282,6 +286,23 @@ export async function sideOf(arg: SideArg): Promise<Side | null> {
   }
   const column = root.getBoundingClientRect();
   return { column: { left: px(column.left), width: px(column.width) }, blocks };
+}
+
+/**
+ * The front matter as the reader sees it: View's card above the body | Edit's properties opened in place. Its text
+ * (white space collapsed) and its chips; null: no front matter shown so.
+ */
+export function cardOf(arg: SideArg): { text: string; chips: number } | null {
+  const root = document.querySelector(arg.root);
+  const card =
+    arg.mode === "view"
+      ? root?.parentElement?.querySelector(":scope > section.card")
+      : root?.querySelector(':scope > .pm-locked[data-look="properties"]');
+  if (!(card instanceof HTMLElement)) return null;
+  return {
+    text: card.innerText.replace(/\s+/g, " ").trim(),
+    chips: card.querySelectorAll(".chip").length,
+  };
 }
 
 /** The document's scroll offset (View and Edit share the scroller). */

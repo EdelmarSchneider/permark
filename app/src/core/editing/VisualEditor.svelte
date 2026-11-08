@@ -24,6 +24,7 @@
   import CharacterPicker from "./visual/CharacterPicker.svelte";
   import { frontMatterSyntax } from "../config/frontMatter";
   import { documents } from "../doc/document.svelte";
+  import { reading } from "../doc/reading.svelte";
   import { pictureDisplayUrl, pictureFiles, pictureLink } from "./pictures";
   import { baseName, pictureType } from "../explorer/importModel";
   import { relativeLink } from "./source/complete";
@@ -384,6 +385,7 @@
         label: t("edit.documentText"),
         locked: {
           render: (node) => book.get(node),
+          inline: (source) => book.inline(source),
           refresh: () => refreshLooks(current.path, book),
           blocks: hooks.hooks,
           card: (body, front) => mountCard(card, body, front),
@@ -435,11 +437,14 @@
       }
       const editor = made;
       const doc = await loaded.buildDoc(editor, current.text, current.segments ?? []);
-      // locked blocks draw View's look from their first paint when the render and the card come in time; a render
-      // that comes later (a large document, a busy backend) brings it then, the blocks show their source until it does
-      const asked = doc.sources.some((s) => s.locked !== null)
-        ? (early ?? viewOf(current.path, current.text))
-        : null;
+      // locked blocks and HTML written in a line draw View's look from their first paint when the render and the card
+      // come in time; a render that comes later (a large document, a busy backend) brings it then, the blocks show
+      // their source until it does
+      const asked =
+        doc.sources.some((s) => s.locked !== null) ||
+        loaded.pieceSources(doc.doc, "html").length > 0
+          ? (early ?? viewOf(current.path, current.text))
+          : null;
       const ticket = book.ask();
       let deadline: ReturnType<typeof setTimeout> | undefined;
       const first =
@@ -788,7 +793,12 @@
     {#each targets as target (target)}<option value={target}></option>{/each}
   </datalist>
 
-  <div class="page md">
+  <div
+    class="page md"
+    class:is-wide={reading.width === "wide"}
+    class:is-full={reading.width === "full"}
+    style:--zoom={reading.zoom / 100}
+  >
     <div class="host" bind:this={host}></div>
     {#if slash !== null && slashItems.length > 0}
       <div
@@ -823,10 +833,11 @@
     flex-direction: column;
     min-height: 100%;
   }
+  /* View's column (`.md`: the reading width x zoom) with the side padding View's `.doc-column` puts around it */
   .page {
     position: relative;
     width: 100%;
-    max-width: var(--measure);
+    max-width: calc(var(--column) * var(--zoom) + 2 * var(--sp-5));
     margin: 0 auto;
     padding: var(--sp-5) var(--sp-5) var(--sp-8);
   }

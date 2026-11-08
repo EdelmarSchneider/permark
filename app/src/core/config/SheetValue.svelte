@@ -1,6 +1,9 @@
 <script lang="ts">
   // One value of a sheet: text, number, date, bool (a switch), or empty, as written. In Edit mode a click opens the
-  // value for typing; Enter or leaving it commits through the sheet's editor, Escape puts it back.
+  // value for typing; Enter or leaving it commits through the sheet's editor, Escape puts it back. On a card for
+  // readers (a document's front matter) it reads as View's card shows it: a plain date in words, in the text font.
+  import { language } from "../i18n";
+  import { readerDate } from "../time";
   import Lock from "@lucide/svelte/icons/lock";
   import type { NewValue, Scalar } from "../../api";
   import { t } from "../i18n";
@@ -13,8 +16,10 @@
     editable: boolean;
     /** Commits a new value; resolves to the word of a refusal, or null when it was made. */
     commit: (path: string, value: NewValue) => Promise<string | null>;
+    /** Shown as View's front matter card shows it (typing still takes the value as written). */
+    card?: boolean;
   };
-  let { scalar, label, editable, commit }: Props = $props();
+  let { scalar, label, editable, commit, card = false }: Props = $props();
 
   let draft = $state<string | null>(null);
   let refusal = $state<string | null>(null);
@@ -110,7 +115,9 @@
   {:else if scalar.kind === "null"}
     <span class="empty">{t("config.empty")}</span>
   {:else}
-    <span class="text" class:code={scalar.kind !== "string"}>{scalar.text}</span>
+    <span class="text" class:code={scalar.kind !== "string" && !card}
+      >{card ? readerDate(scalar.text, language.locale) : scalar.text}</span
+    >
   {/if}
   {#if draft === null}
     {#if canEdit && scalar.kind !== "bool"}

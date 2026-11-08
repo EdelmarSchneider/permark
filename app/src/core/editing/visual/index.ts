@@ -16,5 +16,6 @@ export { LookBook, lockedLooks, type LockedRender } from "./lockedRender";
 export { applyEdits, blockOf, docRange, scopeIn, selectRange } from "./edits";
 export { markAt, marksPlugin, setMarks } from "./marks";
 export { repaintLooks } from "./inlineLooks";
+export { pieceSources } from "./inlineSource";
 export { formatOf, run, type BlockType, type Command, type Format } from "./commands";
 export { appPlugins, slashAt, type PluginHost, type SlashState } from "./plugins";

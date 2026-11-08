@@ -2272,9 +2272,17 @@
                 "line": 13,
                 "end": 13,
                 "value": {
-                  "type": "raw",
-                  "text": "[db]",
-                  "reason": "flow"
+                  "type": "list",
+                  "items": [
+                    {
+                      "path": "services.web.depends_on[0]",
+                      "kind": "string",
+                      "text": "db",
+                      "edit": {
+                        "editable": "surgical"
+                      }
+                    }
+                  ]
                 },
                 "comment": null
               }

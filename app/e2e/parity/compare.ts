@@ -242,6 +242,26 @@ export function entryDiffs(where: Where, entry: Entry): Diff[] {
   return out;
 }
 
+/** The front matter as read: its text (white space collapsed) and its chips. */
+export type CardRead = { text: string; chips: number };
+
+/** Edit's properties opened in place read as View's card: the same text (dates in words), lists as chips. */
+export function openCardDiffs(where: Where, view: CardRead, open: CardRead | null): Diff[] {
+  const row = (property: string, v: string, e: string): Diff => ({
+    ...where,
+    element: "card-open",
+    index: 1,
+    property,
+    view: v,
+    edit: e,
+  });
+  if (open === null) return [row("shown", "yes", "no")];
+  const out: Diff[] = [];
+  if (open.text !== view.text) out.push(row("text", view.text, open.text));
+  if (open.chips !== view.chips) out.push(row("chips", String(view.chips), String(open.chips)));
+  return out;
+}
+
 /** Feature areas not yet implemented in Edit: each known gap names the one it belongs to. */
 export const AREAS = ["code-colors", "locked-blocks", "fewer-locks", "inline-decorations"] as const;
 export type Area = (typeof AREAS)[number];

@@ -1,22 +1,29 @@
 // @vitest-environment jsdom
 import "./jsdomShims";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { undo } from "@milkdown/kit/prose/history";
 import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import type { Segment } from "../../../api/generated/Segment";
 import { classify } from "./classify";
 import { buildDoc, compose, type Built } from "./compose";
-import { createCore, INLINE_SOURCE, LOCKED, type Core, type LockedHost } from "./core";
+import { createCore, INLINE_SOURCE, LOCKED, relook, type Core, type LockedHost } from "./core";
 import { appPlugins, type PluginHost } from "./plugins";
 
 let core: Core;
 const neared: HTMLElement[] = [];
 const undone: HTMLElement[] = [];
 const followed: string[] = [];
+/** View's elements for HTML pieces by source (what a render of the document gave) and the renders asked for. */
+const viewHtml = new Map<string, string>();
+let renders = 0;
 
 const host: LockedHost = {
   render: () => null,
-  refresh: () => Promise.resolve(),
+  refresh: () => {
+    renders += 1;
+    return Promise.resolve();
+  },
+  inline: (source) => viewHtml.get(source) ?? null,
   blocks: {
     enhance: (element) => element,
     near: (element) => {
@@ -171,7 +178,8 @@ describe("inline math, read as View reads it", () => {
     ["Emph *a $b* c$ d", ["$b* c$"]],
     ["I paid $5, he paid 10$ ok", ["$5, he paid 10$"]],
     ["Auto <http://a.b/$x$> $y$", ["$y$"]],
-    ['Html <span title="$x$">t</span> $y$', ["$y$"]],
+    // the element is a piece of its own (HTML written in a line): no formula inside its attribute
+    ['Html <span title="$x$">t</span> $y$', ['<span title="$x$">t</span>', "$y$"]],
   ])("%s", (text, expected) => {
     expect(atomsIn(text)).toEqual(expected);
   });
@@ -529,6 +537,70 @@ describe("reference-style links", () => {
     await load("A [x] b.\n\n[x]: javascript:alert(1)\n");
     expect(anchors()[0]?.hasAttribute("href")).toBe(false);
     expect(anchors()[0]?.textContent).toBe("x");
+  });
+});
+
+describe("HTML written in a line", () => {
+  const LINE =
+    "Press <kbd>Ctrl</kbd>+<kbd>F</kbd>, H<sub>2</sub>O, x<sup>2</sup>, <mark>this</mark>,<br>next.\n";
+
+  beforeEach(() => {
+    viewHtml.clear();
+    renders = 0;
+  });
+
+  it("a paragraph using it is editable text, each element a piece kept as written", async () => {
+    expect(atomsIn(LINE)).toEqual([
+      "<kbd>Ctrl</kbd>",
+      "<kbd>F</kbd>",
+      "<sub>2</sub>",
+      "<sup>2</sup>",
+      "<mark>this</mark>",
+      "<br>",
+    ]);
+    // an element with Markdown inside is one piece; a tag without its end stays as it is
+    expect(atomsIn("A <kbd>**Ctrl**</kbd> and <kbd>open.\n")).toEqual(["<kbd>**Ctrl**</kbd>"]);
+    const built = await load(LINE);
+    expect(built.sources.map((s) => s.locked)).toEqual([null]);
+    expect(atoms().map((atom) => atom.dataset.kind)).toEqual(Array(6).fill("html"));
+    const composed = compose(core, built, core.view.state.doc);
+    expect(composed.text).toBe(LINE);
+    expect(composed.changed).toBe(0);
+  });
+
+  it("is drawn as View's element for its source; with none known, its source shows as text", async () => {
+    viewHtml.set("<kbd>Ctrl</kbd>", "<kbd>Ctrl</kbd>");
+    viewHtml.set("<br>", "<br>");
+    await load(LINE.replace("<kbd>F</kbd>", "<kbd>G</kbd>"));
+    const [ctrl, g, , , , br] = atoms();
+    expect(ctrl?.querySelector("kbd")?.textContent).toBe("Ctrl");
+    expect(br?.querySelector("br")).not.toBeNull();
+    // never the person's HTML: an element View has not drawn is its source, as text
+    expect(g?.querySelector("kbd")).toBeNull();
+    expect(g?.textContent).toBe("<kbd>G</kbd>");
+    expect(neared).toContain(ctrl?.querySelector("kbd"));
+    expect(ctrl?.getAttribute("aria-label")).toBe("block: html");
+    // the looks a later render of the document brings are drawn when it comes
+    viewHtml.set("<kbd>G</kbd>", "<kbd>G</kbd>");
+    relook(core.view);
+    expect(atoms()[1]?.querySelector("kbd")?.textContent).toBe("G");
+  });
+
+  it("a click opens its source; what is typed goes in as written, drawn from View's look of it", async () => {
+    viewHtml.set("<kbd>Ctrl</kbd>", "<kbd>Ctrl</kbd>");
+    viewHtml.set("<kbd>Alt</kbd>", "<kbd>Alt</kbd>");
+    const built = await load("Press <kbd>Ctrl</kbd> now.\n");
+    const field = openAtom(0);
+    expect(field.value).toBe("<kbd>Ctrl</kbd>");
+    type(field, "<kbd>Alt</kbd>");
+    expect(sourceAt(0)).toBe("<kbd>Alt</kbd>");
+    key(field, "Escape");
+    expect(atoms()[0]?.querySelector("kbd")?.textContent).toBe("Alt");
+    expect(compose(core, built, core.view.state.doc).text).toBe("Press <kbd>Alt</kbd> now.\n");
+    expect(renders).toBe(0);
+    // a source no render has drawn yet: the document is rendered again once typing pauses
+    type(openAtom(0), "<kbd>Shift</kbd>");
+    await vi.waitFor(() => expect(renders).toBe(1));
   });
 });
 

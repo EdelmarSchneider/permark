@@ -31,6 +31,8 @@
     /** Ignore files: how many project files each pattern matches, by line. */
     matches?: ReadonlyMap<number, number> | null;
     capped?: boolean;
+    /** A card for readers (a document's front matter): values shown as View's card shows them. */
+    card?: boolean;
   };
   let {
     sheet,
@@ -42,6 +44,7 @@
     source,
     matches = null,
     capped = false,
+    card = false,
   }: Props = $props();
 
   let folded = $state.raw<ReadonlySet<string>>(new Set());
@@ -376,7 +379,7 @@
                 {/if}
                 <div class="body">
                   {#if value.type === "scalar"}
-                    <SheetValue scalar={value} label={row.key} {editable} {commit} />
+                    <SheetValue scalar={value} label={row.key} {editable} {commit} {card} />
                   {:else if value.type === "list"}
                     <span class="chips">
                       {#each value.items as item (item.path)}
@@ -386,6 +389,7 @@
                             label={`${row.key} ${item.path.slice(row.path.length)}`}
                             {editable}
                             {commit}
+                            {card}
                           />
                         </span>
                       {/each}
