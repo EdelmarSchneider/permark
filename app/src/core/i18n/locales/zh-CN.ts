@@ -85,6 +85,13 @@ export default {
   "error.superseded": "在此期间打开了其他内容。",
   "error.internal": "PerMark 内部出错：{detail}",
   "error.unknown": "出现问题：{message}",
+  "error.settingsUnreadable": "PerMark 无法读取设置文件 {subject}。未做任何更改。",
+  "error.settingsUnreadable.notText":
+    "PerMark 无法读取设置文件 {subject}（它不是纯文本）。未做任何更改。",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark 无法读取设置文件 {subject}（文件过大）。未做任何更改。",
+  "error.settingsUnreadable.locked":
+    "PerMark 无法读取设置文件 {subject}（另一个程序正在使用它）。未做任何更改。",
 
   // ---- conditions
   "condition.workspace": "请先打开文件夹或文件。",

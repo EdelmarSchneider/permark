@@ -2,10 +2,11 @@
 //!
 //! The parser (comrak) says where each inline link, image and HTML node sits (`sourcepos`); the destination inside
 //! such a node is located by reading the node's own text. Reference definitions are not in the tree: they are found
-//! by their line grammar outside code, HTML blocks and paragraph text (definitions at the start of a paragraph are
-//! taken off it by the parser, which then reports the positions of the text left too high: see `AfterDefinitions`).
-//! A destination whose text does not agree with what the parser resolved is dropped: a link that is not read with
-//! certainty is never edited.
+//! by their grammar outside code, HTML blocks, tables and paragraph | heading text (definitions at the start of a
+//! paragraph are taken off it by the parser, which then reports the positions of the text left too high: see
+//! `AfterDefinitions`). A definition read over several lines is kept only when the parser defines its label the same
+//! way (see `confirmed`). A destination whose text does not agree with what the parser resolved is dropped: a link
+//! that is not read with certainty is never edited.
 //!
 //! With the prompt features on, the parser reads the text reading parses (prompt tags marked, front matter cut), so a
 //! link inside a prompt block is a link even with no blank line after its tag. Only whole lines differ there: each
@@ -14,7 +15,7 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-use comrak::nodes::{AstNode, NodeValue, Sourcepos};
+use comrak::nodes::{AstNode, LineColumn, NodeHeading, NodeValue, Sourcepos};
 use comrak::{parse_document, Arena, Options};
 
 use crate::format::{reading_text, MarkdownFeatures};
@@ -22,6 +23,9 @@ use crate::format::{reading_text, MarkdownFeatures};
 const BOM: &str = "\u{feff}";
 /// Most escaped pipes of one table row the column shift is searched for.
 const SHIFT_LIMIT: usize = 16;
+/// Longest link label, in bytes, and deepest parentheses of a bare destination the parser accepts.
+const MAX_LABEL: usize = 1000;
+const MAX_PARENS: usize = 32;
 
 /// How a destination is written.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -248,11 +252,16 @@ fn scan(body: &str, lines: &Lines) -> Vec<Dest> {
                 }
                 blocked.push((pos.start.line, pos.end.line));
             }
-            NodeValue::CodeBlock(_) | NodeValue::FrontMatter(_) => {
+            NodeValue::CodeBlock(_) | NodeValue::FrontMatter(_) | NodeValue::Table(_) => {
                 blocked.push((pos.start.line, pos.end.line));
             }
-            NodeValue::Paragraph => {
-                raised = AfterDefinitions::of(node, pos, body, lines);
+            NodeValue::Paragraph | NodeValue::Heading(NodeHeading { setext: true, .. }) => {
+                // the last line of a setext heading is its underline
+                let text_end = match data.value {
+                    NodeValue::Paragraph => pos.end.line,
+                    _ => pos.end.line.saturating_sub(1),
+                };
+                raised = AfterDefinitions::of(node, pos.start, text_end, body, lines);
                 let taken = raised.as_ref().map_or(0, |p| p.taken);
                 blocked.push((pos.start.line + taken, pos.end.line));
             }
@@ -265,10 +274,10 @@ fn scan(body: &str, lines: &Lines) -> Vec<Dest> {
     dests
 }
 
-/// A paragraph that begins with reference definitions. The parser takes them off but keeps the paragraph's first line
-/// as the start of the text left, so it reports each inline position `taken` lines too high, with its column counted
-/// from where the text of that higher line starts. The definitions take whole lines, so the text left starts on line
-/// `first + taken`.
+/// A paragraph | setext heading that begins with reference definitions. The parser takes them off but keeps the first
+/// line as the start of the text left, so it reports each inline position `taken` lines too high, with its column
+/// counted from where the text of that higher line starts. The definitions take whole lines, so the text left starts
+/// on line `first + taken`.
 struct AfterDefinitions {
     /// First line of the paragraph: the first definition.
     first: usize,
@@ -279,39 +288,42 @@ struct AfterDefinitions {
 }
 
 impl AfterDefinitions {
-    /// `None` when the paragraph `node` (at `pos`) kept all of its lines.
-    fn of<'a>(node: &'a AstNode<'a>, pos: Sourcepos, body: &str, lines: &Lines) -> Option<Self> {
-        let first = pos.start.line;
-        let start = pos.start.column.checked_sub(1)?;
-        if body.as_bytes().get(lines.start_of(first)? + start) != Some(&b'[') {
+    /// `None` when the paragraph | setext heading `node` (from `start`, its text ending on line `text_end`) kept all
+    /// of its lines.
+    fn of<'a>(
+        node: &'a AstNode<'a>,
+        start: LineColumn,
+        text_end: usize,
+        body: &str,
+        lines: &Lines,
+    ) -> Option<Self> {
+        let first = start.line;
+        let column = start.column.checked_sub(1)?;
+        if body.as_bytes().get(lines.start_of(first)? + column) != Some(&b'[') {
             return None; // a definition starts with its label
         }
-        // the text left ends on the paragraph's last line: the lines it reports less are the definitions'
+        // the text left ends on the last line of text: the lines it reports less are the definitions'
         let last = node
             .descendants()
             .skip(1)
             .map(|n| n.data().sourcepos.end.line)
             .max()?;
-        let taken = pos.end.line.checked_sub(last)?;
-        if taken == 0 || taken > pos.end.line - first {
+        let taken = text_end.checked_sub(last)?;
+        if taken == 0 || taken > text_end.saturating_sub(first) {
             return None;
         }
-        // only lines read as definitions here are surely what the parser took off: after a definition over several
-        // lines (destination or title on the next one) nothing of the paragraph is placed or taken as a definition
-        let defined = (first..first + taken).all(|line| {
-            lines
-                .content_of(line, body)
-                .is_some_and(|content| definition_in(&body[content]).is_some())
-        });
-        if !defined {
-            return None;
+        // the lines the parser took off must read here as definitions, back to back: else what they hold is not known
+        // for sure, and nothing of the paragraph is placed or taken as a definition
+        let mut line = first;
+        while line < first + taken {
+            line = definition_at(body, lines, line, first + taken - 1)?.last + 1;
         }
         // before the text of the other lines: indentation, and quote marks inside a container
         let top = node
             .parent()
             .is_some_and(|p| matches!(p.data().value, NodeValue::Document));
         let marks: &[u8] = if top { b" \t" } else { b" \t>" };
-        let starts = (first + 1..=pos.end.line)
+        let starts = (first + 1..=text_end)
             .map(|line| {
                 let content = lines.content_of(line, body)?;
                 Some(
@@ -325,7 +337,7 @@ impl AfterDefinitions {
         Some(Self {
             first,
             taken,
-            starts: std::iter::once(start).chain(starts).collect(),
+            starts: std::iter::once(column).chain(starts).collect(),
         })
     }
 
@@ -396,6 +408,12 @@ fn unescape(raw: &str) -> String {
     out
 }
 
+/// Whether a destination as written (`inner`: without angle brackets) is the one the parser resolved, `url`. Entities
+/// (`&amp;`) are decoded by the parser, not here: a destination with one is taken as it is written.
+fn agrees(inner: &str, url: &str) -> bool {
+    inner.contains('&') || unescape(inner) == url
+}
+
 /// Finds `(dest "title")` at the end of a link | image node's text. `base`: offset of the node text in the document.
 fn inline_dest(node: &str, url: &str, base: usize) -> Option<Dest> {
     if !(node.starts_with('[') || node.starts_with("![")) {
@@ -411,13 +429,7 @@ fn inline_dest(node: &str, url: &str, base: usize) -> Option<Dest> {
                 Form::Angle => &raw[1..raw.len() - 1],
                 _ => raw,
             };
-            // entities (`&amp;`) are decoded by the parser, not here: those are compared by prefix only
-            let agrees = if inner.contains('&') {
-                true
-            } else {
-                unescape(inner) == url
-            };
-            if agrees && !inner.is_empty() {
+            if agrees(inner, url) && !inner.is_empty() {
                 return Some(Dest {
                     range: base + range.start..base + range.end,
                     form,
@@ -642,108 +654,286 @@ fn container_prefix(line: &str) -> usize {
     i
 }
 
-/// `[label]: dest "title"` on one line: the destination's range inside the line.
-fn definition_in(line: &str) -> Option<(Range<usize>, Form)> {
-    let at = container_prefix(line);
-    let rest = &line[at..];
-    let bytes = rest.as_bytes();
-    if bytes.first() != Some(&b'[') || bytes.get(1) == Some(&b'^') {
+/// A reference definition: its destination, its label (inside the brackets) and its last line.
+struct Definition {
+    dest: Dest,
+    label: Range<usize>,
+    last: usize,
+    /// It is one only through what follows its first line (destination on the next line, a title from the
+    /// destination's line closing on a later one): the parser's own definitions confirm it (see [`confirmed`]).
+    spans: bool,
+}
+
+/// A place in the text of a definition: byte `pos` of line `line`, whose text ends at byte `end`. The definition may
+/// go on over the lines after it up to line `limit`.
+#[derive(Clone, Copy)]
+struct Cursor<'t> {
+    body: &'t str,
+    lines: &'t Lines,
+    line: usize,
+    pos: usize,
+    end: usize,
+    limit: usize,
+}
+
+impl Cursor<'_> {
+    fn byte(&self, ahead: usize) -> Option<u8> {
+        let at = self.pos + ahead;
+        (at < self.end).then(|| self.body.as_bytes()[at])
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.byte(0)
+    }
+
+    fn escaped(&self) -> bool {
+        self.peek() == Some(b'\\') && self.byte(1).is_some_and(|b| b.is_ascii_punctuation())
+    }
+
+    fn at_end(&self) -> bool {
+        self.pos >= self.end
+    }
+
+    fn spaces(&mut self) {
+        while matches!(self.peek(), Some(b' ' | b'\t')) {
+            self.pos += 1;
+        }
+    }
+
+    /// Goes to the text of the next line (after its quote marks and indentation) when the definition can go on
+    /// there: up to `limit`, and not over a blank line (it ends the paragraph).
+    fn next_line(&mut self) -> bool {
+        if self.line >= self.limit {
+            return false;
+        }
+        let Some(content) = self.lines.content_of(self.line + 1, self.body) else {
+            return false;
+        };
+        let bytes = self.body.as_bytes();
+        let mut pos = content.start;
+        while pos < content.end && matches!(bytes[pos], b' ' | b'\t' | b'>') {
+            pos += 1;
+        }
+        if pos == content.end {
+            return false;
+        }
+        (self.line, self.pos, self.end) = (self.line + 1, pos, content.end);
+        true
+    }
+
+    /// White space with at most one line break in it.
+    fn space_and_break(&mut self) {
+        self.spaces();
+        if self.at_end() && self.next_line() {
+            self.spaces();
+        }
+    }
+
+    /// A link destination, `<...>` (on one line) | bare (parentheses balanced); the cursor goes past it.
+    fn destination(&mut self) -> Option<Form> {
+        let start = self.pos;
+        if self.peek() == Some(b'<') {
+            self.pos += 1;
+            loop {
+                match self.peek()? {
+                    b'>' => {
+                        self.pos += 1;
+                        return Some(Form::Angle);
+                    }
+                    b'\\' => self.pos += 2,
+                    b'<' => return None,
+                    _ => self.pos += 1,
+                }
+            }
+        }
+        let mut depth = 0_usize;
+        while let Some(b) = self.peek() {
+            match b {
+                b'\\' if self.escaped() => self.pos += 2,
+                b'(' => {
+                    depth += 1;
+                    if depth > MAX_PARENS {
+                        return None;
+                    }
+                    self.pos += 1;
+                }
+                b')' if depth == 0 => break,
+                b')' => {
+                    depth -= 1;
+                    self.pos += 1;
+                }
+                b if b.is_ascii_whitespace() || (b.is_ascii_control() && b != 0) => break,
+                _ => self.pos += 1,
+            }
+        }
+        (self.pos > start && depth == 0).then_some(Form::Bare)
+    }
+
+    /// A link title, `"..."` | `'...'` | `(...)`, over lines too; the cursor goes past it.
+    fn title(&mut self) -> bool {
+        let close = match self.peek() {
+            Some(b'"') => b'"',
+            Some(b'\'') => b'\'',
+            Some(b'(') => b')',
+            _ => return false,
+        };
+        self.pos += 1;
+        loop {
+            match self.peek() {
+                None if self.next_line() => {}
+                None => return false,
+                Some(b'\\') if self.escaped() => self.pos += 2,
+                Some(b) if b == close => {
+                    self.pos += 1;
+                    return true;
+                }
+                Some(b'(') if close == b')' => return false,
+                Some(_) => self.pos += 1,
+            }
+        }
+    }
+}
+
+/// The reference definition starting on line `first`, read as the parser reads one (CommonMark): `[label]:`, the
+/// destination on that line or the next, an optional title after white space on the destination's line or the next
+/// one, then nothing else on its line. Lines after `first` are read up to line `limit`.
+fn definition_at(body: &str, lines: &Lines, first: usize, limit: usize) -> Option<Definition> {
+    let content = lines.content_of(first, body)?;
+    let mut at = Cursor {
+        body,
+        lines,
+        line: first,
+        pos: content.start + container_prefix(&body[content.clone()]),
+        end: content.end,
+        limit,
+    };
+    // the label: on its line, no bracket in it unless escaped, not blank, not a footnote's
+    if at.peek() != Some(b'[') || at.byte(1) == Some(b'^') {
         return None;
     }
-    let mut i = 1;
+    at.pos += 1;
+    let label_start = at.pos;
     loop {
-        match *bytes.get(i)? {
-            b'\\' => i += 2,
+        match at.peek()? {
             b']' => break,
             b'[' => return None,
-            _ => i += 1,
+            b'\\' if at.escaped() => at.pos += 2,
+            _ => at.pos += 1,
+        }
+        if at.pos - label_start > MAX_LABEL {
+            return None;
         }
     }
-    if i == 1 || bytes.get(i + 1) != Some(&b':') {
+    let label = label_start..at.pos;
+    if body[label.clone()].trim_ascii().is_empty() || at.byte(1) != Some(b':') {
         return None;
     }
-    i += 2;
-    let mut j = i;
-    while matches!(bytes.get(j), Some(b' ' | b'\t')) {
-        j += 1;
-    }
-    if j == i || j >= bytes.len() {
-        return None;
-    }
-    let start = j;
-    let form = if bytes[j] == b'<' {
-        j += 1;
-        loop {
-            match *bytes.get(j)? {
-                b'\\' => j += 2,
-                b'>' => {
-                    j += 1;
-                    break;
-                }
-                b'<' => return None,
-                _ => j += 1,
-            }
-        }
-        Form::Angle
-    } else {
-        while j < bytes.len() && !bytes[j].is_ascii_whitespace() {
-            j += 1;
-        }
-        Form::Bare
+    at.pos += 2;
+    at.space_and_break();
+    let dest_line = at.line;
+    let start = at.pos;
+    let form = at.destination()?;
+    let dest = Dest {
+        range: start..at.pos,
+        form,
+        kind: Kind::Definition,
+        line: 0,
     };
-    let end = j;
-    // optional title, then nothing else
-    let mut k = end;
-    while matches!(bytes.get(k), Some(b' ' | b'\t')) {
-        k += 1;
-    }
-    if k < bytes.len() {
-        if k == end {
+    // a title needs white space before it and nothing after it on its line; else the destination ends its line
+    let mut titled = at;
+    titled.space_and_break();
+    let title_line = titled.line;
+    let spaced = (titled.line, titled.pos) != (at.line, at.pos);
+    let end = if spaced && titled.title() && {
+        titled.spaces();
+        titled.at_end()
+    } {
+        titled
+    } else {
+        at.spaces();
+        if !at.at_end() {
             return None;
         }
-        let quote = bytes[k];
-        let close = match quote {
-            b'"' | b'\'' => quote,
-            b'(' => b')',
-            _ => return None,
-        };
-        k += 1;
-        loop {
-            match *bytes.get(k)? {
-                b'\\' => k += 2,
-                b if b == close => {
-                    k += 1;
-                    break;
-                }
-                _ => k += 1,
-            }
-        }
-        while matches!(bytes.get(k), Some(b' ' | b'\t')) {
-            k += 1;
-        }
-        if k < bytes.len() {
-            return None;
-        }
-    }
-    (end > start).then_some((at + start..at + end, form))
+        at
+    };
+    Some(Definition {
+        dest,
+        label,
+        last: end.line,
+        spans: dest_line > first || (title_line == dest_line && end.line > dest_line),
+    })
 }
 
 fn definitions(body: &str, lines: &Lines, blocked: &[(usize, usize)], out: &mut Vec<Dest>) {
-    for line_no in 1..=lines.starts.len() {
-        let Some(content) = lines.content_of(line_no, body) else {
-            continue;
-        };
-        let line = &body[content.clone()];
-        if !line.contains("]:") || blocked.iter().any(|(a, b)| (*a..=*b).contains(&line_no)) {
-            continue;
-        }
-        if let Some((range, form)) = definition_in(line) {
-            out.push(Dest {
-                range: content.start + range.start..content.start + range.end,
-                form,
-                kind: Kind::Definition,
-                line: 0,
+    let count = lines.starts.len();
+    let mut spanning = Vec::new();
+    let mut line = 1;
+    while line <= count {
+        let free = !blocked.iter().any(|(a, b)| (*a..=*b).contains(&line));
+        let found = lines
+            .content_of(line, body)
+            .filter(|content| free && body[content.clone()].contains("]:"))
+            .and_then(|_| {
+                // a definition goes on up to the next line where none can be
+                let limit = blocked
+                    .iter()
+                    .map(|(a, _)| *a)
+                    .filter(|a| *a > line)
+                    .min()
+                    .map_or(count, |a| a - 1);
+                definition_at(body, lines, line, limit)
             });
+        match found {
+            Some(definition) => {
+                line = definition.last + 1;
+                if definition.spans {
+                    spanning.push(definition);
+                } else {
+                    out.push(definition.dest);
+                }
+            }
+            None => line += 1,
         }
     }
+    if !spanning.is_empty() {
+        let confirmed = confirmed(body, &spanning);
+        out.extend(
+            spanning
+                .into_iter()
+                .zip(confirmed)
+                .filter_map(|(definition, ok)| ok.then_some(definition.dest)),
+        );
+    }
+}
+
+/// Whether the parser defines the label of each of `asked` with that destination. Lines that read as a definition
+/// over several lines can be something else to it (a setext heading, a table, a paragraph a block cuts short): a
+/// reference to each label, added after the text, is resolved by the parser through its own definitions.
+fn confirmed(body: &str, asked: &[Definition]) -> Vec<bool> {
+    let mut probe = String::with_capacity(body.len() + 2 + asked.len() * 8);
+    probe.push_str(body);
+    probe.push_str("\n\n");
+    // one reference per line from here
+    let first = Lines::new(&probe).starts.len();
+    for definition in asked {
+        probe.push_str("[r][");
+        probe.push_str(&body[definition.label.clone()]);
+        probe.push_str("]\n");
+    }
+    let arena = Arena::new();
+    let root = parse_document(&arena, &probe, &options());
+    let mut found = vec![false; asked.len()];
+    for node in root.descendants() {
+        let data = node.data();
+        let NodeValue::Link(link) = &data.value else {
+            continue;
+        };
+        let Some(at) = data.sourcepos.start.line.checked_sub(first) else {
+            continue;
+        };
+        if let (Some(definition), Some(ok)) = (asked.get(at), found.get_mut(at)) {
+            *ok = agrees(definition.dest.inner(body), &link.url);
+        }
+    }
+    found
 }

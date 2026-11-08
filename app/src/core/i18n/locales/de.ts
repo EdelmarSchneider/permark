@@ -89,6 +89,14 @@ export default {
   "error.superseded": "Inzwischen wurde etwas anderes geöffnet.",
   "error.internal": "In PerMark ist etwas schiefgelaufen: {detail}",
   "error.unknown": "Etwas ist schiefgelaufen: {message}",
+  "error.settingsUnreadable":
+    "PerMark kann die Einstellungsdatei {subject} nicht lesen. Es wurde nichts geändert.",
+  "error.settingsUnreadable.notText":
+    "PerMark kann die Einstellungsdatei {subject} nicht lesen (sie ist kein reiner Text). Es wurde nichts geändert.",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark kann die Einstellungsdatei {subject} nicht lesen (sie ist zu groß). Es wurde nichts geändert.",
+  "error.settingsUnreadable.locked":
+    "PerMark kann die Einstellungsdatei {subject} nicht lesen (ein anderes Programm verwendet sie). Es wurde nichts geändert.",
 
   // ---- conditions
   "condition.workspace": "Zuerst einen Ordner oder eine Datei öffnen.",

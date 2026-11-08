@@ -91,6 +91,14 @@ export default {
   "error.superseded": "Autre chose a été ouvert entre-temps.",
   "error.internal": "Une erreur interne s'est produite dans PerMark : {detail}",
   "error.unknown": "Une erreur s'est produite : {message}",
+  "error.settingsUnreadable":
+    "PerMark ne peut pas lire le fichier de paramètres {subject}. Rien n'a été modifié.",
+  "error.settingsUnreadable.notText":
+    "PerMark ne peut pas lire le fichier de paramètres {subject} (ce n'est pas du texte brut). Rien n'a été modifié.",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark ne peut pas lire le fichier de paramètres {subject} (il est trop volumineux). Rien n'a été modifié.",
+  "error.settingsUnreadable.locked":
+    "PerMark ne peut pas lire le fichier de paramètres {subject} (un autre programme l'utilise). Rien n'a été modifié.",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "Ouvrez d'abord un dossier ou un fichier.",

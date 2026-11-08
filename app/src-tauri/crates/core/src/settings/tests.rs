@@ -240,15 +240,62 @@ fn a_settings_file_that_is_not_utf8_or_too_large_is_refused_never_set_aside() {
     };
     let latin1 = b"theme = \"dark\"\n# caf\xe9\n".to_vec();
     std::fs::write(file.path(), &latin1).unwrap();
-    assert!(file.apply(&SettingChange::Theme(ThemePref::Light)).is_err());
+    assert_eq!(
+        refusal(&file),
+        ("notText", file.path().display().to_string())
+    );
     assert_eq!(std::fs::read(file.path()).unwrap(), latin1);
     assert_eq!(names(), ["settings.toml"]);
     let mut big = b"theme = \"dark\"\n".to_vec();
     big.resize(usize::try_from(MAX_SETTINGS_BYTES).unwrap() + 1, b'\n');
     std::fs::write(file.path(), &big).unwrap();
-    assert!(file.apply(&SettingChange::Theme(ThemePref::Light)).is_err());
+    assert_eq!(
+        refusal(&file),
+        ("tooLarge", file.path().display().to_string())
+    );
     assert_eq!(std::fs::read(file.path()).unwrap(), big);
     assert_eq!(names(), ["settings.toml"]);
+}
+
+/// Why a change to an unreadable settings file is refused, as the window hears it, and the file it is about.
+fn refusal(file: &SettingsFile) -> (&'static str, String) {
+    let error = IpcError::from(
+        file.apply(&SettingChange::Theme(ThemePref::Light))
+            .unwrap_err(),
+    );
+    assert_eq!(error.kind, crate::error::ErrorKind::SettingsUnreadable);
+    let why = match error.detail.as_deref() {
+        Some("notText") => "notText",
+        Some("tooLarge") => "tooLarge",
+        Some("locked") => "locked",
+        other => panic!("{other:?}"),
+    };
+    (why, error.subject.unwrap_or_default())
+}
+
+#[cfg(windows)]
+#[test]
+fn a_settings_file_another_program_holds_is_refused_as_locked_and_left_alone() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let base = tempfile::tempdir().unwrap();
+    let file = SettingsFile::app(&AppDirs::under(base.path()));
+    std::fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+    std::fs::write(file.path(), "theme = \"dark\"\n").unwrap();
+    // no sharing: every other open fails with a sharing violation, past the retries
+    let held = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(file.path())
+        .unwrap();
+    assert_eq!(
+        refusal(&file),
+        ("locked", file.path().display().to_string())
+    );
+    drop(held);
+    assert_eq!(
+        std::fs::read_to_string(file.path()).unwrap(),
+        "theme = \"dark\"\n"
+    );
 }
 
 #[test]

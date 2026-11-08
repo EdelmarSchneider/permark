@@ -89,6 +89,14 @@ export default {
   "error.superseded": "Mentres tanto abriuse outra cousa.",
   "error.internal": "Algo foi mal dentro de PerMark: {detail}",
   "error.unknown": "Algo foi mal: {message}",
+  "error.settingsUnreadable":
+    "PerMark non pode ler o ficheiro de configuración {subject}. Non se cambiou nada.",
+  "error.settingsUnreadable.notText":
+    "PerMark non pode ler o ficheiro de configuración {subject} (non é texto simple). Non se cambiou nada.",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark non pode ler o ficheiro de configuración {subject} (é demasiado grande). Non se cambiou nada.",
+  "error.settingsUnreadable.locked":
+    "PerMark non pode ler o ficheiro de configuración {subject} (outro programa está a usalo). Non se cambiou nada.",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "Abra primeiro un cartafol ou un ficheiro.",

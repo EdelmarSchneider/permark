@@ -88,6 +88,14 @@ export default {
   "error.superseded": "Outra coisa foi aberta nesse meio-tempo.",
   "error.internal": "Algo deu errado dentro do PerMark: {detail}",
   "error.unknown": "Algo deu errado: {message}",
+  "error.settingsUnreadable":
+    "O PerMark não consegue ler o arquivo de configurações {subject}. Nada foi alterado.",
+  "error.settingsUnreadable.notText":
+    "O PerMark não consegue ler o arquivo de configurações {subject} (não é texto simples). Nada foi alterado.",
+  "error.settingsUnreadable.tooLarge":
+    "O PerMark não consegue ler o arquivo de configurações {subject} (é grande demais). Nada foi alterado.",
+  "error.settingsUnreadable.locked":
+    "O PerMark não consegue ler o arquivo de configurações {subject} (outro programa está usando o arquivo). Nada foi alterado.",
 
   // ---- conditions
   "condition.workspace": "Abra uma pasta ou um arquivo primeiro.",

@@ -89,6 +89,14 @@ export default {
   "error.superseded": "その間に別のものが開かれました。",
   "error.internal": "PerMark の内部で問題が発生しました：{detail}",
   "error.unknown": "問題が発生しました：{message}",
+  "error.settingsUnreadable":
+    "PerMark は設定ファイル {subject} を読み取れません。何も変更されていません。",
+  "error.settingsUnreadable.notText":
+    "PerMark は設定ファイル {subject} を読み取れません（プレーンテキストではありません）。何も変更されていません。",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark は設定ファイル {subject} を読み取れません（ファイルが大きすぎます）。何も変更されていません。",
+  "error.settingsUnreadable.locked":
+    "PerMark は設定ファイル {subject} を読み取れません（別のプログラムが使用しています）。何も変更されていません。",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "先にフォルダーかファイルを開いてください。",

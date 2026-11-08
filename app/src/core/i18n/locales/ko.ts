@@ -86,6 +86,14 @@ export default {
   "error.superseded": "그사이에 다른 항목이 열렸습니다.",
   "error.internal": "PerMark 내부에서 문제가 발생했습니다: {detail}",
   "error.unknown": "문제가 발생했습니다: {message}",
+  "error.settingsUnreadable":
+    "PerMark가 설정 파일을 읽을 수 없습니다. 아무것도 변경되지 않았습니다: {subject}",
+  "error.settingsUnreadable.notText":
+    "PerMark가 설정 파일을 읽을 수 없습니다(일반 텍스트가 아닙니다). 아무것도 변경되지 않았습니다: {subject}",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark가 설정 파일을 읽을 수 없습니다(파일이 너무 큽니다). 아무것도 변경되지 않았습니다: {subject}",
+  "error.settingsUnreadable.locked":
+    "PerMark가 설정 파일을 읽을 수 없습니다(다른 프로그램이 사용 중입니다). 아무것도 변경되지 않았습니다: {subject}",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "먼저 폴더나 파일을 여세요.",

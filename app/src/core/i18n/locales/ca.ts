@@ -89,6 +89,14 @@ export default {
   "error.superseded": "Mentrestant s'ha obert una altra cosa.",
   "error.internal": "Alguna cosa ha anat malament dins del PerMark: {detail}",
   "error.unknown": "Alguna cosa ha anat malament: {message}",
+  "error.settingsUnreadable":
+    "El PerMark no pot llegir el fitxer de configuració {subject}. No s'ha canviat res.",
+  "error.settingsUnreadable.notText":
+    "El PerMark no pot llegir el fitxer de configuració {subject} (no és text pla). No s'ha canviat res.",
+  "error.settingsUnreadable.tooLarge":
+    "El PerMark no pot llegir el fitxer de configuració {subject} (és massa gran). No s'ha canviat res.",
+  "error.settingsUnreadable.locked":
+    "El PerMark no pot llegir el fitxer de configuració {subject} (un altre programa l'està fent servir). No s'ha canviat res.",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "Primer obriu una carpeta o un fitxer.",

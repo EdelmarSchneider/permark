@@ -131,9 +131,14 @@ pub const RETRY_DELAYS: [Duration; 3] = [
     Duration::from_millis(150),
 ];
 
-/// Windows sharing (32) | lock (33) violation, or access denied (antivirus | sync client holding the file).
+/// Windows sharing (32) | lock (33) violation: another program holds the file.
+pub(crate) fn is_locked(error: &io::Error) -> bool {
+    matches!(error.raw_os_error(), Some(32 | 33))
+}
+
+/// [`is_locked`], or access denied (antivirus | sync client holding the file).
 fn is_transient(error: &io::Error) -> bool {
-    matches!(error.raw_os_error(), Some(32 | 33)) || error.kind() == io::ErrorKind::PermissionDenied
+    is_locked(error) || error.kind() == io::ErrorKind::PermissionDenied
 }
 
 /// Runs `op`, retrying transient errors after each of `delays`.

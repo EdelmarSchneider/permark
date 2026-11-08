@@ -89,6 +89,14 @@ export default {
   "error.superseded": "Între timp a fost deschis altceva.",
   "error.internal": "A apărut o eroare internă în PerMark: {detail}",
   "error.unknown": "A apărut o eroare: {message}",
+  "error.settingsUnreadable":
+    "PerMark nu poate citi fișierul de setări {subject}. Nu s-a schimbat nimic.",
+  "error.settingsUnreadable.notText":
+    "PerMark nu poate citi fișierul de setări {subject} (nu este text simplu). Nu s-a schimbat nimic.",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark nu poate citi fișierul de setări {subject} (este prea mare). Nu s-a schimbat nimic.",
+  "error.settingsUnreadable.locked":
+    "PerMark nu poate citi fișierul de setări {subject} (un alt program îl folosește). Nu s-a schimbat nimic.",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "Deschide mai întâi un dosar sau un fișier.",

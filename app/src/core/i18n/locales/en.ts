@@ -85,6 +85,14 @@ const en = {
   "error.superseded": "Something else was opened in the meantime.",
   "error.internal": "Something went wrong inside PerMark: {detail}",
   "error.unknown": "Something went wrong: {message}",
+  "error.settingsUnreadable":
+    "PerMark can't read the settings file {subject}. Nothing was changed.",
+  "error.settingsUnreadable.notText":
+    "PerMark can't read the settings file {subject} (it isn't plain text). Nothing was changed.",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark can't read the settings file {subject} (it's too large). Nothing was changed.",
+  "error.settingsUnreadable.locked":
+    "PerMark can't read the settings file {subject} (another program is using it). Nothing was changed.",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "Open a folder or a file first.",
