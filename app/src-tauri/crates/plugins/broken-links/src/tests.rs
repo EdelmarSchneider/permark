@@ -36,11 +36,31 @@ struct Harness {
 
 impl Harness {
     fn new() -> Self {
+        Self::with_plugins(vec![plugin()])
+    }
+
+    /// With a plugin that turns the prompt features on, as the prompt blocks plugin does.
+    fn with_prompts() -> Self {
+        use permark_core::format::{
+            Contributions, MarkdownFeature, PromptBlocks, DEFAULT_PROMPT_TAGS,
+        };
+        use permark_core::plugins::StaticPlugin;
+        let prompts = StaticPlugin::app(
+            "prompt-blocks",
+            PluginKind::Embed,
+            Contributions::default().markdown(vec![MarkdownFeature::PromptBlocks(PromptBlocks {
+                tags: DEFAULT_PROMPT_TAGS,
+            })]),
+        );
+        Self::with_plugins(vec![plugin(), prompts])
+    }
+
+    fn with_plugins(plugins: Vec<Arc<dyn Plugin>>) -> Self {
         let sink = Arc::new(Sink::default());
         let base = tempfile::tempdir().unwrap();
         let env = CoreEnv::new(
             AppDirs::under(base.path()),
-            Arc::new(PluginRegistry::new(vec![plugin()]).unwrap()),
+            Arc::new(PluginRegistry::new(plugins).unwrap()),
             sink.clone(),
             Distribution::Direct,
             AppSettings::default(),
@@ -362,6 +382,56 @@ fn a_destination_that_is_very_long_is_shortened_not_refused() {
 }
 
 #[test]
+fn links_inside_prompt_blocks_are_checked_and_repaired_while_the_prompt_features_are_on() {
+    // no blank line after the tag: without the prompt features the block is raw HTML and holds no link
+    const NOTE: &str = "<context>\r\n- [plan](old/plan.md) `[code](old/plan.md)`\r\n</context>\r\n";
+    let mut h = Harness::with_prompts();
+    h.write("a/note.md", NOTE);
+    h.write("b/plan.md", "# plan\n");
+    h.open();
+    assert_eq!(h.broken(), ["a/note.md:2:old/plan.md"]);
+    assert_eq!(
+        h.repair("a/note.md", 2, "old/plan.md", "b/plan.md"),
+        json!({"outcome": "wrote", "href": "../b/plan.md"})
+    );
+    assert_eq!(
+        h.bytes("a/note.md"),
+        NOTE.replacen("(old/plan.md)", "(../b/plan.md)", 1)
+            .as_bytes(),
+        "the code span, the tags and CRLF stay"
+    );
+
+    let mut off = Harness::new();
+    off.write("a/note.md", NOTE);
+    off.open();
+    assert_eq!(off.broken(), Vec::<String>::new());
+}
+
+#[test]
+fn documents_are_checked_again_when_the_prompt_features_turn_off_and_on() {
+    const NOTE: &str = "<context>\n[plan](old/plan.md)\n</context>\n";
+    let mut h = Harness::with_prompts();
+    h.write("a/note.md", NOTE);
+    h.open();
+    assert_eq!(h.broken(), ["a/note.md:2:old/plan.md"]);
+    let core = h.core().clone();
+    h.env.set_settings(AppSettings {
+        plugins: BTreeMap::from([(PluginId::of("prompt-blocks"), false)]),
+        ..AppSettings::default()
+    });
+    core.apply_plugins(&h.env);
+    wait_until("checked without the prompt features", || {
+        h.broken().is_empty()
+    });
+    h.env.set_settings(AppSettings::default());
+    core.apply_plugins(&h.env);
+    wait_until("checked with them again", || {
+        h.broken() == ["a/note.md:2:old/plan.md"]
+    });
+    drop(core);
+}
+
+#[test]
 fn off_leaves_nothing_behind() {
     let mut h = Harness::new();
     h.write("a.md", "[x](gone.md)\n");
@@ -440,7 +510,7 @@ impl Roots {
         };
         std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
         std::fs::write(&abs, text).unwrap();
-        checker.read(&self.vault(), path, &abs);
+        checker.read(&self.vault(), path, &abs, &MarkdownFeatures::default());
     }
 }
 

@@ -1,6 +1,6 @@
 //! Where the `@path` references reading marks sit in the source, so a move can keep them pointing at their files.
 //!
-//! The parse reading does ([`prepared`], [`parsed`]) and the scan it marks with ([`inline::references`], outside
+//! The parse reading does ([`reading_text`], [`parsed`]) and the scan it marks with ([`inline::references`], outside
 //! [`in_link`]): text, not code, links, images or HTML. Every line keeps its place through the cuts and markers, so a text node's line and
 //! column are its place in the source. A text node whose source does not read as its literal (escapes, entities) is
 //! left out: a reference not located with certainty is never edited.
@@ -10,7 +10,7 @@ use std::ops::Range;
 use comrak::nodes::NodeValue;
 use comrak::Arena;
 
-use super::{frontmatter, in_link, inline, options, parsed, prepared, too_many_container_markers};
+use super::{in_link, inline, options, parsed, reading_text, too_many_container_markers};
 use crate::format::{DocEnv, MarkdownFeatures};
 use crate::links::Lines;
 
@@ -86,7 +86,7 @@ pub fn at_refs(
     // reading gets the text decoded, without its byte order mark
     let offset = if text.starts_with(BOM) { BOM.len() } else { 0 };
     let body = &text[offset..];
-    let prepared = prepared(body, frontmatter::find(body).as_ref(), features);
+    let prepared = reading_text(body, features);
     let arena = Arena::new();
     let Some(root) = parsed(&arena, &prepared, &options()) else {
         return Vec::new();
@@ -102,7 +102,7 @@ pub fn at_refs(
         if !literal.contains('@') {
             continue;
         }
-        let Some(range) = lines.range_of(data.sourcepos, body.len()) else {
+        let Some(range) = lines.range_of(data.sourcepos, body) else {
             continue;
         };
         if in_link(node) || body.get(range.clone()) != Some(literal.as_ref()) {
