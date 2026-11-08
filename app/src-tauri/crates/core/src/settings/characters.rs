@@ -166,7 +166,7 @@ pub(crate) fn load(profile: &Path, name: &str) -> Result<Vec<CharacterGroup>, Ch
         return Ok(defaults());
     }
     let path = profile.join(name);
-    if fsx::file_identity(&path).is_none() {
+    if std::fs::symlink_metadata(&path).is_err() {
         return Ok(defaults());
     }
     let shown = path.display().to_string();

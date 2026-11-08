@@ -1,6 +1,6 @@
 //! The copy engine of "drop into project": files and folders copied chunk by chunk under a hidden temp name,
-//! progress and cancel checked between chunks, links never followed, originals deleted only while they still are
-//! what was copied.
+//! progress and cancel checked between chunks, links never followed, copies flushed to disk before an original goes,
+//! originals deleted only while they still are what was copied.
 
 use std::fs;
 use std::io::{self, Read, Write};
@@ -9,9 +9,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
 use super::{ImportPhase, ImportProgress};
-use crate::fsx::{retry, scratch_in, RETRY_DELAYS};
+use crate::fsx::{hash, read_bytes, retry, scratch_in, sync_folder, ContentHash, RETRY_DELAYS};
 
 const CHUNK: usize = 1024 * 1024;
+/// Originals up to this size are read again before they are deleted and must hash as their copy did; larger ones are
+/// judged by length and modified time alone (reading them twice would double a slow move).
+const VERIFY_LIMIT: u64 = 16 * 1024 * 1024;
 /// Progress is reported at most this often (and at the end of each item).
 pub(crate) const TICK: Duration = Duration::from_millis(100);
 
@@ -46,6 +49,9 @@ pub(crate) struct Run<'a> {
     pub bytes_total: u64,
     /// Links and special files left out of folders (never followed, never copied).
     pub links: u32,
+    /// Each copy is flushed to disk before it counts: the originals are deleted after (a move across volumes). A plain
+    /// copy skips the flush, which costs milliseconds per file.
+    pub durable: bool,
     tick: Duration,
     last: Option<Instant>,
     buf: Vec<u8>,
@@ -72,6 +78,7 @@ impl<'a> Run<'a> {
             bytes_done: 0,
             bytes_total: 0,
             links: 0,
+            durable: false,
             tick,
             last: None,
             buf: Vec::new(),
@@ -144,6 +151,8 @@ pub(crate) struct CopiedFile {
     pub rel: PathBuf,
     pub len: u64,
     pub modified: Option<SystemTime>,
+    /// Hash of the bytes copied.
+    pub hash: ContentHash,
 }
 
 /// What a copy put in place: the files (with what they were) and the folders made, relative to the item.
@@ -153,8 +162,12 @@ pub(crate) struct Copied {
     pub dirs: Vec<PathBuf>,
 }
 
-/// Copies one regular file to `dst`, which must not exist. Modified time and the read-only flag are kept.
-fn copy_file(run: &mut Run<'_>, src: &Path, dst: &Path) -> Result<(u64, Option<SystemTime>), Stop> {
+/// What [`copy_file`] copied: length, modified time, hash of the bytes.
+type FileFacts = (u64, Option<SystemTime>, ContentHash);
+
+/// Copies one regular file to `dst`, which must not exist (flushed to disk when the run is `durable`). Modified time and
+/// the read-only flag are kept.
+fn copy_file(run: &mut Run<'_>, src: &Path, dst: &Path) -> Result<FileFacts, Stop> {
     run.check()?;
     let mut input =
         retry(&RETRY_DELAYS, || fs::File::open(src)).map_err(|e| Stop::failed(src, e))?;
@@ -174,6 +187,7 @@ fn copy_file(run: &mut Run<'_>, src: &Path, dst: &Path) -> Result<(u64, Option<S
     if buf.len() != CHUNK {
         buf = vec![0; CHUNK];
     }
+    let mut hasher = xxhash_rust::xxh3::Xxh3::new();
     let result = loop {
         if run.cancelled() {
             break Err(Stop::Cancelled);
@@ -187,6 +201,7 @@ fn copy_file(run: &mut Run<'_>, src: &Path, dst: &Path) -> Result<(u64, Option<S
         if let Err(e) = output.write_all(&buf[..read]) {
             break Err(Stop::failed(dst, e));
         }
+        hasher.update(&buf[..read]);
         run.bytes_done += read as u64;
         run.emit(false);
     };
@@ -197,10 +212,15 @@ fn copy_file(run: &mut Run<'_>, src: &Path, dst: &Path) -> Result<(u64, Option<S
         // best effort: a file system that cannot keep times still has the bytes
         let _ = output.set_modified(time);
     }
+    if run.durable {
+        // the original is deleted next: the copy must be on disk first, not in a cache a power cut empties
+        output.sync_all().map_err(|e| Stop::failed(dst, e))?;
+    }
     drop(output);
     let _ = fs::set_permissions(dst, meta.permissions());
     run.files_done += 1;
-    Ok((meta.len(), modified))
+    // same function as `fsx::hash`, fed chunk by chunk
+    Ok((meta.len(), modified, ContentHash(hasher.digest())))
 }
 
 /// Copies the folder `src` into the new folder `dst` (made here). Explicit stack: no depth limit.
@@ -229,11 +249,12 @@ fn copy_tree(run: &mut Run<'_>, src: &Path, dst: &Path, copied: &mut Copied) -> 
                 copied.dirs.push(below.clone());
                 stack.push((path, target, below));
             } else {
-                let (len, modified) = copy_file(run, &path, &target)?;
+                let (len, modified, hash) = copy_file(run, &path, &target)?;
                 copied.files.push(CopiedFile {
                     rel: below,
                     len,
                     modified,
+                    hash,
                 });
             }
         }
@@ -285,11 +306,12 @@ pub(crate) fn place_copy(
     let built = if is_dir {
         copy_tree(run, src, &stage, &mut copied)
     } else {
-        copy_file(run, src, &stage).map(|(len, modified)| {
+        copy_file(run, src, &stage).map(|(len, modified, hash)| {
             copied.files.push(CopiedFile {
                 rel: PathBuf::new(),
                 len,
                 modified,
+                hash,
             });
         })
     };
@@ -308,10 +330,19 @@ pub(crate) fn place_copy(
             io::Error::from(io::ErrorKind::AlreadyExists),
         ));
     }
+    if run.durable && is_dir {
+        for dir in &copied.dirs {
+            sync_folder(&stage.join(dir));
+        }
+        sync_folder(&stage);
+    }
     announce(&copied);
     if let Err(error) = retry(&RETRY_DELAYS, || rename(&stage, dest)) {
         remove_tree_forced(&stage);
         return Err(Stop::failed(dest, error));
+    }
+    if let Some(parent) = dest.parent().filter(|_| run.durable) {
+        sync_folder(parent);
     }
     Ok(copied)
 }
@@ -386,8 +417,10 @@ pub(crate) struct Deleted {
     pub left: u32,
 }
 
-/// After a copy across volumes: deletes the originals that still are what was copied (same length and modified time),
-/// then the emptied folders, deepest first. A file changed since is kept.
+/// After a copy across volumes: deletes the originals that still are what was copied (same length and modified time,
+/// and up to [`VERIFY_LIMIT`] the same bytes), then the emptied folders, deepest first. A file changed since is kept.
+/// Deleted for good, not sent to the recycle bin: a move leaves no second copy behind (as a file manager's move between
+/// volumes does), and a removable drive often has no bin.
 pub(crate) fn delete_originals(
     run: &Run<'_>,
     src: &Path,
@@ -403,7 +436,8 @@ pub(crate) fn delete_originals(
         };
         let unchanged = fs::symlink_metadata(&path).is_ok_and(|m| {
             m.is_file() && m.len() == file.len && m.modified().ok() == file.modified
-        });
+        }) && (file.len > VERIFY_LIMIT
+            || read_bytes(&path, VERIFY_LIMIT).is_ok_and(|bytes| hash(&bytes) == file.hash));
         if !unchanged || run.cancelled() || remove_file_forced(&path).is_err() {
             out.left += 1;
         } else {
@@ -436,6 +470,7 @@ pub(crate) fn relocate(
             let cancel = AtomicBool::new(false);
             let silent = |_: &ImportProgress| {};
             let mut run = Run::new(0, 1, &cancel, &silent, TICK);
+            run.durable = true;
             let copied = place_copy(&mut run, src, is_dir, dest, rename, &mut |_| {})?;
             let deleted = delete_originals(&run, src, is_dir, &copied);
             Ok(deleted.left == 0 && run.links == 0)

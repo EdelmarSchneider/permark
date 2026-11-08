@@ -1205,7 +1205,7 @@ export default {
   "notes.move.title": "Mover para um projeto",
   "notes.moveDown": "Mover para baixo",
   "notes.moveKept":
-    "“{name}” mudou enquanto estava a ser copiada, por isso continua nas suas notas e a cópia está no projeto.",
+    "“{name}” mudou enquanto estava a ser copiada ou tem texto ainda não guardado, por isso continua nas suas notas e a cópia está no projeto.",
   "notes.moveToProject": "Mover para um projeto...",
   "notes.moveUndone": "“{name}” voltou às suas notas.",
   "notes.moveUndoneKept":

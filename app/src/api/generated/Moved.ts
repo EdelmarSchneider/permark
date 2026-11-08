@@ -9,6 +9,7 @@ export type Moved = {
  */
 destination: string, undoId: number | null, 
 /**
- * The note changed while it was copied: both are kept, nothing was removed.
+ * The note changed while it was copied, or holds text typed and not saved yet: both are kept, nothing was
+ * removed.
  */
 kept: boolean, };

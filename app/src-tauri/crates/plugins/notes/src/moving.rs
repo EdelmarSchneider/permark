@@ -58,7 +58,8 @@ impl NotesService {
     }
 
     /// Moves a note into a project folder: its exact bytes are written to `folder/name` (a file that must not be there
-    /// already), then the note goes to the recycle bin. A note that changed while it was copied stays too (`kept`).
+    /// already), then the note goes to the recycle bin. A note that changed while it was copied, or holds text typed and
+    /// not saved yet, stays too (`kept`).
     ///
     /// # Errors
     /// Not a note there | the destination is not acceptable | a file is there already | the system refused.
@@ -94,7 +95,9 @@ impl NotesService {
                 .subject(note)
                 .detail("the copy is not what the note holds"));
         }
-        if now.as_deref() != Some(hash.as_str()) {
+        // text typed and not saved yet is not in the copy: the note stays with it
+        if now.as_deref() != Some(hash.as_str()) || Self::unsaved_entry(&ctx, &note, &abs).is_some()
+        {
             return Ok(Moved {
                 destination,
                 undo_id: None,

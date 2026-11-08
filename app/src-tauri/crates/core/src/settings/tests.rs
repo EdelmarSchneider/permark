@@ -227,6 +227,31 @@ fn settings_file_apply_reads_fresh_and_keeps_hand_edits() {
 }
 
 #[test]
+fn a_settings_file_that_is_not_utf8_or_too_large_is_refused_never_set_aside() {
+    let base = tempfile::tempdir().unwrap();
+    let file = SettingsFile::app(&AppDirs::under(base.path()));
+    let dir = file.path().parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(&dir).unwrap();
+    let names = || -> Vec<String> {
+        std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect()
+    };
+    let latin1 = b"theme = \"dark\"\n# caf\xe9\n".to_vec();
+    std::fs::write(file.path(), &latin1).unwrap();
+    assert!(file.apply(&SettingChange::Theme(ThemePref::Light)).is_err());
+    assert_eq!(std::fs::read(file.path()).unwrap(), latin1);
+    assert_eq!(names(), ["settings.toml"]);
+    let mut big = b"theme = \"dark\"\n".to_vec();
+    big.resize(usize::try_from(MAX_SETTINGS_BYTES).unwrap() + 1, b'\n');
+    std::fs::write(file.path(), &big).unwrap();
+    assert!(file.apply(&SettingChange::Theme(ThemePref::Light)).is_err());
+    assert_eq!(std::fs::read(file.path()).unwrap(), big);
+    assert_eq!(names(), ["settings.toml"]);
+}
+
+#[test]
 fn a_corrupt_settings_file_is_kept_aside_not_overwritten() {
     let base = tempfile::tempdir().unwrap();
     let file = SettingsFile::app(&AppDirs::under(base.path()));

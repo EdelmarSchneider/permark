@@ -11,7 +11,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use super::{check_name, FileOpError};
-use crate::fsx::{retry, RETRY_DELAYS};
+use crate::fsx::{retry, same_file, SameFile, RETRY_DELAYS};
 use crate::paths::{fold, strip_root, Vault, VaultPath, WORKTREE_PREFIX};
 use crate::tree::below_root;
 
@@ -26,7 +26,7 @@ pub(crate) struct ValidMove {
     pub abs_from: PathBuf,
     pub abs_to: PathBuf,
     pub is_dir: bool,
-    /// Only the case of the name changes: the destination "exists" because it is the source itself.
+    /// Only the case | normalization of the name changes: an existing destination may be the source itself.
     pub case_only: bool,
 }
 
@@ -133,7 +133,7 @@ pub(crate) fn check_moves(
         confine(vault, to_root, &abs_to)?;
         let meta = fs::symlink_metadata(&abs_from).map_err(|e| io_error(from, e))?;
         let is_dir = meta.is_dir();
-        // the same entry under another case is a rename; the same name is nothing to do
+        // the same entry under another case | normalization is a rename; the same name is nothing to do
         let same_parent = from.parent().map(|p| p.key()) == to.parent().map(|p| p.key());
         let case_only = same_parent && from.key() == to.key() && from.name() != to.name();
         if from.key() == to.key() && !case_only {
@@ -159,10 +159,7 @@ pub(crate) fn check_moves(
                 to.parent().map_or_else(String::new, |p| p.to_string()),
             )));
         }
-        // any other existing destination is refused
-        if !case_only && fs::symlink_metadata(&abs_to).is_ok() {
-            return Err(FileOpError::Exists(to.to_string()));
-        }
+        free(case_only, &abs_from, &abs_to, to)?;
         valid.push(ValidMove {
             from: from.clone(),
             to: to.clone(),
@@ -192,6 +189,26 @@ fn check_together(moves: &[ValidMove]) -> Result<(), FileOpError> {
         }
     }
     Ok(())
+}
+
+/// Refuses `to` when something other than the source may be at `abs_to`. A name that only compares equal (case,
+/// Unicode normalization) may still be another file: a case-sensitive folder, or a volume that keeps NFC and NFD
+/// apart. Only the volume's own file identity proves it is the source; a volume that cannot prove it gets its own
+/// refusal, so the person learns why a plain case change was refused.
+fn free(
+    case_only: bool,
+    abs_from: &Path,
+    abs_to: &Path,
+    to: &VaultPath,
+) -> Result<(), FileOpError> {
+    if fs::symlink_metadata(abs_to).is_err() {
+        return Ok(());
+    }
+    match case_only.then(|| same_file(abs_from, abs_to)) {
+        Some(SameFile::Yes) => Ok(()),
+        Some(SameFile::Unknown) => Err(FileOpError::MaybeSame(to.to_string())),
+        Some(SameFile::Other) | None => Err(FileOpError::Exists(to.to_string())),
+    }
 }
 
 /// Renames a file or folder, retrying the transient errors Windows gives while something else has it open.
@@ -233,9 +250,7 @@ fn move_one(
     m: &ValidMove,
     rename: &impl Fn(&Path, &Path) -> io::Result<()>,
 ) -> Result<(), FileOpError> {
-    if !m.case_only && fs::symlink_metadata(&m.abs_to).is_ok() {
-        return Err(FileOpError::Exists(m.to.to_string()));
-    }
+    free(m.case_only, &m.abs_from, &m.abs_to, &m.to)?;
     rename(&m.abs_from, &m.abs_to).map_err(|e| io_error(&m.from, e))
 }
 
@@ -246,8 +261,8 @@ fn put_back(
 ) -> Vec<(String, String)> {
     let mut left = Vec::new();
     for m in done.iter().rev() {
-        let free = m.case_only || fs::symlink_metadata(&m.abs_from).is_err();
-        if !free || rename(&m.abs_to, &m.abs_from).is_err() {
+        let clear = free(m.case_only, &m.abs_to, &m.abs_from, &m.from).is_ok();
+        if !clear || rename(&m.abs_to, &m.abs_from).is_err() {
             left.push((m.from.to_string(), m.to.to_string()));
         }
     }

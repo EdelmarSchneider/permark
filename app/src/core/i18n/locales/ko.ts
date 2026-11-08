@@ -1177,7 +1177,7 @@ export default {
   "notes.move.title": "프로젝트로 이동",
   "notes.moveDown": "아래로 이동",
   "notes.moveKept":
-    "복사하는 동안 “{name}” 메모가 변경되어 메모에 그대로 두었으며, 복사본은 프로젝트에 있습니다.",
+    "“{name}” 메모가 복사 중에 변경되었거나 저장되지 않은 텍스트가 있어 메모에 그대로 두었으며, 복사본은 프로젝트에 있습니다.",
   "notes.moveToProject": "프로젝트로 이동...",
   "notes.moveUndone": "“{name}” 메모가 메모 목록으로 돌아왔습니다.",
   "notes.moveUndoneKept":

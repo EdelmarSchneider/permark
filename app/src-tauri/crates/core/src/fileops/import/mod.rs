@@ -602,6 +602,7 @@ impl FileOps {
                 }
             }
             // another volume: counted now, copied, and the originals deleted after
+            run.durable = true;
             if item.is_dir {
                 count_tree(run, &item.source)?;
             } else {

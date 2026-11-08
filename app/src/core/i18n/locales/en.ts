@@ -1174,7 +1174,7 @@ const en = {
   "notes.move.title": "Move to a project",
   "notes.moveDown": "Move down",
   "notes.moveKept":
-    "“{name}” changed while it was being copied, so it stays in your notes and the copy is in the project.",
+    "“{name}” changed while it was being copied or has text that isn't saved yet, so it stays in your notes and the copy is in the project.",
   "notes.moveToProject": "Move to project...",
   "notes.moveUndone": "“{name}” is back in your notes.",
   "notes.moveUndoneKept":

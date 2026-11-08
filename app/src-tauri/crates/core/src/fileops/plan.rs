@@ -12,6 +12,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
+use unicode_normalization::UnicodeNormalization;
+
 use crate::links::{join_relative, parse, percent_decode, scheme_of, Dest, Form};
 use crate::paths::{Vault, VaultPath, WORKTREE_PREFIX};
 use crate::tree::key_of;
@@ -287,39 +289,39 @@ fn unescape(raw: &str) -> String {
     out
 }
 
-/// A name as a link writes it with percent-encoding.
-fn encode_name(name: &str) -> String {
-    let style = Style {
-        form: Form::Bare,
-        percent: true,
-        percent_non_ascii: true,
-        backslash: false,
-        dot_slash: false,
-        trailing_slash: false,
-    };
-    encode_segment(name, style)
+/// One spelling for the candidate filter: NFC, lowercase. The name of a file and the text of a link may each be NFC or
+/// NFD (a Mac writes NFD names), in any case.
+fn comparable(text: &str) -> String {
+    text.nfc().collect::<String>().to_lowercase()
 }
 
-/// The names (lowercase) a link to a moved path has to contain, in the forms a link can spell them.
+/// The names a link to a moved path has to contain, in the one spelling of [`comparable`].
 fn needles(moves: &[(String, String)]) -> Vec<String> {
     let mut out = Vec::new();
     for (from, _) in moves {
         let name = from.rsplit('/').next().unwrap_or(from);
-        let stem = strip_md(name);
-        for spelled in [stem.to_owned(), encode_name(stem)] {
-            let spelled = spelled.to_lowercase();
-            if !spelled.is_empty() && !out.contains(&spelled) {
-                out.push(spelled);
-            }
+        let stem = comparable(strip_md(name));
+        if !stem.is_empty() && !out.contains(&stem) {
+            out.push(stem);
         }
     }
     out
 }
 
-/// Whether `text` contains any of the lowercase `needles`, ignoring case.
+/// Whether `text` may hold a link to one of the `needles`: the text is compared with its Markdown escapes and
+/// percent-escapes undone, so `My%20Notes%20(1)`, `My Notes \(1\)` and `Relat%C3%B3rio` all match their names.
+/// A cheap filter: a false match only costs a parse.
 pub(crate) fn mentions(text: &str, needles: &[String]) -> bool {
-    let lower = text.to_lowercase();
-    needles.iter().any(|n| lower.contains(n.as_str()))
+    let lower = text.to_ascii_lowercase();
+    if needles.iter().any(|n| lower.contains(n.as_str())) {
+        return true;
+    }
+    // ASCII text without `%` | `\` reads the same after unescaping, decoding and NFC: the quick miss is the answer
+    if !text.bytes().any(|b| !b.is_ascii() || b == b'%' || b == b'\\') {
+        return false;
+    }
+    let plain = comparable(&percent_decode(&unescape(text)));
+    needles.iter().any(|n| plain.contains(n.as_str()))
 }
 
 // ---- the planner -------------------------------------------------------------------------------------------------

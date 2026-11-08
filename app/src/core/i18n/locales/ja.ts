@@ -1207,7 +1207,7 @@ export default {
   "notes.move.title": "プロジェクトへ移動",
   "notes.moveDown": "下へ移動",
   "notes.moveKept":
-    "「{name}」はコピー中に変更されたため、メモに残っています。コピーはプロジェクトにあります。",
+    "「{name}」はコピー中に変更されたか、保存されていないテキストがあるため、メモに残っています。コピーはプロジェクトにあります。",
   "notes.moveToProject": "プロジェクトへ移動...",
   "notes.moveUndone": "「{name}」はメモに戻りました。",
   "notes.moveUndoneKept":

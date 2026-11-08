@@ -16,7 +16,7 @@ use permark_core::paths::{fold, FileScope};
 use crate::journal::Entry as JournalEntry;
 use crate::names::{edits_stem, first_free, EXTENSION};
 use crate::service::{
-    checked_name, differs_from_file, write_like, write_new, Ctx, NotesService, Target,
+    checked_name, differs_from_file, rename_free, write_like, write_new, Ctx, NotesService, Target,
 };
 use crate::state::{LooseEntry, Stamp};
 use crate::text::{is_blank, stem_from_title, title_of};
@@ -410,9 +410,7 @@ impl NotesService {
             .file_name()
             .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
         if name != current {
-            if target.exists() && fold(&name) != fold(&current) {
-                return Err(IpcError::new(ErrorKind::Exists).subject(name));
-            }
+            rename_free(old, &current, &target, &name)?;
             std::fs::rename(old, &target).map_err(|e| IpcError::io(&name, &e))?;
         }
         self.scope.set_loose(id, &target).map_err(IpcError::from)?;

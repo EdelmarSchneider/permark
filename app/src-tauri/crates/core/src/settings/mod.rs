@@ -22,7 +22,7 @@ pub use project::{
 
 use crate::error::IpcError;
 use crate::fileops::{check_name, NameProblem};
-use crate::fsx::write_atomic;
+use crate::fsx::{read_bytes, write_atomic, FsxError};
 use crate::plugins::PluginId;
 use crate::state::AppDirs;
 use crate::tree::extension_of;
@@ -539,14 +539,30 @@ fn valid_notes_folder(text: &str) -> bool {
 
 /// Reads a settings file as a document; missing | too large | unreadable | not TOML -> `None`.
 pub(crate) fn read_doc(path: &Path) -> Option<DocumentMut> {
-    let meta = std::fs::metadata(path).ok()?;
-    if meta.len() > MAX_SETTINGS_BYTES {
-        return None;
-    }
-    std::fs::read_to_string(path)
-        .ok()?
-        .parse::<DocumentMut>()
-        .ok()
+    read_settings_text(path).ok()??.parse::<DocumentMut>().ok()
+}
+
+/// The text of a settings file; `None`: there is none.
+///
+/// # Errors
+/// Larger than [`MAX_SETTINGS_BYTES`] | not UTF-8 (both `InvalidData`) | unreadable (locked past the retries, denied).
+fn read_settings_text(path: &Path) -> io::Result<Option<String>> {
+    let bytes = match read_bytes(path, MAX_SETTINGS_BYTES) {
+        Ok(bytes) => bytes,
+        Err(FsxError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
+            return Ok(None);
+        }
+        Err(FsxError::Io { source, .. }) => return Err(source),
+        Err(error) => {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                error.to_string(),
+            ))
+        }
+    };
+    String::from_utf8(bytes)
+        .map(Some)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "not UTF-8 text"))
 }
 
 fn str_of<'a>(doc: &'a DocumentMut, key: &str) -> Option<&'a str> {
@@ -1020,7 +1036,9 @@ impl SettingsFile {
 }
 
 /// Reads a settings file fresh (hand edits kept; a file that is not TOML is moved to `<name>.broken-<ms>` first),
-/// lets `change` edit the document, writes it back atomically (line endings of an all-CRLF file kept).
+/// lets `change` edit the document, writes it back atomically (line endings of an all-CRLF file kept). A file that
+/// cannot be read as text (too large, not UTF-8, locked) is an error and stays as it is: it may be fine and only
+/// unreadable now, so it is never set aside or reset.
 pub(crate) fn edit_file(
     path: &Path,
     change: impl FnOnce(&mut DocumentMut),
@@ -1029,12 +1047,11 @@ pub(crate) fn edit_file(
         path: path.display().to_string(),
         source,
     };
-    let original = std::fs::read_to_string(path).unwrap_or_default();
-    let exists = std::fs::symlink_metadata(path).is_ok();
-    let mut doc = if let Some(doc) = read_doc(path) {
-        doc
-    } else {
-        if exists {
+    let original = read_settings_text(path).map_err(io)?;
+    let mut doc = match original.as_deref().map(str::parse::<DocumentMut>) {
+        None => DocumentMut::new(),
+        Some(Ok(doc)) => doc,
+        Some(Err(_)) => {
             let ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_millis());
@@ -1043,10 +1060,11 @@ pub(crate) fn edit_file(
                 .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
             std::fs::rename(path, path.with_file_name(format!("{name}.broken-{ms}")))
                 .map_err(io)?;
+            DocumentMut::new()
         }
-        DocumentMut::new()
     };
     change(&mut doc);
+    let original = original.unwrap_or_default();
     write_atomic(path, render(&doc, &original).as_bytes()).map_err(io)?;
     Ok(doc)
 }

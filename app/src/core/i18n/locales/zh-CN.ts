@@ -1149,7 +1149,8 @@ export default {
   "notes.move.noRecents": "没有最近的项目。请浏览选择一个文件夹。",
   "notes.move.title": "移动到项目",
   "notes.moveDown": "下移",
-  "notes.moveKept": "“{name}”在复制过程中发生了变化，因此它仍保留在你的笔记中，副本已放入项目。",
+  "notes.moveKept":
+    "“{name}”在复制过程中发生了变化或有尚未保存的文字，因此它仍保留在你的笔记中，副本已放入项目。",
   "notes.moveToProject": "移到项目...",
   "notes.moveUndone": "“{name}”已回到你的笔记中。",
   "notes.moveUndoneKept": "“{name}”已回到你的笔记中。副本已被更改，因此仍保留在项目中。",

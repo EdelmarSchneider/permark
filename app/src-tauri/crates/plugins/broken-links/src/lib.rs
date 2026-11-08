@@ -527,11 +527,18 @@ fn repair(
     let new_bytes = new_text.into_bytes();
     let new_hash = fsx::hash(&new_bytes);
     own.expect_write(&args.path, new_hash);
-    if fsx::write_atomic(&abs, &new_bytes).is_err() {
-        own.retract_write(&args.path, new_hash);
-        return refused(RepairRefusal::WriteFailed);
+    // a save that lands after the read above is never replaced: the rename waits for the bytes the edit is for
+    match fsx::write_atomic_if_unchanged(&abs, &new_bytes, seen) {
+        Ok(true) => RepairResult::Wrote { href: token },
+        written => {
+            own.retract_write(&args.path, new_hash);
+            refused(if written.is_ok() {
+                RepairRefusal::Changed
+            } else {
+                RepairRefusal::WriteFailed
+            })
+        }
     }
-    RepairResult::Wrote { href: token }
 }
 
 impl Plugin for BrokenLinksPlugin {

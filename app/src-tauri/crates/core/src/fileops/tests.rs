@@ -1176,3 +1176,173 @@ fn the_plan_names_the_ignored_folders_it_did_not_look_into() {
         "no links planned, nothing to say"
     );
 }
+
+// ---- integrity: names that compare equal, mixed link spellings, saves that slip in ----------------------------------
+
+#[test]
+fn a_rename_that_only_changes_normalization_never_replaces_another_file() {
+    let nfc = "caf\u{e9}.md";
+    let nfd = "cafe\u{301}.md";
+    let f = fx(&[(nfc, "mine")]);
+    fs::write(f.dir.path().join(nfd), "theirs").unwrap();
+    if fs::read_dir(f.dir.path()).unwrap().count() < 2 {
+        // this file system folds normalization: both names are one file
+        return;
+    }
+    assert_eq!(
+        kind_of(f.ops.plan_move(&[spec(nfc, nfd)], true).unwrap_err()),
+        ErrorKind::Exists
+    );
+    assert_eq!(read(&f, nfc), "mine");
+    assert_eq!(read(&f, nfd), "theirs");
+    // the other spelling appears between the preview and the apply
+    fs::remove_file(f.dir.path().join(nfd)).unwrap();
+    let plan = f.ops.plan_move(&[spec(nfc, nfd)], true).unwrap();
+    fs::write(f.dir.path().join(nfd), "theirs again").unwrap();
+    assert_eq!(
+        kind_of(f.ops.apply_move(plan.plan_id, true).unwrap_err()),
+        ErrorKind::Exists
+    );
+    assert_eq!(read(&f, nfc), "mine");
+    assert_eq!(read(&f, nfd), "theirs again");
+}
+
+#[test]
+fn links_spelled_with_mixed_escapes_are_found_and_rewritten() {
+    let f = fx(&[
+        (
+            "a.md",
+            "[p](My%20Notes%20(1).md) [e](My%20Notes%20\\(1\\).md)\n",
+        ),
+        ("b.md", "[r](Relat\u{f3}rio%20final.md)\n"),
+        ("My Notes (1).md", ""),
+        ("Relat\u{f3}rio final.md", ""),
+    ]);
+    let outcome = mv(
+        &f,
+        &[
+            ("My Notes (1).md", "Done (2).md"),
+            ("Relat\u{f3}rio final.md", "Relat\u{f3}rio 2.md"),
+        ],
+    );
+    assert_eq!(outcome.links, 3);
+    assert_eq!(
+        read(&f, "a.md"),
+        "[p](Done%20%282%29.md) [e](Done%20%282%29.md)\n"
+    );
+    assert_eq!(read(&f, "b.md"), "[r](Relat\u{f3}rio%202.md)\n");
+}
+
+#[test]
+fn the_candidate_filter_matches_any_normalization_and_escape_of_a_moved_name() {
+    let f = fx(&[("Relato\u{301}rio.md", "")]);
+    let vault = Vault::new(Root::open(f.dir.path()).unwrap());
+    let moves = [("Relato\u{301}rio.md".to_owned(), "x.md".to_owned())];
+    let planner = Planner::new(&vault, &moves);
+    for text in [
+        "[r](Relat\u{f3}rio.md)",
+        "[r](RELAT%C3%93RIO.md)",
+        "[r](relato%CC%81rio.md)",
+        "[r](<Relato\u{301}rio.md>)",
+    ] {
+        assert!(mentions(text, planner.needles()), "{text}");
+    }
+    assert!(!mentions("[r](other.md)", planner.needles()));
+}
+
+#[test]
+fn a_case_change_the_drive_cannot_prove_is_one_item_is_refused_with_its_reason() {
+    let error = IpcError::from(FileOpError::MaybeSame("Plan.md".to_owned()));
+    assert_eq!(error.kind, ErrorKind::Exists);
+    assert_eq!(error.subject.as_deref(), Some("Plan.md"));
+    assert_eq!(error.detail.as_deref(), Some(IDENTITY_UNKNOWN));
+}
+
+#[test]
+fn the_candidate_filter_matches_plain_ascii_links_in_any_case() {
+    let f = fx(&[("docs/Plan.md", "")]);
+    let vault = Vault::new(Root::open(f.dir.path()).unwrap());
+    let moves = [("docs/Plan.md".to_owned(), "docs/x.md".to_owned())];
+    let planner = Planner::new(&vault, &moves);
+    for text in ["[p](docs/Plan.md)", "[p](PLAN.md)", "see [[plan]]"] {
+        assert!(mentions(text, planner.needles()), "{text}");
+    }
+    assert!(!mentions("[p](docs/other.md)", planner.needles()));
+}
+
+/// Another program holds `path` without delete sharing (a rename over it waits), writes `text` through its handle as
+/// soon as the temp of an atomic write of `path` shows up, and lets go a moment later.
+#[cfg(windows)]
+fn slip_in_save(path: &Path, text: &'static str) -> std::thread::JoinHandle<()> {
+    use std::io::Write as _;
+    use std::os::windows::fs::OpenOptionsExt;
+    const SHARE_READ_WRITE: u32 = 0x1 | 0x2;
+    let mut held = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(SHARE_READ_WRITE)
+        .open(path)
+        .unwrap();
+    let dir = path.parent().unwrap().to_path_buf();
+    let prefix = format!(".{}.", path.file_name().unwrap().to_string_lossy());
+    std::thread::spawn(move || {
+        let start = std::time::Instant::now();
+        while start.elapsed() < std::time::Duration::from_secs(10) {
+            let temp = fs::read_dir(&dir).unwrap().flatten().any(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                name.starts_with(&prefix) && crate::fsx::is_scratch_name(&name)
+            });
+            if temp {
+                break;
+            }
+            std::thread::yield_now();
+        }
+        held.set_len(0).unwrap();
+        held.write_all(text.as_bytes()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        drop(held);
+    })
+}
+
+#[cfg(windows)]
+#[test]
+fn a_link_rewrite_never_replaces_a_save_that_slips_in_before_its_write() {
+    let f = fx(&[
+        ("a.md", "[b](b.md)\n"),
+        ("c.md", "[b](b.md)\n"),
+        ("b.md", ""),
+    ]);
+    let plan = f.ops.plan_move(&[spec("b.md", "moved.md")], true).unwrap();
+    let writer = slip_in_save(&f.dir.path().join("a.md"), "their save\n");
+    let outcome = f.ops.apply_move(plan.plan_id, true).unwrap();
+    writer.join().unwrap();
+    assert_eq!(read(&f, "a.md"), "their save\n");
+    assert_eq!(
+        outcome.skipped,
+        [Skip {
+            path: "a.md".to_owned(),
+            reason: SkipReason::Changed
+        }]
+    );
+    assert_eq!(read(&f, "c.md"), "[b](moved.md)\n");
+}
+
+#[cfg(windows)]
+#[test]
+fn an_undo_never_replaces_a_save_that_slips_in_before_its_write() {
+    let f = fx(&[("a.md", "[b](b.md)\n"), ("b.md", "")]);
+    mv(&f, &[("b.md", "c.md")]);
+    let writer = slip_in_save(&f.dir.path().join("a.md"), "their save\n");
+    let outcome = f.ops.undo().unwrap().unwrap();
+    writer.join().unwrap();
+    assert_eq!(read(&f, "a.md"), "their save\n");
+    assert!(
+        outcome
+            .skipped
+            .iter()
+            .any(|s| s.path == "a.md" && s.reason == SkipReason::Changed),
+        "{:?}",
+        outcome.skipped
+    );
+    assert!(exists(&f, "b.md"), "the file still went back");
+}

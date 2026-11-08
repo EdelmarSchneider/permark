@@ -1224,7 +1224,7 @@ export default {
   "notes.move.title": "Déplacer vers un projet",
   "notes.moveDown": "Descendre",
   "notes.moveKept":
-    "« {name} » a changé pendant sa copie : elle reste donc dans vos notes, et la copie se trouve dans le projet.",
+    "« {name} » a changé pendant sa copie ou contient du texte non enregistré : elle reste donc dans vos notes, et la copie se trouve dans le projet.",
   "notes.moveToProject": "Déplacer vers un projet...",
   "notes.moveUndone": "« {name} » est de retour dans vos notes.",
   "notes.moveUndoneKept":
