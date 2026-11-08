@@ -35,6 +35,9 @@ beforeEach(async () => {
   document.body.replaceChildren();
   target = document.createElement("div");
   document.body.append(target);
+  // a project with no broken link to start from: the showcase README's deliberate one is repaired
+  const readme = mock.probe.project.files.get("README.md") ?? "";
+  mock.probe.project.files.set("README.md", readme.replace("(docs/nope.md)", "(docs/guide.md)"));
   await mock.openPath(MOCK_FOLDER, "thisTab");
   if (!started) {
     await windowStore.start();

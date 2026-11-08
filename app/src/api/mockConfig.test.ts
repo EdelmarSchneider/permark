@@ -4,7 +4,7 @@ import { createMockEditing } from "./mockEdit";
 import { mockView } from "./mockDocs";
 
 const config = createMockConfig();
-const editing = createMockEditing(() => []).api;
+const editing = createMockEditing().api;
 
 async function sheet(path: string, text: string) {
   const result = await config.configSheet(path, text);
