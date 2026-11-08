@@ -145,7 +145,8 @@ export class EditingSession {
   #savedListeners = new Set<(path: string) => void>();
   #waiting: ((ok: boolean) => void)[] = [];
   #unguard: (() => void) | null = null;
-  #loadedSegments: Segment[] | null = null;
+  /** The block map the backend gave with the text it was made from: only that exact text may reuse it. */
+  #loadedSegments: { text: string; segments: Segment[] } | null = null;
   /** Marks shown now: the editor made next (Edit <-> Source) shows them too. */
   #marks: Marks | null = null;
 
@@ -277,7 +278,8 @@ export class EditingSession {
   }
 
   #mount(source: EditSource, line: number): void {
-    this.#loadedSegments = source.segments;
+    this.#loadedSegments =
+      source.segments === null ? null : { text: source.text, segments: source.segments };
     this.text = source.text;
     this.content = {
       path: source.path,
@@ -295,16 +297,23 @@ export class EditingSession {
       await this.confirmLeave({ kind: "view" });
       return;
     }
-    if (this.#path === null || this.content === null) return;
+    const path = this.#path;
+    if (path === null || this.content === null) return;
+    // a reload is on its way: an editor made now would hold the text from before it, and the reload would be dropped
+    if (this.state.s === "loading") return;
     if (mode === "edit" && this.kind === "text") return;
     const editor = this.#editor;
     const text = editor?.text() ?? this.content.text;
     const line = at ?? editor?.topLine() ?? this.content.line;
     let segments: Segment[] | null = null;
     if (mode === "edit" && this.kind === "markdown") {
-      if (text === this.base?.text && this.#loadedSegments) segments = this.#loadedSegments;
+      const loaded = this.#loadedSegments;
+      if (loaded?.text === text) segments = loaded.segments;
       else {
+        const seq = this.#seq;
         const result = await this.#api.editSegments(text);
+        // the window moved on meanwhile (another document, a reload, another switch): this text is not its own now
+        if (seq !== this.#seq || path !== this.#path) return;
         if (!result.ok) {
           this.#hooks?.fail(result.error);
           return;
@@ -313,7 +322,7 @@ export class EditingSession {
       }
     }
     this.#editor = null;
-    this.content = { path: this.#path, text, segments, line, seq: ++this.#seq };
+    this.content = { path, text, segments, line, seq: ++this.#seq };
     this.mode = mode;
     this.lastEdit = mode;
     this.chosenMode = mode;

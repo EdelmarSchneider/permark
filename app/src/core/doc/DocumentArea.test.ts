@@ -24,6 +24,7 @@ const { WindowStore } = await import("../window.svelte");
 const { syncPlugins } = await import("../plugins/instance.svelte");
 const { installWindowKeys } = await import("../commands/install");
 const { ui } = await import("../shell/ui.svelte");
+const { Box } = await import("../testing/box.svelte");
 
 // The code and formula embeds, the editor pane and its visual editor are chunks loaded on first use, and highlight.js
 // loads each grammar the same way. In the app they are prebuilt chunks that load quickly; here the first import
@@ -551,6 +552,170 @@ describe("editing", () => {
     await show("notes/todo.txt");
     await until(() => modeButton("Edit")?.disabled === true, "no visual editor for text");
     expect(modeButton("Source")?.disabled).toBe(false);
+  });
+});
+
+describe("another document comes while edits are unsaved", () => {
+  // The window's document as the backend says it (`window-changed`), handed to the area as its prop, as the app
+  // does: a route that moves the tab (the file opened from the system, a drop) never asks the editor first.
+  let told: InstanceType<typeof Box<string | null>>;
+
+  beforeEach(async () => {
+    stopFollowing?.();
+    if (component) await unmount(component);
+    // CodeMirror measures text ranges, which jsdom does not lay out
+    await import("../editing/visual/jsdomShims");
+    told = new Box<string | null>(null);
+    stopFollowing = await mock.on("window-changed", (event) => {
+      if (event.view.state === "showing") told.value = event.view.document;
+    });
+    component = mount(DocumentArea, {
+      target,
+      props: {
+        workspace,
+        get document() {
+          return told.value;
+        },
+        store,
+      },
+    });
+    flushSync();
+  });
+
+  const sourceButton = (): HTMLButtonElement | undefined =>
+    [...target.querySelectorAll<HTMLButtonElement>(".modes button")].find(
+      (b) => b.textContent?.trim() === "Source",
+    );
+  const promptButton = (label: string): HTMLButtonElement | undefined =>
+    [...target.querySelectorAll<HTMLButtonElement>("[role=dialog] button")].find(
+      (b) => b.textContent?.trim() === label,
+    );
+
+  it("asks first; Keep editing goes back to the edited text, Discard lets it go and shows the new one", async () => {
+    await show("docs/guide.md");
+    await until(() => sourceButton() !== undefined, "mode switch");
+    sourceButton()?.click();
+    await until(() => target.querySelector(".cm-editor") !== null, "source editor");
+    await until(() => editing.state.s === "clean", "loaded");
+    expect(editing.apply([{ from: 0, to: 0, insert: "Unsaved words. ", expect: "" }])).toBe(true);
+    await until(() => editing.state.s === "dirty", "unsaved");
+
+    // the backend moves the tab to another document without asking
+    await show("README.md");
+    await until(() => editing.state.s === "unsavedPrompt", "asked");
+    expect(editing.path).toBe("docs/guide.md");
+    expect(documents.path).toBe("docs/guide.md");
+
+    promptButton("Keep editing")?.click();
+    await until(() => told.value === "docs/guide.md", "the window back on the edited document");
+    await tick();
+    expect(editing.state.s).toBe("dirty");
+    expect(editing.current().startsWith("Unsaved words. ")).toBe(true);
+    expect(documents.path).toBe("docs/guide.md");
+
+    const saves = mock.probe.edit.saves.length;
+    await show("README.md");
+    await until(() => editing.state.s === "unsavedPrompt", "asked again");
+    promptButton("Discard")?.click();
+    await until(() => documents.view?.path === "README.md", "the new document");
+    expect(told.value).toBe("README.md");
+    expect(mock.probe.edit.saves).toHaveLength(saves);
+    // the mode chosen in the window (Source) opens the new document, without the discarded words
+    await until(() => editing.path === "README.md" && editing.state.s === "clean", "next editor");
+    expect(editing.current()).not.toContain("Unsaved words.");
+  });
+
+  /** `path` is shown in Source with words typed and not saved. */
+  async function typeIn(path: string): Promise<void> {
+    await until(() => documents.view?.path === path, "the document");
+    await until(() => sourceButton() !== undefined, "mode switch");
+    sourceButton()?.click();
+    await until(() => editing.path === path && editing.state.s === "clean", "loaded");
+    expect(editing.apply([{ from: 0, to: 0, insert: "Unsaved words. ", expect: "" }])).toBe(true);
+    await until(() => editing.state.s === "dirty", "unsaved");
+  }
+
+  it("Save saves the edits first, then the new document shows", async () => {
+    await show("docs/guide.md");
+    await typeIn("docs/guide.md");
+    const saves = mock.probe.edit.saves.length;
+    await show("README.md");
+    await until(() => editing.state.s === "unsavedPrompt", "asked");
+    promptButton("Save")?.click();
+    await until(() => documents.view?.path === "README.md", "the new document");
+    expect(mock.probe.edit.saves.slice(saves).map((s) => s.path)).toEqual(["docs/guide.md"]);
+    expect(mock.probe.edit.files.get("docs/guide.md")?.startsWith("Unsaved words. ")).toBe(true);
+    expect(told.value).toBe("README.md");
+  });
+
+  it("back on the edited document while the question is open: the question goes, the edits stay", async () => {
+    await show("docs/guide.md");
+    await typeIn("docs/guide.md");
+    await show("README.md");
+    await until(() => editing.state.s === "unsavedPrompt", "asked");
+    // the backend puts the tab back on the edited document (it was opened from the system again)
+    await show("docs/guide.md");
+    const moved = vi.spyOn(mock, "showDocument");
+    await until(() => editing.state.s === "dirty", "the question gone");
+    await tick();
+    expect(target.querySelector("[role=dialog]")).toBeNull();
+    expect(editing.path).toBe("docs/guide.md");
+    expect(editing.current().startsWith("Unsaved words. ")).toBe(true);
+    expect(documents.path).toBe("docs/guide.md");
+    // the window is there already: it is not put back again
+    expect(moved).not.toHaveBeenCalled();
+    moved.mockRestore();
+  });
+
+  it("in the Notes the edits save by themselves: no question, saved, then the next note shows", async () => {
+    stopFollowing?.();
+    if (component) await unmount(component);
+    const opened = await mock.openNotes("thisTab");
+    if (
+      !opened.ok ||
+      opened.value.outcome !== "opened" ||
+      opened.value.view.state !== "showing" ||
+      opened.value.view.workspace.kind !== "notes"
+    ) {
+      throw new Error("no notes");
+    }
+    const notes = opened.value.view.workspace;
+    const list = await mock.pluginCall("notes.list", {});
+    const [first, second] = list.ok ? list.value.entries.map((n) => n.path) : [];
+    if (first === undefined || second === undefined) throw new Error("two notes expected");
+    // the note the Notes show (a wish from another view moves it without asking the editor)
+    const note = new Box<string | null>(first);
+    component = mount(DocumentArea, {
+      target,
+      props: {
+        workspace: notes,
+        get document() {
+          return note.value;
+        },
+        store,
+      },
+    });
+    flushSync();
+    await typeIn(first);
+    expect(editing.policy.kind).toBe("auto");
+    const saves = mock.probe.edit.saves.length;
+    note.value = second;
+    await until(() => documents.view?.path === second, "the next note");
+    expect(target.querySelector("[role=dialog]")).toBeNull();
+    expect(mock.probe.edit.saves.slice(saves).map((s) => s.path)).toEqual([first]);
+    expect(mock.probe.edit.files.get(first)?.startsWith("Unsaved words. ")).toBe(true);
+  });
+
+  it("lets a clean editor go without asking", async () => {
+    await show("docs/guide.md");
+    await until(() => sourceButton() !== undefined, "mode switch");
+    sourceButton()?.click();
+    await until(() => editing.state.s === "clean", "loaded");
+    await show("README.md");
+    await until(() => documents.view?.path === "README.md", "the new document");
+    expect(target.querySelector("[role=dialog]")).toBeNull();
+    // the mode chosen in the window opens the next document too
+    await until(() => editing.path === "README.md", "editor on the new document");
   });
 });
 

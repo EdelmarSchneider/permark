@@ -8,6 +8,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ### Fixed
 - Switching to another file while editing now opens the editor that fits that file. Before, a config file such as `pyproject.toml` could open in the Markdown editor, and a Markdown file in the sheet made for config files, with "This file can't be shown as a sheet", until PerMark was restarted. Opening a file that only has Source also no longer turns your choice of Edit into Source for the next files. <!-- f: editing -->
 - Edit now looks like View for lists, tables and code: list items keep View's spacing, tables have their frame and the same row height and stripes, and code blocks show their language and keep their spacing. Switching to Edit at the top of a page no longer selects the properties or scrolls past them, and the editing toolbar fits on one row. <!-- f: editing, edit-mode -->
+- Unsaved edits are no longer dropped without a question when another document opens in the same tab from outside PerMark (opened from the system, dropped on the window, or chosen with quick open). You get the usual Save, Discard or Keep editing choice, and Keep editing brings the tab back to your text. <!-- f: editing -->
+- Moving to another file while a review, a comment, Copy with reference or Mark as read is still on its way no longer acts on the wrong file: a review never keeps or reverts changes of a file you are not looking at, and every revert that was written can be undone. <!-- f: review, comments, unread -->
+- Switching between Edit and Source while the document reloads no longer leaves the editor stuck on loading, and Edit after a save in Source splits the blocks of the saved text. <!-- f: editing -->
+- Opening another folder in a tab while the first one is still listing its files no longer stops the file tree from showing new and renamed files. Pressing Escape to cancel an input method composition no longer closes the file filter or the tag filter. <!-- f: explorer, tags -->
 
 ## [0.9.0] - 2026-11-05
 

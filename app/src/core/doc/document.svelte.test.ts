@@ -177,6 +177,57 @@ describe("opening", () => {
     }
   });
 
+  it("the current view is the shown document's only: none while another file loads", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    expect(fx.doc.current?.path).toBe("README.md");
+    const pending = fx.doc.show("docs/guide.md");
+    expect(fx.doc.view?.path).toBe("README.md");
+    expect(fx.doc.current).toBeNull();
+    await pending;
+    expect(fx.doc.current?.path).toBe("docs/guide.md");
+    expect(fx.doc.current).toBe(fx.doc.view);
+  });
+
+  it("a place asked in the document that is still loading waits for it; the previous page stays put", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    const held = holdOpens(fx.api);
+    try {
+      fx.doc.navigate("notes/todo.txt", null);
+      await vi.waitFor(() => expect(fx.doc.state.status).toBe("loading"));
+      const scroll = vi.spyOn(fx.doc, "scrollToLine");
+      fx.doc.navigate("notes/todo.txt", null, 2);
+      expect(scroll).not.toHaveBeenCalled();
+      held.releaseAll();
+      await vi.waitFor(() => expect(fx.doc.view?.path).toBe("notes/todo.txt"));
+      expect(fx.doc.lineRequest).toMatchObject({ path: "notes/todo.txt", line: 2 });
+    } finally {
+      held.releaseAll();
+      held.restore();
+    }
+  });
+
+  it("a plain ask for the document still loading keeps the place asked before it", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const held = holdOpens(fx.api);
+    try {
+      fx.doc.navigate("notes/todo.txt", null, 2);
+      await vi.waitFor(() => expect(fx.doc.state.status).toBe("loading"));
+      // the tree | an editor asks for the same document, with no place of its own
+      fx.doc.navigate("notes/todo.txt", null);
+      held.releaseAll();
+      await vi.waitFor(() => expect(fx.doc.view?.path).toBe("notes/todo.txt"));
+      expect(fx.doc.lineRequest).toMatchObject({ path: "notes/todo.txt", line: 2 });
+    } finally {
+      held.releaseAll();
+      held.restore();
+    }
+  });
+
   it("a second ask for the document that is being opened waits for that open", async () => {
     const fx = await setup();
     const first = fx.doc.show("docs/guide.md");
@@ -414,6 +465,21 @@ describe("links and navigation", () => {
     expect(fx.doc.path).toBe("package.json");
   });
 
+  it("putting the window back on the edited document tells a refusal, and nothing breaks", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const refusal: ApiError = {
+      kind: "backend",
+      command: "show_document",
+      error: { kind: "notFound", subject: "docs/guide.md", detail: null },
+    };
+    vi.spyOn(fx.api, "showDocument").mockResolvedValueOnce({ ok: false, error: refusal });
+    fx.doc.stayOn("docs/guide.md");
+    await vi.waitFor(() => expect(fx.failures).toEqual([refusal]));
+    expect(fx.doc.path).toBe("README.md");
+    expect(fx.doc.state.status).toBe("ready");
+  });
+
   it("an anchor of the same document stays in it", async () => {
     const fx = await setup();
     await open(fx, "README.md");
@@ -461,6 +527,51 @@ describe("copying", () => {
     expect(ref).toEqual({ path: "README.md", section: item?.id, line: code?.lineStart });
     // outside any block: the document alone
     expect(fx.doc.referenceAt(null)).toEqual({ path: "README.md", section: null, line: null });
+  });
+
+  it("no reference before the first document is on screen", async () => {
+    const fx = await setup();
+    const held = holdOpens(fx.api);
+    try {
+      const pending = fx.doc.show("docs/guide.md");
+      expect(fx.doc.path).toBe("docs/guide.md");
+      expect(fx.doc.referenceAt(null)).toBeNull();
+      held.releaseAll();
+      await pending;
+      expect(fx.doc.referenceAt(null)).toEqual({
+        path: "docs/guide.md",
+        section: null,
+        line: null,
+      });
+    } finally {
+      held.releaseAll();
+      held.restore();
+    }
+  });
+
+  it("no reference while another file loads: the passage on screen belongs to the previous page", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const view = fx.doc.view;
+    if (view?.body.kind !== "markdown") throw new Error("not markdown");
+    const element = document.createElement("p");
+    element.setAttribute("data-b", view.body.blocks[1]?.id ?? "");
+    document.body.append(element);
+    const held = holdOpens(fx.api);
+    try {
+      const pending = fx.doc.show("docs/guide.md");
+      expect(fx.doc.referenceAt(element)).toBeNull();
+      held.releaseAll();
+      await pending;
+      expect(fx.doc.referenceAt(null)).toEqual({
+        path: "docs/guide.md",
+        section: null,
+        line: null,
+      });
+    } finally {
+      held.releaseAll();
+      held.restore();
+    }
   });
 });
 

@@ -646,6 +646,15 @@ describe("filter popover", () => {
     await tick();
     expect(root.querySelector('[role="dialog"]')).toBeNull();
   });
+
+  it("an Escape that ends an input method's composition leaves it open", async () => {
+    const { root } = await render();
+    root.querySelector<HTMLElement>("[data-filter-trigger]")?.click();
+    await tick();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true }));
+    await tick();
+    expect(root.querySelector('[role="dialog"]')).not.toBeNull();
+  });
 });
 
 describe("states", () => {
