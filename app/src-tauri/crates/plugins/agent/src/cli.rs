@@ -245,7 +245,7 @@ impl Agent {
         }
     }
 
-    /// The line `permark context` prints, or why there is none.
+    /// What `permark context` prints, or why there is none.
     ///
     /// # Errors
     /// The reason, for standard error.

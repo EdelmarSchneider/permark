@@ -84,6 +84,43 @@ pub(super) fn file_identity(path: &Path) -> io::Result<(u64, u64)> {
     ))
 }
 
+/// Where an open file really is (`GetFinalPathNameByHandleW`, normalized, drive letter form: `\\?\C:\...` |
+/// `\\?\UNC\server\share\...`), links and junctions followed.
+// Documented FFI: std has no "path of a handle". The handle is owned by `file`, alive for the whole call; `buf` is a
+// live writable buffer whose length in UTF-16 units is the size passed.
+#[allow(unsafe_code)]
+pub(super) fn final_path(file: &std::fs::File) -> io::Result<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFinalPathNameByHandleW, FILE_NAME_NORMALIZED, VOLUME_NAME_DOS,
+    };
+    let mut buf: Vec<u16> = vec![0; 512];
+    // a buffer too small answers the size needed: one retry with that size
+    for _ in 0..2 {
+        let size = u32::try_from(buf.len()).unwrap_or(u32::MAX);
+        // SAFETY: `file` keeps the handle open for the call; `buf` holds `size` writable units.
+        let n = unsafe {
+            GetFinalPathNameByHandleW(
+                file.as_raw_handle(),
+                buf.as_mut_ptr(),
+                size,
+                FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
+            )
+        };
+        let n = usize::try_from(n).unwrap_or(usize::MAX);
+        if n == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if n < buf.len() {
+            buf.truncate(n);
+            return Ok(PathBuf::from(OsString::from_wide(&buf)));
+        }
+        buf.resize(n, 0);
+    }
+    Err(io::Error::other("path of the open file keeps growing"))
+}
+
 fn wide(path: &Path) -> io::Result<Vec<u16>> {
     let mut units: Vec<u16> = path.as_os_str().encode_wide().collect();
     if units.contains(&0) {

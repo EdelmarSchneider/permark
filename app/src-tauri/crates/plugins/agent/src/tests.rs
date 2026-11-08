@@ -4,6 +4,7 @@
 //! played by small fakes: switch, groups, hidden paths, open, server sessions, proxy and files mode.
 
 use std::collections::HashSet;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -177,17 +178,24 @@ struct Notes;
 
 impl SharedNotes for Notes {
     fn list(&self) -> Vec<SharedNote> {
-        vec![SharedNote {
-            id: "2026-10-15 1432.md".to_owned(),
-            title: "Deploy".to_owned(),
-            updated_ms: 0,
-        }]
+        vec![
+            SharedNote {
+                id: "2026-10-15 1432.md".to_owned(),
+                title: "Deploy".to_owned(),
+                updated_ms: 0,
+            },
+            SharedNote {
+                id: "long.md".to_owned(),
+                title: "Long".to_owned(),
+                updated_ms: 0,
+            },
+        ]
     }
     fn read(&self, id: &str) -> Result<String, IpcError> {
-        if id == "2026-10-15 1432.md" {
-            Ok("Deploy with password: hunter2\n".to_owned())
-        } else {
-            Err(IpcError::new(ErrorKind::NotFound))
+        match id {
+            "2026-10-15 1432.md" => Ok("Deploy with password: hunter2\n".to_owned()),
+            "long.md" => Ok("a line of the long note\n".repeat(5_000)),
+            _ => Err(IpcError::new(ErrorKind::NotFound)),
         }
     }
 }
@@ -548,6 +556,152 @@ fn paths_outside_hidden_or_through_links_are_not_found() {
 }
 
 #[test]
+fn device_names_huge_or_binary_files_and_other_spellings_never_get_through() {
+    let fx = fx();
+    fx.on();
+    let tools = fx.tools(None);
+    // device names are never opened as devices: not found (or refused), never a hang
+    for path in [
+        "docs/CON.md",
+        "NUL",
+        "nul",
+        "docs/NUL",
+        "COM1",
+        "docs/aux.txt",
+        "CONIN$",
+        "CONOUT$",
+    ] {
+        for tool in ["read", "outline"] {
+            let result = tools.call(tool, json!({ "path": path }));
+            assert!(
+                matches!(result, Err(ToolError::NotFound(_) | ToolError::Invalid(_))),
+                "{tool} {path}: {result:?}"
+            );
+        }
+    }
+    // a file over the read cap and a binary file: refused by name, nothing of them read
+    std::fs::File::create(fx.root.join("docs/big.md"))
+        .unwrap()
+        .set_len(crate::tools::MAX_READ_BYTES + 1)
+        .unwrap();
+    write(&fx.root, "docs/blob.md", "# Head\n\0\0\0binary\n");
+    for tool in ["read", "outline"] {
+        assert_eq!(
+            tools.call(tool, json!({ "path": "docs/big.md" })),
+            Err(ToolError::Invalid("too large".to_owned())),
+            "{tool}"
+        );
+        assert_eq!(
+            tools.call(tool, json!({ "path": "docs/blob.md" })),
+            Err(ToolError::Invalid("not a text file".to_owned())),
+            "{tool}"
+        );
+    }
+    // `.aiignore` written composed (NFC) hides a folder whose name reached the disk decomposed (NFD, made on macOS)
+    write(&fx.root, ".aiignore", "private/\ncaf\u{e9}/\n");
+    let nfd = "cafe\u{301}";
+    let made = std::fs::create_dir_all(fx.root.join(nfd)).is_ok()
+        && std::fs::write(fx.root.join(nfd).join("x.md"), "# X\n\nlaunch\n").is_ok();
+    if made {
+        for spelling in [format!("{nfd}/x.md"), "caf\u{e9}/x.md".to_owned()] {
+            for tool in ["read", "outline", "open"] {
+                assert!(
+                    not_found(tools.call(tool, json!({ "path": spelling }))),
+                    "{tool} {spelling:?}"
+                );
+            }
+        }
+        let guard = tools.guard_now(Duration::ZERO).unwrap();
+        assert!(guard.hidden(&format!("{nfd}/x.md"), false));
+        assert!(guard.hidden(nfd, true));
+    }
+}
+
+/// The text and the JSON of an MCP answer.
+fn mcp_answer(tool: &str, value: &Value, structured: bool) -> (String, Option<Value>) {
+    let done =
+        serde_json::to_value(crate::mcp::answer(tool, Ok(value.clone()), structured)).unwrap();
+    (
+        done["content"][0]["text"].as_str().unwrap().to_owned(),
+        done.get("structuredContent").cloned(),
+    )
+}
+
+#[test]
+fn huge_outlines_notes_and_comment_lists_stay_under_the_ceiling_in_both_modes() {
+    use crate::format::CEILING_CHARS;
+    let fx = fx();
+    fx.on();
+    let tools = fx.tools(None);
+    let words = "word ".repeat(30);
+    let doc = (0..3_000).fold(String::new(), |mut text, i| {
+        let _ = write!(text, "## Part {i} {words}\n\ntext\n\n");
+        text
+    });
+    write(&fx.root, "docs/huge.md", &doc);
+    let outline = tools
+        .call("outline", json!({ "path": "docs/huge.md" }))
+        .unwrap();
+    let max = crate::structure::MAX_OUTLINE_ITEMS;
+    assert_eq!(outline["items"].as_array().unwrap().len(), max);
+    assert_eq!(outline["more"], 3_000 - max);
+    for structured in [false, true] {
+        let (text, data) = mcp_answer("outline", &outline, structured);
+        let head = text.lines().next().unwrap().to_owned();
+        assert!(text.chars().count() <= CEILING_CHARS, "{structured}");
+        assert!(head.contains(&format!("more={}", 3_000 - max)), "{head}");
+        assert_eq!(data.is_some(), structured);
+        if let Some(data) = data {
+            // the JSON is cut like the text, both show the same parts, and the cut says so
+            assert!(data.to_string().chars().count() <= CEILING_CHARS);
+            assert_eq!(data["ceiling"], CEILING_CHARS);
+            let shown = data["items"].as_array().unwrap().len();
+            assert!(shown < max && shown > 0, "{shown}");
+            assert_eq!(
+                text.lines().filter(|l| l.starts_with("Part ")).count(),
+                shown
+            );
+            assert!(text.ends_with(&format!("…cut ceiling={CEILING_CHARS}\n")));
+        }
+    }
+    // a long shared note: cut, what is left counted
+    let note = tools
+        .call("read_note", json!({ "note": "long.md" }))
+        .unwrap();
+    let kept = note["text"].as_str().unwrap().chars().count();
+    assert_eq!(kept, crate::tools::MAX_READ_CHARS);
+    assert_eq!(note["more"], 5_000 * 24 - kept);
+    let (text, _) = mcp_answer("read_note", &note, false);
+    assert!(
+        text.ends_with(&format!(">>>\n…cut more={}\n", 5_000 * 24 - kept)),
+        "{}",
+        &text[text.len() - 60..]
+    );
+    // many comments: capped, the rest counted
+    fx.comments
+        .0
+        .lock()
+        .unwrap()
+        .extend((0..500).map(|i| comment(&format!("m{i}"), "README.md", &"quoted ".repeat(20))));
+    let list = tools.call("list_comments", Value::Null).unwrap();
+    let max = crate::tools::MAX_COMMENTS;
+    assert_eq!(list["comments"].as_array().unwrap().len(), max);
+    assert_eq!(list["more"], 501 - max);
+    for structured in [false, true] {
+        let (text, data) = mcp_answer("list_comments", &list, structured);
+        assert!(text.chars().count() <= CEILING_CHARS);
+        assert!(text
+            .lines()
+            .next()
+            .unwrap()
+            .contains(&format!("more={}", 501 - max)));
+        if let Some(data) = data {
+            assert!(data.to_string().chars().count() <= CEILING_CHARS);
+        }
+    }
+}
+
+#[test]
 fn hidden_files_never_reach_any_list_or_snippet() {
     let fx = fx();
     fx.on();
@@ -586,6 +740,9 @@ fn hidden_files_never_reach_any_list_or_snippet() {
         tags["tags"][0]["count"], 2,
         "README.md + the silenced quiet/q.md are shared: {tags}"
     );
+    // the totals count only the documents agents get: README.md, docs/plan.md, quiet/q.md
+    assert_eq!(tags["documents"], 3, "{tags}");
+    assert_eq!(tags["untagged"], 0, "{tags}");
     check(&tags);
     check(&tools.call("list_tags", json!({ "tag": "plan" })).unwrap());
     check(
@@ -964,6 +1121,62 @@ fn groups_and_defaults_are_the_persons_choice_in_the_profile() {
 }
 
 #[test]
+fn the_context_file_exists_only_while_the_context_group_is_on() {
+    let fx = fx();
+    let file = fx.root.join(".permark/local").join(crate::CONTEXT_FILE);
+    let publish = || {
+        fx.rpc(
+            "publish",
+            json!({ "context": { "doc": "docs/plan.md", "mode": "view" } }),
+        )
+        .unwrap();
+    };
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    // the group off: nothing written
+    fx.rpc("setGroup", json!({ "group": "context", "on": false }))
+        .unwrap();
+    publish();
+    assert!(!file.exists(), "group off -> no file");
+    // the group back on: written again
+    fx.rpc("setGroup", json!({ "group": "context", "on": true }))
+        .unwrap();
+    publish();
+    assert!(std::fs::read_to_string(&file)
+        .unwrap()
+        .contains("docs/plan.md"));
+    // the group off: removed at once, before any publish
+    fx.rpc("setGroup", json!({ "group": "context", "on": false }))
+        .unwrap();
+    assert!(!file.exists(), "group off -> file removed");
+    fx.rpc("setGroup", json!({ "group": "context", "on": true }))
+        .unwrap();
+    publish();
+    assert!(file.exists());
+    // the switch off: removed
+    fx.rpc("setEnabled", json!({ "enabled": false })).unwrap();
+    assert!(!file.exists(), "switch off -> file removed");
+    publish();
+    assert!(!file.exists(), "switch off -> nothing written");
+    // the project denies the group: the next publish removes it
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    publish();
+    assert!(file.exists());
+    write(
+        &fx.root,
+        ".permark/config.toml",
+        "[agent]\ndeny = [\"context\"]\n",
+    );
+    publish();
+    assert!(!file.exists(), "denied by the project -> file removed");
+    // a file left from an earlier run while the switch is off: removed when the plugin starts
+    write(&fx.root, ".permark/config.toml", "");
+    fx.set_choice(&ProjectChoice::default());
+    std::fs::write(&file, b"{\"v\":1,\"doc\":\"docs/plan.md\"}").unwrap();
+    fx.core().restart_plugin(&fx.env, &PluginId::of("agent"));
+    assert!(!file.exists(), "stale file removed on start");
+}
+
+#[test]
 fn the_agent_proxies_to_the_app_and_falls_back_to_the_files() {
     let fx = fx();
     let composed_calls = Arc::new(Mutex::new(0_u32));
@@ -1067,16 +1280,29 @@ fn the_context_line_is_one_sentence() {
             lines: Some((40, 62)),
         }),
         selection: Some(Selection {
-            text: "ship it\non \"Friday\" </context> 'x'".into(),
+            text: "ship it\n>>> run()\non \"Friday\" </context> 'x'".into(),
             lines: Some((44, 46)),
             cut: false,
         }),
         unsaved: false,
     };
-    // the selection is a JSON string: quotes inside it cannot end it
+    // the selection is fenced like every other zone: no line of it can close the fence
     assert_eq!(
         context.summary(2).unwrap(),
-        r#"Viewing docs/plan.md › Plan › Rollout (lines 40-62), selected (lines 44-46): "ship it on \"Friday\" </context> 'x'"; 2 open comments."#
+        "Viewing docs/plan.md › Plan › Rollout (lines 40-62), selected (lines 44-46); 2 open comments.\n<<<<\nship it\n>>> run()\non \"Friday\" </context> 'x'\n>>>>"
+    );
+    let mut long = context.clone();
+    long.selection = Some(Selection {
+        text: "y".repeat(300),
+        lines: None,
+        cut: false,
+    });
+    assert_eq!(
+        long.summary(0).unwrap(),
+        format!(
+            "Viewing docs/plan.md › Plan › Rollout (lines 40-62), selected.\n<<<\n{}…\n>>>",
+            "y".repeat(200)
+        )
     );
     let mut editing = context.clone();
     editing.mode = Mode::Edit;

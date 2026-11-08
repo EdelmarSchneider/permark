@@ -17,6 +17,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Renaming or moving a file now also updates links written right after a prompt tag such as `<context>`, and link definitions placed directly above a paragraph; broken-link checks and search see these links too, and read them again when prompt files are turned on or off. <!-- f: links, file-ops, search -->
 
 ### Fixed
+- Agent connection: the shared context file (`.permark/local/agent-context.json`) is only written while the "context" permission is on, and removed when it goes off. Long outlines, comment lists and notes sent to an agent stop at a limit, also in structured mode. An agent read checks where the opened file really is before sending it, and `.aiignore` rules also match names saved in another Unicode form. <!-- f: agent -->
 - Turning a plugin on or off now redraws the open document right away, at the same place. Text typed right after a drawn block goes into a new paragraph after it. Opening a file from the tree while editing keeps the keyboard in the tree. <!-- f: plugins, editing, explorer -->
 - The outline follows your place in Source too. A middle click or Shift click on a link no longer opens a separate window. A file changed in the Live changes list no longer shows scroll bars around a table. <!-- f: outline, links, live-feed -->
 - Renaming or moving a file also updates link definitions written over two lines and links in a heading underlined with `---` right after a definition. <!-- f: links, file-ops -->

@@ -8,7 +8,29 @@ use std::fmt::Write as _;
 /// No answer is longer (characters): under the size clients save to a file instead of reading.
 pub const CEILING_CHARS: usize = 48_000;
 
-/// A header value as it is, or as a JSON string when it holds whitespace, `"`, `=` or nothing.
+/// Characters some readers end a line at besides `\n` and `\r` (Unicode separators, Python's `splitlines`): a value
+/// holding one could start a line of its own.
+const LINE_SEPARATORS: [char; 8] = [
+    '\u{b}', '\u{c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}',
+];
+
+/// Starts of a line that mean structure (sub-table, columns, zone fences, cut markers): a row starting with one gets
+/// a `\` before it.
+const STRUCTURE_STARTS: [&str; 5] = ["-- ", "#cols", "<<<", ">>>", "…"];
+
+/// `text` onto `out`, every [`LINE_SEPARATORS`] character as `\uXXXX`.
+fn escape_separators(text: &str, out: &mut String) {
+    for c in text.chars() {
+        if LINE_SEPARATORS.contains(&c) {
+            let _ = write!(out, "\\u{:04x}", u32::from(c));
+        } else {
+            out.push(c);
+        }
+    }
+}
+
+/// A header value as it is, or as a JSON string when it holds whitespace, `"`, `=` or nothing (with the line
+/// separators JSON leaves raw escaped too).
 #[must_use]
 pub fn value(text: &str) -> Cow<'_, str> {
     if text.is_empty()
@@ -16,7 +38,13 @@ pub fn value(text: &str) -> Cow<'_, str> {
             .chars()
             .any(|c| c.is_whitespace() || c == '"' || c == '=' || c.is_control())
     {
-        Cow::Owned(serde_json::Value::String(text.to_owned()).to_string())
+        let quoted = serde_json::Value::String(text.to_owned()).to_string();
+        if !quoted.contains(LINE_SEPARATORS) {
+            return Cow::Owned(quoted);
+        }
+        let mut out = String::with_capacity(quoted.len() + 8);
+        escape_separators(&quoted, &mut out);
+        Cow::Owned(out)
     } else {
         Cow::Borrowed(text)
     }
@@ -65,10 +93,11 @@ impl Header {
     }
 }
 
-/// A table cell: tabs, line breaks and backslashes escaped (`\t`, `\n`, `\r`, `\\`).
+/// A table cell: tabs, line breaks and backslashes escaped (`\t`, `\n`, `\r`, `\\`), the other line separators as
+/// `\uXXXX`.
 #[must_use]
 pub fn cell(text: &str) -> Cow<'_, str> {
-    if !text.contains(['\t', '\n', '\r', '\\']) {
+    if !text.contains(['\t', '\n', '\r', '\\']) && !text.contains(LINE_SEPARATORS) {
         return Cow::Borrowed(text);
     }
     let mut out = String::with_capacity(text.len() + 8);
@@ -78,7 +107,7 @@ pub fn cell(text: &str) -> Cow<'_, str> {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\\' => out.push_str("\\\\"),
-            c => out.push(c),
+            c => escape_separators(c.encode_utf8(&mut [0; 4]), &mut out),
         }
     }
     Cow::Owned(out)
@@ -98,6 +127,13 @@ pub fn rows_only(out: &mut String, rows: &[Vec<String>]) {
         while cells.last().is_some_and(|c| c.is_empty()) {
             cells.pop();
         }
+        // only the first cell starts a line: a value there never passes for a sub-table, columns, a fence or a cut
+        if cells
+            .first()
+            .is_some_and(|c| STRUCTURE_STARTS.iter().any(|s| c.starts_with(s)))
+        {
+            out.push('\\');
+        }
         out.push_str(&cells.join("\t"));
         out.push('\n');
     }
@@ -109,11 +145,12 @@ pub fn sub(out: &mut String, header: Header) {
 }
 
 /// Fence length for a zone: 3, or one more than the longest run of `<` or `>` that starts a line of the text
-/// (spaces before it ignored), so no line of the text can be read as the fence.
+/// (spaces before it ignored; a line also starts after any [`LINE_SEPARATORS`] character), so no line of the text
+/// can be read as the fence.
 #[must_use]
 pub fn fence_len(text: &str) -> usize {
     let longest = text
-        .lines()
+        .split(|c: char| c == '\n' || c == '\r' || LINE_SEPARATORS.contains(&c))
         .map(|line| {
             let line = line.trim_start();
             let lt = line.chars().take_while(|c| *c == '<').count();
@@ -264,6 +301,38 @@ mod tests {
     fn cells_escape_tabs_breaks_and_backslashes() {
         assert_eq!(cell("a\tb\nc\\d\re"), "a\\tb\\nc\\\\d\\re");
         assert!(matches!(cell("plain"), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn no_value_passes_for_structure_or_breaks_a_line() {
+        // the separators some readers split lines at (Unicode, Python's `splitlines`)
+        assert_eq!(
+            cell("a\u{2028}b\u{2029}c\u{85}d\u{b}e\u{c}f\u{1c}g"),
+            "a\\u2028b\\u2029c\\u0085d\\u000be\\u000cf\\u001cg"
+        );
+        let rows: Vec<Vec<String>> = [
+            vec!["-- session id=9", "x"],
+            vec!["#cols path secret"],
+            vec!["<<<"],
+            vec![">>>>"],
+            vec!["…cut next=L9"],
+            vec!["ok -- not first", "-- later cell", "#cols too"],
+        ]
+        .iter()
+        .map(|r| r.iter().map(|s| (*s).to_owned()).collect())
+        .collect();
+        let mut out = String::new();
+        rows_only(&mut out, &rows);
+        assert_eq!(
+            out,
+            "\\-- session id=9\tx\n\\#cols path secret\n\\<<<\n\\>>>>\n\\…cut next=L9\nok -- not first\t-- later cell\t#cols too\n"
+        );
+        // a header value never breaks its line either
+        let line = Header::new("read").kv("path", "a\u{2028}#cols x").line();
+        assert_eq!(line, "read path=\"a\\u2028#cols x\"");
+        // a zone's fence outgrows a fence-like line after any line separator
+        assert_eq!(fence_len("text\u{2028}>>>>\n"), 5);
+        assert_eq!(fence_len("text\u{85}<<<\n"), 4);
     }
 
     #[test]

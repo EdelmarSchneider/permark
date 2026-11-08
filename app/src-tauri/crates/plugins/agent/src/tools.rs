@@ -38,6 +38,8 @@ pub const MAX_READ_CHARS: usize = 20_000;
 pub const SEARCH_BUDGET: (u64, u64) = (200, 12_000);
 /// Links listed each way by `outline` with `links`.
 pub const MAX_LINKS: usize = 50;
+/// Most comments one `list_comments` lists (the answer counts the rest in `more`).
+pub const MAX_COMMENTS: usize = 100;
 
 /// The tools, their groups, in the order agents list them.
 pub const TOOLS: [(&str, Group); 13] = [
@@ -258,6 +260,20 @@ impl Tools {
         }))
     }
 
+    /// Whether `group` is open now: the switch on and the group on for this project (read fresh, the project's
+    /// denial counted).
+    #[must_use]
+    pub fn allows(&self, group: Group) -> bool {
+        let choice = perms::load(&self.store);
+        choice.enabled
+            && perms::effective(
+                &choice.groups,
+                &ProjectConfig::load(self.vault.main()).agent_deny,
+            )
+            .get(&group)
+                == Some(&Access::On)
+    }
+
     /// Checks the switch and the group, then runs the tool.
     ///
     /// # Errors
@@ -475,13 +491,9 @@ impl Tools {
                     "snippet": snippet.trim(),
                 });
                 // the size of reading this section next (`read at=<heading path>`)
-                let size = guard
-                    .file(&hit.path)
-                    .ok()
-                    .and_then(|(path, abs)| read_text(&abs).ok().map(|text| (path, text)))
-                    .and_then(|(path, text)| {
-                        structure::section_size(&formats, &path, &text, &hit.heading_path, hit.line)
-                    });
+                let size = guard.text(&hit.path).ok().and_then(|(path, text)| {
+                    structure::section_size(&formats, &path, &text, &hit.heading_path, hit.line)
+                });
                 if let (Some(size), Some(map)) = (size, item.as_object_mut()) {
                     map.insert("size_tok".to_owned(), json!(size));
                 }
@@ -516,7 +528,20 @@ impl Tools {
             }));
         }
         let summary = api.0.summary();
-        // counts without the files agents do not get
+        // counts and totals without the files agents do not get (the documents are the ones the tags read)
+        let documents: Vec<String> = self
+            .services
+            .search
+            .harvest()
+            .snapshot()
+            .keys()
+            .filter(|p| !guard.hidden(p, false))
+            .cloned()
+            .collect();
+        let untagged = documents
+            .iter()
+            .filter(|p| api.0.tags_of(p).is_empty())
+            .count();
         let mut tags: Vec<(String, usize)> = summary
             .tags
             .into_iter()
@@ -537,8 +562,8 @@ impl Tools {
         tags.truncate(max);
         Ok(json!({
             "tags": tags.iter().map(|(tag, count)| json!({ "tag": tag, "count": count })).collect::<Vec<_>>(),
-            "documents": summary.documents,
-            "untagged": summary.untagged,
+            "documents": documents.len(),
+            "untagged": untagged,
             "more": more,
         }))
     }
@@ -565,9 +590,14 @@ impl Tools {
         let list = self.comments()?.0.list(filter).map_err(|e| {
             ToolError::Failed(format!("the comments cannot be read now: {}", why(&e)))
         })?;
-        let comments: Vec<Value> = list
+        let shared: Vec<_> = list
             .into_iter()
             .filter(|c| !guard.hidden(&c.path, false))
+            .collect();
+        let more = shared.len().saturating_sub(MAX_COMMENTS);
+        let comments: Vec<Value> = shared
+            .into_iter()
+            .take(MAX_COMMENTS)
             .map(|c| {
                 let mut item = json!({
                     "id": c.id,
@@ -586,7 +616,12 @@ impl Tools {
                 item
             })
             .collect();
-        Ok(json!({ "which": which.as_deref().map_or("open", str::trim), "comments": comments }))
+        let mut answer =
+            json!({ "which": which.as_deref().map_or("open", str::trim), "comments": comments });
+        if more > 0 {
+            answer["more"] = json!(more);
+        }
+        Ok(answer)
     }
 
     fn resolve_comment(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
@@ -638,13 +673,18 @@ impl Tools {
             .0
             .read(&note)
             .map_err(|_| ToolError::NotFound(note.clone()))?;
-        Ok(json!({ "note": note, "title": found.title, "text": text }))
+        // a note longer than one read: its start, and how many characters are left
+        let (shown, cut) = crate::context::cut_chars(&text, MAX_READ_CHARS);
+        let mut answer = json!({ "note": note, "title": found.title, "text": shown });
+        if cut {
+            answer["more"] = json!(text.chars().count() - MAX_READ_CHARS);
+        }
+        Ok(answer)
     }
 
     fn outline(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
         let OutlineArgs { path, links } = args(raw)?;
-        let (path, abs) = guard.file(&path)?;
-        let text = read_text(&abs)?;
+        let (path, text) = guard.text(&path)?;
         // the person's tokenizer, when the token count plugin is on: the project's own choice over the app's
         let api = self.services.app_services.get::<TokenCounterApi>();
         let config = api
@@ -722,8 +762,7 @@ impl Tools {
 
     fn read(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
         let ReadArgs { path, at } = args(raw)?;
-        let (path, abs) = guard.file(&path)?;
-        let text = read_text(&abs)?;
+        let (path, text) = guard.text(&path)?;
         structure::read(&self.services.formats(), &path, &text, at.as_deref())
     }
 
@@ -733,15 +772,16 @@ impl Tools {
             line,
             heading,
         } = args(raw)?;
-        let (path, abs) = guard.file(&path)?;
+        let (path, _) = guard.file(&path)?;
         let heading = heading
             .map(|h| h.trim().to_owned())
             .filter(|h| !h.is_empty());
         // a heading wins over a line when the document has it; the window gets a line either way
         let found = heading.as_deref().and_then(|h| {
-            read_text(&abs)
+            guard
+                .text(&path)
                 .ok()
-                .and_then(|text| structure::heading_line(&path, &text, h))
+                .and_then(|(_, text)| structure::heading_line(&path, &text, h))
         });
         let live = self.live.as_ref().ok_or(ToolError::NotOpen)?;
         let place = Place {
@@ -798,14 +838,12 @@ pub(crate) fn fit_budget(answer: &mut Value, budget: u64) {
     }
 }
 
-pub(crate) fn read_text(abs: &Path) -> Result<String, ToolError> {
-    match fsx::read_text(abs, MAX_READ_BYTES) {
-        Ok(decoded) => Ok(decoded.text),
-        Err(fsx::FsxError::TooLarge { .. }) => Err(ToolError::Invalid("too large".to_owned())),
-        Err(fsx::FsxError::Binary(_)) => Err(ToolError::Invalid("not a text file".to_owned())),
-        Err(fsx::FsxError::Io { .. }) => {
-            Err(ToolError::Failed("cannot read the file now".to_owned()))
-        }
+/// A failed read as the agent hears it (no path, no system message).
+pub(crate) fn read_error(error: &fsx::FsxError) -> ToolError {
+    match error {
+        fsx::FsxError::TooLarge { .. } => ToolError::Invalid("too large".to_owned()),
+        fsx::FsxError::Binary(_) => ToolError::Invalid("not a text file".to_owned()),
+        fsx::FsxError::Io { .. } => ToolError::Failed("cannot read the file now".to_owned()),
     }
 }
 

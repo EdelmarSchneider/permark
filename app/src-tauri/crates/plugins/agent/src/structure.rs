@@ -224,6 +224,16 @@ impl<'a> Sizer<'a> {
     }
 }
 
+/// Most parts one outline lists (the first ones; the answer counts the rest in `more`).
+pub const MAX_OUTLINE_ITEMS: usize = 300;
+
+/// The first [`MAX_OUTLINE_ITEMS`] parts and how many more there are.
+fn capped<T>(mut parts: Vec<T>) -> (Vec<T>, usize) {
+    let more = parts.len().saturating_sub(MAX_OUTLINE_ITEMS);
+    parts.truncate(MAX_OUTLINE_ITEMS);
+    (parts, more)
+}
+
 /// The outline answer. `tokens`: the project's primary tokenizer, when the token count plugin is on and ready.
 #[must_use]
 pub fn outline(
@@ -233,10 +243,12 @@ pub fn outline(
     tokens: Option<Tokens<'_>>,
 ) -> Value {
     let lines = line_count(text);
+    let mut more = 0;
     if let Some(sheet) = sheet_of(formats, path, text) {
         let sizer = Sizer::new(text, tokens);
-        let items: Vec<Value> = sheet
-            .outline()
+        let (parts, left) = capped(sheet.outline());
+        more = left;
+        let items: Vec<Value> = parts
             .into_iter()
             .map(|p| {
                 let mut item = json!({ "at": p.path, "label": p.label, "level": 1, "line": p.line, "lines": p.end.saturating_sub(p.line) + 1 });
@@ -254,13 +266,18 @@ pub fn outline(
         if let Some(spec) = &sheet.spec {
             answer["spec"] = json!(spec);
         }
+        if more > 0 {
+            answer["more"] = json!(more);
+        }
         sizer.name_tokenizer(&mut answer);
         return answer;
     }
     let sizer = Sizer::new(text, tokens);
     let mut answer = match kind_of(path) {
         Kind::Markdown => {
-            let items: Vec<Value> = markdown_parts(text)
+            let (parts, left) = capped(markdown_parts(text));
+            more = left;
+            let items: Vec<Value> = parts
                 .into_iter()
                 .map(|p| {
                     let mut item = json!({ "at": p.at, "level": p.level, "line": p.from, "lines": p.to - p.from + 1 });
@@ -272,7 +289,9 @@ pub fn outline(
         }
         Kind::Json => {
             let valid = serde_json::from_str::<Value>(text).is_ok();
-            let items: Vec<Value> = json_parts(text)
+            let (parts, left) = capped(json_parts(text));
+            more = left;
+            let items: Vec<Value> = parts
                 .into_iter()
                 .map(|(p, kind)| {
                     let mut item = json!({ "at": p.at, "type": kind, "line": p.from, "lines": p.to - p.from + 1 });
@@ -288,6 +307,9 @@ pub fn outline(
         }
         Kind::Text => json!({ "path": path, "kind": "text", "lines": lines, "items": [] }),
     };
+    if more > 0 {
+        answer["more"] = json!(more);
+    }
     sizer.name_tokenizer(&mut answer);
     answer
 }
@@ -703,7 +725,9 @@ mod tests {
             .set_len(crate::tools::MAX_READ_BYTES + 1)
             .unwrap();
         assert_eq!(
-            crate::tools::read_text(&path).unwrap_err(),
+            crate::tools::read_error(
+                &permark_core::fsx::read_text(&path, crate::tools::MAX_READ_BYTES).unwrap_err()
+            ),
             ToolError::Invalid("too large".to_owned())
         );
     }
