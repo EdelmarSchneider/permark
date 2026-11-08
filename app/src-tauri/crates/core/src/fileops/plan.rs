@@ -317,7 +317,10 @@ pub(crate) fn mentions(text: &str, needles: &[String]) -> bool {
         return true;
     }
     // ASCII text without `%` | `\` reads the same after unescaping, decoding and NFC: the quick miss is the answer
-    if !text.bytes().any(|b| !b.is_ascii() || b == b'%' || b == b'\\') {
+    if !text
+        .bytes()
+        .any(|b| !b.is_ascii() || b == b'%' || b == b'\\')
+    {
         return false;
     }
     let plain = comparable(&percent_decode(&unescape(text)));

@@ -1612,8 +1612,14 @@ fn a_rename_onto_another_name_of_the_same_file_is_refused() {
         f.service.rename("a.md", "b.md").unwrap_err().kind,
         ErrorKind::Exists
     );
-    assert_eq!(std::fs::read_to_string(f.notes.join("a.md")).unwrap(), "mine");
-    assert_eq!(std::fs::read_to_string(f.notes.join("b.md")).unwrap(), "mine");
+    assert_eq!(
+        std::fs::read_to_string(f.notes.join("a.md")).unwrap(),
+        "mine"
+    );
+    assert_eq!(
+        std::fs::read_to_string(f.notes.join("b.md")).unwrap(),
+        "mine"
+    );
 }
 
 #[test]

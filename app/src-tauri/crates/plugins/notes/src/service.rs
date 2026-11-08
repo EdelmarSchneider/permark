@@ -1018,7 +1018,12 @@ pub(crate) fn checked_name(typed: &str, extension: Option<&str>) -> Result<Strin
 /// very same file under another case of its name may be there: a name that merely folds the same can be another file
 /// (a case-sensitive folder, a Unicode case pair), and another name of the same file (a hard link) is a second
 /// entry, so the rename would change nothing on disk while everything kept about the note moved on.
-pub(crate) fn rename_free(abs: &Path, old: &str, target: &Path, name: &str) -> Result<(), IpcError> {
+pub(crate) fn rename_free(
+    abs: &Path,
+    old: &str,
+    target: &Path,
+    name: &str,
+) -> Result<(), IpcError> {
     if !target.exists() {
         return Ok(());
     }
