@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block } from "../../api";
-import { BlockHost, type BlockHooks } from "./blocks";
+import { BlockHost, NearScreen, type BlockHooks } from "./blocks";
 
 function block(id: string, html: string | null = `<p>${id}</p>`): Block {
   return { id, kind: "p", lineStart: 1, lineEnd: 1, html };
@@ -212,5 +212,120 @@ describe("BlockHost", () => {
     expect(r.host.byAnchor("nope")).toBeNull();
     expect(r.host.byAnchor("")).toBeNull();
     expect(r.host.byAnchor('x"] , [id="intro')).toBeNull();
+  });
+});
+
+describe("NearScreen", () => {
+  /** A stand-in for the browser's observer: what it watches, and a way to bring an element near. */
+  type Watch = {
+    observed: Set<Element>;
+    options: IntersectionObserverInit | undefined;
+    disconnected: boolean;
+    show(el: Element): void;
+  };
+  let watches: Watch[] = [];
+
+  beforeEach(() => {
+    watches = [];
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        #watch: Watch;
+        constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
+          const watch: Watch = {
+            observed: new Set(),
+            options,
+            disconnected: false,
+            show: (el) => {
+              const entry = { isIntersecting: true, target: el } as IntersectionObserverEntry;
+              callback([entry], this as unknown as IntersectionObserver);
+            },
+          };
+          this.#watch = watch;
+          watches.push(watch);
+        }
+        observe(el: Element): void {
+          this.#watch.observed.add(el);
+        }
+        unobserve(el: Element): void {
+          this.#watch.observed.delete(el);
+        }
+        disconnect(): void {
+          this.#watch.disconnected = true;
+          this.#watch.observed.clear();
+        }
+      },
+    );
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function watcher(): {
+    near: NearScreen;
+    done: string[];
+    undone: string[];
+    scroller: HTMLElement;
+  } {
+    const scroller = document.createElement("div");
+    const done: string[] = [];
+    const undone: string[] = [];
+    const near = new NearScreen(scroller, (el) => {
+      done.push(el.id);
+      return () => void undone.push(el.id);
+    });
+    return { near, done, undone, scroller };
+  }
+
+  function element(id: string): HTMLElement {
+    const el = document.createElement("p");
+    el.id = id;
+    return el;
+  }
+
+  it("does an element's work once it comes within a screen of the pane, then stops watching it", () => {
+    const { near, done, scroller } = watcher();
+    const watch = watches[0];
+    expect(watch?.options).toEqual({ root: scroller, rootMargin: "100% 0px 100% 0px" });
+    const a = element("a");
+    near.watch(a);
+    expect(done).toEqual([]);
+    expect(watch?.observed.has(a)).toBe(true);
+    watch?.show(a);
+    watch?.show(a);
+    expect(done).toEqual(["a"]);
+    expect(watch?.observed.has(a)).toBe(false);
+  });
+
+  it("forgetting an element undoes its work; stopping undoes all and lets the observer go", () => {
+    const { near, done, undone } = watcher();
+    const watch = watches[0];
+    const [a, b, c] = [element("a"), element("b"), element("c")];
+    for (const el of [a, b, c]) near.watch(el);
+    watch?.show(a);
+    watch?.show(b);
+    near.forget(a);
+    near.forget(c);
+    expect(undone).toEqual(["a"]);
+    expect(watch?.observed.has(c)).toBe(false);
+    near.stop();
+    expect(undone).toEqual(["a", "b"]);
+    expect(watch?.disconnected).toBe(true);
+    // nothing left to undo twice
+    near.stop();
+    near.forget(b);
+    expect(undone).toEqual(["a", "b"]);
+    expect(done).toEqual(["a", "b"]);
+  });
+
+  it("without an observer (no viewport to watch) the work is done at once", () => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal("IntersectionObserver", undefined);
+    const { near, done, undone } = watcher();
+    const a = element("a");
+    near.watch(a);
+    expect(done).toEqual(["a"]);
+    near.forget(a);
+    expect(undone).toEqual(["a"]);
   });
 });

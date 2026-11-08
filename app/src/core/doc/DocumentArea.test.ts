@@ -482,6 +482,8 @@ describe("editing", () => {
     await import("../editing/visual/jsdomShims");
     await show("README.md");
     await until(() => modeButton("Edit") !== undefined, "mode switch");
+    // View's card is there (its plugin is on): Edit draws the same card
+    await until(() => target.querySelector(".reading section[aria-label]") !== null, "card");
     modeButton("Edit")?.click();
     await until(() => target.querySelector(".ProseMirror") !== null, "visual editor");
     const errors = vi.spyOn(console, "error");
@@ -491,15 +493,68 @@ describe("editing", () => {
     );
     expect(errors.mock.calls[0]?.[0]).toBeUndefined();
     expect(target.querySelector("[role=toolbar][aria-label=Formatting]")).not.toBeNull();
-    // the front matter stays as written, with the way to Source
+    // blocks kept as written look as View draws them: the front matter as View's card, the rest as View's blocks
     const locked = [...target.querySelectorAll<HTMLElement>(".pm-locked")];
-    expect(locked.map((l) => `${l.dataset.kind}:${l.dataset.reason}`).join(",")).toContain(
-      "frontMatter:frontMatter",
+    const looks = locked.map((l) => `${l.dataset.kind}:${l.dataset.reason}:${l.dataset.look}`);
+    expect(looks).toContain("frontMatter:frontMatter:card");
+    expect(looks).toContain("math:math:view");
+    // prompt blocks: the tag lines are the edges of View's box, the blocks between stay the editor's own inside it
+    const edges = [...target.querySelectorAll<HTMLElement>(".pm-editor > [data-edge]")];
+    expect(edges.map((e) => `${e.dataset.look}:${e.dataset.edge}`)).toEqual([
+      "prompt:open",
+      "prompt:close",
+      "prompt:open",
+      "prompt:close",
+    ]);
+    const summaries = edges.map((e) => e.querySelector("details.prompt-block > summary"));
+    expect(summaries.map((s) => s?.textContent ?? null)).toEqual([
+      "context",
+      null,
+      "instructions",
+      null,
+    ]);
+    const inside = [...target.querySelectorAll(".pm-editor > .pm-prompt-in")];
+    expect(inside.map((el) => el.localName)).toEqual(["p", "ul", "ol"]);
+    expect(inside[0]?.textContent).toContain("You are reading a prompt file");
+    // hydrated as View: the math embed draws the formula
+    await until(
+      () => target.querySelector(".pm-editor .pm-locked [data-math-style] .katex") !== null,
+      "math drawn",
     );
+    expect(target.querySelector(".pm-editor .pm-locked section[aria-label]")).not.toBeNull();
+    expect(target.querySelector(".pm-editor [data-b]")).toBeNull();
     expect(target.querySelector(".reading")?.hasAttribute("hidden")).toBe(true);
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", ctrlKey: true }));
     await until(() => target.querySelector(".ProseMirror") === null, "back to View");
     expect(target.querySelector(".reading")?.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("Edit does not wait long for View's render: blocks kept as written show their source, then View's look", async () => {
+    await import("../editing/visual/jsdomShims");
+    await show("README.md");
+    await until(() => modeButton("Edit") !== undefined, "mode switch");
+    const render = mock.configSheet.bind(mock);
+    let release = (): void => {};
+    const held = new Promise<void>((done) => (release = done));
+    const slow = vi.spyOn(mock, "configSheet").mockImplementation(async (path, text) => {
+      await held;
+      return render(path, text);
+    });
+    const math = (): HTMLElement | null =>
+      target.querySelector<HTMLElement>('.pm-editor .pm-locked[data-kind="math"]');
+    try {
+      modeButton("Edit")?.click();
+      await until(() => math() !== null, "the editor before the render");
+      expect(math()?.dataset.look).toBe("source");
+      release();
+      await until(() => math()?.dataset.look === "view", "View's look");
+      await until(
+        () => target.querySelector('.pm-editor .pm-locked[data-look="card"]') !== null,
+        "View's card",
+      );
+    } finally {
+      slow.mockRestore();
+    }
   });
 
   it("the picture button chooses pictures in a file dialog and puts each in the image folder", async () => {

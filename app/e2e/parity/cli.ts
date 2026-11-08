@@ -173,6 +173,18 @@ async function compareAll(
       });
       try {
         const page = await run.openApp(context, url, errors);
+        // every block comes near the screen once, then the pane is back at the top and at rest: lazy embeds (math,
+        // diagrams) are drawn in both modes wherever they are, so both are compared fully drawn
+        const drawAll = async (): Promise<void> => {
+          const screens = await page.evaluate(snapshot.screensOf);
+          for (let screen = 1; screen < screens; screen++) {
+            await page.evaluate(snapshot.scrollToScreen, screen);
+            await seed.settle(page, 100);
+          }
+          await page.evaluate(snapshot.scrollToScreen, 0);
+          await page.clock.runFor(AT_REST_MS);
+          await seed.settle(page);
+        };
         await seed.seed(page, "project", {});
         for (const doc of args.docs) {
           const where = { doc, theme };
@@ -180,6 +192,7 @@ async function compareAll(
           await seed.settle(page);
           await page.clock.runFor(AT_REST_MS);
           await seed.settle(page);
+          await drawAll();
           const view = await page.evaluate(snapshot.sideOf, VIEW_SIDE);
           if (view === null) throw new Error(`${doc}: no reading view (${VIEW_ROOT})`);
           const viewScroll = await page.evaluate(snapshot.scrollOf);
@@ -187,6 +200,7 @@ async function compareAll(
           await page.locator(EDIT_ROOT).waitFor({ state: "visible", timeout: WAIT });
           await seed.settle(page);
           const entry = await page.evaluate(snapshot.entryOf);
+          await drawAll();
           const edit = await page.evaluate(snapshot.sideOf, EDIT_SIDE);
           if (edit === null) throw new Error(`${doc}: no visual editor (${EDIT_ROOT})`);
           diffs.push(

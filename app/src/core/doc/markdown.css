@@ -12,6 +12,11 @@
   margin: 0 auto;
   font: calc(var(--fs-reading) * var(--zoom)) / var(--lh-reading) var(--font-reading);
   color: var(--text);
+  /* a fold's edge and inner space, and a prompt box's left edge (Edit builds the box from the same) */
+  --details-rule: 1px;
+  --details-pad-y: 8px;
+  --details-pad-x: 14px;
+  --prompt-rule: 3px;
 }
 .md.is-wide {
   --column: var(--measure-wide);
@@ -19,8 +24,23 @@
 .md.is-full {
   --column: 100000px;
 }
-.md-body > * {
+/* the blocks inside a prompt box in Edit are the body's children but spaced as the box's (see the prompt blocks) */
+.md-body > :where(:not(.pm-prompt-in)) {
   margin: 0 0 1em;
+}
+/* Edit draws View's blocks for a block it keeps as written inside one holder: the holder adds no space (the margins
+   of what it holds collapse through it) and the blocks in it are spaced as the body's own; View's footnotes rule
+   goes above the first footnote only. A prompt box's bottom edge is spaced as View's box. */
+.md-body > .pm-locked:not([data-look="source"], [data-edge="close"]) {
+  margin: 0;
+}
+.md-body > :where(.pm-locked[data-look="view"]:not(.pm-prompt-in)) > * {
+  margin: 0 0 1em;
+}
+.md .pm-locked[data-notes="next"] > .footnotes {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 /* a long document: blocks far from the screen skip layout and painting (their size is remembered once seen) */
 .md.is-long .md-body > * {
@@ -234,9 +254,10 @@
   font-size: 0.75em;
   line-height: 0;
 }
-.md details {
-  padding: 8px 14px;
-  border: 1px solid var(--border);
+.md details,
+.md .pm-prompt-frame {
+  padding: var(--details-pad-y) var(--details-pad-x);
+  border: var(--details-rule) solid var(--border);
   border-radius: var(--radius-card);
   background: var(--surface);
 }
@@ -251,8 +272,9 @@
   margin-bottom: 0;
 }
 /* prompt blocks (<context>, <instructions>, ...): a fold that names its tag */
-.md details.prompt-block {
-  border-left: 3px solid var(--accent-muted);
+.md details.prompt-block,
+.md .pm-prompt-frame {
+  border-left: var(--prompt-rule) solid var(--accent-muted);
   border-radius: 0 var(--radius-card) var(--radius-card) 0;
 }
 .md details.prompt-block > summary {
@@ -271,6 +293,46 @@
 .md details.prompt-block > summary::marker {
   color: var(--muted);
 }
+/* Edit: the blocks of a prompt box stay the editor's own, so the box is built around them. The open tag line is the
+   box's top: View's summary in a box of View's classes that paints nothing and has no bottom. The blocks between are
+   laid out as the box's children (inset by the box's edge and padding, per box around them; spaced by their own
+   rules, not the body's; the last one flush with the box's end). The close tag line is the box's bottom padding and
+   edge. One frame under the top, stretched to the bottom edge, paints the box once. */
+.md .pm-editor {
+  isolation: isolate;
+}
+.md .pm-editor > .pm-prompt-in {
+  margin-left: calc(var(--prompt-depth, 1) * (var(--prompt-rule) + var(--details-pad-x)));
+  margin-right: calc(var(--prompt-depth, 1) * (var(--details-rule) + var(--details-pad-x)));
+}
+.md .pm-editor > .pm-prompt-end,
+.md .pm-editor > .pm-prompt-end.pm-locked > :last-child {
+  margin-bottom: 0;
+}
+.md .pm-editor > [data-edge="open"] {
+  position: relative;
+}
+.md .pm-editor > [data-edge="open"] > details.prompt-block {
+  padding-bottom: 0;
+  border-bottom-width: 0;
+  border-color: transparent;
+  background: none;
+}
+.md .pm-editor > [data-edge="close"][data-look="prompt"] {
+  padding-top: var(--details-pad-y);
+  border-bottom: var(--details-rule) solid transparent;
+}
+.md .pm-prompt-frame {
+  display: none;
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--prompt-box);
+  z-index: -1;
+  pointer-events: none;
+}
+.md [data-box] > .pm-prompt-frame {
+  display: block;
+}
 .md .tvar {
   padding: 0.05em 0.35em;
   border-radius: 4px;
@@ -284,11 +346,13 @@
   font-size: 0.9em;
   text-decoration-style: dotted;
 }
-.md-body dl dt {
+/* a description list of the document; the front matter card Edit draws in its body is the plugin's own markup, laid
+   out as View lays it out above the body */
+.md-body dl:where(:not(.pm-locked[data-look="card"] dl)) dt {
   font-weight: 600;
   margin-top: 0.6em;
 }
-.md-body dl dd {
+.md-body dl:where(:not(.pm-locked[data-look="card"] dl)) dd {
   margin: 0.15em 0 0 1.4em;
   color: var(--muted);
 }

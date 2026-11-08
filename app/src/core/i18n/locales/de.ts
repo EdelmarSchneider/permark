@@ -459,6 +459,16 @@ export default {
   "edit.discard": "Verwerfen",
   "edit.keepEditing": "Weiter bearbeiten",
   "edit.editInSource": "Im Quelltext bearbeiten",
+  "edit.blockSource": "Quelltext dieses Blocks",
+  "edit.blockSourceHint": "Esc zum Beenden",
+  "edit.block.html": "HTML",
+  "edit.block.formula": "Formel",
+  "edit.block.footnote": "Fußnote",
+  "edit.block.diagram": "Diagramm",
+  "edit.block.alert": "Hinweis",
+  "edit.block.other": "Block bleibt wie geschrieben",
+  "edit.block.openHint": "Eingabetaste zum Bearbeiten",
+  "edit.documentText": "Dokumenttext",
   "edit.visualForMarkdown":
     "Der Bearbeitungsmodus ist für Markdown- und Einstellungsdateien; nutze Quelltext.",
   "edit.diagramNoPlugin":
@@ -1400,7 +1410,6 @@ export default {
   "config.fromSource": "Im Quelltext bearbeiten",
   "config.nothing": "In dieser Datei gibt es noch nichts anzuzeigen.",
   "config.noSheet": "Diese Datei lässt sich nicht als Tabelle zeigen. Nutze den Quelltext.",
-  "config.fm.bar": "Eigenschaften. Eine zu ändern lässt den Rest der Datei, wie er ist.",
   "config.reason.multiline": "Text über mehrere Zeilen. Ändere ihn im Quelltext.",
   "config.reason.alias": "Ein Alias eines anderen Werts. Ändere ihn im Quelltext.",
   "config.reason.anchor":

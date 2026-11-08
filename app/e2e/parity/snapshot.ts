@@ -81,6 +81,7 @@ export async function sideOf(arg: SideArg): Promise<Side | null> {
   };
 
   const kindOf = (el: Element): string => {
+    if (el.matches("details.prompt-block, .pm-prompt-frame")) return "prompt";
     if (el.classList.contains("pm-locked")) return "locked";
     if (el.matches(".code-block, pre")) return "code";
     if (el.matches(".table-wrap, .tableWrapper, table")) return "table";
@@ -115,9 +116,10 @@ export async function sideOf(arg: SideArg): Promise<Side | null> {
     const task =
       li.classList.contains("task-list-item") || li.getAttribute("data-item-type") === "task";
     const kind = task ? "task" : list?.localName === "ol" ? "ordered" : "bullet";
-    // ProseMirror wraps every item's text in a paragraph: Edit says loose by the list's `spread`
+    // ProseMirror wraps every item's text in a paragraph: Edit says loose by the list's `spread` (a list in a block
+    // Edit draws as View is View's own)
     const loose =
-      arg.mode === "edit"
+      arg.mode === "edit" && li.closest(".pm-locked") === null
         ? list?.getAttribute("data-spread") === "true"
         : [...(list?.children ?? [])].some((c) => c.querySelector(":scope > p") !== null);
     return `li.${kind}.${loose ? "loose" : "tight"}`;
@@ -149,6 +151,7 @@ export async function sideOf(arg: SideArg): Promise<Side | null> {
         extra["offset-top"] = px(r.top - box.top);
         extra["offset-right"] = px(box.right - r.right);
       } else if (/^h[1-6]$/.test(tag)) type = tag;
+      else if (tag === "summary") type = "summary";
       else if (tag === "p") type = el === block ? "p" : null;
       else if (tag === "li") {
         type = listKind(el);
@@ -172,11 +175,13 @@ export async function sideOf(arg: SideArg): Promise<Side | null> {
         }
       } else if (tag === "a") {
         if (el.classList.contains("anchor")) type = "anchor";
+        else if (el.classList.contains("at-ref")) type = "at-ref";
         else {
           type = "a";
           if (el.classList.contains("is-missing")) flavor = "missing";
         }
       } else if (tag === "span" && el.classList.contains("code-ref")) type = "code-ref";
+      else if (tag === "span" && el.classList.contains("tvar")) type = "tvar";
       else if (tag === "img" && !el.classList.contains("ProseMirror-separator")) {
         type = "img";
         extra["width"] = px(r.width);
@@ -194,27 +199,84 @@ export async function sideOf(arg: SideArg): Promise<Side | null> {
 
   const top = root.getBoundingClientRect().top;
   const blocks: Side["blocks"] = [];
-  for (const el of root.children) {
-    if (!(el instanceof HTMLElement)) continue;
+
+  // the front matter card: above View's body, inside Edit's (a block kept as written); measured first on both sides,
+  // its rows by their place in the card
+  const card =
+    arg.mode === "view"
+      ? root.parentElement?.querySelector(":scope > section.card")
+      : root.querySelector(':scope > .pm-locked[data-look="card"] > section.card');
+  if (card instanceof HTMLElement) {
+    const r = card.getBoundingClientRect();
+    const items: Item[] = [];
+    for (const el of card.querySelectorAll("dt, dd, .chip, pre")) {
+      const e = el.getBoundingClientRect();
+      const type = `card-${el.classList.contains("chip") ? "chip" : el.localName}`;
+      items.push({
+        type,
+        label: type,
+        props: {
+          ...styleOf(el),
+          "offset-left": px(e.left - r.left),
+          "offset-top": px(e.top - r.top),
+          height: px(e.height),
+        },
+      });
+    }
+    blocks.push({
+      kind: "card",
+      key: `card:${textOf(card)}`,
+      top: r.top - top,
+      bottom: r.bottom - top,
+      props: { height: px(r.height), ...frameOf(card) },
+      items,
+      locked: null,
+    });
+  }
+
+  // a block Edit keeps as written and draws as View: the blocks it holds are View's, measured as View's are; the
+  // front matter card is measured above; one that shows its source stays one locked block.
+  // A prompt box: the box itself (View's details | Edit's frame under its open tag line), its summary row, then the
+  // blocks it holds (View's children | the editor's blocks between the tag lines); the close tag line is the box's edge.
+  const shown: HTMLElement[] = [];
+  const add = (el: Element): void => {
+    if (!(el instanceof HTMLElement) || el.matches('.pm-locked[data-look="card"]')) return;
+    if (el.matches("details.prompt-block")) {
+      shown.push(el);
+      for (const held of el.children) add(held);
+    } else if (el.matches('.pm-locked[data-look="prompt"]')) {
+      for (const part of [":scope > .pm-prompt-frame", ":scope > details > summary"]) {
+        const found = el.querySelector(part);
+        if (found !== null) add(found);
+      }
+    } else if (el.matches('.pm-locked[data-look="view"]')) {
+      for (const held of el.children) add(held);
+    } else shown.push(el);
+  };
+  for (const el of root.children) add(el);
+  for (const el of shown) {
     // ProseMirror's own helpers (gap cursor, widgets) are editing affordances
     if (el.matches(".ProseMirror-gapcursor, .ProseMirror-widget")) continue;
     const r = el.getBoundingClientRect();
-    if (r.width === 0 && r.height === 0) continue;
+    // nothing drawn (a link definition in Edit, an empty block): nothing to compare
+    if (r.height === 0) continue;
     const kind = kindOf(el);
     const locked =
       kind === "locked"
         ? { kind: el.dataset["kind"] ?? "other", reason: el.dataset["reason"] ?? "" }
         : null;
+    // a prompt box is named by its tag and measured as a frame: what it holds is measured in its own blocks
+    const box = kind === "prompt";
     blocks.push({
       kind,
-      key: `${kind}:${locked === null ? textOf(el) : ""}`,
+      key: `${kind}:${box ? (el.dataset["tag"] ?? "") : locked === null ? textOf(el) : ""}`,
       top: r.top - top,
       bottom: r.bottom - top,
       props: {
         height: px(r.height),
-        ...(kind === "code" || kind === "table" ? frameOf(el) : {}),
+        ...(kind === "code" || kind === "table" || box ? frameOf(el) : {}),
       },
-      items: locked === null ? itemsOf(el) : [],
+      items: locked === null && !box ? itemsOf(el) : [],
       locked,
     });
   }
@@ -248,4 +310,17 @@ export function entryOf(): { scroll: number; selected: number; toolbarRows: numb
     selected: document.querySelectorAll(".pm-editor .ProseMirror-selectednode").length,
     toolbarRows: rows,
   };
+}
+
+/** Screens of the document pane: scroll steps of one screen that reach its end. */
+export function screensOf(): number {
+  const pane = document.querySelector("[data-scroller]");
+  if (!(pane instanceof HTMLElement) || pane.clientHeight === 0) return 0;
+  return Math.ceil(pane.scrollHeight / pane.clientHeight);
+}
+
+/** Scrolls the document pane `screen` screens down (0: the top). */
+export function scrollToScreen(screen: number): void {
+  const pane = document.querySelector("[data-scroller]");
+  if (pane instanceof HTMLElement) pane.scrollTop = screen * pane.clientHeight;
 }

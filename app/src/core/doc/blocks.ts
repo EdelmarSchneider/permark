@@ -31,14 +31,67 @@ export type Applied = {
   settled: Promise<void>;
 };
 
+/**
+ * The deferred work of elements, done once each comes within one viewport of the pane above or below (at once where
+ * nothing can watch the viewport), and undone when the element goes or the watching stops.
+ */
+export class NearScreen {
+  #near: (element: HTMLElement) => (() => void) | void;
+  #observer: IntersectionObserver | null = null;
+  #undo = new Map<HTMLElement, () => void>();
+
+  constructor(scroller: HTMLElement, near: (element: HTMLElement) => (() => void) | void) {
+    this.#near = near;
+    if (typeof IntersectionObserver !== "undefined") {
+      this.#observer = new IntersectionObserver((entries) => this.#onView(entries), {
+        root: scroller,
+        // one viewport above and below counts as near
+        rootMargin: "100% 0px 100% 0px",
+      });
+    }
+  }
+
+  watch(element: HTMLElement): void {
+    if (this.#observer) this.#observer.observe(element);
+    else this.#done(element);
+  }
+
+  /** The element goes: no more watching, its work undone. */
+  forget(element: HTMLElement): void {
+    this.#observer?.unobserve(element);
+    this.#undo.get(element)?.();
+    this.#undo.delete(element);
+  }
+
+  stop(): void {
+    this.#observer?.disconnect();
+    this.#observer = null;
+    for (const undo of this.#undo.values()) undo();
+    this.#undo.clear();
+  }
+
+  #done(element: HTMLElement): void {
+    if (this.#undo.has(element)) return;
+    const undo = this.#near(element);
+    if (undo) this.#undo.set(element, undo);
+  }
+
+  #onView(entries: IntersectionObserverEntry[]): void {
+    for (const entry of entries) {
+      if (!entry.isIntersecting || !(entry.target instanceof HTMLElement)) continue;
+      this.#observer?.unobserve(entry.target);
+      this.#done(entry.target);
+    }
+  }
+}
+
 export class BlockHost {
   #container: HTMLElement | null = null;
   #scroller: HTMLElement | null = null;
   #hooks: BlockHooks | null = null;
   #els = new Map<string, HTMLElement>();
   #order: string[] = [];
-  #undo = new Map<string, () => void>();
-  #observer: IntersectionObserver | null = null;
+  #near: NearScreen | null = null;
   #timer: ReturnType<typeof setTimeout> | null = null;
   #sliceDone: (() => void) | null = null;
   #firstSlice = FIRST_SLICE;
@@ -55,22 +108,14 @@ export class BlockHost {
     this.#container = container;
     this.#scroller = scroller;
     this.#hooks = hooks;
-    if (typeof IntersectionObserver !== "undefined") {
-      this.#observer = new IntersectionObserver((entries) => this.#onView(entries), {
-        root: scroller,
-        // one viewport above and below counts as near
-        rootMargin: "100% 0px 100% 0px",
-      });
-    }
+    this.#near = new NearScreen(scroller, (element) => hooks.near(element));
   }
 
   /** Stops, undoes every block's deferred work and forgets the blocks (their DOM goes with the container). */
   detach(): void {
     this.#stopSlices();
-    this.#observer?.disconnect();
-    this.#observer = null;
-    for (const undo of this.#undo.values()) undo();
-    this.#undo.clear();
+    this.#near?.stop();
+    this.#near = null;
     this.#els.clear();
     this.#order = [];
     this.#container = null;
@@ -152,15 +197,8 @@ export class BlockHost {
       const root = hooks.enhance(first);
       root.setAttribute("data-b", block.id);
       this.#els.set(block.id, root);
-      this.#observer?.observe(root);
-      if (this.#observer === null) this.#laterNear(block.id, root);
+      this.#near?.watch(root);
     }
-  }
-
-  /** Without an observer (no viewport to watch), blocks do their deferred work as soon as they are built. */
-  #laterNear(id: string, root: HTMLElement): void {
-    const undo = this.#hooks?.near(root);
-    if (undo) this.#undo.set(id, undo);
   }
 
   /** Puts the built blocks in the container in `order`, moving only what is out of place. */
@@ -233,11 +271,9 @@ export class BlockHost {
   #drop(id: string): void {
     const el = this.#els.get(id);
     if (el) {
-      this.#observer?.unobserve(el);
+      this.#near?.forget(el);
       el.remove();
     }
-    this.#undo.get(id)?.();
-    this.#undo.delete(id);
     this.#els.delete(id);
   }
 
@@ -279,20 +315,6 @@ export class BlockHost {
       const delta = el.getBoundingClientRect().top - top - mark.offset;
       if (Math.abs(delta) > 0.5) scroller.scrollTop += delta;
       return;
-    }
-  }
-
-  // ---- near the screen ---------------------------------------------------------------------------------------
-
-  #onView(entries: IntersectionObserverEntry[]): void {
-    for (const entry of entries) {
-      if (!entry.isIntersecting) continue;
-      const el = entry.target;
-      if (!(el instanceof HTMLElement)) continue;
-      this.#observer?.unobserve(el);
-      const id = el.getAttribute("data-b");
-      if (id === null) continue;
-      this.#laterNear(id, el);
     }
   }
 }

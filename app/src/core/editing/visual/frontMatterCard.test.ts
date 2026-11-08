@@ -1,33 +1,58 @@
 // @vitest-environment jsdom
 import "./jsdomShims";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import { TextSelection } from "@milkdown/kit/prose/state";
-import { buildDoc, compose } from "./compose";
-import { createCore, type Core } from "./core";
+import type { FrontMatter } from "../../../api/generated/FrontMatter";
+import { buildDoc, compose, type Built } from "./compose";
+import { createCore, type Core, type LockedHost } from "./core";
+import type { LockedRender } from "./lockedRender";
 
 let core: Core;
 let replace: ((source: string) => void) | null = null;
-let drawn = 0;
+let looks = new WeakMap<PMNode, LockedRender>();
+
+const FRONT: FrontMatter = {
+  syntax: "yaml",
+  raw: "title: A plan\nowner: ana",
+  fields: [
+    { key: "title", value: { type: "text", text: "A plan" } },
+    { key: "owner", value: { type: "text", text: "ana" } },
+  ],
+};
+
+function hostWith(card: LockedHost["card"]): LockedHost {
+  return {
+    render: (node) => looks.get(node) ?? null,
+    refresh: () => Promise.resolve(),
+    blocks: { enhance: (element) => element, near: () => {} },
+    card,
+    // the editable properties take the card's place and edit through `replace`
+    properties: (_target, _source, put) => {
+      replace = put;
+      return () => {};
+    },
+    reasonText: (reason) => `locked: ${reason}`,
+    editLabel: "Source",
+    edit: () => {},
+    sourceLabel: "Source of this block",
+    sourceHint: "Esc to finish",
+    blockLabel: (name) => name,
+    openHint: "Enter to edit",
+  };
+}
+
+const viewCard: LockedHost["card"] = (target) => {
+  const card = document.createElement("section");
+  card.className = "card-stub";
+  target.append(card);
+  return () => card.remove();
+};
 
 beforeAll(async () => {
   const host = document.createElement("div");
   document.body.append(host);
-  core = await createCore({
-    host,
-    locked: {
-      reasonText: (reason) => reason,
-      editLabel: "Source",
-      cardText: "Properties",
-      edit: () => {},
-      // the properties card takes the front matter's place and edits through `replace`
-      draw: (_body, kind, _source, put) => {
-        if (kind !== "frontMatter") return null;
-        replace = put;
-        drawn += 1;
-        return () => {};
-      },
-    },
-  });
+  core = await createCore({ host, locked: hostWith(viewCard) });
 });
 
 afterAll(async () => {
@@ -40,16 +65,26 @@ const SEGMENTS = [
   { lineStart: 6, lineEnd: 6, kind: "paragraph", lock: null },
 ] as const;
 
+/** TEXT in `editor` with View's card as the front matter's look. */
+async function load(editor: Core): Promise<Built> {
+  const built = await buildDoc(editor, TEXT, SEGMENTS);
+  const front = built.doc.firstChild;
+  if (front) looks.set(front, { kind: "frontMatter", frontMatter: FRONT });
+  editor.setDoc(built.doc);
+  return built;
+}
+
 describe("the front matter as editable properties", () => {
   it("replaces the block's source: the document gets those bytes and nothing else changes", async () => {
-    const built = await buildDoc(core, TEXT, SEGMENTS);
-    core.setDoc(built.doc);
-    expect(drawn).toBeGreaterThan(0);
-    const block = document.querySelector(".pm-locked--card");
-    expect(block).not.toBeNull();
-    expect(block?.querySelector(".pm-locked__why")?.textContent).toBe("Properties");
+    looks = new WeakMap();
+    const built = await load(core);
+    const block = core.view.dom.querySelector<HTMLElement>(".pm-locked");
+    const card = block?.querySelector(".card-stub");
+    expect(block?.dataset.look).toBe("card");
     // untouched: the same text, no block changed
     expect(compose(core, built, core.view.state.doc).text).toBe(TEXT);
+    card?.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+    expect(replace).not.toBeNull();
     replace?.("---\ntitle: A better plan\nowner: ana\n---");
     const composed = compose(core, built, core.view.state.doc);
     expect(composed.text).toBe(TEXT.replace("A plan", "A better plan"));
@@ -57,8 +92,7 @@ describe("the front matter as editable properties", () => {
   });
 
   it("a document that starts with the front matter opens with the caret in its first text, nothing selected", async () => {
-    const built = await buildDoc(core, TEXT, SEGMENTS);
-    core.setDoc(built.doc);
+    await load(core);
     const { selection, doc } = core.view.state;
     expect(selection).toBeInstanceOf(TextSelection);
     expect(selection.empty).toBe(true);
@@ -69,22 +103,15 @@ describe("the front matter as editable properties", () => {
   it("a front matter block with no card keeps its source and the reason", async () => {
     const plain = await createCore({
       host: document.body.appendChild(document.createElement("div")),
-      locked: {
-        reasonText: (reason) => `locked: ${reason}`,
-        editLabel: "Source",
-        edit: () => {},
-        draw: () => null,
-      },
+      locked: hostWith(() => null),
     });
-    const built = await buildDoc(plain, TEXT, SEGMENTS);
-    plain.setDoc(built.doc);
-    const blocks = document.querySelectorAll(".pm-locked");
-    const last = blocks[blocks.length - 1];
-    expect(last?.classList.contains("pm-locked--card")).toBe(false);
-    expect(last?.querySelector(".pm-locked__source")?.textContent).toBe(
+    await load(plain);
+    const block = plain.view.dom.querySelector<HTMLElement>(".pm-locked");
+    expect(block?.dataset.look).toBe("source");
+    expect(block?.querySelector(".pm-locked__source")?.textContent).toBe(
       "---\ntitle: A plan\nowner: ana\n---",
     );
-    expect(last?.querySelector(".pm-locked__why")?.textContent).toBe("locked: frontMatter");
+    expect(block?.querySelector(".pm-locked__why")?.textContent).toBe("locked: frontMatter");
     await plain.destroy();
   });
 });
