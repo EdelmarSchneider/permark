@@ -482,6 +482,8 @@ describe("editing", () => {
     await import("../editing/visual/jsdomShims");
     await show("README.md");
     await until(() => modeButton("Edit") !== undefined, "mode switch");
+    // View's card is there (its plugin is on): Edit draws the same card
+    await until(() => target.querySelector(".reading section[aria-label]") !== null, "card");
     modeButton("Edit")?.click();
     await until(() => target.querySelector(".ProseMirror") !== null, "visual editor");
     const errors = vi.spyOn(console, "error");
@@ -491,11 +493,18 @@ describe("editing", () => {
     );
     expect(errors.mock.calls[0]?.[0]).toBeUndefined();
     expect(target.querySelector("[role=toolbar][aria-label=Formatting]")).not.toBeNull();
-    // the front matter stays as written, with the way to Source
+    // blocks kept as written look as View draws them: the front matter as View's card, the rest as View's blocks
     const locked = [...target.querySelectorAll<HTMLElement>(".pm-locked")];
-    expect(locked.map((l) => `${l.dataset.kind}:${l.dataset.reason}`).join(",")).toContain(
-      "frontMatter:frontMatter",
+    const looks = locked.map((l) => `${l.dataset.kind}:${l.dataset.reason}:${l.dataset.look}`);
+    expect(looks).toContain("frontMatter:frontMatter:card");
+    expect(looks).toContain("math:math:view");
+    // hydrated as View: the math embed draws the formula
+    await until(
+      () => target.querySelector(".pm-editor .pm-locked [data-math-style] .katex") !== null,
+      "math drawn",
     );
+    expect(target.querySelector(".pm-editor .pm-locked section[aria-label]")).not.toBeNull();
+    expect(target.querySelector(".pm-editor [data-b]")).toBeNull();
     expect(target.querySelector(".reading")?.hasAttribute("hidden")).toBe(true);
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", ctrlKey: true }));
     await until(() => target.querySelector(".ProseMirror") === null, "back to View");

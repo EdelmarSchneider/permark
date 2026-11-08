@@ -1361,7 +1361,6 @@ export default {
   "config.fromSource": "소스에서 편집",
   "config.nothing": "이 파일에는 아직 표시할 내용이 없습니다.",
   "config.noSheet": "이 파일은 시트로 표시할 수 없습니다. 소스를 사용하세요.",
-  "config.fm.bar": "속성입니다. 하나를 변경해도 파일의 나머지 부분은 그대로 유지됩니다.",
   "config.reason.multiline": "여러 줄로 된 텍스트입니다. 소스에서 변경하세요.",
   "config.reason.alias": "다른 값의 별칭입니다. 소스에서 변경하세요.",
   "config.reason.anchor": "다른 값이 참조하는 앵커가 있습니다. 소스에서 변경하세요.",

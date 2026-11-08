@@ -6,9 +6,9 @@ import type { Body } from "../../../api/generated/Body";
 import type { Segment } from "../../../api/generated/Segment";
 import { createMockConfig } from "../../../api/mockConfig";
 import { createMockEditing } from "../../../api/mockEdit";
-import { buildDoc } from "./compose";
+import { buildDoc, compose } from "./compose";
 import { createCore, type Core } from "./core";
-import { lockedRenders, type LineBlock, type LockedRender } from "./lockedRender";
+import { lockedLooks, lockedRenders, type LineBlock, type LockedRender } from "./lockedRender";
 
 let core: Core;
 
@@ -118,6 +118,24 @@ describe("locked blocks look like View", () => {
     blocks.forEach((b, i) =>
       expect(renders[i] === null, `line ${b.lineStart}`).toBe(b.reason === null),
     );
+  });
+
+  it("the looks of a document's nodes, placed by the composed text, are the looks of its blocks", async () => {
+    const { text, segments } = await fixture("README.md");
+    const built = await buildDoc(core, text, segments);
+    const body = await viewOf("README.md", text);
+    const looks = lockedLooks(body, built.doc, compose(core, built, built.doc));
+    const blocks = built.sources.map((s) => ({
+      lineStart: s.lineStart,
+      lineEnd: s.lineStart + (s.text.match(/\n/g)?.length ?? 0),
+      reason: s.locked,
+      text: s.text,
+    }));
+    const expected = lockedRenders(body, blocks);
+    const nodes: (LockedRender | null)[] = [];
+    built.doc.forEach((node) => nodes.push(looks.get(node) ?? null));
+    expect(nodes).toEqual(expected);
+    expect(looks.size).toBeGreaterThan(5);
   });
 
   it("CLAUDE.md: the front matter card and the prompt tag lines", async () => {

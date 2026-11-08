@@ -1382,7 +1382,6 @@ export default {
   "config.fromSource": "Editar en Fuente",
   "config.nothing": "Todavía no hay nada que mostrar en este archivo.",
   "config.noSheet": "Este archivo no puede mostrarse como hoja. Usa Fuente.",
-  "config.fm.bar": "Propiedades. Cambiar una deja el resto del archivo como está.",
   "config.reason.multiline": "Texto en varias líneas. Cámbialo en Fuente.",
   "config.reason.alias": "Un alias de otro valor. Cámbialo en Fuente.",
   "config.reason.anchor": "Tiene un ancla a la que se refieren otros valores. Cámbialo en Fuente.",

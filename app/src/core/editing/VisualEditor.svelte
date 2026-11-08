@@ -1,10 +1,13 @@
 <script lang="ts">
   // Edit mode: Milkdown over the blocks of the text (loaded on first use). Untouched blocks keep their bytes
-  // (compose); locked blocks show their source with the reason and a way to Source. Toolbar, slash menu, link and
-  // picture popovers.
-  import { mount, unmount } from "svelte";
+  // (compose); locked blocks look as View draws their lines (View's render of the text, asked for when the editor is
+  // made), their source only where View's blocks cannot be matched. Toolbar, slash menu, link and picture popovers.
+  import { mount, unmount, type Component } from "svelte";
   import type { Node as PMNode } from "@milkdown/kit/prose/model";
-  import { api } from "../../api";
+  import { api, type Body } from "../../api";
+  import type { FrontMatter } from "../../api/generated/FrontMatter";
+  import type { BlockHooks } from "../doc/blocks";
+  import type { FrontMatterProps } from "../plugins/props";
   import { apiErrorText } from "../errors";
   import { conditions } from "../conditions/context.svelte";
   import { t, type MessageKey } from "../i18n";
@@ -29,6 +32,7 @@
     Core,
     Format,
     LockReason,
+    LockedRender,
     SlashState,
   } from "./visual";
   import type { PickerKind } from "./visual/characters";
@@ -66,6 +70,8 @@
   let core: Core | null = null;
   let built: Built | null = null;
   const composedOf = new WeakMap<PMNode, Composed>();
+  /** View's look of each locked block, by node (attrs feed the clipboard and node equality: the look stays out). */
+  const looks = new WeakMap<PMNode, LockedRender>();
 
   const REASONS: Record<LockReason, MessageKey> = {
     frontMatter: "edit.locked.frontMatter",
@@ -170,36 +176,85 @@
     if (line !== undefined) scrollToLine(line);
   }
 
-  /** A diagram drawn in a locked block; the front matter as properties that can be edited. */
-  function draw(
-    body: HTMLElement,
-    kind: string,
-    source: string,
-    replace: (source: string) => void,
-  ): (() => void) | null {
-    if (kind === "frontMatter") return propertiesCard(body, source, replace);
-    if (kind !== "code") return null;
-    const match = /^ {0,3}(?:`{3,}|~{3,})[ \t]*(\S+)/.exec(source);
-    const language = (match?.[1] ?? "").toLowerCase();
-    const wanted = language === "puml" ? "plantuml" : language;
-    const embed = contributions
-      .visible("embed", conditions.current)
-      .find((e) => e.language === wanted);
-    if (!embed) return null;
-    const code = source.split("\n").slice(1, -1).join("\n");
-    let gone = false;
-    let mounted: ReturnType<typeof mount> | null = null;
-    void embed.view().then((loaded) => {
-      if (gone) return;
-      mounted = mount(loaded.default, {
-        target: body,
-        props: { source: code, info: language, display: false },
-      });
-    });
-    return () => {
-      gone = true;
-      if (mounted) void unmount(mounted);
+  /** View's render of `text` as the file at `path` (null: none to be had, locked blocks show their source). */
+  function viewOf(path: string, text: string): Promise<Body | null> {
+    return api.configSheet(path, text).then(
+      (result) => (result.ok ? result.value : null),
+      () => null,
+    );
+  }
+
+  /** View's look again for every locked block, from a render of the text as it is now. */
+  async function refreshLooks(path: string): Promise<void> {
+    const now = composed();
+    const doc = core?.view.state.doc;
+    const loaded = mod;
+    if (!now || !doc || !loaded) return;
+    const body = await viewOf(path, now.text);
+    if (body === null) return;
+    for (const [node, look] of loaded.lockedLooks(body, doc, now)) looks.set(node, look);
+  }
+
+  /**
+   * View's hooks for the backend blocks locked blocks draw: structure at once; embeds and links once a block comes
+   * within a screen of the pane, as in View. `stop` undoes what is left.
+   */
+  function viewHooks(): { hooks: BlockHooks; stop: () => void } {
+    const undo = new Map<HTMLElement, () => void>();
+    const near = (element: HTMLElement): void => {
+      if (!undo.has(element)) undo.set(element, documents.decorator.near(element));
     };
+    const observer =
+      typeof IntersectionObserver === "undefined"
+        ? null
+        : new IntersectionObserver(
+            (entries) => {
+              for (const entry of entries) {
+                if (!entry.isIntersecting || !(entry.target instanceof HTMLElement)) continue;
+                observer?.unobserve(entry.target);
+                near(entry.target);
+              }
+            },
+            { root: scroller, rootMargin: "100% 0px 100% 0px" },
+          );
+    return {
+      hooks: {
+        enhance: documents.enhance,
+        near: (element) => {
+          if (observer) observer.observe(element);
+          else near(element);
+          return () => {
+            observer?.unobserve(element);
+            undo.get(element)?.();
+            undo.delete(element);
+          };
+        },
+      },
+      stop: () => {
+        observer?.disconnect();
+        for (const done of undo.values()) done();
+        undo.clear();
+      },
+    };
+  }
+
+  /** View's front matter card, loaded before the document is drawn (nothing moves when it arrives). */
+  async function loadCard(): Promise<Component<FrontMatterProps> | null> {
+    const card = contributions.visible("frontMatterCard", conditions.current)[0];
+    return card ? (await card.view()).default : null;
+  }
+
+  function mountCard(
+    card: Component<FrontMatterProps> | null,
+    target: HTMLElement,
+    front: FrontMatter,
+  ): (() => void) | null {
+    if (card === null) return null;
+    const mounted = mount(card, {
+      target,
+      props: { syntax: front.syntax, raw: front.raw, fields: front.fields },
+    });
+    return () => void unmount(mounted);
   }
 
   /** The front matter as editable properties, when a plugin reads its syntax (YAML | TOML). */
@@ -256,18 +311,29 @@
     let gone = false;
     let detach = (): void => {};
     let made: Core | null = null;
+    let nearby: ReturnType<typeof viewHooks> | null = null;
+    let card: Component<FrontMatterProps> | null = null;
     void (async () => {
+      // asked for at once when the backend keeps blocks as written already (the editor may keep more)
+      const early = (current.segments ?? []).some((s) => s.lock !== null)
+        ? viewOf(current.path, current.text)
+        : null;
       const loaded = await import("./visual");
       if (gone) return;
       mod = loaded;
+      const hooks = viewHooks();
+      nearby = hooks;
       made = await loaded.createCore({
         host: target,
         locked: {
+          render: (node) => looks.get(node) ?? null,
+          refresh: () => refreshLooks(current.path),
+          blocks: hooks.hooks,
+          card: (body, front) => mountCard(card, body, front),
+          properties: propertiesCard,
           reasonText: (reason) => t(REASONS[reason]),
           editLabel: t("edit.editInSource"),
-          cardText: t("config.fm.bar"),
           edit: (node) => void session.switchTo("source", lineOf(node)),
-          draw,
         },
         code: { label: codeLabel },
         first: loaded.appPlugins({
@@ -306,9 +372,21 @@
         return;
       }
       const doc = await loaded.buildDoc(made, current.text, current.segments ?? []);
+      // locked blocks draw View's look from their first paint: the render and the card come first
+      const body = doc.sources.some((s) => s.locked !== null)
+        ? await (early ?? viewOf(current.path, current.text))
+        : null;
+      if (body?.kind === "markdown" && body.frontMatter !== null) {
+        card = await loadCard().catch(() => null);
+      }
       if (gone) {
         await made.destroy();
         return;
+      }
+      if (body !== null) {
+        const now = loaded.compose(made, doc, doc.doc);
+        composedOf.set(doc.doc, now);
+        for (const [node, look] of loaded.lockedLooks(body, doc.doc, now)) looks.set(node, look);
       }
       built = doc;
       core = made;
@@ -364,6 +442,7 @@
       core = null;
       built = null;
       if (made) void made.destroy();
+      nearby?.stop();
     };
   });
 
@@ -655,7 +734,8 @@
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
-  .host :global(.pm-locked) {
+  /* a locked block View's blocks cannot be matched with: its source, the reason and the way to Source */
+  .host :global(.pm-locked[data-look="source"]) {
     margin: var(--sp-3) 0;
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius-card);
@@ -663,6 +743,7 @@
   }
   .host :global(.pm-locked.ProseMirror-selectednode) {
     outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
   .host :global(.pm-locked__bar) {
     display: flex;
@@ -686,18 +767,6 @@
     background: transparent;
     font: var(--fs-code) / 1.5 var(--font-code);
     white-space: pre;
-  }
-  .host :global(.pm-locked__drawing) {
-    padding: var(--sp-2) var(--sp-3);
-    border-top: 1px solid var(--border);
-  }
-  /* the front matter as properties: the card replaces the source */
-  .host :global(.pm-locked--card .pm-locked__source) {
-    display: none;
-  }
-  .host :global(.pm-locked--card .pm-locked__drawing) {
-    padding: 0;
-    border-top: 0;
   }
   .popover {
     position: sticky;

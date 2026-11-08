@@ -1360,7 +1360,6 @@ const en = {
   "config.fromSource": "Edit in Source",
   "config.nothing": "Nothing to show in this file yet.",
   "config.noSheet": "This file can't be shown as a sheet. Use Source.",
-  "config.fm.bar": "Properties. Changing one keeps the rest of the file as it is.",
   "config.reason.multiline": "Text over several lines. Change it in Source.",
   "config.reason.alias": "An alias of another value. Change it in Source.",
   "config.reason.anchor": "Has an anchor other values refer to. Change it in Source.",

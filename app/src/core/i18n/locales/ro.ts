@@ -1453,7 +1453,6 @@ export default {
   "config.fromSource": "Editează în Sursă",
   "config.nothing": "Încă nu este nimic de afișat în acest fișier.",
   "config.noSheet": "Acest fișier nu poate fi afișat ca fișă. Folosește Sursă.",
-  "config.fm.bar": "Proprietăți. Modificarea uneia păstrează restul fișierului așa cum este.",
   "config.reason.multiline": "Text pe mai multe rânduri. Se modifică în Sursă.",
   "config.reason.alias": "Un alias al altei valori. Se modifică în Sursă.",
   "config.reason.anchor": "Are o ancoră la care se referă alte valori. Se modifică în Sursă.",

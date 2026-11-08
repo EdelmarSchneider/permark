@@ -115,9 +115,10 @@ export async function sideOf(arg: SideArg): Promise<Side | null> {
     const task =
       li.classList.contains("task-list-item") || li.getAttribute("data-item-type") === "task";
     const kind = task ? "task" : list?.localName === "ol" ? "ordered" : "bullet";
-    // ProseMirror wraps every item's text in a paragraph: Edit says loose by the list's `spread`
+    // ProseMirror wraps every item's text in a paragraph: Edit says loose by the list's `spread` (a list in a block
+    // Edit draws as View is View's own)
     const loose =
-      arg.mode === "edit"
+      arg.mode === "edit" && li.closest(".pm-locked") === null
         ? list?.getAttribute("data-spread") === "true"
         : [...(list?.children ?? [])].some((c) => c.querySelector(":scope > p") !== null);
     return `li.${kind}.${loose ? "loose" : "tight"}`;
@@ -194,12 +195,20 @@ export async function sideOf(arg: SideArg): Promise<Side | null> {
 
   const top = root.getBoundingClientRect().top;
   const blocks: Side["blocks"] = [];
+  // a block Edit keeps as written and draws as View: the blocks it holds are View's, measured as View's are; View's
+  // front matter card sits above the body View's side measures; one that shows its source stays one locked block
+  const shown: HTMLElement[] = [];
   for (const el of root.children) {
-    if (!(el instanceof HTMLElement)) continue;
+    if (!(el instanceof HTMLElement) || el.matches('.pm-locked[data-look="card"]')) continue;
+    if (!el.matches('.pm-locked[data-look="view"]')) shown.push(el);
+    else for (const held of el.children) if (held instanceof HTMLElement) shown.push(held);
+  }
+  for (const el of shown) {
     // ProseMirror's own helpers (gap cursor, widgets) are editing affordances
     if (el.matches(".ProseMirror-gapcursor, .ProseMirror-widget")) continue;
     const r = el.getBoundingClientRect();
-    if (r.width === 0 && r.height === 0) continue;
+    // nothing drawn (a link definition in Edit, an empty block): nothing to compare
+    if (r.height === 0) continue;
     const kind = kindOf(el);
     const locked =
       kind === "locked"
@@ -248,4 +257,17 @@ export function entryOf(): { scroll: number; selected: number; toolbarRows: numb
     selected: document.querySelectorAll(".pm-editor .ProseMirror-selectednode").length,
     toolbarRows: rows,
   };
+}
+
+/** Screens of the document pane: scroll steps of one screen that reach its end. */
+export function screensOf(): number {
+  const pane = document.querySelector("[data-scroller]");
+  if (!(pane instanceof HTMLElement) || pane.clientHeight === 0) return 0;
+  return Math.ceil(pane.scrollHeight / pane.clientHeight);
+}
+
+/** Scrolls the document pane `screen` screens down (0: the top). */
+export function scrollToScreen(screen: number): void {
+  const pane = document.querySelector("[data-scroller]");
+  if (pane instanceof HTMLElement) pane.scrollTop = screen * pane.clientHeight;
 }

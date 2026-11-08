@@ -1399,7 +1399,6 @@ export default {
   "config.fromSource": "Edita al codi font",
   "config.nothing": "Encara no hi ha res a mostrar en aquest fitxer.",
   "config.noSheet": "Aquest fitxer no es pot mostrar com a full. Feu servir el codi font.",
-  "config.fm.bar": "Propietats. Si en canvieu una, la resta del fitxer es manté tal com està.",
   "config.reason.multiline": "Text en diverses línies. Canvieu-lo al codi font.",
   "config.reason.alias": "Un àlies d'un altre valor. Canvieu-lo al codi font.",
   "config.reason.anchor":

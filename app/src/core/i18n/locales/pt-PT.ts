@@ -1394,7 +1394,6 @@ export default {
   "config.fromSource": "Editar no Código-fonte",
   "config.nothing": "Ainda não há nada para mostrar neste ficheiro.",
   "config.noSheet": "Não é possível mostrar este ficheiro como folha. Use o Código-fonte.",
-  "config.fm.bar": "Propriedades. Alterar uma mantém o resto do ficheiro tal como está.",
   "config.reason.multiline": "Texto em várias linhas. Altere-o no Código-fonte.",
   "config.reason.alias": "Um alias de outro valor. Altere-o no Código-fonte.",
   "config.reason.anchor":

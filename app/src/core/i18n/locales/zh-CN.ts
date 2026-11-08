@@ -1327,7 +1327,6 @@ export default {
   "config.fromSource": "在源码中编辑",
   "config.nothing": "此文件里暂时没有可显示的内容。",
   "config.noSheet": "此文件无法显示为表格，请使用源码。",
-  "config.fm.bar": "属性。修改其中一项，文件的其余部分保持原样。",
   "config.reason.multiline": "跨多行的文本。请在源码中修改。",
   "config.reason.alias": "另一个值的别名。请在源码中修改。",
   "config.reason.anchor": "带有其他值引用的锚点。请在源码中修改。",

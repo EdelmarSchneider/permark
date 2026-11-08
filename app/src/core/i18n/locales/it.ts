@@ -1396,7 +1396,6 @@ export default {
   "config.fromSource": "Modifica nel Sorgente",
   "config.nothing": "Non c'è ancora nulla da mostrare in questo file.",
   "config.noSheet": "Questo file non può essere mostrato come foglio. Usa il Sorgente.",
-  "config.fm.bar": "Proprietà. Cambiarne una lascia il resto del file com'è.",
   "config.reason.multiline": "Testo su più righe. Cambialo nel Sorgente.",
   "config.reason.alias": "Un alias di un altro valore. Cambialo nel Sorgente.",
   "config.reason.anchor": "Ha un'ancora a cui rimandano altri valori. Cambialo nel Sorgente.",

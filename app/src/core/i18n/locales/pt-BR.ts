@@ -1381,7 +1381,6 @@ export default {
   "config.fromSource": "Editar no Código",
   "config.nothing": "Ainda não há nada para mostrar neste arquivo.",
   "config.noSheet": "Este arquivo não pode ser mostrado como planilha. Use o Código.",
-  "config.fm.bar": "Propriedades. Mudar uma mantém o resto do arquivo como está.",
   "config.reason.multiline": "Texto em várias linhas. Mude no Código.",
   "config.reason.alias": "Um alias de outro valor. Mude no Código.",
   "config.reason.anchor": "Tem uma âncora usada por outros valores. Mude no Código.",

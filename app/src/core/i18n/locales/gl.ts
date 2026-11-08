@@ -1387,7 +1387,6 @@ export default {
   "config.fromSource": "Editar en Fonte",
   "config.nothing": "Aínda non hai nada que mostrar neste ficheiro.",
   "config.noSheet": "Este ficheiro non se pode mostrar como folla. Use Fonte.",
-  "config.fm.bar": "Propiedades. Cambiar unha deixa o resto do ficheiro tal como está.",
   "config.reason.multiline": "Texto en varias liñas. Cámbieo en Fonte.",
   "config.reason.alias": "Un alias doutro valor. Cámbieo en Fonte.",
   "config.reason.anchor": "Ten unha áncora á que se refiren outros valores. Cámbieo en Fonte.",

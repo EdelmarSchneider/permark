@@ -1415,7 +1415,6 @@ export default {
   "config.fromSource": "Modifier en mode Source",
   "config.nothing": "Rien à afficher dans ce fichier pour l'instant.",
   "config.noSheet": "Ce fichier ne peut pas être affiché sous forme de fiche. Utilisez Source.",
-  "config.fm.bar": "Propriétés. En modifier une laisse le reste du fichier tel quel.",
   "config.reason.multiline": "Texte sur plusieurs lignes. À modifier en mode Source.",
   "config.reason.alias": "Alias d'une autre valeur. À modifier en mode Source.",
   "config.reason.anchor":

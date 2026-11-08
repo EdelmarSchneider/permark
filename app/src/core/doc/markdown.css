@@ -22,6 +22,20 @@
 .md-body > * {
   margin: 0 0 1em;
 }
+/* Edit draws View's blocks for a block it keeps as written inside one holder: the holder adds no space (the margins
+   of what it holds collapse through it) and the blocks in it are spaced as the body's own; View's footnotes rule
+   goes above the first footnote only */
+.md-body > .pm-locked:not([data-look="source"]) {
+  margin: 0;
+}
+.md-body > :where(.pm-locked[data-look="view"]) > * {
+  margin: 0 0 1em;
+}
+.md .pm-locked[data-notes="next"] > .footnotes {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
 /* a long document: blocks far from the screen skip layout and painting (their size is remembered once seen) */
 .md.is-long .md-body > * {
   content-visibility: auto;

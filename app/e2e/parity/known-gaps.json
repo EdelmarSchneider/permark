@@ -7,14 +7,9 @@
       "why": "View colors code with the highlighter; the visual editor shows code in one color."
     },
     {
-      "area": "fewer-locks",
-      "element": "locked(paragraph)",
-      "why": "A paragraph with a footnote reference, a reference link or inline math is kept as source in Edit."
-    },
-    {
       "area": "locked-blocks",
       "element": "locked(*)",
-      "why": "Blocks the visual editor cannot rewrite exactly (front matter, alerts, math, diagrams, HTML, footnotes) show their source instead of View's drawing."
+      "why": "The tag lines of a prompt block show their source instead of the edges of View's prompt box."
     },
     {
       "area": "inline-decorations",

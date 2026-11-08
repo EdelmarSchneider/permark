@@ -13,10 +13,12 @@
 // floating blocks with several possible owners, a prompt box around a kept inner block, a footnote without its list
 // item, a body that is not Markdown.
 
+import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import type { Block } from "../../../api/generated/Block";
 import type { Body } from "../../../api/generated/Body";
 import type { FrontMatter } from "../../../api/generated/FrontMatter";
-import type { LockReason } from "./core";
+import type { Composed } from "./compose";
+import { LOCKED, reasonOf, type LockReason } from "./lockedView";
 
 /** One top-level block of the editor's text. */
 export type LineBlock = {
@@ -90,6 +92,38 @@ export function lockedRenders(body: Body, blocks: readonly LineBlock[]): (Locked
     out[i] = html === undefined ? NONE : { kind: "html", html: html.join("\n") };
   });
   return out;
+}
+
+/**
+ * View's look of each locked node of `doc`, by node. `composed` places the nodes in `composed.text`, the text `body`
+ * renders (an empty paragraph is not written: no lines, no look).
+ */
+export function lockedLooks(
+  body: Body,
+  doc: PMNode,
+  composed: Composed,
+): Map<PMNode, LockedRender> {
+  const nodes: PMNode[] = [];
+  const blocks: LineBlock[] = [];
+  doc.forEach((node, _offset, index) => {
+    const range = composed.ranges[index];
+    const lineStart = composed.lines.get(node);
+    if (!range || lineStart === undefined) return;
+    const text = composed.text.slice(range.from, range.to);
+    nodes.push(node);
+    blocks.push({
+      lineStart,
+      lineEnd: lineStart + (text.match(/\n/g)?.length ?? 0),
+      reason: node.type.name === LOCKED ? reasonOf(node) : null,
+      text,
+    });
+  });
+  const looks = new Map<PMNode, LockedRender>();
+  lockedRenders(body, blocks).forEach((look, i) => {
+    const node = nodes[i];
+    if (look !== null && node !== undefined) looks.set(node, look);
+  });
+  return looks;
 }
 
 // ---- lines -> owners -----------------------------------------------------------------------------------------------

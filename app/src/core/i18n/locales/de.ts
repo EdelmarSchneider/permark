@@ -1400,7 +1400,6 @@ export default {
   "config.fromSource": "Im Quelltext bearbeiten",
   "config.nothing": "In dieser Datei gibt es noch nichts anzuzeigen.",
   "config.noSheet": "Diese Datei lässt sich nicht als Tabelle zeigen. Nutze den Quelltext.",
-  "config.fm.bar": "Eigenschaften. Eine zu ändern lässt den Rest der Datei, wie er ist.",
   "config.reason.multiline": "Text über mehrere Zeilen. Ändere ihn im Quelltext.",
   "config.reason.alias": "Ein Alias eines anderen Werts. Ändere ihn im Quelltext.",
   "config.reason.anchor":

@@ -1397,7 +1397,6 @@ export default {
   "config.fromSource": "ソースで編集",
   "config.nothing": "このファイルには、まだ表示するものがありません。",
   "config.noSheet": "このファイルはシートとして表示できません。ソースを使用してください。",
-  "config.fm.bar": "プロパティ。1 つを変更しても、ファイルの他の部分はそのまま保たれます。",
   "config.reason.multiline": "複数行のテキストです。ソースで変更してください。",
   "config.reason.alias": "別の値のエイリアスです。ソースで変更してください。",
   "config.reason.anchor": "他の値から参照されるアンカーがあります。ソースで変更してください。",
