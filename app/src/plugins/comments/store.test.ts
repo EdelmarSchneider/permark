@@ -111,6 +111,16 @@ describe("starting a comment", () => {
     expect(media.store.begin(sel)).toBe(false);
     media.stop();
   });
+
+  it("does nothing while another file loads: the passage on screen belongs to the previous page", async () => {
+    const { view, text } = page();
+    const { store, stop } = await setup({ path: "README.md", view });
+    expect(store.begin({ text: "Back to the readme", node: text, endNode: text, rect: null })).toBe(
+      false,
+    );
+    expect(store.draft).toBeNull();
+    stop();
+  });
 });
 
 describe("the comments", () => {

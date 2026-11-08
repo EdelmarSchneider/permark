@@ -23,6 +23,9 @@ const shown = vi.hoisted(() => {
       get view(): DocumentView | null {
         return state.view;
       },
+      get current(): DocumentView | null {
+        return state.view !== null && state.view.path === state.path ? state.view : null;
+      },
       get savePolicy(): SavePolicy {
         return { kind: "explicit" };
       },

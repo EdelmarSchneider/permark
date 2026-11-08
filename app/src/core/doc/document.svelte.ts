@@ -188,6 +188,16 @@ export class DocumentController {
     return this.#shown;
   }
 
+  /**
+   * The view of the document the window shows, `null` until it is on screen. While another file loads, the page still
+   * holds the previous file's view (`view`): whatever acts on the shown document reads this one. Reactive like `view`
+   * (the shown path only moves together with the state).
+   */
+  get current(): DocumentView | null {
+    const view = this.view;
+    return view !== null && view.path === this.path ? view : null;
+  }
+
   /** The path of what the page shows now. Reactive (it follows the view), unlike `path`, which only the controller moves. */
   get shown(): string | null {
     return this.view?.path ?? null;
@@ -711,6 +721,12 @@ export class DocumentController {
    */
   navigate(path: string, anchor: string | null, line: number | null = null): void {
     if (path === this.#shown) {
+      // still opening: the page holds the previous file, so the place waits for this document's paint
+      if (this.state.status === "loading" && this.current === null) {
+        this.#anchor = anchor;
+        this.#line = line;
+        return;
+      }
       if (anchor === null && line !== null) {
         if (this.view?.body.kind === "markdown") this.scrollToLine(line, true);
         else this.#askLine(path, line);
@@ -724,14 +740,25 @@ export class DocumentController {
 
   async #show(path: string): Promise<boolean> {
     if (!(await confirmLeave({ kind: "document", path }))) return false;
+    await this.#place(path);
+    return true;
+  }
+
+  /** Puts the window on `path`: a single file holds it here, a project's tab is told by the backend (which tells the
+   *  window back). */
+  async #place(path: string): Promise<void> {
     if (this.singleFile) {
       // the window shows it (`DocumentArea` follows `singleDoc`)
       this.singleDoc = path;
-      return true;
+      return;
     }
     const result = await this.#api.showDocument(path);
     if (!result.ok) this.#hooks.fail(result.error);
-    return true;
+  }
+
+  /** Puts the window back on `path` without asking: the person kept editing it when another document came. */
+  stayOn(path: string): void {
+    void this.#place(path);
   }
 
   async back(): Promise<void> {
@@ -887,9 +914,10 @@ export class DocumentController {
   /** The reference of a passage: the document, the heading above it, its first line. */
   referenceAt(node: Node | null): Reference | null {
     const path = this.#shown;
-    const view = this.view;
-    if (path === null || view?.body.kind !== "markdown")
-      return path === null ? null : { path, section: null, line: null };
+    const view = this.current;
+    // another file's page while this one loads: a passage of it is not in this document
+    if (path === null || (view === null && this.view !== null)) return null;
+    if (view?.body.kind !== "markdown") return { path, section: null, line: null };
     const element = node instanceof Element ? node : (node?.parentElement ?? null);
     const block = element?.closest<HTMLElement>("[data-b]") ?? null;
     const id = block?.getAttribute("data-b") ?? null;

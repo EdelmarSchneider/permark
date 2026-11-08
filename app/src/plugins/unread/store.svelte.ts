@@ -40,11 +40,10 @@ export function nextUnread(unread: readonly string[], from: string | null): stri
 /** The document the window shows and the version of it (reactive). */
 export type ReadingPort = () => { path: string | null; hash: string | null };
 
-const shownDocument: ReadingPort = () => {
-  const view = documents.view;
-  const path = documents.path;
-  return { path, hash: view !== null && view.path === path ? view.hash : null };
-};
+const shownDocument: ReadingPort = () => ({
+  path: documents.path,
+  hash: documents.current?.hash ?? null,
+});
 
 export class UnreadStore {
   since = $state.raw<SinceVisit | null>(null);

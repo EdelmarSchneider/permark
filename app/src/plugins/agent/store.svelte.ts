@@ -109,10 +109,11 @@ export class AgentStore {
 
   #windowContext(): AgentWindowContext {
     const path = documents.path;
-    const view = documents.view;
+    // while another file loads, the page (its outline, its selection) is still the previous file's
+    const view = documents.current;
     const outline = view?.body.kind === "markdown" ? view.body.outline : [];
     const mode = editing.mode;
-    const page = mode === "view" ? this.#page : null;
+    const page = mode === "view" && view !== null ? this.#page : null;
     const text = (mode === "view" ? (page?.text ?? "") : editing.selection).slice(0, MAX_SELECTION);
     return {
       doc: path,

@@ -91,7 +91,8 @@ export default definePlugin({
         },
         run: () => {
           const path = shown();
-          const hash = documents.view?.hash ?? null;
+          // the version on screen only when it is this document's (not the previous file's while it loads)
+          const hash = documents.current?.hash ?? null;
           if (path !== null && hash !== null) void unread.markRead(path, hash);
         },
       }),
