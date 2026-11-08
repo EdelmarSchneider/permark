@@ -13,13 +13,20 @@
   import DocHeader from "./DocHeader.svelte";
   import { documents } from "./document.svelte";
   import FindBar from "./FindBar.svelte";
+  import { pageFinder } from "./find";
   import { ownedByTarget } from "./escape";
   import { editExtra } from "./headerFit";
   import ImageZoom from "./ImageZoom.svelte";
   import MarkdownBody from "./MarkdownBody.svelte";
   import ModeSwitch, { shownEditActions } from "../editing/ModeSwitch.svelte";
   import { SHEET_FORMATS } from "../config/formats";
-  import { chooseMode, editBlockedReason, editKindOf, openRemembered } from "../editing/choose";
+  import {
+    chooseMode,
+    editBlockedReason,
+    editKindOf,
+    openFind,
+    openRemembered,
+  } from "../editing/choose";
   import { editing } from "../editing/session.svelte";
   import { ui } from "../shell/ui.svelte";
 
@@ -93,6 +100,11 @@
     void doc;
     return editing.mode !== "view" && editing.path === documents.path;
   });
+  // what the find bar searches: the page, or the text of the editor shown instead (Source has its own panel)
+  const pageFind = $derived(
+    scroller ? pageFinder(scroller, (again) => documents.onPainted(again)) : null,
+  );
+  const finder = $derived(editingNow ? editing.finder : pageFind);
 
   $effect(() => {
     documents.bind({
@@ -104,6 +116,11 @@
       editorSet: () => store.editor.trim() !== "",
       modKey: () => (conditions.current.platform === "mac" ? "Cmd" : "Ctrl"),
       chooseEditor,
+      editorHeadings: () => (editingNow ? editing.headingTops() : null),
+      showEditorHeading: (index) => {
+        if (editingNow) editing.showHeading(index);
+        return editingNow;
+      },
       openFolderWith: (folder, document) => {
         void api.openFolderWith(folder, document).then((result) => {
           if (!result.ok) store.notifyFileOpFailed(result.error);
@@ -280,7 +297,7 @@
           role={view?.role ?? null}
           template={store.referenceTemplate}
           hasOutline={outline.length > 0}
-          onFind={() => ui.openFind()}
+          onFind={openFind}
           canOpenSystem={workspace.kind === "project"}
           modes={view !== null && view.body.kind !== "media" ? modes : undefined}
           extra={editExtra(
@@ -400,8 +417,8 @@
       {/if}
     </div>
 
-    {#if ui.finding && scroller && !editingNow}
-      <FindBar root={scroller} close={() => ui.closeFind()} />
+    {#if ui.finding && finder}
+      <FindBar {finder} close={() => ui.closeFind()} />
     {/if}
   </div>
 </section>

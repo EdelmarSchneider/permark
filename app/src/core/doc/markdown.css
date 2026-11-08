@@ -603,3 +603,13 @@
   text-decoration-color: var(--accent);
   text-decoration-thickness: 2px;
 }
+/* the same in Edit (editor decorations: the text there is the editor's own DOM) */
+.find-match {
+  background-color: var(--mark);
+}
+.find-match--current {
+  background-color: var(--mark-strong);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+}

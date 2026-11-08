@@ -71,7 +71,7 @@
             data-at={at}
             title={mark?.title === undefined ? item.label : `${item.label} · ${mark.title}`}
             aria-current={documents.currentHeading === at ? "location" : undefined}
-            onclick={() => documents.scrollToAnchor(item.id)}
+            onclick={() => documents.goToHeading(at)}
           >
             <span class="text">{item.label === "" ? t("outline.untitled") : item.label}</span>
             {#if mark !== null}<span class="mark" data-mark
