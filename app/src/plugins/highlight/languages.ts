@@ -32,6 +32,16 @@ export function isPlainName(name: string): boolean {
   return PLAIN.has(name.toLowerCase());
 }
 
+/**
+ * The label of a fence that names its language: highlight.js's name for it, else the word as written; null for no
+ * language or a plain-text name. A block that names none may still get a guessed label once it is highlighted.
+ */
+export function fenceLabel(info: string): string | null {
+  const word = fenceWord(info);
+  if (word === "" || isPlainName(word)) return null;
+  return resolveLanguage(word)?.name ?? word;
+}
+
 /** The language a name stands for, or null when highlight.js does not have it. */
 export function resolveLanguage(name: string): Resolved | null {
   return BY_NAME.get(name.trim().toLowerCase()) ?? null;

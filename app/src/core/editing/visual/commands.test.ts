@@ -130,6 +130,37 @@ describe("Edit-mode commands", () => {
     expect(markdown()).toBe("```ts\nlet a = 1;\n```");
   });
 
+  it("draws a code block in the reading view's wrapper, the fence language as its label, the code editable", () => {
+    load("```rust\nfn main() {}\n```\n\n```\nplain\n```\n");
+    const blocks = Array.from(core.view.dom.querySelectorAll(":scope > .code-block"));
+    expect(blocks.length).toBe(2);
+    const [rust, plain] = blocks;
+    expect(rust?.querySelector(":scope > pre > code")?.textContent).toBe("fn main() {}");
+    expect(rust?.querySelector(".lang")?.textContent).toBe("rust");
+    // no language: no label, as in the reading view
+    expect(plain?.querySelector(".lang")).toBeNull();
+    // the label is not part of the text
+    expect(markdown()).toBe("```rust\nfn main() {}\n```\n\n```\nplain\n```");
+    caretAfter("fn");
+    run(core, { kind: "language", language: "ts" });
+    expect(core.view.dom.querySelector(".code-block .lang")?.textContent).toBe("ts");
+    caretAfter("main");
+    core.view.dispatch(core.view.state.tr.insertText("2"));
+    expect(markdown()).toBe("```ts\nfn main2() {}\n```\n\n```\nplain\n```");
+    run(core, { kind: "language", language: "" });
+    expect(core.view.dom.querySelectorAll(".code-block .lang").length).toBe(0);
+  });
+
+  it("draws a table in the reading view's wrapper, its cells editable", () => {
+    load("| a | b |\n| - | - |\n| 1 | 2 |\n");
+    const wrap = core.view.dom.querySelector(":scope > .table-wrap");
+    const header = wrap?.querySelector(":scope > table > tbody > tr[data-is-header] > th");
+    expect(header?.textContent).toBe("a");
+    caretAfter("1");
+    core.view.dispatch(core.view.state.tr.insertText("0"));
+    expect(markdown()).toMatch(/\| 10 +\| 2 +\|/);
+  });
+
   it("inserts a picked character at the caret, and refuses on a locked block", () => {
     load("one two\n");
     caretAfter("one ");

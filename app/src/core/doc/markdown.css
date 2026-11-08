@@ -168,6 +168,12 @@
 .md li + li {
   margin-top: 0.25em;
 }
+/* Edit mode: ProseMirror holds an item's text in a paragraph (`li > div > p`, the item view's content box). A tight
+   list's items have no paragraph in the reading view, so there it keeps no space of its own; a loose list
+   (`data-spread="true"`) has paragraphs in both views and keeps their spacing. */
+.md .pm-editor :is(ul, ol)[data-spread="false"] > li > div > p {
+  margin: 0;
+}
 .md hr {
   border: 0;
   border-top: 1px solid var(--border);
@@ -388,6 +394,18 @@
 .md tbody tr:last-child td {
   border-bottom: 0;
 }
+/* Edit mode: a cell holds its text in a paragraph; the reading view's cell holds the text itself */
+.md .pm-editor :is(th, td) > p {
+  margin: 0;
+}
+/* Edit mode keeps the header row in `tbody` (ProseMirror tables have no `thead`): the stripes count body rows only,
+   so the same rows are striped as in the reading view */
+.md .pm-editor tbody tr:nth-child(even) {
+  background: none;
+}
+.md .pm-editor tbody tr:nth-child(even of :not([data-is-header])) {
+  background: var(--zebra);
+}
 
 /* code (a block with no highlighter plugin, and the shape every code block shares) */
 .md .code-block {
@@ -410,6 +428,22 @@
   padding: 0;
   border: 0;
   background: none;
+}
+/* Edit mode: the language label where the highlighter's corner shows it in the reading view. That corner sits 3px
+   from the top and 6px from the right, centers the label on the 24px row of its buttons, and puts its buttons
+   (`--corner-buttons`: the block's actions and Copy, 2px apart) right of the label. */
+.md .pm-editor .code-block > .lang {
+  position: absolute;
+  top: calc(3px + (24px - 11px * 1.3) / 2);
+  right: calc(6px + var(--corner-buttons, 1) * (24px + 2px));
+  margin-right: 6px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--surface);
+  font: 11px / 1.3 var(--font-code);
+  color: var(--muted);
+  pointer-events: none;
+  user-select: none;
 }
 
 /* blockquote */

@@ -521,6 +521,8 @@ export class DocumentController {
     const view = this.view;
     const scroller = this.host.scroller;
     if (view?.body.kind !== "markdown" || !scroller) return 1;
+    // at the top, what stands above the first block (the front matter's properties) is in view too
+    if (scroller.scrollTop <= 0) return 1;
     const top = scroller.getBoundingClientRect().top;
     for (const block of view.body.blocks) {
       const element = this.host.element(block.id);

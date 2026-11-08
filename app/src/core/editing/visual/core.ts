@@ -2,7 +2,8 @@
 // app's own). Runs without a window too (vitest drives it in jsdom).
 //
 // Added to the stock CommonMark + GFM schema: `pm_locked`, an atom holding a block the editor must not rewrite
-// (its source, drawn by the app), and `taskItemView`, the real checkbox of a task item. Left out: stock plugins
+// (its source, drawn by the app), `taskItemView`, the real checkbox of a task item, and the reading view's wrappers
+// of code blocks (with their language) and tables (`codeBlockView`, `tableView`). Left out: stock plugins
 // that change a document by themselves (heading ids, list renumbering, empty-line preservation). A no-break space
 // is written as `&nbsp;`; link marks end at the link's edge; the serializer writes the style below.
 
@@ -21,6 +22,7 @@ import { history } from "@milkdown/kit/plugin/history";
 import {
   bulletListKeymap,
   codeBlockKeymap,
+  codeBlockSchema,
   commonmark,
   headingKeymap,
   inlineCodeKeymap,
@@ -33,13 +35,13 @@ import {
   syncListOrderPlugin,
   textSchema,
 } from "@milkdown/kit/preset/commonmark";
-import { gfm, strikethroughKeymap } from "@milkdown/kit/preset/gfm";
+import { gfm, strikethroughKeymap, tableSchema } from "@milkdown/kit/preset/gfm";
 import { gapCursor } from "@milkdown/kit/prose/gapcursor";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
-import { EditorState } from "@milkdown/kit/prose/state";
+import { EditorState, Selection } from "@milkdown/kit/prose/state";
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $ctx, $node, $prose, $view } from "@milkdown/kit/utils";
-import { taskLabel } from "../../doc/enhance";
+import { CODE_BLOCK, TABLE_WRAP, taskLabel } from "../../doc/enhance";
 
 export const LOCKED = "pm_locked";
 const NO_BREAK_SPACE = String.fromCharCode(0xa0);
@@ -86,6 +88,18 @@ const noHost: LockedHost = {
 };
 
 export const lockedHostCtx = $ctx<LockedHost, "pmLockedHost">(noHost, "pmLockedHost");
+
+/** A code block's label as the reading view's corner shows it: the text, and the buttons right of it there. */
+export type CodeLabel = { text: string; buttons: number };
+
+/** What a code block needs from the app to label itself like the reading view. */
+export type CodeHost = { label(language: string): CodeLabel | null };
+
+const plainCode: CodeHost = {
+  label: (language) => (language === "" ? null : { text: language, buttons: 1 }),
+};
+
+export const codeHostCtx = $ctx<CodeHost, "pmCodeHost">(plainCode, "pmCodeHost");
 
 const textNode = $node("text", () => ({
   group: "inline",
@@ -255,6 +269,66 @@ const taskItemView = $view(listItemSchema.node, (): NodeViewConstructor => (node
 });
 
 /**
+ * A code block in the reading view's shape: the `.code-block` wrapper (the block's outer space and the label's
+ * frame) around `pre > code`, and its language label where that view's corner has it (`CodeHost`). The label is
+ * drawn, not text: it stays out of the document and is gone when the block gets none.
+ */
+const codeBlockView = $view(codeBlockSchema.node, (ctx): NodeViewConstructor => (node) => {
+  const host = ctx.get(codeHostCtx.key);
+  const dom = document.createElement("div");
+  dom.className = CODE_BLOCK;
+  const pre = document.createElement("pre");
+  const code = document.createElement("code");
+  pre.append(code);
+  const label = document.createElement("span");
+  label.className = "lang";
+  label.contentEditable = "false";
+  dom.append(pre);
+  const paint = (): void => {
+    const language = String(node.attrs.language ?? "");
+    dom.dataset.info = language;
+    if (language === "") delete pre.dataset.language;
+    else pre.dataset.language = language;
+    const shown = host.label(language);
+    if (shown === null) {
+      label.remove();
+      return;
+    }
+    label.textContent = shown.text;
+    label.style.setProperty("--corner-buttons", String(shown.buttons));
+    if (label.parentElement !== dom) dom.append(label);
+  };
+  paint();
+  return {
+    dom,
+    contentDOM: code,
+    ignoreMutation: (mutation) => label.contains(mutation.target),
+    update: (next) => {
+      if (next.type !== node.type) return false;
+      node = next;
+      paint();
+      return true;
+    },
+  };
+});
+
+/** A table in the reading view's `.table-wrap`, so its frame, corners and outer space come from the same rules. */
+const tableView = $view(tableSchema.node, (): NodeViewConstructor => (node) => {
+  const dom = document.createElement("div");
+  dom.className = TABLE_WRAP;
+  const table = document.createElement("table");
+  const body = document.createElement("tbody");
+  table.append(body);
+  dom.append(table);
+  return { dom, contentDOM: body, update: (next) => next.type === node.type };
+});
+
+/** Where the caret starts: the first text, so a leading locked block (the front matter) is not selected. */
+function startOf(doc: PMNode): Selection {
+  return Selection.findFrom(doc.resolve(0), 1, true) ?? Selection.atStart(doc);
+}
+
+/**
  * Stock plugins left out: they change a document by themselves, or are replaced. The Mod-Alt keymaps go too: AltGr
  * is Ctrl+Alt on Windows and types characters (`{` `[` `}` on many layouts); `keys.ts` binds them safely. Mod-e is
  * the mode key.
@@ -311,6 +385,7 @@ export type Core = {
 export type CoreOptions = {
   host: HTMLElement;
   locked?: LockedHost;
+  code?: CodeHost;
   /** Before the stock plugins (keys and pastes seen first). */
   first?: Parameters<Editor["use"]>[0][];
   /** After the stock plugins. */
@@ -339,11 +414,15 @@ export async function createCore(options: CoreOptions): Promise<Core> {
       // text typed at the edge of a link stays out of it
       ctx.update(linkSchema.key, (previous) => (c) => ({ ...previous(c), inclusive: false }));
       if (options.locked) ctx.set(lockedHostCtx.key, options.locked);
+      if (options.code) ctx.set(codeHostCtx.key, options.code);
     })
     .use(lockedHostCtx)
+    .use(codeHostCtx)
     .use(lockedNode)
     .use(lockedView)
     .use(taskItemView)
+    .use(codeBlockView)
+    .use(tableView)
     .use((options.first ?? []).flat())
     .use([...commonmark, ...gfm].filter((plugin) => !LEFT_OUT.has(plugin)))
     .use(textNode)
@@ -383,6 +462,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
         const state = EditorState.create({
           schema: view.state.schema,
           doc,
+          selection: startOf(doc),
           plugins: view.state.plugins,
         });
         view.updateState(state);

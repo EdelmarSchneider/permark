@@ -35,6 +35,8 @@ const EDIT_SIDE: SideArg = { root: EDIT_ROOT, mode: "edit" };
 /** The header's mode switch: View, Edit, Source in this order. */
 const MODE = ".modes button.mode";
 const WAIT = 15_000;
+/** Past the glow a live change puts on blocks for a moment (3 s): the comparison is of the page at rest. */
+const AT_REST_MS = 3_500;
 /** Longest value shown in the table (the JSON report keeps the whole value). */
 const CELL = 44;
 
@@ -175,6 +177,8 @@ async function compareAll(
         for (const doc of args.docs) {
           const where = { doc, theme };
           await seed.seed(page, "doc", { path: doc });
+          await seed.settle(page);
+          await page.clock.runFor(AT_REST_MS);
           await seed.settle(page);
           const view = await page.evaluate(snapshot.sideOf, VIEW_SIDE);
           if (view === null) throw new Error(`${doc}: no reading view (${VIEW_ROOT})`);

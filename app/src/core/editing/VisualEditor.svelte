@@ -19,7 +19,16 @@
   import { baseName, pictureType } from "../explorer/importModel";
   import { relativeLink } from "./source/complete";
   import type { Content, EditingSession, TextRange } from "./session.svelte";
-  import type { Built, Command, Composed, Core, Format, LockReason, SlashState } from "./visual";
+  import type {
+    Built,
+    CodeLabel,
+    Command,
+    Composed,
+    Core,
+    Format,
+    LockReason,
+    SlashState,
+  } from "./visual";
   import type { PickerKind } from "./visual/characters";
 
   type Props = {
@@ -131,14 +140,19 @@
     const lines = composed()?.lines;
     if (!core || !lines) return;
     const view = core.view;
-    const found: { element: HTMLElement | null } = { element: null };
-    view.state.doc.forEach((node, offset) => {
+    const found: { element: HTMLElement | null; index: number } = { element: null, index: -1 };
+    view.state.doc.forEach((node, offset, index) => {
       const at = lines.get(node);
       const dom = view.nodeDOM(offset);
-      if (at !== undefined && at <= line && dom instanceof HTMLElement) found.element = dom;
+      if (at !== undefined && at <= line && dom instanceof HTMLElement) {
+        found.element = dom;
+        found.index = index;
+      }
     });
     const element = found.element;
-    if (element) {
+    // the first block is the top of the document: the page opens there, header included, as the reading view does
+    if (found.index === 0) scroller.scrollTop = 0;
+    else if (element) {
       scroller.scrollTop +=
         element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 48;
     }
@@ -209,6 +223,24 @@
     };
   }
 
+  /**
+   * A code block's label as the reading view gives it: named by the embed that draws the block there (the one for
+   * its language, else the one for any code); right of it, the actions that take the language and Copy.
+   */
+  function codeLabel(language: string): CodeLabel | null {
+    const word = language.toLowerCase();
+    const embeds = contributions.visible("embed", conditions.current);
+    const embed =
+      (word === "" ? undefined : embeds.find((e) => e.language === word)) ??
+      embeds.find((e) => e.language === "@code");
+    const text = embed?.label?.(language) ?? null;
+    if (text === null) return null;
+    const actions = contributions
+      .visible("codeAction", conditions.current)
+      .filter((action) => action.applies(word)).length;
+    return { text, buttons: actions + 1 };
+  }
+
   function refresh(): void {
     if (core && mod) format = mod.formatOf(core.view.state);
   }
@@ -241,6 +273,7 @@
           edit: (node) => void session.switchTo("source", lineOf(node)),
           draw,
         },
+        code: { label: codeLabel },
         first: loaded.appPlugins({
           core: () => core,
           changed: () => {

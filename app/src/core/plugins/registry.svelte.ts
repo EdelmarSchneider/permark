@@ -248,7 +248,17 @@ export type Contribution = Owned &
         view: LazyComponent<ViewerProps>;
       }
     | { kind: "editor"; id: string; claims: (name: string) => boolean; view: LazyComponent }
-    | { kind: "embed"; id: string; language: string; view: LazyComponent<EmbedProps> }
+    | {
+        kind: "embed";
+        id: string;
+        language: string;
+        view: LazyComponent<EmbedProps>;
+        /**
+         * The language label the embed's corner shows for a fence's info (null: none), with Copy as the corner's
+         * only button of its own. Lets Edit mode label its code blocks the same way; absent: Edit shows no label.
+         */
+        label?: (info: string) => string | null;
+      }
     /** A button next to Copy on a fenced code block whose language it takes (convert the block). */
     | {
         kind: "codeAction";
