@@ -2,7 +2,9 @@
 // app's own). Runs without a window too (vitest drives it in jsdom).
 //
 // Added to the stock CommonMark + GFM schema: `pm_locked`, an atom holding a block the editor must not rewrite
-// (drawn as View draws it, `lockedView.ts`; View's prompt boxes around blocks, `promptBoxes.ts`), `taskItemView`, the
+// (drawn as View draws it, `lockedView.ts`; View's prompt boxes around blocks, `promptBoxes.ts`), `inline_source`, an
+// inline atom keeping a piece of a line as written (inline math, footnote references, reference-style links:
+// `inlineSource.ts`), `taskItemView`, the
 // real checkbox of a task item, and the reading view's wrappers of code blocks (with their language and token colors,
 // `codeColors.ts`) and tables (`codeBlockView`, `tableView`). Left out: stock plugins that change a document by
 // themselves (heading ids, list renumbering, empty-line preservation). A no-break space is written as `&nbsp;`; link
@@ -53,8 +55,10 @@ import {
   lockedView,
   type LockedHost,
 } from "./lockedView";
+import { escapingText, inlineSource } from "./inlineSource";
 import { promptBoxes } from "./promptBoxes";
 
+export { INLINE_SOURCE } from "./inlineSource";
 export { LOCKED, relook, type BlockName, type LockReason, type LockedHost } from "./lockedView";
 
 const NO_BREAK_SPACE = String.fromCharCode(0xa0);
@@ -320,7 +324,11 @@ export async function createCore(options: CoreOptions): Promise<Core> {
           ...(options.label === undefined ? {} : { "aria-label": options.label }),
         },
       }));
-      ctx.update(remarkStringifyOptionsCtx, (previous) => ({ ...previous, ...STRINGIFY_OPTIONS }));
+      ctx.update(remarkStringifyOptionsCtx, (previous) => ({
+        ...previous,
+        ...STRINGIFY_OPTIONS,
+        handlers: { ...previous.handlers, text: escapingText(previous.handlers?.text) },
+      }));
       // text typed at the edge of a link stays out of it
       ctx.update(linkSchema.key, (previous) => (c) => ({ ...previous(c), inclusive: false }));
       if (options.locked) ctx.set(lockedHostCtx.key, options.locked);
@@ -332,6 +340,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
     .use(lockedView)
     .use(lockedKeys)
     .use(lockedRelook)
+    .use(inlineSource)
     .use(promptBoxes)
     .use(taskItemView)
     .use(codeBlockView)

@@ -8,7 +8,7 @@ import { undo } from "@milkdown/kit/prose/history";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import type { Segment } from "../../../api/generated/Segment";
 import { buildDoc, compose, MAX_SPLICE, type Built } from "./compose";
-import { createCore, LOCKED, type Core } from "./core";
+import { createCore, INLINE_SOURCE, LOCKED, type Core } from "./core";
 
 type Fixture = Record<string, { text: string; segments: Segment[] }>;
 
@@ -156,20 +156,83 @@ describe("compose", () => {
   );
 
   it("locks what it must not rewrite and keeps it", async () => {
-    const text = "Inline $x_1$ math\n\nA [ref][r] link\n\n[r]: http://x\n\nplain *one*\n";
+    const text = "Inline $x_1\ny$ math\n\nA ![ref][r] link\n\n[r]: http://x\n\nplain *one*\n";
     const built = await load(text, [
-      { lineStart: 1, lineEnd: 1, kind: "paragraph", lock: null },
-      { lineStart: 3, lineEnd: 3, kind: "paragraph", lock: null },
-      { lineStart: 5, lineEnd: 5, kind: "raw", lock: "definition" },
-      { lineStart: 7, lineEnd: 7, kind: "paragraph", lock: null },
+      { lineStart: 1, lineEnd: 2, kind: "paragraph", lock: null },
+      { lineStart: 4, lineEnd: 4, kind: "paragraph", lock: null },
+      { lineStart: 6, lineEnd: 6, kind: "raw", lock: "definition" },
+      { lineStart: 8, lineEnd: 8, kind: "paragraph", lock: null },
     ]);
     expect(built.sources.map((s) => s.locked)).toEqual(["math", "reference", "definition", null]);
     const types: string[] = [];
     core.view.state.doc.forEach((n) => types.push(n.type.name));
     expect(types).toEqual([LOCKED, LOCKED, LOCKED, "paragraph"]);
     expect(compose(core, built, retype(3, "two")).text).toBe(
-      "Inline $x_1$ math\n\nA [ref][r] link\n\n[r]: http://x\n\ntwo\n",
+      "Inline $x_1\ny$ math\n\nA ![ref][r] link\n\n[r]: http://x\n\ntwo\n",
     );
+  });
+
+  describe("a paragraph with inline math is text around its formulas", () => {
+    const TEXT = "Lead $a_b_c$ mid $$x^2$$ and $`y`$ tail \\$5, $6 *em*.\n\nNext $q$ words.\n";
+
+    /** Position of the `n`-th formula. */
+    function formulaAt(n: number): number {
+      const found: number[] = [];
+      core.view.state.doc.descendants((node, pos) => {
+        if (node.type.name === INLINE_SOURCE) found.push(pos);
+      });
+      const at = found[n];
+      if (at === undefined) throw new Error(`no formula ${n}`);
+      return at;
+    }
+
+    function typeAt(pos: number, text: string): PMNode {
+      core.view.dispatch(core.view.state.tr.insertText(text, pos));
+      return core.view.state.doc;
+    }
+
+    it("untouched: every byte back, nothing locked", async () => {
+      const built = await load(TEXT);
+      expect(built.sources.map((s) => s.locked)).toEqual([null, null]);
+      const composed = compose(core, built, core.view.state.doc);
+      expect(composed.text).toBe(TEXT);
+      expect(composed.changed).toBe(0);
+    });
+
+    it.each([
+      ["right before a formula", 0, 0, "Lead $a_b_c$", "Lead Z$a_b_c$"],
+      ["right after a formula", 0, 1, "$a_b_c$ mid", "$a_b_c$Z mid"],
+      ["after display math", 1, 1, "$$x^2$$ and", "$$x^2$$Z and"],
+      ["after code math", 2, 1, "$`y`$ tail", "$`y`$Z tail"],
+    ])("typing %s changes only the typed character", async (_, n, after, find, by) => {
+      const built = await load(TEXT);
+      const composed = compose(core, built, typeAt(formulaAt(n) + after, "Z"));
+      expect(composed.text).toBe(TEXT.replace(find, () => by));
+      expect(composed.changed).toBe(1);
+    });
+
+    it("typing at the end of the paragraph keeps every formula and escape", async () => {
+      const built = await load(TEXT);
+      const composed = compose(core, built, typeAtEnd(0, "Z"));
+      expect(composed.text).toBe(TEXT.replace("*em*.", "*em*.Z"));
+      expect(composed.changed).toBe(1);
+    });
+
+    it("a `$` typed as text is written escaped: it stays text when read again", async () => {
+      const built = await load(TEXT);
+      expect(compose(core, built, typeAtEnd(1, " $x$")).text).toBe(
+        TEXT.replace("words.\n", () => "words. \\$x\\$\n"),
+      );
+    });
+
+    it("deleting a formula drops only its bytes", async () => {
+      const built = await load(TEXT);
+      const at = formulaAt(3);
+      core.view.dispatch(core.view.state.tr.delete(at, at + 1));
+      expect(compose(core, built, core.view.state.doc).text).toBe(
+        TEXT.replace("Next $q$ words.", "Next  words."),
+      );
+    });
   });
 
   it("writes an edited block in the editor's style and keeps the blank lines around untouched blocks", async () => {
