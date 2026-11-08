@@ -845,16 +845,17 @@ const note = (label: string, first: boolean): LockedRender => ({
   first,
 });
 
-const REF_TEXT = ["See [the site][ref].", "", "[ref]: https://example.com/a", ""].join("\n");
+// a picture by reference keeps its paragraph as written (a link by reference would be editable text)
+const REF_TEXT = ["See ![the site][ref].", "", "[ref]: https://example.com/a", ""].join("\n");
 
 const REF_SEGMENTS = [
   { lineStart: 1, lineEnd: 1, kind: "paragraph", lock: null },
   { lineStart: 3, lineEnd: 3, kind: "raw", lock: "definition" },
 ] as const;
 
-const linkTo = (href: string): LockedRender => ({
+const pictureAt = (src: string): LockedRender => ({
   kind: "html",
-  html: `<p>See <a href="${href}">the site</a>.</p>`,
+  html: `<p>See <img src="${src}" alt="the site">.</p>`,
 });
 
 describe("blocks at rest follow View's look of the text around them", () => {
@@ -883,17 +884,17 @@ describe("blocks at rest follow View's look of the text around them", () => {
     const built = await buildDoc(core, REF_TEXT, REF_SEGMENTS);
     const paragraph = built.doc.child(0);
     expect(paragraph.type.name).toBe(LOCKED);
-    looks.set(paragraph, linkTo("https://example.com/a"));
+    looks.set(paragraph, pictureAt("https://example.com/a"));
     looks.set(built.doc.child(1), { kind: "none" });
     core.setDoc(built.doc);
     const field = openBox(1);
     refreshed = () => {
-      looks.set(core.view.state.doc.child(0), linkTo("https://example.com/b"));
+      looks.set(core.view.state.doc.child(0), pictureAt("https://example.com/b"));
     };
     type(field, "[ref]: https://example.com/b");
     vi.advanceTimersByTime(250);
     await settle();
-    expect(blocks()[0]?.querySelector("a")?.getAttribute("href")).toBe("https://example.com/b");
+    expect(blocks()[0]?.querySelector("img")?.getAttribute("src")).toBe("https://example.com/b");
     // the same look again: nothing drawn anew
     const drawn = blocks()[0]?.querySelector("p");
     type(field, "[ref]: https://example.com/b ");

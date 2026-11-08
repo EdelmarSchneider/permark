@@ -95,6 +95,7 @@
     html: "edit.block.html",
     formula: "edit.block.formula",
     footnote: "edit.block.footnote",
+    link: "link.label",
     diagram: "edit.block.diagram",
     alert: "edit.block.alert",
     other: "edit.block.other",

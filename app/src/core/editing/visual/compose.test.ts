@@ -156,7 +156,7 @@ describe("compose", () => {
   );
 
   it("locks what it must not rewrite and keeps it", async () => {
-    const text = "Inline $x_1\ny$ math\n\nA [ref][r] link\n\n[r]: http://x\n\nplain *one*\n";
+    const text = "Inline $x_1\ny$ math\n\nA ![ref][r] link\n\n[r]: http://x\n\nplain *one*\n";
     const built = await load(text, [
       { lineStart: 1, lineEnd: 2, kind: "paragraph", lock: null },
       { lineStart: 4, lineEnd: 4, kind: "paragraph", lock: null },
@@ -168,7 +168,7 @@ describe("compose", () => {
     core.view.state.doc.forEach((n) => types.push(n.type.name));
     expect(types).toEqual([LOCKED, LOCKED, LOCKED, "paragraph"]);
     expect(compose(core, built, retype(3, "two")).text).toBe(
-      "Inline $x_1\ny$ math\n\nA [ref][r] link\n\n[r]: http://x\n\ntwo\n",
+      "Inline $x_1\ny$ math\n\nA ![ref][r] link\n\n[r]: http://x\n\ntwo\n",
     );
   });
 

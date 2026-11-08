@@ -3,8 +3,8 @@
 // read again by the editor (`classify`: the same checks as at load) and its node replaced; every other node stays
 // the same object, so `compose` keeps its bytes. Only the touched block is written by the editor (as typing would).
 // Text offsets -> document positions (`docRange`: reveal, correction marks): the range's text found in its block's
-// shown text (markup left out) where the text around it matches best. An inline piece kept as written (a formula) is
-// not prose: no range in its source is found, no edit may change it.
+// shown text (markup left out) where the text around it matches best. An inline piece kept as written (a formula, a
+// reference) is not prose: no range in its source is found, no edit may change it.
 
 import { closeHistory } from "@milkdown/kit/prose/history";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
@@ -196,13 +196,13 @@ export function editsTr(
     if (index === null) return null;
     byBlock.set(index, [...(byBlock.get(index) ?? []), edit]);
   }
-  // the whole text once edited: a block may now use a reference defined elsewhere (written escaped: not editable)
+  // the whole text once edited: a block may now use a picture by reference (written escaped: not editable)
   let edited = text;
   for (const edit of [...sorted].reverse()) {
     edited = edited.slice(0, edit.from) + edit.insert + edited.slice(edit.to);
   }
   const written = composed.ranges.flatMap((r, index) => (r === null ? [] : [index]));
-  const usesReference = blocksUsingReferences(core, edited, startsAfter(composed, sorted));
+  const usesReference = blocksUsingReferences(core, edited, startsAfter(composed, sorted)).blocks;
   const at: number[] = [];
   state.doc.forEach((_, offset) => at.push(offset));
   const replaced: { from: number; to: number; node: PMNode }[] = [];

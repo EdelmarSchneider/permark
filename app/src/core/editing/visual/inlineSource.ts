@@ -1,10 +1,12 @@
 // `inline_source`: a piece of a line the editor keeps as written (its exact source is the node's `source`), drawn as
-// View draws it, so the text around it stays editable. Kinds: inline math (`inlineMath.ts`). Read from the editor's
-// mdast node `inlineSource` and written back as the same bytes. At rest it is one thing to select (an arrow key
-// selects it, the next moves past it); a click | Enter opens a small field under it with the editable part of its
-// source (a formula's TeX). What is typed goes into the document at once (the editor's undo, dirty state and autosave
-// see it) when it still reads as one such piece; the piece is drawn again on each pause. Escape | Enter | focus
-// elsewhere closes the field; emptied, the piece goes.
+// View draws it, so the text around it stays editable. Kinds: inline math (`inlineMath.ts`), footnote references and
+// reference-style links (`references.ts`). Read from the editor's mdast node `inlineSource` and written back as the
+// same bytes. At rest it is one thing to select (an arrow key selects it, the next moves past it); a click | Enter
+// opens a small field under it with the editable part of its source (a formula's TeX, a reference's whole source).
+// What is typed goes into the document at once (the editor's undo, dirty state and autosave see it) when it still
+// reads as one such piece; the piece is drawn again on each pause. Escape | Enter | focus elsewhere closes the field;
+// emptied, the piece goes. A footnote's number counts the references before it in the whole document (blocks kept as
+// written too): the footnotes are drawn again when the numbers change.
 
 import type { Literal } from "mdast";
 import type { Handle } from "mdast-util-to-markdown";
@@ -12,12 +14,27 @@ import { parserCtx } from "@milkdown/kit/core";
 import type { Ctx } from "@milkdown/kit/ctx";
 import { closeHistory, redo, undo } from "@milkdown/kit/prose/history";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
-import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
-import type { NodeViewConstructor } from "@milkdown/kit/prose/view";
+import { NodeSelection, Plugin, TextSelection } from "@milkdown/kit/prose/state";
+import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import type { RemarkPluginRaw } from "@milkdown/kit/transformer";
-import { $node, $remark, $view } from "@milkdown/kit/utils";
+import { $node, $prose, $remark, $view } from "@milkdown/kit/utils";
 import { mathElement, mathFromMarkdown, mathParts, mathSyntax } from "./inlineMath";
-import { lockedHostCtx, opensOnEnter, PREVIEW_MS, showText, type BlockName } from "./lockedView";
+import {
+  LOCKED,
+  lockedHostCtx,
+  opensOnEnter,
+  PREVIEW_MS,
+  showText,
+  type BlockName,
+} from "./lockedView";
+import {
+  definedSyntax,
+  footnoteIds,
+  footnoteLook,
+  linkLook,
+  referencePieces,
+  referencesCtx,
+} from "./references";
 
 declare module "mdast" {
   /** A piece of a line kept as written: `value` is its exact source. */
@@ -35,7 +52,7 @@ declare module "mdast" {
 
 export const INLINE_SOURCE = "inline_source";
 
-export const INLINE_KINDS = ["math"] as const;
+export const INLINE_KINDS = ["math", "footnote", "link"] as const;
 export type InlineKind = (typeof INLINE_KINDS)[number];
 
 /** The source split into the part the person edits and what stays around it. */
@@ -45,17 +62,38 @@ type Parts = { open: string; text: string; close: string };
 type Kind = {
   /** Its name to assistive technology. */
   name: BlockName;
-  /** View's element for `source`, the source only ever as text (View's hooks hydrate it). */
-  look(source: string): HTMLElement;
+  /**
+   * View's element for `source` in the document of `view`, the source only ever as text (View's hooks hydrate it);
+   * null: not one of this kind.
+   */
+  look(source: string, ctx: Ctx, view: EditorView): HTMLElement | null;
   /** The editable part of `source`; null: nothing to edit in place. */
   parts(source: string): Parts | null;
+  /** Its look holds a number counted over the document (`numbersOf`): drawn again when the numbers change. */
+  numbered?: true;
 };
+
+/** The whole source is what the person edits. */
+function wholeSource(source: string): Parts {
+  return { open: "", text: source, close: "" };
+}
 
 const KINDS: Record<InlineKind, Kind> = {
   math: {
     name: "formula",
     look: mathElement,
     parts: mathParts,
+  },
+  footnote: {
+    name: "footnote",
+    look: (source, ctx, view) => footnoteLook(ctx, source, numbersOf(ctx, view.state.doc)),
+    parts: wholeSource,
+    numbered: true,
+  },
+  link: {
+    name: "link",
+    look: (source, ctx) => linkLook(ctx, source),
+    parts: wholeSource,
   },
 };
 
@@ -69,29 +107,46 @@ function writeSource(node: { value: string }): string {
 }
 writeSource.peek = (node: { value: string }): string => node.value.charAt(0);
 
+/** A text starting so right after a `]` (a reference's end) would join it into a link | make it a definition. */
+const AFTER_LABEL = /^[[(:]/;
+
 /**
- * Milkdown's text writing (`text`) with every `$` escaped: Milkdown writes a text that ends in a space as it is,
- * without the escapes (`unsafe` below) any other text gets.
+ * Milkdown's text writing (`text`) with every `$` escaped, and a `(` | `[` | `:` right after a `]`: Milkdown writes a
+ * text that ends in a space as it is, without the escapes (`unsafe` below) any other text gets.
  */
-export function escapingDollars(text: Handle | undefined): Handle {
+export function escapingText(text: Handle | undefined): Handle {
   return (node: { value: string }, parent, state, info) => {
     const written = text ? text(node, parent, state, info) : state.safe(node.value, info);
-    return written === node.value ? written.replace(/\$/g, "\\$") : written;
+    if (written !== node.value) return written;
+    const escaped = written.replace(/\$/g, "\\$");
+    return info.before === "]" && AFTER_LABEL.test(escaped) ? `\\${escaped}` : escaped;
   };
 }
 
-const remarkInlineSource: RemarkPluginRaw<undefined> = function () {
-  const data = this.data();
-  (data.micromarkExtensions ??= []).push(mathSyntax);
-  (data.fromMarkdownExtensions ??= []).push(mathFromMarkdown);
-  // a `$` typed as text stays text (as `*` and `_` do): written escaped, it never starts a formula on the next read
-  (data.toMarkdownExtensions ??= []).push({
-    handlers: { inlineSource: writeSource },
-    unsafe: [{ character: "$", inConstruct: "phrasing" }],
-  });
-};
+function remarkInlineSource(ctx: Ctx): RemarkPluginRaw<undefined> {
+  return function () {
+    const data = this.data();
+    (data.micromarkExtensions ??= []).push(
+      mathSyntax,
+      definedSyntax(() => ctx.get(referencesCtx.key)),
+    );
+    (data.fromMarkdownExtensions ??= []).push(mathFromMarkdown);
+    (data.toMarkdownExtensions ??= []).push({
+      handlers: { inlineSource: writeSource },
+      unsafe: [
+        // a `$` typed as text stays text (as `*` and `_` do): written escaped, it never starts a formula on the next read
+        { character: "$", inConstruct: "phrasing" },
+        // a `:` typed right after a reference that opens a paragraph would make the paragraph a definition
+        { character: ":", before: "\\]", inConstruct: "phrasing" },
+      ],
+    });
+    return (tree, file) => {
+      if (typeof file.value === "string") referencePieces(tree, file.value);
+    };
+  };
+}
 
-const inlineSourceRemark = $remark("pmInlineSource", () => remarkInlineSource);
+const inlineSourceRemark = $remark("pmInlineSource", remarkInlineSource);
 
 /** `source` read by the editor of `ctx` is one piece of `kind` with this very source (a paste, a field's text). */
 function readsAsOne(ctx: Ctx, kind: InlineKind, source: string): boolean {
@@ -156,6 +211,71 @@ export const inlineSourceNode = $node(INLINE_SOURCE, (ctx) => {
   };
 });
 
+/** Footnote numbers by first reference (View's), per document; labels each top-level node refers to, per node. */
+const numbering = new WeakMap<PMNode, ReadonlyMap<string, number>>();
+const referredBy = new WeakMap<PMNode, readonly string[]>();
+
+/** The number of each footnote `doc` refers to: in the order of first reference, blocks kept as written included. */
+function numbersOf(ctx: Ctx, doc: PMNode): ReadonlyMap<string, number> {
+  const known = numbering.get(doc);
+  if (known !== undefined) return known;
+  const numbers = new Map<string, number>();
+  doc.forEach((block) => {
+    let ids = referredBy.get(block);
+    if (ids === undefined) {
+      const found: string[] = [];
+      if (block.type.name === LOCKED) found.push(...footnoteIds(ctx, String(block.attrs.source)));
+      else {
+        block.descendants((node) => {
+          const kind = kindOf(node.attrs.kind);
+          if (node.type.name === INLINE_SOURCE && kind !== null && KINDS[kind].numbered) {
+            found.push(...footnoteIds(ctx, String(node.attrs.source)));
+          }
+          return true;
+        });
+      }
+      ids = found;
+      referredBy.set(block, ids);
+    }
+    for (const id of ids) if (!numbers.has(id)) numbers.set(id, numbers.size + 1);
+  });
+  numbering.set(doc, numbers);
+  return numbers;
+}
+
+function sameNumbers(a: ReadonlyMap<string, number>, b: ReadonlyMap<string, number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [id, number] of a) if (b.get(id) !== number) return false;
+  return true;
+}
+
+/** The numbered pieces of each editor, by what draws each again. */
+const numbered = new WeakMap<EditorView, Set<() => void>>();
+
+function numberedIn(view: EditorView): Set<() => void> {
+  let found = numbered.get(view);
+  if (found === undefined) {
+    found = new Set();
+    numbered.set(view, found);
+  }
+  return found;
+}
+
+/** A reference added | removed | moved before others: the numbered pieces are drawn again. */
+const renumber = $prose(
+  (ctx) =>
+    new Plugin({
+      view: () => ({
+        update: (view, previous) => {
+          if (view.state.doc === previous.doc || ctx.get(referencesCtx.key).notes.size === 0)
+            return;
+          if (sameNumbers(numbersOf(ctx, view.state.doc), numbersOf(ctx, previous.doc))) return;
+          for (const draw of numberedIn(view)) draw();
+        },
+      }),
+    }),
+);
+
 /** A piece of no known kind: its source as text. */
 function plainLook(source: string): HTMLElement {
   const shown = document.createElement("span");
@@ -217,7 +337,7 @@ export const inlineSourceView = $view(inlineSourceNode, (ctx): NodeViewConstruct
       clearTimeout(timer);
       timer = undefined;
       undraw();
-      const shown = kind()?.look(source()) ?? plainLook(source());
+      const shown = kind()?.look(source(), ctx, view) ?? plainLook(source());
       if (look) look.replaceWith(shown);
       else dom.prepend(shown);
       look = shown;
@@ -389,6 +509,7 @@ export const inlineSourceView = $view(inlineSourceNode, (ctx): NodeViewConstruct
     opensOnEnter(dom, openField);
     draw();
     paintState();
+    if (kind()?.numbered) numberedIn(view).add(draw);
 
     return {
       dom,
@@ -425,9 +546,16 @@ export const inlineSourceView = $view(inlineSourceNode, (ctx): NodeViewConstruct
         clearTimeout(timer);
         undraw();
         undraw = () => {};
+        numberedIn(view).delete(draw);
       },
     };
   };
 });
 
-export const inlineSource = [inlineSourceRemark, inlineSourceNode, inlineSourceView].flat();
+export const inlineSource = [
+  referencesCtx,
+  inlineSourceRemark,
+  inlineSourceNode,
+  inlineSourceView,
+  renumber,
+].flat();

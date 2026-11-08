@@ -206,7 +206,7 @@ describe("checked edits in the Edit-mode editor", () => {
     const text = "A list:\n\nSee r here.\n\n[r]: http://x\n";
     await load(text);
     const before = core.view.state.doc;
-    // `[r]` would use the definition below: the editor would write it escaped
+    // `[r]` would use the definition below: a link by reference, never made by a fix
     expect(applyEdits(core, now(), [fix(text, "r here", "[r] here")])).toBe(false);
     // a paragraph turned into a heading
     expect(applyEdits(core, now(), [fix(text, "A list:", "# A list:")])).toBe(false);
@@ -380,6 +380,33 @@ describe("inline formulas in correction", () => {
     const before = core.view.state.doc;
     expect(applyEdits(core, now(), [fix(fixed, "teh", "the", 10)])).toBe(false);
     expect(applyEdits(core, now(), [fix(fixed, "$teh=mc^2$", "teh")])).toBe(false);
+    expect(core.view.state.doc).toBe(before);
+  });
+});
+
+describe("references in correction", () => {
+  const TEXT =
+    "Teh [teh site][s] and teh note[^teh].\n\n[s]: https://example.com\n\n[^teh]: Note.\n";
+
+  it("marks the prose around a reference, never its source", async () => {
+    await load(TEXT);
+    const words = [0, 1, 2, 3].map((n) => wordAt(TEXT, "teh", n));
+    setMarks(core.view, now(), words, null, () => {});
+    expect(marks()).toEqual(["teh"]);
+    const doc = core.view.state.doc;
+    expect(docRange(doc, now(), words[0] ?? wordAt(TEXT, "teh"))).toBeNull();
+    expect(docRange(doc, now(), words[2] ?? wordAt(TEXT, "teh"))).toBeNull();
+    expect(docText(docRange(doc, now(), words[1] ?? wordAt(TEXT, "teh")))).toBe("teh");
+  });
+
+  it("a fix in the prose goes in and keeps each reference's bytes; one in a reference is refused", async () => {
+    await load(TEXT);
+    expect(applyEdits(core, now(), [fix(TEXT, "teh", "the", 18)])).toBe(true);
+    const fixed = TEXT.replace("and teh", "and the");
+    expect(now().text).toBe(fixed);
+    const before = core.view.state.doc;
+    expect(applyEdits(core, now(), [fix(fixed, "teh", "the", 4)])).toBe(false);
+    expect(applyEdits(core, now(), [fix(fixed, "[^teh]", "[^the]")])).toBe(false);
     expect(core.view.state.doc).toBe(before);
   });
 });

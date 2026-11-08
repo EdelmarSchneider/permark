@@ -12,6 +12,7 @@ import { appPlugins, type PluginHost } from "./plugins";
 let core: Core;
 const neared: HTMLElement[] = [];
 const undone: HTMLElement[] = [];
+const followed: string[] = [];
 
 const host: LockedHost = {
   render: () => null,
@@ -44,7 +45,7 @@ const plugins: PluginHost = {
   slash: () => {},
   slashKey: () => false,
   pictures: () => {},
-  followLink: () => {},
+  followLink: (href) => void followed.push(href),
   displaySrc: (src) => src,
 };
 
@@ -62,6 +63,7 @@ beforeEach(() => {
   core.setDoc(core.parse("Other text.\n"));
   neared.length = 0;
   undone.length = 0;
+  followed.length = 0;
 });
 
 /** The inline atoms the editor reads in `text`, by their source. */
@@ -363,5 +365,210 @@ describe("a block that keeps its math as written", () => {
   it("multi-line inline math stays a locked block", async () => {
     await load("Energy $E=\nmc^2$ here.\n");
     expect(core.view.state.doc.child(0).type.name).toBe(LOCKED);
+  });
+});
+
+describe("footnote references", () => {
+  const NOTES = "Lead[^b] mid[^a] and again[^b] end.\n\n[^a]: Note A.\n\n[^b]: Note B.\n";
+
+  /** The numbers the footnote pieces show, in order. */
+  const numbers = (): (string | null | undefined)[] =>
+    atoms().map(
+      (atom) => atom.querySelector("sup.footnote-ref > a[data-footnote-ref]")?.textContent,
+    );
+
+  it("a paragraph using footnotes is editable text, each reference a piece kept as written", async () => {
+    const built = await load(NOTES);
+    expect(built.sources.map((s) => s.locked)).toEqual([null, "definition", "definition"]);
+    expect(core.view.state.doc.child(0).type.name).toBe("paragraph");
+    expect(atoms().map((atom) => atom.dataset.kind)).toEqual(["footnote", "footnote", "footnote"]);
+    expect([0, 1, 2].map((n) => sourceAt(n))).toEqual(["[^b]", "[^a]", "[^b]"]);
+    const composed = compose(core, built, core.view.state.doc);
+    expect(composed.text).toBe(NOTES);
+    expect(composed.changed).toBe(0);
+  });
+
+  it("is drawn as View draws it: a superscript number by first reference", async () => {
+    await load(NOTES);
+    expect(numbers()).toEqual(["1", "2", "1"]);
+    const links = atoms().map((atom) => atom.querySelector("a")?.getAttribute("href"));
+    expect(links).toEqual(["#fn-b", "#fn-a", "#fn-b"]);
+    expect(atoms()[0]?.getAttribute("aria-label")).toBe("block: footnote");
+    expect(atoms()[0]?.contentEditable).toBe("false");
+  });
+
+  it("numbers follow when a reference goes and comes back", async () => {
+    await load(NOTES);
+    const at = atomAt(0);
+    core.view.dispatch(core.view.state.tr.delete(at, at + 1));
+    expect(numbers()).toEqual(["1", "2"]);
+    undo(core.view.state, core.view.dispatch);
+    expect(numbers()).toEqual(["1", "2", "1"]);
+  });
+
+  it("counts references in blocks kept as written too, in document order", async () => {
+    await load(
+      "A [long\nname][s] first[^b]\n\nThen[^a] and[^b].\n\n[^a]: A.\n\n[^b]: B.\n\n[s]: https://example.com\n",
+    );
+    expect(core.view.state.doc.child(0).type.name).toBe(LOCKED);
+    expect(numbers()).toEqual(["2", "1"]);
+  });
+
+  it("a label matches as the parser matches it (case aside); a reference to no footnote stays text", async () => {
+    await load("One[^Note] two[^none] end.\n\n[^note]: N.\n");
+    expect(core.view.state.doc.child(0).type.name).toBe("paragraph");
+    expect(atoms().map((_, n) => sourceAt(n))).toEqual(["[^Note]"]);
+    expect(core.view.state.doc.child(0).textContent).toContain("two[^none] end.");
+  });
+
+  it("a click opens its source: another defined label goes in, an undefined one is refused", async () => {
+    const built = await load(NOTES);
+    const field = openAtom(1);
+    expect(field.value).toBe("[^a]");
+    type(field, "[^b]");
+    expect(sourceAt(1)).toBe("[^b]");
+    type(field, "[^zz]");
+    expect(sourceAt(1)).toBe("[^b]");
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+    key(field, "Escape");
+    expect(numbers()).toEqual(["1", "1", "1"]);
+    expect(compose(core, built, core.view.state.doc).text).toBe(
+      NOTES.replace("mid[^a]", "mid[^b]"),
+    );
+  });
+
+  it("Ctrl+click follows its in-page anchor (nothing in Edit) and opens nothing", async () => {
+    await load(NOTES);
+    const atom = atoms()[0];
+    const anchor = atom?.querySelector("a");
+    if (!anchor) throw new Error("no anchor");
+    press(anchor, "click", { ctrlKey: true });
+    expect(followed).toEqual(["#fn-b"]);
+    expect(atom?.querySelector("input")).toBeNull();
+  });
+});
+
+describe("reference-style links", () => {
+  const LINKS =
+    'See [the guide][g], [Docs][] and [docs] here.\n\n[g]: https://example.com/guide "Guide"\n[docs]: docs/index.md\n';
+
+  const anchors = (): (HTMLAnchorElement | null | undefined)[] =>
+    atoms().map((atom) => atom.querySelector("a"));
+
+  it("a paragraph using them is editable text, each link a piece kept as written", async () => {
+    const built = await load(LINKS);
+    expect(built.sources.map((s) => s.locked)).toEqual([null, "definition"]);
+    expect(atoms().map((atom) => atom.dataset.kind)).toEqual(["link", "link", "link"]);
+    expect([0, 1, 2].map((n) => sourceAt(n))).toEqual(["[the guide][g]", "[Docs][]", "[docs]"]);
+    const composed = compose(core, built, core.view.state.doc);
+    expect(composed.text).toBe(LINKS);
+    expect(composed.changed).toBe(0);
+  });
+
+  it("is drawn as View's link: its text, the href and title of its definition", async () => {
+    await load(LINKS);
+    expect(anchors().map((a) => a?.textContent)).toEqual(["the guide", "Docs", "docs"]);
+    expect(anchors().map((a) => a?.getAttribute("href"))).toEqual([
+      "https://example.com/guide",
+      "docs/index.md",
+      "docs/index.md",
+    ]);
+    expect(anchors()[0]?.title).toBe("Guide");
+    // View's hooks see the link (a missing target is marked as in View)
+    expect(neared).toContain(anchors()[1]);
+    expect(atoms()[0]?.getAttribute("aria-label")).toBe("block: link");
+  });
+
+  it("Ctrl+click follows the resolved href; a click opens the source", async () => {
+    await load(LINKS);
+    const anchor = anchors()[0];
+    if (!anchor) throw new Error("no anchor");
+    press(anchor, "click", { ctrlKey: true });
+    expect(followed).toEqual(["https://example.com/guide"]);
+    expect(atoms()[0]?.querySelector("input")).toBeNull();
+    const field = openAtom(0);
+    expect(field.value).toBe("[the guide][g]");
+    type(field, "[the handbook][g]");
+    expect(sourceAt(0)).toBe("[the handbook][g]");
+    key(field, "Escape");
+    expect(anchors()[0]?.textContent).toBe("the handbook");
+    expect(followed).toEqual(["https://example.com/guide"]);
+  });
+
+  it("labels match as the parser matches them: case and inner spaces aside", async () => {
+    await load("A [The   Guide] b.\n\n[the guide]: https://example.com/g\n");
+    expect(anchors().map((a) => a?.getAttribute("href"))).toEqual(["https://example.com/g"]);
+  });
+
+  it("a shortcut with no definition stays plain text, as in View", async () => {
+    const text = "A [nothing] here and [g].\n\n[g]: https://example.com/g\n";
+    const built = await load(text);
+    expect(atoms().map((_, n) => sourceAt(n))).toEqual(["[g]"]);
+    expect(core.view.state.doc.child(0).textContent).toContain("A [nothing] here");
+    expect(compose(core, built, core.view.state.doc).text).toBe(text);
+  });
+
+  it("an unsafe destination is no href", async () => {
+    await load("A [x] b.\n\n[x]: javascript:alert(1)\n");
+    expect(anchors()[0]?.hasAttribute("href")).toBe(false);
+    expect(anchors()[0]?.textContent).toBe("x");
+  });
+});
+
+describe("saving around reference pieces", () => {
+  const TEXT =
+    "[^n] lead [the site][s] mid [s] tail.\n\nNext words.\n\n[^n]: Note.\n\n[s]: https://example.com\n";
+
+  function typeAt(pos: number, text: string): void {
+    core.view.dispatch(core.view.state.tr.insertText(text, pos));
+  }
+
+  it.each([
+    ["before a link", 1, 0, " [the site]", " Z[the site]"],
+    ["after a link", 1, 1, "[s] mid", "[s]Z mid"],
+    ["after a shortcut", 2, 1, "[s] tail", "[s]Z tail"],
+    ["after a footnote", 0, 1, "[^n] lead", "[^n]Z lead"],
+  ])("typing %s changes only the typed character", async (_, n, after, find, by) => {
+    const built = await load(TEXT);
+    typeAt(atomAt(n) + after, "Z");
+    const composed = compose(core, built, core.view.state.doc);
+    expect(composed.text).toBe(TEXT.replace(find, () => by));
+    expect(composed.changed).toBe(1);
+  });
+
+  it.each([
+    ["`(` after a shortcut stays text (never a link destination)", 2, "(x)", "[s]\\(x) tail"],
+    ["`(` after a footnote, before another piece, stays text", 0, "(x)", "[^n]\\(x) lead"],
+    ["`[` after a shortcut stays text (never a full reference)", 2, "[g]", "[s]\\[g] tail"],
+    [
+      "`:` after a piece opening the paragraph stays text (never a definition)",
+      0,
+      ":",
+      "[^n]\\: lead",
+    ],
+    ["`:` with more text after it", 0, ": x.", "[^n]\\: x. lead"],
+  ])("%s", async (_, n, typed, expected) => {
+    const built = await load(TEXT);
+    typeAt(atomAt(n) + 1, typed);
+    expect(compose(core, built, core.view.state.doc).text).toContain(expected);
+  });
+
+  it("deleting a piece drops only its bytes", async () => {
+    const built = await load(TEXT);
+    const at = atomAt(1);
+    core.view.dispatch(core.view.state.tr.delete(at, at + 1));
+    expect(compose(core, built, core.view.state.doc).text).toBe(TEXT.replace("[the site][s]", ""));
+  });
+});
+
+describe("blocks that keep their references as written", () => {
+  it.each([
+    ["a picture by reference", "An ![logo][s] here.\n\n[s]: logo.png\n", "reference"],
+    ["a link across lines", "A [long\nname][s] here.\n\n[s]: https://example.com\n", "reference"],
+    ["a definition", "[s]: https://example.com\n\nUse [s].\n", "definition"],
+  ])("%s", async (_, text, reason) => {
+    const built = await load(text);
+    expect(built.sources.map((s) => s.locked)).toContain(reason);
+    expect(compose(core, built, core.view.state.doc).text).toBe(text);
   });
 });

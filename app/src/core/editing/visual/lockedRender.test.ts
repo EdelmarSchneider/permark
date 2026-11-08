@@ -110,10 +110,11 @@ describe("locked blocks look like View", () => {
     expect(note.html).toContain(item);
     expect(note.html.startsWith(section.slice(0, section.indexOf(">") + 1))).toBe(true);
 
-    // the paragraph with inline math is editable text
+    // the paragraphs with inline math and with a footnote reference are editable text
     expect(blocks.find((b) => b.lineStart === 55)?.reason).toBeNull();
-    // alerts, display math, the diagram and the paragraph using a footnote: View's own blocks, verbatim
-    for (const first of [15, 26, 29, 57, 63]) {
+    expect(blocks.find((b) => b.lineStart === 15)?.reason).toBeNull();
+    // alerts, display math and the diagram: View's own blocks, verbatim
+    for (const first of [26, 29, 57, 63]) {
       const render = at.get(first);
       const own = blocks.find((b) => b.lineStart === first);
       expect(render?.kind, `line ${first}`).toBe("html");

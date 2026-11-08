@@ -12,6 +12,7 @@ import { diff } from "../lines";
 import type { TextRange } from "../session.svelte";
 import { blocksUsingReferences, classify, sameMeaning } from "./classify";
 import { LOCKED, type Core, type LockReason } from "./core";
+import { NO_REFERENCES, useReferences } from "./references";
 
 /** One block of the text the document was made from. */
 export type Source = {
@@ -91,11 +92,14 @@ export async function buildDoc(
     cursor = end;
   }
   separators.push(text.slice(cursor));
-  const usesReference = blocksUsingReferences(
+  // the text's own definitions only (none of a document read before), then given to every block's reading
+  useReferences(core, NO_REFERENCES);
+  const { blocks: usesReference, references } = blocksUsingReferences(
     core,
     text,
     sources.map((s) => s.start),
   );
+  useReferences(core, references);
   const nodes: PMNode[] = [];
   const origin = new WeakMap<PMNode, number>();
   await sliced(sources, (source, i) => {
