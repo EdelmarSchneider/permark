@@ -459,6 +459,8 @@ export default {
   "edit.discard": "Scarta",
   "edit.keepEditing": "Continua a modificare",
   "edit.editInSource": "Modifica nel sorgente",
+  "edit.blockSource": "Sorgente di questo blocco",
+  "edit.blockSourceHint": "Esc per terminare",
   "edit.visualForMarkdown":
     "La modalità Modifica è per i file Markdown e di impostazioni; usa Sorgente.",
   "edit.diagramNoPlugin": "Attiva il plugin Mermaid o PlantUML per vedere il disegno.",

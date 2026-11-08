@@ -35,6 +35,8 @@ function hostWith(card: LockedHost["card"]): LockedHost {
     reasonText: (reason) => `locked: ${reason}`,
     editLabel: "Source",
     edit: () => {},
+    sourceLabel: "Source of this block",
+    sourceHint: "Esc to finish",
   };
 }
 

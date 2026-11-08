@@ -1,10 +1,13 @@
 // `pm_locked`: a block the editor keeps as written (its bytes are written back untouched). At rest it looks as View
 // draws its lines: View's blocks (backend HTML, hydrated with View's hooks), View's front matter card, or nothing for
 // lines View does not draw. Only what View cannot be matched with shows the source, with the reason and a way to
-// Source. A click selects the block; a click on the front matter opens its editable properties in place.
+// Source. A click | Enter opens it in place: the front matter as its editable properties, any other block as its
+// source in a text box, View's look of that text below it. What is typed goes into the document at once (the
+// editor's undo, dirty state and autosave see it); leaving the box shows View's look of the new source.
 
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
-import { NodeSelection, Plugin } from "@milkdown/kit/prose/state";
+import { closeHistory, redo, undo } from "@milkdown/kit/prose/history";
+import { NodeSelection, Plugin, Selection } from "@milkdown/kit/prose/state";
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $ctx, $node, $prose, $view } from "@milkdown/kit/utils";
 import type { FrontMatter } from "../../../api/generated/FrontMatter";
@@ -55,6 +58,10 @@ export type LockedHost = {
   editLabel: string;
   /** "Edit in Source" on this node. */
   edit(node: PMNode): void;
+  /** Name of the text box an opened block shows its source in. */
+  sourceLabel: string;
+  /** The short line under that box: how to finish. */
+  sourceHint: string;
 };
 
 const noHost: LockedHost = {
@@ -66,6 +73,8 @@ const noHost: LockedHost = {
   reasonText: (reason) => reason,
   editLabel: "Source",
   edit: () => {},
+  sourceLabel: "Source",
+  sourceHint: "Esc",
 };
 
 export const lockedHostCtx = $ctx<LockedHost, "pmLockedHost">(noHost, "pmLockedHost");
@@ -126,13 +135,87 @@ function drawBlocks(target: HTMLElement, html: string, hooks: BlockHooks): () =>
   };
 }
 
-/** What the block shows: View's blocks | View's card | nothing | its source. */
-type Look = "view" | "card" | "none" | "source";
+/** What the block shows: View's blocks | View's card | nothing | its source | its source opened in a text box. */
+type Look = "view" | "card" | "none" | "source" | "open";
 
-type State = { kind: "idle" } | { kind: "properties"; opened: string };
+/** The source opened in place: a text box above View's look of what it holds. */
+type Editing = {
+  kind: "source";
+  field: HTMLTextAreaElement;
+  preview: HTMLElement;
+  /** Undoes the hydration of what the preview shows. */
+  undraw: () => void;
+  timer: ReturnType<typeof setTimeout> | undefined;
+  /** An IME composition is going on in the box: its text is not the person's yet. */
+  composing: boolean;
+  /** Time of the last edit put into the document since the box opened (null: none yet). */
+  edited: number | null;
+};
+
+type State = { kind: "idle" } | { kind: "properties"; opened: string } | Editing;
+
+/** How the box is left: Escape | focus elsewhere | an arrow key out of its first | last line. */
+type Exit = "done" | "outside" | "before" | "after";
+
+/** Pause in typing before the preview is rendered again (each render is one of the whole text). */
+const PREVIEW_MS = 250;
 
 /** Opens the block under a node selection (Enter); false when it has nothing to open. */
 const openers = new WeakMap<Node, () => boolean>();
+
+/** Hints made so far: each box points at its own hint by id. */
+let hints = 0;
+
+/** The box as tall as its text: no scrollbar inside it, the page scrolls. */
+function fit(field: HTMLTextAreaElement): void {
+  field.rows = Math.max(1, field.value.split("\n").length);
+  field.style.height = "auto";
+  // no layout (a detached box, a test): the rows above are the height
+  if (field.scrollHeight > 0) {
+    field.style.height = `${field.scrollHeight + field.offsetHeight - field.clientHeight}px`;
+  }
+}
+
+/** `text` in the box, the caret at the end of what differs from the text it showed (an undo shows what it undid). */
+function showText(field: HTMLTextAreaElement, text: string): void {
+  const old = field.value;
+  let head = 0;
+  while (head < old.length && head < text.length && old[head] === text[head]) head += 1;
+  let tail = 0;
+  while (
+    tail < old.length - head &&
+    tail < text.length - head &&
+    old[old.length - 1 - tail] === text[text.length - 1 - tail]
+  ) {
+    tail += 1;
+  }
+  field.value = text;
+  field.setSelectionRange(text.length - tail, text.length - tail);
+}
+
+/** An arrow key with the caret at the very start (up) | end (down) of the box: the key leaves it. */
+function leavesBox(field: HTMLTextAreaElement, key: string): boolean {
+  const { selectionStart: start, selectionEnd: end, value } = field;
+  if (start !== end) return false;
+  return (key === "ArrowUp" && start === 0) || (key === "ArrowDown" && end === value.length);
+}
+
+/** The backend HTML the preview shows for `look` (`""`: View draws nothing); null: none known, the last one stays. */
+function previewOf(look: LockedRender): string | null {
+  switch (look.kind) {
+    case "html":
+    case "footnote":
+      return look.html;
+    case "none":
+      return "";
+    case "frontMatter":
+    case "promptTag":
+    case "source":
+      return null;
+    default:
+      return look satisfies never;
+  }
+}
 
 export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
   return (initial, view, getPos) => {
@@ -191,6 +274,22 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       }
     };
 
+    const editorLook = (editing: Editing): void => {
+      const hint = document.createElement("div");
+      hint.className = "pm-locked__hint";
+      hints += 1;
+      hint.id = `pm-locked-hint-${hints}`;
+      hint.textContent = host.sourceHint;
+      editing.field.setAttribute("aria-describedby", hint.id);
+      dom.append(editing.field, hint, editing.preview);
+      fit(editing.field);
+      teardown = () => {
+        clearTimeout(editing.timer);
+        editing.undraw();
+        editing.undraw = () => {};
+      };
+    };
+
     const paint = (): void => {
       teardown?.();
       teardown = null;
@@ -202,6 +301,9 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
         teardown = host.properties(dom, String(node.attrs.source), replace);
         dom.tabIndex = -1;
         look = "card";
+      } else if (state.kind === "source") {
+        editorLook(state);
+        look = "open";
       } else {
         look = idleLook();
         // nothing drawn, but the keyboard selected it: it shows what it holds
@@ -237,8 +339,7 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       close(false);
     };
 
-    const open = (): boolean => {
-      if (state.kind !== "idle" || render?.kind !== "frontMatter") return false;
+    const openProperties = (): boolean => {
       state = { kind: "properties", opened: String(node.attrs.source) };
       paint();
       if (teardown === null) {
@@ -265,7 +366,169 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       if (changed) rerender();
     };
 
+    // ---- the source in a text box ------------------------------------------------------------------------------
+
+    /** View's blocks for `look` in the preview, hydrated as View's; a look without them keeps the last one shown. */
+    const showPreview = (editing: Editing, look: LockedRender | null): void => {
+      const html = look === null ? null : previewOf(look);
+      if (html === null) return;
+      editing.undraw();
+      editing.preview.replaceChildren();
+      editing.undraw = drawBlocks(editing.preview, html, host.blocks);
+    };
+
+    /** Once typing pauses: the whole text rendered as View does (references resolve), this block's part shown. */
+    const schedulePreview = (editing: Editing): void => {
+      clearTimeout(editing.timer);
+      editing.timer = setTimeout(() => {
+        const asked = node;
+        void host.refresh().then(
+          () => {
+            // typed on meanwhile: the next pause renders again
+            if (gone || state !== editing || node !== asked) return;
+            showPreview(editing, host.render(node));
+          },
+          () => {},
+        );
+      }, PREVIEW_MS);
+    };
+
+    /** The box's text into the document: one transaction per input (quick ones in a row make one undo step). */
+    const commit = (editing: Editing): void => {
+      const next = editing.field.value;
+      const at = getPos();
+      if (state !== editing || at === undefined || next === String(node.attrs.source)) return;
+      const tr = view.state.tr.setNodeMarkup(at, undefined, { ...node.attrs, source: next });
+      // the block stays the selection: what is typed in the box is its own
+      tr.setSelection(NodeSelection.create(tr.doc, at));
+      // the first edit starts an undo step of its own: undo never joins it to an edit made before the box opened
+      if (editing.edited === null) closeHistory(tr);
+      editing.edited = tr.time;
+      view.dispatch(tr);
+      schedulePreview(editing);
+    };
+
+    /** Where the keyboard goes once the box is gone (focus moved elsewhere: where the person put it). */
+    const leave = (exit: Exit): void => {
+      const at = getPos();
+      if (exit === "outside" || at === undefined) return;
+      const doc = view.state.doc;
+      const next =
+        exit === "before"
+          ? Selection.findFrom(doc.resolve(at), -1)
+          : exit === "after"
+            ? Selection.findFrom(doc.resolve(at + node.nodeSize), 1)
+            : null;
+      view.dispatch(
+        view.state.tr.setSelection(next ?? NodeSelection.create(doc, at)).scrollIntoView(),
+      );
+      view.focus();
+    };
+
+    /** An emptied block goes, in the last edit's undo step: one undo brings its text back. */
+    const remove = (at: number, editing: Editing, exit: Exit): void => {
+      const tr = view.state.tr.delete(at, at + node.nodeSize);
+      if (editing.edited !== null) tr.setTime(editing.edited);
+      if (exit !== "outside") {
+        const $at = tr.doc.resolve(Math.min(at, tr.doc.content.size));
+        tr.setSelection(Selection.near($at, exit === "after" ? 1 : -1)).scrollIntoView();
+      }
+      view.dispatch(tr);
+      if (exit !== "outside") view.focus();
+    };
+
+    const closeSource = (editing: Editing, exit: Exit): void => {
+      if (gone || state !== editing) return;
+      // a composition cut short by leaving: what the box shows is what the person typed
+      commit(editing);
+      state = { kind: "idle" };
+      const at = getPos();
+      if (at !== undefined && String(node.attrs.source).trim() === "") {
+        remove(at, editing, exit);
+        return;
+      }
+      // View's look of the new source when the preview has it already; else it is rendered again
+      const known = host.render(node);
+      if (known !== null) render = known;
+      paint();
+      leave(exit);
+      if (known === null) rerender();
+    };
+
+    const keyed = (editing: Editing, event: KeyboardEvent): void => {
+      if (event.isComposing || editing.composing) return;
+      const mod = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+      if (event.key === "Escape") closeSource(editing, "done");
+      else if (mod && !event.altKey && (key === "z" || key === "y")) {
+        // the editor's undo, not the box's own: the box shows the document's text at every step
+        (key === "y" || event.shiftKey ? redo : undo)(view.state, view.dispatch);
+      } else if (!mod && !event.altKey && !event.shiftKey && leavesBox(editing.field, event.key)) {
+        closeSource(editing, event.key === "ArrowUp" ? "before" : "after");
+      } else return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    const openSource = (): boolean => {
+      const field = document.createElement("textarea");
+      field.className = "pm-locked__editor";
+      field.spellcheck = false;
+      field.setAttribute("aria-label", host.sourceLabel);
+      field.value = String(node.attrs.source);
+      const preview = document.createElement("div");
+      preview.className = "pm-locked__preview";
+      // a picture of the text: nothing in it is clicked, followed or focused (the keys stay in the box)
+      preview.setAttribute("inert", "");
+      const editing: Editing = {
+        kind: "source",
+        field,
+        preview,
+        undraw: () => {},
+        timer: undefined,
+        composing: false,
+        edited: null,
+      };
+      field.addEventListener("input", () => {
+        fit(field);
+        if (!editing.composing) commit(editing);
+      });
+      // an IME composition is never cut: its text goes into the document once it is chosen
+      field.addEventListener("compositionstart", () => {
+        editing.composing = true;
+      });
+      field.addEventListener("compositionend", () => {
+        editing.composing = false;
+        commit(editing);
+      });
+      field.addEventListener("keydown", (event) => keyed(editing, event));
+      field.addEventListener("blur", () => {
+        // the window lost focus, the box keeps it: still open when the person comes back
+        if (document.activeElement === field) return;
+        closeSource(editing, "outside");
+      });
+      state = editing;
+      paint();
+      showPreview(editing, render);
+      field.focus({ preventScroll: true });
+      field.setSelectionRange(field.value.length, field.value.length);
+      return true;
+    };
+
+    const open = (): boolean => {
+      if (state.kind !== "idle") return false;
+      if (render?.kind === "frontMatter" && openProperties()) return true;
+      // a prompt box's tag line is one of a pair: it is not opened alone
+      if (render?.kind === "promptTag") return false;
+      return openSource();
+    };
+
     dom.addEventListener("mousedown", (event) => {
+      if (state.kind === "source") {
+        // the hint and the preview take no focus: the keys stay in the box
+        if (event.target !== state.field) event.preventDefault();
+        return;
+      }
       if (state.kind !== "idle" || event.button !== 0 || isControl(dom, event.target)) return;
       // the block is one thing to select: no caret | text selection inside what View drew
       event.preventDefault();
@@ -275,7 +538,8 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
     dom.addEventListener("click", (event) => {
       if (state.kind !== "idle" || event.button !== 0 || isControl(dom, event.target)) return;
       if (event.ctrlKey || event.metaKey) return;
-      open();
+      // the block opens; a link in it is not followed
+      if (open()) event.preventDefault();
     });
     dom.addEventListener("keydown", (event) => {
       if (state.kind !== "properties" || event.key !== "Escape") return;
@@ -296,6 +560,15 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
         const changed = String(next.attrs.source) !== String(node.attrs.source);
         node = next;
         if (!changed) return true;
+        if (state.kind === "source") {
+          // the box stays (caret, composition): only a text it does not show yet goes in (undo, redo)
+          if (state.field.value !== String(next.attrs.source)) {
+            showText(state.field, String(next.attrs.source));
+            fit(state.field);
+            schedulePreview(state);
+          }
+          return true;
+        }
         if (state.kind === "properties") {
           // the properties edit the new source (a value set, the next one starts from it)
           paint();
@@ -325,7 +598,8 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
         // a click on a link goes on to the editor, which follows it on Ctrl | Cmd + click as in its own text
         return event.type !== "click" && !event.type.startsWith("key");
       },
-      // View's hydration (embeds, a details toggled) and the properties change this DOM, never the document
+      // View's hydration (embeds, a details toggled), the properties and the source box change this DOM, never the
+      // document
       ignoreMutation: () => true,
       destroy: () => {
         gone = true;
@@ -337,7 +611,7 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
   };
 });
 
-/** Enter on a selected locked block opens what it offers in place (the front matter's properties). */
+/** Enter on a selected locked block opens it in place (its source | the front matter's properties). */
 export const lockedKeys = $prose(
   () =>
     new Plugin({

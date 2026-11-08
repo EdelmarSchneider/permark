@@ -446,6 +446,8 @@ export default {
   "edit.discard": "버리기",
   "edit.keepEditing": "계속 편집",
   "edit.editInSource": "소스에서 편집",
+  "edit.blockSource": "이 블록의 소스",
+  "edit.blockSourceHint": "Esc 키로 마침",
   "edit.visualForMarkdown": "편집 모드는 Markdown 파일과 설정 파일용입니다. 소스를 사용하세요.",
   "edit.diagramNoPlugin": "그림을 보려면 Mermaid 또는 PlantUML 플러그인을 켜세요.",
   "edit.diagramPanel": "다이어그램 미리 보기",

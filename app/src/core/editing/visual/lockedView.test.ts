@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import "./jsdomShims";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
+import { undo } from "@milkdown/kit/prose/history";
 import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import type { Body } from "../../../api/generated/Body";
 import type { FrontMatter } from "../../../api/generated/FrontMatter";
@@ -53,6 +54,8 @@ const host: LockedHost = {
   reasonText: (reason) => `kept: ${reason}`,
   editLabel: "Source",
   edit: () => {},
+  sourceLabel: "Source of this block",
+  sourceHint: "Esc to finish",
 };
 
 const plugins: PluginHost = {
@@ -86,6 +89,10 @@ beforeEach(() => {
   for (const list of [enhanced, neared, undone, followed]) list.length = 0;
   opened = [];
   refreshed = () => {};
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 const TEXT = [
@@ -223,7 +230,7 @@ describe("a block kept as written, at rest", () => {
     expect(definition?.childElementCount).toBe(0);
   });
 
-  it("a plain click selects the block (outlined) and does not follow a link in it", async () => {
+  it("a plain click selects the block and opens its source in place; a link in it is not followed", async () => {
     await open();
     const html = blocks()[1];
     const link = html?.querySelector("a");
@@ -233,19 +240,35 @@ describe("a block kept as written, at rest", () => {
     const selection = core.view.state.selection;
     expect(selection).toBeInstanceOf(NodeSelection);
     expect(selection.from).toBe(lockedAt(1));
-    expect(html.classList.contains("ProseMirror-selectednode")).toBe(true);
     expect(down.defaultPrevented).toBe(true);
     expect(click.defaultPrevented).toBe(true);
     expect(followed).toEqual([]);
+    expect(html.dataset.look).toBe("open");
+    const field = html.querySelector("textarea");
+    expect(field?.value).toBe(SOURCE);
+    expect(document.activeElement).toBe(field);
+    expect(field?.selectionStart).toBe(SOURCE.length);
+    expect(field?.getAttribute("aria-label")).toBe("Source of this block");
+    const hint = html.querySelector(".pm-locked__hint");
+    expect(hint?.textContent).toBe("Esc to finish");
+    expect(field?.getAttribute("aria-describedby")).toBe(hint?.id);
+    // below the box: View's look of what it holds, hydrated as View's, never clicked or focused
+    const preview = html.querySelector(".pm-locked__preview");
+    expect(preview?.hasAttribute("inert")).toBe(true);
+    const note = preview?.querySelector(":scope > .note");
+    expect(note?.textContent).toContain("words");
+    expect(enhanced).toContain(note);
+    expect(neared).toContain(note);
   });
 
-  it("Ctrl | Cmd + click on a link follows it, as the editor does in its own text", async () => {
+  it("Ctrl | Cmd + click on a link follows it, as the editor does in its own text, and opens nothing", async () => {
     await open();
     const link = blocks()[1]?.querySelector("a");
     if (!link) throw new Error("no link");
     press(link, "click", { ctrlKey: true });
     press(link, "click", { metaKey: true });
     expect(followed).toEqual(["https://example.com/", "https://example.com/"]);
+    expect(core.view.dom.querySelector("textarea")).toBeNull();
   });
 
   it("without a known look (the render failed) every locked block shows its source and the way to Source", async () => {
@@ -311,10 +334,266 @@ describe("the front matter", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
-  it("Enter on another selected locked block leaves it to the editor", async () => {
+  it("Enter on another selected locked block opens its source, not the properties", async () => {
     await open();
     selectLocked(1);
     core.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     expect(opened).toEqual([]);
+    expect(blocks()[1]?.querySelector("textarea")?.value).toBe(SOURCE);
+  });
+
+  it("without editable properties on offer, its source opens in the box", async () => {
+    await open();
+    const properties = host.properties;
+    host.properties = () => null;
+    try {
+      const front = blocks()[0];
+      const card = front?.querySelector(".card-stub");
+      if (!front || !card) throw new Error("no card");
+      press(card, "mousedown");
+      press(card, "click");
+      expect(front.querySelector("textarea")?.value).toBe("---\ntitle: A plan\n---");
+    } finally {
+      host.properties = properties;
+    }
+  });
+});
+
+/** The HTML block of TEXT. */
+const SOURCE = '<div class="note">\nSome <a href="https://example.com/">words</a>\n</div>';
+
+const MATH_TEXT = [
+  "Intro words.",
+  "",
+  "$$",
+  "a + b",
+  "$$",
+  "",
+  "",
+  "$$",
+  "c",
+  "$$",
+  "",
+  "End words.",
+  "",
+].join("\n");
+
+const MATH_SEGMENTS = [
+  { lineStart: 1, lineEnd: 1, kind: "paragraph", lock: null },
+  { lineStart: 3, lineEnd: 5, kind: "math", lock: "math" },
+  { lineStart: 8, lineEnd: 10, kind: "math", lock: "math" },
+  { lineStart: 12, lineEnd: 12, kind: "paragraph", lock: null },
+] as const;
+
+/** View's look of a math block: the backend's HTML for `formula`. */
+const mathLook = (formula: string): LockedRender => ({
+  kind: "html",
+  html: `<div class="math" data-b="m">${formula}</div>`,
+});
+
+/** MATH_TEXT opened, each math block with View's look. */
+async function openMath(): Promise<Built> {
+  const built = await buildDoc(core, MATH_TEXT, MATH_SEGMENTS);
+  const formulas = ["a + b", "c"];
+  built.doc.forEach((node) => {
+    if (node.type.name === LOCKED) looks.set(node, mathLook(formulas.shift() ?? ""));
+  });
+  core.setDoc(built.doc);
+  return built;
+}
+
+/** Opens the `n`-th locked block with a click; its source box. */
+function openBox(n: number): HTMLTextAreaElement {
+  const block = blocks()[n];
+  if (!block) throw new Error(`no block ${n}`);
+  press(block, "mousedown");
+  press(block, "click");
+  const field = block.querySelector("textarea");
+  if (!field) throw new Error("not opened");
+  return field;
+}
+
+/** The person's input in the box. */
+function type(field: HTMLTextAreaElement, text: string, init: InputEventInit = {}): void {
+  field.value = text;
+  field.dispatchEvent(new InputEvent("input", { bubbles: true, ...init }));
+}
+
+function key(field: Element, name: string, init: KeyboardEventInit = {}): KeyboardEvent {
+  const event = new KeyboardEvent("keydown", {
+    key: name,
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
+  field.dispatchEvent(event);
+  return event;
+}
+
+const sourceAt = (n: number): string =>
+  String(core.view.state.doc.nodeAt(lockedAt(n))?.attrs.source);
+
+/** Lets the renders asked for settle (the test host answers at once). */
+async function settle(): Promise<void> {
+  for (let i = 0; i < 3; i++) await Promise.resolve();
+}
+
+describe("a block opened in place", () => {
+  it("what is typed goes into the document at once; only that block's bytes change; undo in the box restores them", async () => {
+    const built = await openMath();
+    const field = openBox(0);
+    type(field, "$$\na + b + c\n$$");
+    const composed = compose(core, built, core.view.state.doc);
+    expect(composed.text).toBe(MATH_TEXT.replace("a + b", "a + b + c"));
+    expect(composed.changed).toBe(1);
+    type(field, "$$\na + b + c + d\n$$");
+    // the box is kept through the edits: same element, still focused
+    expect(blocks()[0]?.querySelector("textarea")).toBe(field);
+    expect(document.activeElement).toBe(field);
+    // keys in the box are its own: Backspace never deletes the block
+    key(field, "Backspace");
+    expect(core.view.state.doc.nodeAt(lockedAt(0))?.type.name).toBe(LOCKED);
+    // the editor's undo: quick edits are one step, and the original block comes back byte for byte
+    const undone = key(field, "z", { ctrlKey: true });
+    expect(undone.defaultPrevented).toBe(true);
+    expect(field.value).toBe("$$\na + b\n$$");
+    const back = compose(core, built, core.view.state.doc);
+    expect(back.text).toBe(MATH_TEXT);
+    expect(back.changed).toBe(0);
+    key(field, "z", { ctrlKey: true, shiftKey: true });
+    expect(field.value).toBe("$$\na + b + c + d\n$$");
+    expect(sourceAt(0)).toBe("$$\na + b + c + d\n$$");
+    key(field, "z", { metaKey: true });
+    key(field, "y", { ctrlKey: true });
+    expect(sourceAt(0)).toBe("$$\na + b + c + d\n$$");
+    expect(blocks()[0]?.querySelector("textarea")).toBe(field);
+  });
+
+  it("the preview shows View's render of the typed text once typing pauses; a render without it keeps the last", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await openMath();
+    const field = openBox(0);
+    const preview = blocks()[0]?.querySelector(".pm-locked__preview");
+    const first = preview?.querySelector(".math");
+    expect(first?.textContent).toBe("a + b");
+    const refresh = vi.fn(() => {
+      const node = core.view.state.doc.nodeAt(lockedAt(0));
+      if (node) looks.set(node, mathLook(String(node.attrs.source).split("\n")[1] ?? ""));
+    });
+    refreshed = refresh;
+    type(field, "$$\nx\n$$");
+    type(field, "$$\nx + y\n$$");
+    vi.advanceTimersByTime(249);
+    expect(refresh).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    await settle();
+    expect(refresh).toHaveBeenCalledTimes(1);
+    const next = preview?.querySelector(".math");
+    expect(next?.textContent).toBe("x + y");
+    expect(undone).toContain(first);
+    expect(enhanced).toContain(next);
+    // the render failed | was not sure: the last preview stays
+    refreshed = () => {};
+    type(field, "$$\nz\n$$");
+    vi.advanceTimersByTime(250);
+    await settle();
+    expect(preview?.querySelector(".math")?.textContent).toBe("x + y");
+  });
+
+  it("Escape closes the box: View's look of the new source, the block selected", async () => {
+    await openMath();
+    const field = openBox(0);
+    refreshed = () => {
+      const node = core.view.state.doc.nodeAt(lockedAt(0));
+      if (node) looks.set(node, mathLook("x"));
+    };
+    type(field, "$$\nx\n$$");
+    const escape = key(field, "Escape");
+    expect(escape.defaultPrevented).toBe(true);
+    await settle();
+    const block = blocks()[0];
+    expect(block?.querySelector("textarea")).toBeNull();
+    expect(block?.dataset.look).toBe("view");
+    expect(block?.querySelector(":scope > .math")?.textContent).toBe("x");
+    const selection = core.view.state.selection;
+    expect(selection).toBeInstanceOf(NodeSelection);
+    expect(selection.from).toBe(lockedAt(0));
+    // the other block keeps its look
+    expect(blocks()[1]?.querySelector(":scope > .math")?.textContent).toBe("c");
+  });
+
+  it("focus moving elsewhere closes it; the window losing focus does not", async () => {
+    await openMath();
+    const field = openBox(1);
+    // the window lost focus: the box still has it
+    field.dispatchEvent(new FocusEvent("blur"));
+    expect(blocks()[1]?.querySelector("textarea")).toBe(field);
+    field.blur();
+    expect(blocks()[1]?.querySelector("textarea")).toBeNull();
+    expect(blocks()[1]?.dataset.look).toBe("view");
+  });
+
+  it("an arrow key out of the first | last line closes it and moves the caret before | after the block", async () => {
+    await openMath();
+    let field = openBox(0);
+    field.setSelectionRange(0, 0);
+    expect(key(field, "ArrowUp", { shiftKey: true }).defaultPrevented).toBe(false);
+    expect(key(field, "ArrowUp").defaultPrevented).toBe(true);
+    expect(blocks()[0]?.querySelector("textarea")).toBeNull();
+    const before = core.view.state.selection;
+    expect(before).toBeInstanceOf(TextSelection);
+    expect(before.$from.parent.textContent).toBe("Intro words.");
+    expect(before.$from.parentOffset).toBe("Intro words.".length);
+    field = openBox(0);
+    field.setSelectionRange(3, 3);
+    expect(key(field, "ArrowDown").defaultPrevented).toBe(false);
+    expect(blocks()[0]?.querySelector("textarea")).toBe(field);
+    field.setSelectionRange(field.value.length, field.value.length);
+    key(field, "ArrowDown");
+    expect(blocks()[0]?.querySelector("textarea")).toBeNull();
+    // the next block is a locked one: it is selected, as an arrow key in the editor does
+    const after = core.view.state.selection;
+    expect(after).toBeInstanceOf(NodeSelection);
+    expect(after.from).toBe(lockedAt(1));
+  });
+
+  it("an emptied block is removed on close; one undo brings it back byte for byte", async () => {
+    const built = await openMath();
+    const field = openBox(0);
+    type(field, "  \n");
+    key(field, "Escape");
+    expect(blocks()).toHaveLength(1);
+    expect(compose(core, built, core.view.state.doc).text).toBe(
+      "Intro words.\n\n$$\nc\n$$\n\nEnd words.\n",
+    );
+    undo(core.view.state, core.view.dispatch);
+    const back = compose(core, built, core.view.state.doc);
+    expect(back.text).toBe(MATH_TEXT);
+    expect(back.changed).toBe(0);
+  });
+
+  it("an IME composition goes into the document only once it is chosen", async () => {
+    await openMath();
+    const field = openBox(0);
+    field.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    type(field, "$$\na + b か\n$$", { isComposing: true });
+    expect(sourceAt(0)).toBe("$$\na + b\n$$");
+    // Escape ends the composition, not the box
+    key(field, "Escape", { isComposing: true });
+    expect(blocks()[0]?.querySelector("textarea")).toBe(field);
+    type(field, "$$\na + b 化\n$$", { isComposing: true });
+    field.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "化" }));
+    expect(sourceAt(0)).toBe("$$\na + b 化\n$$");
+    expect(blocks()[0]?.querySelector("textarea")).toBe(field);
+  });
+
+  it("a link definition selected from the keyboard opens with Enter", async () => {
+    await open();
+    selectLocked(2);
+    core.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    const definition = blocks()[2];
+    expect(definition?.querySelector("textarea")?.value).toBe("[ref]: https://example.com/ref");
+    // View draws nothing for it: an empty preview
+    expect(definition?.querySelector(".pm-locked__preview")?.childElementCount).toBe(0);
   });
 });

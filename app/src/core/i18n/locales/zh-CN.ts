@@ -438,6 +438,8 @@ export default {
   "edit.discard": "放弃",
   "edit.keepEditing": "继续编辑",
   "edit.editInSource": "在源码中编辑",
+  "edit.blockSource": "此块的源码",
+  "edit.blockSourceHint": "按 Esc 完成",
   "edit.visualForMarkdown": "编辑模式适用于 Markdown 文件和设置文件；请使用源码。",
   "edit.diagramNoPlugin": "开启 Mermaid 或 PlantUML 插件即可查看图形。",
   "edit.diagramPanel": "图表预览",

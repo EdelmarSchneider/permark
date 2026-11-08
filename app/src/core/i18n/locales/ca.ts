@@ -459,6 +459,8 @@ export default {
   "edit.discard": "Descarta",
   "edit.keepEditing": "Continua editant",
   "edit.editInSource": "Edita al codi font",
+  "edit.blockSource": "Codi font d'aquest bloc",
+  "edit.blockSourceHint": "Esc per acabar",
   "edit.visualForMarkdown":
     "El mode Edició és per a fitxers Markdown i fitxers de configuració; feu servir Codi font.",
   "edit.diagramNoPlugin": "Activeu el connector Mermaid o PlantUML per a veure el dibuix.",

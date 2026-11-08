@@ -459,6 +459,8 @@ export default {
   "edit.discard": "破棄",
   "edit.keepEditing": "編集を続ける",
   "edit.editInSource": "ソースで編集",
+  "edit.blockSource": "このブロックのソース",
+  "edit.blockSourceHint": "Esc で終了",
   "edit.visualForMarkdown":
     "編集モードは Markdown ファイルと設定ファイル用です。ソースモードを使用してください。",
   "edit.diagramNoPlugin":

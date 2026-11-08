@@ -466,6 +466,8 @@ export default {
   "edit.discard": "Abandonner",
   "edit.keepEditing": "Continuer à modifier",
   "edit.editInSource": "Modifier en mode Source",
+  "edit.blockSource": "Source de ce bloc",
+  "edit.blockSourceHint": "Échap pour terminer",
   "edit.visualForMarkdown":
     "Le mode Édition est réservé aux fichiers Markdown et aux fichiers de configuration ; utilisez Source.",
   "edit.diagramNoPlugin": "Activez le plugin Mermaid ou PlantUML pour voir le diagramme.",

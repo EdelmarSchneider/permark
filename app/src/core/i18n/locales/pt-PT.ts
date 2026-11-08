@@ -461,6 +461,8 @@ export default {
   "edit.discard": "Descartar",
   "edit.keepEditing": "Continuar a editar",
   "edit.editInSource": "Editar no Código-fonte",
+  "edit.blockSource": "Código-fonte deste bloco",
+  "edit.blockSourceHint": "Esc para concluir",
   "edit.visualForMarkdown":
     "O modo Editar é para ficheiros Markdown e ficheiros de configuração; use Código-fonte.",
   "edit.diagramNoPlugin": "Ative o plug-in Mermaid ou PlantUML para ver o desenho.",

@@ -458,6 +458,8 @@ export default {
   "edit.discard": "Descartar",
   "edit.keepEditing": "Seguir editando",
   "edit.editInSource": "Editar en Fuente",
+  "edit.blockSource": "Fuente de este bloque",
+  "edit.blockSourceHint": "Esc para terminar",
   "edit.visualForMarkdown": "El modo Editar es para archivos Markdown y de ajustes; usa Fuente.",
   "edit.diagramNoPlugin": "Activa el plugin Mermaid o PlantUML para ver el dibujo.",
   "edit.diagramPanel": "Vista previa del diagrama",

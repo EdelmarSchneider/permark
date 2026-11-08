@@ -474,6 +474,8 @@ export default {
   "edit.discard": "Renunță la modificări",
   "edit.keepEditing": "Continuă editarea",
   "edit.editInSource": "Editează în Sursă",
+  "edit.blockSource": "Sursa acestui bloc",
+  "edit.blockSourceHint": "Esc pentru a termina",
   "edit.visualForMarkdown":
     "Modul Editare este pentru fișierele Markdown și fișierele de configurare; folosește Sursă.",
   "edit.diagramNoPlugin": "Activează pluginul Mermaid sau PlantUML pentru a vedea desenul.",

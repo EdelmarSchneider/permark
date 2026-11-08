@@ -334,6 +334,8 @@
           reasonText: (reason) => t(REASONS[reason]),
           editLabel: t("edit.editInSource"),
           edit: (node) => void session.switchTo("source", lineOf(node)),
+          sourceLabel: t("edit.blockSource"),
+          sourceHint: t("edit.blockSourceHint"),
         },
         code: { label: codeLabel },
         first: loaded.appPlugins({
@@ -767,6 +769,46 @@
     background: transparent;
     font: var(--fs-code) / 1.5 var(--font-code);
     white-space: pre;
+  }
+  /* a locked block opened in place: its source in a box shaped as View's code block, View's look of it below */
+  .host :global(.pm-locked[data-look="open"]) {
+    margin: 0 0 1em;
+  }
+  .host :global(.pm-locked[data-look="open"].ProseMirror-selectednode) {
+    outline: none;
+  }
+  .host :global(.pm-locked__editor) {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0;
+    padding: 14px 16px;
+    overflow: hidden;
+    resize: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    color: var(--text);
+    font: calc(var(--fs-code) * var(--zoom)) / 1.6 var(--font-code);
+    white-space: pre-wrap;
+  }
+  .host :global(.pm-locked__editor:focus) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .host :global(.pm-locked__hint) {
+    margin-top: var(--sp-1);
+    color: var(--muted);
+    font: var(--fs-ui-sm) / 1.4 var(--font-ui);
+  }
+  .host :global(.pm-locked__preview) {
+    margin-top: var(--sp-3);
+  }
+  .host :global(.pm-locked__preview > *) {
+    margin: 0 0 1em;
+  }
+  .host :global(.pm-locked__preview > :last-child) {
+    margin-bottom: 0;
   }
   .popover {
     position: sticky;

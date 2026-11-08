@@ -447,6 +447,8 @@ const en = {
   "edit.discard": "Discard",
   "edit.keepEditing": "Keep editing",
   "edit.editInSource": "Edit in Source",
+  "edit.blockSource": "Source of this block",
+  "edit.blockSourceHint": "Esc to finish",
   "edit.visualForMarkdown": "Edit mode is for Markdown files and settings files; use Source.",
   "edit.diagramNoPlugin": "Turn on the Mermaid or PlantUML plugin to see the drawing.",
   "edit.diagramPanel": "Diagram preview",

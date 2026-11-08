@@ -459,6 +459,8 @@ export default {
   "edit.discard": "Verwerfen",
   "edit.keepEditing": "Weiter bearbeiten",
   "edit.editInSource": "Im Quelltext bearbeiten",
+  "edit.blockSource": "Quelltext dieses Blocks",
+  "edit.blockSourceHint": "Esc zum Beenden",
   "edit.visualForMarkdown":
     "Der Bearbeitungsmodus ist für Markdown- und Einstellungsdateien; nutze Quelltext.",
   "edit.diagramNoPlugin":
