@@ -237,6 +237,23 @@ describe("an inline formula at rest", () => {
   });
 });
 
+describe("typing while an inline formula is selected", () => {
+  it("the character goes right after it; the formula keeps its bytes", async () => {
+    const text = "Lead $E=mc^2$ tail.\n";
+    const built = await load(text);
+    const view = core.view;
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, atomAt())));
+    // keydown, then keypress: ProseMirror types a key itself over a node selection, else the browser does at the caret
+    const init = { key: "x", bubbles: true, cancelable: true };
+    view.dom.dispatchEvent(new KeyboardEvent("keydown", init));
+    const pressed = new KeyboardEvent("keypress", { ...init, charCode: 120 });
+    view.dom.dispatchEvent(pressed);
+    if (!pressed.defaultPrevented) view.dispatch(view.state.tr.insertText("x"));
+    expect(sourceAt()).toBe("$E=mc^2$");
+    expect(compose(core, built, view.state.doc).text).toBe("Lead $E=mc^2$x tail.\n");
+  });
+});
+
 describe("an inline formula opened", () => {
   const TEXT = "Lead $E=mc^2$ tail \\$5.\n\nNext words.\n";
 

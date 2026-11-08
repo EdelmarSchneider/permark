@@ -95,6 +95,21 @@
     if (event.key === "Escape" && capture.status === "idle") {
       event.preventDefault();
       ui.closeKeyboard();
+      return;
+    }
+    if (event.key !== "Tab" || !dialog) return;
+    // focus stays inside the dialog
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)"),
+    );
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
     }
   }
 

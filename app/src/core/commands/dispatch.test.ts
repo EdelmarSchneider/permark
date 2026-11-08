@@ -46,6 +46,7 @@ function env(
     context,
     typing: false,
     overlay: "none",
+    dialog: false,
     ...extra,
   };
 }
@@ -119,6 +120,21 @@ describe("key -> command", () => {
     // with a box open the tab keys still switch
     const box = env([next, quick], keys, { overlay: "box" });
     expect(resolveKey(press({ key: "Tab", ctrlKey: true }), box).kind).toBe("run");
+  });
+
+  it("while a modal dialog is open (the unsaved changes question) no command runs: not save, not close tab", () => {
+    const save = command("edit.save");
+    const close = command("tab.close");
+    const quick = command("search.quickOpen");
+    const keys = { "edit.save": "Mod+s", "tab.close": "Mod+w", "search.quickOpen": "Mod+p" };
+    const asking = env([save, close, quick], keys, { dialog: true });
+    expect(resolveKey(press({ key: "s", ctrlKey: true }), asking).kind).toBe("pass");
+    expect(resolveKey(press({ key: "w", ctrlKey: true }), asking).kind).toBe("pass");
+    expect(resolveKey(press({ key: "p", ctrlKey: true }), asking).kind).toBe("pass");
+    // a box is a modal dialog too: its own commands still run
+    const box = env([save, close, quick], keys, { dialog: true, overlay: "box" });
+    expect(resolveKey(press({ key: "p", ctrlKey: true }), box).kind).toBe("run");
+    expect(resolveKey(press({ key: "s", ctrlKey: true }), box).kind).toBe("pass");
   });
 
   it("skips a command whose condition is unmet or whose `when` says no, and tries the next holder", () => {

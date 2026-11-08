@@ -390,6 +390,22 @@ describe("the keyboard dialog", () => {
     expect(rowOf("Keyboard shortcuts…").textContent).toContain("No keys");
   });
 
+  it("Tab | Shift+Tab stay inside the dialog", async () => {
+    await mountDialog();
+    const dialog = target.querySelector<HTMLElement>("[role=dialog]");
+    const search = dialog?.querySelector<HTMLInputElement>("input[type=search]");
+    const close = Array.from(dialog?.querySelectorAll("button") ?? []).find(
+      (b) => b.textContent?.trim() === "Close",
+    );
+    if (!search || !close) throw new Error("no dialog");
+    expect(document.activeElement).toBe(search);
+    close.focus();
+    press(close, "Tab");
+    expect(document.activeElement).toBe(search);
+    press(search, "Tab", { shiftKey: true });
+    expect(document.activeElement).toBe(close);
+  });
+
   it("takes the next key press as the new keys and keeps it in the settings", async () => {
     await mountDialog();
     button(rowOf("Save"), "Change")?.click();
