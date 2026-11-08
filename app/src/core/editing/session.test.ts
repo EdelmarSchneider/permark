@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "../../api/mock";
-import { mockHash } from "../../api/mockEdit";
+import { mockHash, mockSegments } from "../../api/mockEdit";
 import { confirmLeave } from "./guard";
 import { EditingSession, type ActiveEditor, type Hooks } from "./session.svelte";
 
@@ -245,6 +245,76 @@ describe("editing session", () => {
     expect(session.content?.text).toBe(content.text + "kept\n");
     expect(session.content?.segments?.length).toBeGreaterThan(0);
     expect(session.state.s).toBe("dirty");
+  });
+});
+
+describe("Edit <-> Source while the document moves", () => {
+  it("waits while the document reloads: the new text lands, nothing from before it is mounted", async () => {
+    const { api, session } = setup();
+    const { content } = await open(session);
+    const theirs = content.text.replace("Guide", "Their guide");
+    api.probe.edit.files.set("docs/guide.md", theirs);
+    const read = api.editSource.bind(api);
+    let release = (): void => {};
+    vi.spyOn(api, "editSource").mockImplementation(
+      (path) =>
+        new Promise((resolve) => {
+          release = () => resolve(read(path));
+        }),
+    );
+    session.onDocumentChanged({
+      window: "main",
+      path: "docs/guide.md",
+      change: "changed",
+      version: mockHash(theirs),
+    });
+    expect(session.state.s).toBe("loading");
+    await session.switchTo("edit");
+    expect(session.mode).toBe("source");
+    release();
+    await settle();
+    expect(session.state.s).toBe("clean");
+    expect(session.content?.text).toBe(theirs);
+  });
+
+  it("a block map that comes back after the window moved to another document is dropped", async () => {
+    const { api, session } = setup();
+    const { editor, content } = await open(session);
+    editor.set(content.text + "mine\n");
+    session.changed();
+    await settle();
+    const map = api.editSegments.bind(api);
+    let release = (): void => {};
+    vi.spyOn(api, "editSegments").mockImplementation(
+      (text) =>
+        new Promise((resolve) => {
+          release = () => resolve(map(text));
+        }),
+    );
+    const switching = session.switchTo("edit");
+    session.release();
+    await open(session, "README.md");
+    release();
+    await switching;
+    expect(session.path).toBe("README.md");
+    expect(session.mode).toBe("source");
+    expect(session.content?.path).toBe("README.md");
+    expect(session.content?.text).not.toContain("mine");
+  });
+
+  it("Edit after a save in Source maps the text as saved, not as it was loaded", async () => {
+    const { session } = setup();
+    const { editor, content } = await open(session);
+    const next = `${content.text}\n## Added later\n\nNew words.\n`;
+    editor.set(next);
+    session.changed();
+    await settle();
+    session.save();
+    await settle();
+    expect(session.state.s).toBe("clean");
+    await session.switchTo("edit");
+    expect(session.content?.text).toBe(next);
+    expect(session.content?.segments).toEqual(mockSegments(next));
   });
 });
 
