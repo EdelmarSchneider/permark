@@ -21,9 +21,10 @@
     const outside = (event: PointerEvent): void => {
       if (root && event.target instanceof Node && !root.contains(event.target)) open = false;
     };
-    // Escape closes the list before it closes the box around it
+    // Escape closes the list before it closes the box around it; one that ends an input method's composition belongs
+    // to the search box
     const escape = (event: KeyboardEvent): void => {
-      if (event.key !== "Escape" || !open) return;
+      if (event.key !== "Escape" || !open || event.isComposing || event.keyCode === 229) return;
       event.preventDefault();
       event.stopPropagation();
       open = false;

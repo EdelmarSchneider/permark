@@ -283,6 +283,113 @@ describe("loading", () => {
     expect(store.nodes.length).toBe(before);
   });
 
+  it("an Explorer closed while its list loads never touches the tree of the one after it", async () => {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "thisTab");
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let sent: () => void = () => {};
+    const asked = new Promise<void>((resolve) => (sent = resolve));
+    let closed = false;
+    const late: string[] = [];
+    // a big list: the backend answers long after it was asked
+    const slow: Api = {
+      ...api,
+      treeOpen: async (filter) => {
+        const result = await api.treeOpen(filter);
+        sent();
+        await gate;
+        return result;
+      },
+      treeKeep: (path) => {
+        if (closed) late.push("treeKeep");
+        return api.treeKeep(path);
+      },
+      treeClose: () => {
+        if (closed) late.push("treeClose");
+        return api.treeClose();
+      },
+    };
+    const host: ExplorerHost = {
+      fail: () => {},
+      note: () => {},
+      view: () => "main",
+      linkUpdate: () => "never",
+      openProject: () => {},
+    };
+    const first = new ExplorerStore(slow, host);
+    void first.setActive("docs/guide.md");
+    void first.start();
+    await asked;
+    // the tab shows another folder: its Explorer goes before the list came
+    first.close();
+    closed = true;
+    const second = new ExplorerStore(api, host);
+    const stop = await second.start();
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await api.newEntry("", "later", "file");
+    expect(paths(second)).toContain("later.md");
+    expect(late).toEqual([]);
+    stop();
+  });
+
+  it("an Explorer closed before it asked for its list never asks", async () => {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "thisTab");
+    const open = vi.spyOn(api, "treeOpen");
+    const store = new ExplorerStore(api, {
+      fail: () => {},
+      note: () => {},
+      view: () => "main",
+      linkUpdate: () => "never",
+      openProject: () => {},
+    });
+    void store.start();
+    store.close();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("an older list that answers last does not replace a newer one", async () => {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "thisTab");
+    let holdNext = false;
+    let release: () => void = () => {};
+    let held: () => void = () => {};
+    const waiting = new Promise<void>((resolve) => (held = resolve));
+    const wrapped: Api = {
+      ...api,
+      treeOpen: async (filter) => {
+        const result = await api.treeOpen(filter);
+        if (holdNext) {
+          holdNext = false;
+          held();
+          await new Promise<void>((resolve) => (release = resolve));
+        }
+        return result;
+      },
+    };
+    const store = new ExplorerStore(wrapped, {
+      fail: () => {},
+      note: () => {},
+      view: () => "main",
+      linkUpdate: () => "never",
+      openProject: () => {},
+    });
+    const stop = await store.start();
+    holdNext = true;
+    const older = store.retry();
+    await waiting;
+    await api.newEntry("", "newer", "file");
+    await store.retry();
+    expect(paths(store)).toContain("newer.md");
+    release();
+    await older;
+    expect(paths(store)).toContain("newer.md");
+    stop();
+  });
+
   it("a failed open shows as failed and can be retried", async () => {
     const api = createMockApi();
     let fail = true;

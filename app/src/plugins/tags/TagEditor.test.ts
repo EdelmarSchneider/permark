@@ -276,4 +276,28 @@ describe("the tag filter of the search boxes", () => {
     flushSync();
     expect(searchTags.selected).toEqual([]);
   });
+
+  it("an Escape that ends an input method's composition leaves the list open", async () => {
+    mock.probe.project.add("fm.md", "---\ntags: [alpha, beta]\n---\n# T\n");
+    await open();
+    searchTags.setProvider({ list: () => tags.overview?.tags ?? [] });
+    component = mount(SearchTagFilter, { target });
+    flushSync();
+    await until(() => target.querySelector(".plus") !== null, "the add button");
+    target.querySelector<HTMLElement>(".plus")?.click();
+    flushSync();
+    const composing = new KeyboardEvent("keydown", {
+      key: "Escape",
+      isComposing: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    target.querySelector<HTMLElement>(".plus")?.dispatchEvent(composing);
+    flushSync();
+    expect(target.querySelectorAll(".menu")).toHaveLength(1);
+    expect(composing.defaultPrevented).toBe(false);
+    press(target.querySelector(".plus") ?? target, "Escape");
+    flushSync();
+    expect(target.querySelectorAll(".menu")).toHaveLength(0);
+  });
 });

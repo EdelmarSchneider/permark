@@ -44,6 +44,8 @@
   // closes on Escape | click outside (imperative listeners, torn down on close)
   $effect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // an Escape that ends an input method's composition belongs to the pattern field
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === "Escape") close();
     };
     const onPointer = (e: PointerEvent): void => {

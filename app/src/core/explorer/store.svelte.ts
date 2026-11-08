@@ -152,6 +152,10 @@ export class ExplorerStore {
   rows = $derived<Row[]>(rowsOf(this.roots, this.nodes, this.expanded, this.collapsedRoots));
 
   #seq = 0;
+  /** Whole lists asked for (the latest answer wins: an older one landing after it would bring back a stale list). */
+  #opens = 0;
+  #closed = false;
+  #off: Unlisten | null = null;
   #anchor: string | null = null;
   #scrolls = 0;
   /** Deltas that arrived before the first list. */
@@ -175,30 +179,53 @@ export class ExplorerStore {
 
   // ---- lifecycle -------------------------------------------------------------------------------------------------
 
-  /** Listens, then loads the list (no change is lost in between). Returns the teardown. */
+  /** Listens, then loads the list (no change is lost in between). Resolves once the list is loaded, with the
+   *  teardown (`close`, which also works before that). */
   async start(): Promise<Unlisten> {
     const off = await this.#api.on("tree-changed", (event) => this.#onChanged(event));
-    await this.#open();
-    return () => {
-      off();
-      if (this.#timer !== null) clearTimeout(this.#timer);
-      this.#timer = null;
-      this.#clearAuto();
-      void this.#api.treeClose();
-    };
+    if (this.#closed) off();
+    else {
+      this.#off = off;
+      await this.#open();
+    }
+    return () => this.close();
+  }
+
+  /** Stops listening and closes the view's list; works at any time, also while the list still loads. The backend
+   *  keeps one list per view, whatever project the view shows by then: a closed store asks for nothing more and drops
+   *  answers still on their way, so it never closes | resets the list of the project that came after it. */
+  close(): void {
+    if (this.#closed) return;
+    this.#closed = true;
+    this.#off?.();
+    this.#off = null;
+    if (this.#timer !== null) clearTimeout(this.#timer);
+    this.#timer = null;
+    this.#clearAuto();
+    void this.#api.treeClose();
+  }
+
+  /** The list asked for as `ask` is still wanted: the store is open and no newer list was asked for since. */
+  #wanted(ask: number): boolean {
+    return !this.#closed && ask === this.#opens;
   }
 
   async #open(): Promise<void> {
+    const ask = ++this.#opens;
     this.load = { status: "loading" };
     const remembered = await this.#api.projectSessionGet(SESSION_FILTER);
+    if (!this.#wanted(ask)) return;
     const filter = remembered.ok ? normalizeFilter(remembered.value) : null;
     const answer = await this.#api.projectSessionGet(CODE_OFFER_KEY);
+    if (!this.#wanted(ask)) return;
     this.#answered = answer.ok && isAnswer(answer.value) ? answer.value : null;
     const open = await this.#api.projectSessionGet(SESSION_EXPANDED);
+    if (!this.#wanted(ask)) return;
     if (open.ok && Array.isArray(open.value)) {
       this.expanded = new Set(open.value.filter((v): v is string => typeof v === "string"));
     }
     const result = await this.#api.treeOpen(filter);
+    if (!this.#wanted(ask)) return;
     if (!result.ok) {
       this.load = { status: "failed", error: result.error };
       return;
