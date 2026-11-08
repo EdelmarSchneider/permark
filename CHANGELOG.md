@@ -13,6 +13,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - When the document you are reading or editing is renamed or moved, PerMark now follows it to its new name at the same place, and Back and Forward follow too. When prompt files are on, renaming or moving a file also updates `@path` references to it, and the preview counts them. <!-- f: file-ops, links -->
 
 ### Fixed
+- In Edit, typing while a formula, diagram or other drawn block is selected (for example right after pressing Esc on it) no longer replaces the whole block: the text goes next to it. Two spaces typed in a row are saved as spaces instead of a non-breaking space. <!-- f: editing -->
+- The question about unsaved changes now takes the keyboard: Esc keeps editing, and typing or shortcuts such as Ctrl+S and Ctrl+W no longer act on the document behind it. <!-- f: editing -->
 - In Edit, text ending in a space kept its escapes when saved, so an escaped bracket before a link or formula, or a `#`, `1.` or `-` typed at the start of a line, no longer turns into a link, heading or list in the file. If a save still holds something that may read differently, a short note says so. <!-- f: editing -->
 - Text typed in the last moment before the file changed on disk, was deleted, or before Save all is no longer lost: it now leads to the usual conflict or unsaved-changes choice. <!-- f: editing -->
 - Renaming or moving a document while it has unsaved edits keeps them: the editor follows the file to its new name, and Keep mine saves there instead of recreating the old file. <!-- f: editing, file-ops -->

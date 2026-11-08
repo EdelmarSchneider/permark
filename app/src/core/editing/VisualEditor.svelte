@@ -830,9 +830,18 @@
     margin: 0 auto;
     padding: var(--sp-5) var(--sp-5) var(--sp-8);
   }
+  /* white space as typed (ProseMirror's own stylesheet sets it): with the browser's default a contenteditable puts a
+     no-break space in for a second space, which the file would get as `&nbsp;` */
   .host :global(.ProseMirror) {
     outline: none;
     min-height: 40vh;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  /* View's look drawn in a kept block | piece: its HTML has line breaks between tags, laid out as View lays them out
+     (the source, its box and code set their own) */
+  .host :global(:is(.pm-locked, .pm-inline)) {
+    white-space: normal;
   }
   .host :global(.pm-editor img) {
     max-width: 100%;

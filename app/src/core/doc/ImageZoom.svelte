@@ -22,6 +22,8 @@
       event.preventDefault();
       close();
     }
+    // the layer is the only place for the focus: Tab would move it to the page behind
+    if (event.key === "Tab") event.preventDefault();
   }
 
   function onwheel(event: WheelEvent): void {

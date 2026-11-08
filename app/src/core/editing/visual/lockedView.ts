@@ -13,6 +13,8 @@ import {
   Plugin,
   PluginKey,
   Selection,
+  TextSelection,
+  type EditorState,
   type Transaction,
 } from "@milkdown/kit/prose/state";
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
@@ -832,20 +834,82 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
 });
 
 /**
+ * The caret where text typed over a selected atom (a locked block, an inline piece, a picture, a rule) goes instead of
+ * replacing it: right after an inline one; for a block, the first text of the block right after it, else a new empty
+ * paragraph after it. Null when no atom is selected.
+ */
+function pastAtom(state: EditorState): Transaction | null {
+  const selection = state.selection;
+  if (!(selection instanceof NodeSelection) || !selection.node.isAtom) return null;
+  const tr = state.tr;
+  const after = selection.to;
+  if (selection.node.isInline) return tr.setSelection(TextSelection.create(tr.doc, after));
+  const $after = tr.doc.resolve(after);
+  const next = $after.nodeAfter;
+  if (next !== null && !next.isAtom) {
+    const found = Selection.findFrom($after, 1, true);
+    if (found !== null && found.from < after + next.nodeSize) return tr.setSelection(found);
+  }
+  const paragraph = state.schema.nodes.paragraph;
+  if (paragraph && $after.parent.canReplaceWith($after.index(), $after.index(), paragraph)) {
+    tr.insert(after, paragraph.create());
+    return tr.setSelection(TextSelection.create(tr.doc, after + 1));
+  }
+  return tr.setSelection(Selection.near($after, 1));
+}
+
+/** Moves the caret off a selected atom (if one is) before input lands. */
+function stepPastAtom(view: EditorView): void {
+  const tr = pastAtom(view.state);
+  if (tr !== null) view.dispatch(tr.scrollIntoView());
+}
+
+/** A key that types: a character without a chord (AltGr ones reach `handleTextInput`), or one an IME takes. */
+function typesText(event: KeyboardEvent): boolean {
+  if (event.key === "Process" || event.keyCode === 229) return true;
+  if (event.ctrlKey || event.metaKey || event.altKey) return false;
+  return [...event.key].length === 1;
+}
+
+/**
  * Enter on a selected locked block opens it in place (its source | the front matter's properties); on any other
- * selected node that registered an opener (`opensOnEnter`), that opener runs.
+ * selected node that registered an opener (`opensOnEnter`), that opener runs. Text typed, composed or pasted over a
+ * selected atom goes after it (`pastAtom`): ProseMirror would replace the atom, and a block kept as written would be
+ * lost to one stray key. Delete | Backspace still remove it: that is asked for.
  */
 export const lockedKeys = $prose(
   () =>
     new Plugin({
       props: {
         handleKeyDown: (view: EditorView, event: KeyboardEvent) => {
+          // the browser types the character at the caret moved here
+          if (typesText(event)) {
+            stepPastAtom(view);
+            return false;
+          }
           if (event.key !== "Enter" || event.isComposing) return false;
           if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false;
           const selection = view.state.selection;
           if (!(selection instanceof NodeSelection)) return false;
           const dom = view.nodeDOM(selection.from);
           return dom !== null && (openers.get(dom)?.() ?? false);
+        },
+        handleTextInput: (view: EditorView, _from: number, _to: number, text: string) => {
+          const tr = pastAtom(view.state);
+          if (tr === null) return false;
+          view.dispatch(tr.insertText(text).scrollIntoView());
+          return true;
+        },
+        // the input then goes where the caret is now
+        handlePaste: (view: EditorView) => {
+          stepPastAtom(view);
+          return false;
+        },
+        handleDOMEvents: {
+          compositionstart: (view: EditorView) => {
+            stepPastAtom(view);
+            return false;
+          },
         },
       },
     }),

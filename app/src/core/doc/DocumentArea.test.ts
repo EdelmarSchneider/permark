@@ -727,6 +727,43 @@ describe("another document comes while edits are unsaved", () => {
     expect(told.value).toBe("README.md");
   });
 
+  it("the question owns the keyboard: Keep editing focused, the editor inert, Ctrl+S saves nothing; Escape gives the editor its keys back", async () => {
+    await show("docs/guide.md");
+    await until(() => sourceButton() !== undefined, "mode switch");
+    sourceButton()?.click();
+    await until(() => target.querySelector(".cm-editor") !== null, "source editor");
+    await until(() => editing.state.s === "clean", "loaded");
+    expect(editing.apply([{ from: 0, to: 0, insert: "Unsaved words. ", expect: "" }])).toBe(true);
+    await until(() => editing.state.s === "dirty", "unsaved");
+    const saves = mock.probe.edit.saves.length;
+    await show("README.md");
+    await until(() => editing.state.s === "unsavedPrompt", "asked");
+    await tick();
+    const keep = promptButton("Keep editing");
+    if (!keep) throw new Error("no question");
+    expect(document.activeElement).toBe(keep);
+    // nothing typed reaches the text behind it
+    const pane = (): HTMLElement | null | undefined =>
+      target.querySelector(".cm-content")?.closest<HTMLElement>(".pane");
+    expect(pane()?.inert).toBe(true);
+    const press = (key: string, init: KeyboardEventInit = {}): void =>
+      void keep.dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init }),
+      );
+    press("s", { ctrlKey: true });
+    await tick();
+    expect(mock.probe.edit.saves).toHaveLength(saves);
+    expect(editing.state.s).toBe("unsavedPrompt");
+    press("Escape");
+    await until(() => editing.state.s === "dirty", "kept editing");
+    await until(
+      () => target.querySelector(".cm-content")?.contains(document.activeElement) === true,
+      "the editor has the keys again",
+    );
+    expect(pane()?.inert).toBe(false);
+    expect(editing.current().startsWith("Unsaved words. ")).toBe(true);
+  });
+
   it("back on the edited document while the question is open: the question goes, the edits stay", async () => {
     await show("docs/guide.md");
     await typeIn("docs/guide.md");

@@ -2,7 +2,7 @@
 import "./jsdomShims";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
-import { undo } from "@milkdown/kit/prose/history";
+import { redo, undo } from "@milkdown/kit/prose/history";
 import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import type { Body } from "../../../api/generated/Body";
 import type { FrontMatter } from "../../../api/generated/FrontMatter";
@@ -1030,6 +1030,135 @@ describe("safety and input", () => {
     field.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "化" }));
     expect(sourceAt(0)).toBe("$$\na + b 化\n$$");
     expect(field.value).toBe("$$\na + b 化\n$$");
+  });
+});
+
+/**
+ * A character typed as the browser delivers it: keydown, then keypress (over a node selection ProseMirror types it
+ * itself), else the browser's own input at the caret.
+ */
+function typeChar(char: string, init: KeyboardEventInit = {}): void {
+  const dom = core.view.dom;
+  const base = { key: char, bubbles: true, cancelable: true, ...init };
+  const down = new KeyboardEvent("keydown", base);
+  dom.dispatchEvent(down);
+  if (down.defaultPrevented) return;
+  const pressed = new KeyboardEvent("keypress", { ...base, charCode: char.charCodeAt(0) });
+  dom.dispatchEvent(pressed);
+  if (pressed.defaultPrevented) return;
+  core.view.dispatch(core.view.state.tr.insertText(char));
+}
+
+/** The text of the top-level nodes, a locked one by its source. */
+const texts = (): string[] => {
+  const found: string[] = [];
+  core.view.state.doc.forEach((node) => {
+    found.push(node.type.name === LOCKED ? String(node.attrs.source) : node.textContent);
+  });
+  return found;
+};
+
+/** A paste event as the webview gives it, with nothing on the clipboard but the text handed to `pasteText`. */
+class PasteEvent extends Event {
+  readonly clipboardData: DataTransfer | null = null;
+  constructor() {
+    super("paste", { bubbles: true, cancelable: true });
+  }
+}
+
+const LAST_TEXT = ["Intro words.", "", "$$", "a + b", "$$", ""].join("\n");
+
+const LAST_SEGMENTS = [
+  { lineStart: 1, lineEnd: 1, kind: "paragraph", lock: null },
+  { lineStart: 3, lineEnd: 5, kind: "math", lock: "math" },
+] as const;
+
+describe("typing while a block is selected", () => {
+  it("after Escape, undo and redo the block stays selected; a typed character goes after it, the block keeps its bytes", async () => {
+    const built = await openMath();
+    const field = openBox(0);
+    type(field, "$$\na + b + c\n$$");
+    key(field, "Escape");
+    undo(core.view.state, core.view.dispatch);
+    redo(core.view.state, core.view.dispatch);
+    const selection = core.view.state.selection;
+    expect(selection).toBeInstanceOf(NodeSelection);
+    expect(selection.from).toBe(lockedAt(0));
+    typeChar("x");
+    expect(texts()).toEqual(["Intro words.", "$$\na + b + c\n$$", "x", "$$\nc\n$$", "End words."]);
+    const composed = compose(core, built, core.view.state.doc);
+    // the new paragraph takes the gap between the blocks; their lines stay as they were
+    expect(composed.text).toBe(
+      "Intro words.\n\n$$\na + b + c\n$$\n\nx\n\n$$\nc\n$$\n\nEnd words.\n",
+    );
+  });
+
+  it("text right after the block takes the character at its start", async () => {
+    await openMath();
+    selectLocked(1);
+    typeChar("x");
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "xEnd words."]);
+  });
+
+  it("at the end of the document a new paragraph after the block takes it", async () => {
+    const built = await buildDoc(core, LAST_TEXT, LAST_SEGMENTS);
+    core.setDoc(built.doc);
+    selectLocked(0);
+    typeChar("x");
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "x"]);
+    expect(compose(core, built, core.view.state.doc).text).toBe(`${LAST_TEXT}\nx\n`);
+  });
+
+  it("a plain key moves the caret after the block before the browser types; a chord leaves the selection", async () => {
+    await openMath();
+    selectLocked(1);
+    const before = core.view.state.doc;
+    key(core.view.dom, "b", { ctrlKey: true });
+    expect(core.view.state.selection).toBeInstanceOf(NodeSelection);
+    key(core.view.dom, "x");
+    const selection = core.view.state.selection;
+    expect(selection).toBeInstanceOf(TextSelection);
+    expect(selection.$from.parent.textContent).toBe("End words.");
+    expect(selection.$from.parentOffset).toBe(0);
+    expect(core.view.state.doc).toBe(before);
+  });
+
+  it("a character typed with AltGr (Ctrl+Alt) goes after the block too", async () => {
+    await openMath();
+    selectLocked(1);
+    typeChar("{", { ctrlKey: true, altKey: true });
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "{End words."]);
+  });
+
+  it("an IME composition starts after the block", async () => {
+    await openMath();
+    selectLocked(0);
+    // the plugins' handlers see the event before ProseMirror's own (whose composition state is left alone here: jsdom
+    // passes for Safari, where ProseMirror drops the first key after a composition)
+    const start = new CompositionEvent("compositionstart", { bubbles: true });
+    const view = core.view;
+    view.someProp("handleDOMEvents", (handlers) => handlers.compositionstart?.(view, start));
+    const selection = view.state.selection;
+    expect(selection).toBeInstanceOf(TextSelection);
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "", "$$\nc\n$$", "End words."]);
+    expect(selection.from).toBe(lockedAt(0) + 2);
+  });
+
+  it("a paste goes after the block", async () => {
+    await openMath();
+    selectLocked(1);
+    core.view.pasteText("Pasted ", new PasteEvent());
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "Pasted End words."]);
+  });
+
+  it("Backspace | Delete on a selected block still remove it", async () => {
+    await openMath();
+    selectLocked(1);
+    key(core.view.dom, "Backspace", { keyCode: 8 });
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "End words."]);
+    selectLocked(0);
+    key(core.view.dom, "Delete", { keyCode: 46 });
+    expect(texts()).toEqual(["Intro words.", "End words."]);
   });
 });
 

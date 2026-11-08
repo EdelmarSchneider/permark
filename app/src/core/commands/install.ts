@@ -8,6 +8,11 @@ import { registerCoreCommands } from "./core";
 import { installButtons, installKeys, isTypingTarget } from "./dispatch";
 import { keys } from "./state.svelte";
 
+/** A modal dialog is on screen (each is drawn only while open). */
+function dialogOpen(): boolean {
+  return document.querySelector('[aria-modal="true"]') !== null;
+}
+
 /** Registers the core's commands and starts listening on `target`; returns the teardown of all three. */
 export function installWindowKeys(
   target: Pick<Window, "addEventListener" | "removeEventListener"> = window,
@@ -20,12 +25,13 @@ export function installWindowKeys(
     context: conditions.current,
     typing: isTypingTarget(event.target),
     overlay: ui.overlay,
+    dialog: dialogOpen(),
   }));
   const stopButtons = installButtons(target, () => ({
     commands: contributions.of("command"),
     context: conditions.current,
     overlay: ui.overlay,
-    dialog: document.querySelector('[aria-modal="true"]') !== null,
+    dialog: dialogOpen(),
   }));
   return () => {
     stopButtons();
