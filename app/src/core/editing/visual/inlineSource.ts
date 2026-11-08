@@ -1,6 +1,6 @@
 // `inline_source`: a piece of a line the editor keeps as written (its exact source is the node's `source`), drawn as
 // View draws it, so the text around it stays editable. Kinds: inline math (`inlineMath.ts`), footnote references and
-// reference-style links (`references.ts`). Read from the editor's mdast node `inlineSource` and written back as the
+// reference-style links (`references.ts`), HTML elements written in a line (`inlineHtml.ts`). Read from the editor's mdast node `inlineSource` and written back as the
 // same bytes. At rest it is one thing to select (an arrow key selects it, the next moves past it); a click | Enter
 // opens a small field under it with the editable part of its source (a formula's TeX, a reference's whole source).
 // What is typed goes into the document at once (the editor's undo, dirty state and autosave see it) when it still
@@ -18,12 +18,15 @@ import { NodeSelection, Plugin, TextSelection } from "@milkdown/kit/prose/state"
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import type { RemarkPluginRaw } from "@milkdown/kit/transformer";
 import { $node, $prose, $remark, $view } from "@milkdown/kit/utils";
+import { htmlLook, htmlPieces } from "./inlineHtml";
 import { mathElement, mathFromMarkdown, mathParts, mathSyntax } from "./inlineMath";
 import {
   LOCKED,
   lockedHostCtx,
+  onRelook,
   opensOnEnter,
   PREVIEW_MS,
+  rerenderSoon,
   showText,
   type BlockName,
 } from "./lockedView";
@@ -52,7 +55,7 @@ declare module "mdast" {
 
 export const INLINE_SOURCE = "inline_source";
 
-export const INLINE_KINDS = ["math", "footnote", "link"] as const;
+export const INLINE_KINDS = ["math", "footnote", "link", "html"] as const;
 export type InlineKind = (typeof INLINE_KINDS)[number];
 
 /** The source split into the part the person edits and what stays around it. */
@@ -71,6 +74,8 @@ type Kind = {
   parts(source: string): Parts | null;
   /** Its look holds a number counted over the document (`numbersOf`): drawn again when the numbers change. */
   numbered?: true;
+  /** Its look comes from View's render of the document (`LockedHost.inline`): drawn again when the looks come back. */
+  rendered?: true;
 };
 
 /** The whole source is what the person edits. */
@@ -94,6 +99,12 @@ const KINDS: Record<InlineKind, Kind> = {
     name: "link",
     look: (source, ctx) => linkLook(ctx, source),
     parts: wholeSource,
+  },
+  html: {
+    name: "html",
+    look: (source, ctx) => htmlLook(ctx, source),
+    parts: wholeSource,
+    rendered: true,
   },
 };
 
@@ -163,18 +174,22 @@ function remarkInlineSource(ctx: Ctx): RemarkPluginRaw<undefined> {
       unsafe: [{ character: "$", inConstruct: "phrasing" }],
     });
     return (tree, file) => {
-      if (typeof file.value === "string") referencePieces(tree, file.value);
+      if (typeof file.value !== "string") return;
+      referencePieces(tree, file.value);
+      htmlPieces(tree, file.value);
     };
   };
 }
 
 const inlineSourceRemark = $remark("pmInlineSource", remarkInlineSource);
 
-/** The sources of the inline pieces in `node`, in order. */
-export function pieceSources(node: PMNode): string[] {
+/** The sources of the inline pieces in `node` (of `kind` only, when given), in order. */
+export function pieceSources(node: PMNode, kind?: InlineKind): string[] {
   const found: string[] = [];
   node.descendants((child) => {
-    if (child.type.name === INLINE_SOURCE) found.push(String(child.attrs.source));
+    if (child.type.name === INLINE_SOURCE && (kind === undefined || child.attrs.kind === kind)) {
+      found.push(String(child.attrs.source));
+    }
     return true;
   });
   return found;
@@ -198,6 +213,7 @@ export function piecesIn(ctx: Ctx, text: string): FoundPiece[] {
   try {
     const tree = ctx.get(remarkCtx).parse(text);
     referencePieces(tree, text);
+    htmlPieces(tree, text);
     visit(tree);
   } catch {
     // unreadable: no piece
@@ -374,8 +390,12 @@ export const inlineSourceView = $view(inlineSourceNode, (ctx): NodeViewConstruct
     let editing: Editing | null = null;
     let gone = false;
     let look: HTMLElement | null = null;
+    /** A rendered piece: View's HTML it was drawn from (null: its source). */
+    let drawnFrom: string | null = null;
     let undraw: () => void = () => {};
     let timer: ReturnType<typeof setTimeout> | undefined;
+    /** A rendered piece edited to a source without a look: the document is rendered again once typing pauses. */
+    let asking: ReturnType<typeof setTimeout> | undefined;
 
     const kind = (): Kind | null => {
       const name = kindOf(node.attrs.kind);
@@ -395,6 +415,7 @@ export const inlineSourceView = $view(inlineSourceNode, (ctx): NodeViewConstruct
       clearTimeout(timer);
       timer = undefined;
       undraw();
+      if (kind()?.rendered) drawnFrom = host.inline?.(source()) ?? null;
       const shown = kind()?.look(source(), ctx, view) ?? plainLook(source());
       if (look) look.replaceWith(shown);
       else dom.prepend(shown);
@@ -568,6 +589,12 @@ export const inlineSourceView = $view(inlineSourceNode, (ctx): NodeViewConstruct
     draw();
     paintState();
     if (kind()?.numbered) numberedIn(view).add(draw);
+    // View's looks came back from a render: at rest, drawn again when its look changed
+    const unwatch = kind()?.rendered
+      ? onRelook(view, () => {
+          if (editing === null && (host.inline?.(source()) ?? null) !== drawnFrom) draw();
+        })
+      : () => {};
 
     return {
       dom,
@@ -576,6 +603,10 @@ export const inlineSourceView = $view(inlineSourceNode, (ctx): NodeViewConstruct
         const changed = source(next) !== source();
         node = next;
         if (!changed) return true;
+        if (kind()?.rendered && (host.inline?.(source()) ?? null) === null) {
+          clearTimeout(asking);
+          asking = setTimeout(() => rerenderSoon(view, host), PREVIEW_MS);
+        }
         if (editing === null) {
           draw();
           return true;
@@ -602,9 +633,11 @@ export const inlineSourceView = $view(inlineSourceNode, (ctx): NodeViewConstruct
       destroy: () => {
         gone = true;
         clearTimeout(timer);
+        clearTimeout(asking);
         undraw();
         undraw = () => {};
         numberedIn(view).delete(draw);
+        unwatch();
       },
     };
   };

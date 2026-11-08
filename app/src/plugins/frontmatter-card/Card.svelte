@@ -2,20 +2,13 @@
   // The properties card: front matter as rows of keys and values. Lists are chips, dates are written for the
   // reader. Text the plugin could not read as properties shows as it is.
   import { language, t } from "../../core/i18n";
+  import { readerDate } from "../../core/time";
   import type { FrontMatterProps } from "../../core/plugins/props";
 
   let { fields, raw, syntax }: FrontMatterProps = $props();
 
-  const DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-  /** A plain date (`2026-10-19`) in the reader's language; anything else as written. */
-  function show(text: string): string {
-    if (!DATE.test(text)) return text;
-    const date = new Date(`${text}T00:00:00`);
-    return Number.isNaN(date.getTime())
-      ? text
-      : date.toLocaleDateString(language.locale, { dateStyle: "long" });
-  }
+  /** A plain date in the reader's language; anything else as written. */
+  const show = (text: string): string => readerDate(text, language.locale);
 </script>
 
 <section class="card" aria-label={t("doc.frontmatter")}>

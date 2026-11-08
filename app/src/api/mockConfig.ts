@@ -1,8 +1,10 @@
 // Config files for the mock backend. The sheets come from the REAL parsers: `cargo test` renders the fixture files
-// (`fixtures/*.sample`) and writes `generated/mock-documents.json`. An edit here only moves one value on its line and
+// (`fixtures/*.sample`) and writes `generated/mock-documents.json`, and the front matter properties of the fixture
+// documents (`generated/mock-config-sheets.json`). An edit here only moves one value on its line and
 // patches the sheet the same way (the backend does it with the parser's spans). A Markdown text renders like the backend
 // only when it is a fixture document's text (`generated/mock-edit-sources.json`); any other gets the simple mock blocks.
 
+import configSheets from "./generated/mock-config-sheets.json";
 import editSources from "./generated/mock-edit-sources.json";
 import { mockNoteView, mockView } from "./mockDocs";
 import type {
@@ -183,7 +185,20 @@ function markdownBody(path: string, text: string): Body {
   return body?.kind === "markdown" ? body : mockNoteView(path, text).body;
 }
 
+function isSheet(value: unknown): value is Body {
+  return typeof value === "object" && value !== null && "kind" in value && value.kind === "sheet";
+}
+
+/** The real backend's sheets of the fixture documents' front matter, by path and text. */
+const REAL_SHEETS = new Map<string, Body>(
+  Object.values(configSheets).flatMap(({ path, text, body }): [string, Body][] =>
+    isSheet(body) ? [[`${path}:${text}`, body]] : [],
+  ),
+);
+
 function sheetBody(path: string, text: string): Body {
+  const real = REAL_SHEETS.get(`${path}:${text}`);
+  if (real !== undefined) return real;
   if (MARKDOWN.test(path)) return markdownBody(path, text);
   const view = mockView(path, [], true);
   const body = view?.body;

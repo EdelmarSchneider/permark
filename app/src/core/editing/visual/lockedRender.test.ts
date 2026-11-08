@@ -11,6 +11,7 @@ import { createMockEditing } from "../../../api/mockEdit";
 import { buildDoc, compose } from "./compose";
 import { createCore, type Core } from "./core";
 import {
+  inlineHtmlLooks,
   LookBook,
   lockedLooks,
   lockedRenders,
@@ -80,11 +81,17 @@ const block = (lineStart: number, lineEnd: number, kind: string, html: string): 
   html,
 });
 
-const line = (n: number, text: string, reason: LineBlock["reason"] = null): LineBlock => ({
+const line = (
+  n: number,
+  text: string,
+  reason: LineBlock["reason"] = null,
+  pieces?: string[],
+): LineBlock => ({
   lineStart: n,
   lineEnd: n + (text.match(/\n/g)?.length ?? 0),
   reason,
   text,
+  ...(pieces ? { pieces } : {}),
 });
 
 describe("locked blocks look like View", () => {
@@ -507,5 +514,63 @@ describe("the looks of an open document", () => {
     expect(sameLook({ kind: "none" }, { kind: "source" })).toBe(false);
     const edge = (edge: "open" | "close"): LockedRender => ({ kind: "promptTag", tag: "a", edge });
     expect(sameLook(edge("open"), edge("close"))).toBe(false);
+  });
+});
+
+describe("HTML written in a line looks like View", () => {
+  it("README showcase: each piece of an editable paragraph gets View's element for it", async () => {
+    const { text, segments } = await fixture("README.md");
+    const built = await buildDoc(core, text, segments);
+    const book = new LookBook();
+    book.take(
+      book.ask(),
+      await viewOf("README.md", text),
+      built.doc,
+      compose(core, built, built.doc),
+    );
+    expect(book.inline("<kbd>Ctrl</kbd>")).toBe("<kbd>Ctrl</kbd>");
+    expect(book.inline("<kbd>F</kbd>")).toBe("<kbd>F</kbd>");
+    expect(book.inline("<kbd>Alt</kbd>")).toBeNull();
+  });
+
+  it("matched by element and text in order; a footnote's number (the parser's own) is never taken", () => {
+    const pieces = ["<sup>1</sup>", "<kbd>X</kbd>", "<br>", "<kbd>Y</kbd>", "<mark>m</mark>"];
+    const blocks = [
+      line(1, "A[^1] <sup>1</sup> <kbd>X</kbd><br>and <kbd>Y</kbd> <mark>m</mark>", null, pieces),
+    ];
+    const html =
+      '<p>A<sup class="footnote-ref"><a href="#fn-1" data-footnote-ref="">1</a></sup> <sup>1</sup> ' +
+      "<kbd>X</kbd><br>\nand <kbd>Y</kbd> <mark>m</mark></p>";
+    const looks = inlineHtmlLooks(markdown([block(1, 1, "p", html)]), blocks);
+    expect(Object.fromEntries(looks)).toEqual({
+      "<sup>1</sup>": "<sup>1</sup>",
+      "<kbd>X</kbd>": "<kbd>X</kbd>",
+      "<br>": "<br>",
+      "<kbd>Y</kbd>": "<kbd>Y</kbd>",
+      "<mark>m</mark>": "<mark>m</mark>",
+    });
+  });
+
+  it("a piece View drops, or shows two ways, or in a View block shared with another block, lends no look", () => {
+    const blocks = [
+      line(1, "<kbd>A</kbd> <span onclick=x>s</span>", null, [
+        "<kbd>A</kbd>",
+        "<span onclick=x>s</span>",
+      ]),
+      line(3, "<kbd>A</kbd>", null, ["<kbd>A</kbd>"]),
+      line(5, "<sub>2</sub>", null, ["<sub>2</sub>"]),
+      line(6, "more", null, []),
+    ];
+    const looks = inlineHtmlLooks(
+      markdown([
+        block(1, 1, "p", "<p><kbd>A</kbd> s</p>"),
+        block(3, 3, "p", '<p><kbd class="x">A</kbd></p>'),
+        block(5, 6, "p", "<p><sub>2</sub>\nmore</p>"),
+      ]),
+      blocks,
+    );
+    expect(looks.get("<span onclick=x>s</span>")).toBeNull();
+    expect(looks.get("<kbd>A</kbd>")).toBeNull();
+    expect(looks.get("<sub>2</sub>")).toBeNull();
   });
 });

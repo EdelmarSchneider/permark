@@ -13,12 +13,15 @@
 // Unsure -> `source` (the caller keeps the source look): a View block over more than one block (it would show twice),
 // floating blocks with several possible owners, a block in a prompt box whose elements cannot be told apart, a
 // footnote without its list item, a body that is not Markdown.
+// HTML written in a line of an editable block (`<kbd>`, `<sub>`, `<br>`, ...) is a piece the editor keeps as written: it
+// looks like View's element for it, found in View's block for that line by element name and text, in order.
 
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import type { Block } from "../../../api/generated/Block";
 import type { Body } from "../../../api/generated/Body";
 import type { FrontMatter } from "../../../api/generated/FrontMatter";
 import type { Composed } from "./compose";
+import { pieceSources } from "./inlineSource";
 import { LOCKED, reasonOf, type LockReason } from "./lockedView";
 
 /** One top-level block of the editor's text. */
@@ -30,6 +33,8 @@ export type LineBlock = {
   /** `null`: an editable block. */
   reason: LockReason | null;
   text: string;
+  /** An editable block: the sources of the HTML pieces in its lines, in order. */
+  pieces?: readonly string[];
 };
 
 /** What a locked block shows while not being edited. */
@@ -49,19 +54,29 @@ export type LockedRender =
 const SOURCE: LockedRender = { kind: "source" };
 const NONE: LockedRender = { kind: "none" };
 
-/** Per block of `blocks` (in text order): its View look, `null` for editable blocks. */
-export function lockedRenders(body: Body, blocks: readonly LineBlock[]): (LockedRender | null)[] {
-  const out = blocks.map((b): LockedRender | null => (b.reason === null ? null : SOURCE));
-  if (body.kind !== "markdown") return out;
-  const tags = promptTags(body.blocks, blocks);
+/** View's blocks placed on the editor's blocks. */
+type Placed = {
+  views: readonly Block[];
+  /** The footnotes section View ends with. */
+  section: Block | null;
+  tags: Map<number, PromptTag>;
+  pairs: Pair[];
+  inBox: Set<number>;
+  /** View's HTML of each block alone in its View blocks, by block index. */
+  mine: Map<number, string[]>;
+  /** Blocks sharing a View block with another block. */
+  unsure: Set<number>;
+};
+
+function placed(blocks: readonly LineBlock[], all: readonly Block[]): Placed {
+  const tags = promptTags(all, blocks);
   const pairs = pairsOf(tags);
   const inBox = new Set<number>();
   for (const pair of pairs) for (let i = pair.open + 1; i < pair.close; i++) inBox.add(i);
-  const last = body.blocks.at(-1);
+  const last = all.at(-1);
   const section = last !== undefined && isFootnotes(last) ? last : null;
-  const views = section === null ? body.blocks : body.blocks.slice(0, -1);
+  const views = section === null ? all : all.slice(0, -1);
   const owners = ownersOf(views, blocks, tags, inBox);
-  const boxed = boxedElements(views, blocks, tags, pairs);
   const mine = new Map<number, string[]>();
   const unsure = new Set<number>();
   views.forEach((view, v) => {
@@ -71,6 +86,15 @@ export function lockedRenders(body: Body, blocks: readonly LineBlock[]): (Locked
       else mine.set(i, [...(mine.get(i) ?? []), view.html]);
     }
   });
+  return { views, section, tags, pairs, inBox, mine, unsure };
+}
+
+/** Per block of `blocks` (in text order): its View look, `null` for editable blocks. */
+export function lockedRenders(body: Body, blocks: readonly LineBlock[]): (LockedRender | null)[] {
+  const out = blocks.map((b): LockedRender | null => (b.reason === null ? null : SOURCE));
+  if (body.kind !== "markdown") return out;
+  const { views, section, tags, pairs, inBox, mine, unsure } = placed(blocks, body.blocks);
+  const boxed = boxedElements(views, blocks, tags, pairs);
   const items = section === null ? null : footnoteItems(section.html ?? "");
   let firstNote = true;
   blocks.forEach((block, i) => {
@@ -103,6 +127,99 @@ export function lockedRenders(body: Body, blocks: readonly LineBlock[]): (Locked
 }
 
 /**
+ * View's look of each HTML piece of the editable blocks, by the piece's source: View's element for it (backend HTML,
+ * cut at element boundaries), found in the View block of its lines by element name and text, in order. Null: View has
+ * no such element there (the sanitizer dropped it), the block shares its View block, or the source shows two ways.
+ */
+export function inlineHtmlLooks(
+  body: Body,
+  blocks: readonly LineBlock[],
+): Map<string, string | null> {
+  const looks = new Map<string, string | null>();
+  if (body.kind !== "markdown") return looks;
+  const { mine, unsure } = placed(blocks, body.blocks);
+  blocks.forEach((block, i) => {
+    const pieces = block.reason === null ? (block.pieces ?? []) : [];
+    if (pieces.length === 0) return;
+    const html = unsure.has(i) ? [] : (mine.get(i) ?? []);
+    const used = new Set<number>();
+    for (const piece of pieces) {
+      const name = /^<([a-zA-Z][a-zA-Z0-9-]*)/.exec(piece)?.[1]?.toLowerCase();
+      const found =
+        name === undefined || html.length !== 1
+          ? undefined
+          : elementsNamed(html[0] ?? "", name).find(
+              (e) => !used.has(e.start) && !isNoteNumber(e.html) && sameText(e.html, piece),
+            );
+      if (found !== undefined) used.add(found.start);
+      const look = found?.html ?? null;
+      const before = looks.get(piece);
+      looks.set(piece, before === undefined || before === look ? look : null);
+    }
+  });
+  return looks;
+}
+
+/** The text a piece of HTML shows, as letters and digits only (tags, entities and punctuation aside). */
+function lettersOf(html: string): string {
+  return html
+    .replace(/<[^>]*>/g, "")
+    .replace(/&#?\w+;/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function sameText(view: string, source: string): boolean {
+  return lettersOf(view) === lettersOf(source);
+}
+
+/** A footnote's number: the parser's own `sup`, never a piece's. */
+function isNoteNumber(html: string): boolean {
+  return html.includes("data-footnote-ref");
+}
+
+/** The elements named `name` in `html` (open tag to its close, a void one alone), in order; none when not shaped. */
+function elementsNamed(html: string, name: string): { start: number; html: string }[] {
+  const tags = tagsOf(html);
+  if (!tags) return [];
+  const found: { start: number; html: string }[] = [];
+  const open: number[] = [];
+  for (const t of tags) {
+    if (t.name !== name) continue;
+    if (!t.closing && (VOID.has(name) || t.attrs.trimEnd().endsWith("/"))) {
+      found.push({ start: t.start, html: html.slice(t.start, t.end) });
+    } else if (!t.closing) open.push(t.start);
+    else {
+      const start = open.pop();
+      if (start !== undefined) found.push({ start, html: html.slice(start, t.end) });
+    }
+  }
+  return found.sort((a, b) => a.start - b.start);
+}
+
+/** The top-level nodes of `doc` placed by `composed` (an empty paragraph is not written: no lines) as line blocks. */
+function lineBlocksOf(doc: PMNode, composed: Composed): { nodes: PMNode[]; blocks: LineBlock[] } {
+  const nodes: PMNode[] = [];
+  const blocks: LineBlock[] = [];
+  doc.forEach((node, _offset, index) => {
+    const range = composed.ranges[index];
+    const lineStart = composed.lines.get(node);
+    if (!range || lineStart === undefined) return;
+    const text = composed.text.slice(range.from, range.to);
+    const locked = node.type.name === LOCKED;
+    nodes.push(node);
+    blocks.push({
+      lineStart,
+      lineEnd: lineStart + (text.match(/\n/g)?.length ?? 0),
+      reason: locked ? reasonOf(node) : null,
+      text,
+      ...(locked ? {} : { pieces: pieceSources(node, "html") }),
+    });
+  });
+  return { nodes, blocks };
+}
+
+/**
  * View's look of each locked node of `doc`, by node. `composed` places the nodes in `composed.text`, the text `body`
  * renders (an empty paragraph is not written: no lines, no look).
  */
@@ -111,21 +228,7 @@ export function lockedLooks(
   doc: PMNode,
   composed: Composed,
 ): Map<PMNode, LockedRender> {
-  const nodes: PMNode[] = [];
-  const blocks: LineBlock[] = [];
-  doc.forEach((node, _offset, index) => {
-    const range = composed.ranges[index];
-    const lineStart = composed.lines.get(node);
-    if (!range || lineStart === undefined) return;
-    const text = composed.text.slice(range.from, range.to);
-    nodes.push(node);
-    blocks.push({
-      lineStart,
-      lineEnd: lineStart + (text.match(/\n/g)?.length ?? 0),
-      reason: node.type.name === LOCKED ? reasonOf(node) : null,
-      text,
-    });
-  });
+  const { nodes, blocks } = lineBlocksOf(doc, composed);
   const looks = new Map<PMNode, LockedRender>();
   lockedRenders(body, blocks).forEach((look, i) => {
     const node = nodes[i];
@@ -167,7 +270,14 @@ const KNOWN_SOURCES = 2000;
 export class LookBook {
   #byNode = new WeakMap<PMNode, LockedRender>();
   #bySource = new Map<string, LockedRender>();
+  /** View's element of each HTML piece written in a line, by its source (kept as the blocks' looks by source are). */
+  #inline = new Map<string, string>();
   #asked = 0;
+
+  /** View's element (backend HTML) of an HTML piece written in a line; null: none known. */
+  inline(source: string): string | null {
+    return this.#inline.get(source) ?? null;
+  }
 
   /** The look of `node`; null: none known. */
   get(node: PMNode): LockedRender | null {
@@ -205,6 +315,14 @@ export class LookBook {
     for (const oldest of this.#bySource.keys()) {
       if (this.#bySource.size <= KNOWN_SOURCES) break;
       this.#bySource.delete(oldest);
+    }
+    for (const [source, look] of inlineHtmlLooks(body, lineBlocksOf(doc, composed).blocks)) {
+      this.#inline.delete(source);
+      if (look !== null) this.#inline.set(source, look);
+    }
+    for (const oldest of this.#inline.keys()) {
+      if (this.#inline.size <= KNOWN_SOURCES) break;
+      this.#inline.delete(oldest);
     }
     return true;
   }

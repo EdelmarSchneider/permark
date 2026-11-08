@@ -77,12 +77,13 @@ describe("the sheet of every format", () => {
     expect(inline.querySelector(".lock")?.getAttribute("title")).toMatch(/inline table/i);
   });
 
-  it("reads YAML as cards and keeps block text and flow lists read only", async () => {
+  it("reads YAML as cards; a list written on one line is a list too", async () => {
     const root = await show(sheetOf("docker-compose.yml"));
     const titles = Array.from(root.querySelectorAll("h3")).map((h) => h.textContent?.trim());
     expect(titles).toContain("services.web.environment");
     expect(rowOf(root, "image").textContent).toContain("nginx:1.27");
-    expect(rowOf(root, "depends_on").querySelector(".lock")).not.toBeNull();
+    expect(rowOf(root, "depends_on").querySelector(".lock")).toBeNull();
+    expect(rowOf(root, "depends_on").querySelectorAll(".chip")).toHaveLength(1);
     expect(rowOf(root, "ports").querySelectorAll(".chip")).toHaveLength(2);
   });
 
