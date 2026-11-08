@@ -211,10 +211,12 @@ function keepListsApart(chunks: Chunk[]): void {
 }
 
 /**
- * Longest block (own text | writing) spliced: Myers costs (n + m) * d and each try reads the block twice; a longer
- * block is written by the editor.
+ * Longest block (own text | writing) spliced; a longer block is written by the editor. Measured near the limit: the
+ * alignment stays under 10 ms; comparing meanings reads the block twice per try (~0.1 s at 20,000 characters, up to
+ * ~0.45 s at 45,000, once per typing pause). A lower limit would make every edit of a long loose list add a blank
+ * line between all its items.
  */
-const MAX_SPLICE = 50_000;
+export const MAX_SPLICE = 50_000;
 /** Characters the tries of leaving changes out may read (changes * block length): a big table stays quick. */
 const LEAVE_OUT_BUDGET = 40_000;
 
@@ -302,6 +304,7 @@ function spliceOf(core: Core, source: Source, node: PMNode): string | null {
       if (from === null || to === null || to < from || from < (hunks.at(-1)?.to ?? 0)) continue;
       hunks.push({ from, to, insert: now.slice(op.b, op.b + op.add) });
     }
+    // no change placed: the block's own bytes, kept only when the edit does not change what the block reads as
     const out = applied(source.text, hunks);
     if (out === tried) continue;
     tried = out;
@@ -310,7 +313,10 @@ function spliceOf(core: Core, source: Source, node: PMNode): string | null {
   return null;
 }
 
-/** Changes the result reads the same without (the editor re-padding a table's columns) are left out. */
+/**
+ * Changes the result reads the same without (the editor re-padding a table's columns) are left out; all of them
+ * left out -> the block's own bytes (the edit changed nothing it reads as).
+ */
 function leaveOut(core: Core, text: string, hunks: readonly Hunk[], now: string): string {
   let kept = hunks;
   if (hunks.length > 1 && hunks.length * text.length <= LEAVE_OUT_BUDGET) {

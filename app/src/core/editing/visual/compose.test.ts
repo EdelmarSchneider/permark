@@ -4,9 +4,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import process from "node:process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { undo } from "@milkdown/kit/prose/history";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import type { Segment } from "../../../api/generated/Segment";
-import { buildDoc, compose, type Built } from "./compose";
+import { buildDoc, compose, MAX_SPLICE, type Built } from "./compose";
 import { createCore, LOCKED, type Core } from "./core";
 
 type Fixture = Record<string, { text: string; segments: Segment[] }>;
@@ -426,6 +427,93 @@ describe("compose", () => {
       expect(compose(core, built, replaceText("|", "")).text).toBe(
         "Lorem [B] (ipsum  dolor) amet\n",
       );
+    });
+
+    it("deleting a whole web address deletes its angle brackets, and only those it has", async () => {
+      let built = await load("Lorem [B] <https://example.com/a> ipsum\n");
+      expect(compose(core, built, replaceText("https://example.com/a", "")).text).toBe(
+        "Lorem [B]  ipsum\n",
+      );
+      // bare in the file, in angle brackets in the editor's writing
+      built = await load("Lorem [B] https://example.com/a ipsum\n");
+      expect(compose(core, built, replaceText("https://example.com/a", "")).text).toBe(
+        "Lorem [B]  ipsum\n",
+      );
+    });
+
+    it("characters outside the basic plane around an edit keep their bytes", async () => {
+      const text = "Lorem [B] \u{1F600} ipsum \u{2000B} dolor ~ \u{1F600}\n";
+      let built = await load(text);
+      expect(compose(core, built, typeAtEnd(0, "Z")).text).toBe(
+        "Lorem [B] \u{1F600} ipsum \u{2000B} dolor ~ \u{1F600}Z\n",
+      );
+      built = await load(text);
+      // same first half (high surrogate): the change is the second half only
+      expect(compose(core, built, replaceText("\u{1F600}", "\u{1F601}")).text).toBe(
+        "Lorem [B] \u{1F601} ipsum \u{2000B} dolor ~ \u{1F600}\n",
+      );
+      built = await load(text);
+      expect(compose(core, built, replaceText("\u{2000B}", "")).text).toBe(
+        "Lorem [B] \u{1F600} ipsum  dolor ~ \u{1F600}\n",
+      );
+    });
+
+    it("a hard break written as two spaces stays as written next to a typed character", async () => {
+      const text = "Lorem [B] ipsum  \ndolor\n";
+      let built = await load(text);
+      expect(compose(core, built, replaceText("ipsum", "ipsumZ")).text).toBe(
+        "Lorem [B] ipsumZ  \ndolor\n",
+      );
+      built = await load(text);
+      expect(compose(core, built, replaceText("dolor", "Zdolor")).text).toBe(
+        "Lorem [B] ipsum  \nZdolor\n",
+      );
+    });
+
+    it("two edits to one block keep both; undoing them gives the block's own bytes back", async () => {
+      const text = "Lorem [B] ipsum ~ dolor\n";
+      const built = await load(text);
+      const once = compose(core, built, replaceText("ipsum", "ipsumZ")).text;
+      expect(once).toBe("Lorem [B] ipsumZ ~ dolor\n");
+      // the same document again: the splice of its node is reused
+      expect(compose(core, built, core.view.state.doc).text).toBe(once);
+      expect(compose(core, built, replaceText("dolor", "Zdolor")).text).toBe(
+        "Lorem [B] ipsumZ ~ Zdolor\n",
+      );
+      const view = core.view;
+      while (undo(view.state, view.dispatch)) {
+        // back to the document as loaded
+      }
+      const back = compose(core, built, view.state.doc);
+      expect(back.text).toBe(text);
+      expect(back.changed).toBe(0);
+    });
+  });
+
+  describe("an edited block the splice cannot keep is written by the editor", () => {
+    it("an item added to a star list (the spliced list would read as two lists)", async () => {
+      const built = await load("* lorem\n* ipsum\n", [
+        { lineStart: 1, lineEnd: 2, kind: "list", lock: null },
+      ]);
+      const view = core.view;
+      let at = -1;
+      view.state.doc.descendants((node, pos) => {
+        if (node.isText && node.text === "ipsum") at = pos + node.nodeSize;
+      });
+      // a new item after "ipsum": paragraph and item split, then typed into
+      view.dispatch(view.state.tr.split(at, 2));
+      view.dispatch(view.state.tr.insertText("dolor", at + 4));
+      const composed = compose(core, built, view.state.doc);
+      expect(composed.text).toBe(`${core.write(view.state.doc.child(0))}\n`);
+      expect(composed.text).toMatch(/^([-+]) lorem\n\1 ipsum\n\1 dolor\n$/);
+    });
+
+    it("a block longer than the splice limit", async () => {
+      const text = `${"Lorem ~ipsum ".repeat(Math.ceil(MAX_SPLICE / 13))}end\n`;
+      const built = await load(text);
+      const composed = compose(core, built, typeAtEnd(0, "Z"));
+      expect(composed.text).toBe(`${core.write(core.view.state.doc.child(0))}\n`);
+      expect(composed.text).not.toBe(text.replace(/end\n$/, "endZ\n"));
     });
   });
 });

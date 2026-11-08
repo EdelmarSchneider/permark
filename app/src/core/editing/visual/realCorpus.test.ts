@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 // Round-trip audit of Edit mode over real Markdown files (opt-in, never in CI). Input: the JSON lines the Rust audit
 // `crates/core/tests/real_corpus.rs` writes (path, editor text, block map). Per file: composed untouched -> must be
-// the text byte for byte; one "Z" typed at the end of up to 5 editable blocks -> only that block's lines may change.
-// Failures grouped by cause; full results -> `PERMARK_CORPUS_REPORT` (default: `report.json` next to the input).
+// the text byte for byte; up to 5 editable blocks, each edited once per mode (type at the end | at the start, delete
+// the last | a middle character, replace a middle word) -> only that block's lines may change, and the block's bytes
+// = its own bytes with exactly that change (else "collateral": other bytes rewritten). Fails on damage (untouched,
+// outside, missing, error); collateral rewrites are reported by group. Console: counts and groups only (no file text);
+// full results with excerpts -> `PERMARK_CORPUS_REPORT` (default: `report.json` next to the input; stays local).
 // Run: `PERMARK_CORPUS_JSONL=<file> npx vitest run src/core/editing/visual/realCorpus.test.ts`.
 import "./jsdomShims";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -23,6 +26,19 @@ const LIMIT = Number(process.env.PERMARK_CORPUS_LIMIT ?? "0");
 const EDITS_PER_FILE = 5;
 const EDITABLE_TYPES = new Set(["paragraph", "heading", "bullet_list", "ordered_list"]);
 const MARK = "Z";
+/** Word typed over a word (holds `MARK`: a lost edit is seen). */
+const WORD = `${MARK}ork`;
+
+type Mode = "typeEnd" | "typeStart" | "deleteLast" | "deleteMiddle" | "replaceWord";
+const MODES: readonly Mode[] = [
+  "typeEnd",
+  "typeStart",
+  "deleteLast",
+  "deleteMiddle",
+  "replaceWord",
+];
+/** Document range replaced by `insert`; `remove` = the text it held. */
+type Edit = { from: number; to: number; remove: string; insert: string };
 
 type Entry = { path: string; text: string; segments: Segment[] };
 type Check =
@@ -36,16 +52,6 @@ type Check =
   | "error";
 type Severity = "HIGH" | "MEDIUM" | "LOW";
 
-const CHECKS: readonly Check[] = [
-  "untouched",
-  "untouchedChanged",
-  "outside",
-  "missing",
-  "count",
-  "collateralMeaning",
-  "collateral",
-  "error",
-];
 const SEVERITY: Record<Check, Severity> = {
   untouched: "HIGH",
   untouchedChanged: "MEDIUM",
@@ -59,6 +65,8 @@ const SEVERITY: Record<Check, Severity> = {
 
 type Failure = {
   check: Check;
+  /** Edit mode (`load`: the file untouched). */
+  mode: Mode | "load";
   path: string;
   /** Block the difference is in (backend kind -> editor node type). */
   kind: string;
@@ -130,8 +138,17 @@ function commonSuffix(a: string, b: string): number {
 
 const around = (text: string, at: number): string =>
   JSON.stringify(text.slice(Math.max(0, at - 12), at + 12));
-const charAt = (text: string, at: number): string =>
-  at < text.length ? JSON.stringify(text.charAt(at)) : "EOF";
+/** Character at `at` for a group key: letters | digits by class only (groups by cause, no file text). */
+function charClass(text: string, at: number): string {
+  if (at >= text.length) return "EOF";
+  const char = text.charAt(at);
+  if (/\p{L}/u.test(char)) return "letter";
+  if (/\p{N}/u.test(char)) return "digit";
+  return JSON.stringify(char);
+}
+
+/** Error for a group key: its kind and message up to the first colon (ProseMirror quotes node content after it). */
+const errorKey = (e: unknown): string => String(e).split(":").slice(0, 2).join(":").slice(0, 80);
 
 /** Three lines of `text` around offset `at`. */
 function excerpt(text: string, at: number): string {
@@ -159,6 +176,7 @@ function blockAt(built: Built, at: number): { source: Source | null; index: numb
 
 function failure(
   check: Check,
+  mode: Mode | "load",
   path: string,
   source: Source | null,
   expected: string,
@@ -170,9 +188,10 @@ function failure(
   const lock = source?.locked ?? null;
   const inBlock = source !== null && at >= source.start && at <= source.end;
   const where = source === null ? "before-first" : inBlock ? "block" : "after-block";
-  const signature = `${check}|${kind}|${String(lock)}|${where}|exp ${charAt(expected, at)} got ${charAt(got, gotAt)}`;
+  const signature = `${mode}|${check}|${kind}|${String(lock)}|${where}|exp ${charClass(expected, at)} got ${charClass(got, gotAt)}`;
   return {
     check,
+    mode,
     path,
     kind,
     lock,
@@ -195,6 +214,101 @@ function endOfText(node: PMNode, offset: number): number | null {
   });
   return end;
 }
+
+/** Document position at the start of the first text block in the top-level node at `offset`. */
+function startOfText(node: PMNode, offset: number): number | null {
+  if (node.isTextblock) return offset + 1;
+  let start: number | null = null;
+  node.descendants((child, pos) => {
+    if (start === null && child.isTextblock) start = offset + 1 + pos + 1;
+    return start === null;
+  });
+  return start;
+}
+
+type TextAt = { pos: number; text: string };
+
+/** Text nodes of the top-level node at `offset`, with their document positions. */
+function textsOf(node: PMNode, offset: number): TextAt[] {
+  const out: TextAt[] = [];
+  node.descendants((child, pos) => {
+    if (child.isText) out.push({ pos: offset + 1 + pos, text: child.text ?? "" });
+    return true;
+  });
+  return out;
+}
+
+/** Match of the global `pattern` nearest the middle of the node's text (inside one text node). */
+function nearMiddle(
+  texts: readonly TextAt[],
+  pattern: RegExp,
+): { pos: number; match: string } | null {
+  const total = texts.reduce((n, t) => n + t.text.length, 0);
+  let best: { pos: number; match: string; distance: number } | null = null;
+  let base = 0;
+  for (const { pos, text } of texts) {
+    for (const m of text.matchAll(pattern)) {
+      const distance = Math.abs(base + m.index - total / 2);
+      if (best === null || distance < best.distance) {
+        best = { pos: pos + m.index, match: m[0], distance };
+      }
+    }
+    base += text.length;
+  }
+  return best && { pos: best.pos, match: best.match };
+}
+
+/**
+ * The edit of `mode` in the top-level node at `offset`. Middle deletions | replacements pick letters | digits: those
+ * map 1:1 to the block's bytes (punctuation may carry an escape that goes with it).
+ */
+function editOf(mode: Mode, node: PMNode, offset: number): Edit | null {
+  const insertAt = (at: number | null): Edit | null =>
+    at === null ? null : { from: at, to: at, remove: "", insert: MARK };
+  const replace = (found: { pos: number; match: string } | null, insert: string): Edit | null =>
+    found && { from: found.pos, to: found.pos + found.match.length, remove: found.match, insert };
+  switch (mode) {
+    case "typeEnd":
+      return insertAt(endOfText(node, offset));
+    case "typeStart":
+      return insertAt(startOfText(node, offset));
+    case "deleteLast": {
+      const last = textsOf(node, offset).at(-1);
+      const char = last ? Array.from(last.text).at(-1) : undefined;
+      if (!last || char === undefined) return null;
+      return replace({ pos: last.pos + last.text.length - char.length, match: char }, "");
+    }
+    case "deleteMiddle":
+      return replace(nearMiddle(textsOf(node, offset), /[\p{L}\p{N}]/gu), "");
+    case "replaceWord":
+      return replace(nearMiddle(textsOf(node, offset), /\p{L}{2,}/gu), WORD);
+    default:
+      return mode satisfies never;
+  }
+}
+
+/** `got` = `original` with one `remove` -> `insert` and nothing else. */
+function oneChange(original: string, got: string, remove: string, insert: string): boolean {
+  if (got.length !== original.length - remove.length + insert.length) return false;
+  const p = firstDiff(original, got);
+  if (p < 0) return remove === insert;
+  const q = commonSuffix(original, got);
+  for (let x = Math.max(0, original.length - remove.length - q); x <= p; x++) {
+    if (
+      original.startsWith(remove, x) &&
+      got.startsWith(insert, x) &&
+      original.slice(x + remove.length) === got.slice(x + insert.length)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** The block's new bytes = its own bytes with exactly the edit (a deleted character takes its escape along). */
+const exactly = (original: string, got: string, edit: Edit): boolean =>
+  oneChange(original, got, edit.remove, edit.insert) ||
+  (edit.insert === "" && oneChange(original, got, `\\${edit.remove}`, ""));
 
 /** Up to `count` indexes spread over `items`. */
 function spread<T>(items: readonly T[], count: number): T[] {
@@ -237,6 +351,13 @@ describe.skipIf(!JSONL)("Edit mode over a real corpus", () => {
     let cleanEdits = 0;
     let allLockedFiles = 0;
     const slow: { path: string; ms: number }[] = [];
+    const byMode: Record<Mode, { edits: number; clean: number }> = {
+      typeEnd: { edits: 0, clean: 0 },
+      typeStart: { edits: 0, clean: 0 },
+      deleteLast: { edits: 0, clean: 0 },
+      deleteMiddle: { edits: 0, clean: 0 },
+      replaceWord: { edits: 0, clean: 0 },
+    };
 
     for (const { path, text, segments } of entries) {
       const fileStart = performance.now();
@@ -246,9 +367,9 @@ describe.skipIf(!JSONL)("Edit mode over a real corpus", () => {
         core.setDoc(built.doc);
       } catch (e) {
         failures.push({
-          ...failure("error", path, null, text, "", 0, 0),
+          ...failure("error", "load", path, null, text, "", 0, 0),
           got: String(e),
-          signature: `error|build|${String(e).slice(0, 80)}`,
+          signature: `load|error|build|${errorKey(e)}`,
         });
         continue;
       }
@@ -270,99 +391,135 @@ describe.skipIf(!JSONL)("Edit mode over a real corpus", () => {
       if (composed.text !== text) {
         const at = firstDiff(text, composed.text);
         failures.push(
-          failure("untouched", path, blockAt(built, at).source, text, composed.text, at, at),
+          failure(
+            "untouched",
+            "load",
+            path,
+            blockAt(built, at).source,
+            text,
+            composed.text,
+            at,
+            at,
+          ),
         );
       } else if (composed.changed !== 0) {
         failures.push({
-          ...failure("untouchedChanged", path, null, text, composed.text, 0, 0),
+          ...failure("untouchedChanged", "load", path, null, text, composed.text, 0, 0),
           got: `changed=${composed.changed}`,
         });
       }
 
-      // 2. one block edited
+      // 2. one block edited, once per mode
       const offsets: number[] = [];
       built.doc.forEach((_, offset) => offsets.push(offset));
       const candidates = built.sources
         .map((s, i) => ({ s, i }))
         .filter(({ s }) => s.locked === null && EDITABLE_TYPES.has(s.type));
       for (const { s: source, i } of spread(candidates, EDITS_PER_FILE)) {
-        core.setDoc(built.doc);
-        const node = built.doc.child(i);
-        const at = endOfText(node, offsets[i] ?? 0);
-        if (at === null) continue;
-        edits += 1;
-        let written: string;
-        let changed: number;
-        try {
-          core.view.dispatch(core.view.state.tr.insertText(MARK, at));
-          const result = compose(core, built, core.view.state.doc);
-          written = result.text;
-          changed = result.changed;
-        } catch (e) {
-          failures.push({
-            ...failure("error", path, source, text, "", source.start, 0),
-            got: String(e),
-            signature: `error|edit|${source.kind}->${source.type}|${String(e).slice(0, 80)}`,
-          });
-          continue;
-        }
-        const before = text.slice(0, source.start);
-        const after = text.slice(source.end);
-        const head = firstDiff(before, written.slice(0, before.length));
-        const tail = commonSuffix(after, written);
-        if (head >= 0 || tail < after.length || written.length < before.length + after.length) {
-          if (head >= 0) {
-            failures.push(
-              failure("outside", path, blockAt(built, head).source, text, written, head, head),
-            );
-          } else {
-            // first differing character of the suffix, counted from its start
-            const at = text.length - tail - 1;
-            const gotAt = written.length - tail - 1;
-            failures.push(
-              failure("outside", path, blockAt(built, at).source, text, written, at, gotAt),
-            );
+        for (const mode of MODES) {
+          core.setDoc(built.doc);
+          const edit = editOf(mode, built.doc.child(i), offsets[i] ?? 0);
+          if (edit === null) continue;
+          const tally = byMode[mode];
+          tally.edits += 1;
+          edits += 1;
+          let written: string;
+          let changed: number;
+          let node: PMNode;
+          try {
+            const view = core.view;
+            // a plain range delete (as Backspace inside text): `insertText("")` may take whole nodes along; a
+            // replaced word keeps its marks (`insertText` drops a code | link mark ending with it): 1:1 with the bytes
+            const marks = view.state.doc.nodeAt(edit.from)?.marks ?? [];
+            const tr =
+              edit.insert === ""
+                ? view.state.tr.delete(edit.from, edit.to)
+                : edit.from === edit.to
+                  ? view.state.tr.insertText(edit.insert, edit.from)
+                  : view.state.tr.replaceWith(
+                      edit.from,
+                      edit.to,
+                      view.state.schema.text(edit.insert, marks),
+                    );
+            view.dispatch(tr);
+            node = view.state.doc.child(i);
+            const result = compose(core, built, view.state.doc);
+            written = result.text;
+            changed = result.changed;
+          } catch (e) {
+            failures.push({
+              ...failure("error", mode, path, source, text, "", source.start, 0),
+              got: String(e),
+              signature: `${mode}|error|edit|${source.kind}->${source.type}|${errorKey(e)}`,
+            });
+            continue;
           }
-          continue;
-        }
-        const middle = written.slice(before.length, written.length - after.length);
-        if (!middle.includes(MARK) || middle.split(MARK).length <= source.text.split(MARK).length) {
-          failures.push(
-            failure("missing", path, source, text, written, source.start, source.start),
-          );
-          continue;
-        }
-        if (changed !== 1) {
-          failures.push({
-            ...failure("count", path, source, text, written, source.start, source.start),
-            got: `changed=${changed}`,
-          });
-        }
-        // the block itself: only the typed character added
-        const p = firstDiff(source.text, middle);
-        const q = commonSuffix(source.text, middle);
-        const surgical =
-          middle.length === source.text.length + 1 &&
-          p + q >= source.text.length &&
-          middle.charAt(p) === MARK;
-        if (surgical) cleanEdits += 1;
-        else {
-          const d = Math.max(0, p);
-          failures.push({
-            // rewritten bytes but the same document as the block with the mark at its end: noise, not damage
-            ...failure(
-              sameMeaning(core, `${source.text.trimEnd()}${MARK}`, middle)
-                ? "collateral"
-                : "collateralMeaning",
-              path,
-              source,
-              text,
-              written,
-              source.start + d,
-              before.length + d,
-            ),
-            rewritten: middle,
-          });
+          const before = text.slice(0, source.start);
+          const after = text.slice(source.end);
+          const head = firstDiff(before, written.slice(0, before.length));
+          const tail = commonSuffix(after, written);
+          if (head >= 0 || tail < after.length || written.length < before.length + after.length) {
+            if (head >= 0) {
+              failures.push(
+                failure(
+                  "outside",
+                  mode,
+                  path,
+                  blockAt(built, head).source,
+                  text,
+                  written,
+                  head,
+                  head,
+                ),
+              );
+            } else {
+              // first differing character of the suffix, counted from its start
+              const at = text.length - tail - 1;
+              const gotAt = written.length - tail - 1;
+              failures.push(
+                failure("outside", mode, path, blockAt(built, at).source, text, written, at, gotAt),
+              );
+            }
+            continue;
+          }
+          const middle = written.slice(before.length, written.length - after.length);
+          // the edit is lost: block unchanged, or fewer `MARK`s than it adds (a replaced word may hold one)
+          const count = (t: string): number => t.split(MARK).length - 1;
+          if (
+            middle === source.text ||
+            count(middle) - count(source.text) < count(edit.insert) - count(edit.remove)
+          ) {
+            failures.push(
+              failure("missing", mode, path, source, text, written, source.start, source.start),
+            );
+            continue;
+          }
+          if (changed !== 1) {
+            failures.push({
+              ...failure("count", mode, path, source, text, written, source.start, source.start),
+              got: `changed=${changed}`,
+            });
+          }
+          if (exactly(source.text, middle, edit)) {
+            tally.clean += 1;
+            cleanEdits += 1;
+          } else {
+            const d = Math.max(0, firstDiff(source.text, middle));
+            failures.push({
+              // rewritten bytes but the same document as the editor's: noise, not damage
+              ...failure(
+                sameMeaning(core, middle, core.write(node)) ? "collateral" : "collateralMeaning",
+                mode,
+                path,
+                source,
+                text,
+                written,
+                source.start + d,
+                before.length + d,
+              ),
+              rewritten: middle,
+            });
+          }
         }
       }
       const ms = performance.now() - fileStart;
@@ -403,6 +560,21 @@ describe.skipIf(!JSONL)("Edit mode over a real corpus", () => {
         return rank[a.severity] - rank[b.severity] || b.count - a.count;
       });
     const pct = (n: number) => Math.round((1000 * n) / Math.max(1, blocks)) / 10;
+    const byCheck = (list: readonly Failure[]): Record<Check, number> => {
+      const counts: Record<Check, number> = {
+        untouched: 0,
+        untouchedChanged: 0,
+        outside: 0,
+        missing: 0,
+        count: 0,
+        collateralMeaning: 0,
+        collateral: 0,
+        error: 0,
+      };
+      for (const f of list) counts[f.check] += 1;
+      return counts;
+    };
+    const failuresByCheck = byCheck(failures);
     const report = {
       files: entries.length,
       blocks,
@@ -410,8 +582,9 @@ describe.skipIf(!JSONL)("Edit mode over a real corpus", () => {
       cleanEdits,
       allLockedFiles,
       durationMs: Math.round(performance.now() - started),
-      failuresByCheck: Object.fromEntries(
-        CHECKS.map((c) => [c, failures.filter((f) => f.check === c).length]),
+      failuresByCheck,
+      byMode: Object.fromEntries(
+        MODES.map((m) => [m, { ...byMode[m], ...byCheck(failures.filter((f) => f.mode === m)) }]),
       ),
       lockReasons: Object.fromEntries(
         [...locks.entries()]
@@ -424,13 +597,27 @@ describe.skipIf(!JSONL)("Edit mode over a real corpus", () => {
       failures,
     };
     writeFileSync(REPORT, JSON.stringify(report, null, 2));
+    // counts and groups only: file text (excerpts, paths) stays in the local report file
     const summary = {
-      ...report,
-      groups: ranked.length,
-      failures: failures.length,
-      kinds: undefined,
+      files: report.files,
+      blocks,
+      edits,
+      cleanEdits,
+      allLockedFiles,
+      durationMs: report.durationMs,
+      failuresByCheck,
+      byMode: report.byMode,
+      lockReasons: report.lockReasons,
+      slowFiles: slow.length,
+      groups: ranked.map((g) => ({ signature: g.signature, count: g.count, files: g.files })),
     };
     console.log(JSON.stringify(summary, null, 2));
     expect(entries.length).toBeGreaterThan(0);
+    const damage =
+      failuresByCheck.untouched +
+      failuresByCheck.outside +
+      failuresByCheck.missing +
+      failuresByCheck.error;
+    expect(damage).toBe(0);
   }, 3_600_000);
 });

@@ -1,8 +1,9 @@
 //! Round-trip audit over real Markdown folders (opt-in, never in CI): writes one JSON line per file (path, editor
 //! text, block map) for the Edit-mode audit in vitest, which cannot call Rust.
 //!
-//! Read-only toward the scanned folders. Env: `PERMARK_CORPUS_DIRS` (`;`-separated folders), `PERMARK_CORPUS_OUT`
-//! (JSONL path, outside the scanned folders).
+//! Read-only toward the scanned folders: nothing is written in them, and an output path inside one is refused.
+//! Env: `PERMARK_CORPUS_DIRS` (`;`-separated folders), `PERMARK_CORPUS_OUT` (JSONL path, outside the scanned
+//! folders).
 //! Run: `cargo test -p permark-core --test real_corpus -- --ignored --nocapture`.
 
 use std::io::Write as _;
@@ -15,6 +16,7 @@ use permark_core::format::{
     DEFAULT_PROMPT_TAGS,
 };
 use permark_core::fsx;
+use permark_core::paths::Root;
 use serde::Serialize;
 
 /// Files above this size are left out (the audit targets ordinary documents).
@@ -80,14 +82,58 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// Panics when `out` lies in one of `dirs` (both compared canonical: links, case and `\\?\` resolved).
+fn refuse_output_inside(out: &Path, dirs: &[PathBuf]) {
+    let parent = out
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let folder = Root::open(parent)
+        .unwrap_or_else(|e| panic!("PERMARK_CORPUS_OUT folder {}: {e}", parent.display()));
+    for dir in dirs {
+        let Ok(scanned) = Root::open(dir) else {
+            continue;
+        };
+        assert!(
+            !folder.path().starts_with(scanned.path()),
+            "PERMARK_CORPUS_OUT lies in the scanned folder {}: the audit writes nothing there",
+            dir.display()
+        );
+    }
+}
+
+#[test]
+fn an_output_in_a_scanned_folder_is_refused() {
+    let scanned = tempfile::tempdir().expect("temp dir");
+    let nested = scanned.path().join("Sub");
+    std::fs::create_dir(&nested).expect("sub dir");
+    let outside = tempfile::tempdir().expect("temp dir");
+    let dirs = [scanned.path().to_path_buf()];
+    refuse_output_inside(&outside.path().join("corpus.jsonl"), &dirs);
+    for out in [
+        scanned.path().join("corpus.jsonl"),
+        nested.join("corpus.jsonl"),
+    ] {
+        let refused = std::panic::catch_unwind(|| refuse_output_inside(&out, &dirs));
+        assert!(refused.is_err(), "{} accepted", out.display());
+    }
+}
+
 #[test]
 #[ignore = "reads real folders named by PERMARK_CORPUS_DIRS"]
 fn real_corpus_block_maps() {
     let dirs = std::env::var("PERMARK_CORPUS_DIRS").expect("PERMARK_CORPUS_DIRS");
+    let dirs: Vec<PathBuf> = dirs
+        .split(';')
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .collect();
     let out_path = PathBuf::from(std::env::var("PERMARK_CORPUS_OUT").expect("PERMARK_CORPUS_OUT"));
+    refuse_output_inside(&out_path, &dirs);
     let mut files = Vec::new();
-    for dir in dirs.split(';').filter(|d| !d.trim().is_empty()) {
-        walk(Path::new(dir.trim()), &mut files);
+    for dir in &dirs {
+        walk(dir, &mut files);
     }
     let registry = formats();
     let mut counts = Counts::default();
