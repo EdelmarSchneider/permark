@@ -9,6 +9,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **Edit shows special blocks the way View does.** Formulas, diagrams, alerts, footnotes, HTML, prompt blocks and the properties at the top of a document used to appear in Edit as a dashed box with their raw text. They now look exactly as they do in View. Click one, or select it and press Enter, to edit its text right there, with a live preview below; press Esc or click elsewhere to see it drawn again. The text inside prompt blocks stays editable as usual, and the properties open their editable card. <!-- f: editing, edit-mode -->
 - Code blocks in Edit now have the same colors as in View, and the colors follow as you type. <!-- f: editing, edit-mode -->
 - Paragraphs with inline math, footnote references or reference-style links can now be edited as normal text in Edit. Each formula, footnote number and link is drawn as in View; click it to change its source. <!-- f: editing, edit-mode -->
+- Edit also shows View's details in the text: links to missing files are underlined in red, code references look and open as in View (Ctrl or Cmd click), headings show their anchor on hover, and prompt files show their variable and file chips. <!-- f: editing, edit-mode -->
 
 ### Fixed
 - Text typed in the last moment before the file changed on disk, was deleted, or before Save all is no longer lost: it now leads to the usual conflict or unsaved-changes choice. <!-- f: editing -->
