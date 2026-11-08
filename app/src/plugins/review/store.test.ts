@@ -34,9 +34,26 @@ async function setup(
   await mock.openPath(MOCK_FOLDER, "thisTab");
   const hash = await mock.pluginCall("review.open", { path: GUIDE });
   const guideHash = hash.ok ? hash.value.hash : "";
+  // answers of a method held back until the test lets them go (a slow backend)
+  const holds = new Map<PluginMethod, Promise<void>>();
+  const hold = (method: PluginMethod): (() => void) => {
+    let open = (): void => undefined;
+    holds.set(
+      method,
+      new Promise<void>((resolve) => {
+        open = resolve;
+      }),
+    );
+    return () => {
+      holds.delete(method);
+      open();
+    };
+  };
   const api: Api = {
     ...mock,
     pluginCall: async <M extends PluginMethod>(method: M, args: PluginMethods[M]["args"]) => {
+      const held = holds.get(method);
+      if (held !== undefined) await held;
       if (method === options.conflictOn) {
         const failure: Result<PluginMethods[M]["result"]> = {
           ok: false,
@@ -96,7 +113,7 @@ async function setup(
   );
   const stop = store.start();
   await settle();
-  return { mock, store, stop, shown, notes, notices, guideHash, repaints: () => repaints };
+  return { mock, store, stop, shown, notes, notices, guideHash, hold, repaints: () => repaints };
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -366,6 +383,48 @@ describe("the review store", () => {
     await store.begin();
     await Promise.all([store.setBasis("commit"), store.setBasis("read"), store.setBasis("commit")]);
     expect(store.basis).toBe(store.reviewing?.basis);
+    stop();
+  });
+
+  it("a review asked for on one document never opens on the next one shown before the answer", async () => {
+    const { store, shown, mock, hold, stop } = await setup();
+    const before = mock.probe.plugins.calls.length;
+    const answer = hold("review.status");
+    const asked = store.begin();
+    shown.value = { path: "README.md", hash: "ee".repeat(8), kind: "blocks" };
+    flushSync();
+    answer();
+    await asked;
+    await settle();
+    expect(store.reviewing).toBeNull();
+    expect(store.state.status).toBe("idle");
+    expect(mock.probe.plugins.calls.slice(before)).not.toContain("review.open");
+    stop();
+  });
+
+  it("a keep or revert in flight when the person moves on changes nothing on the next document", async () => {
+    const { store, shown, mock, hold, stop } = await setup();
+    await store.begin();
+    const announced = store.announcement;
+    const reverted = hold("review.revert");
+    const asked = store.revert(0);
+    const status = hold("review.status");
+    shown.value = { path: "README.md", hash: "ee".repeat(8), kind: "blocks" };
+    flushSync();
+    reverted();
+    await asked;
+    expect(store.undoable).toBe(0);
+    expect(store.announcement).toBe(announced);
+    // the review on screen is not of the document shown: its keys act on nothing
+    const before = mock.probe.plugins.calls.length;
+    await store.keep(0);
+    await store.revertAll();
+    await store.undo();
+    expect(mock.probe.plugins.calls.slice(before)).toEqual([]);
+    status();
+    await settle();
+    expect(store.state.status).toBe("idle");
+    expect(store.undoable).toBe(0);
     stop();
   });
 

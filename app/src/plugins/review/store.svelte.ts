@@ -148,6 +148,19 @@ export class ReviewStore {
     return this.reviewing;
   }
 
+  /** The review on screen when it belongs to the document shown: keys and buttons act only on that file (while
+   *  another document loads, the review of the one before is still on screen). */
+  #mine(): ReviewView | null {
+    const view = this.reviewing;
+    return view !== null && view.path === this.#page.shown().path ? view : null;
+  }
+
+  /** An answer that came back is still wanted: nothing newer ran meanwhile, and `path` is still the document shown
+   *  (the person may have moved on while the backend answered). */
+  #still(seq: number, path: string): boolean {
+    return seq === this.#seq && this.#page.shown().path === path;
+  }
+
   /** The change the keys act on (index), or -1. */
   get current(): number {
     return this.state.status === "reviewing" ? this.state.at : -1;
@@ -261,8 +274,9 @@ export class ReviewStore {
     // asked again while "Review again" is offered (palette, key, F7): the same as that button
     const closed = this.#closed;
     if (closed !== null && closed.path === path) return this.#again(closed);
+    const seq = ++this.#seq;
     const status = await this.#client.call("review.status", { path });
-    if (!status.ok) return;
+    if (!status.ok || !this.#still(seq, path)) return;
     let state = status.value.state;
     // nothing new since the person looked: what changed since the last commit is still worth a look
     let basis: Basis | undefined;
@@ -272,6 +286,7 @@ export class ReviewStore {
       this.#commitBlocked() === null
     ) {
       const commit = await this.#client.call("review.status", { path, basis: "commit" });
+      if (!this.#still(seq, path)) return;
       if (commit.ok && commit.value.state.state === "changes") {
         basis = "commit";
         state = commit.value.state;
@@ -283,7 +298,7 @@ export class ReviewStore {
     if (state.state === "same") return this.#say(t("review.allDone"));
     if (state.state === "unsupported") return;
     const result = await this.#client.call("review.open", { path, basis });
-    if (!result.ok) return;
+    if (!result.ok || !this.#still(seq, path)) return;
     if (basis !== undefined) this.basis = basis;
     this.#held = path;
     this.undoable = 0;
@@ -341,13 +356,18 @@ export class ReviewStore {
       void this.#client.call("review.release", { path: closed.path });
       return;
     }
+    const seq = ++this.#seq;
     const result = await this.#client.call("review.open", { path, basis: this.basis });
+    if (!this.#still(seq, path)) {
+      // left meanwhile: nothing holds the closed review any more (back on it, whatever ran since holds it)
+      if (this.#page.shown().path !== path) void this.#client.call("review.release", { path });
+      return;
+    }
     if (!result.ok || result.value.count === 0) {
       void this.#client.call("review.release", { path });
       if (result.ok) this.#say(t("review.allDone"));
       return;
     }
-    this.#seq += 1;
     this.#held = path;
     this.undoable = 0;
     this.#show(result.value, closed.at);
@@ -377,55 +397,61 @@ export class ReviewStore {
   }
 
   async keep(index = this.current): Promise<void> {
-    const view = this.reviewing;
+    const view = this.#mine();
     if (view === null || index < 0 || !view.canKeep) return;
+    const seq = ++this.#seq;
     const result = await this.#client.call("review.keep", {
       path: view.path,
       hash: view.hash,
       index,
       basis: this.basis,
     });
-    this.#after(result, index, "kept", true);
+    this.#after(result, index, "kept", true, seq, view.path);
   }
 
   async revert(index = this.current): Promise<void> {
-    const view = this.reviewing;
+    const view = this.#mine();
     if (view === null || index < 0) return;
+    const seq = ++this.#seq;
     const result = await this.#client.call("review.revert", {
       path: view.path,
       hash: view.hash,
       index,
       basis: this.basis,
     });
-    this.#after(result, index, "reverted", true);
+    this.#after(result, index, "reverted", true, seq, view.path);
   }
 
   async keepAll(): Promise<void> {
-    const view = this.reviewing;
+    const view = this.#mine();
     if (view === null || !view.canKeep) return;
+    const seq = ++this.#seq;
     const result = await this.#client.call("review.keepAll", {
       path: view.path,
       hash: view.hash,
       basis: this.basis,
     });
-    this.#after(result, 0, "keptAll", false);
+    this.#after(result, 0, "keptAll", false, seq, view.path);
   }
 
   async revertAll(): Promise<void> {
-    const view = this.reviewing;
+    const view = this.#mine();
     if (view === null) return;
+    const seq = ++this.#seq;
     const result = await this.#client.call("review.revertAll", {
       path: view.path,
       hash: view.hash,
       basis: this.basis,
     });
-    this.#after(result, 0, "revertedAll", false);
+    this.#after(result, 0, "revertedAll", false, seq, view.path);
   }
 
   async undo(): Promise<void> {
-    const view = this.reviewing;
+    const view = this.#mine();
     if (view === null || this.undoable === 0) return;
+    const seq = ++this.#seq;
     const result = await this.#client.call("review.undo", { path: view.path, basis: this.basis });
+    if (!this.#still(seq, view.path)) return;
     if (!result.ok) {
       this.#say(t("review.undoStale", { name: view.path.split("/").at(-1) ?? view.path }));
       return;
@@ -441,15 +467,18 @@ export class ReviewStore {
     index: number,
     what: "kept" | "reverted" | "keptAll" | "revertedAll",
     single: boolean,
+    seq: number,
+    path: string,
   ): void {
-    const view = this.reviewing;
-    const name = view?.path.split("/").at(-1) ?? "";
+    // the person moved on (or something newer ran): what the file became is drawn when it is shown again
+    if (!this.#still(seq, path)) return;
+    const name = path.split("/").at(-1) ?? "";
     if (!result.ok) {
       const error = result.error;
       if (error.kind === "backend" && error.error.kind === "conflict") {
         // the file is not the version the changes were drawn from: look again
         this.#say(t("review.stale", { name }));
-        if (view !== null) void this.#refresh(view.path);
+        void this.#refresh(path);
       } else {
         this.#say(
           t("review.failed", {
@@ -487,7 +516,9 @@ export class ReviewStore {
   }
 
   async #refresh(path: string): Promise<void> {
+    const seq = ++this.#seq;
     const result = await this.#client.call("review.open", { path });
+    if (!this.#still(seq, path)) return;
     if (result.ok && result.value.count > 0) this.#show(result.value, this.current);
     else {
       this.state = { status: "idle" };
@@ -541,9 +572,11 @@ export class ReviewStore {
       return;
     }
     const before = this.basis;
-    const view = this.reviewing;
+    const view = this.#mine();
     if (view !== null) {
+      const seq = ++this.#seq;
       const result = await this.#client.call("review.open", { path: view.path, basis });
+      if (!this.#still(seq, view.path)) return;
       if (!result.ok) {
         this.basisNote = t("review.basisFailed");
         return;
@@ -552,6 +585,7 @@ export class ReviewStore {
       this.basisNote = null;
       this.basis = basis;
       await this.#client.call("review.setBasis", { basis });
+      if (!this.#still(seq, view.path)) return;
       this.#show(result.value, 0);
       // the set of changes is another one now: said, not only drawn
       this.announce(
