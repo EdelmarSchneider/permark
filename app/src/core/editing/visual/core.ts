@@ -2,9 +2,13 @@
 // app's own). Runs without a window too (vitest drives it in jsdom).
 //
 // Added to the stock CommonMark + GFM schema: `pm_locked`, an atom holding a block the editor must not rewrite
-// (its source, drawn by the app), and `taskItemView`, the real checkbox of a task item. Left out: stock plugins
-// that change a document by themselves (heading ids, list renumbering, empty-line preservation). A no-break space
-// is written as `&nbsp;`; link marks end at the link's edge; the serializer writes the style below.
+// (drawn as View draws it, `lockedView.ts`; View's prompt boxes around blocks, `promptBoxes.ts`), `inline_source`, an
+// inline atom keeping a piece of a line as written (inline math, footnote references, reference-style links:
+// `inlineSource.ts`), `taskItemView`, the real checkbox of a task item, the reading view's wrappers of code blocks
+// (with their language and token colors, `codeColors.ts`) and tables (`codeBlockView`, `tableView`), and View's inline
+// looks (`inlineLooks.ts`). Left out: stock plugins that change a document by themselves (heading ids, list
+// renumbering, empty-line preservation). A no-break space is written as `&nbsp;`; link marks end at the link's edge;
+// the serializer writes the style below.
 
 import {
   Editor,
@@ -21,6 +25,7 @@ import { history } from "@milkdown/kit/plugin/history";
 import {
   bulletListKeymap,
   codeBlockKeymap,
+  codeBlockSchema,
   commonmark,
   headingKeymap,
   inlineCodeKeymap,
@@ -33,59 +38,51 @@ import {
   syncListOrderPlugin,
   textSchema,
 } from "@milkdown/kit/preset/commonmark";
-import { gfm, strikethroughKeymap } from "@milkdown/kit/preset/gfm";
+import { gfm, strikethroughKeymap, tableSchema } from "@milkdown/kit/preset/gfm";
 import { gapCursor } from "@milkdown/kit/prose/gapcursor";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
-import { EditorState } from "@milkdown/kit/prose/state";
+import { EditorState, Selection } from "@milkdown/kit/prose/state";
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $ctx, $node, $prose, $view } from "@milkdown/kit/utils";
-import { taskLabel } from "../../doc/enhance";
+import { CODE_BLOCK, TABLE_WRAP, taskLabel } from "../../doc/enhance";
+import type { CodeColorer } from "../../plugins/props";
+import { codeColors } from "./codeColors";
+import { inlineLooks, noLooks, type LooksHost } from "./inlineLooks";
+import {
+  lockedHostCtx,
+  lockedKeys,
+  lockedNode,
+  lockedRelook,
+  lockedView,
+  type LockedHost,
+} from "./lockedView";
+import { escapingText, inlineSource } from "./inlineSource";
+import { promptBoxes } from "./promptBoxes";
 
-export const LOCKED = "pm_locked";
+export { INLINE_SOURCE } from "./inlineSource";
+export type { LooksHost } from "./inlineLooks";
+export { LOCKED, relook, type BlockName, type LockReason, type LockedHost } from "./lockedView";
+
 const NO_BREAK_SPACE = String.fromCharCode(0xa0);
 
-/** Why a block stays as written (backend reasons + the editor's own). */
-export type LockReason =
-  | "frontMatter"
-  | "html"
-  | "math"
-  | "footnote"
-  | "diagram"
-  | "data"
-  | "definition"
-  | "kind"
-  | "parse"
-  | "reference"
-  | "differs";
+/** A code block's label as the reading view's corner shows it: the text, and the buttons right of it there. */
+export type CodeLabel = { text: string; buttons: number };
 
-/** What a locked atom needs from the app to draw itself. */
-export type LockedHost = {
-  reasonText(reason: LockReason): string;
-  editLabel: string;
-  /** "Edit in Source" on this node. */
-  edit(node: PMNode): void;
-  /**
-   * Draws more than the source (a diagram), or takes the source's place (the front matter as editable properties);
-   * returns its teardown. `replace` puts a new source in the node.
-   */
-  draw(
-    body: HTMLElement,
-    kind: string,
-    source: string,
-    replace: (source: string) => void,
-  ): (() => void) | null;
-  /** What the bar says of a block that edits itself (the properties card). */
-  cardText?: string;
+/** What a code block needs from the app to look like the reading view: its label and its token colors. */
+export type CodeHost = {
+  label(language: string): CodeLabel | null;
+  /** The reading view's token colors for code of this language (loaded on first use); absent | null: plain. */
+  colors?(language: string): Promise<CodeColorer> | null;
 };
 
-const noHost: LockedHost = {
-  reasonText: (reason) => reason,
-  editLabel: "Source",
-  edit: () => {},
-  draw: () => null,
+const plainCode: CodeHost = {
+  label: (language) => (language === "" ? null : { text: language, buttons: 1 }),
 };
 
-export const lockedHostCtx = $ctx<LockedHost, "pmLockedHost">(noHost, "pmLockedHost");
+export const codeHostCtx = $ctx<CodeHost, "pmCodeHost">(plainCode, "pmCodeHost");
+
+/** View's lookups behind the inline looks (missing links, code references, prompt text); none: anchors only. */
+export const looksHostCtx = $ctx<LooksHost, "pmLooksHost">(noLooks, "pmLooksHost");
 
 const textNode = $node("text", () => ({
   group: "inline",
@@ -105,78 +102,6 @@ const textNode = $node("text", () => ({
     },
   },
 }));
-
-export const lockedNode = $node(LOCKED, () => ({
-  group: "block",
-  atom: true,
-  selectable: true,
-  draggable: false,
-  isolating: true,
-  marks: "",
-  attrs: {
-    // required: ProseMirror never fills a gap with an atom (an emptied document gets a paragraph)
-    source: {},
-    kind: { default: "other" },
-    reason: { default: "kind" },
-  },
-  toDOM: (node) => ["div", { class: "pm-locked", "data-kind": String(node.attrs.kind) }],
-  // made from the file's own text by `buildDoc`, never parsed from Markdown
-  parseMarkdown: { match: () => false, runner: () => {} },
-  toMarkdown: {
-    match: (node) => node.type.name === LOCKED,
-    runner: (state, node) => {
-      state.addNode("html", undefined, String(node.attrs.source));
-    },
-  },
-}));
-
-const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
-  return (node, view, getPos) => {
-    const host = ctx.get(lockedHostCtx.key);
-    const dom = document.createElement("div");
-    dom.className = "pm-locked";
-    dom.contentEditable = "false";
-    dom.setAttribute("role", "group");
-    const reason = String(node.attrs.reason) as LockReason;
-    dom.dataset.kind = String(node.attrs.kind);
-    dom.dataset.reason = reason;
-    const bar = document.createElement("div");
-    bar.className = "pm-locked__bar";
-    const why = document.createElement("span");
-    why.className = "pm-locked__why";
-    why.textContent = host.reasonText(reason);
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "btn btn--sm btn--ghost pm-locked__edit";
-    button.textContent = host.editLabel;
-    button.addEventListener("click", () => host.edit(node));
-    bar.append(why, button);
-    const source = document.createElement("pre");
-    source.className = "pm-locked__source";
-    source.textContent = String(node.attrs.source);
-    dom.append(bar, source);
-    const drawing = document.createElement("div");
-    drawing.className = "pm-locked__drawing";
-    const replace = (next: string): void => {
-      const at = getPos();
-      if (at === undefined) return;
-      view.dispatch(view.state.tr.setNodeMarkup(at, undefined, { ...node.attrs, source: next }));
-    };
-    const undraw = host.draw(drawing, String(node.attrs.kind), String(node.attrs.source), replace);
-    if (undraw) dom.append(drawing);
-    // the front matter as properties takes the source's place
-    if (undraw && reason === "frontMatter") {
-      dom.classList.add("pm-locked--card");
-      if (host.cardText) why.textContent = host.cardText;
-    }
-    return {
-      dom,
-      stopEvent: (event) => event.target instanceof Node && button.contains(event.target),
-      ignoreMutation: () => true,
-      destroy: () => undraw?.(),
-    };
-  };
-});
 
 /** One task item box flips (`pos` is the node's position): the path `taskItemView`'s click takes.
  *  False when `pos` is not a task item, so a stray click does not mark the file changed. */
@@ -255,6 +180,68 @@ const taskItemView = $view(listItemSchema.node, (): NodeViewConstructor => (node
 });
 
 /**
+ * A code block in the reading view's shape: the `.code-block` wrapper (the block's outer space and the label's
+ * frame) around `pre > code`, and its language label where that view's corner has it (`CodeHost`). The label is
+ * drawn, not text: it stays out of the document and is gone when the block gets none.
+ */
+const codeBlockView = $view(codeBlockSchema.node, (ctx): NodeViewConstructor => (node) => {
+  const host = ctx.get(codeHostCtx.key);
+  const dom = document.createElement("div");
+  dom.className = CODE_BLOCK;
+  const pre = document.createElement("pre");
+  const code = document.createElement("code");
+  pre.append(code);
+  const label = document.createElement("span");
+  label.className = "lang";
+  label.contentEditable = "false";
+  dom.append(pre);
+  // painted when the node is made | updated only: nothing re-reads the host when plugins change, so a plugin toggled
+  // while editing relabels a block on its next change (cheap; the label is cosmetic)
+  const paint = (): void => {
+    const language = String(node.attrs.language ?? "");
+    dom.dataset.info = language;
+    if (language === "") delete pre.dataset.language;
+    else pre.dataset.language = language;
+    const shown = host.label(language);
+    if (shown === null) {
+      label.remove();
+      return;
+    }
+    label.textContent = shown.text;
+    label.style.setProperty("--corner-buttons", String(shown.buttons));
+    if (label.parentElement !== dom) dom.append(label);
+  };
+  paint();
+  return {
+    dom,
+    contentDOM: code,
+    ignoreMutation: (mutation) => label.contains(mutation.target),
+    update: (next) => {
+      if (next.type !== node.type) return false;
+      node = next;
+      paint();
+      return true;
+    },
+  };
+});
+
+/** A table in the reading view's `.table-wrap`, so its frame, corners and outer space come from the same rules. */
+const tableView = $view(tableSchema.node, (): NodeViewConstructor => (node) => {
+  const dom = document.createElement("div");
+  dom.className = TABLE_WRAP;
+  const table = document.createElement("table");
+  const body = document.createElement("tbody");
+  table.append(body);
+  dom.append(table);
+  return { dom, contentDOM: body, update: (next) => next.type === node.type };
+});
+
+/** Where the caret starts: the first text, so a leading locked block (the front matter) is not selected. */
+function startOf(doc: PMNode): Selection {
+  return Selection.findFrom(doc.resolve(0), 1, true) ?? Selection.atStart(doc);
+}
+
+/**
  * Stock plugins left out: they change a document by themselves, or are replaced. The Mod-Alt keymaps go too: AltGr
  * is Ctrl+Alt on Windows and types characters (`{` `[` `}` on many layouts); `keys.ts` binds them safely. Mod-e is
  * the mode key.
@@ -310,7 +297,11 @@ export type Core = {
 
 export type CoreOptions = {
   host: HTMLElement;
+  /** The accessible name of the editor's text. */
+  label?: string;
   locked?: LockedHost;
+  code?: CodeHost;
+  looks?: LooksHost;
   /** Before the stock plugins (keys and pastes seen first). */
   first?: Parameters<Editor["use"]>[0][];
   /** After the stock plugins. */
@@ -333,17 +324,37 @@ export async function createCore(options: CoreOptions): Promise<Core> {
       // the blocks are the children of `.md-body`: the reading styles apply as they are
       ctx.update(editorViewOptionsCtx, (previous) => ({
         ...previous,
-        attributes: { class: "md-body pm-editor", spellcheck: "true" },
+        attributes: {
+          class: "md-body pm-editor",
+          spellcheck: "true",
+          ...(options.label === undefined ? {} : { "aria-label": options.label }),
+        },
       }));
-      ctx.update(remarkStringifyOptionsCtx, (previous) => ({ ...previous, ...STRINGIFY_OPTIONS }));
+      ctx.update(remarkStringifyOptionsCtx, (previous) => ({
+        ...previous,
+        ...STRINGIFY_OPTIONS,
+        handlers: { ...previous.handlers, text: escapingText(previous.handlers?.text) },
+      }));
       // text typed at the edge of a link stays out of it
       ctx.update(linkSchema.key, (previous) => (c) => ({ ...previous(c), inclusive: false }));
       if (options.locked) ctx.set(lockedHostCtx.key, options.locked);
+      if (options.code) ctx.set(codeHostCtx.key, options.code);
+      if (options.looks) ctx.set(looksHostCtx.key, options.looks);
     })
     .use(lockedHostCtx)
+    .use(codeHostCtx)
+    .use(looksHostCtx)
     .use(lockedNode)
     .use(lockedView)
+    .use(lockedKeys)
+    .use(lockedRelook)
+    .use(inlineSource)
+    .use(promptBoxes)
     .use(taskItemView)
+    .use(codeBlockView)
+    .use($prose((ctx) => codeColors(() => ctx.get(codeHostCtx.key))))
+    .use(tableView)
+    .use($prose((ctx) => inlineLooks(() => ctx.get(looksHostCtx.key))))
     .use((options.first ?? []).flat())
     .use([...commonmark, ...gfm].filter((plugin) => !LEFT_OUT.has(plugin)))
     .use(textNode)
@@ -383,6 +394,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
         const state = EditorState.create({
           schema: view.state.schema,
           doc,
+          selection: startOf(doc),
           plugins: view.state.plugins,
         });
         view.updateState(state);

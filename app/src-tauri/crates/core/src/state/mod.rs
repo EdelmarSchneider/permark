@@ -824,7 +824,7 @@ pub fn uninit_project(dirs: &AppDirs, root: &Root) -> Result<bool, StateError> {
     let local = permark.join("local");
     if private::is_real_folder(&local) {
         std::fs::create_dir_all(&profile).map_err(fail(&profile))?;
-        copy_over(&local, &profile).map_err(fail(&local))?;
+        copy_over(&local, &profile, true).map_err(fail(&local))?;
     }
     // one step for everyone looking: `.permark/` is there whole or gone; the leftover temp folder is best effort
     let gone = root.path().join(format!(
@@ -886,14 +886,19 @@ fn holds_link(dir: &Path) -> bool {
     }
 }
 
-/// Copies files + folders of `from` into `to`, the copy winning over what `to` holds (links never followed).
-fn copy_over(from: &Path, to: &Path) -> io::Result<()> {
+/// Copies files + folders of `from` into `to`, the copy winning over what `to` holds (links never followed). `top`:
+/// the profile-only and shared files of a project folder stay out (a project's files must never switch them).
+fn copy_over(from: &Path, to: &Path, top: bool) -> io::Result<()> {
     for entry in std::fs::read_dir(from)?.flatten() {
-        let target = to.join(entry.file_name());
+        let name = entry.file_name();
+        if top && PROFILE_ONLY.iter().chain(&SHARED_FILES).any(|p| name == *p) {
+            continue;
+        }
+        let target = to.join(&name);
         let kind = entry.file_type()?;
         if kind.is_dir() {
             std::fs::create_dir_all(&target)?;
-            copy_over(&entry.path(), &target)?;
+            copy_over(&entry.path(), &target, false)?;
         } else if kind.is_file() {
             std::fs::copy(entry.path(), &target)?;
         }

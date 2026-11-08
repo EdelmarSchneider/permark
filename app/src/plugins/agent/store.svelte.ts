@@ -109,10 +109,11 @@ export class AgentStore {
 
   #windowContext(): AgentWindowContext {
     const path = documents.path;
-    const view = documents.view;
+    // while another file loads, the page (its outline, its selection) is still the previous file's
+    const view = documents.current;
     const outline = view?.body.kind === "markdown" ? view.body.outline : [];
     const mode = editing.mode;
-    const page = mode === "view" ? this.#page : null;
+    const page = mode === "view" && view !== null ? this.#page : null;
     const text = (mode === "view" ? (page?.text ?? "") : editing.selection).slice(0, MAX_SELECTION);
     return {
       doc: path,
@@ -151,12 +152,13 @@ export class AgentStore {
     if (result.ok) this.program = result.value;
   }
 
-  /** The first time an agent asks to mark comments done while that is off: offered once. */
+  /** The first time an agent asks to mark comments done while that is off: offered once, so it stays until answered. */
   #offer(group: string): void {
     if (group !== "comments.resolve") return;
-    windowStore.notifyAction(t("agent.ask.resolve"), {
-      label: t("agent.ask.allow"),
-      run: () => void this.setGroup(group, true),
+    windowStore.notifyLasting({
+      text: t("agent.ask.resolve"),
+      actions: [{ label: t("agent.ask.allow"), run: () => void this.setGroup(group, true) }],
+      onGone: () => {},
     });
   }
 }

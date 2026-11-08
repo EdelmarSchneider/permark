@@ -109,8 +109,8 @@
   color: var(--accent-text);
 }
 .icon-btn--sm {
-  width: 24px;
-  height: 24px;
+  width: var(--icon-btn-sm);
+  height: var(--icon-btn-sm);
 }
 
 /* Switch: a checkbox with role="switch" (settings rows, plugin switches). */

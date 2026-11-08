@@ -1,13 +1,18 @@
 <script lang="ts">
-  // Quiet notices (bottom right): failed opens, state set aside, settings not kept. Dismissable; never block. Timed
-  // ones close by themselves (paused while the pointer | focus is on them). Esc with the keyboard in one dismisses it. Their height is published as
-  // `--notices-h` so scrolling pages keep room under their last control.
+  // Quiet notices (bottom right of the page, left of the right panel so they never cover its lists): failed opens,
+  // state set aside, settings not kept, what a file operation did. Dismissable; never block. Most close by themselves
+  // (paused while the pointer | focus is on them). Esc with the keyboard in one dismisses it. Their height is published
+  // as `--notices-h` so scrolling pages keep room under their last control.
   import { apiErrorText, ipcErrorText } from "../errors";
   import { t } from "../i18n";
   import type { Notice, WindowStore } from "../window.svelte";
 
-  type Props = { store: WindowStore };
-  let { store }: Props = $props();
+  type Props = {
+    store: WindowStore;
+    /** Width of the right panel on screen (0: none): the notices keep to its left. */
+    rightInset?: number;
+  };
+  let { store, rightInset = 0 }: Props = $props();
 
   let region: HTMLElement | undefined = $state();
 
@@ -62,7 +67,13 @@
 </script>
 
 {#if store.notices.length > 0}
-  <div class="notices" role="status" aria-live="polite" bind:this={region}>
+  <div
+    class="notices"
+    role="status"
+    aria-live="polite"
+    style:--notices-right="{rightInset}px"
+    bind:this={region}
+  >
     {#each store.notices as notice (notice.id)}
       <!-- Esc bubbling up from its own buttons: the group only hears it, it never takes the keyboard itself -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -116,13 +127,13 @@
 <style>
   .notices {
     position: fixed;
-    right: var(--sp-4);
+    right: calc(var(--notices-right, 0px) + var(--sp-4));
     bottom: calc(var(--h-status) + var(--sp-3));
     z-index: 45;
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);
-    width: min(420px, calc(100vw - 2 * var(--sp-4)));
+    width: min(420px, calc(100vw - var(--notices-right, 0px) - 2 * var(--sp-4)));
   }
   .notice {
     display: flex;
@@ -139,5 +150,10 @@
     flex: 1;
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .notice {
+      animation: none;
+    }
   }
 </style>

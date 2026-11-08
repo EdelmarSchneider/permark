@@ -188,6 +188,29 @@ fn what_an_agent_changed_shows_block_by_block_with_the_old_text() {
 }
 
 #[test]
+fn the_persons_own_save_of_a_read_document_is_never_offered_for_review() {
+    let mut h = Harness::new(false);
+    h.write("own.md", BASE_DOC);
+    h.open();
+    h.ready("own.md");
+    // the person saves in Edit: the editor announces its write, the window tells the documents service
+    let saved = BASE_DOC.replace("Second", "2nd");
+    let core = h.core.clone().unwrap();
+    let hash = fsx::hash(saved.as_bytes());
+    core.watcher().own().expect_write("own.md", hash);
+    h.write("own.md", &saved);
+    core.documents().saved("w", "own.md", &hash.hex());
+    // the page reloads at once, before the watch reports the write
+    assert_eq!(h.state("own.md")["state"], "same");
+    // and once it has: the unread plugin counts the save as read
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(h.state("own.md")["state"], "same");
+    // an agent's change after it is news again
+    agent_writes(&h, "own.md", &saved.replace("Third", "3rd"));
+    wait_until("the change", || h.state("own.md")["state"] == "changes");
+}
+
+#[test]
 fn reading_a_changed_document_keeps_its_review_open_until_released() {
     let mut h = Harness::new(false);
     h.write("a.md", BASE_DOC);

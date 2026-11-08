@@ -42,11 +42,14 @@ pub enum ErrorKind {
     EditorNotSet,
     /// The editor could not be started (`detail`: `notFound | dash | <template problem> | <system text>`).
     EditorFailed,
+    /// A settings file is there but cannot be read as text, so nothing was changed (`detail`: `notText | tooLarge |
+    /// locked`).
+    SettingsUnreadable,
 }
 
 impl ErrorKind {
     /// Every kind (i18n parity test: one `error.<kind>` per entry).
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::NotFound,
         Self::PathEscape,
         Self::InvalidPath,
@@ -71,6 +74,7 @@ impl ErrorKind {
         Self::PartlyMoved,
         Self::EditorNotSet,
         Self::EditorFailed,
+        Self::SettingsUnreadable,
     ];
 }
 
@@ -144,7 +148,7 @@ mod tests {
     fn kinds_serialize_as_camel_case_i18n_suffixes() {
         let json = serde_json::to_string(&ErrorKind::PathEscape).unwrap();
         assert_eq!(json, "\"pathEscape\"");
-        assert_eq!(ErrorKind::ALL.len(), 24);
+        assert_eq!(ErrorKind::ALL.len(), 25);
         assert_eq!(
             serde_json::to_string(&ErrorKind::EditorNotSet).unwrap(),
             "\"editorNotSet\""

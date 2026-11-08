@@ -89,6 +89,14 @@ export default {
   "error.superseded": "Între timp a fost deschis altceva.",
   "error.internal": "A apărut o eroare internă în PerMark: {detail}",
   "error.unknown": "A apărut o eroare: {message}",
+  "error.settingsUnreadable":
+    "PerMark nu poate citi fișierul de setări {subject}. Nu s-a schimbat nimic.",
+  "error.settingsUnreadable.notText":
+    "PerMark nu poate citi fișierul de setări {subject} (nu este text simplu). Nu s-a schimbat nimic.",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark nu poate citi fișierul de setări {subject} (este prea mare). Nu s-a schimbat nimic.",
+  "error.settingsUnreadable.locked":
+    "PerMark nu poate citi fișierul de setări {subject} (un alt program îl folosește). Nu s-a schimbat nimic.",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "Deschide mai întâi un dosar sau un fișier.",
@@ -143,6 +151,8 @@ export default {
   "fileOps.nameReserved": "Acest nume este rezervat de sistem",
   "fileOps.nameTooLong": "Numele este prea lung",
   "fileOps.nameExists": "Aici există deja ceva cu acest nume",
+  "fileOps.identityUnknown":
+    "PerMark nu poate ști dacă aceste două nume sunt același fișier pe această unitate, așa că nu s-a redenumit nimic.",
   "fileOps.files.one": "{n} fișier",
   "fileOps.files.few": "{n} fișiere",
   "fileOps.files.other": "{n} de fișiere",
@@ -443,10 +453,13 @@ export default {
   "edit.save": "Salvează",
   "edit.saveHint": "Salvează (Ctrl+S)",
   "edit.saving": "Se salvează…",
-  "edit.savedBlocks.one": "Salvat, {n} bloc modificat.",
-  "edit.savedBlocks.few": "Salvat, {n} blocuri modificate.",
-  "edit.savedBlocks.other": "Salvat, {n} de blocuri modificate.",
-  "edit.firstSaveHint": "PerMark rescrie doar blocurile pe care le-ai modificat.",
+  "edit.savedBlocks.one": "Salvat, {n} modificare.",
+  "edit.savedBlocks.few": "Salvat, {n} modificări.",
+  "edit.savedBlocks.other": "Salvat, {n} de modificări.",
+  "edit.firstSaveHint": "PerMark rescrie doar părțile pe care le-ai modificat.",
+  "edit.emptyHint": "Începe să scrii aici. Tastează / pentru titluri, liste și altele.",
+  "edit.savedReadsOtherwise":
+    "Unele formule sau linkuri din acest document pot arăta diferit după salvare. Verifică-le în Sursă.",
   "source.find": "Găsește",
   "source.replace": "Înlocuiește",
   "source.next": "Următorul",
@@ -474,6 +487,19 @@ export default {
   "edit.discard": "Renunță la modificări",
   "edit.keepEditing": "Continuă editarea",
   "edit.editInSource": "Editează în Sursă",
+  "edit.blockSource": "Sursa acestui bloc",
+  "edit.blockSourceHint": "Esc pentru a termina",
+  "edit.block.html": "HTML",
+  "edit.block.formula": "Formulă",
+  "edit.block.footnote": "Notă de subsol",
+  "edit.block.diagram": "Diagramă",
+  "edit.block.alert": "Avertizare",
+  "edit.block.other": "Bloc păstrat așa cum este scris",
+  "edit.block.openHint": "Apăsați Enter pentru a edita",
+  "edit.documentText": "Textul documentului",
+  "edit.codeRefHint": "{title} ({mod}+clic)",
+  "edit.codeRefTitleMany":
+    "Se potrivesc mai multe fișiere ({count}). {mod}+clic pentru a alege unul.",
   "edit.visualForMarkdown":
     "Modul Editare este pentru fișierele Markdown și fișierele de configurare; folosește Sursă.",
   "edit.diagramNoPlugin": "Activează pluginul Mermaid sau PlantUML pentru a vedea desenul.",
@@ -507,10 +533,8 @@ export default {
   "conflict.deletedTitle": "A fost șters de pe disc în timp ce editai.",
   "conflict.text": "Nu s-a suprascris nimic. Modificările tale rămân aici până alegi.",
   "conflict.deletedText": "Modificările tale rămân aici până alegi.",
-  "conflict.reload": "Reîncarcă versiunea de pe disc",
-  "conflict.reloadConfirm": "Renunți la modificările tale și încarci fișierul de pe disc?",
-  "conflict.discard": "Renunță la versiunea mea",
-  "conflict.keepMine": "Păstrează versiunea mea (suprascrie)",
+  "conflict.reload": "Folosește versiunea fișierului (renunță la modificările mele)",
+  "conflict.keepMine": "Păstrează versiunea mea (înlocuiește fișierul)",
   "conflict.recreate": "Păstrează versiunea mea (scrie-o din nou)",
   "conflict.saveAsNew": "Salvează ca fișier nou",
   "conflict.showDiff": "Arată diferențele",
@@ -1250,7 +1274,7 @@ export default {
   "notes.move.title": "Mută într-un proiect",
   "notes.moveDown": "Mută în jos",
   "notes.moveKept":
-    "„{name}” s-a modificat în timp ce era copiată, așa că rămâne în notele tale, iar copia se află în proiect.",
+    "„{name}” s-a modificat în timp ce era copiată sau are text nesalvat, așa că rămâne în notele tale, iar copia se află în proiect.",
   "notes.moveToProject": "Mută într-un proiect...",
   "notes.moveUndone": "„{name}” a revenit în notele tale.",
   "notes.moveUndoneKept":
@@ -1453,7 +1477,6 @@ export default {
   "config.fromSource": "Editează în Sursă",
   "config.nothing": "Încă nu este nimic de afișat în acest fișier.",
   "config.noSheet": "Acest fișier nu poate fi afișat ca fișă. Folosește Sursă.",
-  "config.fm.bar": "Proprietăți. Modificarea uneia păstrează restul fișierului așa cum este.",
   "config.reason.multiline": "Text pe mai multe rânduri. Se modifică în Sursă.",
   "config.reason.alias": "Un alias al altei valori. Se modifică în Sursă.",
   "config.reason.anchor": "Are o ancoră la care se referă alte valori. Se modifică în Sursă.",
@@ -1551,9 +1574,9 @@ export default {
   "project.newConfirm": "Folosește acest dosar",
   "project.newBack": "Alege alt dosar…",
   "project.loadFailed": "Setările proiectului nu au putut fi citite.",
-  "project.notInitialized": "PerMark nu este inițializat în acest proiect",
+  "project.notInitialized": "Acest dosar nu are încă setări PerMark",
   "project.notInitializedHint":
-    "Inițializarea creează un dosar .permark în care proiectul își poate păstra setările de partajat cu echipa.",
+    "Inițializează PerMark pentru ca acest dosar să aibă setări proprii, pe care le pot partaja toți cei care lucrează în el.",
   "project.patternPlaceholder": "Model, de exemplu drafts/",
   "project.tree": "Explorator",
   "project.treeExclude": "Ascunde mereu",
@@ -1590,7 +1613,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "Variabilă necunoscută. Folosește {path}, {line} sau {col}.",
   "settings.problem.noPath": "Comanda are nevoie de {path}.",
-  "settings.problem.notInitialized": "PerMark nu este inițializat în acest proiect.",
+  "settings.problem.notInitialized": "Acest dosar nu are încă setări PerMark.",
   "settings.problem.other": "Această valoare nu a fost acceptată.",
   "welcome.newProject": "Proiect nou…",
   "welcome.newProjectHint": "Alege un dosar; PerMark îl configurează ca proiect.",

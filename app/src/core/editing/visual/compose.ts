@@ -3,13 +3,19 @@
 // `buildDoc` turns the blocks of a text (backend block map) into one top-level node each: an editable node from the
 // block's own text, or a locked atom. ProseMirror keeps an unchanged node as the same object across transactions,
 // so `compose` knows which nodes are untouched without tracking: an untouched block is written with its own bytes,
-// the blank lines between two untouched neighbours too; anything else is written by the editor.
+// the blank lines between two untouched neighbours too. An edited block that stands for one block keeps that block's
+// bytes with only the editor's change spliced in (`splice`); anything else is written by the editor. A node holding
+// inline pieces is read back from its text (`readBack`): where its pieces are (`Composed.pieces`), and whether the
+// text still reads as them (`Composed.lost`: else a formula | reference would be text on the next load).
 
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import type { Segment } from "../../../api/generated/Segment";
+import { diff } from "../lines";
 import type { TextRange } from "../session.svelte";
-import { blocksUsingReferences, classify } from "./classify";
+import { blocksUsingReferences, classify, sameMeaning } from "./classify";
 import { LOCKED, type Core, type LockReason } from "./core";
+import { pieceSources, piecesIn } from "./inlineSource";
+import { NO_REFERENCES, useReferences } from "./references";
 
 /** One block of the text the document was made from. */
 export type Source = {
@@ -89,11 +95,14 @@ export async function buildDoc(
     cursor = end;
   }
   separators.push(text.slice(cursor));
-  const usesReference = blocksUsingReferences(
+  // the text's own definitions only (none of a document read before), then given to every block's reading
+  useReferences(core, NO_REFERENCES);
+  const { blocks: usesReference, references } = blocksUsingReferences(
     core,
     text,
     sources.map((s) => s.start),
   );
+  useReferences(core, references);
   const nodes: PMNode[] = [];
   const origin = new WeakMap<PMNode, number>();
   await sliced(sources, (source, i) => {
@@ -135,6 +144,13 @@ export type Composed = {
   lines: Map<PMNode, number>;
   /** Range of each top-level node in `text`, by its index in the document (`null`: an empty paragraph, not written). */
   ranges: (TextRange | null)[];
+  /**
+   * Ranges in `text` of the inline pieces of each top-level node, by its index in the document; a node in `lost`:
+   * its whole range (none of its text is known to be prose).
+   */
+  pieces: TextRange[][];
+  /** Document indexes of the nodes whose text does not read back as their inline pieces. */
+  lost: number[];
 };
 
 const isEmptyParagraph = (node: PMNode): boolean =>
@@ -206,6 +222,145 @@ function keepListsApart(chunks: Chunk[]): void {
     chunk.kept = false;
     markers[i] = { ordered: here.ordered, mark };
   }
+}
+
+/**
+ * Longest block (own text | writing) spliced; a longer block is written by the editor. Measured near the limit: the
+ * alignment stays under 10 ms; comparing meanings reads the block twice per try (~0.1 s at 20,000 characters, up to
+ * ~0.45 s at 45,000, once per typing pause). A lower limit would make every edit of a long loose list add a blank
+ * line between all its items.
+ */
+export const MAX_SPLICE = 50_000;
+/** Characters the tries of leaving changes out may read (changes * block length): a big table stays quick. */
+const LEAVE_OUT_BUDGET = 40_000;
+
+/** `written[a, a + count)` equals `text[b, b + count)`. */
+type Run = { a: number; b: number; count: number };
+/** `text[from, to)` replaced by `insert`. */
+type Hunk = { from: number; to: number; insert: string };
+
+/** Equal runs of a block's writing at load against its own text, both ends included (fixed per block). */
+const alignments = new WeakMap<Source, Run[]>();
+/** Splice of an edited node (ProseMirror never changes a node in place). */
+const splices = new WeakMap<PMNode, { source: Source; text: string | null }>();
+
+function alignment(source: Source, written: string): Run[] {
+  let runs = alignments.get(source);
+  if (runs === undefined) {
+    runs = [{ a: 0, b: 0, count: 0 }];
+    for (const op of diff(written.split(""), source.text.split(""))) {
+      if (op.kind === "same") runs.push({ a: op.a, b: op.b, count: op.count });
+    }
+    runs.push({ a: written.length, b: source.text.length, count: 0 });
+    alignments.set(source, runs);
+  }
+  return runs;
+}
+
+/**
+ * Offset in the block's text of offset `at` in its writing; null inside a part the two write differently. Next to
+ * characters only the text has (indentation, a trailing space, an escape), `at` has two places: `late` takes the
+ * one after them.
+ */
+function place(runs: readonly Run[], at: number, late: boolean): number | null {
+  let found: number | null = null;
+  for (const run of runs) {
+    if (run.a > at) break;
+    if (at <= run.a + run.count) {
+      found = run.b + at - run.a;
+      if (!late) break;
+    }
+  }
+  return found;
+}
+
+function applied(text: string, hunks: readonly Hunk[]): string {
+  let out = "";
+  let next = 0;
+  for (const hunk of hunks) {
+    out += text.slice(next, hunk.from) + hunk.insert;
+    next = hunk.to;
+  }
+  return out + text.slice(next);
+}
+
+/**
+ * The block's own text with the editor's change to its writing (writing at load -> writing now) applied: characters
+ * the person did not touch keep their bytes where the editor writes them differently (escapes, `<url>`, bullets,
+ * indentation, blank lines in a list). A change that falls where the two writings differ has no place in the text
+ * and is left out. Null (the editor's writing is used) when the result does not read as the editor's writing.
+ */
+function splice(core: Core, source: Source, node: PMNode): string | null {
+  const cached = splices.get(node);
+  if (cached?.source === source) return cached.text;
+  const text = spliceOf(core, source, node);
+  splices.set(node, { source, text });
+  return text;
+}
+
+function spliceOf(core: Core, source: Source, node: PMNode): string | null {
+  const before = source.written;
+  const now = core.write(node);
+  if (before === null || Math.max(source.text.length, before.length, now.length) > MAX_SPLICE) {
+    return null;
+  }
+  const runs = alignment(source, before);
+  const changes = diff(before.split(""), now.split("")).flatMap((op) =>
+    op.kind === "change" ? [op] : [],
+  );
+  let tried: string | null = null;
+  // first a deletion keeps the text's own characters at its edges and an insertion goes before them; then the reverse
+  for (const inner of [true, false]) {
+    const hunks: Hunk[] = [];
+    for (const op of changes) {
+      const from = place(runs, op.a, op.remove === 0 ? !inner : inner);
+      const to = op.remove === 0 ? from : place(runs, op.a + op.remove, !inner);
+      if (from === null || to === null || to < from || from < (hunks.at(-1)?.to ?? 0)) continue;
+      hunks.push({ from, to, insert: now.slice(op.b, op.b + op.add) });
+    }
+    // no change placed: the block's own bytes, kept only when the edit does not change what the block reads as
+    const out = applied(source.text, hunks);
+    if (out === tried) continue;
+    tried = out;
+    if (sameMeaning(core, out, now)) return leaveOut(core, source.text, hunks, now);
+  }
+  return null;
+}
+
+/**
+ * Changes the result reads the same without (the editor re-padding a table's columns) are left out; all of them
+ * left out -> the block's own bytes (the edit changed nothing it reads as).
+ */
+function leaveOut(core: Core, text: string, hunks: readonly Hunk[], now: string): string {
+  let kept = hunks;
+  if (hunks.length > 1 && hunks.length * text.length <= LEAVE_OUT_BUDGET) {
+    for (const hunk of hunks) {
+      const without = kept.filter((h) => h !== hunk);
+      if (sameMeaning(core, applied(text, without), now)) kept = without;
+    }
+  }
+  return applied(text, kept);
+}
+
+/** Offsets of each piece of a node in its text, by node; null: the text reads as other pieces. */
+const readBacks = new WeakMap<PMNode, { text: string; spans: readonly TextRange[] | null }>();
+
+/**
+ * The pieces of `node` read back from `text`, its writing: their offsets in it; null when it reads as other pieces
+ * (the splice and the editor's writing read alike, so no other writing would keep them).
+ */
+function readBack(core: Core, node: PMNode, text: string): readonly TextRange[] | null {
+  const known = readBacks.get(node);
+  if (known?.text === text) return known.spans;
+  const sources = pieceSources(node);
+  let spans: readonly TextRange[] | null = [];
+  if (sources.length > 0) {
+    const read = core.editor.action((ctx) => piecesIn(ctx, text));
+    const same = read.length === sources.length && read.every((p, k) => p.source === sources[k]);
+    spans = same ? read.map(({ from, to }) => ({ from, to })) : null;
+  }
+  readBacks.set(node, { text, spans });
+  return spans;
 }
 
 /** The text of `doc` (see the header). */
@@ -287,9 +442,13 @@ export function compose(core: Core, built: Built, doc: PMNode): Composed {
       chunk.kept = chunk.origin !== null && built.sources[chunk.origin]?.text === chunk.text;
       continue;
     }
-    const fence =
-      chunk.origin !== null ? withFenceLanguage(built, chunk.origin, chunk.node, core) : null;
-    chunk.text = fence ?? core.write(chunk.node);
+    const source = chunk.origin === null ? undefined : built.sources[chunk.origin];
+    const own =
+      chunk.origin === null || source === undefined
+        ? null
+        : (withFenceLanguage(built, chunk.origin, chunk.node, core) ??
+          splice(core, source, chunk.node));
+    chunk.text = own ?? core.write(chunk.node);
   }
   keepListsApart(chunks);
 
@@ -307,8 +466,11 @@ export function compose(core: Core, built: Built, doc: PMNode): Composed {
 
   const lines = new Map<PMNode, number>();
   const ranges: (TextRange | null)[] = Array.from({ length: doc.childCount }, () => null);
+  const pieces: TextRange[][] = Array.from({ length: doc.childCount }, () => []);
+  const lost: number[] = [];
   if (chunks.length === 0) {
-    return { text: n === 0 ? built.text : (built.separators[n] ?? ""), changed: n, lines, ranges };
+    const text = n === 0 ? built.text : (built.separators[n] ?? "");
+    return { text, changed: n, lines, ranges, pieces, lost };
   }
   const leading = n === 0 ? "" : (built.separators[0] ?? "");
   const trailing = n === 0 ? built.text : (built.separators[n] ?? "");
@@ -321,13 +483,21 @@ export function compose(core: Core, built: Built, doc: PMNode): Composed {
       line += countBreaks(sep);
     }
     lines.set(chunk.node, line);
-    ranges[indexes[i] ?? 0] = { from: text.length, to: text.length + chunk.text.length };
+    const index = indexes[i] ?? 0;
+    const from = text.length;
+    ranges[index] = { from, to: from + chunk.text.length };
+    const spans = readBack(core, chunk.node, chunk.text);
+    if (spans === null) lost.push(index);
+    pieces[index] = (spans ?? [{ from: 0, to: chunk.text.length }]).map((span) => ({
+      from: from + span.from,
+      to: from + span.to,
+    }));
     text += chunk.text;
     line += countBreaks(chunk.text);
   });
   text += trailing;
   const changed = chunks.filter((c) => !c.kept).length + (n - claimed.size);
-  return { text, changed, lines, ranges };
+  return { text, changed, lines, ranges, pieces, lost };
 }
 
 function countBreaks(text: string): number {

@@ -13,6 +13,7 @@ import {
   type Version,
   type WorkspaceView,
 } from "../../api";
+import { IDENTITY_UNKNOWN } from "../../api/error";
 import { untrack } from "svelte";
 import { documents as defaultDocuments } from "../../core/doc/document.svelte";
 import { confirmLeave } from "../../core/editing/guard";
@@ -535,6 +536,9 @@ export class NotesStore {
       if (wasCurrent) await this.#edit(path);
       if (result.error.kind === "backend") {
         const error = result.error.error;
+        if (error.kind === "exists" && error.detail === IDENTITY_UNKNOWN) {
+          return t("fileOps.identityUnknown");
+        }
         if (error.kind === "exists") return t("notes.rename.exists", { name: trimmed });
         if (error.kind === "invalidName") return invalidNameText(error.detail);
       }

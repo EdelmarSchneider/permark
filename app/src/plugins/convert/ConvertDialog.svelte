@@ -4,6 +4,7 @@
   // Copy | Save as a new file next to the source | Open the result. The source is never written.
   import X from "@lucide/svelte/icons/x";
   import { language, t, tn } from "../../core/i18n";
+  import { dialogFocus } from "../../core/shell/dialogFocus";
   import {
     change,
     count,
@@ -28,23 +29,6 @@
   );
   const tokenizer = $derived(tokenizerName(ready?.analysis.tokenizer ?? null));
 
-  let dialog: HTMLElement | undefined = $state();
-
-  function onkeydown(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      converter.close();
-    }
-  }
-
-  // focus enters the dialog and returns where it was when the dialog goes
-  $effect(() => {
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialog?.focus();
-    return () => before?.focus();
-  });
-
   function size(bytes: number): string {
     const format = new Intl.NumberFormat(language.locale, { maximumFractionDigits: 1 });
     if (bytes < 1024) return t("convert.bytes", { n: format.format(bytes) });
@@ -61,14 +45,14 @@
       if (e.target === e.currentTarget) converter.close();
     }}
   >
+    <!-- the dialog itself takes the focus: its title is read first -->
     <div
-      bind:this={dialog}
       class="dialog"
       role="dialog"
       aria-modal="true"
       aria-labelledby="convert-title"
       tabindex="-1"
-      {onkeydown}
+      use:dialogFocus={{ initial: (d) => d, onEscape: () => converter.close() }}
     >
       <header>
         <h2 id="convert-title">{t("convert.title", { name })}</h2>

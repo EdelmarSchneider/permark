@@ -128,6 +128,13 @@ impl PluginSet {
         }
     }
 
+    /// Tells every running instance that the formats of the plugins that are on changed.
+    pub fn formats_changed(&self) {
+        for (_, instance) in &self.running {
+            instance.formats_changed();
+        }
+    }
+
     /// Stops everything (reverse start order).
     pub fn stop_all(&mut self) {
         while let Some(instance) = self.running.pop() {

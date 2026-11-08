@@ -89,6 +89,14 @@ export default {
   "error.superseded": "その間に別のものが開かれました。",
   "error.internal": "PerMark の内部で問題が発生しました：{detail}",
   "error.unknown": "問題が発生しました：{message}",
+  "error.settingsUnreadable":
+    "PerMark は設定ファイル {subject} を読み取れません。何も変更されていません。",
+  "error.settingsUnreadable.notText":
+    "PerMark は設定ファイル {subject} を読み取れません（プレーンテキストではありません）。何も変更されていません。",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark は設定ファイル {subject} を読み取れません（ファイルが大きすぎます）。何も変更されていません。",
+  "error.settingsUnreadable.locked":
+    "PerMark は設定ファイル {subject} を読み取れません（別のプログラムが使用しています）。何も変更されていません。",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "先にフォルダーかファイルを開いてください。",
@@ -141,6 +149,8 @@ export default {
   "fileOps.nameReserved": "その名前はシステムで予約されています",
   "fileOps.nameTooLong": "名前が長すぎます",
   "fileOps.nameExists": "この名前のものが既にあります",
+  "fileOps.identityUnknown":
+    "このドライブでは、この 2 つの名前が同じファイルかどうかを PerMark が判断できないため、名前は変更されませんでした。",
   "fileOps.files.one": "{n} 個のファイル",
   "fileOps.files.other": "{n} 個のファイル",
   "fileOps.items.one": "{n} 個の項目",
@@ -429,9 +439,12 @@ export default {
   "edit.save": "保存",
   "edit.saveHint": "保存 (Ctrl+S)",
   "edit.saving": "保存しています…",
-  "edit.savedBlocks.one": "保存しました。{n} 個のブロックが変更されました。",
-  "edit.savedBlocks.other": "保存しました。{n} 個のブロックが変更されました。",
-  "edit.firstSaveHint": "PerMark は変更したブロックだけを書き換えます。",
+  "edit.savedBlocks.one": "保存しました（{n} か所の変更）。",
+  "edit.savedBlocks.other": "保存しました（{n} か所の変更）。",
+  "edit.firstSaveHint": "PerMark は変更した部分だけを書き換えます。",
+  "edit.emptyHint": "ここから書き始めてください。/ を入力すると見出しやリストなどを追加できます。",
+  "edit.savedReadsOtherwise":
+    "このドキュメントの一部の数式やリンクは、保存後に表示が変わる場合があります。ソースで確認してください。",
   "source.find": "検索",
   "source.replace": "置換",
   "source.next": "次へ",
@@ -459,6 +472,18 @@ export default {
   "edit.discard": "破棄",
   "edit.keepEditing": "編集を続ける",
   "edit.editInSource": "ソースで編集",
+  "edit.blockSource": "このブロックのソース",
+  "edit.blockSourceHint": "Esc で終了",
+  "edit.block.html": "HTML",
+  "edit.block.formula": "数式",
+  "edit.block.footnote": "脚注",
+  "edit.block.diagram": "図",
+  "edit.block.alert": "注意書き",
+  "edit.block.other": "記述どおりに保持されるブロック",
+  "edit.block.openHint": "Enter で編集",
+  "edit.documentText": "文書のテキスト",
+  "edit.codeRefHint": "{title}（{mod}+クリック）",
+  "edit.codeRefTitleMany": "{count} 個のファイルが一致します。{mod}+クリックで選択してください。",
   "edit.visualForMarkdown":
     "編集モードは Markdown ファイルと設定ファイル用です。ソースモードを使用してください。",
   "edit.diagramNoPlugin":
@@ -491,11 +516,9 @@ export default {
   "conflict.deletedTitle": "編集中にディスク上で削除されました。",
   "conflict.text": "何も上書きされていません。選択するまで、編集内容はここに残ります。",
   "conflict.deletedText": "選択するまで、編集内容はここに残ります。",
-  "conflict.reload": "ディスクの内容を読み込む",
-  "conflict.reloadConfirm": "編集内容を破棄して、ディスクからファイルを読み込みますか？",
-  "conflict.discard": "自分の編集を破棄",
-  "conflict.keepMine": "自分の編集を残す（上書き）",
-  "conflict.recreate": "自分の編集を残す（書き戻す）",
+  "conflict.reload": "ファイルの内容を使う（自分の編集を破棄）",
+  "conflict.keepMine": "自分の版を残す（ファイルを置き換え）",
+  "conflict.recreate": "自分の版を残す（書き戻す）",
   "conflict.saveAsNew": "新しいファイルとして保存",
   "conflict.showDiff": "差分を表示",
   "conflict.hideDiff": "差分を隠す",
@@ -1197,7 +1220,7 @@ export default {
   "notes.move.title": "プロジェクトへ移動",
   "notes.moveDown": "下へ移動",
   "notes.moveKept":
-    "「{name}」はコピー中に変更されたため、メモに残っています。コピーはプロジェクトにあります。",
+    "「{name}」はコピー中に変更されたか、保存されていないテキストがあるため、メモに残っています。コピーはプロジェクトにあります。",
   "notes.moveToProject": "プロジェクトへ移動...",
   "notes.moveUndone": "「{name}」はメモに戻りました。",
   "notes.moveUndoneKept":
@@ -1397,7 +1420,6 @@ export default {
   "config.fromSource": "ソースで編集",
   "config.nothing": "このファイルには、まだ表示するものがありません。",
   "config.noSheet": "このファイルはシートとして表示できません。ソースを使用してください。",
-  "config.fm.bar": "プロパティ。1 つを変更しても、ファイルの他の部分はそのまま保たれます。",
   "config.reason.multiline": "複数行のテキストです。ソースで変更してください。",
   "config.reason.alias": "別の値のエイリアスです。ソースで変更してください。",
   "config.reason.anchor": "他の値から参照されるアンカーがあります。ソースで変更してください。",
@@ -1494,9 +1516,9 @@ export default {
   "project.newConfirm": "このフォルダーを使用",
   "project.newBack": "別のフォルダーを選択…",
   "project.loadFailed": "プロジェクトの設定を読み取れませんでした。",
-  "project.notInitialized": "このプロジェクトでは PerMark が初期化されていません",
+  "project.notInitialized": "このフォルダーにはまだ PerMark の設定がありません",
   "project.notInitializedHint":
-    "初期化すると、チームと共有する設定を保存できる .permark フォルダーが作成されます。",
+    "PerMark を初期化すると、このフォルダー独自の設定を作成でき、ここで作業する全員で共有できます。",
   "project.patternPlaceholder": "パターン（例：drafts/）",
   "project.tree": "エクスプローラー",
   "project.treeExclude": "常に隠す",
@@ -1532,7 +1554,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "不明なプレースホルダーです。{path}、{line}、{col} を使用してください。",
   "settings.problem.noPath": "コマンドには {path} が必要です。",
-  "settings.problem.notInitialized": "このプロジェクトでは PerMark が初期化されていません。",
+  "settings.problem.notInitialized": "このフォルダーにはまだ PerMark の設定がありません。",
   "settings.problem.other": "この値は受け付けられませんでした。",
   "welcome.newProject": "新しいプロジェクト…",
   "welcome.newProjectHint": "フォルダーを選ぶと、PerMark がプロジェクトとして設定します。",

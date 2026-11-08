@@ -1,79 +1,80 @@
 <script lang="ts">
-  // Find in page: a small bar at the top right of the document. Enter goes to the next match, Shift+Enter to the
-  // previous, Escape closes. The matches are painted without touching the document.
+  // Find in page: a small bar at the top right of the document. Enter | F3 go to the next match, with Shift to the
+  // previous, Escape closes. The matches are painted without touching the document. What is searched is a `Finder`:
+  // the page in View, the text in Edit; the bar closes when its finder goes (another mode, another editor).
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronUp from "@lucide/svelte/icons/chevron-up";
   import X from "@lucide/svelte/icons/x";
+  import { untrack } from "svelte";
   import { t } from "../i18n";
-  import { documents } from "./document.svelte";
-  import { FIND_LIMIT, clearPaint, findIn, paint } from "./find";
+  import { FIND_LIMIT, type Finder } from "./find";
 
-  type Props = { root: HTMLElement; close: () => void };
-  let { root, close }: Props = $props();
+  type Props = { finder: Finder; close: () => void };
+  let { finder, close }: Props = $props();
 
   let query = $state("");
   let input: HTMLInputElement | undefined = $state();
-  let ranges = $state.raw<readonly Range[]>([]);
+  let total = $state(0);
   let current = $state(0);
   let capped = $state(false);
 
-  /** Looks again in the page; keeps the match number when there still is one. */
+  /** Looks again; keeps the match number when there still is one. */
   function search(keep: boolean): void {
-    const found = query !== "" ? findIn(root, query) : { ranges: [], capped: false };
-    ranges = found.ranges;
+    const found = finder.search(query);
+    total = found.total;
     capped = found.capped;
-    current = keep ? Math.min(current, Math.max(0, ranges.length - 1)) : 0;
-    paint(ranges, current);
-    if (!keep) reveal();
-  }
-
-  function reveal(): void {
-    const range = ranges[current];
-    if (!range) return;
-    const box = range.getBoundingClientRect();
-    const pane = root.getBoundingClientRect();
-    if (box.top < pane.top + 40 || box.bottom > pane.bottom - 40) {
-      root.scrollTop += box.top - pane.top - pane.height / 3;
-    }
+    current = keep ? Math.min(current, Math.max(0, total - 1)) : 0;
+    finder.show(current, !keep);
   }
 
   function step(direction: 1 | -1): void {
-    if (ranges.length === 0) return;
-    current = (current + direction + ranges.length) % ranges.length;
-    paint(ranges, current);
-    reveal();
+    if (total === 0) return;
+    current = (current + direction + total) % total;
+    finder.show(current, true);
+  }
+
+  /** Closes the bar; the finder hands the current match on (Edit: selected, the editor takes the keyboard). */
+  function finish(): void {
+    finder.done?.(total > 0 ? current : null);
+    close();
   }
 
   function onkeydown(event: KeyboardEvent): void {
     if (event.isComposing) return;
-    if (event.key === "Enter") {
+    if (event.key === "Enter" || event.key === "F3") {
       event.preventDefault();
       step(event.shiftKey ? -1 : 1);
     } else if (event.key === "Escape") {
       event.preventDefault();
-      close();
+      finish();
     }
   }
 
-  // focus on open; the paint is undone when the bar goes; a changed page is searched again
+  // focus on open
   $effect(() => {
     input?.focus();
     input?.select();
-    const stop = documents.onPainted(() => search(true));
+  });
+
+  // a changed page | text is searched again; the paint goes with the finder, and so does the bar
+  $effect(() => {
+    const target = finder;
+    const stop = target.watch(() => search(true));
     return () => {
       stop();
-      clearPaint();
+      target.clear();
+      untrack(() => close());
     };
   });
 
   const count = $derived(
     query === ""
       ? ""
-      : ranges.length === 0
+      : total === 0
         ? t("find.none")
         : t("find.count", {
             index: current + 1,
-            total: capped ? `${FIND_LIMIT}+` : ranges.length,
+            total: capped ? `${FIND_LIMIT}+` : total,
           }),
   );
 </script>
@@ -97,7 +98,7 @@
     class="icon-btn icon-btn--sm"
     title={t("find.previousHint")}
     aria-label={t("find.previous")}
-    disabled={ranges.length === 0}
+    disabled={total === 0}
     onclick={() => step(-1)}
   >
     <ChevronUp size={15} />
@@ -107,7 +108,7 @@
     class="icon-btn icon-btn--sm"
     title={t("find.nextHint")}
     aria-label={t("find.next")}
-    disabled={ranges.length === 0}
+    disabled={total === 0}
     onclick={() => step(1)}
   >
     <ChevronDown size={15} />
@@ -117,7 +118,7 @@
     class="icon-btn icon-btn--sm"
     title={t("find.closeHint")}
     aria-label={t("find.close")}
-    onclick={close}
+    onclick={finish}
   >
     <X size={15} />
   </button>

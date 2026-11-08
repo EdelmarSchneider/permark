@@ -12,6 +12,7 @@ const KEYS: Record<EditProblem, MessageKey> = {
   tooLong: "fileOps.nameTooLong",
   notMarkdown: "newFile.notMarkdown",
   exists: "fileOps.nameExists",
+  identityUnknown: "fileOps.identityUnknown",
 };
 
 export function problemText(problem: EditProblem): string {

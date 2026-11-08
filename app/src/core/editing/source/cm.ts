@@ -10,9 +10,11 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { yamlFrontmatter } from "@codemirror/lang-yaml";
 import {
   bracketMatching,
+  ensureSyntaxTree,
   HighlightStyle,
   LanguageDescription,
   syntaxHighlighting,
+  syntaxTree,
 } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import {
@@ -158,11 +160,43 @@ export function languageFor(path: string, markdownText: boolean): Extension | Pr
   return found ? found.load() : [];
 }
 
+/** A parse of the text (the Lezer tree; its package is not a direct dependency). */
+type Tree = ReturnType<typeof syntaxTree>;
+
+const HEADING = /^(ATX|Setext)Heading[1-6]$/;
+/** Room above a heading brought to the top, as View's jump to a heading leaves it. */
+const HEADING_GAP = 12;
+/** Most time an outline click may spend parsing the rest of a long text to find its heading. */
+const PARSE_MS = 200;
+
+/** Starts of the Markdown headings in `tree`, in document order, inside quotes and lists too (the outline counts
+ *  those); fenced code, front matter and other leaf blocks hold none. */
+export function headingStarts(tree: Tree): number[] {
+  const starts: number[] = [];
+  tree.iterate({
+    enter: (node) => {
+      if (HEADING.test(node.name)) {
+        starts.push(node.from);
+        return false;
+      }
+      return !node.type.is("LeafBlock");
+    },
+  });
+  return starts;
+}
+
 export type SourceView = {
   view: EditorView;
   text(): string;
-  topLine(): number;
+  /** The first line in view. `viewTop`: the top edge of the page that scrolls around the editor (client y); none:
+   *  the editor scrolls itself. */
+  topLine(viewTop?: number): number;
   scrollToLine(line: number): void;
+  /** Tops of the Markdown headings (document order), px below the top edge of what is in view; `viewTop` as in
+   *  `topLine`. Only the parsed part counts: CodeMirror parses past what is in view, so every heading above is there. */
+  headingTops(viewTop?: number): number[];
+  /** Scrolls `page` (none: the editor itself) so heading `index` (document order) stands a little below its top. */
+  showHeading(index: number, page?: HTMLElement): void;
   selection(): string;
   insert(text: string, at?: number): void;
   /** Long lines wrap (the setting) or scroll sideways. */
@@ -179,6 +213,8 @@ export type SourceView = {
   markAt(): number | null;
   /** Text is being composed (IME). */
   composing(): boolean;
+  /** Opens the find + replace panel (as Ctrl+F in the editor does). */
+  search(): void;
   destroy(): void;
 };
 
@@ -303,13 +339,45 @@ export function createSource(options: {
   if (loaded instanceof Promise) {
     void loaded.then((support) => view.dispatch({ effects: language.reconfigure(support) }));
   }
+  /** Client y where what is in view starts: the page around the editor scrolls it out at the top, then the page's
+   *  edge. */
+  const inView = (viewTop?: number): number => {
+    const top = view.scrollDOM.getBoundingClientRect().top;
+    return Math.max(top, viewTop ?? top);
+  };
+  /** Client y of the line holding `pos` (the height map: lines out of view are estimated). */
+  const lineTop = (pos: number): number => view.documentTop + view.lineBlockAt(pos).top;
+  // scrolling asks on every frame: the headings are found again only when the parse moved on
+  let parsed: { tree: Tree; starts: number[] } | null = null;
+  const headings = (tree: Tree): number[] => {
+    if (!options.markdown) return [];
+    if (parsed?.tree !== tree) parsed = { tree, starts: headingStarts(tree) };
+    return parsed.starts;
+  };
   return {
     view,
     text: () => view.state.doc.toString(),
-    topLine: () => {
-      const rect = view.scrollDOM.getBoundingClientRect();
-      const block = view.lineBlockAtHeight(rect.top - view.documentTop + 1);
+    topLine: (viewTop) => {
+      const block = view.lineBlockAtHeight(inView(viewTop) - view.documentTop + 1);
       return view.state.doc.lineAt(block.from).number;
+    },
+    headingTops: (viewTop) => {
+      const edge = inView(viewTop);
+      return headings(syntaxTree(view.state)).map((pos) => lineTop(pos) - edge);
+    },
+    showHeading: (index, page) => {
+      const state = view.state;
+      // a heading far below what is in view may not be parsed yet
+      const tree = ensureSyntaxTree(state, state.doc.length, PARSE_MS) ?? syntaxTree(state);
+      const at = headings(tree)[index];
+      if (at === undefined) return;
+      const scroller = page ?? view.scrollDOM;
+      // at once, so the outline keeps the clicked heading current; CodeMirror then corrects it once the lines around
+      // it are measured (lines never shown have estimated heights)
+      scroller.scrollTop += lineTop(at) - scroller.getBoundingClientRect().top - HEADING_GAP;
+      view.dispatch({
+        effects: EditorView.scrollIntoView(at, { y: "start", yMargin: HEADING_GAP }),
+      });
     },
     scrollToLine: (line) => {
       const doc = view.state.doc;
@@ -354,6 +422,7 @@ export function createSource(options: {
       view.dispatch({ effects: marksEffect(view.state, ranges, current, pick) }),
     markAt: () => markAt(view.state),
     composing: () => view.composing,
+    search: () => void openSearchPanel(view),
     destroy: () => view.destroy(),
   };
 }

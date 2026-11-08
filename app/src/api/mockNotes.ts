@@ -1,6 +1,7 @@
 // What the notes plugin answers in the mock backend (`dev:mock`, tests): a few notes in memory, the loose files, pins,
 // versions, the journal. The same shapes the real plugin serves; titles are made the simple way (no Markdown parser).
 
+import { IDENTITY_UNKNOWN } from "./error";
 import { MockPluginError } from "./mockOrganizing";
 import type {
   Deleted,
@@ -44,6 +45,9 @@ export type NotesProbe = {
   recover(path: string, text: string): void;
   /** Calls the notes got, `notes.<method>`. */
   calls: string[];
+  /** The Notes folder's drive gives no file ids (FAT, some network drives): a rename that only changes case cannot be
+   *  proven to keep one file, so it is refused. */
+  fileIdsUnknown: boolean;
 };
 
 function titleOf(text: string): string {
@@ -115,6 +119,7 @@ export function createMockNotes(
   const calls: string[] = [];
   let nextUndo = 1;
   let folderStatus: FolderInfo["status"] = { status: "ready" };
+  let fileIdsUnknown = false;
   let hex = 0x0a1b2c00;
 
   const folder = (): FolderInfo => ({
@@ -242,8 +247,11 @@ export function createMockNotes(
     "notes.rename": ({ path, name }) => {
       const note = need(path);
       const next = /\.[a-z]+$/i.test(name) ? name : `${name}.md`;
-      if (/[\\/:*?"<>|]/.test(next)) throw new MockPluginError("invalidName", "chars");
+      if (/[\\/:*?"<>|]/.test(next)) throw new MockPluginError("invalidName", name, "chars");
       if (next !== path && notes.has(next)) throw new MockPluginError("exists", next);
+      // the same name in another case is the same file on this drive only when the drive can prove it (`rename_free`)
+      const caseOnly = next !== path && next.toLowerCase() === path.toLowerCase();
+      if (caseOnly && fileIdsUnknown) throw new MockPluginError("exists", next, IDENTITY_UNKNOWN);
       notes.delete(path);
       notes.set(next, { ...note, name: next });
       files.set(next, textOf(path));
@@ -369,7 +377,7 @@ export function createMockNotes(
     "notes.moveToProject": ({ path, folder: dest, name }) => {
       const note = need(path);
       if (dest === MOCK_NOTES_FOLDER) throw new MockPluginError("intoItself", dest);
-      if (/[\\/:*?"<>|]/.test(name)) throw new MockPluginError("invalidName", "chars");
+      if (/[\\/:*?"<>|]/.test(name)) throw new MockPluginError("invalidName", name, "chars");
       const gone = remove([path]);
       void note;
       return { destination: `${dest}/${name}`, undoId: gone.undoId, kept: false };
@@ -418,6 +426,12 @@ export function createMockNotes(
       },
       recover: (path, text) => {
         recovered.set(path, text);
+      },
+      get fileIdsUnknown() {
+        return fileIdsUnknown;
+      },
+      set fileIdsUnknown(on) {
+        fileIdsUnknown = on;
       },
     },
   };

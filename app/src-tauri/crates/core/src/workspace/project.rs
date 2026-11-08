@@ -460,7 +460,8 @@ impl ProjectCore {
             Arc::clone(&own),
             &store,
         )
-        .with_activity(Arc::clone(&activity));
+        .with_activity(Arc::clone(&activity))
+        .with_formats(Arc::clone(&formats));
         let core = Arc::new(Self {
             _explorer_sub: explorer_sub,
             _projects_sub: projects_sub,
@@ -902,18 +903,20 @@ impl ProjectCore {
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = enablement;
         // config files are searched by their keys while a config format is on: read again only when the plugins change
-        {
+        let formats_changed = {
             let mut formats_on = self
                 .formats_on
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
-            if *formats_on != *on {
+            let changed = *formats_on != *on;
+            if changed {
                 *self.formats.write().unwrap_or_else(PoisonError::into_inner) =
                     Arc::new(FormatRegistry::build(&env.registry.contributions(on)));
                 formats_on.clone_from(on);
                 self.search.formats_changed();
             }
-        }
+            changed
+        };
         let mut context = Context::welcome(env.distribution);
         context.workspace = crate::conditions::WorkspaceKind::Project;
         context.plugins.clone_from(on);
@@ -941,6 +944,13 @@ impl ProjectCore {
                     cx
                 }
             });
+        // plugins that kept running are told, so what they read with the old formats (links of documents) is read again
+        if formats_changed {
+            self.plugins
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .formats_changed();
+        }
         for failure in failures {
             env.sink.emit(CoreEvent::PluginFailed {
                 message: failure.to_string(),

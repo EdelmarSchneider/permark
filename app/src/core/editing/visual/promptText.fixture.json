@@ -1,0 +1,158 @@
+{
+  "about": "Template variables and @file references in a text, as the Markdown renderer marks them (prompt-blocks plugin). Read by the renderer's tests and by Edit's mirror; html: what the text becomes, null: left as it is.",
+  "files": [
+    "docs/plan.md",
+    "src/main.rs",
+    "a b.md",
+    "café/ü.md",
+    "x.md",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.md",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.md"
+  ],
+  "cases": [
+    {
+      "text": "Hello {{ user_name }}, bye {{x.y-z}}!",
+      "html": "Hello <span class=\"tvar\">{{user_name}}</span>, bye <span class=\"tvar\">{{x.y-z}}</span>!"
+    },
+    {
+      "text": "{{}}",
+      "html": null
+    },
+    {
+      "text": "{{ a b }}",
+      "html": null
+    },
+    {
+      "text": "{{a",
+      "html": null
+    },
+    {
+      "text": "{ {a} }",
+      "html": null
+    },
+    {
+      "text": "{{a<b}}",
+      "html": null
+    },
+    {
+      "text": "plain",
+      "html": null
+    },
+    {
+      "text": "{{{a}}}",
+      "html": "{<span class=\"tvar\">{{a}}</span>}"
+    },
+    {
+      "text": "{{ünïcode_名}}",
+      "html": "<span class=\"tvar\">{{ünïcode_名}}</span>"
+    },
+    {
+      "text": "{{😀}}",
+      "html": null
+    },
+    {
+      "text": "{{aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}}",
+      "html": "<span class=\"tvar\">{{aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}}</span>"
+    },
+    {
+      "text": "{{aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}}",
+      "html": null
+    },
+    {
+      "text": "{{éééééééééééééééééééééééééééééééééééééééé}}",
+      "html": "<span class=\"tvar\">{{éééééééééééééééééééééééééééééééééééééééé}}</span>"
+    },
+    {
+      "text": "{{ééééééééééééééééééééééééééééééééééééééééé}}",
+      "html": null
+    },
+    {
+      "text": "See @docs/plan.md.",
+      "html": "See <a class=\"at-ref\" href=\"/docs/plan.md\">@docs/plan.md</a>."
+    },
+    {
+      "text": "(@src/main.rs)",
+      "html": "(<a class=\"at-ref\" href=\"/src/main.rs\">@src/main.rs</a>)"
+    },
+    {
+      "text": "@docs/missing.md",
+      "html": null
+    },
+    {
+      "text": "mail me@docs/plan.md",
+      "html": null
+    },
+    {
+      "text": "é@x.md",
+      "html": null
+    },
+    {
+      "text": "@docs/plan",
+      "html": null
+    },
+    {
+      "text": "@../etc/passwd.txt",
+      "html": null
+    },
+    {
+      "text": "@docs//plan.md",
+      "html": null
+    },
+    {
+      "text": "@.md",
+      "html": null
+    },
+    {
+      "text": "@/docs/plan.md.",
+      "html": "<a class=\"at-ref\" href=\"/docs/plan.md\">@/docs/plan.md</a>."
+    },
+    {
+      "text": "@",
+      "html": null
+    },
+    {
+      "text": "@@docs/plan.md",
+      "html": null
+    },
+    {
+      "text": "@a b.md",
+      "html": null
+    },
+    {
+      "text": "@café/ü.md",
+      "html": "<a class=\"at-ref\" href=\"/caf%C3%A9/%C3%BC.md\">@café/ü.md</a>"
+    },
+    {
+      "text": "@docs\\plan.md and @src/main.rs:12",
+      "html": "<a class=\"at-ref\" href=\"/docs/plan.md\">@docs\\plan.md</a> and <a class=\"at-ref\" href=\"/src/main.rs\">@src/main.rs</a>:12"
+    },
+    {
+      "text": "@x.md-_/",
+      "html": "<a class=\"at-ref\" href=\"/x.md\">@x.md</a>-_/"
+    },
+    {
+      "text": "@x.md😀",
+      "html": "<a class=\"at-ref\" href=\"/x.md\">@x.md</a>😀"
+    },
+    {
+      "text": "{{a}}@x.md",
+      "html": "<span class=\"tvar\">{{a}}</span><a class=\"at-ref\" href=\"/x.md\">@x.md</a>"
+    },
+    {
+      "text": "x{{a b}}@x.md",
+      "html": "x{{a b}}<a class=\"at-ref\" href=\"/x.md\">@x.md</a>"
+    },
+    {
+      "text": "@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.md",
+      "html": "<a class=\"at-ref\" href=\"/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.md\">@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.md</a>"
+    },
+    {
+      "text": "@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.md",
+      "html": null
+    },
+    {
+      "text": "<b> & {{x}} \"q\"",
+      "html": "&lt;b&gt; &amp; <span class=\"tvar\">{{x}}</span> &quot;q&quot;"
+    }
+  ]
+}

@@ -634,5 +634,27 @@ mod tests {
         if std::fs::read_to_string(&target).ok().as_deref() != Some(text.as_str()) {
             std::fs::write(target, text).unwrap();
         }
+        // the properties of each YAML front matter as Edit asks for them (`config_sheet` of the text between the
+        // fences): the mock serves the real sheets, not made-up ones
+        let mut sheets = serde_json::Map::new();
+        for (path, _) in documents {
+            let source = editor.source(path).unwrap().text;
+            let Some((inner, _)) = source
+                .strip_prefix("---\n")
+                .and_then(|rest| rest.split_once("\n---\n"))
+            else {
+                continue;
+            };
+            let body = editor.config_sheet("front-matter.yaml", inner).unwrap();
+            sheets.insert(
+                path.to_owned(),
+                serde_json::json!({ "path": "front-matter.yaml", "text": inner, "body": body }),
+            );
+        }
+        let text = format!("{}\n", serde_json::to_string_pretty(&sheets).unwrap());
+        let target = generated.join("mock-config-sheets.json");
+        if std::fs::read_to_string(&target).ok().as_deref() != Some(text.as_str()) {
+            std::fs::write(target, text).unwrap();
+        }
     }
 }

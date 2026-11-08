@@ -15,7 +15,7 @@ import {
   type WorkspaceView,
 } from "../../api";
 import { BlockHost } from "./blocks";
-import { decideRef, inApp } from "./codeRefs";
+import { decideRef, inApp, refLabel } from "./codeRefs";
 import { outsideTarget } from "./outside";
 import { Decorator, codeRefOf, type CodeRefTarget, type EmbedLookup } from "./decorate";
 import { enhanceBlock, type EnhanceEnv } from "./enhance";
@@ -29,6 +29,7 @@ import { formatQuote, formatReference, type Reference } from "./reference";
 import { Trail, type Place } from "./trail";
 import type { SavePolicy } from "../editing/docMachine";
 import { confirmLeave } from "../editing/guard";
+import type { MenuEntry } from "../explorer/menu";
 import { t } from "../i18n";
 
 export type Deleted = { movedTo: string | null; at: number };
@@ -92,6 +93,11 @@ export type Hooks = {
   modKey(): string;
   /** Settings at the editor choice. */
   chooseEditor(): void;
+  /** Tops of the headings of the editor shown instead of the page (`headingTops` of the editor); `null`: the page
+   *  shows. */
+  editorHeadings(): number[] | null;
+  /** Scrolls the editor shown instead of the page to its heading `index`; `false`: the page shows. */
+  showEditorHeading(index: number): boolean;
   /** A folder opened as a project in a new tab, showing `document` (a path inside it) when given. */
   openFolderWith(folder: string, document: string | null): void;
 };
@@ -105,6 +111,8 @@ const NO_HOOKS: Hooks = {
   editorSet: () => false,
   modKey: () => "Ctrl",
   chooseEditor: () => {},
+  editorHeadings: () => null,
+  showEditorHeading: () => false,
   openFolderWith: () => {},
 };
 
@@ -134,10 +142,16 @@ export class DocumentController {
   #pending: Promise<void> | null = null;
   #intent: (Place & { line: number | null }) | null = null;
   #viaTrail: string | null = null;
+  /** The shown document was renamed | moved and the window is on its way to the new name (`placed`: the window was
+   *  told to show it). */
+  #following: { path: string; placed: boolean } | null = null;
   #anchor: string | null = null;
   /** A line to scroll to when the document in the making is shown (a search hit without a heading). */
   #line: number | null = null;
   #headings: (HTMLElement | null)[] = [];
+  /** A jump to a heading made it current, and the scroll position it left: it stays current until the reader scrolls
+   *  (near the end of a page the heading cannot reach the top, so the scroll alone would name an earlier one). */
+  #pinnedAt: number | null = null;
   #painters = new Set<() => void>();
   #updaters = new Set<(update: BlockUpdate) => void>();
   #textUpdaters = new Set<(update: TextUpdate) => void>();
@@ -186,6 +200,16 @@ export class DocumentController {
 
   get path(): string | null {
     return this.#shown;
+  }
+
+  /**
+   * The view of the document the window shows, `null` until it is on screen. While another file loads, the page still
+   * holds the previous file's view (`view`): whatever acts on the shown document reads this one. Reactive like `view`
+   * (the shown path only moves together with the state).
+   */
+  get current(): DocumentView | null {
+    const view = this.view;
+    return view !== null && view.path === this.path ? view : null;
   }
 
   /** The path of what the page shows now. Reactive (it follows the view), unlike `path`, which only the controller moves. */
@@ -253,10 +277,12 @@ export class DocumentController {
     this.#paintWaiting = false;
     this.#intent = null;
     this.#viaTrail = null;
+    this.#following = null;
     this.#anchor = null;
     this.#line = null;
     this.lineRequest = null;
     this.#headings = [];
+    this.#pinnedAt = null;
     this.currentHeading = -1;
     this.zoomed = null;
     this.state = { status: "empty" };
@@ -273,6 +299,9 @@ export class DocumentController {
       void this.#api.closeDocument();
       return;
     }
+    // following a rename: the trail names the new path already, and a name passed on the way is no place
+    const following = this.#following !== null;
+    if (this.#following?.path === path) this.#following = null;
     // the same document: whoever asked second waits for the open that is on its way. Already on screen: nothing to do.
     // Still another file, and nothing is opening this one: do not finish. Open it again.
     if (path === this.#shown && this.state.status !== "failed") {
@@ -285,7 +314,7 @@ export class DocumentController {
       const viaTrail = this.#viaTrail === path;
       this.#viaTrail = null;
       const anchor = intent?.anchor ?? (viaTrail ? (this.trail.here?.anchor ?? null) : null);
-      if (!viaTrail) this.trail.visit({ path, anchor });
+      if (!viaTrail && !following) this.trail.visit({ path, anchor });
       this.#anchor = anchor;
       this.#line = intent?.line ?? null;
       // a line asked for an earlier document is not asked again when a viewer shows up later
@@ -348,17 +377,30 @@ export class DocumentController {
     return () => this.#textUpdaters.delete(listener);
   }
 
-  /** The file changed on disk (or went away). */
+  /** The file changed on disk, was renamed | moved (the window goes with it), or went away. */
   onChanged(event: DocumentChanged): void {
+    // the document the window is on its way to can move again (its rename undone) before the window shows it
+    if (
+      event.path === this.#following?.path &&
+      event.change === "deleted" &&
+      event.movedTo !== null
+    ) {
+      void this.followMoved(event.movedTo);
+      return;
+    }
     if (event.path !== this.#shown) return;
     switch (event.change) {
       case "changed":
         void this.#open(event.path, false);
         break;
       case "deleted": {
+        if (event.movedTo !== null) {
+          void this.followMoved(event.movedTo);
+          break;
+        }
         const s = this.state;
         if (s.status === "ready") {
-          this.state = { ...s, deleted: { movedTo: event.movedTo, at: Date.now() } };
+          this.state = { ...s, deleted: { movedTo: null, at: Date.now() } };
         }
         break;
       }
@@ -424,6 +466,7 @@ export class DocumentController {
       return;
     }
     this.#headings = [];
+    if (fresh) this.#pinnedAt = null;
     if (before !== null) this.#told(before, blocks);
     const seq = this.#seq;
     void applied.settled.then(() => {
@@ -491,7 +534,19 @@ export class DocumentController {
   noteScroll(): void {
     const scroller = this.host.scroller;
     if (this.#shown !== null && scroller) reading.remember(this.#shown, scroller.scrollTop);
+    // the scroll of the jump itself leaves the jumped-to heading current
+    const pinned = this.#pinnedAt;
+    if (pinned !== null && scroller && Math.abs(scroller.scrollTop - pinned) < 1) return;
+    this.#pinnedAt = null;
     this.currentHeading = this.#headingAtTop();
+  }
+
+  /** Heading `index` became current by a jump (an outline click, a link to it). */
+  #pin(index: number): void {
+    const scroller = this.host.scroller;
+    if (index < 0 || !scroller) return;
+    this.currentHeading = index;
+    this.#pinnedAt = scroller.scrollTop;
   }
 
   #headingAtTop(): number {
@@ -499,16 +554,34 @@ export class DocumentController {
     const view = this.view;
     if (!scroller || view?.body.kind !== "markdown") return -1;
     const outline = view.body.outline;
-    if (this.#headings.length !== outline.length) {
-      this.#headings = outline.map((item) => this.host.byAnchor(item.id));
+    // an editor shows the text instead of the page: its headings count (the hidden page has no places)
+    let tops = this.#hooks.editorHeadings();
+    if (tops === null) {
+      if (this.#headings.length !== outline.length) {
+        this.#headings = outline.map((item) => this.host.byAnchor(item.id));
+      }
+      const top = scroller.getBoundingClientRect().top;
+      // not yet built (a document still arriving in slices) counts as far below
+      tops = this.#headings.map((el) =>
+        el?.isConnected ? el.getBoundingClientRect().top - top : Infinity,
+      );
     }
-    const top = scroller.getBoundingClientRect().top;
-    const tops = this.#headings.map((el) =>
-      el?.isConnected ? el.getBoundingClientRect().top - top : Infinity,
-    );
-    // not yet built (a document still arriving in slices) counts as far below
-    // a heading within the first bit of the pane counts as reached (a jump leaves it a little below the edge)
-    return currentIndex(tops, 40);
+    // a heading within the first bit of the pane counts as reached (a jump leaves it a little below the edge); at the
+    // bottom of a page that scrolled, the headings below can never reach the top: the last one in view counts
+    const { scrollTop, clientHeight, scrollHeight } = scroller;
+    const bottom =
+      scrollTop > 0 && scrollHeight > clientHeight && scrollTop + clientHeight >= scrollHeight - 1;
+    const reached = currentIndex(tops, bottom ? clientHeight - 40 : 40);
+    return Math.min(reached, outline.length - 1);
+  }
+
+  /** An outline click: the editor on screen, else the page, brings heading `index` to the top. */
+  goToHeading(index: number): void {
+    const view = this.view;
+    const item = view?.body.kind === "markdown" ? view.body.outline[index] : undefined;
+    if (!item) return;
+    if (this.#hooks.showEditorHeading(index)) this.#pin(index);
+    else this.scrollToAnchor(item.id);
   }
 
   /** Reads the shown document again (after a save of this window: no event comes back for it). */
@@ -516,11 +589,22 @@ export class DocumentController {
     if (this.#shown !== null) void this.#open(this.#shown, false, true);
   }
 
+  /**
+   * The plugins changed, and with them how the backend reads documents (the front matter card, prompt boxes): the
+   * shown document is read again whole and drawn anew (a block can keep its id and look another way now), the
+   * reader at the place each scroll remembered (a page hidden behind an editor has no scroll to read now).
+   */
+  formatsChanged(): void {
+    if (this.#shown !== null) void this.#open(this.#shown, true);
+  }
+
   /** Line (1-based) of the first block at the top of the pane (1 when unknown). */
   topLine(): number {
     const view = this.view;
     const scroller = this.host.scroller;
     if (view?.body.kind !== "markdown" || !scroller) return 1;
+    // at the top, what stands above the first block (the front matter's properties) is in view too
+    if (scroller.scrollTop <= 0) return 1;
     const top = scroller.getBoundingClientRect().top;
     for (const block of view.body.blocks) {
       const element = this.host.element(block.id);
@@ -555,6 +639,8 @@ export class DocumentController {
     const delta = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 12;
     scroller.scrollTop += delta;
     tint(el);
+    const view = this.view;
+    if (view?.body.kind === "markdown") this.#pin(view.body.outline.findIndex((h) => h.id === id));
     return true;
   }
 
@@ -709,6 +795,15 @@ export class DocumentController {
    */
   navigate(path: string, anchor: string | null, line: number | null = null): void {
     if (path === this.#shown) {
+      // still opening: the page holds the previous file, so the place waits for this document's paint
+      if (this.state.status === "loading" && this.current === null) {
+        // a newer place replaces the one waiting; an ask with no place (the tree, an editor) keeps it
+        if (anchor !== null || line !== null) {
+          this.#anchor = anchor;
+          this.#line = line;
+        }
+        return;
+      }
       if (anchor === null && line !== null) {
         if (this.view?.body.kind === "markdown") this.scrollToLine(line, true);
         else this.#askLine(path, line);
@@ -722,6 +817,13 @@ export class DocumentController {
 
   async #show(path: string): Promise<boolean> {
     if (!(await confirmLeave({ kind: "document", path }))) return false;
+    await this.#place(path);
+    return true;
+  }
+
+  /** Puts the window on `path`: a single file holds it here, a project's tab is told by the backend (which tells the
+   *  window back). Whether it did. */
+  async #place(path: string): Promise<boolean> {
     if (this.singleFile) {
       // the window shows it (`DocumentArea` follows `singleDoc`)
       this.singleDoc = path;
@@ -729,7 +831,12 @@ export class DocumentController {
     }
     const result = await this.#api.showDocument(path);
     if (!result.ok) this.#hooks.fail(result.error);
-    return true;
+    return result.ok;
+  }
+
+  /** Puts the window back on `path` without asking: the person kept editing it when another document came. */
+  stayOn(path: string): void {
+    void this.#place(path);
   }
 
   async back(): Promise<void> {
@@ -768,9 +875,39 @@ export class DocumentController {
     }
   }
 
-  /** Follows the document that took this one's place (renamed). */
-  followMoved(path: string): void {
-    this.navigate(path, null);
+  /**
+   * Follows the document that took this one's place (renamed | moved) to the same reading place; the trail names it by
+   * the new path. When the window cannot go there, it stays on the last version and the page says where the document
+   * went.
+   */
+  async followMoved(path: string): Promise<void> {
+    const shown = this.#shown;
+    if (shown === null) return;
+    const ahead = this.#following;
+    const from = ahead?.path ?? shown;
+    if (path === from) return;
+    this.trail.rename(from, path);
+    // the place is read when the moved document is painted
+    const scroller = this.host.scroller;
+    if (scroller) reading.remember(path, scroller.scrollTop);
+    // moved back before the window was told to go: it is where it should be
+    if (path === shown && ahead?.placed !== true) {
+      this.#following = null;
+      return;
+    }
+    const follow = { path, placed: false };
+    this.#following = follow;
+    if ((await confirmLeave({ kind: "document", path })) && this.#following === follow) {
+      follow.placed = true;
+      if (await this.#place(path)) return;
+    }
+    // moved again meanwhile (the rename undone): the newer follow decides
+    if (this.#following !== follow) return;
+    this.#following = null;
+    const s = this.state;
+    if (this.#shown === shown && s.status === "ready") {
+      this.state = { ...s, deleted: { movedTo: path, at: Date.now() } };
+    }
   }
 
   // ---- code references, web, the system --------------------------------------------------------------------
@@ -803,6 +940,23 @@ export class DocumentController {
       default:
         decision satisfies never;
     }
+  }
+
+  /**
+   * A click on a code reference (View) | Ctrl + click (Edit): one file opens; several are the entries of a menu to
+   * choose from (returned; nothing opens yet).
+   */
+  codeRefChoices(target: CodeRefTarget, modifier: boolean): MenuEntry[] | null {
+    const [only] = target.paths;
+    if (target.paths.length === 1 && only !== undefined) {
+      void this.openCodeRef(target, only, modifier);
+      return null;
+    }
+    return target.paths.map((path) => ({
+      kind: "item",
+      label: refLabel(path, target.line),
+      run: () => void this.openCodeRef(target, path, modifier),
+    }));
   }
 
   #refHere(path: string, line: number | null, hint: boolean): void {
@@ -885,9 +1039,10 @@ export class DocumentController {
   /** The reference of a passage: the document, the heading above it, its first line. */
   referenceAt(node: Node | null): Reference | null {
     const path = this.#shown;
-    const view = this.view;
-    if (path === null || view?.body.kind !== "markdown")
-      return path === null ? null : { path, section: null, line: null };
+    const view = this.current;
+    // nothing of this document on screen yet (another file's page, or none): no passage is in it
+    if (path === null || view === null) return null;
+    if (view.body.kind !== "markdown") return { path, section: null, line: null };
     const element = node instanceof Element ? node : (node?.parentElement ?? null);
     const block = element?.closest<HTMLElement>("[data-b]") ?? null;
     const id = block?.getAttribute("data-b") ?? null;

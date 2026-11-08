@@ -8,8 +8,11 @@ import {
   type ApiError,
   type DocumentChanged,
   type EditSource,
+  type Result,
   type Segment,
 } from "../../api";
+import type { Finder } from "../doc/find";
+import { t } from "../i18n";
 import {
   isUnsaved,
   transition,
@@ -66,6 +69,16 @@ export type ActiveEditor = {
   markAt?(): number | null;
   /** Text is being composed (IME): edits wait. */
   composing?(): boolean;
+  /** Some block of the text would read back otherwise than shown (a formula | link as text): a save says so. */
+  lost?(): boolean;
+  /** Find in page over the text (the page's find bar searches through it). */
+  find?: Finder;
+  /** Opens the editor's own find panel (Source). */
+  search?(): void;
+  /** Tops of the headings, px below the top edge of the text on screen, in document order (the outline). */
+  headingTops?(): number[];
+  /** Scrolls heading `index` (document order) to the top of the pane. */
+  showHeading?(index: number): void;
 };
 
 /** The last `marks` handed to the editors. */
@@ -83,6 +96,8 @@ export type Content = {
   line: number;
   /** Bumped on every (re)load: the editor is made again. */
   seq: number;
+  /** The editor takes the keyboard once made (`false`: it stays where the person put it, the Explorer's tree). */
+  focus: boolean;
 };
 
 export type Hooks = {
@@ -125,12 +140,17 @@ export class EditingSession {
   kind = $state<EditKind>("text");
   /** First save of the session: the hint shows once. */
   firstSave = $state(true);
+  /** Find in page over the editor on screen (`null`: none offers it; Source has its own panel). */
+  finder = $state.raw<Finder | null>(null);
 
   #api: Api;
   #hooks: Hooks | null = null;
   #editor: ActiveEditor | null = null;
   #policy: SavePolicy = { kind: "explicit" };
   #path = $state<string | null>(null);
+  /** Goes up when the session takes up another document or lets go of one, not when its document is renamed: an
+   *  answer about an earlier document is dropped, one about the renamed document still counts. */
+  #held = 0;
   /** An editor was opened in this window (Ctrl+E goes back to the last one). */
   #used = false;
   #seq = 0;
@@ -145,9 +165,12 @@ export class EditingSession {
   #savedListeners = new Set<(path: string) => void>();
   #waiting: ((ok: boolean) => void)[] = [];
   #unguard: (() => void) | null = null;
-  #loadedSegments: Segment[] | null = null;
+  /** The block map the backend gave with the text it was made from: only that exact text may reuse it. */
+  #loadedSegments: { text: string; segments: Segment[] } | null = null;
   /** Marks shown now: the editor made next (Edit <-> Source) shows them too. */
   #marks: Marks | null = null;
+  /** The last save wrote a text that reads back otherwise (`ActiveEditor.lost`). */
+  #lostSaved = false;
 
   constructor(api: Api = defaultApi) {
     this.#api = api;
@@ -216,13 +239,14 @@ export class EditingSession {
   // ---- entering and leaving ----------------------------------------------------------------------------------
 
   /** Opens `path` in an editor (`kind`: which Edit the document has; `at`: the line to start at, else the reading
-   * place). */
+   * place; `focus`: the editor takes the keyboard once made). */
   async enter(
     mode: "edit" | "source",
     path: string,
     kind: EditKind,
     policy: SavePolicy,
     at?: number,
+    focus = true,
   ): Promise<void> {
     const wanted = kind === "text" ? "source" : mode;
     if (this.#path === path && this.mode !== "view") {
@@ -237,13 +261,14 @@ export class EditingSession {
     this.state = { s: "loading" };
     this.mode = wanted;
     this.lastEdit = wanted;
-    this.chosenMode = wanted;
+    // a file without Edit opens in Source, yet the person's choice stays: the next file that has Edit opens in it
+    this.chosenMode = mode;
     this.#used = true;
     this.#unguard = setLeaveGuard((leave) => this.confirmLeave(leave));
-    await this.#load(line);
+    await this.#load(line, focus);
   }
 
-  async #load(line: number): Promise<void> {
+  async #load(line: number, focus = true): Promise<void> {
     const path = this.#path;
     if (path === null) return;
     const seq = ++this.#seq;
@@ -254,12 +279,30 @@ export class EditingSession {
       this.#close();
       return;
     }
-    this.#mount(result.value, line);
+    this.#fitKind(result.value);
+    this.#mount(result.value, line, focus);
     this.dispatch({ e: "loaded", base: { hash: result.value.hash, text: result.value.text } });
   }
 
-  #mount(source: EditSource, line: number): void {
-    this.#loadedSegments = source.segments;
+  /**
+   * The file, not the caller, decides between the visual editor and the others: the backend gives a block map for
+   * Markdown only. The visual editor on other text, or the sheet on Markdown, would show (and save) it wrong.
+   */
+  #fitKind(source: EditSource): void {
+    const markdown = source.segments !== null;
+    if (markdown === (this.kind === "markdown")) return;
+    if (markdown) {
+      this.kind = "markdown";
+      return;
+    }
+    this.kind = "text";
+    this.mode = "source";
+    this.lastEdit = "source";
+  }
+
+  #mount(source: EditSource, line: number, focus: boolean): void {
+    this.#loadedSegments =
+      source.segments === null ? null : { text: source.text, segments: source.segments };
     this.text = source.text;
     this.content = {
       path: source.path,
@@ -267,6 +310,7 @@ export class EditingSession {
       segments: source.segments,
       line,
       seq: ++this.#seq,
+      focus,
     };
   }
 
@@ -277,16 +321,23 @@ export class EditingSession {
       await this.confirmLeave({ kind: "view" });
       return;
     }
-    if (this.#path === null || this.content === null) return;
+    const path = this.#path;
+    if (path === null || this.content === null) return;
+    // a reload is on its way: an editor made now would hold the text from before it, and the reload would be dropped
+    if (this.state.s === "loading") return;
     if (mode === "edit" && this.kind === "text") return;
     const editor = this.#editor;
     const text = editor?.text() ?? this.content.text;
     const line = at ?? editor?.topLine() ?? this.content.line;
     let segments: Segment[] | null = null;
     if (mode === "edit" && this.kind === "markdown") {
-      if (text === this.base?.text && this.#loadedSegments) segments = this.#loadedSegments;
+      const loaded = this.#loadedSegments;
+      if (loaded?.text === text) segments = loaded.segments;
       else {
+        const seq = this.#seq;
         const result = await this.#api.editSegments(text);
+        // the window moved on meanwhile (another document, a reload, another switch): this text is not its own now
+        if (seq !== this.#seq || path !== this.#path) return;
         if (!result.ok) {
           this.#hooks?.fail(result.error);
           return;
@@ -295,7 +346,7 @@ export class EditingSession {
       }
     }
     this.#editor = null;
-    this.content = { path: this.#path, text, segments, line, seq: ++this.#seq };
+    this.content = { path, text, segments, line, seq: ++this.#seq, focus: true };
     this.mode = mode;
     this.lastEdit = mode;
     this.chosenMode = mode;
@@ -311,13 +362,16 @@ export class EditingSession {
 
   #reset(): void {
     this.#seq += 1;
+    this.#held += 1;
     this.#editor = null;
+    this.finder = null;
     this.content = null;
     this.disk = null;
     this.text = "";
     this.selection = "";
     this.#loadedSegments = null;
     this.#marks = null;
+    this.#lostSaved = false;
     this.#clearTimers();
   }
 
@@ -350,11 +404,13 @@ export class EditingSession {
   attach(seq: number, editor: ActiveEditor): () => void {
     if (this.content?.seq !== seq) return () => {};
     this.#editor = editor;
+    this.finder = editor.find ?? null;
     this.text = editor.text();
     const marks = this.#marks;
     if (marks !== null) editor.marks?.(marks.ranges, marks.current, marks.pick);
     return () => {
       if (this.#editor === editor) this.#editor = null;
+      if (editor.find !== undefined && this.finder === editor.find) this.finder = null;
     };
   }
 
@@ -415,6 +471,21 @@ export class EditingSession {
     this.#editor?.focus();
   }
 
+  /** Opens the own find panel of the editor on screen (Source; others: nothing happens). */
+  search(): void {
+    this.#editor?.search?.();
+  }
+
+  /** Tops of the headings of the editor on screen (`[]`: none, or it does not tell). */
+  headingTops(): number[] {
+    return this.#editor?.headingTops?.() ?? [];
+  }
+
+  /** Scrolls the editor on screen to its heading `index` (one that cannot: nothing happens). */
+  showHeading(index: number): void {
+    this.#editor?.showHeading?.(index);
+  }
+
   /** The editor's text changed (checked shortly after, against the base). */
   changed(): void {
     if (this.#check !== null) clearTimeout(this.#check);
@@ -441,14 +512,17 @@ export class EditingSession {
   // ---- the machine -------------------------------------------------------------------------------------------
 
   dispatch(event: DocEvent): void {
-    // a pending check first: "save" right after typing saves what was typed
+    // a pending check first: "save" right after typing saves what was typed, and a change on disk right after typing
+    // meets the typed text (a conflict), never a clean editor that reloads | closes over it
     if (
       event.e === "save" ||
       event.e === "leave" ||
       event.e === "saveAndLeave" ||
-      event.e === "autosaveDue"
+      event.e === "autosaveDue" ||
+      event.e === "diskChanged" ||
+      event.e === "diskDeleted"
     ) {
-      this.#flush();
+      this.sync();
     }
     const step = transition(this.state, event, this.#policy);
     this.state = step.state;
@@ -457,12 +531,18 @@ export class EditingSession {
     for (const effect of step.effects) void this.#run(effect);
   }
 
-  #flush(): void {
+  /** Runs the change check that waits at once: whoever reads `unsaved` next sees what was just typed. */
+  sync(): void {
     if (this.#check !== null) {
       clearTimeout(this.#check);
       this.#check = null;
       this.#compare();
     }
+  }
+
+  /** The text being edited: the editor's, else the one the next editor mounts with, else the last one checked. */
+  #textNow(): string {
+    return this.#editor?.text() ?? this.content?.text ?? this.text;
   }
 
   save(): void {
@@ -517,10 +597,12 @@ export class EditingSession {
 
   async #save(against: "base" | "disk"): Promise<void> {
     const path = this.#path;
+    const held = this.#held;
     const editor = this.#editor;
     const base = this.base;
     if (path === null || base === null) return;
-    const text = editor?.text() ?? this.content?.text ?? base.text;
+    const text = this.#textNow();
+    const lost = editor?.lost?.() ?? false;
     let from = base;
     if (against === "disk") {
       const disk = await this.#api.editSource(path);
@@ -532,7 +614,8 @@ export class EditingSession {
     }
     const changes = editor?.changes(from.text) ?? 0;
     const result = await this.#api.editSave(path, from.hash, lineEdits(from.text, text));
-    if (this.#path !== path) return;
+    // the answer belongs to this document even when it was renamed meanwhile (the machine waits for it)
+    if (this.#held !== held) return;
     if (!result.ok) {
       this.#hooks?.fail(result.error);
       this.dispatch({ e: "saveFailed", error: result.error.kind });
@@ -546,6 +629,7 @@ export class EditingSession {
           this.#hooks?.note(this.#hooks.savedText(changes, this.firstSave));
           this.firstSave = false;
         }
+        this.#sayLost(lost);
         this.dispatch({ e: "saved", base: { hash: outcome.hash, text } });
         // the editor typed on while saving: compare against the new base
         if (editor && editor.text() !== text) this.changed();
@@ -562,17 +646,28 @@ export class EditingSession {
 
   async #saveAs(exact: boolean): Promise<void> {
     const path = this.#path;
+    const held = this.#held;
     if (path === null) return;
-    const text = this.#editor?.text() ?? this.content?.text ?? "";
-    const result = await this.#api.editSaveAs(path, text, exact);
-    if (this.#path !== path) return;
+    const lost = this.#editor?.lost?.() ?? false;
+    const result = await this.#api.editSaveAs(path, this.#textNow(), exact);
+    if (this.#held !== held) return;
     if (!result.ok) {
       this.#hooks?.fail(result.error);
       this.dispatch({ e: "saveFailed", error: result.error.kind });
       return;
     }
+    this.#sayLost(lost);
     this.dispatch({ e: "savedAs", path: result.value, sameFile: exact });
     if (exact) this.#hooks?.saved();
+  }
+
+  /** The text just written reads back otherwise than the editor showed it: said on each explicit save, once while
+   *  autosave keeps writing such a text (it would speak every second). */
+  #sayLost(lost: boolean): void {
+    if (lost && (this.#policy.kind === "explicit" || !this.#lostSaved)) {
+      this.#hooks?.note(t("edit.savedReadsOtherwise"));
+    }
+    this.#lostSaved = lost;
   }
 
   #leave(leave: Leave): void {
@@ -618,6 +713,7 @@ export class EditingSession {
    * over).
    */
   saveForClose(): Promise<boolean> {
+    this.sync();
     if (!this.unsaved) return Promise.resolve(true);
     if (this.state.s === "conflict") return Promise.resolve(false);
     return new Promise((resolve) => {
@@ -646,11 +742,58 @@ export class EditingSession {
         this.dispatch({ e: "diskChanged", hash: event.version });
         return true;
       case "deleted":
-        this.dispatch({ e: "diskDeleted" });
+        // what was just typed counts: the editor goes along with a renamed file; a deleted one, a clean editor lets go
+        this.sync();
+        if (event.movedTo !== null) void this.#follow(event.movedTo);
+        else this.dispatch({ e: "diskDeleted" });
         return true;
       default:
         return event satisfies never;
     }
+  }
+
+  /**
+   * The file was renamed | moved: the session goes with it (path; with unsaved edits, the unsaved flag and the journal
+   * entry too), keeping the text and the mode; the editor is made again from it. The moved file is then compared with
+   * the base like any change on disk: other bytes (links rewritten by the move) reload a clean editor, and show unsaved
+   * edits the conflict view against the moved file, so "Keep mine" writes there and never brings the old path back.
+   */
+  async #follow(to: string): Promise<void> {
+    const from = this.#path;
+    const base = this.base;
+    if (from === null || base === null) return;
+    const text = this.#textNow();
+    const line = this.#editor?.topLine() ?? this.content?.line ?? 1;
+    this.#path = to;
+    this.text = text;
+    // nothing to type into until the text is mounted again for the new path
+    this.#editor = null;
+    this.content = null;
+    if (this.#journaled && this.#journal !== null) {
+      this.#journal(from, base.hash, null);
+      this.#journaled = false;
+      this.#writeJournal();
+    }
+    if (this.unsaved) void this.#api.editSetUnsaved(to);
+    const seq = ++this.#seq;
+    const loaded = this.#loadedSegments;
+    const blocks: Result<Segment[]> | Promise<Result<Segment[]>> | null =
+      this.mode !== "edit" || this.kind !== "markdown"
+        ? null
+        : loaded?.text === text
+          ? { ok: true, value: loaded.segments }
+          : this.#api.editSegments(text);
+    const [map, disk] = await Promise.all([blocks, this.#api.editSource(to)]);
+    if (seq !== this.#seq || this.#path !== to) return;
+    if (map?.ok === false) {
+      // Edit cannot show this text without its block map (it would rewrite blocks kept as written): Source shows it
+      this.#hooks?.fail(map.error);
+      this.mode = "source";
+      this.lastEdit = "source";
+    }
+    const segments = map?.ok ? map.value : null;
+    this.content = { path: to, text, segments, line, seq: ++this.#seq, focus: true };
+    this.dispatch(disk.ok ? { e: "diskChanged", hash: disk.value.hash } : { e: "diskDeleted" });
   }
 
   // ---- the journal ---------------------------------------------------------------------------------------------
@@ -679,7 +822,7 @@ export class EditingSession {
     const path = this.#path;
     const base = this.base;
     if (path === null || base === null || !this.unsaved) return;
-    const text = this.#editor?.text() ?? this.content?.text ?? base.text;
+    const text = this.#textNow();
     if (text === base.text || this.#journal === null) return;
     this.#journal(path, base.hash, text);
     this.#journaled = true;

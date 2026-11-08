@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "../../api/mock";
-import { mockHash } from "../../api/mockEdit";
+import { mockHash, mockSegments } from "../../api/mockEdit";
+import { t } from "../i18n";
 import { confirmLeave } from "./guard";
 import { EditingSession, type ActiveEditor, type Hooks } from "./session.svelte";
 
@@ -158,6 +159,64 @@ describe("editing session", () => {
     expect(session.state.s).toBe("closed");
   });
 
+  describe("a text that would not read back as the editor shows it", () => {
+    const LOST = t("edit.savedReadsOtherwise");
+
+    async function lossy(policy: "explicit" | "auto") {
+      const setUp = setup();
+      await setUp.session.enter(
+        "source",
+        "docs/guide.md",
+        "markdown",
+        policy === "auto" ? { kind: "auto", delayMs: 800 } : { kind: "explicit" },
+      );
+      const content = setUp.session.content;
+      if (!content) throw new Error("no content");
+      let lost = true;
+      const editor = { ...fakeEditor(content.text), lost: () => lost };
+      setUp.session.attach(content.seq, editor);
+      const type = async (text: string): Promise<void> => {
+        editor.set(text);
+        setUp.session.changed();
+        await settle();
+        await vi.advanceTimersByTimeAsync(1000);
+      };
+      return { ...setUp, content, type, setLost: (next: boolean) => (lost = next) };
+    }
+
+    it("is saved as written, and the save says so", async () => {
+      const { api, session, notes, content, type } = await lossy("explicit");
+      await type(content.text + "x\n");
+      session.save();
+      await settle();
+      expect(session.state.s).toBe("clean");
+      expect(api.probe.edit.files.get("docs/guide.md")).toBe(content.text + "x\n");
+      expect(notes).toEqual(["saved 1", LOST]);
+    });
+
+    it("autosave says so once while it lasts, again once it comes back", async () => {
+      const { notes, content, type, setLost } = await lossy("auto");
+      await type(content.text + "a\n");
+      await type(content.text + "ab\n");
+      expect(notes).toEqual([LOST]);
+      setLost(false);
+      await type(content.text + "abc\n");
+      expect(notes).toEqual([LOST]);
+      setLost(true);
+      await type(content.text + "abcd\n");
+      expect(notes).toEqual([LOST, LOST]);
+    });
+
+    it("says nothing when every block reads back", async () => {
+      const { session, notes, content, type, setLost } = await lossy("explicit");
+      setLost(false);
+      await type(content.text + "x\n");
+      session.save();
+      await settle();
+      expect(notes).toEqual(["saved 1"]);
+    });
+  });
+
   it("asks before leaving unsaved edits: keep editing stays, discard leaves", async () => {
     const { session, api } = setup();
     const { editor, content } = await open(session);
@@ -245,6 +304,76 @@ describe("editing session", () => {
     expect(session.content?.text).toBe(content.text + "kept\n");
     expect(session.content?.segments?.length).toBeGreaterThan(0);
     expect(session.state.s).toBe("dirty");
+  });
+});
+
+describe("Edit <-> Source while the document moves", () => {
+  it("waits while the document reloads: the new text lands, nothing from before it is mounted", async () => {
+    const { api, session } = setup();
+    const { content } = await open(session);
+    const theirs = content.text.replace("Guide", "Their guide");
+    api.probe.edit.files.set("docs/guide.md", theirs);
+    const read = api.editSource.bind(api);
+    let release = (): void => {};
+    vi.spyOn(api, "editSource").mockImplementation(
+      (path) =>
+        new Promise((resolve) => {
+          release = () => resolve(read(path));
+        }),
+    );
+    session.onDocumentChanged({
+      window: "main",
+      path: "docs/guide.md",
+      change: "changed",
+      version: mockHash(theirs),
+    });
+    expect(session.state.s).toBe("loading");
+    await session.switchTo("edit");
+    expect(session.mode).toBe("source");
+    release();
+    await settle();
+    expect(session.state.s).toBe("clean");
+    expect(session.content?.text).toBe(theirs);
+  });
+
+  it("a block map that comes back after the window moved to another document is dropped", async () => {
+    const { api, session } = setup();
+    const { editor, content } = await open(session);
+    editor.set(content.text + "mine\n");
+    session.changed();
+    await settle();
+    const map = api.editSegments.bind(api);
+    let release = (): void => {};
+    vi.spyOn(api, "editSegments").mockImplementation(
+      (text) =>
+        new Promise((resolve) => {
+          release = () => resolve(map(text));
+        }),
+    );
+    const switching = session.switchTo("edit");
+    session.release();
+    await open(session, "README.md");
+    release();
+    await switching;
+    expect(session.path).toBe("README.md");
+    expect(session.mode).toBe("source");
+    expect(session.content?.path).toBe("README.md");
+    expect(session.content?.text).not.toContain("mine");
+  });
+
+  it("Edit after a save in Source maps the text as saved, not as it was loaded", async () => {
+    const { session } = setup();
+    const { editor, content } = await open(session);
+    const next = `${content.text}\n## Added later\n\nNew words.\n`;
+    editor.set(next);
+    session.changed();
+    await settle();
+    session.save();
+    await settle();
+    expect(session.state.s).toBe("clean");
+    await session.switchTo("edit");
+    expect(session.content?.text).toBe(next);
+    expect(session.content?.segments).toEqual(mockSegments(next));
   });
 });
 
@@ -506,5 +635,187 @@ describe("the mode the person chose", () => {
     expect(session.mode).toBe("source");
     expect(session.chosenMode).toBe("source");
     expect(session.path).toBe("docs/handbook.md");
+  });
+
+  it("a file without Edit opens in Source and keeps Edit as the choice for the next file", async () => {
+    const { session } = setup();
+    await session.enter("edit", "notes/todo.txt", "text", { kind: "explicit" });
+    expect(session.mode).toBe("source");
+    expect(session.lastEdit).toBe("source");
+    expect(session.chosenMode).toBe("edit");
+  });
+});
+
+/** The mock watches `path` as the page shows it, and the session hears this window's document events. */
+async function watched(
+  api: ReturnType<typeof createMockApi>,
+  session: EditingSession,
+  path = "docs/guide.md",
+): Promise<void> {
+  await api.openDocument(path, []);
+  await api.on("document-changed", (event) => void session.onDocumentChanged(event));
+}
+
+async function moved(
+  api: ReturnType<typeof createMockApi>,
+  moves: { from: string; to: string }[],
+): Promise<void> {
+  const plan = await api.planMove(moves, true);
+  if (!plan.ok) throw new Error("no plan");
+  const applied = await api.applyMove(plan.value.planId, true);
+  if (!applied.ok) throw new Error("not moved");
+}
+
+describe("the file changes on disk right after typing", () => {
+  it("a link rewrite before the change check ran meets the typed text as a conflict, nothing reloaded", async () => {
+    const { api, session } = setup();
+    const { editor, content } = await open(session);
+    await watched(api, session);
+    const mine = `${content.text}typed\n`;
+    editor.set(mine);
+    session.changed();
+    // a move elsewhere rewrites a link of this document within the wait of the change check
+    await moved(api, [{ from: "README.md", to: "START.md" }]);
+    await settle();
+    expect(session.state.s).toBe("conflict");
+    expect(session.disk?.text).toContain("START.md");
+    expect(session.current()).toBe(mine);
+    session.dispatch({ e: "keepMine" });
+    await settle();
+    expect(api.probe.edit.files.get("docs/guide.md")).toBe(mine);
+  });
+
+  it("a delete before the change check ran keeps the typed text: a conflict, the editor stays", async () => {
+    const { api, session } = setup();
+    const { editor, content } = await open(session);
+    await watched(api, session);
+    const mine = `${content.text}typed\n`;
+    editor.set(mine);
+    session.changed();
+    await api.deleteFiles(["docs/guide.md"]);
+    await settle();
+    expect(session.state).toMatchObject({ s: "conflict", disk: null });
+    expect(session.path).toBe("docs/guide.md");
+    session.dispatch({ e: "keepMine" });
+    await settle();
+    expect(api.probe.edit.files.get("docs/guide.md")).toBe(mine);
+  });
+
+  it("Save all right after typing saves what was typed", async () => {
+    const { api, session } = setup();
+    const { editor, content } = await open(session);
+    editor.set(`${content.text}y`);
+    session.changed();
+    const saved = session.saveForClose();
+    await settle();
+    expect(await saved).toBe(true);
+    expect(api.probe.edit.files.get("docs/guide.md")).toBe(`${content.text}y`);
+  });
+});
+
+describe("the document moves while it holds unsaved edits", () => {
+  type Call = { path: string; baseHash: string; text: string | null };
+
+  it("the session goes with it: same text, still unsaved, journaled and saved under the new path only", async () => {
+    const { api, session } = setup();
+    const calls: Call[] = [];
+    session.bindJournal((path, baseHash, text) => calls.push({ path, baseHash, text }));
+    const { editor, content } = await open(session);
+    await watched(api, session);
+    const mine = `${content.text}mine\n`;
+    editor.set(mine);
+    session.changed();
+    await settle();
+    await vi.advanceTimersByTimeAsync(2000);
+    const baseHash = mockHash(content.text);
+    expect(calls.at(-1)).toEqual({ path: "docs/guide.md", baseHash, text: mine });
+
+    await moved(api, [{ from: "docs/guide.md", to: "docs/manual.md" }]);
+    await settle();
+    expect(session.path).toBe("docs/manual.md");
+    expect(session.state.s).toBe("dirty");
+    expect(session.current()).toBe(mine);
+    expect(api.probe.edit.unsaved).toBe("docs/manual.md");
+    expect(calls.slice(-2)).toEqual([
+      { path: "docs/guide.md", baseHash, text: null },
+      { path: "docs/manual.md", baseHash, text: mine },
+    ]);
+    // the editor is made again from the text it held, for the new path
+    const next = session.content;
+    expect(next).toMatchObject({ path: "docs/manual.md", text: mine });
+    session.attach(next?.seq ?? -1, fakeEditor(next?.text ?? ""));
+    // leaving for the moved document is staying on it
+    expect(await confirmLeave({ kind: "document", path: "docs/manual.md" })).toBe(true);
+
+    session.save();
+    await settle();
+    expect(session.state.s).toBe("clean");
+    expect(api.probe.edit.files.get("docs/manual.md")).toBe(mine);
+    expect(api.probe.edit.files.has("docs/guide.md")).toBe(false);
+  });
+
+  it("moved with its links rewritten before the change check ran: a conflict with the moved file; Keep mine writes there", async () => {
+    const { api, session } = setup();
+    const { editor, content } = await open(session);
+    await watched(api, session);
+    const mine = `${content.text}mine\n`;
+    editor.set(mine);
+    session.changed();
+    await moved(api, [
+      { from: "docs/guide.md", to: "docs/manual.md" },
+      { from: "README.md", to: "START.md" },
+    ]);
+    await settle();
+    expect(session.path).toBe("docs/manual.md");
+    expect(session.state.s).toBe("conflict");
+    expect(session.disk?.text).toContain("START.md");
+    session.dispatch({ e: "keepMine" });
+    await settle();
+    expect(session.state.s).toBe("clean");
+    expect(api.probe.edit.files.get("docs/manual.md")).toBe(mine);
+    expect(api.probe.edit.files.has("docs/guide.md")).toBe(false);
+  });
+
+  it("a clean editor goes with a moved document: still clean, in its mode, nothing marked unsaved", async () => {
+    const { api, session } = setup();
+    const { content } = await open(session);
+    await watched(api, session);
+    await moved(api, [{ from: "docs/guide.md", to: "docs/manual.md" }]);
+    await settle();
+    expect(session.path).toBe("docs/manual.md");
+    expect(session.state.s).toBe("clean");
+    expect(session.mode).toBe("source");
+    expect(session.content).toMatchObject({ path: "docs/manual.md", text: content.text });
+    expect(api.probe.edit.unsaved).toBeNull();
+  });
+
+  it("a clean editor lets go of a deleted document", async () => {
+    const { api, session } = setup();
+    await open(session);
+    await watched(api, session);
+    await api.deleteFiles(["docs/guide.md"]);
+    await settle();
+    expect(session.state.s).toBe("closed");
+    expect(session.mode).toBe("view");
+  });
+});
+
+describe("the editor fits the file, whatever kind the caller asked for", () => {
+  it("a Markdown file asked as a sheet opens the visual editor", async () => {
+    const { session } = setup();
+    await session.enter("edit", "docs/guide.md", "sheet", { kind: "explicit" });
+    expect(session.kind).toBe("markdown");
+    expect(session.mode).toBe("edit");
+    expect(session.content?.segments?.length).toBeGreaterThan(0);
+  });
+
+  it("a config file asked as Markdown opens in Source, and the choice stays", async () => {
+    const { session } = setup();
+    await session.enter("edit", "Cargo.toml", "markdown", { kind: "explicit" });
+    expect(session.kind).toBe("text");
+    expect(session.mode).toBe("source");
+    expect(session.lastEdit).toBe("source");
+    expect(session.chosenMode).toBe("edit");
+    expect(session.content?.segments).toBeNull();
   });
 });

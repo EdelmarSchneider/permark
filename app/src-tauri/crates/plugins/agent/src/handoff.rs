@@ -24,7 +24,7 @@ use ts_rs::TS;
 use crate::format::{self, CEILING_CHARS};
 use crate::guard::Guard;
 use crate::render::activity_text;
-use crate::tools::{read_text, Tools};
+use crate::tools::Tools;
 use crate::ToolError;
 
 /// Rows `activity` lists by default, and at most.
@@ -53,7 +53,7 @@ impl Disk for ProjectDisk<'_> {
     }
 
     fn headings(&self, path: &str) -> Option<Vec<String>> {
-        let text = read_text(&self.abs(path)?).ok()?;
+        let (_, text) = self.guard.text(path).ok()?;
         Some(
             sections(&text)
                 .into_iter()

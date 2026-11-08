@@ -275,6 +275,23 @@ describe("rename, pin, share, copy", () => {
     expect(store.entries.some((e) => e.path === FIRST)).toBe(true);
   });
 
+  it("the reason of a refused name comes as its detail, as the plugin sends it", async () => {
+    const { api } = await setup();
+    const refused = await api.pluginCall("notes.rename", { path: FIRST, name: "a/b" });
+    expect(refused.ok === false && refused.error.kind === "backend" && refused.error.error).toEqual(
+      { kind: "invalidName", subject: "a/b", detail: "chars" },
+    );
+  });
+
+  it("a case-only rename on a drive that cannot prove one file says so, and nothing is renamed", async () => {
+    const { api, store } = await setup();
+    expect(await store.rename(FIRST, "Trip.md")).toBeNull();
+    await settle();
+    api.probe.plugins.notes.fileIdsUnknown = true;
+    expect(await store.rename("Trip.md", "trip.md")).toMatch(/same file/);
+    expect(store.entries.some((e) => e.path === "Trip.md")).toBe(true);
+  });
+
   it("pins, unpins and reorders", async () => {
     const { store } = await setup();
     await store.togglePin(FIRST);

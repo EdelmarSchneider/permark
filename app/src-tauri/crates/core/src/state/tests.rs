@@ -443,6 +443,41 @@ fn uninit_project_removes_the_folder_whole_and_leaves_no_temp() {
     );
 }
 
+/// Undo of an init carries `local/` back into the profile, but never the files that only the profile may hold: a
+/// project's own `local/agent.json` must not switch the agent connection (or plugins) on in the profile.
+#[test]
+fn uninit_project_never_carries_profile_only_files_back() {
+    let f = fx();
+    let store = init_project(&f.dirs, &f.root()).unwrap();
+    let profile = f
+        .dirs
+        .profile
+        .join("projects")
+        .join(ProjectId::of(&f.root()).as_str());
+    fs::create_dir_all(&profile).unwrap();
+    fs::write(profile.join("agent.json"), b"person's choice").unwrap();
+    store
+        .file::<Sample>("session.json")
+        .save(&sample(5))
+        .unwrap();
+    let local = f.root().path().join(".permark/local");
+    for name in PROFILE_ONLY.iter().chain(&SHARED_FILES) {
+        fs::write(local.join(name), b"from the project").unwrap();
+    }
+    assert!(uninit_project(&f.dirs, &f.root()).unwrap());
+    assert_eq!(
+        fs::read(profile.join("agent.json")).unwrap(),
+        b"person's choice"
+    );
+    for name in PROFILE_ONLY.iter().chain(&SHARED_FILES).skip(1) {
+        assert!(!profile.join(name).exists(), "{name} stays out");
+    }
+    assert_eq!(
+        f.store().file::<Sample>("session.json").load().into_value(),
+        sample(5)
+    );
+}
+
 /// N1: a file held open inside `.permark/` (Windows: antivirus, editor) -> the folder stays whole, never half removed.
 #[cfg(windows)]
 #[test]

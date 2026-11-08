@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { EditorView } from "@codemirror/view";
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceView } from "../../api";
@@ -24,6 +25,7 @@ const { WindowStore } = await import("../window.svelte");
 const { syncPlugins } = await import("../plugins/instance.svelte");
 const { installWindowKeys } = await import("../commands/install");
 const { ui } = await import("../shell/ui.svelte");
+const { Box } = await import("../testing/box.svelte");
 
 // The code and formula embeds, the editor pane and its visual editor are chunks loaded on first use, and highlight.js
 // loads each grammar the same way. In the app they are prebuilt chunks that load quickly; here the first import
@@ -44,6 +46,21 @@ await Promise.all([
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
 
 type Shown = Extract<WorkspaceView, { kind: "project" }>;
+
+/** The plugins that have a view and do not need a big library in this test. */
+const PLUGINS = [
+  "highlight",
+  "frontmatter-card",
+  "math",
+  "text-view",
+  "json-view",
+  "media",
+  "xml-view",
+  "fmt-toml",
+  "fmt-yaml",
+  "fmt-dotenv",
+  "fmt-ignore",
+] as const;
 
 let component: Record<string, unknown> | null = null;
 let stopKeys: (() => void) | null = null;
@@ -83,20 +100,7 @@ beforeEach(async () => {
   await store.start();
   reading.setWidth("comfortable");
   reading.setZoom(100);
-  // the plugins that have a view and do not need a big library in this test
-  syncPlugins([
-    "highlight",
-    "frontmatter-card",
-    "math",
-    "text-view",
-    "json-view",
-    "media",
-    "xml-view",
-    "fmt-toml",
-    "fmt-yaml",
-    "fmt-dotenv",
-    "fmt-ignore",
-  ]);
+  syncPlugins(PLUGINS);
   // the window shows what the backend says; the area follows
   stopFollowing = await mock.on("window-changed", (event) => {
     if (event.view.state === "showing") void documents.show(event.view.document);
@@ -218,6 +222,27 @@ describe("the page", () => {
     expect(documents.trail.canBack).toBe(true);
     // the keyboard is on the new page, not lost with the link
     expect(document.activeElement?.hasAttribute("data-scroller")).toBe(true);
+  });
+
+  it("a middle | Shift | Ctrl + Shift click on a link follows it here and never asks for a new window", async () => {
+    const follow = async (init: MouseEventInit, type = "click"): Promise<void> => {
+      await show("README.md");
+      await until(() => target.querySelector('a[href="docs/guide.md"]') !== null, "the link");
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, ...init });
+      target.querySelector('a[href="docs/guide.md"]')?.dispatchEvent(event);
+      expect(event.defaultPrevented, `${type} ${JSON.stringify(init)}`).toBe(true);
+      await until(() => documents.path === "docs/guide.md", "navigated");
+    };
+    await follow({ button: 1 }, "auxclick");
+    await follow({ shiftKey: true });
+    await follow({ ctrlKey: true, shiftKey: true });
+    // the right button's own menu, not a link's
+    await show("README.md");
+    await until(() => target.querySelector('a[href="docs/guide.md"]') !== null, "the link");
+    const right = new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 2 });
+    target.querySelector('a[href="docs/guide.md"]')?.dispatchEvent(right);
+    expect(right.defaultPrevented).toBe(false);
+    expect(documents.path).toBe("README.md");
   });
 
   it("opens web links in the browser and code references in the chosen editor", async () => {
@@ -462,12 +487,65 @@ describe("a document that changes under the reader", () => {
       window: "main",
       path: "README.md",
       change: "deleted",
-      movedTo: "docs/README.md",
+      movedTo: null,
     });
     await until(() => target.querySelector(".banner") !== null, "banner");
-    expect(target.querySelector(".banner")?.textContent).toContain("docs/README.md");
+    expect(target.querySelector(".banner button")).toBeNull();
     expect(target.querySelector(".md.is-tombstone")).not.toBeNull();
     expect(target.querySelectorAll(".md-body > *").length).toBeGreaterThan(5);
+  });
+
+  it("a plugin switched on or off reads the page again and draws it anew, at the same place", async () => {
+    await show("README.md");
+    await until(() => target.querySelectorAll(".md-body > *").length > 5, "blocks");
+    const first = target.querySelector(".md-body > *");
+    const scroller = documents.host.scroller;
+    if (!scroller) throw new Error("no page");
+    scroller.scrollTop = 120;
+    documents.noteScroll();
+    const opens = vi.spyOn(mock, "openDocument");
+    try {
+      // the backend's formats changed with the plugins (the front matter card, prompt boxes)
+      mock.emit("plugins-changed", null);
+      await until(() => opens.mock.calls.length > 0, "read again");
+      // nothing held counts: blocks of the same id can look another way now
+      expect(opens.mock.calls[0]?.[1]).toEqual([]);
+      await until(
+        () =>
+          target.querySelector(".md-body > *") !== first &&
+          target.querySelectorAll(".md-body > *").length > 5,
+        "drawn anew",
+      );
+      await tick();
+      expect(scroller.scrollTop).toBe(120);
+      expect(documents.path).toBe("README.md");
+    } finally {
+      opens.mockRestore();
+    }
+  });
+
+  it("follows a renamed document without a banner; the header names it again after the rename is undone", async () => {
+    await show("docs/guide.md");
+    await until(() => target.querySelectorAll(".md-body > *").length > 0, "blocks");
+    const plan = await mock.planMove([{ from: "docs/guide.md", to: "docs/manual.md" }], true);
+    if (!plan.ok) throw new Error("no plan");
+    await mock.applyMove(plan.value.planId, true);
+    // the mock is shared by the tests of this file: the document goes back to its name whatever happens
+    let renamed = true;
+    try {
+      await until(() => documents.view?.path === "docs/manual.md", "the page on the new name");
+      await tick();
+      expect(target.querySelector(".crumb.current")?.textContent).toBe("manual.md");
+      expect(target.querySelector(".banner")).toBeNull();
+      await mock.undoFileOp();
+      renamed = false;
+      await until(() => documents.view?.path === "docs/guide.md", "the page on the old name");
+      await tick();
+      expect(target.querySelector(".crumb.current")?.textContent).toBe("guide.md");
+      expect(target.querySelector(".banner")).toBeNull();
+    } finally {
+      if (renamed) await mock.undoFileOp();
+    }
   });
 });
 
@@ -481,6 +559,8 @@ describe("editing", () => {
     await import("../editing/visual/jsdomShims");
     await show("README.md");
     await until(() => modeButton("Edit") !== undefined, "mode switch");
+    // View's card is there (its plugin is on): Edit draws the same card
+    await until(() => target.querySelector(".reading section[aria-label]") !== null, "card");
     modeButton("Edit")?.click();
     await until(() => target.querySelector(".ProseMirror") !== null, "visual editor");
     const errors = vi.spyOn(console, "error");
@@ -490,15 +570,68 @@ describe("editing", () => {
     );
     expect(errors.mock.calls[0]?.[0]).toBeUndefined();
     expect(target.querySelector("[role=toolbar][aria-label=Formatting]")).not.toBeNull();
-    // the front matter stays as written, with the way to Source
+    // blocks kept as written look as View draws them: the front matter as View's card, the rest as View's blocks
     const locked = [...target.querySelectorAll<HTMLElement>(".pm-locked")];
-    expect(locked.map((l) => `${l.dataset.kind}:${l.dataset.reason}`).join(",")).toContain(
-      "frontMatter:frontMatter",
+    const looks = locked.map((l) => `${l.dataset.kind}:${l.dataset.reason}:${l.dataset.look}`);
+    expect(looks).toContain("frontMatter:frontMatter:card");
+    expect(looks).toContain("math:math:view");
+    // prompt blocks: the tag lines are the edges of View's box, the blocks between stay the editor's own inside it
+    const edges = [...target.querySelectorAll<HTMLElement>(".pm-editor > [data-edge]")];
+    expect(edges.map((e) => `${e.dataset.look}:${e.dataset.edge}`)).toEqual([
+      "prompt:open",
+      "prompt:close",
+      "prompt:open",
+      "prompt:close",
+    ]);
+    const summaries = edges.map((e) => e.querySelector("details.prompt-block > summary"));
+    expect(summaries.map((s) => s?.textContent ?? null)).toEqual([
+      "context",
+      null,
+      "instructions",
+      null,
+    ]);
+    const inside = [...target.querySelectorAll(".pm-editor > .pm-prompt-in")];
+    expect(inside.map((el) => el.localName)).toEqual(["p", "ul", "ol"]);
+    expect(inside[0]?.textContent).toContain("You are reading a prompt file");
+    // hydrated as View: the math embed draws the formula
+    await until(
+      () => target.querySelector(".pm-editor .pm-locked [data-math-style] .katex") !== null,
+      "math drawn",
     );
+    expect(target.querySelector(".pm-editor .pm-locked section[aria-label]")).not.toBeNull();
+    expect(target.querySelector(".pm-editor [data-b]")).toBeNull();
     expect(target.querySelector(".reading")?.hasAttribute("hidden")).toBe(true);
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", ctrlKey: true }));
     await until(() => target.querySelector(".ProseMirror") === null, "back to View");
     expect(target.querySelector(".reading")?.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("Edit does not wait long for View's render: blocks kept as written show their source, then View's look", async () => {
+    await import("../editing/visual/jsdomShims");
+    await show("README.md");
+    await until(() => modeButton("Edit") !== undefined, "mode switch");
+    const render = mock.configSheet.bind(mock);
+    let release = (): void => {};
+    const held = new Promise<void>((done) => (release = done));
+    const slow = vi.spyOn(mock, "configSheet").mockImplementation(async (path, text) => {
+      await held;
+      return render(path, text);
+    });
+    const math = (): HTMLElement | null =>
+      target.querySelector<HTMLElement>('.pm-editor .pm-locked[data-kind="math"]');
+    try {
+      modeButton("Edit")?.click();
+      await until(() => math() !== null, "the editor before the render");
+      expect(math()?.dataset.look).toBe("source");
+      release();
+      await until(() => math()?.dataset.look === "view", "View's look");
+      await until(
+        () => target.querySelector('.pm-editor .pm-locked[data-look="card"]') !== null,
+        "View's card",
+      );
+    } finally {
+      slow.mockRestore();
+    }
   });
 
   it("the picture button chooses pictures in a file dialog and puts each in the image folder", async () => {
@@ -551,6 +684,333 @@ describe("editing", () => {
     await show("notes/todo.txt");
     await until(() => modeButton("Edit")?.disabled === true, "no visual editor for text");
     expect(modeButton("Source")?.disabled).toBe(false);
+  });
+
+  it("a plugin switched off and on while editing draws the blocks kept as written in their new look; the text stays", async () => {
+    await import("../editing/visual/jsdomShims");
+    await show("README.md");
+    await until(() => modeButton("Edit") !== undefined, "mode switch");
+    modeButton("Edit")?.click();
+    const front = (): HTMLElement | null =>
+      target.querySelector<HTMLElement>('.pm-editor .pm-locked[data-reason="frontMatter"]');
+    await until(() => front()?.dataset.look === "card", "View's card");
+    const text = editing.current();
+    const renders = vi.spyOn(mock, "configSheet");
+    try {
+      syncPlugins(PLUGINS.filter((id) => id !== "frontmatter-card"));
+      await until(() => front()?.dataset.look === "source", "no card: the source");
+      syncPlugins(PLUGINS);
+      await until(() => front()?.dataset.look === "card", "the card again");
+      // drawn from a fresh render of the text as it is, which nothing changed
+      expect(renders).toHaveBeenCalled();
+      expect(editing.current()).toBe(text);
+      expect(editing.unsaved).toBe(false);
+    } finally {
+      renders.mockRestore();
+    }
+  });
+
+  it("a document opened from the Explorer in an editor leaves the keyboard in the tree; Ctrl+E from there gives it to the editor", async () => {
+    await import("../editing/visual/jsdomShims");
+    // the Explorer's tree, a row focused as a click on it leaves it
+    const tree = document.createElement("div");
+    tree.setAttribute("role", "tree");
+    const row = document.createElement("div");
+    row.setAttribute("role", "treeitem");
+    row.tabIndex = -1;
+    tree.append(row);
+    document.body.append(tree);
+    const inEditor = (): boolean =>
+      target.querySelector(".cm-content")?.contains(document.activeElement) === true;
+    await show("docs/guide.md");
+    await until(() => modeButton("Source") !== undefined, "mode switch");
+    modeButton("Source")?.click();
+    await until(inEditor, "the editor has the keyboard");
+    row.focus();
+    await show("README.md");
+    await until(
+      () =>
+        editing.content?.path === "README.md" &&
+        target.querySelector(".cm-content")?.textContent?.includes("Reading showcase") === true,
+      "the next document in Source",
+    );
+    await tick();
+    expect(document.activeElement).toBe(row);
+    // Ctrl+E: View; Ctrl+E again, asked from the tree: the editor takes the keyboard
+    const ctrlE = (): void =>
+      void row.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "e", ctrlKey: true, bubbles: true, cancelable: true }),
+      );
+    ctrlE();
+    await until(() => target.querySelector(".cm-editor") === null, "View");
+    ctrlE();
+    await until(inEditor, "the editor has the keyboard again");
+  });
+});
+
+describe("another document comes while edits are unsaved", () => {
+  // The window's document as the backend says it (`window-changed`), handed to the area as its prop, as the app
+  // does: a route that moves the tab (the file opened from the system, a drop) never asks the editor first.
+  let told: InstanceType<typeof Box<string | null>>;
+
+  beforeEach(async () => {
+    stopFollowing?.();
+    if (component) await unmount(component);
+    // CodeMirror measures text ranges, which jsdom does not lay out
+    await import("../editing/visual/jsdomShims");
+    told = new Box<string | null>(null);
+    stopFollowing = await mock.on("window-changed", (event) => {
+      if (event.view.state === "showing") told.value = event.view.document;
+    });
+    component = mount(DocumentArea, {
+      target,
+      props: {
+        workspace,
+        get document() {
+          return told.value;
+        },
+        store,
+      },
+    });
+    flushSync();
+  });
+
+  const sourceButton = (): HTMLButtonElement | undefined =>
+    [...target.querySelectorAll<HTMLButtonElement>(".modes button")].find(
+      (b) => b.textContent?.trim() === "Source",
+    );
+  const promptButton = (label: string): HTMLButtonElement | undefined =>
+    [...target.querySelectorAll<HTMLButtonElement>("[role=dialog] button")].find(
+      (b) => b.textContent?.trim() === label,
+    );
+
+  it("asks first; Keep editing goes back to the edited text, Discard lets it go and shows the new one", async () => {
+    await show("docs/guide.md");
+    await until(() => sourceButton() !== undefined, "mode switch");
+    sourceButton()?.click();
+    await until(() => target.querySelector(".cm-editor") !== null, "source editor");
+    await until(() => editing.state.s === "clean", "loaded");
+    expect(editing.apply([{ from: 0, to: 0, insert: "Unsaved words. ", expect: "" }])).toBe(true);
+    await until(() => editing.state.s === "dirty", "unsaved");
+
+    // the backend moves the tab to another document without asking
+    await show("README.md");
+    await until(() => editing.state.s === "unsavedPrompt", "asked");
+    expect(editing.path).toBe("docs/guide.md");
+    expect(documents.path).toBe("docs/guide.md");
+
+    promptButton("Keep editing")?.click();
+    await until(() => told.value === "docs/guide.md", "the window back on the edited document");
+    await tick();
+    expect(editing.state.s).toBe("dirty");
+    expect(editing.current().startsWith("Unsaved words. ")).toBe(true);
+    expect(documents.path).toBe("docs/guide.md");
+
+    const saves = mock.probe.edit.saves.length;
+    await show("README.md");
+    await until(() => editing.state.s === "unsavedPrompt", "asked again");
+    promptButton("Discard")?.click();
+    await until(() => documents.view?.path === "README.md", "the new document");
+    expect(told.value).toBe("README.md");
+    expect(mock.probe.edit.saves).toHaveLength(saves);
+    // the mode chosen in the window (Source) opens the new document, without the discarded words
+    await until(() => editing.path === "README.md" && editing.state.s === "clean", "next editor");
+    expect(editing.current()).not.toContain("Unsaved words.");
+  });
+
+  /** `path` is shown in Source with words typed and not saved. */
+  async function typeIn(path: string): Promise<void> {
+    await until(() => documents.view?.path === path, "the document");
+    await until(() => sourceButton() !== undefined, "mode switch");
+    sourceButton()?.click();
+    await until(() => editing.path === path && editing.state.s === "clean", "loaded");
+    expect(editing.apply([{ from: 0, to: 0, insert: "Unsaved words. ", expect: "" }])).toBe(true);
+    await until(() => editing.state.s === "dirty", "unsaved");
+  }
+
+  it("Save saves the edits first, then the new document shows", async () => {
+    await show("docs/guide.md");
+    await typeIn("docs/guide.md");
+    const saves = mock.probe.edit.saves.length;
+    await show("README.md");
+    await until(() => editing.state.s === "unsavedPrompt", "asked");
+    promptButton("Save")?.click();
+    await until(() => documents.view?.path === "README.md", "the new document");
+    expect(mock.probe.edit.saves.slice(saves).map((s) => s.path)).toEqual(["docs/guide.md"]);
+    expect(mock.probe.edit.files.get("docs/guide.md")?.startsWith("Unsaved words. ")).toBe(true);
+    expect(told.value).toBe("README.md");
+  });
+
+  it("the question owns the keyboard: Keep editing focused, the editor inert, Ctrl+S saves nothing; Escape gives the editor its keys back", async () => {
+    await show("docs/guide.md");
+    await until(() => sourceButton() !== undefined, "mode switch");
+    sourceButton()?.click();
+    await until(() => target.querySelector(".cm-editor") !== null, "source editor");
+    await until(() => editing.state.s === "clean", "loaded");
+    expect(editing.apply([{ from: 0, to: 0, insert: "Unsaved words. ", expect: "" }])).toBe(true);
+    await until(() => editing.state.s === "dirty", "unsaved");
+    const saves = mock.probe.edit.saves.length;
+    await show("README.md");
+    await until(() => editing.state.s === "unsavedPrompt", "asked");
+    await tick();
+    const keep = promptButton("Keep editing");
+    if (!keep) throw new Error("no question");
+    expect(document.activeElement).toBe(keep);
+    // nothing typed reaches the text behind it
+    const pane = (): HTMLElement | null | undefined =>
+      target.querySelector(".cm-content")?.closest<HTMLElement>(".pane");
+    expect(pane()?.inert).toBe(true);
+    const press = (key: string, init: KeyboardEventInit = {}): void =>
+      void keep.dispatchEvent(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init }),
+      );
+    press("s", { ctrlKey: true });
+    await tick();
+    expect(mock.probe.edit.saves).toHaveLength(saves);
+    expect(editing.state.s).toBe("unsavedPrompt");
+    press("Escape");
+    await until(() => editing.state.s === "dirty", "kept editing");
+    await until(
+      () => target.querySelector(".cm-content")?.contains(document.activeElement) === true,
+      "the editor has the keys again",
+    );
+    expect(pane()?.inert).toBe(false);
+    expect(editing.current().startsWith("Unsaved words. ")).toBe(true);
+  });
+
+  it("back on the edited document while the question is open: the question goes, the edits stay", async () => {
+    await show("docs/guide.md");
+    await typeIn("docs/guide.md");
+    await show("README.md");
+    await until(() => editing.state.s === "unsavedPrompt", "asked");
+    // the backend puts the tab back on the edited document (it was opened from the system again)
+    await show("docs/guide.md");
+    const moved = vi.spyOn(mock, "showDocument");
+    await until(() => editing.state.s === "dirty", "the question gone");
+    await tick();
+    expect(target.querySelector("[role=dialog]")).toBeNull();
+    expect(editing.path).toBe("docs/guide.md");
+    expect(editing.current().startsWith("Unsaved words. ")).toBe(true);
+    expect(documents.path).toBe("docs/guide.md");
+    // the window is there already: it is not put back again
+    expect(moved).not.toHaveBeenCalled();
+    moved.mockRestore();
+  });
+
+  it("in the Notes the edits save by themselves: no question, saved, then the next note shows", async () => {
+    stopFollowing?.();
+    if (component) await unmount(component);
+    const opened = await mock.openNotes("thisTab");
+    if (
+      !opened.ok ||
+      opened.value.outcome !== "opened" ||
+      opened.value.view.state !== "showing" ||
+      opened.value.view.workspace.kind !== "notes"
+    ) {
+      throw new Error("no notes");
+    }
+    const notes = opened.value.view.workspace;
+    const list = await mock.pluginCall("notes.list", {});
+    const [first, second] = list.ok ? list.value.entries.map((n) => n.path) : [];
+    if (first === undefined || second === undefined) throw new Error("two notes expected");
+    // the note the Notes show (a wish from another view moves it without asking the editor)
+    const note = new Box<string | null>(first);
+    component = mount(DocumentArea, {
+      target,
+      props: {
+        workspace: notes,
+        get document() {
+          return note.value;
+        },
+        store,
+      },
+    });
+    flushSync();
+    await typeIn(first);
+    expect(editing.policy.kind).toBe("auto");
+    const saves = mock.probe.edit.saves.length;
+    note.value = second;
+    await until(() => documents.view?.path === second, "the next note");
+    expect(target.querySelector("[role=dialog]")).toBeNull();
+    expect(mock.probe.edit.saves.slice(saves).map((s) => s.path)).toEqual([first]);
+    expect(mock.probe.edit.files.get(first)?.startsWith("Unsaved words. ")).toBe(true);
+  });
+
+  it("typed just before the backend moves the tab: still asked first", async () => {
+    await show("docs/guide.md");
+    await until(() => sourceButton() !== undefined, "mode switch");
+    sourceButton()?.click();
+    await until(() => editing.path === "docs/guide.md" && editing.state.s === "clean", "loaded");
+    expect(editing.apply([{ from: 0, to: 0, insert: "Just typed. ", expect: "" }])).toBe(true);
+    // within the wait of the change check
+    await show("README.md");
+    await until(() => editing.state.s === "unsavedPrompt", "asked");
+    expect(editing.current().startsWith("Just typed. ")).toBe(true);
+    promptButton("Discard")?.click();
+    await until(() => documents.view?.path === "README.md", "the new document");
+  });
+
+  it("the edited document is renamed: the editor and the page go with it, the edits stay and save there", async () => {
+    await show("docs/guide.md");
+    await typeIn("docs/guide.md");
+    const plan = await mock.planMove([{ from: "docs/guide.md", to: "docs/manual.md" }], true);
+    if (!plan.ok) throw new Error("no plan");
+    await mock.applyMove(plan.value.planId, true);
+    try {
+      await until(() => documents.view?.path === "docs/manual.md", "the page on the new name");
+      expect(told.value).toBe("docs/manual.md");
+      expect(editing.path).toBe("docs/manual.md");
+      expect(editing.state.s).toBe("dirty");
+      await until(
+        () =>
+          target.querySelector(".cm-content")?.textContent?.startsWith("Unsaved words. ") === true,
+        "the edits on screen",
+      );
+      expect(target.querySelector(".banner")).toBeNull();
+      editing.save();
+      await until(() => editing.state.s === "clean", "saved");
+      expect(mock.probe.edit.files.get("docs/manual.md")?.startsWith("Unsaved words. ")).toBe(true);
+      expect(mock.probe.edit.files.has("docs/guide.md")).toBe(false);
+    } finally {
+      // the mock is shared by the tests of this file: the document goes back to its name
+      editing.release();
+      await mock.undoFileOp();
+    }
+  });
+
+  it("a clean editor goes with a renamed document, in the same mode, nothing marked unsaved", async () => {
+    await show("docs/guide.md");
+    await until(() => sourceButton() !== undefined, "mode switch");
+    sourceButton()?.click();
+    await until(() => editing.path === "docs/guide.md" && editing.state.s === "clean", "loaded");
+    const plan = await mock.planMove([{ from: "docs/guide.md", to: "docs/manual.md" }], true);
+    if (!plan.ok) throw new Error("no plan");
+    await mock.applyMove(plan.value.planId, true);
+    try {
+      await until(() => documents.view?.path === "docs/manual.md", "the page on the new name");
+      await until(
+        () => editing.path === "docs/manual.md" && editing.state.s === "clean",
+        "the editor on the new name",
+      );
+      expect(editing.mode).toBe("source");
+      expect(mock.probe.edit.unsaved).toBeNull();
+      expect(target.querySelector(".banner")).toBeNull();
+    } finally {
+      editing.release();
+      await mock.undoFileOp();
+    }
+  });
+
+  it("lets a clean editor go without asking", async () => {
+    await show("docs/guide.md");
+    await until(() => sourceButton() !== undefined, "mode switch");
+    sourceButton()?.click();
+    await until(() => editing.state.s === "clean", "loaded");
+    await show("README.md");
+    await until(() => documents.view?.path === "README.md", "the new document");
+    expect(target.querySelector("[role=dialog]")).toBeNull();
+    // the mode chosen in the window opens the next document too
+    await until(() => editing.path === "README.md", "editor on the new document");
   });
 });
 
@@ -656,7 +1116,6 @@ describe("config files", () => {
     );
 
   async function open(path: string): Promise<void> {
-    mock.probe.project.files.set(path, "placeholder");
     await show(path);
     await until(() => target.querySelector(".sheet") !== null, `the sheet of ${path}`);
   }
@@ -877,6 +1336,148 @@ describe("focus mode", () => {
     expect(target.querySelector(".cm-editor")).not.toBeNull();
     escape();
     await until(() => target.querySelector(".cm-editor") === null, "back to View");
+  });
+});
+
+describe("find in page and the outline in the editors", () => {
+  const modeButton = (label: string): HTMLButtonElement | undefined =>
+    [...target.querySelectorAll<HTMLButtonElement>(".modes button")].find(
+      (b) => b.textContent?.trim() === label,
+    );
+  const bar = (): HTMLInputElement | null =>
+    target.querySelector<HTMLInputElement>("[role=search] input");
+  const count = (): string => target.querySelector("[role=search] .count")?.textContent ?? "";
+  const matches = (): Element[] => [...target.querySelectorAll(".ProseMirror .find-match")];
+  const key = (on: EventTarget, init: KeyboardEventInit): void => {
+    on.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+  };
+
+  async function edit(): Promise<HTMLElement> {
+    await import("../editing/visual/jsdomShims");
+    await show("README.md");
+    await until(() => modeButton("Edit") !== undefined, "mode switch");
+    modeButton("Edit")?.click();
+    await until(() => editing.finder !== null, "visual editor");
+    return target.querySelector(".ProseMirror") as HTMLElement;
+  }
+
+  it("Edit: Ctrl+F opens the find bar over the text; next | previous; Escape selects the match in the editor", async () => {
+    const editor = await edit();
+    const before = editing.current();
+    editor.focus();
+    key(editor, { key: "f", ctrlKey: true });
+    await tick();
+    const input = bar();
+    if (!input) throw new Error("no find bar");
+    expect(document.activeElement).toBe(input);
+    input.value = "keep";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await tick();
+    // painted over the text (the paragraph and the task item), the first one current
+    expect(matches().map((m) => m.textContent?.toLowerCase())).toEqual(["keep", "keep"]);
+    expect(count()).toBe("1 of 2");
+    expect(matches()[0]?.classList.contains("find-match--current")).toBe(true);
+    key(input, { key: "Enter" });
+    await tick();
+    expect(count()).toBe("2 of 2");
+    expect(matches()[1]?.classList.contains("find-match--current")).toBe(true);
+    key(input, { key: "F3" });
+    await tick();
+    expect(count()).toBe("1 of 2");
+    key(input, { key: "Enter", shiftKey: true });
+    await tick();
+    expect(count()).toBe("2 of 2");
+    // what was typed went to the bar, never into the text
+    expect(editing.current()).toBe(before);
+    expect(editing.unsaved).toBe(false);
+    key(input, { key: "Escape" });
+    await tick();
+    expect(bar()).toBeNull();
+    expect(ui.finding).toBe(false);
+    expect(matches()).toHaveLength(0);
+    // Escape in the bar closes only the bar: the editor holds the keyboard, the match selected
+    expect(editing.mode).toBe("edit");
+    expect(document.activeElement).toBe(editor);
+    expect(editing.selection).toBe("Keep");
+    // the header's find opens the bar in Edit too
+    target.querySelector<HTMLButtonElement>("button[aria-label='Find in page']")?.click();
+    await tick();
+    expect(bar()).not.toBeNull();
+  });
+
+  it("Source keeps its own search; a mode switch closes the bar and nothing opens later in View", async () => {
+    const editor = await edit();
+    key(editor, { key: "f", ctrlKey: true });
+    await tick();
+    expect(bar()).not.toBeNull();
+    modeButton("Source")?.click();
+    await until(() => target.querySelector(".cm-editor") !== null, "source editor");
+    await tick();
+    expect(bar()).toBeNull();
+    expect(ui.finding).toBe(false);
+    // the header's find in Source opens CodeMirror's panel, not the page's bar
+    target.querySelector<HTMLButtonElement>("button[aria-label='Find in page']")?.click();
+    await until(() => target.querySelector(".cm-search") !== null, "source search panel");
+    expect(ui.finding).toBe(false);
+    modeButton("View")?.click();
+    await until(() => target.querySelector(".cm-editor") === null, "back to View");
+    await tick();
+    expect(bar()).toBeNull();
+  });
+
+  it("Edit: the outline's current heading follows the editor's scroll; an outline click scrolls the editor", async () => {
+    await edit();
+    const scroller = target.querySelector("[data-scroller]") as HTMLElement;
+    const headings = [...target.querySelectorAll(".ProseMirror h1, .ProseMirror h2")];
+    expect(headings).toHaveLength(7);
+    // jsdom has no layout: heading i stands 100 px below the one before and moves with the scroll
+    const order = new Map<Element, number>(headings.map((h, i) => [h, i]));
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const at = order.get(this);
+        return at === undefined
+          ? new DOMRect(0, 0, 0, 0)
+          : new DOMRect(0, 100 * at - scroller.scrollTop + 5, 600, 30);
+      });
+    try {
+      scroller.scrollTop = 300;
+      scroller.dispatchEvent(new Event("scroll"));
+      await until(() => documents.currentHeading === 3, "the heading at the top of the editor");
+      documents.goToHeading(5);
+      expect(scroller.scrollTop).toBe(300 + (500 - 300 + 5) - 12);
+      expect(documents.currentHeading).toBe(5);
+    } finally {
+      rect.mockRestore();
+    }
+  });
+
+  it("Source: the outline's current heading follows the page's scroll; an outline click scrolls to the heading line", async () => {
+    await edit();
+    modeButton("Source")?.click();
+    await until(() => target.querySelector(".cm-editor") !== null, "source editor");
+    const scroller = target.querySelector("[data-scroller]") as HTMLElement;
+    const cm = EditorView.findFromDOM(target.querySelector(".cm-editor") as HTMLElement);
+    const body = documents.view?.body;
+    if (!cm || body?.kind !== "markdown") throw new Error("no source editor");
+    const lines = body.outline.map((item) => item.line);
+    expect(lines).toHaveLength(7);
+    // jsdom has no layout: the editor's lines are 20 px tall here, the page scrolls the whole editor
+    const page = (): DOMRect => new DOMRect(0, -scroller.scrollTop, 600, 10_000);
+    cm.scrollDOM.getBoundingClientRect = page;
+    cm.contentDOM.getBoundingClientRect = page;
+    const lineTop = (line: number): number => (line - 1) * 20;
+    const block = cm.lineBlockAt.bind(cm);
+    cm.lineBlockAt = (pos) =>
+      Object.defineProperty(block(pos), "top", { value: lineTop(cm.state.doc.lineAt(pos).number) });
+    scroller.scrollTop = lineTop(lines[3] ?? 0);
+    scroller.dispatchEvent(new Event("scroll"));
+    await until(() => documents.currentHeading === 3, "the heading at the top of the page");
+    // the text starts below the editor's top by its padding
+    const padding = cm.documentTop + scroller.scrollTop;
+    documents.goToHeading(5);
+    expect(scroller.scrollTop).toBe(lineTop(lines[5] ?? 0) + padding - 12);
+    expect(documents.currentHeading).toBe(5);
   });
 });
 

@@ -4,6 +4,7 @@
   // Confirm sets the checkpoint and copies one line for the prompt (or the full list). Cancel changes nothing.
   import X from "@lucide/svelte/icons/x";
   import { language, t, tn } from "../../core/i18n";
+  import { dialogFocus } from "../../core/shell/dialogFocus";
   import { relativeTime } from "../../core/time";
   import { approx, canConfirm, included, notes, when } from "./handoff";
   import { handOff } from "./handoff.svelte";
@@ -14,24 +15,6 @@
   const inside = $derived(preview === null ? [] : included(preview));
   const actions = $derived(inside.reduce((n, x) => n + x.rows, 0) + (preview?.outside.files ?? 0));
   const now = Date.now();
-
-  let dialog: HTMLElement | undefined = $state();
-
-  function onkeydown(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      handOff.close();
-    }
-  }
-
-  // focus enters the dialog and returns where it was when the dialog goes
-  $effect(() => {
-    if (open === null) return;
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialog?.focus();
-    return () => before?.focus();
-  });
 </script>
 
 {#if open !== null && preview !== null}
@@ -42,15 +25,15 @@
       if (e.target === e.currentTarget) handOff.close();
     }}
   >
+    <!-- the dialog itself takes the focus: its title and intro are read first -->
     <div
-      bind:this={dialog}
       class="dialog"
       role="dialog"
       aria-modal="true"
       aria-labelledby="handoff-title"
       aria-describedby="handoff-intro"
       tabindex="-1"
-      {onkeydown}
+      use:dialogFocus={{ initial: (d) => d, onEscape: () => handOff.close() }}
     >
       <header>
         <h2 id="handoff-title">{t("agent.handoff.title")}</h2>

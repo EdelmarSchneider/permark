@@ -354,6 +354,21 @@ impl Shared {
         lock(&self.held).get(&key_of(path)).map(|h| h.hash)
     }
 
+    /// `current` is the person's own save of a document read as it stood, and the watch has not reported it yet: the
+    /// unread plugin will count it as read (its rule for own saves), so it is no news meanwhile. The page reloads
+    /// right after a save, before the watch, and would otherwise offer the person's own edits as changes.
+    fn own_save_unreported(&self, path: &str, current: u64) -> bool {
+        let known = self.hub.current_hash(path);
+        self.held_hash(path).is_none()
+            && known != Some(current)
+            && known.is_some()
+            && self.hub.read_hash(path) == known
+            && self
+                .project
+                .documents
+                .saved_as(path, &fsx::ContentHash(current).hex())
+    }
+
     fn commit_text(&self, path: &str) -> Option<String> {
         let repo = self.project.services.get::<RepoHandle>()?;
         let bytes = repo.0.blob_at_head(path)?;
@@ -439,6 +454,9 @@ impl Shared {
             }
             Err(e) => return Err(e),
         };
+        if markdown && asked == Basis::Read && self.own_save_unreported(path, current.hash) {
+            return Ok(status(ReviewState::Same));
+        }
         let base = if markdown {
             self.base(path, asked)
         } else {

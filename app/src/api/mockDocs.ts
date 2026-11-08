@@ -2,8 +2,9 @@
 // the fixture documents (`fixtures/*.md`) with every plugin on and writes `generated/mock-documents.json`; this file
 // only serves them (blocks the caller already holds leave out their HTML) and makes up the simple ones (text, picture).
 
+import editSources from "./generated/mock-edit-sources.json";
 import mockDocuments from "./generated/mock-documents.json";
-import type { Block, DocumentView, LinkTarget, OutlineItem } from "./types";
+import type { Block, DocumentView, EditSource, LinkTarget, OutlineItem } from "./types";
 
 function isView(value: unknown): value is DocumentView {
   if (typeof value !== "object" || value === null) return false;
@@ -17,6 +18,18 @@ const FIXTURES = new Map<string, DocumentView>(
 );
 
 export const MOCK_DOCUMENT_PATHS: readonly string[] = [...FIXTURES.keys()];
+
+function isSource(value: unknown): value is EditSource {
+  return typeof value === "object" && value !== null && "text" in value && "hash" in value;
+}
+
+/** What the editors start from for the fixture documents, as the real backend made it (`cargo test` writes
+ *  `generated/mock-edit-sources.json` from the same files as the views). */
+export const MOCK_EDIT_SOURCES: ReadonlyMap<string, EditSource> = new Map(
+  Object.entries(editSources).flatMap(([path, source]): [string, EditSource][] =>
+    isSource(source) ? [[path, source]] : [],
+  ),
+);
 
 const TEXTS: Record<string, { text: string; language: string; format: string }> = {
   "package.json": {

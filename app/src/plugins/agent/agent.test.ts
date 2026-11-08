@@ -2,7 +2,7 @@
 import "../../core/testing/media";
 import { flushSync, tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AgentWindowContext } from "../../api";
+import type { AgentWindowContext, DocumentView } from "../../api";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import type { OutlineItem } from "../../api/generated/OutlineItem";
 import { documents } from "../../core/doc/document.svelte";
@@ -77,6 +77,33 @@ describe("the section the person is in", () => {
     expect(sectionOf([], 0)).toBeNull();
     expect(sameContext(null, viewing("a.md"))).toBe(false);
     expect(sameContext(viewing("a.md"), viewing("a.md"))).toBe(true);
+  });
+});
+
+describe("the window's own context", () => {
+  it("names the document shown, and no section of the previous page while it loads", async () => {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "thisTab");
+    const previous = {
+      path: "README.md",
+      body: { kind: "markdown", blocks: [], outline: [item("Intro", 1, 1)], frontMatter: null },
+    } as unknown as DocumentView;
+    vi.spyOn(documents, "path", "get").mockReturnValue("docs/guide.md");
+    vi.spyOn(documents, "view", "get").mockReturnValue(previous);
+    documents.currentHeading = 0;
+    const store = new AgentStore(new PluginClient(api, () => MOCK_FOLDER), () => MOCK_FOLDER);
+    const stop = store.start();
+    try {
+      await settle();
+      await store.setEnabled(true);
+      await settle();
+      await new Promise((resolve) => setTimeout(resolve, PUBLISH_DELAY_MS + 50));
+      expect(api.probe.plugins.agent.published.at(-1)).toEqual(viewing("docs/guide.md"));
+    } finally {
+      stop();
+      documents.currentHeading = -1;
+      await store.setEnabled(false);
+    }
   });
 });
 

@@ -2,6 +2,7 @@
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import CodeBlock from "./CodeBlock.svelte";
+import { fenceLabel } from "./languages";
 
 let component: Record<string, unknown> | null = null;
 
@@ -32,6 +33,21 @@ describe("code blocks", () => {
       expect(target.textContent, value).toContain(value);
     }
     expect(target.querySelector("pre button")).toBeNull();
+  });
+
+  it("labels a fence that names its language as the label Edit mode is given for it", async () => {
+    for (const info of ["rust", "JS", "my-dsl"]) {
+      const target = show("let a = 1;\n", info);
+      await vi.waitFor(() => expect(target.querySelector(".lang")).not.toBeNull());
+      expect(target.querySelector(".lang")?.textContent?.trim()).toBe(fenceLabel(info));
+      if (component) void unmount(component);
+      component = null;
+    }
+    expect(fenceLabel("rust")).toBe("Rust");
+    expect(fenceLabel("my-dsl")).toBe("my-dsl");
+    // plain text and no language: no label
+    expect(fenceLabel("text")).toBeNull();
+    expect(fenceLabel("")).toBeNull();
   });
 
   it("copies the text", async () => {

@@ -2,11 +2,13 @@
 
 import { documents } from "../doc/document.svelte";
 import type { DocumentView } from "../../api";
+import { ui } from "../shell/ui.svelte";
 import { editing, type EditKind, type EditMode } from "./session.svelte";
 
-/** Why the open document cannot be edited (`null`: it can; no document: `noViewer`). */
+/** Why the open document cannot be edited (`null`: it can; no document on screen yet: `noViewer`). */
 export function editBlockedReason(): string | null {
-  const view = documents.view;
+  // not the previous file's view while the next one loads: an editor chosen from it would be the wrong kind
+  const view = documents.current;
   if (view === null) return "noViewer";
   return view.editable.editable === "readOnly" ? view.editable.reason : null;
 }
@@ -29,7 +31,7 @@ export function chooseMode(mode: EditMode, at?: number): void {
     void editing.switchTo("view");
     return;
   }
-  const view = documents.view;
+  const view = documents.current;
   if (shown === null || view === null || editBlockedReason() !== null) return;
   if (editing.mode === "view" || editing.path !== shown) {
     void editing.enter(mode, shown, editKindOf(view), documents.savePolicy, at);
@@ -43,10 +45,29 @@ export function chooseMode(mode: EditMode, at?: number): void {
 export function openRemembered(): void {
   const mode = editing.chosenMode;
   const shown = documents.path;
-  const view = documents.view;
+  const view = documents.current;
   if (mode === "view" || shown === null || view === null) return;
   // the editor is already on this document
   if (editing.path === shown) return;
   if (editBlockedReason() !== null) return;
-  void editing.enter(mode, shown, editKindOf(view), documents.savePolicy);
+  void editing.enter(mode, shown, editKindOf(view), documents.savePolicy, undefined, !inTree());
+}
+
+/** The keyboard is in the Explorer's tree (a click | Enter on a row opened the document): it stays there, as it does
+ *  in View, so the tree's keys (F2, Delete) never reach the text. */
+function inTree(): boolean {
+  return globalThis.document?.activeElement?.closest('[role="tree"]') != null;
+}
+
+/** Find in page has something to search: the page, Edit's text, or Source (its own panel). */
+export function canFind(): boolean {
+  if (documents.path === null) return false;
+  return !editingNow() || editing.finder !== null || editing.mode === "source";
+}
+
+/** Find in page in the mode on screen: the find bar over the page | Edit's text; Source opens its own panel. */
+export function openFind(): void {
+  if (!canFind()) return;
+  if (editingNow() && editing.finder === null) editing.search();
+  else ui.openFind();
 }

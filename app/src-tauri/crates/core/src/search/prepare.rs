@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use super::bm25::SectionInput;
 use super::fold::tokenize;
-use crate::format::{sections, FormatRegistry, Section};
+use crate::format::{sections, FormatRegistry, MarkdownFeatures, Section};
 use crate::fsx::read_text;
 use crate::links::{local_target, parse as parse_links};
 use crate::tree::{key_of, Category};
@@ -141,14 +141,32 @@ pub fn read_and_prepare(
     if category == Category::Config {
         let head = &decoded.text.as_bytes()[..decoded.text.len().min(4096)];
         let searchable = formats.pick(path, head)?.searchable(&decoded.text)?;
-        return Some(prepare(path, sig, &searchable, category));
+        return Some(prepare(
+            path,
+            sig,
+            &searchable,
+            category,
+            formats.features(),
+        ));
     }
-    Some(prepare(path, sig, &decoded.text, category))
+    Some(prepare(
+        path,
+        sig,
+        &decoded.text,
+        category,
+        formats.features(),
+    ))
 }
 
-/// Sections + links of a decoded text.
+/// Sections + links of a decoded text (`features`: the Markdown features that are on decide which links reading sees).
 #[must_use]
-pub fn prepare(path: &str, sig: Sig, text: &str, category: Category) -> Prepared {
+pub fn prepare(
+    path: &str,
+    sig: Sig,
+    text: &str,
+    category: Category,
+    features: &MarkdownFeatures,
+) -> Prepared {
     let found = if category == Category::Markdown {
         sections(text)
     } else {
@@ -183,7 +201,7 @@ pub fn prepare(path: &str, sig: Sig, text: &str, category: Category) -> Prepared
     inputs.extend(found.map(|s| section_input(s, None)));
 
     let links = if category == Category::Markdown {
-        let keys: BTreeSet<String> = parse_links(text)
+        let keys: BTreeSet<String> = parse_links(text, features)
             .iter()
             .filter_map(|dest| local_target(path, dest.inner(text)))
             .map(|target| key_of(&target))

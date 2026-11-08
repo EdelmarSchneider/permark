@@ -88,19 +88,19 @@
   /* the language, the plugins' buttons and Copy in the corner */
   .corner {
     position: absolute;
-    top: 3px;
-    right: 6px;
+    top: var(--code-corner-top);
+    right: var(--code-corner-right);
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--code-corner-gap);
   }
   /* muted (not faint) so it keeps AA contrast on the surface */
   .lang {
-    margin-right: 6px;
-    padding: 0 4px;
-    border-radius: 4px;
+    margin-right: var(--code-label-gap);
+    padding: var(--code-label-pad);
+    border-radius: var(--code-label-radius);
     background: var(--surface);
-    font: 11px/1.3 var(--font-code);
+    font: var(--code-label-fs) / var(--code-label-lh) var(--font-code);
     color: var(--muted);
     pointer-events: none;
     user-select: none;

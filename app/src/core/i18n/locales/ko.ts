@@ -86,6 +86,14 @@ export default {
   "error.superseded": "그사이에 다른 항목이 열렸습니다.",
   "error.internal": "PerMark 내부에서 문제가 발생했습니다: {detail}",
   "error.unknown": "문제가 발생했습니다: {message}",
+  "error.settingsUnreadable":
+    "PerMark가 설정 파일을 읽을 수 없습니다. 아무것도 변경되지 않았습니다: {subject}",
+  "error.settingsUnreadable.notText":
+    "PerMark가 설정 파일을 읽을 수 없습니다(일반 텍스트가 아닙니다). 아무것도 변경되지 않았습니다: {subject}",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark가 설정 파일을 읽을 수 없습니다(파일이 너무 큽니다). 아무것도 변경되지 않았습니다: {subject}",
+  "error.settingsUnreadable.locked":
+    "PerMark가 설정 파일을 읽을 수 없습니다(다른 프로그램이 사용 중입니다). 아무것도 변경되지 않았습니다: {subject}",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "먼저 폴더나 파일을 여세요.",
@@ -136,6 +144,8 @@ export default {
   "fileOps.nameReserved": "시스템에서 예약된 이름입니다",
   "fileOps.nameTooLong": "이름이 너무 깁니다",
   "fileOps.nameExists": "이 이름의 항목이 이미 있습니다",
+  "fileOps.identityUnknown":
+    "PerMark가 이 드라이브에서 두 이름이 같은 파일인지 확인할 수 없어 이름을 바꾸지 않았습니다.",
   "fileOps.files.one": "파일 {n}개",
   "fileOps.files.other": "파일 {n}개",
   "fileOps.items.one": "항목 {n}개",
@@ -416,9 +426,12 @@ export default {
   "edit.save": "저장",
   "edit.saveHint": "저장 (Ctrl+S)",
   "edit.saving": "저장 중…",
-  "edit.savedBlocks.one": "저장했습니다. 블록 {n}개가 변경되었습니다.",
-  "edit.savedBlocks.other": "저장했습니다. 블록 {n}개가 변경되었습니다.",
-  "edit.firstSaveHint": "PerMark는 변경한 블록만 다시 씁니다.",
+  "edit.savedBlocks.one": "저장했습니다. {n}곳이 변경되었습니다.",
+  "edit.savedBlocks.other": "저장했습니다. {n}곳이 변경되었습니다.",
+  "edit.firstSaveHint": "PerMark는 변경한 부분만 다시 씁니다.",
+  "edit.emptyHint": "여기에 쓰기 시작하세요. /를 입력하면 제목, 목록 등을 넣을 수 있습니다.",
+  "edit.savedReadsOtherwise":
+    "이 문서의 일부 수식이나 링크는 저장 후 다르게 보일 수 있습니다. 소스에서 확인하세요.",
   "source.find": "찾기",
   "source.replace": "바꾸기",
   "source.next": "다음",
@@ -446,7 +459,19 @@ export default {
   "edit.discard": "버리기",
   "edit.keepEditing": "계속 편집",
   "edit.editInSource": "소스에서 편집",
+  "edit.blockSource": "이 블록의 소스",
+  "edit.blockSourceHint": "Esc 키로 마침",
+  "edit.block.html": "HTML",
+  "edit.block.formula": "수식",
+  "edit.block.footnote": "각주",
+  "edit.block.diagram": "다이어그램",
+  "edit.block.alert": "알림",
+  "edit.block.other": "작성된 그대로 유지되는 블록",
+  "edit.block.openHint": "Enter 키로 편집",
+  "edit.documentText": "문서 텍스트",
   "edit.visualForMarkdown": "편집 모드는 Markdown 파일과 설정 파일용입니다. 소스를 사용하세요.",
+  "edit.codeRefHint": "{title} ({mod}+클릭)",
+  "edit.codeRefTitleMany": "일치하는 파일이 {count}개입니다. {mod}+클릭하여 하나를 선택하세요.",
   "edit.diagramNoPlugin": "그림을 보려면 Mermaid 또는 PlantUML 플러그인을 켜세요.",
   "edit.diagramPanel": "다이어그램 미리 보기",
   "edit.diagramPanelHint": "캐럿이 있는 다이어그램을 텍스트 옆에 표시",
@@ -474,11 +499,9 @@ export default {
   "conflict.text":
     "아무것도 덮어쓰지 않았습니다. 선택할 때까지 편집한 내용은 여기에 남아 있습니다.",
   "conflict.deletedText": "선택할 때까지 편집한 내용은 여기에 남아 있습니다.",
-  "conflict.reload": "디스크 버전 다시 로드",
-  "conflict.reloadConfirm": "편집한 내용을 버리고 디스크에서 파일을 로드할까요?",
-  "conflict.discard": "내 편집 버리기",
-  "conflict.keepMine": "내 편집 유지(덮어쓰기)",
-  "conflict.recreate": "내 편집 유지(다시 쓰기)",
+  "conflict.reload": "파일 버전 사용(내 편집 버리기)",
+  "conflict.keepMine": "내 버전 유지(파일 바꾸기)",
+  "conflict.recreate": "내 버전 유지(다시 쓰기)",
   "conflict.saveAsNew": "새 파일로 저장",
   "conflict.showDiff": "차이점 표시",
   "conflict.hideDiff": "차이점 숨기기",
@@ -1167,7 +1190,7 @@ export default {
   "notes.move.title": "프로젝트로 이동",
   "notes.moveDown": "아래로 이동",
   "notes.moveKept":
-    "복사하는 동안 “{name}” 메모가 변경되어 메모에 그대로 두었으며, 복사본은 프로젝트에 있습니다.",
+    "“{name}” 메모가 복사 중에 변경되었거나 저장되지 않은 텍스트가 있어 메모에 그대로 두었으며, 복사본은 프로젝트에 있습니다.",
   "notes.moveToProject": "프로젝트로 이동...",
   "notes.moveUndone": "“{name}” 메모가 메모 목록으로 돌아왔습니다.",
   "notes.moveUndoneKept":
@@ -1361,7 +1384,6 @@ export default {
   "config.fromSource": "소스에서 편집",
   "config.nothing": "이 파일에는 아직 표시할 내용이 없습니다.",
   "config.noSheet": "이 파일은 시트로 표시할 수 없습니다. 소스를 사용하세요.",
-  "config.fm.bar": "속성입니다. 하나를 변경해도 파일의 나머지 부분은 그대로 유지됩니다.",
   "config.reason.multiline": "여러 줄로 된 텍스트입니다. 소스에서 변경하세요.",
   "config.reason.alias": "다른 값의 별칭입니다. 소스에서 변경하세요.",
   "config.reason.anchor": "다른 값이 참조하는 앵커가 있습니다. 소스에서 변경하세요.",
@@ -1454,9 +1476,9 @@ export default {
   "project.newConfirm": "이 폴더 사용",
   "project.newBack": "다른 폴더 선택…",
   "project.loadFailed": "프로젝트 설정을 읽을 수 없습니다.",
-  "project.notInitialized": "이 프로젝트에서 PerMark가 초기화되지 않았습니다",
+  "project.notInitialized": "이 폴더에는 아직 PerMark 설정이 없습니다",
   "project.notInitializedHint":
-    "초기화하면 프로젝트가 팀과 공유할 설정을 보관하는 .permark 폴더가 만들어집니다.",
+    "PerMark를 초기화하면 이 폴더만의 설정을 두고, 이 폴더에서 작업하는 모든 사람과 공유할 수 있습니다.",
   "project.patternPlaceholder": "패턴(예: drafts/)",
   "project.tree": "탐색기",
   "project.treeExclude": "항상 숨기기",
@@ -1492,7 +1514,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "알 수 없는 자리 표시자입니다. {path}, {line}, {col} 중 하나를 사용하세요.",
   "settings.problem.noPath": "명령에는 {path} 자리 표시자가 필요합니다.",
-  "settings.problem.notInitialized": "이 프로젝트에서 PerMark가 초기화되지 않았습니다.",
+  "settings.problem.notInitialized": "이 폴더에는 아직 PerMark 설정이 없습니다.",
   "settings.problem.other": "이 값은 허용되지 않습니다.",
   "welcome.newProject": "새 프로젝트…",
   "welcome.newProjectHint": "폴더를 선택하면 PerMark가 프로젝트로 설정합니다.",

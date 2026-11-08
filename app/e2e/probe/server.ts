@@ -10,7 +10,8 @@ export type MockServer = { url: string; stop(): void };
 
 const READY_MS = 60_000;
 
-function freePort(): Promise<number> {
+/** A port nothing listens on now (loopback). */
+export function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = createServer();
     srv.once("error", reject);
@@ -22,7 +23,8 @@ function freePort(): Promise<number> {
   });
 }
 
-function kill(child: ChildProcess): void {
+/** Stops `child` and the processes it started. */
+export function kill(child: ChildProcess): void {
   if (child.pid === undefined || child.exitCode !== null) return;
   if (process.platform === "win32") {
     spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });

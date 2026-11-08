@@ -89,6 +89,14 @@ export default {
   "error.superseded": "Mentres tanto abriuse outra cousa.",
   "error.internal": "Algo foi mal dentro de PerMark: {detail}",
   "error.unknown": "Algo foi mal: {message}",
+  "error.settingsUnreadable":
+    "PerMark non pode ler o ficheiro de configuración {subject}. Non se cambiou nada.",
+  "error.settingsUnreadable.notText":
+    "PerMark non pode ler o ficheiro de configuración {subject} (non é texto simple). Non se cambiou nada.",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark non pode ler o ficheiro de configuración {subject} (é demasiado grande). Non se cambiou nada.",
+  "error.settingsUnreadable.locked":
+    "PerMark non pode ler o ficheiro de configuración {subject} (outro programa está a usalo). Non se cambiou nada.",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "Abra primeiro un cartafol ou un ficheiro.",
@@ -141,6 +149,8 @@ export default {
   "fileOps.nameReserved": "Ese nome está reservado polo sistema",
   "fileOps.nameTooLong": "O nome é demasiado longo",
   "fileOps.nameExists": "Xa hai algo con este nome aquí",
+  "fileOps.identityUnknown":
+    "PerMark non pode saber se estes dous nomes son o mesmo ficheiro nesta unidade, así que non se renomeou nada.",
   "fileOps.files.one": "{n} ficheiro",
   "fileOps.files.other": "{n} ficheiros",
   "fileOps.items.one": "{n} elemento",
@@ -427,9 +437,12 @@ export default {
   "edit.save": "Gardar",
   "edit.saveHint": "Gardar (Ctrl+S)",
   "edit.saving": "Gardando…",
-  "edit.savedBlocks.one": "Gardado, {n} bloque cambiado.",
-  "edit.savedBlocks.other": "Gardado, {n} bloques cambiados.",
-  "edit.firstSaveHint": "PerMark só reescribe os bloques que cambiou.",
+  "edit.savedBlocks.one": "Gardado, {n} cambio.",
+  "edit.savedBlocks.other": "Gardado, {n} cambios.",
+  "edit.firstSaveHint": "PerMark só reescribe as partes que cambiou.",
+  "edit.emptyHint": "Comece a escribir aquí. Escriba / para títulos, listas e máis.",
+  "edit.savedReadsOtherwise":
+    "Algunhas fórmulas ou ligazóns deste documento poden verse distintas despois de gardar. Revíseas en Fonte.",
   "source.find": "Atopar",
   "source.replace": "Substituír",
   "source.next": "Seguinte",
@@ -457,6 +470,18 @@ export default {
   "edit.discard": "Descartar",
   "edit.keepEditing": "Continuar editando",
   "edit.editInSource": "Editar en Fonte",
+  "edit.blockSource": "Fonte deste bloque",
+  "edit.blockSourceHint": "Esc para rematar",
+  "edit.block.html": "HTML",
+  "edit.block.formula": "Fórmula",
+  "edit.block.footnote": "Nota ao pé",
+  "edit.block.diagram": "Diagrama",
+  "edit.block.alert": "Aviso",
+  "edit.block.other": "Bloque conservado tal como está",
+  "edit.block.openHint": "Preme Intro para editar",
+  "edit.documentText": "Texto do documento",
+  "edit.codeRefHint": "{title} ({mod}+clic)",
+  "edit.codeRefTitleMany": "Coinciden {count} ficheiros. {mod}+clic para escoller un.",
   "edit.visualForMarkdown":
     "O modo Editar é para ficheiros Markdown e de configuración; use Fonte.",
   "edit.diagramNoPlugin": "Active o complemento Mermaid ou PlantUML para ver o debuxo.",
@@ -488,11 +513,9 @@ export default {
   "conflict.deletedTitle": "Eliminouse no disco mentres editaba.",
   "conflict.text": "Non se sobrescribiu nada. As súas edicións seguen aquí ata que decida.",
   "conflict.deletedText": "As súas edicións seguen aquí ata que decida.",
-  "conflict.reload": "Recargar a do disco",
-  "conflict.reloadConfirm": "Descartar as súas edicións e cargar o ficheiro do disco?",
-  "conflict.discard": "Descartar a miña",
-  "conflict.keepMine": "Conservar a miña (sobrescribir)",
-  "conflict.recreate": "Conservar a miña (volver escribila)",
+  "conflict.reload": "Usar a versión do ficheiro (descartar as miñas edicións)",
+  "conflict.keepMine": "Conservar a miña versión (substituír o ficheiro)",
+  "conflict.recreate": "Conservar a miña versión (volver escribila)",
   "conflict.saveAsNew": "Gardar como ficheiro novo",
   "conflict.showDiff": "Mostrar as diferenzas",
   "conflict.hideDiff": "Ocultar as diferenzas",
@@ -1187,7 +1210,7 @@ export default {
   "notes.move.title": "Mover a un proxecto",
   "notes.moveDown": "Baixar",
   "notes.moveKept":
-    "«{name}» cambiou mentres se copiaba, así que segue nas súas notas e a copia está no proxecto.",
+    "«{name}» cambiou mentres se copiaba ou ten texto sen gardar, así que segue nas súas notas e a copia está no proxecto.",
   "notes.moveToProject": "Mover a un proxecto...",
   "notes.moveUndone": "«{name}» volveu ás súas notas.",
   "notes.moveUndoneKept":
@@ -1387,7 +1410,6 @@ export default {
   "config.fromSource": "Editar en Fonte",
   "config.nothing": "Aínda non hai nada que mostrar neste ficheiro.",
   "config.noSheet": "Este ficheiro non se pode mostrar como folla. Use Fonte.",
-  "config.fm.bar": "Propiedades. Cambiar unha deixa o resto do ficheiro tal como está.",
   "config.reason.multiline": "Texto en varias liñas. Cámbieo en Fonte.",
   "config.reason.alias": "Un alias doutro valor. Cámbieo en Fonte.",
   "config.reason.anchor": "Ten unha áncora á que se refiren outros valores. Cámbieo en Fonte.",
@@ -1483,9 +1505,9 @@ export default {
   "project.newConfirm": "Usar este cartafol",
   "project.newBack": "Escoller outro cartafol…",
   "project.loadFailed": "Non foi posíbel ler a configuración do proxecto.",
-  "project.notInitialized": "PerMark non está inicializado neste proxecto",
+  "project.notInitialized": "Este cartafol aínda non ten configuración de PerMark",
   "project.notInitializedHint":
-    "Ao inicializalo créase un cartafol .permark onde o proxecto pode gardar a configuración que comparte co seu equipo.",
+    "Inicialice PerMark para que este cartafol teña a súa propia configuración, que poden compartir todas as persoas que traballan nel.",
   "project.patternPlaceholder": "Padrón, por exemplo drafts/",
   "project.tree": "Explorador",
   "project.treeExclude": "Ocultar sempre",
@@ -1522,7 +1544,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "Marcador de posición descoñecido. Use {path}, {line} ou {col}.",
   "settings.problem.noPath": "A orde necesita {path}.",
-  "settings.problem.notInitialized": "PerMark non está inicializado neste proxecto.",
+  "settings.problem.notInitialized": "Este cartafol aínda non ten configuración de PerMark.",
   "settings.problem.other": "Non se aceptou este valor.",
   "welcome.newProject": "Novo proxecto…",
   "welcome.newProjectHint": "Escolla un cartafol; PerMark configúrao como proxecto.",

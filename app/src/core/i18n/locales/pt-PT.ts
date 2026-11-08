@@ -89,6 +89,14 @@ export default {
   "error.superseded": "Entretanto, foi aberta outra coisa.",
   "error.internal": "Ocorreu um erro no PerMark: {detail}",
   "error.unknown": "Ocorreu um erro: {message}",
+  "error.settingsUnreadable":
+    "O PerMark não consegue ler o ficheiro de definições {subject}. Nada foi alterado.",
+  "error.settingsUnreadable.notText":
+    "O PerMark não consegue ler o ficheiro de definições {subject} (não é texto simples). Nada foi alterado.",
+  "error.settingsUnreadable.tooLarge":
+    "O PerMark não consegue ler o ficheiro de definições {subject} (é demasiado grande). Nada foi alterado.",
+  "error.settingsUnreadable.locked":
+    "O PerMark não consegue ler o ficheiro de definições {subject} (outro programa está a utilizá-lo). Nada foi alterado.",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "Abra primeiro uma pasta ou um ficheiro.",
@@ -142,6 +150,8 @@ export default {
   "fileOps.nameReserved": "Esse nome está reservado pelo sistema",
   "fileOps.nameTooLong": "O nome é demasiado longo",
   "fileOps.nameExists": "Já existe aqui algo com este nome",
+  "fileOps.identityUnknown":
+    "O PerMark não consegue saber se estes dois nomes são o mesmo ficheiro nesta unidade, por isso nada foi renomeado.",
   "fileOps.files.one": "{n} ficheiro",
   "fileOps.files.other": "{n} ficheiros",
   "fileOps.items.one": "{n} item",
@@ -431,9 +441,12 @@ export default {
   "edit.save": "Guardar",
   "edit.saveHint": "Guardar (Ctrl+S)",
   "edit.saving": "A guardar…",
-  "edit.savedBlocks.one": "Guardado, {n} bloco alterado.",
-  "edit.savedBlocks.other": "Guardado, {n} blocos alterados.",
-  "edit.firstSaveHint": "O PerMark reescreve apenas os blocos que alterou.",
+  "edit.savedBlocks.one": "Guardado, {n} alteração.",
+  "edit.savedBlocks.other": "Guardado, {n} alterações.",
+  "edit.firstSaveHint": "O PerMark reescreve apenas as partes que alterou.",
+  "edit.emptyHint": "Comece a escrever aqui. Escreva / para títulos, listas e mais.",
+  "edit.savedReadsOtherwise":
+    "Algumas fórmulas ou ligações deste documento podem ficar diferentes depois de guardar. Verifique-as no Código-fonte.",
   "source.find": "Localizar",
   "source.replace": "Substituir",
   "source.next": "Seguinte",
@@ -461,6 +474,18 @@ export default {
   "edit.discard": "Descartar",
   "edit.keepEditing": "Continuar a editar",
   "edit.editInSource": "Editar no Código-fonte",
+  "edit.blockSource": "Código-fonte deste bloco",
+  "edit.blockSourceHint": "Esc para concluir",
+  "edit.block.html": "HTML",
+  "edit.block.formula": "Fórmula",
+  "edit.block.footnote": "Nota de rodapé",
+  "edit.block.diagram": "Diagrama",
+  "edit.block.alert": "Alerta",
+  "edit.block.other": "Bloco mantido tal como está",
+  "edit.block.openHint": "Prima Enter para editar",
+  "edit.documentText": "Texto do documento",
+  "edit.codeRefHint": "{title} ({mod}+clique)",
+  "edit.codeRefTitleMany": "{count} ficheiros correspondem. {mod}+clique para escolher um.",
   "edit.visualForMarkdown":
     "O modo Editar é para ficheiros Markdown e ficheiros de configuração; use Código-fonte.",
   "edit.diagramNoPlugin": "Ative o plug-in Mermaid ou PlantUML para ver o desenho.",
@@ -492,10 +517,8 @@ export default {
   "conflict.deletedTitle": "Eliminado do disco enquanto estava a editar.",
   "conflict.text": "Nada foi substituído. As suas edições ficam aqui até decidir.",
   "conflict.deletedText": "As suas edições ficam aqui até decidir.",
-  "conflict.reload": "Recarregar a versão do disco",
-  "conflict.reloadConfirm": "Descartar as suas edições e carregar o ficheiro do disco?",
-  "conflict.discard": "Descartar a minha versão",
-  "conflict.keepMine": "Manter a minha versão (substituir)",
+  "conflict.reload": "Usar a versão do ficheiro (descartar as minhas edições)",
+  "conflict.keepMine": "Manter a minha versão (substituir o ficheiro)",
   "conflict.recreate": "Manter a minha versão (voltar a escrever)",
   "conflict.saveAsNew": "Guardar como novo ficheiro",
   "conflict.showDiff": "Mostrar diferenças",
@@ -1195,7 +1218,7 @@ export default {
   "notes.move.title": "Mover para um projeto",
   "notes.moveDown": "Mover para baixo",
   "notes.moveKept":
-    "“{name}” mudou enquanto estava a ser copiada, por isso continua nas suas notas e a cópia está no projeto.",
+    "“{name}” mudou enquanto estava a ser copiada ou tem texto ainda não guardado, por isso continua nas suas notas e a cópia está no projeto.",
   "notes.moveToProject": "Mover para um projeto...",
   "notes.moveUndone": "“{name}” voltou às suas notas.",
   "notes.moveUndoneKept":
@@ -1394,7 +1417,6 @@ export default {
   "config.fromSource": "Editar no Código-fonte",
   "config.nothing": "Ainda não há nada para mostrar neste ficheiro.",
   "config.noSheet": "Não é possível mostrar este ficheiro como folha. Use o Código-fonte.",
-  "config.fm.bar": "Propriedades. Alterar uma mantém o resto do ficheiro tal como está.",
   "config.reason.multiline": "Texto em várias linhas. Altere-o no Código-fonte.",
   "config.reason.alias": "Um alias de outro valor. Altere-o no Código-fonte.",
   "config.reason.anchor":
@@ -1493,9 +1515,9 @@ export default {
   "project.newConfirm": "Utilizar esta pasta",
   "project.newBack": "Escolher outra pasta…",
   "project.loadFailed": "Não foi possível ler as definições do projeto.",
-  "project.notInitialized": "O PerMark não está inicializado neste projeto",
+  "project.notInitialized": "Esta pasta ainda não tem definições do PerMark",
   "project.notInitializedHint":
-    "Inicializar cria uma pasta .permark onde o projeto pode guardar definições para partilhar com a equipa.",
+    "Inicialize o PerMark para que esta pasta tenha definições próprias, que todos os que nela trabalham podem partilhar.",
   "project.patternPlaceholder": "Padrão, por exemplo drafts/",
   "project.tree": "Explorador",
   "project.treeExclude": "Ocultar sempre",
@@ -1533,7 +1555,7 @@ export default {
   "settings.problem.programPlaceholder": "O nome do programa não pode ser um marcador.",
   "settings.problem.unknownPlaceholder": "Marcador desconhecido. Use {path}, {line} ou {col}.",
   "settings.problem.noPath": "O comando precisa de {path}.",
-  "settings.problem.notInitialized": "O PerMark não está inicializado neste projeto.",
+  "settings.problem.notInitialized": "Esta pasta ainda não tem definições do PerMark.",
   "settings.problem.other": "Este valor não foi aceite.",
   "welcome.newProject": "Novo projeto…",
   "welcome.newProjectHint": "Escolha uma pasta; o PerMark prepara-a como projeto.",

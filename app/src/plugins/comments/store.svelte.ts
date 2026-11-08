@@ -166,10 +166,11 @@ export class CommentsStore {
 
   /** Starts a comment on the selected passage of the page. `false`: there is nothing to comment on. */
   begin(selection: PageSelection): boolean {
-    const path = documents.path;
-    const view = documents.view;
+    // the shown document's view only: while another file loads, the passage belongs to the previous page
+    const view = documents.current;
     const quote = selection.text.trim();
-    if (path === null || quote === "" || view?.body.kind !== "markdown") return false;
+    if (view === null || quote === "" || view.body.kind !== "markdown") return false;
+    const path = view.path;
     const blockOf = (node: Node | null): string | null => {
       const element = node instanceof Element ? node : (node?.parentElement ?? null);
       return element?.closest<HTMLElement>("[data-b]")?.getAttribute("data-b") ?? null;

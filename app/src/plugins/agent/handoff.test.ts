@@ -172,6 +172,50 @@ describe("hand-off flow", () => {
     void unmount(view);
     target.remove();
   });
+
+  it("owns the keyboard while open: focus in, Tab stays inside, Escape closes, focus goes back", async () => {
+    const { store } = await setup();
+    await store.open();
+    handOff.state = store.state;
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    const target = document.createElement("div");
+    document.body.append(target);
+    const view = mount(HandOffDialog, { target });
+    await settle();
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]');
+    if (!dialog) throw new Error("no dialog");
+    expect(document.activeElement).toBe(dialog);
+    const controls = [
+      ...dialog.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)"),
+    ];
+    const first = controls[0];
+    const last = controls.at(-1);
+    if (!first || !last) throw new Error("no controls");
+    const key = (on: Element, name: string, shiftKey = false): KeyboardEvent => {
+      const event = new KeyboardEvent("keydown", {
+        key: name,
+        shiftKey,
+        bubbles: true,
+        cancelable: true,
+      });
+      on.dispatchEvent(event);
+      return event;
+    };
+    expect(key(dialog, "Tab", true).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(last);
+    expect(key(last, "Tab").defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(first);
+    key(first, "Escape");
+    await settle();
+    expect(handOff.state.status).toBe("closed");
+    expect(target.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+    void unmount(view);
+    target.remove();
+    opener.remove();
+  });
 });
 
 describe("the preview type", () => {

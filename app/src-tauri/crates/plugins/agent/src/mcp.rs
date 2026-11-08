@@ -238,6 +238,12 @@ pub fn answer(
 ) -> CallToolResult {
     match result {
         Ok(value) => {
+            // the JSON passes no ceiling the text keeps: both are drawn from the data cut to fit it
+            let value = if structured {
+                render::fit(tool, value)
+            } else {
+                value
+            };
             let mut done =
                 CallToolResult::success(vec![ContentBlock::text(render::render(tool, &value))]);
             if structured {

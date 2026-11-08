@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
+use permark_core::format::MarkdownFeatures;
 use permark_core::fsx;
 use permark_core::links::{local_target, parse, resolve, Target};
 use permark_core::paths::{key_of, Vault, VaultPath, WORKTREE_PREFIX};
@@ -187,9 +188,9 @@ impl Checker {
         out
     }
 
-    /// Reads a document (again): its links, checked against the disk. A document that cannot be read is dropped and
-    /// counted as skipped.
-    pub fn read(&mut self, vault: &Vault, path: &str, abs: &Path) {
+    /// Reads a document (again): its links (the ones reading shows with `features` on), checked against the disk. A
+    /// document that cannot be read is dropped and counted as skipped.
+    pub fn read(&mut self, vault: &Vault, path: &str, abs: &Path, features: &MarkdownFeatures) {
         self.forget(path);
         let Ok(from) = VaultPath::parse(path) else {
             return;
@@ -200,7 +201,7 @@ impl Checker {
         };
         let text = &decoded.text;
         let mut links = Vec::new();
-        for dest in parse(text).into_iter().take(MAX_LINKS_PER_DOC) {
+        for dest in parse(text, features).into_iter().take(MAX_LINKS_PER_DOC) {
             let href = dest.inner(text).trim();
             if href.is_empty() {
                 continue;
@@ -274,13 +275,15 @@ impl Checker {
         }
     }
 
-    /// Follows one batch of changes. `read_doc` finds the file of a document path. `true` when the picture may have
-    /// changed. A batch that says "everything" (`bulk`, `rescan`) is the caller's to answer with a full scan.
+    /// Follows one batch of changes. `abs_of` finds the file of a document path; documents read again are read with
+    /// `features`. `true` when the picture may have changed. A batch that says "everything" (`bulk`, `rescan`) is the
+    /// caller's to answer with a full scan.
     pub fn apply(
         &mut self,
         vault: &Vault,
         batch: &FsBatch,
         abs_of: &dyn Fn(&str) -> Option<std::path::PathBuf>,
+        features: &MarkdownFeatures,
     ) -> bool {
         let before = self.fingerprint();
         let mut reread: Vec<String> = Vec::new();
@@ -343,7 +346,7 @@ impl Checker {
         reread.dedup();
         for path in &reread {
             if let Some(abs) = abs_of(path) {
-                self.read(vault, path, &abs);
+                self.read(vault, path, &abs, features);
             }
         }
         for (exact, below) in &places {

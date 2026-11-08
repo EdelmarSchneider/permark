@@ -39,10 +39,15 @@ export const ERROR_KINDS = [
   "partlyMoved",
   "editorNotSet",
   "editorFailed",
+  "settingsUnreadable",
 ] as const satisfies readonly ErrorKind[];
 
 type MissingKinds = Exclude<ErrorKind, (typeof ERROR_KINDS)[number]>;
 export const ERROR_KINDS_COMPLETE: MissingKinds extends never ? true : false = true;
+
+/** `detail` of an `exists` refusal: the two names may be one file, but the drive cannot prove it, so nothing was
+ *  renamed (mirror of Rust `fsx::IDENTITY_UNKNOWN`). */
+export const IDENTITY_UNKNOWN = "identityUnknown";
 
 function isKind(value: unknown): value is ErrorKind {
   return ERROR_KINDS.some((kind) => kind === value);

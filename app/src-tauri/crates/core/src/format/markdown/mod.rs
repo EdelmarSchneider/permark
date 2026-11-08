@@ -8,6 +8,7 @@ mod blocks;
 mod frontmatter;
 mod inline;
 mod prompt;
+mod refs;
 mod sanitize;
 mod sections;
 mod segments;
@@ -20,10 +21,14 @@ use std::collections::HashSet;
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{format_html, parse_document, Anchorizer, Arena, Options};
 
+pub use refs::{at_refs, AtRef};
 pub use sections::{sections, units, Section, TextUnit};
 pub use segments::{segments, LockReason, Segment, SegmentKind};
 
-use super::{Block, Body, Claim, Format, FormatId, FrontMatter, OutlineItem, RenderCx, Rendered};
+use super::{
+    Block, Body, Claim, Format, FormatId, FrontMatter, MarkdownFeatures, OutlineItem, RenderCx,
+    Rendered,
+};
 
 /// A line that starts with more container markers (`>` quotes, list bullets) than this is not parsed: comrak's parse
 /// time grows quadratically with quote nesting, so the check comes first.
@@ -83,43 +88,23 @@ fn render(text: &str, cx: &RenderCx<'_>) -> Rendered {
     if too_many_container_markers(text) {
         return plain(text);
     }
-    // 1. front matter
+    // 1. front matter, 2. prompt tags
     let cut = frontmatter::find(text);
-    let card = cx.features.front_matter_card;
-    let prepared: Cow<'_, str> = match &cut {
-        Some(cut) => {
-            let fence = if card.is_some() {
-                None
-            } else {
-                Some(match cut.syntax {
-                    super::FrontMatterSyntax::Yaml => "yaml",
-                    super::FrontMatterSyntax::Toml => "toml",
-                })
-            };
-            frontmatter::replace(text, cut, fence)
-        }
-        None => Cow::Borrowed(text),
-    };
-    let front_matter = cut.as_ref().zip(card).map(|(cut, parse)| FrontMatter {
-        syntax: cut.syntax,
-        raw: cut.raw.clone(),
-        fields: parse(cut.syntax, &cut.raw),
-    });
-    // 2. prompt tags
-    let prepared = match cx.features.prompt_blocks {
-        Some(blocks) => match prompt::mark(&prepared, blocks.tags) {
-            Cow::Borrowed(_) => prepared,
-            Cow::Owned(marked) => Cow::Owned(marked),
-        },
-        None => prepared,
-    };
+    let prepared = prepared(text, cut.as_ref(), cx.features);
+    let front_matter = cut
+        .as_ref()
+        .zip(cx.features.front_matter_card)
+        .map(|(cut, parse)| FrontMatter {
+            syntax: cut.syntax,
+            raw: cut.raw.clone(),
+            fields: parse(cut.syntax, &cut.raw),
+        });
     // 3. parse
     let arena = Arena::new();
     let opts = options();
-    let root = parse_document(&arena, &prepared, &opts);
-    if is_deeper_than(root, MAX_TREE_DEPTH) {
+    let Some(root) = parsed(&arena, &prepared, &opts) else {
         return plain(text);
-    }
+    };
     // 4. AST edits + outline (after the edits: the ids are the ones the HTML gets)
     if cx.features.prompt_blocks.is_some() {
         mark_inline(root, cx);
@@ -151,6 +136,55 @@ fn render(text: &str, cx: &RenderCx<'_>) -> Rendered {
         },
         notes: Vec::new(),
     }
+}
+
+/// The text the parser reads: the front matter cut (a fenced block when no card shows it), the prompt tags marked
+/// when the prompt features are on. Every line keeps its number and every text its column, so a node's source position
+/// is its place in `text`.
+fn prepared<'t>(
+    text: &'t str,
+    cut: Option<&frontmatter::Cut<'_>>,
+    features: &MarkdownFeatures,
+) -> Cow<'t, str> {
+    let cut_out: Cow<'_, str> = match cut {
+        Some(cut) => {
+            let fence = features
+                .front_matter_card
+                .is_none()
+                .then_some(match cut.syntax {
+                    super::FrontMatterSyntax::Yaml => "yaml",
+                    super::FrontMatterSyntax::Toml => "toml",
+                });
+            frontmatter::replace(text, cut, fence)
+        }
+        None => Cow::Borrowed(text),
+    };
+    match features.prompt_blocks {
+        Some(blocks) => match prompt::mark(&cut_out, blocks.tags) {
+            Cow::Borrowed(_) => cut_out,
+            Cow::Owned(marked) => Cow::Owned(marked),
+        },
+        None => cut_out,
+    }
+}
+
+/// [`prepared`] with the front matter `text` opens with (`text` without a byte order mark): what reading parses, for
+/// scans that must see the document as reading does.
+pub(crate) fn reading_text<'t>(text: &'t str, features: &MarkdownFeatures) -> Cow<'t, str> {
+    prepared(text, frontmatter::find(text).as_ref(), features)
+}
+
+/// The tree of a [`prepared`] text; `None` when it is too deep to walk and hand on.
+fn parsed<'a>(arena: &'a Arena<'a>, prepared: &str, opts: &Options<'_>) -> Option<&'a AstNode<'a>> {
+    let root = parse_document(arena, prepared, opts);
+    (!is_deeper_than(root, MAX_TREE_DEPTH)).then_some(root)
+}
+
+/// Whether `node` sits in a link or an image: its text belongs to that link and is never made another one.
+fn in_link<'a>(node: &'a AstNode<'a>) -> bool {
+    node.ancestors()
+        .skip(1)
+        .any(|a| matches!(a.data().value, NodeValue::Link(_) | NodeValue::Image(_)))
 }
 
 /// Documents of this size or more are sanitized on several threads.
@@ -263,11 +297,7 @@ fn mark_inline<'a>(root: &'a AstNode<'a>, cx: &RenderCx<'_>) {
         let Some(html) = replacement else {
             continue;
         };
-        let in_link = node
-            .ancestors()
-            .skip(1)
-            .any(|a| matches!(a.data().value, NodeValue::Link(_) | NodeValue::Image(_)));
-        if !in_link {
+        if !in_link(node) {
             node.data_mut().value = NodeValue::HtmlInline(html);
         }
     }

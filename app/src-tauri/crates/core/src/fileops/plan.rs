@@ -6,12 +6,17 @@
 //! with its replacement. The text of the link, its title, the `#anchor` and `?query`, angle brackets,
 //! percent-encoding, `\` or `/`, a leading `./` and a missing `.md` are kept as the author wrote them; every other
 //! byte stays as it is. Links that do not resolve to something that exists are left alone (they were broken
-//! already), and so are external links, anchors, and links not read with certainty.
+//! already), and so are external links, anchors, and links not read with certainty. With the prompt features on,
+//! the `@path` references reading marks are kept too: they name project paths, so only those of moving files change,
+//! and only the path is rewritten.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
+use unicode_normalization::UnicodeNormalization;
+
+use crate::format::{at_refs, MarkdownFeatures};
 use crate::links::{join_relative, parse, percent_decode, scheme_of, Dest, Form};
 use crate::paths::{Vault, VaultPath, WORKTREE_PREFIX};
 use crate::tree::key_of;
@@ -287,39 +292,42 @@ fn unescape(raw: &str) -> String {
     out
 }
 
-/// A name as a link writes it with percent-encoding.
-fn encode_name(name: &str) -> String {
-    let style = Style {
-        form: Form::Bare,
-        percent: true,
-        percent_non_ascii: true,
-        backslash: false,
-        dot_slash: false,
-        trailing_slash: false,
-    };
-    encode_segment(name, style)
+/// One spelling for the candidate filter: NFC, lowercase. The name of a file and the text of a link may each be NFC or
+/// NFD (a Mac writes NFD names), in any case.
+fn comparable(text: &str) -> String {
+    text.nfc().collect::<String>().to_lowercase()
 }
 
-/// The names (lowercase) a link to a moved path has to contain, in the forms a link can spell them.
+/// The names a link to a moved path has to contain, in the one spelling of [`comparable`].
 fn needles(moves: &[(String, String)]) -> Vec<String> {
     let mut out = Vec::new();
     for (from, _) in moves {
         let name = from.rsplit('/').next().unwrap_or(from);
-        let stem = strip_md(name);
-        for spelled in [stem.to_owned(), encode_name(stem)] {
-            let spelled = spelled.to_lowercase();
-            if !spelled.is_empty() && !out.contains(&spelled) {
-                out.push(spelled);
-            }
+        let stem = comparable(strip_md(name));
+        if !stem.is_empty() && !out.contains(&stem) {
+            out.push(stem);
         }
     }
     out
 }
 
-/// Whether `text` contains any of the lowercase `needles`, ignoring case.
+/// Whether `text` may hold a link to one of the `needles`: the text is compared with its Markdown escapes and
+/// percent-escapes undone, so `My%20Notes%20(1)`, `My Notes \(1\)` and `Relat%C3%B3rio` all match their names.
+/// A cheap filter: a false match only costs a parse.
 pub(crate) fn mentions(text: &str, needles: &[String]) -> bool {
-    let lower = text.to_lowercase();
-    needles.iter().any(|n| lower.contains(n.as_str()))
+    let lower = text.to_ascii_lowercase();
+    if needles.iter().any(|n| lower.contains(n.as_str())) {
+        return true;
+    }
+    // ASCII text without `%` | `\` reads the same after unescaping, decoding and NFC: the quick miss is the answer
+    if !text
+        .bytes()
+        .any(|b| !b.is_ascii() || b == b'%' || b == b'\\')
+    {
+        return false;
+    }
+    let plain = comparable(&percent_decode(&unescape(text)));
+    needles.iter().any(|n| plain.contains(n.as_str()))
 }
 
 // ---- the planner -------------------------------------------------------------------------------------------------
@@ -336,6 +344,8 @@ pub(crate) struct Planner<'a> {
     mover: Mover,
     needles: Vec<String>,
     seen: RefCell<HashMap<String, Option<Entry>>>,
+    /// The Markdown features that are on: which `@path` references reading marks.
+    features: MarkdownFeatures,
 }
 
 impl<'a> Planner<'a> {
@@ -345,7 +355,14 @@ impl<'a> Planner<'a> {
             mover: Mover::new(moves),
             needles: needles(moves),
             seen: RefCell::new(HashMap::new()),
+            features: MarkdownFeatures::default(),
         }
+    }
+
+    /// Plans the `@path` references these features have reading mark too.
+    pub(crate) fn with_features(mut self, features: MarkdownFeatures) -> Self {
+        self.features = features;
+        self
     }
 
     pub(crate) fn needles(&self) -> &[String] {
@@ -373,7 +390,7 @@ impl<'a> Planner<'a> {
     pub(crate) fn edits_for(&self, doc: &str, text: &str) -> Vec<LinkEdit> {
         let doc_new = self.mover.map_or_same(doc);
         let mut edits = Vec::new();
-        for dest in parse(text) {
+        for dest in parse(text, &self.features) {
             let Some((new, target)) = self.rewrite(doc, &doc_new, text, &dest) else {
                 continue;
             };
@@ -395,7 +412,35 @@ impl<'a> Planner<'a> {
                 causes,
             });
         }
+        // references sit in text outside links; destinations in links, definitions and HTML: never the same bytes
+        let refs = self.reference_edits(text);
+        if !refs.is_empty() {
+            edits.extend(refs);
+            edits.sort_by_key(|e| e.start);
+        }
         edits
+    }
+
+    /// The edits of the `@path` references of `text` to files that move: root paths, so only the target's move counts.
+    fn reference_edits(&self, text: &str) -> Vec<LinkEdit> {
+        let moving =
+            |path: &str| self.mover.map(path).is_some() && self.kind(path) == Some(Entry::File);
+        at_refs(text, &self.features, &moving)
+            .into_iter()
+            .filter_map(|reference| {
+                let (at, target_new) = self.mover.find(&reference.path)?;
+                let new = reference.rewritten(&target_new)?;
+                let old = text[reference.range.clone()].to_owned();
+                (new != old).then(|| LinkEdit {
+                    start: reference.range.start,
+                    end: reference.range.end,
+                    old,
+                    new,
+                    line: reference.line,
+                    causes: vec![at],
+                })
+            })
+            .collect()
     }
 
     /// The new token for one destination and the path it points at (before the move), or `None` when it stays.

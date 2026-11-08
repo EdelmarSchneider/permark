@@ -361,6 +361,39 @@ describe("the sidebar tabs", () => {
     flushSync();
     expect(ui.sidebar).toBe("files");
   });
+
+  it("are one Tab stop: arrows move between the tabs, Enter | Space (a click) selects", async () => {
+    component = mount(SidebarTabs, { target });
+    flushSync();
+    const list = target.querySelector<HTMLElement>('[role="tablist"]');
+    expect(list?.getAttribute("aria-label")).toBe("Sidebar views");
+    const tabs = (): HTMLElement[] => [...target.querySelectorAll<HTMLElement>('[role="tab"]')];
+    const [files, search] = tabs();
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([0, -1]);
+    files?.focus();
+    const press = (key: string): void => {
+      document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      flushSync();
+    };
+    press("ArrowRight");
+    expect(document.activeElement).toBe(search);
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0]);
+    // the focus moved, the view did not: the person selects it
+    expect(ui.sidebar).toBe("files");
+    press("ArrowRight");
+    expect(document.activeElement).toBe(files);
+    press("End");
+    expect(document.activeElement).toBe(search);
+    press("Home");
+    expect(document.activeElement).toBe(files);
+    press("ArrowLeft");
+    expect(document.activeElement).toBe(search);
+    search?.click();
+    flushSync();
+    expect(ui.sidebar).toBe("search");
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0]);
+    ui.showSidebar("files");
+  });
 });
 
 describe("the keyboard dialog", () => {
@@ -388,6 +421,22 @@ describe("the keyboard dialog", () => {
     expect(rowOf("Go to file").querySelector("kbd")?.textContent).toBe("Ctrl+P");
     expect(rowOf("Command palette").querySelector("kbd")?.textContent).toBe("Ctrl+Shift+P");
     expect(rowOf("Keyboard shortcuts…").textContent).toContain("No keys");
+  });
+
+  it("Tab | Shift+Tab stay inside the dialog", async () => {
+    await mountDialog();
+    const dialog = target.querySelector<HTMLElement>("[role=dialog]");
+    const search = dialog?.querySelector<HTMLInputElement>("input[type=search]");
+    const close = Array.from(dialog?.querySelectorAll("button") ?? []).find(
+      (b) => b.textContent?.trim() === "Close",
+    );
+    if (!search || !close) throw new Error("no dialog");
+    expect(document.activeElement).toBe(search);
+    close.focus();
+    press(close, "Tab");
+    expect(document.activeElement).toBe(search);
+    press(search, "Tab", { shiftKey: true });
+    expect(document.activeElement).toBe(close);
   });
 
   it("takes the next key press as the new keys and keeps it in the settings", async () => {

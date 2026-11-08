@@ -16,8 +16,11 @@ import type {
 } from "../../api";
 import { ImportFlow } from "./importFlow.svelte";
 import { ancestorsOf, applyDelta } from "./list";
+import { setLeaveGuard } from "../editing/guard";
 import { editing } from "../editing/session.svelte";
+import { problemText } from "./names";
 import { ExplorerStore, type ExplorerHost } from "./store.svelte";
+import type { NoticeAction } from "../window.svelte";
 
 type Mock = ReturnType<typeof createMockApi>;
 
@@ -26,6 +29,8 @@ type Fx = {
   store: ExplorerStore;
   failures: ApiError[];
   notes: string[];
+  /** Notes that came with buttons (Undo). */
+  acted: { text: string; actions: readonly NoticeAction[] }[];
   opened: string[];
   stop: () => void;
   setLink: (value: LinkUpdate) => void;
@@ -37,17 +42,21 @@ async function setup(link: LinkUpdate = "ask", wrap?: (api: Mock) => Api): Promi
   let setting = link;
   const failures: ApiError[] = [];
   const notes: string[] = [];
+  const acted: Fx["acted"] = [];
   const opened: string[] = [];
   const host: ExplorerHost = {
     fail: (error) => failures.push(error),
-    note: (text) => notes.push(text),
+    note: (text, ...actions) => {
+      notes.push(text);
+      if (actions.length > 0) acted.push({ text, actions });
+    },
     view: () => "main",
     linkUpdate: () => setting,
     openProject: (path) => opened.push(path),
   };
   const store = new ExplorerStore(wrap ? wrap(api) : api, host);
   const stop = await store.start();
-  return { api, store, failures, notes, opened, stop, setLink: (v) => (setting = v) };
+  return { api, store, failures, notes, acted, opened, stop, setLink: (v) => (setting = v) };
 }
 
 function paths(store: ExplorerStore): string[] {
@@ -283,6 +292,163 @@ describe("loading", () => {
     expect(store.nodes.length).toBe(before);
   });
 
+  it("an Explorer closed while its list loads never touches the tree of the one after it", async () => {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "thisTab");
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let sent: () => void = () => {};
+    const asked = new Promise<void>((resolve) => (sent = resolve));
+    let closed = false;
+    const late: string[] = [];
+    // a big list: the backend answers long after it was asked
+    const slow: Api = {
+      ...api,
+      treeOpen: async (filter) => {
+        const result = await api.treeOpen(filter);
+        sent();
+        await gate;
+        return result;
+      },
+      treeKeep: (path) => {
+        if (closed) late.push("treeKeep");
+        return api.treeKeep(path);
+      },
+      treeClose: () => {
+        if (closed) late.push("treeClose");
+        return api.treeClose();
+      },
+    };
+    const host: ExplorerHost = {
+      fail: () => {},
+      note: () => {},
+      view: () => "main",
+      linkUpdate: () => "never",
+      openProject: () => {},
+    };
+    const first = new ExplorerStore(slow, host);
+    void first.setActive("docs/guide.md");
+    void first.start();
+    await asked;
+    // the tab shows another folder: its Explorer goes before the list came
+    first.close();
+    closed = true;
+    const second = new ExplorerStore(api, host);
+    const stop = await second.start();
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await api.newEntry("", "later", "file");
+    expect(paths(second)).toContain("later.md");
+    expect(late).toEqual([]);
+    stop();
+  });
+
+  it("a closed Explorer asks the backend for nothing more, whatever is asked of it", async () => {
+    const { api, store, stop } = await setup("never", (mock) => closedFolders(mock));
+    stop();
+    const methods = [
+      "treeOpen",
+      "treeSetFilter",
+      "treeOpenFolder",
+      "treeKeep",
+      "treeClose",
+      "projectSessionGet",
+      "projectSessionSet",
+      "showDocument",
+      "newEntry",
+      "planMove",
+      "applyMove",
+      "deleteFiles",
+      "undoFileOp",
+      "undoFileOpEntry",
+      "absPath",
+      "openInEditor",
+      "openExternal",
+    ] as const;
+    const called = methods.map((method) => vi.spyOn(api, method));
+    // a menu | a key | a late answer of the panel that went away
+    await store.setFilter({ ...store.filter, show: "everything" });
+    await store.resetFilter();
+    await store.retry();
+    await store.toggle("docs");
+    store.reveal("docs/guide.md");
+    await store.setActive("docs/guide.md");
+    await store.acceptCodeOffer();
+    await store.declineCodeOffer();
+    await store.activate("README.md");
+    store.beginNew("file", "");
+    store.typeName("late");
+    await store.commitEdit();
+    await store.requestMove([{ from: "README.md", to: "docs/README.md" }]);
+    await store.remove(["README.md"]);
+    await store.undo();
+    await store.undoEntry(1);
+    await store.copyPath("README.md", true);
+    await store.openInEditor("README.md");
+    await store.openExternal("README.md", "defaultApp");
+    await store.openAsProject("docs");
+    await store.askInit("docs", "docs");
+    // what the panel would remember a moment later
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    for (const [i, spy] of called.entries()) expect(spy, methods[i]).not.toHaveBeenCalled();
+  });
+
+  it("an Explorer closed before it asked for its list never asks", async () => {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "thisTab");
+    const open = vi.spyOn(api, "treeOpen");
+    const store = new ExplorerStore(api, {
+      fail: () => {},
+      note: () => {},
+      view: () => "main",
+      linkUpdate: () => "never",
+      openProject: () => {},
+    });
+    void store.start();
+    store.close();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("an older list that answers last does not replace a newer one", async () => {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "thisTab");
+    let holdNext = false;
+    let release: () => void = () => {};
+    let held: () => void = () => {};
+    const waiting = new Promise<void>((resolve) => (held = resolve));
+    const wrapped: Api = {
+      ...api,
+      treeOpen: async (filter) => {
+        const result = await api.treeOpen(filter);
+        if (holdNext) {
+          holdNext = false;
+          held();
+          await new Promise<void>((resolve) => (release = resolve));
+        }
+        return result;
+      },
+    };
+    const store = new ExplorerStore(wrapped, {
+      fail: () => {},
+      note: () => {},
+      view: () => "main",
+      linkUpdate: () => "never",
+      openProject: () => {},
+    });
+    const stop = await store.start();
+    holdNext = true;
+    const older = store.retry();
+    await waiting;
+    await api.newEntry("", "newer", "file");
+    await store.retry();
+    expect(paths(store)).toContain("newer.md");
+    release();
+    await older;
+    expect(paths(store)).toContain("newer.md");
+    stop();
+  });
+
   it("a failed open shows as failed and can be retried", async () => {
     const api = createMockApi();
     let fail = true;
@@ -380,6 +546,22 @@ describe("rows and selection", () => {
     await store.activate("ghost.md");
   });
 
+  it("Keep editing (the leave refused): the highlight goes back to the document shown", async () => {
+    const { store } = await setup();
+    await store.setActive("README.md");
+    await store.toggle("docs");
+    // the click selects the row first, then asks to leave the edited document
+    store.select("docs/guide.md", "single");
+    const off = setLeaveGuard(() => Promise.resolve(false));
+    try {
+      await store.activate("docs/guide.md");
+    } finally {
+      off();
+    }
+    expect([...store.selection]).toEqual(["README.md"]);
+    expect(store.focus).toBe("README.md");
+  });
+
   it("the open document is kept in the list and revealed", async () => {
     const { store } = await setup();
     await store.setActive("docs/img/logo.png");
@@ -447,6 +629,8 @@ describe("renaming", () => {
 
   it("with the setting 'ask' a move that changes links waits for the answer", async () => {
     const f = await setup("ask");
+    // the guide links the ideas; a second document does too
+    f.api.probe.project.add("notes/index.md", "See [the ideas](ideas.md).\n");
     f.store.select("notes/ideas.md", "single");
     f.store.beginRename();
     f.store.typeName("thoughts.md");
@@ -457,7 +641,10 @@ describe("renaming", () => {
     await f.store.answerDialog("update");
     expect(f.store.dialog.status).toBe("closed");
     expect(paths(f.store)).toContain("notes/thoughts.md");
-    expect(f.api.probe.project.files.get("README.md")).toContain("(notes/thoughts.md)");
+    expect(f.api.probe.project.files.get("docs/guide.md")).toContain(
+      "(../notes/thoughts.md#second-idea)",
+    );
+    expect(f.api.probe.project.files.get("notes/index.md")).toContain("(thoughts.md)");
     expect(f.notes.at(-1)).toMatch(/2 links updated/);
   });
 
@@ -465,7 +652,9 @@ describe("renaming", () => {
     const f = await setup("ask");
     await f.store.requestMove([{ from: "notes/ideas.md", to: "notes/a.md" }]);
     await f.store.answerDialog("move");
-    expect(f.api.probe.project.files.get("README.md")).toContain("(notes/ideas.md)");
+    expect(f.api.probe.project.files.get("docs/guide.md")).toContain(
+      "(../notes/ideas.md#second-idea)",
+    );
     await f.store.requestMove([{ from: "notes/todo.txt", to: "notes/b.txt" }]);
     expect(f.store.dialog.status).toBe("closed");
     await f.store.requestMove([{ from: "docs/guide.md", to: "docs/g.md" }]);
@@ -478,12 +667,16 @@ describe("renaming", () => {
     const always = await setup("always");
     await always.store.requestMove([{ from: "notes/ideas.md", to: "notes/i.md" }]);
     expect(always.store.dialog.status).toBe("closed");
-    expect(always.api.probe.project.files.get("README.md")).toContain("(notes/i.md)");
+    expect(always.api.probe.project.files.get("docs/guide.md")).toContain(
+      "(../notes/i.md#second-idea)",
+    );
     const never = await setup("never");
     const plan = vi.spyOn(never.api, "planMove");
     await never.store.requestMove([{ from: "notes/ideas.md", to: "notes/i.md" }]);
     expect(plan).toHaveBeenCalledWith([{ from: "notes/ideas.md", to: "notes/i.md" }], false);
-    expect(never.api.probe.project.files.get("README.md")).toContain("(notes/ideas.md)");
+    expect(never.api.probe.project.files.get("docs/guide.md")).toContain(
+      "(../notes/ideas.md#second-idea)",
+    );
   });
 
   it("a name that is taken or invalid keeps the field open with the reason", async () => {
@@ -504,6 +697,23 @@ describe("renaming", () => {
     await f.store.commitEdit();
     expect(f.store.edit.mode).toBe("none");
     expect(f.failures).toEqual([]);
+  });
+
+  it("a case-only rename on a drive that cannot prove one file keeps the field open with its own reason", async () => {
+    const f = await setup("never");
+    f.api.probe.project.fileIdsUnknown = true;
+    f.store.beginRename("README.md");
+    f.store.typeName("readme.md");
+    await f.store.commitEdit();
+    expect(f.store.edit).toMatchObject({ mode: "rename", problem: "identityUnknown" });
+    expect(problemText("identityUnknown")).toMatch(/same file/);
+    expect(f.api.probe.project.files.has("README.md")).toBe(true);
+    expect(f.failures).toEqual([]);
+    // a drive that can tell: the rename goes through
+    f.api.probe.project.fileIdsUnknown = false;
+    await f.store.commitEdit();
+    expect(f.store.edit.mode).toBe("none");
+    expect(f.api.probe.project.files.has("readme.md")).toBe(true);
   });
 
   it("escape cancels, and renaming to the same name does nothing", async () => {
@@ -678,6 +888,23 @@ describe("delete and undo", () => {
     expect(f.notes.at(-1)).toBe("Undone.");
     await f.store.undo();
     expect(f.notes.at(-1)).toBe("Nothing to undo");
+  });
+
+  it("the notes of a delete and a rename carry Undo: the same journal undo as Ctrl+Z", async () => {
+    const f = await setup("never");
+    const undo = vi.spyOn(f.api, "undoFileOp");
+    await f.store.remove(["README.md"]);
+    expect(f.acted.at(-1)?.text).toContain("README.md");
+    expect(f.acted.at(-1)?.actions.map((a) => a.label)).toEqual(["Undo"]);
+    f.acted.at(-1)?.actions[0]?.run();
+    await vi.waitFor(() => expect(paths(f.store)).toContain("README.md"));
+    expect(undo).toHaveBeenCalledTimes(1);
+    await f.store.requestMove([{ from: "README.md", to: "READ.md" }]);
+    const renamed = f.acted.at(-1);
+    expect(renamed?.text).toContain("READ.md");
+    renamed?.actions[0]?.run();
+    await vi.waitFor(() => expect(paths(f.store)).toContain("README.md"));
+    expect(undo).toHaveBeenCalledTimes(2);
   });
 
   it("nothing selected, nothing deleted", async () => {

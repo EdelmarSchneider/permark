@@ -17,12 +17,14 @@
   type Props = {
     session: EditingSession;
     content: Content;
+    /** The page's scroller the editor lies in (it scrolls, the editor grows with its text). */
+    scroller: HTMLElement;
     markdown: boolean;
     /** Single file: no project files to link to. */
     project: boolean;
     pictures: (files: File[]) => Promise<string[]>;
   };
-  let { session, content, markdown, project, pictures }: Props = $props();
+  let { session, content, scroller, markdown, project, pictures }: Props = $props();
 
   let host: HTMLElement | undefined = $state();
   let source: SourceView | null = null;
@@ -66,12 +68,12 @@
       });
       source = made;
       made.scrollToLine(current.line);
-      made.view.focus();
+      if (current.focus) made.view.focus();
       detach = session.attach(current.seq, {
         kind: "source",
         text: () => made.text(),
         changes: (base) => changedRuns(base, made.text()),
-        topLine: () => made.topLine(),
+        topLine: () => made.topLine(scroller.getBoundingClientRect().top),
         selection: () => made.selection(),
         focus: () => made.view.focus(),
         pictures: (files, point) => {
@@ -84,6 +86,9 @@
         marks: (ranges, current, pick) => made.marks(ranges, current, pick),
         markAt: () => made.markAt(),
         composing: () => made.composing(),
+        search: () => made.search(),
+        headingTops: () => made.headingTops(scroller.getBoundingClientRect().top),
+        showHeading: (index) => made.showHeading(index, scroller),
       });
     });
     return () => {

@@ -291,7 +291,9 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 2px;
+    /* buttons side by side with no gap (their hover fills are rounded): the whole set fits one row in a pane beside
+       the explorer and the outline; a narrower pane wraps it */
+    gap: 0;
     padding: 4px var(--sp-3);
     border-bottom: 1px solid var(--border);
     background: var(--bg);

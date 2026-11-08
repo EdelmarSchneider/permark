@@ -91,6 +91,14 @@ export default {
   "error.superseded": "Autre chose a été ouvert entre-temps.",
   "error.internal": "Une erreur interne s'est produite dans PerMark : {detail}",
   "error.unknown": "Une erreur s'est produite : {message}",
+  "error.settingsUnreadable":
+    "PerMark ne peut pas lire le fichier de paramètres {subject}. Rien n'a été modifié.",
+  "error.settingsUnreadable.notText":
+    "PerMark ne peut pas lire le fichier de paramètres {subject} (ce n'est pas du texte brut). Rien n'a été modifié.",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark ne peut pas lire le fichier de paramètres {subject} (il est trop volumineux). Rien n'a été modifié.",
+  "error.settingsUnreadable.locked":
+    "PerMark ne peut pas lire le fichier de paramètres {subject} (un autre programme l'utilise). Rien n'a été modifié.",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "Ouvrez d'abord un dossier ou un fichier.",
@@ -146,6 +154,8 @@ export default {
   "fileOps.nameReserved": "Ce nom est réservé par le système",
   "fileOps.nameTooLong": "Le nom est trop long",
   "fileOps.nameExists": "Un élément portant ce nom existe déjà ici",
+  "fileOps.identityUnknown":
+    "PerMark ne peut pas savoir si ces deux noms désignent le même fichier sur ce lecteur, donc rien n'a été renommé.",
   "fileOps.files.one": "{n} fichier",
   "fileOps.files.other": "{n} fichiers",
   "fileOps.items.one": "{n} élément",
@@ -436,9 +446,12 @@ export default {
   "edit.save": "Enregistrer",
   "edit.saveHint": "Enregistrer (Ctrl+S)",
   "edit.saving": "Enregistrement…",
-  "edit.savedBlocks.one": "Enregistré, {n} bloc modifié.",
-  "edit.savedBlocks.other": "Enregistré, {n} blocs modifiés.",
-  "edit.firstSaveHint": "PerMark ne réécrit que les blocs que vous avez modifiés.",
+  "edit.savedBlocks.one": "Enregistré, {n} modification.",
+  "edit.savedBlocks.other": "Enregistré, {n} modifications.",
+  "edit.firstSaveHint": "PerMark ne réécrit que les parties que vous avez modifiées.",
+  "edit.emptyHint": "Commencez à écrire ici. Tapez / pour les titres, les listes et plus encore.",
+  "edit.savedReadsOtherwise":
+    "Certaines formules ou certains liens de ce document peuvent s'afficher différemment après l'enregistrement. Vérifiez-les en mode Source.",
   "source.find": "Rechercher",
   "source.replace": "Remplacer",
   "source.next": "Suivant",
@@ -466,6 +479,18 @@ export default {
   "edit.discard": "Abandonner",
   "edit.keepEditing": "Continuer à modifier",
   "edit.editInSource": "Modifier en mode Source",
+  "edit.blockSource": "Source de ce bloc",
+  "edit.blockSourceHint": "Échap pour terminer",
+  "edit.block.html": "HTML",
+  "edit.block.formula": "Formule",
+  "edit.block.footnote": "Note de bas de page",
+  "edit.block.diagram": "Diagramme",
+  "edit.block.alert": "Encadré",
+  "edit.block.other": "Bloc conservé tel quel",
+  "edit.block.openHint": "Appuyez sur Entrée pour modifier",
+  "edit.documentText": "Texte du document",
+  "edit.codeRefHint": "{title} ({mod}+clic)",
+  "edit.codeRefTitleMany": "{count} fichiers correspondent. {mod}+clic pour en choisir un.",
   "edit.visualForMarkdown":
     "Le mode Édition est réservé aux fichiers Markdown et aux fichiers de configuration ; utilisez Source.",
   "edit.diagramNoPlugin": "Activez le plugin Mermaid ou PlantUML pour voir le diagramme.",
@@ -499,11 +524,9 @@ export default {
   "conflict.text":
     "Rien n'a été écrasé. Vos modifications restent ici jusqu'à ce que vous choisissiez.",
   "conflict.deletedText": "Vos modifications restent ici jusqu'à ce que vous choisissiez.",
-  "conflict.reload": "Recharger depuis le disque",
-  "conflict.reloadConfirm": "Abandonner vos modifications et charger le fichier depuis le disque ?",
-  "conflict.discard": "Abandonner ma version",
-  "conflict.keepMine": "Conserver ma version (écraser)",
-  "conflict.recreate": "Conserver ma version (la réécrire)",
+  "conflict.reload": "Prendre la version du fichier (abandonner mes modifications)",
+  "conflict.keepMine": "Garder ma version (remplacer le fichier)",
+  "conflict.recreate": "Garder ma version (la réécrire)",
   "conflict.saveAsNew": "Enregistrer comme nouveau fichier",
   "conflict.showDiff": "Afficher les différences",
   "conflict.hideDiff": "Masquer les différences",
@@ -1214,7 +1237,7 @@ export default {
   "notes.move.title": "Déplacer vers un projet",
   "notes.moveDown": "Descendre",
   "notes.moveKept":
-    "« {name} » a changé pendant sa copie : elle reste donc dans vos notes, et la copie se trouve dans le projet.",
+    "« {name} » a changé pendant sa copie ou contient du texte non enregistré : elle reste donc dans vos notes, et la copie se trouve dans le projet.",
   "notes.moveToProject": "Déplacer vers un projet...",
   "notes.moveUndone": "« {name} » est de retour dans vos notes.",
   "notes.moveUndoneKept":
@@ -1415,7 +1438,6 @@ export default {
   "config.fromSource": "Modifier en mode Source",
   "config.nothing": "Rien à afficher dans ce fichier pour l'instant.",
   "config.noSheet": "Ce fichier ne peut pas être affiché sous forme de fiche. Utilisez Source.",
-  "config.fm.bar": "Propriétés. En modifier une laisse le reste du fichier tel quel.",
   "config.reason.multiline": "Texte sur plusieurs lignes. À modifier en mode Source.",
   "config.reason.alias": "Alias d'une autre valeur. À modifier en mode Source.",
   "config.reason.anchor":
@@ -1515,9 +1537,9 @@ export default {
   "project.newConfirm": "Utiliser ce dossier",
   "project.newBack": "Choisir un autre dossier…",
   "project.loadFailed": "Impossible de lire les paramètres du projet.",
-  "project.notInitialized": "PerMark n'est pas initialisé dans ce projet",
+  "project.notInitialized": "Ce dossier n'a pas encore de paramètres PerMark",
   "project.notInitializedHint":
-    "L'initialisation crée un dossier .permark où le projet peut conserver des paramètres à partager avec son équipe.",
+    "Initialisez PerMark pour donner à ce dossier ses propres paramètres, que tous ceux qui y travaillent peuvent partager.",
   "project.patternPlaceholder": "Motif, par exemple drafts/",
   "project.tree": "Explorateur",
   "project.treeExclude": "Toujours masquer",
@@ -1555,7 +1577,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "Espace réservé inconnu. Utilisez {path}, {line} ou {col}.",
   "settings.problem.noPath": "La commande doit contenir {path}.",
-  "settings.problem.notInitialized": "PerMark n'est pas initialisé dans ce projet.",
+  "settings.problem.notInitialized": "Ce dossier n'a pas encore de paramètres PerMark.",
   "settings.problem.other": "Cette valeur n'a pas été acceptée.",
   "welcome.newProject": "Nouveau projet…",
   "welcome.newProjectHint": "Choisissez un dossier ; PerMark le configure comme projet.",

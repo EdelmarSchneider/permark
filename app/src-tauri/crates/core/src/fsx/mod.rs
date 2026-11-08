@@ -48,24 +48,80 @@ pub fn recycle(paths: &[PathBuf]) -> Result<(), String> {
 
 /// Identity of a file | folder on its volume, `(volume, file)`: kept across a rename on the same volume (unix
 /// `st_dev` + `st_ino`; Windows volume serial + file index). A link is named itself, never followed. `None`: unknown
-/// (gone, refused, or no such notion here).
+/// (gone, refused, no such notion here, or a volume that reports no real ids).
 #[must_use]
 pub fn file_identity(path: &Path) -> Option<(u64, u64)> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         let meta = std::fs::symlink_metadata(path).ok()?;
-        Some((meta.dev(), meta.ino()))
+        known_identity(meta.dev(), meta.ino())
     }
     #[cfg(windows)]
     {
-        win::file_identity(path).ok()
+        let (volume, file) = win::file_identity(path).ok()?;
+        known_identity(volume, file)
     }
     #[cfg(not(any(unix, windows)))]
     {
         let _ = path;
         None
     }
+}
+
+/// FAT and some network | NAS drivers answer 0 for every file: such an id tells two files apart from nothing.
+fn known_identity(volume: u64, file: u64) -> Option<(u64, u64)> {
+    (volume != 0 && file != 0).then_some((volume, file))
+}
+
+/// Whether two names are one file, as far as the volume can tell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SameFile {
+    /// One file: equal ids, size and last write.
+    Yes,
+    /// Two files: the ids differ.
+    Other,
+    /// Not provable: an id is unknown, or equal ids disagree on size | last write (ids that are not unique).
+    Unknown,
+}
+
+/// [`IpcError`] detail of a refusal because two names may be one file but the volume cannot prove it
+/// ([`SameFile::Unknown`]).
+pub const IDENTITY_UNKNOWN: &str = "identityUnknown";
+
+/// What has to agree for two names to be taken as one file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileFacts {
+    id: (u64, u64),
+    len: u64,
+    modified: Option<std::time::SystemTime>,
+}
+
+fn facts(path: &Path) -> Option<FileFacts> {
+    let id = file_identity(path)?;
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    Some(FileFacts {
+        id,
+        len: meta.len(),
+        modified: meta.modified().ok(),
+    })
+}
+
+/// Size and last write corroborate the ids: a driver handing out non-unique ids would otherwise make another file
+/// look like this one, and a rename "onto itself" would replace it.
+fn compare(a: Option<FileFacts>, b: Option<FileFacts>) -> SameFile {
+    match (a, b) {
+        (Some(a), Some(b)) if a.id != b.id => SameFile::Other,
+        (Some(a), Some(b)) if a == b => SameFile::Yes,
+        _ => SameFile::Unknown,
+    }
+}
+
+/// Whether two paths name one file | folder (a case | normalization spelling of one name, a hard link). A name that
+/// only compares equal is never taken for the same file without the volume's proof.
+#[must_use]
+pub fn same_file(a: &Path, b: &Path) -> SameFile {
+    compare(facts(a), facts(b))
 }
 
 /// Retry delays for transient Windows sharing | lock violations.
@@ -75,9 +131,14 @@ pub const RETRY_DELAYS: [Duration; 3] = [
     Duration::from_millis(150),
 ];
 
-/// Windows sharing (32) | lock (33) violation, or access denied (antivirus | sync client holding the file).
+/// Windows sharing (32) | lock (33) violation: another program holds the file.
+pub(crate) fn is_locked(error: &io::Error) -> bool {
+    matches!(error.raw_os_error(), Some(32 | 33))
+}
+
+/// [`is_locked`], or access denied (antivirus | sync client holding the file).
 fn is_transient(error: &io::Error) -> bool {
-    matches!(error.raw_os_error(), Some(32 | 33)) || error.kind() == io::ErrorKind::PermissionDenied
+    is_locked(error) || error.kind() == io::ErrorKind::PermissionDenied
 }
 
 /// Runs `op`, retrying transient errors after each of `delays`.
@@ -132,8 +193,18 @@ impl From<FsxError> for IpcError {
 /// # Errors
 /// `TooLarge` (checked before reading), `Io`.
 pub fn read_bytes(path: &Path, limit: u64) -> Result<Vec<u8>, FsxError> {
-    let bytes = retry(&RETRY_DELAYS, || {
+    read_limited(path, limit, false).map(|(bytes, _)| bytes)
+}
+
+/// [`read_bytes`]; `locate`: also the path of the file as opened ([`opened_path`]).
+fn read_limited(
+    path: &Path,
+    limit: u64,
+    locate: bool,
+) -> Result<(Vec<u8>, Option<PathBuf>), FsxError> {
+    let read = retry(&RETRY_DELAYS, || {
         let file = std::fs::File::open(path)?;
+        let opened = if locate { opened_path(&file) } else { None };
         let len = file.metadata()?.len();
         if len > limit {
             return Ok(None);
@@ -141,11 +212,11 @@ pub fn read_bytes(path: &Path, limit: u64) -> Result<Vec<u8>, FsxError> {
         let mut bytes = Vec::with_capacity(usize::try_from(len).unwrap_or(0));
         // `take`: a file growing while read never exceeds the limit
         file.take(limit.saturating_add(1)).read_to_end(&mut bytes)?;
-        Ok(Some(bytes))
+        Ok(Some((bytes, opened)))
     })
     .map_err(|e| FsxError::io(path, e))?;
     let shown = || path.display().to_string();
-    let bytes = bytes.ok_or_else(|| FsxError::TooLarge {
+    let (bytes, opened) = read.ok_or_else(|| FsxError::TooLarge {
         path: shown(),
         limit,
     })?;
@@ -155,7 +226,7 @@ pub fn read_bytes(path: &Path, limit: u64) -> Result<Vec<u8>, FsxError> {
             limit,
         });
     }
-    Ok(bytes)
+    Ok((bytes, opened))
 }
 
 /// Reads a text file of at most `limit` bytes.
@@ -165,6 +236,49 @@ pub fn read_bytes(path: &Path, limit: u64) -> Result<Vec<u8>, FsxError> {
 pub fn read_text(path: &Path, limit: u64) -> Result<Decoded, FsxError> {
     let bytes = read_bytes(path, limit)?;
     decode(&bytes).ok_or_else(|| FsxError::Binary(path.display().to_string()))
+}
+
+/// [`read_text`] plus where the file that was read really is: the path of the open handle, every link and junction
+/// on the way followed (`None`: the system cannot tell). A path checked against a boundary before the open can be
+/// swapped for a link before it; this one is the file the bytes came from.
+///
+/// # Errors
+/// See [`read_text`].
+pub fn read_text_opened(path: &Path, limit: u64) -> Result<(Decoded, Option<PathBuf>), FsxError> {
+    let (bytes, opened) = read_limited(path, limit, true)?;
+    let text = decode(&bytes).ok_or_else(|| FsxError::Binary(path.display().to_string()))?;
+    Ok((text, opened))
+}
+
+/// The path of an open file as the system knows it (Windows: may carry `\\?\`, see [`crate::paths::simplified`]).
+fn opened_path(file: &std::fs::File) -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        win::final_path(file).ok()
+    }
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        use std::os::fd::AsRawFd;
+        std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd())).ok()
+    }
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        rustix::fs::getpath(file)
+            .ok()
+            .map(|p| PathBuf::from(std::ffi::OsStr::from_bytes(p.as_bytes())))
+    }
+    #[cfg(not(any(
+        windows,
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios"
+    )))]
+    {
+        let _ = file;
+        None
+    }
 }
 
 /// Scratch files of editors and tools (`*.tmp`, `*~`, `.#*`, `*.swp`, Vim's `4913`) and the hidden
@@ -186,12 +300,22 @@ pub fn is_scratch_name(name: &str) -> bool {
 /// Temp files of this process: two writes of one file never share a temp.
 static TEMP_COUNT: AtomicU64 = AtomicU64::new(0);
 
-/// Hidden temp next to `path`: `.<name>.<pid>.<n>.part`.
+/// Bytes of the target's name a temp name keeps: a name near the 255 limit of file systems still has a temp.
+const TEMP_NAME_KEEP: usize = 64;
+
+/// Hidden temp next to `path`: `.<name>.<pid>.<n>.part`, `<name>` cut to [`TEMP_NAME_KEEP`] bytes.
 fn temp_path(path: &Path) -> PathBuf {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
-    let name = path
+    let mut name = path
         .file_name()
         .map_or_else(|| "file".to_owned(), |n| n.to_string_lossy().into_owned());
+    if name.len() > TEMP_NAME_KEEP {
+        let mut end = TEMP_NAME_KEEP;
+        while !name.is_char_boundary(end) {
+            end -= 1;
+        }
+        name.truncate(end);
+    }
     let n = TEMP_COUNT.fetch_add(1, Ordering::Relaxed);
     dir.join(format!(".{name}.{}.{n}.part", std::process::id()))
 }
@@ -256,6 +380,21 @@ pub fn write_atomic_checked(
     result
 }
 
+/// [`write_atomic_checked`] guarded by `seen`: `bytes` replace `path` only while it still holds the bytes hashed `seen`.
+/// Check, then rename: two steps, not one atomic compare-and-swap. The check runs right before each rename attempt,
+/// which narrows the window but does not close it: on Unix any writer, and on Windows a writer that does not keep the
+/// file open, can still land between the two. `Ok(false)`: the file changed or went meanwhile, untouched.
+///
+/// # Errors
+/// IO failure; temp removed, target untouched.
+pub fn write_atomic_if_unchanged(path: &Path, bytes: &[u8], seen: ContentHash) -> io::Result<bool> {
+    write_atomic_checked(path, bytes, || match std::fs::read(path) {
+        Ok(now) => Ok(hash(&now) == seen),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    })
+}
+
 /// Moves `from` over `to` durably (Windows: `MoveFileExW` replace + write-through; Unix: rename + folder fsync),
 /// retrying transient locks ([`RETRY_DELAYS`]). Both on one volume (a finished download next to its part).
 ///
@@ -305,17 +444,30 @@ fn rename_durably(from: &Path, to: &Path) -> io::Result<()> {
     {
         std::fs::rename(from, to)?;
         if let Some(dir) = to.parent() {
-            let dir = if dir.as_os_str().is_empty() {
-                Path::new(".")
-            } else {
-                dir
-            };
-            // folder flush: some file systems cannot; the rename happened anyway
-            if let Ok(folder) = std::fs::File::open(dir) {
-                let _ = folder.sync_all();
-            }
+            sync_folder(dir);
         }
         Ok(())
+    }
+}
+
+/// Flushes the entries of folder `dir` (names made, renamed, removed in it) to disk, best effort: some file systems
+/// cannot, and what was done in the folder happened anyway. Unix only: std opens no folder handle on Windows, where
+/// durable renames go through write-through instead.
+pub(crate) fn sync_folder(dir: &Path) {
+    #[cfg(not(windows))]
+    {
+        let dir = if dir.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            dir
+        };
+        if let Ok(folder) = std::fs::File::open(dir) {
+            let _ = folder.sync_all();
+        }
+    }
+    #[cfg(windows)]
+    {
+        let _ = dir;
     }
 }
 
@@ -384,6 +536,87 @@ mod tests {
         write_atomic(&path, b"two").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"two");
         assert_eq!(names_in(path.parent().unwrap()), ["ação 文.json"]);
+    }
+
+    #[test]
+    fn a_name_at_the_length_limit_gets_a_short_temp_that_is_still_scratch() {
+        let dir = tempfile::tempdir().unwrap();
+        let name = format!("{}.md", "n".repeat(247));
+        assert_eq!(name.len(), 250);
+        let path = dir.path().join(&name);
+        for long in [path.clone(), dir.path().join("\u{e9}".repeat(125))] {
+            let temp = temp_path(&long);
+            let temp = temp.file_name().unwrap().to_string_lossy().into_owned();
+            assert!(temp.len() <= 128 && is_scratch_name(&temp), "{temp}");
+        }
+        write_atomic(&path, b"one").unwrap();
+        write_atomic(&path, b"two").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"two");
+        assert_eq!(names_in(dir.path()), [name]);
+    }
+
+    #[test]
+    fn a_write_while_unchanged_refuses_a_file_that_changed_or_went() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.md");
+        let seen = hash(b"seen");
+        std::fs::write(&path, "theirs").unwrap();
+        assert!(!write_atomic_if_unchanged(&path, b"mine", seen).unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), b"theirs");
+        std::fs::remove_file(&path).unwrap();
+        assert!(!write_atomic_if_unchanged(&path, b"mine", seen).unwrap());
+        assert!(!path.exists());
+        std::fs::write(&path, "seen").unwrap();
+        assert!(write_atomic_if_unchanged(&path, b"mine", seen).unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), b"mine");
+        assert_eq!(names_in(dir.path()), ["a.md"]);
+    }
+
+    #[test]
+    fn two_names_are_the_same_file_only_when_the_volume_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.md");
+        let b = dir.path().join("b.md");
+        std::fs::write(&a, "a").unwrap();
+        std::fs::write(&b, "b").unwrap();
+        assert_eq!(same_file(&a, &a), SameFile::Yes);
+        assert_eq!(same_file(&a, &b), SameFile::Other);
+        assert_eq!(
+            same_file(&a, &dir.path().join("missing.md")),
+            SameFile::Unknown
+        );
+        if crate::paths::CASE_INSENSITIVE {
+            assert_eq!(same_file(&a, &dir.path().join("A.md")), SameFile::Yes);
+        }
+    }
+
+    #[test]
+    fn a_zero_volume_serial_or_file_index_is_no_identity() {
+        assert_eq!(known_identity(7, 0), None);
+        assert_eq!(known_identity(0, 9), None);
+        assert_eq!(known_identity(7, 9), Some((7, 9)));
+    }
+
+    #[test]
+    fn equal_ids_are_one_file_only_when_size_and_last_write_agree() {
+        let at = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(5);
+        let one = FileFacts {
+            id: (7, 9),
+            len: 3,
+            modified: Some(at),
+        };
+        assert_eq!(compare(Some(one), Some(one)), SameFile::Yes);
+        let longer = FileFacts { len: 4, ..one };
+        assert_eq!(compare(Some(one), Some(longer)), SameFile::Unknown);
+        let later = FileFacts {
+            modified: Some(at + Duration::from_secs(1)),
+            ..one
+        };
+        assert_eq!(compare(Some(one), Some(later)), SameFile::Unknown);
+        let other = FileFacts { id: (7, 10), ..one };
+        assert_eq!(compare(Some(one), Some(other)), SameFile::Other);
+        assert_eq!(compare(Some(one), None), SameFile::Unknown);
+        assert_eq!(compare(None, Some(one)), SameFile::Unknown);
     }
 
     #[test]
@@ -519,6 +752,41 @@ mod tests {
         assert!(free_space(&file).unwrap() > 0);
         // a store root not created yet: its nearest existing folder answers
         assert!(free_space(&folder.join("not").join("yet")).unwrap() > 0);
+    }
+
+    /// The opened file's own path: a link (junction | symlink) on the way is followed to where the file really is.
+    #[test]
+    fn a_read_names_where_the_opened_file_really_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = crate::paths::canonicalize(dir.path()).unwrap();
+        let real = base.join("real ação");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::write(real.join("a.md"), "# A\n").unwrap();
+        let (text, opened) = read_text_opened(&real.join("a.md"), 1024).unwrap();
+        assert_eq!(text.text, "# A\n");
+        let opened = opened.expect("the system names the opened file");
+        assert_eq!(crate::paths::simplified(&opened), real.join("a.md"));
+        let link = base.join("link");
+        #[cfg(windows)]
+        let made = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&link)
+            .arg(&real)
+            .output()
+            .is_ok_and(|o| o.status.success());
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(&real, &link).is_ok();
+        if made {
+            let (_, opened) = read_text_opened(&link.join("a.md"), 1024).unwrap();
+            assert_eq!(
+                crate::paths::simplified(&opened.unwrap()),
+                real.join("a.md")
+            );
+        }
+        assert!(matches!(
+            read_text_opened(&real.join("a.md"), 2),
+            Err(FsxError::TooLarge { .. })
+        ));
     }
 
     #[test]

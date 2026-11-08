@@ -393,11 +393,12 @@ describe("the plugins page", () => {
 });
 
 describe("the project settings and Initialize PerMark", () => {
-  it("not initialized: the section only offers to create .permark; yes creates it and the controls appear", async () => {
+  it("not initialized: the section only offers to create .permark, in plain words; yes creates it and the controls appear", async () => {
     await open();
     mountPage("project");
     await tick();
-    expect(target.textContent).toContain("PerMark is not initialized in this project");
+    expect(target.textContent).toContain("This folder has no PerMark settings yet");
+    expect(target.textContent).not.toMatch(/not initialized|\.permark/);
     expect(target.querySelector(".list")).toBeNull();
     byText("button", "Initialize PerMark").click();
     expect(ui.initDialog.status).toBe("asking");

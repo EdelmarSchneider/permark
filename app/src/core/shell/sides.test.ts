@@ -64,6 +64,7 @@ describe("Ctrl+B by editor", () => {
     context: {} as never,
     typing: isTypingTarget(target),
     overlay: "none" as const,
+    dialog: false,
   });
   const ev = (defaultPrevented: boolean) => ({
     key: "b",

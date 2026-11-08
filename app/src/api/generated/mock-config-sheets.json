@@ -1,0 +1,176 @@
+{
+  "README.md": {
+    "path": "front-matter.yaml",
+    "text": "title: Reading showcase\nstatus: draft\nowner: Ana Souza\ntags: [reading, markdown, demo]\nupdated: 2026-10-19",
+    "body": {
+      "kind": "sheet",
+      "sheet": {
+        "kind": "config",
+        "groups": [
+          {
+            "path": "",
+            "title": "",
+            "line": 1,
+            "end": 5,
+            "comment": null,
+            "rows": [
+              {
+                "path": "title",
+                "key": "title",
+                "line": 1,
+                "end": 1,
+                "value": {
+                  "type": "scalar",
+                  "path": "title",
+                  "kind": "string",
+                  "text": "Reading showcase",
+                  "edit": {
+                    "editable": "surgical"
+                  }
+                },
+                "comment": null
+              },
+              {
+                "path": "status",
+                "key": "status",
+                "line": 2,
+                "end": 2,
+                "value": {
+                  "type": "scalar",
+                  "path": "status",
+                  "kind": "string",
+                  "text": "draft",
+                  "edit": {
+                    "editable": "surgical"
+                  }
+                },
+                "comment": null
+              },
+              {
+                "path": "owner",
+                "key": "owner",
+                "line": 3,
+                "end": 3,
+                "value": {
+                  "type": "scalar",
+                  "path": "owner",
+                  "kind": "string",
+                  "text": "Ana Souza",
+                  "edit": {
+                    "editable": "surgical"
+                  }
+                },
+                "comment": null
+              },
+              {
+                "path": "tags",
+                "key": "tags",
+                "line": 4,
+                "end": 4,
+                "value": {
+                  "type": "list",
+                  "items": [
+                    {
+                      "path": "tags[0]",
+                      "kind": "string",
+                      "text": "reading",
+                      "edit": {
+                        "editable": "surgical"
+                      }
+                    },
+                    {
+                      "path": "tags[1]",
+                      "kind": "string",
+                      "text": "markdown",
+                      "edit": {
+                        "editable": "surgical"
+                      }
+                    },
+                    {
+                      "path": "tags[2]",
+                      "kind": "string",
+                      "text": "demo",
+                      "edit": {
+                        "editable": "surgical"
+                      }
+                    }
+                  ]
+                },
+                "comment": null
+              },
+              {
+                "path": "updated",
+                "key": "updated",
+                "line": 5,
+                "end": 5,
+                "value": {
+                  "type": "scalar",
+                  "path": "updated",
+                  "kind": "date",
+                  "text": "2026-10-19",
+                  "edit": {
+                    "editable": "surgical"
+                  }
+                },
+                "comment": null
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "CLAUDE.md": {
+    "path": "front-matter.yaml",
+    "text": "name: project-rules\ndescription: Rules the agent follows in this repository",
+    "body": {
+      "kind": "sheet",
+      "sheet": {
+        "kind": "config",
+        "groups": [
+          {
+            "path": "",
+            "title": "",
+            "line": 1,
+            "end": 2,
+            "comment": null,
+            "rows": [
+              {
+                "path": "name",
+                "key": "name",
+                "line": 1,
+                "end": 1,
+                "value": {
+                  "type": "scalar",
+                  "path": "name",
+                  "kind": "string",
+                  "text": "project-rules",
+                  "edit": {
+                    "editable": "surgical"
+                  }
+                },
+                "comment": null
+              },
+              {
+                "path": "description",
+                "key": "description",
+                "line": 2,
+                "end": 2,
+                "value": {
+                  "type": "scalar",
+                  "path": "description",
+                  "kind": "string",
+                  "text": "Rules the agent follows in this repository",
+                  "edit": {
+                    "editable": "surgical"
+                  }
+                },
+                "comment": null
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

@@ -3,6 +3,7 @@
   // at, and the answers: move and update | move only | cancel. Escape | backdrop = cancel.
   import type { MovePlan, SkipReason } from "../../api";
   import { t, tn, type MessageKey } from "../i18n";
+  import { dialogFocus } from "../shell/dialogFocus";
 
   type Props = { plan: MovePlan; answer: (choice: "update" | "move" | "cancel") => void };
   let { plan, answer }: Props = $props();
@@ -22,9 +23,6 @@
   /** Moves listed before "and n more". */
   const SHOWN_MOVES = 4;
 
-  let dialog: HTMLElement | undefined = $state();
-  let primary: HTMLButtonElement | undefined = $state();
-
   const hasLinks = $derived(plan.linkCount > 0);
   /** The ignored folders whose documents were not read: the first few, then "…". */
   const uncheckedText = $derived(
@@ -37,33 +35,6 @@
         })
       : t("fileOps.dialogLabel"),
   );
-
-  function onkeydown(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      answer("cancel");
-      return;
-    }
-    if (e.key !== "Tab" || !dialog) return;
-    // focus stays inside the dialog
-    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>("button:not(:disabled)"));
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last?.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first?.focus();
-    }
-  }
-
-  // focus the default answer once shown; give focus back when closed
-  $effect(() => {
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    primary?.focus();
-    return () => before?.focus();
-  });
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -73,14 +44,14 @@
     if (e.target === e.currentTarget) answer("cancel");
   }}
 >
+  <!-- the keyboard starts on the default answer -->
   <div
-    bind:this={dialog}
     class="dialog"
     role="dialog"
     aria-modal="true"
     aria-labelledby="plan-title"
     tabindex="-1"
-    {onkeydown}
+    use:dialogFocus={{ initial: "[data-initial]", onEscape: () => answer("cancel") }}
   >
     <h2 id="plan-title">{title}</h2>
     <section aria-label={t("fileOps.movesLabel")} class="moves">
@@ -141,7 +112,7 @@
           >{t("fileOps.moveOnly")}</button
         >
         <button
-          bind:this={primary}
+          data-initial
           type="button"
           class="btn btn--primary"
           onclick={() => answer("update")}
@@ -149,12 +120,7 @@
           {t("fileOps.moveAndUpdate")}
         </button>
       {:else}
-        <button
-          bind:this={primary}
-          type="button"
-          class="btn btn--primary"
-          onclick={() => answer("move")}
-        >
+        <button data-initial type="button" class="btn btn--primary" onclick={() => answer("move")}>
           {t("fileOps.move")}
         </button>
       {/if}

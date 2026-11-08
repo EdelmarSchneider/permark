@@ -1,7 +1,9 @@
-// Plugin `highlight`: syntax highlighting, the language label and the copy button of code blocks (`@code` embed).
+// Plugin `highlight`: syntax highlighting, the language label and the copy button of code blocks (`@code` embed),
+// and the same token colors for code blocks in Edit mode.
 
 import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { definePlugin } from "../../core/plugins/registry.svelte";
+import { fenceLabel } from "./languages";
 
 export default definePlugin({
   manifest: { id: "highlight", kind: "embed", dependsOn: [] },
@@ -12,6 +14,8 @@ export default definePlugin({
       language: "@code",
       requires: NO_REQUIREMENT,
       view: () => import("./CodeBlock.svelte"),
+      label: fenceLabel,
+      colors: () => import("./colors").then((module) => module.codeSpans),
     });
   },
 });

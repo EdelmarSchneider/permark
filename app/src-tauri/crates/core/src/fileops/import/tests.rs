@@ -647,6 +647,42 @@ fn a_file_changed_while_it_was_copied_is_not_deleted_from_its_old_place() {
 }
 
 #[test]
+fn an_original_rewritten_with_the_same_length_and_time_is_not_deleted() {
+    let f = fx(&[], &[("a.md", "one")]);
+    let p = plan(&f, "", &["a.md"]);
+    let original = f.outside.path().join("a.md");
+    let rename = |from: &Path, to: &Path| {
+        let result = other_volume(from, to);
+        if result.is_ok() {
+            // a tool rewrites the original in place and puts its time back: length and time look untouched
+            let time = fs::metadata(&original).unwrap().modified().unwrap();
+            fs::write(&original, "ONE").unwrap();
+            fs::OpenOptions::new()
+                .write(true)
+                .open(&original)
+                .unwrap()
+                .set_modified(time)
+                .unwrap();
+        }
+        result
+    };
+    let out = f
+        .ops
+        .import_apply_with(
+            p.plan_id,
+            ImportMode::Move,
+            ConflictChoice::Skip,
+            &quiet(),
+            &rename,
+            TICK,
+        )
+        .unwrap();
+    assert_eq!((out.copied, out.moved, out.left_behind), (1, 0, 1));
+    assert_eq!(fs::read_to_string(&original).unwrap(), "ONE");
+    assert_eq!(read(&f, "a.md"), "one", "the copy is what was read");
+}
+
+#[test]
 fn a_move_that_deleted_nothing_is_recorded_as_a_copy() {
     let f = fx(&[], &[("a.md", "one")]);
     let p = plan(&f, "", &["a.md"]);

@@ -1,8 +1,12 @@
 // A small in-memory project for the mock backend (dev:mock, tests): files, folders, a simplified filter, moves with a
-// link preview, delete, new, undo. It mirrors the shapes of the real backend, not its every rule (the Rust side has
-// those, with their tests).
+// link preview, delete, new, undo. Its files are the ones the editor and the document view read and write (one store,
+// as one disk). It mirrors the shapes and the refusals of the real backend (names, protected folders, case, unsaved
+// documents), not its every rule (the Rust side has those, with their tests).
 
-import { diffLists, nameOf, parentOf } from "../core/explorer/list";
+import { diffLists, nameOf, parentOf, renamedPath } from "../core/explorer/list";
+import { IDENTITY_UNKNOWN } from "./error";
+import { MOCK_EDIT_SOURCES, mockTextOf } from "./mockDocs";
+import { checkName, newFileName } from "./mockNames";
 import type {
   Category,
   MoveOutcome,
@@ -62,21 +66,57 @@ const PRESETS: Record<string, readonly Category[]> = {
   ],
 };
 
+/** A document saved on Windows: UTF-8 with a BOM, CRLF line breaks (the editor's encoding and line ending paths). */
+export const MOCK_CRLF_BOM_DOC = "docs/windows.md";
+
+/** The mock project's files. A file the fixture views were rendered from has that text: what the view shows, the
+ *  editor edits and the project moves is one file. */
 export function seedFiles(): Record<string, string> {
-  return {
-    "CLAUDE.md": "# Rules\n",
-    "README.md": "# Demo\n\nSee [the guide](docs/guide.md) and [notes](notes/ideas.md).\n",
-    "docs/guide.md":
-      "# Guide\n\nBack to the [readme](../README.md). Ideas: [i](../notes/ideas.md).\n",
-    "docs/handbook.md": "# Handbook\n\nA long document to read.\n",
+  // the fixture documents (README.md, docs/guide.md, ...) come with their texts below, and so do the files the mock
+  // shows as text (`mockTextOf`)
+  const files: Record<string, string> = {
     "docs/img/logo.png": "png",
-    "notes/ideas.md": "# Ideas\n\n- one\n",
-    "notes/todo.txt": "todo",
-    "package.json": "{}",
-    ".github/ci.yml": "name: ci",
-    "src/main.rs": "fn main() {}",
+    "notes/todo.txt": "",
+    "package.json": "",
+    ".github/ci.yml": "",
+    "src/main.rs": "",
+    [MOCK_CRLF_BOM_DOC]:
+      "\uFEFF# Saved on Windows\r\n\r\nLines end with CR LF.\r\nThe file starts with a BOM.\r\n",
   };
+  for (const [path, source] of MOCK_EDIT_SOURCES) files[path] = source.text;
+  for (const path of Object.keys(files)) files[path] = mockTextOf(path) ?? files[path] ?? "";
+  return files;
 }
+
+/** The spelling `path` has in `files`, matched without case as on Windows and macOS (`paths::fold`); `null`: none. */
+export function storedPath(files: ReadonlyMap<string, string>, path: string): string | null {
+  if (files.has(path)) return path;
+  const key = path.toLowerCase();
+  for (const stored of files.keys()) if (stored.toLowerCase() === key) return stored;
+  return null;
+}
+
+/** `path` is `folder` or inside it (folded). */
+function within(path: string, folder: string): boolean {
+  const a = path.toLowerCase();
+  const b = folder.toLowerCase();
+  return a === b || a.startsWith(`${b}/`);
+}
+
+/** The project folder itself (or a worktree's): never moved or deleted. */
+function isRoot(path: string): boolean {
+  return path === "" || /^@wt\/[^/]+$/.test(path);
+}
+
+/** Folders the app keeps for itself or that make a folder a repository (`fileops/ops.rs` `is_protected`). */
+function isProtected(path: string): boolean {
+  const rel = path.startsWith("@wt/") ? path.split("/").slice(2).join("/") : path;
+  const parts = rel.split("/").map((p) => p.toLowerCase());
+  return parts[0] === ".permark" || parts.includes(".git");
+}
+
+/** A document whose links a move rewrites: what the preview saw and the changes it showed. */
+type PlannedDoc = { path: string; seen: string; changes: PlanFile["changes"] };
 
 type Op =
   | { kind: "move"; moves: MoveSpec[]; before: Map<string, string> }
@@ -91,9 +131,12 @@ export class MockProject {
   readonly kept = new Set<string>();
   /** Names of the linked worktrees of the vault, in its order (their files sit below `@wt/<name>/`). */
   readonly worktrees: string[] = [];
+  /** The drive gives no file ids (FAT, some network drives): a rename that only changes case cannot be proven to keep
+   *  one file (`fsx::same_file` answers Unknown), so it is refused. */
+  fileIdsUnknown = false;
   readonly #undo: (Op & { id: number })[] = [];
   #nextUndo = 1;
-  readonly #plans = new Map<number, MoveSpec[]>();
+  readonly #plans = new Map<number, { moves: MoveSpec[]; docs: PlannedDoc[]; refs: boolean }>();
   #nextPlan = 1;
 
   constructor(seed: Record<string, string> = seedFiles()) {
@@ -105,8 +148,24 @@ export class MockProject {
     for (let at = parentOf(path); at !== ""; at = parentOf(at)) this.dirs.add(at);
   }
 
+  /** Something is at `path`, in any case (the mock models a Windows volume). */
   exists(path: string): boolean {
-    return this.files.has(path) || this.dirs.has(path);
+    return this.#stored(path) !== null;
+  }
+
+  /** The spelling of the file or folder at `path` (folded), or `null`. */
+  #stored(path: string): string | null {
+    if (this.files.has(path) || this.dirs.has(path)) return path;
+    const file = storedPath(this.files, path);
+    if (file !== null) return file;
+    const key = path.toLowerCase();
+    for (const dir of this.dirs) if (dir.toLowerCase() === key) return dir;
+    return null;
+  }
+
+  #isDir(path: string): boolean {
+    const stored = this.#stored(path);
+    return stored !== null && this.dirs.has(stored);
   }
 
   /** The flat list a filter shows: folders first, names case-insensitive, parents before children. */
@@ -177,33 +236,83 @@ export class MockProject {
 
   // ---- operations ----------------------------------------------------------------------------------------------
 
-  plan(moves: MoveSpec[], updateLinks: boolean): MovePlan {
+  /** The checks of `fileops/ops.rs` `check_moves`, in its order. */
+  #checkMoves(moves: readonly MoveSpec[]): void {
+    if (moves.length === 0) throw new MockRefusal("unavailable", null);
     for (const m of moves) {
+      for (const path of [m.from, m.to]) {
+        if (isRoot(path) || isProtected(path)) throw new MockRefusal("protected", path);
+      }
+      const problem = checkName(nameOf(m.to));
+      if (problem !== null) throw new MockRefusal("invalidName", null, problem);
       if (!this.exists(m.from)) throw new MockRefusal("notFound", m.from);
-      if (this.exists(m.to)) throw new MockRefusal("exists", m.to);
-      if (m.to === m.from || m.to.startsWith(`${m.from}/`))
+      // the same entry under another case is a rename; the same name is nothing to do
+      const sameKey = m.from.toLowerCase() === m.to.toLowerCase();
+      const caseOnly = sameKey && m.from !== m.to;
+      if (sameKey && !caseOnly) throw new MockRefusal("unavailable", null);
+      if (this.#isDir(m.from) && within(m.to, m.from) && !caseOnly) {
         throw new MockRefusal("intoItself", m.from);
-      if (!this.dirs.has(parentOf(m.to)) && parentOf(m.to) !== "")
-        throw new MockRefusal("notFound", parentOf(m.to));
+      }
+      const parent = parentOf(m.to);
+      if (parent !== "" && !this.#isDir(parent)) throw new MockRefusal("notFound", parent);
+      if (!caseOnly && this.exists(m.to)) throw new MockRefusal("exists", m.to);
+      if (caseOnly && this.fileIdsUnknown) throw new MockRefusal("exists", m.to, IDENTITY_UNKNOWN);
     }
+    moves.forEach((a, at) => {
+      for (const b of moves.slice(at + 1)) {
+        if (within(a.from, b.from) || within(b.from, a.from)) {
+          throw new MockRefusal("overlap", a.from);
+        }
+        if (within(a.to, b.to) || within(b.to, a.to)) throw new MockRefusal("overlap", a.to);
+      }
+    });
+  }
+
+  /** Checks the moves and finds the links to change (`refs`: the `@path` references too, as with the prompt features
+   *  on); a document with unsaved edits (`unsaved`) is left to its editor (skipped `unsaved`), as `plan_move_with`.
+   *  Nothing is touched. */
+  plan(
+    moves: MoveSpec[],
+    updateLinks: boolean,
+    unsaved: readonly string[] = [],
+    refs = false,
+  ): MovePlan {
+    this.#checkMoves(moves);
     const files: PlanFile[] = [];
+    const docs: PlannedDoc[] = [];
+    const skipped: MovePlan["skipped"] = [];
+    const held = new Set(unsaved.map((p) => p.toLowerCase()));
     if (updateLinks) {
       for (const [path, text] of this.files) {
         if (!path.endsWith(".md")) continue;
-        const changes = text.split("\n").flatMap((line, at) =>
-          moves
-            .filter((m) => line.includes(`(${relativeLink(path, m.from)})`))
+        const changes = text.split("\n").flatMap((line, at) => [
+          ...moves
+            .filter((m) => linksTo(line, relativeLink(path, m.from)))
             .map((m) => ({
               line: at + 1,
               old: relativeLink(path, m.from),
               new: relativeLink(path, m.to),
             })),
-        );
-        if (changes.length > 0) files.push({ path, movedTo: null, changes });
+          ...(refs ? moves : []).flatMap((m) =>
+            [...line.matchAll(atRef(m.from))].map(() => ({
+              line: at + 1,
+              old: m.from,
+              new: m.to,
+            })),
+          ),
+        ]);
+        if (changes.length === 0) continue;
+        if (held.has(path.toLowerCase())) {
+          skipped.push({ path, reason: "unsaved" });
+          continue;
+        }
+        const movedTo = renamedPath(path, moves);
+        files.push({ path, movedTo: movedTo === path ? null : movedTo, changes });
+        docs.push({ path, seen: text, changes });
       }
     }
     const planId = this.#nextPlan++;
-    this.#plans.set(planId, moves);
+    this.#plans.set(planId, { moves, docs, refs });
     return {
       planId,
       moves,
@@ -211,40 +320,50 @@ export class MockProject {
       fileCount: files.length,
       files,
       truncated: false,
-      skipped: [],
+      skipped,
       unchecked: [],
     };
   }
 
   /** The moves of a kept plan (for the rename hints). */
   moves(planId: number): MoveSpec[] {
-    return this.#plans.get(planId) ?? [];
+    return this.#plans.get(planId)?.moves ?? [];
   }
 
+  /** Makes the moves of a preview (checked again), then rewrites the links of the documents it showed, each only if
+   *  it still is what the preview saw. */
   apply(planId: number, updateLinks: boolean): MoveOutcome {
-    const moves = this.#plans.get(planId);
-    if (!moves) throw new MockRefusal("unavailable", "");
+    const plan = this.#plans.get(planId);
+    if (!plan) throw new MockRefusal("unavailable", null);
     this.#plans.delete(planId);
+    const { moves, refs } = plan;
+    this.#checkMoves(moves);
     const before = new Map(this.files);
     let links = 0;
-    const touched = new Set<string>();
+    let documents = 0;
+    const skipped: MoveOutcome["skipped"] = [];
     if (updateLinks) {
-      for (const [path, text] of this.files) {
-        let next = text;
-        for (const m of moves) {
-          const old = `(${relativeLink(path, m.from)})`;
-          if (next.includes(old)) {
-            next = next.split(old).join(`(${relativeLink(path, m.to)})`);
-            links += 1;
-            touched.add(path);
+      for (const doc of plan.docs) {
+        const now = this.files.get(doc.path);
+        const at = renamedPath(doc.path, moves);
+        if (now === undefined) skipped.push({ path: at, reason: "missing" });
+        else if (now !== doc.seen) skipped.push({ path: at, reason: "changed" });
+        else {
+          let next = now;
+          for (const m of moves) {
+            const [from, to] = [relativeLink(doc.path, m.from), relativeLink(doc.path, m.to)];
+            next = next.split(`(${from})`).join(`(${to})`).split(`(${from}#`).join(`(${to}#`);
+            if (refs) next = next.replace(atRef(m.from), `@${m.to}`);
           }
+          this.files.set(doc.path, next);
+          links += doc.changes.length;
+          documents += 1;
         }
-        this.files.set(path, next);
       }
     }
-    for (const m of moves) this.#rename(m.from, m.to);
+    for (const m of moves) this.#rename(this.#stored(m.from) ?? m.from, m.to);
     this.#push({ kind: "move", moves, before });
-    return { moved: moves.length, links, documents: touched.size, skipped: [] };
+    return { moved: moves.length, links, documents, skipped };
   }
 
   #rename(from: string, to: string): void {
@@ -262,10 +381,23 @@ export class MockProject {
     }
   }
 
-  delete(paths: string[]): void {
-    const files = new Map<string, string>();
+  /** Deletes every path or none (all checked first, as `check_deletes`); a path inside another one goes with it.
+   *  Returns what went. */
+  delete(paths: string[]): string[] {
+    if (paths.length === 0) throw new MockRefusal("unavailable", null);
+    const checked: string[] = [];
     for (const path of paths) {
-      if (!this.exists(path)) throw new MockRefusal("notFound", path);
+      if (isRoot(path) || isProtected(path)) throw new MockRefusal("protected", path);
+      const stored = this.#stored(path);
+      if (stored === null) throw new MockRefusal("notFound", path);
+      checked.push(stored);
+    }
+    const kept = checked.filter(
+      (path, at) =>
+        !checked.some((other, i) => i !== at && within(path, other) && (path !== other || i < at)),
+    );
+    const files = new Map<string, string>();
+    for (const path of kept) {
       for (const [p, text] of [...this.files]) {
         if (p === path || p.startsWith(`${path}/`)) {
           files.set(p, text);
@@ -275,7 +407,8 @@ export class MockProject {
       for (const d of [...this.dirs])
         if (d === path || d.startsWith(`${path}/`)) this.dirs.delete(d);
     }
-    this.#push({ kind: "delete", paths, files });
+    this.#push({ kind: "delete", paths: kept, files });
+    return kept;
   }
 
   /** Items an import put in place (project paths): one undo step takes them out again. Returns its journal id. */
@@ -304,30 +437,36 @@ export class MockProject {
     }
   }
 
-  /** Takes back exactly the operation `id` unless gone or touched by a newer one; whether it did. */
-  undoEntry(id: number): boolean {
+  /** Takes back exactly the operation `id` unless gone or touched by a newer one; the moves that took it back
+   *  ([`MockProject.undo`]), `null` when it did not. */
+  undoEntry(id: number): MoveSpec[] | null {
     const at = this.#undo.findIndex((op) => op.id === id);
     const op = this.#undo[at];
-    if (op === undefined) return false;
+    if (op === undefined) return null;
     const mine = MockProject.#paths(op);
     const near = (a: string, b: string): boolean =>
       a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
     const touched = this.#undo
       .slice(at + 1)
       .some((later) => MockProject.#paths(later).some((p) => mine.some((m) => near(p, m))));
-    if (touched) return false;
+    if (touched) return null;
     this.#undo.splice(at, 1);
-    this.#takeBack(op);
-    return true;
+    return this.#takeBack(op);
   }
 
+  /** A new empty file (`.md` | `.txt`) or folder in `dir`, by the backend's rules (`FileOps::create`). */
   create(dir: string, name: string, kind: NewKind): string {
-    const full = kind === "file" && !/\.[a-z]+$/i.test(name) ? `${name}.md` : name;
-    if (/[\\/:*?"<>|]/.test(full)) throw new MockRefusal("invalidName", "chars");
-    // as the backend (`fileops/names.rs` `new_file_name`): only Markdown and plain text are made here
-    if (kind === "file" && !/\.(md|markdown|txt)$/i.test(full)) {
-      throw new MockRefusal("invalidName", "notMarkdown");
+    let full = name;
+    if (kind === "file") {
+      const named = newFileName(name);
+      if (!named.ok) throw new MockRefusal("invalidName", null, named.problem);
+      full = named.name;
+    } else {
+      const problem = checkName(name);
+      if (problem !== null) throw new MockRefusal("invalidName", null, problem);
     }
+    if (isProtected(dir)) throw new MockRefusal("protected", dir);
+    if (dir !== "" && !this.#isDir(dir)) throw new MockRefusal("notFound", dir);
     const path = dir === "" ? full : `${dir}/${full}`;
     if (this.exists(path)) throw new MockRefusal("exists", path);
     if (kind === "file") this.add(path, "");
@@ -339,27 +478,29 @@ export class MockProject {
     return path;
   }
 
-  /** Takes the newest operation back; false when there is none. */
-  undo(): boolean {
+  /** Takes the newest operation back; the moves that took it back (a move's, each `to` -> `from`; none for the other
+   *  kinds), as the watch sees an undo; `null` when there is nothing to take back. */
+  undo(): MoveSpec[] | null {
     const op = this.#undo.pop();
-    if (!op) return false;
-    this.#takeBack(op);
-    return true;
+    if (!op) return null;
+    return this.#takeBack(op);
   }
 
-  #takeBack(op: Op): void {
+  #takeBack(op: Op): MoveSpec[] {
     switch (op.kind) {
-      case "move":
-        for (const m of [...op.moves].reverse()) this.#rename(m.to, m.from);
+      case "move": {
+        const back = [...op.moves].reverse().map((m) => ({ from: m.to, to: m.from }));
+        for (const m of back) this.#rename(m.from, m.to);
         for (const [path, text] of op.before) if (this.files.has(path)) this.files.set(path, text);
-        return;
+        return back;
+      }
       case "new":
         this.files.delete(op.path);
         this.dirs.delete(op.path);
-        return;
+        return [];
       case "delete":
         for (const [path, text] of op.files) this.add(path, text);
-        return;
+        return [];
       case "import":
         for (const path of op.paths) {
           for (const p of [...this.files.keys()]) {
@@ -368,9 +509,9 @@ export class MockProject {
           for (const d of [...this.dirs])
             if (d === path || d.startsWith(`${path}/`)) this.dirs.delete(d);
         }
-        return;
+        return [];
       default:
-        op satisfies never;
+        return op satisfies never;
     }
   }
 
@@ -379,14 +520,39 @@ export class MockProject {
   }
 }
 
-/** What the mock refuses, with the kind the real backend would answer. */
+/** What the mock refuses, with the kind, subject and detail the real backend would answer. */
 export class MockRefusal extends Error {
   constructor(
-    readonly kind: "notFound" | "exists" | "intoItself" | "invalidName" | "unavailable",
-    readonly subject: string,
+    readonly kind:
+      | "notFound"
+      | "exists"
+      | "intoItself"
+      | "invalidName"
+      | "unavailable"
+      | "protected"
+      | "overlap",
+    readonly subject: string | null,
+    readonly detail: string | null = null,
   ) {
     super(kind);
   }
+}
+
+/** `line` holds a Markdown link to `href`, with or without an anchor. */
+function linksTo(line: string, href: string): boolean {
+  return line.includes(`(${href})`) || line.includes(`(${href}#`);
+}
+
+/** A character an `@path` reference's path may hold (`inline.rs` `is_path_char`). */
+const PATH_CHAR = String.raw`[\p{L}\p{N}_./\\@+~-]`;
+
+/** The `@path` references to `target` (a project path) in a text: not inside a word or a path, and the path ends where
+ *  a character it cannot hold follows (a sentence's `.` may come first). An approximation of the backend's rule for
+ *  the mock: code, links, front matter, escapes and other spellings of the path (`\`, a leading `/`) are not told
+ *  apart here. */
+function atRef(target: string): RegExp {
+  const path = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(String.raw`(?<!${PATH_CHAR})@${path}(?=[._/\\-]*(?!${PATH_CHAR}))`, "gu");
 }
 
 /** The way from the document `doc` to `target` (both project paths). */

@@ -30,8 +30,13 @@ fn is_variable_name(name: &str) -> bool {
             .all(|c| c.is_alphanumeric() || matches!(c, '_' | '.' | '-'))
 }
 
-fn is_path_char(c: char) -> bool {
+pub(super) fn is_path_char(c: char) -> bool {
     c.is_alphanumeric() || matches!(c, '_' | '.' | '/' | '\\' | '-' | '@' | '+' | '~')
+}
+
+/// Whether an `@` after `previous` (`None`: the start of the text) may start a reference: not inside a word or a path.
+fn may_start(previous: Option<char>) -> bool {
+    previous.is_none_or(|p| !(p.is_alphanumeric() || is_path_char(p)))
 }
 
 /// An extension of 1..12 characters with at least one letter after the last dot of the last segment.
@@ -62,7 +67,7 @@ fn encode(path: &str) -> String {
 }
 
 /// The `@path` at the start of `text` (without the `@`), when it names an existing file.
-fn reference_at<'t>(text: &'t str, env: &dyn DocEnv) -> Option<&'t str> {
+pub(super) fn reference_at<'t>(text: &'t str, env: &dyn DocEnv) -> Option<&'t str> {
     let run: &str = {
         let end = text
             .char_indices()
@@ -86,59 +91,74 @@ fn reference_at<'t>(text: &'t str, env: &dyn DocEnv) -> Option<&'t str> {
     env.file_exists(normalized).then_some(path)
 }
 
+/// The `@path` references [`mark`] marks in `text`, in order: the offset of each path (after its `@`) and the path as
+/// written.
+pub(super) fn references<'t>(text: &'t str, env: &dyn DocEnv) -> Vec<(usize, &'t str)> {
+    let mut found = Vec::new();
+    if !text.contains('@') {
+        return found;
+    }
+    let mut previous: Option<char> = None;
+    // a path is read as one piece: an `@` inside it starts nothing
+    let mut inside_until = 0;
+    for (at, c) in text.char_indices() {
+        if at >= inside_until && c == '@' && may_start(previous) {
+            if let Some(path) = reference_at(&text[at + 1..], env) {
+                found.push((at + 1, path));
+                inside_until = at + 1 + path.len();
+            }
+        }
+        previous = Some(c);
+    }
+    found
+}
+
+/// The `{{name}}` variable at the start of `text`: the name and the length of the whole `{{ ... }}`.
+fn variable_at(text: &str) -> Option<(&str, usize)> {
+    let body = text.strip_prefix("{{")?;
+    let close = body.find("}}").filter(|n| *n <= MAX_VARIABLE)?;
+    let name = body[..close].trim();
+    is_variable_name(name).then_some((name, 2 + close + 2))
+}
+
 /// HTML for `text` with its variables and references marked, or `None` when it has none.
 pub(super) fn mark(text: &str, env: &dyn DocEnv) -> Option<String> {
     if !text.contains("{{") && !text.contains('@') {
         return None;
     }
+    // a reference and a variable never share a character (`{` ends a path, `@` is no name character): each is found on
+    // its own
+    let mut refs = references(text, env).into_iter().peekable();
     let mut out = String::with_capacity(text.len() + 32);
-    let mut found = false;
     let mut plain_from = 0;
-    let mut previous: Option<char> = None;
-    let mut chars = text.char_indices().peekable();
-    while let Some((at, c)) = chars.next() {
-        let rest = &text[at..];
-        let mut consumed = None;
-        if c == '{' && rest.starts_with("{{") {
-            if let Some(close) = rest[2..].find("}}").filter(|n| *n <= MAX_VARIABLE) {
-                let name = rest[2..2 + close].trim();
-                if is_variable_name(name) {
-                    escape(&text[plain_from..at], &mut out);
-                    out.push_str("<span class=\"tvar\">{{");
-                    escape(name, &mut out);
-                    out.push_str("}}</span>");
-                    consumed = Some(2 + close + 2);
-                }
-            }
-        } else if c == '@' && previous.is_none_or(|p| !(p.is_alphanumeric() || is_path_char(p))) {
-            if let Some(path) = reference_at(&rest[1..], env) {
-                escape(&text[plain_from..at], &mut out);
-                out.push_str("<a class=\"at-ref\" href=\"/");
-                out.push_str(&encode(
-                    percent_decode(path)
-                        .replace('\\', "/")
-                        .trim_start_matches('/'),
-                ));
-                out.push_str("\">@");
-                escape(path, &mut out);
-                out.push_str("</a>");
-                consumed = Some(1 + path.len());
-            }
+    for (at, c) in text.char_indices() {
+        if at < plain_from {
+            continue;
         }
-        match consumed {
-            Some(len) => {
-                found = true;
-                let end = at + len;
-                plain_from = end;
-                previous = text[..end].chars().next_back();
-                while chars.peek().is_some_and(|(i, _)| *i < end) {
-                    chars.next();
-                }
+        if let Some((_, path)) = refs.next_if(|(path_at, _)| *path_at == at + 1) {
+            escape(&text[plain_from..at], &mut out);
+            out.push_str("<a class=\"at-ref\" href=\"/");
+            out.push_str(&encode(
+                percent_decode(path)
+                    .replace('\\', "/")
+                    .trim_start_matches('/'),
+            ));
+            out.push_str("\">@");
+            escape(path, &mut out);
+            out.push_str("</a>");
+            plain_from = at + 1 + path.len();
+        } else if c == '{' {
+            if let Some((name, len)) = variable_at(&text[at..]) {
+                escape(&text[plain_from..at], &mut out);
+                out.push_str("<span class=\"tvar\">{{");
+                escape(name, &mut out);
+                out.push_str("}}</span>");
+                plain_from = at + len;
             }
-            None => previous = Some(c),
         }
     }
-    if !found {
+    // every piece marked is longer than nothing: no piece, nothing moved on
+    if plain_from == 0 {
         return None;
     }
     escape(&text[plain_from..], &mut out);
@@ -208,6 +228,72 @@ mod tests {
             out.starts_with("a&lt;script&gt; <a class=\"at-ref\""),
             "{out}"
         );
+    }
+
+    /// Shared with vitest (`app/src/core/editing/visual/promptText.test.ts`): Edit's mirror of these rules marks the
+    /// same pieces.
+    const FIXTURE: &str =
+        include_str!("../../../../../../src/core/editing/visual/promptText.fixture.json");
+
+    #[derive(serde::Deserialize)]
+    struct Fixture {
+        files: Vec<String>,
+        cases: Vec<Case>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Case {
+        text: String,
+        html: Option<String>,
+    }
+
+    struct Listed(Vec<String>);
+    impl DocEnv for Listed {
+        fn file_exists(&self, path: &str) -> bool {
+            self.0.iter().any(|file| file == path)
+        }
+    }
+
+    #[test]
+    fn shared_fixture_cases() {
+        let fixture: Fixture = serde_json::from_str(FIXTURE).unwrap();
+        assert!(fixture.cases.len() >= 30);
+        let files = Listed(fixture.files);
+        for case in fixture.cases {
+            assert_eq!(mark(&case.text, &files), case.html, "{}", case.text);
+        }
+    }
+
+    /// The references `mark` makes into links, as `@path` texts.
+    fn marked_references(html: &str) -> Vec<String> {
+        html.split("<a class=\"at-ref\"")
+            .skip(1)
+            .map(|rest| {
+                let start = rest.find("\">").unwrap() + 2;
+                rest[start..rest.find("</a>").unwrap()].to_owned()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn references_are_the_pieces_mark_makes_links() {
+        let fixture: Fixture = serde_json::from_str(FIXTURE).unwrap();
+        let files = Listed(fixture.files);
+        for case in fixture.cases {
+            let found: Vec<String> = references(&case.text, &files)
+                .into_iter()
+                .map(|(at, path)| {
+                    assert_eq!(&case.text[at - 1..at + path.len()], format!("@{path}"));
+                    format!("@{path}")
+                })
+                .collect();
+            let marked = case
+                .html
+                .as_deref()
+                .map(marked_references)
+                .unwrap_or_default();
+            assert_eq!(found, marked, "{}", case.text);
+        }
     }
 
     #[test]

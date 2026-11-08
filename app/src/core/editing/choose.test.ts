@@ -23,6 +23,9 @@ const shown = vi.hoisted(() => {
       get view(): DocumentView | null {
         return state.view;
       },
+      get current(): DocumentView | null {
+        return state.view !== null && state.view.path === state.path ? state.view : null;
+      },
       get savePolicy(): SavePolicy {
         return { kind: "explicit" };
       },
@@ -36,7 +39,8 @@ vi.mock("../doc/document.svelte", () => ({ documents: shown.documents }));
 
 const { editing, EditingSession } = await import("./session.svelte");
 const { api } = await import("../../api");
-const { chooseMode, openRemembered } = await import("./choose");
+const { chooseMode, editBlockedReason, openRemembered } = await import("./choose");
+const { mockView } = await import("../../api/mockDocs");
 
 /** The view of a markdown file the mock can open (`readOnly`: the page says it cannot be edited). */
 function viewFor(path: string, readOnly = false): DocumentView {
@@ -71,6 +75,33 @@ function switchTo(path: string, readOnly = false): void {
   editing.release();
   show(path, readOnly);
   openRemembered();
+}
+
+/** The view the mock backend gives for `path` (Markdown, a config file's sheet, plain text). */
+function mockViewOf(path: string): DocumentView {
+  const view = mockView(path, [], true);
+  if (view === null) throw new Error(`the mock has no ${path}`);
+  return view;
+}
+
+/** The window shows `path` with the view the mock backend gives for it. */
+function showMock(path: string): void {
+  shown.state.path = path;
+  shown.state.view = mockViewOf(path);
+}
+
+/**
+ * A file switch as it really comes: the path moves first while the page still holds the previous file's view (the
+ * new one loads), and the document area asks again once the new view lands.
+ */
+async function switchWhileLoading(path: string): Promise<void> {
+  editing.release();
+  shown.state.path = path;
+  openRemembered();
+  await flush();
+  shown.state.view = mockViewOf(path);
+  openRemembered();
+  await flush();
 }
 
 beforeEach(() => {
@@ -149,5 +180,58 @@ describe("the chosen mode", () => {
     await flush();
     expect(editing.mode).toBe("edit");
     expect(editing.content?.seq).toBe(seq);
+  });
+});
+
+describe("the editor follows the file shown, not the page still on screen while it loads", () => {
+  it("Edit on Markdown, then a config file: the sheet opens on it", async () => {
+    chooseMode("edit");
+    await flush();
+    expect(editing.kind).toBe("markdown");
+    await switchWhileLoading("Cargo.toml");
+    expect(editing.path).toBe("Cargo.toml");
+    expect(editing.kind).toBe("sheet");
+    expect(editing.mode).toBe("edit");
+  });
+
+  it("Edit on a config file, then Markdown: the visual editor opens on it", async () => {
+    showMock("Cargo.toml");
+    chooseMode("edit");
+    await flush();
+    expect(editing.kind).toBe("sheet");
+    await switchWhileLoading("README.md");
+    expect(editing.path).toBe("README.md");
+    expect(editing.kind).toBe("markdown");
+    expect(editing.mode).toBe("edit");
+  });
+
+  it("Edit, then a text file without Edit opens in Source; the next Markdown file opens in Edit again", async () => {
+    chooseMode("edit");
+    await flush();
+    await switchWhileLoading("notes/todo.txt");
+    expect(editing.path).toBe("notes/todo.txt");
+    expect(editing.kind).toBe("text");
+    expect(editing.mode).toBe("source");
+    await switchWhileLoading("docs/handbook.md");
+    expect(editing.path).toBe("docs/handbook.md");
+    expect(editing.kind).toBe("markdown");
+    expect(editing.mode).toBe("edit");
+  });
+
+  it("Edit chosen while the next file loads opens no editor with the previous file's kind", async () => {
+    shown.state.path = "Cargo.toml";
+    expect(editBlockedReason()).toBe("noViewer");
+    chooseMode("edit");
+    await flush();
+    expect(editing.path).toBeNull();
+    expect(editing.mode).toBe("view");
+    // its view lands: Edit is available and opens the sheet
+    shown.state.view = mockViewOf("Cargo.toml");
+    expect(editBlockedReason()).toBeNull();
+    chooseMode("edit");
+    await flush();
+    expect(editing.path).toBe("Cargo.toml");
+    expect(editing.kind).toBe("sheet");
+    expect(editing.mode).toBe("edit");
   });
 });

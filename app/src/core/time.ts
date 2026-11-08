@@ -15,6 +15,15 @@ export function compactRelativeFormat(locale: string): Intl.RelativeTimeFormat {
     : narrow;
 }
 
+/** A plain date (`2026-10-19`) as readers of `locale` write it (long style); anything else as written. */
+export function readerDate(text: string, locale: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const date = new Date(`${text}T00:00:00`);
+  return Number.isNaN(date.getTime())
+    ? text
+    : date.toLocaleDateString(locale, { dateStyle: "long" });
+}
+
 /** `then` seen from `now` (both in ms); `locale` is a BCP 47 tag. A moment ahead of `now` reads as "now". */
 export function relativeTime(then: number, now: number, locale: string): string {
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });

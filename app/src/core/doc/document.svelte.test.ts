@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Api, ApiError, DocumentView, WorkspaceView } from "../../api";
+import type { Api, ApiError, DocumentChanged, DocumentView, WorkspaceView } from "../../api";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import { DocumentController } from "./document.svelte";
 import { reading } from "./reading.svelte";
@@ -63,6 +63,8 @@ async function setup(path: string = MOCK_FOLDER): Promise<Fx> {
     editorSet: () => fx.editor.set,
     modKey: () => "Ctrl",
     chooseEditor: () => (fx.chose += 1),
+    editorHeadings: () => null,
+    showEditorHeading: () => false,
     openFolderWith: (folder, document) => fx.folders.push({ folder, document }),
   });
   doc.setWorkspace(workspace);
@@ -134,6 +136,16 @@ async function open(fx: Fx, path: string): Promise<void> {
   await tick();
 }
 
+/** The trail's documents, newest first. */
+function trailPaths(fx: Fx): string[] {
+  return fx.doc.trail.recent().map((r) => r.place.path);
+}
+
+/** The backend's word that `from` was renamed | moved to `to`. */
+function moved(from: string, to: string): DocumentChanged {
+  return { window: "main", path: from, change: "deleted", movedTo: to };
+}
+
 function markdownIds(view: DocumentView | null): string[] {
   return view?.body.kind === "markdown" ? view.body.blocks.map((b) => b.id) : [];
 }
@@ -174,6 +186,57 @@ describe("opening", () => {
       expect(fx.doc.state.error.kind === "backend" && fx.doc.state.error.error.kind).toBe(
         "notFound",
       );
+    }
+  });
+
+  it("the current view is the shown document's only: none while another file loads", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    expect(fx.doc.current?.path).toBe("README.md");
+    const pending = fx.doc.show("docs/guide.md");
+    expect(fx.doc.view?.path).toBe("README.md");
+    expect(fx.doc.current).toBeNull();
+    await pending;
+    expect(fx.doc.current?.path).toBe("docs/guide.md");
+    expect(fx.doc.current).toBe(fx.doc.view);
+  });
+
+  it("a place asked in the document that is still loading waits for it; the previous page stays put", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    const held = holdOpens(fx.api);
+    try {
+      fx.doc.navigate("notes/todo.txt", null);
+      await vi.waitFor(() => expect(fx.doc.state.status).toBe("loading"));
+      const scroll = vi.spyOn(fx.doc, "scrollToLine");
+      fx.doc.navigate("notes/todo.txt", null, 2);
+      expect(scroll).not.toHaveBeenCalled();
+      held.releaseAll();
+      await vi.waitFor(() => expect(fx.doc.view?.path).toBe("notes/todo.txt"));
+      expect(fx.doc.lineRequest).toMatchObject({ path: "notes/todo.txt", line: 2 });
+    } finally {
+      held.releaseAll();
+      held.restore();
+    }
+  });
+
+  it("a plain ask for the document still loading keeps the place asked before it", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const held = holdOpens(fx.api);
+    try {
+      fx.doc.navigate("notes/todo.txt", null, 2);
+      await vi.waitFor(() => expect(fx.doc.state.status).toBe("loading"));
+      // the tree | an editor asks for the same document, with no place of its own
+      fx.doc.navigate("notes/todo.txt", null);
+      held.releaseAll();
+      await vi.waitFor(() => expect(fx.doc.view?.path).toBe("notes/todo.txt"));
+      expect(fx.doc.lineRequest).toMatchObject({ path: "notes/todo.txt", line: 2 });
+    } finally {
+      held.releaseAll();
+      held.restore();
     }
   });
 
@@ -339,23 +402,126 @@ describe("changes on disk", () => {
     expect(seen).not.toHaveBeenCalled();
   });
 
-  it("keeps the last version when the file is deleted, and says where it went", async () => {
+  it("keeps the last version when the file is deleted", async () => {
     const fx = await setup();
     await open(fx, "README.md");
     const view = fx.doc.view;
+    fx.doc.onChanged({ window: "main", path: "README.md", change: "deleted", movedTo: null });
+    expect(fx.doc.state.status).toBe("ready");
+    expect(fx.doc.view).toBe(view);
+    expect(fx.doc.state.status === "ready" && fx.doc.state.deleted?.movedTo).toBeNull();
+    // the file is back: the deleted mark goes with the new version
+    fx.doc.onChanged({ window: "main", path: "README.md", change: "changed", version: "v3" });
+    await tick();
+    expect(fx.doc.state.status === "ready" && fx.doc.state.deleted).toBeNull();
+  });
+
+  it("follows a renamed document at the same reading place, and back when the rename is undone", async () => {
+    const fx = await setup();
+    await fx.api.on("document-changed", (event) => fx.doc.onChanged(event));
+    await open(fx, "docs/guide.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    try {
+      scroller.scrollTop = 240;
+      const plan = await fx.api.planMove([{ from: "docs/guide.md", to: "docs/manual.md" }], true);
+      if (!plan.ok) throw new Error("no plan");
+      await fx.api.applyMove(plan.value.planId, true);
+      await vi.waitFor(() => expect(fx.doc.view?.path).toBe("docs/manual.md"));
+      expect(fx.doc.state.status === "ready" && fx.doc.state.deleted).toBeNull();
+      expect(reading.scrollOf("docs/manual.md")).toBe(240);
+      await fx.api.undoFileOp();
+      await vi.waitFor(() => expect(fx.doc.view?.path).toBe("docs/guide.md"));
+      expect(fx.doc.state.status === "ready" && fx.doc.state.deleted).toBeNull();
+      expect(fx.failures).toEqual([]);
+    } finally {
+      scroller.remove();
+    }
+  });
+
+  it("back and forward after following a rename, and its undo, go to documents that exist", async () => {
+    const fx = await setup();
+    await fx.api.on("document-changed", (event) => fx.doc.onChanged(event));
+    await open(fx, "README.md");
+    await fx.doc.activateLink("docs/guide.md#getting-started");
+    await tick();
+    const plan = await fx.api.planMove([{ from: "docs/guide.md", to: "docs/manual.md" }], true);
+    if (!plan.ok) throw new Error("no plan");
+    await fx.api.applyMove(plan.value.planId, true);
+    await vi.waitFor(() => expect(fx.doc.view?.path).toBe("docs/manual.md"));
+    expect(trailPaths(fx)).toEqual(["docs/manual.md", "README.md"]);
+    await fx.doc.back();
+    await tick();
+    expect(fx.doc.path).toBe("README.md");
+    await fx.doc.forward();
+    await vi.waitFor(() => expect(fx.doc.view?.path).toBe("docs/manual.md"));
+    expect(fx.doc.trail.here).toEqual({ path: "docs/manual.md", anchor: "getting-started" });
+    await fx.api.undoFileOp();
+    await vi.waitFor(() => expect(fx.doc.view?.path).toBe("docs/guide.md"));
+    expect(trailPaths(fx)).toEqual(["docs/guide.md", "README.md"]);
+    await fx.doc.back();
+    await tick();
+    expect(fx.doc.path).toBe("README.md");
+    expect(fx.doc.state.status).toBe("ready");
+    expect(fx.failures).toEqual([]);
+  });
+
+  it("a rename undone before the window went after it leaves the window where it is", async () => {
+    const fx = await setup();
+    await open(fx, "docs/guide.md");
+    fx.doc.onChanged(moved("docs/guide.md", "docs/manual.md"));
+    fx.doc.onChanged(moved("docs/manual.md", "docs/guide.md"));
+    await tick();
+    await tick();
+    expect(fx.doc.path).toBe("docs/guide.md");
+    expect(fx.doc.state.status === "ready" && fx.doc.state.deleted).toBeNull();
+    expect(trailPaths(fx)).toEqual(["docs/guide.md"]);
+  });
+
+  it("a rename undone while the window is on its way to the new name brings it back", async () => {
+    const fx = await setup();
+    await open(fx, "docs/guide.md");
+    const real = fx.api.showDocument.bind(fx.api);
+    const held: (() => void)[] = [];
+    vi.spyOn(fx.api, "showDocument").mockImplementation(
+      (path) => new Promise((resolve) => held.push(() => resolve(real(path)))),
+    );
+    fx.doc.onChanged(moved("docs/guide.md", "docs/manual.md"));
+    await vi.waitFor(() => expect(held).toHaveLength(1));
+    fx.doc.onChanged(moved("docs/manual.md", "docs/guide.md"));
+    await vi.waitFor(() => expect(held).toHaveLength(2));
+    for (const go of held) go();
+    await vi.waitFor(() => expect(fx.doc.view?.path).toBe("docs/guide.md"));
+    expect(fx.doc.path).toBe("docs/guide.md");
+    await tick();
+    expect(fx.doc.state.status).toBe("ready");
+    expect(trailPaths(fx)).toEqual(["docs/guide.md"]);
+  });
+
+  it("stays on a renamed document it cannot follow, and says where it went", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    vi.spyOn(fx.api, "showDocument").mockResolvedValue({
+      ok: false,
+      error: {
+        kind: "backend",
+        command: "show_document",
+        error: { kind: "notFound", subject: null, detail: null },
+      },
+    });
     fx.doc.onChanged({
       window: "main",
       path: "README.md",
       change: "deleted",
       movedTo: "docs/README.md",
     });
-    expect(fx.doc.state.status).toBe("ready");
-    expect(fx.doc.view).toBe(view);
-    expect(fx.doc.state.status === "ready" && fx.doc.state.deleted?.movedTo).toBe("docs/README.md");
-    // the file is back: the deleted mark goes with the new version
-    fx.doc.onChanged({ window: "main", path: "README.md", change: "changed", version: "v3" });
-    await tick();
-    expect(fx.doc.state.status === "ready" && fx.doc.state.deleted).toBeNull();
+    await vi.waitFor(() =>
+      expect(fx.doc.state.status === "ready" && fx.doc.state.deleted?.movedTo).toBe(
+        "docs/README.md",
+      ),
+    );
+    expect(fx.doc.path).toBe("README.md");
+    expect(fx.failures).toHaveLength(1);
   });
 });
 
@@ -414,6 +580,21 @@ describe("links and navigation", () => {
     expect(fx.doc.path).toBe("package.json");
   });
 
+  it("putting the window back on the edited document tells a refusal, and nothing breaks", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const refusal: ApiError = {
+      kind: "backend",
+      command: "show_document",
+      error: { kind: "notFound", subject: "docs/guide.md", detail: null },
+    };
+    vi.spyOn(fx.api, "showDocument").mockResolvedValueOnce({ ok: false, error: refusal });
+    fx.doc.stayOn("docs/guide.md");
+    await vi.waitFor(() => expect(fx.failures).toEqual([refusal]));
+    expect(fx.doc.path).toBe("README.md");
+    expect(fx.doc.state.status).toBe("ready");
+  });
+
   it("an anchor of the same document stays in it", async () => {
     const fx = await setup();
     await open(fx, "README.md");
@@ -435,7 +616,7 @@ describe("copying", () => {
     await fx.doc.copyReference("{path}#{section}");
     expect(write).toHaveBeenLastCalledWith("docs/guide.md");
     await fx.doc.copyDocument();
-    expect(write).toHaveBeenLastCalledWith("# docs/guide.md\n");
+    expect(write).toHaveBeenLastCalledWith(fx.api.probe.project.files.get("docs/guide.md"));
   });
 
   it("tells when the clipboard refuses", async () => {
@@ -461,6 +642,51 @@ describe("copying", () => {
     expect(ref).toEqual({ path: "README.md", section: item?.id, line: code?.lineStart });
     // outside any block: the document alone
     expect(fx.doc.referenceAt(null)).toEqual({ path: "README.md", section: null, line: null });
+  });
+
+  it("no reference before the first document is on screen", async () => {
+    const fx = await setup();
+    const held = holdOpens(fx.api);
+    try {
+      const pending = fx.doc.show("docs/guide.md");
+      expect(fx.doc.path).toBe("docs/guide.md");
+      expect(fx.doc.referenceAt(null)).toBeNull();
+      held.releaseAll();
+      await pending;
+      expect(fx.doc.referenceAt(null)).toEqual({
+        path: "docs/guide.md",
+        section: null,
+        line: null,
+      });
+    } finally {
+      held.releaseAll();
+      held.restore();
+    }
+  });
+
+  it("no reference while another file loads: the passage on screen belongs to the previous page", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const view = fx.doc.view;
+    if (view?.body.kind !== "markdown") throw new Error("not markdown");
+    const element = document.createElement("p");
+    element.setAttribute("data-b", view.body.blocks[1]?.id ?? "");
+    document.body.append(element);
+    const held = holdOpens(fx.api);
+    try {
+      const pending = fx.doc.show("docs/guide.md");
+      expect(fx.doc.referenceAt(element)).toBeNull();
+      held.releaseAll();
+      await pending;
+      expect(fx.doc.referenceAt(null)).toEqual({
+        path: "docs/guide.md",
+        section: null,
+        line: null,
+      });
+    } finally {
+      held.releaseAll();
+      held.restore();
+    }
   });
 });
 
@@ -731,6 +957,73 @@ describe("where the reader is", () => {
     for (let i = 0; i < 60; i++) reading.remember(`d${i}.md`, 10 + i);
     expect(reading.scrollOf("d0.md")).toBeNull();
     expect(reading.scrollOf("d59.md")).toBe(69);
+  });
+
+  it("a page at its top reads from line 1, though the front matter is drawn above the first block", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    // every block on screen, below the pane's top edge
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 100, 600, 40));
+    try {
+      fx.doc.attachBody(container, scroller);
+      fx.doc.paint(() => undefined);
+      const view = fx.doc.view;
+      const first = view?.body.kind === "markdown" ? view.body.blocks[0] : undefined;
+      expect(first?.lineStart ?? 0).toBeGreaterThan(1);
+      expect(scroller.scrollTop).toBe(0);
+      expect(fx.doc.topLine()).toBe(1);
+    } finally {
+      rect.mockRestore();
+      scroller.remove();
+    }
+  });
+
+  it("an outline click keeps its heading current where the end of the page cannot scroll it up; at the bottom the last heading in view is current", async () => {
+    const fx = await setup();
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    fx.doc.paint(() => undefined);
+    const view = fx.doc.view;
+    const ids = view?.body.kind === "markdown" ? view.body.outline.map((item) => item.id) : [];
+    expect(ids).toHaveLength(7);
+    // jsdom has no layout: 1000 px of page in a 500 px pane, heading i at 300 + 100 i
+    let top = 0;
+    Object.defineProperty(scroller, "clientHeight", { value: 500, configurable: true });
+    Object.defineProperty(scroller, "scrollHeight", { value: 1000, configurable: true });
+    Object.defineProperty(scroller, "scrollTop", {
+      configurable: true,
+      get: () => top,
+      set: (value: number) => (top = Math.max(0, Math.min(500, value))),
+    });
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const at = ids.indexOf(this.id);
+        return at < 0 ? new DOMRect(0, 0, 0, 0) : new DOMRect(0, 300 + 100 * at - top, 600, 30);
+      });
+    try {
+      // the page ends before heading 5 reaches the top: it stays the one clicked
+      fx.doc.goToHeading(5);
+      expect(top).toBe(500);
+      expect(fx.doc.currentHeading).toBe(5);
+      fx.doc.noteScroll();
+      expect(fx.doc.currentHeading).toBe(5);
+      // the reader scrolls: the heading at the top is current again
+      scroller.scrollTop = 420;
+      fx.doc.noteScroll();
+      expect(fx.doc.currentHeading).toBe(1);
+      // scrolled to the bottom: the last heading in view, not the one at the top
+      scroller.scrollTop = 500;
+      fx.doc.noteScroll();
+      expect(fx.doc.currentHeading).toBe(6);
+    } finally {
+      rect.mockRestore();
+      scroller.remove();
+    }
   });
 });
 

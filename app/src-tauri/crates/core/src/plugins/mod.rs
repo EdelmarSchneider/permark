@@ -138,6 +138,9 @@ pub enum PluginError {
 pub trait Running: Send {
     /// The app settings changed (App scope; called with the new settings, quick).
     fn settings_changed(&self, _settings: &AppSettings) {}
+    /// The formats and Markdown features of the plugins that are on changed (Project scope; the project's
+    /// `formats()` are the new ones; quick).
+    fn formats_changed(&self) {}
 }
 
 /// A plugin implementation (one per plugin crate).

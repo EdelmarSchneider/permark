@@ -54,13 +54,34 @@ export function errorKey(kind: ErrorKind): MessageKey {
       return "error.editorNotSet";
     case "editorFailed":
       return "error.editorFailed";
+    case "settingsUnreadable":
+      return "error.settingsUnreadable";
     default:
       return kind satisfies never;
   }
 }
 
+/** Why a settings file can't be read (`detail` of `settingsUnreadable`, mirror of Rust `settings::Unreadable::code`);
+ *  a reason not known here falls back to the kind's own words. */
+function settingsUnreadableKey(detail: string | null): MessageKey {
+  switch (detail) {
+    case "notText":
+      return "error.settingsUnreadable.notText";
+    case "tooLarge":
+      return "error.settingsUnreadable.tooLarge";
+    case "locked":
+      return "error.settingsUnreadable.locked";
+    default:
+      return "error.settingsUnreadable";
+  }
+}
+
 export function ipcErrorText(error: IpcError): string {
-  return t(errorKey(error.kind), { subject: error.subject ?? "", detail: error.detail ?? "" });
+  const key =
+    error.kind === "settingsUnreadable"
+      ? settingsUnreadableKey(error.detail)
+      : errorKey(error.kind);
+  return t(key, { subject: error.subject ?? "", detail: error.detail ?? "" });
 }
 
 export function apiErrorText(error: ApiError): string {

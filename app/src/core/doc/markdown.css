@@ -12,6 +12,11 @@
   margin: 0 auto;
   font: calc(var(--fs-reading) * var(--zoom)) / var(--lh-reading) var(--font-reading);
   color: var(--text);
+  /* a fold's edge and inner space, and a prompt box's left edge (Edit builds the box from the same) */
+  --details-rule: 1px;
+  --details-pad-y: 8px;
+  --details-pad-x: 14px;
+  --prompt-rule: 3px;
 }
 .md.is-wide {
   --column: var(--measure-wide);
@@ -19,8 +24,23 @@
 .md.is-full {
   --column: 100000px;
 }
-.md-body > * {
+/* the blocks inside a prompt box in Edit are the body's children but spaced as the box's (see the prompt blocks) */
+.md-body > :where(:not(.pm-prompt-in)) {
   margin: 0 0 1em;
+}
+/* Edit draws View's blocks for a block it keeps as written inside one holder: the holder adds no space (the margins
+   of what it holds collapse through it) and the blocks in it are spaced as the body's own; View's footnotes rule
+   goes above the first footnote only. A prompt box's bottom edge is spaced as View's box. */
+.md-body > .pm-locked:not([data-look="source"], [data-edge="close"]) {
+  margin: 0;
+}
+.md-body > :where(.pm-locked[data-look="view"]:not(.pm-prompt-in)) > * {
+  margin: 0 0 1em;
+}
+.md .pm-locked[data-notes="next"] > .footnotes {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 /* a long document: blocks far from the screen skip layout and painting (their size is remembered once seen) */
 .md.is-long .md-body > * {
@@ -152,6 +172,10 @@
   text-decoration-style: solid;
   text-decoration-color: var(--text);
 }
+/* Edit: a click on a reference places the caret (Ctrl | Cmd + click opens it) */
+.md .pm-editor .code-ref {
+  cursor: text;
+}
 .md kbd {
   font: 500 0.78em var(--font-code);
   padding: 0.05em 0.4em;
@@ -167,6 +191,12 @@
 }
 .md li + li {
   margin-top: 0.25em;
+}
+/* Edit mode: ProseMirror holds an item's text in a paragraph (`li > div > p`, the item view's content box). A tight
+   list's items have no paragraph in the reading view, so there it keeps no space of its own; a loose list
+   (`data-spread="true"`) has paragraphs in both views and keeps their spacing. */
+.md .pm-editor :is(ul, ol)[data-spread="false"] > li > div > p {
+  margin: 0;
 }
 .md hr {
   border: 0;
@@ -228,9 +258,10 @@
   font-size: 0.75em;
   line-height: 0;
 }
-.md details {
-  padding: 8px 14px;
-  border: 1px solid var(--border);
+.md details,
+.md .pm-prompt-frame {
+  padding: var(--details-pad-y) var(--details-pad-x);
+  border: var(--details-rule) solid var(--border);
   border-radius: var(--radius-card);
   background: var(--surface);
 }
@@ -245,8 +276,9 @@
   margin-bottom: 0;
 }
 /* prompt blocks (<context>, <instructions>, ...): a fold that names its tag */
-.md details.prompt-block {
-  border-left: 3px solid var(--accent-muted);
+.md details.prompt-block,
+.md .pm-prompt-frame {
+  border-left: var(--prompt-rule) solid var(--accent-muted);
   border-radius: 0 var(--radius-card) var(--radius-card) 0;
 }
 .md details.prompt-block > summary {
@@ -265,6 +297,54 @@
 .md details.prompt-block > summary::marker {
   color: var(--muted);
 }
+/* Edit on an empty document: a quiet hint where the text goes, drawn before the caret (never part of the text). */
+.md .pm-editor > p.pm-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--faint);
+  pointer-events: none;
+}
+/* Edit: the blocks of a prompt box stay the editor's own, so the box is built around them. The open tag line is the
+   box's top: View's summary in a box of View's classes that paints nothing and has no bottom. The blocks between are
+   laid out as the box's children (inset by the box's edge and padding, per box around them; spaced by their own
+   rules, not the body's; the last one flush with the box's end). The close tag line is the box's bottom padding and
+   edge. One frame under the top, stretched to the bottom edge, paints the box once. */
+.md .pm-editor {
+  isolation: isolate;
+}
+.md .pm-editor > .pm-prompt-in {
+  margin-left: calc(var(--prompt-depth, 1) * (var(--prompt-rule) + var(--details-pad-x)));
+  margin-right: calc(var(--prompt-depth, 1) * (var(--details-rule) + var(--details-pad-x)));
+}
+.md .pm-editor > .pm-prompt-end,
+.md .pm-editor > .pm-prompt-end.pm-locked > :last-child {
+  margin-bottom: 0;
+}
+.md .pm-editor > [data-edge="open"] {
+  position: relative;
+}
+.md .pm-editor > [data-edge="open"] > details.prompt-block {
+  padding-bottom: 0;
+  border-bottom-width: 0;
+  border-color: transparent;
+  background: none;
+}
+.md .pm-editor > [data-edge="close"][data-look="prompt"] {
+  padding-top: var(--details-pad-y);
+  border-bottom: var(--details-rule) solid transparent;
+}
+.md .pm-prompt-frame {
+  display: none;
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--prompt-box);
+  z-index: -1;
+  pointer-events: none;
+}
+.md [data-box] > .pm-prompt-frame {
+  display: block;
+}
 .md .tvar {
   padding: 0.05em 0.35em;
   border-radius: 4px;
@@ -278,11 +358,13 @@
   font-size: 0.9em;
   text-decoration-style: dotted;
 }
-.md-body dl dt {
+/* a description list of the document; the front matter card Edit draws in its body is the plugin's own markup, laid
+   out as View lays it out above the body */
+.md-body dl:where(:not(.pm-locked[data-look="card"] dl)) dt {
   font-weight: 600;
   margin-top: 0.6em;
 }
-.md-body dl dd {
+.md-body dl:where(:not(.pm-locked[data-look="card"] dl)) dd {
   margin: 0.15em 0 0 1.4em;
   color: var(--muted);
 }
@@ -388,6 +470,18 @@
 .md tbody tr:last-child td {
   border-bottom: 0;
 }
+/* Edit mode: a cell holds its text in a paragraph; the reading view's cell holds the text itself */
+.md .pm-editor :is(th, td) > p {
+  margin: 0;
+}
+/* Edit mode keeps the header row in `tbody` (ProseMirror tables have no `thead`): the stripes count body rows only,
+   so the same rows are striped as in the reading view */
+.md .pm-editor tbody tr:nth-child(even) {
+  background: none;
+}
+.md .pm-editor tbody tr:nth-child(even of :not([data-is-header])) {
+  background: var(--zebra);
+}
 
 /* code (a block with no highlighter plugin, and the shape every code block shares) */
 .md .code-block {
@@ -410,6 +504,27 @@
   padding: 0;
   border: 0;
   background: none;
+}
+/* Edit mode: the language label where the highlighter's corner shows it in the reading view; both read the corner's
+   numbers from the `--code-corner-*` and `--code-label-*` tokens. That corner centers the label on the row of its
+   buttons and puts its buttons (`--corner-buttons`: the block's actions and Copy) right of the label. */
+.md .pm-editor .code-block > .lang {
+  position: absolute;
+  top: calc(
+    var(--code-corner-top) + (var(--icon-btn-sm) - var(--code-label-fs) * var(--code-label-lh)) / 2
+  );
+  right: calc(
+    var(--code-corner-right) + var(--corner-buttons, 1) *
+      (var(--icon-btn-sm) + var(--code-corner-gap))
+  );
+  margin-right: var(--code-label-gap);
+  padding: var(--code-label-pad);
+  border-radius: var(--code-label-radius);
+  background: var(--surface);
+  font: var(--code-label-fs) / var(--code-label-lh) var(--font-code);
+  color: var(--muted);
+  pointer-events: none;
+  user-select: none;
 }
 
 /* blockquote */
@@ -492,6 +607,16 @@
 ::highlight(pm-find-current) {
   background-color: var(--mark-strong);
   color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+}
+/* the same in Edit (editor decorations: the text there is the editor's own DOM) */
+.find-match {
+  background-color: var(--mark);
+}
+.find-match--current {
+  background-color: var(--mark-strong);
   text-decoration: underline;
   text-decoration-color: var(--accent);
   text-decoration-thickness: 2px;

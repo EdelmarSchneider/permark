@@ -1,6 +1,7 @@
 <script lang="ts">
   // The document area while editing: the editor of the mode (Edit | Source), the conflict banner, a failed save,
   // the unsaved prompt, and the question before a large picture is saved.
+  import { tick } from "svelte";
   import { api } from "../../api";
   import { apiErrorText } from "../errors";
   import { baseName } from "../explorer/importModel";
@@ -10,6 +11,7 @@
   import { ASK_ABOVE, REFUSE_ABOVE, extensionOf } from "./pictures";
   import type { EditingSession } from "./session.svelte";
   import SourceEditor from "./SourceEditor.svelte";
+  import UnsavedDialog from "./UnsavedDialog.svelte";
   import VisualEditor from "./VisualEditor.svelte";
 
   type Props = {
@@ -77,6 +79,12 @@
     return saved;
   }
 
+  /** The unsaved question's answer; Keep editing gives the editor its keys back once it is no longer inert. */
+  function answer(choice: "save" | "discard" | "keepEditing"): void {
+    session.answer(choice);
+    if (choice === "keepEditing") void tick().then(() => session.focus());
+  }
+
   async function copyAll(): Promise<void> {
     try {
       await navigator.clipboard.writeText(session.text);
@@ -87,7 +95,8 @@
   }
 </script>
 
-<div class="pane">
+<!-- while the unsaved question is up, the editor takes no keys, clicks or focus -->
+<div class="pane" inert={doc.s === "unsavedPrompt"}>
   {#if conflict}
     <ConflictView
       theirs={session.disk?.text ?? null}
@@ -157,6 +166,7 @@
       <SourceEditor
         {session}
         {content}
+        {scroller}
         markdown={session.kind === "markdown"}
         {project}
         {pictures}
@@ -166,26 +176,11 @@
 </div>
 
 {#if doc.s === "unsavedPrompt"}
-  <div class="backdrop">
-    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="pm-unsaved-title">
-      <h2 id="pm-unsaved-title">{t("edit.unsavedTitle")}</h2>
-      <p>{t("edit.unsavedText", { name: session.path?.split("/").at(-1) ?? "" })}</p>
-      <div class="buttons">
-        {#if doc.back.s !== "conflict"}
-          <button type="button" class="btn btn--primary" onclick={() => session.answer("save")}>
-            {t("edit.save")}
-          </button>
-        {/if}
-        <button type="button" class="btn" onclick={() => session.answer("discard")}
-          >{t("edit.discard")}</button
-        >
-        <!-- svelte-ignore a11y_autofocus -->
-        <button type="button" class="btn" autofocus onclick={() => session.answer("keepEditing")}>
-          {t("edit.keepEditing")}
-        </button>
-      </div>
-    </div>
-  </div>
+  <UnsavedDialog
+    name={session.path?.split("/").at(-1) ?? ""}
+    canSave={doc.back.s !== "conflict"}
+    {answer}
+  />
 {/if}
 
 <style>
@@ -214,36 +209,5 @@
     height: 2px;
     background: var(--accent);
     opacity: 0.6;
-  }
-  .backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 50;
-    display: grid;
-    place-items: center;
-    padding: var(--sp-4);
-    background: var(--backdrop);
-  }
-  .dialog {
-    width: min(440px, 100%);
-    padding: var(--sp-5);
-    border-radius: var(--radius-card);
-    background: var(--bg);
-    box-shadow: var(--shadow-pop);
-  }
-  .dialog h2 {
-    margin: 0 0 var(--sp-2);
-    font-size: 15px;
-  }
-  .dialog p {
-    margin: 0 0 var(--sp-4);
-    color: var(--muted);
-    overflow-wrap: anywhere;
-  }
-  .buttons {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: var(--sp-2);
   }
 </style>

@@ -470,6 +470,8 @@ describe("context menu", () => {
 describe("move dialog", () => {
   it("asks about links with their lines, then moves and updates", async () => {
     const { root, store, api } = await render("ask");
+    // the guide links the ideas; a second document does too
+    api.probe.project.add("notes/index.md", "See [the ideas](ideas.md).\n");
     await store.requestMove([{ from: "notes/ideas.md", to: "notes/thoughts.md" }]);
     await tick();
     const dialog = document.querySelector('[role="dialog"][aria-modal="true"]');
@@ -482,7 +484,10 @@ describe("move dialog", () => {
     );
     primary?.click();
     await vi.waitFor(() => expect(store.dialog.status).toBe("closed"));
-    expect(api.probe.project.files.get("README.md")).toContain("(notes/thoughts.md)");
+    expect(api.probe.project.files.get("docs/guide.md")).toContain(
+      "(../notes/thoughts.md#second-idea)",
+    );
+    expect(api.probe.project.files.get("notes/thoughts.md")).toBeDefined();
     expect(root).toBeTruthy();
   });
 
@@ -645,6 +650,15 @@ describe("filter popover", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     await tick();
     expect(root.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("an Escape that ends an input method's composition leaves it open", async () => {
+    const { root } = await render();
+    root.querySelector<HTMLElement>("[data-filter-trigger]")?.click();
+    await tick();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", isComposing: true }));
+    await tick();
+    expect(root.querySelector('[role="dialog"]')).not.toBeNull();
   });
 });
 

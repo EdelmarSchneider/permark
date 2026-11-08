@@ -15,6 +15,7 @@ export const SEEDS = [
   "rightPanel",
   "foreignTreeNews",
   "failPlugin",
+  "failEdit",
   "importFiles",
   "tabShown",
   "projectNews",

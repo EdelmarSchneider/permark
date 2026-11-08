@@ -232,6 +232,82 @@ fn quoted_end(s: &str, from: usize) -> Option<usize> {
     None
 }
 
+/// The flow sequence at `span` of `text` (one line, `line`) as a sequence of its values, each with its own bytes;
+/// none when it holds anything else (a nested collection, an empty item, a `key: value`, an indicator).
+fn flow_list(text: &str, span: Range<usize>, line: usize) -> Option<Val> {
+    let whole = text.get(span.clone())?;
+    let inner = whole.strip_prefix('[')?.strip_suffix(']')?;
+    let base = span.start + 1;
+    let bytes = inner.as_bytes();
+    let mut items = Vec::new();
+    let mut from = 0;
+    let mut i = 0;
+    while i <= bytes.len() {
+        match bytes.get(i) {
+            Some(b'"' | b'\'') => i = quoted_end(inner, i)?,
+            Some(b'[' | b']' | b'{' | b'}') => return None,
+            Some(b',') | None => {
+                items.push(flow_item(inner, from..i, base, line)?);
+                from = i + 1;
+                i += 1;
+            }
+            Some(_) => i += 1,
+        }
+    }
+    Some(Val::Seq {
+        items,
+        first: line,
+        last: line,
+    })
+}
+
+/// One value of a flow sequence (`range` of `inner`, which starts at `base` in the file).
+fn flow_item(inner: &str, range: Range<usize>, base: usize, line: usize) -> Option<SeqItem> {
+    let raw = inner.get(range.clone())?;
+    let lead = raw.len() - raw.trim_start().len();
+    let item = raw.trim();
+    let start = base + range.start + lead;
+    let span = start..start + item.len();
+    let proto = match item.as_bytes().first()? {
+        b'"' | b'\'' => {
+            if quoted_end(item, 0)? != item.len() {
+                return None;
+            }
+            let body = &item[1..item.len() - 1];
+            let (text, quote) = if item.starts_with('"') {
+                (unescape_double(body), Quote::Double)
+            } else {
+                (body.replace("''", "'"), Quote::Single)
+            };
+            Proto {
+                kind: ScalarKind::String,
+                text,
+                span,
+                quote,
+                read_only: None,
+            }
+        }
+        first => {
+            let indicator = b"?:#&*!|>%@`".contains(first)
+                || (*first == b'-' && matches!(item.as_bytes().get(1), None | Some(b' ' | b'\t')));
+            if indicator || item.contains(": ") || item.ends_with(':') || item.contains(" #") {
+                return None;
+            }
+            Proto {
+                kind: kind_of_plain(item),
+                text: item.to_owned(),
+                span,
+                quote: Quote::Plain,
+                read_only: None,
+            }
+        }
+    };
+    Some(SeqItem {
+        line,
+        val: Val::Scalar(proto),
+    })
+}
+
 impl<'a> Parser<'a> {
     pub fn new(text: &'a str) -> Self {
         let lines = Lines::new(text);
@@ -519,7 +595,15 @@ impl<'a> Parser<'a> {
             }
             b'[' | b'{' => {
                 let (val, last, comment) = self.flow(j, at);
-                (val, last, comment)
+                // a list of values on one line (`[a, 'b c']`) reads as the list it is; a tag | anchor before it
+                // keeps it as written
+                let one_line = match &val {
+                    Val::Raw { span, .. } if prop.is_none() && last == j => {
+                        flow_list(self.text, span.clone(), j)
+                    }
+                    _ => None,
+                };
+                (one_line.unwrap_or(val), last, comment)
             }
             b'*' => {
                 let end = plain_end(rest);

@@ -89,6 +89,14 @@ export default {
   "error.superseded": "Mentrestant s'ha obert una altra cosa.",
   "error.internal": "Alguna cosa ha anat malament dins del PerMark: {detail}",
   "error.unknown": "Alguna cosa ha anat malament: {message}",
+  "error.settingsUnreadable":
+    "El PerMark no pot llegir el fitxer de configuració {subject}. No s'ha canviat res.",
+  "error.settingsUnreadable.notText":
+    "El PerMark no pot llegir el fitxer de configuració {subject} (no és text pla). No s'ha canviat res.",
+  "error.settingsUnreadable.tooLarge":
+    "El PerMark no pot llegir el fitxer de configuració {subject} (és massa gran). No s'ha canviat res.",
+  "error.settingsUnreadable.locked":
+    "El PerMark no pot llegir el fitxer de configuració {subject} (un altre programa l'està fent servir). No s'ha canviat res.",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "Primer obriu una carpeta o un fitxer.",
@@ -141,6 +149,8 @@ export default {
   "fileOps.nameReserved": "El sistema reserva aquest nom",
   "fileOps.nameTooLong": "El nom és massa llarg",
   "fileOps.nameExists": "Aquí ja hi ha un element amb aquest nom",
+  "fileOps.identityUnknown":
+    "PerMark no pot saber si aquests dos noms són el mateix fitxer en aquesta unitat, així que no s'ha reanomenat res.",
   "fileOps.files.one": "{n} fitxer",
   "fileOps.files.other": "{n} fitxers",
   "fileOps.items.one": "{n} element",
@@ -429,9 +439,12 @@ export default {
   "edit.save": "Desa",
   "edit.saveHint": "Desa (Ctrl+S)",
   "edit.saving": "S'està desant…",
-  "edit.savedBlocks.one": "Desat, {n} bloc canviat.",
-  "edit.savedBlocks.other": "Desat, {n} blocs canviats.",
-  "edit.firstSaveHint": "El PerMark només reescriu els blocs que heu canviat.",
+  "edit.savedBlocks.one": "Desat, {n} canvi.",
+  "edit.savedBlocks.other": "Desat, {n} canvis.",
+  "edit.firstSaveHint": "El PerMark només reescriu les parts que heu canviat.",
+  "edit.emptyHint": "Comenceu a escriure aquí. Escriviu / per a títols, llistes i més.",
+  "edit.savedReadsOtherwise":
+    "Algunes fórmules o enllaços d'aquest document es poden veure diferents després de desar. Reviseu-los al codi font.",
   "source.find": "Cerca",
   "source.replace": "Substitueix",
   "source.next": "Següent",
@@ -459,6 +472,18 @@ export default {
   "edit.discard": "Descarta",
   "edit.keepEditing": "Continua editant",
   "edit.editInSource": "Edita al codi font",
+  "edit.blockSource": "Codi font d'aquest bloc",
+  "edit.blockSourceHint": "Esc per acabar",
+  "edit.block.html": "HTML",
+  "edit.block.formula": "Fórmula",
+  "edit.block.footnote": "Nota al peu",
+  "edit.block.diagram": "Diagrama",
+  "edit.block.alert": "Avís",
+  "edit.block.other": "Bloc conservat tal com està escrit",
+  "edit.block.openHint": "Prem Retorn per editar",
+  "edit.documentText": "Text del document",
+  "edit.codeRefHint": "{title} ({mod}+clic)",
+  "edit.codeRefTitleMany": "Coincideixen {count} fitxers. {mod}+clic per a triar-ne un.",
   "edit.visualForMarkdown":
     "El mode Edició és per a fitxers Markdown i fitxers de configuració; feu servir Codi font.",
   "edit.diagramNoPlugin": "Activeu el connector Mermaid o PlantUML per a veure el dibuix.",
@@ -493,11 +518,9 @@ export default {
   "conflict.text":
     "No s'ha sobreescrit res. Les vostres edicions es mantenen aquí fins que decidiu.",
   "conflict.deletedText": "Les vostres edicions es mantenen aquí fins que decidiu.",
-  "conflict.reload": "Torna a carregar la versió del disc",
-  "conflict.reloadConfirm": "Voleu descartar les vostres edicions i carregar el fitxer del disc?",
-  "conflict.discard": "Descarta la meva",
-  "conflict.keepMine": "Conserva la meva (sobreescriu)",
-  "conflict.recreate": "Conserva la meva (torna-la a escriure)",
+  "conflict.reload": "Fes servir la versió del fitxer (descarta les meves edicions)",
+  "conflict.keepMine": "Conserva la meva versió (substitueix el fitxer)",
+  "conflict.recreate": "Conserva la meva versió (torna-la a escriure)",
   "conflict.saveAsNew": "Desa com a fitxer nou",
   "conflict.showDiff": "Mostra les diferències",
   "conflict.hideDiff": "Amaga les diferències",
@@ -1196,7 +1219,7 @@ export default {
   "notes.move.title": "Mou a un projecte",
   "notes.moveDown": "Mou avall",
   "notes.moveKept":
-    "«{name}» ha canviat mentre es copiava, així que es queda a les vostres notes i la còpia és al projecte.",
+    "«{name}» ha canviat mentre es copiava o té text sense desar, així que es queda a les vostres notes i la còpia és al projecte.",
   "notes.moveToProject": "Mou a un projecte...",
   "notes.moveUndone": "«{name}» ha tornat a les vostres notes.",
   "notes.moveUndoneKept":
@@ -1399,7 +1422,6 @@ export default {
   "config.fromSource": "Edita al codi font",
   "config.nothing": "Encara no hi ha res a mostrar en aquest fitxer.",
   "config.noSheet": "Aquest fitxer no es pot mostrar com a full. Feu servir el codi font.",
-  "config.fm.bar": "Propietats. Si en canvieu una, la resta del fitxer es manté tal com està.",
   "config.reason.multiline": "Text en diverses línies. Canvieu-lo al codi font.",
   "config.reason.alias": "Un àlies d'un altre valor. Canvieu-lo al codi font.",
   "config.reason.anchor":
@@ -1496,9 +1518,9 @@ export default {
   "project.newConfirm": "Utilitza aquesta carpeta",
   "project.newBack": "Tria una altra carpeta…",
   "project.loadFailed": "No s'ha pogut llegir la configuració del projecte.",
-  "project.notInitialized": "El PerMark no està inicialitzat en aquest projecte",
+  "project.notInitialized": "Aquesta carpeta encara no té configuració del PerMark",
   "project.notInitializedHint":
-    "En inicialitzar-lo es crea una carpeta .permark on el projecte pot desar la configuració que vol compartir amb el seu equip.",
+    "Inicialitzeu el PerMark perquè aquesta carpeta tingui la seva pròpia configuració, que pot compartir tothom qui hi treballa.",
   "project.patternPlaceholder": "Patró, per exemple drafts/",
   "project.tree": "Explorador",
   "project.treeExclude": "Amaga sempre",
@@ -1536,7 +1558,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "Marcador de posició desconegut. Feu servir {path}, {line} o {col}.",
   "settings.problem.noPath": "L'ordre necessita {path}.",
-  "settings.problem.notInitialized": "El PerMark no està inicialitzat en aquest projecte.",
+  "settings.problem.notInitialized": "Aquesta carpeta encara no té configuració del PerMark.",
   "settings.problem.other": "No s'ha acceptat aquest valor.",
   "welcome.newProject": "Projecte nou…",
   "welcome.newProjectHint": "Trieu una carpeta; el PerMark la configura com a projecte.",

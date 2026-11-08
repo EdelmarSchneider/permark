@@ -88,6 +88,14 @@ export default {
   "error.superseded": "Nel frattempo è stato aperto qualcos'altro.",
   "error.internal": "Si è verificato un errore in PerMark: {detail}",
   "error.unknown": "Qualcosa è andato storto: {message}",
+  "error.settingsUnreadable":
+    "PerMark non riesce a leggere il file delle impostazioni {subject}. Non è stato modificato nulla.",
+  "error.settingsUnreadable.notText":
+    "PerMark non riesce a leggere il file delle impostazioni {subject} (non è testo semplice). Non è stato modificato nulla.",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark non riesce a leggere il file delle impostazioni {subject} (è troppo grande). Non è stato modificato nulla.",
+  "error.settingsUnreadable.locked":
+    "PerMark non riesce a leggere il file delle impostazioni {subject} (un altro programma lo sta usando). Non è stato modificato nulla.",
 
   // ---- conditions
   "condition.workspace": "Prima apri una cartella o un file.",
@@ -141,6 +149,8 @@ export default {
   "fileOps.nameReserved": "Questo nome è riservato dal sistema",
   "fileOps.nameTooLong": "Il nome è troppo lungo",
   "fileOps.nameExists": "Qui c'è già un elemento con questo nome",
+  "fileOps.identityUnknown":
+    "PerMark non riesce a capire se questi due nomi sono lo stesso file su questa unità, quindi non è stato rinominato nulla.",
   "fileOps.files.one": "{n} file",
   "fileOps.files.other": "{n} file",
   "fileOps.items.one": "{n} elemento",
@@ -429,9 +439,12 @@ export default {
   "edit.save": "Salva",
   "edit.saveHint": "Salva (Ctrl+S)",
   "edit.saving": "Salvataggio…",
-  "edit.savedBlocks.one": "Salvato, {n} blocco modificato.",
-  "edit.savedBlocks.other": "Salvato, {n} blocchi modificati.",
-  "edit.firstSaveHint": "PerMark riscrive solo i blocchi che hai modificato.",
+  "edit.savedBlocks.one": "Salvato, {n} modifica.",
+  "edit.savedBlocks.other": "Salvato, {n} modifiche.",
+  "edit.firstSaveHint": "PerMark riscrive solo le parti che hai modificato.",
+  "edit.emptyHint": "Inizia a scrivere qui. Digita / per titoli, elenchi e altro.",
+  "edit.savedReadsOtherwise":
+    "Alcune formule o alcuni link di questo documento potrebbero apparire diversi dopo il salvataggio. Controllali in Sorgente.",
   "source.find": "Trova",
   "source.replace": "Sostituisci",
   "source.next": "Successivo",
@@ -459,6 +472,18 @@ export default {
   "edit.discard": "Scarta",
   "edit.keepEditing": "Continua a modificare",
   "edit.editInSource": "Modifica nel sorgente",
+  "edit.blockSource": "Sorgente di questo blocco",
+  "edit.blockSourceHint": "Esc per terminare",
+  "edit.block.html": "HTML",
+  "edit.block.formula": "Formula",
+  "edit.block.footnote": "Nota a piè di pagina",
+  "edit.block.diagram": "Diagramma",
+  "edit.block.alert": "Avviso",
+  "edit.block.other": "Blocco mantenuto come scritto",
+  "edit.block.openHint": "Premi Invio per modificare",
+  "edit.documentText": "Testo del documento",
+  "edit.codeRefHint": "{title} ({mod}+clic)",
+  "edit.codeRefTitleMany": "{count} file corrispondono. {mod}+clic per sceglierne uno.",
   "edit.visualForMarkdown":
     "La modalità Modifica è per i file Markdown e di impostazioni; usa Sorgente.",
   "edit.diagramNoPlugin": "Attiva il plugin Mermaid o PlantUML per vedere il disegno.",
@@ -491,11 +516,9 @@ export default {
   "conflict.text":
     "Non è stato sovrascritto nulla. Le tue modifiche restano qui finché non scegli.",
   "conflict.deletedText": "Le tue modifiche restano qui finché non scegli.",
-  "conflict.reload": "Ricarica la loro versione",
-  "conflict.reloadConfirm": "Scartare le tue modifiche e caricare il file dal disco?",
-  "conflict.discard": "Scarta le mie",
-  "conflict.keepMine": "Mantieni le mie (sovrascrivi)",
-  "conflict.recreate": "Mantieni le mie (riscrivilo)",
+  "conflict.reload": "Usa la versione del file (scarta le mie modifiche)",
+  "conflict.keepMine": "Mantieni la mia versione (sostituisci il file)",
+  "conflict.recreate": "Mantieni la mia versione (riscrivila)",
   "conflict.saveAsNew": "Salva come nuovo file",
   "conflict.showDiff": "Mostra differenze",
   "conflict.hideDiff": "Nascondi differenze",
@@ -1197,7 +1220,7 @@ export default {
   "notes.move.title": "Sposta in un progetto",
   "notes.moveDown": "Sposta giù",
   "notes.moveKept":
-    "“{name}” è cambiata durante la copia, quindi resta nelle tue note e la copia è nel progetto.",
+    "“{name}” è cambiata durante la copia o ha testo non salvato, quindi resta nelle tue note e la copia è nel progetto.",
   "notes.moveToProject": "Sposta in un progetto...",
   "notes.moveUndone": "“{name}” è tornata tra le tue note.",
   "notes.moveUndoneKept":
@@ -1396,7 +1419,6 @@ export default {
   "config.fromSource": "Modifica nel Sorgente",
   "config.nothing": "Non c'è ancora nulla da mostrare in questo file.",
   "config.noSheet": "Questo file non può essere mostrato come foglio. Usa il Sorgente.",
-  "config.fm.bar": "Proprietà. Cambiarne una lascia il resto del file com'è.",
   "config.reason.multiline": "Testo su più righe. Cambialo nel Sorgente.",
   "config.reason.alias": "Un alias di un altro valore. Cambialo nel Sorgente.",
   "config.reason.anchor": "Ha un'ancora a cui rimandano altri valori. Cambialo nel Sorgente.",
@@ -1492,9 +1514,9 @@ export default {
   "project.newConfirm": "Usa questa cartella",
   "project.newBack": "Scegli un'altra cartella…",
   "project.loadFailed": "Impossibile leggere le impostazioni del progetto.",
-  "project.notInitialized": "PerMark non è inizializzato in questo progetto",
+  "project.notInitialized": "Questa cartella non ha ancora impostazioni di PerMark",
   "project.notInitializedHint":
-    "L'inizializzazione crea una cartella .permark dove il progetto può tenere impostazioni da condividere con il team.",
+    "Inizializza PerMark per dare a questa cartella impostazioni proprie, che chiunque ci lavori può condividere.",
   "project.patternPlaceholder": "Pattern, ad esempio drafts/",
   "project.tree": "Esplora risorse",
   "project.treeExclude": "Nascondi sempre",
@@ -1531,7 +1553,7 @@ export default {
   "settings.problem.programPlaceholder": "Il nome del programma non può essere un segnaposto.",
   "settings.problem.unknownPlaceholder": "Segnaposto sconosciuto. Usa {path}, {line} o {col}.",
   "settings.problem.noPath": "Il comando richiede {path}.",
-  "settings.problem.notInitialized": "PerMark non è inizializzato in questo progetto.",
+  "settings.problem.notInitialized": "Questa cartella non ha ancora impostazioni di PerMark.",
   "settings.problem.other": "Questo valore non è stato accettato.",
   "welcome.newProject": "Nuovo progetto…",
   "welcome.newProjectHint": "Scegli una cartella; PerMark la prepara come progetto.",

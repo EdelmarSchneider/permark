@@ -164,6 +164,42 @@ fn saved(result: Result<(), permark_core::state::StateError>) -> Result<(), IpcE
     result.map_err(IpcError::from)
 }
 
+/// Keeps the context file in step with the person's choice: removed while the switch or the `context` group is off
+/// (a script reads it with no check of its own); `write`: the current context written while both are on.
+fn sync_context_file(hub: &Hub, write: bool) {
+    let store = hub.tools.store();
+    if store.location() != StateLocation::Project {
+        return;
+    }
+    let file = store.raw_file(CONTEXT_FILE);
+    if !hub.tools.allows(Group::Context) {
+        let _ = file.remove();
+        return;
+    }
+    if !write {
+        return;
+    }
+    // never waits: before the projects inside are known the file is left as it is
+    let Ok((shared, open)) = hub
+        .tools
+        .guard_now(std::time::Duration::ZERO)
+        .and_then(|guard| hub.tools.context(&guard))
+    else {
+        return;
+    };
+    // compact, no empty fields, versioned like the agent's text answers
+    let mut value = serde_json::to_value(&shared).unwrap_or_default();
+    if let Some(map) = value.as_object_mut() {
+        map.insert("v".to_owned(), serde_json::json!(1));
+        if open > 0 {
+            map.insert("openComments".to_owned(), serde_json::json!(open));
+        }
+    }
+    if let Ok(bytes) = serde_json::to_vec(&value) {
+        let _ = file.write(&bytes);
+    }
+}
+
 /// Turns the switch: the first time on, the project starts from the app's defaults.
 fn set_enabled(hub: &Hub, enabled: bool) -> Result<(), IpcError> {
     let store = hub.tools.store();
@@ -205,6 +241,8 @@ impl Plugin for AgentPlugin {
         let endpoint = Endpoint::project(store.app_dir(), vault.main());
         let switch = Arc::new(Switch::new(Arc::clone(&hub), endpoint));
         switch.apply();
+        // a context file an earlier run left while the switch or the group is off goes now
+        sync_context_file(&hub, false);
         let mut registrations: Vec<RpcRegistration> = Vec::new();
         let h = Arc::clone(&hub);
         registrations.extend(cx.rpc("status", typed(move |_: NoArgs, _| Ok(h.status()))));
@@ -214,6 +252,7 @@ impl Plugin for AgentPlugin {
             typed(move |args: EnabledArgs, _| {
                 set_enabled(&s.hub, args.enabled)?;
                 s.apply();
+                sync_context_file(&s.hub, true);
                 Ok(s.hub.status())
             }),
         ));
@@ -231,6 +270,7 @@ impl Plugin for AgentPlugin {
                         .save(&choice),
                 )?;
                 h.changed();
+                sync_context_file(&h, true);
                 Ok(h.status())
             }),
         ));
@@ -250,33 +290,11 @@ impl Plugin for AgentPlugin {
         ));
         let h = Arc::clone(&hub);
         let l = Arc::clone(&live);
-        let local = store.clone();
         registrations.extend(cx.rpc(
             "publish",
             typed(move |args: PublishArgs, _| {
                 l.publish(args.context);
-                if perms::load(h.tools.store()).enabled
-                    && local.location() == StateLocation::Project
-                {
-                    // compact, no empty fields, versioned like the agent's text answers
-                    // never waits: before the projects inside are known the file is left as it is
-                    let context = h
-                        .tools
-                        .guard_now(std::time::Duration::ZERO)
-                        .and_then(|guard| h.tools.context(&guard));
-                    if let Ok((shared, open)) = context {
-                        let mut value = serde_json::to_value(&shared).unwrap_or_default();
-                        if let Some(map) = value.as_object_mut() {
-                            map.insert("v".to_owned(), serde_json::json!(1));
-                            if open > 0 {
-                                map.insert("openComments".to_owned(), serde_json::json!(open));
-                            }
-                        }
-                        if let Ok(bytes) = serde_json::to_vec(&value) {
-                            let _ = local.raw_file(CONTEXT_FILE).write(&bytes);
-                        }
-                    }
-                }
+                sync_context_file(&h, true);
                 Ok(())
             }),
         ));

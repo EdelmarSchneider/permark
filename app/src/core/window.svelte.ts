@@ -37,8 +37,8 @@ export type Notice =
   | { id: number; kind: "initFailed"; path: string; error: ApiError }
   | { id: number; kind: "fileOpFailed"; error: ApiError }
   | { id: number; kind: "note"; text: string }
-  /** A quiet line with buttons (Undo, Open in project); stays until dismissed. `onGone` hears how it went; `key`: one
-   *  notice per key (a newer one takes its place). */
+  /** A quiet line with buttons (Undo, Open in project); closes by itself after `ACTION_MS` unless `lasting` (then it
+   *  stays until dismissed). `onGone` hears how it went; `key`: one notice per key (a newer one takes its place). */
   | {
       id: number;
       kind: "action";
@@ -46,6 +46,7 @@ export type Notice =
       actions: readonly NoticeAction[];
       onGone?: (how: NoticeGone) => void;
       key?: string;
+      lasting?: boolean;
     }
   /** A quiet line (buttons optional) that closes by itself after `closeAfterMs`, paused while held (pointer | focus
    *  on it); `onGone` hears how it went. */
@@ -58,12 +59,40 @@ export type Notice =
       onGone?: (how: NoticeGone) => void;
     };
 
+/** A quiet note closes by itself after this long (paused while held). */
+export const NOTE_MS = 5000;
+/** An error, or a note with buttons, waits longer: there is something to read or to do. */
+export const ACTION_MS = 10_000;
+/** Notices on screen at once: a newer one pushes the oldest out. */
+export const MAX_NOTICES = 3;
+
+/** How long `notice` stays by itself; `null`: until the person dismisses it. */
+function closeAfter(notice: Notice): number | null {
+  switch (notice.kind) {
+    case "note":
+      return NOTE_MS;
+    case "timed":
+      return notice.closeAfterMs;
+    case "action":
+      return notice.lasting === true ? null : ACTION_MS;
+    case "openFailed":
+    case "apiFailed":
+    case "stateRecovered":
+    case "settingNotSaved":
+    case "initFailed":
+    case "fileOpFailed":
+      return ACTION_MS;
+    default:
+      return notice satisfies never;
+  }
+}
+
 /** How a notice went: its button ran, it was dismissed | timed out | pushed out by newer ones. */
 export type NoticeGone = "action" | "dismissed" | "timeout" | "pushedOut";
 /** Why a timed notice waits: the pointer | the focus is on it. */
 export type NoticeHold = "pointer" | "focus";
 
-/** The clock of a timed notice: time left, running since (`null`: held), who holds it. */
+/** The clock of a notice that closes by itself: time left, running since (`null`: held), who holds it. */
 type NoticeClock = {
   left: number;
   since: number | null;
@@ -388,7 +417,7 @@ export class WindowStore {
     actions: readonly NoticeAction[];
     onGone: (how: NoticeGone) => void;
   }): number {
-    return this.#notify({ kind: "action", ...body });
+    return this.#notify({ kind: "action", ...body, lasting: true });
   }
 
   /** A quiet line with buttons that takes the place of the one with the same `key` (no pile of the same note). */
@@ -417,7 +446,7 @@ export class WindowStore {
     this.#gone(gone, how);
   }
 
-  /** The pointer | the focus is on a timed notice: its clock waits. */
+  /** The pointer | the focus is on a notice: its clock waits. */
   holdNotice(id: number, hold: NoticeHold): void {
     const clock = this.#clocks.get(id);
     if (!clock) return;
@@ -429,7 +458,7 @@ export class WindowStore {
     clock.handle = null;
   }
 
-  /** The pointer | the focus left a timed notice: its clock runs on when nothing holds it. */
+  /** The pointer | the focus left a notice: its clock runs on when nothing holds it. */
   releaseNotice(id: number, hold: NoticeHold): void {
     const clock = this.#clocks.get(id);
     if (!clock) return;
@@ -451,14 +480,15 @@ export class WindowStore {
 
   #notify(body: NoticeBody): number {
     const notice = { ...body, id: this.#nextNotice++ } as Notice;
-    // newest last; at most 5 on screen
+    // newest last; a few on screen, so they never pile up over the page and the panels
     const all = [...this.notices, notice];
-    const out = all.slice(0, Math.max(0, all.length - 5));
-    this.notices = all.slice(-5);
+    const out = all.slice(0, Math.max(0, all.length - MAX_NOTICES));
+    this.notices = all.slice(-MAX_NOTICES);
     for (const old of out) this.#gone(old, "pushedOut");
-    if (notice.kind === "timed") {
+    const left = closeAfter(notice);
+    if (left !== null) {
       const clock: NoticeClock = {
-        left: notice.closeAfterMs,
+        left,
         since: null,
         handle: null,
         holds: new Set(),

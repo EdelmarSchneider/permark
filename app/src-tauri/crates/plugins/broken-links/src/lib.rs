@@ -22,8 +22,9 @@ use std::time::{Duration, Instant};
 use permark_core::conditions::Requirement;
 use permark_core::document::{DocScope, Documents};
 use permark_core::fileops::replacement_href;
+use permark_core::format::MarkdownFeatures;
 use permark_core::fsx;
-use permark_core::links::{local_target, parse, Form};
+use permark_core::links::{local_target, parse, same_links, Form};
 use permark_core::paths::{Vault, VaultPath, WORKTREE_PREFIX};
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
@@ -67,17 +68,24 @@ struct State {
     ready: bool,
 }
 
+/// The Markdown features that are on for the project now: with the prompt features, links inside prompt blocks are
+/// links, as reading shows them.
+type Features = Arc<dyn Fn() -> MarkdownFeatures + Send + Sync>;
+
 struct Shared {
     vault: Vault,
     scope: DocScope,
     explorer: Arc<Explorer>,
     announce: Arc<dyn Fn(&BrokenSummary) + Send + Sync>,
+    features: Features,
     state: Mutex<State>,
     stop: AtomicBool,
 }
 
 enum Msg {
     Batch(FsBatch),
+    /// The plugins that are on changed: other Markdown features may find other links.
+    FormatsChanged,
     Stop,
 }
 
@@ -203,11 +211,13 @@ impl Shared {
     }
 
     /// Reads every document of every root (the lock is let go between documents, so a question is answered at once).
-    fn scan_all(&self) {
+    /// Returns the Markdown features the links were read with.
+    fn scan_all(&self) -> MarkdownFeatures {
         self.state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .checker = Checker::new();
+        let features = (self.features)();
         let mut prefixes = vec![String::new()];
         prefixes.extend(
             self.vault
@@ -219,7 +229,7 @@ impl Shared {
             let (docs, _) = self.explorer.scan_documents(&prefix);
             for (at, path) in docs.iter().enumerate() {
                 if at % 32 == 0 && self.stop.load(Ordering::Relaxed) {
-                    return;
+                    return features;
                 }
                 let Some(abs) = self.abs_of(path) else {
                     continue;
@@ -228,7 +238,7 @@ impl Shared {
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
                     .checker
-                    .read(&self.vault, path, &abs);
+                    .read(&self.vault, path, &abs, &features);
             }
         }
         self.state
@@ -236,6 +246,7 @@ impl Shared {
             .unwrap_or_else(PoisonError::into_inner)
             .ready = true;
         (self.announce)(&self.summary());
+        features
     }
 
     fn follow(&self, batches: &[FsBatch]) {
@@ -244,11 +255,13 @@ impl Shared {
             return;
         }
         let mut changed = false;
+        let features = (self.features)();
         for batch in batches {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            changed |= state
-                .checker
-                .apply(&self.vault, batch, &|path| self.abs_of(path));
+            changed |=
+                state
+                    .checker
+                    .apply(&self.vault, batch, &|path| self.abs_of(path), &features);
         }
         if changed {
             (self.announce)(&self.summary());
@@ -257,7 +270,7 @@ impl Shared {
 }
 
 fn run(shared: &Shared, rx: &std::sync::mpsc::Receiver<Msg>) {
-    shared.scan_all();
+    let mut features = shared.scan_all();
     let mut batches: Vec<FsBatch> = Vec::new();
     let mut deadline: Option<Instant> = None;
     loop {
@@ -269,6 +282,12 @@ fn run(shared: &Shared, rx: &std::sync::mpsc::Receiver<Msg>) {
             Ok(Msg::Batch(batch)) => {
                 batches.push(batch);
                 deadline.get_or_insert_with(|| Instant::now() + QUIET);
+            }
+            // links read with other Markdown features may be other links: every document is read again
+            Ok(Msg::FormatsChanged) => {
+                if !same_links(&features, &(shared.features)()) {
+                    features = shared.scan_all();
+                }
             }
             Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => return,
             Err(RecvTimeoutError::Timeout) => {
@@ -287,12 +306,14 @@ impl BrokenLinksService {
         scope: DocScope,
         explorer: Arc<Explorer>,
         announce: Arc<dyn Fn(&BrokenSummary) + Send + Sync>,
+        features: Features,
     ) -> Self {
         let shared = Arc::new(Shared {
             vault,
             scope,
             explorer,
             announce,
+            features,
             state: Mutex::new(State {
                 checker: Checker::new(),
                 ready: false,
@@ -318,6 +339,11 @@ impl BrokenLinksService {
         if !batch.is_empty() {
             let _ = self.tx.send(Msg::Batch(batch.clone()));
         }
+    }
+
+    /// The plugins that are on changed (quick): the documents are read again when their links may differ.
+    pub fn formats_changed(&self) {
+        let _ = self.tx.send(Msg::FormatsChanged);
     }
 
     /// The broken links, by document and line.
@@ -429,8 +455,9 @@ fn one_destination(
     text: &str,
     line: u32,
     href: &str,
+    features: &MarkdownFeatures,
 ) -> Result<(Range<usize>, Form), RepairRefusal> {
-    let mut matched = parse(text)
+    let mut matched = parse(text, features)
         .into_iter()
         .filter(|dest| u32::try_from(dest.line).ok() == Some(line) && dest.inner(text) == href);
     let Some(dest) = matched.next() else {
@@ -484,6 +511,7 @@ fn repair(
     documents: &Documents,
     explorer: &Explorer,
     own: &OwnWrites,
+    features: &MarkdownFeatures,
     args: &RepairArgs,
 ) -> RepairResult {
     #[cfg(test)]
@@ -502,7 +530,7 @@ fn repair(
     let Ok(text) = std::str::from_utf8(&bytes) else {
         return refused(RepairRefusal::NotUtf8);
     };
-    let (range, form) = match one_destination(text, args.line, &args.href) {
+    let (range, form) = match one_destination(text, args.line, &args.href, features) {
         Ok(found) => found,
         Err(reason) => return refused(reason),
     };
@@ -527,11 +555,18 @@ fn repair(
     let new_bytes = new_text.into_bytes();
     let new_hash = fsx::hash(&new_bytes);
     own.expect_write(&args.path, new_hash);
-    if fsx::write_atomic(&abs, &new_bytes).is_err() {
-        own.retract_write(&args.path, new_hash);
-        return refused(RepairRefusal::WriteFailed);
+    // a save that lands after the read above is never replaced: the rename waits for the bytes the edit is for
+    match fsx::write_atomic_if_unchanged(&abs, &new_bytes, seen) {
+        Ok(true) => RepairResult::Wrote { href: token },
+        written => {
+            own.retract_write(&args.path, new_hash);
+            refused(if written.is_ok() {
+                RepairRefusal::Changed
+            } else {
+                RepairRefusal::WriteFailed
+            })
+        }
     }
-    RepairResult::Wrote { href: token }
 }
 
 impl Plugin for BrokenLinksPlugin {
@@ -549,6 +584,10 @@ impl Plugin for BrokenLinksPlugin {
             });
         };
         let events = cx.events().clone();
+        let features: Features = {
+            let project = project.clone();
+            Arc::new(move || *project.formats().features())
+        };
         let service = Arc::new(BrokenLinksService::start(
             vault.clone(),
             project.documents.scope().clone(),
@@ -559,6 +598,7 @@ impl Plugin for BrokenLinksPlugin {
                     serde_json::to_value(summary).unwrap_or(serde_json::Value::Null),
                 );
             }),
+            Arc::clone(&features),
         ));
         let subscription = hub.subscribe({
             let service = Arc::clone(&service);
@@ -572,7 +612,9 @@ impl Plugin for BrokenLinksPlugin {
         let own = Arc::clone(&project.own);
         registrations.extend(cx.rpc(
             "repair",
-            typed(move |args: RepairArgs, _| Ok(repair(&documents, &explorer, &own, &args))),
+            typed(move |args: RepairArgs, _| {
+                Ok(repair(&documents, &explorer, &own, &features(), &args))
+            }),
         ));
         Ok(Box::new(BrokenLinksRunning {
             subscription: Some(subscription),
@@ -589,7 +631,13 @@ struct BrokenLinksRunning {
     service: Option<Arc<BrokenLinksService>>,
 }
 
-impl Running for BrokenLinksRunning {}
+impl Running for BrokenLinksRunning {
+    fn formats_changed(&self) {
+        if let Some(service) = &self.service {
+            service.formats_changed();
+        }
+    }
+}
 
 impl Drop for BrokenLinksRunning {
     fn drop(&mut self) {

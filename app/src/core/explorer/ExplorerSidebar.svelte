@@ -13,7 +13,9 @@
 
   const explorer = new ExplorerStore(api, {
     fail: (error) => store.notifyFileOpFailed(error),
-    note: (text) => store.notifyNote(text),
+    // one file-operation note with Undo at a time: its Undo is always the newest operation, the one Ctrl+Z takes back
+    note: (text, ...actions) =>
+      actions.length === 0 ? store.notifyNote(text) : store.notifyKeyed("fileOp", text, ...actions),
     view: () => store.label,
     linkUpdate: () => store.linkUpdate,
     openProject: (path) => void store.open(path),
@@ -21,18 +23,11 @@
     initProject: (path, name) => ui.askInit(path, name),
   });
 
-  // listens while shown (teardown even when the component goes before the first load ends)
+  // listens while shown; closed at once when the component goes, also while a big list still loads (a teardown that
+  // waited for it would close the list of the folder the tab shows next)
   $effect(() => {
-    let off: (() => void) | null = null;
-    let gone = false;
-    void explorer.start().then((stop) => {
-      if (gone) stop();
-      else off = stop;
-    });
-    return () => {
-      gone = true;
-      off?.();
-    };
+    void explorer.start();
+    return () => explorer.close();
   });
 
   // the rest of the window can point at this tree while it lives

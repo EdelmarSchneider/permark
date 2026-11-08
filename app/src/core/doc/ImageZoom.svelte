@@ -1,6 +1,7 @@
 <script lang="ts">
   // A picture shown large over the page. A click or Escape closes it; the wheel zooms; a drag moves it.
   import { t } from "../i18n";
+  import { dialogFocus } from "../shell/dialogFocus";
 
   type Props = { src: string; alt: string; close: () => void };
   let { src, alt, close }: Props = $props();
@@ -9,20 +10,6 @@
   let x = $state(0);
   let y = $state(0);
   let drag: { px: number; py: number; x: number; y: number; moved: boolean } | null = null;
-  let layer: HTMLElement | undefined = $state();
-
-  $effect(() => {
-    layer?.focus();
-    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    return () => before?.focus();
-  });
-
-  function onkeydown(event: KeyboardEvent): void {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      close();
-    }
-  }
 
   function onwheel(event: WheelEvent): void {
     event.preventDefault();
@@ -52,14 +39,14 @@
   }
 </script>
 
+<!-- no control inside: the layer itself holds the focus, Tab never reaches the page behind -->
 <div
   class="layer"
-  bind:this={layer}
   role="dialog"
   aria-modal="true"
   aria-label={t("doc.imageZoomed")}
   tabindex="-1"
-  {onkeydown}
+  use:dialogFocus={{ onEscape: close }}
   {onwheel}
   {onpointerdown}
   {onpointermove}

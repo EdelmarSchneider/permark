@@ -1,8 +1,12 @@
 // Config files for the mock backend. The sheets come from the REAL parsers: `cargo test` renders the fixture files
-// (`fixtures/*.sample`) and writes `generated/mock-documents.json`. An edit here only moves one value on its line and
-// patches the sheet the same way (the backend does it with the parser's spans).
+// (`fixtures/*.sample`) and writes `generated/mock-documents.json`, and the front matter properties of the fixture
+// documents (`generated/mock-config-sheets.json`). An edit here only moves one value on its line and
+// patches the sheet the same way (the backend does it with the parser's spans). A Markdown text renders like the backend
+// only when it is a fixture document's text (`generated/mock-edit-sources.json`); any other gets the simple mock blocks.
 
-import { mockView } from "./mockDocs";
+import configSheets from "./generated/mock-config-sheets.json";
+import editSources from "./generated/mock-edit-sources.json";
+import { mockNoteView, mockView } from "./mockDocs";
 import type {
   Api,
   Body,
@@ -165,7 +169,37 @@ function plainSheet(text: string): Sheet | null {
       };
 }
 
+const MARKDOWN = /\.(md|markdown|mdown|mkd|mdx)$/i;
+
+/** Fixture path by its edit text. */
+const FIXTURE_TEXTS = new Map<string, string>(
+  Object.entries(editSources).flatMap(([path, source]): [string, string][] =>
+    typeof source.text === "string" ? [[source.text, path]] : [],
+  ),
+);
+
+/** The whole-text render of a Markdown file: the fixture's real one, else escaped blocks with their lines. */
+function markdownBody(path: string, text: string): Body {
+  const fixture = FIXTURE_TEXTS.get(text);
+  const body = fixture === undefined ? undefined : mockView(fixture, [], true)?.body;
+  return body?.kind === "markdown" ? body : mockNoteView(path, text).body;
+}
+
+function isSheet(value: unknown): value is Body {
+  return typeof value === "object" && value !== null && "kind" in value && value.kind === "sheet";
+}
+
+/** The real backend's sheets of the fixture documents' front matter, by path and text. */
+const REAL_SHEETS = new Map<string, Body>(
+  Object.values(configSheets).flatMap(({ path, text, body }): [string, Body][] =>
+    isSheet(body) ? [[`${path}:${text}`, body]] : [],
+  ),
+);
+
 function sheetBody(path: string, text: string): Body {
+  const real = REAL_SHEETS.get(`${path}:${text}`);
+  if (real !== undefined) return real;
+  if (MARKDOWN.test(path)) return markdownBody(path, text);
   const view = mockView(path, [], true);
   const body = view?.body;
   if (body?.kind !== "sheet") {

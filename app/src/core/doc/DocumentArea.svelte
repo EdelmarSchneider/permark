@@ -13,13 +13,20 @@
   import DocHeader from "./DocHeader.svelte";
   import { documents } from "./document.svelte";
   import FindBar from "./FindBar.svelte";
+  import { pageFinder } from "./find";
   import { ownedByTarget } from "./escape";
   import { editExtra } from "./headerFit";
   import ImageZoom from "./ImageZoom.svelte";
   import MarkdownBody from "./MarkdownBody.svelte";
   import ModeSwitch, { shownEditActions } from "../editing/ModeSwitch.svelte";
   import { SHEET_FORMATS } from "../config/formats";
-  import { chooseMode, editKindOf, openRemembered } from "../editing/choose";
+  import {
+    chooseMode,
+    editBlockedReason,
+    editKindOf,
+    openFind,
+    openRemembered,
+  } from "../editing/choose";
   import { editing } from "../editing/session.svelte";
   import { ui } from "../shell/ui.svelte";
 
@@ -83,15 +90,21 @@
   const overrides = $derived(contributions.visible("bodyOverride", conditions.current));
   const override = $derived(view === null ? undefined : overrides.find((o) => o.when(view)));
   const outline = $derived(view?.body.kind === "markdown" ? view.body.outline : []);
-  const visual = $derived(view !== null && editKindOf(view) !== "text");
-  const readOnly = $derived(
-    view === null
-      ? "noViewer"
-      : view.editable.editable === "readOnly"
-        ? view.editable.reason
-        : null,
+  // the editors follow the shown document's view only (while another file loads, `view` is still the previous one)
+  const current = $derived(documents.current);
+  const visual = $derived(current !== null && editKindOf(current) !== "text");
+  const readOnly = $derived(editBlockedReason());
+  const editingNow = $derived.by(() => {
+    // `documents.path` moves together with the document's state but is not reactive itself: the state is read too, so
+    // a page that catches up with the editor (it followed a renamed document) shows the editor again
+    void doc;
+    return editing.mode !== "view" && editing.path === documents.path;
+  });
+  // what the find bar searches: the page, or the text of the editor shown instead (Source has its own panel)
+  const pageFind = $derived(
+    scroller ? pageFinder(scroller, (again) => documents.onPainted(again)) : null,
   );
-  const editingNow = $derived(editing.mode !== "view" && editing.path === documents.path);
+  const finder = $derived(editingNow ? editing.finder : pageFind);
 
   $effect(() => {
     documents.bind({
@@ -103,6 +116,11 @@
       editorSet: () => store.editor.trim() !== "",
       modKey: () => (conditions.current.platform === "mac" ? "Cmd" : "Ctrl"),
       chooseEditor,
+      editorHeadings: () => (editingNow ? editing.headingTops() : null),
+      showEditorHeading: (index) => {
+        if (editingNow) editing.showHeading(index);
+        return editingNow;
+      },
       openFolderWith: (folder, document) => {
         void api.openFolderWith(folder, document).then((result) => {
           if (!result.ok) store.notifyFileOpFailed(result.error);
@@ -126,15 +144,56 @@
 
   // which workspace and document: the controller follows (idempotent: same ids do nothing)
   $effect(() => {
+    const same = untrack(() => documents.workspaceId) === workspace.id;
     documents.setWorkspace(workspace);
-    // another document came without the leave guard (it saved or discarded first when it was asked)
     const shown = path;
     // only the workspace and the path decide when this runs: a failed open must not make it run again by itself
     untrack(() => {
-      if (editing.path !== null && editing.path !== shown) editing.release();
-      void documents.show(path);
+      const edited = editing.path;
+      // back on the edited document while the unsaved prompt asks about leaving it: there is nothing to leave now,
+      // so a Save | Discard meant for the other document must not take the editor away
+      if (asking && edited === shown && editing.state.s === "unsavedPrompt") {
+        editing.answer("keepEditing");
+      }
+      // the routes that ask first (a link, the tree, search) let go of the editor before the document moves
+      if (edited === null || edited === shown) {
+        void documents.show(shown);
+        return;
+      }
+      // the backend moved this tab to another document without asking (an open from the system, a drop); words typed
+      // a moment ago count as unsaved too
+      editing.sync();
+      if (same && editing.unsaved) void leaveFor(edited);
+      else {
+        editing.release();
+        void documents.show(shown);
+      }
     });
   });
+
+  /** The unsaved prompt is open for a document that came without asking. */
+  let asking = false;
+
+  /**
+   * Another document came while `edited` holds unsaved edits: the unsaved prompt decides. Save | Discard: the window
+   * shows the document it was told last; Keep editing: it goes back to `edited`, so the tab names what is on screen.
+   */
+  async function leaveFor(edited: string): Promise<void> {
+    if (asking) return;
+    asking = true;
+    const next = path;
+    // no document next is no "document" to leave for (the same path would count as staying on the edited one)
+    const left = await editing.confirmLeave(
+      next === null ? { kind: "workspace" } : { kind: "document", path: next },
+    );
+    asking = false;
+    // the area went away, or the window left the workspace, meanwhile
+    if (documents.workspaceId !== workspace.id) return;
+    // the window came back to the edited document meanwhile: it is on screen already
+    if (path === edited) return;
+    if (left) void documents.show(path);
+    else documents.stayOn(edited);
+  }
 
   // the mode the person chose in this window (View | Edit | Source) opens the new document too: the page is
   // ready, the editor follows when the document allows it (an explicit choice of View opens nothing)
@@ -156,16 +215,33 @@
     ui.closeFind();
   });
 
-  // the file changed on disk, or went away
+  // the file changed on disk, was renamed | moved, or went away
   $effect(() => {
     let off: (() => void) | null = null;
     let gone = false;
     void api
       .on("document-changed", (event) => {
         if (event.window !== store.label) return;
+        // the editor first: it takes a renamed document along at once, so the page that follows finds it there
         editing.onDocumentChanged(event);
         documents.onChanged(event);
       })
+      .then((stop) => {
+        if (gone) stop();
+        else off = stop;
+      });
+    return () => {
+      gone = true;
+      off?.();
+    };
+  });
+
+  // a plugin came or went: the backend reads documents with other formats, so the page is read again
+  $effect(() => {
+    let off: (() => void) | null = null;
+    let gone = false;
+    void api
+      .on("plugins-changed", () => documents.formatsChanged())
       .then((stop) => {
         if (gone) stop();
         else off = stop;
@@ -237,7 +313,7 @@
           role={view?.role ?? null}
           template={store.referenceTemplate}
           hasOutline={outline.length > 0}
-          onFind={() => ui.openFind()}
+          onFind={openFind}
           canOpenSystem={workspace.kind === "project"}
           modes={view !== null && view.body.kind !== "media" ? modes : undefined}
           extra={editExtra(
@@ -277,7 +353,7 @@
               <button
                 type="button"
                 class="btn btn--sm"
-                onclick={() => documents.followMoved(moved)}
+                onclick={() => void documents.followMoved(moved)}
               >
                 {t("doc.deleted.moved", { path: moved })}
               </button>
@@ -357,8 +433,8 @@
       {/if}
     </div>
 
-    {#if ui.finding && scroller && !editingNow}
-      <FindBar root={scroller} close={() => ui.closeFind()} />
+    {#if ui.finding && finder}
+      <FindBar {finder} close={() => ui.closeFind()} />
     {/if}
   </div>
 </section>

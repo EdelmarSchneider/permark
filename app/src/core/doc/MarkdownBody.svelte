@@ -114,11 +114,10 @@
     }
     const link = target.closest("a[href]");
     if (link) {
+      // never the web view's own way (an empty href reloads the page, Shift + click opens a window)
+      event.preventDefault();
       const href = link.getAttribute("href");
-      if (href) {
-        event.preventDefault();
-        void documents.activateLink(href);
-      }
+      if (href) void documents.activateLink(href);
       return;
     }
     const chip = target.closest(".remote-image");
@@ -133,6 +132,16 @@
     if (target instanceof HTMLImageElement && !target.classList.contains("is-broken")) {
       documents.zoomed = { src: target.currentSrc || target.src, alt: target.alt };
     }
+  }
+
+  // the middle button on a link: the web view would open it in a window of its own; it is followed here as a click is
+  function onauxclick(event: MouseEvent): void {
+    if (event.button !== 1 || !(event.target instanceof Element)) return;
+    const link = event.target.closest("a[href]");
+    if (!link) return;
+    event.preventDefault();
+    const href = link.getAttribute("href");
+    if (href) void documents.activateLink(href);
   }
 
   // Enter on a reference opens it as a click does; Ctrl | Cmd + Enter as Ctrl | Cmd + click (the editor)
@@ -154,24 +163,13 @@
     col: number | null,
     event: MouseEvent | KeyboardEvent,
   ): void {
-    const modifier = event.ctrlKey || event.metaKey;
-    const [only] = paths;
-    if (paths.length === 1 && only !== undefined) {
-      void documents.openCodeRef({ paths, line, col }, only, modifier);
-      return;
-    }
+    const entries = documents.codeRefChoices({ paths, line, col }, event.ctrlKey || event.metaKey);
+    if (entries === null) return;
     const at =
       event instanceof MouseEvent
         ? { x: event.clientX, y: event.clientY }
         : { x: window.innerWidth / 2, y: window.innerHeight / 3 };
-    menu = {
-      ...at,
-      entries: paths.map((path) => ({
-        kind: "item",
-        label: line === null ? path : `${path}:${line}`,
-        run: () => void documents.openCodeRef({ paths, line, col }, path, modifier),
-      })),
-    };
+    menu = { ...at, entries };
   }
 
   function oncontextmenu(event: MouseEvent): void {
@@ -248,6 +246,7 @@
       class="md-body"
       bind:this={container}
       {onclick}
+      {onauxclick}
       {onkeydown}
       {oncontextmenu}
       role="document"

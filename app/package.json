@@ -1,6 +1,6 @@
 {
   "name": "permark",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "A unified document workspace: read, write and organize Markdown and the files around it. Free and open source.",
   "license": "MIT OR Apache-2.0",
   "author": "Edelmar Schneider",
@@ -26,6 +26,7 @@
     "version:sync": "node scripts/version.mjs sync",
     "version:check": "node scripts/version.mjs check",
     "ux:probe": "node e2e/probe/cli.ts",
+    "ux:parity": "node e2e/parity/cli.ts",
     "ux:calibrate": "node e2e/calibration/calibrate.ts",
     "notices": "node scripts/third-party-notices.mjs",
     "gen:languages": "node scripts/gen-code-languages.mjs && prettier --write src/plugins/highlight/languageData.ts"
@@ -59,8 +60,12 @@
     "@tauri-apps/cli": "^2.12.2",
     "@tsconfig/svelte": "^5.0.8",
     "@types/katex": "^0.16.8",
+    "@types/mdast": "^4.0.4",
     "@types/node": "^24.19.2",
     "jsdom": "^30.1.3",
+    "mdast-util-from-markdown": "^2.1.0",
+    "mdast-util-to-markdown": "^2.2.0",
+    "micromark-util-types": "^2.0.3",
     "prettier": "^3.9.10",
     "prettier-plugin-svelte": "^4.1.1",
     "svelte": "^5.57.2",

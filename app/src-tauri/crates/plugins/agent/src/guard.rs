@@ -15,6 +15,7 @@ use permark_core::paths::{
 use permark_core::projects::{map::within, AgentRules, ProjectMap};
 
 use crate::perms::Group;
+use crate::tools::{read_error, MAX_READ_BYTES};
 use crate::ToolError;
 
 /// The ignore file agents honor (project root, gitignore syntax).
@@ -59,6 +60,18 @@ fn matcher(base: &Path, rules: &AgentRules) -> Option<Gitignore> {
     any.then(|| builder.build().ok())
         .flatten()
         .filter(|g| !g.is_empty())
+}
+
+/// Whether `rules` hide `path`, as written or in its composed (NFC) spelling: a name made on macOS can reach the
+/// folder decomposed while the person types `.aiignore` composed.
+fn ignores(rules: &Gitignore, path: &str, is_dir: bool) -> bool {
+    let hit = |p: &str| {
+        rules
+            .matched_path_or_any_parents(Path::new(p), is_dir)
+            .is_ignore()
+    };
+    // `key_of` is the NFC spelling, folded only where the matcher ignores case too
+    hit(path) || (!path.is_ascii() && hit(&key_of(path)))
 }
 
 impl Scope {
@@ -114,18 +127,14 @@ impl Scope {
         let member_rule = self.members.iter().any(|(member, depth, rules)| {
             within(&key, member) && {
                 let rel: Vec<&str> = path.split('/').skip(*depth).collect();
-                !rel.is_empty()
-                    && rules
-                        .matched_path_or_any_parents(Path::new(&rel.join("/")), is_dir)
-                        .is_ignore()
+                !rel.is_empty() && ignores(rules, &rel.join("/"), is_dir)
             }
         });
         member_rule
-            || self.ancestors.iter().any(|(rel, rules)| {
-                rules
-                    .matched_path_or_any_parents(Path::new(&format!("{rel}/{path}")), is_dir)
-                    .is_ignore()
-            })
+            || self
+                .ancestors
+                .iter()
+                .any(|(rel, rules)| ignores(rules, &format!("{rel}/{path}"), is_dir))
     }
 
     /// The member whose `[agent] deny` takes the call's group away at `path`.
@@ -200,11 +209,9 @@ impl Guard {
         }) {
             return true;
         }
-        self.rules.as_ref().is_some_and(|rules| {
-            rules
-                .matched_path_or_any_parents(Path::new(path), is_dir)
-                .is_ignore()
-        })
+        self.rules
+            .as_ref()
+            .is_some_and(|rules| ignores(rules, path, is_dir))
     }
 
     /// An existing, shared file of the project from an agent's word: `(project path, absolute path)`. Anything else
@@ -239,6 +246,28 @@ impl Guard {
         Ok((path.as_str().to_owned(), abs))
     }
 
+    /// [`Guard::file`] and its text: the file is checked again where it really is once open, so a link swapped in
+    /// after the check of the path and before the open never leads out of the folder or to a hidden part of it.
+    ///
+    /// # Errors
+    /// `NotFound` (see [`Guard::file`]), `Invalid` (too large, not text), `Failed` (unreadable now).
+    pub fn text(&self, raw: &str) -> Result<(String, String), ToolError> {
+        let (path, abs) = self.file(raw)?;
+        let (decoded, opened) = permark_core::fsx::read_text_opened(&abs, MAX_READ_BYTES)
+            .map_err(|e| read_error(&e))?;
+        if !self.opened_shared(opened.as_deref()) {
+            return Err(ToolError::NotFound(raw.trim().to_owned()));
+        }
+        Ok((path, decoded.text))
+    }
+
+    /// Whether the file a read opened is a shared file of the folder (`None`: the system cannot tell, refused).
+    fn opened_shared(&self, opened: Option<&Path>) -> bool {
+        opened
+            .and_then(|o| self.vault.relativize(o))
+            .is_some_and(|shown| !shown.is_root() && !self.hidden(shown.as_str(), false))
+    }
+
     /// The guard as a search filter: hidden paths do not answer.
     #[must_use]
     pub fn as_lookup(self: &Arc<Self>) -> Arc<dyn SilenceLookup> {
@@ -257,6 +286,40 @@ impl SilenceLookup for Lookup {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The file a read opened is checked where it really is: a link swapped in between the check of the path and the
+    /// open can lead nowhere outside the folder or hidden in it.
+    #[test]
+    fn a_read_is_kept_only_when_the_opened_file_is_shared() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dunce::canonicalize(dir.path()).unwrap();
+        let proj = base.join("proj");
+        for (path, text) in [
+            ("docs/a.md", "# A\n"),
+            ("private/s.md", "# S\n"),
+            (".aiignore", "private/\n"),
+        ] {
+            let file = proj.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, text).unwrap();
+        }
+        std::fs::write(base.join("outside.md"), "# Out\n").unwrap();
+        let root = Root::open(&proj).unwrap();
+        let guard = Guard::new(&root, &[]);
+        assert_eq!(
+            guard.text("docs/a.md").unwrap(),
+            ("docs/a.md".to_owned(), "# A\n".to_owned())
+        );
+        assert!(guard.opened_shared(Some(&proj.join("docs/a.md"))));
+        #[cfg(windows)]
+        assert!(guard.opened_shared(Some(Path::new(&format!(
+            r"\\?\{}",
+            proj.join("docs/a.md").display()
+        )))));
+        assert!(!guard.opened_shared(Some(&base.join("outside.md"))));
+        assert!(!guard.opened_shared(Some(&proj.join("private/s.md"))));
+        assert!(!guard.opened_shared(None), "unknown: refused");
+    }
 
     #[test]
     fn machinery_folders_at_any_depth_are_hidden_and_key_files_are_not() {

@@ -199,6 +199,20 @@ fn reference_definitions_are_rewritten_and_their_uses_are_not_touched() {
 }
 
 #[test]
+fn definitions_over_lines_and_heading_links_are_rewritten_and_undone_exactly() {
+    let doc = "[one]: b.md\nsee [one] and [x](b.md#s)\n---\n\n[two]:\r\n  <b.md>\r\n  \"T\"\r\nthen [two] ![i](b.md)\r\n\n[three]: b.md\n  'T'\n\n> [four]:\n>   b.md\n> quote [y](b.md)\n> ===\n";
+    let f = fx(&[("a.md", doc), ("b.md", "")]);
+    let outcome = mv(&f, &[("b.md", "c/b.md")]);
+    assert_eq!(outcome.links, 7);
+    assert_eq!(
+        read(&f, "a.md"),
+        "[one]: c/b.md\nsee [one] and [x](c/b.md#s)\n---\n\n[two]:\r\n  <c/b.md>\r\n  \"T\"\r\nthen [two] ![i](c/b.md)\r\n\n[three]: c/b.md\n  'T'\n\n> [four]:\n>   c/b.md\n> quote [y](c/b.md)\n> ===\n"
+    );
+    f.ops.undo().unwrap().unwrap();
+    assert_eq!(read(&f, "a.md"), doc, "byte for byte");
+}
+
+#[test]
 fn spaces_and_special_characters_are_written_the_way_the_link_was() {
     let f = fx(&[
         ("a.md", "[bare](x.md) [angle](<x.md>) [pct](x.md)\n"),
@@ -880,6 +894,202 @@ fn undo_of_a_moved_document_with_rewritten_links_restores_both() {
     assert_eq!(read(&f, "docs/a.md"), original);
 }
 
+// ---- `@path` references (prompt text) -------------------------------------------------------------------------------
+
+/// [`fx`] with the prompt features on (the plugin that marks `@path` references in reading).
+fn fx_prompts(files: &[(&str, &str)]) -> Fx {
+    use crate::format::{Contributions, FormatRegistry, MarkdownFeature, PromptBlocks};
+    let Fx {
+        dir,
+        state,
+        ops,
+        explorer,
+        own,
+    } = fx(files);
+    let formats = FormatRegistry::build(&Contributions::default().markdown(vec![
+        MarkdownFeature::PromptBlocks(PromptBlocks {
+            tags: crate::format::DEFAULT_PROMPT_TAGS,
+        }),
+    ]));
+    Fx {
+        dir,
+        state,
+        ops: ops.with_formats(Arc::new(std::sync::RwLock::new(Arc::new(formats)))),
+        explorer,
+        own,
+    }
+}
+
+const PROMPT_TEXT: &str = "Read @docs/guide.md first.\r\n`@docs/guide.md` stays, [@docs/guide.md](other.md) too\r\n<context>\r\n- see @docs/guide.md.\r\n</context>\r\n";
+
+#[test]
+fn references_to_a_moved_file_are_rewritten_in_place_counted_and_undone() {
+    let f = fx_prompts(&[
+        ("README.md", PROMPT_TEXT),
+        ("docs/guide.md", "# Guide\n"),
+        ("other.md", ""),
+    ]);
+    let plan = f
+        .ops
+        .plan_move(&[spec("docs/guide.md", "docs/manual.md")], true)
+        .unwrap();
+    assert_eq!((plan.link_count, plan.file_count), (2, 1));
+    let changes: Vec<(u32, &str, &str)> = plan.files[0]
+        .changes
+        .iter()
+        .map(|c| (c.line, c.old.as_str(), c.new.as_str()))
+        .collect();
+    assert_eq!(
+        changes,
+        [
+            (1, "docs/guide.md", "docs/manual.md"),
+            (4, "docs/guide.md", "docs/manual.md")
+        ]
+    );
+    let outcome = f.ops.apply_move(plan.plan_id, true).unwrap();
+    assert_eq!((outcome.links, outcome.documents), (2, 1));
+    // only the two paths changed: code, the link's text, the line endings and every other byte stay
+    assert_eq!(
+        read(&f, "README.md"),
+        PROMPT_TEXT
+            .replacen("Read @docs/guide.md", "Read @docs/manual.md", 1)
+            .replacen("see @docs/guide.md.", "see @docs/manual.md.", 1)
+    );
+    f.ops.undo().unwrap().unwrap();
+    assert_eq!(read(&f, "README.md"), PROMPT_TEXT, "byte for byte");
+    assert!(exists(&f, "docs/guide.md"));
+}
+
+#[test]
+fn references_follow_a_moved_folder_and_stay_when_the_new_name_cannot_be_one() {
+    let text = "@docs/guide.md and @/docs/a.md\n";
+    let f = fx_prompts(&[
+        ("README.md", text),
+        ("docs/guide.md", ""),
+        ("docs/a.md", ""),
+    ]);
+    mv(&f, &[("docs", "handbook")]);
+    assert_eq!(
+        read(&f, "README.md"),
+        "@handbook/guide.md and @/handbook/a.md\n"
+    );
+    // a name with a space ends a reference: written in, the text would name another file
+    let f = fx_prompts(&[
+        ("README.md", text),
+        ("docs/guide.md", ""),
+        ("docs/a.md", ""),
+    ]);
+    let plan = f
+        .ops
+        .plan_move(&[spec("docs/guide.md", "docs/my guide.md")], true)
+        .unwrap();
+    assert_eq!(plan.link_count, 0);
+}
+
+#[test]
+fn a_reference_below_front_matter_moves_and_the_front_matter_stays() {
+    let text =
+        "\u{feff}---\r\nsee: \"@docs/guide.md\"\r\n---\r\nÉ @docs/guide.md, ü @docs/guide.md\r\n";
+    let f = fx_prompts(&[("README.md", text), ("docs/guide.md", "")]);
+    let plan = f
+        .ops
+        .plan_move(&[spec("docs/guide.md", "docs/manual.md")], true)
+        .unwrap();
+    let lines: Vec<u32> = plan.files[0].changes.iter().map(|c| c.line).collect();
+    assert_eq!(lines, [4, 4]);
+    f.ops.apply_move(plan.plan_id, true).unwrap();
+    // reading marks no reference in front matter: it stays, with the byte order mark and the line endings
+    assert_eq!(
+        read(&f, "README.md"),
+        text.replace(
+            "É @docs/guide.md, ü @docs/guide.md",
+            "É @docs/manual.md, ü @docs/manual.md"
+        )
+    );
+}
+
+#[test]
+fn references_stay_as_written_when_the_prompt_features_are_off() {
+    let f = fx(&[
+        ("README.md", PROMPT_TEXT),
+        ("docs/guide.md", ""),
+        ("other.md", ""),
+    ]);
+    let plan = f
+        .ops
+        .plan_move(&[spec("docs/guide.md", "docs/manual.md")], true)
+        .unwrap();
+    assert_eq!(plan.link_count, 0);
+    f.ops.apply_move(plan.plan_id, true).unwrap();
+    assert_eq!(read(&f, "README.md"), PROMPT_TEXT);
+}
+
+/// Prompt blocks with no blank line after their tags: without the prompt features the lines from the first tag to the
+/// blank line are one HTML block, and only the `href` after it is a destination.
+const BLOCK_TEXT: &str = "\u{feff}<context>\r\n- see [guide](docs/guide.md) and `[code](docs/guide.md)`\r\n</context>\r\n<rules>\r\n<example>\r\n[g]: docs/guide.md\r\n\r\n<a href=\"docs/guide.md\">g</a>\r\n</example>\r\n</rules>\r\n";
+
+#[test]
+fn links_inside_prompt_blocks_follow_a_moved_file_and_undo_is_exact() {
+    let f = fx_prompts(&[("README.md", BLOCK_TEXT), ("docs/guide.md", "# Guide\n")]);
+    let plan = f
+        .ops
+        .plan_move(&[spec("docs/guide.md", "docs/manual.md")], true)
+        .unwrap();
+    let lines: Vec<u32> = plan.files[0].changes.iter().map(|c| c.line).collect();
+    assert_eq!(lines, [2, 6, 8]);
+    f.ops.apply_move(plan.plan_id, true).unwrap();
+    // the code span, the tags, the byte order mark and the line endings stay
+    assert_eq!(
+        read(&f, "README.md"),
+        BLOCK_TEXT
+            .replacen("[guide](docs/guide.md)", "[guide](docs/manual.md)", 1)
+            .replacen("[g]: docs/guide.md", "[g]: docs/manual.md", 1)
+            .replacen("href=\"docs/guide.md\"", "href=\"docs/manual.md\"", 1)
+    );
+    f.ops.undo().unwrap().unwrap();
+    assert_eq!(read(&f, "README.md"), BLOCK_TEXT, "byte for byte");
+}
+
+#[test]
+fn links_inside_prompt_blocks_are_read_as_before_when_the_prompt_features_are_off() {
+    let f = fx(&[("README.md", BLOCK_TEXT), ("docs/guide.md", "# Guide\n")]);
+    let plan = f
+        .ops
+        .plan_move(&[spec("docs/guide.md", "docs/manual.md")], true)
+        .unwrap();
+    let lines: Vec<u32> = plan.files[0].changes.iter().map(|c| c.line).collect();
+    assert_eq!(lines, [8]);
+}
+
+/// Definitions with paragraph text right after them (no blank line between): the parser takes them off the
+/// paragraph, so their lines are read apart from it.
+const DEFINITIONS_TEXT: &str = "[guide]: docs/guide.md\r\n[home]: README.md\r\nSee the [guide] or [the manual](docs/guide.md) and `[c](docs/guide.md)`.\r\n\r\n> [q]: <docs/guide.md> \"Quoted\"\r\n> quoted [guide][q]\r\n";
+
+#[test]
+fn a_definition_right_before_paragraph_text_follows_a_renamed_file_and_undo_is_exact() {
+    let f = fx(&[
+        ("README.md", DEFINITIONS_TEXT),
+        ("docs/guide.md", "# Guide\n"),
+    ]);
+    let plan = f
+        .ops
+        .plan_move(&[spec("docs/guide.md", "docs/manual.md")], true)
+        .unwrap();
+    let lines: Vec<u32> = plan.files[0].changes.iter().map(|c| c.line).collect();
+    assert_eq!(lines, [1, 3, 5]);
+    f.ops.apply_move(plan.plan_id, true).unwrap();
+    // the code span, the titles and the line endings stay
+    assert_eq!(
+        read(&f, "README.md"),
+        DEFINITIONS_TEXT
+            .replacen("[guide]: docs/guide.md", "[guide]: docs/manual.md", 1)
+            .replacen("(docs/guide.md)", "(docs/manual.md)", 1)
+            .replacen("<docs/guide.md>", "<docs/manual.md>", 1)
+    );
+    f.ops.undo().unwrap().unwrap();
+    assert_eq!(read(&f, "README.md"), DEFINITIONS_TEXT, "byte for byte");
+}
+
 #[test]
 fn undo_reports_what_changed_since_instead_of_overwriting_it() {
     let f = fx(&[("a.md", "[b](b.md)\n"), ("b.md", "")]);
@@ -1175,4 +1385,174 @@ fn the_plan_names_the_ignored_folders_it_did_not_look_into() {
         without.unchecked.is_empty(),
         "no links planned, nothing to say"
     );
+}
+
+// ---- integrity: names that compare equal, mixed link spellings, saves that slip in ----------------------------------
+
+#[test]
+fn a_rename_that_only_changes_normalization_never_replaces_another_file() {
+    let nfc = "caf\u{e9}.md";
+    let nfd = "cafe\u{301}.md";
+    let f = fx(&[(nfc, "mine")]);
+    fs::write(f.dir.path().join(nfd), "theirs").unwrap();
+    if fs::read_dir(f.dir.path()).unwrap().count() < 2 {
+        // this file system folds normalization: both names are one file
+        return;
+    }
+    assert_eq!(
+        kind_of(f.ops.plan_move(&[spec(nfc, nfd)], true).unwrap_err()),
+        ErrorKind::Exists
+    );
+    assert_eq!(read(&f, nfc), "mine");
+    assert_eq!(read(&f, nfd), "theirs");
+    // the other spelling appears between the preview and the apply
+    fs::remove_file(f.dir.path().join(nfd)).unwrap();
+    let plan = f.ops.plan_move(&[spec(nfc, nfd)], true).unwrap();
+    fs::write(f.dir.path().join(nfd), "theirs again").unwrap();
+    assert_eq!(
+        kind_of(f.ops.apply_move(plan.plan_id, true).unwrap_err()),
+        ErrorKind::Exists
+    );
+    assert_eq!(read(&f, nfc), "mine");
+    assert_eq!(read(&f, nfd), "theirs again");
+}
+
+#[test]
+fn links_spelled_with_mixed_escapes_are_found_and_rewritten() {
+    let f = fx(&[
+        (
+            "a.md",
+            "[p](My%20Notes%20(1).md) [e](My%20Notes%20\\(1\\).md)\n",
+        ),
+        ("b.md", "[r](Relat\u{f3}rio%20final.md)\n"),
+        ("My Notes (1).md", ""),
+        ("Relat\u{f3}rio final.md", ""),
+    ]);
+    let outcome = mv(
+        &f,
+        &[
+            ("My Notes (1).md", "Done (2).md"),
+            ("Relat\u{f3}rio final.md", "Relat\u{f3}rio 2.md"),
+        ],
+    );
+    assert_eq!(outcome.links, 3);
+    assert_eq!(
+        read(&f, "a.md"),
+        "[p](Done%20%282%29.md) [e](Done%20%282%29.md)\n"
+    );
+    assert_eq!(read(&f, "b.md"), "[r](Relat\u{f3}rio%202.md)\n");
+}
+
+#[test]
+fn the_candidate_filter_matches_any_normalization_and_escape_of_a_moved_name() {
+    let f = fx(&[("Relato\u{301}rio.md", "")]);
+    let vault = Vault::new(Root::open(f.dir.path()).unwrap());
+    let moves = [("Relato\u{301}rio.md".to_owned(), "x.md".to_owned())];
+    let planner = Planner::new(&vault, &moves);
+    for text in [
+        "[r](Relat\u{f3}rio.md)",
+        "[r](RELAT%C3%93RIO.md)",
+        "[r](relato%CC%81rio.md)",
+        "[r](<Relato\u{301}rio.md>)",
+    ] {
+        assert!(mentions(text, planner.needles()), "{text}");
+    }
+    assert!(!mentions("[r](other.md)", planner.needles()));
+}
+
+#[test]
+fn a_case_change_the_drive_cannot_prove_is_one_item_is_refused_with_its_reason() {
+    let error = IpcError::from(FileOpError::MaybeSame("Plan.md".to_owned()));
+    assert_eq!(error.kind, ErrorKind::Exists);
+    assert_eq!(error.subject.as_deref(), Some("Plan.md"));
+    assert_eq!(error.detail.as_deref(), Some(IDENTITY_UNKNOWN));
+}
+
+#[test]
+fn the_candidate_filter_matches_plain_ascii_links_in_any_case() {
+    let f = fx(&[("docs/Plan.md", "")]);
+    let vault = Vault::new(Root::open(f.dir.path()).unwrap());
+    let moves = [("docs/Plan.md".to_owned(), "docs/x.md".to_owned())];
+    let planner = Planner::new(&vault, &moves);
+    for text in ["[p](docs/Plan.md)", "[p](PLAN.md)", "see [[plan]]"] {
+        assert!(mentions(text, planner.needles()), "{text}");
+    }
+    assert!(!mentions("[p](docs/other.md)", planner.needles()));
+}
+
+/// Another program holds `path` without delete sharing (a rename over it waits), writes `text` through its handle as
+/// soon as the temp of an atomic write of `path` shows up, and lets go a moment later.
+#[cfg(windows)]
+fn slip_in_save(path: &Path, text: &'static str) -> std::thread::JoinHandle<()> {
+    use std::io::Write as _;
+    use std::os::windows::fs::OpenOptionsExt;
+    const SHARE_READ_WRITE: u32 = 0x1 | 0x2;
+    let mut held = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(SHARE_READ_WRITE)
+        .open(path)
+        .unwrap();
+    let dir = path.parent().unwrap().to_path_buf();
+    let prefix = format!(".{}.", path.file_name().unwrap().to_string_lossy());
+    std::thread::spawn(move || {
+        let start = std::time::Instant::now();
+        while start.elapsed() < std::time::Duration::from_secs(10) {
+            let temp = fs::read_dir(&dir).unwrap().flatten().any(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                name.starts_with(&prefix) && crate::fsx::is_scratch_name(&name)
+            });
+            if temp {
+                break;
+            }
+            std::thread::yield_now();
+        }
+        held.set_len(0).unwrap();
+        held.write_all(text.as_bytes()).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        drop(held);
+    })
+}
+
+#[cfg(windows)]
+#[test]
+fn a_link_rewrite_never_replaces_a_save_that_slips_in_before_its_write() {
+    let f = fx(&[
+        ("a.md", "[b](b.md)\n"),
+        ("c.md", "[b](b.md)\n"),
+        ("b.md", ""),
+    ]);
+    let plan = f.ops.plan_move(&[spec("b.md", "moved.md")], true).unwrap();
+    let writer = slip_in_save(&f.dir.path().join("a.md"), "their save\n");
+    let outcome = f.ops.apply_move(plan.plan_id, true).unwrap();
+    writer.join().unwrap();
+    assert_eq!(read(&f, "a.md"), "their save\n");
+    assert_eq!(
+        outcome.skipped,
+        [Skip {
+            path: "a.md".to_owned(),
+            reason: SkipReason::Changed
+        }]
+    );
+    assert_eq!(read(&f, "c.md"), "[b](moved.md)\n");
+}
+
+#[cfg(windows)]
+#[test]
+fn an_undo_never_replaces_a_save_that_slips_in_before_its_write() {
+    let f = fx(&[("a.md", "[b](b.md)\n"), ("b.md", "")]);
+    mv(&f, &[("b.md", "c.md")]);
+    let writer = slip_in_save(&f.dir.path().join("a.md"), "their save\n");
+    let outcome = f.ops.undo().unwrap().unwrap();
+    writer.join().unwrap();
+    assert_eq!(read(&f, "a.md"), "their save\n");
+    assert!(
+        outcome
+            .skipped
+            .iter()
+            .any(|s| s.path == "a.md" && s.reason == SkipReason::Changed),
+        "{:?}",
+        outcome.skipped
+    );
+    assert!(exists(&f, "b.md"), "the file still went back");
 }

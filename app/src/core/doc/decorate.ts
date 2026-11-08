@@ -12,6 +12,18 @@ export type LazyEmbed = () => Promise<{ default: Component<EmbedProps> }>;
 /** The embed for a language word (`mermaid`) or a reserved name (`@code`, `@math`), if a plugin brings one. */
 export type EmbedLookup = (language: string) => LazyEmbed | undefined;
 
+/**
+ * What draws a fenced code block of this info: the embed for its language, else the one for any code (`@code`).
+ * `find` maps a language word | reserved name to its embed (the reading view's loader, Edit's contribution).
+ */
+export function codeEmbed<T>(
+  info: string,
+  find: (language: string) => T | undefined,
+): T | undefined {
+  const language = info.toLowerCase();
+  return (language === "" ? undefined : find(language)) ?? find("@code");
+}
+
 /** The mark on an element that holds a code reference. */
 export const CODE_REF = "code-ref";
 
@@ -36,6 +48,8 @@ export class LinkCache {
   #known = new Map<string, LinkTarget>();
   #queue = new Set<string>();
   #flush: Promise<void> | null = null;
+  /** Counts `forget` calls: an answer to a request sent before the last one may describe files that changed. */
+  #generation = 0;
 
   constructor(api: Api) {
     this.#api = api;
@@ -47,6 +61,12 @@ export class LinkCache {
     this.#doc = path;
     this.#known.clear();
     this.#queue.clear();
+  }
+
+  /** Forgets the answers (files came or went): the next ask goes to the backend again. */
+  forget(): void {
+    this.#known.clear();
+    this.#generation += 1;
   }
 
   peek(href: string): LinkTarget | undefined {
@@ -66,12 +86,13 @@ export class LinkCache {
   async #send(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, BATCH_AFTER_MS));
     const doc = this.#doc;
+    const generation = this.#generation;
     const asked = [...this.#queue];
     this.#queue.clear();
     this.#flush = null;
     if (doc === null || asked.length === 0) return;
     const result = await this.#api.resolveLinks(doc, asked);
-    if (!result.ok || doc !== this.#doc) return;
+    if (!result.ok || doc !== this.#doc || generation !== this.#generation) return;
     asked.forEach((href, at) => {
       const target = result.value[at];
       if (target) this.#known.set(href, target);
@@ -79,7 +100,8 @@ export class LinkCache {
   }
 }
 
-function isLocalHref(href: string | null): href is string {
+/** A link to a file of the project (not a heading of the page, not a URL): the ones whose target may be missing. */
+export function isLocalHref(href: string | null): href is string {
   return href !== null && href !== "" && !href.startsWith("#") && !SCHEME.test(href);
 }
 
@@ -128,7 +150,7 @@ export class Decorator {
     const setup = this.refSetup();
     for (const element of root.querySelectorAll<HTMLElement>(`.${CODE_REF}`)) {
       const target = codeRefOf(element);
-      if (target) element.title = titleOf(target.paths, target.line, setup);
+      if (target) element.title = codeRefTitle(target.paths, target.line, setup);
     }
   }
 
@@ -148,8 +170,7 @@ export class Decorator {
 
   #lookup(element: HTMLElement): LazyEmbed | undefined {
     if (element.hasAttribute("data-math-style")) return this.#embeds("@math");
-    const language = (element.getAttribute("data-info") ?? "").toLowerCase();
-    return (language === "" ? undefined : this.#embeds(language)) ?? this.#embeds("@code");
+    return codeEmbed(element.getAttribute("data-info") ?? "", this.#embeds);
   }
 
   #syncEmbeds(block: HTMLElement): void {
@@ -295,11 +316,11 @@ function markCodeRef(
   if (ref.col !== null) element.setAttribute("data-ref-col", String(ref.col));
   element.tabIndex = 0;
   element.setAttribute("role", "link");
-  element.title = titleOf(paths, ref.line, setup);
+  element.title = codeRefTitle(paths, ref.line, setup);
 }
 
 /** What the tooltip of a reference says: where it leads and what a click does. */
-function titleOf(
+export function codeRefTitle(
   paths: readonly string[],
   line: number | null,
   setup: { editorSet: boolean; mod: string },

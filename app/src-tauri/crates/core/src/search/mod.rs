@@ -342,7 +342,8 @@ impl SearchIndex {
         &self.shared.harvest
     }
 
-    /// The formats that are on changed: config files are read again for their keys.
+    /// The formats that are on changed: config files are read again for their keys, Markdown documents for their
+    /// links when the Markdown features changed.
     pub fn formats_changed(&self) {
         let _ = self.tx.send(Msg::FormatsChanged);
     }

@@ -89,6 +89,14 @@ export default {
   "error.superseded": "Inzwischen wurde etwas anderes geöffnet.",
   "error.internal": "In PerMark ist etwas schiefgelaufen: {detail}",
   "error.unknown": "Etwas ist schiefgelaufen: {message}",
+  "error.settingsUnreadable":
+    "PerMark kann die Einstellungsdatei {subject} nicht lesen. Es wurde nichts geändert.",
+  "error.settingsUnreadable.notText":
+    "PerMark kann die Einstellungsdatei {subject} nicht lesen (sie ist kein reiner Text). Es wurde nichts geändert.",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark kann die Einstellungsdatei {subject} nicht lesen (sie ist zu groß). Es wurde nichts geändert.",
+  "error.settingsUnreadable.locked":
+    "PerMark kann die Einstellungsdatei {subject} nicht lesen (ein anderes Programm verwendet sie). Es wurde nichts geändert.",
 
   // ---- conditions
   "condition.workspace": "Zuerst einen Ordner oder eine Datei öffnen.",
@@ -141,6 +149,8 @@ export default {
   "fileOps.nameReserved": "Dieser Name ist vom System reserviert",
   "fileOps.nameTooLong": "Der Name ist zu lang",
   "fileOps.nameExists": "Hier gibt es bereits etwas mit diesem Namen",
+  "fileOps.identityUnknown":
+    "PerMark kann nicht erkennen, ob diese beiden Namen auf diesem Laufwerk dieselbe Datei sind, daher wurde nichts umbenannt.",
   "fileOps.files.one": "{n} Datei",
   "fileOps.files.other": "{n} Dateien",
   "fileOps.items.one": "{n} Element",
@@ -429,9 +439,12 @@ export default {
   "edit.save": "Speichern",
   "edit.saveHint": "Speichern (Strg+S)",
   "edit.saving": "Wird gespeichert…",
-  "edit.savedBlocks.one": "Gespeichert, {n} Block geändert.",
-  "edit.savedBlocks.other": "Gespeichert, {n} Blöcke geändert.",
-  "edit.firstSaveHint": "PerMark schreibt nur die Blöcke neu, die du geändert hast.",
+  "edit.savedBlocks.one": "Gespeichert, {n} Änderung.",
+  "edit.savedBlocks.other": "Gespeichert, {n} Änderungen.",
+  "edit.firstSaveHint": "PerMark schreibt nur die Stellen neu, die du geändert hast.",
+  "edit.emptyHint": "Fang hier an zu schreiben. Tippe / für Überschriften, Listen und mehr.",
+  "edit.savedReadsOtherwise":
+    "Einige Formeln oder Links in diesem Dokument sehen nach dem Speichern womöglich anders aus. Prüfe sie im Quelltext.",
   "source.find": "Suchen",
   "source.replace": "Ersetzen",
   "source.next": "Weiter",
@@ -459,6 +472,18 @@ export default {
   "edit.discard": "Verwerfen",
   "edit.keepEditing": "Weiter bearbeiten",
   "edit.editInSource": "Im Quelltext bearbeiten",
+  "edit.blockSource": "Quelltext dieses Blocks",
+  "edit.blockSourceHint": "Esc zum Beenden",
+  "edit.block.html": "HTML",
+  "edit.block.formula": "Formel",
+  "edit.block.footnote": "Fußnote",
+  "edit.block.diagram": "Diagramm",
+  "edit.block.alert": "Hinweis",
+  "edit.block.other": "Block bleibt wie geschrieben",
+  "edit.block.openHint": "Eingabetaste zum Bearbeiten",
+  "edit.documentText": "Dokumenttext",
+  "edit.codeRefHint": "{title} ({mod}+Klick)",
+  "edit.codeRefTitleMany": "{count} Dateien passen. {mod}+Klick, um eine auszuwählen.",
   "edit.visualForMarkdown":
     "Der Bearbeitungsmodus ist für Markdown- und Einstellungsdateien; nutze Quelltext.",
   "edit.diagramNoPlugin":
@@ -493,11 +518,9 @@ export default {
   "conflict.text":
     "Nichts wurde überschrieben. Deine Änderungen bleiben hier, bis du entscheidest.",
   "conflict.deletedText": "Deine Änderungen bleiben hier, bis du entscheidest.",
-  "conflict.reload": "Ihre Fassung neu laden",
-  "conflict.reloadConfirm": "Deine Änderungen verwerfen und die Datei von der Festplatte laden?",
-  "conflict.discard": "Meine verwerfen",
-  "conflict.keepMine": "Meine behalten (überschreiben)",
-  "conflict.recreate": "Meine behalten (wieder anlegen)",
+  "conflict.reload": "Fassung der Datei nehmen (meine Änderungen verwerfen)",
+  "conflict.keepMine": "Meine Fassung behalten (Datei ersetzen)",
+  "conflict.recreate": "Meine Fassung behalten (wieder anlegen)",
   "conflict.saveAsNew": "Als neue Datei speichern",
   "conflict.showDiff": "Unterschiede zeigen",
   "conflict.hideDiff": "Unterschiede ausblenden",
@@ -1200,7 +1223,7 @@ export default {
   "notes.move.title": "In ein Projekt verschieben",
   "notes.moveDown": "Nach unten",
   "notes.moveKept":
-    "„{name}“ hat sich beim Kopieren geändert und bleibt daher in deinen Notizen; die Kopie liegt im Projekt.",
+    "„{name}“ hat sich beim Kopieren geändert oder enthält noch nicht gespeicherten Text und bleibt daher in deinen Notizen; die Kopie liegt im Projekt.",
   "notes.moveToProject": "In ein Projekt verschieben ...",
   "notes.moveUndone": "„{name}“ ist wieder in deinen Notizen.",
   "notes.moveUndoneKept":
@@ -1400,7 +1423,6 @@ export default {
   "config.fromSource": "Im Quelltext bearbeiten",
   "config.nothing": "In dieser Datei gibt es noch nichts anzuzeigen.",
   "config.noSheet": "Diese Datei lässt sich nicht als Tabelle zeigen. Nutze den Quelltext.",
-  "config.fm.bar": "Eigenschaften. Eine zu ändern lässt den Rest der Datei, wie er ist.",
   "config.reason.multiline": "Text über mehrere Zeilen. Ändere ihn im Quelltext.",
   "config.reason.alias": "Ein Alias eines anderen Werts. Ändere ihn im Quelltext.",
   "config.reason.anchor":
@@ -1498,9 +1520,9 @@ export default {
   "project.newConfirm": "Diesen Ordner verwenden",
   "project.newBack": "Anderen Ordner wählen…",
   "project.loadFailed": "Die Projekteinstellungen konnten nicht gelesen werden.",
-  "project.notInitialized": "PerMark ist in diesem Projekt nicht eingerichtet",
+  "project.notInitialized": "Dieser Ordner hat noch keine PerMark-Einstellungen",
   "project.notInitializedHint":
-    "Beim Einrichten entsteht ein Ordner .permark, in dem das Projekt Einstellungen für das Team ablegen kann.",
+    "Nach dem Einrichten hat dieser Ordner eigene Einstellungen, die alle teilen können, die daran arbeiten.",
   "project.patternPlaceholder": "Muster, zum Beispiel drafts/",
   "project.tree": "Explorer",
   "project.treeExclude": "Immer ausblenden",
@@ -1538,7 +1560,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "Unbekannter Platzhalter. Möglich sind {path}, {line} und {col}.",
   "settings.problem.noPath": "Der Befehl braucht {path}.",
-  "settings.problem.notInitialized": "PerMark ist in diesem Projekt nicht eingerichtet.",
+  "settings.problem.notInitialized": "Dieser Ordner hat noch keine PerMark-Einstellungen.",
   "settings.problem.other": "Dieser Wert wurde nicht angenommen.",
   "welcome.newProject": "Neues Projekt …",
   "welcome.newProjectHint": "Ordner wählen; PerMark richtet ihn als Projekt ein.",

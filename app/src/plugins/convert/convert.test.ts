@@ -224,6 +224,45 @@ describe("the dialog", () => {
     flushSync();
     expect(converter.state.status).toBe("closed");
   });
+
+  it("owns the keyboard while open: focus in, Tab stays inside, Escape closes, focus goes back", async () => {
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    converter.open({ kind: "text", text: '[{"id":1}]', language: "json", beside: null });
+    const target = document.createElement("div");
+    document.body.append(target);
+    component = mount(ConvertDialog, { target });
+    await until(() => converter.state.status === "ready", "ready");
+    flushSync();
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]');
+    if (!dialog) throw new Error("no dialog");
+    expect(document.activeElement).toBe(dialog);
+    const controls = [
+      ...dialog.querySelectorAll<HTMLElement>("button:not(:disabled), select:not(:disabled)"),
+    ];
+    const first = controls[0];
+    const last = controls.at(-1);
+    if (!first || !last) throw new Error("no controls");
+    const key = (on: Element, name: string, shiftKey = false): KeyboardEvent => {
+      const event = new KeyboardEvent("keydown", {
+        key: name,
+        shiftKey,
+        bubbles: true,
+        cancelable: true,
+      });
+      on.dispatchEvent(event);
+      return event;
+    };
+    expect(key(dialog, "Tab", true).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(last);
+    expect(key(last, "Tab").defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(first);
+    key(first, "Escape");
+    flushSync();
+    expect(converter.state.status).toBe("closed");
+    expect(document.activeElement).toBe(opener);
+  });
 });
 
 describe("the code block button", () => {

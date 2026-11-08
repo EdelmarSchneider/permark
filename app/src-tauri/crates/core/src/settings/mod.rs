@@ -22,7 +22,7 @@ pub use project::{
 
 use crate::error::IpcError;
 use crate::fileops::{check_name, NameProblem};
-use crate::fsx::write_atomic;
+use crate::fsx::{read_bytes, write_atomic, FsxError};
 use crate::plugins::PluginId;
 use crate::state::AppDirs;
 use crate::tree::extension_of;
@@ -415,12 +415,41 @@ pub enum SettingsError {
     /// A project setting was asked for in a folder PerMark is not initialized in.
     #[error("PerMark is not initialized in this folder")]
     NotInitialized,
+    /// The settings file is there but cannot be read as text: it stays as it is and nothing is changed.
+    #[error("cannot read {path}: {}", why.code())]
+    Unreadable { path: String, why: Unreadable },
+}
+
+/// Why a settings file cannot be read as text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unreadable {
+    NotText,
+    TooLarge,
+    /// Another program holds it, past the retries.
+    Locked,
+}
+
+impl Unreadable {
+    /// The word the UI words it by (`detail` of [`crate::error::ErrorKind::SettingsUnreadable`]).
+    #[must_use]
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::NotText => "notText",
+            Self::TooLarge => "tooLarge",
+            Self::Locked => "locked",
+        }
+    }
 }
 
 impl From<SettingsError> for IpcError {
     fn from(error: SettingsError) -> Self {
         match error {
             SettingsError::Io { path, source } => IpcError::io(path, &source),
+            SettingsError::Unreadable { path, why } => {
+                IpcError::new(crate::error::ErrorKind::SettingsUnreadable)
+                    .subject(path)
+                    .detail(why.code())
+            }
             SettingsError::Invalid { key, reason } => {
                 IpcError::new(crate::error::ErrorKind::InvalidData)
                     .subject(key)
@@ -539,14 +568,34 @@ fn valid_notes_folder(text: &str) -> bool {
 
 /// Reads a settings file as a document; missing | too large | unreadable | not TOML -> `None`.
 pub(crate) fn read_doc(path: &Path) -> Option<DocumentMut> {
-    let meta = std::fs::metadata(path).ok()?;
-    if meta.len() > MAX_SETTINGS_BYTES {
-        return None;
-    }
-    std::fs::read_to_string(path)
-        .ok()?
-        .parse::<DocumentMut>()
-        .ok()
+    read_settings_text(path).ok()??.parse::<DocumentMut>().ok()
+}
+
+/// The text of a settings file; `None`: there is none.
+///
+/// # Errors
+/// `Unreadable`: larger than [`MAX_SETTINGS_BYTES`] | not UTF-8 | locked past the retries; `Io`: denied, any other
+/// failure.
+fn read_settings_text(path: &Path) -> Result<Option<String>, SettingsError> {
+    let unreadable = |why| SettingsError::Unreadable {
+        path: path.display().to_string(),
+        why,
+    };
+    let bytes = match read_bytes(path, MAX_SETTINGS_BYTES) {
+        Ok(bytes) => bytes,
+        Err(FsxError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
+            return Ok(None);
+        }
+        Err(FsxError::Io { source, .. }) if crate::fsx::is_locked(&source) => {
+            return Err(unreadable(Unreadable::Locked));
+        }
+        Err(FsxError::Io { path, source }) => return Err(SettingsError::Io { path, source }),
+        Err(FsxError::TooLarge { .. }) => return Err(unreadable(Unreadable::TooLarge)),
+        Err(FsxError::Binary(_)) => return Err(unreadable(Unreadable::NotText)),
+    };
+    String::from_utf8(bytes)
+        .map(Some)
+        .map_err(|_| unreadable(Unreadable::NotText))
 }
 
 fn str_of<'a>(doc: &'a DocumentMut, key: &str) -> Option<&'a str> {
@@ -942,6 +991,12 @@ impl SettingsFile {
         )
     }
 
+    /// Why the file is there but cannot be read (`load` gave the defaults then); `None`: read, or there is none.
+    #[must_use]
+    pub fn read_failure(&self) -> Option<SettingsError> {
+        read_settings_text(&self.path).err()
+    }
+
     /// Applies one change to the file on disk (read fresh: hand edits kept) and returns the new settings.
     /// A file that is not TOML is moved to `settings.toml.broken-<ms>` first (never silently overwritten).
     ///
@@ -1020,7 +1075,9 @@ impl SettingsFile {
 }
 
 /// Reads a settings file fresh (hand edits kept; a file that is not TOML is moved to `<name>.broken-<ms>` first),
-/// lets `change` edit the document, writes it back atomically (line endings of an all-CRLF file kept).
+/// lets `change` edit the document, writes it back atomically (line endings of an all-CRLF file kept). A file that
+/// cannot be read as text (too large, not UTF-8, locked) is an error and stays as it is: it may be fine and only
+/// unreadable now, so it is never set aside or reset.
 pub(crate) fn edit_file(
     path: &Path,
     change: impl FnOnce(&mut DocumentMut),
@@ -1029,12 +1086,11 @@ pub(crate) fn edit_file(
         path: path.display().to_string(),
         source,
     };
-    let original = std::fs::read_to_string(path).unwrap_or_default();
-    let exists = std::fs::symlink_metadata(path).is_ok();
-    let mut doc = if let Some(doc) = read_doc(path) {
-        doc
-    } else {
-        if exists {
+    let original = read_settings_text(path)?;
+    let mut doc = match original.as_deref().map(str::parse::<DocumentMut>) {
+        None => DocumentMut::new(),
+        Some(Ok(doc)) => doc,
+        Some(Err(_)) => {
             let ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_millis());
@@ -1043,10 +1099,11 @@ pub(crate) fn edit_file(
                 .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
             std::fs::rename(path, path.with_file_name(format!("{name}.broken-{ms}")))
                 .map_err(io)?;
+            DocumentMut::new()
         }
-        DocumentMut::new()
     };
     change(&mut doc);
+    let original = original.unwrap_or_default();
     write_atomic(path, render(&doc, &original).as_bytes()).map_err(io)?;
     Ok(doc)
 }
