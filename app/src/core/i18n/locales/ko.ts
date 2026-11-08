@@ -421,6 +421,8 @@ export default {
   "edit.savedBlocks.one": "저장했습니다. 블록 {n}개가 변경되었습니다.",
   "edit.savedBlocks.other": "저장했습니다. 블록 {n}개가 변경되었습니다.",
   "edit.firstSaveHint": "PerMark는 변경한 블록만 다시 씁니다.",
+  "edit.savedReadsOtherwise":
+    "이 문서의 일부 수식이나 링크는 저장 후 다르게 보일 수 있습니다. 소스에서 확인하세요.",
   "source.find": "찾기",
   "source.replace": "바꾸기",
   "source.next": "다음",

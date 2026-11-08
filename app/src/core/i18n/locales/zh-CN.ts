@@ -413,6 +413,7 @@ export default {
   "edit.savedBlocks.one": "已保存，{n} 个块有改动。",
   "edit.savedBlocks.other": "已保存，{n} 个块有改动。",
   "edit.firstSaveHint": "PerMark 只重写你改动过的块。",
+  "edit.savedReadsOtherwise": "此文档中的部分公式或链接在保存后可能显示不同。请在源码中检查。",
   "source.find": "查找",
   "source.replace": "替换",
   "source.next": "下一个",

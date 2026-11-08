@@ -515,6 +515,7 @@
         },
         markAt: () => (core && mod ? mod.markAt(core.view.state) : null),
         composing: () => core?.view.composing ?? false,
+        lost: () => (composed()?.lost.length ?? 0) > 0,
       });
     })().catch((error: unknown) => {
       // the visual editor could not be made: the document opens in Source instead

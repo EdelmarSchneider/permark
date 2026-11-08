@@ -422,6 +422,8 @@ const en = {
   "edit.savedBlocks.one": "Saved, {n} block changed.",
   "edit.savedBlocks.other": "Saved, {n} blocks changed.",
   "edit.firstSaveHint": "PerMark rewrites only the blocks you changed.",
+  "edit.savedReadsOtherwise":
+    "Some formulas or links in this document may look different after saving. Check them in Source.",
   "source.find": "Find",
   "source.replace": "Replace",
   "source.next": "Next",
