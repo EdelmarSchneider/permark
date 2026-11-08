@@ -533,6 +533,21 @@ describe("compose", () => {
       );
     });
 
+    it("two spaces typed in a row are two spaces, in the document and in the file", async () => {
+      const built = await load("Lorem ipsum\n\nDolor\n");
+      const doc = replaceText("ipsum", "ip  sum");
+      expect(doc.child(0).textContent).toBe("Lorem ip  sum");
+      expect(compose(core, built, doc).text).toBe("Lorem ip  sum\n\nDolor\n");
+    });
+
+    it("a no-break space written as `&nbsp;` in the file keeps its bytes next to an edit", async () => {
+      const built = await load("Lorem&nbsp;ipsum dolor\n");
+      expect(core.view.state.doc.child(0).textContent).toBe("Lorem ipsum dolor");
+      expect(compose(core, built, replaceText("dolor", "dolorZ")).text).toBe(
+        "Lorem&nbsp;ipsum dolorZ\n",
+      );
+    });
+
     it("two edits to one block keep both; undoing them gives the block's own bytes back", async () => {
       const text = "Lorem [B] ipsum ~ dolor\n";
       const built = await load(text);

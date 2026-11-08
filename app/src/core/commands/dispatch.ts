@@ -16,6 +16,8 @@ export type KeyEnv = {
   /** What owns the keyboard: nothing, a box (Search everywhere, the keyboard dialog: its own commands still run),
    * a question to answer (the window close prompt: no command runs). */
   overlay: Overlay;
+  /** A modal dialog (`aria-modal`) is open: it owns the input; no command runs unless it is a box (`overlay`). */
+  dialog: boolean;
 };
 
 export type Overlay = "none" | "box" | "question";
@@ -31,16 +33,18 @@ function staysWithOverlay(id: string): boolean {
 
 /**
  * What a key press does. Passes (the browser and the widgets keep the key) when: another handler already took it,
- * it is part of a composition | dead key | AltGr, it is no combo of the grammar, it is a plain key while the person
- * types or an overlay is open, no command holds the combo, or none that holds it can run now. Several can run: the
- * narrower one (its scope inside the other's: in the Notes tab `notes.pinned1` over `tab.select1`), else the first
- * registered.
+ * a question | a modal dialog other than a box is open (Ctrl+S must not save behind it, Ctrl+W must not close the tab
+ * it asks about), it is part of a composition | dead key | AltGr, it is no combo of the grammar, it is a plain key while
+ * the person types or an overlay is open, no command holds the combo, or none that holds it can run now. Several can
+ * run: the narrower one (its scope inside the other's: in the Notes tab `notes.pinned1` over `tab.select1`), else the
+ * first registered.
  */
 export function resolveKey(
   event: KeyEventLike & { defaultPrevented?: boolean },
   env: KeyEnv,
 ): KeyDecision {
   if (event.defaultPrevented === true || env.overlay === "question") return PASS;
+  if (env.dialog && env.overlay === "none") return PASS;
   const combo = comboFromEvent(event, env.mac);
   if (combo === null) return PASS;
   const boxed = env.overlay === "box";
@@ -62,10 +66,7 @@ const SIDE_BUTTONS: ReadonlyMap<number, string> = new Map([
   [4, "doc.forward"],
 ]);
 
-export type ButtonEnv = Pick<KeyEnv, "commands" | "context" | "overlay"> & {
-  /** A modal dialog (`aria-modal`) is open: it owns the input. */
-  dialog: boolean;
-};
+export type ButtonEnv = Pick<KeyEnv, "commands" | "context" | "overlay" | "dialog">;
 
 export type ButtonDecision = { kind: "run"; command: CommandItem } | { kind: "pass" };
 
