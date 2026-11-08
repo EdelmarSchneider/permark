@@ -1601,6 +1601,22 @@ fn a_rename_never_replaces_another_note_whose_name_only_folds_the_same() {
 }
 
 #[test]
+fn a_rename_onto_another_name_of_the_same_file_is_refused() {
+    let f = fx();
+    note(&f, "a.md", "mine", 10);
+    if std::fs::hard_link(f.notes.join("a.md"), f.notes.join("b.md")).is_err() {
+        // this file system has no hard links
+        return;
+    }
+    assert_eq!(
+        f.service.rename("a.md", "b.md").unwrap_err().kind,
+        ErrorKind::Exists
+    );
+    assert_eq!(std::fs::read_to_string(f.notes.join("a.md")).unwrap(), "mine");
+    assert_eq!(std::fs::read_to_string(f.notes.join("b.md")).unwrap(), "mine");
+}
+
+#[test]
 fn a_loose_rename_never_replaces_another_file_whose_name_only_folds_the_same() {
     let f = fx();
     let dir = f.tmp.path().join("d");

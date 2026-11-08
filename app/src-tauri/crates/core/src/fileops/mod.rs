@@ -44,7 +44,7 @@ use self::ops::{
 use self::plan::{apply_edits, invert_edits, mentions, split_root, DocPlan, Planner};
 use self::undo::{DocUndo, Entry, Journal, Op, UndoEdit, JOURNAL_FILE};
 use crate::error::{ErrorKind, IpcError};
-use crate::fsx::{hash, write_atomic_if_unchanged, ContentHash};
+use crate::fsx::{hash, write_atomic_if_unchanged, ContentHash, IDENTITY_UNKNOWN};
 use crate::paths::{Vault, VaultError, VaultPath};
 use crate::state::StateFile;
 use crate::tree::{Explorer, Renamed};
@@ -63,6 +63,8 @@ pub enum FileOpError {
     Vault(#[from] VaultError),
     #[error("{0} already exists")]
     Exists(String),
+    #[error("{0} already exists, and the drive can't tell whether it is the item being renamed")]
+    MaybeSame(String),
     #[error("invalid name: {}", .0.as_str())]
     InvalidName(NameProblem),
     #[error("{0} can't be moved into itself")]
@@ -95,6 +97,9 @@ impl From<FileOpError> for IpcError {
         match error {
             FileOpError::Vault(e) => e.into(),
             FileOpError::Exists(path) => IpcError::new(ErrorKind::Exists).subject(path),
+            FileOpError::MaybeSame(path) => IpcError::new(ErrorKind::Exists)
+                .subject(path)
+                .detail(IDENTITY_UNKNOWN),
             FileOpError::InvalidName(problem) => {
                 IpcError::new(ErrorKind::InvalidName).detail(problem.as_str())
             }

@@ -1250,6 +1250,26 @@ fn the_candidate_filter_matches_any_normalization_and_escape_of_a_moved_name() {
     assert!(!mentions("[r](other.md)", planner.needles()));
 }
 
+#[test]
+fn a_case_change_the_drive_cannot_prove_is_one_item_is_refused_with_its_reason() {
+    let error = IpcError::from(FileOpError::MaybeSame("Plan.md".to_owned()));
+    assert_eq!(error.kind, ErrorKind::Exists);
+    assert_eq!(error.subject.as_deref(), Some("Plan.md"));
+    assert_eq!(error.detail.as_deref(), Some(IDENTITY_UNKNOWN));
+}
+
+#[test]
+fn the_candidate_filter_matches_plain_ascii_links_in_any_case() {
+    let f = fx(&[("docs/Plan.md", "")]);
+    let vault = Vault::new(Root::open(f.dir.path()).unwrap());
+    let moves = [("docs/Plan.md".to_owned(), "docs/x.md".to_owned())];
+    let planner = Planner::new(&vault, &moves);
+    for text in ["[p](docs/Plan.md)", "[p](PLAN.md)", "see [[plan]]"] {
+        assert!(mentions(text, planner.needles()), "{text}");
+    }
+    assert!(!mentions("[p](docs/other.md)", planner.needles()));
+}
+
 /// Another program holds `path` without delete sharing (a rename over it waits), writes `text` through its handle as
 /// soon as the temp of an atomic write of `path` shows up, and lets go a moment later.
 #[cfg(windows)]

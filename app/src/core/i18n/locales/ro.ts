@@ -1260,7 +1260,7 @@ export default {
   "notes.move.title": "Mută într-un proiect",
   "notes.moveDown": "Mută în jos",
   "notes.moveKept":
-    "„{name}” s-a modificat în timp ce era copiată, așa că rămâne în notele tale, iar copia se află în proiect.",
+    "„{name}” s-a modificat în timp ce era copiată sau are text nesalvat, așa că rămâne în notele tale, iar copia se află în proiect.",
   "notes.moveToProject": "Mută într-un proiect...",
   "notes.moveUndone": "„{name}” a revenit în notele tale.",
   "notes.moveUndoneKept":

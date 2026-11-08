@@ -103,7 +103,8 @@ pub struct Moved {
     pub destination: String,
     #[ts(type = "number | null")]
     pub undo_id: Option<u64>,
-    /// The note changed while it was copied: both are kept, nothing was removed.
+    /// The note changed while it was copied, or holds text typed and not saved yet: both are kept, nothing was
+    /// removed.
     pub kept: bool,
 }
 

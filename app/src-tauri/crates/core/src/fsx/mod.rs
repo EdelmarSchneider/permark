@@ -48,18 +48,19 @@ pub fn recycle(paths: &[PathBuf]) -> Result<(), String> {
 
 /// Identity of a file | folder on its volume, `(volume, file)`: kept across a rename on the same volume (unix
 /// `st_dev` + `st_ino`; Windows volume serial + file index). A link is named itself, never followed. `None`: unknown
-/// (gone, refused, or no such notion here).
+/// (gone, refused, no such notion here, or a volume that reports no real ids).
 #[must_use]
 pub fn file_identity(path: &Path) -> Option<(u64, u64)> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
         let meta = std::fs::symlink_metadata(path).ok()?;
-        Some((meta.dev(), meta.ino()))
+        known_identity(meta.dev(), meta.ino())
     }
     #[cfg(windows)]
     {
-        win::file_identity(path).ok()
+        let (volume, file) = win::file_identity(path).ok()?;
+        known_identity(volume, file)
     }
     #[cfg(not(any(unix, windows)))]
     {
@@ -68,11 +69,59 @@ pub fn file_identity(path: &Path) -> Option<(u64, u64)> {
     }
 }
 
-/// Whether two paths name one file | folder (a case | normalization spelling of one name, a hard link). Unknown
-/// identity on either side answers `false`: a name that only compares equal is never taken for the same file.
+/// FAT and some network | NAS drivers answer 0 for every file: such an id tells two files apart from nothing.
+fn known_identity(volume: u64, file: u64) -> Option<(u64, u64)> {
+    (volume != 0 && file != 0).then_some((volume, file))
+}
+
+/// Whether two names are one file, as far as the volume can tell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SameFile {
+    /// One file: equal ids, size and last write.
+    Yes,
+    /// Two files: the ids differ.
+    Other,
+    /// Not provable: an id is unknown, or equal ids disagree on size | last write (ids that are not unique).
+    Unknown,
+}
+
+/// [`IpcError`] detail of a refusal because two names may be one file but the volume cannot prove it
+/// ([`SameFile::Unknown`]).
+pub const IDENTITY_UNKNOWN: &str = "identityUnknown";
+
+/// What has to agree for two names to be taken as one file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileFacts {
+    id: (u64, u64),
+    len: u64,
+    modified: Option<std::time::SystemTime>,
+}
+
+fn facts(path: &Path) -> Option<FileFacts> {
+    let id = file_identity(path)?;
+    let meta = std::fs::symlink_metadata(path).ok()?;
+    Some(FileFacts {
+        id,
+        len: meta.len(),
+        modified: meta.modified().ok(),
+    })
+}
+
+/// Size and last write corroborate the ids: a driver handing out non-unique ids would otherwise make another file
+/// look like this one, and a rename "onto itself" would replace it.
+fn compare(a: Option<FileFacts>, b: Option<FileFacts>) -> SameFile {
+    match (a, b) {
+        (Some(a), Some(b)) if a.id != b.id => SameFile::Other,
+        (Some(a), Some(b)) if a == b => SameFile::Yes,
+        _ => SameFile::Unknown,
+    }
+}
+
+/// Whether two paths name one file | folder (a case | normalization spelling of one name, a hard link). A name that
+/// only compares equal is never taken for the same file without the volume's proof.
 #[must_use]
-pub fn same_file(a: &Path, b: &Path) -> bool {
-    matches!((file_identity(a), file_identity(b)), (Some(x), Some(y)) if x == y)
+pub fn same_file(a: &Path, b: &Path) -> SameFile {
+    compare(facts(a), facts(b))
 }
 
 /// Retry delays for transient Windows sharing | lock violations.
@@ -273,8 +322,10 @@ pub fn write_atomic_checked(
     result
 }
 
-/// [`write_atomic_checked`] as a compare-and-swap: `bytes` replace `path` only while it still holds the bytes hashed
-/// `seen` (checked right before each rename attempt). `Ok(false)`: the file changed or went meanwhile, untouched.
+/// [`write_atomic_checked`] guarded by `seen`: `bytes` replace `path` only while it still holds the bytes hashed `seen`.
+/// Check, then rename: two steps, not one atomic compare-and-swap. The check runs right before each rename attempt,
+/// which narrows the window but does not close it: on Unix any writer, and on Windows a writer that does not keep the
+/// file open, can still land between the two. `Ok(false)`: the file changed or went meanwhile, untouched.
 ///
 /// # Errors
 /// IO failure; temp removed, target untouched.
@@ -470,12 +521,44 @@ mod tests {
         let b = dir.path().join("b.md");
         std::fs::write(&a, "a").unwrap();
         std::fs::write(&b, "b").unwrap();
-        assert!(same_file(&a, &a));
-        assert!(!same_file(&a, &b));
-        assert!(!same_file(&a, &dir.path().join("missing.md")));
+        assert_eq!(same_file(&a, &a), SameFile::Yes);
+        assert_eq!(same_file(&a, &b), SameFile::Other);
+        assert_eq!(
+            same_file(&a, &dir.path().join("missing.md")),
+            SameFile::Unknown
+        );
         if crate::paths::CASE_INSENSITIVE {
-            assert!(same_file(&a, &dir.path().join("A.md")));
+            assert_eq!(same_file(&a, &dir.path().join("A.md")), SameFile::Yes);
         }
+    }
+
+    #[test]
+    fn a_zero_volume_serial_or_file_index_is_no_identity() {
+        assert_eq!(known_identity(7, 0), None);
+        assert_eq!(known_identity(0, 9), None);
+        assert_eq!(known_identity(7, 9), Some((7, 9)));
+    }
+
+    #[test]
+    fn equal_ids_are_one_file_only_when_size_and_last_write_agree() {
+        let at = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(5);
+        let one = FileFacts {
+            id: (7, 9),
+            len: 3,
+            modified: Some(at),
+        };
+        assert_eq!(compare(Some(one), Some(one)), SameFile::Yes);
+        let longer = FileFacts { len: 4, ..one };
+        assert_eq!(compare(Some(one), Some(longer)), SameFile::Unknown);
+        let later = FileFacts {
+            modified: Some(at + Duration::from_secs(1)),
+            ..one
+        };
+        assert_eq!(compare(Some(one), Some(later)), SameFile::Unknown);
+        let other = FileFacts { id: (7, 10), ..one };
+        assert_eq!(compare(Some(one), Some(other)), SameFile::Other);
+        assert_eq!(compare(Some(one), None), SameFile::Unknown);
+        assert_eq!(compare(None, Some(one)), SameFile::Unknown);
     }
 
     #[test]

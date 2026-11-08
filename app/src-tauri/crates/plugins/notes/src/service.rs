@@ -728,11 +728,7 @@ impl NotesService {
                 }
                 if name != old {
                     let target = dir.join(&name);
-                    // only the very same file (another case of its name) may be there already; a name that merely
-                    // folds the same can be another file (a case-sensitive folder, a Unicode case pair)
-                    if target.exists() && !fsx::same_file(&abs, &target) {
-                        return Err(IpcError::new(ErrorKind::Exists).subject(name));
-                    }
+                    rename_free(&abs, &old, &target, &name)?;
                     std::fs::rename(&abs, &target).map_err(|e| IpcError::io(&name, &e))?;
                     ctx.update(|state| state.rename(&old, &name));
                     ctx.journal.rename(&old, &name);
@@ -1016,6 +1012,28 @@ pub(crate) fn checked_name(typed: &str, extension: Option<&str>) -> Result<Strin
         Some(extension) if !has_extension => format!("{name}.{extension}"),
         _ => name.to_owned(),
     })
+}
+
+/// Refuses renaming `old` (file `abs`) to `name` (file `target`) when something else may be at `target`. Only the
+/// very same file under another case of its name may be there: a name that merely folds the same can be another file
+/// (a case-sensitive folder, a Unicode case pair), and another name of the same file (a hard link) is a second
+/// entry, so the rename would change nothing on disk while everything kept about the note moved on.
+pub(crate) fn rename_free(abs: &Path, old: &str, target: &Path, name: &str) -> Result<(), IpcError> {
+    if !target.exists() {
+        return Ok(());
+    }
+    let same = if fold(name) == fold(old) {
+        fsx::same_file(abs, target)
+    } else {
+        fsx::SameFile::Other
+    };
+    match same {
+        fsx::SameFile::Yes => Ok(()),
+        fsx::SameFile::Other => Err(IpcError::new(ErrorKind::Exists).subject(name)),
+        fsx::SameFile::Unknown => Err(IpcError::new(ErrorKind::Exists)
+            .subject(name)
+            .detail(fsx::IDENTITY_UNKNOWN)),
+    }
 }
 
 /// Creates `path` (which must not exist) holding `bytes`, durably.

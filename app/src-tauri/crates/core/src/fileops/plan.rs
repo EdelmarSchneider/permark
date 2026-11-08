@@ -312,6 +312,14 @@ fn needles(moves: &[(String, String)]) -> Vec<String> {
 /// percent-escapes undone, so `My%20Notes%20(1)`, `My Notes \(1\)` and `Relat%C3%B3rio` all match their names.
 /// A cheap filter: a false match only costs a parse.
 pub(crate) fn mentions(text: &str, needles: &[String]) -> bool {
+    let lower = text.to_ascii_lowercase();
+    if needles.iter().any(|n| lower.contains(n.as_str())) {
+        return true;
+    }
+    // ASCII text without `%` | `\` reads the same after unescaping, decoding and NFC: the quick miss is the answer
+    if !text.bytes().any(|b| !b.is_ascii() || b == b'%' || b == b'\\') {
+        return false;
+    }
     let plain = comparable(&percent_decode(&unescape(text)));
     needles.iter().any(|n| plain.contains(n.as_str()))
 }

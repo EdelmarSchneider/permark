@@ -1210,7 +1210,7 @@ export default {
   "notes.move.title": "In ein Projekt verschieben",
   "notes.moveDown": "Nach unten",
   "notes.moveKept":
-    "„{name}“ hat sich beim Kopieren geändert und bleibt daher in deinen Notizen; die Kopie liegt im Projekt.",
+    "„{name}“ hat sich beim Kopieren geändert oder enthält noch nicht gespeicherten Text und bleibt daher in deinen Notizen; die Kopie liegt im Projekt.",
   "notes.moveToProject": "In ein Projekt verschieben ...",
   "notes.moveUndone": "„{name}“ ist wieder in deinen Notizen.",
   "notes.moveUndoneKept":
