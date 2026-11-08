@@ -471,6 +471,8 @@ export default {
   "edit.block.other": "Blocco mantenuto come scritto",
   "edit.block.openHint": "Premi Invio per modificare",
   "edit.documentText": "Testo del documento",
+  "edit.codeRefHint": "{title} ({mod}+clic)",
+  "edit.codeRefTitleMany": "{count} file corrispondono. {mod}+clic per sceglierne uno.",
   "edit.visualForMarkdown":
     "La modalità Modifica è per i file Markdown e di impostazioni; usa Sorgente.",
   "edit.diagramNoPlugin": "Attiva il plugin Mermaid o PlantUML per vedere il disegno.",

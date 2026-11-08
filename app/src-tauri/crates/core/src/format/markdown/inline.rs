@@ -210,6 +210,40 @@ mod tests {
         );
     }
 
+    /// Shared with vitest (`app/src/core/editing/visual/promptText.test.ts`): Edit's mirror of these rules marks the
+    /// same pieces.
+    const FIXTURE: &str =
+        include_str!("../../../../../../src/core/editing/visual/promptText.fixture.json");
+
+    #[derive(serde::Deserialize)]
+    struct Fixture {
+        files: Vec<String>,
+        cases: Vec<Case>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct Case {
+        text: String,
+        html: Option<String>,
+    }
+
+    struct Listed(Vec<String>);
+    impl DocEnv for Listed {
+        fn file_exists(&self, path: &str) -> bool {
+            self.0.iter().any(|file| file == path)
+        }
+    }
+
+    #[test]
+    fn shared_fixture_cases() {
+        let fixture: Fixture = serde_json::from_str(FIXTURE).unwrap();
+        assert!(fixture.cases.len() >= 30);
+        let files = Listed(fixture.files);
+        for case in fixture.cases {
+            assert_eq!(mark(&case.text, &files), case.html, "{}", case.text);
+        }
+    }
+
     #[test]
     fn spaces_and_unicode_in_references() {
         // a space ends the path: names with spaces are not referenced this way

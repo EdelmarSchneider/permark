@@ -15,7 +15,7 @@ import {
   type WorkspaceView,
 } from "../../api";
 import { BlockHost } from "./blocks";
-import { decideRef, inApp } from "./codeRefs";
+import { decideRef, inApp, refLabel } from "./codeRefs";
 import { outsideTarget } from "./outside";
 import { Decorator, codeRefOf, type CodeRefTarget, type EmbedLookup } from "./decorate";
 import { enhanceBlock, type EnhanceEnv } from "./enhance";
@@ -29,6 +29,7 @@ import { formatQuote, formatReference, type Reference } from "./reference";
 import { Trail, type Place } from "./trail";
 import type { SavePolicy } from "../editing/docMachine";
 import { confirmLeave } from "../editing/guard";
+import type { MenuEntry } from "../explorer/menu";
 import { t } from "../i18n";
 
 export type Deleted = { movedTo: string | null; at: number };
@@ -835,6 +836,23 @@ export class DocumentController {
       default:
         decision satisfies never;
     }
+  }
+
+  /**
+   * A click on a code reference (View) | Ctrl + click (Edit): one file opens; several are the entries of a menu to
+   * choose from (returned; nothing opens yet).
+   */
+  codeRefChoices(target: CodeRefTarget, modifier: boolean): MenuEntry[] | null {
+    const [only] = target.paths;
+    if (target.paths.length === 1 && only !== undefined) {
+      void this.openCodeRef(target, only, modifier);
+      return null;
+    }
+    return target.paths.map((path) => ({
+      kind: "item",
+      label: refLabel(path, target.line),
+      run: () => void this.openCodeRef(target, path, modifier),
+    }));
   }
 
   #refHere(path: string, line: number | null, hint: boolean): void {

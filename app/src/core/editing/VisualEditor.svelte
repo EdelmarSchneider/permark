@@ -2,7 +2,7 @@
   // Edit mode: Milkdown over the blocks of the text (loaded on first use). Untouched blocks keep their bytes
   // (compose); locked blocks look as View draws their lines (View's render of the text, asked for when the editor is
   // made), their source only where View's blocks cannot be matched. Toolbar, slash menu, link and picture popovers.
-  import { mount, unmount, type Component } from "svelte";
+  import { mount, unmount, untrack, type Component } from "svelte";
   import type { Node as PMNode } from "@milkdown/kit/prose/model";
   import { api, type Body } from "../../api";
   import type { FrontMatter } from "../../api/generated/FrontMatter";
@@ -15,7 +15,10 @@
   import type { ContributionOf } from "../plugins/registry.svelte";
   import "../doc/markdown.css";
   import { codeActionsFor } from "../doc/CodeActions.svelte";
-  import { codeEmbed } from "../doc/decorate";
+  import { codeEmbed, codeRefTitle, type CodeRefTarget } from "../doc/decorate";
+  import { inApp } from "../doc/codeRefs";
+  import ContextMenu from "../explorer/ContextMenu.svelte";
+  import type { MenuEntry } from "../explorer/menu";
   import { ui } from "../shell/ui.svelte";
   import EditorToolbar from "./EditorToolbar.svelte";
   import CharacterPicker from "./visual/CharacterPicker.svelte";
@@ -35,6 +38,7 @@
     Format,
     LockReason,
     LookBook,
+    LooksHost,
     SlashState,
   } from "./visual";
   import type { PickerKind } from "./visual/characters";
@@ -67,6 +71,8 @@
     | { kind: "picker"; picker: PickerKind };
   let popover = $state<Popover>({ kind: "none" });
   let targets = $state.raw<string[]>([]);
+  /** The files a Ctrl | Cmd + clicked code reference can mean, to choose from. */
+  let refMenu = $state.raw<{ x: number; y: number; entries: readonly MenuEntry[] } | null>(null);
 
   let mod: Module | null = null;
   let core: Core | null = null;
@@ -289,6 +295,57 @@
     return codeEmbedOf(language)?.colors?.() ?? null;
   }
 
+  /**
+   * View's lookups for the inline looks of `path`: its link cache, its code reference resolution, its tooltips; a
+   * Ctrl | Cmd + click opens a reference as View's click does. Files that come or go make links be looked up again.
+   */
+  function looksHost(path: string): LooksHost {
+    return {
+      links: (hrefs) => documents.decorator.links.resolve(hrefs),
+      codeRefs: async (written) => {
+        const result = await api.resolveCodeRefs(path, [...written]);
+        return result.ok ? result.value : null;
+      },
+      promptText: () => promptText,
+      refTitle: (paths, line) => {
+        const { editorSet, mod } = documents.decorator.refSetup();
+        const [first] = paths;
+        if (paths.length !== 1 || first === undefined) {
+          return t("edit.codeRefTitleMany", { count: paths.length, mod });
+        }
+        // Ctrl | Cmd + click here does what a click does in View: View's Ctrl | Cmd + click to the editor has no
+        // gesture left in Edit, so the tooltip does not offer it
+        const title = codeRefTitle(paths, line, { editorSet: editorSet && !inApp(first), mod });
+        return t("edit.codeRefHint", { title, mod });
+      },
+      missingTitle: (missing) => t("link.missing", { path: missing }),
+      openRef: (target: CodeRefTarget, at) => {
+        const entries = documents.codeRefChoices(target, false);
+        if (entries !== null) refMenu = { ...at, entries };
+      },
+      forget: () => documents.decorator.links.forget(),
+      onFiles: (changed) => {
+        let gone = false;
+        let stop: (() => void) | null = null;
+        // the Explorer's tree events: files coming or going in folders it hides (hidden, ignored) refresh no link
+        // until the document opens again
+        void api
+          .on("tree-changed", ({ delta }) => {
+            if (delta.added.length + delta.removed.length + delta.renamed.length === 0) return;
+            changed();
+          })
+          .then((unlisten) => {
+            if (gone) unlisten();
+            else stop = unlisten;
+          });
+        return () => {
+          gone = true;
+          stop?.();
+        };
+      },
+    };
+  }
+
   function refresh(): void {
     if (core && mod) format = mod.formatOf(core.view.state);
   }
@@ -340,6 +397,7 @@
           openHint: t("edit.block.openHint"),
         },
         code: { label: codeLabel, colors: codeColors },
+        looks: looksHost(current.path),
         first: loaded.appPlugins({
           core: () => core,
           changed: () => {
@@ -472,6 +530,20 @@
       if (made) void made.destroy();
       nearby?.stop();
     };
+  });
+
+  /** View marks `{{variables}}` and `@file` references while the prompt-blocks plugin is on. */
+  const promptText = $derived(conditions.current.plugins.includes("prompt-blocks"));
+  /** What a code reference's tooltip offers depends on whether an editor is chosen. */
+  const editorSet = $derived(documents.decorator.refSetup().editorSet);
+
+  // prompt text switched or the editor setting changed while editing: the inline looks are drawn again
+  $effect(() => {
+    void promptText;
+    void editorSet;
+    untrack(() => {
+      if (core && mod) mod.repaintLooks(core.view);
+    });
   });
 
   // ---- slash menu -------------------------------------------------------------------------------------------
@@ -702,6 +774,14 @@
         popoverKey={onPopoverKey}
       />
     </div>
+  {/if}
+  {#if refMenu}
+    <ContextMenu
+      x={refMenu.x}
+      y={refMenu.y}
+      entries={refMenu.entries}
+      close={() => (refMenu = null)}
+    />
   {/if}
   <datalist id="pm-link-targets">
     {#each targets as target (target)}<option value={target}></option>{/each}

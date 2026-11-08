@@ -473,6 +473,8 @@ export default {
   "edit.block.other": "Bloco mantido tal como está",
   "edit.block.openHint": "Prima Enter para editar",
   "edit.documentText": "Texto do documento",
+  "edit.codeRefHint": "{title} ({mod}+clique)",
+  "edit.codeRefTitleMany": "{count} ficheiros correspondem. {mod}+clique para escolher um.",
   "edit.visualForMarkdown":
     "O modo Editar é para ficheiros Markdown e ficheiros de configuração; use Código-fonte.",
   "edit.diagramNoPlugin": "Ative o plug-in Mermaid ou PlantUML para ver o desenho.",

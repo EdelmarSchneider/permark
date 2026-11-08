@@ -459,6 +459,8 @@ export default {
   "edit.block.openHint": "Enter 키로 편집",
   "edit.documentText": "문서 텍스트",
   "edit.visualForMarkdown": "편집 모드는 Markdown 파일과 설정 파일용입니다. 소스를 사용하세요.",
+  "edit.codeRefHint": "{title} ({mod}+클릭)",
+  "edit.codeRefTitleMany": "일치하는 파일이 {count}개입니다. {mod}+클릭하여 하나를 선택하세요.",
   "edit.diagramNoPlugin": "그림을 보려면 Mermaid 또는 PlantUML 플러그인을 켜세요.",
   "edit.diagramPanel": "다이어그램 미리 보기",
   "edit.diagramPanelHint": "캐럿이 있는 다이어그램을 텍스트 옆에 표시",

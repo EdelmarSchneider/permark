@@ -154,24 +154,13 @@
     col: number | null,
     event: MouseEvent | KeyboardEvent,
   ): void {
-    const modifier = event.ctrlKey || event.metaKey;
-    const [only] = paths;
-    if (paths.length === 1 && only !== undefined) {
-      void documents.openCodeRef({ paths, line, col }, only, modifier);
-      return;
-    }
+    const entries = documents.codeRefChoices({ paths, line, col }, event.ctrlKey || event.metaKey);
+    if (entries === null) return;
     const at =
       event instanceof MouseEvent
         ? { x: event.clientX, y: event.clientY }
         : { x: window.innerWidth / 2, y: window.innerHeight / 3 };
-    menu = {
-      ...at,
-      entries: paths.map((path) => ({
-        kind: "item",
-        label: line === null ? path : `${path}:${line}`,
-        run: () => void documents.openCodeRef({ paths, line, col }, path, modifier),
-      })),
-    };
+    menu = { ...at, entries };
   }
 
   function oncontextmenu(event: MouseEvent): void {

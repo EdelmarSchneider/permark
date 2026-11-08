@@ -471,6 +471,8 @@ export default {
   "edit.block.other": "Block bleibt wie geschrieben",
   "edit.block.openHint": "Eingabetaste zum Bearbeiten",
   "edit.documentText": "Dokumenttext",
+  "edit.codeRefHint": "{title} ({mod}+Klick)",
+  "edit.codeRefTitleMany": "{count} Dateien passen. {mod}+Klick, um eine auszuwählen.",
   "edit.visualForMarkdown":
     "Der Bearbeitungsmodus ist für Markdown- und Einstellungsdateien; nutze Quelltext.",
   "edit.diagramNoPlugin":

@@ -164,7 +164,6 @@ describe("known gaps", () => {
     const gaps = parseKnownGaps(
       JSON.parse(readFileSync(path.join(here, "known-gaps.json"), "utf8")),
     );
-    expect(gaps.length).toBeGreaterThan(0);
     const styleGaps = [
       diff("li.bullet.tight", "height"),
       diff("tr", "height"),

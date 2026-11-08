@@ -486,6 +486,9 @@ export default {
   "edit.block.other": "Bloc păstrat așa cum este scris",
   "edit.block.openHint": "Apăsați Enter pentru a edita",
   "edit.documentText": "Textul documentului",
+  "edit.codeRefHint": "{title} ({mod}+clic)",
+  "edit.codeRefTitleMany":
+    "Se potrivesc mai multe fișiere ({count}). {mod}+clic pentru a alege unul.",
   "edit.visualForMarkdown":
     "Modul Editare este pentru fișierele Markdown și fișierele de configurare; folosește Sursă.",
   "edit.diagramNoPlugin": "Activează pluginul Mermaid sau PlantUML pentru a vedea desenul.",

@@ -4,11 +4,11 @@
 // Added to the stock CommonMark + GFM schema: `pm_locked`, an atom holding a block the editor must not rewrite
 // (drawn as View draws it, `lockedView.ts`; View's prompt boxes around blocks, `promptBoxes.ts`), `inline_source`, an
 // inline atom keeping a piece of a line as written (inline math, footnote references, reference-style links:
-// `inlineSource.ts`), `taskItemView`, the
-// real checkbox of a task item, and the reading view's wrappers of code blocks (with their language and token colors,
-// `codeColors.ts`) and tables (`codeBlockView`, `tableView`). Left out: stock plugins that change a document by
-// themselves (heading ids, list renumbering, empty-line preservation). A no-break space is written as `&nbsp;`; link
-// marks end at the link's edge; the serializer writes the style below.
+// `inlineSource.ts`), `taskItemView`, the real checkbox of a task item, the reading view's wrappers of code blocks
+// (with their language and token colors, `codeColors.ts`) and tables (`codeBlockView`, `tableView`), and View's inline
+// looks (`inlineLooks.ts`). Left out: stock plugins that change a document by themselves (heading ids, list
+// renumbering, empty-line preservation). A no-break space is written as `&nbsp;`; link marks end at the link's edge;
+// the serializer writes the style below.
 
 import {
   Editor,
@@ -47,6 +47,7 @@ import { $ctx, $node, $prose, $view } from "@milkdown/kit/utils";
 import { CODE_BLOCK, TABLE_WRAP, taskLabel } from "../../doc/enhance";
 import type { CodeColorer } from "../../plugins/props";
 import { codeColors } from "./codeColors";
+import { inlineLooks, noLooks, type LooksHost } from "./inlineLooks";
 import {
   lockedHostCtx,
   lockedKeys,
@@ -59,6 +60,7 @@ import { escapingText, inlineSource } from "./inlineSource";
 import { promptBoxes } from "./promptBoxes";
 
 export { INLINE_SOURCE } from "./inlineSource";
+export type { LooksHost } from "./inlineLooks";
 export { LOCKED, relook, type BlockName, type LockReason, type LockedHost } from "./lockedView";
 
 const NO_BREAK_SPACE = String.fromCharCode(0xa0);
@@ -78,6 +80,9 @@ const plainCode: CodeHost = {
 };
 
 export const codeHostCtx = $ctx<CodeHost, "pmCodeHost">(plainCode, "pmCodeHost");
+
+/** View's lookups behind the inline looks (missing links, code references, prompt text); none: anchors only. */
+export const looksHostCtx = $ctx<LooksHost, "pmLooksHost">(noLooks, "pmLooksHost");
 
 const textNode = $node("text", () => ({
   group: "inline",
@@ -296,6 +301,7 @@ export type CoreOptions = {
   label?: string;
   locked?: LockedHost;
   code?: CodeHost;
+  looks?: LooksHost;
   /** Before the stock plugins (keys and pastes seen first). */
   first?: Parameters<Editor["use"]>[0][];
   /** After the stock plugins. */
@@ -333,9 +339,11 @@ export async function createCore(options: CoreOptions): Promise<Core> {
       ctx.update(linkSchema.key, (previous) => (c) => ({ ...previous(c), inclusive: false }));
       if (options.locked) ctx.set(lockedHostCtx.key, options.locked);
       if (options.code) ctx.set(codeHostCtx.key, options.code);
+      if (options.looks) ctx.set(looksHostCtx.key, options.looks);
     })
     .use(lockedHostCtx)
     .use(codeHostCtx)
+    .use(looksHostCtx)
     .use(lockedNode)
     .use(lockedView)
     .use(lockedKeys)
@@ -346,6 +354,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
     .use(codeBlockView)
     .use($prose((ctx) => codeColors(() => ctx.get(codeHostCtx.key))))
     .use(tableView)
+    .use($prose((ctx) => inlineLooks(() => ctx.get(looksHostCtx.key))))
     .use((options.first ?? []).flat())
     .use([...commonmark, ...gfm].filter((plugin) => !LEFT_OUT.has(plugin)))
     .use(textNode)
