@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use permark_core::workspace::{ClosingTab, Resolution, TabId, ViewChange};
 use serde::{Deserialize, Serialize};
-use tauri::webview::WebviewBuilder;
+use tauri::webview::{NewWindowResponse, WebviewBuilder};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Rect, WebviewUrl};
 use ts_rs::TS;
 
@@ -154,7 +154,10 @@ fn create(handle: &AppHandle, window: &str, view: &str) {
     };
     let size = native.inner_size().unwrap_or(PhysicalSize::new(1280, 800));
     let builder = WebviewBuilder::new(view, WebviewUrl::App("index.html".into()))
-        .background_color(page_color(handle, &native));
+        .background_color(page_color(handle, &native))
+        // a middle | Shift click on a link, or `window.open`, never opens a web view window the app does not manage:
+        // the app follows links itself; refused here, not left to the web view library's default
+        .on_new_window(|_url, _features| NewWindowResponse::Deny);
     // the web view keeps its data in PerMark's own cache folder (Windows, Linux; debug builds in the `PerMark-dev`
     // one), never in a folder named after the app identifier: a development build and an installed one never share it
     #[cfg(not(target_os = "macos"))]

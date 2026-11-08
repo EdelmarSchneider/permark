@@ -96,6 +96,8 @@ export type Content = {
   line: number;
   /** Bumped on every (re)load: the editor is made again. */
   seq: number;
+  /** The editor takes the keyboard once made (`false`: it stays where the person put it, the Explorer's tree). */
+  focus: boolean;
 };
 
 export type Hooks = {
@@ -237,13 +239,14 @@ export class EditingSession {
   // ---- entering and leaving ----------------------------------------------------------------------------------
 
   /** Opens `path` in an editor (`kind`: which Edit the document has; `at`: the line to start at, else the reading
-   * place). */
+   * place; `focus`: the editor takes the keyboard once made). */
   async enter(
     mode: "edit" | "source",
     path: string,
     kind: EditKind,
     policy: SavePolicy,
     at?: number,
+    focus = true,
   ): Promise<void> {
     const wanted = kind === "text" ? "source" : mode;
     if (this.#path === path && this.mode !== "view") {
@@ -262,10 +265,10 @@ export class EditingSession {
     this.chosenMode = mode;
     this.#used = true;
     this.#unguard = setLeaveGuard((leave) => this.confirmLeave(leave));
-    await this.#load(line);
+    await this.#load(line, focus);
   }
 
-  async #load(line: number): Promise<void> {
+  async #load(line: number, focus = true): Promise<void> {
     const path = this.#path;
     if (path === null) return;
     const seq = ++this.#seq;
@@ -277,7 +280,7 @@ export class EditingSession {
       return;
     }
     this.#fitKind(result.value);
-    this.#mount(result.value, line);
+    this.#mount(result.value, line, focus);
     this.dispatch({ e: "loaded", base: { hash: result.value.hash, text: result.value.text } });
   }
 
@@ -297,7 +300,7 @@ export class EditingSession {
     this.lastEdit = "source";
   }
 
-  #mount(source: EditSource, line: number): void {
+  #mount(source: EditSource, line: number, focus: boolean): void {
     this.#loadedSegments =
       source.segments === null ? null : { text: source.text, segments: source.segments };
     this.text = source.text;
@@ -307,6 +310,7 @@ export class EditingSession {
       segments: source.segments,
       line,
       seq: ++this.#seq,
+      focus,
     };
   }
 
@@ -342,7 +346,7 @@ export class EditingSession {
       }
     }
     this.#editor = null;
-    this.content = { path, text, segments, line, seq: ++this.#seq };
+    this.content = { path, text, segments, line, seq: ++this.#seq, focus: true };
     this.mode = mode;
     this.lastEdit = mode;
     this.chosenMode = mode;
@@ -788,7 +792,7 @@ export class EditingSession {
       this.lastEdit = "source";
     }
     const segments = map?.ok ? map.value : null;
-    this.content = { path: to, text, segments, line, seq: ++this.#seq };
+    this.content = { path: to, text, segments, line, seq: ++this.#seq, focus: true };
     this.dispatch(disk.ok ? { e: "diskChanged", hash: disk.value.hash } : { e: "diskDeleted" });
   }
 

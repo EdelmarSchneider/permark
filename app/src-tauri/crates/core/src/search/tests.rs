@@ -159,6 +159,23 @@ fn fuzzy_words_match_in_any_order_and_positions_stay_aligned_with_accents() {
 }
 
 #[test]
+fn fuzzy_matches_an_accented_letter_by_its_base_whatever_its_form_and_nothing_without_it() {
+    // typed as one character, as a capital, or decomposed (the letter, then the combining tilde)
+    for q in ["ñ", "Ñ", "n\u{303}"] {
+        assert!(fuzzy(q, "notes/España.md").is_some(), "{q:?}");
+        assert!(fuzzy(q, "Espan\u{303}a.md").is_some(), "{q:?}");
+        assert!(fuzzy(q, "plan.md").is_some(), "{q:?}");
+        assert!(fuzzy(q, "docs/guide.md").is_none(), "{q:?}");
+        assert!(fuzzy(q, "README.md").is_none(), "{q:?}");
+    }
+    assert_eq!(
+        fuzzy("an\u{303}a", "España.md").map(|m| m.positions),
+        Some(vec![3, 4, 5])
+    );
+    assert!(Needle::new("\u{303}").is_none());
+}
+
+#[test]
 fn fuzzy_never_panics_on_odd_input() {
     for q in ["\0", "\u{202e}", "💥💥", "a b c d e f g", "////", "..", "é"] {
         let _ = fuzzy(q, "dir/💥 file é.md");

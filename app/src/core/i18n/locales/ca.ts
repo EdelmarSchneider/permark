@@ -89,6 +89,14 @@ export default {
   "error.superseded": "Mentrestant s'ha obert una altra cosa.",
   "error.internal": "Alguna cosa ha anat malament dins del PerMark: {detail}",
   "error.unknown": "Alguna cosa ha anat malament: {message}",
+  "error.settingsUnreadable":
+    "El PerMark no pot llegir el fitxer de configuració {subject}. No s'ha canviat res.",
+  "error.settingsUnreadable.notText":
+    "El PerMark no pot llegir el fitxer de configuració {subject} (no és text pla). No s'ha canviat res.",
+  "error.settingsUnreadable.tooLarge":
+    "El PerMark no pot llegir el fitxer de configuració {subject} (és massa gran). No s'ha canviat res.",
+  "error.settingsUnreadable.locked":
+    "El PerMark no pot llegir el fitxer de configuració {subject} (un altre programa l'està fent servir). No s'ha canviat res.",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "Primer obriu una carpeta o un fitxer.",
@@ -1510,9 +1518,9 @@ export default {
   "project.newConfirm": "Utilitza aquesta carpeta",
   "project.newBack": "Tria una altra carpeta…",
   "project.loadFailed": "No s'ha pogut llegir la configuració del projecte.",
-  "project.notInitialized": "El PerMark no està inicialitzat en aquest projecte",
+  "project.notInitialized": "Aquesta carpeta encara no té configuració del PerMark",
   "project.notInitializedHint":
-    "En inicialitzar-lo es crea una carpeta .permark on el projecte pot desar la configuració que vol compartir amb el seu equip.",
+    "Inicialitzeu el PerMark perquè aquesta carpeta tingui la seva pròpia configuració, que pot compartir tothom qui hi treballa.",
   "project.patternPlaceholder": "Patró, per exemple drafts/",
   "project.tree": "Explorador",
   "project.treeExclude": "Amaga sempre",
@@ -1550,7 +1558,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "Marcador de posició desconegut. Feu servir {path}, {line} o {col}.",
   "settings.problem.noPath": "L'ordre necessita {path}.",
-  "settings.problem.notInitialized": "El PerMark no està inicialitzat en aquest projecte.",
+  "settings.problem.notInitialized": "Aquesta carpeta encara no té configuració del PerMark.",
   "settings.problem.other": "No s'ha acceptat aquest valor.",
   "welcome.newProject": "Projecte nou…",
   "welcome.newProjectHint": "Trieu una carpeta; el PerMark la configura com a projecte.",

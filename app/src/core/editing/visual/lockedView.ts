@@ -191,7 +191,7 @@ export function touchesLocked(tr: Transaction, spans: readonly Span[] = []): boo
  * The locked blocks of one editor (each repaints at rest when View's look of its node changed); `asked`: a render is
  * asked for once the changes of this turn are in.
  */
-type Painters = { repaint: Set<() => void>; asked: boolean };
+type Painters = { repaint: Set<(all: boolean) => void>; asked: boolean };
 
 const paintersOf = new WeakMap<EditorView, Painters>();
 
@@ -207,11 +207,12 @@ function painters(view: EditorView): Painters {
 /**
  * View's looks came back from a render (or were taken from one that came late): every block at rest whose look changed
  * repaints (a footnote that became the first gets the rule, a paragraph its new reference), and what depends on the
- * looks (prompt boxes) is found again.
+ * looks (prompt boxes) is found again. `all`: every block at rest repaints, its look changed or not (what draws a look
+ * came or went: a plugin's card).
  */
-export function relook(view: EditorView): void {
+export function relook(view: EditorView, all = false): void {
   if (view.isDestroyed) return;
-  for (const repaint of painters(view).repaint) repaint();
+  for (const repaint of painters(view).repaint) repaint(all);
   view.dispatch(view.state.tr.setMeta(LOOKS_META, true));
 }
 
@@ -538,11 +539,12 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, at)));
     };
 
-    /** At rest: View's look of the node as known now, drawn when it differs from the one shown. */
-    const repaint = (): void => {
+    /** At rest: View's look of the node as known now, drawn when it differs from the one shown (`all`: drawn anyway). */
+    const repaint = (all: boolean): void => {
       if (state.kind !== "idle") return;
       const next = host.render(node);
-      if (next === render || (next !== null && render !== null && sameLook(next, render))) return;
+      const same = next === render || (next !== null && render !== null && sameLook(next, render));
+      if (same && !all) return;
       render = next;
       paint();
     };
@@ -759,15 +761,14 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       // the block opens; a link in it is not followed
       if (open()) event.preventDefault();
     });
-    dom.addEventListener(
-      "click",
-      (event) => {
-        // opened: a link in the preview is never followed (it is inert, but not every webview knows that)
-        const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
-        if (state.kind !== "idle" && link !== null && dom.contains(link)) event.preventDefault();
-      },
-      true,
-    );
+    // opened: a link in the preview is never followed (it is inert, but not every webview knows that), nor opened in
+    // a window of its own by the middle button
+    const inertLinks = (event: MouseEvent): void => {
+      const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (state.kind !== "idle" && link !== null && dom.contains(link)) event.preventDefault();
+    };
+    dom.addEventListener("click", inertLinks, true);
+    dom.addEventListener("auxclick", inertLinks, true);
     dom.addEventListener("keydown", (event) => {
       if (state.kind !== "properties" || event.key !== "Escape") return;
       // a field of the properties takes its own Escape (it puts its value back) and stops it
@@ -825,8 +826,9 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       stopEvent: (event) => {
         if (state.kind !== "idle") return true;
         if (isControl(dom, event.target)) return true;
-        // a click on a link goes on to the editor, which follows it on Ctrl | Cmd + click as in its own text
-        return event.type !== "click" && !event.type.startsWith("key");
+        // a click on a link goes on to the editor, which follows it on Ctrl | Cmd + click (or a middle click) as in
+        // its own text
+        return event.type !== "click" && event.type !== "auxclick" && !event.type.startsWith("key");
       },
       // View's hydration (embeds, a details toggled), the properties and the source box change this DOM, never the
       // document
@@ -844,8 +846,9 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
 
 /**
  * The caret where text typed over a selected atom (a locked block, an inline piece, a picture, a rule) goes instead of
- * replacing it: right after an inline one; for a block, the first text of the block right after it, else a new empty
- * paragraph after it. Null when no atom is selected.
+ * replacing it: right after an inline one; for a block, a new empty paragraph right after it (the empty paragraph
+ * already there, if one is). The start of the next block would join the text to it (a heading, a list item).
+ * Null when no atom is selected.
  */
 function pastAtom(state: EditorState): Transaction | null {
   const selection = state.selection;
@@ -855,11 +858,10 @@ function pastAtom(state: EditorState): Transaction | null {
   if (selection.node.isInline) return tr.setSelection(TextSelection.create(tr.doc, after));
   const $after = tr.doc.resolve(after);
   const next = $after.nodeAfter;
-  if (next !== null && !next.isAtom) {
-    const found = Selection.findFrom($after, 1, true);
-    if (found !== null && found.from < after + next.nodeSize) return tr.setSelection(found);
-  }
   const paragraph = state.schema.nodes.paragraph;
+  if (next !== null && next.type === paragraph && next.content.size === 0) {
+    return tr.setSelection(TextSelection.create(tr.doc, after + 1));
+  }
   if (paragraph && $after.parent.canReplaceWith($after.index(), $after.index(), paragraph)) {
     tr.insert(after, paragraph.create());
     return tr.setSelection(TextSelection.create(tr.doc, after + 1));

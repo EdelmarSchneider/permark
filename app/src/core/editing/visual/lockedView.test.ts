@@ -196,7 +196,7 @@ function caretInText(): void {
 
 function press(
   target: Element,
-  type: "mousedown" | "click",
+  type: "mousedown" | "click" | "auxclick",
   init: MouseEventInit = {},
 ): MouseEvent {
   const event = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, ...init });
@@ -279,6 +279,24 @@ describe("a block kept as written, at rest", () => {
     press(link, "click", { metaKey: true });
     expect(followed).toEqual(["https://example.com/", "https://example.com/"]);
     expect(core.view.dom.querySelector("textarea")).toBeNull();
+  });
+
+  it("a middle click on a link follows it as Ctrl | Cmd + click does; no click on a link asks for a new window", async () => {
+    await open();
+    const link = blocks()[1]?.querySelector("a");
+    if (!link) throw new Error("no link");
+    // the middle button: the web view would open the link in a window of its own
+    expect(press(link, "auxclick", { button: 1 }).defaultPrevented).toBe(true);
+    expect(followed).toEqual(["https://example.com/"]);
+    expect(core.view.dom.querySelector("textarea")).toBeNull();
+    // in the text: Shift | Ctrl + Shift + click would open a new window too
+    core.setDoc(core.parse("A [link](docs/a.md) here.\n"));
+    const inText = core.view.dom.querySelector("a[href]");
+    if (!inText) throw new Error("no link in the text");
+    expect(press(inText, "auxclick", { button: 1 }).defaultPrevented).toBe(true);
+    expect(press(inText, "click", { shiftKey: true }).defaultPrevented).toBe(true);
+    expect(press(inText, "click", { ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(true);
+    expect(followed).toEqual(["https://example.com/", "docs/a.md", "docs/a.md"]);
   });
 
   it("without a known look (the render failed) every locked block shows its source and the way to Source", async () => {
@@ -1002,6 +1020,7 @@ describe("safety and input", () => {
     if (!link) throw new Error("no link");
     expect(press(link, "click").defaultPrevented).toBe(true);
     expect(press(link, "click", { ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(press(link, "auxclick", { button: 1 }).defaultPrevented).toBe(true);
     expect(followed).toEqual([]);
   });
 
@@ -1093,11 +1112,26 @@ describe("typing while a block is selected", () => {
     );
   });
 
-  it("text right after the block takes the character at its start", async () => {
-    await openMath();
+  it("a new paragraph right after the block takes the character; the text after it stays as it is", async () => {
+    const built = await openMath();
     selectLocked(1);
     typeChar("x");
-    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "xEnd words."]);
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "x", "End words."]);
+    expect(compose(core, built, core.view.state.doc).text).toBe(
+      "Intro words.\n\n$$\na + b\n$$\n\n\n$$\nc\n$$\n\nx\n\nEnd words.\n",
+    );
+  });
+
+  it("an empty paragraph right after the block takes the character: no second one is made", async () => {
+    await openMath();
+    const view = core.view;
+    const after = lockedAt(1) + (view.state.doc.nodeAt(lockedAt(1))?.nodeSize ?? 0);
+    const paragraph = view.state.schema.nodes.paragraph;
+    if (!paragraph) throw new Error("no paragraph");
+    view.dispatch(view.state.tr.insert(after, paragraph.create()));
+    selectLocked(1);
+    typeChar("x");
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "x", "End words."]);
   });
 
   it("at the end of the document a new paragraph after the block takes it", async () => {
@@ -1115,19 +1149,20 @@ describe("typing while a block is selected", () => {
     const before = core.view.state.doc;
     key(core.view.dom, "b", { ctrlKey: true });
     expect(core.view.state.selection).toBeInstanceOf(NodeSelection);
+    expect(core.view.state.doc).toBe(before);
     key(core.view.dom, "x");
     const selection = core.view.state.selection;
     expect(selection).toBeInstanceOf(TextSelection);
-    expect(selection.$from.parent.textContent).toBe("End words.");
-    expect(selection.$from.parentOffset).toBe(0);
-    expect(core.view.state.doc).toBe(before);
+    expect(selection.$from.parent.type.name).toBe("paragraph");
+    expect(selection.$from.parent.textContent).toBe("");
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "", "End words."]);
   });
 
   it("a character typed with AltGr (Ctrl+Alt) goes after the block too", async () => {
     await openMath();
     selectLocked(1);
     typeChar("{", { ctrlKey: true, altKey: true });
-    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "{End words."]);
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "{", "End words."]);
   });
 
   it("an IME composition starts after the block", async () => {
@@ -1147,8 +1182,8 @@ describe("typing while a block is selected", () => {
   it("a paste goes after the block", async () => {
     await openMath();
     selectLocked(1);
-    core.view.pasteText("Pasted ", new PasteEvent());
-    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "Pasted End words."]);
+    core.view.pasteText("Pasted", new PasteEvent());
+    expect(texts()).toEqual(["Intro words.", "$$\na + b\n$$", "$$\nc\n$$", "Pasted", "End words."]);
   });
 
   it("Backspace | Delete on a selected block still remove it", async () => {

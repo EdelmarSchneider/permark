@@ -415,12 +415,41 @@ pub enum SettingsError {
     /// A project setting was asked for in a folder PerMark is not initialized in.
     #[error("PerMark is not initialized in this folder")]
     NotInitialized,
+    /// The settings file is there but cannot be read as text: it stays as it is and nothing is changed.
+    #[error("cannot read {path}: {}", why.code())]
+    Unreadable { path: String, why: Unreadable },
+}
+
+/// Why a settings file cannot be read as text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unreadable {
+    NotText,
+    TooLarge,
+    /// Another program holds it, past the retries.
+    Locked,
+}
+
+impl Unreadable {
+    /// The word the UI words it by (`detail` of [`crate::error::ErrorKind::SettingsUnreadable`]).
+    #[must_use]
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::NotText => "notText",
+            Self::TooLarge => "tooLarge",
+            Self::Locked => "locked",
+        }
+    }
 }
 
 impl From<SettingsError> for IpcError {
     fn from(error: SettingsError) -> Self {
         match error {
             SettingsError::Io { path, source } => IpcError::io(path, &source),
+            SettingsError::Unreadable { path, why } => {
+                IpcError::new(crate::error::ErrorKind::SettingsUnreadable)
+                    .subject(path)
+                    .detail(why.code())
+            }
             SettingsError::Invalid { key, reason } => {
                 IpcError::new(crate::error::ErrorKind::InvalidData)
                     .subject(key)
@@ -545,24 +574,28 @@ pub(crate) fn read_doc(path: &Path) -> Option<DocumentMut> {
 /// The text of a settings file; `None`: there is none.
 ///
 /// # Errors
-/// Larger than [`MAX_SETTINGS_BYTES`] | not UTF-8 (both `InvalidData`) | unreadable (locked past the retries, denied).
-fn read_settings_text(path: &Path) -> io::Result<Option<String>> {
+/// `Unreadable`: larger than [`MAX_SETTINGS_BYTES`] | not UTF-8 | locked past the retries; `Io`: denied, any other
+/// failure.
+fn read_settings_text(path: &Path) -> Result<Option<String>, SettingsError> {
+    let unreadable = |why| SettingsError::Unreadable {
+        path: path.display().to_string(),
+        why,
+    };
     let bytes = match read_bytes(path, MAX_SETTINGS_BYTES) {
         Ok(bytes) => bytes,
         Err(FsxError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
             return Ok(None);
         }
-        Err(FsxError::Io { source, .. }) => return Err(source),
-        Err(error) => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                error.to_string(),
-            ))
+        Err(FsxError::Io { source, .. }) if crate::fsx::is_locked(&source) => {
+            return Err(unreadable(Unreadable::Locked));
         }
+        Err(FsxError::Io { path, source }) => return Err(SettingsError::Io { path, source }),
+        Err(FsxError::TooLarge { .. }) => return Err(unreadable(Unreadable::TooLarge)),
+        Err(FsxError::Binary(_)) => return Err(unreadable(Unreadable::NotText)),
     };
     String::from_utf8(bytes)
         .map(Some)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "not UTF-8 text"))
+        .map_err(|_| unreadable(Unreadable::NotText))
 }
 
 fn str_of<'a>(doc: &'a DocumentMut, key: &str) -> Option<&'a str> {
@@ -958,6 +991,12 @@ impl SettingsFile {
         )
     }
 
+    /// Why the file is there but cannot be read (`load` gave the defaults then); `None`: read, or there is none.
+    #[must_use]
+    pub fn read_failure(&self) -> Option<SettingsError> {
+        read_settings_text(&self.path).err()
+    }
+
     /// Applies one change to the file on disk (read fresh: hand edits kept) and returns the new settings.
     /// A file that is not TOML is moved to `settings.toml.broken-<ms>` first (never silently overwritten).
     ///
@@ -1047,7 +1086,7 @@ pub(crate) fn edit_file(
         path: path.display().to_string(),
         source,
     };
-    let original = read_settings_text(path).map_err(io)?;
+    let original = read_settings_text(path)?;
     let mut doc = match original.as_deref().map(str::parse::<DocumentMut>) {
         None => DocumentMut::new(),
         Some(Ok(doc)) => doc,

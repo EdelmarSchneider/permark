@@ -89,6 +89,14 @@ export default {
   "error.superseded": "Entretanto, foi aberta outra coisa.",
   "error.internal": "Ocorreu um erro no PerMark: {detail}",
   "error.unknown": "Ocorreu um erro: {message}",
+  "error.settingsUnreadable":
+    "O PerMark não consegue ler o ficheiro de definições {subject}. Nada foi alterado.",
+  "error.settingsUnreadable.notText":
+    "O PerMark não consegue ler o ficheiro de definições {subject} (não é texto simples). Nada foi alterado.",
+  "error.settingsUnreadable.tooLarge":
+    "O PerMark não consegue ler o ficheiro de definições {subject} (é demasiado grande). Nada foi alterado.",
+  "error.settingsUnreadable.locked":
+    "O PerMark não consegue ler o ficheiro de definições {subject} (outro programa está a utilizá-lo). Nada foi alterado.",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "Abra primeiro uma pasta ou um ficheiro.",
@@ -1507,9 +1515,9 @@ export default {
   "project.newConfirm": "Utilizar esta pasta",
   "project.newBack": "Escolher outra pasta…",
   "project.loadFailed": "Não foi possível ler as definições do projeto.",
-  "project.notInitialized": "O PerMark não está inicializado neste projeto",
+  "project.notInitialized": "Esta pasta ainda não tem definições do PerMark",
   "project.notInitializedHint":
-    "Inicializar cria uma pasta .permark onde o projeto pode guardar definições para partilhar com a equipa.",
+    "Inicialize o PerMark para que esta pasta tenha definições próprias, que todos os que nela trabalham podem partilhar.",
   "project.patternPlaceholder": "Padrão, por exemplo drafts/",
   "project.tree": "Explorador",
   "project.treeExclude": "Ocultar sempre",
@@ -1547,7 +1555,7 @@ export default {
   "settings.problem.programPlaceholder": "O nome do programa não pode ser um marcador.",
   "settings.problem.unknownPlaceholder": "Marcador desconhecido. Use {path}, {line} ou {col}.",
   "settings.problem.noPath": "O comando precisa de {path}.",
-  "settings.problem.notInitialized": "O PerMark não está inicializado neste projeto.",
+  "settings.problem.notInitialized": "Esta pasta ainda não tem definições do PerMark.",
   "settings.problem.other": "Este valor não foi aceite.",
   "welcome.newProject": "Novo projeto…",
   "welcome.newProjectHint": "Escolha uma pasta; o PerMark prepara-a como projeto.",

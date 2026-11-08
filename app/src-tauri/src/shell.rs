@@ -80,6 +80,15 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// The startup notice for a settings file that is there but cannot be read: the app runs on the defaults and the file
+/// is left untouched (no backup), so the person knows why their choices are missing.
+fn unreadable_settings(file: &SettingsFile) -> Option<StateRecovered> {
+    file.read_failure().map(|_| StateRecovered {
+        file: file.path().display().to_string(),
+        backup: None,
+    })
+}
+
 /// `Store` = a store updates this copy: the Microsoft Store build (feature `store`), or the .deb inside a snap.
 pub(crate) fn distribution() -> Distribution {
     let in_snap = cfg!(all(unix, not(target_os = "macos")))
@@ -102,6 +111,7 @@ impl Shell {
         // first start: the language the installer recorded (a failed write leaves the system language)
         let _ = settings_file.adopt_language(installer_language());
         let settings = settings_file.load();
+        let unreadable = unreadable_settings(&settings_file);
         let sink: Arc<dyn EventSink> = Arc::new(TauriSink::new(handle.clone()));
         let env = Arc::new(CoreEnv::new(
             dirs.clone(),
@@ -130,7 +140,7 @@ impl Shell {
             settings_lock: Mutex::new(()),
             next_window: AtomicU64::new(1),
             normal: Mutex::new(HashMap::new()),
-            notices: Mutex::new(Vec::new()),
+            notices: Mutex::new(unreadable.into_iter().collect()),
             delivery: Mutex::new(Delivery::default()),
             server: Mutex::new(None),
             _updater: updater,
@@ -307,5 +317,27 @@ impl Shell {
         drop(lock(&self.server).take());
         self.saver.stop();
         self.env.stop_app_plugins();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_settings_file_that_cannot_be_read_is_told_at_start_a_missing_one_is_not() {
+        let base = tempfile::tempdir().unwrap();
+        let file = SettingsFile::app(&AppDirs::under(base.path()));
+        assert_eq!(unreadable_settings(&file), None);
+        std::fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+        std::fs::write(file.path(), b"theme = \"dark\"\n# caf\xe9\n").unwrap();
+        // no backup: the file was left in place, never set aside
+        assert_eq!(
+            unreadable_settings(&file),
+            Some(StateRecovered {
+                file: file.path().display().to_string(),
+                backup: None,
+            })
+        );
     }
 }

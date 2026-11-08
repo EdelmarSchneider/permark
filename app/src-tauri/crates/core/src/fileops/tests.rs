@@ -199,6 +199,20 @@ fn reference_definitions_are_rewritten_and_their_uses_are_not_touched() {
 }
 
 #[test]
+fn definitions_over_lines_and_heading_links_are_rewritten_and_undone_exactly() {
+    let doc = "[one]: b.md\nsee [one] and [x](b.md#s)\n---\n\n[two]:\r\n  <b.md>\r\n  \"T\"\r\nthen [two] ![i](b.md)\r\n\n[three]: b.md\n  'T'\n\n> [four]:\n>   b.md\n> quote [y](b.md)\n> ===\n";
+    let f = fx(&[("a.md", doc), ("b.md", "")]);
+    let outcome = mv(&f, &[("b.md", "c/b.md")]);
+    assert_eq!(outcome.links, 7);
+    assert_eq!(
+        read(&f, "a.md"),
+        "[one]: c/b.md\nsee [one] and [x](c/b.md#s)\n---\n\n[two]:\r\n  <c/b.md>\r\n  \"T\"\r\nthen [two] ![i](c/b.md)\r\n\n[three]: c/b.md\n  'T'\n\n> [four]:\n>   c/b.md\n> quote [y](c/b.md)\n> ===\n"
+    );
+    f.ops.undo().unwrap().unwrap();
+    assert_eq!(read(&f, "a.md"), doc, "byte for byte");
+}
+
+#[test]
 fn spaces_and_special_characters_are_written_the_way_the_link_was() {
     let f = fx(&[
         ("a.md", "[bare](x.md) [angle](<x.md>) [pct](x.md)\n"),

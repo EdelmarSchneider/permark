@@ -89,6 +89,14 @@ export default {
   "error.superseded": "その間に別のものが開かれました。",
   "error.internal": "PerMark の内部で問題が発生しました：{detail}",
   "error.unknown": "問題が発生しました：{message}",
+  "error.settingsUnreadable":
+    "PerMark は設定ファイル {subject} を読み取れません。何も変更されていません。",
+  "error.settingsUnreadable.notText":
+    "PerMark は設定ファイル {subject} を読み取れません（プレーンテキストではありません）。何も変更されていません。",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark は設定ファイル {subject} を読み取れません（ファイルが大きすぎます）。何も変更されていません。",
+  "error.settingsUnreadable.locked":
+    "PerMark は設定ファイル {subject} を読み取れません（別のプログラムが使用しています）。何も変更されていません。",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "先にフォルダーかファイルを開いてください。",
@@ -1508,9 +1516,9 @@ export default {
   "project.newConfirm": "このフォルダーを使用",
   "project.newBack": "別のフォルダーを選択…",
   "project.loadFailed": "プロジェクトの設定を読み取れませんでした。",
-  "project.notInitialized": "このプロジェクトでは PerMark が初期化されていません",
+  "project.notInitialized": "このフォルダーにはまだ PerMark の設定がありません",
   "project.notInitializedHint":
-    "初期化すると、チームと共有する設定を保存できる .permark フォルダーが作成されます。",
+    "PerMark を初期化すると、このフォルダー独自の設定を作成でき、ここで作業する全員で共有できます。",
   "project.patternPlaceholder": "パターン（例：drafts/）",
   "project.tree": "エクスプローラー",
   "project.treeExclude": "常に隠す",
@@ -1546,7 +1554,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "不明なプレースホルダーです。{path}、{line}、{col} を使用してください。",
   "settings.problem.noPath": "コマンドには {path} が必要です。",
-  "settings.problem.notInitialized": "このプロジェクトでは PerMark が初期化されていません。",
+  "settings.problem.notInitialized": "このフォルダーにはまだ PerMark の設定がありません。",
   "settings.problem.other": "この値は受け付けられませんでした。",
   "welcome.newProject": "新しいプロジェクト…",
   "welcome.newProjectHint": "フォルダーを選ぶと、PerMark がプロジェクトとして設定します。",

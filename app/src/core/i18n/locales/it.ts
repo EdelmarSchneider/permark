@@ -88,6 +88,14 @@ export default {
   "error.superseded": "Nel frattempo è stato aperto qualcos'altro.",
   "error.internal": "Si è verificato un errore in PerMark: {detail}",
   "error.unknown": "Qualcosa è andato storto: {message}",
+  "error.settingsUnreadable":
+    "PerMark non riesce a leggere il file delle impostazioni {subject}. Non è stato modificato nulla.",
+  "error.settingsUnreadable.notText":
+    "PerMark non riesce a leggere il file delle impostazioni {subject} (non è testo semplice). Non è stato modificato nulla.",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark non riesce a leggere il file delle impostazioni {subject} (è troppo grande). Non è stato modificato nulla.",
+  "error.settingsUnreadable.locked":
+    "PerMark non riesce a leggere il file delle impostazioni {subject} (un altro programma lo sta usando). Non è stato modificato nulla.",
 
   // ---- conditions
   "condition.workspace": "Prima apri una cartella o un file.",
@@ -1506,9 +1514,9 @@ export default {
   "project.newConfirm": "Usa questa cartella",
   "project.newBack": "Scegli un'altra cartella…",
   "project.loadFailed": "Impossibile leggere le impostazioni del progetto.",
-  "project.notInitialized": "PerMark non è inizializzato in questo progetto",
+  "project.notInitialized": "Questa cartella non ha ancora impostazioni di PerMark",
   "project.notInitializedHint":
-    "L'inizializzazione crea una cartella .permark dove il progetto può tenere impostazioni da condividere con il team.",
+    "Inizializza PerMark per dare a questa cartella impostazioni proprie, che chiunque ci lavori può condividere.",
   "project.patternPlaceholder": "Pattern, ad esempio drafts/",
   "project.tree": "Esplora risorse",
   "project.treeExclude": "Nascondi sempre",
@@ -1545,7 +1553,7 @@ export default {
   "settings.problem.programPlaceholder": "Il nome del programma non può essere un segnaposto.",
   "settings.problem.unknownPlaceholder": "Segnaposto sconosciuto. Usa {path}, {line} o {col}.",
   "settings.problem.noPath": "Il comando richiede {path}.",
-  "settings.problem.notInitialized": "PerMark non è inizializzato in questo progetto.",
+  "settings.problem.notInitialized": "Questa cartella non ha ancora impostazioni di PerMark.",
   "settings.problem.other": "Questo valore non è stato accettato.",
   "welcome.newProject": "Nuovo progetto…",
   "welcome.newProjectHint": "Scegli una cartella; PerMark la prepara come progetto.",

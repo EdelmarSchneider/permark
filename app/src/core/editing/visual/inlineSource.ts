@@ -625,8 +625,9 @@ export const inlineSourceView = $view(inlineSourceNode, (ctx): NodeViewConstruct
       deselectNode: () => dom.classList.remove("ProseMirror-selectednode"),
       stopEvent: (event) => {
         if (editing !== null) return true;
-        // a click goes on to the editor, which follows a link around the piece on Ctrl | Cmd + click
-        return event.type !== "click" && !event.type.startsWith("key");
+        // a click goes on to the editor, which follows a link around the piece on Ctrl | Cmd + click (or a middle
+        // click)
+        return event.type !== "click" && event.type !== "auxclick" && !event.type.startsWith("key");
       },
       // View's hydration and the field change this DOM, never the document
       ignoreMutation: () => true,

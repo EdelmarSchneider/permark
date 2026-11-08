@@ -2,6 +2,7 @@
 //! path substring > path subsequence; a query of several words that does not match as typed matches when each word
 //! matches the path. Pure; characters are folded one to one (so positions point into the original path).
 
+use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::UnicodeNormalization;
 
 /// One matched path: higher score is better; `positions` are indices (characters) of the matched characters.
@@ -175,8 +176,13 @@ impl Needle {
     /// `None` for an empty (blank) query.
     #[must_use]
     pub fn new(query: &str) -> Option<Self> {
-        let whole = fold_aligned(query.trim());
-        if whole.is_empty() {
+        // a mark written apart from its letter (decomposed text) goes, as it does in a letter written whole: the query
+        // has no positions to keep aligned
+        let whole: String = fold_aligned(query.trim())
+            .chars()
+            .filter(|&c| !is_combining_mark(c))
+            .collect();
+        if whole.trim().is_empty() {
             return None;
         }
         let words = whole.split_whitespace().map(str::to_owned).collect();

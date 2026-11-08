@@ -86,6 +86,14 @@ export default {
   "error.superseded": "그사이에 다른 항목이 열렸습니다.",
   "error.internal": "PerMark 내부에서 문제가 발생했습니다: {detail}",
   "error.unknown": "문제가 발생했습니다: {message}",
+  "error.settingsUnreadable":
+    "PerMark가 설정 파일을 읽을 수 없습니다. 아무것도 변경되지 않았습니다: {subject}",
+  "error.settingsUnreadable.notText":
+    "PerMark가 설정 파일을 읽을 수 없습니다(일반 텍스트가 아닙니다). 아무것도 변경되지 않았습니다: {subject}",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark가 설정 파일을 읽을 수 없습니다(파일이 너무 큽니다). 아무것도 변경되지 않았습니다: {subject}",
+  "error.settingsUnreadable.locked":
+    "PerMark가 설정 파일을 읽을 수 없습니다(다른 프로그램이 사용 중입니다). 아무것도 변경되지 않았습니다: {subject}",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "먼저 폴더나 파일을 여세요.",
@@ -1468,9 +1476,9 @@ export default {
   "project.newConfirm": "이 폴더 사용",
   "project.newBack": "다른 폴더 선택…",
   "project.loadFailed": "프로젝트 설정을 읽을 수 없습니다.",
-  "project.notInitialized": "이 프로젝트에서 PerMark가 초기화되지 않았습니다",
+  "project.notInitialized": "이 폴더에는 아직 PerMark 설정이 없습니다",
   "project.notInitializedHint":
-    "초기화하면 프로젝트가 팀과 공유할 설정을 보관하는 .permark 폴더가 만들어집니다.",
+    "PerMark를 초기화하면 이 폴더만의 설정을 두고, 이 폴더에서 작업하는 모든 사람과 공유할 수 있습니다.",
   "project.patternPlaceholder": "패턴(예: drafts/)",
   "project.tree": "탐색기",
   "project.treeExclude": "항상 숨기기",
@@ -1506,7 +1514,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "알 수 없는 자리 표시자입니다. {path}, {line}, {col} 중 하나를 사용하세요.",
   "settings.problem.noPath": "명령에는 {path} 자리 표시자가 필요합니다.",
-  "settings.problem.notInitialized": "이 프로젝트에서 PerMark가 초기화되지 않았습니다.",
+  "settings.problem.notInitialized": "이 폴더에는 아직 PerMark 설정이 없습니다.",
   "settings.problem.other": "이 값은 허용되지 않습니다.",
   "welcome.newProject": "새 프로젝트…",
   "welcome.newProjectHint": "폴더를 선택하면 PerMark가 프로젝트로 설정합니다.",

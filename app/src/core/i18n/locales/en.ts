@@ -85,6 +85,14 @@ const en = {
   "error.superseded": "Something else was opened in the meantime.",
   "error.internal": "Something went wrong inside PerMark: {detail}",
   "error.unknown": "Something went wrong: {message}",
+  "error.settingsUnreadable":
+    "PerMark can't read the settings file {subject}. Nothing was changed.",
+  "error.settingsUnreadable.notText":
+    "PerMark can't read the settings file {subject} (it isn't plain text). Nothing was changed.",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark can't read the settings file {subject} (it's too large). Nothing was changed.",
+  "error.settingsUnreadable.locked":
+    "PerMark can't read the settings file {subject} (another program is using it). Nothing was changed.",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "Open a folder or a file first.",
@@ -1467,9 +1475,9 @@ const en = {
   "project.newConfirm": "Use this folder",
   "project.newBack": "Choose another folder…",
   "project.loadFailed": "The project settings couldn't be read.",
-  "project.notInitialized": "PerMark is not initialized in this project",
+  "project.notInitialized": "This folder has no PerMark settings yet",
   "project.notInitializedHint":
-    "Initializing creates a .permark folder where the project can keep settings to share with its team.",
+    "Initialize PerMark to give this folder its own settings, which everyone who works on it can share.",
   "project.patternPlaceholder": "Pattern, for example drafts/",
   "project.tree": "Explorer",
   "project.treeExclude": "Always hide",
@@ -1504,7 +1512,7 @@ const en = {
   "settings.problem.programPlaceholder": "The program name can't be a placeholder.",
   "settings.problem.unknownPlaceholder": "Unknown placeholder. Use {path}, {line} or {col}.",
   "settings.problem.noPath": "The command needs {path}.",
-  "settings.problem.notInitialized": "PerMark is not initialized in this project.",
+  "settings.problem.notInitialized": "This folder has no PerMark settings yet.",
   "settings.problem.other": "This value was not accepted.",
   "welcome.newProject": "New project…",
   "welcome.newProjectHint": "Choose a folder; PerMark sets it up as a project.",

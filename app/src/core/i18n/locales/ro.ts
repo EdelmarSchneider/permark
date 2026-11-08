@@ -89,6 +89,14 @@ export default {
   "error.superseded": "Între timp a fost deschis altceva.",
   "error.internal": "A apărut o eroare internă în PerMark: {detail}",
   "error.unknown": "A apărut o eroare: {message}",
+  "error.settingsUnreadable":
+    "PerMark nu poate citi fișierul de setări {subject}. Nu s-a schimbat nimic.",
+  "error.settingsUnreadable.notText":
+    "PerMark nu poate citi fișierul de setări {subject} (nu este text simplu). Nu s-a schimbat nimic.",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark nu poate citi fișierul de setări {subject} (este prea mare). Nu s-a schimbat nimic.",
+  "error.settingsUnreadable.locked":
+    "PerMark nu poate citi fișierul de setări {subject} (un alt program îl folosește). Nu s-a schimbat nimic.",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
   "condition.workspace": "Deschide mai întâi un dosar sau un fișier.",
@@ -1566,9 +1574,9 @@ export default {
   "project.newConfirm": "Folosește acest dosar",
   "project.newBack": "Alege alt dosar…",
   "project.loadFailed": "Setările proiectului nu au putut fi citite.",
-  "project.notInitialized": "PerMark nu este inițializat în acest proiect",
+  "project.notInitialized": "Acest dosar nu are încă setări PerMark",
   "project.notInitializedHint":
-    "Inițializarea creează un dosar .permark în care proiectul își poate păstra setările de partajat cu echipa.",
+    "Inițializează PerMark pentru ca acest dosar să aibă setări proprii, pe care le pot partaja toți cei care lucrează în el.",
   "project.patternPlaceholder": "Model, de exemplu drafts/",
   "project.tree": "Explorator",
   "project.treeExclude": "Ascunde mereu",
@@ -1605,7 +1613,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "Variabilă necunoscută. Folosește {path}, {line} sau {col}.",
   "settings.problem.noPath": "Comanda are nevoie de {path}.",
-  "settings.problem.notInitialized": "PerMark nu este inițializat în acest proiect.",
+  "settings.problem.notInitialized": "Acest dosar nu are încă setări PerMark.",
   "settings.problem.other": "Această valoare nu a fost acceptată.",
   "welcome.newProject": "Proiect nou…",
   "welcome.newProjectHint": "Alege un dosar; PerMark îl configurează ca proiect.",

@@ -167,18 +167,119 @@ fn a_definition_right_before_text_in_a_quote_or_a_list_item_is_found() {
 }
 
 #[test]
-fn a_later_line_is_text_and_nothing_is_placed_after_a_definition_over_two_lines() {
+fn a_later_line_is_text_and_a_label_over_lines_places_nothing() {
     // only the leading definitions leave the paragraph: a later line is never one
     let text = "[a]: a.md\ntext\n[b]: not-a-definition.md\n";
     assert_eq!(placed(text, &OFF), [("a.md", 1)]);
-    // the lines the parser took off are not all one-line definitions: what they hold is not known for sure, so no
-    // link of the paragraph is moved and none of those lines is taken as a definition
+    // a label over two lines: the lines the parser took off are not read back to back here, so what they hold is not
+    // known for sure: no link of the paragraph is moved, none of those lines is a definition
+    let text = "[a\nb]: a.md\nthen [x](x.md)\n";
+    assert_eq!(placed(text, &OFF), []);
+    // a title closing on a later line is read
+    let text = "[a]: a.md\n\"two\nlines\"\nthen [x](x.md)\n";
+    assert_eq!(placed(text, &OFF), [("a.md", 1), ("x.md", 4)]);
+}
+
+#[test]
+fn a_definition_over_two_or_three_lines_right_before_paragraph_text_is_found_with_that_text() {
+    for ending in ["\n", "\r\n", "\r"] {
+        let text = format!(
+            "[a]:{ending}  a.md{ending}[b]: b.md{ending}  \"Title\"{ending}[c]:{ending}\t<c d.md>{ending}  'T'{ending}then [x](x.md){ending}  more ![ü](ÿ.png) [b]{ending}"
+        );
+        assert_eq!(
+            placed(&text, &OFF),
+            [
+                ("a.md", 2),
+                ("b.md", 3),
+                ("<c d.md>", 6),
+                ("x.md", 8),
+                ("ÿ.png", 9)
+            ],
+            "{ending:?}"
+        );
+    }
+    let text = "> [q]:\n>   q.md\n> quote [x](x.md)\n\n- [l]: l.md\n  (T)\n  item [y](y.md)\n";
+    assert_eq!(
+        placed(text, &OFF),
+        [("q.md", 2), ("x.md", 3), ("l.md", 5), ("y.md", 7)]
+    );
+}
+
+#[test]
+fn definitions_over_several_lines_are_found_on_their_own() {
+    let text = "[a]:\n  a.md\n\n[b]: b.md\n  \"T\"\n\n[c]:\n<c d.md>\n'T'\n\n> [q]:\n>   q.md\n\n- [l]:\n  l.md\n\n> [z]:\nlazy.md\n\n[e]: e.md \"two\nlines\"\n\n[f]:f.md\n";
+    assert_eq!(
+        placed(text, &OFF),
+        [
+            ("a.md", 2),
+            ("b.md", 4),
+            ("<c d.md>", 8),
+            ("q.md", 12),
+            ("l.md", 15),
+            ("lazy.md", 18),
+            ("e.md", 20),
+            ("f.md", 23)
+        ]
+    );
+}
+
+#[test]
+fn what_only_looks_like_a_definition_over_two_lines_is_not_one() {
     for text in [
-        "[a]:\n  a.md\nthen [x](x.md)\n",
-        "[a]: a.md\n  \"Title\"\nthen [x](x.md)\n",
+        // a setext heading, a table, a heading, a quote, a list: not the rest of a definition
+        "[a]:\n-\n",
+        "[a]:\n|-|\n",
+        "[a]: x\n|-|\n",
+        "[a]:\n# a.md\n",
+        "[a]:\n> a.md\n",
+        "[a]:\n- a.md\n",
+        // a blank line ends the paragraph; junk after the destination | title; a blank label; an unbalanced `)`
+        "[a]:\n\n  a.md\n",
+        "[a]:\n  a.md junk\n",
+        "[a]:\n  a.md \"t\" junk\n",
+        "[ ]: a.md\n",
+        "[a]: a.md)\n",
+        "[a]:\n  a.md)\n",
+        // at the very end of the text, an angled destination is not one for the parser
+        "[a]:\n<a.md>",
     ] {
         assert_eq!(placed(text, &OFF), [], "{text:?}");
     }
+    // a second definition of a label is not the one the parser uses: one over two lines is then not confirmed
+    let text = "[a]: one.md\n\n[a]:\n  two.md\n";
+    assert_eq!(placed(text, &OFF), [("one.md", 1)]);
+}
+
+#[test]
+fn a_setext_heading_right_after_definitions_keeps_exact_offsets() {
+    for ending in ["\n", "\r\n", "\r"] {
+        let text = format!(
+            "\u{feff}[d]: d.md{ending}see [y](y.md){ending}---{ending}{ending}[e]: e.md{ending}[f]:{ending}  <f g.md>{ending}ü [z](ÿ.md){ending}  more [w](w.md){ending}==={ending}"
+        );
+        assert_eq!(
+            placed(&text, &OFF),
+            [
+                ("d.md", 1),
+                ("y.md", 2),
+                ("e.md", 5),
+                ("<f g.md>", 7),
+                ("ÿ.md", 8),
+                ("w.md", 9)
+            ],
+            "{ending:?}"
+        );
+    }
+    let text = "> [q]: q.md\n> quote [x](x.md)\n> ---\n\n- [l]:\n  l.md\n  item [y](y.md)\n  ===\n";
+    assert_eq!(
+        placed(text, &OFF),
+        [("q.md", 1), ("x.md", 2), ("l.md", 6), ("y.md", 7)]
+    );
+}
+
+#[test]
+fn the_text_of_a_setext_heading_is_never_a_definition() {
+    let text = "see\n[a]: not-a-definition.md\n---\n\n[d]: d.md\n---\n";
+    assert_eq!(placed(text, &OFF), [("d.md", 5)]);
 }
 
 #[test]
@@ -292,7 +393,7 @@ fn text_after_a_definition_behind_a_tab_and_multibyte_text_never_panics() {
 
 #[test]
 fn random_paragraphs_led_by_a_definition_never_panic_and_every_range_holds_a_destination() {
-    const PIECES: [&str; 30] = [
+    const PIECES: [&str; 42] = [
         " ",
         "  ",
         "\t",
@@ -323,9 +424,26 @@ fn random_paragraphs_led_by_a_definition_never_panic_and_every_range_holds_a_des
         "<context>",
         "</context>",
         "text",
+        // setext underlines, a table delimiter row, a blank line
+        "\n---",
+        "\r\n===",
+        "\n-",
+        "\n  ---",
+        "\n|-|",
+        "\n\n",
+        // definitions over several lines (each ends where a following piece cannot lengthen the destination)
+        "[f]:\n  f.md ",
+        "[g]: g.md\n  \"t\"",
+        "[k]:\r\n\t<k l.md>\n'T'",
+        "[m]: m.md 'a\nb'",
+        "\n>  [f]:\n>\tf.md ",
+        "[n]:n.md ",
     ];
-    const DESTS: [&str; 6] = ["y.md", "ü.png", "<c d.md>", "h.md", "d.md", "<e f.md>"];
-    const LEADS: [&str; 8] = [
+    const DESTS: [&str; 13] = [
+        "y.md", "ü.png", "<c d.md>", "h.md", "d.md", "<e f.md>", "f.md", "g.md", "<k l.md>",
+        "m.md", "n.md", "o.md", "<o p.md>",
+    ];
+    const LEADS: [&str; 12] = [
         "",
         "> ",
         "- ",
@@ -334,6 +452,10 @@ fn random_paragraphs_led_by_a_definition_never_panic_and_every_range_holds_a_des
         ">\t",
         "<context>\n",
         "\u{feff}",
+        "[o]:\n  o.md\n",
+        "> [o]:\n>  o.md\n> ",
+        "- [o]: o.md\n  'T'\n  ",
+        "[o]:\r\n\t<o p.md>\r\n",
     ];
     // xorshift: the same texts on every run
     let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
@@ -343,7 +465,7 @@ fn random_paragraphs_led_by_a_definition_never_panic_and_every_range_holds_a_des
         seed ^= seed << 17;
         usize::try_from(seed % u64::try_from(n).unwrap()).unwrap()
     };
-    for _ in 0..500 {
+    for _ in 0..2000 {
         let mut text = LEADS[pick(LEADS.len())].to_owned();
         text.push_str("[d]: d.md");
         text.push_str(["\n", "\r\n", "\r"][pick(3)]);
@@ -593,6 +715,12 @@ fn every_link_reading_renders_is_one_parse_finds() {
         "> [a]: a.md\n> [b]: b.md\n> quote [a] [x](x.md) [b]\nlazy [z](z.md)\n\n- [l]: l.md\n  item [l][] [y](y.md)\n",
         "<context>\r\n[guide]: docs/guide.md\r\nSee the [guide] and [x](x.md).\r\n</context>\r\n",
         "[a](x.md) [b](x.md) ![p](img/p.png) <img alt=\"q\" src=\"q%20r.png\"> ![p2](<img/p.png>)\n\n[r][d] [s][d] ![t][d]\n\n[d]: x.md\n",
+        "[a]: a.md\nsee [a] and [x](x.md)\n---\n",
+        "[a]:\n  a.md\n[b]: b.md\n  \"Title\"\nsee [a], [b] and [x](x.md)\n===\n",
+        "[c]:\r\n\t<c d.md>\r\n  'T'\r\nthen [c] ![i](i.png)\r\n",
+        "> [q]:\n>   q.md\n> quote [q] [y](y.md)\n> ---\n\n- [l]: l.md\n  (T)\n  item [l][] [z](z.md)\n",
+        "[e]:\n  e.md\n\n[f]: f.md 'two\nlines'\n\n[g]:g.md\n\n[e] [f] [g]\n",
+        "see\n[h]: h.md\n---\n\n[i]:\n-\n\n[j]: j.md\n|-|\n\n[h] [i] [j]\n",
     ] {
         docs.push((format!("{text:?}"), text.to_owned()));
     }

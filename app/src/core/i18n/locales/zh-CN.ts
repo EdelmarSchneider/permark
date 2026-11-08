@@ -85,6 +85,13 @@ export default {
   "error.superseded": "在此期间打开了其他内容。",
   "error.internal": "PerMark 内部出错：{detail}",
   "error.unknown": "出现问题：{message}",
+  "error.settingsUnreadable": "PerMark 无法读取设置文件 {subject}。未做任何更改。",
+  "error.settingsUnreadable.notText":
+    "PerMark 无法读取设置文件 {subject}（它不是纯文本）。未做任何更改。",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark 无法读取设置文件 {subject}（文件过大）。未做任何更改。",
+  "error.settingsUnreadable.locked":
+    "PerMark 无法读取设置文件 {subject}（另一个程序正在使用它）。未做任何更改。",
 
   // ---- conditions
   "condition.workspace": "请先打开文件夹或文件。",
@@ -1432,8 +1439,9 @@ export default {
   "project.newConfirm": "使用此文件夹",
   "project.newBack": "选择其他文件夹…",
   "project.loadFailed": "无法读取项目设置。",
-  "project.notInitialized": "此项目尚未初始化 PerMark",
-  "project.notInitializedHint": "初始化会创建 .permark 文件夹，项目可在其中保存与团队共享的设置。",
+  "project.notInitialized": "此文件夹还没有 PerMark 设置",
+  "project.notInitializedHint":
+    "初始化 PerMark 后，此文件夹会有自己的设置，所有在此工作的人都可以共享。",
   "project.patternPlaceholder": "模式，例如 drafts/",
   "project.tree": "资源管理器",
   "project.treeExclude": "始终隐藏",
@@ -1468,7 +1476,7 @@ export default {
   "settings.problem.programPlaceholder": "程序名不能是占位符。",
   "settings.problem.unknownPlaceholder": "未知的占位符。请使用 {path}、{line} 或 {col}。",
   "settings.problem.noPath": "命令中需要 {path}。",
-  "settings.problem.notInitialized": "此项目尚未初始化 PerMark。",
+  "settings.problem.notInitialized": "此文件夹还没有 PerMark 设置。",
   "settings.problem.other": "此值未被接受。",
   "welcome.newProject": "新建项目…",
   "welcome.newProjectHint": "选择一个文件夹，PerMark 会将其设置为项目。",

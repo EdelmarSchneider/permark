@@ -89,6 +89,14 @@ export default {
   "error.superseded": "Inzwischen wurde etwas anderes geöffnet.",
   "error.internal": "In PerMark ist etwas schiefgelaufen: {detail}",
   "error.unknown": "Etwas ist schiefgelaufen: {message}",
+  "error.settingsUnreadable":
+    "PerMark kann die Einstellungsdatei {subject} nicht lesen. Es wurde nichts geändert.",
+  "error.settingsUnreadable.notText":
+    "PerMark kann die Einstellungsdatei {subject} nicht lesen (sie ist kein reiner Text). Es wurde nichts geändert.",
+  "error.settingsUnreadable.tooLarge":
+    "PerMark kann die Einstellungsdatei {subject} nicht lesen (sie ist zu groß). Es wurde nichts geändert.",
+  "error.settingsUnreadable.locked":
+    "PerMark kann die Einstellungsdatei {subject} nicht lesen (ein anderes Programm verwendet sie). Es wurde nichts geändert.",
 
   // ---- conditions
   "condition.workspace": "Zuerst einen Ordner oder eine Datei öffnen.",
@@ -1512,9 +1520,9 @@ export default {
   "project.newConfirm": "Diesen Ordner verwenden",
   "project.newBack": "Anderen Ordner wählen…",
   "project.loadFailed": "Die Projekteinstellungen konnten nicht gelesen werden.",
-  "project.notInitialized": "PerMark ist in diesem Projekt nicht eingerichtet",
+  "project.notInitialized": "Dieser Ordner hat noch keine PerMark-Einstellungen",
   "project.notInitializedHint":
-    "Beim Einrichten entsteht ein Ordner .permark, in dem das Projekt Einstellungen für das Team ablegen kann.",
+    "Nach dem Einrichten hat dieser Ordner eigene Einstellungen, die alle teilen können, die daran arbeiten.",
   "project.patternPlaceholder": "Muster, zum Beispiel drafts/",
   "project.tree": "Explorer",
   "project.treeExclude": "Immer ausblenden",
@@ -1552,7 +1560,7 @@ export default {
   "settings.problem.unknownPlaceholder":
     "Unbekannter Platzhalter. Möglich sind {path}, {line} und {col}.",
   "settings.problem.noPath": "Der Befehl braucht {path}.",
-  "settings.problem.notInitialized": "PerMark ist in diesem Projekt nicht eingerichtet.",
+  "settings.problem.notInitialized": "Dieser Ordner hat noch keine PerMark-Einstellungen.",
   "settings.problem.other": "Dieser Wert wurde nicht angenommen.",
   "welcome.newProject": "Neues Projekt …",
   "welcome.newProjectHint": "Ordner wählen; PerMark richtet ihn als Projekt ein.",
