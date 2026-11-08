@@ -198,18 +198,16 @@
     ui.closeFind();
   });
 
-  // the file changed on disk, or went away
+  // the file changed on disk, was renamed | moved, or went away
   $effect(() => {
     let off: (() => void) | null = null;
     let gone = false;
     void api
       .on("document-changed", (event) => {
         if (event.window !== store.label) return;
+        // the editor first: it takes a renamed document along at once, so the page that follows finds it there
         editing.onDocumentChanged(event);
-        // the edited document was renamed and its edits went with it: the page follows them (no "deleted" banner)
-        const moved = event.change === "deleted" ? event.movedTo : null;
-        if (moved !== null && editing.path === moved) documents.followMoved(moved);
-        else documents.onChanged(event);
+        documents.onChanged(event);
       })
       .then((stop) => {
         if (gone) stop();
@@ -322,7 +320,7 @@
               <button
                 type="button"
                 class="btn btn--sm"
-                onclick={() => documents.followMoved(moved)}
+                onclick={() => void documents.followMoved(moved)}
               >
                 {t("doc.deleted.moved", { path: moved })}
               </button>

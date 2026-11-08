@@ -136,7 +136,7 @@ export class MockProject {
   fileIdsUnknown = false;
   readonly #undo: (Op & { id: number })[] = [];
   #nextUndo = 1;
-  readonly #plans = new Map<number, { moves: MoveSpec[]; docs: PlannedDoc[] }>();
+  readonly #plans = new Map<number, { moves: MoveSpec[]; docs: PlannedDoc[]; refs: boolean }>();
   #nextPlan = 1;
 
   constructor(seed: Record<string, string> = seedFiles()) {
@@ -268,9 +268,15 @@ export class MockProject {
     });
   }
 
-  /** Checks the moves and finds the links to change; a document with unsaved edits (`unsaved`) is left to its
-   *  editor (skipped `unsaved`), as `plan_move_with`. Nothing is touched. */
-  plan(moves: MoveSpec[], updateLinks: boolean, unsaved: readonly string[] = []): MovePlan {
+  /** Checks the moves and finds the links to change (`refs`: the `@path` references too, as with the prompt features
+   *  on); a document with unsaved edits (`unsaved`) is left to its editor (skipped `unsaved`), as `plan_move_with`.
+   *  Nothing is touched. */
+  plan(
+    moves: MoveSpec[],
+    updateLinks: boolean,
+    unsaved: readonly string[] = [],
+    refs = false,
+  ): MovePlan {
     this.#checkMoves(moves);
     const files: PlanFile[] = [];
     const docs: PlannedDoc[] = [];
@@ -279,15 +285,22 @@ export class MockProject {
     if (updateLinks) {
       for (const [path, text] of this.files) {
         if (!path.endsWith(".md")) continue;
-        const changes = text.split("\n").flatMap((line, at) =>
-          moves
+        const changes = text.split("\n").flatMap((line, at) => [
+          ...moves
             .filter((m) => linksTo(line, relativeLink(path, m.from)))
             .map((m) => ({
               line: at + 1,
               old: relativeLink(path, m.from),
               new: relativeLink(path, m.to),
             })),
-        );
+          ...(refs ? moves : []).flatMap((m) =>
+            [...line.matchAll(atRef(m.from))].map(() => ({
+              line: at + 1,
+              old: m.from,
+              new: m.to,
+            })),
+          ),
+        ]);
         if (changes.length === 0) continue;
         if (held.has(path.toLowerCase())) {
           skipped.push({ path, reason: "unsaved" });
@@ -299,7 +312,7 @@ export class MockProject {
       }
     }
     const planId = this.#nextPlan++;
-    this.#plans.set(planId, { moves, docs });
+    this.#plans.set(planId, { moves, docs, refs });
     return {
       planId,
       moves,
@@ -323,7 +336,7 @@ export class MockProject {
     const plan = this.#plans.get(planId);
     if (!plan) throw new MockRefusal("unavailable", null);
     this.#plans.delete(planId);
-    const { moves } = plan;
+    const { moves, refs } = plan;
     this.#checkMoves(moves);
     const before = new Map(this.files);
     let links = 0;
@@ -340,6 +353,7 @@ export class MockProject {
           for (const m of moves) {
             const [from, to] = [relativeLink(doc.path, m.from), relativeLink(doc.path, m.to)];
             next = next.split(`(${from})`).join(`(${to})`).split(`(${from}#`).join(`(${to}#`);
+            if (refs) next = next.replace(atRef(m.from), `@${m.to}`);
           }
           this.files.set(doc.path, next);
           links += doc.changes.length;
@@ -423,21 +437,21 @@ export class MockProject {
     }
   }
 
-  /** Takes back exactly the operation `id` unless gone or touched by a newer one; whether it did. */
-  undoEntry(id: number): boolean {
+  /** Takes back exactly the operation `id` unless gone or touched by a newer one; the moves that took it back
+   *  ([`MockProject.undo`]), `null` when it did not. */
+  undoEntry(id: number): MoveSpec[] | null {
     const at = this.#undo.findIndex((op) => op.id === id);
     const op = this.#undo[at];
-    if (op === undefined) return false;
+    if (op === undefined) return null;
     const mine = MockProject.#paths(op);
     const near = (a: string, b: string): boolean =>
       a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
     const touched = this.#undo
       .slice(at + 1)
       .some((later) => MockProject.#paths(later).some((p) => mine.some((m) => near(p, m))));
-    if (touched) return false;
+    if (touched) return null;
     this.#undo.splice(at, 1);
-    this.#takeBack(op);
-    return true;
+    return this.#takeBack(op);
   }
 
   /** A new empty file (`.md` | `.txt`) or folder in `dir`, by the backend's rules (`FileOps::create`). */
@@ -464,27 +478,29 @@ export class MockProject {
     return path;
   }
 
-  /** Takes the newest operation back; false when there is none. */
-  undo(): boolean {
+  /** Takes the newest operation back; the moves that took it back (a move's, each `to` -> `from`; none for the other
+   *  kinds), as the watch sees an undo; `null` when there is nothing to take back. */
+  undo(): MoveSpec[] | null {
     const op = this.#undo.pop();
-    if (!op) return false;
-    this.#takeBack(op);
-    return true;
+    if (!op) return null;
+    return this.#takeBack(op);
   }
 
-  #takeBack(op: Op): void {
+  #takeBack(op: Op): MoveSpec[] {
     switch (op.kind) {
-      case "move":
-        for (const m of [...op.moves].reverse()) this.#rename(m.to, m.from);
+      case "move": {
+        const back = [...op.moves].reverse().map((m) => ({ from: m.to, to: m.from }));
+        for (const m of back) this.#rename(m.from, m.to);
         for (const [path, text] of op.before) if (this.files.has(path)) this.files.set(path, text);
-        return;
+        return back;
+      }
       case "new":
         this.files.delete(op.path);
         this.dirs.delete(op.path);
-        return;
+        return [];
       case "delete":
         for (const [path, text] of op.files) this.add(path, text);
-        return;
+        return [];
       case "import":
         for (const path of op.paths) {
           for (const p of [...this.files.keys()]) {
@@ -493,9 +509,9 @@ export class MockProject {
           for (const d of [...this.dirs])
             if (d === path || d.startsWith(`${path}/`)) this.dirs.delete(d);
         }
-        return;
+        return [];
       default:
-        op satisfies never;
+        return op satisfies never;
     }
   }
 
@@ -525,6 +541,18 @@ export class MockRefusal extends Error {
 /** `line` holds a Markdown link to `href`, with or without an anchor. */
 function linksTo(line: string, href: string): boolean {
   return line.includes(`(${href})`) || line.includes(`(${href}#`);
+}
+
+/** A character an `@path` reference's path may hold (`inline.rs` `is_path_char`). */
+const PATH_CHAR = String.raw`[\p{L}\p{N}_./\\@+~-]`;
+
+/** The `@path` references to `target` (a project path) in a text: not inside a word or a path, and the path ends where
+ *  a character it cannot hold follows (a sentence's `.` may come first). An approximation of the backend's rule for
+ *  the mock: code, links, front matter, escapes and other spellings of the path (`\`, a leading `/`) are not told
+ *  apart here. */
+function atRef(target: string): RegExp {
+  const path = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(String.raw`(?<!${PATH_CHAR})@${path}(?=[._/\\-]*(?!${PATH_CHAR}))`, "gu");
 }
 
 /** The way from the document `doc` to `target` (both project paths). */

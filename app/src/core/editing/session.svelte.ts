@@ -709,9 +709,9 @@ export class EditingSession {
         this.dispatch({ e: "diskChanged", hash: event.version });
         return true;
       case "deleted":
-        // what was just typed counts: edits go along with a renamed file, a clean editor lets go of it
+        // what was just typed counts: the editor goes along with a renamed file; a deleted one, a clean editor lets go
         this.sync();
-        if (event.movedTo !== null && this.unsaved) void this.#follow(event.movedTo);
+        if (event.movedTo !== null) void this.#follow(event.movedTo);
         else this.dispatch({ e: "diskDeleted" });
         return true;
       default:
@@ -720,10 +720,10 @@ export class EditingSession {
   }
 
   /**
-   * The file was renamed | moved while it holds unsaved edits: the session goes with it (path, unsaved flag, journal
-   * entry), keeping the text; the editor is made again from it. The moved file is then compared with the base like
-   * any change on disk: other bytes (links rewritten by the move) -> the conflict view against the moved file, so
-   * "Keep mine" writes there and never brings the old path back.
+   * The file was renamed | moved: the session goes with it (path; with unsaved edits, the unsaved flag and the journal
+   * entry too), keeping the text and the mode; the editor is made again from it. The moved file is then compared with
+   * the base like any change on disk: other bytes (links rewritten by the move) reload a clean editor, and show unsaved
+   * edits the conflict view against the moved file, so "Keep mine" writes there and never brings the old path back.
    */
   async #follow(to: string): Promise<void> {
     const from = this.#path;
@@ -741,7 +741,7 @@ export class EditingSession {
       this.#journaled = false;
       this.#writeJournal();
     }
-    void this.#api.editSetUnsaved(to);
+    if (this.unsaved) void this.#api.editSetUnsaved(to);
     const seq = ++this.#seq;
     const loaded = this.#loadedSegments;
     const blocks: Result<Segment[]> | Promise<Result<Segment[]>> | null =

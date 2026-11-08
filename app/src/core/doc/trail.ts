@@ -62,6 +62,21 @@ export class Trail {
       .slice(0, count);
   }
 
+  /** A document was renamed | moved: its places name the new path (anchors kept), so back and forward never lead to a
+   *  name that is gone. Places that became the same, side by side, count once; the cursor stays on its place. */
+  rename(from: string, to: string): void {
+    const places: Place[] = [];
+    let at = -1;
+    this.#places.forEach((place, index) => {
+      const now = place.path === from ? { ...place, path: to } : place;
+      const last = places.at(-1);
+      if (last === undefined || !same(last, now)) places.push(now);
+      if (index === this.#at) at = places.length - 1;
+    });
+    this.#places = places;
+    this.#at = at;
+  }
+
   /** Forgets a document (it was deleted | the workspace changed). */
   clear(): void {
     this.#places = [];

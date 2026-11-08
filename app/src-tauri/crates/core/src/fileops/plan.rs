@@ -6,7 +6,9 @@
 //! with its replacement. The text of the link, its title, the `#anchor` and `?query`, angle brackets,
 //! percent-encoding, `\` or `/`, a leading `./` and a missing `.md` are kept as the author wrote them; every other
 //! byte stays as it is. Links that do not resolve to something that exists are left alone (they were broken
-//! already), and so are external links, anchors, and links not read with certainty.
+//! already), and so are external links, anchors, and links not read with certainty. With the prompt features on,
+//! the `@path` references reading marks are kept too: they name project paths, so only those of moving files change,
+//! and only the path is rewritten.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -14,6 +16,7 @@ use std::fmt::Write as _;
 
 use unicode_normalization::UnicodeNormalization;
 
+use crate::format::{at_refs, MarkdownFeatures};
 use crate::links::{join_relative, parse, percent_decode, scheme_of, Dest, Form};
 use crate::paths::{Vault, VaultPath, WORKTREE_PREFIX};
 use crate::tree::key_of;
@@ -341,6 +344,8 @@ pub(crate) struct Planner<'a> {
     mover: Mover,
     needles: Vec<String>,
     seen: RefCell<HashMap<String, Option<Entry>>>,
+    /// The Markdown features that are on: which `@path` references reading marks.
+    features: MarkdownFeatures,
 }
 
 impl<'a> Planner<'a> {
@@ -350,7 +355,14 @@ impl<'a> Planner<'a> {
             mover: Mover::new(moves),
             needles: needles(moves),
             seen: RefCell::new(HashMap::new()),
+            features: MarkdownFeatures::default(),
         }
+    }
+
+    /// Plans the `@path` references these features have reading mark too.
+    pub(crate) fn with_features(mut self, features: MarkdownFeatures) -> Self {
+        self.features = features;
+        self
     }
 
     pub(crate) fn needles(&self) -> &[String] {
@@ -400,7 +412,35 @@ impl<'a> Planner<'a> {
                 causes,
             });
         }
+        // references sit in text outside links; destinations in links, definitions and HTML: never the same bytes
+        let refs = self.reference_edits(text);
+        if !refs.is_empty() {
+            edits.extend(refs);
+            edits.sort_by_key(|e| e.start);
+        }
         edits
+    }
+
+    /// The edits of the `@path` references of `text` to files that move: root paths, so only the target's move counts.
+    fn reference_edits(&self, text: &str) -> Vec<LinkEdit> {
+        let moving =
+            |path: &str| self.mover.map(path).is_some() && self.kind(path) == Some(Entry::File);
+        at_refs(text, &self.features, &moving)
+            .into_iter()
+            .filter_map(|reference| {
+                let (at, target_new) = self.mover.find(&reference.path)?;
+                let new = reference.rewritten(&target_new)?;
+                let old = text[reference.range.clone()].to_owned();
+                (new != old).then(|| LinkEdit {
+                    start: reference.range.start,
+                    end: reference.range.end,
+                    old,
+                    new,
+                    line: reference.line,
+                    causes: vec![at],
+                })
+            })
+            .collect()
     }
 
     /// The new token for one destination and the path it points at (before the move), or `None` when it stays.

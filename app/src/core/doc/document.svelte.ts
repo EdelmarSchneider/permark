@@ -135,6 +135,9 @@ export class DocumentController {
   #pending: Promise<void> | null = null;
   #intent: (Place & { line: number | null }) | null = null;
   #viaTrail: string | null = null;
+  /** The shown document was renamed | moved and the window is on its way to the new name (`placed`: the window was
+   *  told to show it). */
+  #following: { path: string; placed: boolean } | null = null;
   #anchor: string | null = null;
   /** A line to scroll to when the document in the making is shown (a search hit without a heading). */
   #line: number | null = null;
@@ -264,6 +267,7 @@ export class DocumentController {
     this.#paintWaiting = false;
     this.#intent = null;
     this.#viaTrail = null;
+    this.#following = null;
     this.#anchor = null;
     this.#line = null;
     this.lineRequest = null;
@@ -284,6 +288,9 @@ export class DocumentController {
       void this.#api.closeDocument();
       return;
     }
+    // following a rename: the trail names the new path already, and a name passed on the way is no place
+    const following = this.#following !== null;
+    if (this.#following?.path === path) this.#following = null;
     // the same document: whoever asked second waits for the open that is on its way. Already on screen: nothing to do.
     // Still another file, and nothing is opening this one: do not finish. Open it again.
     if (path === this.#shown && this.state.status !== "failed") {
@@ -296,7 +303,7 @@ export class DocumentController {
       const viaTrail = this.#viaTrail === path;
       this.#viaTrail = null;
       const anchor = intent?.anchor ?? (viaTrail ? (this.trail.here?.anchor ?? null) : null);
-      if (!viaTrail) this.trail.visit({ path, anchor });
+      if (!viaTrail && !following) this.trail.visit({ path, anchor });
       this.#anchor = anchor;
       this.#line = intent?.line ?? null;
       // a line asked for an earlier document is not asked again when a viewer shows up later
@@ -359,17 +366,30 @@ export class DocumentController {
     return () => this.#textUpdaters.delete(listener);
   }
 
-  /** The file changed on disk (or went away). */
+  /** The file changed on disk, was renamed | moved (the window goes with it), or went away. */
   onChanged(event: DocumentChanged): void {
+    // the document the window is on its way to can move again (its rename undone) before the window shows it
+    if (
+      event.path === this.#following?.path &&
+      event.change === "deleted" &&
+      event.movedTo !== null
+    ) {
+      void this.followMoved(event.movedTo);
+      return;
+    }
     if (event.path !== this.#shown) return;
     switch (event.change) {
       case "changed":
         void this.#open(event.path, false);
         break;
       case "deleted": {
+        if (event.movedTo !== null) {
+          void this.followMoved(event.movedTo);
+          break;
+        }
         const s = this.state;
         if (s.status === "ready") {
-          this.state = { ...s, deleted: { movedTo: event.movedTo, at: Date.now() } };
+          this.state = { ...s, deleted: { movedTo: null, at: Date.now() } };
         }
         break;
       }
@@ -749,15 +769,16 @@ export class DocumentController {
   }
 
   /** Puts the window on `path`: a single file holds it here, a project's tab is told by the backend (which tells the
-   *  window back). */
-  async #place(path: string): Promise<void> {
+   *  window back). Whether it did. */
+  async #place(path: string): Promise<boolean> {
     if (this.singleFile) {
       // the window shows it (`DocumentArea` follows `singleDoc`)
       this.singleDoc = path;
-      return;
+      return true;
     }
     const result = await this.#api.showDocument(path);
     if (!result.ok) this.#hooks.fail(result.error);
+    return result.ok;
   }
 
   /** Puts the window back on `path` without asking: the person kept editing it when another document came. */
@@ -801,9 +822,39 @@ export class DocumentController {
     }
   }
 
-  /** Follows the document that took this one's place (renamed). */
-  followMoved(path: string): void {
-    this.navigate(path, null);
+  /**
+   * Follows the document that took this one's place (renamed | moved) to the same reading place; the trail names it by
+   * the new path. When the window cannot go there, it stays on the last version and the page says where the document
+   * went.
+   */
+  async followMoved(path: string): Promise<void> {
+    const shown = this.#shown;
+    if (shown === null) return;
+    const ahead = this.#following;
+    const from = ahead?.path ?? shown;
+    if (path === from) return;
+    this.trail.rename(from, path);
+    // the place is read when the moved document is painted
+    const scroller = this.host.scroller;
+    if (scroller) reading.remember(path, scroller.scrollTop);
+    // moved back before the window was told to go: it is where it should be
+    if (path === shown && ahead?.placed !== true) {
+      this.#following = null;
+      return;
+    }
+    const follow = { path, placed: false };
+    this.#following = follow;
+    if ((await confirmLeave({ kind: "document", path })) && this.#following === follow) {
+      follow.placed = true;
+      if (await this.#place(path)) return;
+    }
+    // moved again meanwhile (the rename undone): the newer follow decides
+    if (this.#following !== follow) return;
+    this.#following = null;
+    const s = this.state;
+    if (this.#shown === shown && s.status === "ready") {
+      this.state = { ...s, deleted: { movedTo: path, at: Date.now() } };
+    }
   }
 
   // ---- code references, web, the system --------------------------------------------------------------------

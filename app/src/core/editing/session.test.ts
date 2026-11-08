@@ -776,11 +776,24 @@ describe("the document moves while it holds unsaved edits", () => {
     expect(api.probe.edit.files.has("docs/guide.md")).toBe(false);
   });
 
-  it("a clean editor lets go of a moved document", async () => {
+  it("a clean editor goes with a moved document: still clean, in its mode, nothing marked unsaved", async () => {
+    const { api, session } = setup();
+    const { content } = await open(session);
+    await watched(api, session);
+    await moved(api, [{ from: "docs/guide.md", to: "docs/manual.md" }]);
+    await settle();
+    expect(session.path).toBe("docs/manual.md");
+    expect(session.state.s).toBe("clean");
+    expect(session.mode).toBe("source");
+    expect(session.content).toMatchObject({ path: "docs/manual.md", text: content.text });
+    expect(api.probe.edit.unsaved).toBeNull();
+  });
+
+  it("a clean editor lets go of a deleted document", async () => {
     const { api, session } = setup();
     await open(session);
     await watched(api, session);
-    await moved(api, [{ from: "docs/guide.md", to: "docs/manual.md" }]);
+    await api.deleteFiles(["docs/guide.md"]);
     await settle();
     expect(session.state.s).toBe("closed");
     expect(session.mode).toBe("view");

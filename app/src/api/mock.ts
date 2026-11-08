@@ -1026,7 +1026,9 @@ export function createMockApi(): Api & {
     planMove: (moves, updateLinks) => {
       try {
         const unsaved = editing.probe.unsaved;
-        return ok(project.plan(moves, updateLinks, unsaved === null ? [] : [unsaved]));
+        // `@path` references are kept as reading marks them: with the prompt features on
+        const refs = shell.pluginsOn(inProject()).includes("prompt-blocks");
+        return ok(project.plan(moves, updateLinks, unsaved === null ? [] : [unsaved], refs));
       } catch (e) {
         return Promise.resolve(fail("fileops_plan_move", e));
       }
@@ -1063,16 +1065,18 @@ export function createMockApi(): Api & {
       }
     },
     undoFileOp: () => {
-      const done = project.undo();
-      if (done) refreshTree();
-      if (done) tellShown();
-      return ok(done ? { kind: "move", restored: 1, skipped: [] } : null);
+      const back = project.undo();
+      if (back === null) return ok(null);
+      refreshTree(back);
+      tellShown(back);
+      return ok({ kind: "move", restored: 1, skipped: [] });
     },
     undoFileOpEntry: (id) => {
-      const done = project.undoEntry(id);
-      if (done) refreshTree();
-      if (done) tellShown();
-      return ok(done ? { kind: "import", restored: 1, skipped: [] } : null);
+      const back = project.undoEntry(id);
+      if (back === null) return ok(null);
+      refreshTree(back);
+      tellShown(back);
+      return ok({ kind: "import", restored: 1, skipped: [] });
     },
     ...importing.api,
     remotePicture: (url) => {
