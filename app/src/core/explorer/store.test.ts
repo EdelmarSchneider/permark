@@ -334,6 +334,56 @@ describe("loading", () => {
     stop();
   });
 
+  it("a closed Explorer asks the backend for nothing more, whatever is asked of it", async () => {
+    const { api, store, stop } = await setup("never", (mock) => closedFolders(mock));
+    stop();
+    const methods = [
+      "treeOpen",
+      "treeSetFilter",
+      "treeOpenFolder",
+      "treeKeep",
+      "treeClose",
+      "projectSessionGet",
+      "projectSessionSet",
+      "showDocument",
+      "newEntry",
+      "planMove",
+      "applyMove",
+      "deleteFiles",
+      "undoFileOp",
+      "undoFileOpEntry",
+      "absPath",
+      "openInEditor",
+      "openExternal",
+    ] as const;
+    const called = methods.map((method) => vi.spyOn(api, method));
+    // a menu | a key | a late answer of the panel that went away
+    await store.setFilter({ ...store.filter, show: "everything" });
+    await store.resetFilter();
+    await store.retry();
+    await store.toggle("docs");
+    store.reveal("docs/guide.md");
+    await store.setActive("docs/guide.md");
+    await store.acceptCodeOffer();
+    await store.declineCodeOffer();
+    await store.activate("README.md");
+    store.beginNew("file", "");
+    store.typeName("late");
+    await store.commitEdit();
+    await store.requestMove([{ from: "README.md", to: "docs/README.md" }]);
+    await store.remove(["README.md"]);
+    await store.undo();
+    await store.undoEntry(1);
+    await store.copyPath("README.md", true);
+    await store.openInEditor("README.md");
+    await store.openExternal("README.md", "defaultApp");
+    await store.openAsProject("docs");
+    await store.askInit("docs", "docs");
+    // what the panel would remember a moment later
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    for (const [i, spy] of called.entries()) expect(spy, methods[i]).not.toHaveBeenCalled();
+  });
+
   it("an Explorer closed before it asked for its list never asks", async () => {
     const api = createMockApi();
     await api.openPath(MOCK_FOLDER, "thisTab");

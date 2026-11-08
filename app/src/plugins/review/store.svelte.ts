@@ -97,7 +97,13 @@ export class ReviewStore {
   basisNote = $state<string | null>(null);
   /** The latest thing said for screen readers (a live region in the bar). */
   announcement = $state("");
+  /** Reads (status, open): only the newest answer is drawn. Writes go up too, so a read sent before a write never
+   *  draws the file as it was over what the write answered. */
   #seq = 0;
+  /** The review that keeps | reverts | undos belong to: goes up when a review opens or closes, or the person leaves
+   *  its document. A write that came back for the same review on the same document is recorded, whatever ran since:
+   *  the file changed, so Undo must be able to take it back. */
+  #review = 0;
   /** The document an `offer` | `reviewing` belongs to (to release it when the person leaves). */
   #held: string | null = null;
   /** A review just closed with changes in it: still held while "Review again" is offered (a stray Esc loses
@@ -161,6 +167,17 @@ export class ReviewStore {
     return seq === this.#seq && this.#page.shown().path === path;
   }
 
+  /** What a write answered belongs to the review on screen: it is still open and its document is still shown. */
+  #here(review: number, path: string): boolean {
+    return review === this.#review && this.#page.shown().path === path;
+  }
+
+  /** An open of `path` came back too late. The person left: nothing stays held for it (the backend may have opened
+   *  it after the release that went with leaving). Still on it: whatever ran since holds it. */
+  #letGoIfLeft(path: string): void {
+    if (this.#page.shown().path !== path) void this.#client.call("review.release", { path });
+  }
+
   /** The change the keys act on (index), or -1. */
   get current(): number {
     return this.state.status === "reviewing" ? this.state.at : -1;
@@ -207,6 +224,7 @@ export class ReviewStore {
 
   #reset(): void {
     this.#seq += 1;
+    this.#review += 1;
     this.#held = null;
     this.#forget();
     this.state = { status: "idle" };
@@ -221,6 +239,7 @@ export class ReviewStore {
       // the person left the document: its review is over
       void this.#client.call("review.release", { path: this.#held });
       this.#held = null;
+      this.#review += 1;
       this.undoable = 0;
     }
     if (this.#closed !== null && this.#closed.path !== path) this.#letGo();
@@ -298,9 +317,11 @@ export class ReviewStore {
     if (state.state === "same") return this.#say(t("review.allDone"));
     if (state.state === "unsupported") return;
     const result = await this.#client.call("review.open", { path, basis });
-    if (!result.ok || !this.#still(seq, path)) return;
+    if (!this.#still(seq, path)) return this.#letGoIfLeft(path);
+    if (!result.ok) return;
     if (basis !== undefined) this.basis = basis;
     this.#held = path;
+    this.#review += 1;
     this.undoable = 0;
     this.basisNote = null;
     this.#show(result.value, 0);
@@ -323,6 +344,7 @@ export class ReviewStore {
     const path = view?.path ?? this.#held;
     const at = this.current;
     this.#seq += 1;
+    this.#review += 1;
     this.state = { status: "idle" };
     this.undoable = 0;
     this.#held = null;
@@ -358,17 +380,14 @@ export class ReviewStore {
     }
     const seq = ++this.#seq;
     const result = await this.#client.call("review.open", { path, basis: this.basis });
-    if (!this.#still(seq, path)) {
-      // left meanwhile: nothing holds the closed review any more (back on it, whatever ran since holds it)
-      if (this.#page.shown().path !== path) void this.#client.call("review.release", { path });
-      return;
-    }
+    if (!this.#still(seq, path)) return this.#letGoIfLeft(path);
     if (!result.ok || result.value.count === 0) {
       void this.#client.call("review.release", { path });
       if (result.ok) this.#say(t("review.allDone"));
       return;
     }
     this.#held = path;
+    this.#review += 1;
     this.undoable = 0;
     this.#show(result.value, closed.at);
     this.announce(
@@ -396,67 +415,74 @@ export class ReviewStore {
     closed.takeBack();
   }
 
+  /** A keep | revert | undo goes out: reads sent before it are superseded. Returns the review it belongs to. */
+  #write(): number {
+    this.#seq += 1;
+    return this.#review;
+  }
+
   async keep(index = this.current): Promise<void> {
     const view = this.#mine();
     if (view === null || index < 0 || !view.canKeep) return;
-    const seq = ++this.#seq;
+    const review = this.#write();
     const result = await this.#client.call("review.keep", {
       path: view.path,
       hash: view.hash,
       index,
       basis: this.basis,
     });
-    this.#after(result, index, "kept", true, seq, view.path);
+    this.#after(result, index, "kept", true, review, view.path);
   }
 
   async revert(index = this.current): Promise<void> {
     const view = this.#mine();
     if (view === null || index < 0) return;
-    const seq = ++this.#seq;
+    const review = this.#write();
     const result = await this.#client.call("review.revert", {
       path: view.path,
       hash: view.hash,
       index,
       basis: this.basis,
     });
-    this.#after(result, index, "reverted", true, seq, view.path);
+    this.#after(result, index, "reverted", true, review, view.path);
   }
 
   async keepAll(): Promise<void> {
     const view = this.#mine();
     if (view === null || !view.canKeep) return;
-    const seq = ++this.#seq;
+    const review = this.#write();
     const result = await this.#client.call("review.keepAll", {
       path: view.path,
       hash: view.hash,
       basis: this.basis,
     });
-    this.#after(result, 0, "keptAll", false, seq, view.path);
+    this.#after(result, 0, "keptAll", false, review, view.path);
   }
 
   async revertAll(): Promise<void> {
     const view = this.#mine();
     if (view === null) return;
-    const seq = ++this.#seq;
+    const review = this.#write();
     const result = await this.#client.call("review.revertAll", {
       path: view.path,
       hash: view.hash,
       basis: this.basis,
     });
-    this.#after(result, 0, "revertedAll", false, seq, view.path);
+    this.#after(result, 0, "revertedAll", false, review, view.path);
   }
 
   async undo(): Promise<void> {
     const view = this.#mine();
     if (view === null || this.undoable === 0) return;
-    const seq = ++this.#seq;
+    const review = this.#write();
     const result = await this.#client.call("review.undo", { path: view.path, basis: this.basis });
-    if (!this.#still(seq, view.path)) return;
+    if (!this.#here(review, view.path)) return;
     if (!result.ok) {
       this.#say(t("review.undoStale", { name: view.path.split("/").at(-1) ?? view.path }));
       return;
     }
-    this.undoable -= 1;
+    // two undos sent before the first answer: the count never goes below none
+    this.undoable = Math.max(0, this.undoable - 1);
     this.#show(result.value, this.current);
     this.announce(tn("review.sr.undone", result.value.count));
   }
@@ -467,11 +493,11 @@ export class ReviewStore {
     index: number,
     what: "kept" | "reverted" | "keptAll" | "revertedAll",
     single: boolean,
-    seq: number,
+    review: number,
     path: string,
   ): void {
-    // the person moved on (or something newer ran): what the file became is drawn when it is shown again
-    if (!this.#still(seq, path)) return;
+    // the person moved on | closed the review: what the file became is drawn when it is shown again
+    if (!this.#here(review, path)) return;
     const name = path.split("/").at(-1) ?? "";
     if (!result.ok) {
       const error = result.error;
@@ -501,6 +527,7 @@ export class ReviewStore {
       );
       this.state = { status: "idle" };
       this.#held = null;
+      this.#review += 1;
       this.undoable = 0;
       this.#page.repaint();
       return;
@@ -518,7 +545,7 @@ export class ReviewStore {
   async #refresh(path: string): Promise<void> {
     const seq = ++this.#seq;
     const result = await this.#client.call("review.open", { path });
-    if (!this.#still(seq, path)) return;
+    if (!this.#still(seq, path)) return this.#letGoIfLeft(path);
     if (result.ok && result.value.count > 0) this.#show(result.value, this.current);
     else {
       this.state = { status: "idle" };
@@ -576,16 +603,17 @@ export class ReviewStore {
     if (view !== null) {
       const seq = ++this.#seq;
       const result = await this.#client.call("review.open", { path: view.path, basis });
-      if (!this.#still(seq, view.path)) return;
+      if (!this.#still(seq, view.path)) return this.#letGoIfLeft(view.path);
       if (!result.ok) {
         this.basisNote = t("review.basisFailed");
         return;
       }
       if (this.basis !== before) return;
+      await this.#client.call("review.setBasis", { basis });
+      if (!this.#still(seq, view.path)) return this.#letGoIfLeft(view.path);
+      // the choice shows only with the review drawn on it
       this.basisNote = null;
       this.basis = basis;
-      await this.#client.call("review.setBasis", { basis });
-      if (!this.#still(seq, view.path)) return;
       this.#show(result.value, 0);
       // the set of changes is another one now: said, not only drawn
       this.announce(

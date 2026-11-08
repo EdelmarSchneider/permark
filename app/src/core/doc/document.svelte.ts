@@ -723,8 +723,11 @@ export class DocumentController {
     if (path === this.#shown) {
       // still opening: the page holds the previous file, so the place waits for this document's paint
       if (this.state.status === "loading" && this.current === null) {
-        this.#anchor = anchor;
-        this.#line = line;
+        // a newer place replaces the one waiting; an ask with no place (the tree, an editor) keeps it
+        if (anchor !== null || line !== null) {
+          this.#anchor = anchor;
+          this.#line = line;
+        }
         return;
       }
       if (anchor === null && line !== null) {
@@ -915,9 +918,9 @@ export class DocumentController {
   referenceAt(node: Node | null): Reference | null {
     const path = this.#shown;
     const view = this.current;
-    // another file's page while this one loads: a passage of it is not in this document
-    if (path === null || (view === null && this.view !== null)) return null;
-    if (view?.body.kind !== "markdown") return { path, section: null, line: null };
+    // nothing of this document on screen yet (another file's page, or none): no passage is in it
+    if (path === null || view === null) return null;
+    if (view.body.kind !== "markdown") return { path, section: null, line: null };
     const element = node instanceof Element ? node : (node?.parentElement ?? null);
     const block = element?.closest<HTMLElement>("[data-b]") ?? null;
     const id = block?.getAttribute("data-b") ?? null;

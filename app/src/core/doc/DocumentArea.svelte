@@ -128,6 +128,11 @@
     // only the workspace and the path decide when this runs: a failed open must not make it run again by itself
     untrack(() => {
       const edited = editing.path;
+      // back on the edited document while the unsaved prompt asks about leaving it: there is nothing to leave now,
+      // so a Save | Discard meant for the other document must not take the editor away
+      if (asking && edited === shown && editing.state.s === "unsavedPrompt") {
+        editing.answer("keepEditing");
+      }
       // the routes that ask first (a link, the tree, search) let go of the editor before the document moves
       if (edited === null || edited === shown) void documents.show(shown);
       // the backend moved this tab to another document without asking (an open from the system, a drop)
@@ -157,6 +162,8 @@
     asking = false;
     // the area went away, or the window left the workspace, meanwhile
     if (documents.workspaceId !== workspace.id) return;
+    // the window came back to the edited document meanwhile: it is on screen already
+    if (path === edited) return;
     if (left) void documents.show(path);
     else documents.stayOn(edited);
   }

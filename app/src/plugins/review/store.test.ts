@@ -428,6 +428,93 @@ describe("the review store", () => {
     stop();
   });
 
+  it("two reverts sent before the first answer both count: Undo can take back each", async () => {
+    const { store, stop } = await setup();
+    await store.begin();
+    // a held key repeats: the second goes out while the first is on its way
+    await Promise.all([store.revert(0), store.revert(1)]);
+    expect(store.undoable).toBe(2);
+    expect(store.announcement).toBe("Reverted. 1 change left.");
+    stop();
+  });
+
+  it("a revert answered after the page showed the new version of the file still counts", async () => {
+    const { store, shown, hold, stop } = await setup();
+    await store.begin();
+    const reverted = hold("review.revert");
+    const asked = store.revert(0);
+    // the write reached the disk: the page shows the new version before the answer comes back
+    shown.value = { path: GUIDE, hash: "dd".repeat(8), kind: "blocks" };
+    await settle();
+    reverted();
+    await asked;
+    expect(store.undoable).toBe(1);
+    expect(store.reviewing?.count).toBe(1);
+    expect(store.announcement).toBe("Reverted. 1 change left.");
+    stop();
+  });
+
+  it("a review closed while a revert is on its way stays closed", async () => {
+    const { store, hold, stop } = await setup();
+    await store.begin();
+    const reverted = hold("review.revert");
+    const asked = store.revert(0);
+    await store.done();
+    reverted();
+    await asked;
+    expect(store.state.status).toBe("idle");
+    expect(store.undoable).toBe(0);
+    stop();
+  });
+
+  /** The calls after the last `review.open` the backend handled. */
+  const afterOpen = (calls: string[]): string[] => calls.slice(calls.lastIndexOf("review.open"));
+
+  it("a review that opens after the person left is let go (asked for, by Refresh, by a basis)", async () => {
+    const leave = async (start: (f: Awaited<ReturnType<typeof setup>>) => Promise<void>) => {
+      const f = await setup({ conflictOn: "review.revert" });
+      await f.store.begin();
+      const opened = f.hold("review.open");
+      const asked = start(f);
+      await settle();
+      f.shown.value = { path: "README.md", hash: "ee".repeat(8), kind: "blocks" };
+      await settle();
+      opened();
+      await asked;
+      await settle();
+      expect(afterOpen(f.mock.probe.plugins.calls)).toContain("review.release");
+      expect(f.store.reviewing).toBeNull();
+      f.stop();
+    };
+    // asked for again (a review open on another basis: begin opens it afresh)
+    await leave(async (f) => {
+      await f.store.done();
+      f.notices.splice(0).forEach((n) => n.onGone("dismissed"));
+      await f.store.begin();
+    });
+    // a stale keep | revert reads the review again
+    await leave((f) => f.store.revert(0));
+    // another basis
+    await leave((f) => f.store.setBasis("commit"));
+  });
+
+  it("a basis chosen while the person leaves is not taken for the review it never drew", async () => {
+    const { store, shown, hold, stop } = await setup();
+    await store.begin();
+    const setting = hold("review.setBasis");
+    const asked = store.setBasis("commit");
+    await settle();
+    const status = hold("review.status");
+    shown.value = { path: "README.md", hash: "ee".repeat(8), kind: "blocks" };
+    flushSync();
+    setting();
+    await asked;
+    expect(store.basis).toBe("read");
+    status();
+    await settle();
+    stop();
+  });
+
   it("teardown leaves it idle", async () => {
     const { store, stop } = await setup();
     await store.begin();

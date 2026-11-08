@@ -193,7 +193,9 @@ export class ExplorerStore {
 
   /** Stops listening and closes the view's list; works at any time, also while the list still loads. The backend
    *  keeps one list per view, whatever project the view shows by then: a closed store asks for nothing more and drops
-   *  answers still on their way, so it never closes | resets the list of the project that came after it. */
+   *  answers still on their way, so it never closes | resets the list of the project that came after it. A closed
+   *  store stays closed (one store per sidebar: the next one is a new store), so every action that would reach the
+   *  backend does nothing. */
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
@@ -211,6 +213,7 @@ export class ExplorerStore {
   }
 
   async #open(): Promise<void> {
+    if (this.#closed) return;
     const ask = ++this.#opens;
     this.load = { status: "loading" };
     const remembered = await this.#api.projectSessionGet(SESSION_FILTER);
@@ -312,6 +315,7 @@ export class ExplorerStore {
   }
 
   #remember(): void {
+    if (this.#closed) return;
     if (this.#timer !== null) clearTimeout(this.#timer);
     this.#timer = setTimeout(() => {
       this.#timer = null;
@@ -329,7 +333,9 @@ export class ExplorerStore {
   // ---- filter ----------------------------------------------------------------------------------------------------
 
   async setFilter(filter: TreeFilter): Promise<void> {
+    if (this.#closed) return;
     const result = await this.#api.treeSetFilter(filter);
+    if (this.#closed) return;
     if (!result.ok) {
       this.#host.fail(result.error);
       return;
@@ -351,6 +357,7 @@ export class ExplorerStore {
   }
 
   async #answer(answer: Answer): Promise<void> {
+    if (this.#closed) return;
     this.#answered = answer;
     this.codeOffer = { status: "none" };
     await this.#api.projectSessionSet(CODE_OFFER_KEY, answer);
@@ -358,7 +365,9 @@ export class ExplorerStore {
 
   /** Back to the project's default filter. */
   async resetFilter(): Promise<void> {
+    if (this.#closed) return;
     const result = await this.#api.treeOpen(null);
+    if (this.#closed) return;
     if (!result.ok) {
       this.#host.fail(result.error);
       return;
@@ -391,6 +400,7 @@ export class ExplorerStore {
    * go first: a folder the list does not have yet is only reachable once its parent is opened.
    */
   async #openFolders(paths: readonly string[]): Promise<void> {
+    if (this.#closed) return;
     const chain = new Set<string>();
     for (const p of paths) {
       if (p !== "") chain.add(p);
@@ -406,6 +416,7 @@ export class ExplorerStore {
     this.#remember();
     for (const p of closed) {
       const node = this.nodes.find((n) => n.path === p);
+      if (this.#closed) return;
       if (node?.kind.type === "dir" && node.kind.unlisted !== null) {
         const result = await this.#api.treeOpenFolder(p);
         if (!result.ok) this.#host.fail(result.error);
@@ -525,6 +536,7 @@ export class ExplorerStore {
   /** Enter | double click | click on a file: a folder toggles, a file is shown. `inList` false is for
    *  a path the backend has just created and has not listed yet (its row may still be on its way). */
   async activate(path: string, inList = true): Promise<void> {
+    if (this.#closed) return;
     const node = this.nodes.find((n) => n.path === path);
     if (inList && node === undefined) return;
     if (node?.kind.type === "dir") {
@@ -544,6 +556,7 @@ export class ExplorerStore {
   }
 
   async #follow(path: string | null): Promise<void> {
+    if (this.#closed) return;
     const kept = await this.#api.treeKeep(path);
     if (!kept.ok && !treeGone(kept.error)) this.#host.fail(kept.error);
     if (path !== null) this.reveal(path);
@@ -621,6 +634,7 @@ export class ExplorerStore {
   }
 
   async commitEdit(): Promise<void> {
+    if (this.#closed) return;
     const edit = this.edit;
     if (edit.mode === "none") return;
     const problem = quickNameProblem(edit.value);
@@ -683,6 +697,7 @@ export class ExplorerStore {
    * from the inline name field, which shows a refusal about the name.
    */
   async requestMove(moves: MoveSpec[], inField = false): Promise<void> {
+    if (this.#closed) return;
     const setting = this.#host.linkUpdate();
     const plan = await this.#api.planMove(moves, setting !== "never");
     if (!plan.ok) {
@@ -710,6 +725,7 @@ export class ExplorerStore {
   }
 
   async #apply(plan: MovePlan, updateLinks: boolean): Promise<void> {
+    if (this.#closed) return;
     const result = await this.#api.applyMove(plan.planId, updateLinks);
     this.edit = { mode: "none" };
     if (!result.ok) {
@@ -738,6 +754,7 @@ export class ExplorerStore {
   // ---- delete / undo ---------------------------------------------------------------------------------------------
 
   async remove(paths?: readonly string[]): Promise<void> {
+    if (this.#closed) return;
     const targets = paths === undefined ? this.targets() : topmost(paths);
     if (targets.length === 0) return;
     const result = await this.#api.deleteFiles(targets);
@@ -753,11 +770,13 @@ export class ExplorerStore {
   }
 
   async undo(): Promise<void> {
+    if (this.#closed) return;
     this.#undone(await this.#api.undoFileOp(), t("fileOps.nothingToUndo"));
   }
 
   /** Takes back exactly the operation `id` (an import's notice): not the newest one, whatever came after. */
   async undoEntry(id: number): Promise<void> {
+    if (this.#closed) return;
     this.#undone(await this.#api.undoFileOpEntry(id), t("import.undoGone"));
   }
 
@@ -781,6 +800,7 @@ export class ExplorerStore {
   // ---- outside PerMark -------------------------------------------------------------------------------------------
 
   async copyPath(path: string, full: boolean): Promise<void> {
+    if (this.#closed) return;
     let text = path;
     if (full) {
       const abs = await this.#api.absPath(path);
@@ -811,16 +831,19 @@ export class ExplorerStore {
 
   /** Opens the file in the person's editor (setting). */
   async openInEditor(path: string): Promise<void> {
+    if (this.#closed) return;
     const result = await this.#api.openInEditor(path, null, null);
     if (!result.ok) this.#host.fail(result.error);
   }
 
   async openExternal(path: string, mode: OpenMode): Promise<void> {
+    if (this.#closed) return;
     const result = await this.#api.openExternal(path, mode);
     if (!result.ok) this.#host.fail(result.error);
   }
 
   async openAsProject(path: string): Promise<void> {
+    if (this.#closed) return;
     const abs = await this.#api.absPath(path);
     if (!abs.ok) {
       this.#host.fail(abs.error);
@@ -831,6 +854,7 @@ export class ExplorerStore {
 
   /** "Initialize PerMark in this folder": the window asks first, then creates `.permark/` there. */
   async askInit(path: string, name: string): Promise<void> {
+    if (this.#closed) return;
     const abs = await this.#api.absPath(path);
     if (!abs.ok) {
       this.#host.fail(abs.error);
