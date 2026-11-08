@@ -460,7 +460,8 @@ impl ProjectCore {
             Arc::clone(&own),
             &store,
         )
-        .with_activity(Arc::clone(&activity));
+        .with_activity(Arc::clone(&activity))
+        .with_formats(Arc::clone(&formats));
         let core = Arc::new(Self {
             _explorer_sub: explorer_sub,
             _projects_sub: projects_sub,
