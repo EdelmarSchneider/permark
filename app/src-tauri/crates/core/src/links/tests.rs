@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 
 use super::*;
@@ -167,13 +167,18 @@ fn a_definition_right_before_text_in_a_quote_or_a_list_item_is_found() {
 }
 
 #[test]
-fn a_later_line_is_text_and_links_after_a_two_line_definition_are_placed() {
+fn a_later_line_is_text_and_nothing_is_placed_after_a_definition_over_two_lines() {
     // only the leading definitions leave the paragraph: a later line is never one
     let text = "[a]: a.md\ntext\n[b]: not-a-definition.md\n";
     assert_eq!(placed(text, &OFF), [("a.md", 1)]);
-    // a definition over two lines is not read here, but the links after it are still placed exactly
-    let text = "[a]:\n  a.md\nthen [x](x.md)\n";
-    assert_eq!(placed(text, &OFF), [("x.md", 3)]);
+    // the lines the parser took off are not all one-line definitions: what they hold is not known for sure, so no
+    // link of the paragraph is moved and none of those lines is taken as a definition
+    for text in [
+        "[a]:\n  a.md\nthen [x](x.md)\n",
+        "[a]: a.md\n  \"Title\"\nthen [x](x.md)\n",
+    ] {
+        assert_eq!(placed(text, &OFF), [], "{text:?}");
+    }
 }
 
 #[test]
@@ -264,6 +269,99 @@ fn hostile_input_never_panics() {
     }
 }
 
+#[test]
+fn text_after_a_definition_behind_a_tab_and_multibyte_text_never_panics() {
+    // the parser counts a tab as spaces: a column placed from a line that holds one can fall inside a character
+    for text in [
+        "> [a]: x\n\tx\nx é[l](y.md)\n",
+        "> [a]: x\n>\té [l](y.md)\n",
+        "- [a]: x.md\n\t日本 [l](y.md)\n",
+        "1. [a]: x.md\n \tü [l](y.md) é\n",
+        "> - [a]: x\n>\t\té [l](y.md)\n",
+    ] {
+        for features in [OFF, PROMPTS] {
+            for d in parse(text, &features) {
+                assert!(
+                    matches!(text.get(d.range.clone()), Some("x" | "x.md" | "y.md")),
+                    "{text:?}: {d:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn random_paragraphs_led_by_a_definition_never_panic_and_every_range_holds_a_destination() {
+    const PIECES: [&str; 30] = [
+        " ",
+        "  ",
+        "\t",
+        ">\t",
+        " \t",
+        ">",
+        "> ",
+        "- ",
+        "1. ",
+        "é",
+        "日本",
+        "ü ",
+        "\n",
+        "\r\n",
+        "\r",
+        "[l](y.md)",
+        "[é日](y.md)",
+        "![i](ü.png)",
+        "\n>\t",
+        "[c](<c d.md>)",
+        "<a href=\"h.md\">h</a>",
+        "[d]: d.md ",
+        "[e]: <e f.md> \"t\"",
+        "`",
+        "|",
+        "\\",
+        "[r][d]",
+        "<context>",
+        "</context>",
+        "text",
+    ];
+    const DESTS: [&str; 6] = ["y.md", "ü.png", "<c d.md>", "h.md", "d.md", "<e f.md>"];
+    const LEADS: [&str; 8] = [
+        "",
+        "> ",
+        "- ",
+        "1. ",
+        "\t",
+        ">\t",
+        "<context>\n",
+        "\u{feff}",
+    ];
+    // xorshift: the same texts on every run
+    let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
+    let mut pick = |n: usize| -> usize {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        usize::try_from(seed % u64::try_from(n).unwrap()).unwrap()
+    };
+    for _ in 0..500 {
+        let mut text = LEADS[pick(LEADS.len())].to_owned();
+        text.push_str("[d]: d.md");
+        text.push_str(["\n", "\r\n", "\r"][pick(3)]);
+        for _ in 0..pick(24) {
+            text.push_str(PIECES[pick(PIECES.len())]);
+        }
+        for features in [OFF, PROMPTS] {
+            for d in parse(&text, &features) {
+                assert!(
+                    text.get(d.range.clone())
+                        .is_some_and(|raw| DESTS.contains(&raw)),
+                    "{text:?}: {d:?}"
+                );
+            }
+        }
+    }
+}
+
 // ---- parse: prompt blocks -------------------------------------------------------------------------------------------
 
 /// The bytes each destination's range covers, with its line.
@@ -335,8 +433,27 @@ impl DocEnv for NoFiles {
     }
 }
 
-/// The local destinations reading renders as `<a href>` (footnote marks left out), decoded, each once.
-fn rendered_hrefs(text: &str, features: &MarkdownFeatures) -> BTreeSet<String> {
+#[test]
+fn a_lone_carriage_return_in_front_matter_cut_for_the_card_falls_back_to_the_text_as_written() {
+    // the card cuts the front matter to empty lines, where a lone `\r` is no line break any more: the lines no longer
+    // pair up, so the text is read as written, where a prompt tag line opens an HTML block
+    let text =
+        "---\r\nkey: a\rb\r\n---\r\n<context>\r\n[z](z.md)\r\n</context>\r\n\r\n[w](w.md)\r\n";
+    let card = MarkdownFeatures {
+        front_matter_card: Some(no_card),
+        ..PROMPTS
+    };
+    assert_eq!(placed(text, &PROMPTS), [("z.md", 6), ("w.md", 9)]);
+    assert_eq!(placed(text, &card), [("w.md", 9)]);
+    assert_eq!(placed(text, &card), placed(text, &OFF));
+}
+
+/// A destination as reading shows it: `("a", href)` for a link, `("img", project path)` for a picture.
+type Shown = (&'static str, String);
+
+/// The local destinations reading renders as `<a href>` (footnote marks left out) and `<img src>`, decoded, counted
+/// per occurrence.
+fn rendered(text: &str, features: &MarkdownFeatures) -> BTreeMap<Shown, usize> {
     let known = HashSet::new();
     let rendered = MarkdownFormat.render(
         text.strip_prefix('\u{feff}').unwrap_or(text),
@@ -350,35 +467,105 @@ fn rendered_hrefs(text: &str, features: &MarkdownFeatures) -> BTreeSet<String> {
     let Body::Markdown { blocks, .. } = rendered.body else {
         panic!("not markdown");
     };
-    let mut out = BTreeSet::new();
+    let mut out = BTreeMap::new();
     for block in blocks {
         let html = block.html.unwrap_or_default();
-        for rest in html.split("<a ").skip(1) {
-            let tag = &rest[..rest.find('>').unwrap_or(rest.len())];
-            let Some((_, value)) = tag.split_once("href=\"") else {
-                continue;
-            };
-            let href = percent_decode(&value[..value.find('"').unwrap()].replace("&amp;", "&"));
-            if !tag.contains("data-footnote") && scheme_of(&href).is_none() {
-                out.insert(href);
+        for (open, attribute, kind) in [("<a ", "href=\"", "a"), ("<img ", "src=\"", "img")] {
+            for rest in html.split(open).skip(1) {
+                let tag = &rest[..rest.find('>').unwrap_or(rest.len())];
+                let Some((_, value)) = tag.split_once(attribute) else {
+                    continue;
+                };
+                let value = value[..value.find('"').unwrap()].replace("&amp;", "&");
+                // reading points a picture at its project file
+                let shown = match kind {
+                    "a" => (!tag.contains("data-footnote") && scheme_of(&value).is_none())
+                        .then(|| percent_decode(&value)),
+                    _ => value.strip_prefix("pm-asset:").map(percent_decode),
+                };
+                if let Some(value) = shown {
+                    *out.entry((kind, value)).or_insert(0) += 1;
+                }
             }
         }
     }
     out
 }
 
-/// The local destinations `parse` finds that reading makes `<a href>` of, each once.
-fn parsed_hrefs(text: &str, features: &MarkdownFeatures) -> BTreeSet<String> {
-    parse(text, features)
+/// What reading shows of `dest` when it is not a definition, read from the bytes of its range: `None` for a
+/// destination reading shows neither as a link nor as a picture (web, other HTML attributes).
+fn shown_as(text: &str, dest: &Dest) -> Option<Shown> {
+    let href = dest.inner(text);
+    if scheme_of(href).is_some() {
+        return None;
+    }
+    let link = || Some(("a", percent_decode(href)));
+    let picture = || local_target("doc.md", href).map(|path| ("img", path));
+    match dest.kind {
+        Kind::Inline | Kind::Definition => link(),
+        Kind::Image => picture(),
+        Kind::Html => {
+            let before = &text[..dest.range.start];
+            let tag = &before[before.rfind('<')?..];
+            if tag.starts_with("<a ") && tag.ends_with("href=\"") {
+                link()
+            } else if tag.starts_with("<img ") && tag.ends_with("src=\"") {
+                picture()
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// Every destination reading shows is one `parse` finds, as often and from the bytes of its range: links and pictures
+/// by occurrence; what is left is shown through references, each of a definition `parse` found, and every
+/// definition found is one reading uses.
+fn assert_same_links(name: &str, text: &str, features: &MarkdownFeatures) {
+    let shown = rendered(text, features);
+    let mut left = shown.clone();
+    let mut definitions = Vec::new();
+    for dest in parse(text, features) {
+        if dest.kind == Kind::Definition {
+            definitions.push(dest);
+            continue;
+        }
+        let Some(key) = shown_as(text, &dest) else {
+            continue;
+        };
+        let count = left.get_mut(&key);
+        assert!(
+            count.as_ref().is_some_and(|n| **n > 0),
+            "{name}: {key:?} is found more often than reading shows it"
+        );
+        if let Some(n) = count {
+            *n -= 1;
+        }
+    }
+    left.retain(|_, n| *n > 0);
+    let used = |dest: &Dest, (kind, value): &Shown| {
+        let href = dest.inner(text);
+        match *kind {
+            "a" => percent_decode(href) == *value,
+            _ => local_target("doc.md", href).as_ref() == Some(value),
+        }
+    };
+    for key in left.keys() {
+        assert!(
+            definitions.iter().any(|d| used(d, key)),
+            "{name}: {key:?} is shown by reading and not found"
+        );
+    }
+    for dest in definitions
         .iter()
-        .filter(|d| match d.kind {
-            Kind::Inline | Kind::Definition => true,
-            Kind::Html => text[..d.range.start].ends_with("<a href=\""),
-            Kind::Image => false,
-        })
-        .map(|d| d.inner(text).to_owned())
-        .filter(|href| scheme_of(href).is_none())
-        .collect()
+        .filter(|d| scheme_of(d.inner(text)).is_none())
+    {
+        assert!(
+            shown.keys().any(|key| used(dest, key)),
+            "{name}: definition {:?} is found and not used by reading",
+            dest.inner(text)
+        );
+    }
 }
 
 #[test]
@@ -405,6 +592,7 @@ fn every_link_reading_renders_is_one_parse_finds() {
         "[guide]: docs/guide.md\nSee the [guide] and [x](x.md).\n",
         "> [a]: a.md\n> [b]: b.md\n> quote [a] [x](x.md) [b]\nlazy [z](z.md)\n\n- [l]: l.md\n  item [l][] [y](y.md)\n",
         "<context>\r\n[guide]: docs/guide.md\r\nSee the [guide] and [x](x.md).\r\n</context>\r\n",
+        "[a](x.md) [b](x.md) ![p](img/p.png) <img alt=\"q\" src=\"q%20r.png\"> ![p2](<img/p.png>)\n\n[r][d] [s][d] ![t][d]\n\n[d]: x.md\n",
     ] {
         docs.push((format!("{text:?}"), text.to_owned()));
     }
@@ -414,12 +602,11 @@ fn every_link_reading_renders_is_one_parse_finds() {
     };
     for (name, text) in &docs {
         for features in [OFF, PROMPTS, card] {
-            assert_eq!(
-                parsed_hrefs(text, &features),
-                rendered_hrefs(text, &features),
+            let name = format!(
                 "{name} (prompt features on: {})",
                 features.prompt_blocks.is_some()
             );
+            assert_same_links(&name, text, &features);
         }
     }
 }

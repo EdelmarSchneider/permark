@@ -24,7 +24,7 @@ use permark_core::document::{DocScope, Documents};
 use permark_core::fileops::replacement_href;
 use permark_core::format::MarkdownFeatures;
 use permark_core::fsx;
-use permark_core::links::{local_target, parse, Form};
+use permark_core::links::{local_target, parse, same_links, Form};
 use permark_core::paths::{Vault, VaultPath, WORKTREE_PREFIX};
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
@@ -84,6 +84,8 @@ struct Shared {
 
 enum Msg {
     Batch(FsBatch),
+    /// The plugins that are on changed: other Markdown features may find other links.
+    FormatsChanged,
     Stop,
 }
 
@@ -209,7 +211,8 @@ impl Shared {
     }
 
     /// Reads every document of every root (the lock is let go between documents, so a question is answered at once).
-    fn scan_all(&self) {
+    /// Returns the Markdown features the links were read with.
+    fn scan_all(&self) -> MarkdownFeatures {
         self.state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -226,7 +229,7 @@ impl Shared {
             let (docs, _) = self.explorer.scan_documents(&prefix);
             for (at, path) in docs.iter().enumerate() {
                 if at % 32 == 0 && self.stop.load(Ordering::Relaxed) {
-                    return;
+                    return features;
                 }
                 let Some(abs) = self.abs_of(path) else {
                     continue;
@@ -243,6 +246,7 @@ impl Shared {
             .unwrap_or_else(PoisonError::into_inner)
             .ready = true;
         (self.announce)(&self.summary());
+        features
     }
 
     fn follow(&self, batches: &[FsBatch]) {
@@ -266,7 +270,7 @@ impl Shared {
 }
 
 fn run(shared: &Shared, rx: &std::sync::mpsc::Receiver<Msg>) {
-    shared.scan_all();
+    let mut features = shared.scan_all();
     let mut batches: Vec<FsBatch> = Vec::new();
     let mut deadline: Option<Instant> = None;
     loop {
@@ -278,6 +282,12 @@ fn run(shared: &Shared, rx: &std::sync::mpsc::Receiver<Msg>) {
             Ok(Msg::Batch(batch)) => {
                 batches.push(batch);
                 deadline.get_or_insert_with(|| Instant::now() + QUIET);
+            }
+            // links read with other Markdown features may be other links: every document is read again
+            Ok(Msg::FormatsChanged) => {
+                if !same_links(&features, &(shared.features)()) {
+                    features = shared.scan_all();
+                }
             }
             Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => return,
             Err(RecvTimeoutError::Timeout) => {
@@ -329,6 +339,11 @@ impl BrokenLinksService {
         if !batch.is_empty() {
             let _ = self.tx.send(Msg::Batch(batch.clone()));
         }
+    }
+
+    /// The plugins that are on changed (quick): the documents are read again when their links may differ.
+    pub fn formats_changed(&self) {
+        let _ = self.tx.send(Msg::FormatsChanged);
     }
 
     /// The broken links, by document and line.
@@ -616,7 +631,13 @@ struct BrokenLinksRunning {
     service: Option<Arc<BrokenLinksService>>,
 }
 
-impl Running for BrokenLinksRunning {}
+impl Running for BrokenLinksRunning {
+    fn formats_changed(&self) {
+        if let Some(service) = &self.service {
+            service.formats_changed();
+        }
+    }
+}
 
 impl Drop for BrokenLinksRunning {
     fn drop(&mut self) {

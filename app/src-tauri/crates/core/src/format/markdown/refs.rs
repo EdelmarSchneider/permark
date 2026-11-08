@@ -102,7 +102,7 @@ pub fn at_refs(
         if !literal.contains('@') {
             continue;
         }
-        let Some(range) = lines.range_of(data.sourcepos, body.len()) else {
+        let Some(range) = lines.range_of(data.sourcepos, body) else {
             continue;
         };
         if in_link(node) || body.get(range.clone()) != Some(literal.as_ref()) {

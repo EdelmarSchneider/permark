@@ -408,6 +408,30 @@ fn links_inside_prompt_blocks_are_checked_and_repaired_while_the_prompt_features
 }
 
 #[test]
+fn documents_are_checked_again_when_the_prompt_features_turn_off_and_on() {
+    const NOTE: &str = "<context>\n[plan](old/plan.md)\n</context>\n";
+    let mut h = Harness::with_prompts();
+    h.write("a/note.md", NOTE);
+    h.open();
+    assert_eq!(h.broken(), ["a/note.md:2:old/plan.md"]);
+    let core = h.core().clone();
+    h.env.set_settings(AppSettings {
+        plugins: BTreeMap::from([(PluginId::of("prompt-blocks"), false)]),
+        ..AppSettings::default()
+    });
+    core.apply_plugins(&h.env);
+    wait_until("checked without the prompt features", || {
+        h.broken().is_empty()
+    });
+    h.env.set_settings(AppSettings::default());
+    core.apply_plugins(&h.env);
+    wait_until("checked with them again", || {
+        h.broken() == ["a/note.md:2:old/plan.md"]
+    });
+    drop(core);
+}
+
+#[test]
 fn off_leaves_nothing_behind() {
     let mut h = Harness::new();
     h.write("a.md", "[x](gone.md)\n");

@@ -103,11 +103,12 @@ impl Lines {
         self.starts.get(line.checked_sub(1)?).copied()
     }
 
-    /// Byte range of a node from its 1-based `sourcepos` (end column inclusive).
-    pub(crate) fn range_of(&self, pos: Sourcepos, len: usize) -> Option<Range<usize>> {
+    /// Byte range in `text` of a node from its 1-based `sourcepos` (end column inclusive); `None` when it does not
+    /// fall on characters of `text`.
+    pub(crate) fn range_of(&self, pos: Sourcepos, text: &str) -> Option<Range<usize>> {
         let start = self.start_of(pos.start.line)? + pos.start.column.checked_sub(1)?;
         let end = self.start_of(pos.end.line)? + pos.end.column;
-        (start < end && end <= len).then_some(start..end)
+        within(text, start, end)
     }
 
     /// 1-based line of a byte offset.
@@ -126,6 +127,12 @@ impl Lines {
         }
         Some(start..stop)
     }
+}
+
+/// `start..end` when it is a non-empty range of whole characters of `text`.
+fn within(text: &str, start: usize, end: usize) -> Option<Range<usize>> {
+    (start < end && text.is_char_boundary(start) && text.is_char_boundary(end))
+        .then_some(start..end)
 }
 
 fn options() -> Options<'static> {
@@ -162,6 +169,14 @@ pub fn parse(text: &str, features: &MarkdownFeatures) -> Vec<Dest> {
         dest.range = dest.range.start + offset..dest.range.end + offset;
     }
     dests
+}
+
+/// Whether [`parse`] finds the same destinations in every text with `a` as with `b`: the prompt features change the
+/// text parsed, and whether a front matter card is on changes how the front matter is cut from it.
+#[must_use]
+pub fn same_links(a: &MarkdownFeatures, b: &MarkdownFeatures) -> bool {
+    a.prompt_blocks == b.prompt_blocks
+        && a.front_matter_card.is_some() == b.front_matter_card.is_some()
 }
 
 /// The destinations of `source` (`body` with whole lines replaced) at their places in `body`: the same line, the same
@@ -203,8 +218,8 @@ fn scan(body: &str, lines: &Lines) -> Vec<Dest> {
         let pos = data.sourcepos;
         let moved = raised.as_ref().filter(|p| p.holds(pos.start.line));
         let range = match moved {
-            Some(paragraph) => paragraph.range_of(pos, lines, body.len()),
-            None => lines.range_of(pos, body.len()),
+            Some(paragraph) => paragraph.range_of(pos, lines, body),
+            None => lines.range_of(pos, body),
         };
         let moved = moved.is_some();
         match &data.value {
@@ -281,6 +296,16 @@ impl AfterDefinitions {
         if taken == 0 || taken > pos.end.line - first {
             return None;
         }
+        // only lines read as definitions here are surely what the parser took off: after a definition over several
+        // lines (destination or title on the next one) nothing of the paragraph is placed or taken as a definition
+        let defined = (first..first + taken).all(|line| {
+            lines
+                .content_of(line, body)
+                .is_some_and(|content| definition_in(&body[content]).is_some())
+        });
+        if !defined {
+            return None;
+        }
         // before the text of the other lines: indentation, and quote marks inside a container
         let top = node
             .parent()
@@ -317,11 +342,12 @@ impl AfterDefinitions {
         Some(lines.start_of(self.first + real)? + self.starts.get(real)? + at)
     }
 
-    /// [`Lines::range_of`] for a node of this paragraph's text.
-    fn range_of(&self, pos: Sourcepos, lines: &Lines, len: usize) -> Option<Range<usize>> {
+    /// [`Lines::range_of`] for a node of this paragraph's text. The parser counts a tab as spaces, so a place found
+    /// from a line that holds one can fall inside a character: such a node is left out.
+    fn range_of(&self, pos: Sourcepos, lines: &Lines, text: &str) -> Option<Range<usize>> {
         let start = self.place(pos.start.line, pos.start.column.checked_sub(1)?, lines)?;
         let end = self.place(pos.end.line, pos.end.column, lines)?;
-        (start < end && end <= len).then_some(start..end)
+        within(text, start, end)
     }
 }
 
@@ -335,7 +361,8 @@ fn with_kind(mut dest: Dest, kind: Kind) -> Dest {
 /// [`inline_dest`] on the node text; when the parser's columns are off to the left (inside a table cell the parser
 /// counts an escaped pipe `\|` as one character), the same text a few bytes to the right.
 fn shifted_inline_dest(body: &str, range: &Range<usize>, url: &str) -> Option<Dest> {
-    let line_end = body[range.start..]
+    let line_end = body
+        .get(range.start..)?
         .find(['\n', '\r'])
         .map_or(body.len(), |at| range.start + at);
     for shift in 0..=SHIFT_LIMIT {

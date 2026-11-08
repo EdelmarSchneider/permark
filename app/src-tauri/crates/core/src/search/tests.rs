@@ -1379,6 +1379,58 @@ fn config_files_are_found_by_their_keys_while_a_format_is_on_and_never_by_values
 }
 
 #[test]
+fn links_of_documents_are_read_again_when_the_prompt_features_change() {
+    use crate::format::{
+        Contributions, FormatRegistry, MarkdownFeature, PromptBlocks, DEFAULT_PROMPT_TAGS,
+    };
+    use std::sync::RwLock;
+
+    let dir = tempfile::tempdir().unwrap();
+    // no blank line after the tag: a link only while the prompt features are on
+    write(
+        dir.path(),
+        "a.md",
+        "<context>\n[b](docs/b.md)\n</context>\n",
+    );
+    write(dir.path(), "docs/b.md", "# b\n");
+    let vault = Vault::new(Root::open(dir.path()).unwrap());
+    let sink = Arc::new(Recorder::default());
+    let explorer = Arc::new(Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        sink.clone(),
+        None,
+    ));
+    let formats = Arc::new(RwLock::new(Arc::new(FormatRegistry::core())));
+    let index = SearchIndex::start_with(
+        vault,
+        explorer,
+        sink,
+        "root".to_owned(),
+        Arc::clone(&formats),
+    );
+    assert!(index.wait_ready(Duration::from_secs(60)));
+    let wait_for = |what: &str, want: &[&str]| {
+        let start = Instant::now();
+        while index.linking_to("docs/b.md") != want {
+            assert!(start.elapsed() < Duration::from_secs(20), "{what}");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    assert!(index.linking_to("docs/b.md").is_empty());
+    let prompts =
+        Contributions::default().markdown(vec![MarkdownFeature::PromptBlocks(PromptBlocks {
+            tags: DEFAULT_PROMPT_TAGS,
+        })]);
+    *formats.write().unwrap() = Arc::new(FormatRegistry::build(&prompts));
+    index.formats_changed();
+    wait_for("the link inside the prompt block", &["a.md"]);
+    *formats.write().unwrap() = Arc::new(FormatRegistry::core());
+    index.formats_changed();
+    wait_for("the link gone with the prompt features", &[]);
+}
+
+#[test]
 fn hidden_paths_rank_after_every_other_match_unless_the_tree_shows_them() {
     let f = fx(&[
         (".claude/rules/notes.md", "x\n"),
