@@ -42,7 +42,7 @@ const CELL = 44;
 
 const USAGE = `usage: npm run ux:parity -- [--doc <path>]... [--theme light|dark] [--url <running mock url>]
   [--out <report.json>] [--all]
-  --all: list the known gaps too (default: new differences only, known ones counted per phase)`;
+  --all: list the known gaps too (default: new differences only, known ones counted per area)`;
 
 type Args = {
   docs: string[];
@@ -112,9 +112,9 @@ function cell(v: string): string {
   return v.length > CELL ? `${v.slice(0, CELL - 1)}…` : v;
 }
 
-function table(groups: DiffGroup[], phaseOf?: (g: DiffGroup) => string): string {
+function table(groups: DiffGroup[], areaOf?: (g: DiffGroup) => string): string {
   const head = ["doc", "theme", "element#", "property", "View", "Edit"];
-  if (phaseOf) head.push("phase");
+  if (areaOf) head.push("area");
   const rows = groups.map((g) => {
     const times = g.count > g.indexes.length * g.themes.length ? ` x${g.count}` : "";
     const delta = g.delta === null ? "" : ` (${g.delta > 0 ? "+" : ""}${g.delta})`;
@@ -126,7 +126,7 @@ function table(groups: DiffGroup[], phaseOf?: (g: DiffGroup) => string): string 
       cell(g.view),
       cell(g.edit) + delta,
     ];
-    if (phaseOf) row.push(phaseOf(g));
+    if (areaOf) row.push(areaOf(g));
     return row;
   });
   const widths = head.map((h, c) => Math.max(h.length, ...rows.map((r) => (r[c] ?? "").length)));
@@ -243,14 +243,14 @@ async function main(): Promise<number> {
   }
 
   const result = triage(diffs, gaps);
-  const phaseOf = new Map(result.covered.map((c) => [c.diff, c.gap.phase]));
+  const areaOf = new Map(result.covered.map((c) => [c.diff, c.gap.area]));
   // one document's rows together (a theme-only row would otherwise trail after every document)
   const byDoc = (a: DiffGroup, b: DiffGroup): number =>
     args.docs.indexOf(a.doc) - args.docs.indexOf(b.doc);
   const fresh = groupDiffs(result.uncovered).sort(byDoc);
   const known = groupDiffs(result.covered.map((c) => c.diff)).sort(byDoc);
-  const perPhase = new Map<string, number>();
-  for (const c of result.covered) perPhase.set(c.gap.phase, (perPhase.get(c.gap.phase) ?? 0) + 1);
+  const perArea = new Map<string, number>();
+  for (const c of result.covered) perArea.set(c.gap.area, (perArea.get(c.gap.area) ?? 0) + 1);
   mkdirSync(path.dirname(args.out), { recursive: true });
   writeFileSync(
     args.out,
@@ -261,7 +261,7 @@ async function main(): Promise<number> {
         docs: args.docs,
         themes: args.themes,
         seconds: Math.round((Date.now() - started) / 100) / 10,
-        diffs: diffs.map((d) => ({ ...d, phase: phaseOf.get(d) ?? null })),
+        diffs: diffs.map((d) => ({ ...d, area: areaOf.get(d) ?? null })),
         stale: args.partial ? null : result.stale,
         errors,
       },
@@ -280,23 +280,19 @@ async function main(): Promise<number> {
     console.log("NEW differences: none");
   }
   if (args.all && known.length > 0) {
-    const firstPhase = new Map(
-      result.covered.map((c) => [
-        `${c.diff.doc}|${c.diff.element}|${c.diff.property}`,
-        c.gap.phase,
-      ]),
+    const firstArea = new Map(
+      result.covered.map((c) => [`${c.diff.doc}|${c.diff.element}|${c.diff.property}`, c.gap.area]),
     );
     console.log("\nknown gaps:");
-    console.log(table(known, (g) => firstPhase.get(`${g.doc}|${g.element}|${g.property}`) ?? ""));
+    console.log(table(known, (g) => firstArea.get(`${g.doc}|${g.element}|${g.property}`) ?? ""));
   }
-  const counts = [...perPhase].map(([p, n]) => `${p} ${n}`).join(", ");
+  const counts = [...perArea].map(([p, n]) => `${p} ${n}`).join(", ");
   console.log(`\nknown: ${result.covered.length} (${counts || "none"})`);
   if (args.partial) {
     console.log("partial run: known gaps not checked for staleness");
   } else if (result.stale.length > 0) {
     console.log("known gaps no longer seen (remove them from known-gaps.json):");
-    for (const g of result.stale)
-      console.log(`  ${g.phase}: ${g.element} ${g.property} (${g.doc})`);
+    for (const g of result.stale) console.log(`  ${g.area}: ${g.element} ${g.property} (${g.doc})`);
   }
   if (errors.length > 0) console.log(`page errors: ${errors.length} (report errors[])`);
   console.log(`report: ${args.out} (${Math.round((Date.now() - started) / 1000)} s)`);

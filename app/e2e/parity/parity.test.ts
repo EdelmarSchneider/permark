@@ -145,21 +145,21 @@ describe("known gaps", () => {
   it("covers matching diffs and names the entries that no longer occur", () => {
     const gaps = parseKnownGaps({
       gaps: [
-        { phase: "locked-blocks", element: "locked(*)", why: "w" },
-        { phase: "code-colors", element: "pre", property: "token-colors", why: "w" },
+        { area: "locked-blocks", element: "locked(*)", why: "w" },
+        { area: "code-colors", element: "pre", property: "token-colors", why: "w" },
       ],
     });
     const result = triage([diff("locked(alert)", "reason"), diff("li.task.tight", "height")], gaps);
     expect(result.uncovered.map((d) => d.element)).toEqual(["li.task.tight"]);
     expect(result.covered).toHaveLength(1);
-    expect(result.stale.map((g) => g.phase)).toEqual(["code-colors"]);
+    expect(result.stale.map((g) => g.area)).toEqual(["code-colors"]);
   });
 
-  it("refuses an entry without a known phase", () => {
-    expect(() => parseKnownGaps({ gaps: [{ phase: "B", element: "pre", why: "w" }] })).toThrow();
+  it("refuses an entry without a known area", () => {
+    expect(() => parseKnownGaps({ gaps: [{ area: "B", element: "pre", why: "w" }] })).toThrow();
   });
 
-  it("the shipped list parses and holds no style gap the style fixes must close", () => {
+  it("the shipped list parses and holds no gap for the styles Edit already matches", () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
     const gaps = parseKnownGaps(
       JSON.parse(readFileSync(path.join(here, "known-gaps.json"), "utf8")),

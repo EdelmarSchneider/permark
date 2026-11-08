@@ -242,18 +242,13 @@ export function entryDiffs(where: Where, entry: Entry): Diff[] {
   return out;
 }
 
-/** The later parity work each known gap waits for. */
-export const PHASES = [
-  "code-colors",
-  "locked-blocks",
-  "fewer-locks",
-  "inline-decorations",
-] as const;
-export type Phase = (typeof PHASES)[number];
+/** Feature areas not yet implemented in Edit: each known gap names the one it belongs to. */
+export const AREAS = ["code-colors", "locked-blocks", "fewer-locks", "inline-decorations"] as const;
+export type Area = (typeof AREAS)[number];
 
-/** A difference known and planned: `element` | `property` | `doc` match with `*` as wildcard. */
+/** A difference known (not yet implemented in Edit): `element` | `property` | `doc` match with `*` as wildcard. */
 export type KnownGap = {
-  phase: Phase;
+  area: Area;
   element: string;
   property: string;
   doc: string;
@@ -266,8 +261,8 @@ function text(v: unknown, what: string, def?: string): string {
   return v;
 }
 
-function isPhase(v: unknown): v is Phase {
-  return PHASES.some((p) => p === v);
+function isArea(v: unknown): v is Area {
+  return AREAS.some((a) => a === v);
 }
 
 export function parseKnownGaps(raw: unknown): KnownGap[] {
@@ -278,11 +273,11 @@ export function parseKnownGaps(raw: unknown): KnownGap[] {
     if (typeof g !== "object" || g === null)
       throw new Error(`known gaps: entry ${i} not an object`);
     const entry: Record<string, unknown> = { ...g };
-    if (!isPhase(entry["phase"])) {
-      throw new Error(`known gaps: entry ${i} phase one of ${PHASES.join(", ")}`);
+    if (!isArea(entry["area"])) {
+      throw new Error(`known gaps: entry ${i} area one of ${AREAS.join(", ")}`);
     }
     return {
-      phase: entry["phase"],
+      area: entry["area"],
       element: text(entry["element"], `entry ${i} element`),
       property: text(entry["property"], `entry ${i} property`, "*"),
       doc: text(entry["doc"], `entry ${i} doc`, "*"),

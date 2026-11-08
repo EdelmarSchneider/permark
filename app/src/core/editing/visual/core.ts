@@ -284,6 +284,8 @@ const codeBlockView = $view(codeBlockSchema.node, (ctx): NodeViewConstructor => 
   label.className = "lang";
   label.contentEditable = "false";
   dom.append(pre);
+  // painted when the node is made | updated only: nothing re-reads the host when plugins change, so a plugin toggled
+  // while editing relabels a block on its next change (cheap; the label is cosmetic)
   const paint = (): void => {
     const language = String(node.attrs.language ?? "");
     dom.dataset.info = language;

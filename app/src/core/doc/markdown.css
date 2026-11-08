@@ -429,18 +429,23 @@
   border: 0;
   background: none;
 }
-/* Edit mode: the language label where the highlighter's corner shows it in the reading view. That corner sits 3px
-   from the top and 6px from the right, centers the label on the 24px row of its buttons, and puts its buttons
-   (`--corner-buttons`: the block's actions and Copy, 2px apart) right of the label. */
+/* Edit mode: the language label where the highlighter's corner shows it in the reading view; both read the corner's
+   numbers from the `--code-corner-*` and `--code-label-*` tokens. That corner centers the label on the row of its
+   buttons and puts its buttons (`--corner-buttons`: the block's actions and Copy) right of the label. */
 .md .pm-editor .code-block > .lang {
   position: absolute;
-  top: calc(3px + (24px - 11px * 1.3) / 2);
-  right: calc(6px + var(--corner-buttons, 1) * (24px + 2px));
-  margin-right: 6px;
-  padding: 0 4px;
-  border-radius: 4px;
+  top: calc(
+    var(--code-corner-top) + (var(--icon-btn-sm) - var(--code-label-fs) * var(--code-label-lh)) / 2
+  );
+  right: calc(
+    var(--code-corner-right) + var(--corner-buttons, 1) *
+      (var(--icon-btn-sm) + var(--code-corner-gap))
+  );
+  margin-right: var(--code-label-gap);
+  padding: var(--code-label-pad);
+  border-radius: var(--code-label-radius);
   background: var(--surface);
-  font: 11px / 1.3 var(--font-code);
+  font: var(--code-label-fs) / var(--code-label-lh) var(--font-code);
   color: var(--muted);
   pointer-events: none;
   user-select: none;

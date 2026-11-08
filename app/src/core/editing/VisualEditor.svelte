@@ -10,6 +10,8 @@
   import { t, type MessageKey } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
   import "../doc/markdown.css";
+  import { codeActionsFor } from "../doc/CodeActions.svelte";
+  import { codeEmbed } from "../doc/decorate";
   import { ui } from "../shell/ui.svelte";
   import EditorToolbar from "./EditorToolbar.svelte";
   import CharacterPicker from "./visual/CharacterPicker.svelte";
@@ -228,17 +230,11 @@
    * its language, else the one for any code); right of it, the actions that take the language and Copy.
    */
   function codeLabel(language: string): CodeLabel | null {
-    const word = language.toLowerCase();
     const embeds = contributions.visible("embed", conditions.current);
-    const embed =
-      (word === "" ? undefined : embeds.find((e) => e.language === word)) ??
-      embeds.find((e) => e.language === "@code");
+    const embed = codeEmbed(language, (word) => embeds.find((e) => e.language === word));
     const text = embed?.label?.(language) ?? null;
     if (text === null) return null;
-    const actions = contributions
-      .visible("codeAction", conditions.current)
-      .filter((action) => action.applies(word)).length;
-    return { text, buttons: actions + 1 };
+    return { text, buttons: codeActionsFor(language).length + 1 };
   }
 
   function refresh(): void {

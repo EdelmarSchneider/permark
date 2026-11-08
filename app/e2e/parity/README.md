@@ -11,6 +11,6 @@ What it compares:
 
 Lengths may differ by 1 px (the scroll position by 2 px); colors must match exactly. Blocks the visual editor shows as source count once each.
 
-Differences that later work will close are listed in `known-gaps.json`, each tagged with its `phase`. The probe exits with 1 when it finds a difference that is not on that list, and names the listed gaps it no longer sees, so the list only shrinks. The full report is written to `permark-ux-parity/report.json` in the system's temp folder.
+Differences from features not yet implemented in Edit are listed in `known-gaps.json`, each tagged with its feature `area`. The probe exits with 1 when it finds a difference that is not on that list, and names the listed gaps it no longer sees, so the list only shrinks. The full report is written to `permark-ux-parity/report.json` in the system's temp folder.
 
 Options: `--doc <path>` (repeatable), `--theme light|dark`, `--url <running dev:mock url>`, `--out <file>`, `--all` (list the known gaps too).
