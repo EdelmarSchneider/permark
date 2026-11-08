@@ -42,6 +42,14 @@ function value(argv: string[], at: number, flag: string): string {
   return v;
 }
 
+/** A running mock server's address: loopback only (the probe drives a page, never a remote site). */
+export function loopbackUrl(url: string): string {
+  if (!/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?\//.test(url)) {
+    throw new UsageError("--url: loopback http URL expected (http://127.0.0.1:<port>/)");
+  }
+  return url;
+}
+
 export function parseOptions(argv: string[]): Options {
   const out: Partial<Options> & { axe: boolean } = { axe: true };
   for (let i = 0; i < argv.length; i++) {
@@ -74,14 +82,9 @@ export function parseOptions(argv: string[]): Options {
       case "--app":
         out.app = value(argv, i++, a);
         break;
-      case "--url": {
-        const url = value(argv, i++, a);
-        if (!/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?\//.test(url)) {
-          throw new UsageError("--url: loopback http URL expected (http://127.0.0.1:<port>/)");
-        }
-        out.url = url;
+      case "--url":
+        out.url = loopbackUrl(value(argv, i++, a));
         break;
-      }
       default:
         if (a.startsWith("--")) throw new UsageError(`unknown option ${a}`);
         if (out.source !== undefined)
