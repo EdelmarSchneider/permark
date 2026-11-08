@@ -507,4 +507,32 @@ describe("the mode the person chose", () => {
     expect(session.chosenMode).toBe("source");
     expect(session.path).toBe("docs/handbook.md");
   });
+
+  it("a file without Edit opens in Source and keeps Edit as the choice for the next file", async () => {
+    const { session } = setup();
+    await session.enter("edit", "notes/todo.txt", "text", { kind: "explicit" });
+    expect(session.mode).toBe("source");
+    expect(session.lastEdit).toBe("source");
+    expect(session.chosenMode).toBe("edit");
+  });
+});
+
+describe("the editor fits the file, whatever kind the caller asked for", () => {
+  it("a Markdown file asked as a sheet opens the visual editor", async () => {
+    const { session } = setup();
+    await session.enter("edit", "docs/guide.md", "sheet", { kind: "explicit" });
+    expect(session.kind).toBe("markdown");
+    expect(session.mode).toBe("edit");
+    expect(session.content?.segments?.length).toBeGreaterThan(0);
+  });
+
+  it("a config file asked as Markdown opens in Source, and the choice stays", async () => {
+    const { session } = setup();
+    await session.enter("edit", "Cargo.toml", "markdown", { kind: "explicit" });
+    expect(session.kind).toBe("text");
+    expect(session.mode).toBe("source");
+    expect(session.lastEdit).toBe("source");
+    expect(session.chosenMode).toBe("edit");
+    expect(session.content?.segments).toBeNull();
+  });
 });
