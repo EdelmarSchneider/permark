@@ -172,6 +172,10 @@
   text-decoration-style: solid;
   text-decoration-color: var(--text);
 }
+/* Edit: a click on a reference places the caret (Ctrl | Cmd + click opens it) */
+.md .pm-editor .code-ref {
+  cursor: text;
+}
 .md kbd {
   font: 500 0.78em var(--font-code);
   padding: 0.05em 0.4em;

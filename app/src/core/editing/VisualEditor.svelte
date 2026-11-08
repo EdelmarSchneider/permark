@@ -15,7 +15,10 @@
   import type { ContributionOf } from "../plugins/registry.svelte";
   import "../doc/markdown.css";
   import { codeActionsFor } from "../doc/CodeActions.svelte";
-  import { codeEmbed } from "../doc/decorate";
+  import { codeEmbed, type CodeRefTarget } from "../doc/decorate";
+  import { refLabel } from "../doc/codeRefs";
+  import ContextMenu from "../explorer/ContextMenu.svelte";
+  import type { MenuEntry } from "../explorer/menu";
   import { ui } from "../shell/ui.svelte";
   import EditorToolbar from "./EditorToolbar.svelte";
   import CharacterPicker from "./visual/CharacterPicker.svelte";
@@ -35,6 +38,7 @@
     Format,
     LockReason,
     LookBook,
+    LooksHost,
     SlashState,
   } from "./visual";
   import type { PickerKind } from "./visual/characters";
@@ -67,6 +71,8 @@
     | { kind: "picker"; picker: PickerKind };
   let popover = $state<Popover>({ kind: "none" });
   let targets = $state.raw<string[]>([]);
+  /** The files a Ctrl | Cmd + clicked code reference can mean, to choose from. */
+  let refMenu = $state.raw<{ x: number; y: number; entries: readonly MenuEntry[] } | null>(null);
 
   let mod: Module | null = null;
   let core: Core | null = null;
@@ -289,6 +295,51 @@
     return codeEmbedOf(language)?.colors?.() ?? null;
   }
 
+  /**
+   * View's lookups for the inline looks of `path`: its link cache, its code reference resolution, its tooltips; a
+   * Ctrl | Cmd + click opens a reference as View's click does. Files that come or go make links be looked up again.
+   */
+  function looksHost(path: string): LooksHost {
+    const modKey = (): string => documents.decorator.refSetup().mod;
+    return {
+      links: (hrefs) => documents.decorator.links.resolve(hrefs),
+      codeRefs: async (written) => {
+        const result = await api.resolveCodeRefs(path, [...written]);
+        return result.ok ? result.value : null;
+      },
+      promptText: () => conditions.current.plugins.includes("prompt-blocks"),
+      refTitle: (paths, line) => {
+        const [first] = paths;
+        return paths.length === 1 && first !== undefined
+          ? t("edit.codeRefTitle", { path: refLabel(first, line), mod: modKey() })
+          : t("edit.codeRefTitleMany", { count: paths.length, mod: modKey() });
+      },
+      missingTitle: (missing) => t("link.missing", { path: missing }),
+      openRef: (target: CodeRefTarget, at) => {
+        const entries = documents.codeRefChoices(target, false);
+        if (entries !== null) refMenu = { ...at, entries };
+      },
+      onFiles: (changed) => {
+        let gone = false;
+        let stop: (() => void) | null = null;
+        void api
+          .on("tree-changed", ({ delta }) => {
+            if (delta.added.length + delta.removed.length + delta.renamed.length === 0) return;
+            documents.decorator.links.forget();
+            changed();
+          })
+          .then((unlisten) => {
+            if (gone) unlisten();
+            else stop = unlisten;
+          });
+        return () => {
+          gone = true;
+          stop?.();
+        };
+      },
+    };
+  }
+
   function refresh(): void {
     if (core && mod) format = mod.formatOf(core.view.state);
   }
@@ -340,6 +391,7 @@
           openHint: t("edit.block.openHint"),
         },
         code: { label: codeLabel, colors: codeColors },
+        looks: looksHost(current.path),
         first: loaded.appPlugins({
           core: () => core,
           changed: () => {
@@ -702,6 +754,14 @@
         popoverKey={onPopoverKey}
       />
     </div>
+  {/if}
+  {#if refMenu}
+    <ContextMenu
+      x={refMenu.x}
+      y={refMenu.y}
+      entries={refMenu.entries}
+      close={() => (refMenu = null)}
+    />
   {/if}
   <datalist id="pm-link-targets">
     {#each targets as target (target)}<option value={target}></option>{/each}

@@ -471,6 +471,8 @@ export default {
   "edit.block.other": "記述どおりに保持されるブロック",
   "edit.block.openHint": "Enter で編集",
   "edit.documentText": "文書のテキスト",
+  "edit.codeRefTitle": "{path}\n{mod}+クリックで開く",
+  "edit.codeRefTitleMany": "{count} 個のファイルが一致します。{mod}+クリックで選択してください。",
   "edit.visualForMarkdown":
     "編集モードは Markdown ファイルと設定ファイル用です。ソースモードを使用してください。",
   "edit.diagramNoPlugin":

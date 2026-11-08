@@ -61,6 +61,11 @@ export class LinkCache {
     this.#queue.clear();
   }
 
+  /** Forgets the answers (files came or went): the next ask goes to the backend again. */
+  forget(): void {
+    this.#known.clear();
+  }
+
   peek(href: string): LinkTarget | undefined {
     return this.#known.get(href);
   }
@@ -91,7 +96,8 @@ export class LinkCache {
   }
 }
 
-function isLocalHref(href: string | null): href is string {
+/** A link to a file of the project (not a heading of the page, not a URL): the ones whose target may be missing. */
+export function isLocalHref(href: string | null): href is string {
   return href !== null && href !== "" && !href.startsWith("#") && !SCHEME.test(href);
 }
 
