@@ -84,6 +84,23 @@ function replaceText(find: string, by: string): PMNode {
   return view.state.doc;
 }
 
+/** Types `text` at the end of the last text block of the n-th top-level node. */
+function typeAtEnd(n: number, text: string): PMNode {
+  const view = core.view;
+  let at = -1;
+  view.state.doc.forEach((node, offset, index) => {
+    if (index !== n) return;
+    if (node.isTextblock) at = offset + node.nodeSize - 1;
+    node.descendants((child, pos) => {
+      if (child.isTextblock) at = offset + 1 + pos + 1 + child.content.size;
+      return true;
+    });
+  });
+  if (at < 0) throw new Error("no text block");
+  view.dispatch(view.state.tr.insertText(text, at));
+  return view.state.doc;
+}
+
 /** Every corpus document is built in a real editor: slow machines need more than the default 5 s. */
 const CORPUS_MS = 30_000;
 
@@ -305,5 +322,110 @@ describe("compose", () => {
     const out = compose(core, built, view.state.doc).text;
     expect(out.startsWith("- a\n- b\n\n")).toBe(true);
     expect(out).toMatch(/\n\n[*+] C\n[*+] d\n$/);
+  });
+
+  describe("an edited block keeps every character the person did not change", () => {
+    const list = (lines: number): Segment[] => [
+      { lineStart: 1, lineEnd: lines, kind: "list", lock: null },
+    ];
+    // each block is written differently by the editor than in the file; one letter typed at its end
+    const cases: { name: string; text: string; segments?: Segment[]; expected: string }[] = [
+      {
+        name: "a bare web address",
+        text: "Lorem ipsum (https://example.com/a/b) dolor\n",
+        expected: "Lorem ipsum (https://example.com/a/b) dolorZ\n",
+      },
+      {
+        name: "a dot after a word",
+        text: "Lorem low..high dolor amet below.\n",
+        expected: "Lorem low..high dolor amet below.Z\n",
+      },
+      {
+        name: "a tilde",
+        text: "Lorem ipsum ~100 ms amet\n",
+        expected: "Lorem ipsum ~100 ms ametZ\n",
+      },
+      {
+        name: "a bracket",
+        text: "Lorem [B] ipsum amet\n",
+        expected: "Lorem [B] ipsum ametZ\n",
+      },
+      {
+        name: "a bracket in a heading",
+        text: "## [0.5.7] - 2026-01-01\n",
+        expected: "## [0.5.7] - 2026-01-01Z\n",
+      },
+      {
+        name: "a star that marks nothing",
+        text: "Lorem ipsum-* dolor amet\n",
+        expected: "Lorem ipsum-* dolor ametZ\n",
+      },
+      {
+        name: "a loose list with one blank line",
+        text: "- lorem\n- ipsum\n\n- dolor\n",
+        segments: list(4),
+        expected: "- lorem\n- ipsum\n\n- dolorZ\n",
+      },
+      {
+        name: "an escaped pipe outside a table",
+        text: "Lorem (ipsum \\| dolor) amet\n",
+        expected: "Lorem (ipsum \\| dolor) ametZ\n",
+      },
+      {
+        name: "an indented paragraph",
+        text: "   Lorem ipsum dolor amet\n",
+        expected: "   Lorem ipsum dolor ametZ\n",
+      },
+      {
+        name: "a lazy continuation line",
+        text: "- lorem ipsum\nDolor sit amet\n",
+        segments: list(2),
+        expected: "- lorem ipsum\nDolor sit ametZ\n",
+      },
+      {
+        name: "star bullets",
+        text: "* lorem\n* ipsum\n",
+        segments: list(2),
+        expected: "* lorem\n* ipsumZ\n",
+      },
+      {
+        name: "a table in a list",
+        text: "- lorem\n\n  | a | b |\n  |---|---|\n  | lorem ipsum | c |\n",
+        segments: list(5),
+        expected: "- lorem\n\n  | a | b |\n  |---|---|\n  | lorem ipsum | cZ |\n",
+      },
+      {
+        name: "a padded code span",
+        text: "Lorem ` or ` ipsum\n",
+        expected: "Lorem ` or ` ipsumZ\n",
+      },
+      {
+        name: "a trailing space",
+        text: "Lorem ipsum. \n\nDolor\n",
+        expected: "Lorem ipsum.Z \n\nDolor\n",
+      },
+    ];
+    for (const { name, text, segments, expected } of cases) {
+      it(name, async () => {
+        const built = await load(text, segments);
+        const composed = compose(core, built, typeAtEnd(0, "Z"));
+        expect(composed.text).toBe(expected);
+        expect(composed.changed).toBe(1);
+      });
+    }
+
+    it("typing at the start of an indented paragraph keeps the indentation before it", async () => {
+      const built = await load("   Lorem ipsum\n");
+      const view = core.view;
+      view.dispatch(view.state.tr.insertText("Z", 1));
+      expect(compose(core, built, view.state.doc).text).toBe("   ZLorem ipsum\n");
+    });
+
+    it("deleting an escaped character deletes its escape too", async () => {
+      const built = await load("Lorem [B] (ipsum \\| dolor) amet\n");
+      expect(compose(core, built, replaceText("|", "")).text).toBe(
+        "Lorem [B] (ipsum  dolor) amet\n",
+      );
+    });
   });
 });
