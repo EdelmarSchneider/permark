@@ -2,10 +2,11 @@
 // app's own). Runs without a window too (vitest drives it in jsdom).
 //
 // Added to the stock CommonMark + GFM schema: `pm_locked`, an atom holding a block the editor must not rewrite
-// (drawn as View draws it, `lockedView.ts`), `taskItemView`, the real checkbox of a task item, and the reading
-// view's wrappers of code blocks (with their language) and tables (`codeBlockView`, `tableView`). Left out: stock plugins
-// that change a document by themselves (heading ids, list renumbering, empty-line preservation). A no-break space
-// is written as `&nbsp;`; link marks end at the link's edge; the serializer writes the style below.
+// (drawn as View draws it, `lockedView.ts`; View's prompt boxes around blocks, `promptBoxes.ts`), `taskItemView`, the
+// real checkbox of a task item, and the reading view's wrappers of code blocks (with their language) and tables
+// (`codeBlockView`, `tableView`). Left out: stock plugins that change a document by themselves (heading ids, list
+// renumbering, empty-line preservation). A no-break space is written as `&nbsp;`; link marks end at the link's edge;
+// the serializer writes the style below.
 
 import {
   Editor,
@@ -43,6 +44,7 @@ import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $ctx, $node, $prose, $view } from "@milkdown/kit/utils";
 import { CODE_BLOCK, TABLE_WRAP, taskLabel } from "../../doc/enhance";
 import { lockedHostCtx, lockedKeys, lockedNode, lockedView, type LockedHost } from "./lockedView";
+import { promptBoxes } from "./promptBoxes";
 
 export { LOCKED, type LockReason, type LockedHost } from "./lockedView";
 
@@ -310,6 +312,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
     .use(lockedNode)
     .use(lockedView)
     .use(lockedKeys)
+    .use(promptBoxes)
     .use(taskItemView)
     .use(codeBlockView)
     .use(tableView)

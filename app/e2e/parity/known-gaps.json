@@ -7,11 +7,6 @@
       "why": "View colors code with the highlighter; the visual editor shows code in one color."
     },
     {
-      "area": "locked-blocks",
-      "element": "locked(*)",
-      "why": "The tag lines of a prompt block show their source instead of the edges of View's prompt box."
-    },
-    {
       "area": "inline-decorations",
       "element": "anchor",
       "why": "View puts a # link before each heading."
@@ -30,6 +25,16 @@
       "area": "inline-decorations",
       "element": "a(missing)",
       "why": "View underlines a link to a missing file."
+    },
+    {
+      "area": "inline-decorations",
+      "element": "at-ref",
+      "why": "View links a file named with @ in plain text as a file reference."
+    },
+    {
+      "area": "inline-decorations",
+      "element": "tvar",
+      "why": "View marks a {{variable}} in plain text as a variable chip."
     }
   ]
 }

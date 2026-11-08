@@ -498,6 +498,24 @@ describe("editing", () => {
     const looks = locked.map((l) => `${l.dataset.kind}:${l.dataset.reason}:${l.dataset.look}`);
     expect(looks).toContain("frontMatter:frontMatter:card");
     expect(looks).toContain("math:math:view");
+    // prompt blocks: the tag lines are the edges of View's box, the blocks between stay the editor's own inside it
+    const edges = [...target.querySelectorAll<HTMLElement>(".pm-editor > [data-edge]")];
+    expect(edges.map((e) => `${e.dataset.look}:${e.dataset.edge}`)).toEqual([
+      "prompt:open",
+      "prompt:close",
+      "prompt:open",
+      "prompt:close",
+    ]);
+    const summaries = edges.map((e) => e.querySelector("details.prompt-block > summary"));
+    expect(summaries.map((s) => s?.textContent ?? null)).toEqual([
+      "context",
+      null,
+      "instructions",
+      null,
+    ]);
+    const inside = [...target.querySelectorAll(".pm-editor > .pm-prompt-in")];
+    expect(inside.map((el) => el.localName)).toEqual(["p", "ul", "ol"]);
+    expect(inside[0]?.textContent).toContain("You are reading a prompt file");
     // hydrated as View: the math embed draws the formula
     await until(
       () => target.querySelector(".pm-editor .pm-locked [data-math-style] .katex") !== null,

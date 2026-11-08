@@ -597,3 +597,186 @@ describe("a block opened in place", () => {
     expect(definition?.querySelector(".pm-locked__preview")?.childElementCount).toBe(0);
   });
 });
+
+const PROMPT_TEXT = [
+  "<context>",
+  "Inner words.",
+  "",
+  "$$",
+  "x",
+  "$$",
+  "",
+  "</context>",
+  "",
+  "After.",
+  "",
+  "<context>",
+  "",
+  "Tail.",
+  "",
+].join("\n");
+
+const PROMPT_SEGMENTS = [
+  { lineStart: 1, lineEnd: 1, kind: "html", lock: "html" },
+  { lineStart: 2, lineEnd: 2, kind: "paragraph", lock: null },
+  { lineStart: 4, lineEnd: 6, kind: "math", lock: "math" },
+  { lineStart: 8, lineEnd: 8, kind: "html", lock: "html" },
+  { lineStart: 10, lineEnd: 10, kind: "paragraph", lock: null },
+  { lineStart: 12, lineEnd: 12, kind: "html", lock: "html" },
+  { lineStart: 14, lineEnd: 14, kind: "paragraph", lock: null },
+] as const;
+
+const PROMPT_MATH = '<p><span data-math-style="display">x</span></p>';
+
+/** View's render of PROMPT_TEXT: one box for the paired tags; the unpaired one is dropped by the sanitizer. */
+const PROMPT_BODY: Body = {
+  kind: "markdown",
+  outline: [],
+  frontMatter: null,
+  blocks: [
+    {
+      id: "d1",
+      kind: "details",
+      lineStart: 2,
+      lineEnd: 6,
+      html:
+        '<details data-b="d1" class="prompt-block" data-tag="context" open=""><summary>context</summary>\n' +
+        `<p>Inner words.</p>\n${PROMPT_MATH}\n</details>`,
+    },
+    { id: "p1", kind: "p", lineStart: 10, lineEnd: 10, html: '<p data-b="p1">After.</p>' },
+    { id: "p2", kind: "p", lineStart: 14, lineEnd: 14, html: '<p data-b="p2">Tail.</p>' },
+  ],
+};
+
+async function openPrompt(): Promise<Built> {
+  const built = await buildDoc(core, PROMPT_TEXT, PROMPT_SEGMENTS);
+  const composed = compose(core, built, built.doc);
+  for (const [node, look] of lockedLooks(PROMPT_BODY, built.doc, composed)) looks.set(node, look);
+  core.setDoc(built.doc);
+  return built;
+}
+
+/** The top-level blocks of the editor, in order. */
+const tops = (): HTMLElement[] => [...core.view.dom.querySelectorAll<HTMLElement>(":scope > *")];
+
+const inBox = (el: Element | undefined): boolean => el?.classList.contains("pm-prompt-in") ?? false;
+
+describe("a prompt box", () => {
+  it("its tag lines are the box's edges, the blocks between get the box's layout and stay the editor's own", async () => {
+    await openPrompt();
+    const [open, inner, math, close, after, lone, tail] = tops();
+    expect(open?.dataset.look).toBe("prompt");
+    expect(open?.dataset.edge).toBe("open");
+    const summary = open?.querySelector(":scope > details.prompt-block[open] > summary");
+    expect(summary?.textContent).toBe("context");
+    expect(summary?.childElementCount).toBe(0);
+    expect(open?.querySelector<HTMLElement>(":scope > details")?.dataset.tag).toBe("context");
+    // the frame paints the box: there, stretched to the close edge
+    expect(open?.querySelector(":scope > .pm-prompt-frame")).not.toBeNull();
+    expect(open?.dataset.box).toBe("");
+    expect(open?.style.getPropertyValue("--prompt-box")).toBe("0px");
+    expect(close?.dataset.look).toBe("prompt");
+    expect(close?.dataset.edge).toBe("close");
+    expect(close?.childElementCount).toBe(0);
+
+    expect(inner?.localName).toBe("p");
+    expect(inBox(inner)).toBe(true);
+    expect(inner?.classList.contains("pm-prompt-end")).toBe(false);
+    // a kept block inside: its own View element, never the box's markup
+    expect(math?.dataset.look).toBe("view");
+    expect(inBox(math)).toBe(true);
+    expect(math?.classList.contains("pm-prompt-end")).toBe(true);
+    expect(math?.querySelector(":scope > p > [data-math-style]")).not.toBeNull();
+    expect(math?.querySelector("details, summary")).toBeNull();
+
+    // outside the box, and a tag line without its pair: no box
+    expect([after, lone, tail].some(inBox)).toBe(false);
+    expect(lone?.dataset.edge).toBeUndefined();
+    expect(core.view.dom.querySelectorAll(".pm-prompt-frame")).toHaveLength(1);
+  });
+
+  it("the frame reaches from the top of the open edge to the bottom of the close edge", async () => {
+    await openPrompt();
+    const [open, , , close] = tops();
+    if (!open || !close) throw new Error("no box");
+    open.getBoundingClientRect = () => new DOMRect(0, 100, 600, 40);
+    close.getBoundingClientRect = () => new DOMRect(0, 251, 600, 9);
+    caretInText();
+    expect(open.style.getPropertyValue("--prompt-box")).toBe("160px");
+  });
+
+  it("typing in a block inside: it keeps the box's layout, and only its bytes change", async () => {
+    const built = await openPrompt();
+    const view = core.view;
+    let end = -1;
+    view.state.doc.forEach((node, offset) => {
+      if (node.textContent === "Inner words.") end = offset + node.nodeSize - 1;
+    });
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, end)));
+    view.dispatch(view.state.tr.insertText(" More."));
+    const inner = tops()[1];
+    expect(inner?.textContent).toBe("Inner words. More.");
+    expect(inBox(inner)).toBe(true);
+    const composed = compose(core, built, view.state.doc);
+    expect(composed.text).toBe(PROMPT_TEXT.replace("Inner words.", "Inner words. More."));
+    expect(composed.changed).toBe(1);
+  });
+
+  it("a click on a tag line opens its source in place, the box still drawn; Escape brings the edge back", async () => {
+    await openPrompt();
+    const open = tops()[0];
+    const summary = open?.querySelector("summary");
+    if (!open || !summary) throw new Error("no edge");
+    press(summary, "mousedown");
+    const click = press(summary, "click");
+    // the box never folds in the editor
+    expect(click.defaultPrevented).toBe(true);
+    expect(open.dataset.look).toBe("open");
+    const field = open.querySelector("textarea");
+    expect(field?.value).toBe("<context>");
+    expect(open.querySelector(":scope > .pm-prompt-frame")).not.toBeNull();
+    expect(inBox(tops()[1])).toBe(true);
+    if (!field) return;
+    key(field, "Escape");
+    expect(open.dataset.look).toBe("prompt");
+    expect(open.querySelector("summary")?.textContent).toBe("context");
+  });
+
+  it("Enter on a selected close tag line opens its source", async () => {
+    await openPrompt();
+    selectLocked(2);
+    core.view.dom.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(tops()[3]?.querySelector("textarea")?.value).toBe("</context>");
+  });
+
+  it("while a tag line is typed in, the box stays; once its new look comes back, the box follows it", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    await openPrompt();
+    const field = openBox(2);
+    type(field, "</contexts>");
+    expect(inBox(tops()[1])).toBe(true);
+    // View's render of the new text: the tag line pairs with nothing, the box is gone
+    refreshed = () => {
+      for (const n of [0, 2]) {
+        const node = core.view.state.doc.nodeAt(lockedAt(n));
+        if (node) looks.set(node, { kind: "none" });
+      }
+    };
+    vi.advanceTimersByTime(250);
+    await settle();
+    expect(inBox(tops()[1])).toBe(false);
+    expect(tops()[0]?.dataset.box).toBeUndefined();
+  });
+
+  it("deleting a tag line takes the box away; undo brings it back", async () => {
+    await openPrompt();
+    const view = core.view;
+    const at = lockedAt(2);
+    view.dispatch(view.state.tr.delete(at, at + 1));
+    expect(tops().some(inBox)).toBe(false);
+    expect(tops()[0]?.dataset.box).toBeUndefined();
+    undo(view.state, view.dispatch);
+    expect(inBox(tops()[1])).toBe(true);
+    expect(tops()[0]?.dataset.box).toBe("");
+  });
+});

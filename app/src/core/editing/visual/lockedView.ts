@@ -1,9 +1,10 @@
 // `pm_locked`: a block the editor keeps as written (its bytes are written back untouched). At rest it looks as View
-// draws its lines: View's blocks (backend HTML, hydrated with View's hooks), View's front matter card, or nothing for
-// lines View does not draw. Only what View cannot be matched with shows the source, with the reason and a way to
-// Source. A click | Enter opens it in place: the front matter as its editable properties, any other block as its
-// source in a text box, View's look of that text below it. What is typed goes into the document at once (the
-// editor's undo, dirty state and autosave see it); leaving the box shows View's look of the new source.
+// draws its lines: View's blocks (backend HTML, hydrated with View's hooks), View's front matter card, an edge of
+// View's prompt box (the box itself: `promptBoxes.ts`), or nothing for lines View does not draw. Only what View
+// cannot be matched with shows the source, with the reason and a way to Source. A click | Enter opens it in place:
+// the front matter as its editable properties, any other block as its source in a text box, View's look of that
+// text below it. What is typed goes into the document at once (the editor's undo, dirty state and autosave see it);
+// leaving the box shows View's look of the new source.
 
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import { closeHistory, redo, undo } from "@milkdown/kit/prose/history";
@@ -15,6 +16,12 @@ import type { BlockHooks } from "../../doc/blocks";
 import type { LockedRender } from "./lockedRender";
 
 export const LOCKED = "pm_locked";
+
+/** Meta of a transaction made when View's looks came back from a render (what depends on them is found again). */
+export const LOOKS_META = "pmLockedLooks";
+
+/** The frame that paints a prompt box: under its open edge, stretched to its close edge (`promptBoxes.ts`). */
+const PROMPT_FRAME = "pm-prompt-frame";
 
 /** Why a block stays as written (backend reasons + the editor's own). */
 export const LOCK_REASONS = [
@@ -135,8 +142,35 @@ function drawBlocks(target: HTMLElement, html: string, hooks: BlockHooks): () =>
   };
 }
 
-/** What the block shows: View's blocks | View's card | nothing | its source | its source opened in a text box. */
-type Look = "view" | "card" | "none" | "source" | "open";
+/**
+ * An edge of View's prompt box into `target`: the open tag line as View's summary row (in a `details` of View's box
+ * classes that paints nothing: the frame does), the close tag line as the box's bottom edge. The tag is text only.
+ */
+function drawEdge(target: HTMLElement, tag: string, edge: "open" | "close"): void {
+  if (edge === "close") return;
+  const box = document.createElement("details");
+  box.className = "prompt-block";
+  box.dataset.tag = tag;
+  box.open = true;
+  const summary = document.createElement("summary");
+  summary.textContent = tag;
+  // a click opens the tag line's source: the box never folds in the editor, nor takes the keyboard
+  summary.tabIndex = -1;
+  summary.addEventListener("click", (event) => event.preventDefault());
+  box.append(summary);
+  target.append(box, frameOf(tag));
+}
+
+function frameOf(tag: string): HTMLElement {
+  const frame = document.createElement("div");
+  frame.className = PROMPT_FRAME;
+  frame.dataset.tag = tag;
+  frame.setAttribute("aria-hidden", "true");
+  return frame;
+}
+
+/** What the block shows: View's blocks | View's card | a prompt box's edge | nothing | its source | its open source. */
+type Look = "view" | "card" | "prompt" | "none" | "source" | "open";
 
 /** The source opened in place: a text box above View's look of what it holds. */
 type Editing = {
@@ -267,6 +301,8 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
         case "none":
           return "none";
         case "promptTag":
+          drawEdge(dom, render.tag, render.edge);
+          return "prompt";
         case "source":
           return "source";
         default:
@@ -282,6 +318,8 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       hint.textContent = host.sourceHint;
       editing.field.setAttribute("aria-describedby", hint.id);
       dom.append(editing.field, hint, editing.preview);
+      // the open tag line of a prompt box still paints the box around its blocks
+      if (render?.kind === "promptTag" && render.edge === "open") dom.append(frameOf(render.tag));
       fit(editing.field);
       teardown = () => {
         clearTimeout(editing.timer);
@@ -296,6 +334,9 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       dom.replaceChildren();
       delete dom.dataset.notes;
       dom.removeAttribute("tabindex");
+      // which edge of a prompt box it is, opened or not (the box is laid out by it)
+      if (render?.kind === "promptTag") dom.dataset.edge = render.edge;
+      else delete dom.dataset.edge;
       let look: Look;
       if (state.kind === "properties") {
         teardown = host.properties(dom, String(node.attrs.source), replace);
@@ -325,12 +366,20 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, at)));
     };
 
+    /** View's looks came back from a render: the editor finds again what depends on them (prompt boxes). */
+    const looksBack = (): void => {
+      if (!gone) view.dispatch(view.state.tr.setMeta(LOOKS_META, true));
+    };
+
     /** The source changed (an edit of the properties, undo): the look is rendered again. */
     const rerender = (): void => {
       void host.refresh().then(() => {
-        if (gone || state.kind !== "idle") return;
-        render = host.render(node);
-        paint();
+        if (gone) return;
+        if (state.kind === "idle") {
+          render = host.render(node);
+          paint();
+        }
+        looksBack();
       });
     };
 
@@ -387,6 +436,7 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
             // typed on meanwhile: the next pause renders again
             if (gone || state !== editing || node !== asked) return;
             showPreview(editing, host.render(node));
+            looksBack();
           },
           () => {},
         );
@@ -518,8 +568,6 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
     const open = (): boolean => {
       if (state.kind !== "idle") return false;
       if (render?.kind === "frontMatter" && openProperties()) return true;
-      // a prompt box's tag line is one of a pair: it is not opened alone
-      if (render?.kind === "promptTag") return false;
       return openSource();
     };
 

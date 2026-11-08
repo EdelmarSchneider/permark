@@ -736,9 +736,10 @@
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
-  /* a locked block View's blocks cannot be matched with: its source, the reason and the way to Source */
+  /* a locked block View's blocks cannot be matched with: its source, the reason and the way to Source (space above
+     and below only: inside a prompt box it keeps the box's inset) */
   .host :global(.pm-locked[data-look="source"]) {
-    margin: var(--sp-3) 0;
+    margin-block: var(--sp-3);
     border: 1px dashed var(--border-strong);
     border-radius: var(--radius-card);
     background: var(--surface);
@@ -772,7 +773,7 @@
   }
   /* a locked block opened in place: its source in a box shaped as View's code block, View's look of it below */
   .host :global(.pm-locked[data-look="open"]) {
-    margin: 0 0 1em;
+    margin-block: 0 1em;
   }
   .host :global(.pm-locked[data-look="open"].ProseMirror-selectednode) {
     outline: none;

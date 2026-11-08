@@ -5,8 +5,8 @@
 What it compares:
 
 - The content column (left edge, width).
-- Blocks, paired by kind and text: height, the gap to the next block, and the frame (border, radius, background) of code blocks and tables.
-- Elements inside each pair of blocks, paired by order within their type (headings, paragraphs, list items by kind, tables, rows, cells, code, links, quotes, rules, pictures, the code block's language label): font, size, weight, line height, colors, margins, padding, border, radius, underline, and the height of list items and table rows.
+- Blocks, paired by kind and text: height, the gap to the next block, and the frame (border, radius, background) of code blocks, tables and prompt boxes. A prompt box counts as three parts: its frame, its summary row, and the blocks it holds, each compared on its own.
+- Elements inside each pair of blocks, paired by order within their type (headings, paragraphs, list items by kind, tables, rows, cells, code, links, file references, variables, quotes, rules, pictures, summaries, the code block's language label): font, size, weight, line height, colors, margins, padding, border, radius, underline, and the height of list items and table rows.
 - Entering Edit: nothing is selected, the page stays where View was, and the toolbar fits on one row.
 
 Lengths may differ by 1 px (the scroll position by 2 px); colors must match exactly. Blocks the visual editor shows as source count once each; blocks it keeps as written but draws as View are compared like View's blocks.

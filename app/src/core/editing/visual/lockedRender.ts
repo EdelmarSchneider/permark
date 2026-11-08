@@ -7,11 +7,12 @@
 //    before it ("floating"): it belongs to the only HTML block between its anchored neighbours;
 //  - the front matter is the card's data (`Body.frontMatter`), or a code block when the card is off;
 //  - footnote definitions are one block each where written; View lists the referenced ones at the end: by label;
-//  - prompt tag lines are markers in View (the `<details>` box around the blocks between them);
+//  - prompt tag lines are markers in View (the `<details>` box around the blocks between them); the box is one View
+//    block without lines of its children: a kept block inside gets its own element of the box, matched by order;
 //  - link definitions, comments and HTML the sanitizer drops have no View block: nothing to show.
 // Unsure -> `source` (the caller keeps the source look): a View block over more than one block (it would show twice),
-// floating blocks with several possible owners, a prompt box around a kept inner block, a footnote without its list
-// item, a body that is not Markdown.
+// floating blocks with several possible owners, a block in a prompt box whose elements cannot be told apart, a
+// footnote without its list item, a body that is not Markdown.
 
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import type { Block } from "../../../api/generated/Block";
@@ -53,16 +54,20 @@ export function lockedRenders(body: Body, blocks: readonly LineBlock[]): (Locked
   const out = blocks.map((b): LockedRender | null => (b.reason === null ? null : SOURCE));
   if (body.kind !== "markdown") return out;
   const tags = promptTags(body.blocks, blocks);
+  const pairs = pairsOf(tags);
+  const inBox = new Set<number>();
+  for (const pair of pairs) for (let i = pair.open + 1; i < pair.close; i++) inBox.add(i);
   const last = body.blocks.at(-1);
   const section = last !== undefined && isFootnotes(last) ? last : null;
   const views = section === null ? body.blocks : body.blocks.slice(0, -1);
-  const owners = ownersOf(views, blocks, tags);
+  const owners = ownersOf(views, blocks, tags, inBox);
+  const boxed = boxedElements(views, blocks, tags, pairs);
   const mine = new Map<number, string[]>();
   const unsure = new Set<number>();
   views.forEach((view, v) => {
     const own = owners[v] ?? [];
     for (const i of own) {
-      if (own.length > 1 || view.html === null || isPromptBox(view)) unsure.add(i);
+      if (own.length > 1 || view.html === null) unsure.add(i);
       else mine.set(i, [...(mine.get(i) ?? []), view.html]);
     }
   });
@@ -88,8 +93,11 @@ export function lockedRenders(body: Body, blocks: readonly LineBlock[]): (Locked
       return;
     }
     if (unsure.has(i)) return;
-    const html = mine.get(i);
-    out[i] = html === undefined ? NONE : { kind: "html", html: html.join("\n") };
+    // in a box: its own elements of the box, when they can be told apart (a View block of its own too: unsure)
+    const html = inBox.has(i) ? (mine.has(i) ? undefined : boxed.get(i)) : (mine.get(i) ?? []);
+    if (html !== undefined) {
+      out[i] = html.length === 0 ? NONE : { kind: "html", html: html.join("\n") };
+    }
   });
   return out;
 }
@@ -154,6 +162,7 @@ function ownersOf(
   views: readonly Block[],
   blocks: readonly LineBlock[],
   tags: ReadonlyMap<number, PromptTag>,
+  inBox: ReadonlySet<number>,
 ): number[][] {
   const owners: number[][] = [];
   // the backend's last line seen: a block without lines of its own gets it (1 before the first block)
@@ -166,7 +175,8 @@ function ownersOf(
     for (let i = firstEndingFrom(blocks, anchoredEnd + 1); i < blocks.length; i++) {
       const block = blocks[i];
       if (!block || block.lineStart >= before) break;
-      if (block.lineStart > anchoredEnd && block.reason === "html" && !tags.has(i)) {
+      const free = !tags.has(i) && !inBox.has(i);
+      if (block.lineStart > anchoredEnd && block.reason === "html" && free) {
         candidates.push(i);
       }
     }
@@ -180,7 +190,14 @@ function ownersOf(
       (lastEnd === 0
         ? view.lineStart === 1 && unplacedAtStart(blocks)
         : view.lineStart === lastEnd);
-    if (floating) {
+    if (isPromptBox(view)) {
+      // its blocks get their elements by order (`boxedElements`); its lines anchor the blocks after it
+      owners[v] = [];
+      if (!floating) {
+        settle(view.lineStart);
+        anchoredEnd = Math.max(anchoredEnd, view.lineEnd);
+      }
+    } else if (floating) {
       run.push(v);
       owners[v] = [];
     } else {
@@ -348,6 +365,156 @@ function promptTags(views: readonly Block[], blocks: readonly LineBlock[]): Map<
     const name = OPEN_LINE.exec(line)?.[1]?.toLowerCase();
     if (name !== undefined && names.has(name) && !SELF_CLOSING.test(line))
       stack.push({ at: i, name });
+  });
+  return found;
+}
+
+/** A prompt box by the block indexes of its tag lines; `depth`: boxes around it. */
+type Pair = { open: number; close: number; depth: number };
+
+/** The boxes of the paired tag lines, in text order (paired lines nest: each close meets its open on top). */
+function pairsOf(tags: ReadonlyMap<number, PromptTag>): Pair[] {
+  const pairs: Pair[] = [];
+  const stack: number[] = [];
+  for (const [i, tag] of [...tags].sort(([a], [b]) => a - b)) {
+    if (tag.edge === "open") stack.push(i);
+    else {
+      const open = stack.pop();
+      if (open !== undefined) pairs.push({ open, close: i, depth: stack.length });
+    }
+  }
+  return pairs.sort((a, b) => a.open - b.open);
+}
+
+/** Elements without a closing tag. */
+const VOID = new Set(
+  "area base br col embed hr img input link meta param source track wbr".split(" "),
+);
+
+/** View's box: its tag and its elements after the summary; null when not shaped so (then nothing in it is matched). */
+function boxParts(html: string): { tag: string; children: string[] } | null {
+  const tags = tagsOf(html);
+  const first = tags?.[0];
+  if (!tags || !first || first.name !== "details" || first.closing) return null;
+  const tag = /(?:^|\s)data-tag="([^"]*)"/.exec(first.attrs)?.[1];
+  if (tag === undefined) return null;
+  const children: string[] = [];
+  let depth = 0;
+  let start = 0;
+  let last = first.end;
+  for (const [k, t] of tags.entries()) {
+    const opens = !t.closing && !VOID.has(t.name) && !t.attrs.trimEnd().endsWith("/");
+    if (depth === 1 && !t.closing) {
+      // text of its own between the elements: View shows what no block of the editor holds
+      if (html.slice(last, t.start).trim() !== "") return null;
+      start = t.start;
+      if (!opens) {
+        children.push(html.slice(t.start, t.end));
+        last = t.end;
+      }
+    }
+    if (opens) depth += 1;
+    else if (t.closing) {
+      depth -= 1;
+      if (depth === 1) {
+        children.push(html.slice(start, t.end));
+        last = t.end;
+      } else if (depth === 0) {
+        if (k !== tags.length - 1 || html.slice(last, t.start).trim() !== "") return null;
+      } else if (depth < 0) return null;
+    }
+  }
+  if (depth !== 0 || !children[0]?.startsWith("<summary")) return null;
+  return { tag, children: children.slice(1) };
+}
+
+/** Elements a block makes in View's box: one per Markdown block, none for the ones View shows elsewhere | not at all. */
+function elementsOf(block: LineBlock): number | null {
+  switch (block.reason) {
+    case null:
+    case "math":
+    case "diagram":
+    case "data":
+    case "kind":
+    case "reference":
+      return 1;
+    case "footnote":
+    case "definition":
+      return 0;
+    // raw HTML makes any number; the others may span several Markdown blocks
+    case "html":
+    case "parse":
+    case "differs":
+    case "frontMatter":
+      return null;
+    default:
+      return block.reason satisfies never;
+  }
+}
+
+/**
+ * View's elements for the kept blocks inside prompt boxes, by block index. The editor's outermost boxes meet View's
+ * boxes in order; inside one, the blocks take the box's elements in order, as many as each makes: counted from the
+ * start up to the first block of unknown count and from the end back to the last one (a single one of unknown count
+ * takes what is left). A box inside a box is one element, matched the same way inside it.
+ */
+function boxedElements(
+  views: readonly Block[],
+  blocks: readonly LineBlock[],
+  tags: ReadonlyMap<number, PromptTag>,
+  pairs: readonly Pair[],
+): Map<number, string[]> {
+  const found = new Map<number, string[]>();
+  const outer = pairs.filter((pair) => pair.depth === 0);
+  const boxes = views.filter(isPromptBox);
+  if (outer.length !== boxes.length) return found;
+  const byOpen = new Map(pairs.map((pair) => [pair.open, pair]));
+
+  type Unit = { block: number } | { box: Pair };
+  const fill = (html: string, pair: Pair): void => {
+    const parts = boxParts(html);
+    if (parts === null || parts.tag !== tags.get(pair.open)?.tag) return;
+    const units: { unit: Unit; count: number | null }[] = [];
+    for (let i = pair.open + 1; i < pair.close; i++) {
+      const inner = byOpen.get(i);
+      const block = blocks[i];
+      if (inner !== undefined) {
+        units.push({ unit: { box: inner }, count: 1 });
+        i = inner.close;
+      } else if (block !== undefined) units.push({ unit: { block: i }, count: elementsOf(block) });
+    }
+    const all = parts.children;
+    const unknown = units.filter((u) => u.count === null);
+    const known = units.reduce((sum, u) => sum + (u.count ?? 0), 0);
+    const only = unknown[0];
+    if (unknown.length === 1 && only !== undefined) only.count = all.length - known;
+    if (known > all.length || (unknown.length === 0 && known !== all.length)) return;
+    const take = (unit: Unit, elements: string[]): void => {
+      if ("box" in unit) {
+        const box = elements[0];
+        if (box !== undefined) fill(box, unit.box);
+      } else if (blocks[unit.block]?.reason !== null) found.set(unit.block, elements);
+    };
+    let from = 0;
+    let rest = units.length;
+    for (const [k, u] of units.entries()) {
+      if (u.count === null || u.count < 0) {
+        rest = k;
+        break;
+      }
+      take(u.unit, all.slice(from, from + u.count));
+      from += u.count;
+    }
+    let to = all.length;
+    for (const u of units.slice(rest).reverse()) {
+      if (u.count === null || u.count < 0) break;
+      take(u.unit, all.slice(to - u.count, to));
+      to -= u.count;
+    }
+  };
+  outer.forEach((pair, k) => {
+    const html = boxes[k]?.html;
+    if (html) fill(html, pair);
   });
   return found;
 }

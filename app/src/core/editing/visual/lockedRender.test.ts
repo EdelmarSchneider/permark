@@ -280,10 +280,11 @@ describe("locked blocks look like View", () => {
     );
   });
 
-  it("prompt blocks: paired tag lines only; a box around a kept inner block keeps the source look", () => {
+  it("prompt blocks: paired tag lines only; a kept block inside gets its own element of the box, never the box", () => {
+    const math = '<p><span data-math-style="display">x</span></p>';
     const details =
       '<details data-b="d" class="prompt-block" data-tag="context" open=""><summary>context</summary>\n' +
-      '<p><span data-math-style="display">x</span></p>\n</details>';
+      `${math}\n</details>`;
     const blocks = [
       line(1, "<context>", "html"),
       line(2, "$$\nx\n$$", "math"),
@@ -298,14 +299,97 @@ describe("locked blocks look like View", () => {
     ]);
     const renders = lockedRenders(body, blocks);
     expect(renders[0]).toEqual({ kind: "promptTag", tag: "context", edge: "open" });
-    expect(renders[1]).toEqual({ kind: "source" });
+    expect(renders[1]).toEqual({ kind: "html", html: math });
     expect(renders[2]).toEqual({ kind: "promptTag", tag: "context", edge: "close" });
+    // the box itself is drawn by the editor: its markup never comes out of here
+    for (const render of renders) {
+      if (render?.kind === "html") expect(render.html).not.toMatch(/<details|<summary/);
+    }
     // unpaired, and a tag that is no prompt tag: plain HTML blocks
     expect(renders[3]?.kind).not.toBe("promptTag");
     expect(renders[5]?.kind).not.toBe("promptTag");
     // without the prompt blocks feature (no box in View) no line is a prompt tag
     const off = markdown([block(2, 4, "p", '<p><span data-math-style="display">x</span></p>')]);
     expect(lockedRenders(off, blocks).some((r) => r?.kind === "promptTag")).toBe(false);
+  });
+
+  it("in a box, blocks of unknown count: the others are matched from both ends; between two of them, the source", () => {
+    const m1 = '<p><span data-math-style="display">a</span></p>';
+    const m2 = '<p><span data-math-style="display">b</span></p>';
+    const box = (inner: string[]): Block =>
+      block(
+        2,
+        14,
+        "details",
+        '<details data-b="d" class="prompt-block" data-tag="context" open=""><summary>context</summary>\n' +
+          `${inner.join("\n")}\n</details>`,
+      );
+    const blocks = [
+      line(1, "<context>", "html"),
+      line(2, "$$\na\n$$", "math"),
+      line(6, "<div>one</div>", "html"),
+      line(8, "Words."),
+      line(10, "<div>two</div>", "html"),
+      line(12, "$$\nb\n$$", "math"),
+      line(15, "</context>", "html"),
+    ];
+    const both = lockedRenders(
+      markdown([box([m1, "<div>one</div>", "<p>Words.</p>", "<div>two</div>", m2])]),
+      blocks,
+    );
+    expect(both.slice(1, 6)).toEqual([
+      { kind: "html", html: m1 },
+      { kind: "source" },
+      null,
+      { kind: "source" },
+      { kind: "html", html: m2 },
+    ]);
+
+    // a single block of unknown count takes what is left: a comment View drops takes nothing
+    const one = [
+      line(1, "<context>", "html"),
+      line(2, "<!-- note -->", "html"),
+      line(4, "$$\na\n$$", "math"),
+      line(8, "</context>", "html"),
+    ];
+    expect(lockedRenders(markdown([box([m1])]), one).slice(1, 3)).toEqual([
+      { kind: "none" },
+      { kind: "html", html: m1 },
+    ]);
+    // more blocks than the box has elements: nothing in it can be told apart
+    const many = [one[0], line(2, "First."), one[2], one[3]].flatMap((b) => (b ? [b] : []));
+    expect(lockedRenders(markdown([box([m1])]), many)[2]).toEqual({ kind: "source" });
+  });
+
+  it("a box inside a box: its tag lines are edges too, its kept blocks get their elements in it", () => {
+    const math = '<p><span data-math-style="display">x</span></p>';
+    const inner =
+      '<details class="prompt-block" data-tag="example" open=""><summary>example</summary>\n' +
+      `<p>Input.</p>\n${math}\n</details>`;
+    const outer =
+      '<details data-b="d" class="prompt-block" data-tag="examples" open=""><summary>examples</summary>\n' +
+      `<p>Two.</p>\n${inner}\n<hr />\n</details>`;
+    const blocks = [
+      line(1, "<examples>", "html"),
+      line(2, "Two."),
+      line(3, "<example>", "html"),
+      line(4, "Input."),
+      line(6, "$$\nx\n$$", "math"),
+      line(9, "</example>", "html"),
+      line(10, "***", "kind"),
+      line(11, "</examples>", "html"),
+    ];
+    const renders = lockedRenders(markdown([block(2, 10, "details", outer)]), blocks);
+    expect(renders).toEqual([
+      { kind: "promptTag", tag: "examples", edge: "open" },
+      null,
+      { kind: "promptTag", tag: "example", edge: "open" },
+      null,
+      { kind: "html", html: math },
+      { kind: "promptTag", tag: "example", edge: "close" },
+      { kind: "html", html: "<hr />" },
+      { kind: "promptTag", tag: "examples", edge: "close" },
+    ]);
   });
 
   it("the front matter without the card (View: a code block) and a body that is not Markdown", () => {
