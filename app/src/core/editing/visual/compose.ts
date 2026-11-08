@@ -4,7 +4,9 @@
 // block's own text, or a locked atom. ProseMirror keeps an unchanged node as the same object across transactions,
 // so `compose` knows which nodes are untouched without tracking: an untouched block is written with its own bytes,
 // the blank lines between two untouched neighbours too. An edited block that stands for one block keeps that block's
-// bytes with only the editor's change spliced in (`splice`); anything else is written by the editor.
+// bytes with only the editor's change spliced in (`splice`); anything else is written by the editor. A node holding
+// inline pieces is read back from its text (`readBack`): where its pieces are (`Composed.pieces`), and whether the
+// text still reads as them (`Composed.lost`: else a formula | reference would be text on the next load).
 
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import type { Segment } from "../../../api/generated/Segment";
@@ -12,6 +14,7 @@ import { diff } from "../lines";
 import type { TextRange } from "../session.svelte";
 import { blocksUsingReferences, classify, sameMeaning } from "./classify";
 import { LOCKED, type Core, type LockReason } from "./core";
+import { pieceSources, piecesIn } from "./inlineSource";
 import { NO_REFERENCES, useReferences } from "./references";
 
 /** One block of the text the document was made from. */
@@ -141,6 +144,13 @@ export type Composed = {
   lines: Map<PMNode, number>;
   /** Range of each top-level node in `text`, by its index in the document (`null`: an empty paragraph, not written). */
   ranges: (TextRange | null)[];
+  /**
+   * Ranges in `text` of the inline pieces of each top-level node, by its index in the document; a node in `lost`:
+   * its whole range (none of its text is known to be prose).
+   */
+  pieces: TextRange[][];
+  /** Document indexes of the nodes whose text does not read back as their inline pieces. */
+  lost: number[];
 };
 
 const isEmptyParagraph = (node: PMNode): boolean =>
@@ -332,6 +342,27 @@ function leaveOut(core: Core, text: string, hunks: readonly Hunk[], now: string)
   return applied(text, kept);
 }
 
+/** Offsets of each piece of a node in its text, by node; null: the text reads as other pieces. */
+const readBacks = new WeakMap<PMNode, { text: string; spans: readonly TextRange[] | null }>();
+
+/**
+ * The pieces of `node` read back from `text`, its writing: their offsets in it; null when it reads as other pieces
+ * (the splice and the editor's writing read alike, so no other writing would keep them).
+ */
+function readBack(core: Core, node: PMNode, text: string): readonly TextRange[] | null {
+  const known = readBacks.get(node);
+  if (known?.text === text) return known.spans;
+  const sources = pieceSources(node);
+  let spans: readonly TextRange[] | null = [];
+  if (sources.length > 0) {
+    const read = core.editor.action((ctx) => piecesIn(ctx, text));
+    const same = read.length === sources.length && read.every((p, k) => p.source === sources[k]);
+    spans = same ? read.map(({ from, to }) => ({ from, to })) : null;
+  }
+  readBacks.set(node, { text, spans });
+  return spans;
+}
+
 /** The text of `doc` (see the header). */
 export function compose(core: Core, built: Built, doc: PMNode): Composed {
   const nodes: PMNode[] = [];
@@ -435,8 +466,11 @@ export function compose(core: Core, built: Built, doc: PMNode): Composed {
 
   const lines = new Map<PMNode, number>();
   const ranges: (TextRange | null)[] = Array.from({ length: doc.childCount }, () => null);
+  const pieces: TextRange[][] = Array.from({ length: doc.childCount }, () => []);
+  const lost: number[] = [];
   if (chunks.length === 0) {
-    return { text: n === 0 ? built.text : (built.separators[n] ?? ""), changed: n, lines, ranges };
+    const text = n === 0 ? built.text : (built.separators[n] ?? "");
+    return { text, changed: n, lines, ranges, pieces, lost };
   }
   const leading = n === 0 ? "" : (built.separators[0] ?? "");
   const trailing = n === 0 ? built.text : (built.separators[n] ?? "");
@@ -449,13 +483,21 @@ export function compose(core: Core, built: Built, doc: PMNode): Composed {
       line += countBreaks(sep);
     }
     lines.set(chunk.node, line);
-    ranges[indexes[i] ?? 0] = { from: text.length, to: text.length + chunk.text.length };
+    const index = indexes[i] ?? 0;
+    const from = text.length;
+    ranges[index] = { from, to: from + chunk.text.length };
+    const spans = readBack(core, chunk.node, chunk.text);
+    if (spans === null) lost.push(index);
+    pieces[index] = (spans ?? [{ from: 0, to: chunk.text.length }]).map((span) => ({
+      from: from + span.from,
+      to: from + span.to,
+    }));
     text += chunk.text;
     line += countBreaks(chunk.text);
   });
   text += trailing;
   const changed = chunks.filter((c) => !c.kept).length + (n - claimed.size);
-  return { text, changed, lines, ranges };
+  return { text, changed, lines, ranges, pieces, lost };
 }
 
 function countBreaks(text: string): number {

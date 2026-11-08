@@ -8,9 +8,9 @@
 // emptied, the piece goes. A footnote's number counts the references before it in the whole document (blocks kept as
 // written too): the footnotes are drawn again when the numbers change.
 
-import type { Literal } from "mdast";
+import type { Literal, Nodes, Text } from "mdast";
 import type { Handle } from "mdast-util-to-markdown";
-import { parserCtx } from "@milkdown/kit/core";
+import { parserCtx, remarkCtx } from "@milkdown/kit/core";
 import type { Ctx } from "@milkdown/kit/ctx";
 import { closeHistory, redo, undo } from "@milkdown/kit/prose/history";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
@@ -111,15 +111,31 @@ writeSource.peek = (node: { value: string }): string => node.value.charAt(0);
 const AFTER_LABEL = /^[[(:]/;
 
 /**
- * Milkdown's text writing (`text`) with every `$` escaped, and a `(` | `[` | `:` right after a `]`: Milkdown writes a
- * text that ends in a space as it is, without the escapes (`unsafe` below) any other text gets.
+ * `written` (a text's writing) right after the piece `piece`, its first character escaped | encoded when it would
+ * change the piece: a `(` | `[` | `:` after a reference's `]` (a link, a definition), a digit after the closing `$`
+ * of `$x$` (no digit may follow it: the formula would be text). A numeric character reference reads as the digit
+ * and is no digit to the math rule. Prose elsewhere is written as typed (a `]:` inside it defines nothing).
+ */
+function afterPiece(piece: string, written: string): string {
+  if (piece.endsWith("]") && AFTER_LABEL.test(written)) return `\\${written}`;
+  const digit = /^[0-9]/.exec(written)?.[0];
+  if (digit !== undefined && mathParts(piece)?.open === "$") {
+    return `&#${digit.charCodeAt(0)};${written.slice(1)}`;
+  }
+  return written;
+}
+
+/**
+ * Milkdown's text writing (`text`) with every `$` escaped (Milkdown writes a text that ends in a space as it is,
+ * without the escapes, `unsafe` below, any other text gets) and its start kept apart from a piece right before it.
  */
 export function escapingText(text: Handle | undefined): Handle {
-  return (node: { value: string }, parent, state, info) => {
+  return (node: Text, parent, state, info) => {
     const written = text ? text(node, parent, state, info) : state.safe(node.value, info);
-    if (written !== node.value) return written;
-    const escaped = written.replace(/\$/g, "\\$");
-    return info.before === "]" && AFTER_LABEL.test(escaped) ? `\\${escaped}` : escaped;
+    const escaped = written === node.value ? written.replace(/\$/g, "\\$") : written;
+    const siblings: readonly Nodes[] = parent?.children ?? [];
+    const before = siblings[siblings.indexOf(node) - 1];
+    return before?.type === "inlineSource" ? afterPiece(before.value, escaped) : escaped;
   };
 }
 
@@ -133,12 +149,8 @@ function remarkInlineSource(ctx: Ctx): RemarkPluginRaw<undefined> {
     (data.fromMarkdownExtensions ??= []).push(mathFromMarkdown);
     (data.toMarkdownExtensions ??= []).push({
       handlers: { inlineSource: writeSource },
-      unsafe: [
-        // a `$` typed as text stays text (as `*` and `_` do): written escaped, it never starts a formula on the next read
-        { character: "$", inConstruct: "phrasing" },
-        // a `:` typed right after a reference that opens a paragraph would make the paragraph a definition
-        { character: ":", before: "\\]", inConstruct: "phrasing" },
-      ],
+      // a `$` typed as text stays text (as `*` and `_` do): written escaped, it never starts a formula on the next read
+      unsafe: [{ character: "$", inConstruct: "phrasing" }],
     });
     return (tree, file) => {
       if (typeof file.value === "string") referencePieces(tree, file.value);
@@ -147,6 +159,42 @@ function remarkInlineSource(ctx: Ctx): RemarkPluginRaw<undefined> {
 }
 
 const inlineSourceRemark = $remark("pmInlineSource", remarkInlineSource);
+
+/** The sources of the inline pieces in `node`, in order. */
+export function pieceSources(node: PMNode): string[] {
+  const found: string[] = [];
+  node.descendants((child) => {
+    if (child.type.name === INLINE_SOURCE) found.push(String(child.attrs.source));
+    return true;
+  });
+  return found;
+}
+
+/** A piece found in a text: its source and offsets. */
+export type FoundPiece = { source: string; from: number; to: number };
+
+/** The inline pieces the editor of `ctx` reads in `text`, in order (its reading before any node is made). */
+export function piecesIn(ctx: Ctx, text: string): FoundPiece[] {
+  const found: FoundPiece[] = [];
+  const visit = (node: Nodes): void => {
+    if (node.type !== "inlineSource") {
+      if ("children" in node) node.children.forEach(visit);
+      return;
+    }
+    const from = node.position?.start.offset;
+    const to = node.position?.end.offset;
+    if (from !== undefined && to !== undefined) found.push({ source: node.value, from, to });
+  };
+  try {
+    const tree = ctx.get(remarkCtx).parse(text);
+    referencePieces(tree, text);
+    visit(tree);
+  } catch {
+    // unreadable: no piece
+    return [];
+  }
+  return found;
+}
 
 /** `source` read by the editor of `ctx` is one piece of `kind` with this very source (a paste, a field's text). */
 function readsAsOne(ctx: Ctx, kind: InlineKind, source: string): boolean {

@@ -410,3 +410,16 @@ describe("references in correction", () => {
     expect(core.view.state.doc).toBe(before);
   });
 });
+
+describe("a piece after the same text written as prose", () => {
+  it.each([
+    ["a formula", "Teh \\$teh$ and $teh$ teh.\n", "teh"],
+    ["a reference", "*Teh \\[s]* and [s] teh.\n\n[s]: https://example.com\n", "s]"],
+  ])("%s: the prose is found, never the piece's source", async (_, text, word) => {
+    await load(text);
+    const doc = core.view.state.doc;
+    // the first one is escaped prose, the second one inside the piece's own source
+    expect(docText(docRange(doc, now(), wordAt(text, word, 0)))).toBe(word);
+    expect(docRange(doc, now(), wordAt(text, word, 1))).toBeNull();
+  });
+});

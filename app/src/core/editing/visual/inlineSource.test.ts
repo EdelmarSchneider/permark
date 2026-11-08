@@ -572,3 +572,94 @@ describe("blocks that keep their references as written", () => {
     expect(compose(core, built, core.view.state.doc).text).toBe(text);
   });
 });
+
+describe("what is typed next to a piece reads back as typed", () => {
+  const DEFS = "\n\n[^n]: Note.\n\n[s]: https://example.com\n\n[docs]: d.md\n";
+  const PIECES = ["$x$", "$$x$$", "$`x`$", "[^n]", "[the site][s]", "[Docs][]", "[s]"];
+
+  function typeAt(pos: number, text: string): void {
+    core.view.dispatch(core.view.state.tr.insertText(text, pos));
+  }
+
+  /** The first block as saved, read again: the same pieces and text the editor shows. */
+  function readsBack(built: Built): string {
+    const composed = compose(core, built, core.view.state.doc);
+    const range = composed.ranges[0];
+    if (!range) throw new Error("no block");
+    const saved = composed.text.slice(range.from, range.to);
+    const again = core.parse(saved);
+    expect(again.childCount).toBe(1);
+    expect(again.child(0).toJSON()).toEqual(core.view.state.doc.child(0).toJSON());
+    expect(composed.lost).toEqual([]);
+    return saved;
+  }
+
+  it("a digit typed right after a formula is written as a character reference", async () => {
+    const built = await load("Cost $x$ now.\n");
+    typeAt(atomAt() + 1, "5");
+    expect(readsBack(built)).toBe("Cost $x$&#53; now.");
+  });
+
+  it("a space deleted between a formula and a digit keeps the formula", async () => {
+    const built = await load("Sum $a$ 5 more.\n");
+    const at = atomAt() + 1;
+    core.view.dispatch(core.view.state.tr.delete(at, at + 1));
+    expect(readsBack(built)).toBe("Sum $a$&#53; more.");
+  });
+
+  it("a digit after display or code math stays as typed (no rule against it there)", async () => {
+    const built = await load("A $$x$$ and $`y`$ b.\n");
+    typeAt(atomAt(1) + 1, "5");
+    typeAt(atomAt(0) + 1, "5");
+    expect(readsBack(built)).toBe("A $$x$$5 and $`y`$5 b.");
+  });
+
+  it.each(
+    PIECES.flatMap((piece) => ["$", "5", "a", "\\", "]", "(", "[", ":"].map((c) => [piece, c])),
+  )("%s then %s", async (piece, typed) => {
+    const built = await load(`${piece} tail.${DEFS}`);
+    typeAt(atomAt() + 1, typed);
+    readsBack(built);
+  });
+
+  it.each(PIECES.flatMap((piece) => ["$", "5", "\\", "!", "[", "]"].map((c) => [c, piece])))(
+    "%s then %s",
+    async (typed, piece) => {
+      const built = await load(`Lead ${piece}${DEFS}`);
+      typeAt(atomAt(), typed);
+      readsBack(built);
+    },
+  );
+
+  it("a `:` after a bracket typed as prose is not escaped", async () => {
+    const built = await load("Note.\n");
+    typeAt(1, "[12:30]: ok ");
+    expect(readsBack(built)).toBe("\\[12:30]: ok Note.");
+  });
+});
+
+describe("pieces that do not read back", () => {
+  it("two references joined by deleting the space between them read as one link: the save says so", async () => {
+    const built = await load("See [a] [b] here.\n\n[a]: a.md\n\n[b]: b.md\n");
+    const at = atomAt(0) + 1;
+    core.view.dispatch(core.view.state.tr.delete(at, at + 1));
+    const composed = compose(core, built, core.view.state.doc);
+    expect(composed.text).toContain("See [a][b] here.");
+    // Markdown reads `[a][b]` as one full reference: text `a`, label `b`
+    expect(atomsIn("See [a][b] here.")).toEqual(["[a][b]"]);
+    expect(composed.lost).toEqual([0]);
+  });
+
+  it("a piece whose source no longer reads as one is reported, its block written by the editor", async () => {
+    const built = await load("Lead $x$ tail.\n\nNext.\n");
+    const at = atomAt();
+    const node = core.view.state.doc.nodeAt(at);
+    if (!node) throw new Error("no atom");
+    core.view.dispatch(
+      core.view.state.tr.setNodeMarkup(at, undefined, { ...node.attrs, source: "$ x$" }),
+    );
+    const composed = compose(core, built, core.view.state.doc);
+    expect(composed.text).toBe("Lead $ x$ tail.\n\nNext.\n");
+    expect(composed.lost).toEqual([0]);
+  });
+});

@@ -115,6 +115,18 @@ fn gfm_features_render() {
 }
 
 #[test]
+fn a_character_reference_right_after_inline_math_keeps_the_formula() {
+    // no digit may follow the closing `$` (`$y$5` is text): the Edit-mode editor writes a digit typed there as a
+    // numeric character reference, which must read as the formula followed by the digit
+    let html = plain_html("Cost $x$&#53; now, $z$&#x35; here and $y$5 there\n");
+    let formulas = html.matches("data-math-style=\"inline\"").count();
+    assert_eq!(formulas, 2, "{html}");
+    assert!(html.contains(">x</span>5 now"), "{html}");
+    assert!(html.contains(">z</span>5 here"), "{html}");
+    assert!(html.contains("$y$5 there"), "{html}");
+}
+
+#[test]
 fn blocks_have_lines_kinds_and_marks() {
     let (blocks, _, _, _) = parts(
         "# One\n\nPara\ntwo lines\n\n- a\n- b\n\n```\ncode\n```\n",

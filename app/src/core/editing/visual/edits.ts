@@ -14,7 +14,8 @@ import type { EditScope, TextEdit, TextRange } from "../session.svelte";
 import { checkEdits } from "../textEdits";
 import { blocksUsingReferences, classify } from "./classify";
 import type { Composed } from "./compose";
-import { INLINE_SOURCE, LOCKED, type Core } from "./core";
+import { LOCKED, type Core } from "./core";
+import { pieceSources } from "./inlineSource";
 
 /** Document index of the top-level node whose text holds `from..to` (`null`: between blocks | outside). */
 export function blockOf(composed: Composed, from: number, to: number): number | null {
@@ -48,29 +49,6 @@ function shownText(node: PMNode, start: number): { text: string; at: number[] } 
   return { text, at };
 }
 
-/** The sources of the inline pieces in `node`, in order. */
-function pieces(node: PMNode): string[] {
-  const found: string[] = [];
-  node.descendants((child) => {
-    if (child.type.name === INLINE_SOURCE) found.push(String(child.attrs.source));
-    return true;
-  });
-  return found;
-}
-
-/** Offsets of the inline pieces of `node` in `markdown`, its text (each written as its source, in order). */
-function pieceSpans(node: PMNode, markdown: string): TextRange[] {
-  const spans: TextRange[] = [];
-  let next = 0;
-  for (const source of pieces(node)) {
-    const at = markdown.indexOf(source, next);
-    if (at < 0) continue;
-    spans.push({ from: at, to: at + source.length });
-    next = at + source.length;
-  }
-  return spans;
-}
-
 function commonTail(markdown: string, shown: string): number {
   const a = markdown.replace(MARKUP, "");
   const b = shown.replace(MARKUP, "");
@@ -101,8 +79,9 @@ export function docRange(doc: PMNode, composed: Composed, range: TextRange): Tex
   const shown = shownText(node, start);
   const markdown = composed.text.slice(block.from, block.to);
   const rel = range.from - block.from;
-  const end = range.to - block.from;
-  if (pieceSpans(node, markdown).some((span) => rel < span.to && end > span.from)) return null;
+  // where the text's own reading has the pieces: a prose copy of a piece's source is prose
+  const pieces = composed.pieces[index] ?? [];
+  if (pieces.some((span) => range.from < span.to && range.to > span.from)) return null;
   const needle = composed.text.slice(range.from, range.to);
   const before = markdown.slice(Math.max(0, rel - CONTEXT), rel);
   const after = markdown.slice(rel + needle.length, rel + needle.length + CONTEXT);
@@ -218,11 +197,11 @@ export function editsTr(
     }
     const verdict = classify(core, markdown, null, usesReference.has(written.indexOf(index)));
     // a fix never changes a formula (its TeX is no prose)
-    const kept = JSON.stringify(pieces(node));
+    const kept = JSON.stringify(pieceSources(node));
     if (
       !verdict.editable ||
       verdict.node.type !== node.type ||
-      JSON.stringify(pieces(verdict.node)) !== kept
+      JSON.stringify(pieceSources(verdict.node)) !== kept
     ) {
       return null;
     }

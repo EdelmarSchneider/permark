@@ -35,7 +35,12 @@ export const NO_REFERENCES: References = { links: new Map(), notes: new Set() };
 
 export const referencesCtx = $ctx<References, "pmReferences">(NO_REFERENCES, "pmReferences");
 
-/** The definitions every reading of `core` counts as given from now on (a document's, read at its load). */
+/**
+ * The definitions every reading of `core` counts as given from now on (a document's, read at its load). Read once
+ * per load, not per edit: a definition changed while editing leaves the links | numbers already drawn as they were
+ * until the document is opened again. Saving is not affected: every piece keeps its exact source, and a
+ * definition's block is kept as written.
+ */
 export function useReferences(core: Core, references: References): void {
   core.editor.action((ctx) => ctx.set(referencesCtx.key, references));
 }
@@ -149,7 +154,11 @@ export function referencePieces(tree: Root, text: string): void {
 
 type Found = FootnoteReference | LinkReference;
 
-/** What each source read so far holds, per set of definitions (a piece is drawn again on every pause of its field). */
+/**
+ * What each source read so far holds, per set of definitions (a piece is drawn again on every pause of its field).
+ * It grows by one entry per distinct source drawn while a document is open (each pause of a field that changed it)
+ * and goes with its set of definitions when the next document loads: small, never held across documents.
+ */
 const readings = new WeakMap<References, Map<string, Found[]>>();
 
 /** The outermost references `source` holds when read with the document's definitions, in order. */
