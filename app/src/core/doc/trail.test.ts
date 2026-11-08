@@ -66,4 +66,32 @@ describe("Trail", () => {
     trail.clear();
     expect(trail.here).toBeNull();
   });
+
+  it("names a renamed document by its new path, anchors kept, the same place in a row once", () => {
+    const trail = new Trail();
+    for (const place of [at("a.md"), at("b.md", "intro"), at("c.md"), at("b.md"), at("a.md")]) {
+      trail.visit(place);
+    }
+    trail.back();
+    trail.rename("b.md", "d/b.md");
+    expect(trail.here).toEqual(at("d/b.md"));
+    expect(trail.recent().map((r) => r.place)).toEqual([
+      at("a.md"),
+      at("d/b.md"),
+      at("c.md"),
+      at("d/b.md", "intro"),
+      at("a.md"),
+    ]);
+    // the rename undone, then "c.md" renamed onto the place next to it: the two count once
+    trail.rename("d/b.md", "b.md");
+    trail.rename("c.md", "b.md");
+    expect(trail.recent().map((r) => r.place)).toEqual([
+      at("a.md"),
+      at("b.md"),
+      at("b.md", "intro"),
+      at("a.md"),
+    ]);
+    expect(trail.here).toEqual(at("b.md"));
+    expect(trail.back()).toEqual(at("b.md", "intro"));
+  });
 });

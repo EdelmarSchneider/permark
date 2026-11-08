@@ -412,12 +412,8 @@ impl<'a> Planner<'a> {
                 causes,
             });
         }
-        // a reference sits in text, never inside a link's destination: the check only keeps the edits apart
-        let refs: Vec<LinkEdit> = self
-            .reference_edits(text)
-            .into_iter()
-            .filter(|r| !edits.iter().any(|e| e.start < r.end && r.start < e.end))
-            .collect();
+        // references sit in text outside links; destinations in links, definitions and HTML: never the same bytes
+        let refs = self.reference_edits(text);
         if !refs.is_empty() {
             edits.extend(refs);
             edits.sort_by_key(|e| e.start);

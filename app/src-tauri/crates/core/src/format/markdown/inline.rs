@@ -113,59 +113,52 @@ pub(super) fn references<'t>(text: &'t str, env: &dyn DocEnv) -> Vec<(usize, &'t
     found
 }
 
+/// The `{{name}}` variable at the start of `text`: the name and the length of the whole `{{ ... }}`.
+fn variable_at(text: &str) -> Option<(&str, usize)> {
+    let body = text.strip_prefix("{{")?;
+    let close = body.find("}}").filter(|n| *n <= MAX_VARIABLE)?;
+    let name = body[..close].trim();
+    is_variable_name(name).then_some((name, 2 + close + 2))
+}
+
 /// HTML for `text` with its variables and references marked, or `None` when it has none.
 pub(super) fn mark(text: &str, env: &dyn DocEnv) -> Option<String> {
     if !text.contains("{{") && !text.contains('@') {
         return None;
     }
+    // a reference and a variable never share a character (`{` ends a path, `@` is no name character): each is found on
+    // its own
+    let mut refs = references(text, env).into_iter().peekable();
     let mut out = String::with_capacity(text.len() + 32);
-    let mut found = false;
     let mut plain_from = 0;
-    let mut previous: Option<char> = None;
-    let mut chars = text.char_indices().peekable();
-    while let Some((at, c)) = chars.next() {
-        let rest = &text[at..];
-        let mut consumed = None;
-        if c == '{' && rest.starts_with("{{") {
-            if let Some(close) = rest[2..].find("}}").filter(|n| *n <= MAX_VARIABLE) {
-                let name = rest[2..2 + close].trim();
-                if is_variable_name(name) {
-                    escape(&text[plain_from..at], &mut out);
-                    out.push_str("<span class=\"tvar\">{{");
-                    escape(name, &mut out);
-                    out.push_str("}}</span>");
-                    consumed = Some(2 + close + 2);
-                }
-            }
-        } else if c == '@' && may_start(previous) {
-            if let Some(path) = reference_at(&rest[1..], env) {
-                escape(&text[plain_from..at], &mut out);
-                out.push_str("<a class=\"at-ref\" href=\"/");
-                out.push_str(&encode(
-                    percent_decode(path)
-                        .replace('\\', "/")
-                        .trim_start_matches('/'),
-                ));
-                out.push_str("\">@");
-                escape(path, &mut out);
-                out.push_str("</a>");
-                consumed = Some(1 + path.len());
-            }
+    for (at, c) in text.char_indices() {
+        if at < plain_from {
+            continue;
         }
-        match consumed {
-            Some(len) => {
-                found = true;
-                let end = at + len;
-                plain_from = end;
-                previous = text[..end].chars().next_back();
-                while chars.peek().is_some_and(|(i, _)| *i < end) {
-                    chars.next();
-                }
+        if let Some((_, path)) = refs.next_if(|(path_at, _)| *path_at == at + 1) {
+            escape(&text[plain_from..at], &mut out);
+            out.push_str("<a class=\"at-ref\" href=\"/");
+            out.push_str(&encode(
+                percent_decode(path)
+                    .replace('\\', "/")
+                    .trim_start_matches('/'),
+            ));
+            out.push_str("\">@");
+            escape(path, &mut out);
+            out.push_str("</a>");
+            plain_from = at + 1 + path.len();
+        } else if c == '{' {
+            if let Some((name, len)) = variable_at(&text[at..]) {
+                escape(&text[plain_from..at], &mut out);
+                out.push_str("<span class=\"tvar\">{{");
+                escape(name, &mut out);
+                out.push_str("}}</span>");
+                plain_from = at + len;
             }
-            None => previous = Some(c),
         }
     }
-    if !found {
+    // every piece marked is longer than nothing: no piece, nothing moved on
+    if plain_from == 0 {
         return None;
     }
     escape(&text[plain_from..], &mut out);

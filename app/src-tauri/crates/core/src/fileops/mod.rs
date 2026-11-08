@@ -42,7 +42,7 @@ use self::ops::{
     announced_pairs, check_deletes, check_moves, execute_moves, io_error, is_protected, locate,
     ValidMove,
 };
-use self::plan::{apply_edits, invert_edits, mentions, split_root, DocPlan, Planner};
+use self::plan::{apply_edits, invert_edits, mentions, split_root, DocPlan, Mover, Planner};
 use self::undo::{DocUndo, Entry, Journal, Op, UndoEdit, JOURNAL_FILE};
 use crate::error::{ErrorKind, IpcError};
 use crate::format::{FormatRegistry, MarkdownFeatures};
@@ -589,9 +589,10 @@ impl FileOps {
         let mut undo_docs = Vec::new();
         let mut links = 0_usize;
         if update_links {
-            let planner = Planner::new(&self.vault, &stored.moves);
+            // the edits were planned with the preview: writing them needs only where each document went
+            let mover = Mover::new(&stored.moves);
             for doc in &stored.docs {
-                self.rewrite_document(doc, &planner, &mut links, &mut undo_docs, &mut skipped);
+                self.rewrite_document(doc, &mover, &mut links, &mut undo_docs, &mut skipped);
             }
         }
         let moved = valid.len();
@@ -611,12 +612,12 @@ impl FileOps {
     fn rewrite_document(
         &self,
         doc: &DocPlan,
-        planner: &Planner<'_>,
+        mover: &Mover,
         links: &mut usize,
         undo_docs: &mut Vec<DocUndo>,
         skipped: &mut Vec<Skip>,
     ) {
-        let now_path = planner.mover().map_or_same(&doc.path);
+        let now_path = mover.map_or_same(&doc.path);
         let skip = |reason| Skip {
             path: now_path.clone(),
             reason,
@@ -681,7 +682,7 @@ impl FileOps {
                 })
                 .collect(),
             causes,
-            moved_by: planner.mover().move_index_of(&doc.path),
+            moved_by: mover.move_index_of(&doc.path),
         });
     }
 

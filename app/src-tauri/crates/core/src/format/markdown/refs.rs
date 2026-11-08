@@ -1,20 +1,16 @@
 //! Where the `@path` references reading marks sit in the source, so a move can keep them pointing at their files.
 //!
-//! Same parse as reading (front matter cut, prompt markers, the same options) and the same rule ([`inline`]): text,
-//! not code, links, images or HTML. Every line keeps its place through the cuts and markers, so a text node's line and
+//! The parse reading does ([`prepared`], [`parsed`]) and the scan it marks with ([`inline::references`], outside
+//! [`in_link`]): text, not code, links, images or HTML. Every line keeps its place through the cuts and markers, so a text node's line and
 //! column are its place in the source. A text node whose source does not read as its literal (escapes, entities) is
 //! left out: a reference not located with certainty is never edited.
 
-use std::borrow::Cow;
 use std::ops::Range;
 
 use comrak::nodes::NodeValue;
-use comrak::{parse_document, Arena};
+use comrak::Arena;
 
-use super::{
-    frontmatter, inline, is_deeper_than, options, prompt, too_many_container_markers,
-    MAX_TREE_DEPTH,
-};
+use super::{frontmatter, in_link, inline, options, parsed, prepared, too_many_container_markers};
 use crate::format::{DocEnv, MarkdownFeatures};
 use crate::links::Lines;
 
@@ -74,30 +70,27 @@ impl AtRef {
 
 /// The `@path` references of the Markdown `text` that name an existing file (`exists`, asked with a project path), as
 /// reading marks them; none when the prompt features are off (reading marks none then). In text order.
+///
+/// A reference in the same text run as an escape or an entity (`\*`, `&amp;`) is left as written: there the source
+/// bytes are not the text reading sees, so its place is not known for certain and a guessed edit could break the
+/// document.
 #[must_use]
 pub fn at_refs(
     text: &str,
     features: &MarkdownFeatures,
     exists: &dyn Fn(&str) -> bool,
 ) -> Vec<AtRef> {
-    let Some(blocks) = features.prompt_blocks else {
-        return Vec::new();
-    };
-    if !text.contains('@') || too_many_container_markers(text) {
+    if features.prompt_blocks.is_none() || !text.contains('@') || too_many_container_markers(text) {
         return Vec::new();
     }
+    // reading gets the text decoded, without its byte order mark
     let offset = if text.starts_with(BOM) { BOM.len() } else { 0 };
     let body = &text[offset..];
-    let cut: Cow<'_, str> = match frontmatter::find(body) {
-        Some(cut) => frontmatter::replace(body, &cut, None),
-        None => Cow::Borrowed(body),
-    };
-    let prepared = prompt::mark(&cut, blocks.tags);
+    let prepared = prepared(body, frontmatter::find(body).as_ref(), features);
     let arena = Arena::new();
-    let root = parse_document(&arena, &prepared, &options());
-    if is_deeper_than(root, MAX_TREE_DEPTH) {
+    let Some(root) = parsed(&arena, &prepared, &options()) else {
         return Vec::new();
-    }
+    };
     let lines = Lines::new(body);
     let env = Exists(exists);
     let mut found = Vec::new();
@@ -109,14 +102,10 @@ pub fn at_refs(
         if !literal.contains('@') {
             continue;
         }
-        let in_link = node
-            .ancestors()
-            .skip(1)
-            .any(|a| matches!(a.data().value, NodeValue::Link(_) | NodeValue::Image(_)));
         let Some(range) = lines.range_of(data.sourcepos, body.len()) else {
             continue;
         };
-        if in_link || body.get(range.clone()) != Some(literal.as_ref()) {
+        if in_link(node) || body.get(range.clone()) != Some(literal.as_ref()) {
             continue;
         }
         for (at, written) in inline::references(literal, &env) {
@@ -197,6 +186,92 @@ mod tests {
                 .collect::<Vec<_>>(),
             [("docs/guide.md", "docs/guide.md", 2)]
         );
+    }
+
+    #[test]
+    fn text_before_a_reference_on_its_line_may_be_any_script() {
+        // the parser counts columns in bytes: a wider character before a reference shifts nothing
+        let text = "É @docs/guide.md, 日本 @src/main.rs\n- ü *@docs/guide.md*\n";
+        assert_eq!(
+            found(text),
+            [
+                ("docs/guide.md".to_owned(), 1),
+                ("src/main.rs".to_owned(), 1),
+                ("docs/guide.md".to_owned(), 2),
+            ]
+        );
+    }
+
+    fn no_card(_: crate::format::FrontMatterSyntax, _: &str) -> Vec<crate::format::Field> {
+        Vec::new()
+    }
+
+    /// The `@path` texts reading makes links of, with the lines of the block holding each.
+    fn marked(text: &str, features: &MarkdownFeatures) -> Vec<(String, u32, u32)> {
+        let known = std::collections::HashSet::new();
+        let rendered = super::super::render(
+            text.strip_prefix(BOM).unwrap_or(text),
+            &crate::format::RenderCx {
+                path: "README.md",
+                env: &Exists(&files),
+                features,
+                known: &known,
+            },
+        );
+        let crate::format::Body::Markdown { blocks, .. } = rendered.body else {
+            panic!("not markdown");
+        };
+        let mut out = Vec::new();
+        for block in blocks {
+            let html = block.html.unwrap_or_default();
+            for rest in html.split("<a class=\"at-ref\"").skip(1) {
+                let start = rest.find("\">").unwrap() + 2;
+                let end = rest.find("</a>").unwrap();
+                out.push((
+                    rest[start..end].to_owned(),
+                    block.line_start,
+                    block.line_end,
+                ));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn every_reference_found_is_one_reading_marks() {
+        // (text, whether every reference shares no text run with an escape | entity)
+        let cases = [
+            ("---\ntitle: \"@docs/guide.md\"\n---\nRead @docs/guide.md.\n", true),
+            ("+++\nsee = \"@src/main.rs\"\n+++\n# @src/main.rs\n", true),
+            ("<context>\n@docs/guide.md\n</context>\n\n<rules>\n- see @src/main.rs\n</rules>\n", true),
+            ("\u{feff}---\r\na: 1\r\n---\r\n<context>\r\n@docs/guide.md\r\n</context>\r\n", true),
+            ("É @docs/guide.md\n\n| a | b |\n|---|---|\n| @src/main.rs | x |\n\n> ü @docs/guide.md\n", true),
+            ("See \\* @src/main.rs and &amp; @docs/guide.md\n\n@docs/guide.md\n", false),
+        ];
+        let card = MarkdownFeatures {
+            front_matter_card: Some(no_card),
+            ..PROMPTS
+        };
+        for features in [PROMPTS, card] {
+            for (text, plain) in cases {
+                let marked = marked(text, &features);
+                let refs = at_refs(text, &features, &files);
+                let mut left = marked.iter();
+                for r in &refs {
+                    let written = format!("@{}", &text[r.range.clone()]);
+                    let line = u32::try_from(r.line).unwrap();
+                    assert!(
+                        left.any(|(m, start, end)| *m == written && (*start..=*end).contains(&line)),
+                        "{written} on line {line} is not marked in {text:?}: {marked:?}"
+                    );
+                }
+                if plain {
+                    assert_eq!(refs.len(), marked.len(), "{text:?}");
+                } else {
+                    assert!(refs.len() < marked.len(), "{text:?}");
+                }
+            }
+        }
     }
 
     #[test]

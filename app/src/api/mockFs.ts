@@ -547,7 +547,9 @@ function linksTo(line: string, href: string): boolean {
 const PATH_CHAR = String.raw`[\p{L}\p{N}_./\\@+~-]`;
 
 /** The `@path` references to `target` (a project path) in a text: not inside a word or a path, and the path ends where
- *  a character it cannot hold follows (a sentence's `.` may come first). Code is not told apart here. */
+ *  a character it cannot hold follows (a sentence's `.` may come first). An approximation of the backend's rule for
+ *  the mock: code, links, front matter, escapes and other spellings of the path (`\`, a leading `/`) are not told
+ *  apart here. */
 function atRef(target: string): RegExp {
   const path = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(String.raw`(?<!${PATH_CHAR})@${path}(?=[._/\\-]*(?!${PATH_CHAR}))`, "gu");

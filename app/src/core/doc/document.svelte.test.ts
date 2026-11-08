@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Api, ApiError, DocumentView, WorkspaceView } from "../../api";
+import type { Api, ApiError, DocumentChanged, DocumentView, WorkspaceView } from "../../api";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import { DocumentController } from "./document.svelte";
 import { reading } from "./reading.svelte";
@@ -132,6 +132,16 @@ function page(): { container: HTMLElement; scroller: HTMLElement } {
 async function open(fx: Fx, path: string): Promise<void> {
   await fx.api.showDocument(path);
   await tick();
+}
+
+/** The trail's documents, newest first. */
+function trailPaths(fx: Fx): string[] {
+  return fx.doc.trail.recent().map((r) => r.place.path);
+}
+
+/** The backend's word that `from` was renamed | moved to `to`. */
+function moved(from: string, to: string): DocumentChanged {
+  return { window: "main", path: from, change: "deleted", movedTo: to };
 }
 
 function markdownIds(view: DocumentView | null): string[] {
@@ -425,6 +435,65 @@ describe("changes on disk", () => {
     } finally {
       scroller.remove();
     }
+  });
+
+  it("back and forward after following a rename, and its undo, go to documents that exist", async () => {
+    const fx = await setup();
+    await fx.api.on("document-changed", (event) => fx.doc.onChanged(event));
+    await open(fx, "README.md");
+    await fx.doc.activateLink("docs/guide.md#getting-started");
+    await tick();
+    const plan = await fx.api.planMove([{ from: "docs/guide.md", to: "docs/manual.md" }], true);
+    if (!plan.ok) throw new Error("no plan");
+    await fx.api.applyMove(plan.value.planId, true);
+    await vi.waitFor(() => expect(fx.doc.view?.path).toBe("docs/manual.md"));
+    expect(trailPaths(fx)).toEqual(["docs/manual.md", "README.md"]);
+    await fx.doc.back();
+    await tick();
+    expect(fx.doc.path).toBe("README.md");
+    await fx.doc.forward();
+    await vi.waitFor(() => expect(fx.doc.view?.path).toBe("docs/manual.md"));
+    expect(fx.doc.trail.here).toEqual({ path: "docs/manual.md", anchor: "getting-started" });
+    await fx.api.undoFileOp();
+    await vi.waitFor(() => expect(fx.doc.view?.path).toBe("docs/guide.md"));
+    expect(trailPaths(fx)).toEqual(["docs/guide.md", "README.md"]);
+    await fx.doc.back();
+    await tick();
+    expect(fx.doc.path).toBe("README.md");
+    expect(fx.doc.state.status).toBe("ready");
+    expect(fx.failures).toEqual([]);
+  });
+
+  it("a rename undone before the window went after it leaves the window where it is", async () => {
+    const fx = await setup();
+    await open(fx, "docs/guide.md");
+    fx.doc.onChanged(moved("docs/guide.md", "docs/manual.md"));
+    fx.doc.onChanged(moved("docs/manual.md", "docs/guide.md"));
+    await tick();
+    await tick();
+    expect(fx.doc.path).toBe("docs/guide.md");
+    expect(fx.doc.state.status === "ready" && fx.doc.state.deleted).toBeNull();
+    expect(trailPaths(fx)).toEqual(["docs/guide.md"]);
+  });
+
+  it("a rename undone while the window is on its way to the new name brings it back", async () => {
+    const fx = await setup();
+    await open(fx, "docs/guide.md");
+    const real = fx.api.showDocument.bind(fx.api);
+    const held: (() => void)[] = [];
+    vi.spyOn(fx.api, "showDocument").mockImplementation(
+      (path) => new Promise((resolve) => held.push(() => resolve(real(path)))),
+    );
+    fx.doc.onChanged(moved("docs/guide.md", "docs/manual.md"));
+    await vi.waitFor(() => expect(held).toHaveLength(1));
+    fx.doc.onChanged(moved("docs/manual.md", "docs/guide.md"));
+    await vi.waitFor(() => expect(held).toHaveLength(2));
+    for (const go of held) go();
+    await vi.waitFor(() => expect(fx.doc.view?.path).toBe("docs/guide.md"));
+    expect(fx.doc.path).toBe("docs/guide.md");
+    await tick();
+    expect(fx.doc.state.status).toBe("ready");
+    expect(trailPaths(fx)).toEqual(["docs/guide.md"]);
   });
 
   it("stays on a renamed document it cannot follow, and says where it went", async () => {

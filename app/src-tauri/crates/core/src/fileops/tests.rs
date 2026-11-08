@@ -973,6 +973,28 @@ fn references_follow_a_moved_folder_and_stay_when_the_new_name_cannot_be_one() {
 }
 
 #[test]
+fn a_reference_below_front_matter_moves_and_the_front_matter_stays() {
+    let text =
+        "\u{feff}---\r\nsee: \"@docs/guide.md\"\r\n---\r\nÉ @docs/guide.md, ü @docs/guide.md\r\n";
+    let f = fx_prompts(&[("README.md", text), ("docs/guide.md", "")]);
+    let plan = f
+        .ops
+        .plan_move(&[spec("docs/guide.md", "docs/manual.md")], true)
+        .unwrap();
+    let lines: Vec<u32> = plan.files[0].changes.iter().map(|c| c.line).collect();
+    assert_eq!(lines, [4, 4]);
+    f.ops.apply_move(plan.plan_id, true).unwrap();
+    // reading marks no reference in front matter: it stays, with the byte order mark and the line endings
+    assert_eq!(
+        read(&f, "README.md"),
+        text.replace(
+            "É @docs/guide.md, ü @docs/guide.md",
+            "É @docs/manual.md, ü @docs/manual.md"
+        )
+    );
+}
+
+#[test]
 fn references_stay_as_written_when_the_prompt_features_are_off() {
     let f = fx(&[
         ("README.md", PROMPT_TEXT),
