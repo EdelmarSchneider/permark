@@ -458,6 +458,7 @@
               api.assetUrl(documents.workspaceId ?? 0, path, null),
             ),
         }),
+        plugins: [loaded.emptyHint(t("edit.emptyHint"))],
       });
       if (gone) {
         await made.destroy();

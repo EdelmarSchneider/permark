@@ -161,7 +161,9 @@ export function languageFor(path: string, markdownText: boolean): Extension | Pr
 export type SourceView = {
   view: EditorView;
   text(): string;
-  topLine(): number;
+  /** The first line in view. `viewTop`: the top edge of the page that scrolls around the editor (client y); none:
+   *  the editor scrolls itself. */
+  topLine(viewTop?: number): number;
   scrollToLine(line: number): void;
   selection(): string;
   insert(text: string, at?: number): void;
@@ -308,9 +310,11 @@ export function createSource(options: {
   return {
     view,
     text: () => view.state.doc.toString(),
-    topLine: () => {
+    topLine: (viewTop) => {
       const rect = view.scrollDOM.getBoundingClientRect();
-      const block = view.lineBlockAtHeight(rect.top - view.documentTop + 1);
+      // the page around the editor scrolls it out at the top: what is in view starts at the page's edge
+      const top = Math.max(rect.top, viewTop ?? rect.top);
+      const block = view.lineBlockAtHeight(top - view.documentTop + 1);
       return view.state.doc.lineAt(block.from).number;
     },
     scrollToLine: (line) => {

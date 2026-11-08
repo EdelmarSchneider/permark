@@ -49,17 +49,38 @@ fn range(start: usize, len: usize) -> Vec<u32> {
         .collect()
 }
 
-/// Leftmost subsequence match of `q` in `text[from..]` preferring nothing fancy (greedy), scored by runs and word
-/// starts. `offset` shifts the positions back into the whole path.
-#[allow(clippy::cast_precision_loss)]
-fn subsequence(text: &[char], q: &[char], offset: usize) -> Option<Match> {
+/// Below this many points a letter on average (runs and word starts), a subsequence is letters strewn over the
+/// text: such a match would list nearly every path for a short query, so it is no match.
+const SCATTERED_BELOW: f32 = 1.0;
+
+/// Where the letters of `q` fall in `text`, in order: the leftmost each time, or (`starts`) the first one from there
+/// that starts a word or follows the letter before ("rt" in `rust-tauri`: the `t` of `tauri`). `None`: no match this
+/// way.
+fn letters(text: &[char], q: &[char], starts: bool) -> Option<Vec<usize>> {
     let mut positions: Vec<usize> = Vec::with_capacity(q.len());
     let mut from = 0;
     for &ch in q {
-        let at = from + text[from..].iter().position(|&c| c == ch)?;
+        let leftmost = from + text[from..].iter().position(|&c| c == ch)?;
+        let after = positions.last().copied();
+        let at = if starts {
+            (leftmost..text.len())
+                .find(|&i| {
+                    text[i] == ch
+                        && (i == 0 || boundary(text[i - 1]) || after.is_some_and(|p| i == p + 1))
+                })
+                .unwrap_or(leftmost)
+        } else {
+            leftmost
+        };
         positions.push(at);
         from = at + 1;
     }
+    Some(positions)
+}
+
+/// Points of matched letters: runs and word starts count, the gaps between them cost a little.
+#[allow(clippy::cast_precision_loss)]
+fn letters_score(text: &[char], positions: &[usize]) -> f32 {
     let mut score = 0.0_f32;
     for (i, &pos) in positions.iter().enumerate() {
         if i > 0 && pos == positions[i - 1] + 1 {
@@ -72,6 +93,25 @@ fn subsequence(text: &[char], q: &[char], offset: usize) -> Option<Match> {
     if let (Some(first), Some(last)) = (positions.first(), positions.last()) {
         let gaps = last - first - (positions.len() - 1);
         score -= gaps as f32 * 0.1;
+    }
+    score
+}
+
+/// Subsequence match of `q` in `text`, the better of the leftmost letters and the word-start ones, scored by runs and
+/// word starts; letters strewn over the text are no match. `offset` shifts the positions back into the whole path.
+#[allow(clippy::cast_precision_loss)]
+fn subsequence(text: &[char], q: &[char], offset: usize) -> Option<Match> {
+    let leftmost = letters(text, q, false)?;
+    let mut best = (letters_score(text, &leftmost), leftmost);
+    if let Some(starts) = letters(text, q, true) {
+        let score = letters_score(text, &starts);
+        if score > best.0 {
+            best = (score, starts);
+        }
+    }
+    let (score, positions) = best;
+    if score < q.len() as f32 * SCATTERED_BELOW {
+        return None;
     }
     Some(Match {
         score,

@@ -16,9 +16,11 @@ import type {
 } from "../../api";
 import { ImportFlow } from "./importFlow.svelte";
 import { ancestorsOf, applyDelta } from "./list";
+import { setLeaveGuard } from "../editing/guard";
 import { editing } from "../editing/session.svelte";
 import { problemText } from "./names";
 import { ExplorerStore, type ExplorerHost } from "./store.svelte";
+import type { NoticeAction } from "../window.svelte";
 
 type Mock = ReturnType<typeof createMockApi>;
 
@@ -27,6 +29,8 @@ type Fx = {
   store: ExplorerStore;
   failures: ApiError[];
   notes: string[];
+  /** Notes that came with buttons (Undo). */
+  acted: { text: string; actions: readonly NoticeAction[] }[];
   opened: string[];
   stop: () => void;
   setLink: (value: LinkUpdate) => void;
@@ -38,17 +42,21 @@ async function setup(link: LinkUpdate = "ask", wrap?: (api: Mock) => Api): Promi
   let setting = link;
   const failures: ApiError[] = [];
   const notes: string[] = [];
+  const acted: Fx["acted"] = [];
   const opened: string[] = [];
   const host: ExplorerHost = {
     fail: (error) => failures.push(error),
-    note: (text) => notes.push(text),
+    note: (text, ...actions) => {
+      notes.push(text);
+      if (actions.length > 0) acted.push({ text, actions });
+    },
     view: () => "main",
     linkUpdate: () => setting,
     openProject: (path) => opened.push(path),
   };
   const store = new ExplorerStore(wrap ? wrap(api) : api, host);
   const stop = await store.start();
-  return { api, store, failures, notes, opened, stop, setLink: (v) => (setting = v) };
+  return { api, store, failures, notes, acted, opened, stop, setLink: (v) => (setting = v) };
 }
 
 function paths(store: ExplorerStore): string[] {
@@ -538,6 +546,22 @@ describe("rows and selection", () => {
     await store.activate("ghost.md");
   });
 
+  it("Keep editing (the leave refused): the highlight goes back to the document shown", async () => {
+    const { store } = await setup();
+    await store.setActive("README.md");
+    await store.toggle("docs");
+    // the click selects the row first, then asks to leave the edited document
+    store.select("docs/guide.md", "single");
+    const off = setLeaveGuard(() => Promise.resolve(false));
+    try {
+      await store.activate("docs/guide.md");
+    } finally {
+      off();
+    }
+    expect([...store.selection]).toEqual(["README.md"]);
+    expect(store.focus).toBe("README.md");
+  });
+
   it("the open document is kept in the list and revealed", async () => {
     const { store } = await setup();
     await store.setActive("docs/img/logo.png");
@@ -864,6 +888,23 @@ describe("delete and undo", () => {
     expect(f.notes.at(-1)).toBe("Undone.");
     await f.store.undo();
     expect(f.notes.at(-1)).toBe("Nothing to undo");
+  });
+
+  it("the notes of a delete and a rename carry Undo: the same journal undo as Ctrl+Z", async () => {
+    const f = await setup("never");
+    const undo = vi.spyOn(f.api, "undoFileOp");
+    await f.store.remove(["README.md"]);
+    expect(f.acted.at(-1)?.text).toContain("README.md");
+    expect(f.acted.at(-1)?.actions.map((a) => a.label)).toEqual(["Undo"]);
+    f.acted.at(-1)?.actions[0]?.run();
+    await vi.waitFor(() => expect(paths(f.store)).toContain("README.md"));
+    expect(undo).toHaveBeenCalledTimes(1);
+    await f.store.requestMove([{ from: "README.md", to: "READ.md" }]);
+    const renamed = f.acted.at(-1);
+    expect(renamed?.text).toContain("READ.md");
+    renamed?.actions[0]?.run();
+    await vi.waitFor(() => expect(paths(f.store)).toContain("README.md"));
+    expect(undo).toHaveBeenCalledTimes(2);
   });
 
   it("nothing selected, nothing deleted", async () => {

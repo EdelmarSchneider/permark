@@ -29,15 +29,41 @@ function find(hay: readonly string[], needle: readonly string[]): number {
   return -1;
 }
 
-function subsequence(text: readonly string[], q: readonly string[], offset: number): Match | null {
+/** Below this many points a letter on average (runs and word starts), a subsequence is letters strewn over the
+ *  text: such a match would list nearly everything for a short query, so it is no match. */
+const SCATTERED_BELOW = 1;
+
+/** Where the letters of `q` fall in `text`, in order: the leftmost each time, or (`starts`) the first one from there
+ *  that starts a word or follows the letter before ("rt" in `rust-tauri`: the `t` of `tauri`). `null`: no match. */
+function letters(text: readonly string[], q: readonly string[], starts: boolean): number[] | null {
   const positions: number[] = [];
   let from = 0;
   for (const ch of q) {
-    const at = text.indexOf(ch, from);
-    if (at < 0) return null;
+    const leftmost = text.indexOf(ch, from);
+    if (leftmost < 0) return null;
+    const after = positions[positions.length - 1];
+    let at = leftmost;
+    if (starts) {
+      for (let i = leftmost; i < text.length; i++) {
+        if (text[i] !== ch) continue;
+        if (
+          i === 0 ||
+          BOUNDARY.test(text[i - 1] ?? "") ||
+          (after !== undefined && i === after + 1)
+        ) {
+          at = i;
+          break;
+        }
+      }
+    }
     positions.push(at);
     from = at + 1;
   }
+  return positions;
+}
+
+/** Points of matched letters: runs and word starts count, the gaps between them cost a little. */
+function lettersScore(text: readonly string[], positions: readonly number[]): number {
   let score = 0;
   positions.forEach((pos, i) => {
     if (i > 0 && pos === (positions[i - 1] ?? -2) + 1) score += 3;
@@ -45,8 +71,21 @@ function subsequence(text: readonly string[], q: readonly string[], offset: numb
   });
   const first = positions[0] ?? 0;
   const last = positions[positions.length - 1] ?? 0;
-  score -= (last - first - (positions.length - 1)) * 0.1;
-  return { score, positions: positions.map((p) => p + offset) };
+  return score - (last - first - (positions.length - 1)) * 0.1;
+}
+
+/** The better of the leftmost letters and the word-start ones; letters strewn over the text are no match. */
+function subsequence(text: readonly string[], q: readonly string[], offset: number): Match | null {
+  const leftmost = letters(text, q, false);
+  if (leftmost === null) return null;
+  let best = { score: lettersScore(text, leftmost), positions: leftmost };
+  const starts = letters(text, q, true);
+  if (starts !== null) {
+    const score = lettersScore(text, starts);
+    if (score > best.score) best = { score, positions: starts };
+  }
+  if (best.score < q.length * SCATTERED_BELOW) return null;
+  return { score: best.score, positions: best.positions.map((p) => p + offset) };
 }
 
 function matchOne(q: readonly string[], p: readonly string[]): Match | null {

@@ -166,6 +166,7 @@
       <SourceEditor
         {session}
         {content}
+        {scroller}
         markdown={session.kind === "markdown"}
         {project}
         {pictures}

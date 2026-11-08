@@ -47,6 +47,14 @@ describe("fuzzy match", () => {
     expect(runs.map((r) => r.text).join("")).toBe(text);
   });
 
+  it("drops letters strewn over a text; word starts and runs still match", () => {
+    expect(fuzzyMatch("guid", "docs/guide.md")).not.toBeNull();
+    expect(fuzzyMatch("guid", "programming/build/rust-tauri.md")).toBeNull();
+    expect(fuzzyMatch("rp", "docs/carxpool.md")).toBeNull();
+    expect(fuzzyMatch("rt", "notes/rust-tauri.md")?.positions).toEqual([6, 11]);
+    expect(fuzzyMatch("dgd", "docs/guide.md")).not.toBeNull();
+  });
+
   it("matches several words in any order", () => {
     expect(fuzzyMatch("token auth", "docs/auth-flow/token.md")).not.toBeNull();
     expect(fuzzyMatch("token missing", "docs/auth-flow/token.md")).toBeNull();
