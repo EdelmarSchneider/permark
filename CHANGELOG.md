@@ -10,6 +10,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Code blocks in Edit now have the same colors as in View, and the colors follow as you type. <!-- f: editing, edit-mode -->
 
 ### Fixed
+- Text typed in the last moment before the file changed on disk, was deleted, or before Save all is no longer lost: it now leads to the usual conflict or unsaved-changes choice. <!-- f: editing -->
+- Renaming or moving a document while it has unsaved edits keeps them: the editor follows the file to its new name, and Keep mine saves there instead of recreating the old file. <!-- f: editing, file-ops -->
 - Renaming a file to the same name with different capital letters, or a different Unicode spelling, can no longer replace another file that already has that name on drives that tell them apart. When a drive cannot say whether two names are the same file, PerMark refuses instead of guessing. <!-- f: file-ops -->
 - Moving or renaming a file now also updates links written with mixed escapes, such as `My%20Notes%20(1).md` or accented names with an encoded space. Link updates, their undo and broken-link repair no longer overwrite a save that lands while they work. <!-- f: file-ops, links -->
 - Moving files to another drive makes sure the copies are on disk, and that the originals did not change, before deleting the originals. <!-- f: file-ops -->
