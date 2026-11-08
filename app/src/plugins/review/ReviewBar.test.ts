@@ -64,6 +64,17 @@ function key(el: HTMLElement, name: string, init: KeyboardEventInit = {}): void 
 }
 
 describe("the review bar", () => {
+  it("the offer floats over the top of the page: the page under it never moves when it appears", () => {
+    review.state = { status: "offer", path: "docs/guide.md", count: 3 };
+    flushSync();
+    const offer = target.querySelector<HTMLElement>(".bar");
+    expect(offer?.textContent).toContain("Changed since you last read");
+    // the strip sits in a zero-height anchor out of the flow (an overlay), not in the column above the page
+    const anchor = offer?.parentElement;
+    expect(anchor?.classList.contains("overlay")).toBe(true);
+    expect(offer?.classList.contains("floating")).toBe(true);
+  });
+
   it("opened from the palette (the keyboard went back to the file list): the keyboard goes to the bar", () => {
     tree.focus();
     review.state = { status: "reviewing", view: VIEW, at: 0 };

@@ -753,6 +753,7 @@
                 note={store.edit.mode === "new" && store.edit.kind === "file"
                   ? t("newFile.note")
                   : null}
+                suffix={store.edit.mode === "new" && store.edit.kind === "file" ? ".md" : null}
                 oninput={(v) => store.typeName(v)}
                 commit={() => void store.commitEdit()}
                 cancel={() => store.cancelEdit()}

@@ -297,6 +297,14 @@
 .md details.prompt-block > summary::marker {
   color: var(--muted);
 }
+/* Edit on an empty document: a quiet hint where the text goes, drawn before the caret (never part of the text). */
+.md .pm-editor > p.pm-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--faint);
+  pointer-events: none;
+}
 /* Edit: the blocks of a prompt box stay the editor's own, so the box is built around them. The open tag line is the
    box's top: View's summary in a box of View's classes that paints nothing and has no bottom. The blocks between are
    laid out as the box's children (inset by the box's edge and padding, per box around them; spaced by their own

@@ -79,7 +79,7 @@ describe("window open flow", () => {
     stop();
   });
 
-  it("superseded opens stay quiet, other failures become notices (max 5)", async () => {
+  it("superseded opens stay quiet, other failures become notices (max 3)", async () => {
     const api = createMockApi();
     let kind: "superseded" | "notFound" = "superseded";
     const failing: Api = {
@@ -99,10 +99,10 @@ describe("window open flow", () => {
     expect(store.notices).toHaveLength(0);
     kind = "notFound";
     for (let i = 0; i < 8; i++) await store.open(`x${i}`);
-    expect(store.notices).toHaveLength(5);
+    expect(store.notices).toHaveLength(3);
     const first = store.notices[0];
     if (first) store.dismiss(first.id);
-    expect(store.notices).toHaveLength(4);
+    expect(store.notices).toHaveLength(2);
   });
 
   it("outside open failures for this window only become notices", async () => {
@@ -362,13 +362,61 @@ describe("timed notices", () => {
     }
   });
 
+  it("a quiet note closes by itself after 5 s, held while the pointer | focus is on it", () => {
+    vi.useFakeTimers();
+    try {
+      const store = new WindowStore(createMockApi());
+      const id = store.notifyNote("Moved a.md");
+      vi.advanceTimersByTime(4000);
+      store.holdNotice(id, "pointer");
+      vi.advanceTimersByTime(60_000);
+      expect(store.notices).toHaveLength(1);
+      store.releaseNotice(id, "pointer");
+      vi.advanceTimersByTime(999);
+      expect(store.notices).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      expect(store.notices).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("errors and notes with buttons wait longer (10 s); a lasting one waits for the person", () => {
+    vi.useFakeTimers();
+    try {
+      const store = new WindowStore(createMockApi());
+      store.notifyFileOpFailed({
+        kind: "backend",
+        command: "fileops_delete",
+        error: { kind: "io", subject: "a", detail: null },
+      });
+      store.notifyAction("Deleted a.md", { label: "Undo", run: () => {} });
+      store.notifyKeyed("fileOp", "Renamed a.md to b.md", { label: "Undo", run: () => {} });
+      vi.advanceTimersByTime(9999);
+      expect(store.notices).toHaveLength(3);
+      vi.advanceTimersByTime(1);
+      expect(store.notices).toHaveLength(0);
+      store.notifyLasting({ text: "Review closed.", actions: [], onGone: () => {} });
+      vi.advanceTimersByTime(600_000);
+      expect(store.notices).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("at most 3 on screen: the oldest goes", () => {
+    const store = new WindowStore(createMockApi());
+    for (const text of ["a", "b", "c", "d"]) store.notifyNote(text);
+    expect(store.notices.map((n) => (n.kind === "note" ? n.text : ""))).toEqual(["b", "c", "d"]);
+  });
+
   // adversarial: dismissed, button, pushed out by newer ones, held after it went
   it("say how they went, once; a gone notice holds nothing", () => {
     vi.useFakeTimers();
     try {
       const store = new WindowStore(createMockApi());
       const gone: string[] = [];
-      for (let n = 0; n < 7; n += 1) {
+      for (let n = 0; n < 5; n += 1) {
         store.notifyTimed({
           text: `n${n}`,
           actions: [],
@@ -376,7 +424,7 @@ describe("timed notices", () => {
           onGone: (how) => gone.push(`${n}:${how}`),
         });
       }
-      expect(store.notices).toHaveLength(5);
+      expect(store.notices).toHaveLength(3);
       expect(gone).toEqual(["0:pushedOut", "1:pushedOut"]);
       const [a, b] = store.notices;
       store.dismiss(a!.id);
@@ -384,15 +432,7 @@ describe("timed notices", () => {
       store.dismiss(b!.id, "action");
       store.holdNotice(a!.id, "pointer");
       vi.advanceTimersByTime(8000);
-      expect(gone).toEqual([
-        "0:pushedOut",
-        "1:pushedOut",
-        "2:dismissed",
-        "3:action",
-        "4:timeout",
-        "5:timeout",
-        "6:timeout",
-      ]);
+      expect(gone).toEqual(["0:pushedOut", "1:pushedOut", "2:dismissed", "3:action", "4:timeout"]);
       expect(store.notices).toHaveLength(0);
     } finally {
       vi.useRealTimers();

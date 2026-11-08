@@ -22,6 +22,7 @@ import {
 } from "../../api";
 import { IDENTITY_UNKNOWN } from "../../api/error";
 import { t, tn } from "../i18n";
+import type { NoticeAction } from "../window.svelte";
 import { CODE_OFFER_KEY, isAnswer, shouldOfferCode, withCode, type Answer } from "./codeOffer";
 import { DEFAULT_FILTER, filterToJson, normalizeFilter } from "./filter";
 import {
@@ -79,8 +80,8 @@ export type Drag =
 export type ExplorerHost = {
   /** A failed action, worded by the window's notices. */
   fail(error: ApiError): void;
-  /** A quiet note ("Moved ...", "Undone"). */
-  note(text: string): void;
+  /** A quiet note ("Moved ...", "Undone"), with buttons when there is something to do about it (Undo). */
+  note(text: string, ...actions: NoticeAction[]): void;
   /** The view this Explorer lives in: tree events name their view, and every view hears every event. */
   view(): string;
   linkUpdate(): LinkUpdate;
@@ -545,7 +546,11 @@ export class ExplorerStore {
       await this.toggle(path);
       return;
     }
-    if (!(await confirmLeave({ kind: "document", path }))) return;
+    if (!(await confirmLeave({ kind: "document", path }))) {
+      // the person keeps editing: the highlight goes back to the document still shown
+      this.revealActive();
+      return;
+    }
     const result = await this.#api.showDocument(path);
     if (!result.ok) this.#host.fail(result.error);
   }
@@ -735,7 +740,7 @@ export class ExplorerStore {
       this.#host.fail(result.error);
       return;
     }
-    this.#host.note(this.#moveNote(plan, result.value));
+    this.#host.note(this.#moveNote(plan, result.value), this.#undoAction());
     const last = plan.moves[plan.moves.length - 1];
     if (last !== undefined) this.reveal(last.to);
   }
@@ -769,7 +774,13 @@ export class ExplorerStore {
       targets.length === 1 && targets[0] !== undefined
         ? t("fileOps.summaryDeleted", { what: nameOf(targets[0]) })
         : t("fileOps.summaryDeleted", { what: tn("fileOps.items", targets.length) }),
+      this.#undoAction(),
     );
+  }
+
+  /** The Undo of a note about a file operation: the journal's undo, as Ctrl+Z in the tree (wherever the focus is). */
+  #undoAction(): NoticeAction {
+    return { label: t("fileOps.undo"), run: () => void this.undo() };
   }
 
   async undo(): Promise<void> {

@@ -1,6 +1,8 @@
-// Search over the in-memory project (dev:mock, tests): the same shapes as the backend, none of its ranking rules (the
-// Rust side has those, with their tests). Words must all appear in a section; a path matches as a subsequence.
+// Search over the in-memory project (dev:mock, tests): the same shapes as the backend, few of its ranking rules (the
+// Rust side has those, with their tests). Words must all appear in a section; a path matches by the shared fuzzy
+// rules (`core/search/fuzzy.ts`, the backend's mirror).
 
+import { fuzzyMatch } from "../core/search/fuzzy";
 import { categoryOfName, type MockProject } from "./mockFs";
 import type { FileHit, FolderHit, PathResults, Recent, SectionHit, SectionResults } from "./types";
 
@@ -86,20 +88,10 @@ export function mockSections(
   return { hits: hits.slice(0, limit), partial: false };
 }
 
-/** Indices of the characters of `q` found in order in `path` (a substring when there is one). */
+/** Indices of the matched characters of `q` in `path`, by the backend's rules (letters strewn over a path are no
+ *  match); `null`: no match. */
 function positionsOf(q: string, path: string): number[] | null {
-  const hay = fold(path);
-  const at = hay.indexOf(q);
-  if (at >= 0) return Array.from({ length: q.length }, (_, i) => at + i);
-  const found: number[] = [];
-  let from = 0;
-  for (const ch of q) {
-    const i = hay.indexOf(ch, from);
-    if (i < 0) return null;
-    found.push(i);
-    from = i + 1;
-  }
-  return found;
+  return fuzzyMatch(q, path)?.positions ?? null;
 }
 
 /** A dot file or a file inside a dot folder (the worktree prefix `@wt/<name>/` not counted). */
