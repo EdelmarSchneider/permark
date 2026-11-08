@@ -16,6 +16,9 @@ const settle = async (): Promise<void> => {
 
 async function setup() {
   const api = createMockApi();
+  // a project with no broken link to start from: the showcase README's deliberate one is repaired
+  const readme = api.probe.project.files.get("README.md") ?? "";
+  api.probe.project.files.set("README.md", readme.replace("(docs/nope.md)", "(docs/guide.md)"));
   await api.openPath(MOCK_FOLDER, "thisTab");
   const store = new BrokenLinksStore(new PluginClient(api, () => MOCK_FOLDER), () => MOCK_FOLDER);
   const stop = store.start();

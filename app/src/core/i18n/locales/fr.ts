@@ -146,6 +146,8 @@ export default {
   "fileOps.nameReserved": "Ce nom est réservé par le système",
   "fileOps.nameTooLong": "Le nom est trop long",
   "fileOps.nameExists": "Un élément portant ce nom existe déjà ici",
+  "fileOps.identityUnknown":
+    "PerMark ne peut pas savoir si ces deux noms désignent le même fichier sur ce lecteur, donc rien n'a été renommé.",
   "fileOps.files.one": "{n} fichier",
   "fileOps.files.other": "{n} fichiers",
   "fileOps.items.one": "{n} élément",

@@ -8,6 +8,7 @@ import {
   type ApiError,
   type DocumentChanged,
   type EditSource,
+  type Result,
   type Segment,
 } from "../../api";
 import {
@@ -131,6 +132,9 @@ export class EditingSession {
   #editor: ActiveEditor | null = null;
   #policy: SavePolicy = { kind: "explicit" };
   #path = $state<string | null>(null);
+  /** Goes up when the session takes up another document or lets go of one, not when its document is renamed: an
+   *  answer about an earlier document is dropped, one about the renamed document still counts. */
+  #held = 0;
   /** An editor was opened in this window (Ctrl+E goes back to the last one). */
   #used = false;
   #seq = 0;
@@ -338,6 +342,7 @@ export class EditingSession {
 
   #reset(): void {
     this.#seq += 1;
+    this.#held += 1;
     this.#editor = null;
     this.content = null;
     this.disk = null;
@@ -468,14 +473,17 @@ export class EditingSession {
   // ---- the machine -------------------------------------------------------------------------------------------
 
   dispatch(event: DocEvent): void {
-    // a pending check first: "save" right after typing saves what was typed
+    // a pending check first: "save" right after typing saves what was typed, and a change on disk right after typing
+    // meets the typed text (a conflict), never a clean editor that reloads | closes over it
     if (
       event.e === "save" ||
       event.e === "leave" ||
       event.e === "saveAndLeave" ||
-      event.e === "autosaveDue"
+      event.e === "autosaveDue" ||
+      event.e === "diskChanged" ||
+      event.e === "diskDeleted"
     ) {
-      this.#flush();
+      this.sync();
     }
     const step = transition(this.state, event, this.#policy);
     this.state = step.state;
@@ -484,12 +492,18 @@ export class EditingSession {
     for (const effect of step.effects) void this.#run(effect);
   }
 
-  #flush(): void {
+  /** Runs the change check that waits at once: whoever reads `unsaved` next sees what was just typed. */
+  sync(): void {
     if (this.#check !== null) {
       clearTimeout(this.#check);
       this.#check = null;
       this.#compare();
     }
+  }
+
+  /** The text being edited: the editor's, else the one the next editor mounts with, else the last one checked. */
+  #textNow(): string {
+    return this.#editor?.text() ?? this.content?.text ?? this.text;
   }
 
   save(): void {
@@ -544,10 +558,11 @@ export class EditingSession {
 
   async #save(against: "base" | "disk"): Promise<void> {
     const path = this.#path;
+    const held = this.#held;
     const editor = this.#editor;
     const base = this.base;
     if (path === null || base === null) return;
-    const text = editor?.text() ?? this.content?.text ?? base.text;
+    const text = this.#textNow();
     let from = base;
     if (against === "disk") {
       const disk = await this.#api.editSource(path);
@@ -559,7 +574,8 @@ export class EditingSession {
     }
     const changes = editor?.changes(from.text) ?? 0;
     const result = await this.#api.editSave(path, from.hash, lineEdits(from.text, text));
-    if (this.#path !== path) return;
+    // the answer belongs to this document even when it was renamed meanwhile (the machine waits for it)
+    if (this.#held !== held) return;
     if (!result.ok) {
       this.#hooks?.fail(result.error);
       this.dispatch({ e: "saveFailed", error: result.error.kind });
@@ -589,10 +605,10 @@ export class EditingSession {
 
   async #saveAs(exact: boolean): Promise<void> {
     const path = this.#path;
+    const held = this.#held;
     if (path === null) return;
-    const text = this.#editor?.text() ?? this.content?.text ?? "";
-    const result = await this.#api.editSaveAs(path, text, exact);
-    if (this.#path !== path) return;
+    const result = await this.#api.editSaveAs(path, this.#textNow(), exact);
+    if (this.#held !== held) return;
     if (!result.ok) {
       this.#hooks?.fail(result.error);
       this.dispatch({ e: "saveFailed", error: result.error.kind });
@@ -645,6 +661,7 @@ export class EditingSession {
    * over).
    */
   saveForClose(): Promise<boolean> {
+    this.sync();
     if (!this.unsaved) return Promise.resolve(true);
     if (this.state.s === "conflict") return Promise.resolve(false);
     return new Promise((resolve) => {
@@ -673,11 +690,58 @@ export class EditingSession {
         this.dispatch({ e: "diskChanged", hash: event.version });
         return true;
       case "deleted":
-        this.dispatch({ e: "diskDeleted" });
+        // what was just typed counts: edits go along with a renamed file, a clean editor lets go of it
+        this.sync();
+        if (event.movedTo !== null && this.unsaved) void this.#follow(event.movedTo);
+        else this.dispatch({ e: "diskDeleted" });
         return true;
       default:
         return event satisfies never;
     }
+  }
+
+  /**
+   * The file was renamed | moved while it holds unsaved edits: the session goes with it (path, unsaved flag, journal
+   * entry), keeping the text; the editor is made again from it. The moved file is then compared with the base like
+   * any change on disk: other bytes (links rewritten by the move) -> the conflict view against the moved file, so
+   * "Keep mine" writes there and never brings the old path back.
+   */
+  async #follow(to: string): Promise<void> {
+    const from = this.#path;
+    const base = this.base;
+    if (from === null || base === null) return;
+    const text = this.#textNow();
+    const line = this.#editor?.topLine() ?? this.content?.line ?? 1;
+    this.#path = to;
+    this.text = text;
+    // nothing to type into until the text is mounted again for the new path
+    this.#editor = null;
+    this.content = null;
+    if (this.#journaled && this.#journal !== null) {
+      this.#journal(from, base.hash, null);
+      this.#journaled = false;
+      this.#writeJournal();
+    }
+    void this.#api.editSetUnsaved(to);
+    const seq = ++this.#seq;
+    const loaded = this.#loadedSegments;
+    const blocks: Result<Segment[]> | Promise<Result<Segment[]>> | null =
+      this.mode !== "edit" || this.kind !== "markdown"
+        ? null
+        : loaded?.text === text
+          ? { ok: true, value: loaded.segments }
+          : this.#api.editSegments(text);
+    const [map, disk] = await Promise.all([blocks, this.#api.editSource(to)]);
+    if (seq !== this.#seq || this.#path !== to) return;
+    if (map?.ok === false) {
+      // Edit cannot show this text without its block map (it would rewrite blocks kept as written): Source shows it
+      this.#hooks?.fail(map.error);
+      this.mode = "source";
+      this.lastEdit = "source";
+    }
+    const segments = map?.ok ? map.value : null;
+    this.content = { path: to, text, segments, line, seq: ++this.#seq };
+    this.dispatch(disk.ok ? { e: "diskChanged", hash: disk.value.hash } : { e: "diskDeleted" });
   }
 
   // ---- the journal ---------------------------------------------------------------------------------------------
@@ -706,7 +770,7 @@ export class EditingSession {
     const path = this.#path;
     const base = this.base;
     if (path === null || base === null || !this.unsaved) return;
-    const text = this.#editor?.text() ?? this.content?.text ?? base.text;
+    const text = this.#textNow();
     if (text === base.text || this.#journal === null) return;
     this.#journal(path, base.hash, text);
     this.#journaled = true;

@@ -143,6 +143,8 @@ export default {
   "fileOps.nameReserved": "Acest nume este rezervat de sistem",
   "fileOps.nameTooLong": "Numele este prea lung",
   "fileOps.nameExists": "Aici există deja ceva cu acest nume",
+  "fileOps.identityUnknown":
+    "PerMark nu poate ști dacă aceste două nume sunt același fișier pe această unitate, așa că nu s-a redenumit nimic.",
   "fileOps.files.one": "{n} fișier",
   "fileOps.files.few": "{n} fișiere",
   "fileOps.files.other": "{n} de fișiere",

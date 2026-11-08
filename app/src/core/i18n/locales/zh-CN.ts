@@ -135,6 +135,8 @@ export default {
   "fileOps.nameReserved": "该名称已被系统保留",
   "fileOps.nameTooLong": "名称过长",
   "fileOps.nameExists": "此处已有同名项目",
+  "fileOps.identityUnknown":
+    "PerMark 无法判断这两个名称在此驱动器上是否为同一文件，因此未重命名任何内容。",
   "fileOps.files.one": "{n} 个文件",
   "fileOps.files.other": "{n} 个文件",
   "fileOps.items.one": "{n} 项",

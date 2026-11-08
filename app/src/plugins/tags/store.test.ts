@@ -16,6 +16,9 @@ const settle = async (): Promise<void> => {
 
 async function setup() {
   const api = createMockApi();
+  // a project whose only tags are the ones a test gives: the showcase README's are taken out
+  const readme = api.probe.project.files.get("README.md") ?? "";
+  api.probe.project.files.set("README.md", readme.replace("tags: [reading, markdown, demo]\n", ""));
   await api.openPath(MOCK_FOLDER, "thisTab");
   api.probe.project.add("fm.md", "---\ntitle: x\ntags: [alpha, Beta]\n---\n# T\n");
   const notes: string[] = [];

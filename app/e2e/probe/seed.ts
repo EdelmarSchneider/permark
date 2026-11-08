@@ -66,6 +66,9 @@ type MockApi = {
   pluginCall: (method: string, args: Record<string, unknown>) => Promise<unknown>;
   probe: {
     project: { add(path: string, text: string): void; files: Map<string, string> };
+    edit: {
+      failures: { command: string; path: string; kind: string; detail: string | null }[];
+    };
     drops: { fire(event: unknown): void };
     projects: { news(event: unknown): void };
     context: { set(over: Record<string, unknown>): void };
@@ -254,6 +257,21 @@ export async function seed(page: Page, use: SeedUse, args: Record<string, unknow
           subject: typeof failure.subject === "string" ? failure.subject : null,
         },
       );
+      break;
+    }
+    case "failEdit": {
+      // the editor's read (`edit_source`) | save (`edit_save`) of a document fails as the backend would refuse it
+      // (binary, encoding, tooLarge, unsupported, denied + detail readOnly)
+      const command = str(args, "command", "edit_source");
+      if (command !== "edit_source" && command !== "edit_save") {
+        throw new Error('seed failEdit: "command" edit_source | edit_save');
+      }
+      await withMock(page, (m, a) => void m.mockApi.probe.edit.failures.push(a), {
+        command,
+        path: str(args, "path"),
+        kind: str(args, "kind"),
+        detail: typeof args["detail"] === "string" ? args["detail"] : null,
+      });
       break;
     }
     case "importFiles": {

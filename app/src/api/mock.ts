@@ -2,6 +2,7 @@
 // view of its active tab (switching tabs shows that tab's workspace in it; the app switches between views instead).
 
 import { DEFAULT_FILTER } from "../core/explorer/filter";
+import { renamedPath } from "../core/explorer/list";
 import { opensAsText } from "../core/explorer/importModel";
 import type { CharacterEntry } from "./generated/CharacterEntry";
 import type { CharacterGroup } from "./generated/CharacterGroup";
@@ -11,7 +12,7 @@ import type { WindowView } from "./generated/WindowView";
 import type { WorkspaceRefDto } from "./generated/WorkspaceRefDto";
 import type { WorkspaceView } from "./generated/WorkspaceView";
 import {
-  MOCK_DOCUMENT_PATHS,
+  MOCK_EDIT_SOURCES,
   mockAssetUrl,
   mockLinkTarget,
   mockNoteView,
@@ -23,12 +24,12 @@ import { createMockTokens, type TokensProbe } from "./mockTokens";
 import { createMockLocalAi, type LocalAiProbe } from "./mockLocalAi";
 import { createMockCorrection, type CorrectionProbe } from "./mockCorrection";
 import { createMockConvert, type ConvertProbe } from "./mockConvert";
-import { createMockEditing, type MockEditProbe } from "./mockEdit";
+import { createMockEditing, mockDecoded, mockHash, type MockEditProbe } from "./mockEdit";
 import { createMockImport, type ImportProbe } from "./mockImport";
 import { createMockNotes, MOCK_NOTES_FOLDER } from "./mockNotes";
 import { createMockOrganizing } from "./mockOrganizing";
 import { createMockPlugins, type MockPluginProbe } from "./mockPlugins";
-import { MockProject, MockRefusal, seedFiles } from "./mockFs";
+import { MockProject, MockRefusal, storedPath } from "./mockFs";
 import { createMockProjects, type ProjectsProbe } from "./mockProjects";
 import { mockPictureRefusal } from "./mockRemote";
 import { mockFiles, mockRecent, mockSections } from "./mockSearch";
@@ -42,6 +43,7 @@ import type {
   EventName,
   Events,
   JsonValue,
+  MoveSpec,
   PluginEnvelope,
   PluginEventName,
   PluginEvents,
@@ -454,8 +456,30 @@ export function createMockApi(): Api & {
     view: projects.probe.viewOf(rootNow()),
     root: rootNow(),
   }));
-  const editing = createMockEditing(() => Object.keys(seedFiles()).sort());
-  const notes = createMockNotes(editing.probe.files, () => {
+  /** The Notes folder's files (another folder than the project's). */
+  const noteFiles = new Map<string, string>();
+  /** The files of the workspace shown: what the editor and the document view read and write. */
+  function filesShown(): Map<string, string> {
+    return view.state === "showing" && view.workspace.kind === "notes" ? noteFiles : project.files;
+  }
+  const editing = createMockEditing({
+    files: filesShown,
+    linkTargets: () => [...project.files.keys()].sort(),
+    // the window that saved shows that version: no change back to it (`Documents::saved`)
+    saved: (path, hash) => {
+      if (probe.shown.path === path) shownVersion = hash;
+    },
+    created: (path) => {
+      if (filesShown() !== project.files) return;
+      project.add(path, project.files.get(path) ?? "");
+      refreshTree();
+    },
+    // the backend refreshes its window registry: every window hears the tab's chip with or without the dot
+    unsaved: () => {
+      if (view.state === "showing") announceTabs();
+    },
+  });
+  const notes = createMockNotes(noteFiles, () => {
     for (const handler of appListeners["notes:intent"]) handler(null);
   });
   const appListeners: { [E in AppPluginEventName]: Set<(payload: AppPluginEvents[E]) => void> } = {
@@ -570,6 +594,8 @@ export function createMockApi(): Api & {
     opening: { ms: 0, fails: new Set(), refused: [] },
   };
   let tree: TreeView | null = null;
+  /** The version of the shown document last told to the window (`null`: gone), as `document/mod.rs` keeps it. */
+  let shownVersion: string | null = null;
   let liveOff = false;
   /** The view's drop listeners (the system's drag events, fired by tests through `probe.drops.fire`). */
   const dropHandlers = new Set<(event: DropEvent) => void>();
@@ -581,15 +607,45 @@ export function createMockApi(): Api & {
   function fail<T>(command: CommandName, refusal: unknown): Result<T> {
     if (!(refusal instanceof MockRefusal)) throw refusal;
     const kind: ErrorKind = refusal.kind;
-    const detail = kind === "invalidName" ? refusal.subject : null;
     return {
       ok: false,
       error: {
         kind: "backend",
         command,
-        error: { kind, subject: kind === "invalidName" ? null : refusal.subject, detail },
+        error: { kind, subject: refusal.subject, detail: refusal.detail },
       },
     };
+  }
+
+  /** The file the mock serves for `path`: a single file shows its own name, and the mock serves the showcase for it
+   *  (the files next to it: the project's). */
+  function servedPath(path: string): string {
+    const shown = view.state === "showing" ? view.workspace : null;
+    return shown?.kind === "singleFile" && path === shown.name ? "README.md" : path;
+  }
+
+  /** The current version of a file of the workspace shown (folded as on Windows), `null` when it is gone. */
+  function versionOf(path: string): string | null {
+    const files = filesShown();
+    const stored = storedPath(files, path);
+    return stored === null ? null : mockHash(files.get(stored) ?? "");
+  }
+
+  /** What the watch makes of a file operation for the shown document (`Inner::check`): a file with other content is
+   *  `changed`, a file gone is `deleted` (`movedTo`: where a move took it). */
+  function tellShown(moves: readonly MoveSpec[] = []): void {
+    const path = probe.shown.path;
+    if (path === null) return;
+    const now = versionOf(path);
+    if (now === shownVersion) return;
+    shownVersion = now;
+    const moved = renamedPath(path, moves);
+    emit(
+      "document-changed",
+      now !== null
+        ? { window: "main", path, change: "changed", version: now }
+        : { window: "main", path, change: "deleted", movedTo: moved === path ? null : moved },
+    );
   }
 
   function refused<T>(command: CommandName, kind: ErrorKind, subject: string | null): Result<T> {
@@ -969,7 +1025,8 @@ export function createMockApi(): Api & {
     },
     planMove: (moves, updateLinks) => {
       try {
-        return ok(project.plan(moves, updateLinks));
+        const unsaved = editing.probe.unsaved;
+        return ok(project.plan(moves, updateLinks, unsaved === null ? [] : [unsaved]));
       } catch (e) {
         return Promise.resolve(fail("fileops_plan_move", e));
       }
@@ -979,6 +1036,7 @@ export function createMockApi(): Api & {
         const specs = project.moves(planId);
         const outcome = project.apply(planId, updateLinks);
         refreshTree(specs);
+        tellShown(specs);
         return ok(outcome);
       } catch (e) {
         return Promise.resolve(fail("fileops_apply_move", e));
@@ -986,9 +1044,10 @@ export function createMockApi(): Api & {
     },
     deleteFiles: (paths) => {
       try {
-        project.delete(paths);
+        const deleted = project.delete(paths);
         refreshTree();
-        return ok({ deleted: paths });
+        tellShown();
+        return ok({ deleted });
       } catch (e) {
         return Promise.resolve(fail("fileops_delete", e));
       }
@@ -996,9 +1055,8 @@ export function createMockApi(): Api & {
     newEntry: (dir, name, kind) => {
       try {
         const path = project.create(dir, name, kind);
-        // a new file is empty text on disk: `edit_source` must find it
-        if (kind === "file" && !editing.probe.files.has(path)) editing.probe.files.set(path, "");
         refreshTree();
+        tellShown();
         return ok(path);
       } catch (e) {
         return Promise.resolve(fail("fileops_new", e));
@@ -1007,11 +1065,13 @@ export function createMockApi(): Api & {
     undoFileOp: () => {
       const done = project.undo();
       if (done) refreshTree();
+      if (done) tellShown();
       return ok(done ? { kind: "move", restored: 1, skipped: [] } : null);
     },
     undoFileOpEntry: (id) => {
       const done = project.undoEntry(id);
       if (done) refreshTree();
+      if (done) tellShown();
       return ok(done ? { kind: "import", restored: 1, skipped: [] } : null);
     },
     ...importing.api,
@@ -1042,7 +1102,7 @@ export function createMockApi(): Api & {
     },
     openDocument: (path, known) => {
       if (view.state === "showing" && view.workspace.kind === "notes") {
-        const text = editing.probe.files.get(path);
+        const text = noteFiles.get(path);
         if (text === undefined) {
           return Promise.resolve({
             ok: false,
@@ -1054,22 +1114,24 @@ export function createMockApi(): Api & {
           });
         }
         probe.shown = { path, known };
+        shownVersion = versionOf(path);
         return ok(mockNoteView(path, text));
       }
-      // a single file shows its own name; the mock serves the showcase for it (the files next to it: the project's)
-      const asked =
-        view.state === "showing" &&
-        view.workspace.kind === "singleFile" &&
-        path === view.workspace.name
-          ? "README.md"
-          : path;
-      // a Markdown file the probe | a test added (no rendered fixture): the simple view of its text
-      const added = project.files.get(asked);
+      const asked = servedPath(path);
+      // a file that is not there (moved, deleted) | a folder does not open, as on disk
+      const stored = storedPath(project.files, asked);
+      const raw = stored === null ? undefined : project.files.get(stored);
+      // a Markdown file with no rendered fixture of its text (added by the probe | a test, saved by the editor, links
+      // rewritten): the simple view of its text
+      const text = raw === undefined ? null : mockDecoded(raw).text;
       const found =
-        added !== undefined && /\.md$/i.test(asked) && !MOCK_DOCUMENT_PATHS.includes(asked)
-          ? mockNoteView(asked, added, { inline: true })
-          : mockView(asked, known, project.exists(path));
+        stored === null
+          ? null
+          : text !== null && /\.md$/i.test(asked) && MOCK_EDIT_SOURCES.get(stored)?.text !== text
+            ? mockNoteView(asked, text, { inline: true })
+            : mockView(stored, known, true);
       probe.shown = { path, known };
+      shownVersion = versionOf(path);
       if (!found) {
         return Promise.resolve({
           ok: false,
@@ -1087,12 +1149,15 @@ export function createMockApi(): Api & {
       return ok(null);
     },
     documentMore: () => ok({ text: "", next: null }),
-    documentText: (path) =>
-      ok(
-        view.state === "showing" && view.workspace.kind === "notes"
-          ? (editing.probe.files.get(path) ?? "")
-          : `# ${path}\n`,
-      ),
+    // the file's text as read: BOM gone, its own line breaks (`Documents::text`)
+    documentText: (path) => {
+      const files = filesShown();
+      const stored = storedPath(files, servedPath(path));
+      const raw = stored === null ? undefined : files.get(stored);
+      if (raw === undefined)
+        return Promise.resolve(refused<string>("document_text", "notFound", path));
+      return ok(mockDecoded(raw).body);
+    },
     // as the backend: a relative link above the folder of a single file leads outside; in a project it is missing
     resolveLinks: (doc, hrefs) =>
       ok(

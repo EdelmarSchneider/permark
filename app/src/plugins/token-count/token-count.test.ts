@@ -46,6 +46,8 @@ async function until(check: () => boolean, what: string): Promise<void> {
 }
 
 const text = (): string => (target.textContent ?? "").replace(/\s+/g, " ").trim();
+/** The text of the shown document as the backend reads it. */
+const readme = (): string => mock.probe.project.files.get("README.md") ?? "";
 
 function byText<T extends HTMLElement = HTMLElement>(selector: string, wanted: string): T {
   const found = Array.from(target.querySelectorAll<T>(selector)).find((el) =>
@@ -320,7 +322,7 @@ describe("the status item", () => {
   it("marks an estimate with ≈ and names the tokenizer", async () => {
     await choose("claude");
     await show("README.md");
-    const expected = estimate("claude", "# README.md\n");
+    const expected = estimate("claude", readme());
     await until(() => bar().startsWith("≈"), "the number shows");
     expect(bar()).toBe(`≈ ${expected} ${expected === 1 ? "token" : "tokens"} · Claude`);
     expect(target.querySelector(".item")?.getAttribute("title")).toContain("approx.");
@@ -345,9 +347,9 @@ describe("the status item", () => {
     await choose("o200k");
     probe.setVocab("o200k", { kind: "ready" });
     await show("README.md");
-    const exact = standIn("o200k", "# README.md\n");
+    const exact = standIn("o200k", readme());
     await until(() => bar() === `${exact} ${exact === 1 ? "token" : "tokens"} · GPT-4o`, "exact");
-    expect(probe.counted).toContain("# README.md\n");
+    expect(probe.counted).toContain(readme());
     expect(target.querySelector(".item")?.getAttribute("title")).not.toContain("approx.");
   });
 

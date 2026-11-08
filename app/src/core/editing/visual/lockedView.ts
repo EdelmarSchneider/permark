@@ -18,6 +18,7 @@ import {
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $ctx, $node, $prose, $view } from "@milkdown/kit/utils";
 import type { FrontMatter } from "../../../api/generated/FrontMatter";
+import type { LockReason as BackendLockReason } from "../../../api/generated/LockReason";
 import type { BlockHooks } from "../../doc/blocks";
 import { sameLook, type LockedRender } from "./lockedRender";
 
@@ -32,8 +33,9 @@ const TYPED_META = "pmLockedTyped";
 /** The frame that paints a prompt box: under its open edge, stretched to its close edge (`promptBoxes.ts`). */
 const PROMPT_FRAME = "pm-prompt-frame";
 
-/** Why a block stays as written (backend reasons + the editor's own). */
-export const LOCK_REASONS = [
+/** Why the backend keeps a block as written (mirror of the generated `LockReason`; `satisfies` + the check below keep
+ *  it exhaustive, so a reason the backend adds fails to compile until it is listed here). */
+const BACKEND_REASONS = [
   "frontMatter",
   "html",
   "math",
@@ -43,9 +45,13 @@ export const LOCK_REASONS = [
   "definition",
   "kind",
   "parse",
-  "reference",
-  "differs",
-] as const;
+] as const satisfies readonly BackendLockReason[];
+
+type MissingReasons = Exclude<BackendLockReason, (typeof BACKEND_REASONS)[number]>;
+export const BACKEND_REASONS_COMPLETE: MissingReasons extends never ? true : false = true;
+
+/** Why a block stays as written: the backend's reasons, then the editor's own. */
+export const LOCK_REASONS = [...BACKEND_REASONS, "reference", "differs"] as const;
 
 export type LockReason = (typeof LOCK_REASONS)[number];
 

@@ -761,6 +761,48 @@ describe("another document comes while edits are unsaved", () => {
     expect(mock.probe.edit.files.get(first)?.startsWith("Unsaved words. ")).toBe(true);
   });
 
+  it("typed just before the backend moves the tab: still asked first", async () => {
+    await show("docs/guide.md");
+    await until(() => sourceButton() !== undefined, "mode switch");
+    sourceButton()?.click();
+    await until(() => editing.path === "docs/guide.md" && editing.state.s === "clean", "loaded");
+    expect(editing.apply([{ from: 0, to: 0, insert: "Just typed. ", expect: "" }])).toBe(true);
+    // within the wait of the change check
+    await show("README.md");
+    await until(() => editing.state.s === "unsavedPrompt", "asked");
+    expect(editing.current().startsWith("Just typed. ")).toBe(true);
+    promptButton("Discard")?.click();
+    await until(() => documents.view?.path === "README.md", "the new document");
+  });
+
+  it("the edited document is renamed: the editor and the page go with it, the edits stay and save there", async () => {
+    await show("docs/guide.md");
+    await typeIn("docs/guide.md");
+    const plan = await mock.planMove([{ from: "docs/guide.md", to: "docs/manual.md" }], true);
+    if (!plan.ok) throw new Error("no plan");
+    await mock.applyMove(plan.value.planId, true);
+    try {
+      await until(() => documents.view?.path === "docs/manual.md", "the page on the new name");
+      expect(told.value).toBe("docs/manual.md");
+      expect(editing.path).toBe("docs/manual.md");
+      expect(editing.state.s).toBe("dirty");
+      await until(
+        () =>
+          target.querySelector(".cm-content")?.textContent?.startsWith("Unsaved words. ") === true,
+        "the edits on screen",
+      );
+      expect(target.querySelector(".banner")).toBeNull();
+      editing.save();
+      await until(() => editing.state.s === "clean", "saved");
+      expect(mock.probe.edit.files.get("docs/manual.md")?.startsWith("Unsaved words. ")).toBe(true);
+      expect(mock.probe.edit.files.has("docs/guide.md")).toBe(false);
+    } finally {
+      // the mock is shared by the tests of this file: the document goes back to its name
+      editing.release();
+      await mock.undoFileOp();
+    }
+  });
+
   it("lets a clean editor go without asking", async () => {
     await show("docs/guide.md");
     await until(() => sourceButton() !== undefined, "mode switch");
@@ -876,7 +918,6 @@ describe("config files", () => {
     );
 
   async function open(path: string): Promise<void> {
-    mock.probe.project.files.set(path, "placeholder");
     await show(path);
     await until(() => target.querySelector(".sheet") !== null, `the sheet of ${path}`);
   }

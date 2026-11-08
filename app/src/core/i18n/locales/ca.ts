@@ -141,6 +141,8 @@ export default {
   "fileOps.nameReserved": "El sistema reserva aquest nom",
   "fileOps.nameTooLong": "El nom és massa llarg",
   "fileOps.nameExists": "Aquí ja hi ha un element amb aquest nom",
+  "fileOps.identityUnknown":
+    "PerMark no pot saber si aquests dos noms són el mateix fitxer en aquesta unitat, així que no s'ha reanomenat res.",
   "fileOps.files.one": "{n} fitxer",
   "fileOps.files.other": "{n} fitxers",
   "fileOps.items.one": "{n} element",

@@ -141,6 +141,8 @@ export default {
   "fileOps.nameReserved": "その名前はシステムで予約されています",
   "fileOps.nameTooLong": "名前が長すぎます",
   "fileOps.nameExists": "この名前のものが既にあります",
+  "fileOps.identityUnknown":
+    "このドライブでは、この 2 つの名前が同じファイルかどうかを PerMark が判断できないため、名前は変更されませんでした。",
   "fileOps.files.one": "{n} 個のファイル",
   "fileOps.files.other": "{n} 個のファイル",
   "fileOps.items.one": "{n} 個の項目",

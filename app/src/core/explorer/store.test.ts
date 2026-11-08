@@ -17,6 +17,7 @@ import type {
 import { ImportFlow } from "./importFlow.svelte";
 import { ancestorsOf, applyDelta } from "./list";
 import { editing } from "../editing/session.svelte";
+import { problemText } from "./names";
 import { ExplorerStore, type ExplorerHost } from "./store.svelte";
 
 type Mock = ReturnType<typeof createMockApi>;
@@ -604,6 +605,8 @@ describe("renaming", () => {
 
   it("with the setting 'ask' a move that changes links waits for the answer", async () => {
     const f = await setup("ask");
+    // the guide links the ideas; a second document does too
+    f.api.probe.project.add("notes/index.md", "See [the ideas](ideas.md).\n");
     f.store.select("notes/ideas.md", "single");
     f.store.beginRename();
     f.store.typeName("thoughts.md");
@@ -614,7 +617,10 @@ describe("renaming", () => {
     await f.store.answerDialog("update");
     expect(f.store.dialog.status).toBe("closed");
     expect(paths(f.store)).toContain("notes/thoughts.md");
-    expect(f.api.probe.project.files.get("README.md")).toContain("(notes/thoughts.md)");
+    expect(f.api.probe.project.files.get("docs/guide.md")).toContain(
+      "(../notes/thoughts.md#second-idea)",
+    );
+    expect(f.api.probe.project.files.get("notes/index.md")).toContain("(thoughts.md)");
     expect(f.notes.at(-1)).toMatch(/2 links updated/);
   });
 
@@ -622,7 +628,9 @@ describe("renaming", () => {
     const f = await setup("ask");
     await f.store.requestMove([{ from: "notes/ideas.md", to: "notes/a.md" }]);
     await f.store.answerDialog("move");
-    expect(f.api.probe.project.files.get("README.md")).toContain("(notes/ideas.md)");
+    expect(f.api.probe.project.files.get("docs/guide.md")).toContain(
+      "(../notes/ideas.md#second-idea)",
+    );
     await f.store.requestMove([{ from: "notes/todo.txt", to: "notes/b.txt" }]);
     expect(f.store.dialog.status).toBe("closed");
     await f.store.requestMove([{ from: "docs/guide.md", to: "docs/g.md" }]);
@@ -635,12 +643,16 @@ describe("renaming", () => {
     const always = await setup("always");
     await always.store.requestMove([{ from: "notes/ideas.md", to: "notes/i.md" }]);
     expect(always.store.dialog.status).toBe("closed");
-    expect(always.api.probe.project.files.get("README.md")).toContain("(notes/i.md)");
+    expect(always.api.probe.project.files.get("docs/guide.md")).toContain(
+      "(../notes/i.md#second-idea)",
+    );
     const never = await setup("never");
     const plan = vi.spyOn(never.api, "planMove");
     await never.store.requestMove([{ from: "notes/ideas.md", to: "notes/i.md" }]);
     expect(plan).toHaveBeenCalledWith([{ from: "notes/ideas.md", to: "notes/i.md" }], false);
-    expect(never.api.probe.project.files.get("README.md")).toContain("(notes/ideas.md)");
+    expect(never.api.probe.project.files.get("docs/guide.md")).toContain(
+      "(../notes/ideas.md#second-idea)",
+    );
   });
 
   it("a name that is taken or invalid keeps the field open with the reason", async () => {
@@ -661,6 +673,23 @@ describe("renaming", () => {
     await f.store.commitEdit();
     expect(f.store.edit.mode).toBe("none");
     expect(f.failures).toEqual([]);
+  });
+
+  it("a case-only rename on a drive that cannot prove one file keeps the field open with its own reason", async () => {
+    const f = await setup("never");
+    f.api.probe.project.fileIdsUnknown = true;
+    f.store.beginRename("README.md");
+    f.store.typeName("readme.md");
+    await f.store.commitEdit();
+    expect(f.store.edit).toMatchObject({ mode: "rename", problem: "identityUnknown" });
+    expect(problemText("identityUnknown")).toMatch(/same file/);
+    expect(f.api.probe.project.files.has("README.md")).toBe(true);
+    expect(f.failures).toEqual([]);
+    // a drive that can tell: the rename goes through
+    f.api.probe.project.fileIdsUnknown = false;
+    await f.store.commitEdit();
+    expect(f.store.edit.mode).toBe("none");
+    expect(f.api.probe.project.files.has("readme.md")).toBe(true);
   });
 
   it("escape cancels, and renaming to the same name does nothing", async () => {

@@ -20,6 +20,7 @@ import {
   type TreeNode,
   type Unlisten,
 } from "../../api";
+import { IDENTITY_UNKNOWN } from "../../api/error";
 import { t, tn } from "../i18n";
 import { CODE_OFFER_KEY, isAnswer, shouldOfferCode, withCode, type Answer } from "./codeOffer";
 import { DEFAULT_FILTER, filterToJson, normalizeFilter } from "./filter";
@@ -103,8 +104,9 @@ const NAME_PROBLEMS = [
 ] as const;
 export type NameProblem = (typeof NAME_PROBLEMS)[number];
 
-/** What can be wrong with the name being typed: a rule of names, or the name is taken. */
-export type EditProblem = NameProblem | "exists";
+/** What can be wrong with the name being typed: a rule of names, the name is taken, or the drive cannot tell whether
+ *  a name that differs only in case is the same file. */
+export type EditProblem = NameProblem | "exists" | "identityUnknown";
 
 export function isNameProblem(text: string | null): text is NameProblem {
   return NAME_PROBLEMS.some((p) => p === text);
@@ -682,7 +684,8 @@ export class ExplorerStore {
         return;
       }
       if (kind === "exists") {
-        this.edit = { ...this.edit, problem: "exists" };
+        const unknown = error.error.detail === IDENTITY_UNKNOWN;
+        this.edit = { ...this.edit, problem: unknown ? "identityUnknown" : "exists" };
         return;
       }
     }
