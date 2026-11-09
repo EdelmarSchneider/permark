@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use permark_core::plugins::{
     FolderReveal, FolderRevealApi, ProjectPlaces, ProjectPlacesApi, ServiceLease, Services,
 };
-use permark_core::{ErrorKind, IpcError};
+use permark_core::{paths, ErrorKind, IpcError};
 use serde_json::{json, Value};
 
 use super::installs::{
@@ -139,6 +139,12 @@ fn elsewhere(lab: &Lab, name: &str) -> PathBuf {
     lab.tmp.path().join("Jo\u{e3}o m\u{f3}delos").join(name)
 }
 
+/// A chosen store as the plugin saves it: the disk's own spelling (a temp folder can be an 8.3 short name on Windows
+/// or sit behind a link on macOS).
+fn saved(path: &Path) -> String {
+    paths::canonicalize(path).unwrap().display().to_string()
+}
+
 /// AC-7: a store inside | holding an open or recent project, inside the default store, or relative: refused.
 #[test]
 fn a_store_must_stay_clear_of_projects_and_stores() {
@@ -176,7 +182,7 @@ fn a_store_must_stay_clear_of_projects_and_stores() {
     assert!(!project.join("models").exists());
     let chosen = elsewhere(&lab, "store");
     let state = set_store(&run, Some(&chosen), None).unwrap();
-    assert_eq!(state["store"]["path"], chosen.display().to_string());
+    assert_eq!(state["store"]["path"], saved(&chosen));
     assert_eq!(state["store"]["isDefault"], false);
     assert_eq!(state["store"]["available"], true);
     assert!(chosen.is_dir());
@@ -259,7 +265,7 @@ fn move_copies_checks_and_removes_the_old_copy() {
     set_store(&run, Some(&chosen), Some("move")).unwrap();
     let state = settled(&run);
     assert_eq!(state["storeMove"], Value::Null);
-    assert_eq!(state["store"]["path"], chosen.display().to_string());
+    assert_eq!(state["store"]["path"], saved(&chosen));
     assert_eq!(kind_of(&state, WHISPER), "installed");
     assert_eq!(kind_of(&state, LFM), "installed");
     assert_eq!(assigned(&state, "dictation"), WHISPER);
