@@ -1,19 +1,7 @@
-// What the correction plugin answers in the mock backend. Timer-driven runs (`stepMs` per phase): mock engine not
-// installed (mock local-ai `engineInstalled`) -> `engine` 0 -> 50 -> 100 % of its bytes first (then installed, as
-// `ModelHost::open`), loading 0 -> 50 -> 100 %, one `piece` per piece (a fixed "correction": common English misspellings fixed, case kept; pieces over
-// `TOO_LONG` chars -> `discarded` tooLong), then `done` | `probe.failRun`. A new run stops the old one (cancelled), as
-// the plugin. Status: `probe.available` when set, else whether mock local-ai has a model on job "correction".
+// What the correction plugin answers in the mock backend: a mock piece run (`mockPieceRun.ts`) on the model of job
+// "correction" whose answer is a fixed "correction": common English misspellings fixed, case kept.
 
-import type { PieceRunPhase } from "./generated/PieceRunPhase";
-import type { PieceRunPiece } from "./generated/PieceRunPiece";
-import type { IpcError } from "./generated/IpcError";
-import { MOCK_ENGINE_BYTES } from "./mockLocalAi";
-import type { AppPluginEventName, AppPluginEvents, PluginMethods } from "./types";
-
-type CorrectionMethods = Pick<
-  PluginMethods,
-  "correction.status" | "correction.run" | "correction.cancel"
->;
+import { createMockPieceRun, type PieceRunHandlers, type PieceRunWiring } from "./mockPieceRun";
 
 /** Misspelling -> fix (lowercase); the mock model's whole knowledge. */
 const FIXES: ReadonlyMap<string, string> = new Map([
@@ -24,23 +12,6 @@ const FIXES: ReadonlyMap<string, string> = new Map([
   ["occured", "occurred"],
   ["wich", "which"],
 ]);
-/** Pieces longer than this are "too long for the model". */
-const TOO_LONG = 2000;
-
-export type CorrectionProbe = {
-  /** Calls made: `status`, `run <id> <pieces>`, `cancel <id>`. */
-  calls: string[];
-  /** What each run was sent, in order. */
-  runs: { run: string; pieces: PieceRunPiece[] }[];
-  /** Time of one run phase. Read when a run starts. */
-  stepMs: number;
-  /** `correction.status` answer (`null`: a model on job "correction" in mock local-ai). */
-  available: boolean | null;
-  /** The next run fails with this after loading (`null`: it succeeds). */
-  failRun: IpcError | null;
-  /** Stops the run timer (tests). */
-  stopAll(): void;
-};
 
 /** The mock model's answer for `text`: the known misspellings fixed, first letter's case kept. */
 export function mockCorrect(text: string): string {
@@ -53,98 +24,17 @@ export function mockCorrect(text: string): string {
   });
 }
 
-export function createMockCorrection(
-  emit: <E extends AppPluginEventName>(event: E, payload: AppPluginEvents[E]) => void = () => {},
-  /** Mock local-ai has a model on job "correction". */
-  assigned: () => boolean = () => true,
-  /** Mock local-ai's engine files (a run gets them when missing). */
-  engine: { engineInstalled: boolean } = { engineInstalled: true },
-) {
-  let current: { run: string; next: PieceRunPhase[] } | null = null;
-  let timer: ReturnType<typeof setInterval> | null = null;
-  const stopTimer = (): void => {
-    if (timer !== null) clearInterval(timer);
-    timer = null;
-  };
-  const probe: CorrectionProbe = {
-    calls: [],
-    runs: [],
-    stepMs: 300,
-    available: null,
-    failRun: null,
-    stopAll: stopTimer,
-  };
-
-  function step(): void {
-    const phase = current?.next.shift();
-    if (current === null || phase === undefined) {
-      stopTimer();
-      return;
-    }
-    const run = current.run;
-    if (current.next.length === 0) {
-      stopTimer();
-      current = null;
-    }
-    if (phase.kind === "engine" && phase.receivedBytes === phase.totalBytes)
-      engine.engineInstalled = true;
-    emit("correction:run", { run, phase });
-  }
-
-  function stop(): void {
-    if (current === null) return;
-    const run = current.run;
-    stopTimer();
-    current = null;
-    emit("correction:run", { run, phase: { kind: "cancelled" } });
-  }
-
-  function start(run: string, pieces: readonly PieceRunPiece[]): null {
-    stop();
-    const fetch = engine.engineInstalled
-      ? []
-      : [0, 0.5, 1].map((part): PieceRunPhase => ({
-          kind: "engine",
-          receivedBytes: Math.round(MOCK_ENGINE_BYTES * part),
-          totalBytes: MOCK_ENGINE_BYTES,
-        }));
-    const loading = [0, 0.5, 1].map((progress): PieceRunPhase => ({ kind: "loading", progress }));
-    const failure = probe.failRun;
-    probe.failRun = null;
-    const answers = pieces.map(({ id, text }): PieceRunPhase => ({
-      kind: "piece",
-      id,
-      result:
-        text.length > TOO_LONG
-          ? { kind: "discarded", reason: "tooLong" }
-          : { kind: "output", text: mockCorrect(text) },
-    }));
-    const end: PieceRunPhase[] =
-      failure === null ? [...answers, { kind: "done" }] : [{ kind: "failed", error: failure }];
-    current = { run, next: [...fetch, ...loading, ...end] };
-    timer = setInterval(step, probe.stepMs);
-    return null;
-  }
-
-  const handlers: {
-    [M in keyof CorrectionMethods]: (
-      args: CorrectionMethods[M]["args"],
-    ) => CorrectionMethods[M]["result"];
-  } = {
-    "correction.status": () => {
-      probe.calls.push("status");
-      return { available: probe.available ?? assigned() };
-    },
-    "correction.run": ({ run, pieces }) => {
-      probe.calls.push(`run ${run} ${pieces.length}`);
-      probe.runs.push({ run, pieces: structuredClone(pieces) });
-      return start(run, pieces);
-    },
-    "correction.cancel": ({ run }) => {
-      probe.calls.push(`cancel ${run}`);
-      if (current?.run === run) stop();
-      return null;
-    },
+export function createMockCorrection(wiring: PieceRunWiring) {
+  const { status, run, cancel, probe } = createMockPieceRun(
+    "correction",
+    "correction",
+    mockCorrect,
+    wiring,
+  );
+  const handlers: PieceRunHandlers<"correction"> = {
+    "correction.status": status,
+    "correction.run": run,
+    "correction.cancel": cancel,
   };
   return { handlers, probe };
 }

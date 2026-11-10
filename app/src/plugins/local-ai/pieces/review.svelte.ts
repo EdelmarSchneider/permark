@@ -165,6 +165,11 @@ export class PieceReview {
     this.#session = session;
   }
 
+  /** The plugin this review is set up for. */
+  get plugin(): PiecePlugin {
+    return this.#config.plugin;
+  }
+
   get state(): ReviewState {
     return this.#state;
   }

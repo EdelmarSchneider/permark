@@ -22,7 +22,8 @@ import { createMockConfig } from "./mockConfig";
 import { createMockDistribution, type DistributionProbe } from "./mockDistribution";
 import { createMockTokens, type TokensProbe } from "./mockTokens";
 import { createMockLocalAi, type LocalAiProbe } from "./mockLocalAi";
-import { createMockCorrection, type CorrectionProbe } from "./mockCorrection";
+import { createMockCorrection } from "./mockCorrection";
+import type { PieceRunProbe, PieceRunWiring } from "./mockPieceRun";
 import { createMockConvert, type ConvertProbe } from "./mockConvert";
 import { createMockEditing, mockDecoded, mockHash, type MockEditProbe } from "./mockEdit";
 import { createMockImport, type ImportProbe } from "./mockImport";
@@ -226,7 +227,7 @@ export type MockProbe = {
   /** Local AI: calls made, disk space, this computer, download + move timers. */
   localAi: LocalAiProbe;
   /** Correction: calls made, the status answer, a failure for the next run, the run timer. */
-  correction: CorrectionProbe;
+  correction: PieceRunProbe;
   /** Drop into project: what lies outside, the plans and applies, a hold to keep one running. */
   imports: ImportProbe;
   /** Picture files read for a drop on an editor, by path. */
@@ -511,16 +512,18 @@ export function createMockApi(): Api & {
     },
     () => [rootNow()],
   );
-  const correction = createMockCorrection(
-    (event, payload) => {
+  // what every mock piece run shares: the app's events, mock local-ai's assignments + engine files
+  const pieceRuns: PieceRunWiring = {
+    emit: (event, payload) => {
       for (const handler of appListeners[event]) handler(payload);
     },
-    () =>
+    assigned: (task) =>
       localAi.handlers["local-ai.state"]({}).assignments.some(
-        (a) => a.task === "correction" && a.model !== null,
+        (a) => a.task === task && a.model !== null,
       ),
-    localAi.probe,
-  );
+    engine: localAi.probe,
+  };
+  const correction = createMockCorrection(pieceRuns);
   const plugins = createMockPlugins(
     emitPlugin,
     () => mockView("docs/guide.md", [], true)?.hash ?? "0",
