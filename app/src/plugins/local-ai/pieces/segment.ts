@@ -1,9 +1,10 @@
 // Pieces of a Markdown document to send to a model, one at a time (a plugin's run: correction). Parsed with the
 // editor's own grammar (Markdown + GFM in YAML front matter, as `languageFor` in `core/editing/source/cm.ts`) so the
-// UTF-16 offsets are the editor's. Piece = one prose block (paragraph | heading | list item | quote paragraph),
-// clipped to the scope; long blocks -> sentence groups under a char budget. Whole blocks never sent: front matter,
-// code, HTML, comments, `$$` math, tables, link definitions. Inline non-prose -> numbered markers `⟦n⟧` the model must
-// copy back; `restore` puts the original bytes back.
+// UTF-16 offsets are the editor's. Piece = one prose block (paragraph | heading | list item | quote paragraph | the
+// text of one table cell), clipped to the scope; long blocks -> sentence groups under a char budget. Whole blocks
+// never sent: front matter, code, HTML, comments, `$$` math, link definitions. Of a table only each cell's own text
+// goes: never a pipe, the padding or the alignment row; a table the grammar does not read as one is left alone.
+// Inline non-prose -> numbered markers `⟦n⟧` the model must copy back; `restore` puts the original bytes back.
 
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { yamlFrontmatter } from "@codemirror/lang-yaml";
@@ -32,7 +33,7 @@ export type Budget = { chars: number; cjkChars: number };
 
 export type Scope = { from: number; to: number };
 
-export type PieceKind = "paragraph" | "heading" | "listItem" | "quote";
+export type PieceKind = "paragraph" | "heading" | "listItem" | "quote" | "cell";
 
 export type Piece = {
   /** Document range (UTF-16) of the piece. */
@@ -76,6 +77,10 @@ const HIDDEN_TEXT = [
   /\$(?!\s)[^$\n]+(?<!\s)\$(?!\d)/g,
   /[⟦⟧]/g,
 ];
+// a table's alignment row inside a paragraph: a table the reader may draw that the grammar did not read as one
+// (spaces | `\r` after the row)
+const ALIGNMENT_ROW =
+  /^[ \t>]*(?:\|[ \t]*)?:?-+:?[ \t]*\|(?:[ \t]*:?-+:?[ \t]*\|)*(?:[ \t]*:?-+:?)?[ \t\r]*$/m;
 
 /** Pieces of `doc` to send, in document order; `scope` limits them (UTF-16 offsets; default whole document), `budget`
  *  their size (default: what a small model takes well). */
@@ -100,6 +105,10 @@ export function pieces(
       if (ref.name === "Paragraph" && doc.startsWith("$$", node.from)) {
         const close = doc.indexOf("$$", node.from + 2);
         mathEnd = close < 0 ? node.to : close + 2;
+        return false;
+      }
+      // a table the grammar missed: left alone (as a paragraph its pipes would go to the model as words)
+      if (ref.name === "Paragraph" && ALIGNMENT_ROW.test(doc.slice(node.from, node.to))) {
         return false;
       }
       const content = trim(doc, contentRange(doc, node));
@@ -137,11 +146,18 @@ export function unmarked(text: string): string {
   return text.replace(MARKER, "");
 }
 
+// a `TableCell` is the cell's text alone: the grammar leaves its padding and the pipes around it out
 function isProse(name: string): boolean {
-  return name === "Paragraph" || name === "Task" || /^(ATX|Setext)Heading\d$/.test(name);
+  return (
+    name === "Paragraph" ||
+    name === "Task" ||
+    name === "TableCell" ||
+    /^(ATX|Setext)Heading\d$/.test(name)
+  );
 }
 
 function kindOf(node: Node): PieceKind {
+  if (node.name === "TableCell") return "cell";
   if (node.name.includes("Heading")) return "heading";
   if (node.name === "Task" || node.parent?.name === "ListItem") return "listItem";
   for (let up = node.parent; up; up = up.parent) if (up.name === "Blockquote") return "quote";
@@ -190,9 +206,10 @@ function trim(doc: string, range: Range): Range {
 // inline non-prose inside `content`, sorted, overlaps merged
 function hiddenRanges(doc: string, block: Node, content: Range): Range[] {
   const found: Range[] = [];
+  const cell = block.name === "TableCell";
   const walk = (node: Node): void => {
     for (let child = node.firstChild; child; child = child.nextSibling) {
-      const hidden = hiddenPart(doc, child);
+      const hidden = hiddenPart(doc, child, cell);
       if (hidden !== null) found.push(hidden);
       if (hidden === null || hidden.from > child.from) walk(child);
     }
@@ -219,11 +236,13 @@ function hiddenRanges(doc: string, block: Node, content: Range): Range[] {
 }
 
 // part of an inline node the model never sees: whole node, or a link's destination `(…)`
-function hiddenPart(doc: string, node: Node): Range | null {
+function hiddenPart(doc: string, node: Node, cell: boolean): Range | null {
   if (HIDDEN.has(node.name)) return { from: node.from, to: node.to };
-  // backslash hard break
-  if (node.name === "Escape" && doc[node.from + 1] === "\n")
-    return { from: node.from, to: node.to };
+  if (node.name === "Escape") {
+    const escaped = doc[node.from + 1];
+    // backslash hard break; in a table cell an escaped pipe (the model never sees | moves a pipe of a row)
+    return escaped === "\n" || (cell && escaped === "|") ? { from: node.from, to: node.to } : null;
+  }
   if (node.name !== "Link" && node.name !== "Image") return null;
   // footnote reference `[^x]`
   if (doc.startsWith("[^", node.from)) return { from: node.from, to: node.to };

@@ -139,6 +139,27 @@ describe("a correction run", () => {
     expect(mock.probe.correction.calls).toContain(`cancel ${sent[0]?.run}`);
   });
 
+  it("the text of a table goes too, cell by cell; a fix lands in its cell alone", async () => {
+    const table = "| Name | Note |\n|---|---|\n| Teh quick fox | 12 |\n";
+    session.text = `${DOC}\n${table}`;
+    await store.runOver("document");
+    expect(sent[0]?.pieces.map((p) => p.text)).toEqual([
+      "I has a cat.",
+      "She recieve mail from teh office.",
+      "Name",
+      "Note",
+      "Teh quick fox",
+    ]);
+    answer(4, (t) => t.replace("Teh", "The"));
+    // an answer that would add a cell to the row is left out
+    answer(3, () => "Note | more");
+    const at = session.text.indexOf("Teh");
+    expect(suggestions()).toEqual([`${at}-${at + 3}:Teh>The`]);
+    expect(store.review?.discarded).toBe(1);
+    store.accept();
+    expect(session.text).toBe(`${DOC}\n${table.replace("Teh", "The")}`);
+  });
+
   it("nothing to check: no run, the bar says so", async () => {
     session.text = "```\nteh\n```\n";
     await store.runOver("document");

@@ -79,6 +79,24 @@ describe("judge", () => {
     expect(reason(judge(ja, only(ja), "今日は天気がいいです。"))).toBe("ok");
   });
 
+  it("a table cell: a fix lands on the cell's own words; a pipe | line break in the answer discards it", () => {
+    const doc = "| Name | Note |\n|:--|--:|\n| Teh quick fox | recieve `x` \\| mail |\n";
+    const [, , fox, mail] = pieces(doc);
+    if (fox === undefined || mail === undefined) throw new Error("no cells");
+    expect(applied(doc, judge(doc, fox, "The quick fox"))).toBe(doc.replace("Teh", "The"));
+    expect(mail.text).toBe("recieve ⟦1⟧ ⟦2⟧ mail");
+    const at = doc.indexOf("recieve");
+    expect(judge(doc, mail, "receive ⟦1⟧ ⟦2⟧ mail")).toMatchObject({
+      kind: "ok",
+      suggestions: [{ from: at, to: at + 7, original: "recieve", insert: "receive" }],
+    });
+    expect(reason(judge(doc, fox, "The quick | fox"))).toBe("cell");
+    expect(reason(judge(doc, fox, "The quick\nfox"))).toBe("cell");
+    // a cell is a label like a list item: no final period added
+    expect(judge(doc, fox, "Teh quick fox.")).toMatchObject({ kind: "ok", suggestions: [] });
+    expect(applied(doc, judge(doc, fox, "The quick fox."))).toBe(doc.replace("Teh", "The"));
+  });
+
   it("drops a suggestion that only adds a final period to a heading | list item", () => {
     const heading = "# Teh title";
     const v = judge(heading, only(heading), "The title.");

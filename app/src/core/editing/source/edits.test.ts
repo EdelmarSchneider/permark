@@ -50,6 +50,19 @@ describe("what a correction works on in the Source editor", () => {
     });
   });
 
+  it("paragraph: in a table, the cell at the caret; its pipes, padding and alignment row = nothing", () => {
+    const table = "| Teh head | b |\n|:---------|--:|\n|  teh cell   |   |\n";
+    const head = table.indexOf("Teh head");
+    expect(scopeIn(state(table, head + 2), "paragraph")).toEqual({ from: head, to: head + 8 });
+    const cell = table.indexOf("teh cell");
+    expect(scopeIn(state(table, cell), "paragraph")).toEqual({ from: cell, to: cell + 8 });
+    // the caret right after the last character still belongs to the cell
+    expect(scopeIn(state(table, cell + 8), "paragraph")).toEqual({ from: cell, to: cell + 8 });
+    expect(scopeIn(state(table, cell + 10), "paragraph")).toBeNull();
+    expect(scopeIn(state(table, table.indexOf("|:--") + 3), "paragraph")).toBeNull();
+    expect(scopeIn(state(table, table.lastIndexOf("|") - 2), "paragraph")).toBeNull();
+  });
+
   it("paragraph: no prose block at the caret (blank line, code, front matter) = nothing", () => {
     expect(scopeIn(state(DOC, DOC.indexOf("\n\nFirst") + 1), "paragraph")).toBeNull();
     expect(scopeIn(state(DOC, DOC.indexOf("code") + 1), "paragraph")).toBeNull();
@@ -76,6 +89,21 @@ describe("edits a correction applies in the Source editor", () => {
       { from: 17, to: 20, insert: "the", expect: "teh" },
     ]);
     expect(next?.doc.toString()).toBe("The cat  \nsat on the mat. ☕\n");
+  });
+
+  it("a fix in a table cell changes its text alone: pipes, padding, alignment row and other cells stay", () => {
+    const table =
+      "| Name    | Note    |\n| :------ | ------: |\n| teh cat | a \\| b  |\n| other   | recieve |\n";
+    const cat = table.indexOf("teh");
+    const other = table.indexOf("other");
+    const next = apply(state(table), [
+      { from: cat, to: cat + 3, insert: "the", expect: "teh" },
+      { from: other, to: other + 5, insert: "another", expect: "other" },
+    ]);
+    // a longer cell moves its own row's pipes on; nothing is padded again
+    expect(next?.doc.toString()).toBe(
+      "| Name    | Note    |\n| :------ | ------: |\n| the cat | a \\| b  |\n| another   | recieve |\n",
+    );
   });
 
   it("all or nothing: one range whose text moved on = no change at all", () => {

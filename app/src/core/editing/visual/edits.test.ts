@@ -411,6 +411,80 @@ describe("references in correction", () => {
   });
 });
 
+describe("table cells in correction", () => {
+  // columns padded by hand with an escaped pipe, then a table written tight: neither is how the editor writes one
+  const TABLE =
+    "| Name    | Note      |\n| :------ | --------: |\n| teh cat | a \\| b    |\n| other   | recieve   |";
+  const TEXT = `Kept _one_.\n\n${TABLE}\n\n* kept  \n\n|Nme|Note|\n|:-:|---|\n|teh|x \\| y|\n`;
+
+  it("paragraph: the caret in a cell = the whole table (a top-level block)", async () => {
+    await load(TEXT);
+    select(posOf("cat"));
+    const from = TEXT.indexOf(TABLE);
+    expect(scopeIn(core.view.state, now(), "paragraph")).toEqual({
+      from,
+      to: from + TABLE.length,
+    });
+  });
+
+  it("a fix in a cell changes that cell's text alone: pipes, padding, alignment row, other cells and blocks stay", async () => {
+    await load(TEXT);
+    const before = core.view.state.doc;
+    expect(docText(docRange(before, now(), wordAt(TEXT, "teh")))).toBe("teh");
+    expect(applyEdits(core, now(), [fix(TEXT, "teh", "the")])).toBe(true);
+    const after = now();
+    expect(after.text).toBe(TEXT.replace("teh cat", "the cat"));
+    expect(after.changed).toBe(1);
+    // the other nodes are the same objects
+    [0, 2, 3].forEach((i) => expect(core.view.state.doc.child(i)).toBe(before.child(i)));
+  });
+
+  it("a cell made longer | shorter leaves the columns as written: nothing is padded again", async () => {
+    await load(TEXT);
+    expect(applyEdits(core, now(), [fix(TEXT, "other", "another")])).toBe(true);
+    expect(now().text).toBe(TEXT.replace("| other   |", "| another   |"));
+    await load(TEXT);
+    expect(applyEdits(core, now(), [fix(TEXT, "teh cat", "cat")])).toBe(true);
+    expect(now().text).toBe(TEXT.replace("| teh cat |", "| cat |"));
+  });
+
+  it("several cells changing width: only spaces that pad the table's cells may move; every other block stays", async () => {
+    await load(TEXT);
+    const edits = [fix(TEXT, "teh cat", "the big cat"), fix(TEXT, "recieve", "got")];
+    expect(applyEdits(core, now(), edits)).toBe(true);
+    const after = now();
+    // the editor pads the columns anew; where that moves a pipe, spaces of it may stay (the header row's too)
+    const squeezed = (text: string): string => text.replace(/ +/g, " ");
+    const replaced = TEXT.replace("teh cat", "the big cat").replace("recieve", "got");
+    expect(squeezed(after.text)).toBe(squeezed(replaced));
+    expect(after.text).toContain("\n| :------ | --------: |\n");
+    const from = TEXT.indexOf(TABLE);
+    expect(after.text.slice(0, from)).toBe(TEXT.slice(0, from));
+    expect(after.text.endsWith(TEXT.slice(from + TABLE.length))).toBe(true);
+    expect(after.changed).toBe(1);
+  });
+
+  it("refuses a fix that would add a cell | a line to the row", async () => {
+    await load(TEXT);
+    const before = core.view.state.doc;
+    expect(applyEdits(core, now(), [fix(TEXT, "other", "ot | her")])).toBe(false);
+    expect(applyEdits(core, now(), [fix(TEXT, "other", "ot\nher")])).toBe(false);
+    expect(core.view.state.doc).toBe(before);
+  });
+
+  it("a header cell and a body cell of a table written tight; one undo takes both back", async () => {
+    await load(TEXT);
+    const tight = TEXT.indexOf("|Nme|");
+    const edits = [fix(TEXT, "Nme", "Name"), fix(TEXT, "teh", "the", tight)];
+    expect(applyEdits(core, now(), edits)).toBe(true);
+    expect(now().text).toBe(TEXT.replace("|Nme|", "|Name|").replace("|teh|", "|the|"));
+    const view = core.view;
+    expect(undo(view.state, view.dispatch)).toBe(true);
+    expect(now().text).toBe(TEXT);
+    expect(now().changed).toBe(0);
+  });
+});
+
 describe("a piece after the same text written as prose", () => {
   it.each([
     ["a formula", "Teh \\$teh$ and $teh$ teh.\n", "teh"],

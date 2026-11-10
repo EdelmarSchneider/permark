@@ -56,6 +56,10 @@ describe("pieces", () => {
       "item won\n  more",
       "task too",
       "quote won\n⟦1⟧ still",
+      "teh",
+      "b",
+      "teh",
+      "d",
     ]);
     expect(list.map((p) => p.kind)).toEqual([
       "heading",
@@ -63,6 +67,10 @@ describe("pieces", () => {
       "listItem",
       "listItem",
       "quote",
+      "cell",
+      "cell",
+      "cell",
+      "cell",
     ]);
     expect(list[1]?.markers).toEqual([
       '(http://a.b/c "Teh title")',
@@ -85,13 +93,14 @@ describe("pieces", () => {
     }
   });
 
-  it("never touches front matter, code, tables, HTML, comments, math or link definitions", () => {
+  it("never touches front matter, code, a table's pipes | alignment row, HTML, comments, math or link definitions", () => {
     const covered = pieces(DOC)
       .map((p) => DOC.slice(p.from, p.to))
       .join("\n");
     for (const kept of [
       "title: Teh draft",
-      "| teh |",
+      "|",
+      "---",
       "teh code",
       "teh indented",
       "teh html",
@@ -164,6 +173,129 @@ describe("pieces", () => {
     const jaPieces = pieces(ja, undefined, { chars: 100, cjkChars: 30 });
     expect(jaPieces).toHaveLength(4);
     expect(jaPieces.map((p) => p.original).join("")).toBe(ja);
+  });
+});
+
+describe("table cells", () => {
+  const TABLE = [
+    "| Teh head | Size  |",
+    "|:---------|------:|",
+    "|  teh  cell   | 12 |",
+    "|          | a \\| b teh |",
+    "| Use `npm run` teh | [teh docs](http://a.b/c) $x$ |",
+    "",
+  ].join("\n");
+
+  it("each cell with text is one piece: its text alone, never the padding or a pipe", () => {
+    const list = pieces(TABLE);
+    expect(texts(list)).toEqual([
+      "Teh head",
+      "Size",
+      "teh  cell",
+      "a ⟦1⟧ b teh",
+      "Use ⟦1⟧ teh",
+      "[teh docs]⟦1⟧ ⟦2⟧",
+    ]);
+    expect(new Set(list.map((p) => p.kind))).toEqual(new Set(["cell"]));
+    // header cells too; the exact range of each
+    expect(list.map((p) => [p.from, p.to])).toEqual(
+      ["Teh head", "Size", "teh  cell", "a \\| b teh", "Use `npm run` teh"]
+        .map((cell) => [TABLE.indexOf(cell), TABLE.indexOf(cell) + cell.length])
+        .concat([[TABLE.indexOf("[teh docs]"), TABLE.indexOf("$x$") + 3]]),
+    );
+    for (const piece of list) {
+      expect(TABLE.slice(piece.from, piece.to)).toBe(piece.original);
+      expect(piece.original).toBe(piece.original.trim());
+      expect(piece.text).not.toContain("|");
+      expect(restore(piece.text, piece)).toBe(piece.original);
+    }
+  });
+
+  it("the alignment row, an empty cell and a cell without letters are never pieces", () => {
+    const covered = texts(pieces(TABLE)).join("\n");
+    expect(covered).not.toContain("--");
+    expect(covered).not.toContain("12");
+    expect(pieces("| 1 | 2 |\n|---|---|\n|   | `x` |\n")).toEqual([]);
+  });
+
+  it("an escaped pipe is a marker: the model never sees a pipe, the bytes come back", () => {
+    const piece = pieces(TABLE)[3];
+    if (piece === undefined) throw new Error("no piece");
+    expect(piece.markers).toEqual(["\\|"]);
+    expect(restore("a ⟦1⟧ b the", piece)).toBe("a \\| b the");
+    // in emphasis | a link's text too; outside a table an escaped pipe stays plain text
+    const [strong] = pieces("| **teh \\| x** [a \\| b](u) |\n|---|\n");
+    expect(strong?.text).toBe("**teh ⟦1⟧ x** [a ⟦2⟧ b]⟦3⟧");
+    expect(texts(pieces("Teh \\| pipe"))).toEqual(["Teh \\| pipe"]);
+  });
+
+  it("inline non-prose in a cell is a marker, as in a paragraph", () => {
+    const list = pieces(TABLE);
+    expect(list[4]?.markers).toEqual(["`npm run`"]);
+    expect(list[5]?.markers).toEqual(["(http://a.b/c)", "$x$"]);
+    const [html] = pieces("| <b>teh</b> https://x.y/teh [[Teh page]] |\n|---|\n");
+    expect(html?.text).toBe("⟦1⟧teh⟦2⟧ ⟦3⟧ ⟦4⟧");
+  });
+
+  it("a table in a quote | a list item, and one written without outer pipes", () => {
+    const quote = "> | teh quote | b |\n> |---|---|\n> | c | teh |\n";
+    expect(texts(pieces(quote))).toEqual(["teh quote", "b", "c", "teh"]);
+    expect(new Set(pieces(quote).map((p) => p.kind))).toEqual(new Set(["cell"]));
+    const item = "- item\n\n  | teh list | x |\n  |---|---|\n  | y | z |\n";
+    expect(texts(pieces(item))).toEqual(["item", "teh list", "x", "y", "z"]);
+    expect(pieces(item).map((p) => p.kind)).toEqual(["listItem", "cell", "cell", "cell", "cell"]);
+    expect(texts(pieces("teh a | b\n--|--\nteh one | two\n"))).toEqual([
+      "teh a",
+      "b",
+      "teh one",
+      "two",
+    ]);
+  });
+
+  it("a table the grammar does not read as one is left alone, never sent as a paragraph", () => {
+    const rows = ["| Teh head | b |", "|---|---|", "| teh | d |", "", "Teh after.", ""];
+    // CRLF line ends (the editor's text has LF; a text that comes as the file has it)
+    expect(texts(pieces(rows.join("\r\n")))).toEqual(["Teh after."]);
+    // spaces after the alignment row
+    expect(texts(pieces(rows.join("\n").replace("|---|---|", "|---|---|  ")))).toEqual([
+      "Teh after.",
+    ]);
+    // right under a paragraph's line the grammar reads it: cells as ever
+    expect(texts(pieces(`Teh intro\n${rows.join("\n")}`))).toEqual([
+      "Teh intro",
+      "Teh head",
+      "b",
+      "teh",
+      "d",
+      "Teh after.",
+    ]);
+    // dashes and a pipe among words are no alignment row
+    expect(texts(pieces("Teh a - b\nc -- d | e"))).toEqual(["Teh a - b\nc -- d | e"]);
+  });
+
+  it("clips to the scope: the cells it touches, each cut as a paragraph is", () => {
+    const doc = "| Teh head | Size here |\n|---|---|\n| teh cell | more words |\n";
+    const cell = doc.indexOf("teh cell");
+    const more = doc.indexOf("more");
+    // inside one cell; a cut mid-word widens to the word
+    expect(texts(pieces(doc, { from: cell, to: cell + 8 }))).toEqual(["teh cell"]);
+    expect(texts(pieces(doc, { from: cell + 5, to: cell + 6 }))).toEqual(["cell"]);
+    // across two cells: the padding and the pipe between them belong to neither
+    const across = pieces(doc, { from: cell + 4, to: more + 4 });
+    expect(texts(across)).toEqual(["cell", "more"]);
+    expect(across.map((p) => [p.from, p.to])).toEqual([
+      [cell + 4, cell + 8],
+      [more, more + 4],
+    ]);
+    // across rows: the alignment row between them is never a piece
+    expect(texts(pieces(doc, { from: doc.indexOf("Size"), to: cell + 3 }))).toEqual([
+      "Size here",
+      "teh",
+    ]);
+    // only pipes, padding or the alignment row
+    const row = doc.indexOf("|---");
+    expect(pieces(doc, { from: row, to: row + 9 })).toEqual([]);
+    expect(pieces(doc, { from: cell + 8, to: more })).toEqual([]);
   });
 });
 

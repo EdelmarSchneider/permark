@@ -1,6 +1,7 @@
 // Checks any model output for one piece must pass before a plugin reads it as an answer: an output that leaks
-// thinking, opens with a preamble, breaks the markers | Markdown symbols or changes length (dropped | added text)
-// beyond the plugin's range is discarded whole. What the answer may change beyond that is the plugin's own guard.
+// thinking, opens with a preamble, breaks the markers | Markdown symbols | the table row of a cell or changes length
+// (dropped | added text) beyond the plugin's range is discarded whole. What the answer may change beyond that is the
+// plugin's own guard.
 
 import { restore, unmarked, type Piece } from "./segment";
 
@@ -18,7 +19,7 @@ export type StructureLimits = {
   preambles: readonly string[];
 };
 
-export type StructureDiscard = "thinking" | "preamble" | "markers" | "symbols" | "length";
+export type StructureDiscard = "thinking" | "preamble" | "markers" | "symbols" | "cell" | "length";
 
 export type Structure =
   /** `restored`: the output with the markers back as original bytes. */
@@ -33,6 +34,7 @@ export function structureVerdict(piece: Piece, output: string, limits: Structure
   const restored = restore(output, piece);
   if (restored === null) return discard("markers");
   if (SYMBOLS.some((s) => count(piece.text, s) !== count(output, s))) return discard("symbols");
+  if (piece.kind === "cell" && breaksRow(restored.trim())) return discard("cell");
   const before = unmarked(piece.text);
   const after = unmarked(output);
   const ratio = after.trim().length / Math.max(1, before.trim().length);
@@ -45,6 +47,19 @@ export function structureVerdict(piece: Piece, output: string, limits: Structure
 function preamble(input: string, output: string, preambles: readonly string[]): boolean {
   const opens = (text: string, p: string) => text.trimStart().toLowerCase().startsWith(p);
   return preambles.some((p) => opens(output, p) && !opens(input, p));
+}
+
+// `text` (an answer without the space around it: a plugin puts the piece's own back) in the place of a table cell
+// would change the cells of its row: a line break, a pipe not escaped, or a backslash left open at the end (it would
+// escape the pipe that closes the cell). Escapes as the table grammar reads them: `\\|` is a backslash, then a pipe.
+function breaksRow(text: string): boolean {
+  if (/[\r\n]/.test(text)) return true;
+  let escaped = false;
+  for (const ch of text) {
+    if (ch === "|" && !escaped) return true;
+    escaped = !escaped && ch === "\\";
+  }
+  return escaped;
 }
 
 function count(text: string, symbol: string): number {

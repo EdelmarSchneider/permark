@@ -54,6 +54,29 @@ describe("structureVerdict", () => {
     expect(reason(check(only(doc), "This sentence is complete."))).toBe("length");
   });
 
+  it("discards an answer that would break a table cell: a pipe, a line break", () => {
+    const [head, , cell] = pieces("| Teh head | b |\n|---|---|\n| teh \\| cell | d |\n");
+    if (head === undefined || cell === undefined) throw new Error("no cells");
+    expect(reason(check(head, "The | head"))).toBe("cell");
+    expect(reason(check(head, "The\nhead"))).toBe("cell");
+    expect(reason(check(head, "The\r\nhead"))).toBe("cell");
+    // a backslash left open at the end would escape the row's own pipe
+    expect(reason(check(head, "The head\\"))).toBe("cell");
+    // the escaped pipe back in its place; a backslash put before it leaves it bare
+    expect(check(cell, "the ⟦1⟧ cell")).toEqual({ kind: "ok", restored: "the \\| cell" });
+    expect(reason(check(cell, "the \\⟦1⟧ cell"))).toBe("cell");
+    // an escaped pipe is text; space around the answer is not part of it
+    expect(reason(check(head, "The \\| head"))).toBe("ok");
+    expect(check(head, " The head\n")).toEqual({ kind: "ok", restored: " The head\n" });
+  });
+
+  it("a pipe | line break in a paragraph's answer is not this rule's", () => {
+    const piece = only("Teh head");
+    expect(reason(check(piece, "The | head"))).toBe("ok");
+    expect(reason(check(piece, "The\nhead"))).toBe("ok");
+    expect(reason(check(piece, "The head\\"))).toBe("ok");
+  });
+
   it("takes the caller's length range and preambles", () => {
     const doc = "This sentence is complete and has a clear ending.";
     const wide: StructureLimits = { minRatio: 0.3, maxRatio: 3, preambles: [] };

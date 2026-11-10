@@ -1,14 +1,14 @@
 // Checks on one model output before its suggestions reach the person: a piece whose output fails the structure check
-// of `local-ai` (leaked thinking, a preamble, broken markers | Markdown symbols, length: dropped | added text),
-// changes script (a translation) or too many words (a rewrite) is discarded whole. A heading | list item never gets a
-// final period added. Thresholds tuned on the eval set (`eval/`).
+// of `local-ai` (leaked thinking, a preamble, broken markers | Markdown symbols | table row, length: dropped | added
+// text), changes script (a translation) or too many words (a rewrite) is discarded whole. A heading | list item |
+// table cell never gets a final period added. Thresholds tuned on the eval set (`eval/`).
 
 import {
   structureVerdict,
   type StructureDiscard,
   type StructureLimits,
 } from "../local-ai/pieces/guards";
-import { unmarked, type Piece } from "../local-ai/pieces/segment";
+import { unmarked, type Piece, type PieceKind } from "../local-ai/pieces/segment";
 import type { Suggestion } from "../local-ai/pieces/suggestion";
 import { suggest, wordDiff, type WordDiff } from "./diff";
 
@@ -54,6 +54,8 @@ const STRUCTURE: StructureLimits = {
   preambles: PREAMBLES,
 };
 const FINAL_PERIODS = [".", "。"];
+/** Pieces that are labels more often than sentences: a final period the model adds is not a fix. */
+const LABELS: ReadonlySet<PieceKind> = new Set<PieceKind>(["heading", "listItem", "cell"]);
 const SCRIPTS = [
   /\p{Script=Latin}/u,
   /\p{Script=Han}/u,
@@ -145,9 +147,10 @@ function similarity(a: string, b: string): number {
   return 1 - (row[y.length] ?? longer) / longer;
 }
 
-// heading | list item: a final period the model added is left out (the suggestion dropped when nothing else is left)
+// heading | list item | table cell: a final period the model added is left out (the suggestion dropped when nothing
+// else is left)
 function keepEnding(piece: Piece, s: Suggestion): Suggestion[] {
-  if ((piece.kind !== "heading" && piece.kind !== "listItem") || s.to !== piece.to) return [s];
+  if (!LABELS.has(piece.kind) || s.to !== piece.to) return [s];
   const period = FINAL_PERIODS.find((p) => s.insert.endsWith(p) && !s.original.endsWith(p));
   if (period === undefined) return [s];
   const insert = s.insert.slice(0, -period.length);
