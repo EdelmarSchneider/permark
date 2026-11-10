@@ -4,32 +4,23 @@
 //! long), cancel, new run cancels the old one, warm session (idle unload, reassignment), plugin off (no thread,
 //! nothing loaded), production model source (`ModelHost` service, the job's own task).
 
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, Instant};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
-use permark_core::conditions::{Context, Distribution};
-use permark_core::events::EventSink;
-use permark_core::plugins::{AppServices, CxWorkspace, PluginCx, PluginId, RpcTable, Services};
+use permark_core::plugins::{AppServices, PluginId, RpcTable, Services};
 use permark_core::settings::AppSettings;
-use permark_core::IpcError;
 use serde_json::{json, Value};
 
-use super::installs::{Events, E2B};
+use super::installs::E2B;
 use super::testrun::Bench;
-use crate::engine::{
-    CancelToken, ChatMessage, ChatRequest, Device, Engine, EngineError, FakeEngine, FileRole,
-    Finish, GenEvent, LoadOpts, ModelFiles, Role, Sampling, SessionId, Usage,
-};
-use crate::host::{engine_ipc, HostError, HostProgress};
-use crate::pieces::{Models, Piece, PieceJob, PieceRunner, Session, THINKING};
+use crate::engine::{ChatMessage, FakeEngine, Role, Sampling};
+use crate::pieces::testkit::{pieces, wait, Events, Fake, RAMBLE};
+use crate::pieces::{Models, PieceJob, PieceRunner, THINKING};
 use crate::tasks::Task;
 
 /// Plugin the test runs belong to (events `echo:run`).
 const PLUGIN: PluginId = PluginId::of("echo");
-/// Piece word that makes the fake answer hit its cap.
-const RAMBLE: &str = "ramble";
 const SHORT_IDLE: Duration = Duration::from_millis(150);
 const PACE: Duration = Duration::from_millis(20);
 /// System turn of [`Echo`] before the run's tone.
@@ -74,211 +65,18 @@ impl PieceJob for Echo {
     }
 }
 
-impl Events {
-    /// Phases of run `run` so far.
-    fn phases(&self, run: &str) -> Vec<Value> {
-        self.0
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(name, p)| name == "echo:run" && p["run"] == run)
-            .map(|(_, p)| p["phase"].clone())
-            .collect()
-    }
-
-    /// Phases of `run` once its last one (`done` | `cancelled` | `failed`) went out.
-    fn ended(&self, run: &str) -> Vec<Value> {
-        wait(|| {
-            let phases = self.phases(run);
-            phases
-                .last()
-                .is_some_and(|p| {
-                    ["done", "cancelled", "failed"].contains(&p["kind"].as_str().unwrap())
-                })
-                .then_some(phases)
-        })
-    }
-}
-
-fn wait<T>(mut f: impl FnMut() -> Option<T>) -> T {
-    let start = Instant::now();
-    loop {
-        if let Some(value) = f() {
-            return value;
-        }
-        assert!(start.elapsed() < Duration::from_secs(10), "timed out");
-        std::thread::sleep(Duration::from_millis(2));
-    }
-}
-
-/// Model source over one [`FakeEngine`]; counts loads, records requests.
-struct Fake {
-    engine: Arc<FakeEngine>,
-    assigned: AtomicBool,
-    /// Sessions keep serving (false = model reassigned).
-    serving: Arc<AtomicBool>,
-    opens: AtomicUsize,
-    requests: Arc<Mutex<Vec<ChatRequest>>>,
-    /// Engine files missing: bytes the next open fetches first (as `ModelHost`), then installed.
-    engine_missing: Mutex<Option<u64>>,
-    /// The engine fetch never ends before a cancel.
-    engine_held: AtomicBool,
-}
-
-impl Fake {
-    fn new(engine: FakeEngine) -> Arc<Self> {
-        Arc::new(Self {
-            engine: Arc::new(engine),
-            assigned: AtomicBool::new(true),
-            serving: Arc::new(AtomicBool::new(true)),
-            opens: AtomicUsize::new(0),
-            requests: Arc::default(),
-            engine_missing: Mutex::new(None),
-            engine_held: AtomicBool::new(false),
-        })
-    }
-
-    fn opens(&self) -> usize {
-        self.opens.load(Ordering::Relaxed)
-    }
-}
-
-impl Models for Fake {
-    fn available(&self) -> bool {
-        self.assigned.load(Ordering::Relaxed)
-    }
-
-    fn open(
-        &self,
-        progress: &dyn Fn(HostProgress),
-        cancel: &CancelToken,
-    ) -> Result<Box<dyn Session>, IpcError> {
-        if !self.available() {
-            return Err(HostError::NoModel(Echo::TASK).into());
-        }
-        let missing = *self.engine_missing.lock().unwrap();
-        if let Some(total) = missing {
-            progress(HostProgress::Engine { received: 0, total });
-            if self.engine_held.load(Ordering::Relaxed) {
-                wait(|| cancel.is_cancelled().then_some(()));
-                return Err(engine_ipc(&EngineError::Cancelled));
-            }
-            progress(HostProgress::Engine {
-                received: total,
-                total,
-            });
-            *self.engine_missing.lock().unwrap() = None;
-        }
-        progress(HostProgress::Loading(0.0));
-        self.opens.fetch_add(1, Ordering::Relaxed);
-        self.serving.store(true, Ordering::Relaxed);
-        let files = ModelFiles {
-            model_id: "fake".into(),
-            catalog_version: 1,
-            files: vec![(FileRole::Weights, PathBuf::from("fake.gguf"))],
-            prefix_profile: None,
-            prefixes: None,
-            prompt: None,
-            min_engine: None,
-        };
-        let opts = LoadOpts {
-            context_len: Echo::CONTEXT,
-            device: Device::Auto,
-            threads: None,
-        };
-        let id = self
-            .engine
-            .load(
-                files,
-                opts,
-                &|value| progress(HostProgress::Loading(value)),
-                cancel,
-            )
-            .map_err(|e| engine_ipc(&e))?;
-        Ok(Box::new(FakeSession {
-            engine: Arc::clone(&self.engine),
-            id,
-            serving: Arc::clone(&self.serving),
-            requests: Arc::clone(&self.requests),
-        }))
-    }
-}
-
-struct FakeSession {
-    engine: Arc<FakeEngine>,
-    id: SessionId,
-    serving: Arc<AtomicBool>,
-    requests: Arc<Mutex<Vec<ChatRequest>>>,
-}
-
-impl Drop for FakeSession {
-    fn drop(&mut self) {
-        self.engine.unload(self.id);
-    }
-}
-
-impl Session for FakeSession {
-    fn serves(&self) -> bool {
-        self.serving.load(Ordering::Relaxed)
-    }
-
-    fn count_tokens(&self, text: &str) -> Result<usize, EngineError> {
-        self.engine.count_tokens(self.id, text)
-    }
-
-    fn generate(
-        &self,
-        request: &ChatRequest,
-        sink: &mut dyn FnMut(GenEvent),
-        cancel: &CancelToken,
-    ) -> Result<(), EngineError> {
-        self.requests.lock().unwrap().push(request.clone());
-        let last = &request.messages[request.messages.len() - 1].content;
-        if last.contains(RAMBLE) {
-            sink(GenEvent::Delta("and so on".into()));
-            sink(GenEvent::Done {
-                usage: Usage::default(),
-                finish: Finish::Length,
-            });
-            return Ok(());
-        }
-        self.engine.generate(self.id, request, sink, cancel)
-    }
-}
-
 struct Lab {
     fake: Arc<Fake>,
     events: Arc<Events>,
     runner: PieceRunner<Echo>,
 }
 
-fn cx(events: &Arc<Events>) -> PluginCx {
-    PluginCx::new(
-        PLUGIN,
-        CxWorkspace::App,
-        std::env::temp_dir().join("permark-pieces-unused"),
-        None,
-        Context::welcome(Distribution::Direct),
-        Arc::clone(events) as Arc<dyn EventSink>,
-    )
-}
-
-fn pieces(texts: &[&str]) -> Vec<Piece> {
-    (1u32..)
-        .zip(texts)
-        .map(|(id, text)| Piece {
-            id,
-            text: (*text).to_owned(),
-        })
-        .collect()
-}
-
 impl Lab {
     fn new(engine: FakeEngine) -> Self {
-        let fake = Fake::new(engine);
-        let events = Arc::new(Events::default());
+        let fake = Fake::new::<Echo>(engine);
+        let events = Events::new(PLUGIN);
         let runner = PieceRunner::new(
-            &cx(&events),
+            &events.cx(),
             Arc::clone(&fake) as Arc<dyn Models>,
             SHORT_IDLE,
         );
@@ -543,8 +341,8 @@ fn a_hosted_runner_uses_the_model_assigned_to_the_jobs_task() {
     bench.installs.assign(Task::Correction, Some(E2B)).unwrap();
     let services = Services::new();
     let _offered = services.provide(Arc::clone(&bench.host));
-    let events = Arc::new(Events::default());
-    let cx = cx(&events).with_app(AppServices::new(
+    let events = Events::new(PLUGIN);
+    let cx = events.cx().with_app(AppServices::new(
         RpcTable::new(),
         Arc::clone(&services),
         Arc::new(RwLock::new(AppSettings::default())),

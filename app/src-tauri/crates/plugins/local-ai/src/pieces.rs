@@ -15,7 +15,11 @@
 //! - Dormant: nothing runs | loads before a run; [`Models::available`] reads the state alone.
 //! - Model access ONLY through [`ModelHost`] ([`PieceRunner::hosted`]); [`Models`] | [`Session`] = seams for fakes.
 //! - Text never logged; nothing written to disk.
-//! - Tests: `src/tests/pieces.rs`.
+//! - Tests: `src/tests/pieces.rs`; their fakes = module `testkit`, offered to the tests of the feature plugins too
+//!   (Cargo feature `testkit`, dev-dependencies only).
+
+#[cfg(any(test, feature = "testkit"))]
+pub mod testkit;
 
 use std::cell::Cell;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};

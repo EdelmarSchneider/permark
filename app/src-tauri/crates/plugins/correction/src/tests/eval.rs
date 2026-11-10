@@ -214,7 +214,7 @@ fn eval_cases_are_well_formed() {
 #[test]
 fn eval_runs_cases_over_the_fake_engine_into_an_outputs_file() {
     let cases: Vec<_> = cases().into_iter().take(2).collect();
-    let fake = Fake::new(FakeEngine::new());
+    let fake = Fake::new::<CorrectionJob>(FakeEngine::new());
     let session = fake.open(&|_| {}, &CancelToken::new()).unwrap();
     let (records, total, tokens) = evaluate(session, &cases).unwrap();
     let tmp = tempfile::tempdir().unwrap();

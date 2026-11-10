@@ -16,6 +16,8 @@ serde.workspace = true
 ts-rs.workspace = true
 
 [dev-dependencies]
+# `testkit`: scripted model source + run event collector of the piece runner (tests only).
+permark-plugin-local-ai = { workspace = true, features = ["testkit"] }
 serde_json.workspace = true
 tempfile.workspace = true
 
