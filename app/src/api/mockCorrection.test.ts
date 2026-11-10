@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CorrectionRun } from "./generated/CorrectionRun";
+import type { PieceRun } from "./generated/PieceRun";
 import { createMockApi } from "./mock";
 import { mockCorrect } from "./mockCorrection";
 import { MOCK_ENGINE_BYTES } from "./mockLocalAi";
 
 let mock: ReturnType<typeof createMockApi>;
-let news: CorrectionRun[] = [];
+let news: PieceRun[] = [];
 
 beforeEach(async () => {
   vi.useFakeTimers();

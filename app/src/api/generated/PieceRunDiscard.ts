@@ -3,4 +3,4 @@
 /**
  * Why a piece's answer was dropped.
  */
-export type CorrectionDiscard = "length" | "thinking" | "tooLong";
+export type PieceRunDiscard = "length" | "thinking" | "tooLong";

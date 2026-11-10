@@ -4,8 +4,8 @@
 // `TOO_LONG` chars -> `discarded` tooLong), then `done` | `probe.failRun`. A new run stops the old one (cancelled), as
 // the plugin. Status: `probe.available` when set, else whether mock local-ai has a model on job "correction".
 
-import type { CorrectionPhase } from "./generated/CorrectionPhase";
-import type { CorrectionPiece } from "./generated/CorrectionPiece";
+import type { PieceRunPhase } from "./generated/PieceRunPhase";
+import type { PieceRunPiece } from "./generated/PieceRunPiece";
 import type { IpcError } from "./generated/IpcError";
 import { MOCK_ENGINE_BYTES } from "./mockLocalAi";
 import type { AppPluginEventName, AppPluginEvents, PluginMethods } from "./types";
@@ -31,7 +31,7 @@ export type CorrectionProbe = {
   /** Calls made: `status`, `run <id> <pieces>`, `cancel <id>`. */
   calls: string[];
   /** What each run was sent, in order. */
-  runs: { run: string; pieces: CorrectionPiece[] }[];
+  runs: { run: string; pieces: PieceRunPiece[] }[];
   /** Time of one run phase. Read when a run starts. */
   stepMs: number;
   /** `correction.status` answer (`null`: a model on job "correction" in mock local-ai). */
@@ -60,7 +60,7 @@ export function createMockCorrection(
   /** Mock local-ai's engine files (a run gets them when missing). */
   engine: { engineInstalled: boolean } = { engineInstalled: true },
 ) {
-  let current: { run: string; next: CorrectionPhase[] } | null = null;
+  let current: { run: string; next: PieceRunPhase[] } | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
   const stopTimer = (): void => {
     if (timer !== null) clearInterval(timer);
@@ -99,19 +99,19 @@ export function createMockCorrection(
     emit("correction:run", { run, phase: { kind: "cancelled" } });
   }
 
-  function start(run: string, pieces: readonly CorrectionPiece[]): null {
+  function start(run: string, pieces: readonly PieceRunPiece[]): null {
     stop();
     const fetch = engine.engineInstalled
       ? []
-      : [0, 0.5, 1].map((part): CorrectionPhase => ({
+      : [0, 0.5, 1].map((part): PieceRunPhase => ({
           kind: "engine",
           receivedBytes: Math.round(MOCK_ENGINE_BYTES * part),
           totalBytes: MOCK_ENGINE_BYTES,
         }));
-    const loading = [0, 0.5, 1].map((progress): CorrectionPhase => ({ kind: "loading", progress }));
+    const loading = [0, 0.5, 1].map((progress): PieceRunPhase => ({ kind: "loading", progress }));
     const failure = probe.failRun;
     probe.failRun = null;
-    const answers = pieces.map(({ id, text }): CorrectionPhase => ({
+    const answers = pieces.map(({ id, text }): PieceRunPhase => ({
       kind: "piece",
       id,
       result:
@@ -119,7 +119,7 @@ export function createMockCorrection(
           ? { kind: "discarded", reason: "tooLong" }
           : { kind: "output", text: mockCorrect(text) },
     }));
-    const end: CorrectionPhase[] =
+    const end: PieceRunPhase[] =
       failure === null ? [...answers, { kind: "done" }] : [{ kind: "failed", error: failure }];
     current = { run, next: [...fetch, ...loading, ...end] };
     timer = setInterval(step, probe.stepMs);

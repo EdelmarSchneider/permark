@@ -1,33 +1,38 @@
-//! Correction runs (D-1, D-4): pieces made by the window (segment + markers in TS) -> one model answer each, streamed
-//! as event `correction:run` ([`RunNews`]); the window diffs + guards them.
+//! Piece-by-piece model runs for PerMark features (e.g. plugin `correction`): pieces made by the window (segment +
+//! markers in TS) -> one model answer each, streamed as event `<plugin>:run` ([`RunNews`]); the window judges them.
 //!
+//! - Per feature: a [`PieceJob`] (task, context, prompt from the run's parameters, answer cap, sampling) + its own
+//!   RPC over a [`PieceRunner`]. Everything below lives here once.
 //! - One run at a time: a new run cancels the running one (person re-triggered); it ends `cancelled`.
 //! - Flow on one worker thread: session = warm one (still the assigned model, still loaded) | opened through
-//!   [`Models::open`] (engine missing | outdated -> fetched first, phase `engine`; then phase `loading`) -> per piece in order: too long for the context -> `tooLong`; else greedy
-//!   answer ([`prompt`]); `Finish::Length` -> `length`, `<|channel>` in the answer (thinking leak) -> `thinking`, else
-//!   `output`. Cancel between pieces + inside generate. End: `done` | `cancelled` | `failed` (stable [`IpcError`]).
-//! - Warm session: kept after a run, unloaded after [`IDLE`] without a run, at plugin off ([`Corrector::shutdown`]:
-//!   cancel + join, no thread left) and when it no longer serves (model reassigned | released by `local-ai`).
+//!   [`Models::open`] (engine missing | outdated -> fetched first, phase `engine`; then phase `loading`) -> per piece
+//!   in order: too long for the context -> `tooLong`; else the job's answer ([`answer`]); `Finish::Length` ->
+//!   `length`, [`THINKING`] in the answer (thinking leak) -> `thinking`, else `output`. Cancel between pieces + inside
+//!   generate. End: `done` | `cancelled` | `failed` (stable [`IpcError`]).
+//! - Warm session: kept after a run, unloaded after [`IDLE`] without a run, at plugin off
+//!   ([`PieceRunner::shutdown`]: cancel + join, no thread left) and when it no longer serves (model reassigned |
+//!   released).
 //! - Dormant: nothing runs | loads before a run; [`Models::available`] reads the state alone.
+//! - Model access ONLY through [`ModelHost`] ([`PieceRunner::hosted`]); [`Models`] | [`Session`] = seams for fakes.
 //! - Text never logged; nothing written to disk.
-//! - Tests: `src/tests.rs`.
+//! - Tests: `src/tests/pieces.rs`.
 
 use std::cell::Cell;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use permark_core::plugins::PluginEvents;
+use permark_core::plugins::{PluginCx, PluginEvents, PluginId, Services};
 use permark_core::{ErrorKind, IpcError};
-use permark_plugin_local_ai::engine::{CancelToken, ChatRequest, EngineError, Finish, GenEvent};
-use permark_plugin_local_ai::{engine_ipc, HostProgress};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::prompt;
+use crate::engine::{
+    CancelToken, ChatMessage, ChatRequest, EngineError, Finish, GenEvent, Sampling,
+};
+use crate::host::{engine_ipc, HostError, HostProgress, ModelHost, ModelSession};
+use crate::tasks::Task;
 
-/// Context window asked for a correction session (D-4), tokens.
-pub const CONTEXT: u32 = 4096;
 /// Chat markup around the turns (not in the token counts), tokens.
 const MARKUP: u32 = 64;
 /// Warm session kept this long after a run.
@@ -41,28 +46,41 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Answer of `correction.status`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
-pub struct CorrectionStatus {
-    /// A model is assigned to job "correction" (state alone; it may since be gone -> the run fails `noModel`).
-    pub available: bool,
+/// What one feature asks of the model per piece; the rest of a run is [`PieceRunner`]'s.
+pub trait PieceJob: 'static {
+    /// Per-run parameters, given with each run (none: `()`).
+    type Params: Send + 'static;
+
+    /// Job whose assigned model answers.
+    const TASK: Task;
+    /// Context window asked for a session (model maximum when smaller), tokens.
+    const CONTEXT: u32;
+    /// Decoding of every answer.
+    const SAMPLING: Sampling;
+
+    /// Chat turns of one piece: the prompt for `params`, then `text` as the last user turn.
+    fn messages(params: &Self::Params, text: &str) -> Vec<ChatMessage>;
+
+    /// The prompt text before the piece, for its token count (does the piece fit the context).
+    fn preamble(params: &Self::Params) -> String;
+
+    /// Answer cap for a piece of `piece_tokens` tokens.
+    fn max_tokens(piece_tokens: u32) -> u32;
 }
 
-/// One piece of text to correct (window-made: one prose block | sentence group, non-prose as `⟦n⟧` markers).
+/// One piece of text for the model (window-made: one prose block | sentence group, non-prose as `⟦n⟧` markers).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[ts(export, rename = "CorrectionPiece")]
+#[ts(export, rename = "PieceRunPiece")]
 pub struct Piece {
     pub id: u32,
     pub text: String,
 }
 
-/// One run's news (event `correction:run`, app-wide: windows keep their own `run`).
+/// One run's news (event `<plugin>:run`, app-wide: windows keep their own `run`).
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, rename = "CorrectionRun")]
+#[ts(export, rename = "PieceRun")]
 pub struct RunNews {
     /// Id the window gave the run.
     pub run: String,
@@ -76,7 +94,7 @@ pub struct RunNews {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export, rename = "CorrectionPhase")]
+#[ts(export, rename = "PieceRunPhase")]
 pub enum RunPhase {
     /// AI engine downloading (first run only | after an engine update), bytes.
     Engine {
@@ -96,8 +114,8 @@ pub enum RunPhase {
     },
     Done,
     Cancelled,
-    /// `error`: `local-ai` model service codes (`unavailable/model/noModel`, `unavailable/engine/notAvailable`,
-    /// engine codes of `engine_ipc`).
+    /// `error`: model service codes (`unavailable/model/noModel`, `unavailable/engine/notAvailable`, engine codes of
+    /// [`engine_ipc`]).
     Failed {
         error: IpcError,
     },
@@ -110,9 +128,9 @@ pub enum RunPhase {
     rename_all = "camelCase",
     rename_all_fields = "camelCase"
 )]
-#[ts(export, rename = "CorrectionPieceResult")]
+#[ts(export, rename = "PieceRunResult")]
 pub enum PieceResult {
-    /// Corrected text as the model wrote it (window diffs + guards it).
+    /// Answer as the model wrote it (the window judges it).
     Output {
         text: String,
     },
@@ -124,7 +142,7 @@ pub enum PieceResult {
 /// Why a piece's answer was dropped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export, rename = "CorrectionDiscard")]
+#[ts(export, rename = "PieceRunDiscard")]
 pub enum Discard {
     /// Answer hit its cap (rambling).
     Length,
@@ -134,13 +152,13 @@ pub enum Discard {
     TooLong,
 }
 
-/// Model source of the runs (production: `local-ai`'s `ModelHost`, adapter in `lib.rs`; tests: a fake).
+/// Model source of the runs (production: [`ModelHost`] through [`PieceRunner::hosted`]; tests: a fake).
 pub trait Models: Send + Sync {
-    /// A model is assigned to correction (state alone: nothing loaded).
+    /// A model is assigned to the job (state alone: nothing loaded).
     fn available(&self) -> bool;
 
-    /// Loads the assigned model with a [`CONTEXT`] window, the engine fetched first when missing; `progress` as
-    /// `ModelHost::open` (engine bytes, then loading from 0).
+    /// Loads the assigned model with the job's context window, the engine fetched first when missing; `progress` as
+    /// [`ModelHost::open`] (engine bytes, then loading from 0).
     ///
     /// # Errors
     /// Stable model service codes (no model, no engine for this computer, download | engine failures).
@@ -174,17 +192,78 @@ pub trait Session: Send {
     ) -> Result<(), EngineError>;
 }
 
+/// [`Models`] over the [`ModelHost`] app service (looked up per call; absent -> unavailable) for one job's task.
+struct Hosted {
+    services: Option<Arc<Services>>,
+    task: Task,
+    context: u32,
+}
+
+impl Hosted {
+    fn host(&self) -> Option<Arc<ModelHost>> {
+        self.services.as_ref()?.get::<ModelHost>()
+    }
+}
+
+impl Models for Hosted {
+    fn available(&self) -> bool {
+        self.host().is_some_and(|h| h.is_assigned(self.task))
+    }
+
+    fn open(
+        &self,
+        progress: &dyn Fn(HostProgress),
+        cancel: &CancelToken,
+    ) -> Result<Box<dyn Session>, IpcError> {
+        let host = self.host().ok_or(HostError::NoModel(self.task))?;
+        let session = host.open(self.task, self.context, progress, cancel)?;
+        Ok(Box::new(HostedSession {
+            host,
+            session,
+            task: self.task,
+        }))
+    }
+}
+
+struct HostedSession {
+    host: Arc<ModelHost>,
+    session: ModelSession,
+    task: Task,
+}
+
+impl Session for HostedSession {
+    fn serves(&self) -> bool {
+        self.host.serves(&self.session, self.task)
+            && self.session.engine().context_len(self.session.id()).is_ok()
+    }
+
+    fn count_tokens(&self, text: &str) -> Result<usize, EngineError> {
+        self.session.engine().count_tokens(self.session.id(), text)
+    }
+
+    fn generate(
+        &self,
+        request: &ChatRequest,
+        sink: &mut dyn FnMut(GenEvent),
+        cancel: &CancelToken,
+    ) -> Result<(), EngineError> {
+        self.session
+            .engine()
+            .generate(self.session.id(), request, sink, cancel)
+    }
+}
+
 /// A run asked by a window.
-struct Job {
+struct Asked<P> {
     run: String,
+    params: P,
     pieces: Vec<Piece>,
     cancel: CancelToken,
 }
 
-#[derive(Default)]
-struct State {
+struct State<P> {
     /// Asked, not started yet.
-    pending: Option<Job>,
+    pending: Option<Asked<P>>,
     /// Id + token of the run on the worker.
     running: Option<(String, CancelToken)>,
     /// Session kept between runs.
@@ -196,68 +275,96 @@ struct State {
     closed: bool,
 }
 
-struct Shared {
+struct Shared<J: PieceJob> {
+    /// Owning plugin: worker thread name + subject of the refusal while stopping.
+    plugin: PluginId,
     models: Arc<dyn Models>,
     events: PluginEvents,
     idle: Duration,
-    state: Mutex<State>,
+    state: Mutex<State<J::Params>>,
     wake: Condvar,
 }
 
-/// Correction runs of one plugin instance (rules: module doc).
-pub struct Corrector {
-    shared: Arc<Shared>,
+/// Runs of job `J` for one plugin instance (rules: module doc).
+pub struct PieceRunner<J: PieceJob> {
+    shared: Arc<Shared<J>>,
 }
 
-impl Corrector {
-    /// Nothing started | loaded (dormant); `idle` = warm session lifetime without a run ([`IDLE`]).
+impl<J: PieceJob> PieceRunner<J> {
+    /// Runner of plugin `cx` over the model assigned to the job's task ([`ModelHost`] service; absent ->
+    /// unavailable); warm session kept [`IDLE`]. Nothing started | loaded (dormant).
     #[must_use]
-    pub fn new(models: Arc<dyn Models>, events: PluginEvents, idle: Duration) -> Self {
+    pub fn hosted(cx: &PluginCx) -> Self {
+        let models = Hosted {
+            services: cx.app().map(|app| Arc::clone(&app.services)),
+            task: J::TASK,
+            context: J::CONTEXT,
+        };
+        Self::new(cx, Arc::new(models), IDLE)
+    }
+
+    /// Runner of plugin `cx` over `models` (tests: a fake); `idle` = warm session lifetime without a run. Nothing
+    /// started | loaded (dormant).
+    #[must_use]
+    pub fn new(cx: &PluginCx, models: Arc<dyn Models>, idle: Duration) -> Self {
         Self {
             shared: Arc::new(Shared {
+                plugin: cx.id.clone(),
                 models,
-                events,
+                events: cx.events().clone(),
                 idle,
-                state: Mutex::new(State::default()),
+                state: Mutex::new(State {
+                    pending: None,
+                    running: None,
+                    warm: None,
+                    worker: None,
+                    worker_done: false,
+                    closed: false,
+                }),
                 wake: Condvar::new(),
             }),
         }
     }
 
-    /// Answer of `correction.status` (state alone).
+    /// A model is assigned to the job (state alone: nothing loaded; it may since be gone -> the run fails
+    /// `noModel`).
     #[must_use]
-    pub fn status(&self) -> CorrectionStatus {
-        CorrectionStatus {
-            available: self.shared.models.available(),
-        }
+    pub fn available(&self) -> bool {
+        self.shared.models.available()
     }
 
-    /// Starts run `run` over `pieces` (news as events); cancels the run in progress | not started yet.
+    /// Starts run `run` over `pieces` with `params` (news as events); cancels the run in progress | not started yet.
     ///
     /// # Errors
     /// Plugin stopping; no worker thread.
-    pub fn start(&self, run: String, pieces: Vec<Piece>) -> Result<(), IpcError> {
+    pub fn start(
+        &self,
+        run: String,
+        params: J::Params,
+        pieces: Vec<Piece>,
+    ) -> Result<(), IpcError> {
         let shared = &self.shared;
         let mut state = lock(&shared.state);
         if state.closed {
-            return Err(IpcError::new(ErrorKind::Unavailable).subject("correction"));
+            return Err(IpcError::new(ErrorKind::Unavailable).subject(shared.plugin.as_str()));
         }
         if let Some((_, token)) = &state.running {
             token.cancel();
         }
-        let job = Job {
+        let asked = Asked {
             run,
+            params,
             pieces,
             cancel: CancelToken::new(),
         };
-        if let Some(replaced) = state.pending.replace(job) {
+        if let Some(replaced) = state.pending.replace(asked) {
             shared.emit(&replaced.run, RunPhase::Cancelled);
         }
         if state.worker.is_none() || state.worker_done {
             let previous = state.worker.take();
             let s = Arc::clone(shared);
             let handle = std::thread::Builder::new()
-                .name("correction".into())
+                .name(shared.plugin.as_str().to_owned())
                 .spawn(move || {
                     // the previous worker gave up: its last step was the unlock
                     if let Some(previous) = previous {
@@ -282,9 +389,9 @@ impl Corrector {
                 token.cancel();
             }
         }
-        if state.pending.as_ref().is_some_and(|job| job.run == run) {
-            if let Some(job) = state.pending.take() {
-                shared.emit(&job.run, RunPhase::Cancelled);
+        if state.pending.as_ref().is_some_and(|asked| asked.run == run) {
+            if let Some(asked) = state.pending.take() {
+                shared.emit(&asked.run, RunPhase::Cancelled);
             }
         }
     }
@@ -307,8 +414,8 @@ impl Corrector {
             if let Some((_, token)) = &state.running {
                 token.cancel();
             }
-            if let Some(job) = state.pending.take() {
-                shared.emit(&job.run, RunPhase::Cancelled);
+            if let Some(asked) = state.pending.take() {
+                shared.emit(&asked.run, RunPhase::Cancelled);
             }
             (state.worker.take(), state.warm.take())
         };
@@ -320,13 +427,13 @@ impl Corrector {
     }
 }
 
-impl Drop for Corrector {
+impl<J: PieceJob> Drop for PieceRunner<J> {
     fn drop(&mut self) {
         self.shutdown();
     }
 }
 
-impl Shared {
+impl<J: PieceJob> Shared<J> {
     fn emit(&self, run: &str, phase: RunPhase) {
         let news = RunNews {
             run: run.to_owned(),
@@ -337,10 +444,10 @@ impl Shared {
         }
     }
 
-    /// Worker loop: runs jobs; idle past `idle` | closed -> warm session unloaded, thread ends.
+    /// Worker loop: runs what was asked; idle past `idle` | closed -> warm session unloaded, thread ends.
     fn work(&self) {
         loop {
-            let (job, warm) = {
+            let (asked, warm) = {
                 let state = lock(&self.state);
                 let (mut state, timeout) = self
                     .wake
@@ -353,13 +460,13 @@ impl Shared {
                     drop(warm);
                     return;
                 }
-                let Some(job) = state.pending.take() else {
+                let Some(asked) = state.pending.take() else {
                     continue;
                 };
-                state.running = Some((job.run.clone(), job.cancel.clone()));
-                (job, state.warm.take())
+                state.running = Some((asked.run.clone(), asked.cancel.clone()));
+                (asked, state.warm.take())
             };
-            let (phase, session) = self.run(&job, warm);
+            let (phase, session) = self.run(&asked, warm);
             let mut state = lock(&self.state);
             // closed meanwhile: unloaded here (after the unlock), never kept
             let closing = if state.closed {
@@ -371,7 +478,7 @@ impl Shared {
             state.running = None;
             drop(state);
             // after the unlock: a sink never runs under the state lock
-            self.emit(&job.run, phase);
+            self.emit(&asked.run, phase);
             drop(closing);
         }
     }
@@ -379,22 +486,22 @@ impl Shared {
     /// One run; answers the last phase + the session to keep warm.
     fn run(
         &self,
-        job: &Job,
+        asked: &Asked<J::Params>,
         warm: Option<Box<dyn Session>>,
     ) -> (RunPhase, Option<Box<dyn Session>>) {
-        let cancel = &job.cancel;
-        if job.pieces.is_empty() {
+        let cancel = &asked.cancel;
+        if asked.pieces.is_empty() {
             return (RunPhase::Done, warm);
         }
         let session = match warm.filter(|s| s.serves()) {
             Some(session) => session,
-            None => match self.open(&job.run, cancel) {
+            None => match self.open(&asked.run, cancel) {
                 Ok(session) => session,
                 Err(_) if cancel.is_cancelled() => return (RunPhase::Cancelled, None),
                 Err(error) => return (RunPhase::Failed { error }, None),
             },
         };
-        let phase = match self.pieces(job, session.as_ref()) {
+        let phase = match self.pieces(asked, session.as_ref()) {
             _ if cancel.is_cancelled() => RunPhase::Cancelled,
             Ok(()) => RunPhase::Done,
             Err(EngineError::Cancelled) => RunPhase::Cancelled,
@@ -433,17 +540,19 @@ impl Shared {
     }
 
     /// Every piece in order (stops early on cancel).
-    fn pieces(&self, job: &Job, session: &dyn Session) -> Result<(), EngineError> {
-        let preamble = preamble_tokens(session)?;
-        for piece in &job.pieces {
-            if job.cancel.is_cancelled() {
+    fn pieces(&self, asked: &Asked<J::Params>, session: &dyn Session) -> Result<(), EngineError> {
+        let preamble = preamble_tokens::<J>(session, &asked.params)?;
+        for piece in &asked.pieces {
+            if asked.cancel.is_cancelled() {
                 return Ok(());
             }
-            let Some(result) = correct(session, preamble, &piece.text, &job.cancel)? else {
+            let Some(result) =
+                answer::<J>(session, &asked.params, preamble, &piece.text, &asked.cancel)?
+            else {
                 return Ok(());
             };
             self.emit(
-                &job.run,
+                &asked.run,
                 RunPhase::Piece {
                     id: piece.id,
                     result,
@@ -458,31 +567,38 @@ fn tokens(count: usize) -> u32 {
     u32::try_from(count).unwrap_or(u32::MAX)
 }
 
-/// Tokens of the prompt before the piece ([`prompt::preamble`]), counted once per run.
+/// Tokens of the job's prompt before the piece ([`PieceJob::preamble`]), counted once per run.
 ///
 /// # Errors
 /// Engine failure.
-pub(crate) fn preamble_tokens(session: &dyn Session) -> Result<u32, EngineError> {
-    Ok(tokens(session.count_tokens(&prompt::preamble())?))
+pub fn preamble_tokens<J: PieceJob>(
+    session: &dyn Session,
+    params: &J::Params,
+) -> Result<u32, EngineError> {
+    Ok(tokens(session.count_tokens(&J::preamble(params))?))
 }
 
-/// One piece (production path, also run by the eval set `tests/eval.rs`); `None`: cancelled during the answer.
-pub(crate) fn correct(
+/// One piece (the run path, also driven directly by a feature's eval set); `None`: cancelled during the answer.
+///
+/// # Errors
+/// Engine failure.
+pub fn answer<J: PieceJob>(
     session: &dyn Session,
+    params: &J::Params,
     preamble: u32,
     text: &str,
     cancel: &CancelToken,
 ) -> Result<Option<PieceResult>, EngineError> {
     let discarded = |reason| Ok(Some(PieceResult::Discarded { reason }));
     let piece = tokens(session.count_tokens(text)?);
-    let max_tokens = prompt::max_tokens(piece);
+    let max_tokens = J::max_tokens(piece);
     let needed = u64::from(preamble) + u64::from(piece) + u64::from(max_tokens) + u64::from(MARKUP);
-    if needed > u64::from(CONTEXT) {
+    if needed > u64::from(J::CONTEXT) {
         return discarded(Discard::TooLong);
     }
     let request = ChatRequest {
-        messages: prompt::messages(text),
-        sampling: prompt::SAMPLING,
+        messages: J::messages(params, text),
+        sampling: J::SAMPLING,
         max_tokens,
         ..ChatRequest::default()
     };

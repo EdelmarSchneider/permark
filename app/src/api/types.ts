@@ -20,8 +20,8 @@ import type { StoreMode } from "./generated/StoreMode";
 import type { StoreMove } from "./generated/StoreMove";
 import type { ModelProgress } from "./generated/ModelProgress";
 import type { ModelTest } from "./generated/ModelTest";
-import type { CorrectionPiece } from "./generated/CorrectionPiece";
-import type { CorrectionRun } from "./generated/CorrectionRun";
+import type { PieceRunPiece } from "./generated/PieceRunPiece";
+import type { PieceRun } from "./generated/PieceRun";
 import type { CorrectionStatus } from "./generated/CorrectionStatus";
 import type { FolderBadge } from "./generated/FolderBadge";
 import type { FolderBadges } from "./generated/FolderBadges";
@@ -688,7 +688,7 @@ export interface PluginMethods {
   /** A model is assigned to job "correction" (state only: nothing loads). */
   "correction.status": { args: Record<string, never>; result: CorrectionStatus };
   /** Starts run `run` over `pieces` (a new run stops the old one); news come as `correction:run`. */
-  "correction.run": { args: { run: string; pieces: CorrectionPiece[] }; result: null };
+  "correction.run": { args: { run: string; pieces: PieceRunPiece[] }; result: null };
   /** Stops run `run`; its end comes as `correction:run` `cancelled`. */
   "correction.cancel": { args: { run: string }; result: null };
   "fmt-toon.toJson": { args: { text: string }; result: string };
@@ -755,7 +755,7 @@ export interface AppPluginEvents {
   "local-ai:test": ModelTest;
   /** One correction run's news (`loading` -> `piece` per piece -> `done` | `cancelled` | `failed`); windows keep
    *  their own run id. */
-  "correction:run": CorrectionRun;
+  "correction:run": PieceRun;
 }
 export type AppPluginEventName = keyof AppPluginEvents;
 export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };

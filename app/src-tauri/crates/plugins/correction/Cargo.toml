@@ -13,10 +13,10 @@ publish = false
 permark-core.workspace = true
 permark-plugin-local-ai.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 ts-rs.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 tempfile.workspace = true
 
 [lints]

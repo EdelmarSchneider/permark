@@ -3,7 +3,7 @@
 // follow accepted edits and the person's typing, IME composition, cancel, and what closes the review.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "../../api/mock";
-import type { CorrectionPhase } from "../../api/generated/CorrectionPhase";
+import type { PieceRunPhase } from "../../api/generated/PieceRunPhase";
 import type { EditScope, TextEdit, TextRange } from "../../core/editing/session.svelte";
 import { checkEdits } from "../../core/editing/textEdits";
 import { changedRange, CorrectionStore, type Session } from "./store.svelte";
@@ -100,7 +100,7 @@ function runId(): string {
   return last.run;
 }
 
-function news(phase: CorrectionPhase, run = runId()): void {
+function news(phase: PieceRunPhase, run = runId()): void {
   store.news({ run, phase });
 }
 

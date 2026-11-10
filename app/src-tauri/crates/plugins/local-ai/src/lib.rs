@@ -21,6 +21,9 @@
 //!
 //! Model service ([`host`]): app service [`ModelHost`] (`services.get::<ModelHost>()`) while on, for PerMark
 //! features (e.g. plugin `correction`); withdrawn first at plugin off.
+//!
+//! Piece runs ([`pieces`]): the runner a feature plugin builds over that service for its own job (text pieces -> one
+//! model answer each, as the feature's events); owned + stopped by that plugin, nothing of it runs here.
 
 pub mod catalog;
 pub mod engine;
@@ -29,6 +32,7 @@ pub mod guard;
 pub mod host;
 pub mod installs;
 pub mod machine;
+pub mod pieces;
 mod relocate;
 pub mod runtime;
 pub(crate) mod state;

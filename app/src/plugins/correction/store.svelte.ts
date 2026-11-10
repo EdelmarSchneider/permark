@@ -11,8 +11,8 @@
 
 import { untrack } from "svelte";
 import { api as defaultApi, type Api, type ApiError, type Unlisten } from "../../api";
-import type { CorrectionPieceResult } from "../../api/generated/CorrectionPieceResult";
-import type { CorrectionRun } from "../../api/generated/CorrectionRun";
+import type { PieceRunResult } from "../../api/generated/PieceRunResult";
+import type { PieceRun } from "../../api/generated/PieceRun";
 import {
   editing,
   type EditMode,
@@ -199,7 +199,7 @@ export class CorrectionStore {
   }
 
   /** One run's news; other runs' (other windows, old runs) are ignored. */
-  news(news: CorrectionRun): void {
+  news(news: PieceRun): void {
     if (this.#run === null || news.run !== this.#run) return;
     const phase = news.phase;
     switch (phase.kind) {
@@ -414,7 +414,7 @@ export class CorrectionStore {
     if (review !== null) this.state = { ...review, status };
   }
 
-  #answer(id: number, result: CorrectionPieceResult): void {
+  #answer(id: number, result: PieceRunResult): void {
     this.#answered += 1;
     this.#status({
       kind: "checking",
