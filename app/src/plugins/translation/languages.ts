@@ -203,6 +203,18 @@ export function namesIn(locale: string = language.locale): (tag: string) => stri
   return (tag) => (names === null ? tag : languageName(tag, names));
 }
 
+/** The name of `tag`'s language in that language itself ("Deutsch", "日本語"); `null` where the runtime has no names
+ *  in it (asked anyway, it answers in its own default language) or none for the tag. */
+export function ownName(tag: string): string | null {
+  try {
+    if (Intl.DisplayNames.supportedLocalesOf([tag]).length === 0) return null;
+  } catch {
+    return null;
+  }
+  const name = namesIn(tag)(tag);
+  return sameTag(name, tag) ? null : name;
+}
+
 /** The script `tag`'s language is written in, as the runtime's locale data says (`Latn`, `Cyrl`, `Jpan`, `Hans`, …);
  *  `undefined` when it does not know. */
 export function scriptOf(tag: string): string | undefined {

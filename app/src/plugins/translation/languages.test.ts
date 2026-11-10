@@ -9,6 +9,7 @@ import {
   isTag,
   namesIn,
   offered,
+  ownName,
   sameTag,
   scriptOf,
 } from "./languages";
@@ -135,5 +136,25 @@ describe("namesIn", () => {
     expect(namesIn()("de")).toBe(namesIn(language.locale)("de"));
     expect(namesIn("en")("qaa")).toBe("qaa");
     expect(namesIn("en")("not a tag")).toBe("not a tag");
+  });
+});
+
+describe("ownName", () => {
+  it("names a language in that language itself", () => {
+    expect(ownName("de")).toBe("Deutsch");
+    expect(ownName("ja")).toBe("日本語");
+    expect(ownName("pt-BR")).toBe("português (Brasil)");
+    expect(ownName("zh-Hans")).toBe("简体中文");
+  });
+
+  it("is null where the runtime does not speak the language: never a name in some other language", () => {
+    // asked for names in a language it has no names in (Latin, Hmong, … by its data), the runtime answers in its
+    // own default language
+    for (const tag of LANGUAGES) {
+      if (Intl.DisplayNames.supportedLocalesOf([tag]).length === 0)
+        expect(ownName(tag), tag).toBeNull();
+    }
+    expect(ownName("qaa")).toBeNull();
+    expect(ownName("not a tag")).toBeNull();
   });
 });

@@ -2486,6 +2486,21 @@ const en = {
   "plugin.translation.name": "Translation",
   "plugin.translation.about":
     "Translates text into another language with a small AI model on this computer. Every translated part is shown for review before it goes in, and the text never leaves the computer.",
+  "translation.language.command": "Translate to…",
+  "translation.language.title": "Translate to",
+  "translation.language.to": "To: {language}",
+  "translation.language.from": "From: {language}",
+  "translation.language.choose": "Choose…",
+  "translation.language.detect": "Detect automatically",
+  "translation.language.search": "Search languages",
+  "translation.language.list": "Languages",
+  "translation.language.recent": "Recently used",
+  "translation.language.all": "All languages",
+  "translation.language.count.one": "{n} language",
+  "translation.language.count.other": "{n} languages",
+  "translation.language.none": "No language matches '{query}'.",
+  "translation.language.quality": "Quality depends on the model you chose.",
+  "translation.language.save": "Save",
 } as const;
 
 export default en;
