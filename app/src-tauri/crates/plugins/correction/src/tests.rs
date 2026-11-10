@@ -9,7 +9,8 @@ use permark_core::plugins::{AppServices, RpcCall, RpcTable, Services};
 use permark_core::settings::AppSettings;
 use permark_plugin_local_ai::engine::{FakeEngine, Role};
 use permark_plugin_local_ai::pieces::testkit::{pieces, Events, Fake};
-use permark_plugin_local_ai::pieces::{Models, IDLE};
+use permark_plugin_local_ai::pieces::{Models, PieceJob, IDLE};
+use permark_plugin_local_ai::Task;
 use serde_json::{json, Value};
 
 use crate::prompt::{self, CorrectionJob};
@@ -75,6 +76,13 @@ fn the_answer_cap_is_1_3_times_the_piece_plus_32() {
     assert_eq!(prompt::max_tokens(10), 45);
     assert_eq!(prompt::max_tokens(100), 162);
     assert_eq!(prompt::max_tokens(u32::MAX), u32::MAX);
+}
+
+/// The job asks for the model assigned to the correction task, in the context its prompt was sized for.
+#[test]
+fn the_job_runs_the_correction_task_in_a_4096_token_context() {
+    assert_eq!(CorrectionJob::TASK, Task::Correction);
+    assert_eq!(CorrectionJob::CONTEXT, 4096);
 }
 
 /// Plugin over the real service lookup: no `ModelHost` offered -> status unavailable, run fails `noModel`; off

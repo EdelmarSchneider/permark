@@ -273,7 +273,7 @@ export class PieceReview {
 
   // ---- runs --------------------------------------------------------------------------------------------------
 
-  /** The plugin's key (correction: Mod+Alt+K): in review with suggestions -> the one marked at the caret current
+  /** The plugin's key: in review with suggestions -> the one marked at the caret current
    *  (if any), the keyboard to Accept; else a run over the selection | paragraph. */
   runHere(): Promise<void> {
     const review = this.review;
