@@ -15,7 +15,8 @@
   import { ui } from "../../core/shell/ui.svelte";
   import { LOCAL_AI_PAGE } from "../local-ai/store.svelte";
   import { percentText } from "../local-ai/words";
-  import { correction, running, type Found, type RunStatus } from "./store.svelte";
+  import { running, type Found, type RunStatus } from "../local-ai/pieces/review.svelte";
+  import { correction } from "./store.svelte";
   import { failureText } from "./words";
 
   const shown = $derived(correction.state);

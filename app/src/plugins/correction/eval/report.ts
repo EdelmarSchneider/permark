@@ -5,8 +5,8 @@
 // markers in a case) throw. Not shipped: imported by `eval.test.ts` only.
 
 import type { PieceRunResult } from "../../../api/generated/PieceRunResult";
+import { restore, type Piece } from "../../local-ai/pieces/segment";
 import { judge } from "../guards";
-import { restore, type Piece } from "../segment";
 
 export type CaseKind = "errors" | "clean" | "marker" | "heading" | "injection" | "mixed";
 

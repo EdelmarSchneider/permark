@@ -1,4 +1,4 @@
-// Pieces of a Markdown document to send to the correction model (spec feature-correction D-3, D-4). Parsed with the
+// Pieces of a Markdown document to send to a model, one at a time (a plugin's run: correction). Parsed with the
 // editor's own grammar (Markdown + GFM in YAML front matter, as `languageFor` in `core/editing/source/cm.ts`) so the
 // UTF-16 offsets are the editor's. Piece = one prose block (paragraph | heading | list item | quote paragraph),
 // clipped to the scope; long blocks -> sentence groups under a char budget. Whole blocks never sent: front matter,
@@ -7,7 +7,7 @@
 
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { yamlFrontmatter } from "@codemirror/lang-yaml";
-import { frontMatterSyntax } from "../../core/config/frontMatter";
+import { frontMatterSyntax } from "../../../core/config/frontMatter";
 
 type Parser = ReturnType<typeof yamlFrontmatter>["language"]["parser"];
 type Node = ReturnType<Parser["parse"]>["topNode"];
@@ -26,6 +26,9 @@ export const CHAR_BUDGET = 1200;
 export const CJK_CHAR_BUDGET = 400;
 /** Share of CJK letters past which a block counts as CJK. */
 const CJK_SHARE = 0.5;
+
+/** Chars a piece may hold: alphabetic text | text mostly Han | Kana | Hangul. */
+export type Budget = { chars: number; cjkChars: number };
 
 export type Scope = { from: number; to: number };
 
@@ -74,8 +77,13 @@ const HIDDEN_TEXT = [
   /[⟦⟧]/g,
 ];
 
-/** Pieces of `doc` to correct, in document order; `scope` limits them (UTF-16 offsets; default whole document). */
-export function pieces(doc: string, scope?: Scope): Piece[] {
+/** Pieces of `doc` to send, in document order; `scope` limits them (UTF-16 offsets; default whole document), `budget`
+ *  their size (default: what a small model takes well). */
+export function pieces(
+  doc: string,
+  scope?: Scope,
+  budget: Budget = { chars: CHAR_BUDGET, cjkChars: CJK_CHAR_BUDGET },
+): Piece[] {
   const tree = markdownParser().parse(doc);
   const skipUntil = frontMatterEnd(doc);
   const out: Piece[] = [];
@@ -99,7 +107,7 @@ export function pieces(doc: string, scope?: Scope): Piece[] {
       const hidden = hiddenRanges(doc, node, content);
       const clipped = clip(doc, content, hidden, scope);
       if (clipped === null) return false;
-      for (const group of groups(doc, clipped, hidden)) {
+      for (const group of groups(doc, clipped, hidden, budget)) {
         const piece = cut(doc, group, hidden, kindOf(node));
         if (piece !== null) out.push(piece);
       }
@@ -120,8 +128,13 @@ export function restore(output: string, piece: Piece): string | null {
     return piece.markers[n - 1] ?? "";
   });
   if (!exact || next - 1 !== piece.markers.length) return null;
-  if (/[⟦⟧]/.test(output.replace(MARKER, ""))) return null;
+  if (/[⟦⟧]/.test(unmarked(output))) return null;
   return back;
+}
+
+/** `text` with its markers out: the words alone (what a length | a script is measured on). */
+export function unmarked(text: string): string {
+  return text.replace(MARKER, "");
 }
 
 function isProse(name: string): boolean {
@@ -245,9 +258,9 @@ function clip(doc: string, content: Range, hidden: readonly Range[], scope?: Sco
 }
 
 // sentence groups of `range` under the budget; never cut inside a hidden range
-function groups(doc: string, range: Range, hidden: readonly Range[]): Range[] {
+function groups(doc: string, range: Range, hidden: readonly Range[], sizes: Budget): Range[] {
   const text = doc.slice(range.from, range.to);
-  const budget = mostlyCjk(text) ? CJK_CHAR_BUDGET : CHAR_BUDGET;
+  const budget = mostlyCjk(text) ? sizes.cjkChars : sizes.chars;
   if (text.length <= budget) return [range];
   const sentences = new Intl.Segmenter(undefined, { granularity: "sentence" });
   const cuts: number[] = [];
@@ -293,7 +306,7 @@ function cut(doc: string, range: Range, hidden: readonly Range[], kind: PieceKin
     at = h.to;
   }
   text += doc.slice(at, range.to);
-  if (!LETTER.test(text.replace(MARKER, ""))) return null;
+  if (!LETTER.test(unmarked(text))) return null;
   return {
     from: range.from,
     to: range.to,

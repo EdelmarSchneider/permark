@@ -148,6 +148,23 @@ describe("pieces", () => {
     expect(jaPieces.map((p) => p.original).join("")).toBe(ja);
     for (const p of [...enPieces, ...jaPieces]) expect(ja + en).toContain(p.original);
   });
+
+  it("takes the caller's budget in place of the default one", () => {
+    const en = Array.from({ length: 12 }, (_, i) => `Sentence number ${i} has some words.`).join(
+      " ",
+    );
+    expect(pieces(en)).toHaveLength(1);
+    const enPieces = pieces(en, undefined, { chars: 100, cjkChars: 30 });
+    expect(enPieces.length).toBeGreaterThan(1);
+    for (const p of enPieces) expect(p.original.length).toBeLessThanOrEqual(100);
+    expect(enPieces.map((p) => p.original).join(" ")).toBe(en);
+
+    const ja = "今日は天気がとても良いので公園へ散歩に行きました。".repeat(4);
+    expect(pieces(ja)).toHaveLength(1);
+    const jaPieces = pieces(ja, undefined, { chars: 100, cjkChars: 30 });
+    expect(jaPieces).toHaveLength(4);
+    expect(jaPieces.map((p) => p.original).join("")).toBe(ja);
+  });
 });
 
 describe("restore", () => {
