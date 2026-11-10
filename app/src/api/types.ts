@@ -23,6 +23,10 @@ import type { ModelTest } from "./generated/ModelTest";
 import type { PieceRunPiece } from "./generated/PieceRunPiece";
 import type { PieceRun } from "./generated/PieceRun";
 import type { CorrectionStatus } from "./generated/CorrectionStatus";
+import type { TranslationLanguage } from "./generated/TranslationLanguage";
+import type { TranslationPrefs } from "./generated/TranslationPrefs";
+import type { TranslationSaved } from "./generated/TranslationSaved";
+import type { TranslationStatus } from "./generated/TranslationStatus";
 import type { FolderBadge } from "./generated/FolderBadge";
 import type { FolderBadges } from "./generated/FolderBadges";
 import type { FolderJob } from "./generated/FolderJob";
@@ -691,6 +695,33 @@ export interface PluginMethods {
   "correction.run": { args: { run: string; pieces: PieceRunPiece[] }; result: null };
   /** Stops run `run`; its end comes as `correction:run` `cancelled`. */
   "correction.cancel": { args: { run: string }; result: null };
+  /** A model is assigned to job "translation" (state only: nothing loads). */
+  "translation.status": { args: Record<string, never>; result: TranslationStatus };
+  /**
+   * Starts run `run` over `pieces` into `target`, from `source` (`null`: the model reads it off each piece); a new run
+   * stops the old one; news come as `translation:run`. Refused (`invalidData`, nothing started): detail `tag` (not
+   * shaped like a language tag) | `name` (not a plain language name) | `sameLanguage` (source = target).
+   */
+  "translation.run": {
+    args: {
+      run: string;
+      pieces: PieceRunPiece[];
+      target: TranslationLanguage;
+      source: TranslationLanguage | null;
+    };
+    result: null;
+  };
+  /** Stops run `run`; its end comes as `translation:run` `cancelled`. */
+  "translation.cancel": { args: { run: string }; result: null };
+  /** The target chosen last and the recent ones (kept in the profile, for every window). */
+  "translation.prefs": { args: Record<string, never>; result: TranslationPrefs };
+  /** Remembers `target` (a tag) as chosen: to the front of the recent ones, each once, five at most. */
+  "translation.setPrefs": { args: { target: string }; result: TranslationPrefs };
+  /** Writes `text` as a NEW file `name` in the folder of `beside`, never over a file (a taken name gets ` (2)`). */
+  "translation.save": {
+    args: { beside: string; name: string; text: string };
+    result: TranslationSaved;
+  };
   "fmt-toon.toJson": { args: { text: string }; result: string };
   "convert.analyze": {
     args: { job: number; source: ConvertSource; from?: string };
@@ -756,6 +787,8 @@ export interface AppPluginEvents {
   /** One correction run's news (`loading` -> `piece` per piece -> `done` | `cancelled` | `failed`); windows keep
    *  their own run id. */
   "correction:run": PieceRun;
+  /** One translation run's news, as `correction:run`. */
+  "translation:run": PieceRun;
 }
 export type AppPluginEventName = keyof AppPluginEvents;
 export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };

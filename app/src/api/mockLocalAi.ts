@@ -369,6 +369,7 @@ export function createMockLocalAi(
   const assignments = new Map<AiTask, string>([
     ["semanticIndex", "embeddinggemma-2"],
     ["correction", "gemma-4-e2b-it"],
+    ["translation", "gemma-4-e2b-it"],
   ]);
   /** License address -> terms revision accepted. */
   const accepted = new Map<string, string | null>();

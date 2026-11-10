@@ -2482,6 +2482,10 @@ const en = {
   "correction.retry": "Try again",
   "correction.openSettings": "Open Local AI settings",
   "correction.show": "Show in the text",
+  // ---- translation (plugin `translation`)
+  "plugin.translation.name": "Translation",
+  "plugin.translation.about":
+    "Translates text into another language with a small AI model on this computer. Every translated part is shown for review before it goes in, and the text never leaves the computer.",
 } as const;
 
 export default en;

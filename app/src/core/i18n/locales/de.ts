@@ -2563,4 +2563,8 @@ export default {
   "correction.retry": "Erneut versuchen",
   "correction.openSettings": "Einstellungen für lokale KI öffnen",
   "correction.show": "Im Text zeigen",
+  // ---- translation (plugin `translation`)
+  "plugin.translation.name": "Übersetzung",
+  "plugin.translation.about":
+    "Übersetzt Text mit einem kleinen KI-Modell auf diesem Computer in eine andere Sprache. Jeder übersetzte Teil wird vor dem Übernehmen zur Prüfung angezeigt, und der Text verlässt den Computer nie.",
 } satisfies Messages;

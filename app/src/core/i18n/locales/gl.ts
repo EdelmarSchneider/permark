@@ -2531,4 +2531,8 @@ export default {
   "correction.retry": "Tentar de novo",
   "correction.openSettings": "Abrir a configuración da IA local",
   "correction.show": "Amosar no texto",
+  // ---- translation (plugin `translation`)
+  "plugin.translation.name": "Tradución",
+  "plugin.translation.about":
+    "Traduce texto a outro idioma cun pequeno modelo de IA neste computador. Cada parte traducida móstrase para revisala antes de aplicala, e o texto nunca sae do computador.",
 } satisfies Messages;

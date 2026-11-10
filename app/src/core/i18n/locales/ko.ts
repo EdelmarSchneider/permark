@@ -2483,4 +2483,8 @@ export default {
   "correction.retry": "다시 시도",
   "correction.openSettings": "로컬 AI 설정 열기",
   "correction.show": "본문에서 보기",
+  // ---- translation (plugin `translation`)
+  "plugin.translation.name": "번역",
+  "plugin.translation.about":
+    "이 컴퓨터의 작은 AI 모델로 텍스트를 다른 언어로 번역합니다. 번역된 모든 부분은 적용 전에 검토할 수 있으며, 텍스트는 컴퓨터 밖으로 나가지 않습니다.",
 } satisfies Messages;

@@ -2400,4 +2400,8 @@ export default {
   "correction.retry": "重试",
   "correction.openSettings": "打开本地 AI 设置",
   "correction.show": "在文本中显示",
+  // ---- translation (plugin `translation`)
+  "plugin.translation.name": "翻译",
+  "plugin.translation.about":
+    "用这台电脑上的小型 AI 模型把文本翻译成另一种语言。每段译文都会先显示出来供审阅，文本不会离开这台电脑。",
 } satisfies Messages;

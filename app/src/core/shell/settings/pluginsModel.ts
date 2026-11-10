@@ -22,6 +22,7 @@ export const KNOWN_PLUGINS = [
   "token-count",
   "local-ai",
   "correction",
+  "translation",
   "prompt-blocks",
   "frontmatter-card",
   "highlight",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { structureVerdict, type Structure, type StructureLimits } from "./guards";
+import { letterShare, structureVerdict, type Structure, type StructureLimits } from "./guards";
 import { pieces, type Piece } from "./segment";
 
 const LIMITS: StructureLimits = {
@@ -102,5 +102,19 @@ describe("structureVerdict", () => {
     expect(reason(check(only(doc), "This sentence is complete.", wide))).toBe("ok");
     expect(reason(check(only(doc), `Here is the text: ${doc}`, wide))).toBe("ok");
     expect(reason(check(only(doc), "This.", wide))).toBe("length");
+  });
+});
+
+describe("letterShare", () => {
+  it("is the share of a text's letters in a script; digits, marks and spaces are not counted", () => {
+    expect(letterShare("abc дe", /\p{Script=Latin}/u)).toBe(0.8);
+    expect(letterShare("abc дe", /\p{Script=Cyrillic}/u)).toBe(0.2);
+    expect(letterShare("a1 2, 3!", /\p{Script=Latin}/u)).toBe(1);
+    expect(letterShare("今日は PerMark", /[\p{Script=Han}\p{Script=Hiragana}]/u)).toBe(0.3);
+  });
+
+  it("is 0 for a text without a letter", () => {
+    expect(letterShare("12 + 3 = 15", /\p{Script=Latin}/u)).toBe(0);
+    expect(letterShare("", /\p{Script=Latin}/u)).toBe(0);
   });
 });

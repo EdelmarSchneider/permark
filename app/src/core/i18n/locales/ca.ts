@@ -2559,4 +2559,8 @@ export default {
   "correction.retry": "Torna-ho a provar",
   "correction.openSettings": "Obre la configuració de la IA local",
   "correction.show": "Mostra-ho al text",
+  // ---- translation (plugin `translation`)
+  "plugin.translation.name": "Traducció",
+  "plugin.translation.about":
+    "Tradueix text a un altre idioma amb un model d'IA petit en aquest ordinador. Cada part traduïda es mostra per revisar-la abans d'aplicar-la, i el text no surt mai de l'ordinador.",
 } satisfies Messages;

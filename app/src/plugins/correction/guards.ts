@@ -4,6 +4,7 @@
 // table cell never gets a final period added. Thresholds tuned on the eval set (`eval/`).
 
 import {
+  letterShare,
   structureVerdict,
   type StructureDiscard,
   type StructureLimits,
@@ -56,6 +57,7 @@ const STRUCTURE: StructureLimits = {
 const FINAL_PERIODS = [".", "。"];
 /** Pieces that are labels more often than sentences: a final period the model adds is not a fix. */
 const LABELS: ReadonlySet<PieceKind> = new Set<PieceKind>(["heading", "listItem", "cell"]);
+/** The scripts a letter is counted under; the last one = any other script. */
 const SCRIPTS = [
   /\p{Script=Latin}/u,
   /\p{Script=Han}/u,
@@ -64,8 +66,8 @@ const SCRIPTS = [
   /\p{Script=Cyrillic}/u,
   /\p{Script=Greek}/u,
   /\p{Script=Arabic}/u,
+  /[^\p{Script=Latin}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Cyrillic}\p{Script=Greek}\p{Script=Arabic}]/u,
 ];
-const LETTER = /\p{L}/u;
 
 export type Discard = StructureDiscard | "script" | "overEdit";
 
@@ -89,23 +91,11 @@ export function judge(doc: string, piece: Piece, output: string, lang?: string):
 
 // total variation between the letter shares per script
 function scriptShift(a: string, b: string): number {
-  const sa = shares(a);
-  const sb = shares(b);
-  return sa.reduce((sum, share, i) => sum + Math.abs(share - (sb[i] ?? 0)), 0) / 2;
-}
-
-// share of letters per entry of `SCRIPTS`, last = any other script
-function shares(text: string): number[] {
-  const counts = Array.from({ length: SCRIPTS.length + 1 }, () => 0);
-  let letters = 0;
-  for (const ch of text) {
-    if (!LETTER.test(ch)) continue;
-    letters += 1;
-    const found = SCRIPTS.findIndex((s) => s.test(ch));
-    const i = found < 0 ? SCRIPTS.length : found;
-    counts[i] = (counts[i] ?? 0) + 1;
-  }
-  return counts.map((c) => c / Math.max(1, letters));
+  const moved = SCRIPTS.reduce(
+    (sum, script) => sum + Math.abs(letterShare(a, script) - letterShare(b, script)),
+    0,
+  );
+  return moved / 2;
 }
 
 function overEdit(d: WordDiff): boolean {

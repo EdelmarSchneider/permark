@@ -312,7 +312,9 @@ function groups(doc: string, range: Range, hidden: readonly Range[], sizes: Budg
   return out.map((r) => trim(doc, r)).filter((r) => r.from < r.to);
 }
 
-function mostlyCjk(text: string): boolean {
+/** `text` is mostly Han | Kana | Hangul: about one token per char, far fewer chars for the same words than
+ *  alphabetic text. */
+export function mostlyCjk(text: string): boolean {
   let letters = 0;
   let cjk = 0;
   for (const ch of text) {

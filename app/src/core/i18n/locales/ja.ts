@@ -2544,4 +2544,8 @@ export default {
   "correction.retry": "再試行",
   "correction.openSettings": "ローカル AI の設定を開く",
   "correction.show": "本文で表示",
+  // ---- translation (plugin `translation`)
+  "plugin.translation.name": "翻訳",
+  "plugin.translation.about":
+    "このコンピューター上の小さな AI モデルで、テキストを別の言語に翻訳します。翻訳した部分はすべて適用前に確認でき、テキストがコンピューターの外に出ることはありません。",
 } satisfies Messages;

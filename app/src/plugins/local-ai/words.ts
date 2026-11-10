@@ -99,8 +99,9 @@ export function fitKey(fit: ModelFit): MessageKey {
   }
 }
 
-/** Name of one BCP-47 language in the current language (`mul` = many; unknown code -> the code). */
-function languageName(code: string, names: Intl.DisplayNames): string {
+/** Name of one BCP-47 language in the language of `names` (`mul` = many, in the current language; unknown code ->
+ *  the code). */
+export function languageName(code: string, names: Intl.DisplayNames): string {
   if (code === "mul") return t("localAi.languages.many");
   try {
     return names.of(code) ?? code;

@@ -2591,4 +2591,8 @@ export default {
   "correction.retry": "Réessayer",
   "correction.openSettings": "Ouvrir les paramètres d'IA locale",
   "correction.show": "Afficher dans le texte",
+  // ---- translation (plugin `translation`)
+  "plugin.translation.name": "Traduction",
+  "plugin.translation.about":
+    "Traduit le texte dans une autre langue avec un petit modèle d'IA sur cet ordinateur. Chaque partie traduite est présentée pour relecture avant d'être appliquée, et le texte ne quitte jamais l'ordinateur.",
 } satisfies Messages;

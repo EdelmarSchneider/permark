@@ -2663,4 +2663,8 @@ export default {
   "correction.retry": "Încearcă din nou",
   "correction.openSettings": "Deschide setările AI local",
   "correction.show": "Arată în text",
+  // ---- translation (plugin `translation`)
+  "plugin.translation.name": "Traducere",
+  "plugin.translation.about":
+    "Traduce textul în altă limbă cu un model AI mic de pe acest computer. Fiecare parte tradusă e arătată pentru verificare înainte să fie aplicată, iar textul nu părăsește niciodată computerul.",
 } satisfies Messages & FewForms;

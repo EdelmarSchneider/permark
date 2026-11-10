@@ -1,7 +1,7 @@
 // Checks any model output for one piece must pass before a plugin reads it as an answer: an output that leaks
 // thinking, opens with a preamble, breaks the markers | Markdown symbols | the table row of a cell or changes length
 // (dropped | added text) beyond the plugin's range is discarded whole. What the answer may change beyond that is the
-// plugin's own guard.
+// plugin's own guard; the count of a text's letters by script (`letterShare`) is here for those.
 
 import { restore, unmarked, type MarkerOrder, type Piece } from "./segment";
 
@@ -10,6 +10,7 @@ export const LENGTH_MIN_CHARS = 20;
 
 const THINKING = "<|channel";
 const SYMBOLS = ["*", "_", "[", "]", "~"];
+const LETTER = /\p{L}/u;
 
 export type StructureLimits = {
   /** Output | input length (markers out) must stay in this range. */
@@ -44,6 +45,19 @@ export function structureVerdict(piece: Piece, output: string, limits: Structure
     return discard("length");
   }
   return { kind: "ok", restored };
+}
+
+/** Share of the letters of `text` that `script` matches (a pattern for one char; 0: no letter in the text). What tells
+ *  the script an answer is written in: digits, punctuation and spaces say nothing. */
+export function letterShare(text: string, script: RegExp): number {
+  let letters = 0;
+  let found = 0;
+  for (const ch of text) {
+    if (!LETTER.test(ch)) continue;
+    letters += 1;
+    if (script.test(ch)) found += 1;
+  }
+  return found / Math.max(1, letters);
 }
 
 function preamble(input: string, output: string, preambles: readonly string[]): boolean {

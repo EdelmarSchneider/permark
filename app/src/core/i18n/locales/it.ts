@@ -2543,4 +2543,8 @@ export default {
   "correction.retry": "Riprova",
   "correction.openSettings": "Apri impostazioni IA locale",
   "correction.show": "Mostra nel testo",
+  // ---- translation (plugin `translation`)
+  "plugin.translation.name": "Traduzione",
+  "plugin.translation.about":
+    "Traduce il testo in un'altra lingua con un piccolo modello di IA su questo computer. Ogni parte tradotta viene mostrata per la revisione prima di essere applicata, e il testo non lascia mai il computer.",
 } satisfies Messages;
