@@ -1,0 +1,25 @@
+[package]
+name = "permark-plugin-translation"
+description = "PerMark plugin translation: translates Markdown text with the local model assigned to translation, into a language the person picks; reviewed piece by piece in the editor, or saved as a new file beside the original."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Depends on `permark-core` + the declared plugin dependency `local-ai` (model service `ModelHost`, piece runner).
+[dependencies]
+permark-core.workspace = true
+permark-plugin-local-ai.workspace = true
+serde.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+# `testkit`: scripted model source + run event collector of the piece runner (tests only).
+permark-plugin-local-ai = { workspace = true, features = ["testkit"] }
+serde_json.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
