@@ -4,7 +4,8 @@
 // text of one table cell), clipped to the scope; long blocks -> sentence groups under a char budget. Whole blocks
 // never sent: front matter, code, HTML, comments, `$$` math, link definitions. Of a table only each cell's own text
 // goes: never a pipe, the padding or the alignment row; a table the grammar does not read as one is left alone.
-// Inline non-prose -> numbered markers `⟦n⟧` the model must copy back; `restore` puts the original bytes back.
+// Inline non-prose -> numbered markers `⟦n⟧` the model must copy back, each once (in the piece's order, or anywhere
+// for a plugin whose answers move the words); `restore` puts the original bytes back.
 
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { yamlFrontmatter } from "@codemirror/lang-yaml";
@@ -47,6 +48,10 @@ export type Piece = {
   /** Original bytes of marker `⟦i + 1⟧`. */
   markers: readonly string[];
 };
+
+/** Where the markers of an answer may stand: as in the piece | anywhere (an answer that moves the words around
+ *  them: a translation). */
+export type MarkerOrder = "inOrder" | "anyOrder";
 
 type Range = { from: number; to: number };
 
@@ -126,17 +131,22 @@ export function pieces(
   return out;
 }
 
-/** `output` with the markers back as original bytes; null when the markers are not exactly `⟦1⟧…⟦n⟧` in order. */
-export function restore(output: string, piece: Piece): string | null {
-  let next = 1;
-  let exact = true;
+/** `output` with the markers back as original bytes; null unless it holds each marker `⟦1⟧…⟦n⟧` of the piece exactly
+ *  once (`inOrder`, the default: in the piece's order too) and no other marker bracket. */
+export function restore(
+  output: string,
+  piece: Piece,
+  order: MarkerOrder = "inOrder",
+): string | null {
+  const seen: number[] = [];
   const back = output.replace(MARKER, (_, digits: string) => {
     const n = Number(digits);
-    if (n !== next) exact = false;
-    next += 1;
+    seen.push(n);
     return piece.markers[n - 1] ?? "";
   });
-  if (!exact || next - 1 !== piece.markers.length) return null;
+  if (seen.length !== piece.markers.length) return null;
+  const numbers = order === "inOrder" ? seen : [...seen].sort((a, b) => a - b);
+  if (numbers.some((n, i) => n !== i + 1)) return null;
   if (/[⟦⟧]/.test(unmarked(output))) return null;
   return back;
 }

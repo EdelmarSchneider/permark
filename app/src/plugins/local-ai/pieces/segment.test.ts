@@ -132,6 +132,16 @@ describe("pieces", () => {
     expect(piece && restore(piece.text, piece)).toBe("A ⟦1⟧ literal");
   });
 
+  it("quotation marks are text the model reads and may write another way; only a quote block's `>` is a marker", () => {
+    const said = "He said \"teh\", “teh”, «teh», 'teh', ‘teh’ and „teh“.";
+    const [plain] = pieces(said);
+    expect(plain?.text).toBe(said);
+    expect(plain?.markers).toEqual([]);
+    const [quoted] = pieces("> “quote won”\n> «still»\n");
+    expect(quoted?.text).toBe("“quote won”\n⟦1⟧ «still»");
+    expect(quoted?.markers).toEqual([">"]);
+  });
+
   it("clips to the scope, widening a cut mid-word | mid-marker", () => {
     const doc = "First paragraph teh.\n\nSecond won `x` here.\n\nThird.";
     const second = doc.indexOf("Second");
@@ -319,6 +329,24 @@ describe("restore", () => {
       "See ⟦1⟧ and ⟦2⟧ then ⟦3.",
     ]) {
       expect(restore(bad, piece), bad).toBeNull();
+    }
+  });
+
+  it("any order when the caller lets the markers move: each one still exactly once", () => {
+    if (piece === undefined) throw new Error("no piece");
+    expect(restore("Then ⟦3⟧, see ⟦2⟧ and ⟦1⟧.", piece, "anyOrder")).toBe(
+      "Then `c`, see `b` and `a`.",
+    );
+    expect(restore("See ⟦1⟧ and ⟦2⟧ then ⟦3⟧.", piece, "anyOrder")).toBe(piece.original);
+    for (const bad of [
+      "Then ⟦3⟧, see ⟦1⟧.",
+      "Then ⟦3⟧, see ⟦2⟧ and ⟦1⟧ ⟦2⟧.",
+      "Then ⟦3⟧, see ⟦1⟧ and ⟦1⟧.",
+      "Then ⟦3⟧, see ⟦2⟧ and ⟦4⟧.",
+      "Then ⟦3⟧, see ⟦2⟧ and ⟦1⟧ ⟦0⟧.",
+      "Then ⟦3⟧, see ⟦2⟧ and ⟦1.",
+    ]) {
+      expect(restore(bad, piece, "anyOrder"), bad).toBeNull();
     }
   });
 });

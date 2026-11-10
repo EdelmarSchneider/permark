@@ -49,6 +49,25 @@ describe("structureVerdict", () => {
     expect(reason(check(piece, "Use ⟦1⟧ with _care_ now."))).toBe("symbols");
   });
 
+  it("markers in the piece's order unless the caller lets them move; each one exactly once either way", () => {
+    const piece = only("See `a` and `b` then `c`.");
+    const moved = "Then ⟦3⟧, see ⟦1⟧ and ⟦2⟧.";
+    expect(reason(check(piece, moved))).toBe("markers");
+    expect(reason(check(piece, moved, { ...LIMITS, markers: "inOrder" }))).toBe("markers");
+    const free: StructureLimits = { ...LIMITS, markers: "anyOrder" };
+    expect(check(piece, moved, free)).toEqual({
+      kind: "ok",
+      restored: "Then `c`, see `a` and `b`.",
+    });
+    expect(reason(check(piece, "Then ⟦3⟧, see ⟦1⟧.", free))).toBe("markers");
+    expect(reason(check(piece, "Then ⟦3⟧, see ⟦1⟧ and ⟦2⟧ ⟦1⟧.", free))).toBe("markers");
+    expect(reason(check(piece, "Then ⟦3⟧, see ⟦1⟧ and ⟦4⟧.", free))).toBe("markers");
+    // the other checks hold as ever
+    expect(reason(check(piece, "Here is: ⟦3⟧ ⟦1⟧ ⟦2⟧", free))).toBe("preamble");
+    const marked = only("Use `npm` with *care* now.");
+    expect(reason(check(marked, "Now with care use ⟦1⟧.", free))).toBe("symbols");
+  });
+
   it("discards dropped | added text by length ratio", () => {
     const doc = "This sentence is complete and has a clear ending.";
     expect(reason(check(only(doc), "This sentence is complete."))).toBe("length");

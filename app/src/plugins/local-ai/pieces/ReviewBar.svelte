@@ -30,6 +30,8 @@
     show: MessageKey;
     /** `{n}` parts left as they were. */
     discarded: PluralKey;
+    /** `{n}` parts whose answer said the same as the part (none: a plugin whose review never counts them; no note). */
+    same?: PluralKey;
     /** `{n}` suggestions the text no longer matches. */
     outdated: PluralKey;
     retry: MessageKey;
@@ -48,8 +50,9 @@
   // The strip under the header while a plugin's piece run goes on | is reviewed (nothing before a run); the words and
   // what the excerpt draws are the plugin's. Row 1: where the run stands (getting the AI engine the first time + its
   // size progress, getting the model ready + progress, checking part i of n, the count) + "3 / 12" + previous | next;
-  // row 2: the current suggestion as the plugin draws it, notes (parts left as they were, suggestions the text no
-  // longer matches), a failure with Try again + Local AI settings; row 3: Accept | Reject, all of them, Done, Cancel.
+  // row 2: the current suggestion as the plugin draws it, notes (parts left as they were, parts whose answer said the
+  // same when the plugin has words for it, suggestions the text no longer matches), a failure with Try again + Local
+  // AI settings; row 3: Accept | Reject, all of them, Done, Cancel.
   // The excerpt = a button: click | Enter -> the suggestion selected in the text. One polite live region: the phase,
   // then the count + the current suggestion. A focused button turned off -> the keyboard to Cancel (running) | Done.
   // Keys inside the bar: A | R, Shift+A | Shift+R, Esc (Done, back to the editor). The bar carries its plugin's name
@@ -249,6 +252,9 @@
       {/if}
       {#if review.discarded > 0}
         <p class="quiet">{tn(labels.discarded, review.discarded)}</p>
+      {/if}
+      {#if labels.same !== undefined && review.same > 0}
+        <p class="quiet">{tn(labels.same, review.same)}</p>
       {/if}
       {#if review.outdated > 0}
         <p class="quiet">{tn(labels.outdated, review.outdated)}</p>

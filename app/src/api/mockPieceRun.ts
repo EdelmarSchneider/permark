@@ -1,9 +1,10 @@
 // What a plugin that runs pieces answers in the mock backend: its `status` | `run` | `cancel` and its news
 // `<plugin>:run`. Timer-driven runs (`stepMs` per phase): mock engine not installed (mock local-ai `engineInstalled`)
 // -> `engine` 0 -> 50 -> 100 % of its bytes first (then installed, as `ModelHost::open`), loading 0 -> 50 -> 100 %,
-// one `piece` per piece (the plugin's `answer` for its text; pieces over `TOO_LONG` chars -> `discarded` tooLong),
-// then `done` | `probe.failRun`. A new run stops the old one (cancelled), as the plugins. Status: `probe.available`
-// when set, else whether mock local-ai has a model on the plugin's job.
+// one `piece` per piece (the plugin's `answer` for its text and what the run was sent beside its id + pieces: a
+// target language, …; pieces over `TOO_LONG` chars -> `discarded` tooLong), then `done` | `probe.failRun`. A new run
+// stops the old one (cancelled), as the plugins. Status: `probe.available` when set, else whether mock local-ai has a
+// model on the plugin's job.
 
 import type { PiecePlugin } from "../plugins/local-ai/pieces/review.svelte";
 import type { AiTask } from "./generated/AiTask";
@@ -16,11 +17,17 @@ import type { AppPluginEventName, AppPluginEvents, PluginMethods } from "./types
 /** Pieces longer than this are "too long for the model". */
 const TOO_LONG = 2000;
 
-export type PieceRunProbe = {
+/** A plugin whose run takes its id + pieces alone. */
+type NoRunArgs = Record<never, never>;
+
+/** What a run is sent: its id, its pieces and what the plugin's run takes beside them (`A`). */
+type Sent<A> = { run: string; pieces: PieceRunPiece[] } & A;
+
+export type PieceRunProbe<A = NoRunArgs> = {
   /** Calls made: `status`, `run <id> <pieces>`, `cancel <id>`. */
   calls: string[];
   /** What each run was sent, in order. */
-  runs: { run: string; pieces: PieceRunPiece[] }[];
+  runs: Sent<A>[];
   /** Time of one run phase. Read when a run starts. */
   stepMs: number;
   /** The `status` answer (`null`: a model on the plugin's job in mock local-ai). */
@@ -47,11 +54,12 @@ export type PieceRunHandlers<P extends PiecePlugin> = {
   ) => PluginMethods[M]["result"];
 };
 
-/** The mock backend of `plugin`: runs on the model of job `task`, `answer` = the mock model's output for a piece. */
-export function createMockPieceRun(
+/** The mock backend of `plugin`: runs on the model of job `task`, `answer` = the mock model's output for a piece's
+ *  text in a run that was sent `sent` (what the plugin's run takes beside its id + pieces: `A`). */
+export function createMockPieceRun<A = NoRunArgs>(
   plugin: PiecePlugin,
   task: AiTask,
-  answer: (text: string) => string,
+  answer: (text: string, sent: A) => string,
   { emit, assigned, engine }: PieceRunWiring,
 ) {
   let current: { run: string; next: PieceRunPhase[] } | null = null;
@@ -60,7 +68,7 @@ export function createMockPieceRun(
     if (timer !== null) clearInterval(timer);
     timer = null;
   };
-  const probe: PieceRunProbe = {
+  const probe: PieceRunProbe<A> = {
     calls: [],
     runs: [],
     stepMs: 300,
@@ -93,7 +101,8 @@ export function createMockPieceRun(
     emit(`${plugin}:run`, { run, phase: { kind: "cancelled" } });
   }
 
-  function start(run: string, pieces: readonly PieceRunPiece[]): null {
+  function start(sent: Sent<A>): null {
+    const { run, pieces } = sent;
     stop();
     const fetch = engine.engineInstalled
       ? []
@@ -111,7 +120,7 @@ export function createMockPieceRun(
       result:
         text.length > TOO_LONG
           ? { kind: "discarded", reason: "tooLong" }
-          : { kind: "output", text: answer(text) },
+          : { kind: "output", text: answer(text, sent) },
     }));
     const end: PieceRunPhase[] =
       failure === null ? [...answers, { kind: "done" }] : [{ kind: "failed", error: failure }];
@@ -125,10 +134,10 @@ export function createMockPieceRun(
       probe.calls.push("status");
       return { available: probe.available ?? assigned(task) };
     },
-    run: ({ run, pieces }: { run: string; pieces: PieceRunPiece[] }): null => {
-      probe.calls.push(`run ${run} ${pieces.length}`);
-      probe.runs.push({ run, pieces: structuredClone(pieces) });
-      return start(run, pieces);
+    run: (sent: Sent<A>): null => {
+      probe.calls.push(`run ${sent.run} ${sent.pieces.length}`);
+      probe.runs.push(structuredClone(sent));
+      return start(sent);
     },
     cancel: ({ run }: { run: string }): null => {
       probe.calls.push(`cancel ${run}`);

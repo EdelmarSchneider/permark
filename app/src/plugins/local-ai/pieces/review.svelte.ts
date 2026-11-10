@@ -2,8 +2,12 @@
 // backend runs the pieces, which pieces to send, what an answer is worth). A run: the pieces of the editor's text in
 // the scope (the plugin's `prepare`, offsets = the editor's text, LF) go to `<plugin>.run`; news `<plugin>:run` of
 // this run only; each answer -> the plugin's `judge` -> suggestions (document offsets) merged in document order;
-// discarded answers only counted. Offsets follow the text: own edits shift what follows exactly; any other change
-// (typing, the other editor) -> prefix/suffix diff, suggestions | pieces touching it dropped (counted), the rest shifted.
+// discarded answers and answers that say the same as their piece only counted, each on its own. One review at a time
+// in an editor (the marks of every plugin's review go to the editor's one layer): while one is open, another
+// plugin's does not run and says `blocked`. Offsets follow the text: own edits shift what follows exactly; any other
+// change (typing, the other editor, the editor writing a block its own way) -> prefix/suffix diff, the rest shifted,
+// suggestions | pieces touching it dropped (counted) unless their text is still told apart inside what changed
+// (`follower`).
 // Accept = one checked `session.apply` (expect = original): refused while composing -> retried shortly; refused else
 // -> dropped (counted). Accept all = one apply (one undo step); a batch refused (Edit mode: a locked block, …) ->
 // each edit alone, only the refused ones dropped. File switch | conflict | View -> review closed. Every pending
@@ -58,9 +62,12 @@ export type PiecePlugin = {
     : never;
 }[AppPluginEventName];
 
-/** What a plugin makes of one answer: its suggestions in document offsets, or the piece left as it was. */
+/** What a plugin makes of one answer: its suggestions in document offsets, the piece left as it was (an answer not
+ *  to trust), or nothing to suggest because the answer says the same as the piece. */
 export type PieceVerdict =
-  { kind: "ok"; suggestions: Suggestion[] } | { kind: "discard"; reason: string };
+  | { kind: "ok"; suggestions: Suggestion[] }
+  | { kind: "discard"; reason: string }
+  | { kind: "same" };
 
 /** What makes the review one plugin's feature. */
 export type ReviewConfig = {
@@ -93,6 +100,8 @@ export type Review = {
   at: number;
   /** Pieces left as they were (the model changed too much | the piece was too long). */
   discarded: number;
+  /** Pieces whose answer said the same as the piece (verdict `same`). */
+  same: number;
   /** Suggestions dropped because the text changed under them. */
   outdated: number;
 };
@@ -124,8 +133,80 @@ export function changedRange(before: string, after: string): TextRange & { delta
   return { from: head, to: before.length - tail, delta: after.length - before.length };
 }
 
+/** Chars of a changed part past which nothing is looked for inside it. */
+const FOLLOW_CHARS = 20_000;
+/** A run of letters | digits. */
+const WORD = /[\p{L}\p{N}]+/gu;
+
+/** Starts of each `needle` inside `text[from, to)`. */
+function places(text: string, needle: string, from: number, to: number): number[] {
+  const found: number[] = [];
+  let at = text.indexOf(needle, from);
+  while (at >= 0 && at + needle.length <= to) {
+    found.push(at);
+    at = text.indexOf(needle, at + 1);
+  }
+  return found;
+}
+
+/** The word before and the word after `from..to` in `text`, as far as its excerpt reaches (none: empty). */
+function wordsAround(text: string, from: number, to: number): string {
+  const { before, after } = around(text, from, to);
+  return `${before.match(WORD)?.at(-1) ?? ""} ${after.match(WORD)?.[0] ?? ""}`;
+}
+
+/**
+ * Where the ranges of `was` are in `now`, by the one part that differs between them: a range before it stays, one
+ * after it moves by the length change, one it touches is gone (`null`) unless its text is still told apart inside the
+ * part: there as many times as before (the same one of them, in order), between the same two words. So a change that
+ * only moves what is around a text (a table's columns padded anew, words typed elsewhere in a block the editor then
+ * writes again) keeps its range; a change of its own words, or of the word next to them, drops it. An empty range
+ * has no text to find: touched = gone.
+ */
+function follower(
+  was: string,
+  now: string,
+): <R extends TextRange & { original: string }>(range: R) => R | null {
+  const change = changedRange(was, now);
+  const end = change.to + change.delta;
+  const searched = Math.max(change.to, end) - change.from <= FOLLOW_CHARS;
+  return (range) => {
+    if (range.to < change.from) return range;
+    let by = change.delta;
+    if (range.from <= change.to) {
+      const text = range.original;
+      if (!searched || text === "" || range.from < change.from || range.to > change.to) return null;
+      const before = places(was, text, change.from, change.to);
+      const after = places(now, text, change.from, end);
+      const at = after[before.indexOf(range.from)];
+      if (at === undefined || before.length !== after.length) return null;
+      if (wordsAround(was, range.from, range.to) !== wordsAround(now, at, at + text.length))
+        return null;
+      by = at - range.from;
+    }
+    return by === 0 ? range : { ...range, from: range.from + by, to: range.to + by };
+  };
+}
+
 function newRunId(): string {
   return globalThis.crypto.randomUUID();
+}
+
+/** Whose review is open in an editor (`null`: none). */
+class Turn {
+  holder = $state.raw<PieceReview | null>(null);
+}
+
+/** The turn of each editing session: every review of a window shares the session, and its editor's one mark layer. */
+const turns = new WeakMap<Session, Turn>();
+
+function turnOf(session: Session): Turn {
+  let turn = turns.get(session);
+  if (turn === undefined) {
+    turn = new Turn();
+    turns.set(session, turn);
+  }
+  return turn;
 }
 
 export class PieceReview {
@@ -138,6 +219,8 @@ export class PieceReview {
   readonly #config: ReviewConfig;
   readonly #api: Api;
   readonly #session: Session;
+  /** Whose review is open in the session's editor. */
+  readonly #turn: Turn;
   /** Id of the run whose news count (`null`: none running). */
   #run: string | null = null;
   /** Pieces sent and not answered yet, by id, at their offsets in `#known`. */
@@ -163,6 +246,7 @@ export class PieceReview {
     this.#config = config;
     this.#api = api;
     this.#session = session;
+    this.#turn = turnOf(session);
   }
 
   /** The plugin this review is set up for. */
@@ -174,10 +258,19 @@ export class PieceReview {
     return this.#state;
   }
 
-  /** Every change of the state marks the text anew. */
+  /** Every change of the state marks the text anew; a review (a run going on | suggestions to go through) holds the
+   *  editor until it is no longer one. */
   set state(next: ReviewState) {
     this.#state = next;
+    if (next.kind === "review") this.#turn.holder = this;
+    else if (this.#turn.holder === this) this.#turn.holder = null;
     this.#mark();
+  }
+
+  /** Another plugin's review is open in this editor: no run starts here until it closes. */
+  get blocked(): boolean {
+    const holder = this.#turn.holder;
+    return holder !== null && holder !== this;
   }
 
   get review(): ({ kind: "review" } & Review) | null {
@@ -288,9 +381,10 @@ export class PieceReview {
     return this.runOver(this.#session.scope("selection") === null ? "paragraph" : "selection");
   }
 
-  /** Starts a run over `kind` of the editor's text (an earlier run of this window is stopped). */
+  /** Starts a run over `kind` of the editor's text (an earlier run of this review is stopped). Nothing while another
+   *  plugin's review is open (`blocked`). */
   async runOver(kind: EditScope): Promise<void> {
-    if (!this.available) return;
+    if (!this.available || this.blocked) return;
     this.#scope = kind;
     this.#stopRun();
     this.#clearWaiting();
@@ -315,6 +409,7 @@ export class PieceReview {
       suggestions: [],
       at: 0,
       discarded: 0,
+      same: 0,
       outdated: 0,
     };
     const sent = await this.#api.pluginCall(`${this.#config.plugin}.run`, {
@@ -414,23 +509,23 @@ export class PieceReview {
     this.done();
   }
 
-  /** Follows the editor's text: a change not made here drops what it touched and shifts what follows. */
+  /** Follows the editor's text: a change not made here shifts what follows it and drops what it touched, unless that
+   *  is still found inside it (`follower`). */
   sync(): void {
     if (this.state.kind === "closed") return;
+    const was = this.#known;
     const now = this.#session.current();
-    if (now === this.#known) return;
-    const change = changedRange(this.#known, now);
+    if (now === was) return;
     this.#known = now;
-    const touches = (r: TextRange): boolean => r.from <= change.to && r.to >= change.from;
-    const shift = <R extends TextRange>(r: R): R =>
-      r.from >= change.to ? { ...r, from: r.from + change.delta, to: r.to + change.delta } : r;
+    const follow = follower(was, now);
     for (const [id, piece] of this.#pieces) {
-      if (touches(piece)) this.#pieces.delete(id);
-      else this.#pieces.set(id, shift(piece));
+      const moved = follow(piece);
+      if (moved === null) this.#pieces.delete(id);
+      else this.#pieces.set(id, moved);
     }
     const review = this.review;
     if (review === null) return;
-    const kept = review.suggestions.filter((s) => !touches(s)).map(shift);
+    const kept = review.suggestions.flatMap((s) => follow(s) ?? []);
     this.#waiting = this.#waiting.filter((key) => kept.some((s) => s.key === key));
     this.#settle(kept, review.suggestions.length - kept.length);
   }
@@ -474,6 +569,10 @@ export class PieceReview {
     const verdict = this.#config.judge(this.#known, piece, result.text);
     if (verdict.kind === "discard") {
       this.state = { ...review, discarded: review.discarded + 1 };
+      return;
+    }
+    if (verdict.kind === "same") {
+      this.state = { ...review, same: review.same + 1 };
       return;
     }
     if (verdict.suggestions.length === 0) return;

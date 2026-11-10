@@ -79,6 +79,7 @@ function state(patch: Partial<Review>): Review {
     suggestions: [],
     at: 0,
     discarded: 0,
+    same: 0,
     outdated: 0,
     ...patch,
   };
@@ -138,6 +139,20 @@ describe("the piece review bar", () => {
     // no marks of its own around what the plugin drew
     expect(target.querySelector("del, ins")).toBeNull();
     expect(target.querySelector("[aria-live]")?.textContent).toContain("1/1: has > have");
+  });
+
+  it("answers that said the same as their piece: a note of its own, only from a plugin with words for it", () => {
+    const notes = (): string[] =>
+      [...target.querySelectorAll("p.quiet")].map((note) => note.textContent ?? "");
+    show(state({ same: 2, discarded: 1 }));
+    expect(notes()).toEqual([tn("search.files", 1)]);
+    if (component) void unmount(component);
+    const labels: ReviewLabels = { ...LABELS, same: "wordCount.words" };
+    component = mount(ReviewBar, { target, props: { review, labels, excerpt } });
+    flushSync();
+    expect(notes()).toEqual([tn("search.files", 1), tn("wordCount.words", 2)]);
+    show(state({ same: 0, discarded: 1 }));
+    expect(notes()).toEqual([tn("search.files", 1)]);
   });
 
   it("a failed run: the plugin's words for no model on its job, the engine's own for the rest", () => {

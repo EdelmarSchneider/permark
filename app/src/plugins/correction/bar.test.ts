@@ -38,6 +38,7 @@ function review(patch: Partial<Review>): Review {
     suggestions: [],
     at: 0,
     discarded: 0,
+    same: 0,
     outdated: 0,
     ...patch,
   };

@@ -3,7 +3,7 @@
 // (dropped | added text) beyond the plugin's range is discarded whole. What the answer may change beyond that is the
 // plugin's own guard.
 
-import { restore, unmarked, type Piece } from "./segment";
+import { restore, unmarked, type MarkerOrder, type Piece } from "./segment";
 
 /** The length range holds for inputs at least this long (shorter ones: a ratio over a few chars says little). */
 export const LENGTH_MIN_CHARS = 20;
@@ -17,6 +17,8 @@ export type StructureLimits = {
   maxRatio: number;
   /** Openings of a chat answer instead of the text (lowercase; ignored when the original opens the same way). */
   preambles: readonly string[];
+  /** Where the output's markers may stand (default: in the piece's order); each one exactly once either way. */
+  markers?: MarkerOrder;
 };
 
 export type StructureDiscard = "thinking" | "preamble" | "markers" | "symbols" | "cell" | "length";
@@ -31,7 +33,7 @@ export function structureVerdict(piece: Piece, output: string, limits: Structure
   const discard = (reason: StructureDiscard): Structure => ({ kind: "discard", reason });
   if (output.includes(THINKING)) return discard("thinking");
   if (preamble(piece.text, output, limits.preambles)) return discard("preamble");
-  const restored = restore(output, piece);
+  const restored = restore(output, piece, limits.markers);
   if (restored === null) return discard("markers");
   if (SYMBOLS.some((s) => count(piece.text, s) !== count(output, s))) return discard("symbols");
   if (piece.kind === "cell" && breaksRow(restored.trim())) return discard("cell");
