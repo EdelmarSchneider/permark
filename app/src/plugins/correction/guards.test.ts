@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { pieces, type Piece } from "../local-ai/pieces/segment";
 import { judge, type Verdict } from "./guards";
-import { pieces, type Piece } from "./segment";
 
 function only(doc: string): Piece {
   const [piece] = pieces(doc);
@@ -39,24 +39,11 @@ describe("judge", () => {
     expect(v).toMatchObject({ kind: "ok", suggestions: [] });
   });
 
-  it("discards a thinking leak and a preamble", () => {
+  it("passes on what the structure check discards, with its own preambles and length range", () => {
     const doc = "This is fine text.";
-    const piece = only(doc);
-    expect(reason(judge(doc, piece, "<|channel>thought\nThis is fine text."))).toBe("thinking");
-    expect(reason(judge(doc, piece, "Here is the corrected text: This is fine text."))).toBe(
-      "preamble",
-    );
-    expect(reason(judge(doc, piece, "Texto corrigido: This is fine text."))).toBe("preamble");
-    const own = "Corrected values are shown below.";
-    expect(reason(judge(own, only(own), own))).toBe("ok");
-  });
-
-  it("discards tampered markers and changed Markdown symbols", () => {
-    const doc = "Use `npm` with *care* now.";
-    const piece = only(doc);
-    expect(reason(judge(doc, piece, "Use npm with *care* now."))).toBe("markers");
-    expect(reason(judge(doc, piece, "Use ⟦1⟧ with care now."))).toBe("symbols");
-    expect(reason(judge(doc, piece, "Use ⟦1⟧ with _care_ now."))).toBe("symbols");
+    expect(reason(judge(doc, only(doc), "Texto corrigido: This is fine text."))).toBe("preamble");
+    const long = "This sentence is complete and has a clear ending.";
+    expect(reason(judge(long, only(long), "This sentence is complete."))).toBe("length");
   });
 
   it("discards an over-edit: ratio on long pieces, count on short ones", () => {
@@ -82,11 +69,6 @@ describe("judge", () => {
     expect(reason(judge(three, only(three), "Una caza blanca"))).toBe("ok");
     const two = "# Teh title";
     expect(reason(judge(two, only(two), "The title"))).toBe("ok");
-  });
-
-  it("discards dropped | added text by length ratio", () => {
-    const doc = "This sentence is complete and has a clear ending.";
-    expect(reason(judge(doc, only(doc), "This sentence is complete."))).toBe("length");
   });
 
   it("discards a translation by the shift of script", () => {

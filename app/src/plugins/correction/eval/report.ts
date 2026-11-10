@@ -4,9 +4,9 @@
 // totals + one line per non-exact case. Quality never fails a run; harness errors (missing | extra outputs, bad
 // markers in a case) throw. Not shipped: imported by `eval.test.ts` only.
 
-import type { CorrectionPieceResult } from "../../../api/generated/CorrectionPieceResult";
+import type { PieceRunResult } from "../../../api/generated/PieceRunResult";
+import { restore, type Piece } from "../../local-ai/pieces/segment";
 import { judge } from "../guards";
-import { restore, type Piece } from "../segment";
 
 export type CaseKind = "errors" | "clean" | "marker" | "heading" | "injection" | "mixed";
 
@@ -22,7 +22,7 @@ export type EvalCase = {
   expected: string;
 };
 
-export type EvalRecord = { id: string; result: CorrectionPieceResult; ms: number; tokens: number };
+export type EvalRecord = { id: string; result: PieceRunResult; ms: number; tokens: number };
 
 export type EvalOutputs = {
   profile: string;

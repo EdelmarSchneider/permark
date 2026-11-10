@@ -4,8 +4,37 @@
 //! - [`messages`]: system rules + 2 few-shot turns + the raw piece as last user turn.
 //! - [`max_tokens`]: answer cap = ceil(1.3 x piece tokens) + 32 (a correction is about as long as its input).
 //! - [`SAMPLING`]: greedy, fixed seed (same piece -> same answer).
+//! - [`CorrectionJob`]: the above as the job of `local-ai`'s piece runner (model of job "correction", [`CONTEXT`]).
 
 use permark_plugin_local_ai::engine::{ChatMessage, Role, Sampling};
+use permark_plugin_local_ai::pieces::PieceJob;
+use permark_plugin_local_ai::Task;
+
+/// Context window asked for a correction session, tokens.
+pub const CONTEXT: u32 = 4096;
+
+/// Correction as a piece job: this module's prompt, answer cap and sampling; no per-run parameters.
+pub struct CorrectionJob;
+
+impl PieceJob for CorrectionJob {
+    type Params = ();
+
+    const TASK: Task = Task::Correction;
+    const CONTEXT: u32 = CONTEXT;
+    const SAMPLING: Sampling = SAMPLING;
+
+    fn messages((): &(), text: &str) -> Vec<ChatMessage> {
+        messages(text)
+    }
+
+    fn preamble((): &()) -> String {
+        preamble()
+    }
+
+    fn max_tokens(piece_tokens: u32) -> u32 {
+        max_tokens(piece_tokens)
+    }
+}
 
 /// Rules of the task (English; the model answers in the language of the text).
 pub const SYSTEM: &str = "\

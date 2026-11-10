@@ -1,6 +1,6 @@
 //! Eval set (D-8) step 1 of 2: every case of `app/src/plugins/correction/eval/cases.json` through the production piece
-//! path ([`correct`]: same prompt, sampling, answer cap, too-long + length + thinking discards) -> outputs JSON. Step
-//! 2 (TS report: restore + guards + scores) = `app/src/plugins/correction/eval/eval.test.ts`.
+//! path ([`answer`] of [`CorrectionJob`]: same prompt, sampling, answer cap, too-long + length + thinking discards) ->
+//! outputs JSON. Step 2 (TS report: restore + guards + scores) = `app/src/plugins/correction/eval/eval.test.ts`.
 //!
 //! - Always run: cases file shape; 2 cases over [`FakeEngine`] into a temp outputs file (harness check, no model).
 //! - `#[ignore]`, by hand: the REAL worker + a local chat GGUF. Env: `PERMARK_WORKER` = worker build (debug override),
@@ -31,12 +31,13 @@ use permark_plugin_local_ai::engine::{
     CancelToken, ChatRequest, Device, EngineError, FakeEngine, FileRole, GenEvent, LoadOpts,
     ModelFiles, SessionId,
 };
+use permark_plugin_local_ai::pieces::{answer, preamble_tokens, Models, PieceResult, Session};
 use permark_plugin_local_ai::runtime::{Runtime, WorkerLog};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::Fake;
-use crate::run::{correct, preamble_tokens, Models, PieceResult, Session, CONTEXT};
+use crate::prompt::{CorrectionJob, CONTEXT};
 
 const CASES: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -127,7 +128,7 @@ impl Session for Metered {
     }
 }
 
-/// Every case in order through [`correct`]; answers the records + total generate time + answer tokens.
+/// Every case in order through [`answer`]; answers the records + total generate time + answer tokens.
 fn evaluate(
     session: Box<dyn Session>,
     cases: &[Case],
@@ -136,13 +137,13 @@ fn evaluate(
         inner: session,
         tokens: Cell::new(0),
     };
-    let preamble = preamble_tokens(&session)?;
+    let preamble = preamble_tokens::<CorrectionJob>(&session, &())?;
     let cancel = CancelToken::new();
     let (mut records, mut total, mut tokens) = (Vec::new(), Duration::ZERO, 0u32);
     for case in cases {
         let started = Instant::now();
-        let result =
-            correct(&session, preamble, &case.text, &cancel)?.ok_or(EngineError::Cancelled)?;
+        let result = answer::<CorrectionJob>(&session, &(), preamble, &case.text, &cancel)?
+            .ok_or(EngineError::Cancelled)?;
         let elapsed = started.elapsed();
         total += elapsed;
         tokens = tokens.saturating_add(session.tokens.get());
@@ -213,7 +214,7 @@ fn eval_cases_are_well_formed() {
 #[test]
 fn eval_runs_cases_over_the_fake_engine_into_an_outputs_file() {
     let cases: Vec<_> = cases().into_iter().take(2).collect();
-    let fake = Fake::new(FakeEngine::new());
+    let fake = Fake::new::<CorrectionJob>(FakeEngine::new());
     let session = fake.open(&|_| {}, &CancelToken::new()).unwrap();
     let (records, total, tokens) = evaluate(session, &cases).unwrap();
     let tmp = tempfile::tempdir().unwrap();
