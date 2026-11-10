@@ -196,22 +196,37 @@ export function offered(): readonly string[] {
   return nameable;
 }
 
+/** Where a language's name is shown: on its own (a list row, a tab, a menu entry, a label) | inside a sentence. */
+export type NamePlace = "label" | "sentence";
+
 /** Names of languages in the language `locale` (default: the app's): `tag` -> its name there, the tag itself where
- *  the runtime has none. One lookup serves a whole list. */
-export function namesIn(locale: string = language.locale): (tag: string) => string {
+ *  the runtime has none. The runtime writes a name as it stands inside a sentence ("alemão": small in Portuguese,
+ *  Spanish, French, …); as a `label` its first letter is a capital, by that language's rules. One lookup serves a
+ *  whole list. */
+export function namesIn(
+  locale: string = language.locale,
+  place: NamePlace = "label",
+): (tag: string) => string {
   const names = displayNames(locale);
-  return (tag) => (names === null ? tag : languageName(tag, names));
+  return (tag) => {
+    const name = names === null ? tag : languageName(tag, names);
+    if (place === "sentence" || sameTag(name, tag)) return name;
+    // the first character whole (a letter outside the basic plane is two code units)
+    const [first] = name;
+    return first === undefined ? name : first.toLocaleUpperCase(locale) + name.slice(first.length);
+  };
 }
 
-/** The name of `tag`'s language in that language itself ("Deutsch", "日本語"); `null` where the runtime has no names
- *  in it (asked anyway, it answers in its own default language) or none for the tag. */
+/** The name of `tag`'s language in that language itself, written as the runtime gives it ("Deutsch", "日本語",
+ *  "português (Brasil)"); `null` where the runtime has no names in it (asked anyway, it answers in its own default
+ *  language) or none for the tag. */
 export function ownName(tag: string): string | null {
   try {
     if (Intl.DisplayNames.supportedLocalesOf([tag]).length === 0) return null;
   } catch {
     return null;
   }
-  const name = namesIn(tag)(tag);
+  const name = namesIn(tag, "sentence")(tag);
   return sameTag(name, tag) ? null : name;
 }
 

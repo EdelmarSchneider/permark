@@ -30,8 +30,9 @@
     show: MessageKey;
     /** `{n}` parts left as they were. */
     discarded: PluralKey;
-    /** `{n}` parts whose answer said the same as the part (none: a plugin whose review never counts them; no note). */
-    same?: PluralKey;
+    /** `{n}` parts whose answer said the same as the part (none: a plugin whose review never counts them; no note).
+     *  A function: the plugin's own words for the count, where they hold more than it (a language's name). */
+    same?: PluralKey | ((n: number) => string);
     /** `{n}` suggestions the text no longer matches. */
     outdated: PluralKey;
     retry: MessageKey;
@@ -53,8 +54,9 @@
   // row 2: the current suggestion as the plugin draws it, notes (parts left as they were, parts whose answer said the
   // same when the plugin has words for it, suggestions the text no longer matches), a failure with Try again + Local
   // AI settings; row 3: Accept | Reject, all of them, Done, Cancel.
-  // The excerpt = a button: click | Enter -> the suggestion selected in the text. One polite live region: the phase,
-  // then the count + the current suggestion. A focused button turned off -> the keyboard to Cancel (running) | Done.
+  // The excerpt = a button: click | Enter -> the suggestion selected in the text (an excerpt with controls of its
+  // own stands without it: `excerptAs`). One polite live region: the phase, then the count + the current
+  // suggestion. A focused button turned off -> the keyboard to Cancel (running) | Done.
   // Keys inside the bar: A | R, Shift+A | Shift+R, Esc (Done, back to the editor). The bar carries its plugin's name
   // (`data-<plugin>`: correction's = `data-correction`).
   import { untrack, type Snippet } from "svelte";
@@ -74,8 +76,12 @@
     labels: ReviewLabels;
     /** Draws a suggestion inside the excerpt. */
     excerpt: Snippet<[Found]>;
+    /** How the excerpt stands in the bar. `button` (default): inside one button that shows the suggestion in the
+     *  text, cut to three lines, named by `labels.show`. `own`: as the plugin draws it, nothing around it: its sizes,
+     *  its names and its way to the suggestion in the text (`review.show`) are the plugin's. */
+    excerptAs?: "button" | "own";
   };
-  let { review: store, labels, excerpt }: Props = $props();
+  let { review: store, labels, excerpt, excerptAs = "button" }: Props = $props();
 
   const shown = $derived(store.state);
   const review = $derived(shown.kind === "review" ? shown : null);
@@ -148,6 +154,11 @@
       default:
         return status satisfies never;
     }
+  }
+
+  /** What the bar says of `n` answers that said the same as their part. */
+  function sameNote(same: NonNullable<ReviewLabels["same"]>, n: number): string {
+    return typeof same === "function" ? same(n) : tn(same, n);
   }
 
   /** What the bar says about a failed run: the plugin's words for no model on the job (fixed on the Local AI page),
@@ -238,7 +249,9 @@
           >
         {/if}
       </div>
-      {#if current !== null}
+      {#if current !== null && excerptAs === "own"}
+        {@render excerpt(current)}
+      {:else if current !== null}
         <button
           type="button"
           class="excerpt"
@@ -254,7 +267,7 @@
         <p class="quiet">{tn(labels.discarded, review.discarded)}</p>
       {/if}
       {#if labels.same !== undefined && review.same > 0}
-        <p class="quiet">{tn(labels.same, review.same)}</p>
+        <p class="quiet">{sameNote(labels.same, review.same)}</p>
       {/if}
       {#if review.outdated > 0}
         <p class="quiet">{tn(labels.outdated, review.outdated)}</p>

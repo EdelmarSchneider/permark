@@ -153,6 +153,34 @@ describe("the piece review bar", () => {
     expect(notes()).toEqual([tn("search.files", 1), tn("wordCount.words", 2)]);
     show(state({ same: 0, discarded: 1 }));
     expect(notes()).toEqual([tn("search.files", 1)]);
+    // words that need more than the count (a language's name): the plugin's own
+    if (component) void unmount(component);
+    const own: ReviewLabels = { ...LABELS, same: (n) => `${n} already in German` };
+    component = mount(ReviewBar, { target, props: { review, labels: own, excerpt } });
+    flushSync();
+    show(state({ same: 3 }));
+    expect(notes()).toEqual(["3 already in German"]);
+  });
+
+  it("an excerpt that stands on its own: drawn as the plugin draws it, no button of the frame around it", () => {
+    if (component) void unmount(component);
+    component = mount(ReviewBar, {
+      target,
+      props: { review, labels: LABELS, excerpt, excerptAs: "own" },
+    });
+    flushSync();
+    show(state({ suggestions: [S1, S2] }));
+    expect(button("show")).toBeNull();
+    const stack = target.querySelector(".stack");
+    expect(stack?.parentElement).toBe(group());
+    // not cut and not hidden from assistive tech by the frame: sizes and names are the plugin's
+    expect(stack?.closest("button, [aria-hidden]")).toBeNull();
+    expect([...(stack?.querySelectorAll(":scope > span") ?? [])].map((l) => l.textContent)).toEqual(
+      ["has", "have"],
+    );
+    // the rest of the bar as ever
+    expect(button("accept")?.disabled).toBe(false);
+    expect(target.querySelector("[aria-live]")?.textContent).toContain("1/2: has > have");
   });
 
   it("a failed run: the plugin's words for no model on its job, the engine's own for the rest", () => {

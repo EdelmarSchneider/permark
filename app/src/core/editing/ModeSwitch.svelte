@@ -4,12 +4,14 @@
   import type { ContributionOf } from "../plugins/registry.svelte";
   import type { EditMode } from "./session.svelte";
 
-  /** The plugins' edit actions shown with the mode switch in `mode` (none in View); the header counts them. */
+  /** The plugins' edit actions shown with the mode switch in `mode` (none in View), by their `order` (plugins load
+   *  in no fixed order); the header counts them. */
   export function shownEditActions(mode: EditMode): ContributionOf<"editAction">[] {
     if (mode === "view") return [];
     return contributions
       .visible("editAction", conditions.current)
-      .filter((action) => action.when?.() ?? true);
+      .filter((action) => action.when?.() ?? true)
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }
 </script>
 

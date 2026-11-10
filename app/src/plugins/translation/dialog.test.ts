@@ -164,8 +164,8 @@ describe("the language dialog", () => {
     open();
     const all = names();
     expect(all).toEqual(offered().map(namesIn("pt-BR")).sort(new Intl.Collator("pt-BR").compare));
-    expect(all.indexOf("árabe")).toBeGreaterThan(all.indexOf("alemão"));
-    expect(all.indexOf("árabe")).toBeLessThan(all.indexOf("basco"));
+    expect(all.indexOf("Árabe")).toBeGreaterThan(all.indexOf("Alemão"));
+    expect(all.indexOf("Árabe")).toBeLessThan(all.indexOf("Basco"));
     expect(said(one("h2"))).toBe("Traduzir para");
   });
 
@@ -209,9 +209,9 @@ describe("the language dialog", () => {
     await language.choose("pt-BR", []);
     open();
     type("German");
-    expect(names()[0]).toBe("alemão");
+    expect(names()[0]).toBe("Alemão");
     type("Deutsch");
-    expect(names()[0]).toBe("alemão");
+    expect(names()[0]).toBe("Alemão");
   });
 
   it("Down + Enter choose a row and the dialog stays; the confirm button saves the choice and tells the opener", async () => {

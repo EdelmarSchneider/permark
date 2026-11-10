@@ -130,20 +130,39 @@ describe("scriptOf", () => {
 
 describe("namesIn", () => {
   it("names a language in the asked language (the app's by default), the tag itself where there is no name", () => {
-    expect(namesIn("pt-BR")("de")).toBe("alemão");
+    expect(namesIn("pt-BR")("de")).toBe("Alemão");
     expect(namesIn("de")("de")).toBe("Deutsch");
     expect(namesIn("en")("pt-BR")).toBe("Brazilian Portuguese");
     expect(namesIn()("de")).toBe(namesIn(language.locale)("de"));
     expect(namesIn("en")("qaa")).toBe("qaa");
     expect(namesIn("en")("not a tag")).toBe("not a tag");
   });
+
+  it("starts a name with a capital letter where the runtime writes it small (a list, a label, a menu)", () => {
+    // the runtime's names are written for the middle of a sentence: small in Portuguese, Spanish, French, …
+    expect(namesIn("pt-BR")("pt-BR")).toBe("Português (Brasil)");
+    expect(namesIn("es")("de")).toBe("Alemán");
+    expect(namesIn("fr")("zh-Hans")).toBe("Chinois simplifié");
+    expect(namesIn("it")("ja")).toBe("Giapponese");
+    // a script without capitals, and a name that has one already, stay as they are
+    expect(namesIn("ja")("de")).toBe("ドイツ語");
+    expect(namesIn("en")("de")).toBe("German");
+  });
+
+  it("inside a sentence a name stays as the runtime writes it", () => {
+    expect(namesIn("pt-BR", "sentence")("de")).toBe("alemão");
+    expect(namesIn("fr", "sentence")("zh-Hans")).toBe("chinois simplifié");
+    expect(namesIn("en", "sentence")("de")).toBe("German");
+    expect(namesIn("de", "sentence")("pt-BR")).toBe("Portugiesisch (Brasilien)");
+  });
 });
 
 describe("ownName", () => {
-  it("names a language in that language itself", () => {
+  it("names a language in that language itself, written as the runtime gives it", () => {
     expect(ownName("de")).toBe("Deutsch");
     expect(ownName("ja")).toBe("日本語");
     expect(ownName("pt-BR")).toBe("português (Brasil)");
+    expect(ownName("es-ES")).toBe("español de España");
     expect(ownName("zh-Hans")).toBe("简体中文");
   });
 

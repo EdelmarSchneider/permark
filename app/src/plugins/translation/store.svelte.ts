@@ -30,6 +30,9 @@ export class Languages {
   source = $state<string | null>(null);
   /** Targets chosen before, newest first. */
   recent = $state.raw<readonly string[]>([]);
+  /** What the last run started in this window was sent (`null`: none yet): its answers are judged against it and its
+   *  review is named by it, whatever is chosen since. */
+  sent = $state.raw<RunLanguages | null>(null);
 
   readonly #api: Api;
   /** Calls made to the backend: only the answer of the latest one is taken. */
@@ -75,6 +78,7 @@ export class Languages {
     this.target = null;
     this.source = null;
     this.recent = [];
+    this.sent = null;
   }
 
   #take(prefs: TranslationPrefs): void {
@@ -97,22 +101,22 @@ export class Translation extends PieceReview {
 
   constructor(api: Api = defaultApi, session: Session = editing) {
     const languages = new Languages(api);
-    /** What the run going on was sent: its answers are judged against it, whatever is chosen since. */
-    let sent: RunLanguages | null = null;
     super(
       {
         plugin: "translation",
         prepare: pieces,
-        judge: (doc, piece, output) =>
-          sent === null
+        judge: (doc, piece, output) => {
+          const sent = languages.sent;
+          return sent === null
             ? { kind: "discard", reason: "languages" }
             : judge(doc, piece, output, {
                 target: sent.target.tag,
                 source: sent.source?.tag ?? null,
-              }),
+              });
+        },
         runArgs: () => {
-          sent = languages.runArgs();
-          return sent ?? {};
+          languages.sent = languages.runArgs();
+          return languages.sent ?? {};
         },
       },
       api,

@@ -12,11 +12,15 @@ vi.mock("../../api", async () => {
 const { api } = await import("../../api");
 const { ContributionRegistry, PluginHost, pluginLoaders } =
   await import("../../core/plugins/registry.svelte");
+const { editing } = await import("../../core/editing/session.svelte");
+const { PieceReview } = await import("../local-ai/pieces/review.svelte");
 const { correction } = await import("./store.svelte");
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
 
 afterEach(() => {
   mock.probe.correction.available = null;
+  editing.mode = "view";
+  vi.restoreAllMocks();
 });
 
 async function on() {
@@ -55,6 +59,51 @@ describe("plugin correction", () => {
     for (const item of registry.ownedBy("correction")) {
       if (item.kind === "editAction" || item.kind === "command") expect(item.when?.()).toBe(false);
     }
+    host.disable("correction");
+  });
+
+  it("while another plugin's review is open nothing of it runs: the menu says why, the commands are not offered", async () => {
+    const { registry, host } = await on();
+    await vi.waitFor(() => expect(correction.available).toBe(true));
+    editing.mode = "source";
+    vi.spyOn(editing, "scope").mockReturnValue({ from: 0, to: 5 });
+    const [button] = registry.of("editAction");
+    const run = registry
+      .of("command")
+      .filter((c) => c.id === "correction.correct" || c.id === "correction.correctDocument");
+    const state = (): (string | undefined)[] =>
+      (button?.entries() ?? []).map((entry) =>
+        entry.kind !== "item" ? entry.kind : entry.disabled === true ? entry.detail : "on",
+      );
+    expect(state()).toEqual(["on", "on", "on"]);
+    expect(run.map((c) => c.when?.())).toEqual([true, true]);
+    // the other plugin's review holds the editor
+    const other = new PieceReview({
+      plugin: "translation",
+      prepare: () => [],
+      judge: () => ({ kind: "same" }),
+      runArgs: () => ({}),
+    });
+    other.state = {
+      kind: "review",
+      status: { kind: "finished" },
+      suggestions: [
+        { key: 1, from: 0, to: 2, original: "Hi", insert: "Oi", before: "", after: "" },
+      ],
+      at: 0,
+      discarded: 0,
+      same: 0,
+      outdated: 0,
+    };
+    expect(correction.blocked).toBe(true);
+    expect(state()).toEqual(Array(3).fill("Finish the current review first"));
+    // the button stays; the commands (and with them the key) go
+    expect(button?.when?.()).toBe(true);
+    expect(run.map((c) => c.when?.())).toEqual([false, false]);
+    other.state = { kind: "closed" };
+    expect(state()).toEqual(["on", "on", "on"]);
+    expect(run.map((c) => c.when?.())).toEqual([true, true]);
+    editing.mode = "view";
     host.disable("correction");
   });
 
