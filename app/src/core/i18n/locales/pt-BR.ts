@@ -2602,4 +2602,5 @@ export default {
   "translation.copy.noFile": "Nenhum arquivo foi criado.",
   "translation.copy.stopped": "Tradução interrompida.",
   "translation.copy.notSaved": "Não foi possível salvar o arquivo traduzido.",
+  "translation.copy.open": "Abrir",
 } satisfies Messages;

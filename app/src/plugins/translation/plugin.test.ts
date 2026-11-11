@@ -20,6 +20,7 @@ const { ContributionRegistry, PluginHost, pluginLoaders } =
   await import("../../core/plugins/registry.svelte");
 const { editing } = await import("../../core/editing/session.svelte");
 const { documents } = await import("../../core/doc/document.svelte");
+const { windowStore } = await import("../../core/window.svelte");
 const { translation } = await import("./store.svelte");
 const { copy } = await import("./copy.svelte");
 const { languageDialog } = await import("./dialog.svelte");
@@ -73,6 +74,7 @@ afterEach(() => {
   translation.state = { kind: "closed" };
   copy.state = { kind: "idle" };
   languageDialog.close();
+  for (const notice of [...windowStore.notices]) windowStore.dismiss(notice.id);
   vi.restoreAllMocks();
 });
 
@@ -341,6 +343,34 @@ describe("the ways into a translation", () => {
     expect(runOver.mock.calls).toEqual([["document"], ["document"]]);
   });
 
+  it("a language named to translate from goes with the run its dialog starts; a run without the dialog reads it off the text", async () => {
+    mock.probe.translation.stepMs = 1e9;
+    const registry = await editingWith(null);
+    const text = "A text to translate.\n";
+    vi.spyOn(editing, "current").mockReturnValue(text);
+    vi.spyOn(editing, "scope").mockImplementation((kind) =>
+      kind === "selection" ? null : { from: 0, to: text.length },
+    );
+    const runs = mock.probe.translation.runs;
+    const before = runs.length;
+    void command(registry, "translation.document").run();
+    languageDialog.confirm("de", "en-US");
+    await vi.waitFor(() => expect(runs).toHaveLength(before + 1));
+    expect(runs.at(-1)).toMatchObject({
+      target: { tag: "de", name: "German" },
+      source: { tag: "en-US", name: "American English" },
+    });
+    // the bar names the languages of the run under review, the window detects again
+    expect(translation.languages.sent?.source?.tag).toBe("en-US");
+    expect(translation.languages.source).toBeNull();
+    // the same command again: no dialog, the language chosen last, the source read off the text
+    void command(registry, "translation.document").run();
+    expect(languageDialog.state.status).toBe("closed");
+    await vi.waitFor(() => expect(runs).toHaveLength(before + 2));
+    expect(runs.at(-1)).toMatchObject({ target: { tag: "de" }, source: null });
+    expect(translation.languages.sent).toMatchObject({ target: { tag: "de" }, source: null });
+  });
+
   it("stepping through the suggestions: one pair of commands and keys, for whichever review is open", async () => {
     const registry = await editingWith("de", "local-ai", "correction");
     const go = vi.spyOn(translation, "go").mockImplementation(() => {});
@@ -524,6 +554,32 @@ describe("translate to a new file", () => {
     expect(run).toHaveBeenCalledOnce();
   });
 
+  it("a language named to translate from goes with the copy its dialog starts, and with no run after it", async () => {
+    mock.probe.translation.stepMs = 1e9;
+    const registry = await editingMarkdown("docs/guide.md");
+    const text = "A text to translate.\n";
+    vi.spyOn(editing, "current").mockReturnValue(text);
+    vi.spyOn(editing, "scope").mockImplementation((kind) =>
+      kind === "selection" ? null : { from: 0, to: text.length },
+    );
+    const runs = mock.probe.translation.runs;
+    const before = runs.length;
+    item(registry, NEW_FILE).run(false);
+    languageDialog.confirm("ja", "en-US");
+    await vi.waitFor(() => expect(runs).toHaveLength(before + 1));
+    expect(copy.running).toBe(true);
+    expect(runs.at(-1)).toMatchObject({
+      target: { tag: "ja", name: "Japanese" },
+      source: { tag: "en-US", name: "American English" },
+    });
+    expect(translation.languages.source).toBeNull();
+    copy.cancel();
+    // a review started by its command: into the same language, the source read off the text
+    void command(registry, "translation.document").run();
+    await vi.waitFor(() => expect(runs).toHaveLength(before + 2));
+    expect(runs.at(-1)).toMatchObject({ target: { tag: "ja" }, source: null });
+  });
+
   it("is off while a translation review is open or a copy runs, and says why; correction's review does not hold it", async () => {
     const registry = await editingMarkdown("docs/guide.md", "correction");
     const run = vi.spyOn(copy, "run").mockResolvedValue();
@@ -652,6 +708,53 @@ describe("translate to a new file", () => {
     expect(registry.ownedBy("translation")).toHaveLength(0);
     expect(copy.running).toBe(false);
     expect(mock.probe.translation.calls).toContain(`cancel ${run ?? ""}`);
+    expect([...mock.probe.project.files.keys()]).toEqual(files);
+  });
+
+  it("switched off while a translation waits for another try at its file: its note goes too, nothing is written", async () => {
+    mock.probe.translation.stepMs = 1e9;
+    await editingMarkdown("docs/guide.md");
+    vi.spyOn(editing, "current").mockReturnValue("A text to translate.\n");
+    const files = [...mock.probe.project.files.keys()];
+    const call = mock.pluginCall.bind(mock);
+    const refused = { on: true, tries: 0 };
+    vi.spyOn(mock, "pluginCall").mockImplementation((method, args) => {
+      if (method === "translation.save") refused.tries += 1;
+      return method === "translation.save" && refused.on
+        ? Promise.resolve({
+            ok: false,
+            error: {
+              kind: "backend",
+              command: "plugin_call",
+              error: { kind: "exists", subject: "guide.de.md", detail: null },
+            },
+          })
+        : call(method, args);
+    });
+    /** The buttons of the notes on screen that offer another try. */
+    const again = () =>
+      windowStore.notices.flatMap((notice) =>
+        notice.kind === "action"
+          ? notice.actions.filter((action) => action.label === "Try again")
+          : [],
+      );
+    await copy.run();
+    const run = mock.probe.translation.runs.at(-1)?.run ?? "";
+    copy.news({
+      run,
+      phase: { kind: "piece", id: 0, result: { kind: "output", text: "Ein Text zum Übersetzen." } },
+    });
+    copy.news({ run, phase: { kind: "done" } });
+    await vi.waitFor(() => expect(again()).toHaveLength(1));
+    expect(windowStore.notices.at(-1)).toMatchObject({ kind: "action", lasting: true });
+    const [button] = again();
+    expect(host?.disable("translation"), "contributions left after deactivate").toBe(0);
+    expect(again()).toEqual([]);
+    // the button of a note that is gone does nothing
+    refused.on = false;
+    button?.run();
+    await Promise.resolve();
+    expect(refused.tries).toBe(1);
     expect([...mock.probe.project.files.keys()]).toEqual(files);
   });
 });

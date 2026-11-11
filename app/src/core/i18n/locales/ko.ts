@@ -2563,4 +2563,5 @@ export default {
   "translation.copy.noFile": "파일을 만들지 않았습니다.",
   "translation.copy.stopped": "번역을 중지했습니다.",
   "translation.copy.notSaved": "번역한 파일을 저장하지 못했습니다.",
+  "translation.copy.open": "열기",
 } satisfies Messages;

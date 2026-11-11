@@ -140,10 +140,10 @@ export type Tally = {
   promptTokens: number;
 };
 
-/** Guard reasons that say an answer broke the Markdown of its piece (markers, symbol counts, a table row, the lines
- *  a marker holds). The first failing check names an answer: one dropped earlier (thinking, an announced answer) is
- *  not counted here. */
-export const STRUCTURE: readonly string[] = ["markers", "symbols", "cell", "lines"];
+/** Guard reasons that say an answer broke the Markdown of its piece (markers, symbol counts, Markdown it does not
+ *  have, a table row, the lines a marker holds). The first failing check names an answer: one dropped earlier
+ *  (thinking, an announced answer) is not counted here. */
+export const STRUCTURE: readonly string[] = ["markers", "symbols", "added", "cell", "lines"];
 /** Target whose translations the report prints in full (read by a person). */
 export const READ = "pt-BR";
 

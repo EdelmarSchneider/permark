@@ -95,6 +95,26 @@ describe("judge: a translation", () => {
     expect(check("Sure, here it is: Abra [o guia]⟦2⟧ agora, depois de ⟦1⟧.")).toBe("preamble");
   });
 
+  it("an answer with Markdown the piece does not have is no translation of it", () => {
+    const doc = "Run `npm install` and then open [the guide](docs/guide.md) now.";
+    const piece = only(doc);
+    const check = (output: string): string => reason(judge(doc, piece, output, TO_PT));
+    expect(check("Abra [o guia](javascript:alert(1))⟦2⟧ agora, depois de executar ⟦1⟧.")).toBe(
+      "added",
+    );
+    expect(check("Abra ![o guia]⟦2⟧ agora, depois de executar ⟦1⟧.")).toBe("added");
+    expect(check("Abra [o guia]⟦2⟧ agora <img src=https://x.y/z>, depois de ⟦1⟧.")).toBe("added");
+    expect(check("Abra [o guia]⟦2⟧ agora, depois de executar ⟦1⟧ e `rm -rf`.")).toBe("added");
+    // the first paragraph of a document turned into its front matter, a paragraph into a heading
+    expect(reason(judge(EN, only(EN), "---\ntitle: O tempo está bom\n---", TO_PT))).toBe("added");
+    expect(reason(judge(EN, only(EN), `# ${PT}`, TO_PT))).toBe("added");
+    // what the piece itself has stays
+    const math = "When a < b the list is sorted -> nothing is done.";
+    expect(
+      insert(judge(math, only(math), "Quando a < b a lista está em ordem -> nada é feito.", TO_PT)),
+    ).toBe("Quando a < b a lista está em ordem -> nada é feito.");
+  });
+
   it("a piece that itself opens like an answer's opening is not held to it, in any language", () => {
     const doc = "Translation: done by hand.";
     expect(insert(judge(doc, only(doc), "Tradução: feita à mão.", TO_PT))).toBe(

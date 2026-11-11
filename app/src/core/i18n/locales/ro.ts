@@ -2754,4 +2754,5 @@ export default {
   "translation.copy.noFile": "Nu a fost creat niciun fișier.",
   "translation.copy.stopped": "Traducere oprită.",
   "translation.copy.notSaved": "Fișierul tradus nu a putut fi salvat.",
+  "translation.copy.open": "Deschide",
 } satisfies Messages & FewForms;

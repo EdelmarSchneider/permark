@@ -68,6 +68,89 @@ describe("structureVerdict", () => {
     expect(reason(check(marked, "Now with care use ⟦1⟧.", free))).toBe("symbols");
   });
 
+  describe("Markdown the piece does not have", () => {
+    const PLAIN = "Open the folder and read the guide now.";
+    const said = (doc: string, output: string): string => reason(check(only(doc), output));
+
+    it("discards an answer that brings in HTML, an autolink, code or a web address", () => {
+      expect(said(PLAIN, "Open the folder <img src=https://x> and read the guide now.")).toBe(
+        "added",
+      );
+      expect(said(PLAIN, "Open the folder <b>and</b> read the guide now.")).toBe("added");
+      expect(said(PLAIN, "Open the folder <https://x> and read the guide now.")).toBe("added");
+      expect(said(PLAIN, "Open the `folder` and read the guide now.")).toBe("added");
+      expect(said(PLAIN, "Open the folder at https://x.y and read it.")).toBe("added");
+      // one side of a tag is enough: the other may come from the text around the piece
+      expect(said(PLAIN, "Open the folder and read the guide now. <!--")).toBe("added");
+      expect(said(PLAIN, "--> Open the folder and read the guide now.")).toBe("added");
+    });
+
+    it("discards an answer that gives a link another destination or makes a picture of it", () => {
+      const doc = "Read [the guide](docs/guide.md) before you start.";
+      const piece = only(doc);
+      expect(piece.text).toBe("Read [the guide]⟦1⟧ before you start.");
+      expect(
+        reason(check(piece, "Read [the guide](javascript:alert(1))⟦1⟧ before you start.")),
+      ).toBe("added");
+      expect(reason(check(piece, "Read ![the guide]⟦1⟧ before you start."))).toBe("added");
+      expect(reason(check(piece, "Read [the guide]⟦1⟧ before you begin."))).toBe("ok");
+      // brackets the piece does not have were refused before this rule
+      expect(said(PLAIN, "Open [x](javascript:alert(1)) and read the guide now.")).toBe("symbols");
+      expect(said(PLAIN, "Open ![alt](u) the folder and read the guide.")).toBe("symbols");
+    });
+
+    it("discards an answer with a line that opens a block: a heading, front matter, a rule, a code fence", () => {
+      expect(said(PLAIN, "# Open the folder and read the guide.")).toBe("added");
+      expect(said(PLAIN, "Open the folder and read\n  ## the guide now.")).toBe("added");
+      expect(said(PLAIN, "---\ntitle: Open the folder and read\n---")).toBe("added");
+      expect(said(PLAIN, "+++\ntitle = 'Open the folder and read'\n+++")).toBe("added");
+      expect(said(PLAIN, "Open the folder and read\n===")).toBe("added");
+      // one char alone on a line is a heading's underline already
+      expect(said(PLAIN, "Open the folder and read the guide\n=")).toBe("added");
+      expect(said(PLAIN, "Open the folder and read the guide\n -- ")).toBe("added");
+      expect(said(PLAIN, "Open the folder and read\n- the guide now.")).toBe("ok");
+      expect(said(PLAIN, "Open the folder and\n~~~\nread the guide now.")).toBe("symbols");
+      const struck = "Open the ~~old~~ folder and read the guide.";
+      expect(said(struck, "Open the folder\n~~~~\nand read the guide now.")).toBe("added");
+    });
+
+    it("keeps what the piece itself has: as many of each, or fewer", () => {
+      const same = (doc: string): string => said(doc, doc);
+      expect(same("When a < b the list is sorted, a -> b says so.")).toBe("ok");
+      expect(same('Press the ">" key and then the "<" key to move.')).toBe("ok");
+      expect(same("C# is fine and so is issue #12 in the list.")).toBe("ok");
+      expect(same("Write e.g. http:// before the name of the site.")).toBe("ok");
+      expect(same("A lone ` is no code and stays where it is.")).toBe("ok");
+      expect(said("When a < b the list is sorted.", "When a is under b it is sorted.")).toBe("ok");
+      // one more than the piece has
+      expect(said("When a < b the list is sorted.", "When a < b the list is <sorted.")).toBe(
+        "added",
+      );
+      // a line of the piece that starts like a block
+      const lines = "The tag\n#todo marks what is left,\n--- so does this.";
+      expect(same(lines)).toBe("ok");
+      expect(said(lines, "The tag\n#todo marks what is left,\n#too --- so does this.")).toBe(
+        "added",
+      );
+    });
+
+    it("does not count what the piece hides behind markers: a quote's `>`, code, tags, addresses", () => {
+      const quote = only("> The weather is nice\n> and the sun shines.\n");
+      expect(quote.markers).toEqual([">"]);
+      expect(check(quote, "The weather is good\n⟦1⟧ and the sun shines.")).toEqual({
+        kind: "ok",
+        restored: "The weather is good\n> and the sun shines.",
+      });
+      // a `>` typed where the marker stood is one the piece does not show
+      expect(reason(check(quote, "The weather is good\n⟦1⟧ > and the sun shines."))).toBe("added");
+      const marked = only(
+        "Run `npm i`, see <https://a.b/c> and <b>this</b> page https://x.y/z now.",
+      );
+      expect(marked.text).toBe("Run ⟦1⟧, see ⟦2⟧ and ⟦3⟧this⟦4⟧ page ⟦5⟧ now.");
+      expect(reason(check(marked, "Run ⟦1⟧, see ⟦2⟧ and ⟦3⟧that⟦4⟧ page ⟦5⟧ now."))).toBe("ok");
+    });
+  });
+
   it("discards dropped | added text by length ratio", () => {
     const doc = "This sentence is complete and has a clear ending.";
     expect(reason(check(only(doc), "This sentence is complete."))).toBe("length");

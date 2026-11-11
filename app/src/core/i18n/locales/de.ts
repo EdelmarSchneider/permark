@@ -2647,4 +2647,5 @@ export default {
   "translation.copy.noFile": "Es wurde keine Datei erstellt.",
   "translation.copy.stopped": "Übersetzung angehalten.",
   "translation.copy.notSaved": "Die übersetzte Datei konnte nicht gespeichert werden.",
+  "translation.copy.open": "Öffnen",
 } satisfies Messages;

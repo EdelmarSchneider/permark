@@ -258,32 +258,33 @@ describe("the language dialog", () => {
 
   it("Esc and Cancel change nothing and give the keyboard back to what opened the dialog", async () => {
     await remembered("de", ["de"]);
-    languages.from("en-US");
     const then = vi.fn();
     open({ then });
     type("Japanese");
     press(field(), "Enter");
     click(tabs()[1] ?? list());
-    click(row("Detect automatically"));
-    expect(tabs().map(said)).toEqual(["To: Japanese", "From: Detect automatically"]);
+    click(row("American English", groups().get("All languages")));
+    expect(tabs().map(said)).toEqual(["To: Japanese", "From: American English"]);
     expect(press(field(), "Escape").defaultPrevented).toBe(true);
     expect(box()).toBeNull();
     expect(document.activeElement).toBe(opener);
-    // a new dialog starts from what the window holds
+    // a new dialog starts from the language chosen last, the source read off the text
     open({ then });
-    expect(tabs().map(said)).toEqual(["To: German", "From: American English"]);
+    expect(tabs().map(said)).toEqual(["To: German", "From: Detect automatically"]);
     click(row("Japanese", groups().get("All languages")));
     click(button("cancel"));
     expect(box()).toBeNull();
     expect(document.activeElement).toBe(opener);
-    expect(languages).toMatchObject({ target: "de", source: "en-US", recent: ["de"] });
+    expect(languages).toMatchObject({ target: "de", source: null, recent: ["de"] });
     expect(mock.probe.translation.prefs).toEqual({ target: "de", recent: ["de"] });
     expect(then).not.toHaveBeenCalled();
   });
 
   it("From: detecting comes first and is the choice until a language is named; the language translated into is off", async () => {
     await remembered("de", ["de", "ja"]);
-    open();
+    /** What a run started by the confirm would be sent. */
+    const started: unknown[] = [];
+    open({ then: () => started.push(languages.runArgs()) });
     press(tabs()[0] ?? list(), "ArrowRight");
     expect(tabs().map((tab) => tab.getAttribute("aria-selected"))).toEqual(["false", "true"]);
     expect(document.activeElement).toBe(tabs()[1]);
@@ -304,25 +305,69 @@ describe("the language dialog", () => {
     expect(nameOf(current() ?? list())).toBe("German");
     press(field(), "Enter");
     expect(said(tabs()[1])).toBe("From: Detect automatically");
-    // a named language holds for the window once confirmed
+    // a named language goes with the run the confirm starts
     type("american english");
     press(field(), "Enter");
     expect(said(tabs()[1])).toBe("From: American English");
     type("");
     expect(options()[0]?.getAttribute("aria-selected")).toBe("false");
     click(button("confirm"));
-    expect(languages).toMatchObject({ target: "de", source: "en-US" });
+    expect(started).toEqual([
+      {
+        target: { tag: "de", name: "German" },
+        source: { tag: "en-US", name: "American English" },
+      },
+    ]);
+  });
+
+  it("a language named to translate from is for the run the confirm starts: after it, and in the next dialog, it is read off the text again", async () => {
+    await remembered("de", ["de"]);
+    const started: unknown[] = [];
+    const then = (): void => void started.push(languages.runArgs());
+    const name = (): void => {
+      click(tabs()[1] ?? list());
+      click(row("American English", groups().get("All languages")));
+      click(button("confirm"));
+    };
+    open({ then });
+    name();
+    expect(started).toMatchObject([{ source: { tag: "en-US" } }]);
+    // a run started without the dialog
+    expect(languages.source).toBeNull();
+    expect(languages.runArgs()).toEqual({ target: { tag: "de", name: "German" }, source: null });
+    // the next dialog detects until a language is named in it; confirmed as it opened, so does its run
+    open({ then });
+    expect(tabs().map(said)).toEqual(["To: German", "From: Detect automatically"]);
+    click(button("confirm"));
+    expect(started[1]).toEqual({ target: { tag: "de", name: "German" }, source: null });
+    // a dialog that only saves the choice starts no run: the language named in it is not kept for a later one
+    open();
+    name();
+    expect(languages).toMatchObject({ target: "de", source: null });
+    // an opener that fails leaves no language named behind either
+    open({
+      then: () => {
+        throw new Error("no run");
+      },
+    });
+    expect(() => dialog.confirm("de", "en-US")).toThrow("no run");
+    expect(languages.source).toBeNull();
   });
 
   it("choosing as the language to translate into the one named as source puts the source back to detecting", async () => {
     await remembered("de", ["de"]);
-    languages.from("en-US");
-    open();
+    const started: unknown[] = [];
+    open({ then: () => started.push(languages.runArgs()) });
+    click(tabs()[1] ?? list());
+    type("american english");
+    press(field(), "Enter");
     expect(tabs().map(said)).toEqual(["To: German", "From: American English"]);
+    click(tabs()[0] ?? list());
     type("american english");
     press(field(), "Enter");
     expect(tabs().map(said)).toEqual(["To: American English", "From: Detect automatically"]);
     click(button("confirm"));
+    expect(started).toEqual([{ target: { tag: "en-US", name: "American English" }, source: null }]);
     expect(languages).toMatchObject({ target: "en-US", source: null });
   });
 

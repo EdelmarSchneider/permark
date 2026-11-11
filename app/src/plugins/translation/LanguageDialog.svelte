@@ -1,8 +1,9 @@
 <script lang="ts">
   // The language dialog: the language a text is translated into (To) and the one it is in (From: read off the text
-  // unless named), each picked from one searchable list. The two picks are a draft: the window's only on the
-  // confirm; Esc | Cancel leave everything as it was. Keys: Up | Down | PageUp | PageDown move through the list
-  // from the field and from the list (there Home | End too), Enter picks the row, Ctrl+Enter confirms.
+  // unless named, for the run the confirm starts alone), each picked from one searchable list. The two picks are a
+  // draft: taken only on the confirm; Esc | Cancel leave everything as it was. Keys: Up | Down | PageUp | PageDown
+  // move through the list from the field and from the list (there Home | End too), Enter picks the row, Ctrl+Enter
+  // confirms.
   import Check from "@lucide/svelte/icons/check";
   import { isComposition } from "../../core/commands/combo";
   import { language, t, tn, type MessageKey } from "../../core/i18n";
@@ -40,8 +41,8 @@
   // one draft per open (the host makes this component anew for every open)
   // svelte-ignore state_referenced_locally
   let target = $state(dialog.languages.target);
-  // svelte-ignore state_referenced_locally
-  let source = $state(dialog.languages.source);
+  /** Named per run: every dialog starts on "detect". */
+  let source = $state<string | null>(null);
   let side = $state<Side>("to");
   let query = $state("");
   /** What the live line says: the count of the list as it last settled. */

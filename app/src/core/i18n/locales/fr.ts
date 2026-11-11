@@ -2674,4 +2674,5 @@ export default {
   "translation.copy.noFile": "Aucun fichier n'a été créé.",
   "translation.copy.stopped": "Traduction arrêtée.",
   "translation.copy.notSaved": "Le fichier traduit n'a pas pu être enregistré.",
+  "translation.copy.open": "Ouvrir",
 } satisfies Messages;

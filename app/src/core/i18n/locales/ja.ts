@@ -2624,4 +2624,5 @@ export default {
   "translation.copy.noFile": "ファイルは作成されませんでした。",
   "translation.copy.stopped": "翻訳を停止しました。",
   "translation.copy.notSaved": "翻訳したファイルを保存できませんでした。",
+  "translation.copy.open": "開く",
 } satisfies Messages;

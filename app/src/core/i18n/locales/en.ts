@@ -2564,6 +2564,7 @@ const en = {
   "translation.copy.noFile": "No file was created.",
   "translation.copy.stopped": "Translation stopped.",
   "translation.copy.notSaved": "The translated file couldn't be saved.",
+  "translation.copy.open": "Open",
 } as const;
 
 export default en;

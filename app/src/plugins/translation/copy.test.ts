@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // A document translated into a new file: the name the file gets, a whole run against the mock backend (what is
-// written, where, what the person is told), the runs that write nothing (stopped, failed, nothing translated) and
-// the status bar item that shows a run with its Cancel.
+// written, where, what the person is told, when the new file opens by itself), the runs that write nothing (stopped,
+// failed, nothing translated), a file that could not be written (the translation kept for "Try again") and the status
+// bar item that shows a run with its Cancel.
 import "../../core/testing/media";
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,7 +11,7 @@ import { MOCK_CRLF_BOM_DOC } from "../../api/mockFs";
 import { mockTranslate } from "../../api/mockTranslation";
 import type { PieceRunPhase } from "../../api/generated/PieceRunPhase";
 import { ui } from "../../core/shell/ui.svelte";
-import type { NoticeAction } from "../../core/window.svelte";
+import type { NoticeAction, NoticeGone } from "../../core/window.svelte";
 import { copyName, TranslationCopy, type CopySession, type CopyWindow } from "./copy.svelte";
 import CopyStatus from "./CopyStatus.svelte";
 import { Languages } from "./store.svelte";
@@ -50,25 +51,53 @@ describe("the name of a translated copy", () => {
   });
 });
 
-/** What the window was asked: documents opened, quiet notes, lines that stay (with their buttons); `folder`: the
- *  workspace it shows. */
+type Stay = { text: string; actions: NoticeAction[] };
+
+/** What the window was asked: documents opened, quiet notes, lines that stay (with their buttons) until they go;
+ *  `folder`: the workspace it shows, `showing`: the document. */
 type Asked = CopyWindow & {
   folder: number | null;
+  showing: string | null;
   opened: string[];
   notes: string[];
-  stays: { text: string; actions: NoticeAction[] }[];
+  stays: Stay[];
+  /** The newest line that stays goes (`how`), as the window lets one go: whoever showed it hears how. */
+  went(how: NoticeGone): void;
+  /** The person presses the button `label` of the newest line that stays: the line goes, then the button runs. */
+  press(label: string): void;
 };
 
 function windowProbe(): Asked {
+  const hears = new Map<Stay, (how: NoticeGone) => void>();
+  const leave = (stay: Stay | undefined, how: NoticeGone): void => {
+    if (stay === undefined || !asked.stays.includes(stay)) return;
+    asked.stays = asked.stays.filter((other) => other !== stay);
+    hears.get(stay)?.(how);
+  };
   const asked: Asked = {
     folder: 7,
+    showing: GUIDE,
     opened: [],
     notes: [],
     stays: [],
     workspace: () => asked.folder,
+    shown: () => asked.showing,
     open: (path) => asked.opened.push(path),
     note: (text) => asked.notes.push(text),
-    lasting: (text, ...actions) => asked.stays.push({ text, actions }),
+    lasting: (text, actions = [], gone) => {
+      const stay: Stay = { text, actions: [...actions] };
+      asked.stays.push(stay);
+      if (gone !== undefined) hears.set(stay, gone);
+      return () => leave(stay, "dismissed");
+    },
+    went: (how) => leave(asked.stays.at(-1), how),
+    press: (label) => {
+      const stay = asked.stays.at(-1);
+      const action = stay?.actions.find((button) => button.label === label);
+      if (action === undefined) throw new Error(`no button ${label}`);
+      leave(stay, "action");
+      action.run();
+    },
   };
   return asked;
 }
@@ -112,7 +141,7 @@ const THREE = "First paragraph here.\n\nSecond paragraph here.\n\nThird paragrap
 const german = (text: string): string => mockTranslate(text, "de");
 
 let mock: ReturnType<typeof createMockApi>;
-let session: { path: string | null; text: string } & CopySession;
+let session: { path: string | null; text: string; unsaved: boolean } & CopySession;
 let asked: Asked;
 let languages: Languages;
 let copy: TranslationCopy;
@@ -121,7 +150,7 @@ let stop: () => void;
 beforeEach(async () => {
   mock = createMockApi();
   mock.probe.translation.stepMs = 1e9;
-  session = { path: GUIDE, text: DOC, current: () => session.text };
+  session = { path: GUIDE, text: DOC, unsaved: false, current: () => session.text };
   asked = windowProbe();
   languages = new Languages(mock);
   await languages.choose("de");
@@ -155,6 +184,18 @@ function answer(id: number, text: string): void {
 async function finished(): Promise<void> {
   news({ kind: "done" });
   await vi.waitFor(() => expect(copy.running).toBe(false));
+}
+
+/** `THREE` with its first part in German. */
+const THREE_DE = "Erster Absatz hier.\n\nSecond paragraph here.\n\nThird paragraph here.\n";
+
+/** The run of a copy of `THREE` answered to its end: the first part translated, the others already in German (a
+ *  part answered before keeps that answer). */
+async function translatedThree(): Promise<void> {
+  answer(0, "Erster Absatz hier.");
+  answer(1, "Second paragraph here.");
+  answer(2, "Third paragraph here.");
+  await finished();
 }
 
 describe("a document translated into a new file", () => {
@@ -285,6 +326,7 @@ describe("a document translated into a new file", () => {
 
   it("replaces the language the original's name carries", async () => {
     session.path = "docs/guide.en.md";
+    asked.showing = "docs/guide.en.md";
     session.text = THREE;
     await copy.run();
     answer(0, "Erster Absatz hier.");
@@ -308,6 +350,7 @@ describe("a document translated into a new file", () => {
     await copy.run();
     session.path = "notes/ideas.md";
     session.text = "Another document.\n";
+    asked.showing = "notes/ideas.md";
     answer(0, "Erster Absatz hier.");
     await finished();
     expect(files().get("docs/guide.de.md")).toBe(
@@ -331,6 +374,243 @@ describe("a document translated into a new file", () => {
     answer(1, "Zweiter Absatz hier.");
     answer(2, "Dritter Absatz hier.");
     expect(copy.state).toMatchObject({ status: { kind: "checking", part: 3, parts: 3 } });
+  });
+});
+
+describe("the new file when the run is done", () => {
+  const DONE = "Translated to German: guide.de.md.";
+
+  /** A copy of `THREE` run to its end, its file written. */
+  async function translated(): Promise<void> {
+    await translatedThree();
+    expect(files().get("docs/guide.de.md")).toBe(THREE_DE);
+  }
+
+  it("opens by itself while the person still looks at the original, with nothing unsaved in it", async () => {
+    session.text = THREE;
+    await copy.run();
+    await translated();
+    expect(asked.opened).toEqual(["docs/guide.de.md"]);
+    expect(asked.notes).toEqual([DONE]);
+    expect(asked.stays).toEqual([]);
+  });
+
+  it("the person went to another document meanwhile: it is not opened under them, a note that stays offers it", async () => {
+    session.text = THREE;
+    await copy.run();
+    session.path = "notes/ideas.md";
+    asked.showing = "notes/ideas.md";
+    await translated();
+    expect(asked.opened).toEqual([]);
+    expect(asked.notes).toEqual([]);
+    expect(asked.stays.map((stay) => stay.text)).toEqual([DONE]);
+    expect(asked.stays[0]?.actions.map((action) => action.label)).toEqual(["Open"]);
+    asked.press("Open");
+    expect(asked.opened).toEqual(["docs/guide.de.md"]);
+    expect(asked.stays).toEqual([]);
+  });
+
+  it("the original has unsaved edits: it is not opened (leaving would ask to save or discard), the note offers it", async () => {
+    session.text = THREE;
+    await copy.run();
+    session.unsaved = true;
+    await translated();
+    expect(asked.opened).toEqual([]);
+    expect(asked.notes).toEqual([]);
+    expect(asked.stays.map((stay) => stay.text)).toEqual([DONE]);
+    asked.press("Open");
+    expect(asked.opened).toEqual(["docs/guide.de.md"]);
+  });
+
+  it("no document on screen by then (the original was closed): not opened either", async () => {
+    session.text = THREE;
+    await copy.run();
+    session.path = null;
+    asked.showing = null;
+    await translated();
+    expect(asked.opened).toEqual([]);
+    expect(asked.stays[0]?.actions.map((action) => action.label)).toEqual(["Open"]);
+  });
+
+  it("not opened, with parts left in the original language: one note that stays says both and offers the file", async () => {
+    session.text = THREE;
+    await copy.run();
+    asked.showing = "notes/ideas.md";
+    news({ kind: "piece", id: 1, result: { kind: "discarded", reason: "tooLong" } });
+    await translated();
+    expect(asked.opened).toEqual([]);
+    expect(asked.stays.map((stay) => stay.text)).toEqual([
+      `${DONE} 1 part couldn't be translated and stays in the original language.`,
+    ]);
+    expect(asked.stays[0]?.actions.map((action) => action.label)).toEqual(["Open"]);
+  });
+
+  it("its Open does nothing once the window shows another folder: the file is not looked for there", async () => {
+    session.text = THREE;
+    await copy.run();
+    asked.showing = "notes/ideas.md";
+    await translated();
+    asked.folder = 8;
+    asked.press("Open");
+    expect(asked.opened).toEqual([]);
+  });
+});
+
+describe("a translated file that cannot be written", () => {
+  const NOT_SAVED = /^The translated file couldn't be saved\. \S/;
+
+  /** The backend refuses to write the file while `on`; `tries`: what each try asked it to write. */
+  function refusedSaves(): { on: boolean; tries: unknown[] } {
+    const call = mock.pluginCall.bind(mock);
+    const refused: { on: boolean; tries: unknown[] } = { on: true, tries: [] };
+    vi.spyOn(mock, "pluginCall").mockImplementation((method, args) => {
+      if (method === "translation.save") refused.tries.push(args);
+      return method === "translation.save" && refused.on
+        ? Promise.resolve({
+            ok: false,
+            error: {
+              kind: "backend",
+              command: "plugin_call",
+              error: { kind: "exists", subject: "guide.de.md", detail: null },
+            },
+          })
+        : call(method, args);
+    });
+    return refused;
+  }
+
+  /** A copy of `THREE` run to its end against a backend that refuses the file. */
+  async function refusedCopy(): Promise<{ on: boolean; tries: unknown[] }> {
+    const refused = refusedSaves();
+    session.text = THREE;
+    await copy.run();
+    await translatedThree();
+    return refused;
+  }
+
+  const SAVE = { beside: GUIDE, name: "guide.de.md", text: THREE_DE };
+
+  it("is said in a note that stays, with why and a way to try again; nothing opens", async () => {
+    const refused = await refusedCopy();
+    expect(refused.tries).toEqual([SAVE]);
+    expect(germanFiles()).toEqual([]);
+    expect(asked.opened).toEqual([]);
+    expect(asked.notes).toEqual([]);
+    expect(asked.stays).toHaveLength(1);
+    expect(asked.stays[0]?.text).toMatch(NOT_SAVED);
+    expect(asked.stays[0]?.actions.map((action) => action.label)).toEqual(["Try again"]);
+    expect(copy.state.kind).toBe("idle");
+  });
+
+  it("Try again writes the same text under the same name; written: the same end as a run that saved at once", async () => {
+    const refused = await refusedCopy();
+    refused.on = false;
+    asked.press("Try again");
+    await vi.waitFor(() => expect(asked.opened).toEqual(["docs/guide.de.md"]));
+    expect(refused.tries).toEqual([SAVE, SAVE]);
+    expect(files().get("docs/guide.de.md")).toBe(THREE_DE);
+    expect(asked.notes).toEqual(["Translated to German: guide.de.md."]);
+    expect(asked.stays).toEqual([]);
+  });
+
+  it("refused again: said again, and the translation is still there for another try", async () => {
+    const refused = await refusedCopy();
+    asked.press("Try again");
+    await vi.waitFor(() => expect(asked.stays).toHaveLength(1));
+    expect(refused.tries).toEqual([SAVE, SAVE]);
+    expect(asked.stays[0]?.text).toMatch(NOT_SAVED);
+    refused.on = false;
+    // the person looks at another document by now: written, offered, not opened
+    asked.showing = "notes/ideas.md";
+    asked.press("Try again");
+    await vi.waitFor(() =>
+      expect(asked.stays.map((stay) => stay.text)).toEqual(["Translated to German: guide.de.md."]),
+    );
+    expect(refused.tries).toEqual([SAVE, SAVE, SAVE]);
+    expect(files().get("docs/guide.de.md")).toBe(THREE_DE);
+    expect(asked.opened).toEqual([]);
+    expect(asked.stays[0]?.actions.map((action) => action.label)).toEqual(["Open"]);
+  });
+
+  it("one press, one try: a second run of the button while the file is being written asks for nothing", async () => {
+    const refused = await refusedCopy();
+    refused.on = false;
+    const [again] = asked.stays[0]?.actions ?? [];
+    again?.run();
+    again?.run();
+    await vi.waitFor(() => expect(asked.opened).toEqual(["docs/guide.de.md"]));
+    expect(refused.tries).toEqual([SAVE, SAVE]);
+    expect(germanFiles()).toEqual(["docs/guide.de.md"]);
+  });
+
+  it("the parts left in the original language are still told after a try that wrote the file", async () => {
+    const refused = refusedSaves();
+    session.text = THREE;
+    await copy.run();
+    news({ kind: "piece", id: 1, result: { kind: "discarded", reason: "tooLong" } });
+    await translatedThree();
+    refused.on = false;
+    asked.press("Try again");
+    await vi.waitFor(() => expect(asked.opened).toEqual(["docs/guide.de.md"]));
+    expect(asked.stays).toEqual([
+      {
+        text: "Translated to German: guide.de.md. 1 part couldn't be translated and stays in the original language.",
+        actions: [],
+      },
+    ]);
+  });
+
+  it.each(["dismissed", "pushedOut"] as const)(
+    "its note gone (%s): the translation is let go, nothing is written later",
+    async (how) => {
+      const refused = await refusedCopy();
+      const [again] = asked.stays[0]?.actions ?? [];
+      asked.went(how);
+      refused.on = false;
+      again?.run();
+      await Promise.resolve();
+      expect(refused.tries).toEqual([SAVE]);
+      expect(germanFiles()).toEqual([]);
+      expect(asked.stays).toEqual([]);
+    },
+  );
+
+  it("a new copy starts: the translation kept is let go and its note taken away", async () => {
+    const refused = await refusedCopy();
+    const [again] = asked.stays[0]?.actions ?? [];
+    refused.on = false;
+    await copy.run();
+    expect(copy.running).toBe(true);
+    expect(asked.stays).toEqual([]);
+    again?.run();
+    await Promise.resolve();
+    expect(refused.tries).toEqual([SAVE]);
+    expect(germanFiles()).toEqual([]);
+  });
+
+  it("the plugin goes off: the translation kept is let go and its note taken away", async () => {
+    const refused = await refusedCopy();
+    const [again] = asked.stays[0]?.actions ?? [];
+    refused.on = false;
+    stop();
+    expect(asked.stays).toEqual([]);
+    again?.run();
+    await Promise.resolve();
+    expect(refused.tries).toEqual([SAVE]);
+    expect(germanFiles()).toEqual([]);
+  });
+
+  it("Try again once the window shows another folder: nothing is written there, and it is said", async () => {
+    const refused = await refusedCopy();
+    refused.on = false;
+    asked.folder = 8;
+    asked.press("Try again");
+    await Promise.resolve();
+    expect(refused.tries).toEqual([SAVE]);
+    expect(germanFiles()).toEqual([]);
+    expect(asked.stays).toEqual([
+      { text: "Translation stopped. No file was created.", actions: [] },
+    ]);
   });
 });
 
@@ -451,27 +731,34 @@ describe("a copy that writes nothing", () => {
     expect(asked.stays[0]?.text).toContain("Choose one on the Local AI page.");
   });
 
-  it("a file that cannot be written: said, nothing opens", async () => {
+  it("the window shows another folder while the original's line ending is read: nothing is written there", async () => {
     session.text = THREE;
+    const read = mock.editSource.bind(mock);
+    let answerRead = (): void => {};
+    const asking = new Promise<void>((resolve) => {
+      answerRead = resolve;
+    });
+    vi.spyOn(mock, "editSource").mockImplementation(async (path) => {
+      await asking;
+      return read(path);
+    });
+    const calls = vi.spyOn(mock, "pluginCall");
     await copy.run();
     answer(0, "Erster Absatz hier.");
-    const call = mock.pluginCall.bind(mock);
-    vi.spyOn(mock, "pluginCall").mockImplementation((method, args) =>
-      method === "translation.save"
-        ? Promise.resolve({
-            ok: false,
-            error: {
-              kind: "backend",
-              command: "plugin_call",
-              error: { kind: "exists", subject: "guide.de.md", detail: null },
-            },
-          })
-        : call(method, args),
-    );
-    await finished();
+    news({ kind: "done" });
+    await Promise.resolve();
+    // the run is over, the file not written yet
+    expect(copy.running).toBe(true);
+    asked.folder = 8;
+    answerRead();
+    await vi.waitFor(() => expect(copy.running).toBe(false));
+    expect(calls.mock.calls.filter(([method]) => method === "translation.save")).toEqual([]);
+    expect(germanFiles()).toEqual([]);
     expect(asked.opened).toEqual([]);
-    expect(asked.stays).toHaveLength(1);
-    expect(asked.stays[0]?.text).toMatch(/^The translated file couldn't be saved\. \S/);
+    expect(asked.notes).toEqual([]);
+    expect(asked.stays).toEqual([
+      { text: "Translation stopped. No file was created.", actions: [] },
+    ]);
   });
 
   it("a document with no text to translate: no run, and a note", async () => {

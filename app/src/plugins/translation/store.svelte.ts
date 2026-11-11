@@ -3,7 +3,8 @@
 // Every prose piece of the scope goes to `translation.run` as `local-ai/pieces/segment.ts` cuts it, with the target
 // language (and the source when the person named it); each answer -> markers back + guards (`guards.ts`) -> one
 // suggestion for the whole piece. Languages: the target chosen last and the recent ones are the backend's
-// (`translation.prefs` | `setPrefs`); the source is this window's, until changed. No run starts without a target.
+// (`translation.prefs` | `setPrefs`); the source is named per run (the language dialog names it for the run its
+// confirm starts, `dialog.svelte.ts`), every other run reads it off the text. No run starts without a target.
 
 import { api as defaultApi, type Api, type PluginMethods } from "../../api";
 import type { TranslationLanguage } from "../../api/generated/TranslationLanguage";
@@ -26,7 +27,8 @@ function named(tag: string | null): TranslationLanguage | null {
 export class Languages {
   /** Tag of the language translated into (`null`: none chosen yet -> the person is asked before a first run). */
   target = $state<string | null>(null);
-  /** Tag of the language translated from (`null`: the model reads it off the text). Never the target. */
+  /** Tag of the language a run starting now translates from (`null`: the model reads it off the text). Never the
+   *  target. Named for one run: whoever names it takes it back once that run has started. */
   source = $state<string | null>(null);
   /** Targets chosen before, newest first. */
   recent = $state.raw<readonly string[]>([]);
@@ -59,7 +61,8 @@ export class Languages {
     if (answer.ok && call === this.#calls) this.#take(answer.value);
   }
 
-  /** Names the language the text is in (`null`, or the target itself: the model reads it off the text). */
+  /** Names the language the text of the run started next is in (`null`, or the target itself: the model reads it
+   *  off the text). */
   from(tag: string | null): void {
     if (tag !== null && englishName(tag) === null) return;
     this.source = tag;

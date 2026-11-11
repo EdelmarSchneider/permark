@@ -2641,4 +2641,5 @@ export default {
   "translation.copy.noFile": "No s'ha creat cap fitxer.",
   "translation.copy.stopped": "S'ha aturat la traducció.",
   "translation.copy.notSaved": "No s'ha pogut desar el fitxer traduït.",
+  "translation.copy.open": "Obre",
 } satisfies Messages;

@@ -2,15 +2,21 @@
 // included) goes to `translation.run` piece by piece, cut as the review cuts it (`local-ai/pieces/segment.ts`), under
 // a run id of its own; each answer is held to the review's checks (`guards.ts judge`). Nothing is shown for review
 // and nothing in the editor changes: when the run is done the translated parts are put into a copy of the text in
-// memory (every other byte as it was), written ONCE as a new file (`translation.save`: never over a file, a taken
-// name gets a number; the line ending of the original), and that file opens. Parts with no usable answer stay in the
-// original language, counted for the person; nothing translated at all -> no file. Stopped | failed | the plugin off
-// -> the run is stopped and nothing is written. Once started it needs the editor no more: the person may edit on,
-// change mode or document. Not the workspace: the backend writes into the one the window shows, so a window that
-// shows another one by then stops the copy instead of writing there. The plugin's backend takes one run at a time:
-// the entries (`index.ts`) keep this run and the review's apart.
+// memory (every other byte as it was) and written ONCE as a new file (`translation.save`: never over a file, a taken
+// name gets a number; the line ending of the original). Parts with no usable answer stay in the original language,
+// counted for the person; nothing translated at all -> no file. Stopped | failed | the plugin off -> the run is
+// stopped and nothing is written. Once started it needs the editor no more: the person may edit on, change mode or
+// document. Not the workspace: the backend writes into the one the window shows, so a window that shows another one
+// by then (asked again right before the file is written) stops the copy instead of writing there.
+// The new file opens by itself only while the person still looks at the original with nothing unsaved in it: opening
+// leaves the document on screen, which asks about unsaved edits and takes the editor from under someone working in
+// another document. Else a note that stays names the file and offers to open it.
+// A file that could not be written: the finished translation is kept in memory and a note that stays offers to try
+// again (the same text, the same name); it is let go when that note goes without its button, a new copy starts or
+// the plugin goes off.
+// The plugin's backend takes one run at a time: the entries (`index.ts`) keep this run and the review's apart.
 
-import { api as defaultApi, type Api } from "../../api";
+import { api as defaultApi, type Api, type PluginMethods, type Result } from "../../api";
 import type { PieceRun } from "../../api/generated/PieceRun";
 import type { PieceRunResult } from "../../api/generated/PieceRunResult";
 import { documents } from "../../core/doc/document.svelte";
@@ -19,7 +25,7 @@ import { apiErrorText } from "../../core/errors";
 import { nameOf, stemLength } from "../../core/explorer/list";
 import { language, t, tn } from "../../core/i18n";
 import { ui } from "../../core/shell/ui.svelte";
-import { windowStore, type NoticeAction } from "../../core/window.svelte";
+import { windowStore, type NoticeAction, type NoticeGone } from "../../core/window.svelte";
 import {
   PieceRunLink,
   type RunEnd,
@@ -60,27 +66,38 @@ export function copyName(name: string, tag: string): string {
   return `${base}.${tag}${name.slice(cut)}`;
 }
 
-/** What the copy needs of the editing session: the document being edited and its text now. */
-export type CopySession = Pick<EditingSession, "path" | "current">;
+/** What the copy needs of the editing session: the document being edited, its text now and whether it holds edits
+ *  not on disk. */
+export type CopySession = Pick<EditingSession, "path" | "current" | "unsaved">;
 
 /** What the copy asks of the window. */
 export type CopyWindow = {
   /** The workspace it shows (`null`: none): a file is written into the one shown when it is written. */
   workspace(): number | null;
+  /** The document it shows (`null`: none). */
+  shown(): string | null;
   /** Opens a document. */
   open(path: string): void;
   /** A quiet line that goes by itself. */
   note(text: string): void;
-  /** A line (with buttons) that stays until the person dismisses it: the end of a run they may not be watching. */
-  lasting(text: string, ...actions: NoticeAction[]): void;
+  /** A line (with buttons) that stays until the person dismisses it: the end of a run they may not be watching.
+   *  `gone` hears how it went; the returned function takes it away. */
+  lasting(
+    text: string,
+    actions?: readonly NoticeAction[],
+    gone?: (how: NoticeGone) => void,
+  ): () => void;
 };
 
 const WINDOW: CopyWindow = {
   workspace: () => documents.workspaceId,
+  shown: () => documents.path,
   open: (path) => documents.navigate(path, null),
   note: (text) => void windowStore.notifyNote(text),
-  lasting: (text, ...actions) =>
-    void windowStore.notifyLasting({ text, actions, onGone: () => {} }),
+  lasting: (text, actions = [], onGone = () => {}) => {
+    const id = windowStore.notifyLasting({ text, actions, onGone });
+    return () => windowStore.dismiss(id);
+  },
 };
 
 export type CopyState =
@@ -115,6 +132,34 @@ type Job = {
   crlf: Promise<boolean>;
 };
 
+/** A translated document as it is written. */
+type Finished = {
+  /** The workspace the original is in: the file is written, and opens, only while the window shows it. */
+  workspace: number | null;
+  /** The document translated: the new file goes beside it. */
+  path: string;
+  /** The name asked for the new file (a taken one gets a number). */
+  name: string;
+  /** Its whole text, with the line ending of the original. */
+  text: string;
+  /** Tag of the language translated into. */
+  target: string;
+  /** Parts left in the original language. */
+  failed: number;
+};
+
+/** What the backend answers when asked to write the file: the path it got. */
+type Saved = Result<PluginMethods["translation.save"]["result"]>;
+
+/** A translation whose file could not be written, kept for "Try again". */
+type Kept = {
+  copy: Finished;
+  /** It is being written again: a second try waits for none. */
+  saving: boolean;
+  /** Takes away the note that offers the try. */
+  unsay: () => void;
+};
+
 const IDLE: CopyState = { kind: "idle" };
 
 export class TranslationCopy {
@@ -128,6 +173,8 @@ export class TranslationCopy {
   readonly #runs: PieceRunLink;
   /** The copy being made (`null`: none). */
   #job: Job | null = null;
+  /** The translation whose file could not be written (`null`: none). */
+  #kept: Kept | null = null;
 
   constructor(
     languages: Languages = translation.languages,
@@ -151,14 +198,15 @@ export class TranslationCopy {
     return this.state.kind === "running";
   }
 
-  /** Hears the run news until the returned teardown runs; the teardown stops a copy on its way: nothing is written,
-   *  nothing said. */
+  /** Hears the run news until the returned teardown runs; the teardown stops a copy on its way and lets go of a
+   *  translation kept for another try: nothing is written, nothing said. */
   listen(): () => void {
     const stopNews = this.#runs.listen();
     return () => {
       stopNews();
       this.#runs.stop();
       this.#clear();
+      this.#forget();
     };
   }
 
@@ -175,6 +223,8 @@ export class TranslationCopy {
       this.#window.note(t("translation.nothing"));
       return;
     }
+    // one translation at a time: the one kept for another try gives way
+    this.#forget();
     this.#job = {
       workspace: this.#window.workspace(),
       path,
@@ -275,10 +325,12 @@ export class TranslationCopy {
         this.#clear();
         this.#window.lasting(
           `${t("translation.failed")} ${runErrorText(status.error, "translation.failed.noModel")}`,
-          {
-            label: t("translation.openSettings"),
-            run: () => ui.openSettingsPage(LOCAL_AI_PAGE, "content"),
-          },
+          [
+            {
+              label: t("translation.openSettings"),
+              run: () => ui.openSettingsPage(LOCAL_AI_PAGE, "content"),
+            },
+          ],
         );
         return;
       default:
@@ -286,41 +338,116 @@ export class TranslationCopy {
     }
   }
 
-  /** The run is done: the translated text is written as the new file, which opens; no part translated: no file. */
+  /** The run is done: the translated text is written as the new file; no part translated: no file. */
   async #finish(job: Job): Promise<void> {
-    const into = namesIn(language.locale, "sentence")(job.sent.target.tag);
+    const target = job.sent.target.tag;
     // a part the run never answered is no translation either
     const failed = job.failed + job.waiting.size;
     if (job.translated.length === 0) {
       this.#clear();
+      const into = namesIn(language.locale, "sentence")(target);
       const why =
         failed > 0 ? t("translation.failed") : t("translation.copy.same", { language: into });
       this.#window.lasting(`${why} ${t("translation.copy.noFile")}`);
       return;
     }
     const crlf = await job.crlf;
-    // let go meanwhile (the plugin went off)
-    if (this.#job !== job) return;
+    // let go meanwhile (the plugin went off), or the window shows another workspace by now: the file is written
+    // into the one shown when the backend is asked, so this is asked last, with nothing to wait for after it
+    if (this.#job !== job || this.#strayed(job)) return;
     let text = job.text;
     // back to front: a range put in never moves the ones before it
     for (const { from, to, insert } of [...job.translated].sort((a, b) => b.from - a.from))
       text = text.slice(0, from) + insert + text.slice(to);
-    const saved = await this.#api.pluginCall("translation.save", {
-      beside: job.path,
-      name: copyName(nameOf(job.path), job.sent.target.tag),
+    const copy: Finished = {
+      workspace: job.workspace,
+      path: job.path,
+      name: copyName(nameOf(job.path), target),
       text: crlf ? text.replace(/\n/g, "\r\n") : text,
-    });
+      target,
+      failed,
+    };
+    const saved = await this.#save(copy);
     if (this.#job !== job) return;
     this.#clear();
+    this.#wrote(copy, saved);
+  }
+
+  #save(copy: Finished): Promise<Saved> {
+    return this.#api.pluginCall("translation.save", {
+      beside: copy.path,
+      name: copy.name,
+      text: copy.text,
+    });
+  }
+
+  /** The backend answered for the file of `copy`. Written: the person is told, and the file opens by itself only
+   *  while they still look at the original with nothing unsaved in it (else the note offers it). Not written: the
+   *  translation is kept and a note offers to try again. */
+  #wrote(copy: Finished, saved: Saved): void {
     if (!saved.ok) {
-      this.#window.lasting(`${t("translation.copy.notSaved")} ${apiErrorText(saved.error)}`);
+      const kept: Kept = {
+        copy,
+        saving: false,
+        unsay: this.#window.lasting(
+          `${t("translation.copy.notSaved")} ${apiErrorText(saved.error)}`,
+          [{ label: t("translation.retry"), run: () => void this.#retry(kept) }],
+          // gone without its button (dismissed, pushed out by newer notes): no way left to try again
+          (how) => {
+            if (how !== "action" && this.#kept === kept) this.#kept = null;
+          },
+        ),
+      };
+      this.#kept = kept;
       return;
     }
-    this.#window.open(saved.value.path);
+    const path = saved.value.path;
     // the name the file got: a taken one was not written over
-    const done = t("translation.copy.done", { language: into, name: nameOf(saved.value.path) });
-    if (failed > 0) this.#window.lasting(`${done} ${tn("translation.copy.failedParts", failed)}`);
-    else this.#window.note(done);
+    const done = t("translation.copy.done", {
+      language: namesIn(language.locale, "sentence")(copy.target),
+      name: nameOf(path),
+    });
+    const said =
+      copy.failed > 0 ? `${done} ${tn("translation.copy.failedParts", copy.failed)}` : done;
+    if (this.#window.shown() === copy.path && !this.#session.unsaved) {
+      this.#window.open(path);
+      if (copy.failed > 0) this.#window.lasting(said);
+      else this.#window.note(said);
+      return;
+    }
+    this.#window.lasting(said, [
+      {
+        label: t("translation.copy.open"),
+        // the path is one of the workspace the copy was made in
+        run: () => {
+          if (this.#window.workspace() === copy.workspace) this.#window.open(path);
+        },
+      },
+    ]);
+  }
+
+  /** "Try again": the kept translation is written once more, as it is. Nothing when it was let go since (its note
+   *  gone, a new copy, the plugin off) or is being written already; a window that shows another workspace by now
+   *  gets no file. */
+  async #retry(kept: Kept): Promise<void> {
+    if (this.#kept !== kept || kept.saving) return;
+    if (this.#window.workspace() !== kept.copy.workspace) {
+      this.#kept = null;
+      this.#window.lasting(stoppedText());
+      return;
+    }
+    kept.saving = true;
+    const saved = await this.#save(kept.copy);
+    if (this.#kept !== kept) return;
+    this.#kept = null;
+    this.#wrote(kept.copy, saved);
+  }
+
+  /** Lets go of the translation kept for another try, and of the note that offers it. */
+  #forget(): void {
+    const kept = this.#kept;
+    this.#kept = null;
+    kept?.unsay();
   }
 
   /** The file of `path` ends its lines with CR LF (a file that cannot be read, or mixes its line endings: no). */

@@ -1,7 +1,8 @@
 // Checks any model output for one piece must pass before a plugin reads it as an answer: an output that leaks
-// thinking, opens with a preamble, breaks the markers | Markdown symbols | the table row of a cell or changes length
-// (dropped | added text) beyond the plugin's range is discarded whole. What the answer may change beyond that is the
-// plugin's own guard; the count of a text's letters by script (`letterShare`) is here for those.
+// thinking, opens with a preamble, breaks the markers | Markdown symbols | the table row of a cell, brings in Markdown
+// the piece does not have (HTML, code, a link's destination, a web address, a line that opens a block) or changes
+// length (dropped | added text) beyond the plugin's range is discarded whole. What the answer may change beyond that
+// is the plugin's own guard; the count of a text's letters by script (`letterShare`) is here for those.
 
 import { restore, unmarked, type MarkerOrder, type Piece } from "./segment";
 
@@ -10,6 +11,22 @@ export const LENGTH_MIN_CHARS = 20;
 
 const THINKING = "<|channel";
 const SYMBOLS = ["*", "_", "[", "]", "~"];
+/** What makes more than words of the text beside it: HTML | an autolink (`<`, `>`), code, a picture, the destination
+ *  of a link, a web address. A piece shows its own behind markers (`segment.ts`), so one in its text is a plain
+ *  char ("a < b"), and an answer may hold as many of each, never more. */
+const ACTIVE = ["<", ">", "`", "![", "](", "://"];
+/** A line that opens a block by how it starts (spaces before it at most): a heading, a rule | a heading's underline |
+ *  a front matter fence (three of the char and more; an underline is one char alone on its line already), a code
+ *  fence. Held like `ACTIVE`: no more such lines than the piece has. */
+const BLOCK_OPENINGS = [
+  /^[ \t]*#/gm,
+  /^[ \t]*---/gm,
+  /^[ \t]*===/gm,
+  /^[ \t]*[-=]{1,2}[ \t]*$/gm,
+  /^[ \t]*\+\+\+/gm,
+  /^[ \t]*```/gm,
+  /^[ \t]*~~~/gm,
+];
 const LETTER = /\p{L}/u;
 
 export type StructureLimits = {
@@ -22,7 +39,8 @@ export type StructureLimits = {
   markers?: MarkerOrder;
 };
 
-export type StructureDiscard = "thinking" | "preamble" | "markers" | "symbols" | "cell" | "length";
+export type StructureDiscard =
+  "thinking" | "preamble" | "markers" | "symbols" | "added" | "cell" | "length";
 
 export type Structure =
   /** `restored`: the output with the markers back as original bytes. */
@@ -37,6 +55,8 @@ export function structureVerdict(piece: Piece, output: string, limits: Structure
   const restored = restore(output, piece, limits.markers);
   if (restored === null) return discard("markers");
   if (SYMBOLS.some((s) => count(piece.text, s) !== count(output, s))) return discard("symbols");
+  // both with their markers in: what a marker stands for (a quote's `>`, a tag, a code span) is not counted
+  if (adds(piece.text, output)) return discard("added");
   if (piece.kind === "cell" && breaksRow(restored.trim())) return discard("cell");
   const before = unmarked(piece.text);
   const after = unmarked(output);
@@ -76,6 +96,15 @@ function breaksRow(text: string): boolean {
     escaped = !escaped && ch === "\\";
   }
   return escaped;
+}
+
+// `output` holds more of an active Markdown token, or more lines that open a block of one kind, than `text`
+function adds(text: string, output: string): boolean {
+  const lines = (of: string, opening: RegExp): number => of.match(opening)?.length ?? 0;
+  return (
+    ACTIVE.some((token) => count(output, token) > count(text, token)) ||
+    BLOCK_OPENINGS.some((opening) => lines(output, opening) > lines(text, opening))
+  );
 }
 
 function count(text: string, symbol: string): number {

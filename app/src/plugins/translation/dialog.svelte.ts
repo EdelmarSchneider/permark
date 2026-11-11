@@ -1,7 +1,9 @@
-// The language dialog of a window. Who asked for it and what follows its confirm: one dialog at a time; the two
-// languages picked in it are the window's only once confirmed (`Languages.choose` | `from`), a closed dialog changes
-// nothing. What it lists: every language offered, by name in the app's language, the recently used ones first; while
-// the person types, only the languages whose name here, own name, English name or tag match, best match first.
+// The language dialog of a window. Who asked for it and what follows its confirm: one dialog at a time; a closed
+// dialog changes nothing. Of the two languages picked in it the one translated into is the window's from the confirm
+// on (`Languages.choose`); the one translated from is named for the run the confirm starts and for no other
+// (`Languages.from`, taken back once the opener ran): every dialog opens on "detect". What it lists: every language
+// offered, by name in the app's language, the recently used ones first; while the person types, only the languages
+// whose name here, own name, English name or tag match, best match first.
 
 import { language, type MessageKey } from "../../core/i18n";
 import { fuzzyMatch } from "../../core/search/fuzzy";
@@ -18,7 +20,8 @@ export type LanguageAsk = {
   confirm?: MessageKey;
   /** Shown above the buttons ("Creates readme.de.md next to this file"). */
   note?: LanguageNote;
-  /** Runs after the confirm: the choice is the window's by then and the dialog closed. */
+  /** Runs after the confirm: the choice is the window's by then and the dialog closed. A run it starts before it
+   *  returns is sent the language named to translate from; one started later is not. */
   then?: () => void;
 };
 
@@ -46,8 +49,8 @@ export class LanguageDialogStore {
     };
   }
 
-  /** The person confirmed: from now on the window translates into `target`, from `source` (`null`: read off the
-   *  text); the dialog goes, then the opener's `then` runs. */
+  /** The person confirmed: from now on the window translates into `target`; the dialog goes, then the opener's `then`
+   *  runs, with `source` named as the language its run translates from (`null`: read off the text). */
   confirm(target: string, source: string | null): void {
     const state = this.state;
     if (state.status !== "open") return;
@@ -55,7 +58,12 @@ export class LanguageDialogStore {
     void this.languages.choose(target);
     this.languages.from(source);
     this.close();
-    state.then?.();
+    try {
+      state.then?.();
+    } finally {
+      // named for that run alone: a run started without the dialog reads the language off the text
+      this.languages.from(null);
+    }
   }
 
   /** Closes the dialog: nothing changes, nothing follows. */

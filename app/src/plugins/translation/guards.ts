@@ -1,7 +1,8 @@
 // Checks on one model output before its translation reaches the person. The first check that fails decides, in this
 // order:
 // 1. structure (`local-ai`): leaked thinking, an opening that announces a translation, markers (each once; anywhere:
-//    a translation moves the words around them), Markdown symbol counts, the row of a table cell -> discarded;
+//    a translation moves the words around them), Markdown symbol counts, Markdown the piece does not have (HTML,
+//    code, a link's destination, a web address, a line that opens a block), the row of a table cell -> discarded;
 // 2. no letter in the answer -> discarded;
 // 3. lines: a marker that holds the lines of its block where it no longer does (a quote's `>` not opening a line, a
 //    hard break at an end of the answer) -> discarded;

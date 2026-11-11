@@ -44,6 +44,9 @@ describe("judge", () => {
     expect(reason(judge(doc, only(doc), "Texto corrigido: This is fine text."))).toBe("preamble");
     const long = "This sentence is complete and has a clear ending.";
     expect(reason(judge(long, only(long), "This sentence is complete."))).toBe("length");
+    // Markdown the piece does not have
+    expect(reason(judge(doc, only(doc), "This is <b>fine</b> text."))).toBe("added");
+    expect(reason(judge(doc, only(doc), "# This is fine text."))).toBe("added");
   });
 
   it("discards an over-edit: ratio on long pieces, count on short ones", () => {

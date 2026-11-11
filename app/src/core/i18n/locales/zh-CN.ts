@@ -2479,4 +2479,5 @@ export default {
   "translation.copy.noFile": "未创建文件。",
   "translation.copy.stopped": "翻译已停止。",
   "translation.copy.notSaved": "无法保存翻译后的文件。",
+  "translation.copy.open": "打开",
 } satisfies Messages;
