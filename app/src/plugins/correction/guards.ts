@@ -1,10 +1,18 @@
-// Checks on one model output before its suggestions reach the person (spec feature-correction D-1, D-3, D-5): a piece
-// whose output leaks thinking, opens with a preamble, breaks the markers | Markdown symbols, changes script (a
-// translation), length (dropped | added text) or too many words (a rewrite) is discarded whole. A heading | list item
-// never gets a final period added. Thresholds tuned on the eval set (U6).
+// Checks on one model output before its suggestions reach the person: a piece whose output fails the structure check
+// of `local-ai` (leaked thinking, a preamble, broken markers | Markdown symbols | table row, length: dropped | added
+// text), changes script (a translation) or too many words (a rewrite) is discarded whole. A heading | list item |
+// table cell never gets a final period added. Thresholds tuned on the eval set (`eval/`).
 
-import { suggest, wordDiff, type Suggestion, type WordDiff } from "./diff";
-import { restore, type Piece } from "./segment";
+import {
+  letterShare,
+  similarity,
+  structureVerdict,
+  type StructureDiscard,
+  type StructureLimits,
+} from "../local-ai/pieces/guards";
+import { unmarked, type Piece, type PieceKind } from "../local-ai/pieces/segment";
+import type { Suggestion } from "../local-ai/pieces/suggestion";
+import { suggest, wordDiff, type WordDiff } from "./diff";
 
 /** Changed-word share past which a piece of at least `RATIO_MIN_WORDS` words is a rewrite. */
 export const MAX_CHANGE_RATIO = 0.3;
@@ -18,11 +26,10 @@ export const MAX_CHANGED_WORDS = 3;
 export const SHORT_WORDS = 3;
 /** Character similarity (1 - edit distance / longer length) under which a changed short word is a different word. */
 export const MIN_WORD_SIMILARITY = 0.5;
-/** Output | input length (markers out) must stay in this range... */
+/** Output | input length (markers out) must stay in this range (inputs too short for it: the changed-word count
+ *  bounds them). */
 export const MIN_LENGTH_RATIO = 0.8;
 export const MAX_LENGTH_RATIO = 1.25;
-/** ...for inputs at least this long (shorter ones: the changed-word count bounds them). */
-export const LENGTH_MIN_CHARS = 20;
 /** Share of letters moving between scripts past which the output is another language. */
 export const MAX_SCRIPT_SHIFT = 0.2;
 
@@ -42,9 +49,16 @@ const PREAMBLES = [
   "hier ist",
   "korrigierter text",
 ];
-const THINKING = "<|channel";
-const SYMBOLS = ["*", "_", "[", "]", "~"];
+/** What the structure check holds a corrected piece to. */
+const STRUCTURE: StructureLimits = {
+  minRatio: MIN_LENGTH_RATIO,
+  maxRatio: MAX_LENGTH_RATIO,
+  preambles: PREAMBLES,
+};
 const FINAL_PERIODS = [".", "。"];
+/** Pieces that are labels more often than sentences: a final period the model adds is not a fix. */
+const LABELS: ReadonlySet<PieceKind> = new Set<PieceKind>(["heading", "listItem", "cell"]);
+/** The scripts a letter is counted under; the last one = any other script. */
 const SCRIPTS = [
   /\p{Script=Latin}/u,
   /\p{Script=Han}/u,
@@ -53,12 +67,10 @@ const SCRIPTS = [
   /\p{Script=Cyrillic}/u,
   /\p{Script=Greek}/u,
   /\p{Script=Arabic}/u,
+  /[^\p{Script=Latin}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Cyrillic}\p{Script=Greek}\p{Script=Arabic}]/u,
 ];
-const LETTER = /\p{L}/u;
-const MARKER = /⟦\d+⟧/g;
 
-export type Discard =
-  "thinking" | "preamble" | "markers" | "symbols" | "script" | "length" | "overEdit";
+export type Discard = StructureDiscard | "script" | "overEdit";
 
 export type Verdict =
   { kind: "ok"; diff: WordDiff; suggestions: Suggestion[] } | { kind: "discard"; reason: Discard };
@@ -66,52 +78,25 @@ export type Verdict =
 /** Verdict on the model's `output` for `piece` (cut from `doc`); ok -> its suggestions in document offsets. */
 export function judge(doc: string, piece: Piece, output: string, lang?: string): Verdict {
   const discard = (reason: Discard): Verdict => ({ kind: "discard", reason });
-  if (output.includes(THINKING)) return discard("thinking");
-  if (preamble(piece.text, output)) return discard("preamble");
-  const restored = restore(output, piece);
-  if (restored === null) return discard("markers");
-  if (SYMBOLS.some((s) => count(piece.text, s) !== count(output, s))) return discard("symbols");
-  const before = piece.text.replace(MARKER, "");
-  const after = output.replace(MARKER, "");
-  if (scriptShift(before, after) > MAX_SCRIPT_SHIFT) return discard("script");
-  const ratio = after.trim().length / Math.max(1, before.trim().length);
-  if (before.length >= LENGTH_MIN_CHARS && (ratio < MIN_LENGTH_RATIO || ratio > MAX_LENGTH_RATIO)) {
-    return discard("length");
-  }
-  const d = wordDiff(piece.original, restored, lang);
+  const structure = structureVerdict(piece, output, STRUCTURE);
+  // length is the structure check's last: a changed script is told before it (a translation changes the length too)
+  if (structure.kind === "discard" && structure.reason !== "length") return structure;
+  if (scriptShift(unmarked(piece.text), unmarked(output)) > MAX_SCRIPT_SHIFT)
+    return discard("script");
+  if (structure.kind === "discard") return structure;
+  const d = wordDiff(piece.original, structure.restored, lang);
   if (overEdit(d)) return discard("overEdit");
-  const suggestions = suggest(doc, piece.from, d).flatMap((s) => keepEnding(piece, s));
+  const suggestions = suggest(doc, piece.from, d, piece.kind).flatMap((s) => keepEnding(piece, s));
   return { kind: "ok", diff: d, suggestions };
-}
-
-function preamble(input: string, output: string): boolean {
-  const opens = (text: string, p: string) => text.trimStart().toLowerCase().startsWith(p);
-  return PREAMBLES.some((p) => opens(output, p) && !opens(input, p));
-}
-
-function count(text: string, symbol: string): number {
-  return text.split(symbol).length - 1;
 }
 
 // total variation between the letter shares per script
 function scriptShift(a: string, b: string): number {
-  const sa = shares(a);
-  const sb = shares(b);
-  return sa.reduce((sum, share, i) => sum + Math.abs(share - (sb[i] ?? 0)), 0) / 2;
-}
-
-// share of letters per entry of `SCRIPTS`, last = any other script
-function shares(text: string): number[] {
-  const counts = Array.from({ length: SCRIPTS.length + 1 }, () => 0);
-  let letters = 0;
-  for (const ch of text) {
-    if (!LETTER.test(ch)) continue;
-    letters += 1;
-    const found = SCRIPTS.findIndex((s) => s.test(ch));
-    const i = found < 0 ? SCRIPTS.length : found;
-    counts[i] = (counts[i] ?? 0) + 1;
-  }
-  return counts.map((c) => c / Math.max(1, letters));
+  const moved = SCRIPTS.reduce(
+    (sum, script) => sum + Math.abs(letterShare(a, script) - letterShare(b, script)),
+    0,
+  );
+  return moved / 2;
 }
 
 function overEdit(d: WordDiff): boolean {
@@ -135,27 +120,10 @@ function overEdit(d: WordDiff): boolean {
   return changed > MAX_CHANGED_WORDS;
 }
 
-// 1 - Levenshtein distance / longer length, over code points (1 = same, 0 = nothing alike)
-function similarity(a: string, b: string): number {
-  const x = [...a.normalize("NFC").toLowerCase()];
-  const y = [...b.normalize("NFC").toLowerCase()];
-  const longer = Math.max(x.length, y.length);
-  if (longer === 0) return 1;
-  let row = Array.from({ length: y.length + 1 }, (_, j) => j);
-  for (let i = 1; i <= x.length; i += 1) {
-    const next = [i];
-    for (let j = 1; j <= y.length; j += 1) {
-      const cost = x[i - 1] === y[j - 1] ? 0 : 1;
-      next.push(Math.min((row[j] ?? 0) + 1, (next[j - 1] ?? 0) + 1, (row[j - 1] ?? 0) + cost));
-    }
-    row = next;
-  }
-  return 1 - (row[y.length] ?? longer) / longer;
-}
-
-// heading | list item: a final period the model added is left out (the suggestion dropped when nothing else is left)
+// heading | list item | table cell: a final period the model added is left out (the suggestion dropped when nothing
+// else is left)
 function keepEnding(piece: Piece, s: Suggestion): Suggestion[] {
-  if ((piece.kind !== "heading" && piece.kind !== "listItem") || s.to !== piece.to) return [s];
+  if (!LABELS.has(piece.kind) || s.to !== piece.to) return [s];
   const period = FINAL_PERIODS.find((p) => s.insert.endsWith(p) && !s.original.endsWith(p));
   if (period === undefined) return [s];
   const insert = s.insert.slice(0, -period.length);

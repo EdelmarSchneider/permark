@@ -9,7 +9,7 @@ import { toggleWrap } from "../doc/wrapLines";
 import { canFind, chooseMode, editBlockedReason, editingNow, openFind } from "../editing/choose";
 import { editing } from "../editing/session.svelte";
 import { diagramPanel } from "../editing/diagramPanel.svelte";
-import { copyPathOf, newInTree, revealInTree } from "../explorer/current";
+import { copyPathOf, newInTree, refreshTree, revealInTree } from "../explorer/current";
 import { t, type MessageKey } from "../i18n";
 import {
   CORE_OWNER,
@@ -203,6 +203,14 @@ const SPECS: readonly Spec[] = [
       ui.showSidebar("files");
       newInTree("file");
     },
+  },
+  {
+    // the tree stays where it is (hidden | shown): only what the disk holds is read again
+    id: "explorer.refresh",
+    label: "cmd.refreshExplorer",
+    keys: ["F5"],
+    requires: PROJECT,
+    run: () => refreshTree(),
   },
   {
     id: "doc.find",

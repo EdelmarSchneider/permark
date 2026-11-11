@@ -300,7 +300,7 @@ impl Explorer {
         }
         view.keep = path.map(str::to_owned);
         let visible = self.visible(model, view);
-        self.update_view(window, view, visible, &[], false);
+        self.update_view(window, view, visible, &[], false, false);
         Ok(())
     }
 
@@ -361,11 +361,14 @@ impl Explorer {
                 _ => None,
             })
             .collect();
-        self.refresh_views(
-            model,
-            &renames,
-            batch.bulk || batch.changes.len() > BULK_CHANGES,
-        );
+        let bulk = batch.bulk || batch.changes.len() > BULK_CHANGES;
+        if batch.rescan {
+            // the disk was read again: every window hears it, also when nothing differs (the one that asked for it
+            // knows by this that its list is as the disk is)
+            self.tell_views(model, &renames, bulk, true);
+        } else {
+            self.refresh_views(model, &renames, bulk);
+        }
     }
 
     /// The app changed these paths itself (a move, a delete, a new file): the model syncs at once, without waiting for
@@ -385,14 +388,19 @@ impl Explorer {
     }
 
     fn refresh_views(&self, model: &TreeModel, renames: &[Renamed], bulk: bool) {
+        self.tell_views(model, renames, bulk, false);
+    }
+
+    /// Moves every view to what the model holds now; `always`: each window is told, also when nothing differs for it.
+    fn tell_views(&self, model: &TreeModel, renames: &[Renamed], bulk: bool, always: bool) {
         let mut views = lock(&self.views);
         for (window, view) in views.iter_mut() {
             let visible = self.visible(model, view);
-            self.update_view(window, view, visible, renames, bulk);
+            self.update_view(window, view, visible, renames, bulk, always);
         }
     }
 
-    /// Moves a view to `visible` and tells its window the difference.
+    /// Moves a view to `visible` and tells its window the difference (`always`: an empty one too).
     fn update_view(
         &self,
         window: &str,
@@ -400,11 +408,13 @@ impl Explorer {
         visible: Visible,
         renames: &[Renamed],
         bulk: bool,
+        always: bool,
     ) {
         let (removed, added) = diff(&view.list, &visible.nodes);
         let counts_changed = view.total != visible.total_files || view.shown != visible.shown_files;
         let filter = std::mem::take(&mut view.filter_moved).then(|| view.compiled.filter.clone());
-        if removed.is_empty() && added.is_empty() && !counts_changed && filter.is_none() {
+        let same = removed.is_empty() && added.is_empty() && !counts_changed && filter.is_none();
+        if same && !always {
             return;
         }
         let old_paths: HashSet<&str> = view.list.iter().map(|n| n.path.as_str()).collect();

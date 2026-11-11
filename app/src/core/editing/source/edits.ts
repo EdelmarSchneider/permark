@@ -7,8 +7,9 @@ import type { EditorState, TransactionSpec } from "@codemirror/state";
 import type { EditScope, TextEdit, TextRange } from "../session.svelte";
 import { checkEdits } from "../textEdits";
 
-/** Markdown blocks that are prose (a list item's | quote's text is a `Paragraph` inside it; a task item's a `Task`). */
-const PROSE = /^(Paragraph|Task|ATXHeading[1-6]|SetextHeading[12])$/;
+/** Markdown blocks that are prose (a list item's | quote's text is a `Paragraph` inside it; a task item's a `Task`;
+ *  a table's is each `TableCell`: its text without the padding and the pipes around it). */
+const PROSE = /^(Paragraph|Task|TableCell|ATXHeading[1-6]|SetextHeading[12])$/;
 /** How long (ms) the parser may run to reach the caret in a long document. */
 const PARSE_MS = 200;
 

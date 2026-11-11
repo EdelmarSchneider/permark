@@ -803,6 +803,13 @@ impl ProjectCore {
         Ok(config)
     }
 
+    /// The person asked to read the folder again: the tree is walked, and the index, git and every plugin that keeps a
+    /// picture of the disk look at it again, as after lost watch reports. Returns at once; the windows are told as each
+    /// part is done.
+    pub fn refresh(&self) {
+        self.watcher.rescan();
+    }
+
     /// Everything that keeps a picture of the disk builds it again (the rules that decide what is listed changed).
     fn rescan(&self) {
         self.hub.publish(&FsBatch {

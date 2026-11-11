@@ -31,13 +31,19 @@ function staysWithOverlay(id: string): boolean {
   return id.startsWith("search.") || id.startsWith("palette.") || id.startsWith("tab.");
 }
 
+/** F5, alone or with modifiers: the webview reloads the page on it by itself, which throws away unsaved edits and what
+ * the window shows. It is never text. */
+function isReloadKey(event: Pick<KeyEventLike, "key">): boolean {
+  return event.key === "F5";
+}
+
 /**
  * What a key press does. Passes (the browser and the widgets keep the key) when: another handler already took it,
  * a question | a modal dialog other than a box is open (Ctrl+S must not save behind it, Ctrl+W must not close the tab
  * it asks about), it is part of a composition | dead key | AltGr, it is no combo of the grammar, it is a plain key while
- * the person types or an overlay is open, no command holds the combo, or none that holds it can run now. Several can
- * run: the narrower one (its scope inside the other's: in the Notes tab `notes.pinned1` over `tab.select1`), else the
- * first registered.
+ * the person types or an overlay is open (F5 excepted while typing: see `isReloadKey`), no command holds the combo, or
+ * none that holds it can run now. Several can run: the narrower one (its scope inside the other's: in the Notes tab
+ * `notes.pinned1` over `tab.select1`), else the first registered.
  */
 export function resolveKey(
   event: KeyEventLike & { defaultPrevented?: boolean },
@@ -48,7 +54,7 @@ export function resolveKey(
   const combo = comboFromEvent(event, env.mac);
   if (combo === null) return PASS;
   const boxed = env.overlay === "box";
-  if (isSingleKey(combo) && (env.typing || boxed)) return PASS;
+  if (isSingleKey(combo) && (boxed || (env.typing && !isReloadKey(event)))) return PASS;
   let best: CommandItem | null = null;
   for (const id of commandsFor(env.keymap, combo)) {
     if (boxed && !staysWithOverlay(id)) continue;
@@ -124,7 +130,12 @@ export function isTypingTarget(target: EventTarget | null): boolean {
   );
 }
 
-/** Listens on `target` until the returned function is called. */
+/** Commands a held key runs once: its repeats are still the command's (taken), and run nothing. Reading the project
+ * folder again once per repeat would queue one walk of the disk after another. */
+const ONCE_PER_PRESS: ReadonlySet<string> = new Set(["explorer.refresh"]);
+
+/** Listens on `target` until the returned function is called. A reload key no command takes is taken all the same:
+ * it is never left to the webview. */
 export function installKeys(
   target: Pick<Window, "addEventListener" | "removeEventListener">,
   env: (event: KeyboardEvent) => KeyEnv,
@@ -132,8 +143,12 @@ export function installKeys(
   const onKey = (event: Event): void => {
     if (!(event instanceof KeyboardEvent)) return;
     const decision = resolveKey(event, env(event));
-    if (decision.kind !== "run") return;
+    if (decision.kind !== "run") {
+      if (isReloadKey(event)) event.preventDefault();
+      return;
+    }
     event.preventDefault();
+    if (event.repeat && ONCE_PER_PRESS.has(decision.command.id)) return;
     runSafely(decision.command);
   };
   target.addEventListener("keydown", onKey);

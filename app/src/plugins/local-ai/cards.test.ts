@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // The This computer and Hugging Face token cards against the mock backend: memory, processor, graphics (own memory,
-// shared, unknown; software renderers left out); the token card only while a listed model needs one, Save (field
-// emptied, never shown again), Clear, refusals in words; the page's card order.
+// shared, unknown; software renderers left out), where models run (only with a graphics card; the fit hints follow);
+// the token card only while a listed model needs one, Save (field emptied, never shown again), Clear, refusals in
+// words; the page's card order.
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MachineProfile } from "../../api/generated/MachineProfile";
@@ -19,6 +20,7 @@ const { default: LocalAiSection } = await import("./LocalAiSection.svelte");
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
 const probe = mock.probe.localAi;
 const SECRET = "hf_secretvalue123";
+const EMBED = "embeddinggemma-2-q8_0";
 
 let target: HTMLElement;
 let component: Record<string, unknown> | null = null;
@@ -124,6 +126,62 @@ describe("This computer", () => {
     const text = textOf("This computer");
     expect(text).toContain("No graphics card found");
     expect(text).not.toContain("free now");
+  });
+
+  /** The "Run models on" choices (`null`: not offered). */
+  function runOn(): HTMLElement | null {
+    return card("This computer")?.querySelector<HTMLElement>('[role="radiogroup"]') ?? null;
+  }
+
+  function chosen(): string {
+    return runOn()?.querySelector('[aria-checked="true"]')?.textContent?.trim() ?? "";
+  }
+
+  function choose(label: string): void {
+    const found = Array.from(runOn()?.querySelectorAll<HTMLElement>('[role="radio"]') ?? []).find(
+      (radio) => radio.textContent?.trim() === label,
+    );
+    if (!found) throw new Error(`no choice ${label}`);
+    found.click();
+    flushSync();
+  }
+
+  const HINT = "Slower, but leaves the graphics card free for other programs.";
+
+  it("lets the person keep models on the processor; the fit hints follow the choice", async () => {
+    await openPage();
+    const group = runOn();
+    const name = group?.getAttribute("aria-labelledby") ?? "";
+    expect(document.getElementById(name)?.textContent).toBe("Run models on");
+    expect(
+      Array.from(group?.querySelectorAll('[role="radio"]') ?? []).map((r) => r.textContent?.trim()),
+    ).toEqual(["Graphics card when there is one", "Processor only"]);
+    expect(chosen()).toBe("Graphics card when there is one");
+    expect(textOf("This computer")).not.toContain(HINT);
+    expect(localAi.machine?.fits[EMBED]).toBe("runsWell");
+
+    choose("Processor only");
+    await until(() => localAi.state?.cpuOnly === true, "saved");
+    flushSync();
+    expect(probe.calls).toContain("setCpuOnly true");
+    expect(chosen()).toBe("Processor only");
+    expect(textOf("This computer")).toContain(HINT);
+    await until(() => localAi.machine?.fits[EMBED] === "slowCpuOnly", "the fit hints follow");
+
+    // a choice made in another window shows here
+    await localAi.setCpuOnly(false);
+    flushSync();
+    expect(chosen()).toBe("Graphics card when there is one");
+    expect(textOf("This computer")).not.toContain(HINT);
+    await until(() => localAi.machine?.fits[EMBED] === "runsWell", "the fit hints follow back");
+  });
+
+  it("offers no choice of where models run when there is no graphics card", async () => {
+    const software = MOCK_MACHINE.gpus.filter((gpu) => gpu.software);
+    probe.machine = { ...structuredClone(MOCK_MACHINE), gpus: structuredClone(software) };
+    await openPage();
+    expect(runOn()).toBeNull();
+    expect(textOf("This computer")).not.toContain("Run models on");
   });
 });
 

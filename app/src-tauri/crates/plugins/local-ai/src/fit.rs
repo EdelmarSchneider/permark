@@ -13,6 +13,9 @@
 //!
 //! Budget: `ram_rec` summed over the distinct models assigned to tasks vs best VRAM (0 if unknown) + 60 % of RAM
 //! total (the rest kept for the system + PerMark) -> [`BudgetWarning`] when above; RAM total unknown -> no warning.
+//!
+//! Models kept on the processor (the person's choice, [`advise`] `device`): fit + budget as on a computer without a
+//! graphics adapter ([`MachineProfile::limited_to`]).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -20,6 +23,7 @@ use serde::Serialize;
 use ts_rs::TS;
 
 use crate::catalog::{Catalog, Needs};
+use crate::engine::Device;
 use crate::machine::MachineProfile;
 
 /// What this computer can do with one model.
@@ -100,13 +104,21 @@ pub fn budget<'a>(
     (needed > available).then_some(BudgetWarning { needed, available })
 }
 
-/// Advice for the catalog given the ids of the models assigned to tasks (repeats counted once; unknown ids skipped).
+/// Advice for the catalog given the ids of the models assigned to tasks (repeats counted once; unknown ids skipped)
+/// and where the person lets models run (`device`).
 #[must_use]
-pub fn advise(catalog: &Catalog, profile: MachineProfile, assigned: &[String]) -> MachineInfo {
+pub fn advise(
+    catalog: &Catalog,
+    profile: MachineProfile,
+    assigned: &[String],
+    device: Device,
+) -> MachineInfo {
+    // the profile told stays whole (the page shows the adapters); the advice reckons with what a load may use
+    let usable = profile.clone().limited_to(device);
     let fits = catalog
         .models
         .iter()
-        .map(|m| (m.id.clone(), fit(&m.needs, &profile)))
+        .map(|m| (m.id.clone(), fit(&m.needs, &usable)))
         .collect();
     let distinct: BTreeSet<&str> = assigned.iter().map(String::as_str).collect();
     let budget = budget(
@@ -114,7 +126,7 @@ pub fn advise(catalog: &Catalog, profile: MachineProfile, assigned: &[String]) -
             .into_iter()
             .filter_map(|id| catalog.model(id))
             .map(|m| &m.needs),
-        &profile,
+        &usable,
     );
     MachineInfo {
         profile,
@@ -236,11 +248,44 @@ mod tests {
             .unwrap();
         let p = machine(Some(big.needs.ram_rec * 3 / 2), Vec::new());
         // budget 0.6 x 1.5 x rec = 0.9 x rec < rec: one model warns; the same id twice warns the same
-        let once = advise(catalog, p.clone(), std::slice::from_ref(&big.id));
-        let twice = advise(catalog, p, &[big.id.clone(), big.id.clone()]);
+        let once = advise(
+            catalog,
+            p.clone(),
+            std::slice::from_ref(&big.id),
+            Device::Auto,
+        );
+        let twice = advise(catalog, p, &[big.id.clone(), big.id.clone()], Device::Auto);
         assert_eq!(once.budget, twice.budget);
         assert_eq!(once.budget.map(|b| b.needed), Some(big.needs.ram_rec));
         assert_eq!(once.fits.len(), catalog.models.len());
         assert_eq!(once.fits[&big.id], Fit::SlowCpuOnly);
+    }
+
+    /// Processor only: hints + budget as on a computer without a graphics card; the profile told keeps its
+    /// adapters (the page still shows them).
+    #[test]
+    fn processor_only_advice_counts_no_graphics_memory() {
+        let catalog = crate::catalog::bundled().unwrap();
+        let big = catalog
+            .models
+            .iter()
+            .max_by_key(|m| m.needs.ram_rec)
+            .unwrap();
+        let ram = big.needs.ram_rec * 3 / 2;
+        let p = machine(Some(ram), vec![gpu(Some(big.needs.vram_rec), false, false)]);
+        let assigned = std::slice::from_ref(&big.id);
+        let auto = advise(catalog, p.clone(), assigned, Device::Auto);
+        assert_eq!(auto.fits[&big.id], Fit::RunsWell);
+        assert_eq!(auto.budget, None);
+        let cpu = advise(catalog, p.clone(), assigned, Device::Cpu);
+        assert_eq!(cpu.fits[&big.id], Fit::SlowCpuOnly);
+        assert_eq!(
+            cpu.budget,
+            Some(BudgetWarning {
+                needed: big.needs.ram_rec,
+                available: ram_share(ram),
+            })
+        );
+        assert_eq!(cpu.profile, p);
     }
 }

@@ -13,7 +13,7 @@ Created and maintained by [Edelmar Schneider](https://github.com/EdelmarSchneide
 
 [![Latest release](https://img.shields.io/github/v/release/EdelmarSchneider/permark)](https://github.com/EdelmarSchneider/permark/releases/latest)
 [![License: MIT or Apache-2.0](https://img.shields.io/badge/license-MIT%20or%20Apache--2.0-blue)](#license)
-[![CI](https://img.shields.io/github/actions/workflow/status/EdelmarSchneider/permark/ci.yml?branch=main&label=CI)](https://github.com/EdelmarSchneider/permark/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/EdelmarSchneider/permark/ci.yml?branch=develop&label=CI)](https://github.com/EdelmarSchneider/permark/actions/workflows/ci.yml?query=branch%3Adevelop)
 
 **Get PerMark:** [Microsoft Store](https://apps.microsoft.com/detail/9NVV5GVZMGGX) (Windows) · [GitHub Releases](https://github.com/EdelmarSchneider/permark/releases/latest) (Windows, macOS, Linux)
 

@@ -3,10 +3,11 @@
 // follow accepted edits and the person's typing, IME composition, cancel, and what closes the review.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "../../api/mock";
-import type { CorrectionPhase } from "../../api/generated/CorrectionPhase";
+import type { PieceRunPhase } from "../../api/generated/PieceRunPhase";
 import type { EditScope, TextEdit, TextRange } from "../../core/editing/session.svelte";
 import { checkEdits } from "../../core/editing/textEdits";
-import { changedRange, CorrectionStore, type Session } from "./store.svelte";
+import { PieceReview, type Session } from "../local-ai/pieces/review.svelte";
+import { REVIEW } from "./store.svelte";
 
 type Fake = Session & {
   text: string;
@@ -58,6 +59,7 @@ function fakeSession(initial: string): Fake {
         fake.text = fake.text.slice(0, e.from) + e.insert + fake.text.slice(e.to);
       return true;
     },
+    changeable: ({ from, to }) => fake.text.slice(from, to) !== fake.locked,
     reveal: (range) => void fake.revealed.push(range),
     marks: (ranges, current, pick) => {
       fake.marked.push({ ranges: [...ranges], current });
@@ -77,7 +79,7 @@ const DOC = "I has a cat.\n\n```\nteh code\n```\n\nShe recieve mail from teh off
 
 let mock: ReturnType<typeof createMockApi>;
 let session: Fake;
-let store: CorrectionStore;
+let store: PieceReview;
 let sent: { run: string; pieces: { id: number; text: string }[] }[] = [];
 
 beforeEach(async () => {
@@ -85,7 +87,7 @@ beforeEach(async () => {
   mock.probe.correction.stepMs = 1e9;
   sent = mock.probe.correction.runs;
   session = fakeSession(DOC);
-  store = new CorrectionStore(mock, session);
+  store = new PieceReview(REVIEW, mock, session);
   await store.ask();
 });
 
@@ -100,7 +102,7 @@ function runId(): string {
   return last.run;
 }
 
-function news(phase: CorrectionPhase, run = runId()): void {
+function news(phase: PieceRunPhase, run = runId()): void {
   store.news({ run, phase });
 }
 
@@ -116,7 +118,7 @@ const suggestions = () =>
 
 /** Runs over the whole DOC with both prose pieces corrected. */
 async function reviewed(): Promise<void> {
-  await store.correct("document");
+  await store.runOver("document");
   answer(0, (t) => t.replace("has", "have"));
   answer(1, (t) => t.replace("recieve", "receives").replace("teh", "the"));
   news({ kind: "done" });
@@ -124,7 +126,7 @@ async function reviewed(): Promise<void> {
 
 describe("a correction run", () => {
   it("sends only the prose pieces of the scope, the caret's block first", async () => {
-    await store.correct("document");
+    await store.runOver("document");
     expect(sent).toHaveLength(1);
     expect(sent[0]?.pieces.map((p) => p.text)).toEqual([
       "I has a cat.",
@@ -132,15 +134,52 @@ describe("a correction run", () => {
     ]);
     expect(store.review?.status).toEqual({ kind: "loading", progress: 0 });
     session.selection = { from: 32, to: 65 };
-    await store.correct("selection");
+    await store.runOver("selection");
     expect(sent[1]?.pieces.map((p) => p.text)).toEqual(["She recieve mail from teh office."]);
     // the earlier run was stopped
     expect(mock.probe.correction.calls).toContain(`cancel ${sent[0]?.run}`);
   });
 
+  it("the text of a table goes too, cell by cell; a fix lands in its cell alone", async () => {
+    const table = "| Name | Note |\n|---|---|\n| Teh quick fox | 12 |\n";
+    session.text = `${DOC}\n${table}`;
+    await store.runOver("document");
+    expect(sent[0]?.pieces.map((p) => p.text)).toEqual([
+      "I has a cat.",
+      "She recieve mail from teh office.",
+      "Name",
+      "Note",
+      "Teh quick fox",
+    ]);
+    answer(4, (t) => t.replace("Teh", "The"));
+    // an answer that would add a cell to the row is left out
+    answer(3, () => "Note | more");
+    const at = session.text.indexOf("Teh");
+    expect(suggestions()).toEqual([`${at}-${at + 3}:Teh>The`]);
+    expect(store.review?.discarded).toBe(1);
+    store.accept();
+    expect(session.text).toBe(`${DOC}\n${table.replace("Teh", "The")}`);
+  });
+
+  it("what the bar shows around a fix in a table cell is that cell's text, also when it is read again", async () => {
+    session.text = "| Name | Note |\n|---|---|\n| Teh quick fox | is donne now |\n";
+    await store.runOver("document");
+    answer(2, (t) => t.replace("Teh", "The"));
+    answer(3, (t) => t.replace("donne", "done"));
+    news({ kind: "done" });
+    const excerpts = (): string[] =>
+      (store.review?.suggestions ?? []).map(
+        (s) => `${s.before}[${s.original}>${s.insert}]${s.after}`,
+      );
+    expect(excerpts()).toEqual(["[Teh>The] quick fox", "is [donne>done] now"]);
+    // one accepted: the excerpts of the others are read from the text as it is now
+    store.accept();
+    expect(excerpts()).toEqual(["is [donne>done] now"]);
+  });
+
   it("nothing to check: no run, the bar says so", async () => {
     session.text = "```\nteh\n```\n";
-    await store.correct("document");
+    await store.runOver("document");
     expect(sent).toHaveLength(0);
     expect(store.state.kind).toBe("nothing");
   });
@@ -149,13 +188,35 @@ describe("a correction run", () => {
     mock.probe.correction.available = false;
     await store.ask();
     expect(store.available).toBe(false);
-    await store.correct("document");
+    await store.runOver("document");
     expect(sent).toHaveLength(0);
     expect(store.state.kind).toBe("closed");
   });
 
+  it("going off: nothing listens any more (Local AI news ask no status, run news go unheard)", async () => {
+    const asks = (): number => mock.probe.correction.calls.filter((c) => c === "status").length;
+    const assign = () =>
+      mock.pluginCall("local-ai.assign", { task: "correction", model: "gemma-4-e2b-it-q4_0" });
+    const stop = store.start();
+    // while on: the start asks, each Local AI change asks again, the run's news arrive
+    await vi.waitFor(() => expect(asks()).toBe(2));
+    await assign();
+    await vi.waitFor(() => expect(asks()).toBe(3));
+    mock.probe.correction.stepMs = 1;
+    await store.runOver("document");
+    await vi.waitFor(() => expect(store.review?.status.kind).toBe("finished"));
+    stop();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    store.available = true;
+    await store.runOver("document");
+    await assign();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(asks()).toBe(3);
+    expect(store.review?.status).toEqual({ kind: "loading", progress: 0 });
+  });
+
   it("hears only its own run; progress and parts follow the news", async () => {
-    await store.correct("document");
+    await store.runOver("document");
     news({ kind: "engine", receivedBytes: 10, totalBytes: 40 });
     expect(store.review?.status).toEqual({ kind: "engine", receivedBytes: 10, totalBytes: 40 });
     expect(store.running).toBe(true);
@@ -171,7 +232,7 @@ describe("a correction run", () => {
   });
 
   it("guards each answer: too much changed | dropped by the plugin -> counted, never shown", async () => {
-    await store.correct("document");
+    await store.runOver("document");
     answer(0, () => "Completely different words were written here instead.");
     news({ kind: "piece", id: 1, result: { kind: "discarded", reason: "tooLong" } });
     news({ kind: "done" });
@@ -181,21 +242,21 @@ describe("a correction run", () => {
   });
 
   it("suggestions come in document order with document offsets", async () => {
-    await store.correct("document");
+    await store.runOver("document");
     answer(1, (t) => t.replace("recieve", "receives").replace("teh", "the"));
     answer(0, (t) => t.replace("has", "have"));
     expect(suggestions()).toEqual(["2-5:has>have", "36-43:recieve>receives", "54-57:teh>the"]);
   });
 
   it("an answer for a piece the person changed meanwhile is dropped", async () => {
-    await store.correct("document");
+    await store.runOver("document");
     session.type(0, "Now ");
     answer(0, (t) => t.replace("has", "have"));
     expect(suggestions()).toEqual([]);
   });
 
   it("failure: the error is kept for the bar", async () => {
-    await store.correct("document");
+    await store.runOver("document");
     news({
       kind: "failed",
       error: { kind: "unavailable", subject: "model", detail: "noModel" },
@@ -259,7 +320,7 @@ describe("the review", () => {
   });
 
   it("accept all | reject all wait for the run to end", async () => {
-    await store.correct("document");
+    await store.runOver("document");
     answer(0, (t) => t.replace("has", "have"));
     store.acceptAll();
     store.rejectAll();
@@ -286,24 +347,56 @@ describe("the review", () => {
     expect(session.text).toBe(DOC);
   });
 
-  it("accept all: an edit the editor refuses drops only that one, the others go in", async () => {
+  it("accept all: an edit the editor refuses drops only that one, the others go in as one edit", async () => {
     await reviewed();
+    // refused once the answers were there (what could not change before the run was never sent)
     session.locked = "teh";
     store.acceptAll();
     expect(session.text).toBe(
       "I have a cat.\n\n```\nteh code\n```\n\nShe receives mail from teh office.\n",
     );
+    // one edit = one undo step, however many were refused
+    expect(session.applied).toHaveLength(1);
+    expect(session.applied[0]?.map((edit) => edit.insert)).toEqual(["have", "receives"]);
     expect(suggestions()).toEqual([]);
-    expect(store.review?.outdated).toBe(1);
-    // refused in the middle: the rest go in, the review ends
+    expect(store.review).toMatchObject({ outdated: 1, total: 3 });
+    // refused in the middle: the rest go in, and the bar stays to say one did not
     session.text = DOC;
     session.locked = "recieve";
+    session.applied = [];
     await reviewed();
     store.acceptAll();
     expect(session.text).toBe(
       "I have a cat.\n\n```\nteh code\n```\n\nShe recieve mail from the office.\n",
     );
-    expect(store.state.kind).toBe("closed");
+    expect(session.applied).toHaveLength(1);
+    expect(suggestions()).toEqual([]);
+    expect(store.review).toMatchObject({ outdated: 1, total: 3 });
+  });
+
+  it("accept all: every edit refused -> none goes in, all are counted", async () => {
+    await reviewed();
+    session.refuse = true;
+    store.acceptAll();
+    expect(session.text).toBe(DOC);
+    expect(session.applied).toEqual([]);
+    expect(suggestions()).toEqual([]);
+    expect(store.review?.outdated).toBe(3);
+  });
+
+  it("counts what the run found in all, whatever became of each suggestion since", async () => {
+    await store.runOver("document");
+    expect(store.review?.total).toBe(0);
+    answer(0, (t) => t.replace("has", "have"));
+    expect(store.review?.total).toBe(1);
+    answer(1, (t) => t.replace("recieve", "receives").replace("teh", "the"));
+    news({ kind: "done" });
+    store.reject();
+    store.accept();
+    session.type(session.text.indexOf("teh office"), "x");
+    store.sync();
+    expect(suggestions()).toEqual([]);
+    expect(store.review).toMatchObject({ total: 3, outdated: 1 });
   });
 
   it("accept all: a suggestion whose text no longer reads as found leaves the list and is counted", async () => {
@@ -337,7 +430,7 @@ describe("the review", () => {
   });
 
   it("cancel stops the run and keeps what was found", async () => {
-    await store.correct("document");
+    await store.runOver("document");
     answer(0, (t) => t.replace("has", "have"));
     const run = runId();
     store.cancel();
@@ -353,7 +446,7 @@ describe("the review", () => {
       ["docs/a.md", "view", false],
       ["docs/a.md", "edit", true],
     ] as const) {
-      await store.correct("document");
+      await store.runOver("document");
       store.left("docs/a.md", "edit", false);
       expect(store.state.kind).toBe("review");
       store.left(path, mode, conflict);
@@ -365,7 +458,7 @@ describe("the review", () => {
   it("Mod+Alt+K in review asks the bar for the keyboard", async () => {
     await reviewed();
     const before = store.focusRequest;
-    await store.correctHere();
+    await store.runHere();
     expect(store.focusRequest).toBe(before + 1);
     expect(sent).toHaveLength(1);
   });
@@ -375,7 +468,7 @@ describe("marks in the text", () => {
   const lastMarks = () => session.marked.at(-1);
 
   it("every pending suggestion marked, the current one known; steps move it; nothing while closed", async () => {
-    await store.correct("document");
+    await store.runOver("document");
     // progress news alone does not mark again
     const before = session.marked.length;
     news({ kind: "loading", progress: 0.5 });
@@ -439,7 +532,7 @@ describe("marks in the text", () => {
   it("Mod+Alt+K on a marked word makes it current and shows it", async () => {
     await reviewed();
     session.caretMark = 1;
-    await store.correctHere();
+    await store.runHere();
     expect(store.review?.at).toBe(1);
     expect(session.revealed.at(-1)).toEqual({ from: 36, to: 43 });
   });
@@ -451,13 +544,5 @@ describe("marks in the text", () => {
     store.show();
     expect(session.revealed.at(-1)).toEqual({ from: 36, to: 43 });
     expect(session.focused).toBe(focused + 1);
-  });
-});
-
-describe("changed ranges", () => {
-  it("prefix and suffix kept, the rest is the change", () => {
-    expect(changedRange("abcdef", "abXdef")).toEqual({ from: 2, to: 3, delta: 0 });
-    expect(changedRange("abc", "abcd")).toEqual({ from: 3, to: 3, delta: 1 });
-    expect(changedRange("aaaa", "aa")).toEqual({ from: 2, to: 4, delta: -2 });
   });
 });

@@ -42,6 +42,7 @@ use ts_rs::TS;
 
 use crate::catalog::{Catalog, CatalogError, EngineNeed, Model, ModelFile};
 use crate::engine::files::{engine_need, WorkerPin};
+use crate::engine::Device;
 use crate::runtime::Runtime;
 use crate::state::{Acceptance, Installed, PluginState, Stale};
 use crate::store::{prune, tidy, version_dir};
@@ -164,6 +165,8 @@ pub struct LocalAiState {
     pub token_set: bool,
     /// License addresses accepted.
     pub accepted_licenses: Vec<String>,
+    /// The person lets models run on the processor only (`false`: on the graphics card when there is one).
+    pub cpu_only: bool,
 }
 
 /// Where models are kept (the Storage card).
@@ -663,16 +666,17 @@ impl Installs {
         self.file.as_ref().map_or(Ok(()), |file| file.save(next))
     }
 
-    /// Changes the state: written first, kept in memory once on disk. No change -> nothing written.
-    fn change(&self, edit: impl FnOnce(&mut PluginState)) -> Result<(), InstallError> {
+    /// Changes the state: written first, kept in memory once on disk. No change -> nothing written (`false`).
+    fn change(&self, edit: impl FnOnce(&mut PluginState)) -> Result<bool, InstallError> {
         let mut inner = self.inner();
         let mut next = inner.state.clone();
         edit(&mut next);
-        if next != inner.state {
+        let changed = next != inner.state;
+        if changed {
             self.save(&next)?;
             inner.state = next;
         }
-        Ok(())
+        Ok(changed)
     }
 
     /// Version of `model`'s lineage usable now: the catalog version on disk, else the recorded one on disk.
@@ -839,6 +843,7 @@ impl Installs {
                 .iter()
                 .map(|a| a.license_url.clone())
                 .collect(),
+            cpu_only: state.cpu_only,
         }
     }
 
@@ -1194,6 +1199,33 @@ impl Installs {
         self.token_known(false);
         self.announce();
         Ok(self.state())
+    }
+
+    /// Where models run from now on: `cpu_only` = the processor only, else the graphics card when there is one. A
+    /// change unloads every session (all loaded under the other choice; a load in flight is cancelled): features
+    /// load again on their next run. Choosing what is chosen: nothing unloaded, nothing written.
+    ///
+    /// # Errors
+    /// State write.
+    pub fn set_cpu_only(&self, cpu_only: bool) -> Result<LocalAiState, InstallError> {
+        // state first: a load starting meanwhile already reads the new choice
+        if self.change(|s| s.cpu_only = cpu_only)? {
+            if let Some(runtime) = &self.runtime {
+                runtime.release_all();
+            }
+        }
+        self.announce();
+        Ok(self.state())
+    }
+
+    /// Where a load runs now, as the person chose (state alone).
+    #[must_use]
+    pub fn device(&self) -> Device {
+        if self.inner().state.cpu_only {
+            Device::Cpu
+        } else {
+            Device::Auto
+        }
     }
 
     /// The installed model assigned to `task` (AC-8), for PerMark's own features.

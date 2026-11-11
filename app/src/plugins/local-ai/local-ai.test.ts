@@ -70,13 +70,28 @@ describe("what the plugin adds", () => {
     await host.enable("local-ai");
     expect(host.state("local-ai")).toBe("on");
     const owned = registry.ownedBy("local-ai");
-    expect(owned.map((c) => c.kind).sort()).toEqual(["command", "settingsPage"]);
+    expect([...new Set(owned.map((c) => c.kind))].sort()).toEqual([
+      "command",
+      "settingsPage",
+      "shortcut",
+    ]);
     const page = owned.find((c) => c.kind === "settingsPage");
     expect(page).toMatchObject({ id: LOCAL_AI_PAGE, label: "localAi.section", order: 35 });
     // on but dormant: switching on reads nothing
     expect(call).not.toHaveBeenCalled();
-    const command = owned.find((c) => c.kind === "command");
-    if (command?.kind !== "command") throw new Error("no command");
+    const commands = owned.flatMap((c) => (c.kind === "command" ? [c] : []));
+    expect(commands.map((c) => c.id)).toEqual([
+      "local-ai.openSettings",
+      "local-ai.nextSuggestion",
+      "local-ai.prevSuggestion",
+    ]);
+    // the steps through a review's suggestions: not offered (their keys pass) while no review is open
+    expect(commands.slice(1).map((c) => c.when?.())).toEqual([false, false]);
+    expect(owned.flatMap((c) => (c.kind === "shortcut" ? [`${c.command} ${c.keys}`] : []))).toEqual(
+      ["local-ai.nextSuggestion F7", "local-ai.prevSuggestion Shift+F7"],
+    );
+    const command = commands[0];
+    if (command === undefined) throw new Error("no command");
     expect(command.label).toBe("localAi.command");
     void command.run();
     expect(ui.settingsPage).toEqual({ status: "open", section: LOCAL_AI_PAGE });

@@ -77,6 +77,24 @@ describe("key -> command", () => {
     expect(resolveKey(press({ key: "F7" }), { ...e, typing: true }).kind).toBe("pass");
   });
 
+  it("F5 reaches its command while the person types too: it is never text, and the webview would reload on it", () => {
+    const refresh = command("explorer.refresh", { requires: PROJECT });
+    const next = command("doc.nextChange");
+    const e = env([refresh, next], { "explorer.refresh": "F5", "doc.nextChange": "F7" });
+    expect(resolveKey(press({ key: "F5" }), e)).toMatchObject({ kind: "run", command: refresh });
+    expect(resolveKey(press({ key: "F5" }), { ...e, typing: true })).toMatchObject({
+      kind: "run",
+      command: refresh,
+    });
+    // the other plain keys still yield to a field
+    expect(resolveKey(press({ key: "F7" }), { ...e, typing: true }).kind).toBe("pass");
+    // a box | a question | a dialog owns the input, or no project is shown: the command does not run
+    expect(resolveKey(press({ key: "F5" }), { ...e, overlay: "box" }).kind).toBe("pass");
+    expect(resolveKey(press({ key: "F5" }), { ...e, overlay: "question" }).kind).toBe("pass");
+    expect(resolveKey(press({ key: "F5" }), { ...e, dialog: true }).kind).toBe("pass");
+    expect(resolveKey(press({ key: "F5" }), { ...e, context: neutralContext() }).kind).toBe("pass");
+  });
+
   it("passes keys nobody holds, keys another handler took and compositions", () => {
     const save = command("edit.save");
     const e = env([save], { "edit.save": "Mod+s" });
@@ -244,6 +262,66 @@ describe("the listener", () => {
     stop();
     window.dispatchEvent(press({ key: "j", ctrlKey: true }));
     expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it("never leaves F5 to the webview: with no command to run the key is taken and nothing happens", () => {
+    const run = vi.fn();
+    const e = env([command("explorer.refresh", { run })], { "explorer.refresh": "F5" });
+    let now: KeyEnv = e;
+    const stop = installKeys(window, () => now);
+    const ran = press({ key: "F5" });
+    window.dispatchEvent(ran);
+    expect(run).toHaveBeenCalledOnce();
+    expect(ran.defaultPrevented).toBe(true);
+    // a dialog owns the input | nobody holds the key (with any modifier): no reload of the page either
+    for (const state of [{ ...e, dialog: true }, env([], {})]) {
+      now = state;
+      for (const init of [{}, { ctrlKey: true }, { shiftKey: true }]) {
+        const swallowed = press({ key: "F5", ...init });
+        window.dispatchEvent(swallowed);
+        expect(swallowed.defaultPrevented).toBe(true);
+      }
+    }
+    expect(run).toHaveBeenCalledOnce();
+    // other keys nobody holds stay the webview's
+    const free = press({ key: "F3" });
+    window.dispatchEvent(free);
+    expect(free.defaultPrevented).toBe(false);
+    stop();
+    const after = press({ key: "F5" });
+    window.dispatchEvent(after);
+    expect(after.defaultPrevented).toBe(false);
+  });
+
+  it("a held key runs Refresh once: its repeats are taken and run nothing; a command that steps follows the key", () => {
+    const refresh = vi.fn();
+    const next = vi.fn();
+    const commands = [
+      command("explorer.refresh", { run: refresh }),
+      command("doc.nextChange", { run: next }),
+    ];
+    let now = env(commands, { "explorer.refresh": "F5", "doc.nextChange": "F7" });
+    const stop = installKeys(window, () => now);
+    window.dispatchEvent(press({ key: "F5" }));
+    for (let n = 0; n < 3; n += 1) {
+      const held = press({ key: "F5", repeat: true });
+      window.dispatchEvent(held);
+      expect(held.defaultPrevented).toBe(true);
+    }
+    expect(refresh).toHaveBeenCalledOnce();
+    // released and pressed again
+    window.dispatchEvent(press({ key: "F5" }));
+    expect(refresh).toHaveBeenCalledTimes(2);
+    // the same on a key the person gave it: taken (never the webview's own reload), not run
+    now = env(commands, { "explorer.refresh": "Mod+r", "doc.nextChange": "F7" });
+    const other = press({ key: "r", ctrlKey: true, repeat: true });
+    window.dispatchEvent(other);
+    expect(other.defaultPrevented).toBe(true);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    window.dispatchEvent(press({ key: "F7" }));
+    window.dispatchEvent(press({ key: "F7", repeat: true }));
+    expect(next).toHaveBeenCalledTimes(2);
+    stop();
   });
 });
 

@@ -1,7 +1,7 @@
 //! The tree model: every listed entry of every root, unfiltered, kept sorted. Built by a walk (never follows links),
 //! kept current by syncing changed paths with the disk ("disk is truth": idempotent, order of events irrelevant).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -239,6 +239,8 @@ pub(crate) struct TreeModel {
     children: HashMap<String, Vec<String>>,
     /// Folder key -> its project marker, for the folders of the main root the walk listed (not the root itself).
     markers: HashMap<String, Marker>,
+    /// Keys of the folders listed because the person asked (a large one, an ignored one): a walk lists them again.
+    asked: HashSet<String>,
 }
 
 impl TreeModel {
@@ -248,6 +250,7 @@ impl TreeModel {
             nodes: HashMap::new(),
             children: HashMap::new(),
             markers: HashMap::new(),
+            asked: HashSet::new(),
         }
     }
 
@@ -402,6 +405,12 @@ impl TreeModel {
         if let Some(list) = self.children.get_mut(&node.parent) {
             list.retain(|k| k != key);
         }
+        if !self.asked.is_empty() {
+            // a folder that went, or closed by what replaces it, is no longer one the person opened
+            let below = format!("{key}/");
+            self.asked
+                .retain(|k| k != key && !k.starts_with(below.as_str()));
+        }
         if !self.markers.is_empty() {
             let below = format!("{key}/");
             self.markers
@@ -428,8 +437,10 @@ impl TreeModel {
 
     // ---- walk --------------------------------------------------------------------------------------------------
 
-    /// Forgets everything and walks every root again.
+    /// Forgets everything and walks every root again. The folders the person opened (large | ignored) are listed
+    /// again: reading the disk again closes nothing.
     pub(crate) fn rebuild(&mut self) {
+        let mut asked: Vec<String> = std::mem::take(&mut self.asked).into_iter().collect();
         self.nodes.clear();
         self.children.clear();
         self.markers.clear();
@@ -445,6 +456,14 @@ impl TreeModel {
             // the root of a walk is exempt from the large-folder guard
             let _ = self.list_dir(&mut walk, &root.abs, &root.prefix, &frames, false, 0, false);
             budget = walk.budget;
+        }
+        // a folder before the ones inside it (its key is their prefix): they are listed by its opening. One that is
+        // gone, or that the walk lists by itself now, is simply not opened
+        asked.sort_unstable_by_key(String::len);
+        for key in asked {
+            if let Some(path) = self.nodes.get(&key).map(|node| node.path.clone()) {
+                self.open_folder(&path);
+            }
         }
     }
 
@@ -577,6 +596,7 @@ impl TreeModel {
         ));
         // asked for by the person: the folder itself is listed whatever its size (its sub-folders keep the guard)
         let _ = self.list_dir(&mut walk, &abs, path, &frames, in_ignored, 1, true);
+        self.asked.insert(key);
         true
     }
 

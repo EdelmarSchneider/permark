@@ -2,18 +2,19 @@
 //! "correction" (plugin `local-ai`); the window reviews every change before it lands (TS side: segment, markers, diff,
 //! guards, review bar).
 //!
-//! Rust side is thin: prompt data ([`prompt`]), model call + piece results stream ([`run`]). Depends on `local-ai`
-//! (model service `ModelHost`, looked up per call: loads only through it; a run fetches a missing engine through it,
-//! phase `engine`).
+//! Rust side is thin: prompt data + the correction job ([`prompt`]) run by `local-ai`'s piece runner
+//! ([`PieceRunner`]: model call + piece results stream, warm session, cancel). Depends on `local-ai` (model service
+//! `ModelHost`, looked up per call: loads only through it; a run fetches a missing engine through it, phase
+//! `engine`).
 //!
 //! On by default but dormant: start registers the RPC only (no thread, no load); the window hides the command until
 //! `status` says a model is assigned.
 //!
 //! RPC (app scope): `status {}` -> [`CorrectionStatus`]; `run { run, pieces: [{ id, text }] }` -> `null` (news as
-//! event `correction:run` = [`RunNews`]); `cancel { run }` -> `null`.
+//! event `correction:run` = the runner's [`RunNews`](permark_plugin_local_ai::pieces::RunNews)); `cancel { run }` ->
+//! `null`.
 
 pub mod prompt;
-pub mod run;
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -21,18 +22,19 @@ use std::sync::Arc;
 use permark_core::conditions::Requirement;
 use permark_core::plugins::{
     typed, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope,
-    RpcRegistration, Running, Services,
+    RpcRegistration, Running,
 };
 use permark_core::IpcError;
-use permark_plugin_local_ai::engine::{CancelToken, ChatRequest, EngineError, GenEvent};
-use permark_plugin_local_ai::{HostError, HostProgress, ModelHost, ModelSession, Task};
-use serde::Deserialize;
+use permark_plugin_local_ai::pieces::{Piece, PieceRunner};
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
-pub use run::{
-    CorrectionStatus, Corrector, Discard, Models, Piece, PieceResult, RunNews, RunPhase, Session,
-};
+pub use prompt::CorrectionJob;
 
 const ID: PluginId = PluginId::of("correction");
+
+/// Correction runs of one plugin instance.
+type Corrector = PieceRunner<CorrectionJob>;
 
 /// The plugin.
 #[must_use]
@@ -67,6 +69,15 @@ impl Drop for Started {
     }
 }
 
+/// Answer of `correction.status`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CorrectionStatus {
+    /// A model is assigned to job "correction" (state alone; it may since be gone -> the run fails `noModel`).
+    pub available: bool,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RunArgs {
@@ -86,12 +97,16 @@ fn register(cx: &PluginCx, corrector: &Arc<Corrector>) -> Vec<RpcRegistration> {
     let c = Arc::clone(corrector);
     rpc.extend(cx.rpc(
         "status",
-        typed(move |_: NoArgs, _| Ok::<_, IpcError>(c.status())),
+        typed(move |_: NoArgs, _| {
+            Ok::<_, IpcError>(CorrectionStatus {
+                available: c.available(),
+            })
+        }),
     ));
     let c = Arc::clone(corrector);
     rpc.extend(cx.rpc(
         "run",
-        typed(move |args: RunArgs, _| c.start(args.run, args.pieces)),
+        typed(move |args: RunArgs, _| c.start(args.run, (), args.pieces)),
     ));
     let c = Arc::clone(corrector);
     rpc.extend(cx.rpc(
@@ -110,68 +125,11 @@ impl Plugin for Correction {
     }
 
     fn start(&self, cx: &PluginCx) -> Result<Box<dyn Running>, PluginError> {
-        let models = Arc::new(Hosted {
-            services: cx.app().map(|app| Arc::clone(&app.services)),
-        });
-        let corrector = Arc::new(Corrector::new(models, cx.events().clone(), run::IDLE));
+        let corrector = Arc::new(Corrector::hosted(cx));
         Ok(Box::new(Started {
             _rpc: register(cx, &corrector),
             corrector,
         }))
-    }
-}
-
-/// [`Models`] over `local-ai`'s `ModelHost` (app service; absent -> unavailable).
-struct Hosted {
-    services: Option<Arc<Services>>,
-}
-
-impl Hosted {
-    fn host(&self) -> Option<Arc<ModelHost>> {
-        self.services.as_ref()?.get::<ModelHost>()
-    }
-}
-
-impl Models for Hosted {
-    fn available(&self) -> bool {
-        self.host().is_some_and(|h| h.is_assigned(Task::Correction))
-    }
-
-    fn open(
-        &self,
-        progress: &dyn Fn(HostProgress),
-        cancel: &CancelToken,
-    ) -> Result<Box<dyn Session>, IpcError> {
-        let host = self.host().ok_or(HostError::NoModel(Task::Correction))?;
-        let session = host.open(Task::Correction, run::CONTEXT, progress, cancel)?;
-        Ok(Box::new(HostedSession { host, session }))
-    }
-}
-
-struct HostedSession {
-    host: Arc<ModelHost>,
-    session: ModelSession,
-}
-
-impl Session for HostedSession {
-    fn serves(&self) -> bool {
-        self.host.serves(&self.session, Task::Correction)
-            && self.session.engine().context_len(self.session.id()).is_ok()
-    }
-
-    fn count_tokens(&self, text: &str) -> Result<usize, EngineError> {
-        self.session.engine().count_tokens(self.session.id(), text)
-    }
-
-    fn generate(
-        &self,
-        request: &ChatRequest,
-        sink: &mut dyn FnMut(GenEvent),
-        cancel: &CancelToken,
-    ) -> Result<(), EngineError> {
-        self.session
-            .engine()
-            .generate(self.session.id(), request, sink, cancel)
     }
 }
 

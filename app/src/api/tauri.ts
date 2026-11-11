@@ -141,6 +141,7 @@ export const tauriApi: Api = {
   treeSetFilter: (filter) => call("tree_set_filter", { filter }),
   treeOpenFolder: (path) => call("tree_open_folder", { path }),
   treeKeep: (path) => call("tree_keep", { path }),
+  treeRefresh: () => call("tree_refresh", {}),
   treeClose: () => call("tree_close", {}),
   planMove: (moves, updateLinks) => call("fileops_plan_move", { moves, updateLinks }),
   applyMove: (planId, updateLinks) => call("fileops_apply_move", { planId, updateLinks }),

@@ -20,9 +20,13 @@ import type { StoreMode } from "./generated/StoreMode";
 import type { StoreMove } from "./generated/StoreMove";
 import type { ModelProgress } from "./generated/ModelProgress";
 import type { ModelTest } from "./generated/ModelTest";
-import type { CorrectionPiece } from "./generated/CorrectionPiece";
-import type { CorrectionRun } from "./generated/CorrectionRun";
+import type { PieceRunPiece } from "./generated/PieceRunPiece";
+import type { PieceRun } from "./generated/PieceRun";
 import type { CorrectionStatus } from "./generated/CorrectionStatus";
+import type { TranslationLanguage } from "./generated/TranslationLanguage";
+import type { TranslationPrefs } from "./generated/TranslationPrefs";
+import type { TranslationSaved } from "./generated/TranslationSaved";
+import type { TranslationStatus } from "./generated/TranslationStatus";
 import type { FolderBadge } from "./generated/FolderBadge";
 import type { FolderBadges } from "./generated/FolderBadges";
 import type { FolderJob } from "./generated/FolderJob";
@@ -383,6 +387,7 @@ export interface Commands {
   tree_set_filter: { args: { filter: TreeFilter }; result: TreeSnapshot };
   tree_open_folder: { args: { path: string }; result: null };
   tree_keep: { args: { path: string | null }; result: null };
+  tree_refresh: { args: Record<string, never>; result: null };
   tree_close: { args: Record<string, never>; result: null };
   projects_view: { args: Record<string, never>; result: ProjectsView };
   projects_include: { args: { pick: ProjectPick }; result: IncludeOutcome };
@@ -674,6 +679,11 @@ export interface PluginMethods {
   "local-ai.setStore": { args: { path: string | null; mode?: StoreMode }; result: LocalAiState };
   /** Stops a running store move (copies removed, the old folder stays in use). */
   "local-ai.cancelMove": { args: Record<string, never>; result: LocalAiState };
+  /**
+   * Where models run: `cpuOnly` = the processor only, else the graphics card when there is one. A change unloads the
+   * loaded models (a running test | run ends; the next one loads again) and moves the fit hints + budget.
+   */
+  "local-ai.setCpuOnly": { args: { cpuOnly: boolean }; result: LocalAiState };
   /** Shows the store folder in the file manager (`unavailable` / `store` while it does not exist). */
   "local-ai.revealStore": { args: Record<string, never>; result: null };
   /** This computer (read on the first call, kept ~30 s), a fit hint per catalog model, the budget warning. */
@@ -688,9 +698,36 @@ export interface PluginMethods {
   /** A model is assigned to job "correction" (state only: nothing loads). */
   "correction.status": { args: Record<string, never>; result: CorrectionStatus };
   /** Starts run `run` over `pieces` (a new run stops the old one); news come as `correction:run`. */
-  "correction.run": { args: { run: string; pieces: CorrectionPiece[] }; result: null };
+  "correction.run": { args: { run: string; pieces: PieceRunPiece[] }; result: null };
   /** Stops run `run`; its end comes as `correction:run` `cancelled`. */
   "correction.cancel": { args: { run: string }; result: null };
+  /** A model is assigned to job "translation" (state only: nothing loads). */
+  "translation.status": { args: Record<string, never>; result: TranslationStatus };
+  /**
+   * Starts run `run` over `pieces` into `target`, from `source` (`null`: the model reads it off each piece); a new run
+   * stops the old one; news come as `translation:run`. Refused (`invalidData`, nothing started): detail `tag` (not
+   * shaped like a language tag) | `name` (not a plain language name) | `sameLanguage` (source = target).
+   */
+  "translation.run": {
+    args: {
+      run: string;
+      pieces: PieceRunPiece[];
+      target: TranslationLanguage;
+      source: TranslationLanguage | null;
+    };
+    result: null;
+  };
+  /** Stops run `run`; its end comes as `translation:run` `cancelled`. */
+  "translation.cancel": { args: { run: string }; result: null };
+  /** The target chosen last and the recent ones (kept in the profile, for every window). */
+  "translation.prefs": { args: Record<string, never>; result: TranslationPrefs };
+  /** Remembers `target` (a tag) as chosen: to the front of the recent ones, each once, five at most. */
+  "translation.setPrefs": { args: { target: string }; result: TranslationPrefs };
+  /** Writes `text` as a NEW file `name` in the folder of `beside`, never over a file (a taken name gets ` (2)`). */
+  "translation.save": {
+    args: { beside: string; name: string; text: string };
+    result: TranslationSaved;
+  };
   "fmt-toon.toJson": { args: { text: string }; result: string };
   "convert.analyze": {
     args: { job: number; source: ConvertSource; from?: string };
@@ -755,7 +792,9 @@ export interface AppPluginEvents {
   "local-ai:test": ModelTest;
   /** One correction run's news (`loading` -> `piece` per piece -> `done` | `cancelled` | `failed`); windows keep
    *  their own run id. */
-  "correction:run": CorrectionRun;
+  "correction:run": PieceRun;
+  /** One translation run's news, as `correction:run`. */
+  "translation:run": PieceRun;
 }
 export type AppPluginEventName = keyof AppPluginEvents;
 export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };
@@ -921,6 +960,9 @@ export interface Api {
   treeOpenFolder(path: string): Promise<Result<null>>;
   /** The open document stays in the list even when the filter hides it. */
   treeKeep(path: string | null): Promise<Result<null>>;
+  /** The person's Refresh: the backend reads the project folder again (the tree, the index, git, every plugin that
+   *  keeps a picture of the disk). Answers at once; what differs arrives as `tree-changed`. */
+  treeRefresh(): Promise<Result<null>>;
   treeClose(): Promise<Result<null>>;
   /** Projects inside this window's folder: Settings > Projects + the strip. Changes arrive as `projects-changed`. */
   projectsView(): Promise<Result<ProjectsView>>;

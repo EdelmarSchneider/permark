@@ -5,6 +5,7 @@ import { flushSync, mount, unmount, type Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "../../api/mock";
 import type { MenuEntry } from "../explorer/menu";
+import type { MessageKey } from "../i18n";
 import { contributions } from "../plugins/instance.svelte";
 import ModeSwitch from "./ModeSwitch.svelte";
 import { EditingSession } from "./session.svelte";
@@ -96,6 +97,32 @@ describe("edit actions with the mode switch", () => {
     button()?.click();
     flushSync();
     expect(document.activeElement?.textContent?.trim()).toBe("Fix the paragraph");
+  });
+
+  it("stand by their order, lowest first, whichever was added first; those without one first, as added", () => {
+    const add = (id: string, label: MessageKey, order?: number): (() => void) =>
+      contributions.register({
+        owner: "core",
+        requires: { needs: [], prefers: [] },
+        kind: "editAction",
+        id,
+        label,
+        icon: Icon,
+        entries: () => [],
+        ...(order === undefined ? {} : { order }),
+      });
+    const removals = [
+      add("test.last", "common.cancel", 2),
+      add("test.second", "common.close", 1),
+      add("test.plain", "common.details"),
+    ];
+    session.mode = "edit";
+    flushSync();
+    const labels = [...target.querySelectorAll('button[aria-haspopup="menu"]')].map((el) =>
+      el.getAttribute("aria-label"),
+    );
+    expect(labels).toEqual(["PerMark", "Details", "Close", "Cancel"]);
+    for (const off of removals) off();
   });
 
   it("a second click on the button closes its menu", () => {

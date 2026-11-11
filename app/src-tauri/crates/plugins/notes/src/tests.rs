@@ -560,6 +560,7 @@ fn the_editors_save_takes_the_version_through_the_observer_and_only_when_bytes_c
         formats: &formats,
         own: None,
         observer: observer.as_deref(),
+        tree: None,
     };
     let source = editor.source("a.md").unwrap();
     // nothing changes: nothing is written, nothing is kept

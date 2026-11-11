@@ -182,6 +182,18 @@ describe("the list", () => {
     expect(store.filter.hideEmptyDirs).toBe(true);
   });
 
+  it("Show all lists a folder with nothing in it", async () => {
+    const { api, root, store } = await render();
+    api.probe.project.dirs.add("blank");
+    await store.setFilter({ ...store.filter, showHidden: true });
+    await tick();
+    expect(rows(root).map((r) => r.dataset["path"])).not.toContain("blank");
+    root.querySelector<HTMLButtonElement>(".foot button")?.click();
+    await vi.waitFor(() => expect(store.filter.show).toBe("everything"));
+    await tick();
+    expect(row(root, "blank").getAttribute("aria-level")).toBe("1");
+  });
+
   it("keeps the header and the counts line on one line, the full text in their tooltip", async () => {
     // a long translation (Japanese) is cut short with an ellipsis instead of wrapping a lone letter
     const { root } = await render();
@@ -448,15 +460,20 @@ describe("context menu", () => {
     expect(labels().map((l) => l.trim())).toEqual([
       "New Markdown file...",
       "New folder...",
+      "Refresh",
       "Initialize PerMark…",
     ]);
     // asking hands the window the project's full path and name
-    document.querySelectorAll<HTMLElement>('[role="menuitem"]')[2]?.click();
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]')[3]?.click();
     await vi.waitFor(() => expect(inits).toEqual([{ path: MOCK_FOLDER, name: "demo" }]));
     // initialized: no such entry
     conditions.set({ ...neutralContext(), workspace: "project", permark: "initialized" });
     await rightClick();
-    expect(labels().map((l) => l.trim())).toEqual(["New Markdown file...", "New folder..."]);
+    expect(labels().map((l) => l.trim())).toEqual([
+      "New Markdown file...",
+      "New folder...",
+      "Refresh",
+    ]);
     document
       .querySelector('[role="menu"]')
       ?.dispatchEvent(
@@ -464,6 +481,57 @@ describe("context menu", () => {
       );
     await tick();
     expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+});
+
+describe("refresh", () => {
+  it("the toolbar button and the tree's own menu read the folder again: a file nobody told of is listed", async () => {
+    const { api, root } = await render();
+    const asked = vi.spyOn(api, "treeRefresh");
+    api.probe.project.add("lost.md", "# Lost");
+    expect(rows(root).some((r) => r.dataset["path"] === "lost.md")).toBe(false);
+    const button = root.querySelector<HTMLElement>('.bar button[aria-label="Refresh"]');
+    expect(button?.title).toBe("Refresh");
+    button?.click();
+    await vi.waitFor(() => expect(row(root, "lost.md")).toBeTruthy());
+    expect(asked).toHaveBeenCalledOnce();
+    // the same from the menu of the empty part of the tree
+    api.probe.project.add("lost-too.md", "x");
+    root.querySelector('[role="tree"]')?.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 10,
+        clientY: 10,
+      }),
+    );
+    await tick();
+    const entry = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
+      (item) => item.textContent?.trim() === "Refresh",
+    );
+    entry?.click();
+    await vi.waitFor(() => expect(row(root, "lost-too.md")).toBeTruthy());
+    expect(asked).toHaveBeenCalledTimes(2);
+  });
+
+  it("the toolbar button shows it is working until the list is told, and asks once however often it is pressed", async () => {
+    const { api, root } = await render();
+    // the real backend answers at once and tells the list after its walk (the mock tells before it answers)
+    const asked = vi.spyOn(api, "treeRefresh").mockResolvedValue({ ok: true, value: null });
+    const button = root.querySelector<HTMLElement>('.bar button[aria-label="Refresh"]');
+    expect(button?.getAttribute("aria-busy")).toBe("false");
+    button?.click();
+    button?.click();
+    await tick();
+    expect(button?.getAttribute("aria-busy")).toBe("true");
+    expect(button?.classList.contains("is-busy")).toBe(true);
+    expect(asked).toHaveBeenCalledOnce();
+    // the folder was read: the window is told its list
+    asked.mockRestore();
+    await api.treeRefresh();
+    await tick();
+    expect(button?.getAttribute("aria-busy")).toBe("false");
+    expect(button?.classList.contains("is-busy")).toBe(false);
   });
 });
 
@@ -650,6 +718,24 @@ describe("filter popover", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     await tick();
     expect(root.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("offers the empty folders switch on every preset but Everything, which lists them all", async () => {
+    const { root, store } = await render();
+    root.querySelector<HTMLElement>("[data-filter-trigger]")?.click();
+    await tick();
+    const labels = (): string[] =>
+      Array.from(root.querySelectorAll('[role="dialog"] label.check')).map(
+        (l) => l.textContent?.trim() ?? "",
+      );
+    const emptyFolders = "Hide folders with no visible files";
+    expect(labels()).toContain(emptyFolders);
+    await store.setFilter({ ...store.filter, show: "everything" });
+    await tick();
+    expect(labels()).not.toContain(emptyFolders);
+    await store.setFilter({ ...store.filter, show: "documents" });
+    await tick();
+    expect(labels()).toContain(emptyFolders);
   });
 
   it("an Escape that ends an input method's composition leaves it open", async () => {

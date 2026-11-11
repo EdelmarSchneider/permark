@@ -278,7 +278,8 @@ export type Contribution = Owned &
     /**
      * An icon button with the mode switch while the document is edited (Edit | Source): opens a menu of `entries` below
      * it (correct the selection | paragraph | document). `when` reactive (absent = true); `command`: the command whose
-     * keys the tooltip shows after `label`.
+     * keys the tooltip shows after `label`; `order`: its place among the buttons, lowest first (absent = 0; equal:
+     * as added).
      */
     | {
         kind: "editAction";
@@ -287,6 +288,7 @@ export type Contribution = Owned &
         icon: Component<{ size?: number }>;
         when?: () => boolean;
         command?: string;
+        order?: number;
         entries: () => MenuEntry[];
       }
   );

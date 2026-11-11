@@ -8,8 +8,9 @@
 //!   streamed (<= [`MAX_TOKENS`]), embedding-only model = one vector of [`EMBED_TEXT`] -> `done` with timings.
 //! - The session is ALWAYS unloaded (done | failed | cancelled) before the last event goes out.
 //! - Cancel ([`Tester::cancel`]): stops the engine download (part kept) | the load (worker killed) | the run.
-//! - Device: load uses `Device::Auto` (GPU when the model fits); result `gpu` = the session really runs on it
-//!   ([`crate::host::ModelSession::on_gpu`]). Memory = the engine's estimate (lower bound: file bytes).
+//! - Device: the load runs where the person chose ([`ModelHost`]: GPU when the model fits | processor only); result
+//!   `gpu` = the session really runs on it ([`crate::host::ModelSession::on_gpu`]; processor only: never). Memory =
+//!   the engine's estimate (lower bound: file bytes). The choice changed mid-test: session unloaded, test cancelled.
 //! - Load, unload, `Blocked` (D-14) + engine error codes: [`crate::host`].
 //! - Dormant: nothing runs | is created before a start; plugin off ([`Tester::shutdown`]) cancels + joins.
 //! - Tests: `src/tests/testrun.rs` (shares the installs lab).

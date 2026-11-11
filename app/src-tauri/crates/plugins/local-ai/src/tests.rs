@@ -14,6 +14,7 @@ use crate::catalog::{FileRole, PUBLISHERS};
 
 mod host;
 mod installs;
+mod pieces;
 mod store;
 mod testrun;
 

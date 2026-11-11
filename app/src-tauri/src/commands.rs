@@ -393,6 +393,14 @@ pub fn tree_keep(handle: AppHandle, window: Webview, path: Option<String>) -> Re
         .keep(window.label(), path.as_deref())?)
 }
 
+/// The person's "Refresh": the project folder is read again (the tree, and everything else that keeps a picture of the
+/// disk). Returns at once; what differs arrives as `tree-changed` events.
+#[tauri::command(async)]
+pub fn tree_refresh(handle: AppHandle, window: Webview) -> Result<(), IpcError> {
+    project_of(&handle, &window)?.refresh();
+    Ok(())
+}
+
 #[tauri::command(async)]
 pub fn tree_close(handle: AppHandle, window: Webview) {
     if let Ok(core) = project_of(&handle, &window) {
@@ -959,9 +967,13 @@ pub(crate) fn with_editor<R>(
     run: impl FnOnce(&Editor<'_>, &Workspace) -> Result<R, IpcError>,
 ) -> Result<R, IpcError> {
     let (workspace, formats) = reading_of(handle, window)?;
-    let own = match &workspace {
-        Workspace::Project(core) => Some(core.watcher().own().as_ref()),
-        Workspace::SingleFile(_) | Workspace::Notes(_) => None,
+    // a project hears of its editor's writes: the watch (its own), the tree (a file created is listed at once)
+    let (own, tree) = match &workspace {
+        Workspace::Project(core) => (
+            Some(core.watcher().own().as_ref()),
+            Some(core.explorer().as_ref()),
+        ),
+        Workspace::SingleFile(_) | Workspace::Notes(_) => (None, None),
     };
     // the Notes keep earlier versions of what a save replaces
     let observer = match &workspace {
@@ -973,6 +985,7 @@ pub(crate) fn with_editor<R>(
         formats: &formats,
         own,
         observer: observer.as_deref(),
+        tree,
     };
     run(&editor, &workspace)
 }
@@ -1577,6 +1590,7 @@ commands![
     tree_set_filter,
     tree_open_folder,
     tree_keep,
+    tree_refresh,
     tree_close,
     projects_view,
     projects_include,

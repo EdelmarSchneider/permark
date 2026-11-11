@@ -49,6 +49,25 @@ fn best_vram_skips_software_and_unknown_adapters() {
     assert!(p.unified());
 }
 
+/// A processor-only load counts on no graphics adapter (memory guard, fit hints, budget); any other load on the
+/// profile as read.
+#[test]
+fn a_processor_only_load_sees_no_graphics_adapter() {
+    let mut p = MachineProfile::unknown();
+    p.gpus = vec![gpu(Some(8 << 30), false, false), gpu(None, true, false)];
+    assert_eq!(p.clone().limited_to(Device::Auto), p);
+    let cpu = p.clone().limited_to(Device::Cpu);
+    assert_eq!(cpu.best_vram(), None);
+    assert!(!cpu.unified());
+    assert_eq!(
+        cpu,
+        MachineProfile {
+            gpus: Vec::new(),
+            ..p
+        }
+    );
+}
+
 /// Real detection on this computer (prints it): `cargo test -p permark-plugin-local-ai -- --ignored --nocapture
 /// machine`.
 #[test]

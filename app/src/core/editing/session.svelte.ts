@@ -55,11 +55,15 @@ export type ActiveEditor = {
   focus(): void;
   /** Puts pictures dropped at a point of the window into the text (the editors that take pictures). */
   pictures?(files: File[], point: { x: number; y: number }): void;
-  /** The range `kind` covers now; `null`: none (empty selection, caret outside a prose block). */
+  /** The range `kind` covers now; `null`: none (empty selection, caret outside a prose block). What an edit may
+   *  change inside it is `changeable`'s to say. */
   scope?(kind: EditScope): TextRange | null;
   /** All `edits` (ranges of the text now, not overlapping) in one undo step; `false` and no change when any range no
    *  longer reads its `expect`. Only `insert` goes in: nothing else of the text changes. */
   apply?(edits: readonly TextEdit[]): boolean;
+  /** Whether `apply` would take an edit of `range` as the text stands (Edit: not in a block kept as written); with
+   *  `insert`: that very edit. Nothing changes. Absent: any range can change (Source). */
+  changeable?(range: TextRange, insert?: string): boolean;
   /** Selects `range` and scrolls it into view (Edit: the block scrolled into view when the range is not found in it). */
   reveal?(range: TextRange): void;
   /** Marks `ranges` in the text (decoration only), `current` distinct; a click on one -> `pick(its index)`. Marks follow
@@ -443,6 +447,12 @@ export class EditingSession {
     const editor = this.#editor;
     if (!editor?.apply || editor.composing?.() === true) return false;
     return editor.apply(edits);
+  }
+
+  /** Whether the editor on screen would take an edit of `range` (with `insert`: that very edit); one that does not
+   *  say (or none on screen) takes any: `apply` still checks each edit. */
+  changeable(range: TextRange, insert?: string): boolean {
+    return this.#editor?.changeable?.(range, insert) ?? true;
   }
 
   /** Shows `range` in the editor on screen. */

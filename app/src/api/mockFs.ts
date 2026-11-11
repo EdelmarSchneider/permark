@@ -197,7 +197,9 @@ export class MockProject {
           forced: false,
         });
         const inside = walk(dir);
-        if (!inside && filter.hideEmptyDirs && !this.kept.has(dir)) out.length = mark;
+        // Everything lists every folder (backend `TreeFilter::hides_empty_dirs`)
+        const hideEmpty = filter.hideEmptyDirs && filter.show !== "everything";
+        if (!inside && hideEmpty && !this.kept.has(dir)) out.length = mark;
         else any = true;
       }
       for (const path of files) {

@@ -1529,9 +1529,12 @@ fn a_window_on_the_default_filter_follows_the_new_default_and_one_with_its_own_s
             && t.delta.filter.as_ref().map(|f| f.show) == Some(FilterShow::Everything)),
         "the window on the default is told its filter moved: {moved:?}"
     );
+    // the folder was read again for the new rules: every window hears that; this one of no filter and no difference
     assert!(
-        moved.iter().all(|t| t.window != "w-1"),
-        "a window with its own filter hears nothing: {moved:?}"
+        moved
+            .iter()
+            .all(|t| t.window != "w-1" || (t.delta.is_empty() && t.delta.filter.is_none())),
+        "a window with its own filter keeps it and its list: {moved:?}"
     );
 }
 

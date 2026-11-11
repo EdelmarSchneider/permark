@@ -41,7 +41,7 @@ export function checkName(name: string): MockNameProblem | null {
 }
 
 /** The extension in lower case: none for `.hidden`, `name.` or no dot. */
-function extensionOf(name: string): string | null {
+export function extensionOf(name: string): string | null {
   const dot = name.lastIndexOf(".");
   if (dot <= 0 || dot + 1 === name.length) return null;
   return name.slice(dot + 1).toLowerCase();

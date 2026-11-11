@@ -461,8 +461,8 @@ impl Pass<'_> {
 
     fn file(&mut self, p: &Pending, path: &str, meta: &Metadata) {
         let key = key_of(path);
-        let prev = self.env.sigs.get(&key);
         let (len, mtime_ms) = stat_sig(meta);
+        let prev = self.env.sigs.previous(&key, p.created, (len, mtime_ms));
         if prev.is_some_and(|s| s.len == len && s.mtime_ms == mtime_ms) {
             return; // untouched since last looked at
         }

@@ -6,11 +6,12 @@
 //! capability set a model must offer.
 //!
 //! RPC for the windows: `catalog`, `tasks`, `state`, `get`, `update`, `acceptLicense`, `cancel`, `deletePart`,
-//! `remove`, `assign`, `setToken`, `clearToken`, `setStore`, `cancelMove` (install calls answer the new
-//! [`LocalAiState`]), `revealStore`, `machine` ([`fit::MachineInfo`]: profile read on first call, fit hints,
-//! budget), `testModel` + `cancelTest` ([`testrun`], answer `null`). Events (app scope): `state` (whole state after
-//! every change), `progress` (one model, throttled by the engine), `move` (store move, ~10/s), `test`
-//! ([`testrun::ModelTest`]: one test's phases).
+//! `remove`, `assign`, `setToken`, `clearToken`, `setStore`, `cancelMove`, `setCpuOnly` (models on the processor
+//! only | on the graphics card when there is one; a change unloads every session) (install calls answer the new
+//! [`LocalAiState`]), `revealStore`, `machine` ([`fit::MachineInfo`]: profile read on first call, fit hints +
+//! budget for where models run), `testModel` + `cancelTest` ([`testrun`], answer `null`). Events (app scope):
+//! `state` (whole state after every change), `progress` (one model, throttled by the engine), `move` (store move,
+//! ~10/s), `test` ([`testrun::ModelTest`]: one test's phases).
 //!
 //! "Remove data" (plugin off): core deletes the plugin's namespace (state + default store); [`Plugin::remove_data`]
 //! first removes the model folders of a chosen store (ONLY `<lineage>/<version>/` of known lineages there),
@@ -21,6 +22,9 @@
 //!
 //! Model service ([`host`]): app service [`ModelHost`] (`services.get::<ModelHost>()`) while on, for PerMark
 //! features (e.g. plugin `correction`); withdrawn first at plugin off.
+//!
+//! Piece runs ([`pieces`]): the runner a feature plugin builds over that service for its own job (text pieces -> one
+//! model answer each, as the feature's events); owned + stopped by that plugin, nothing of it runs here.
 
 pub mod catalog;
 pub mod engine;
@@ -29,6 +33,7 @@ pub mod guard;
 pub mod host;
 pub mod installs;
 pub mod machine;
+pub mod pieces;
 mod relocate;
 pub mod runtime;
 pub(crate) mod state;
@@ -153,6 +158,12 @@ struct StoreArgs {
     mode: Option<StoreMode>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CpuOnlyArgs {
+    cpu_only: bool,
+}
+
 /// Install calls (each answers the new state).
 fn register(cx: &PluginCx, installs: &Arc<Installs>) -> Vec<RpcRegistration> {
     type ModelCall = fn(&Installs, &str) -> Result<LocalAiState, InstallError>;
@@ -200,6 +211,11 @@ fn register(cx: &PluginCx, installs: &Arc<Installs>) -> Vec<RpcRegistration> {
         typed(move |args: StoreArgs, _| {
             Ok::<_, IpcError>(i.set_store(args.path.as_deref(), args.mode)?)
         }),
+    ));
+    let i = Arc::clone(installs);
+    rpc.extend(cx.rpc(
+        "setCpuOnly",
+        typed(move |args: CpuOnlyArgs, _| Ok::<_, IpcError>(i.set_cpu_only(args.cpu_only)?)),
     ));
     let i = Arc::clone(installs);
     rpc.extend(cx.rpc(
@@ -303,7 +319,7 @@ impl Plugin for LocalAi {
             typed(move |_: NoArgs, _| {
                 // state alone: no engine started, no store read
                 let assigned = i.assigned_ids();
-                Ok::<_, IpcError>(fit::advise(&c, machine.profile(), &assigned))
+                Ok::<_, IpcError>(fit::advise(&c, machine.profile(), &assigned, i.device()))
             }),
         ));
         let host = Arc::new(ModelHost::new(

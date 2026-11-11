@@ -13,4 +13,8 @@ categories: Array<Category>,
 /**
  * `+pattern` shows, `-pattern` hides (gitignore syntax), separated by white space or commas.
  */
-patterns: string, assetsNearDocsOnly: boolean, hideEmptyDirs: boolean, showHidden: boolean, showIgnored: boolean, };
+patterns: string, assetsNearDocsOnly: boolean, 
+/**
+ * Not in force under `Everything`, which lists every folder.
+ */
+hideEmptyDirs: boolean, showHidden: boolean, showIgnored: boolean, };

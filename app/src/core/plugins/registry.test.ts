@@ -186,6 +186,7 @@ describe("plugin host", () => {
       "tags",
       "text-view",
       "token-count",
+      "translation",
       "unread",
       "updates",
       "word-count",

@@ -28,4 +28,8 @@ tokenSet: boolean,
 /**
  * License addresses accepted.
  */
-acceptedLicenses: Array<string>, };
+acceptedLicenses: Array<string>, 
+/**
+ * The person lets models run on the processor only (`false`: on the graphics card when there is one).
+ */
+cpuOnly: boolean, };

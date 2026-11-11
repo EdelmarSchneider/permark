@@ -92,7 +92,11 @@ describe("Settings > AI agents", () => {
   it("has its own place in the nav, after Editing; Integration has no agent card", async () => {
     await open();
     mountPage("reading");
-    await until(() => navLabels().includes("AI agents"), "nav item");
+    // plugins come on one by one, each when its module is loaded: wait for every page whose place is checked
+    await until(
+      () => ["AI agents", "Local AI"].every((label) => navLabels().includes(label)),
+      "nav items",
+    );
     const labels = navLabels();
     expect(labels.indexOf("AI agents")).toBe(labels.indexOf("Editing") + 1);
     // Local AI (order 35) sits between the agents and Integration
