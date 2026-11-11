@@ -182,6 +182,18 @@ describe("the list", () => {
     expect(store.filter.hideEmptyDirs).toBe(true);
   });
 
+  it("Show all lists a folder with nothing in it", async () => {
+    const { api, root, store } = await render();
+    api.probe.project.dirs.add("blank");
+    await store.setFilter({ ...store.filter, showHidden: true });
+    await tick();
+    expect(rows(root).map((r) => r.dataset["path"])).not.toContain("blank");
+    root.querySelector<HTMLButtonElement>(".foot button")?.click();
+    await vi.waitFor(() => expect(store.filter.show).toBe("everything"));
+    await tick();
+    expect(row(root, "blank").getAttribute("aria-level")).toBe("1");
+  });
+
   it("keeps the header and the counts line on one line, the full text in their tooltip", async () => {
     // a long translation (Japanese) is cut short with an ellipsis instead of wrapping a lone letter
     const { root } = await render();
@@ -706,6 +718,24 @@ describe("filter popover", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     await tick();
     expect(root.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("offers the empty folders switch on every preset but Everything, which lists them all", async () => {
+    const { root, store } = await render();
+    root.querySelector<HTMLElement>("[data-filter-trigger]")?.click();
+    await tick();
+    const labels = (): string[] =>
+      Array.from(root.querySelectorAll('[role="dialog"] label.check')).map(
+        (l) => l.textContent?.trim() ?? "",
+      );
+    const emptyFolders = "Hide folders with no visible files";
+    expect(labels()).toContain(emptyFolders);
+    await store.setFilter({ ...store.filter, show: "everything" });
+    await tick();
+    expect(labels()).not.toContain(emptyFolders);
+    await store.setFilter({ ...store.filter, show: "documents" });
+    await tick();
+    expect(labels()).toContain(emptyFolders);
   });
 
   it("an Escape that ends an input method's composition leaves it open", async () => {

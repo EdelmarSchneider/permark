@@ -522,6 +522,23 @@ fn empty_folders_go_unless_asked_or_kept() {
 }
 
 #[test]
+fn everything_shows_empty_folders() {
+    let f = fixture(&["empty/", "full/a.md", "deep/inner/"]);
+    let all = TreeFilter::default().with_show(FilterShow::Everything);
+    assert!(all.hide_empty_dirs, "the switch itself is left alone");
+    assert_eq!(
+        shown(&f, all.clone()),
+        ["deep", "deep/inner", "empty", "full", "full/a.md"],
+        "Everything lists a folder with nothing in it"
+    );
+    // back on another preset the switch counts again
+    assert_eq!(
+        shown(&f, all.with_show(FilterShow::DocsAndAssets)),
+        ["full", "full/a.md"]
+    );
+}
+
+#[test]
 fn patterns_show_hide_and_the_last_match_wins() {
     let f = fixture(&[
         "a.md",

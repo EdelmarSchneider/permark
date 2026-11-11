@@ -18,6 +18,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Only one review is open at a time: while you review corrections the translation entries wait, and the other way round. <!-- f: correction, translation -->
 
 ### Fixed
+- The **Everything** filter of the Explorer, and **Show all**, now show empty folders too. Before, a folder with nothing in it stayed hidden until you also turned off "Hide folders with no visible files". That switch is no longer offered while Everything is selected, and it counts again when you choose another filter. <!-- f: explorer -->
 - A file that PerMark created and opened right away (a converted or translated copy, "Save as", a pasted picture) now shows in the Explorer at once. Before, it could stay missing from the Explorer, from search and from the lists that follow changes until something else touched the folder; the same could happen to a document opened right after another program saved it. <!-- f: explorer, watch -->
 - A suggestion waiting in the correction bar is no longer dropped when the text around it changes; it follows its own words. Before, accepting two suggestions in one table could drop the others in that table. <!-- f: correction, editing -->
 - Correction no longer sends the marker of an alert (`[!NOTE]`), the text inside an inline HTML element such as `<kbd>Ctrl</kbd>`, or a table whose separator row ends in spaces to the model, and it refuses an answer that adds links, HTML or headings the text did not have. <!-- f: correction -->
