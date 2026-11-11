@@ -161,6 +161,22 @@ describe("a correction run", () => {
     expect(session.text).toBe(`${DOC}\n${table.replace("Teh", "The")}`);
   });
 
+  it("what the bar shows around a fix in a table cell is that cell's text, also when it is read again", async () => {
+    session.text = "| Name | Note |\n|---|---|\n| Teh quick fox | is donne now |\n";
+    await store.runOver("document");
+    answer(2, (t) => t.replace("Teh", "The"));
+    answer(3, (t) => t.replace("donne", "done"));
+    news({ kind: "done" });
+    const excerpts = (): string[] =>
+      (store.review?.suggestions ?? []).map(
+        (s) => `${s.before}[${s.original}>${s.insert}]${s.after}`,
+      );
+    expect(excerpts()).toEqual(["[Teh>The] quick fox", "is [donne>done] now"]);
+    // one accepted: the excerpts of the others are read from the text as it is now
+    store.accept();
+    expect(excerpts()).toEqual(["is [donne>done] now"]);
+  });
+
   it("nothing to check: no run, the bar says so", async () => {
     session.text = "```\nteh\n```\n";
     await store.runOver("document");

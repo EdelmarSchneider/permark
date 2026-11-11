@@ -298,8 +298,8 @@ describe("the ways into a translation", () => {
     const runOver = vi.spyOn(translation, "runOver").mockResolvedValue();
     expect(itemsOf(menuOf(registry)).at(-1)?.label).toBe("Choose a language…");
     await translation.languages.choose("pt-BR");
-    expect(itemsOf(menuOf(registry)).at(-1)?.label).toBe("To: Brazilian Portuguese…");
-    item(registry, "To: Brazilian Portuguese…").run(false);
+    expect(itemsOf(menuOf(registry)).at(-1)?.label).toBe("To: Portuguese (Brazil)…");
+    item(registry, "To: Portuguese (Brazil)…").run(false);
     expect(languageDialog.state).toMatchObject({
       status: "open",
       confirm: "translation.language.save",
@@ -389,11 +389,11 @@ describe("the ways into a translation", () => {
     languageDialog.confirm("de", "en-US");
     expect(runs).toHaveLength(before);
     expect(translation.languages.source).toBe("en-US");
-    expect(language()).toBe("American English → German…");
+    expect(language()).toBe("English (United States) → German…");
     expect(t("translation.menu.pair", { source: "A", target: "B" })).toBe("A → B…");
     void command(registry, "translation.language").run();
     languageDialog.confirm("ja", "en-US");
-    expect(language()).toBe("American English → Japanese…");
+    expect(language()).toBe("English (United States) → Japanese…");
     // the run started next, from the menu
     item(registry, "Whole document").run(false);
     await vi.waitFor(() => expect(runs).toHaveLength(before + 1));

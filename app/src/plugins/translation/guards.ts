@@ -164,8 +164,9 @@ export function judge(doc: string, piece: Piece, output: string, pair: Pair): Pi
   if (offScript(unmarked(said), unmarked(piece.text), pair.target)) return discard("script");
   if (structure.kind === "discard") return structure;
   const insert = piece.original.includes("\n") ? answer : oneLine(answer);
-  const { from, to, original } = piece;
-  return { kind: "ok", suggestions: [{ from, to, original, insert, ...around(doc, from, to) }] };
+  const { from, to, original, kind: within } = piece;
+  const excerpt = around(doc, from, to, within);
+  return { kind: "ok", suggestions: [{ from, to, original, insert, within, ...excerpt }] };
 }
 
 // the length range for a piece's text and its answer (markers hold no letter: they count for neither script)

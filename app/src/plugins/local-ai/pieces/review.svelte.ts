@@ -759,9 +759,9 @@ export class PieceReview {
       this.done();
       return;
     }
-    // excerpts read the text as it is now (an accepted neighbor shows as changed)
+    // excerpts read the text as it is now (an accepted neighbor shows as changed), each as its piece's kind has it
     const text = this.#known;
-    const suggestions = left.map((s) => ({ ...s, ...around(text, s.from, s.to) }));
+    const suggestions = left.map((s) => ({ ...s, ...around(text, s.from, s.to, s.within) }));
     this.state = { ...review, suggestions, at, outdated: review.outdated + dropped };
     if (removed && left.length > 0) this.#reveal();
   }

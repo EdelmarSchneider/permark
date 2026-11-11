@@ -1,8 +1,9 @@
 // Languages a text can be translated into | from: a fixed list of BCP 47 tags, each named by the runtime's own data
 // (`Intl.DisplayNames`): no name is typed by the person, none is translated here. The English name of a run's
-// language goes into the model's prompt, so the backend checks tag and name before it takes them; `isTag`,
-// `isPromptName` and `sameTag` are its rules (Rust `translation::prompt::{Tag, Language, Pair}`), kept here so a
-// language it would refuse is never offered. A language's script (`scriptOf`) tells what an answer in it is written in.
+// language goes into the model's prompt (`englishName`: not the name a person is shown, `namesIn`), so the backend
+// checks tag and name before it takes them; `isTag`, `isPromptName` and `sameTag` are its rules (Rust
+// `translation::prompt::{Tag, Language, Pair}`), kept here so a language it would refuse is never offered. A
+// language's script (`scriptOf`) tells what an answer in it is written in.
 
 import { language } from "../../core/i18n";
 import { languageName } from "../local-ai/words";
@@ -175,10 +176,14 @@ export function sameTag(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }
 
-/** The runtime's language names in `locale` (`null`: it has none). */
-function displayNames(locale: string): Intl.DisplayNames | null {
+/** How a variant of a language is named: by a name of its own where there is one ("American English") | by its
+ *  language, then what tells it apart ("English (United States)"). */
+type VariantForm = "dialect" | "standard";
+
+/** The runtime's language names in `locale`, variants named as `form` (`null`: it has none). */
+function displayNames(locale: string, form: VariantForm): Intl.DisplayNames | null {
   try {
-    return new Intl.DisplayNames(locale, { type: "language", languageDisplay: "dialect" });
+    return new Intl.DisplayNames(locale, { type: "language", languageDisplay: form });
   } catch {
     return null;
   }
@@ -187,10 +192,11 @@ function displayNames(locale: string): Intl.DisplayNames | null {
 /** Built on the first name asked for (never at app start). */
 let english: Intl.DisplayNames | null | undefined;
 
-/** The name the prompt shows for `tag`: its English dialect name ("Brazilian Portuguese"); `null` when the runtime
- *  has no name for it (it answers the code back) or the name is not one the backend takes. */
+/** The name the prompt shows for `tag`: its English dialect name ("Brazilian Portuguese": the form the prompt was
+ *  tried with, not the one a person is shown); `null` when the runtime has no name for it (it answers the code back)
+ *  or the name is not one the backend takes. */
 export function englishName(tag: string): string | null {
-  if (english === undefined) english = displayNames("en");
+  if (english === undefined) english = displayNames("en", "dialect");
   if (english === null) return null;
   const name = languageName(tag, english).replace(TYPOGRAPHIC_APOSTROPHE, "'");
   return sameTag(name, tag) || !isPromptName(name) ? null : name;
@@ -208,15 +214,16 @@ export function offered(): readonly string[] {
 /** Where a language's name is shown: on its own (a list row, a tab, a menu entry, a label) | inside a sentence. */
 export type NamePlace = "label" | "sentence";
 
-/** Names of languages in the language `locale` (default: the app's): `tag` -> its name there, the tag itself where
- *  the runtime has none. The runtime writes a name as it stands inside a sentence ("alemão": small in Portuguese,
- *  Spanish, French, …); as a `label` its first letter is a capital, by that language's rules. One lookup serves a
- *  whole list. */
+/** Names of languages as a person is shown them, in the language `locale` (default: the app's): `tag` -> its name
+ *  there, the tag itself where the runtime has none. A variant is named by its language first ("English (United
+ *  States)", "Chinese (Simplified)"): in a list it stands, and is looked for, under the language's name. The runtime
+ *  writes a name as it stands inside a sentence ("alemão": small in Portuguese, Spanish, French, …); as a `label` its
+ *  first letter is a capital, by that language's rules. One lookup serves a whole list. */
 export function namesIn(
   locale: string = language.locale,
   place: NamePlace = "label",
 ): (tag: string) => string {
-  const names = displayNames(locale);
+  const names = displayNames(locale, "standard");
   return (tag) => {
     const name = names === null ? tag : languageName(tag, names);
     if (place === "sentence" || sameTag(name, tag)) return name;

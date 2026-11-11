@@ -80,9 +80,9 @@ export type Listed = {
   tag: string;
   /** Its name in the app's language. */
   name: string;
-  /** Its name in the language itself, where that reads differently. */
+  /** Its name in the language itself, where that reads differently (letter case aside). */
   own: string | null;
-  /** Its English name: found by it in a window of any language. */
+  /** The English name its prompt has: found by it in a window of any language, never shown. */
   english: string;
 };
 
@@ -97,7 +97,9 @@ export function listed(locale: string = language.locale): Listed[] {
     .map((tag) => {
       const name = nameHere(tag);
       const own = ownName(tag);
-      return { tag, name, own: own === name ? null : own, english: englishName(tag) ?? tag };
+      // the same name but for the capital a label starts with ("Italiano", "italiano") says nothing more
+      const same = own?.toLocaleLowerCase(locale) === name.toLocaleLowerCase(locale);
+      return { tag, name, own: same ? null : own, english: englishName(tag) ?? tag };
     })
     .sort((a, b) => order.compare(a.name, b.name));
 }

@@ -146,17 +146,31 @@ describe("namesIn", () => {
   it("names a language in the asked language (the app's by default), the tag itself where there is no name", () => {
     expect(namesIn("pt-BR")("de")).toBe("Alemão");
     expect(namesIn("de")("de")).toBe("Deutsch");
-    expect(namesIn("en")("pt-BR")).toBe("Brazilian Portuguese");
+    expect(namesIn("en")("pt-BR")).toBe("Portuguese (Brazil)");
     expect(namesIn()("de")).toBe(namesIn(language.locale)("de"));
     expect(namesIn("en")("qaa")).toBe("qaa");
     expect(namesIn("en")("not a tag")).toBe("not a tag");
+  });
+
+  it("names a variant by its language first, then what tells it apart: it is found under the language's name", () => {
+    expect(namesIn("en")("en-US")).toBe("English (United States)");
+    expect(namesIn("en")("en-GB")).toBe("English (United Kingdom)");
+    expect(namesIn("en")("zh-Hans")).toBe("Chinese (Simplified)");
+    expect(namesIn("en")("es-419")).toBe("Spanish (Latin America)");
+    expect(namesIn("en")("fr-CA")).toBe("French (Canada)");
+    expect(namesIn("en")("sr-Latn")).toBe("Serbian (Latin)");
+    expect(namesIn("pt-BR")("zh-Hans")).toBe("Chinês (simplificado)");
+    expect(namesIn("de")("en-US")).toBe("Englisch (Vereinigte Staaten)");
+    // the name a run's prompt shows is another matter: the form the model was tried with
+    expect(englishName("en-US")).toBe("American English");
+    expect(englishName("zh-Hans")).toBe("Simplified Chinese");
   });
 
   it("starts a name with a capital letter where the runtime writes it small (a list, a label, a menu)", () => {
     // the runtime's names are written for the middle of a sentence: small in Portuguese, Spanish, French, …
     expect(namesIn("pt-BR")("pt-BR")).toBe("Português (Brasil)");
     expect(namesIn("es")("de")).toBe("Alemán");
-    expect(namesIn("fr")("zh-Hans")).toBe("Chinois simplifié");
+    expect(namesIn("fr")("zh-Hans")).toBe("Chinois (simplifié)");
     expect(namesIn("it")("ja")).toBe("Giapponese");
     // a script without capitals, and a name that has one already, stay as they are
     expect(namesIn("ja")("de")).toBe("ドイツ語");
@@ -165,7 +179,7 @@ describe("namesIn", () => {
 
   it("inside a sentence a name stays as the runtime writes it", () => {
     expect(namesIn("pt-BR", "sentence")("de")).toBe("alemão");
-    expect(namesIn("fr", "sentence")("zh-Hans")).toBe("chinois simplifié");
+    expect(namesIn("fr", "sentence")("zh-Hans")).toBe("chinois (simplifié)");
     expect(namesIn("en", "sentence")("de")).toBe("German");
     expect(namesIn("de", "sentence")("pt-BR")).toBe("Portugiesisch (Brasilien)");
   });
@@ -176,8 +190,9 @@ describe("ownName", () => {
     expect(ownName("de")).toBe("Deutsch");
     expect(ownName("ja")).toBe("日本語");
     expect(ownName("pt-BR")).toBe("português (Brasil)");
-    expect(ownName("es-ES")).toBe("español de España");
-    expect(ownName("zh-Hans")).toBe("简体中文");
+    expect(ownName("es-ES")).toBe("español (España)");
+    expect(ownName("zh-Hans")).toBe("中文（简体）");
+    expect(ownName("en-US")).toBe("English (United States)");
   });
 
   it("is null where the runtime does not speak the language: never a name in some other language", () => {

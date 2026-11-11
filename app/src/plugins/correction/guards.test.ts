@@ -100,6 +100,41 @@ describe("judge", () => {
     expect(applied(doc, judge(doc, fox, "The quick fox."))).toBe(doc.replace("Teh", "The"));
   });
 
+  it("a table cell: what is shown around a fix is the cell's own text, never a pipe or another cell", () => {
+    const doc = [
+      "| Feature | State | Notes |",
+      "|---|---|---|",
+      "| Math | is donne now | KaTeX, fast |",
+      "| Diagrams | donne | Mermaid |",
+      "",
+    ].join("\n");
+    const cell = (text: string): Piece => {
+      const found = pieces(doc).find((piece) => piece.original === text);
+      if (found === undefined) throw new Error(`no cell ${text}`);
+      return found;
+    };
+    const inside = judge(doc, cell("is donne now"), "is done now");
+    expect(inside).toMatchObject({
+      kind: "ok",
+      suggestions: [
+        { original: "donne", insert: "done", before: "is ", after: " now", within: "cell" },
+      ],
+    });
+    // the whole cell: nothing of the cells beside it, nothing of the next row
+    const whole = judge(doc, cell("donne"), "done");
+    expect(whole).toMatchObject({ kind: "ok", suggestions: [{ before: "", after: "" }] });
+    for (const verdict of [inside, whole]) {
+      if (verdict.kind !== "ok") throw new Error("discarded");
+      for (const s of verdict.suggestions) expect(s.before + s.after).not.toMatch(/[|\n]/);
+    }
+    // a paragraph's excerpt is the text around the fix, as ever
+    const text = "Some long text before teh error and more after it.";
+    expect(judge(text, only(text), text.replace("teh", "the"))).toMatchObject({
+      kind: "ok",
+      suggestions: [{ before: "Some long text before ", after: " error and more after it." }],
+    });
+  });
+
   it("drops a suggestion that only adds a final period to a heading | list item", () => {
     const heading = "# Teh title";
     const v = judge(heading, only(heading), "The title.");

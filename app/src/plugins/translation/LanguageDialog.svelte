@@ -3,7 +3,8 @@
   // unless named; a named one is for the run that starts next alone, and shows here again while it waits for that
   // run), each picked from one searchable list. The two picks are a draft: taken only on the confirm; Esc | Cancel
   // leave everything as it was. Keys: Up | Down | PageUp | PageDown move through the list from the field and from
-  // the list (there Home | End too), Enter picks the row, Ctrl+Enter confirms.
+  // the list (there Home | End too), Enter picks the row and, on the row that is the pick already, confirms (a new
+  // press: never a key held down), Ctrl+Enter confirms.
   import Check from "@lucide/svelte/icons/check";
   import { isComposition } from "../../core/commands/combo";
   import { language, t, tn, type MessageKey } from "../../core/i18n";
@@ -177,7 +178,11 @@
       case " ":
         if (typing && event.key === " ") return;
         event.preventDefault();
-        pick(current);
+        // the row is the pick already: nothing left to pick, so Enter says "this one" (nothing without a language
+        // to translate into)
+        if (event.key === "Enter" && !event.repeat && current !== null && isChosen(current))
+          confirm();
+        else pick(current);
         return;
       default:
         return;

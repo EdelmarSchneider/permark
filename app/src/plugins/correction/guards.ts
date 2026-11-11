@@ -86,7 +86,7 @@ export function judge(doc: string, piece: Piece, output: string, lang?: string):
   if (structure.kind === "discard") return structure;
   const d = wordDiff(piece.original, structure.restored, lang);
   if (overEdit(d)) return discard("overEdit");
-  const suggestions = suggest(doc, piece.from, d).flatMap((s) => keepEnding(piece, s));
+  const suggestions = suggest(doc, piece.from, d, piece.kind).flatMap((s) => keepEnding(piece, s));
   return { kind: "ok", diff: d, suggestions };
 }
 

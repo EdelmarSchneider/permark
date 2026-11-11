@@ -52,7 +52,7 @@ describe("pieces", () => {
     const list = pieces(DOC);
     expect(texts(list)).toEqual([
       "Teh *title* ⟦1⟧",
-      "Read [teh docs]⟦1⟧ and ⟦2⟧teh⟦3⟧ ⟦4⟧ ⟦5⟧ ⟦6⟧ ⟦7⟧ ⟦8⟧\nline two⟦9⟧three⟦10⟧four",
+      "Read [teh docs]⟦1⟧ and ⟦2⟧ ⟦3⟧ ⟦4⟧ ⟦5⟧ ⟦6⟧ ⟦7⟧\nline two⟦8⟧three⟦9⟧four",
       "item won\n  more",
       "task too",
       "quote won\n⟦1⟧ still",
@@ -74,8 +74,7 @@ describe("pieces", () => {
     ]);
     expect(list[1]?.markers).toEqual([
       '(http://a.b/c "Teh title")',
-      "<span>",
-      "</span>",
+      "<span>teh</span>",
       "$a+b$",
       "[^1]",
       "[[Teh page]]",
@@ -239,6 +238,114 @@ describe("quote alerts", () => {
   });
 });
 
+describe("HTML elements written in a line", () => {
+  /** The one piece of `doc`. */
+  function only(doc: string): Piece {
+    const list = pieces(doc);
+    const [piece] = list;
+    if (piece === undefined || list.length !== 1) throw new Error(`not one piece in ${doc}`);
+    return piece;
+  }
+
+  it.each([
+    ["Press <kbd>Ctrl</kbd> to save.", "Press ⟦1⟧ to save.", ["<kbd>Ctrl</kbd>"]],
+    ["H<sub>2</sub>O is teh water.", "H⟦1⟧O is teh water.", ["<sub>2</sub>"]],
+    ['A <span class="x">text</span> here.', "A ⟦1⟧ here.", ['<span class="x">text</span>']],
+    // the same name inside: each closing tag ends the nearest one still open
+    ["A <span>a <span>b</span> c</span> d.", "A ⟦1⟧ d.", ["<span>a <span>b</span> c</span>"]],
+    ["Teh <b>bold <i>both</i></b> end.", "Teh ⟦1⟧ end.", ["<b>bold <i>both</i></b>"]],
+    // a `>` in a quoted attribute is no end of the tag
+    [
+      'See <span title="a > b">text</span> now.',
+      "See ⟦1⟧ now.",
+      ['<span title="a > b">text</span>'],
+    ],
+    // an attribute written without quotes takes the `/` before the `>`: an opening tag
+    [
+      "See <a href=http://x.y/>teh link</a> now.",
+      "See ⟦1⟧ now.",
+      ["<a href=http://x.y/>teh link</a>"],
+    ],
+    // tag names in any letter case
+    ["Teh <B>bold</b> word.", "Teh ⟦1⟧ word.", ["<B>bold</b>"]],
+    // whatever stands inside goes with it: Markdown, code, a link, a formula
+    [
+      "Teh <span>a *b* `code` [x](u) $y$</span> end.",
+      "Teh ⟦1⟧ end.",
+      ["<span>a *b* `code` [x](u) $y$</span>"],
+    ],
+    // its opening tag inside emphasis, its closing tag after it
+    ["Teh *a <kbd>b* c</kbd> end.", "Teh *a ⟦1⟧ end.", ["<kbd>b* c</kbd>"]],
+    // over a line break; in a quote with the next line's mark
+    ["Teh <em>one\ntwo</em> end.", "Teh ⟦1⟧ end.", ["<em>one\ntwo</em>"]],
+    ["> Teh <em>one\n> two</em> end.", "Teh ⟦1⟧ end.", ["<em>one\n> two</em>"]],
+    ["## Use <kbd>Ctrl</kbd> key", "Use ⟦1⟧ key", ["<kbd>Ctrl</kbd>"]],
+    ["- [ ] press <kbd>Ctrl</kbd> twice", "press ⟦1⟧ twice", ["<kbd>Ctrl</kbd>"]],
+  ])("%j: the whole element is one marker, its text never sent", (doc, text, markers) => {
+    const piece = only(doc);
+    expect(piece.text).toBe(text);
+    expect(piece.markers).toEqual(markers);
+    expect(restore(piece.text, piece)).toBe(piece.original);
+  });
+
+  it.each([
+    // an opening tag with no closing tag in its block
+    ["Teh <b>open text.", "Teh ⟦1⟧open text.", ["<b>"]],
+    ["Teh <span>a <b>b</b> c.", "Teh ⟦1⟧a ⟦2⟧ c.", ["<span>", "<b>b</b>"]],
+    // a closing tag with no opening tag before it
+    ["Teh </i> text.", "Teh ⟦1⟧ text.", ["</i>"]],
+    // tags that hold nothing: closed in themselves, or of an element that never has a closing tag
+    ["One<br>two <br/> three.", "One⟦1⟧two ⟦2⟧ three.", ["<br>", "<br/>"]],
+    [
+      'Teh <img src="a.png" alt="x > y"> picture <span/> here.',
+      "Teh ⟦1⟧ picture ⟦2⟧ here.",
+      ['<img src="a.png" alt="x > y">', "<span/>"],
+    ],
+    ["One <br> two </br> three.", "One ⟦1⟧ two ⟦2⟧ three.", ["<br>", "</br>"]],
+    // closed out of order: the element closed first is the marker, the tag left over stands alone
+    ["Teh <b>a <i>b</b> c</i> d.", "Teh ⟦1⟧ c⟦2⟧ d.", ["<b>a <i>b</b>", "</i>"]],
+  ])("%j: a tag without its other half stays a marker of its own", (doc, text, markers) => {
+    const piece = only(doc);
+    expect(piece.text).toBe(text);
+    expect(piece.markers).toEqual(markers);
+    expect(restore(piece.text, piece)).toBe(piece.original);
+  });
+
+  it("the element comes back byte for byte around whatever the answer says", () => {
+    const piece = only('Press <kbd class="key">Ctrl</kbd> to save.');
+    expect(restore("Drücke ⟦1⟧ zum Speichern.", piece)).toBe(
+      'Drücke <kbd class="key">Ctrl</kbd> zum Speichern.',
+    );
+    expect(restore("Zum Speichern ⟦1⟧ drücken.", piece, "anyOrder")).toBe(
+      'Zum Speichern <kbd class="key">Ctrl</kbd> drücken.',
+    );
+  });
+
+  it("a block that holds nothing but elements is no piece", () => {
+    expect(texts(pieces("Intro teh.\n\n<kbd>Ctrl</kbd> + <kbd>S</kbd>\n"))).toEqual(["Intro teh."]);
+    expect(pieces("| <b>Name</b> | <i>Note</i> |\n|---|---|\n")).toEqual([]);
+  });
+
+  it("in a table cell, with the cell's other text", () => {
+    const [cell] = pieces("| Press <kbd>Ctrl</kbd> now | 12 |\n|---|---|\n");
+    expect(cell?.text).toBe("Press ⟦1⟧ now");
+    expect(cell?.markers).toEqual(["<kbd>Ctrl</kbd>"]);
+  });
+
+  it("a scope that ends inside an element takes all of it; a long block is never cut inside one", () => {
+    const doc = "Press <kbd>Ctrl</kbd> to save.";
+    const inside = doc.indexOf("Ctrl") + 2;
+    expect(texts(pieces(doc, { from: 0, to: inside }))).toEqual(["Press ⟦1⟧"]);
+    expect(texts(pieces(doc, { from: inside, to: doc.length }))).toEqual(["⟦1⟧ to save."]);
+    const element = "<span>First sentence here. Second sentence here. Third one here.</span>";
+    const long = `Before the element. ${element} After the element. And more words.`;
+    const list = pieces(long, undefined, { chars: 40, cjkChars: 20 });
+    expect(list.length).toBeGreaterThan(1);
+    expect(list.flatMap((p) => p.markers)).toEqual([element]);
+    for (const p of list) expect(restore(p.text, p)).toBe(p.original);
+  });
+});
+
 describe("table cells", () => {
   const TABLE = [
     "| Teh head | Size  |",
@@ -296,8 +403,9 @@ describe("table cells", () => {
     const list = pieces(TABLE);
     expect(list[4]?.markers).toEqual(["`npm run`"]);
     expect(list[5]?.markers).toEqual(["(http://a.b/c)", "$x$"]);
-    const [html] = pieces("| <b>teh</b> https://x.y/teh [[Teh page]] |\n|---|\n");
-    expect(html?.text).toBe("⟦1⟧teh⟦2⟧ ⟦3⟧ ⟦4⟧");
+    const [html] = pieces("| <b>teh</b> word https://x.y/teh [[Teh page]] |\n|---|\n");
+    expect(html?.text).toBe("⟦1⟧ word ⟦2⟧ ⟦3⟧");
+    expect(html?.markers[0]).toBe("<b>teh</b>");
   });
 
   it("a table in a quote | a list item, and one written without outer pipes", () => {

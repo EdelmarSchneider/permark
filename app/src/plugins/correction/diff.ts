@@ -5,6 +5,7 @@
 // or one short token apart -> one suggestion. Tokens equal under NFC keep the original bytes.
 
 import { diff, type DiffOp } from "../../core/editing/lines";
+import type { PieceKind } from "../local-ai/pieces/segment";
 import { around, type Suggestion } from "../local-ai/pieces/suggestion";
 
 /** An equal token at most this long between two changes joins them. */
@@ -50,8 +51,9 @@ export function wordDiff(original: string, corrected: string, lang?: string): Wo
 
 type Run = { ops: DiffOp[]; a: number; aEnd: number };
 
-/** Suggestions of `d` for its original text found at `at` in `doc`, in document order. */
-export function suggest(doc: string, at: number, d: WordDiff): Suggestion[] {
+/** Suggestions of `d` for its original text found at `at` in `doc`, in document order; `within`: the kind of the
+ *  piece that text is (what is shown around a change in a table cell stays in the cell). */
+export function suggest(doc: string, at: number, d: WordDiff, within?: PieceKind): Suggestion[] {
   const runs: Run[] = [];
   let open: Run | null = null;
   d.ops.forEach((op, i) => {
@@ -79,7 +81,8 @@ export function suggest(doc: string, at: number, d: WordDiff): Suggestion[] {
       to,
       original,
       insert,
-      ...around(doc, from, to),
+      within,
+      ...around(doc, from, to, within),
     });
   }
   return out;

@@ -153,7 +153,7 @@ describe("the translation bar", () => {
   it("names the language of the original only when the person named it", () => {
     translation.languages.sent = { target: GERMAN, source: ENGLISH };
     show(review({ suggestions: [S1] }));
-    expect(label("original")).toBe("Original · American English");
+    expect(label("original")).toBe("Original · English (United States)");
     expect(text("original").getAttribute("lang")).toBe("en-US");
   });
 
@@ -192,6 +192,41 @@ describe("the translation bar", () => {
     show(review({ suggestions: [S1, S2], at: 0 }));
     show(review({ suggestions: [S1, S2], at: 1 }));
     expect(button("more", block("original"))?.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("each text and each Show more is named with the block it belongs to: four buttons, four names", () => {
+    /** What assistive tech calls `el`: the text of the elements its `aria-labelledby` lists, in that order. */
+    const named = (el: Element | null): string =>
+      (el?.getAttribute("aria-labelledby") ?? "")
+        .split(" ")
+        .map((id) => said(document.getElementById(id)))
+        .join(" ");
+    const longer = "Es regnete eine Woche lang, und dann stieg der Fluss über die Straße. ".repeat(
+      6,
+    );
+    translation.languages.sent = { target: GERMAN, source: ENGLISH };
+    show(review({ suggestions: [{ ...S2, insert: longer.trim() }] }));
+    const names = [
+      text("original"),
+      button("more", block("original")),
+      text("translation"),
+      button("more", block("translation")),
+    ].map(named);
+    expect(names).toEqual([
+      `${label("original")} ${LONG}`,
+      `Show more ${label("original")}`,
+      `Translation · German ${longer.trim()}`,
+      "Show more Translation · German",
+    ]);
+    expect(label("original")).toMatch(/^Original · English/);
+    expect(new Set(names).size).toBe(4);
+    // what a click on a text does is still said of it
+    expect(text("translation").getAttribute("title")).toBe("Show in the text");
+    expect(text("translation").hasAttribute("aria-label")).toBe(false);
+    // shown in full: the button says so under the same block's name
+    button("more", block("translation"))?.click();
+    flushSync();
+    expect(named(button("more", block("translation")))).toBe("Show less Translation · German");
   });
 
   it("a click on either text shows the suggestion in the document", () => {

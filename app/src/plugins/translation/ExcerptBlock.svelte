@@ -1,7 +1,9 @@
 <script lang="ts">
   // One text of the translation excerpt under its name ("Original", "Translation · German"): cut to three lines,
   // with Show more | Show less once it is longer than that. The text is a button: a click shows the suggestion in the
-  // document. It is read in its own language (`lang`) and laid out by its own direction.
+  // document. It is read in its own language (`lang`) and laid out by its own direction. Two blocks stand in one
+  // excerpt, each with the same two buttons: assistive tech is told which block a button is of by the block's name
+  // (the text: its name, then the text; Show more | Show less: its words, then the name).
   import { t } from "../../core/i18n";
 
   type Props = {
@@ -16,6 +18,9 @@
     show: () => void;
   };
   let { kind, label, text, lang, show }: Props = $props();
+
+  /** Prefix of the ids the block's parts name each other by. */
+  const id = $props.id();
 
   let body: HTMLElement | undefined = $state();
   let expanded = $state(false);
@@ -40,14 +45,16 @@
 </script>
 
 <div class={["block", kind]} data-block={kind}>
-  <span class="label">{label}</span>
+  <span class="label" id="{id}-label">{label}</span>
   <button
     bind:this={body}
+    id="{id}-text"
     type="button"
     class="text"
     class:cut={!expanded}
     data-action="show"
     data-text
+    aria-labelledby="{id}-label {id}-text"
     title={t("translation.show")}
     lang={lang ?? undefined}
     dir="auto"
@@ -55,9 +62,11 @@
   >
   {#if long}
     <button
+      id="{id}-more"
       type="button"
       class="more"
       data-action="more"
+      aria-labelledby="{id}-more {id}-label"
       aria-expanded={expanded}
       onclick={() => (expanded = !expanded)}
       >{t(expanded ? "translation.showLess" : "translation.showMore")}</button

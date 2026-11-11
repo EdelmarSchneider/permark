@@ -6,7 +6,9 @@
 // goes: never a pipe, the padding or the alignment row; a table the grammar does not read as one is left alone. Of a
 // quote alert (`> [!NOTE]`) the marker is no part of a piece: an answer cannot rewrite it and undo the alert.
 // Inline non-prose -> numbered markers `⟦n⟧` the model must copy back, each once (in the piece's order, or anywhere
-// for a plugin whose answers move the words); `restore` puts the original bytes back.
+// for a plugin whose answers move the words); `restore` puts the original bytes back. An HTML element written in a
+// line (`<kbd>Ctrl</kbd>`) is one marker from its opening tag to its closing tag: its text is the element's, never
+// sent, never changed by an answer.
 
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { yamlFrontmatter } from "@codemirror/lang-yaml";
@@ -83,6 +85,28 @@ const HIDDEN_TEXT = [
   /\$(?!\s)[^$\n]+(?<!\s)\$(?!\d)/g,
   /[⟦⟧]/g,
 ];
+// an HTML tag as the grammar reads one in a line (`HTMLTag`; no declaration, no CDATA): 1 = the `/` of a closing tag,
+// 2 = its name, 3 = the `/` of a tag closed in itself. Attributes as the grammar takes them: a `>` inside quotes ends
+// nothing, a value without quotes takes a `/` before the `>` as its own
+const TAG =
+  /^<(\/?)\s*([a-zA-Z][\w-]*)(?:\s+[a-zA-Z:_][\w.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)*\s*(\/?)\s*>$/;
+// HTML elements that hold nothing: their tag has no closing tag to wait for
+const VOID_ELEMENTS = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
 // the marker of a quote alert: the five kinds the reader draws, in any letter case
 const ALERT_MARKER = /^\[!(?:note|tip|important|warning|caution)\]/i;
 // a table's alignment row inside a paragraph: a table the reader may draw that the grammar did not read as one
@@ -237,18 +261,23 @@ function trim(doc: string, range: Range): Range {
   return { from, to };
 }
 
-// inline non-prose inside `content`, sorted, overlaps merged
+// inline non-prose inside `content`, sorted, overlaps merged (an HTML element with the tags and whatever else it
+// holds: one range)
 function hiddenRanges(doc: string, block: Node, content: Range): Range[] {
   const found: Range[] = [];
+  /** The block's HTML tags, in document order. */
+  const tags: Range[] = [];
   const cell = block.name === "TableCell";
   const walk = (node: Node): void => {
     for (let child = node.firstChild; child; child = child.nextSibling) {
+      if (child.name === "HTMLTag") tags.push({ from: child.from, to: child.to });
       const hidden = hiddenPart(doc, child, cell);
       if (hidden !== null) found.push(hidden);
       if (hidden === null || hidden.from > child.from) walk(child);
     }
   };
   walk(block);
+  found.push(...htmlElements(doc, tags));
   const text = doc.slice(content.from, content.to);
   for (const pattern of HIDDEN_TEXT) {
     for (const match of text.matchAll(pattern)) {
@@ -267,6 +296,30 @@ function hiddenRanges(doc: string, block: Node, content: Range): Range[] {
     else merged.push({ from, to });
   }
   return merged;
+}
+
+// The HTML elements among `tags` (the tags of one block, in document order), each from its opening tag to its closing
+// tag. A closing tag ends the nearest element of its name still open (any letter case); the ones opened after that one
+// are left open. No element: a tag closed in itself (`<br/>`), the tag of an element that holds nothing (`<br>`,
+// `<img …>`), an opening | closing tag whose other half is not in the block (each stays a tag alone).
+function htmlElements(doc: string, tags: readonly Range[]): Range[] {
+  const found: Range[] = [];
+  const open: { name: string; from: number }[] = [];
+  for (const tag of tags) {
+    const [, closing, written, alone] = TAG.exec(doc.slice(tag.from, tag.to)) ?? [];
+    if (written === undefined) continue;
+    const name = written.toLowerCase();
+    if (closing === "") {
+      if (alone === "" && !VOID_ELEMENTS.has(name)) open.push({ name, from: tag.from });
+      continue;
+    }
+    const at = open.findLastIndex((element) => element.name === name);
+    const element = open[at];
+    if (element === undefined) continue;
+    found.push({ from: element.from, to: tag.to });
+    open.length = at;
+  }
+  return found;
 }
 
 // part of an inline node the model never sees: whole node, or a link's destination `(…)`

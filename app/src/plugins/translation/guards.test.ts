@@ -56,6 +56,7 @@ describe("judge: a translation", () => {
           to: from + EN.length,
           original: EN,
           insert: PT,
+          within: "paragraph",
           ...around(doc, from, from + EN.length),
         },
       ],
@@ -459,6 +460,11 @@ describe("judge: line breaks", () => {
     expect(applied(doc, judge(doc, fox, "A raposa rápida", TO_PT))).toBe(
       doc.replace("The quick fox", "A raposa rápida"),
     );
+    // what stands around it is its cell's (here: nothing), never a pipe or the cell beside it
+    expect(judge(doc, fox, "A raposa rápida", TO_PT)).toMatchObject({
+      kind: "ok",
+      suggestions: [{ before: "", after: "", within: "cell" }],
+    });
     expect(reason(judge(doc, fox, "A raposa | rápida", TO_PT))).toBe("cell");
     expect(reason(judge(doc, fox, "A raposa\nrápida", TO_PT))).toBe("cell");
   });

@@ -3,7 +3,8 @@
 // editor writes a block again when it is edited: a table whose cells changed width gets its columns padded anew
 // (spaces and the alignment row's dashes move, never a cell's text). Suggestions in its other cells, and pieces not
 // answered yet, stay and still go into their own cell; so do suggestions around words typed elsewhere in their
-// paragraph. A change of a suggestion's own words, or of the word next to them, drops it.
+// paragraph. A change of a suggestion's own words, or of the word next to them, drops it. An HTML element written in
+// a line is kept as written by the editor: its text is not sent, so an answer goes in around it.
 import "../../../core/editing/visual/jsdomShims";
 import { undo } from "@milkdown/kit/prose/history";
 import { NodeSelection } from "@milkdown/kit/prose/state";
@@ -16,7 +17,7 @@ import { createCore, type Core } from "../../../core/editing/visual/core";
 import { applyEdits, changeable, scopeIn, selectRange } from "../../../core/editing/visual/edits";
 import { markAt, marksPlugin, setMarks } from "../../../core/editing/visual/marks";
 import { PieceReview, type ReviewConfig, type Session } from "./review.svelte";
-import { pieces } from "./segment";
+import { pieces, restore } from "./segment";
 import { around } from "./suggestion";
 
 let core: Core;
@@ -72,6 +73,20 @@ const NAMED: ReviewConfig = {
   runArgs: () => ({}),
 };
 
+/** A plugin whose answer stands for the whole piece (a translation): one suggestion, the markers put back wherever
+ *  the answer has them. */
+const WHOLE: ReviewConfig = {
+  plugin: "correction",
+  prepare: pieces,
+  judge: (doc, piece, output) => {
+    const insert = restore(output, piece, "anyOrder");
+    if (insert === null) return { kind: "discard", reason: "markers" };
+    const { from, to, original } = piece;
+    return { kind: "ok", suggestions: [{ from, to, original, insert, ...around(doc, from, to) }] };
+  },
+  runArgs: () => ({}),
+};
+
 /** One paragraph segment per line run `first..last` (1-based). */
 function blocks(...runs: [first: number, last: number][]): Segment[] {
   return runs.map(([lineStart, lineEnd]) => ({
@@ -85,20 +100,20 @@ function blocks(...runs: [first: number, last: number][]): Segment[] {
 /** What the backend was asked to run. */
 let runs: (typeof run)[] = [];
 
-/** Opens `text` in the editor, with a review of it that has not run yet. */
-async function opened(text: string, segments: Segment[]): Promise<void> {
+/** Opens `text` in the editor, with a review of it (set up as `config`) that has not run yet. */
+async function opened(text: string, segments: Segment[], config = NAMED): Promise<void> {
   built = await buildDoc(core, text, segments);
   core.setDoc(built.doc);
   const mock = createMockApi();
   mock.probe.correction.stepMs = 1e9;
   runs = mock.probe.correction.runs;
-  store = new PieceReview(NAMED, mock, editorSession());
+  store = new PieceReview(config, mock, editorSession());
   await store.ask();
 }
 
 /** Opens `text` in the editor and starts a run over all of it. */
-async function reviewOf(text: string, segments: Segment[]): Promise<void> {
-  await opened(text, segments);
+async function reviewOf(text: string, segments: Segment[], config = NAMED): Promise<void> {
+  await opened(text, segments, config);
   await store.runOver("document");
   const sent = runs.at(-1);
   if (!sent) throw new Error("no run sent");
@@ -268,6 +283,44 @@ describe("blocks the Edit-mode editor keeps as written", () => {
     await store.runHere();
     expect(store.state).toEqual({ kind: "nothing", locked: 1 });
     expect(runs).toEqual([]);
+  });
+});
+
+describe("an HTML element written in a line, in the Edit-mode editor", () => {
+  const TEXT = "Intro line.\n\nPress <kbd>Ctrl</kbd> to save teh file.\n";
+  const SENT = "Press ⟦1⟧ to save teh file.";
+
+  it("its text is never sent; fixes of the words around it go in, the element as written", async () => {
+    await reviewOf(TEXT, blocks([1, 1], [3, 3]));
+    expect(run.pieces.map((piece) => piece.text)).toEqual(["Intro line.", SENT]);
+    expect(store.review?.locked).toBe(0);
+    answer(SENT, "Press>Hit;teh>the");
+    finish();
+    store.acceptAll();
+    expect(now().text).toBe(TEXT.replace("Press", "Hit").replace("teh", "the"));
+    expect(store.state.kind).toBe("closed");
+  });
+
+  it("an answer for the whole paragraph (a translation) goes in: the element comes back as it was", async () => {
+    await reviewOf(TEXT, blocks([1, 1], [3, 3]), WHOLE);
+    answer(SENT, "Zum Speichern der Datei ⟦1⟧ drücken.");
+    finish();
+    expect(pending()).toHaveLength(1);
+    store.accept();
+    expect(now().text).toBe(
+      TEXT.replace(/Press.*/, "Zum Speichern der Datei <kbd>Ctrl</kbd> drücken."),
+    );
+    expect(store.review?.outdated ?? 0).toBe(0);
+    expect(store.state.kind).toBe("closed");
+  });
+
+  it("what the editor does not take: an answer that changes the element's own text", async () => {
+    await reviewOf(TEXT, blocks([1, 1], [3, 3]));
+    answer(SENT, "Ctrl>Strg");
+    finish();
+    store.accept();
+    expect(now().text).toBe(TEXT);
+    expect(store.review).toMatchObject({ outdated: 1 });
   });
 });
 

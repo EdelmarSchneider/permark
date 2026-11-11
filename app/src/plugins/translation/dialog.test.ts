@@ -9,7 +9,7 @@ import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "../../api/mock";
 import { language, tn } from "../../core/i18n";
-import { LanguageDialogStore, type LanguageAsk } from "./dialog.svelte";
+import { groupsOf, LanguageDialogStore, listed, type LanguageAsk } from "./dialog.svelte";
 import { namesIn, offered } from "./languages";
 import { Languages } from "./store.svelte";
 import TranslationHost from "./TranslationHost.svelte";
@@ -144,7 +144,7 @@ describe("the language dialog", () => {
     expect([...groups().keys()]).toEqual(["Recently used", "All languages"]);
     // five at most
     expect(names(groups().get("Recently used"))).toEqual([
-      "Brazilian Portuguese",
+      "Portuguese (Brazil)",
       "German",
       "Japanese",
       "French",
@@ -153,9 +153,9 @@ describe("the language dialog", () => {
     const all = names(groups().get("All languages"));
     expect(all).toEqual(offered().map(namesIn("en")).sort(new Intl.Collator("en").compare));
     // the language chosen last is the choice: named by its tab, marked in the list, where the keyboard starts
-    expect(said(tabs()[0])).toBe("To: Brazilian Portuguese");
+    expect(said(tabs()[0])).toBe("To: Portuguese (Brazil)");
     const chosen = options().filter((el) => el.getAttribute("aria-selected") === "true");
-    expect(chosen.map(nameOf)).toEqual(["Brazilian Portuguese", "Brazilian Portuguese"]);
+    expect(chosen.map(nameOf)).toEqual(["Portuguese (Brazil)", "Portuguese (Brazil)"]);
     expect(current()).toBe(chosen[0]);
     expect(new Set(options().map((el) => el.id)).size).toBe(options().length);
   });
@@ -180,9 +180,39 @@ describe("the language dialog", () => {
     expect(one("[data-name]", german).getAttribute("dir")).toBe("auto");
     expect(german.getAttribute("title")).toBe("German · Deutsch");
     // English in an English window: one name
-    const english = row("American English");
+    const english = row("English (United States)");
     expect(english.querySelector("[lang]")).toBeNull();
-    expect(english.getAttribute("title")).toBe("American English");
+    expect(english.getAttribute("title")).toBe("English (United States)");
+  });
+
+  it("a variant stands under its language's name: English under E, not under American | British", () => {
+    open();
+    const all = names();
+    const at = (name: string): number => all.indexOf(name);
+    expect(at("Dutch")).toBeGreaterThan(0);
+    expect(all.slice(at("Dutch") + 1, at("Dutch") + 4)).toEqual([
+      "English (United Kingdom)",
+      "English (United States)",
+      "Esperanto",
+    ]);
+    expect(at("Portuguese (Portugal)")).toBe(at("Portuguese (Brazil)") + 1);
+    expect(at("Chinese (Traditional)")).toBe(at("Chinese (Simplified)") + 1);
+    const dialect =
+      /^(American|British|Brazilian|European|Canadian|Latin American|Simplified|Traditional) /;
+    expect(all.filter((name) => dialect.test(name))).toEqual([]);
+  });
+
+  it("the own name is left out where it reads as the name shown, whatever the letter case", async () => {
+    await language.choose("pt-BR", []);
+    open();
+    for (const name of ["Italiano", "Português (Brasil)", "Português (Portugal)"]) {
+      const same = row(name);
+      expect(same.querySelector("[lang]"), name).toBeNull();
+      expect(same.getAttribute("title")).toBe(name);
+    }
+    // a name that reads differently stays beside it
+    expect(said(one("[lang]", row("Alemão")))).toBe("Deutsch");
+    expect(said(one("[lang]", row("Inglês (Estados Unidos)")))).toBe("English (United States)");
   });
 
   it("typing finds a language by its own name, its English name or its tag, and marks what matched", async () => {
@@ -196,7 +226,7 @@ describe("the language dialog", () => {
     expect(current()).toBe(options()[0]);
     expect(said(one(".hit", row("German")))).toBe("Deutsch");
     type("pt-br");
-    expect(names()[0]).toBe("Brazilian Portuguese");
+    expect(names()[0]).toBe("Portuguese (Brazil)");
     type("germ");
     expect(said(one(".hit", row("German")))).toBe("Germ");
     type("no such language");
@@ -213,6 +243,51 @@ describe("the language dialog", () => {
     expect(names()[0]).toBe("Alemão");
     type("Deutsch");
     expect(names()[0]).toBe("Alemão");
+    // by the name its prompt has, which no row shows
+    type("american english");
+    expect(names()).toEqual(["Inglês (Estados Unidos)"]);
+  });
+
+  it("typing lists the names that start with the text first, then the ones that hold it, then the rest", () => {
+    open();
+    type("ara");
+    const found = names();
+    expect(found[0]).toBe("Arabic");
+    for (const holds of ["Marathi", "Gujarati"]) {
+      expect(found.indexOf(holds), holds).toBeGreaterThan(0);
+      // its letters only, apart from each other
+      expect(found.indexOf("Armenian"), holds).toBeGreaterThan(found.indexOf(holds));
+    }
+    type("english");
+    expect(names().slice(0, 2).sort()).toEqual([
+      "English (United Kingdom)",
+      "English (United States)",
+    ]);
+    // whatever is typed, in whatever language the names are shown: by any of a language's names and its tag
+    const folded = (text: string): string =>
+      text.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
+    for (const locale of ["en", "pt-BR", "de", "ja"]) {
+      const all = listed(locale);
+      for (const query of ["ara", "english", "port", "an", "chin", "es", "ar", "in", "united"]) {
+        const rows = groupsOf({
+          side: "to",
+          query,
+          list: all,
+          recent: [],
+          target: null,
+          detect: "",
+        })
+          .flatMap((group) => group.rows)
+          .flatMap((entry) => (entry.kind === "language" ? [entry.language] : []));
+        const ranks = rows.map(({ name, own, english, tag }) => {
+          const texts = [name, own ?? "", english, tag].map(folded);
+          if (texts.some((text) => text.startsWith(query))) return 0;
+          return texts.some((text) => text.includes(query)) ? 1 : 2;
+        });
+        expect(ranks, `${locale} ${query}`).toEqual([...ranks].sort());
+        expect(rows.length, `${locale} ${query}`).toBeGreaterThan(0);
+      }
+    }
   });
 
   it("Down + Enter choose a row and the dialog stays; the confirm button saves the choice and tells the opener", async () => {
@@ -243,6 +318,57 @@ describe("the language dialog", () => {
     expect(document.activeElement).toBe(opener);
   });
 
+  it("Enter on the row that is the choice already confirms: the first Enter chooses, the second confirms", () => {
+    const then = vi.fn();
+    open({ then });
+    press(field(), "ArrowDown");
+    press(field(), "Enter");
+    expect(box()).not.toBeNull();
+    expect(then).not.toHaveBeenCalled();
+    // the key held down: still the first Enter
+    press(field(), "Enter", { repeat: true });
+    expect(box()).not.toBeNull();
+    const name = nameOf(current() ?? list());
+    expect(press(field(), "Enter").defaultPrevented).toBe(true);
+    expect(box()).toBeNull();
+    expect(namesIn("en")(languages.target ?? "")).toBe(name);
+    expect(then).toHaveBeenCalledOnce();
+    // the next dialog opens with the keyboard on that choice: Enter confirms it as it is, from the list too
+    open({ then });
+    expect(current()?.getAttribute("aria-selected")).toBe("true");
+    list().focus();
+    press(list(), "Enter");
+    expect(box()).toBeNull();
+    expect(then).toHaveBeenCalledTimes(2);
+    expect(namesIn("en")(languages.target ?? "")).toBe(name);
+  });
+
+  it("Enter on the choice confirms only what can be confirmed, on either side; Space only ever chooses", async () => {
+    open();
+    // From: detecting is the choice, but there is no language to translate into yet
+    press(tabs()[0] ?? list(), "ArrowRight");
+    expect(options()[0]?.getAttribute("aria-selected")).toBe("true");
+    press(field(), "Enter");
+    expect(box()).not.toBeNull();
+    click(button("cancel"));
+    await remembered("de", ["de"]);
+    open();
+    expect(nameOf(current() ?? list())).toBe("German");
+    list().focus();
+    press(list(), " ");
+    expect(box()).not.toBeNull();
+    // the language translated into is no choice of From: Enter on it does nothing
+    press(tabs()[0] ?? list(), "ArrowRight");
+    type("German");
+    press(field(), "Enter");
+    expect(box()).not.toBeNull();
+    type("");
+    expect(current()).toBe(options()[0]);
+    press(field(), "Enter");
+    expect(box()).toBeNull();
+    expect(languages).toMatchObject({ target: "de", source: null });
+  });
+
   it("Ctrl+Enter confirms from anywhere in the dialog; without a language to translate into it does nothing", () => {
     const then = vi.fn();
     open({ then });
@@ -264,8 +390,8 @@ describe("the language dialog", () => {
     type("Japanese");
     press(field(), "Enter");
     click(tabs()[1] ?? list());
-    click(row("American English", groups().get("All languages")));
-    expect(tabs().map(said)).toEqual(["To: Japanese", "From: American English"]);
+    click(row("English (United States)", groups().get("All languages")));
+    expect(tabs().map(said)).toEqual(["To: Japanese", "From: English (United States)"]);
     expect(press(field(), "Escape").defaultPrevented).toBe(true);
     expect(box()).toBeNull();
     expect(document.activeElement).toBe(opener);
@@ -309,7 +435,7 @@ describe("the language dialog", () => {
     // a named language goes with the run that starts next: here the one the confirm starts
     type("american english");
     press(field(), "Enter");
-    expect(said(tabs()[1])).toBe("From: American English");
+    expect(said(tabs()[1])).toBe("From: English (United States)");
     type("");
     expect(options()[0]?.getAttribute("aria-selected")).toBe("false");
     click(button("confirm"));
@@ -327,7 +453,7 @@ describe("the language dialog", () => {
     const then = (): void => void started.push(languages.runArgs());
     const name = (): void => {
       click(tabs()[1] ?? list());
-      click(row("American English", groups().get("All languages")));
+      click(row("English (United States)", groups().get("All languages")));
       click(button("confirm"));
     };
     // the confirm starts a run: that run takes the language named
@@ -359,9 +485,9 @@ describe("the language dialog", () => {
     await remembered("de", ["de"]);
     languages.from("en-US");
     open();
-    expect(tabs().map(said)).toEqual(["To: German", "From: American English"]);
+    expect(tabs().map(said)).toEqual(["To: German", "From: English (United States)"]);
     click(tabs()[1] ?? list());
-    const waiting = row("American English", groups().get("All languages"));
+    const waiting = row("English (United States)", groups().get("All languages"));
     expect(waiting.getAttribute("aria-selected")).toBe("true");
     expect(options()[0]?.getAttribute("aria-selected")).toBe("false");
     // the keyboard starts on it
@@ -387,11 +513,11 @@ describe("the language dialog", () => {
     click(tabs()[1] ?? list());
     type("american english");
     press(field(), "Enter");
-    expect(tabs().map(said)).toEqual(["To: German", "From: American English"]);
+    expect(tabs().map(said)).toEqual(["To: German", "From: English (United States)"]);
     click(tabs()[0] ?? list());
     type("american english");
     press(field(), "Enter");
-    expect(tabs().map(said)).toEqual(["To: American English", "From: Detect automatically"]);
+    expect(tabs().map(said)).toEqual(["To: English (United States)", "From: Detect automatically"]);
     click(button("confirm"));
     expect(started).toEqual([{ target: { tag: "en-US", name: "American English" }, source: null }]);
     expect(languages).toMatchObject({ target: "en-US", source: null });

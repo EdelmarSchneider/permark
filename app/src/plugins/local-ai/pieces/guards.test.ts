@@ -152,8 +152,12 @@ describe("structureVerdict", () => {
       const marked = only(
         "Run `npm i`, see <https://a.b/c> and <b>this</b> page https://x.y/z now.",
       );
-      expect(marked.text).toBe("Run ⟦1⟧, see ⟦2⟧ and ⟦3⟧this⟦4⟧ page ⟦5⟧ now.");
-      expect(reason(check(marked, "Run ⟦1⟧, see ⟦2⟧ and ⟦3⟧that⟦4⟧ page ⟦5⟧ now."))).toBe("ok");
+      // an element with what it holds, a tag alone: one marker each
+      expect(marked.text).toBe("Run ⟦1⟧, see ⟦2⟧ and ⟦3⟧ page ⟦4⟧ now.");
+      expect(reason(check(marked, "Run ⟦1⟧, see ⟦2⟧ and ⟦3⟧ site ⟦4⟧ now."))).toBe("ok");
+      const broken = only("Line one<br>and <b>this open tag.");
+      expect(broken.text).toBe("Line one⟦1⟧and ⟦2⟧this open tag.");
+      expect(reason(check(broken, "Line one⟦1⟧and ⟦2⟧that open tag."))).toBe("ok");
     });
   });
 
