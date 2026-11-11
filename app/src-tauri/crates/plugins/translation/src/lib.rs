@@ -18,9 +18,11 @@
 //!   ([`Language`], [`Pair`]): refused -> `invalidData`, detail `tag` | `name` | `sameLanguage`, nothing started.
 //! - `cancel { run }` -> `null`.
 //! - `prefs {}` -> [`TranslationPrefs`]; `setPrefs { target: tag }` -> [`TranslationPrefs`] (target to the front of
-//!   the recent ones).
+//!   the recent ones; not written -> error, choices as before).
 //! - `save { beside, name, text }` -> [`TranslationSaved`]: a NEW file `name` next to `beside` in the workspace of
-//!   the calling window, never over a file (a taken name gets ` (2)`).
+//!   the calling window, never over a file (a taken name gets ` (2)`). `name` = one plain file name with the
+//!   extension of `beside`, checked before anything is written: refused -> `invalidData`, detail `name` |
+//!   `extension` | `beside`.
 
 pub mod prefs;
 pub mod prompt;
@@ -29,10 +31,13 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use permark_core::conditions::Requirement;
+use permark_core::fileops::check_name;
+use permark_core::paths::VaultPath;
 use permark_core::plugins::{
     typed, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope,
     RpcRegistration, Running, WindowFilesApi,
 };
+use permark_core::tree::extension_of;
 use permark_core::{ErrorKind, IpcError};
 use permark_plugin_local_ai::pieces::{Piece, PieceRunner};
 use serde::{Deserialize, Serialize};
@@ -167,6 +172,30 @@ struct SaveArgs {
     text: String,
 }
 
+impl SaveArgs {
+    /// `name` as the name of a copy of `beside`, checked before the files service sees it (defense in depth: the
+    /// window is not trusted with it). One plain file name by the app's rule for the names it makes ([`check_name`]:
+    /// no separator, no `:`, no control character, no device name, no dot | space at the end) with the extension of
+    /// the original as [`extension_of`] reads it (lower-cased; an original without one -> a copy without one): the
+    /// copy of a `.md` is a `.md`, never a file of another kind. `beside` itself is the files service's to place.
+    ///
+    /// # Errors
+    /// `invalidData`, detail `name` | `extension` | `beside` (names no file); `beside` no workspace path.
+    fn checked(&self) -> Result<(), IpcError> {
+        let refused = |detail: &str| IpcError::new(ErrorKind::InvalidData).detail(detail);
+        check_name(&self.name).map_err(|_| refused("name"))?;
+        let original = VaultPath::parse(&self.beside)?;
+        let kind = original
+            .name()
+            .map(extension_of)
+            .ok_or_else(|| refused("beside"))?;
+        if extension_of(&self.name) != kind {
+            return Err(refused("extension"));
+        }
+        Ok(())
+    }
+}
+
 /// RPC of one instance over `translator`.
 fn register(cx: &PluginCx, translator: &Arc<Translator>) -> Vec<RpcRegistration> {
     let mut rpc = Vec::new();
@@ -209,6 +238,7 @@ fn register(cx: &PluginCx, translator: &Arc<Translator>) -> Vec<RpcRegistration>
     rpc.extend(cx.rpc(
         "save",
         typed(move |args: SaveArgs, call| {
+            args.checked()?;
             // the window's own files: its boundary, a new file only (never over one)
             let files = services
                 .as_ref()

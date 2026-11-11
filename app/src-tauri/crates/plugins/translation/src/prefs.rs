@@ -40,7 +40,8 @@ impl TranslationPrefs {
     }
 }
 
-/// The choices of one plugin instance: in memory once read, written through on every change.
+/// The choices of one plugin instance: in memory once read, written through on every change (a change that cannot
+/// be written is not made).
 pub struct Store {
     /// `None`: no state store given (kept in memory only).
     file: Option<StateFile<TranslationPrefs>>,
@@ -75,17 +76,18 @@ impl Store {
         self.now().get_or_insert_with(|| self.read()).clone()
     }
 
-    /// Remembers `target` as chosen; answers the choices after it.
+    /// Remembers `target` as chosen; answers the choices after it. Written first, kept in memory after: what later
+    /// calls answer is what the next start reads.
     ///
     /// # Errors
-    /// The state file could not be written (the choice still holds until the app closes).
+    /// The state file could not be written: the choices stay as they were.
     pub fn choose(&self, target: &Tag) -> Result<TranslationPrefs, IpcError> {
         let mut now = self.now();
-        let prefs = now.get_or_insert_with(|| self.read());
-        prefs.choose(target);
+        let mut chosen = now.get_or_insert_with(|| self.read()).clone();
+        chosen.choose(target);
         if let Some(file) = &self.file {
-            file.save(prefs)?;
+            file.save(&chosen)?;
         }
-        Ok(prefs.clone())
+        Ok(now.insert(chosen).clone())
     }
 }

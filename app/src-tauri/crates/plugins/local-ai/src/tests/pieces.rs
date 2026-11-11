@@ -3,7 +3,8 @@
 //! fetch first when missing), requests built by the job from the run's parameters, discards (length, thinking, too
 //! long), cancel, new run cancels the old one, warm session (idle unload, reassignment), plugin off (no thread,
 //! nothing loaded), production model source (`ModelHost` service, the job's own task), two plugins' runners in one
-//! app (a load unloads the other's idle session first, a running one is left alone, no wait on each other).
+//! app (a load unloads the other's idle session first, a run that cannot load unloads nothing, a running one is left
+//! alone, no wait on each other).
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
@@ -439,6 +440,27 @@ fn a_runner_reuses_its_own_warm_session_beside_a_peer() {
     assert_eq!(kinds(&b.events.ended("b2")), ["piece", "done"]);
     assert_eq!(b.fake.opens(), 2);
     assert_eq!(b.loaded(), 1);
+}
+
+/// A run that cannot load (no model assigned to its job) makes no room: the other runner's idle session stays loaded
+/// and serves its next run without a load.
+#[test]
+fn a_run_without_a_model_leaves_the_idle_session_of_another_runner() {
+    let app = app();
+    let a = Lab::peer(PLUGIN, &Fake::new::<Echo>(FakeEngine::new()), &app);
+    let b = Lab::peer(OTHER, &Fake::new::<Echo>(FakeEngine::new()), &app);
+    b.fake.assigned.store(false, Ordering::Relaxed);
+    assert_eq!((a.runner.peers(), b.runner.peers()), (1, 1));
+    a.run("a1", &["One."]);
+    a.events.ended("a1");
+    b.run("b1", &["Two."]);
+    let phases = b.events.ended("b1");
+    assert_eq!(kinds(&phases), ["failed"]);
+    assert_eq!(phases[0]["error"]["detail"], "noModel");
+    assert_eq!(a.loaded(), 1, "still warm");
+    a.run("a2", &["Three."]);
+    assert_eq!(kinds(&a.events.ended("a2")), ["piece", "done"]);
+    assert_eq!((a.fake.opens(), b.fake.opens()), (1, 0));
 }
 
 /// Plugin off: the dropped runner is no longer a peer (nothing left to call); the other one runs as if alone.

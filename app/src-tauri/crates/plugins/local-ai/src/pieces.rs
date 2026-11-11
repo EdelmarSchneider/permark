@@ -15,7 +15,8 @@
 //! - Several runners in one app (one per feature plugin): before a runner loads, the idle warm sessions of the others
 //!   are unloaded (static `RUNNERS`) -> features used one after the other never hold two models; a runner with a
 //!   run asked | in progress keeps its session (never interrupted: both loaded, the memory guard of the load
-//!   decides). The released runner says nothing; its next run loads again.
+//!   decides). The released runner says nothing; its next run loads again. A run with no model assigned
+//!   ([`Models::available`]) loads nothing, so it releases nothing.
 //! - Dormant: nothing runs | loads before a run; [`Models::available`] reads the state alone.
 //! - Model access ONLY through [`ModelHost`] ([`PieceRunner::hosted`]); [`Models`] | [`Session`] = seams for fakes.
 //! - Text never logged; nothing written to disk.
@@ -508,7 +509,8 @@ impl<J: PieceJob> Shared<J> {
     }
 
     /// Before a load: the idle warm sessions of the app's other runners are unloaded (their model workers gone
-    /// before the load's memory guard reads the memory). Called without this runner's state lock (see [`RUNNERS`]).
+    /// before the load's memory guard reads the memory). Called without this runner's state lock (see [`RUNNERS`]),
+    /// and only when this runner has a model to load.
     fn make_room(&self) {
         for peer in self.peers() {
             peer.release_idle();
@@ -598,7 +600,10 @@ impl<J: PieceJob> Shared<J> {
     }
 
     fn open(&self, run: &str, cancel: &CancelToken) -> Result<Box<dyn Session>, IpcError> {
-        self.make_room();
+        // room only for a load that can happen: no model assigned -> the open below fails, the peers keep theirs
+        if self.models.available() {
+            self.make_room();
+        }
         // load progress: the first value, then steps of at least PROGRESS_STEP
         let sent = Cell::new(None::<f32>);
         let progress = |news: HostProgress| match news {

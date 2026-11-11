@@ -23,8 +23,11 @@ pub const CONTEXT: u32 = 4096;
 pub const TAG_MAX: usize = 35;
 /// Longest language name taken, chars.
 pub const NAME_MAX: usize = 64;
-/// What a language name may hold besides letters.
-const NAME_MARKS: [char; 7] = [' ', '(', ')', '-', '\'', ',', '.'];
+/// Most words of a language name (the English names of the languages offered have 3 at most).
+pub const NAME_WORDS: usize = 6;
+/// What a language name may hold besides letters ("Serbian (Cyrillic)", "N'Ko"). No period, no comma: no name the
+/// app builds has one, and with them a short sentence reads as a name.
+const NAME_MARKS: [char; 5] = [' ', '(', ')', '-', '\''];
 
 /// Translation as a piece job: this module's prompt for the run's languages, answer cap and sampling.
 pub struct TranslationJob;
@@ -54,7 +57,7 @@ impl PieceJob for TranslationJob {
 pub enum Refused {
     /// Tag not shaped like a language tag | too long.
     Tag,
-    /// Name without a letter | too long | holding more than letters and [`NAME_MARKS`].
+    /// Name without a letter | too long | of too many words | holding more than letters and [`NAME_MARKS`].
     Name,
     /// Source and target are the same language.
     SameLanguage,
@@ -124,8 +127,9 @@ pub struct Language {
 
 impl Language {
     /// Checks what the window sent: `tag` as [`Tag`]; `name` = at least one letter, only letters (any script) and
-    /// [`NAME_MARKS`] (no line break, quote, colon or digit: nothing that reads as more prompt), at most [`NAME_MAX`]
-    /// chars.
+    /// [`NAME_MARKS`] (no line break, quote, colon, digit, period or comma: nothing that reads as more prompt; an
+    /// invisible character or a combining accent is no letter, so a name written decomposed is refused), at most
+    /// [`NAME_MAX`] chars and [`NAME_WORDS`] words (runs of anything but spaces).
     ///
     /// # Errors
     /// [`Refused::Tag`] | [`Refused::Name`].
@@ -135,7 +139,9 @@ impl Language {
             .chars()
             .all(|c| c.is_alphabetic() || NAME_MARKS.contains(&c));
         let named = name.chars().any(char::is_alphabetic);
-        if plain && named && name.chars().count() <= NAME_MAX {
+        let short = name.chars().count() <= NAME_MAX
+            && name.split(' ').filter(|word| !word.is_empty()).count() <= NAME_WORDS;
+        if plain && named && short {
             Ok(Self {
                 tag,
                 name: name.to_owned(),
