@@ -19,7 +19,7 @@ import { ancestorsOf, applyDelta } from "./list";
 import { setLeaveGuard } from "../editing/guard";
 import { editing } from "../editing/session.svelte";
 import { problemText } from "./names";
-import { ExplorerStore, type ExplorerHost } from "./store.svelte";
+import { ExplorerStore, REFRESH_WAIT_MS, type ExplorerHost } from "./store.svelte";
 import type { NoticeAction } from "../window.svelte";
 
 type Mock = ReturnType<typeof createMockApi>;
@@ -351,6 +351,7 @@ describe("loading", () => {
       "treeSetFilter",
       "treeOpenFolder",
       "treeKeep",
+      "treeRefresh",
       "treeClose",
       "projectSessionGet",
       "projectSessionSet",
@@ -373,6 +374,7 @@ describe("loading", () => {
     await store.toggle("docs");
     store.reveal("docs/guide.md");
     await store.setActive("docs/guide.md");
+    await store.refresh();
     await store.acceptCodeOffer();
     await store.declineCodeOffer();
     await store.activate("README.md");
@@ -578,6 +580,121 @@ describe("rows and selection", () => {
     store.collapseAll();
     store.revealActive();
     expect(store.isOpen("docs")).toBe(false);
+  });
+
+  it("a refresh asks the backend to read the folder again; the list follows through deltas and keeps its place", async () => {
+    const { api, store, failures } = await setup();
+    await store.toggle("docs");
+    store.select("docs/guide.md", "single");
+    const asked = vi.spyOn(api, "treeRefresh");
+    const whole = vi.spyOn(api, "treeOpen");
+    // a file the tree was never told of (a report of the watch that got lost)
+    api.probe.project.add("docs/lost.md", "# Lost");
+    expect(paths(store)).not.toContain("docs/lost.md");
+    await store.refresh();
+    expect(asked).toHaveBeenCalledOnce();
+    expect(paths(store)).toContain("docs/lost.md");
+    expect(store.refreshing.status).toBe("idle");
+    // no whole list asked again (the list would blink), nothing the person set is lost
+    expect(whole).not.toHaveBeenCalled();
+    expect(store.load.status).toBe("ready");
+    expect(store.isOpen("docs")).toBe(true);
+    expect(Array.from(store.selection)).toEqual(["docs/guide.md"]);
+    expect(failures).toEqual([]);
+  });
+
+  it("a refresh tells nothing while the tree is gone, and tells a real refusal", async () => {
+    let answer: ApiError | null = null;
+    const { store, failures } = await setup("ask", (api) => ({
+      ...api,
+      treeRefresh: () =>
+        answer === null ? api.treeRefresh() : Promise.resolve({ ok: false, error: answer }),
+    }));
+    const refusal = (kind: "unsupported" | "io"): ApiError => ({
+      kind: "backend",
+      command: "tree_refresh",
+      error: { kind, subject: kind === "unsupported" ? "project" : null, detail: null },
+    });
+    // another folder opening in the view: no project to read
+    answer = refusal("unsupported");
+    await store.refresh();
+    expect(failures).toEqual([]);
+    expect(store.refreshing.status).toBe("idle");
+    answer = refusal("io");
+    await store.refresh();
+    expect(failures.map((f) => f.kind === "backend" && f.error.kind)).toEqual(["io"]);
+    // a refusal is the end of it: the next ask goes through
+    expect(store.refreshing.status).toBe("idle");
+    answer = null;
+    await store.refresh();
+    expect(failures).toHaveLength(1);
+  });
+
+  /** A backend that answers a Refresh at once and tells the list later, as the real one does after its walk (the
+   *  mock tells before it answers). */
+  function answersFirst(): { asked: () => number; wrap: (api: Mock) => Api } {
+    let asked = 0;
+    return {
+      asked: () => asked,
+      wrap: (api) => ({
+        ...api,
+        treeRefresh: () => {
+          asked += 1;
+          return Promise.resolve({ ok: true, value: null });
+        },
+      }),
+    };
+  }
+
+  it("one refresh at a time: asked again while it runs it is dropped, and the list being told ends it", async () => {
+    const backend = answersFirst();
+    const { api, store } = await setup("ask", backend.wrap);
+    expect(store.refreshing.status).toBe("idle");
+    await store.refresh();
+    expect(store.refreshing.status).toBe("reading");
+    // pressed again | a held key
+    await store.refresh();
+    await store.refresh();
+    expect(backend.asked()).toBe(1);
+    // another view's list is not this one's
+    api.emit("tree-changed", {
+      window: "other",
+      delta: {
+        seq: 1,
+        removed: [],
+        added: [],
+        renamed: [],
+        totalFiles: 0,
+        shownFiles: 0,
+        bulk: true,
+        filter: null,
+      },
+    });
+    expect(store.refreshing.status).toBe("reading");
+    // the backend read the folder: this view is told, also when nothing differs
+    const before = paths(store);
+    await api.treeRefresh();
+    expect(store.refreshing.status).toBe("idle");
+    expect(paths(store)).toEqual(before);
+    await store.refresh();
+    expect(backend.asked()).toBe(2);
+  });
+
+  it("a refresh nothing answers ends by itself after a few seconds, and at once when the Explorer closes", async () => {
+    vi.useFakeTimers();
+    const backend = answersFirst();
+    const { store, stop } = await setup("ask", backend.wrap);
+    await store.refresh();
+    vi.advanceTimersByTime(REFRESH_WAIT_MS - 1);
+    expect(store.refreshing.status).toBe("reading");
+    vi.advanceTimersByTime(1);
+    expect(store.refreshing.status).toBe("idle");
+    await store.refresh();
+    expect(backend.asked()).toBe(2);
+    expect(store.refreshing.status).toBe("reading");
+    stop();
+    expect(store.refreshing.status).toBe("idle");
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("keeping the open document listed tells nothing while the tree is gone, and tells a real refusal", async () => {

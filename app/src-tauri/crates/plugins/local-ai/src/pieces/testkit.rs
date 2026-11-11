@@ -4,6 +4,10 @@
 //!
 //! Compiled for tests only: this crate's own, another crate's through feature `testkit` enabled from its
 //! `[dev-dependencies]` (never part of an app build).
+//!
+//! Module [`eval`]: the harness of a job's eval set (its cases answered by the fake | a real model -> outputs file).
+
+pub mod eval;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -115,7 +119,8 @@ impl Events {
     }
 }
 
-/// Model source over one [`FakeEngine`]; counts loads, records requests.
+/// Model source over one [`FakeEngine`]; counts loads (+ the most loaded at once), records requests. One source may
+/// serve several runners (as the model service does for the features of one app).
 pub struct Fake {
     /// Engine behind every session (its `loaded` = sessions open now).
     pub engine: Arc<FakeEngine>,
@@ -130,6 +135,8 @@ pub struct Fake {
     /// The engine fetch never ends before a cancel.
     pub engine_held: AtomicBool,
     opens: AtomicUsize,
+    /// Most sessions loaded at once, read after each load.
+    peak: AtomicUsize,
     /// Job of the runs (named by `noModel`).
     task: Task,
     /// Context window asked of the engine, tokens.
@@ -148,6 +155,7 @@ impl Fake {
             engine_missing: Mutex::new(None),
             engine_held: AtomicBool::new(false),
             opens: AtomicUsize::new(0),
+            peak: AtomicUsize::new(0),
             task: J::TASK,
             context: J::CONTEXT,
         })
@@ -157,6 +165,12 @@ impl Fake {
     #[must_use]
     pub fn opens(&self) -> usize {
         self.opens.load(Ordering::Relaxed)
+    }
+
+    /// Most models loaded at the same time so far (1: every load found the earlier sessions unloaded).
+    #[must_use]
+    pub fn peak(&self) -> usize {
+        self.peak.load(Ordering::Relaxed)
     }
 }
 
@@ -212,6 +226,7 @@ impl Models for Fake {
                 cancel,
             )
             .map_err(|e| engine_ipc(&e))?;
+        self.peak.fetch_max(self.engine.loaded(), Ordering::Relaxed);
         Ok(Box::new(FakeSession {
             engine: Arc::clone(&self.engine),
             id,

@@ -779,7 +779,7 @@ fn remove_and_store_change_unload_the_engine_sessions_first() {
                 lineage,
                 &needs,
                 crate::engine::model_files(&model, &cat),
-                opts,
+                || opts,
                 &|_| {},
                 &CancelToken::new(),
             )
@@ -821,6 +821,77 @@ fn the_state_survives_a_restart() {
     let run = lab.start(cat.clone(), Arc::new(serving(&cat)));
     assert_eq!(without_free(run.state()), before);
     assert_eq!(run.assigned("assistant"), LFM);
+}
+
+/// Where models run: the graphics card when there is one until the person says processor only; the choice is told
+/// to every window and kept in the profile state file across a restart. Choosing what is chosen writes nothing.
+#[test]
+fn the_processor_only_choice_is_told_and_survives_a_restart() {
+    let lab = Lab::new();
+    let cat = catalog(1, |_| {});
+    let mut run = lab.start(cat.clone(), Arc::new(serving(&cat)));
+    assert_eq!(run.state()["cpuOnly"], false);
+    let same = run.call("setCpuOnly", json!({ "cpuOnly": false })).unwrap();
+    assert_eq!(same["cpuOnly"], false);
+    assert_eq!(
+        entries(lab.tmp.path()),
+        Vec::<String>::new(),
+        "nothing written"
+    );
+    assert!(run.call("setCpuOnly", json!({})).is_err());
+    run.events.0.lock().unwrap().clear();
+    let after = run.call("setCpuOnly", json!({ "cpuOnly": true })).unwrap();
+    assert_eq!(after["cpuOnly"], true);
+    let told = run
+        .events
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .rev()
+        .find(|(name, _)| name == "local-ai:state")
+        .map(|(_, payload)| payload["cpuOnly"].clone());
+    assert_eq!(told, Some(json!(true)));
+    run.stop();
+    let saved: Value = serde_json::from_slice(
+        &std::fs::read(lab.store().plugin_dir(&ID).join(state::FILE)).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(saved["data"]["cpuOnly"], true);
+
+    let run = lab.start(cat.clone(), Arc::new(serving(&cat)));
+    assert_eq!(run.state()["cpuOnly"], true);
+    let back = run.call("setCpuOnly", json!({ "cpuOnly": false })).unwrap();
+    assert_eq!(back["cpuOnly"], false);
+}
+
+/// A state file written before the choice existed: models run where they did (graphics card when there is one),
+/// the rest of the file is read as before.
+#[test]
+fn a_state_file_without_the_choice_reads_as_automatic() {
+    let lab = Lab::new();
+    let cat = catalog(1, |_| {});
+    let terms = cat.model(LFM).unwrap().license.url.clone();
+    let dir = lab.store().plugin_dir(&ID);
+    std::fs::create_dir_all(&dir).unwrap();
+    let old = json!({
+        "version": 1,
+        "data": {
+            "acceptances": [
+                { "model": LFM, "licenseUrl": terms, "revision": "v1.0", "acceptedAt": 1 }
+            ],
+            "assignments": {},
+            "store": null,
+            "installed": {},
+            "stale": []
+        }
+    });
+    std::fs::write(dir.join(state::FILE), old.to_string()).unwrap();
+    let run = lab.start(cat.clone(), Arc::new(serving(&cat)));
+    let state = run.state();
+    assert_eq!(state["cpuOnly"], false);
+    assert_eq!(state["acceptedLicenses"], json!([terms]), "file read");
+    assert!(dir.join(state::FILE).is_file(), "not moved aside");
 }
 
 /// Off: running downloads stop (part kept) and the RPC goes.

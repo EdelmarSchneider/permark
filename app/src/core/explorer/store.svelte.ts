@@ -58,6 +58,12 @@ export function treeGone(error: ApiError): boolean {
   );
 }
 
+/** The longest a Refresh waits for its list (a backend that never tells one must not leave it working forever). */
+export const REFRESH_WAIT_MS = 5000;
+
+/** The person's Refresh: `reading` from the ask until the backend tells this view its list again. */
+export type Refreshing = { status: "idle" } | { status: "reading" };
+
 /** The quiet offer to show the code files the filter hides (`codeOffer.ts`). */
 export type CodeOffer = { status: "none" } | { status: "offered"; hidden: number };
 
@@ -151,6 +157,8 @@ export class ExplorerStore {
   geometry: ((x: number, y: number) => string | null) | null = null;
   /** A request to bring a row into view (`n` makes repeated requests for one path distinct). */
   scrollTo = $state.raw<{ path: string; n: number } | null>(null);
+  /** Whether a Refresh is under way (its button shows it; asking again meanwhile does nothing). */
+  refreshing = $state.raw<Refreshing>({ status: "idle" });
 
   rows = $derived<Row[]>(rowsOf(this.roots, this.nodes, this.expanded, this.collapsedRoots));
 
@@ -174,6 +182,8 @@ export class ExplorerStore {
   #autoFor: string | null = null;
   /** Paths to select once they reach the list (items an import put in place). */
   #toSelect = new Set<string>();
+  /** Ends a Refresh no list answered. */
+  #refreshTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(api: Api, host: ExplorerHost) {
     this.#api = api;
@@ -207,6 +217,7 @@ export class ExplorerStore {
     if (this.#timer !== null) clearTimeout(this.#timer);
     this.#timer = null;
     this.#clearAuto();
+    this.#refreshed();
     void this.#api.treeClose();
   }
 
@@ -279,6 +290,8 @@ export class ExplorerStore {
     // another view's list (another tab's project): its numbering is not ours. Taking it would skip our next delta (a
     // file just copied in stayed out of the list until a reload: director 2026-10-20)
     if (event.window !== this.#host.view()) return;
+    // the backend tells this view its list after reading the folder again, also when nothing differs
+    this.#refreshed();
     if (this.load.status !== "ready") {
       this.#early.push(event);
       return;
@@ -315,6 +328,28 @@ export class ExplorerStore {
 
   async retry(): Promise<void> {
     await this.#open();
+  }
+
+  /** The person's Refresh: the backend reads the project folder again and tells what differs through deltas (the list
+   *  is not asked for again: it keeps its place, what is open and selected). One at a time: asked again while one runs
+   *  (a second press, a held key) it does nothing. It runs until this view is told its list (the backend tells it
+   *  after the walk, also when nothing differs), a refusal, or `REFRESH_WAIT_MS`. A view with no project now (another
+   *  folder opening in it) has nothing to read. */
+  async refresh(): Promise<void> {
+    if (this.#closed || this.refreshing.status === "reading") return;
+    this.refreshing = { status: "reading" };
+    this.#refreshTimer = setTimeout(() => this.#refreshed(), REFRESH_WAIT_MS);
+    const result = await this.#api.treeRefresh();
+    if (result.ok) return;
+    this.#refreshed();
+    if (!treeGone(result.error)) this.#host.fail(result.error);
+  }
+
+  /** The Refresh under way, if any, is over. */
+  #refreshed(): void {
+    if (this.#refreshTimer !== null) clearTimeout(this.#refreshTimer);
+    this.#refreshTimer = null;
+    if (this.refreshing.status !== "idle") this.refreshing = { status: "idle" };
   }
 
   #remember(): void {

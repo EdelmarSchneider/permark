@@ -13,6 +13,8 @@ type Handle = {
   showsHidden(): boolean;
   reveal(path: string): void;
   revealActive(): void;
+  /** Reads the project folder again. */
+  refresh(): Promise<void>;
   beginNew(kind: NewKind): void;
   copyPath(path: string, full: boolean): Promise<void>;
   /** Takes the newest file operation back. */
@@ -67,6 +69,11 @@ export function explorerShowsHidden(): boolean {
 export function revealInTree(path: string | null): void {
   if (path === null) current?.revealActive();
   else current?.reveal(path);
+}
+
+/** Reads the project folder again (the person's Refresh); nothing with no tree in the window. */
+export async function refreshTree(): Promise<void> {
+  await current?.refresh();
 }
 
 /** Starts a new file | folder in the Explorer (the sidebar shows the Files view first). */

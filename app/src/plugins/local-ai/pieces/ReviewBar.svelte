@@ -30,6 +30,9 @@
     show: MessageKey;
     /** `{n}` parts left as they were. */
     discarded: PluralKey;
+    /** `{n}` parts whose answer said the same as the part (none: a plugin whose review never counts them; no note).
+     *  A function: the plugin's own words for the count, where they hold more than it (a language's name). */
+    same?: PluralKey | ((n: number) => string);
     /** `{n}` suggestions the text no longer matches. */
     outdated: PluralKey;
     retry: MessageKey;
@@ -48,22 +51,26 @@
   // The strip under the header while a plugin's piece run goes on | is reviewed (nothing before a run); the words and
   // what the excerpt draws are the plugin's. Row 1: where the run stands (getting the AI engine the first time + its
   // size progress, getting the model ready + progress, checking part i of n, the count) + "3 / 12" + previous | next;
-  // row 2: the current suggestion as the plugin draws it, notes (parts left as they were, suggestions the text no
-  // longer matches), a failure with Try again + Local AI settings; row 3: Accept | Reject, all of them, Done, Cancel.
-  // The excerpt = a button: click | Enter -> the suggestion selected in the text. One polite live region: the phase,
-  // then the count + the current suggestion. A focused button turned off -> the keyboard to Cancel (running) | Done.
+  // row 2: the current suggestion as the plugin draws it, notes (parts not sent because the editor on screen cannot
+  // change them, parts left as they were, parts whose answer said the same when the plugin has words for it,
+  // suggestions the text no longer matches), a failure with Try again + Local AI settings; row 3: Accept | Reject, all
+  // of them, Done, Cancel. A run that ended with none left: the plugin's "none found" only when it found none, else
+  // "all reviewed". Nothing sent because the editor cannot change any part of the scope: that note, not the plugin's
+  // "nothing here".
+  // The excerpt = a button: click | Enter -> the suggestion selected in the text (an excerpt with controls of its
+  // own stands without it: `excerptAs`). One polite live region: the phase, then the count + the current
+  // suggestion. A focused button turned off -> the keyboard to Cancel (running) | Done.
   // Keys inside the bar: A | R, Shift+A | Shift+R, Esc (Done, back to the editor). The bar carries its plugin's name
   // (`data-<plugin>`: correction's = `data-correction`).
   import { untrack, type Snippet } from "svelte";
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronUp from "@lucide/svelte/icons/chevron-up";
-  import type { ApiError } from "../../../api";
   import { isTypingTarget } from "../../../core/commands/dispatch";
   import { sizeText, t, tn } from "../../../core/i18n";
   import { ui } from "../../../core/shell/ui.svelte";
   import { LOCAL_AI_PAGE } from "../store.svelte";
-  import { percentText, testErrorText } from "../words";
-  import { running, type PieceReview, type RunStatus } from "./review.svelte";
+  import { percentText, runErrorText } from "../words";
+  import { running, type PieceReview, type Review } from "./review.svelte";
 
   type Props = {
     /** The review shown and acted on (one per bar). */
@@ -71,8 +78,12 @@
     labels: ReviewLabels;
     /** Draws a suggestion inside the excerpt. */
     excerpt: Snippet<[Found]>;
+    /** How the excerpt stands in the bar. `button` (default): inside one button that shows the suggestion in the
+     *  text, cut to three lines, named by `labels.show`. `own`: as the plugin draws it, nothing around it: its sizes,
+     *  its names and its way to the suggestion in the text (`review.show`) are the plugin's. */
+    excerptAs?: "button" | "own";
   };
-  let { review: store, labels, excerpt }: Props = $props();
+  let { review: store, labels, excerpt, excerptAs = "button" }: Props = $props();
 
   const shown = $derived(store.state);
   const review = $derived(shown.kind === "review" ? shown : null);
@@ -83,7 +94,7 @@
   const announced = $derived.by(() => {
     if (review === null) return "";
     const quiet = review.status.kind === "checking" || review.status.kind === "failed";
-    const phase = quiet ? "" : headline(review.status, count, review.discarded);
+    const phase = quiet ? "" : headline(review);
     const step = current === null ? "" : labels.spoken(current, review.at, count);
     return [phase, step].filter((part) => part !== "").join(" ");
   });
@@ -128,7 +139,9 @@
     (accept ?? el.querySelector<HTMLElement>("button:not(:disabled)"))?.focus();
   });
 
-  function headline(status: RunStatus, found: number, discarded: number): string {
+  /** Where the run stands; at its end: how many suggestions are left, or why none is. */
+  function headline({ status, suggestions, total, discarded }: Review): string {
+    const left = suggestions.length;
     switch (status.kind) {
       case "engine":
         return t("localAi.test.engine");
@@ -137,9 +150,12 @@
       case "checking":
         return t(labels.checking, { i: status.part, n: status.parts });
       case "finished":
-        return found === 0 && discarded === 0 ? t(labels.clean) : tn(labels.found, found);
+        if (left > 0) return tn(labels.found, left);
+        // none left: every one found is handled | none was found (parts left as they were say so in their note)
+        if (total > 0) return t("localAi.review.allReviewed");
+        return discarded === 0 ? t(labels.clean) : tn(labels.found, 0);
       case "cancelled":
-        return tn(labels.stopped, found);
+        return tn(labels.stopped, left);
       case "failed":
         return t(labels.failed);
       default:
@@ -147,15 +163,9 @@
     }
   }
 
-  /** What the bar says about a failed run: the plugin's words for no model on the job (fixed on the Local AI page),
-   *  the Test model words for the rest (`notAvailable` = no engine built for this computer; a missing one the run
-   *  gets). */
-  function failureText(error: ApiError): string {
-    if (error.kind === "backend" && error.error.kind === "unavailable") {
-      const { subject, detail } = error.error;
-      if (subject === "model" && detail === "noModel") return t(labels.noModel);
-    }
-    return testErrorText(error);
+  /** What the bar says of `n` answers that said the same as their part. */
+  function sameNote(same: NonNullable<ReviewLabels["same"]>, n: number): string {
+    return typeof same === "function" ? same(n) : tn(same, n);
   }
 
   function onkeydown(event: KeyboardEvent): void {
@@ -185,18 +195,20 @@
     {onfocusin}
     {onfocusout}
   >
-    {#if review === null}
+    {#if shown.kind === "nothing"}
       <div class="row">
-        <span class="status" role="status" aria-live="polite">{t(labels.nothing)}</span>
+        <span class="status" role="status" aria-live="polite"
+          >{shown.locked > 0 ? tn("localAi.review.locked", shown.locked) : t(labels.nothing)}</span
+        >
         <span class="spacer"></span>
         <button type="button" class="btn btn--sm" onclick={() => store.done()}>
           {t(labels.done)}
         </button>
       </div>
-    {:else}
+    {:else if review !== null}
       <div class="row">
         <p class="sr-only" role="status" aria-live="polite">{announced}</p>
-        <span class="status">{headline(review.status, count, review.discarded)}</span>
+        <span class="status">{headline(review)}</span>
         {#if review.status.kind === "engine"}
           {@const { receivedBytes, totalBytes } = review.status}
           <progress
@@ -235,7 +247,9 @@
           >
         {/if}
       </div>
-      {#if current !== null}
+      {#if current !== null && excerptAs === "own"}
+        {@render excerpt(current)}
+      {:else if current !== null}
         <button
           type="button"
           class="excerpt"
@@ -247,15 +261,21 @@
           <span aria-hidden="true">{@render excerpt(current)}</span>
         </button>
       {/if}
+      {#if review.locked > 0}
+        <p class="quiet">{tn("localAi.review.locked", review.locked)}</p>
+      {/if}
       {#if review.discarded > 0}
         <p class="quiet">{tn(labels.discarded, review.discarded)}</p>
+      {/if}
+      {#if labels.same !== undefined && review.same > 0}
+        <p class="quiet">{sameNote(labels.same, review.same)}</p>
       {/if}
       {#if review.outdated > 0}
         <p class="quiet">{tn(labels.outdated, review.outdated)}</p>
       {/if}
       {#if review.status.kind === "failed"}
         <div class="problem" role="alert">
-          <span>{failureText(review.status.error)}</span>
+          <span>{runErrorText(review.status.error, labels.noModel)}</span>
           <button type="button" class="btn btn--sm" onclick={() => void store.retry()}>
             {t(labels.retry)}
           </button>

@@ -1,12 +1,24 @@
-// Eval set (spec feature-correction D-8) step 2: scores the model outputs of step 1 (Rust `tests/eval.rs`) with the
-// production pipeline (`restore` + `judge`, no copies). Per case: verdict (ok | discard reason, Rust or guards), text
-// the person would get after accepting every suggestion, exact match vs expected. Report = table per language +
-// totals + one line per non-exact case. Quality never fails a run; harness errors (missing | extra outputs, bad
-// markers in a case) throw. Not shipped: imported by `eval.test.ts` only.
+// Eval set, step 2 of 2: scores the model outputs of step 1 (Rust `tests/eval.rs`) with the production pipeline
+// (`restore` + `judge`, no copies), on the eval report of the shared pieces (`local-ai/pieces/eval/report.ts`: records
+// paired with cases, verdicts, tables). Here: what a correction case is and what it scores. Per case: verdict (ok |
+// discard reason, Rust or guards), text the person would get after accepting every suggestion, exact match vs
+// expected. Report = table per language + totals + one line per non-exact case. Quality never fails a run; harness
+// errors (missing | extra outputs, bad markers in a case) throw. Not shipped: imported by `eval.test.ts` only.
 
-import type { PieceRunResult } from "../../../api/generated/PieceRunResult";
+import {
+  accepted,
+  judged,
+  runLine,
+  scored,
+  tallyTable,
+  type Column,
+  type EvalOutputs,
+  type EvalRecord,
+} from "../../local-ai/pieces/eval/report";
 import { restore, type Piece } from "../../local-ai/pieces/segment";
 import { judge } from "../guards";
+
+export type { EvalOutputs, EvalRecord };
 
 export type CaseKind = "errors" | "clean" | "marker" | "heading" | "injection" | "mixed";
 
@@ -20,18 +32,6 @@ export type EvalCase = {
   markers?: Record<string, string>;
   /** Expected answer, markers kept. */
   expected: string;
-};
-
-export type EvalRecord = { id: string; result: PieceRunResult; ms: number; tokens: number };
-
-export type EvalOutputs = {
-  profile: string;
-  model: string;
-  onGpu: boolean | null;
-  loadMs: number;
-  totalMs: number;
-  tokPerSec: number;
-  records: EvalRecord[];
 };
 
 export type Outcome = {
@@ -81,35 +81,24 @@ export function outcome(c: EvalCase, record: EvalRecord): Outcome {
   const piece = pieceOf(c);
   const expected = restore(c.expected, piece);
   if (expected === null) throw new Error(`${c.id}: expected markers do not match its map`);
-  const base = { id: c.id, lang: c.lang, kind: c.kind, changed: c.expected !== c.text, expected };
-  const scored = (verdict: string, result: string): Outcome => ({
-    ...base,
-    verdict,
+  const verdict = judged(record, (output) => judge(piece.original, piece, output, c.lang));
+  const result =
+    verdict.kind === "ok" ? accepted(piece.original, verdict.suggestions) : piece.original;
+  return {
+    id: c.id,
+    lang: c.lang,
+    kind: c.kind,
+    verdict: verdict.kind === "discard" ? verdict.reason : "ok",
+    changed: c.expected !== c.text,
     result,
+    expected,
     exact: result.normalize("NFC") === expected.normalize("NFC"),
-  });
-  if (record.result.kind === "discarded") return scored(record.result.reason, piece.original);
-  const verdict = judge(piece.original, piece, record.result.text, c.lang);
-  if (verdict.kind === "discard") return scored(verdict.reason, piece.original);
-  let result = piece.original;
-  for (const s of [...verdict.suggestions].sort((a, b) => b.from - a.from)) {
-    result = result.slice(0, s.from) + s.insert + result.slice(s.to);
-  }
-  return scored("ok", result);
+  };
 }
 
 /** Every case scored, in case order; throws on missing | extra | duplicate outputs. */
 export function outcomes(cases: readonly EvalCase[], outputs: EvalOutputs): Outcome[] {
-  const byId = new Map(outputs.records.map((r) => [r.id, r]));
-  if (byId.size !== outputs.records.length) throw new Error("duplicate output ids");
-  const extra = outputs.records.filter((r) => !cases.some((c) => c.id === r.id));
-  if (extra.length > 0)
-    throw new Error(`outputs without a case: ${extra.map((r) => r.id).join(", ")}`);
-  return cases.map((c) => {
-    const record = byId.get(c.id);
-    if (record === undefined) throw new Error(`no output for case ${c.id}`);
-    return outcome(c, record);
-  });
+  return scored(cases, outputs, outcome);
 }
 
 export function totals(list: readonly Outcome[]): Totals {
@@ -126,26 +115,21 @@ export function totals(list: readonly Outcome[]): Totals {
   };
 }
 
+const COLUMNS: readonly Column<Totals>[] = [
+  { head: "cases", width: 5, cell: (t) => String(t.cases) },
+  { head: "exact", width: 7, cell: (t) => `${t.exact}/${t.cases}` },
+  { head: "clean", width: 7, cell: (t) => `${t.cleanKept}/${t.clean}` },
+  { head: "disc", width: 5, cell: (t) => String(t.discarded) },
+  { head: "falseD", width: 6, cell: (t) => String(t.falseDiscards) },
+  { head: "missed", width: 6, cell: (t) => String(t.missed) },
+];
+
 /** Compact text report: run facts, table per language + total, one line per non-exact case. */
 export function report(cases: readonly EvalCase[], outputs: EvalOutputs): string {
   const list = outcomes(cases, outputs);
-  const langs = [...new Set(list.map((o) => o.lang))];
-  const row = (name: string, t: Totals) =>
-    [
-      name.padEnd(6),
-      String(t.cases).padStart(5),
-      `${t.exact}/${t.cases}`.padStart(7),
-      `${t.cleanKept}/${t.clean}`.padStart(7),
-      String(t.discarded).padStart(5),
-      String(t.falseDiscards).padStart(6),
-      String(t.missed).padStart(6),
-    ].join(" ");
-  const gpu = outputs.onGpu === null ? "?" : String(outputs.onGpu);
   const lines = [
-    `model ${outputs.model} | profile ${outputs.profile} | gpu ${gpu} | load ${outputs.loadMs} ms | generate ${outputs.totalMs} ms | ${outputs.tokPerSec.toFixed(1)} tok/s`,
-    "lang   cases   exact   clean  disc falseD missed",
-    ...langs.map((lang) => row(lang, totals(list.filter((o) => o.lang === lang)))),
-    row("total", totals(list)),
+    runLine(outputs),
+    ...tallyTable(list, { head: "lang", width: 6, key: (o) => o.lang }, totals, COLUMNS),
   ];
   for (const o of list.filter((x) => !x.exact)) {
     lines.push(

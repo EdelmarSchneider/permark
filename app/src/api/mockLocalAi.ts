@@ -7,6 +7,8 @@
 // it is gone (store unavailable) - the unavailable fixture for dev:mock.
 // Machine: a 6 GiB laptop with a 2 GiB graphics card (`MOCK_MACHINE`): small models run well, mid ones slow, the
 // largest not recommended; assigning a second big model (LFM3 beside Gemma 4 E2B) raises the budget warning.
+// Processor only (`setCpuOnly`): fits + budget as without a graphics card (the fixture assignments then raise the
+// budget warning), a test says it ran on the processor, a change ends the running test.
 // Test model: timer steps (`stepMs`): engine download on the first test only, loading, running, then done with
 // plausible numbers (chat: answer + tokens/s; embedding: dims) | `probe.failTest`; one test at a time; cancel ends it.
 // Engine (`probe.engine`, as the real pin: llama.cpp b11429): EmbeddingGemma 2 + LFM3 need a newer build, Whisper an
@@ -55,6 +57,7 @@ type LocalAiMethods = Pick<
   | "local-ai.clearToken"
   | "local-ai.setStore"
   | "local-ai.cancelMove"
+  | "local-ai.setCpuOnly"
   | "local-ai.revealStore"
   | "local-ai.machine"
   | "local-ai.testModel"
@@ -369,10 +372,13 @@ export function createMockLocalAi(
   const assignments = new Map<AiTask, string>([
     ["semanticIndex", "embeddinggemma-2"],
     ["correction", "gemma-4-e2b-it"],
+    ["translation", "gemma-4-e2b-it"],
   ]);
   /** License address -> terms revision accepted. */
   const accepted = new Map<string, string | null>();
   let tokenSet = false;
+  /** Models run on the processor only (`false`: on the graphics card when there is one). */
+  let cpuOnly = false;
   /** Waiting downloads; the first one runs (one at a time, as the real engine). */
   const queue: string[] = [];
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -509,6 +515,7 @@ export function createMockLocalAi(
       storeMove: storeMove === null ? null : { ...storeMove },
       tokenSet,
       acceptedLicenses: [...accepted.keys()],
+      cpuOnly,
     };
   }
 
@@ -666,18 +673,20 @@ export function createMockLocalAi(
     return state();
   }
 
-  /** Profile, fits, budget (`fit.rs` rules: assigned models' `ramRec` vs best VRAM + 60 % of RAM). */
+  /** Profile, fits, budget (`fit.rs` rules: assigned models' `ramRec` vs best VRAM + 60 % of RAM); processor only:
+   *  both reckoned without the graphics cards (as `MachineProfile::limited_to`), the profile told keeps them. */
   function machine(): MachineInfo {
     const profile = structuredClone(probe.machine);
-    const fits = Object.fromEntries(models.map((m) => [m.id, fitOf(m.needs, profile)]));
+    const usable: MachineProfile = cpuOnly ? { ...profile, gpus: [] } : profile;
+    const fits = Object.fromEntries(models.map((m) => [m.id, fitOf(m.needs, usable)]));
     const assigned = new Set(
       state().assignments.flatMap((a) => (a.model === null ? [] : [a.model])),
     );
     const needed = [...assigned].reduce((sum, id) => sum + modelOf(id).needs.ramRec, 0);
     const room =
-      profile.ramTotal === null
+      usable.ramTotal === null
         ? null
-        : (bestVram(profile) ?? 0) + Math.floor(profile.ramTotal / 5) * 3;
+        : (bestVram(usable) ?? 0) + Math.floor(usable.ramTotal / 5) * 3;
     const budget = room !== null && needed > room ? { needed, available: room } : null;
     return { profile, fits, budget };
   }
@@ -688,7 +697,7 @@ export function createMockLocalAi(
     return {
       loadMs: chat ? 1800 : 600,
       runMs: chat ? 1400 : 40,
-      gpu: true,
+      gpu: !cpuOnly,
       memoryBytes: m.bytes,
       engineVersion: MOCK_ENGINE_VERSION,
       output: chat
@@ -863,6 +872,14 @@ export function createMockLocalAi(
         storeMove = null;
         announce();
       }
+      return state();
+    },
+    "local-ai.setCpuOnly": ({ cpuOnly: next }) => {
+      probe.calls.push(`setCpuOnly ${String(next)}`);
+      // a change unloads what is loaded: the running test ends (as the plugin)
+      if (next !== cpuOnly) cancelTest();
+      cpuOnly = next;
+      announce();
       return state();
     },
     "local-ai.revealStore": () => {

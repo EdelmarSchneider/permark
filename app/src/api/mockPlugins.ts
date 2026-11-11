@@ -10,6 +10,7 @@ import type { createMockDistribution } from "./mockDistribution";
 import type { createMockTokens } from "./mockTokens";
 import type { createMockConvert } from "./mockConvert";
 import type { createMockCorrection } from "./mockCorrection";
+import type { createMockTranslation } from "./mockTranslation";
 import type { createMockLocalAi } from "./mockLocalAi";
 import type { ReviewChange } from "./generated/ReviewChange";
 import { createMockGitMembers, type GitMembersProbe } from "./mockGitMembers";
@@ -129,7 +130,8 @@ export function createMockPlugins(
     ReturnType<typeof createMockTokens>["handlers"] &
     ReturnType<typeof createMockConvert>["handlers"] &
     ReturnType<typeof createMockLocalAi>["handlers"] &
-    ReturnType<typeof createMockCorrection>["handlers"],
+    ReturnType<typeof createMockCorrection>["handlers"] &
+    ReturnType<typeof createMockTranslation>["handlers"],
   projectsView: () => ProjectsView | null = () => null,
 ): {
   call<M extends PluginMethod>(

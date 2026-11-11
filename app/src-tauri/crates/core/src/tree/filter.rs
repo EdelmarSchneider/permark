@@ -33,6 +33,7 @@ pub struct TreeFilter {
     /// `+pattern` shows, `-pattern` hides (gitignore syntax), separated by white space or commas.
     pub patterns: String,
     pub assets_near_docs_only: bool,
+    /// Not in force under `Everything`, which lists every folder.
     pub hide_empty_dirs: bool,
     pub show_hidden: bool,
     pub show_ignored: bool,
@@ -120,6 +121,13 @@ impl TreeFilter {
             FilterShow::Custom => self.categories.clone(),
             other => preset_categories(other),
         }
+    }
+
+    /// Whether a folder that shows nothing is left out. `Everything` lists every folder: `hide_empty_dirs` does not
+    /// count there (like `assets_near_docs_only`), and counts again on another preset.
+    #[must_use]
+    pub fn hides_empty_dirs(&self) -> bool {
+        self.hide_empty_dirs && self.show != FilterShow::Everything
     }
 }
 
@@ -396,7 +404,7 @@ impl Pass<'_> {
                         below.file
                     } else {
                         below.any
-                            || !self.c.filter.hide_empty_dirs
+                            || !self.c.filter.hides_empty_dirs()
                             || unlisted.is_some()
                             || self.kept_dirs.contains(node.key())
                             || self.keep_ancestors.contains(node.key())

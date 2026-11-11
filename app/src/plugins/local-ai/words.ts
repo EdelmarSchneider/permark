@@ -99,8 +99,9 @@ export function fitKey(fit: ModelFit): MessageKey {
   }
 }
 
-/** Name of one BCP-47 language in the current language (`mul` = many; unknown code -> the code). */
-function languageName(code: string, names: Intl.DisplayNames): string {
+/** Name of one BCP-47 language in the language of `names` (`mul` = many, in the current language; unknown code ->
+ *  the code). */
+export function languageName(code: string, names: Intl.DisplayNames): string {
   if (code === "mul") return t("localAi.languages.many");
   try {
     return names.of(code) ?? code;
@@ -247,6 +248,17 @@ export function testErrorText(error: ApiError): string {
       ? engineKey(error.error.detail)
       : null;
   return key === null ? errorText(error) : t(key);
+}
+
+/** Why a plugin's run of pieces failed, in words: `noModel` (the plugin's own) for no model on its job, which the
+ *  Local AI page fixes; the Test model words for the rest (`notAvailable` = no engine built for this computer; a
+ *  missing one the run gets). */
+export function runErrorText(error: ApiError, noModel: MessageKey): string {
+  if (error.kind === "backend" && error.error.kind === "unavailable") {
+    const { subject, detail } = error.error;
+    if (subject === "model" && detail === "noModel") return t(noModel);
+  }
+  return testErrorText(error);
 }
 
 /** A short duration: "0.6 seconds", "1.8 seconds" (one decimal, the current language's unit words). */

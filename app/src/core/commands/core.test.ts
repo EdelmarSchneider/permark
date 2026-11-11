@@ -83,6 +83,26 @@ describe("the core's commands", () => {
     expect(windowStore.notices.at(-1)).toMatchObject({ kind: "note", text: en["doc.noChange"] });
   });
 
+  it("read the project folder again with F5, through the window's Explorer", async () => {
+    const keyOf = (id: string): string | undefined => shortcuts.find((s) => s.command === id)?.keys;
+    expect(keyOf("explorer.refresh")).toBe("F5");
+    const refresh = commands.find((c) => c.id === "explorer.refresh");
+    expect(refresh?.requires).toEqual({
+      needs: [{ need: "workspace", kinds: ["project"] }],
+      prefers: [],
+    });
+    expect(en[refresh?.label ?? "cmd.save"]).toBe("Refresh Explorer");
+    const { setExplorer } = await import("../explorer/current");
+    const asked = vi.fn(() => Promise.resolve());
+    setExplorer({ refresh: asked } as unknown as Parameters<typeof setExplorer>[0]);
+    await refresh?.run();
+    expect(asked).toHaveBeenCalledOnce();
+    // no tree in the window: nothing to ask
+    setExplorer(null);
+    await refresh?.run();
+    expect(asked).toHaveBeenCalledOnce();
+  });
+
   it("switch long lines wrapping with Alt+Z: saved, said by one note that closes, twice is back", async () => {
     const keyOf = (id: string): string | undefined => shortcuts.find((s) => s.command === id)?.keys;
     expect(keyOf("doc.wrapLines")).toBe("Alt+z");

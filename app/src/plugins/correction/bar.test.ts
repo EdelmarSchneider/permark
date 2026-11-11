@@ -38,7 +38,10 @@ function review(patch: Partial<Review>): Review {
     suggestions: [],
     at: 0,
     discarded: 0,
+    same: 0,
     outdated: 0,
+    locked: 0,
+    total: 0,
     ...patch,
   };
 }
@@ -80,7 +83,7 @@ describe("the correction bar", () => {
   });
 
   it("nothing to check: says so, Done", () => {
-    show({ kind: "nothing" });
+    show({ kind: "nothing", locked: 0 });
     expect(said()).toContain("There's no text to check here.");
     expect(group()?.getAttribute("aria-label")).toBe("Spelling and grammar suggestions");
   });
@@ -138,6 +141,11 @@ describe("the correction bar", () => {
     expect(button("acceptAll")?.disabled).toBe(false);
     show(review({}));
     expect(said()).toContain("No mistakes found.");
+    // suggestions were found and each one is handled since: that is not "no mistakes"
+    show(review({ total: 2, outdated: 2 }));
+    expect(target.querySelector(".status")?.textContent).toBe("All reviewed.");
+    expect(said()).not.toContain("No mistakes found.");
+    expect(target.querySelector("[aria-live]")?.textContent).toContain("All reviewed.");
   });
 
   it("stopped: what was found so far", () => {

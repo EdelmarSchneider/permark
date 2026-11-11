@@ -550,6 +550,11 @@
           if (!core || !mod || !now || core.view.composing) return false;
           return mod.applyEdits(core, now, edits);
         },
+        changeable: (range, insert) => {
+          const now = composed();
+          // not ready: nothing to tell by, as with no editor on screen (`apply` still checks each edit)
+          return core && mod && now ? mod.changeable(core, now, range, insert) : true;
+        },
         reveal: (range) => reveal(range),
         marks: (ranges, current, pick) => {
           const now = composed();

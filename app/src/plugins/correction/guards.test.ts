@@ -44,6 +44,9 @@ describe("judge", () => {
     expect(reason(judge(doc, only(doc), "Texto corrigido: This is fine text."))).toBe("preamble");
     const long = "This sentence is complete and has a clear ending.";
     expect(reason(judge(long, only(long), "This sentence is complete."))).toBe("length");
+    // Markdown the piece does not have
+    expect(reason(judge(doc, only(doc), "This is <b>fine</b> text."))).toBe("added");
+    expect(reason(judge(doc, only(doc), "# This is fine text."))).toBe("added");
   });
 
   it("discards an over-edit: ratio on long pieces, count on short ones", () => {
@@ -77,6 +80,59 @@ describe("judge", () => {
     expect(reason(judge(en, only(en), "Погода сегодня очень хорошая."))).toBe("script");
     const ja = "今日わ天気がいいです。";
     expect(reason(judge(ja, only(ja), "今日は天気がいいです。"))).toBe("ok");
+  });
+
+  it("a table cell: a fix lands on the cell's own words; a pipe | line break in the answer discards it", () => {
+    const doc = "| Name | Note |\n|:--|--:|\n| Teh quick fox | recieve `x` \\| mail |\n";
+    const [, , fox, mail] = pieces(doc);
+    if (fox === undefined || mail === undefined) throw new Error("no cells");
+    expect(applied(doc, judge(doc, fox, "The quick fox"))).toBe(doc.replace("Teh", "The"));
+    expect(mail.text).toBe("recieve ⟦1⟧ ⟦2⟧ mail");
+    const at = doc.indexOf("recieve");
+    expect(judge(doc, mail, "receive ⟦1⟧ ⟦2⟧ mail")).toMatchObject({
+      kind: "ok",
+      suggestions: [{ from: at, to: at + 7, original: "recieve", insert: "receive" }],
+    });
+    expect(reason(judge(doc, fox, "The quick | fox"))).toBe("cell");
+    expect(reason(judge(doc, fox, "The quick\nfox"))).toBe("cell");
+    // a cell is a label like a list item: no final period added
+    expect(judge(doc, fox, "Teh quick fox.")).toMatchObject({ kind: "ok", suggestions: [] });
+    expect(applied(doc, judge(doc, fox, "The quick fox."))).toBe(doc.replace("Teh", "The"));
+  });
+
+  it("a table cell: what is shown around a fix is the cell's own text, never a pipe or another cell", () => {
+    const doc = [
+      "| Feature | State | Notes |",
+      "|---|---|---|",
+      "| Math | is donne now | KaTeX, fast |",
+      "| Diagrams | donne | Mermaid |",
+      "",
+    ].join("\n");
+    const cell = (text: string): Piece => {
+      const found = pieces(doc).find((piece) => piece.original === text);
+      if (found === undefined) throw new Error(`no cell ${text}`);
+      return found;
+    };
+    const inside = judge(doc, cell("is donne now"), "is done now");
+    expect(inside).toMatchObject({
+      kind: "ok",
+      suggestions: [
+        { original: "donne", insert: "done", before: "is ", after: " now", within: "cell" },
+      ],
+    });
+    // the whole cell: nothing of the cells beside it, nothing of the next row
+    const whole = judge(doc, cell("donne"), "done");
+    expect(whole).toMatchObject({ kind: "ok", suggestions: [{ before: "", after: "" }] });
+    for (const verdict of [inside, whole]) {
+      if (verdict.kind !== "ok") throw new Error("discarded");
+      for (const s of verdict.suggestions) expect(s.before + s.after).not.toMatch(/[|\n]/);
+    }
+    // a paragraph's excerpt is the text around the fix, as ever
+    const text = "Some long text before teh error and more after it.";
+    expect(judge(text, only(text), text.replace("teh", "the"))).toMatchObject({
+      kind: "ok",
+      suggestions: [{ before: "Some long text before ", after: " error and more after it." }],
+    });
   });
 
   it("drops a suggestion that only adds a final period to a heading | list item", () => {

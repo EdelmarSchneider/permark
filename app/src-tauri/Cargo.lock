@@ -3343,6 +3343,7 @@ dependencies = [
  "permark-plugin-tags",
  "permark-plugin-text-view",
  "permark-plugin-token-count",
+ "permark-plugin-translation",
  "permark-plugin-unread",
  "permark-plugin-updates",
  "permark-plugin-word-count",
@@ -3724,6 +3725,18 @@ dependencies = [
  "tempfile",
  "ts-rs",
  "xxhash-rust",
+]
+
+[[package]]
+name = "permark-plugin-translation"
+version = "0.10.0"
+dependencies = [
+ "permark-core",
+ "permark-plugin-local-ai",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ts-rs",
 ]
 
 [[package]]

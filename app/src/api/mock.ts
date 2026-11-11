@@ -24,6 +24,7 @@ import { createMockTokens, type TokensProbe } from "./mockTokens";
 import { createMockLocalAi, type LocalAiProbe } from "./mockLocalAi";
 import { createMockCorrection } from "./mockCorrection";
 import type { PieceRunProbe, PieceRunWiring } from "./mockPieceRun";
+import { createMockTranslation, type TranslationProbe } from "./mockTranslation";
 import { createMockConvert, type ConvertProbe } from "./mockConvert";
 import { createMockEditing, mockDecoded, mockHash, type MockEditProbe } from "./mockEdit";
 import { createMockImport, type ImportProbe } from "./mockImport";
@@ -228,6 +229,8 @@ export type MockProbe = {
   localAi: LocalAiProbe;
   /** Correction: calls made, the status answer, a failure for the next run, the run timer. */
   correction: PieceRunProbe;
+  /** Translation: as correction, with what each run was sent as languages, and the remembered targets. */
+  translation: TranslationProbe;
   /** Drop into project: what lies outside, the plans and applies, a hold to keep one running. */
   imports: ImportProbe;
   /** Picture files read for a drop on an editor, by path. */
@@ -494,6 +497,7 @@ export function createMockApi(): Api & {
     "local-ai:move": new Set(),
     "local-ai:test": new Set(),
     "correction:run": new Set(),
+    "translation:run": new Set(),
   };
   const distribution = createMockDistribution((event, payload) => {
     for (const handler of appListeners[event]) handler(payload);
@@ -524,6 +528,16 @@ export function createMockApi(): Api & {
     engine: localAi.probe,
   };
   const correction = createMockCorrection(pieceRuns);
+  const translation = createMockTranslation(pieceRuns, {
+    taken: (path) => storedPath(filesShown(), path) !== null,
+    // a new file of the workspace shown, as one the editor saves under a new name
+    add: (path, text) => {
+      filesShown().set(path, text);
+      if (filesShown() !== project.files) return;
+      project.add(path, text);
+      refreshTree();
+    },
+  });
   const plugins = createMockPlugins(
     emitPlugin,
     () => mockView("docs/guide.md", [], true)?.hash ?? "0",
@@ -535,6 +549,7 @@ export function createMockApi(): Api & {
       ...convert.handlers,
       ...localAi.handlers,
       ...correction.handlers,
+      ...translation.handlers,
     },
     // read when asked (the projects mock is made just below)
     () => projects.probe.viewOf(rootNow()),
@@ -568,6 +583,7 @@ export function createMockApi(): Api & {
     convert: convert.probe,
     localAi: localAi.probe,
     correction: correction.probe,
+    translation: translation.probe,
     imports: importing.probe,
     pictures: [],
     liveOff: (off) => {
@@ -1020,6 +1036,13 @@ export function createMockApi(): Api & {
       // no tree open for this view (not yet | closed): `TreeError::NoView`
       if (!tree) return Promise.resolve(refused<null>("tree_keep", "unavailable", null));
       tree = { ...tree, keep: path };
+      return ok(null);
+    },
+    // the folder read again: the list is made anew from the files and the window told what differs
+    treeRefresh: () => {
+      const no = whileOpening<null>("tree_refresh");
+      if (no) return Promise.resolve(no);
+      refreshTree();
       return ok(null);
     },
     treeClose: () => {

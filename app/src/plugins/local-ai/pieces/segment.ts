@@ -1,9 +1,14 @@
 // Pieces of a Markdown document to send to a model, one at a time (a plugin's run: correction). Parsed with the
 // editor's own grammar (Markdown + GFM in YAML front matter, as `languageFor` in `core/editing/source/cm.ts`) so the
-// UTF-16 offsets are the editor's. Piece = one prose block (paragraph | heading | list item | quote paragraph),
-// clipped to the scope; long blocks -> sentence groups under a char budget. Whole blocks never sent: front matter,
-// code, HTML, comments, `$$` math, tables, link definitions. Inline non-prose -> numbered markers `⟦n⟧` the model must
-// copy back; `restore` puts the original bytes back.
+// UTF-16 offsets are the editor's. Piece = one prose block (paragraph | heading | list item | quote paragraph | the
+// text of one table cell), clipped to the scope; long blocks -> sentence groups under a char budget. Whole blocks
+// never sent: front matter, code, HTML, comments, `$$` math, link definitions. Of a table only each cell's own text
+// goes: never a pipe, the padding or the alignment row; a table the grammar does not read as one is left alone. Of a
+// quote alert (`> [!NOTE]`) the marker is no part of a piece: an answer cannot rewrite it and undo the alert.
+// Inline non-prose -> numbered markers `⟦n⟧` the model must copy back, each once (in the piece's order, or anywhere
+// for a plugin whose answers move the words); `restore` puts the original bytes back. An HTML element written in a
+// line (`<kbd>Ctrl</kbd>`) is one marker from its opening tag to its closing tag: its text is the element's, never
+// sent, never changed by an answer.
 
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { yamlFrontmatter } from "@codemirror/lang-yaml";
@@ -32,7 +37,7 @@ export type Budget = { chars: number; cjkChars: number };
 
 export type Scope = { from: number; to: number };
 
-export type PieceKind = "paragraph" | "heading" | "listItem" | "quote";
+export type PieceKind = "paragraph" | "heading" | "listItem" | "quote" | "cell";
 
 export type Piece = {
   /** Document range (UTF-16) of the piece. */
@@ -46,6 +51,10 @@ export type Piece = {
   /** Original bytes of marker `⟦i + 1⟧`. */
   markers: readonly string[];
 };
+
+/** Where the markers of an answer may stand: as in the piece | anywhere (an answer that moves the words around
+ *  them: a translation). */
+export type MarkerOrder = "inOrder" | "anyOrder";
 
 type Range = { from: number; to: number };
 
@@ -76,6 +85,34 @@ const HIDDEN_TEXT = [
   /\$(?!\s)[^$\n]+(?<!\s)\$(?!\d)/g,
   /[⟦⟧]/g,
 ];
+// an HTML tag as the grammar reads one in a line (`HTMLTag`; no declaration, no CDATA): 1 = the `/` of a closing tag,
+// 2 = its name, 3 = the `/` of a tag closed in itself. Attributes as the grammar takes them: a `>` inside quotes ends
+// nothing, a value without quotes takes a `/` before the `>` as its own
+const TAG =
+  /^<(\/?)\s*([a-zA-Z][\w-]*)(?:\s+[a-zA-Z:_][\w.:-]*(?:\s*=\s*(?:[^\s"'=<>`]+|'[^']*'|"[^"]*"))?)*\s*(\/?)\s*>$/;
+// HTML elements that hold nothing: their tag has no closing tag to wait for
+const VOID_ELEMENTS = new Set([
+  "area",
+  "base",
+  "br",
+  "col",
+  "embed",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
+]);
+// the marker of a quote alert: the five kinds the reader draws, in any letter case
+const ALERT_MARKER = /^\[!(?:note|tip|important|warning|caution)\]/i;
+// a table's alignment row inside a paragraph: a table the reader may draw that the grammar did not read as one
+// (spaces | `\r` after the row)
+const ALIGNMENT_ROW =
+  /^[ \t>]*(?:\|[ \t]*)?:?-+:?[ \t]*\|(?:[ \t]*:?-+:?[ \t]*\|)*(?:[ \t]*:?-+:?)?[ \t\r]*$/m;
 
 /** Pieces of `doc` to send, in document order; `scope` limits them (UTF-16 offsets; default whole document), `budget`
  *  their size (default: what a small model takes well). */
@@ -102,6 +139,10 @@ export function pieces(
         mathEnd = close < 0 ? node.to : close + 2;
         return false;
       }
+      // a table the grammar missed: left alone (as a paragraph its pipes would go to the model as words)
+      if (ref.name === "Paragraph" && ALIGNMENT_ROW.test(doc.slice(node.from, node.to))) {
+        return false;
+      }
       const content = trim(doc, contentRange(doc, node));
       if (content.from >= content.to) return false;
       const hidden = hiddenRanges(doc, node, content);
@@ -117,17 +158,22 @@ export function pieces(
   return out;
 }
 
-/** `output` with the markers back as original bytes; null when the markers are not exactly `⟦1⟧…⟦n⟧` in order. */
-export function restore(output: string, piece: Piece): string | null {
-  let next = 1;
-  let exact = true;
+/** `output` with the markers back as original bytes; null unless it holds each marker `⟦1⟧…⟦n⟧` of the piece exactly
+ *  once (`inOrder`, the default: in the piece's order too) and no other marker bracket. */
+export function restore(
+  output: string,
+  piece: Piece,
+  order: MarkerOrder = "inOrder",
+): string | null {
+  const seen: number[] = [];
   const back = output.replace(MARKER, (_, digits: string) => {
     const n = Number(digits);
-    if (n !== next) exact = false;
-    next += 1;
+    seen.push(n);
     return piece.markers[n - 1] ?? "";
   });
-  if (!exact || next - 1 !== piece.markers.length) return null;
+  if (seen.length !== piece.markers.length) return null;
+  const numbers = order === "inOrder" ? seen : [...seen].sort((a, b) => a - b);
+  if (numbers.some((n, i) => n !== i + 1)) return null;
   if (/[⟦⟧]/.test(unmarked(output))) return null;
   return back;
 }
@@ -137,11 +183,18 @@ export function unmarked(text: string): string {
   return text.replace(MARKER, "");
 }
 
+// a `TableCell` is the cell's text alone: the grammar leaves its padding and the pipes around it out
 function isProse(name: string): boolean {
-  return name === "Paragraph" || name === "Task" || /^(ATX|Setext)Heading\d$/.test(name);
+  return (
+    name === "Paragraph" ||
+    name === "Task" ||
+    name === "TableCell" ||
+    /^(ATX|Setext)Heading\d$/.test(name)
+  );
 }
 
 function kindOf(node: Node): PieceKind {
+  if (node.name === "TableCell") return "cell";
   if (node.name.includes("Heading")) return "heading";
   if (node.name === "Task" || node.parent?.name === "ListItem") return "listItem";
   for (let up = node.parent; up; up = up.parent) if (up.name === "Blockquote") return "quote";
@@ -164,9 +217,30 @@ function frontMatterEnd(doc: string): number {
   return 0;
 }
 
-// the block's text without heading marks, setext underline or task box
+/** Where the text of `block` starts when the block opens a quote alert as the reader takes one (comrak `alerts`):
+ *  `[!NOTE]` right after the quote's first `>` and one space, what follows on that line being the alert's title.
+ *  Past the marker; past the next line's quote marks too when the marker stands alone on its line. `null`: no alert. */
+function alertTextStart(doc: string, block: Node): number | null {
+  const quote = block.parent;
+  const mark = block.prevSibling;
+  if (quote?.name !== "Blockquote" || mark?.name !== "QuoteMark" || mark.from !== quote.from)
+    return null;
+  if (doc.slice(mark.to, block.from) !== " ") return null;
+  const marker = ALERT_MARKER.exec(doc.slice(block.from, block.to));
+  if (marker === null) return null;
+  let from = block.from + marker[0].length;
+  for (let child = block.firstChild; child; child = child.nextSibling) {
+    if (child.name !== "QuoteMark" || child.from < from) continue;
+    if (doc.slice(from, child.from).trim() !== "") break;
+    from = child.to;
+  }
+  return from;
+}
+
+// the block's text without heading marks, setext underline, task box or the marker of a quote alert
 function contentRange(doc: string, node: Node): Range {
   let { from, to } = node;
+  from = alertTextStart(doc, node) ?? from;
   const first = node.firstChild;
   const last = node.lastChild;
   if (node.name.startsWith("ATX")) {
@@ -187,17 +261,23 @@ function trim(doc: string, range: Range): Range {
   return { from, to };
 }
 
-// inline non-prose inside `content`, sorted, overlaps merged
+// inline non-prose inside `content`, sorted, overlaps merged (an HTML element with the tags and whatever else it
+// holds: one range)
 function hiddenRanges(doc: string, block: Node, content: Range): Range[] {
   const found: Range[] = [];
+  /** The block's HTML tags, in document order. */
+  const tags: Range[] = [];
+  const cell = block.name === "TableCell";
   const walk = (node: Node): void => {
     for (let child = node.firstChild; child; child = child.nextSibling) {
-      const hidden = hiddenPart(doc, child);
+      if (child.name === "HTMLTag") tags.push({ from: child.from, to: child.to });
+      const hidden = hiddenPart(doc, child, cell);
       if (hidden !== null) found.push(hidden);
       if (hidden === null || hidden.from > child.from) walk(child);
     }
   };
   walk(block);
+  found.push(...htmlElements(doc, tags));
   const text = doc.slice(content.from, content.to);
   for (const pattern of HIDDEN_TEXT) {
     for (const match of text.matchAll(pattern)) {
@@ -218,12 +298,38 @@ function hiddenRanges(doc: string, block: Node, content: Range): Range[] {
   return merged;
 }
 
+// The HTML elements among `tags` (the tags of one block, in document order), each from its opening tag to its closing
+// tag. A closing tag ends the nearest element of its name still open (any letter case); the ones opened after that one
+// are left open. No element: a tag closed in itself (`<br/>`), the tag of an element that holds nothing (`<br>`,
+// `<img …>`), an opening | closing tag whose other half is not in the block (each stays a tag alone).
+function htmlElements(doc: string, tags: readonly Range[]): Range[] {
+  const found: Range[] = [];
+  const open: { name: string; from: number }[] = [];
+  for (const tag of tags) {
+    const [, closing, written, alone] = TAG.exec(doc.slice(tag.from, tag.to)) ?? [];
+    if (written === undefined) continue;
+    const name = written.toLowerCase();
+    if (closing === "") {
+      if (alone === "" && !VOID_ELEMENTS.has(name)) open.push({ name, from: tag.from });
+      continue;
+    }
+    const at = open.findLastIndex((element) => element.name === name);
+    const element = open[at];
+    if (element === undefined) continue;
+    found.push({ from: element.from, to: tag.to });
+    open.length = at;
+  }
+  return found;
+}
+
 // part of an inline node the model never sees: whole node, or a link's destination `(…)`
-function hiddenPart(doc: string, node: Node): Range | null {
+function hiddenPart(doc: string, node: Node, cell: boolean): Range | null {
   if (HIDDEN.has(node.name)) return { from: node.from, to: node.to };
-  // backslash hard break
-  if (node.name === "Escape" && doc[node.from + 1] === "\n")
-    return { from: node.from, to: node.to };
+  if (node.name === "Escape") {
+    const escaped = doc[node.from + 1];
+    // backslash hard break; in a table cell an escaped pipe (the model never sees | moves a pipe of a row)
+    return escaped === "\n" || (cell && escaped === "|") ? { from: node.from, to: node.to } : null;
+  }
   if (node.name !== "Link" && node.name !== "Image") return null;
   // footnote reference `[^x]`
   if (doc.startsWith("[^", node.from)) return { from: node.from, to: node.to };
@@ -283,7 +389,9 @@ function groups(doc: string, range: Range, hidden: readonly Range[], sizes: Budg
   return out.map((r) => trim(doc, r)).filter((r) => r.from < r.to);
 }
 
-function mostlyCjk(text: string): boolean {
+/** `text` is mostly Han | Kana | Hangul: about one token per char, far fewer chars for the same words than
+ *  alphabetic text. */
+export function mostlyCjk(text: string): boolean {
   let letters = 0;
   let cjk = 0;
   for (const ch of text) {

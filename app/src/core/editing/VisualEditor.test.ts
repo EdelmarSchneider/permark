@@ -38,6 +38,16 @@ describe("the text column", () => {
   });
 });
 
+describe("what the editor answers the session", () => {
+  it("an edit counts as changeable while the editor cannot tell yet (not ready)", () => {
+    // as the session answers with no editor on screen: `apply` still checks each edit; "no" here would turn every
+    // part of a run into one "that can only be changed in Source"
+    const answer = /changeable: \(range, insert\) => \{([\s\S]*?)\n {8}\},/.exec(source)?.[1] ?? "";
+    expect(answer).toContain("mod.changeable(core, now, range, insert)");
+    expect(answer.replace(/\s+/g, " ")).toMatch(/\? mod\.changeable\([^)]*\) : true;/);
+  });
+});
+
 describe("the editor's text", () => {
   it("keeps white space as typed: the browser puts no no-break space in for a second space", () => {
     // ProseMirror expects this (its own stylesheet sets it); without it a contenteditable writes U+00A0

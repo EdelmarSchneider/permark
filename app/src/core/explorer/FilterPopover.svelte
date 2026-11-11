@@ -127,14 +127,17 @@
       </span>
     </label>
   {/if}
-  <label class="check">
-    <input
-      type="checkbox"
-      checked={filter.hideEmptyDirs}
-      onchange={(e) => change({ hideEmptyDirs: e.currentTarget.checked })}
-    />
-    <span>{t("filter.hideEmptyFolders")}</span>
-  </label>
+  <!-- Everything lists every folder, so the switch has nothing to do there -->
+  {#if filter.show !== "everything"}
+    <label class="check">
+      <input
+        type="checkbox"
+        checked={filter.hideEmptyDirs}
+        onchange={(e) => change({ hideEmptyDirs: e.currentTarget.checked })}
+      />
+      <span>{t("filter.hideEmptyFolders")}</span>
+    </label>
+  {/if}
   <label class="check">
     <input
       type="checkbox"
