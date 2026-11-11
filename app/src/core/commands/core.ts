@@ -22,12 +22,18 @@ import { askInitHere } from "../shell/initProject";
 import { rightAvailable } from "../shell/layout";
 import { defaultRightViews } from "../shell/rightViews";
 import { rightViews } from "../shell/rightViews.svelte";
-import { rightSide, toggleOutlinePanel, toggleRightPanel, toggleSidebar } from "../shell/sides";
+import {
+  documentPane,
+  rightSide,
+  toggleOutlinePanel,
+  toggleRightPanel,
+  toggleSidebar,
+} from "../shell/sides";
 import { tabs } from "../shell/tabs.svelte";
 import { ui } from "../shell/ui.svelte";
 import { conditions } from "../conditions/context.svelte";
 import { stepChange } from "./changes";
-import { isTypingTarget } from "./dispatch";
+import { isTextTarget, isTypingTarget } from "./dispatch";
 import { windowStore as store } from "../window.svelte";
 import { NO_REQUIREMENT, type Requirement } from "../conditions/available";
 
@@ -59,6 +65,14 @@ const canEdit = (): boolean => (hasDocument() && editBlockedReason() === null) |
 function cycleWidth(): void {
   const at = WIDTHS.indexOf(reading.width);
   reading.setWidth(WIDTHS[(at + 1) % WIDTHS.length] ?? "comfortable");
+}
+
+/** Selects the document shown in View: what its pane holds, nothing else. No document | an editor open (the keyboard
+ * outside it) | no page on screen: nothing is selected. */
+function selectDocument(): void {
+  if (!readable()) return;
+  const pane = documentPane();
+  if (pane !== null) window.getSelection()?.selectAllChildren(pane);
 }
 
 /** `tab.select1..8` (Mod+1..8): tab n of this window; none there -> nothing. */
@@ -283,6 +297,18 @@ const SPECS: readonly Spec[] = [
     // macOS: Option+Z types a character (Ω, ż) where text goes; there the key stays text
     when: () => !(conditions.current.platform === "mac" && isTypingTarget(document.activeElement)),
     run: toggleWrap,
+  },
+  {
+    // in text (a field, an editor) the key stays the text's own select-all; everywhere else it is this command, so
+    // the webview never selects the window around the document (the bars, the panels). The Explorer list takes the
+    // key before this for its rows.
+    id: "doc.selectAll",
+    label: "cmd.selectAll",
+    keys: ["Mod+a"],
+    requires: READING,
+    inPalette: false,
+    when: () => !isTextTarget(document.activeElement),
+    run: selectDocument,
   },
   {
     id: "edit.diagramPanel",

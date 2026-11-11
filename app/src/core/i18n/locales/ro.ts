@@ -650,6 +650,7 @@ export default {
   "cmd.zoomIn": "Mărește",
   "cmd.zoomOut": "Micșorează",
   "cmd.cycleWidth": "Schimbă lățimea de citire",
+  "cmd.selectAll": "Selectează tot",
   "cmd.wrapLines": "Încadrează rândurile lungi (activat | dezactivat)",
   "wrap.on": "Rândurile lungi se încadrează acum.",
   "wrap.off":

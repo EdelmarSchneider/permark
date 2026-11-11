@@ -611,6 +611,7 @@ export default {
   "cmd.zoomIn": "확대",
   "cmd.zoomOut": "축소",
   "cmd.cycleWidth": "읽기 너비 변경",
+  "cmd.selectAll": "모두 선택",
   "cmd.wrapLines": "긴 줄 자동 줄 바꿈 (켜기 | 끄기)",
   "wrap.on": "이제 긴 줄을 자동으로 바꿉니다.",
   "wrap.off":

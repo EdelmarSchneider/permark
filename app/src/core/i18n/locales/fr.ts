@@ -638,6 +638,7 @@ export default {
   "cmd.zoomIn": "Zoom avant",
   "cmd.zoomOut": "Zoom arrière",
   "cmd.cycleWidth": "Changer la largeur de lecture",
+  "cmd.selectAll": "Tout sélectionner",
   "cmd.wrapLines": "Retour à la ligne automatique (oui | non)",
   "wrap.on": "Les lignes longues reviennent maintenant à la ligne.",
   "wrap.off":

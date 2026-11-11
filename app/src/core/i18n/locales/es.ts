@@ -625,6 +625,7 @@ export default {
   "cmd.zoomIn": "Acercar",
   "cmd.zoomOut": "Alejar",
   "cmd.cycleWidth": "Cambiar el ancho de lectura",
+  "cmd.selectAll": "Seleccionar todo",
   "cmd.wrapLines": "Ajustar líneas largas (sí | no)",
   "wrap.on": "Las líneas largas ahora se ajustan.",
   "wrap.off":

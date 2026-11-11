@@ -631,6 +631,7 @@ export default {
   "cmd.zoomIn": "Ampliar",
   "cmd.zoomOut": "Reduzir",
   "cmd.cycleWidth": "Mudar a largura de leitura",
+  "cmd.selectAll": "Selecionar tudo",
   "cmd.wrapLines": "Quebrar linhas longas (ativar | desativar)",
   "wrap.on": "As linhas longas passam a ser quebradas.",
   "wrap.off":

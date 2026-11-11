@@ -629,6 +629,7 @@ export default {
   "cmd.zoomIn": "拡大",
   "cmd.zoomOut": "縮小",
   "cmd.cycleWidth": "本文の幅を切り替え",
+  "cmd.selectAll": "すべて選択",
   "cmd.wrapLines": "長い行を折り返す（オン | オフ）",
   "wrap.on": "長い行を折り返すようになりました。",
   "wrap.off":

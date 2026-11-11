@@ -536,6 +536,53 @@ describe("rows and selection", () => {
     expect(store.isOpen("docs")).toBe(false);
   });
 
+  it("select all takes every row the list shows, inside open folders too; what a closed folder holds is no row", async () => {
+    const { store } = await setup();
+    await store.toggle("docs");
+    const keys = store.rows.flatMap((r) => (r.type === "node" ? [r.node.path] : []));
+    expect(keys).toEqual(
+      expect.arrayContaining(["README.md", "docs", "docs/guide.md", "docs/img"]),
+    );
+    const inClosed = paths(store).filter((p) => !keys.includes(p));
+    expect(inClosed.length).toBeGreaterThan(0);
+    // nothing had the keyboard: the first row takes it, and Shift + arrow goes on from there
+    expect(store.focus).toBeNull();
+    store.selectAll();
+    expect([...store.selection]).toEqual(keys);
+    for (const path of inClosed) expect(store.selection.has(path), path).toBe(false);
+    expect(store.focus).toBe(keys[0]);
+    store.move(1, true);
+    expect([...store.selection]).toEqual(keys.slice(0, 2));
+    // the row the keyboard is on stays, whatever was selected before
+    store.select("docs/guide.md", "single");
+    store.select("README.md", "toggle");
+    store.select("docs/guide.md", "toggle");
+    store.selectAll();
+    expect([...store.selection]).toEqual(keys);
+    expect(store.focus).toBe("docs/guide.md");
+    // exactly what Home, then Shift+End reaches
+    store.moveTo("first", false);
+    store.moveTo("last", true);
+    expect([...store.selection]).toEqual(keys);
+    // a row that went away with its folder still names the keyboard's place: the first row takes over
+    store.select("docs/guide.md", "single");
+    await store.toggle("docs");
+    store.selectAll();
+    const closed = store.rows.flatMap((r) => (r.type === "node" ? [r.node.path] : []));
+    expect(closed).not.toContain("docs/guide.md");
+    expect([...store.selection]).toEqual(closed);
+    expect(store.focus).toBe(closed[0]);
+  });
+
+  it("select all in a list with no rows selects nothing", async () => {
+    const { store } = await setup();
+    store.nodes = [];
+    expect(store.rows).toEqual([]);
+    store.selectAll();
+    expect(store.selection.size).toBe(0);
+    expect(store.focus).toBeNull();
+  });
+
   it("a file shows its document, a folder toggles", async () => {
     const { api, store } = await setup();
     await store.activate("README.md");

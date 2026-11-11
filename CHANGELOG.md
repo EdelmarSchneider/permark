@@ -7,6 +7,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - A link written after Chinese, Japanese or other non-ASCII text in a table cell that also holds an escaped pipe (`\|`) is found again: the broken-link check and search see it, and renaming a file updates it. Before, that link was skipped. <!-- f: links -->
+- **Ctrl+A** (Cmd+A on macOS) no longer selects everything in the window, such as the top bar, the Explorer and the status bar. In View it selects the document only, and in the Explorer it selects every file and folder in the list. In text fields and in the editors it works as before. <!-- f: explorer, shortcuts -->
 
 ## [0.11.0] - 2026-11-11
 

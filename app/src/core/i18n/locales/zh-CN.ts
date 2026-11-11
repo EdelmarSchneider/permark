@@ -598,6 +598,7 @@ export default {
   "cmd.zoomIn": "放大",
   "cmd.zoomOut": "缩小",
   "cmd.cycleWidth": "切换阅读宽度",
+  "cmd.selectAll": "全选",
   "cmd.wrapLines": "长行自动换行（开 | 关）",
   "wrap.on": "长行现在会自动换行。",
   "wrap.off": "长行不再自动换行。左右滚动：按住 Shift 并滚动鼠标滚轮，或点击文本后使用方向键。",

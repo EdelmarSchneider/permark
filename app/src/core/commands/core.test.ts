@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../api", async () => {
   const { createMockApi } = await import("../../api/mock");
@@ -12,8 +12,12 @@ Object.defineProperty(window, "matchMedia", {
 const { ContributionRegistry, CORE_OWNER } = await import("../plugins/registry.svelte");
 const { registerCoreCommands } = await import("./core");
 const { buildKeymap, conflicts } = await import("./keymap");
+const { installKeys, isTypingTarget } = await import("./dispatch");
+const { neutralContext } = await import("../conditions/context.svelte");
 const { parseCombo } = await import("./combo");
 const { en } = await import("../i18n/table");
+const { documents } = await import("../doc/document.svelte");
+const { editing } = await import("../editing/session.svelte");
 
 describe("the core's commands", () => {
   const registry = new ContributionRegistry();
@@ -59,6 +63,7 @@ describe("the core's commands", () => {
   it("keep the box commands out of the palette and name the keys the app is known by", () => {
     const hidden = commands.filter((c) => c.inPalette === false).map((c) => c.id);
     expect(hidden.sort()).toEqual([
+      "doc.selectAll",
       "palette.open",
       "search.everywhere",
       "search.quickOpen",
@@ -147,6 +152,159 @@ describe("the core's commands", () => {
     expect(told?.kind === "timed" ? told.text : "").toMatch(/^Couldn't keep this setting/);
     expect(wrapNotes()).toBe(0);
     set.mockRestore();
+  });
+
+  describe("select all (Mod+A)", () => {
+    const selectAll = commands.find((c) => c.id === "doc.selectAll");
+    const selection = window.getSelection();
+    const at = (id: string): HTMLElement => {
+      const found = document.getElementById(id);
+      if (!found) throw new Error(`no #${id}`);
+      return found;
+    };
+    /** A window: bars, the Explorer, the page with a document, the right panel, and the places text is typed. */
+    function drawWindow(): void {
+      document.body.innerHTML =
+        '<header id="top">Top bar <input id="field"><textarea id="area"></textarea></header>' +
+        '<aside data-region="sidebar"><div role="tree" tabindex="0" id="tree">README.md</div></aside>' +
+        '<main data-region="page"><div id="header">guide.md <button id="mode">Edit</button></div>' +
+        '<div data-scroller tabindex="-1" id="pane"><h1>Title</h1>' +
+        '<p>First <input type="checkbox" id="task"> words.</p></div></main>' +
+        '<aside data-region="right"><button id="outline">Outline</button></aside>' +
+        '<footer id="status">Status bar</footer>' +
+        '<div contenteditable="true" tabindex="0" id="edit">x</div>' +
+        '<div class="cm-content" tabindex="0" id="source">y</div>';
+    }
+    /** Exactly the contents of the document pane are selected. */
+    function expectPaneSelected(): void {
+      const pane = at("pane");
+      expect(selection?.rangeCount).toBe(1);
+      const range = selection?.getRangeAt(0);
+      expect(range?.startContainer).toBe(pane);
+      expect(range?.endContainer).toBe(pane);
+      expect([range?.startOffset, range?.endOffset]).toEqual([0, pane.childNodes.length]);
+      expect(selection?.toString()).toBe("TitleFirst  words.");
+      for (const id of ["top", "tree", "header", "outline", "status"]) {
+        expect(range?.intersectsNode(at(id)), id).toBe(false);
+      }
+    }
+    /** No text is selected (a caret where the focus went is no selection). */
+    function expectNothingSelected(): void {
+      expect(selection?.isCollapsed).toBe(true);
+      expect(selection?.toString()).toBe("");
+    }
+
+    it("is a command with its key, a label, and no entry in the palette", () => {
+      const keyOf = (id: string): string | undefined =>
+        shortcuts.find((s) => s.command === id)?.keys;
+      expect(keyOf("doc.selectAll")).toBe("Mod+a");
+      expect(selectAll?.inPalette).toBe(false);
+      expect(en[selectAll?.label ?? "cmd.save"]).toBe("Select all");
+      expect(selectAll?.requires).toEqual({
+        needs: [{ need: "workspace", kinds: ["project", "singleFile", "notes"] }],
+        prefers: [],
+      });
+    });
+
+    let stopKeys: (() => void) | null = null;
+    afterEach(async () => {
+      stopKeys?.();
+      stopKeys = null;
+      editing.release();
+      await documents.show(null);
+      selection?.removeAllRanges();
+      document.body.innerHTML = "";
+    });
+
+    it("the key press reaches it through the window's listener: from a ticked task box the document, in a field the field's own", async () => {
+      drawWindow();
+      await documents.show("README.md");
+      const map = buildKeymap(
+        shortcuts.map((s) => ({ command: s.command, keys: s.keys })),
+        {},
+        commands.map((c) => c.id),
+      );
+      stopKeys = installKeys(window, (event) => ({
+        mac: false,
+        keymap: map,
+        commands,
+        context: { ...neutralContext(), workspace: "project" },
+        typing: isTypingTarget(event.target),
+        overlay: "none",
+        dialog: false,
+      }));
+      const press = (id: string): KeyboardEvent => {
+        const event = new KeyboardEvent("keydown", {
+          key: "a",
+          code: "KeyA",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        });
+        at(id).focus();
+        at(id).dispatchEvent(event);
+        return event;
+      };
+      expect(press("task").defaultPrevented).toBe(true);
+      expectPaneSelected();
+      selection?.removeAllRanges();
+      expect(press("field").defaultPrevented).toBe(false);
+      expectNothingSelected();
+    });
+
+    it("in View selects the document and nothing of the window around it, wherever the keyboard is", async () => {
+      drawWindow();
+      await documents.show("README.md");
+      for (const id of ["pane", "tree", "outline", "mode", "task"]) {
+        selection?.removeAllRanges();
+        at(id).focus();
+        expect(document.activeElement, id).toBe(at(id));
+        expect(selectAll?.when?.(), id).toBe(true);
+        await selectAll?.run();
+        expectPaneSelected();
+      }
+      // nothing has the keyboard (the body)
+      selection?.removeAllRanges();
+      at("task").blur();
+      expect(selectAll?.when?.()).toBe(true);
+      await selectAll?.run();
+      expectPaneSelected();
+    });
+
+    it("leaves the key to the text where one has the keyboard: a field, a text area, the editors", () => {
+      drawWindow();
+      for (const id of ["field", "area", "edit", "source"]) {
+        at(id).focus();
+        expect(document.activeElement, id).toBe(at(id));
+        expect(selectAll?.when?.(), id).toBe(false);
+      }
+    });
+
+    it("selects nothing with no document shown, while editing, or with no page on screen", async () => {
+      drawWindow();
+      selection?.removeAllRanges();
+      expect(documents.path).toBeNull();
+      expect(selectAll?.when?.()).toBe(true);
+      await selectAll?.run();
+      expectNothingSelected();
+      // editing, the keyboard outside the editor (a button of the header)
+      await documents.show("README.md");
+      await editing.enter("source", "README.md", "markdown", { kind: "explicit" });
+      expect(editing.mode).toBe("source");
+      at("mode").focus();
+      expect(selectAll?.when?.()).toBe(true);
+      await selectAll?.run();
+      expectNothingSelected();
+      // back in View the same press selects the document: it was the editor that held it back
+      editing.release();
+      await selectAll?.run();
+      expect(selection?.toString()).toBe("TitleFirst  words.");
+      // the page not drawn
+      document.body.innerHTML = "<header>Top bar</header>";
+      expect(documents.path).toBe("README.md");
+      await selectAll?.run();
+      expectNothingSelected();
+    });
   });
 
   it("leave nothing behind when removed", () => {

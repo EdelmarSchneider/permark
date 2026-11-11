@@ -631,6 +631,7 @@ export default {
   "cmd.zoomIn": "Vergrößern",
   "cmd.zoomOut": "Verkleinern",
   "cmd.cycleWidth": "Lesebreite ändern",
+  "cmd.selectAll": "Alles auswählen",
   "cmd.wrapLines": "Lange Zeilen umbrechen (an | aus)",
   "wrap.on": "Lange Zeilen werden jetzt umgebrochen.",
   "wrap.off":

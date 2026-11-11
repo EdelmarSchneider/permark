@@ -3,6 +3,10 @@ import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import type { LinkUpdate } from "../../api";
+import type { CommandItem } from "../commands/commands";
+import { installKeys, isTextTarget } from "../commands/dispatch";
+import { buildKeymap } from "../commands/keymap";
+import { NO_REQUIREMENT } from "../conditions/available";
 import { neutralContext } from "../conditions/context.svelte";
 import { conditions } from "../conditions/context.svelte";
 import { ContributionRegistry } from "../plugins/registry.svelte";
@@ -67,12 +71,17 @@ function row(root: HTMLElement, path: string): HTMLElement {
   return found;
 }
 
-function key(root: HTMLElement, name: string, init: KeyboardEventInit = {}): void {
+function key(root: HTMLElement, name: string, init: KeyboardEventInit = {}): KeyboardEvent {
   const tree = root.querySelector('[role="tree"]');
-  tree?.dispatchEvent(
-    new KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true, ...init }),
-  );
+  const event = new KeyboardEvent("keydown", {
+    key: name,
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
+  tree?.dispatchEvent(event);
   flushSync();
+  return event;
 }
 
 function pointer(target: EventTarget, type: string, x: number, y: number): void {
@@ -298,6 +307,79 @@ describe("keyboard", () => {
     expect(store.nodes.map((n) => n.path)).toContain("scratch.md");
     key(root, "z", { metaKey: true });
     await vi.waitFor(() => expect(store.nodes.map((n) => n.path)).not.toContain("scratch.md"));
+  });
+
+  it("Ctrl+A and Cmd+A select every row the list shows, and the window's own select-all never gets the key", async () => {
+    const { root, store } = await render();
+    const pageSelectAll = vi.fn();
+    const command: CommandItem = {
+      kind: "command",
+      owner: "core",
+      id: "doc.selectAll",
+      label: "cmd.selectAll",
+      run: pageSelectAll,
+      requires: NO_REQUIREMENT,
+      when: () => !isTextTarget(document.activeElement),
+    };
+    const stop = installKeys(window, () => ({
+      mac: false,
+      keymap: buildKeymap([{ command: command.id, keys: "Mod+a" }], {}, [command.id]),
+      commands: [command],
+      context: neutralContext(),
+      typing: false,
+      overlay: "none",
+      dialog: false,
+    }));
+    mounted.push(stop);
+    row(root, "docs").click();
+    await tick();
+    const listed = (): string[] =>
+      store.rows.flatMap((r) => (r.type === "node" ? [r.node.path] : []));
+    expect(listed()).toContain("docs/guide.md");
+    store.select("docs/guide.md", "single");
+    flushSync();
+    const all = key(root, "a", { ctrlKey: true });
+    expect(all.defaultPrevented).toBe(true);
+    expect([...store.selection]).toEqual(listed());
+    expect(rows(root).length).toBeGreaterThan(3);
+    for (const drawn of rows(root)) {
+      expect(drawn.getAttribute("aria-selected"), drawn.dataset["path"]).toBe("true");
+    }
+    expect(store.focus).toBe("docs/guide.md");
+    // Cmd+A too (Caps Lock on)
+    store.select("README.md", "single");
+    expect(key(root, "A", { metaKey: true }).defaultPrevented).toBe(true);
+    expect([...store.selection]).toEqual(listed());
+    // other chords with A, and the plain letter, are not select-all
+    store.select("README.md", "single");
+    for (const init of [{ ctrlKey: true, shiftKey: true }, { ctrlKey: true, altKey: true }, {}]) {
+      expect(key(root, "a", init).defaultPrevented).toBe(false);
+      expect([...store.selection]).toEqual(["README.md"]);
+    }
+    // in the name field the key is the field's: its own text is selected, not the rows
+    store.beginRename("README.md");
+    await tick();
+    const input = root.querySelector<HTMLInputElement>("input[type=text]");
+    if (!input) throw new Error("no field");
+    const typed = new KeyboardEvent("keydown", {
+      key: "a",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    input.dispatchEvent(typed);
+    expect(typed.defaultPrevented).toBe(false);
+    expect([...store.selection]).toEqual(["README.md"]);
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await tick();
+    // a list with nothing in it: nothing to select, the key is still the list's
+    store.nodes = [];
+    store.selection = new Set();
+    flushSync();
+    expect(rows(root)).toEqual([]);
+    expect(key(root, "a", { ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(store.selection.size).toBe(0);
+    expect(pageSelectAll).not.toHaveBeenCalled();
   });
 
   it("shortcuts do not fire while composing or typing in the field", async () => {

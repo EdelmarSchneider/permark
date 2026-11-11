@@ -611,6 +611,7 @@ const en = {
   "cmd.zoomIn": "Zoom in",
   "cmd.zoomOut": "Zoom out",
   "cmd.cycleWidth": "Change reading width",
+  "cmd.selectAll": "Select all",
   "cmd.wrapLines": "Wrap long lines (on | off)",
   "wrap.on": "Long lines now wrap.",
   "wrap.off":

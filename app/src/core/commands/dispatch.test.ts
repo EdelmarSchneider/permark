@@ -7,6 +7,8 @@ import type { CommandItem } from "./commands";
 import {
   installButtons,
   installKeys,
+  isStraySelectAll,
+  isTextTarget,
   isTypingTarget,
   resolveButton,
   resolveKey,
@@ -293,6 +295,80 @@ describe("the listener", () => {
     expect(after.defaultPrevented).toBe(false);
   });
 
+  it("never leaves select-all to the webview where no text has the keyboard: the key is taken and nothing runs", () => {
+    document.body.innerHTML =
+      '<p id="words">words</p><button id="button">b</button><input type="checkbox" id="box">' +
+      '<select id="choice"><option>x</option></select><input id="field"><textarea id="area"></textarea>' +
+      '<div contenteditable="true" id="edit"><p id="inside">x</p></div><div class="cm-content" id="source"></div>';
+    const from = (id: string, init: Partial<KeyboardEventInit> = {}): KeyboardEvent => {
+      const event = press({ key: "a", code: "KeyA", ctrlKey: true, ...init });
+      document.getElementById(id)?.dispatchEvent(event);
+      return event;
+    };
+    const run = vi.fn();
+    const held = env([command("doc.selectAll", { run })], { "doc.selectAll": "Mod+a" });
+    let now: KeyEnv = held;
+    const stop = installKeys(window, () => now);
+    expect(from("words").defaultPrevented).toBe(true);
+    expect(run).toHaveBeenCalledOnce();
+    // a dialog | a question | a box owns the input, the window has no such command, the person gave it another key
+    const states: KeyEnv[] = [
+      { ...held, dialog: true },
+      { ...held, overlay: "question" },
+      { ...held, overlay: "box", dialog: true },
+      {
+        ...held,
+        context: neutralContext(),
+        commands: [command("doc.selectAll", { requires: PROJECT })],
+      },
+      env([], {}),
+    ];
+    for (const [at, state] of states.entries()) {
+      now = state;
+      for (const id of ["words", "button", "box", "choice"]) {
+        expect(from(id).defaultPrevented, `${at} ${id}`).toBe(true);
+      }
+      // in text it stays the text's own select-all
+      for (const id of ["field", "area", "edit", "inside", "source"]) {
+        expect(from(id).defaultPrevented, `${at} ${id}`).toBe(false);
+      }
+      // only that chord: the other keys nobody holds stay the webview's
+      expect(from("words", { shiftKey: true }).defaultPrevented).toBe(false);
+      expect(from("words", { altKey: true }).defaultPrevented).toBe(false);
+      expect(from("words", { key: "c", code: "KeyC" }).defaultPrevented).toBe(false);
+      expect(from("words", { ctrlKey: false }).defaultPrevented).toBe(false);
+    }
+    expect(run).toHaveBeenCalledOnce();
+    // macOS: Cmd+A, not Control+A
+    now = { ...env([], {}), mac: true };
+    expect(from("words", { ctrlKey: false, metaKey: true }).defaultPrevented).toBe(true);
+    expect(from("words").defaultPrevented).toBe(false);
+    stop();
+    expect(from("words").defaultPrevented).toBe(false);
+  });
+
+  it("tells a select-all press outside text by the chord and by where the keyboard is, on any layout", () => {
+    document.body.innerHTML = '<p id="words">words</p><input id="field">';
+    const words = document.getElementById("words");
+    const field = document.getElementById("field");
+    const chord = { key: "a", code: "KeyA", ctrlKey: true, metaKey: false, altKey: false };
+    expect(isStraySelectAll({ ...chord, shiftKey: false, target: words }, false)).toBe(true);
+    expect(isStraySelectAll({ ...chord, shiftKey: false, target: null }, false)).toBe(true);
+    expect(isStraySelectAll({ ...chord, shiftKey: false, target: field }, false)).toBe(false);
+    expect(isStraySelectAll({ ...chord, shiftKey: true, target: words }, false)).toBe(false);
+    // Caps Lock | another layout (Cyrillic: the same physical key)
+    expect(isStraySelectAll({ ...chord, key: "A", shiftKey: false, target: words }, false)).toBe(
+      true,
+    );
+    expect(isStraySelectAll({ ...chord, key: "ф", shiftKey: false, target: words }, false)).toBe(
+      true,
+    );
+    // a composition | AltGr types characters
+    expect(
+      isStraySelectAll({ ...chord, shiftKey: false, isComposing: true, target: words }, false),
+    ).toBe(false);
+  });
+
   it("a held key runs Refresh once: its repeats are taken and run nothing; a command that steps follows the key", () => {
     const refresh = vi.fn();
     const next = vi.fn();
@@ -412,5 +488,29 @@ describe("where typing goes", () => {
     expect(isTypingTarget(get("b"))).toBe(false);
     expect(isTypingTarget(document.body)).toBe(false);
     expect(isTypingTarget(null)).toBe(false);
+  });
+
+  it("knows text from the controls that only take keys: a box to tick, a slider, a choice list hold none", () => {
+    const kinds = ["checkbox", "radio", "button", "submit", "reset", "range", "color", "file"];
+    document.body.innerHTML =
+      '<input id="plain"><input type="text" id="text"><input type="search" id="search">' +
+      '<input type="password" id="password"><input type="number" id="number"><input type="TEXT" id="upper">' +
+      '<textarea id="area"></textarea><div contenteditable="true" id="edit"><b id="in">x</b>' +
+      '<input type="checkbox" id="task"></div><div class="cm-content" id="cm"><span id="cs">y</span></div>' +
+      '<select id="choice"><option>x</option></select><button id="b"></button><p id="p">words</p>' +
+      kinds.map((kind) => `<input type="${kind}" id="${kind}">`).join("") +
+      '<input type="CheckBox" id="mixed">';
+    const get = (id: string): Element | null => document.getElementById(id);
+    const text = ["plain", "text", "search", "password", "number", "upper", "area", "edit", "in"];
+    for (const id of [...text, "cm", "cs"]) expect(isTextTarget(get(id)), id).toBe(true);
+    // a task box inside the editor is the editor's: select-all there selects its text
+    expect(isTextTarget(get("task"))).toBe(true);
+    for (const id of [...kinds, "mixed", "choice", "b", "p"]) {
+      expect(isTextTarget(get(id)), id).toBe(false);
+    }
+    expect(isTextTarget(document.body)).toBe(false);
+    expect(isTextTarget(null)).toBe(false);
+    // plain keys are still theirs (Space ticks, arrows move, letters jump in a list): typing as before
+    for (const id of [...kinds, "mixed", "choice"]) expect(isTypingTarget(get(id)), id).toBe(true);
   });
 });

@@ -59,12 +59,23 @@ function letGo(region: "sidebar" | "right"): void {
   focusPage(active);
 }
 
+/** The page region of this window (`null`: not drawn). */
+function pageRegion(): HTMLElement | null {
+  return document.querySelector<HTMLElement>('[data-region="page"]');
+}
+
+/** The pane the document scrolls in: all of the document that is drawn, and nothing of the window around it
+ *  (`null`: no page on screen). */
+export function documentPane(): HTMLElement | null {
+  return pageRegion()?.querySelector<HTMLElement>("[data-scroller]") ?? null;
+}
+
 /** The keyboard goes to the page: the editor when one is open, else the document scroller, else the page region. */
 function focusPage(active: HTMLElement): void {
-  const page = document.querySelector<HTMLElement>('[data-region="page"]');
+  const page = pageRegion();
   const target =
     page?.querySelector<HTMLElement>("[contenteditable='true'], .cm-content") ??
-    page?.querySelector<HTMLElement>("[data-scroller]") ??
+    documentPane() ??
     page;
   if (target) target.focus({ preventScroll: true });
   else active.blur();

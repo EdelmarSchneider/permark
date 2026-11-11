@@ -631,6 +631,7 @@ export default {
   "cmd.zoomIn": "Amplia",
   "cmd.zoomOut": "Redueix",
   "cmd.cycleWidth": "Canvia l'amplada de lectura",
+  "cmd.selectAll": "Selecciona-ho tot",
   "cmd.wrapLines": "Ajusta les línies llargues (sí | no)",
   "wrap.on": "Ara les línies llargues s'ajusten.",
   "wrap.off":
