@@ -8,6 +8,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ### Added
 - **Translate text.** While you edit a document, in Edit or in Source, the translate button next to the mode switch translates the selection, the paragraph you are in or the whole document with the local AI model you chose for translation in **Settings > Local AI**. You pick the language from a list you can search; the language of the text is found by itself, and you can name it for the next run. Each translation is shown under its original and nothing changes in your text until you accept it, one by one or all at once. Code, links, web addresses, formulas and HTML stay as written. **Ctrl+Alt+R** translates where the cursor is. Nothing leaves your computer. <!-- f: translation, editing, local-ai -->
 - **Translate to a new file.** The same menu can translate a whole document into a new file next to it, named after the language (`readme.md` becomes `readme.pt-BR.md`). Your document is not changed and an existing file is never replaced. Progress and Cancel are in the status bar, so you can keep working meanwhile. Parts the model could not translate stay in the original language, and the notice says how many. <!-- f: translation, local-ai -->
+- **Refresh the Explorer.** **F5**, the new button at the top of the Explorer and its background menu read the folder and the git state again from disk. F5 no longer reloads the whole page. <!-- f: explorer, shortcuts -->
+- **Run AI models on the processor only.** In **Settings > Local AI**, "Run models on" lets you keep local models off the graphics card, for example while another program uses it. It is slower, and it applies to correction, translation and Test model. <!-- f: local-ai -->
 
 ### Changed
 - **Correct spelling and grammar** now also checks text in tables, cell by cell; the table itself is never touched. <!-- f: correction, editing -->
@@ -16,6 +18,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Only one review is open at a time: while you review corrections the translation entries wait, and the other way round. <!-- f: correction, translation -->
 
 ### Fixed
+- A file that PerMark created and opened right away (a converted or translated copy, "Save as", a pasted picture) now shows in the Explorer at once. Before, it could stay missing from the Explorer, from search and from the lists that follow changes until something else touched the folder; the same could happen to a document opened right after another program saved it. <!-- f: explorer, watch -->
 - A suggestion waiting in the correction bar is no longer dropped when the text around it changes; it follows its own words. Before, accepting two suggestions in one table could drop the others in that table. <!-- f: correction, editing -->
 - Correction no longer sends the marker of an alert (`[!NOTE]`), the text inside an inline HTML element such as `<kbd>Ctrl</kbd>`, or a table whose separator row ends in spaces to the model, and it refuses an answer that adds links, HTML or headings the text did not have. <!-- f: correction -->
 - Using correction and translation one after the other no longer loads the AI model twice at the same time, which could fail on computers with little memory. <!-- f: local-ai -->
