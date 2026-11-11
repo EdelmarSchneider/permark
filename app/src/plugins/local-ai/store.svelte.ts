@@ -64,9 +64,11 @@ export type ModelTestView = { model: string; step: TestStep };
 
 const TEST_ENDED: ReadonlySet<TestStep["kind"]> = new Set(["done", "failed", "cancelled"]);
 
-/** Assignments in one string: a change asks this computer's budget again. */
-function assignmentKey(state: LocalAiState): string {
-  return state.assignments.map((a) => `${a.task}=${a.model ?? ""}`).join(",");
+/** What this computer's advice depends on (assignments -> budget; where models run -> fit hints + budget) in one
+ *  string: a change asks it again. */
+function adviceKey(state: LocalAiState): string {
+  const assignments = state.assignments.map((a) => `${a.task}=${a.model ?? ""}`).join(",");
+  return `${state.cpuOnly ? "cpu" : "auto"};${assignments}`;
 }
 
 export class LocalAiStore {
@@ -229,6 +231,12 @@ export class LocalAiStore {
     return this.#took(await this.#client.call("local-ai.cancelMove", {}));
   }
 
+  /** Where models run: the processor only, or the graphics card when there is one. A change unloads what is loaded
+   *  (a running test | run ends; the next one loads again). */
+  async setCpuOnly(cpuOnly: boolean): Promise<Result<LocalAiState>> {
+    return this.#took(await this.#client.call("local-ai.setCpuOnly", { cpuOnly }));
+  }
+
   /** "Test model": phases come as `local-ai:test`; a refusal shows as the failed step. */
   async test(model: string): Promise<Result<null>> {
     this.modelTest = { model, step: { kind: "starting" } };
@@ -264,11 +272,8 @@ export class LocalAiStore {
     const before = this.state;
     this.#note(before, state);
     this.state = state;
-    // the budget follows the assignments (the backend reckons it)
-    if (
-      this.machine !== null &&
-      (before === null || assignmentKey(before) !== assignmentKey(state))
-    )
+    // the budget follows the assignments, fit hints + budget where models run (the backend reckons them)
+    if (this.machine !== null && (before === null || adviceKey(before) !== adviceKey(state)))
       void this.#readMachine();
   }
 

@@ -2473,6 +2473,11 @@ export default {
   "localAi.machine.gpuUnknown": "Mémoire inconnue",
   "localAi.machine.noGpu": "Aucune carte graphique trouvée",
   "localAi.machine.unknown": "Inconnu",
+  "localAi.machine.runOn": "Faire tourner les modèles sur",
+  "localAi.machine.runOn.auto": "Carte graphique, s'il y en a une",
+  "localAi.machine.runOn.cpu": "Processeur uniquement",
+  "localAi.machine.runOn.cpuHint":
+    "Plus lent, mais laisse la carte graphique libre pour les autres programmes.",
   "localAi.store.title": "Stockage",
   "localAi.store.folder": "Dossier des modèles",
   "localAi.store.default": "Le dossier par défaut",

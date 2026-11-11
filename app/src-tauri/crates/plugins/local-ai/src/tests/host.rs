@@ -13,7 +13,7 @@ use permark_core::{ErrorKind, IpcError};
 use super::installs::{catalog, serving, Held, Lab, E2B};
 use super::testrun::{engine_files, plenty, Bench};
 use crate::engine::files::tests::{pin, url};
-use crate::engine::{files, CancelToken, FakeEngine};
+use crate::engine::{files, CancelToken, EngineError, FakeEngine};
 use crate::host::{HostError, HostProgress, ModelHost, ModelSession};
 use crate::tasks::Task;
 
@@ -27,6 +27,16 @@ fn open(bench: &Bench, context_len: u32) -> Result<ModelSession, HostError> {
 
 fn engine_dir(bench: &Bench) -> std::path::PathBuf {
     bench.lab.store().plugin_dir(&crate::ID).join(files::DIR)
+}
+
+/// Engine files of `bench` installed: the opens that follow fetch nothing.
+fn engine_ready(bench: &Bench) {
+    bench.host.files.enqueue().unwrap();
+    let start = Instant::now();
+    while !bench.host.files.is_installed() {
+        assert!(start.elapsed() < Duration::from_secs(10), "engine files");
+        std::thread::sleep(Duration::from_millis(5));
+    }
 }
 
 fn ipc(error: HostError) -> (ErrorKind, Option<String>, Option<String>) {
@@ -205,12 +215,7 @@ fn open_loads_the_assigned_model_and_drop_unloads() {
     let bench = Bench::fake(FakeEngine::new);
     bench.install(E2B);
     bench.installs.assign(Task::Correction, Some(E2B)).unwrap();
-    bench.host.files.enqueue().unwrap();
-    let start = Instant::now();
-    while !bench.host.files.is_installed() {
-        assert!(start.elapsed() < Duration::from_secs(10), "engine files");
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    engine_ready(&bench);
     let session = open(&bench, 512).unwrap();
     assert!(session.on_gpu());
     assert!(session.memory_bytes().is_some_and(|m| m > 0));
@@ -254,12 +259,7 @@ fn serves_follows_the_assignment() {
     bench.install(E2B);
     bench.install(E4B);
     bench.installs.assign(Task::Correction, Some(E2B)).unwrap();
-    bench.host.files.enqueue().unwrap();
-    let start = Instant::now();
-    while !bench.host.files.is_installed() {
-        assert!(start.elapsed() < Duration::from_secs(10), "engine files");
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    engine_ready(&bench);
     let session = open(&bench, 512).unwrap();
     assert!(bench.host.serves(&session, Task::Correction));
     assert!(!bench.host.serves(&session, Task::Translation));
@@ -267,4 +267,52 @@ fn serves_follows_the_assignment() {
     assert!(!bench.host.serves(&session, Task::Correction));
     bench.installs.assign(Task::Correction, None).unwrap();
     assert!(!bench.host.serves(&session, Task::Correction));
+}
+
+/// Models load where the person chose: the graphics card when there is one, or the processor only (the fake engine
+/// places a load on its graphics card unless the load options say processor).
+#[test]
+fn open_loads_on_the_processor_when_the_person_chose_so() {
+    let bench = Bench::fake(FakeEngine::new);
+    bench.install(E2B);
+    bench.installs.assign(Task::Correction, Some(E2B)).unwrap();
+    engine_ready(&bench);
+    assert!(open(&bench, 512).unwrap().on_gpu());
+    assert!(bench.installs.set_cpu_only(true).unwrap().cpu_only);
+    let cpu = open(&bench, 512).unwrap();
+    assert!(!cpu.on_gpu());
+    assert!(cpu.memory_bytes().is_some_and(|m| m > 0));
+    drop(cpu);
+    bench.unloaded();
+}
+
+/// A session loaded under the other choice never keeps serving: unloaded under its holder when the choice changes
+/// (as on a store change) and no longer `serves`; the next open loads where the person now chose. Choosing what is
+/// chosen leaves it alone.
+#[test]
+fn a_changed_choice_unloads_what_was_loaded_under_the_other() {
+    let bench = Bench::fake(FakeEngine::new);
+    bench.install(E2B);
+    bench.installs.assign(Task::Correction, Some(E2B)).unwrap();
+    engine_ready(&bench);
+    let session = open(&bench, 512).unwrap();
+    bench.installs.set_cpu_only(false).unwrap();
+    assert!(bench.host.serves(&session, Task::Correction), "same choice");
+    assert_eq!(bench.runtime.loaded().len(), 1);
+
+    bench.installs.set_cpu_only(true).unwrap();
+    assert!(!bench.host.serves(&session, Task::Correction));
+    assert_eq!(
+        session.engine().count_tokens(session.id(), "Hello"),
+        Err(EngineError::NotLoaded)
+    );
+    bench.unloaded();
+    let next = open(&bench, 512).unwrap();
+    assert!(!next.on_gpu());
+    assert!(bench.host.serves(&next, Task::Correction));
+
+    bench.installs.set_cpu_only(false).unwrap();
+    assert!(!bench.host.serves(&next, Task::Correction));
+    bench.unloaded();
+    assert!(open(&bench, 512).unwrap().on_gpu());
 }

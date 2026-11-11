@@ -679,6 +679,11 @@ export interface PluginMethods {
   "local-ai.setStore": { args: { path: string | null; mode?: StoreMode }; result: LocalAiState };
   /** Stops a running store move (copies removed, the old folder stays in use). */
   "local-ai.cancelMove": { args: Record<string, never>; result: LocalAiState };
+  /**
+   * Where models run: `cpuOnly` = the processor only, else the graphics card when there is one. A change unloads the
+   * loaded models (a running test | run ends; the next one loads again) and moves the fit hints + budget.
+   */
+  "local-ai.setCpuOnly": { args: { cpuOnly: boolean }; result: LocalAiState };
   /** Shows the store folder in the file manager (`unavailable` / `store` while it does not exist). */
   "local-ai.revealStore": { args: Record<string, never>; result: null };
   /** This computer (read on the first call, kept ~30 s), a fit hint per catalog model, the budget warning. */

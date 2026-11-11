@@ -306,6 +306,36 @@ fn a_running_test_refuses_another_and_cancel_unloads() {
     bench.unloaded();
 }
 
+/// Processor only: the test loads there and says so (`gpu` false).
+#[test]
+fn a_test_on_the_processor_says_so() {
+    let bench = Bench::fake(FakeEngine::new);
+    bench.install(E2B);
+    bench.installs.set_cpu_only(true).unwrap();
+    bench.tester.start(E2B).unwrap();
+    let (_, done) = bench.end();
+    assert_eq!(done["kind"], "done", "{done}");
+    assert_eq!(done["result"]["gpu"], false);
+    bench.unloaded();
+}
+
+/// The choice changes while a test runs: its session is unloaded under it and the test ends cancelled (it never
+/// goes on where the person no longer wants models to run).
+#[test]
+fn a_changed_choice_ends_a_running_test() {
+    let bench = Bench::fake(|| FakeEngine::new().paced(Duration::from_secs(10)));
+    bench.install(E2B);
+    bench.tester.start(E2B).unwrap();
+    bench.wait("running");
+    let started = Instant::now();
+    bench.installs.set_cpu_only(true).unwrap();
+    let (kinds, last) = bench.end();
+    assert!(started.elapsed() < Duration::from_secs(5), "ended at once");
+    assert_eq!(kinds.last().map(String::as_str), Some("cancelled"));
+    assert_eq!(last, json!({ "kind": "cancelled" }));
+    bench.unloaded();
+}
+
 /// Cancel while the engine downloads: download stopped, cancelled, no worker started.
 #[test]
 fn cancel_during_the_engine_download_stops_it() {

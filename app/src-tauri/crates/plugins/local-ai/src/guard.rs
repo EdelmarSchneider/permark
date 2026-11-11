@@ -4,7 +4,8 @@
 //! - Need = `ram_min` (files) + [`MARGIN`] (context + runtime).
 //! - Room = free RAM now (OS available; unknown (macOS) -> RAM total share of the budget rule,
 //!   [`crate::fit::ram_share`]) + best real adapter VRAM ([`MachineProfile::best_vram`]; unified memory = one pool,
-//!   VRAM never added). RAM unknown entirely -> allowed (the engine's own fit at load decides).
+//!   VRAM never added). RAM unknown entirely -> allowed (the engine's own fit at load decides). A processor-only
+//!   load: the caller hands a profile without adapters ([`MachineProfile::limited_to`]) -> free RAM alone.
 //! - Loads are serialized (runtime): free RAM read now already holds the loaded sessions -> never subtracted again.
 
 use crate::catalog::Needs;

@@ -2446,6 +2446,11 @@ export default {
   "localAi.machine.gpuUnknown": "Speicher unbekannt",
   "localAi.machine.noGpu": "Keine Grafikkarte gefunden",
   "localAi.machine.unknown": "Unbekannt",
+  "localAi.machine.runOn": "Modelle ausführen auf",
+  "localAi.machine.runOn.auto": "Grafikkarte, falls vorhanden",
+  "localAi.machine.runOn.cpu": "Nur Prozessor",
+  "localAi.machine.runOn.cpuHint":
+    "Langsamer, aber die Grafikkarte bleibt für andere Programme frei.",
   "localAi.store.title": "Speicherort",
   "localAi.store.folder": "Modellordner",
   "localAi.store.default": "Der Standardordner",

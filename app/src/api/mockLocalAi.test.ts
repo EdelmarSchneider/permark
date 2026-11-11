@@ -404,6 +404,41 @@ describe("local AI mock machine", () => {
     };
     expect(new Set(Object.values(h["local-ai.machine"]({}).fits))).toEqual(new Set(["runsWell"]));
   });
+
+  it("keeps models on the processor when asked: told to the windows, advice without graphics memory", () => {
+    const { h, events, probe } = setup();
+    expect(h["local-ai.state"]({}).cpuOnly).toBe(false);
+    events.length = 0;
+    expect(h["local-ai.setCpuOnly"]({ cpuOnly: true }).cpuOnly).toBe(true);
+    expect(probe.calls).toContain("setCpuOnly true");
+    expect(events.at(-1)).toMatchObject({ name: "local-ai:state", payload: { cpuOnly: true } });
+    const info = h["local-ai.machine"]({});
+    // the cards are still this computer's; the advice no longer counts them
+    expect(info.profile).toEqual(MOCK_MACHINE);
+    expect(info.fits[EMBED]).toBe("slowCpuOnly");
+    expect(info.fits[WHISPER]).toBe("slowCpuOnly");
+    expect(info.fits[E4B]).toBe("notRecommended");
+    const ramRec = (id: string) => MOCK_CATALOG.models.find((m) => m.id === id)?.needs.ramRec ?? 0;
+    expect(info.budget).toEqual({
+      needed: ramRec(EMBED) + ramRec(E2B),
+      available: Math.floor((6 * 1_073_741_824) / 5) * 3,
+    });
+    probe.machine = {
+      ...MOCK_MACHINE,
+      ramTotal: 16 * 1_073_741_824,
+      gpus: [
+        { name: "Apple M2", dedicatedVram: null, shared: null, unified: true, software: false },
+      ],
+    };
+    expect(new Set(Object.values(h["local-ai.machine"]({}).fits))).toEqual(
+      new Set(["slowCpuOnly"]),
+    );
+    probe.machine = structuredClone(MOCK_MACHINE);
+    expect(h["local-ai.setCpuOnly"]({ cpuOnly: false }).cpuOnly).toBe(false);
+    const back = h["local-ai.machine"]({});
+    expect(back.fits[EMBED]).toBe("runsWell");
+    expect(back.budget).toBeNull();
+  });
 });
 
 describe("local AI mock model test", () => {
@@ -464,6 +499,24 @@ describe("local AI mock model test", () => {
     expect(refusal(() => h["local-ai.testModel"]({ model: LFM })).detail).toBe("notInstalled");
     expect(refusal(() => h["local-ai.testModel"]({ model: "nope" })).kind).toBe("notFound");
     expect(h["local-ai.cancelTest"]({})).toBeNull();
+  });
+
+  it("says the processor ran the test when models are kept there; a changed choice ends a running test", () => {
+    const { h, events, probe } = setup();
+    probe.engineInstalled = true;
+    h["local-ai.setCpuOnly"]({ cpuOnly: true });
+    h["local-ai.testModel"]({ model: E2B });
+    vi.advanceTimersByTime(400 * 20);
+    const last = tests(events).at(-1);
+    if (last?.phase.kind !== "done") throw new Error(last?.phase.kind);
+    expect(last.phase.result.gpu).toBe(false);
+    h["local-ai.testModel"]({ model: E2B });
+    vi.advanceTimersByTime(400 * 2);
+    // the same choice again leaves the test alone
+    h["local-ai.setCpuOnly"]({ cpuOnly: true });
+    expect(tests(events).at(-1)?.phase.kind).toBe("loading");
+    h["local-ai.setCpuOnly"]({ cpuOnly: false });
+    expect(tests(events).at(-1)?.phase).toEqual({ kind: "cancelled" });
   });
 
   it("ends in the failure asked by the probe", () => {

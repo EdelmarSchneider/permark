@@ -2371,6 +2371,11 @@ export default {
   "localAi.machine.gpuUnknown": "메모리 알 수 없음",
   "localAi.machine.noGpu": "그래픽 카드를 찾지 못했습니다",
   "localAi.machine.unknown": "알 수 없음",
+  "localAi.machine.runOn": "모델 실행 위치",
+  "localAi.machine.runOn.auto": "그래픽 카드(있는 경우)",
+  "localAi.machine.runOn.cpu": "프로세서만",
+  "localAi.machine.runOn.cpuHint":
+    "더 느리지만 그래픽 카드를 다른 프로그램이 쓸 수 있게 남겨 둡니다.",
   "localAi.store.title": "저장 위치",
   "localAi.store.folder": "모델 폴더",
   "localAi.store.default": "기본 폴더",

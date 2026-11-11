@@ -2428,6 +2428,11 @@ export default {
   "localAi.machine.gpuUnknown": "メモリ不明",
   "localAi.machine.noGpu": "グラフィックスカードが見つかりません",
   "localAi.machine.unknown": "不明",
+  "localAi.machine.runOn": "モデルの実行先",
+  "localAi.machine.runOn.auto": "グラフィックスカード（ある場合）",
+  "localAi.machine.runOn.cpu": "プロセッサのみ",
+  "localAi.machine.runOn.cpuHint":
+    "遅くなりますが、グラフィックスカードをほかのプログラムのために空けておけます。",
   "localAi.store.title": "保存場所",
   "localAi.store.folder": "モデルのフォルダー",
   "localAi.store.default": "既定のフォルダー",

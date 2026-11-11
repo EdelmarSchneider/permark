@@ -2441,6 +2441,11 @@ export default {
   "localAi.machine.gpuUnknown": "Memòria desconeguda",
   "localAi.machine.noGpu": "No s'ha trobat cap targeta gràfica",
   "localAi.machine.unknown": "Desconegut",
+  "localAi.machine.runOn": "On executar els models",
+  "localAi.machine.runOn.auto": "Targeta gràfica, si n'hi ha",
+  "localAi.machine.runOn.cpu": "Només processador",
+  "localAi.machine.runOn.cpuHint":
+    "Més lent, però deixa la targeta gràfica lliure per a altres programes.",
   "localAi.store.title": "Emmagatzematge",
   "localAi.store.folder": "Carpeta dels models",
   "localAi.store.default": "La carpeta per defecte",

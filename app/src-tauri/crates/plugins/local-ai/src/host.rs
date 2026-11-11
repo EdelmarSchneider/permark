@@ -5,10 +5,11 @@
 //!   `engineTooOld` | `unsupported`, nothing started) -> engine files of the current pin installed, else fetched
 //!   first through [`WorkerFiles`] ([`HostProgress::Engine`]; cancel stops the download, part kept; no pin ->
 //!   `notAvailable`) -> [`HostProgress::Loading`] from 0 -> load through [`Runtime::load`] (memory guard inside;
-//!   `Device::Auto`; context capped at the model's maximum). Tester ("Test model") takes the same path
-//!   (`ModelHost::open_model`): ONE engine fetch.
-//! - [`ModelSession`]: RAII, Drop unloads (worker exits). Plugin off | model removed | store change unloads it under
-//!   the holder too (its load token cancelled, calls then fail `notLoaded`).
+//!   device = the person's choice, [`Installs::device`]: graphics card when there is one | processor only; context
+//!   capped at the model's maximum). Tester ("Test model") takes the same path (`ModelHost::open_model`): ONE engine
+//!   fetch.
+//! - [`ModelSession`]: RAII, Drop unloads (worker exits). Plugin off | model removed | store change | another device
+//!   chosen unloads it under the holder too (its load token cancelled, calls then fail `notLoaded`).
 //! - Dormant: building one creates | spawns nothing; [`ModelHost::is_assigned`] + [`ModelHost::serves`] read the
 //!   state alone.
 //! - Errors toward IPC: [`HostError`] -> [`IpcError`]; engine failures through [`engine_ipc`] (stable codes; engine
@@ -131,6 +132,8 @@ pub struct ModelSession {
     id: SessionId,
     /// Lineage of the loaded model ([`ModelHost::serves`]).
     lineage: String,
+    /// Device it was loaded for ([`ModelHost::serves`]).
+    device: Device,
     on_gpu: bool,
     memory_bytes: Option<u64>,
 }
@@ -205,11 +208,14 @@ impl ModelHost {
         }
     }
 
-    /// `session` still carries the model assigned to `task` (lineage; state alone): a feature keeping a session warm
-    /// drops it when the person assigns another model (a version update | removal unloads it already).
+    /// `session` still carries the model assigned to `task` (lineage), loaded for the device the person chooses now
+    /// (state alone): a feature keeping a session warm drops it when the person assigns another model | lets models
+    /// run elsewhere (a version update | removal | device change unloads it already; a load that began just before
+    /// the change is only told here).
     #[must_use]
     pub fn serves(&self, session: &ModelSession, task: Task) -> bool {
         self.installs.assigned_lineage(task).as_deref() == Some(session.lineage.as_str())
+            && self.installs.device() == session.device
     }
 
     /// A model is assigned to `task` (state alone: no engine started, no disk read; the model may since be gone ->
@@ -319,7 +325,7 @@ impl ModelHost {
         let files = engine::model_files(installed, &self.catalog);
         let opts = LoadOpts {
             context_len: model.context_len.min(context_len),
-            device: Device::Auto,
+            device: self.installs.device(),
             threads: None,
         };
         let memory_bytes = self
@@ -348,6 +354,7 @@ impl ModelHost {
             runtime: Arc::clone(&self.runtime),
             id,
             lineage: installed.lineage.clone(),
+            device: opts.device,
             on_gpu,
             memory_bytes,
         })

@@ -96,6 +96,10 @@ pub struct PluginState {
     pub installed: BTreeMap<String, Installed>,
     #[serde(default)]
     pub stale: Vec<Stale>,
+    /// Models run on the processor only, never on a graphics card (`false`, also a file written before the choice
+    /// existed: the graphics card when there is one).
+    #[serde(default)]
+    pub cpu_only: bool,
 }
 
 impl StateData for PluginState {

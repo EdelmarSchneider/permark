@@ -24,6 +24,8 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use ts_rs::TS;
 
+use crate::engine::Device;
+
 /// How long a read profile is answered again before it is read anew.
 pub const FRESH: Duration = Duration::from_secs(30);
 
@@ -90,6 +92,16 @@ impl MachineProfile {
     #[must_use]
     pub fn unified(&self) -> bool {
         self.gpus.iter().any(|g| g.unified && !g.software)
+    }
+
+    /// What a load on `device` may count on here: processor only -> no graphics adapter (memory guard, fit hints,
+    /// budget then reckon without graphics memory).
+    #[must_use]
+    pub fn limited_to(mut self, device: Device) -> Self {
+        if device == Device::Cpu {
+            self.gpus.clear();
+        }
+        self
     }
 }
 

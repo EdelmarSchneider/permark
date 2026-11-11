@@ -2405,6 +2405,11 @@ export default {
   "localAi.machine.gpuUnknown": "Memória desconhecida",
   "localAi.machine.noGpu": "Nenhuma placa de vídeo encontrada",
   "localAi.machine.unknown": "Desconhecido",
+  "localAi.machine.runOn": "Onde rodar os modelos",
+  "localAi.machine.runOn.auto": "Placa de vídeo, se houver",
+  "localAi.machine.runOn.cpu": "Só processador",
+  "localAi.machine.runOn.cpuHint":
+    "Mais lento, mas deixa a placa de vídeo livre para outros programas.",
   "localAi.store.title": "Armazenamento",
   "localAi.store.folder": "Pasta dos modelos",
   "localAi.store.default": "A pasta padrão",

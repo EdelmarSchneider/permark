@@ -4,7 +4,8 @@
 //!
 //! - Dormant (AC-8): building one spawns, threads, creates nothing; first `load` starts a worker (+ its stderr
 //!   thread), the log file is written when a worker's stderr ends.
-//! - Loads serialized (one at a time) with the memory guard ([`guard::check`]) on a profile read now.
+//! - Loads serialized (one at a time) with the memory guard ([`guard::check`]) on a profile read now, limited to the
+//!   load's device (processor only: graphics memory never counted).
 //! - [`Runtime::release`] (D-11, Windows mmap lock): every session of a lineage unloaded (= its workers exit) before
 //!   its files are removed | moved; a load of it in flight is cancelled (its token) + waited for (no session missed).
 //!   The token a released session was loaded with is cancelled too (its owner's work, e.g. a model test, stops).
@@ -181,7 +182,7 @@ impl Runtime {
         &self.engine
     }
 
-    /// Loads `model` of `lineage` after the memory guard on `needs`.
+    /// Loads `model` of `lineage` after the memory guard on `needs` (room = what `opts.device` may use).
     ///
     /// # Errors
     /// [`EngineError::OutOfMemory`] (guard, no worker started) | [`EngineError::Cancelled`] (`cancel` | released
@@ -198,7 +199,7 @@ impl Runtime {
         lock(&self.pending).push((lineage.to_owned(), cancel.clone()));
         let loaded = {
             let _one = lock(&self.loading);
-            let loaded = guard::check(needs, &(self.machine)())
+            let loaded = guard::check(needs, &(self.machine)().limited_to(opts.device))
                 .and_then(|()| self.engine.load(model, opts, progress, cancel));
             if let Ok(session) = loaded {
                 lock(&self.sessions).insert(session, (lineage.to_owned(), cancel.clone()));

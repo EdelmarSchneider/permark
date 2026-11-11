@@ -2416,6 +2416,11 @@ export default {
   "localAi.machine.gpuUnknown": "Memoria descoñecida",
   "localAi.machine.noGpu": "Non se atopou ningunha tarxeta gráfica",
   "localAi.machine.unknown": "Descoñecido",
+  "localAi.machine.runOn": "Onde executar os modelos",
+  "localAi.machine.runOn.auto": "Tarxeta gráfica, se a hai",
+  "localAi.machine.runOn.cpu": "Só procesador",
+  "localAi.machine.runOn.cpuHint":
+    "Máis lento, pero deixa a tarxeta gráfica libre para outros programas.",
   "localAi.store.title": "Almacenamento",
   "localAi.store.folder": "Cartafol dos modelos",
   "localAi.store.default": "O cartafol predeterminado",

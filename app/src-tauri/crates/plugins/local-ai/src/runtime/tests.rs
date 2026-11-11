@@ -115,6 +115,42 @@ fn the_guard_refuses_before_a_worker_starts() {
     assert_eq!(workers.launched(), 0);
 }
 
+/// Little free memory beside a large graphics card.
+fn card() -> MachineProfile {
+    MachineProfile {
+        gpus: vec![crate::machine::Gpu {
+            name: "g".into(),
+            dedicated_vram: Some(8 * GIB),
+            shared: None,
+            unified: false,
+            software: false,
+        }],
+        ..memory(GIB)
+    }
+}
+
+/// The guard counts graphics memory only for a load that may use the graphics card: a processor-only load is
+/// judged on free RAM alone (refused, no worker started).
+#[test]
+fn the_guard_counts_no_graphics_memory_for_a_processor_load() {
+    let (runtime, workers) = rig(card);
+    let on = |device| {
+        let opts = LoadOpts { device, ..opts() };
+        runtime.load(
+            "a",
+            &needs(),
+            model("a"),
+            opts,
+            &|_| {},
+            &CancelToken::new(),
+        )
+    };
+    assert_eq!(on(Device::Cpu), Err(EngineError::OutOfMemory));
+    assert_eq!(workers.launched(), 0);
+    assert!(on(Device::Auto).is_ok());
+    assert_eq!(workers.launched(), 1);
+}
+
 /// D-11: release(lineage) unloads that lineage's sessions only (their workers end); others keep working.
 #[test]
 fn release_unloads_every_session_of_a_lineage() {
