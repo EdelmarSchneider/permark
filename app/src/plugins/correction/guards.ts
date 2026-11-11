@@ -5,6 +5,7 @@
 
 import {
   letterShare,
+  similarity,
   structureVerdict,
   type StructureDiscard,
   type StructureLimits,
@@ -117,24 +118,6 @@ function overEdit(d: WordDiff): boolean {
   if (words >= RATIO_MIN_WORDS) return changed / words > MAX_CHANGE_RATIO;
   if (words <= SHORT_WORDS) return unlike > words / 2;
   return changed > MAX_CHANGED_WORDS;
-}
-
-// 1 - Levenshtein distance / longer length, over code points (1 = same, 0 = nothing alike)
-function similarity(a: string, b: string): number {
-  const x = [...a.normalize("NFC").toLowerCase()];
-  const y = [...b.normalize("NFC").toLowerCase()];
-  const longer = Math.max(x.length, y.length);
-  if (longer === 0) return 1;
-  let row = Array.from({ length: y.length + 1 }, (_, j) => j);
-  for (let i = 1; i <= x.length; i += 1) {
-    const next = [i];
-    for (let j = 1; j <= y.length; j += 1) {
-      const cost = x[i - 1] === y[j - 1] ? 0 : 1;
-      next.push(Math.min((row[j] ?? 0) + 1, (next[j - 1] ?? 0) + 1, (row[j - 1] ?? 0) + cost));
-    }
-    row = next;
-  }
-  return 1 - (row[y.length] ?? longer) / longer;
 }
 
 // heading | list item | table cell: a final period the model added is left out (the suggestion dropped when nothing

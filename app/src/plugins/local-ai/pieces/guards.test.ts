@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { letterShare, structureVerdict, type Structure, type StructureLimits } from "./guards";
+import {
+  letterShare,
+  similarity,
+  structureVerdict,
+  type Structure,
+  type StructureLimits,
+} from "./guards";
 import { pieces, type Piece } from "./segment";
 
 const LIMITS: StructureLimits = {
@@ -199,5 +205,25 @@ describe("letterShare", () => {
   it("is 0 for a text without a letter", () => {
     expect(letterShare("12 + 3 = 15", /\p{Script=Latin}/u)).toBe(0);
     expect(letterShare("", /\p{Script=Latin}/u)).toBe(0);
+  });
+});
+
+describe("similarity", () => {
+  it("is 1 for the same text, 0 for texts with nothing alike, between them by the chars to change", () => {
+    expect(similarity("abc", "abc")).toBe(1);
+    expect(similarity("", "")).toBe(1);
+    expect(similarity("abc", "xyz")).toBe(0);
+    expect(similarity("abc", "")).toBe(0);
+    // one char put in, one changed, one taken out: each counts once against the longer text
+    expect(similarity("Introdution", "Introduction")).toBeCloseTo(11 / 12);
+    expect(similarity("casa", "caza")).toBe(0.75);
+    expect(similarity("abcd", "abc")).toBe(0.75);
+    expect(similarity("Una casa blanca", "A white house")).toBeLessThan(0.5);
+  });
+
+  it("compares code points after NFC, whatever the letter case", () => {
+    expect(similarity("Café", "CAFE\u0301")).toBe(1);
+    // a char outside the basic plane is one char
+    expect(similarity("𝒜b", "𝒜c")).toBe(0.5);
   });
 });

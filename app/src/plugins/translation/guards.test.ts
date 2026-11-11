@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { similarity } from "../local-ai/pieces/guards";
 import type { PieceVerdict } from "../local-ai/pieces/review.svelte";
 import { pieces, type Piece } from "../local-ai/pieces/segment";
 import { around } from "../local-ai/pieces/suggestion";
-import { judge, type Pair } from "./guards";
+import { judge, NEAR_SAME, type Pair } from "./guards";
 
 const TO_PT: Pair = { target: "pt-BR", source: null };
 const TO_JA: Pair = { target: "ja", source: null };
@@ -153,6 +154,84 @@ describe("judge: the same text as the piece", () => {
   it("with its markers where they were", () => {
     const doc = "Run `npm install` first.";
     expect(judge(doc, only(doc), "Run ⟦1⟧ first.", TO_PT)).toEqual({ kind: "same" });
+  });
+});
+
+describe("judge: nearly the same text as the piece", () => {
+  // what a real model answered for text that was in the target already: the piece again, a little reworded
+  const JA_PIECE = "入力を止めてから数秒後に、変更内容が自動的に保存されます。";
+  const JA_ANSWER = "入力を停止してから数秒後に、変更内容が自動的に保存されます。";
+  const EN_PIECE =
+    "The quick start guide covers installation, the first project and the keyboard shortcuts.";
+  const EN_ANSWER =
+    "The quick start guide covers installation, the first project, and the keyboard shortcuts.";
+  // what it answered for Spanish into Brazilian Portuguese: as close as a real translation came
+  const ES_PIECE = "Para cambiar el idioma, abre la configuración y elige una opción de la lista.";
+  const ES_ANSWER = "Para mudar o idioma, abra as configurações e escolha uma opção na lista.";
+  const ES_HEADING = "## Cómo compartir una carpeta con tu equipo";
+  const ES_HEADING_ANSWER = "Como compartilhar uma pasta com sua equipe";
+
+  it("is nothing to suggest when the source is read off the text: the piece is in the target already", () => {
+    expect(similarity(JA_ANSWER, JA_PIECE)).toBeGreaterThanOrEqual(NEAR_SAME);
+    expect(judge(JA_PIECE, only(JA_PIECE), JA_ANSWER, TO_JA)).toEqual({ kind: "same" });
+    expect(judge(EN_PIECE, only(EN_PIECE), EN_ANSWER, TO_EN)).toEqual({ kind: "same" });
+    // quoted by the model, on two lines: still the piece
+    expect(judge(EN_PIECE, only(EN_PIECE), `"${EN_ANSWER}"`, TO_EN)).toEqual({ kind: "same" });
+    expect(judge(EN_PIECE, only(EN_PIECE), EN_ANSWER.replace(", and", ",\nand"), TO_EN)).toEqual({
+      kind: "same",
+    });
+  });
+
+  it("is a translation to offer when the person named the source: close variants of a language differ by as little", () => {
+    expect(
+      insert(judge(JA_PIECE, only(JA_PIECE), JA_ANSWER, { target: "ja", source: "en-US" })),
+    ).toBe(JA_ANSWER);
+    expect(
+      insert(judge(EN_PIECE, only(EN_PIECE), EN_ANSWER, { target: "en-US", source: "pt-BR" })),
+    ).toBe(EN_ANSWER);
+    const pt = "A equipa actualiza o projecto todas as semanas.";
+    const br = "A equipe atualiza o projeto todas as semanas.";
+    expect(similarity(br, pt)).toBeGreaterThanOrEqual(NEAR_SAME);
+    expect(insert(judge(pt, only(pt), br, { target: "pt-BR", source: "pt-PT" }))).toBe(br);
+    expect(judge(pt, only(pt), br, TO_PT)).toEqual({ kind: "same" });
+  });
+
+  it("a translation between close languages is far from it, source named or not", () => {
+    expect(similarity(ES_ANSWER, ES_PIECE)).toBeLessThan(NEAR_SAME - 0.2);
+    expect(insert(judge(ES_PIECE, only(ES_PIECE), ES_ANSWER, TO_PT))).toBe(ES_ANSWER);
+    expect(
+      insert(judge(ES_PIECE, only(ES_PIECE), ES_ANSWER, { target: "pt-BR", source: "es-419" })),
+    ).toBe(ES_ANSWER);
+    expect(applied(ES_HEADING, judge(ES_HEADING, only(ES_HEADING), ES_HEADING_ANSWER, TO_PT))).toBe(
+      `## ${ES_HEADING_ANSWER}`,
+    );
+  });
+
+  it("the piece itself is nothing to suggest whether the source is named or not", () => {
+    for (const source of [null, "pt-BR"]) {
+      expect(judge(EN_PIECE, only(EN_PIECE), EN_PIECE, { target: "en-US", source })).toEqual({
+        kind: "same",
+      });
+      expect(
+        judge(EN_PIECE, only(EN_PIECE), ` ${EN_PIECE}\n`, { target: "en-US", source }),
+      ).toEqual({ kind: "same" });
+    }
+  });
+
+  it("is told before a line without text and the script are asked: never a discard", () => {
+    // read off the text, the piece with a word of its own language changed is the piece; with the source named
+    // that word is held to the target's script
+    const reworded = EN_PIECE.replace("covers", "covered");
+    expect(judge(EN_PIECE, only(EN_PIECE), reworded, TO_JA)).toEqual({ kind: "same" });
+    expect(
+      reason(judge(EN_PIECE, only(EN_PIECE), reworded, { target: "ja", source: "en-US" })),
+    ).toBe("script");
+    // a short note after the piece
+    const note = `${EN_PIECE}\n\n(same)`;
+    expect(judge(EN_PIECE, only(EN_PIECE), note, TO_EN)).toEqual({ kind: "same" });
+    expect(
+      reason(judge(EN_PIECE, only(EN_PIECE), note, { target: "en-US", source: "pt-BR" })),
+    ).toBe("blankLine");
   });
 });
 

@@ -2,7 +2,8 @@
 // thinking, opens with a preamble, breaks the markers | Markdown symbols | the table row of a cell, brings in Markdown
 // the piece does not have (HTML, code, a link's destination, a web address, a line that opens a block) or changes
 // length (dropped | added text) beyond the plugin's range is discarded whole. What the answer may change beyond that
-// is the plugin's own guard; the count of a text's letters by script (`letterShare`) is here for those.
+// is the plugin's own guard; the count of a text's letters by script (`letterShare`) and how alike two texts are
+// (`similarity`) are here for those.
 
 import { restore, unmarked, type MarkerOrder, type Piece } from "./segment";
 
@@ -78,6 +79,26 @@ export function letterShare(text: string, script: RegExp): number {
     if (script.test(ch)) found += 1;
   }
   return found / Math.max(1, letters);
+}
+
+/** How alike two texts are, char by char: 1 - Levenshtein distance / longer length, over code points after NFC,
+ *  whatever the letter case (1 = same, 0 = nothing alike). Time and memory grow with the product of the lengths:
+ *  for a piece and its answer, not for documents. */
+export function similarity(a: string, b: string): number {
+  const x = [...a.normalize("NFC").toLowerCase()];
+  const y = [...b.normalize("NFC").toLowerCase()];
+  const longer = Math.max(x.length, y.length);
+  if (longer === 0) return 1;
+  let row = Array.from({ length: y.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= x.length; i += 1) {
+    const next = [i];
+    for (let j = 1; j <= y.length; j += 1) {
+      const cost = x[i - 1] === y[j - 1] ? 0 : 1;
+      next.push(Math.min((row[j] ?? 0) + 1, (next[j - 1] ?? 0) + 1, (row[j - 1] ?? 0) + cost));
+    }
+    row = next;
+  }
+  return 1 - (row[y.length] ?? longer) / longer;
 }
 
 function preamble(input: string, output: string, preambles: readonly string[]): boolean {

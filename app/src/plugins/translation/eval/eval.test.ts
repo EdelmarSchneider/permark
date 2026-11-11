@@ -265,6 +265,46 @@ describe("translation eval report", () => {
     ]);
   });
 
+  it("judges a case as the app would its run: the piece a little reworded is nothing to suggest, unless the case names the source", () => {
+    const comma = "The guide covers installation, the first project and the keyboard shortcuts.";
+    const variant = "A equipa actualiza o projecto todas as semanas.";
+    const close = evalCases([
+      {
+        id: "reworded",
+        kind: "same",
+        from: "pt-BR",
+        source: null,
+        target: "en-US",
+        markdown: comma,
+        text: comma,
+        expect: "same",
+      },
+      {
+        id: "variant",
+        kind: "plain",
+        from: "pt-PT",
+        source: "pt-PT",
+        target: "pt-BR",
+        markdown: variant,
+        text: variant,
+        expect: "translated",
+      },
+    ]);
+    const [reworded, named] = close;
+    if (reworded === undefined || named === undefined) throw new Error("no cases");
+    const list = outcomes(close, {
+      ...RUN,
+      records: [
+        said(reworded, comma.replace(" and", ", and")),
+        said(named, "A equipe atualiza o projeto todas as semanas."),
+      ],
+    });
+    expect(list.map((o) => [o.id, o.verdict, o.met, o.translation])).toEqual([
+      ["reworded", "same", true, null],
+      ["variant", "ok", true, "A equipe atualiza o projeto todas as semanas."],
+    ]);
+  });
+
   it("prints the run, the tables, the rates, what a person must look at and the translations to read", () => {
     const text = report(fixture, outputs);
     expect(text.startsWith("model fake | profile fake | gpu ?")).toBe(true);
