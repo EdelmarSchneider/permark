@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-11
+
 ### Added
 - **Translate text.** While you edit a document, in Edit or in Source, the translate button next to the mode switch translates the selection, the paragraph you are in or the whole document with the local AI model you chose for translation in **Settings > Local AI**. You pick the language from a list you can search; the language of the text is found by itself, and you can name it for the next run. Each translation is shown under its original and nothing changes in your text until you accept it, one by one or all at once. Code, links, web addresses, formulas and HTML stay as written. **Ctrl+Alt+R** translates where the cursor is. Nothing leaves your computer. <!-- f: translation, editing, local-ai -->
 - **Translate to a new file.** The same menu can translate a whole document into a new file next to it, named after the language (`readme.md` becomes `readme.pt-BR.md`). Your document is not changed and an existing file is never replaced. Progress and Cancel are in the status bar, so you can keep working meanwhile. Parts the model could not translate stay in the original language, and the notice says how many. <!-- f: translation, local-ai -->
