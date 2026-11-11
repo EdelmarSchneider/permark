@@ -5,9 +5,9 @@
 //!   `engineTooOld` | `unsupported`, nothing started) -> engine files of the current pin installed, else fetched
 //!   first through [`WorkerFiles`] ([`HostProgress::Engine`]; cancel stops the download, part kept; no pin ->
 //!   `notAvailable`) -> [`HostProgress::Loading`] from 0 -> load through [`Runtime::load`] (memory guard inside;
-//!   device = the person's choice, [`Installs::device`]: graphics card when there is one | processor only; context
-//!   capped at the model's maximum). Tester ("Test model") takes the same path (`ModelHost::open_model`): ONE engine
-//!   fetch.
+//!   device = the person's choice, [`Installs::device`]: graphics card when there is one | processor only, read once
+//!   the runtime knows the load -> a choice changed meanwhile cancels the load | is the one read; context capped at
+//!   the model's maximum). Tester ("Test model") takes the same path (`ModelHost::open_model`): ONE engine fetch.
 //! - [`ModelSession`]: RAII, Drop unloads (worker exits). Plugin off | model removed | store change | another device
 //!   chosen unloads it under the holder too (its load token cancelled, calls then fail `notLoaded`).
 //! - Dormant: building one creates | spawns nothing; [`ModelHost::is_assigned`] + [`ModelHost::serves`] read the
@@ -210,8 +210,7 @@ impl ModelHost {
 
     /// `session` still carries the model assigned to `task` (lineage), loaded for the device the person chooses now
     /// (state alone): a feature keeping a session warm drops it when the person assigns another model | lets models
-    /// run elsewhere (a version update | removal | device change unloads it already; a load that began just before
-    /// the change is only told here).
+    /// run elsewhere (a version update | removal | device change unloads it too).
     #[must_use]
     pub fn serves(&self, session: &ModelSession, task: Task) -> bool {
         self.installs.assigned_lineage(task).as_deref() == Some(session.lineage.as_str())
@@ -323,23 +322,21 @@ impl ModelHost {
         cancel: &CancelToken,
     ) -> Result<ModelSession, EngineError> {
         let files = engine::model_files(installed, &self.catalog);
-        let opts = LoadOpts {
+        // the person's choice, read by the runtime once it knows this load: `Installs::set_cpu_only` writes the
+        // choice, then releases -> a change before the read is the one read, a later one cancels this load |
+        // unloads its session. Read here instead, a change before the runtime knew the load would cancel nothing
+        // and the model would load where the person no longer lets models run
+        let opts = || LoadOpts {
             context_len: model.context_len.min(context_len),
             device: self.installs.device(),
             threads: None,
         };
-        let memory_bytes = self
-            .runtime
-            .engine()
-            .estimate_memory(&files, &opts)
-            .ok()
-            .map(|m| m.ram.saturating_add(m.vram));
-        let id = self
+        let (id, opts) = self
             .runtime
             .load(
                 &installed.lineage,
                 &model.needs,
-                files,
+                files.clone(),
                 opts,
                 progress,
                 cancel,
@@ -349,6 +346,12 @@ impl ModelHost {
                 EngineError::Io(_) if !self.files.is_installed() => EngineError::Blocked,
                 e => e,
             })?;
+        let memory_bytes = self
+            .runtime
+            .engine()
+            .estimate_memory(&files, &opts)
+            .ok()
+            .map(|m| m.ram.saturating_add(m.vram));
         let on_gpu = self.runtime.engine().on_gpu(id);
         Ok(ModelSession {
             runtime: Arc::clone(&self.runtime),

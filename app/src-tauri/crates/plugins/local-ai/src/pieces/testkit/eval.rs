@@ -106,8 +106,8 @@ impl Model {
             vram_rec: 1,
         };
         let started = Instant::now();
-        let id = runtime
-            .load("eval", &small, model, opts, &|_| {}, &CancelToken::new())
+        let (id, _) = runtime
+            .load("eval", &small, model, || opts, &|_| {}, &CancelToken::new())
             .unwrap_or_else(|e| panic!("load: {e:?}"));
         let load = started.elapsed();
         let on_gpu = runtime.engine().on_gpu(id);

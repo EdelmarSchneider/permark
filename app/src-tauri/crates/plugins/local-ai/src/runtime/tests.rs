@@ -64,14 +64,16 @@ fn rig(machine: fn() -> MachineProfile) -> (Runtime, Workers) {
 }
 
 fn load(runtime: &Runtime, lineage: &str) -> Result<SessionId, EngineError> {
-    runtime.load(
-        lineage,
-        &needs(),
-        model(lineage),
-        opts(),
-        &|_| {},
-        &CancelToken::new(),
-    )
+    runtime
+        .load(
+            lineage,
+            &needs(),
+            model(lineage),
+            opts,
+            &|_| {},
+            &CancelToken::new(),
+        )
+        .map(|(session, _)| session)
 }
 
 /// AC-8: a runtime (pinned worker files included) creates, spawns, starts nothing until a load.
@@ -135,15 +137,17 @@ fn card() -> MachineProfile {
 fn the_guard_counts_no_graphics_memory_for_a_processor_load() {
     let (runtime, workers) = rig(card);
     let on = |device| {
-        let opts = LoadOpts { device, ..opts() };
-        runtime.load(
-            "a",
-            &needs(),
-            model("a"),
-            opts,
-            &|_| {},
-            &CancelToken::new(),
-        )
+        let opts = || LoadOpts { device, ..opts() };
+        runtime
+            .load(
+                "a",
+                &needs(),
+                model("a"),
+                opts,
+                &|_| {},
+                &CancelToken::new(),
+            )
+            .map(|(session, _)| session)
     };
     assert_eq!(on(Device::Cpu), Err(EngineError::OutOfMemory));
     assert_eq!(workers.launched(), 0);
@@ -183,8 +187,8 @@ fn release_cancels_and_waits_for_a_load_in_flight() {
     let (runtime, workers) = rig(plenty);
     let runtime = Arc::new(runtime);
     let other = CancelToken::new();
-    let b = runtime
-        .load("b", &needs(), model("b"), opts(), &|_| {}, &other)
+    let (b, _) = runtime
+        .load("b", &needs(), model("b"), opts, &|_| {}, &other)
         .unwrap();
     let reached = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let loading = {
@@ -199,7 +203,7 @@ fn release_cancels_and_waits_for_a_load_in_flight() {
                     std::thread::sleep(Duration::from_millis(1));
                 }
             };
-            runtime.load("a", &needs(), model("a"), opts(), &progress, &cancel)
+            runtime.load("a", &needs(), model("a"), opts, &progress, &cancel)
         })
     };
     let started = Instant::now();
@@ -323,19 +327,19 @@ fn smoke_the_real_worker_on_cpu() {
     let junk = tmp.path().join("junk.gguf");
     std::fs::write(&junk, b"not a model at all").unwrap();
     for (model, want) in [(too_new, "EngineTooOld"), (files(&junk), "Corrupt")] {
-        let refused = runtime.load("smoke", &small, model, cpu, &|_| {}, &CancelToken::new());
+        let refused = runtime.load("smoke", &small, model, || cpu, &|_| {}, &CancelToken::new());
         assert!(format!("{refused:?}").contains(want), "{refused:?}");
     }
 
     let started = Instant::now();
     let steps = std::sync::Mutex::new(0u32);
     let progress = |_: f32| *steps.lock().unwrap() += 1;
-    let session = runtime
+    let (session, _) = runtime
         .load(
             "smoke",
             &small,
             files(&embed),
-            cpu,
+            || cpu,
             &progress,
             &CancelToken::new(),
         )
@@ -422,12 +426,12 @@ fn smoke_chat(runtime: &Runtime, chat: &std::path::Path, log: &std::path::Path) 
         .get(&name)
         .cloned();
     let started = Instant::now();
-    let session = runtime
+    let (session, _) = runtime
         .load(
             "smoke-chat",
             &small,
             model,
-            cpu,
+            || cpu,
             &|_| {},
             &CancelToken::new(),
         )

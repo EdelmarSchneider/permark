@@ -779,7 +779,7 @@ fn remove_and_store_change_unload_the_engine_sessions_first() {
                 lineage,
                 &needs,
                 crate::engine::model_files(&model, &cat),
-                opts,
+                || opts,
                 &|_| {},
                 &CancelToken::new(),
             )

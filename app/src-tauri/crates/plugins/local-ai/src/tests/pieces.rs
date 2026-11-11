@@ -2,7 +2,8 @@
 //! word, paced for cancel; [`RAMBLE`] in a piece -> answer cut at its cap): dormant availability, phase order (engine
 //! fetch first when missing), requests built by the job from the run's parameters, discards (length, thinking, too
 //! long), cancel, new run cancels the old one, warm session (idle unload, reassignment), plugin off (no thread,
-//! nothing loaded), production model source (`ModelHost` service, the job's own task), two plugins' runners in one
+//! nothing loaded), warm session unloaded under its run (by its source -> `cancelled`; lost by the engine ->
+//! `failed`), production model source (`ModelHost` service, the job's own task), two plugins' runners in one
 //! app (a load unloads the other's idle session first, a run that cannot load unloads nothing, a running one is left
 //! alone, no wait on each other).
 
@@ -10,13 +11,13 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use permark_core::plugins::{AppServices, PluginCx, PluginId, RpcTable, Services};
+use permark_core::plugins::{AppServices, PluginCx, PluginId, RpcTable, ServiceLease, Services};
 use permark_core::settings::AppSettings;
 use serde_json::{json, Value};
 
 use super::installs::E2B;
 use super::testrun::Bench;
-use crate::engine::{ChatMessage, FakeEngine, Role, Sampling};
+use crate::engine::{ChatMessage, Engine, FakeEngine, Role, Sampling, SessionId};
 use crate::pieces::testkit::{pieces, wait, Events, Fake, RAMBLE};
 use crate::pieces::{Models, PieceJob, PieceRunner, IDLE, THINKING};
 use crate::tasks::Task;
@@ -33,6 +34,11 @@ const ROUNDS: usize = 20;
 const RULES: &str = "Echo the text in this tone:";
 /// Tone of the runs that do not care.
 const TONE: &str = "plain";
+/// One-word pieces of a run to be met in progress: paced, seconds pass before its last one, and an engine call
+/// that fails ends it at the next piece.
+const MANY: [&str; 200] = ["word"; 200];
+/// Session of a fake engine's first load.
+const FIRST: SessionId = SessionId(1);
 
 /// Small job with a per-run parameter (a tone): system turn = [`RULES`] + tone, user turn = the piece; cap =
 /// 2 x piece tokens + 8; a task of its own.
@@ -112,6 +118,20 @@ impl Lab {
 
     fn paced() -> Self {
         Self::new(FakeEngine::new().paced(PACE))
+    }
+
+    /// Run `r2` in progress ([`MANY`]) on the session run `r1` left warm ([`FIRST`]; kept [`IDLE`]: only the test
+    /// unloads it).
+    fn mid_warm_run() -> Self {
+        let events = Events::new(PLUGIN);
+        let cx = events.cx();
+        let fake = Fake::new::<Echo>(FakeEngine::new().paced(PACE));
+        let lab = Self::over(fake, events, &cx, IDLE);
+        lab.run("r1", &["One."]);
+        lab.events.ended("r1");
+        lab.run("r2", &MANY);
+        wait(|| (lab.fake.requests.lock().unwrap().len() == 2).then_some(()));
+        lab
     }
 
     fn run(&self, run: &str, texts: &[&str]) {
@@ -313,6 +333,57 @@ fn the_next_run_reuses_the_warm_session_until_the_model_changes() {
     assert_eq!(kinds(&phases)[0], "loading");
     assert_eq!(lab.fake.opens(), 2);
     assert_eq!(lab.loaded(), 1);
+}
+
+/// The model source takes a warm session from under its run (the person lets models run elsewhere | removes the
+/// model: unloaded, no longer serving) -> the run ends `cancelled`, as a run that loaded the model itself does;
+/// never `failed`. The session is not kept: a source that serves again never hands the next run the unloaded one.
+#[test]
+fn a_run_whose_warm_session_its_source_unloads_ends_cancelled() {
+    let lab = Lab::mid_warm_run();
+    lab.fake.serving.store(false, Ordering::Relaxed);
+    lab.fake.engine.unload(FIRST);
+    let phases = lab.events.ended("r2");
+    assert_eq!(kinds(&phases).last(), Some(&"cancelled"), "{phases:?}");
+    assert!(!kinds(&phases).contains(&"loading"), "{phases:?}");
+    lab.fake.serving.store(true, Ordering::Relaxed);
+    lab.run("r3", &["Three."]);
+    let phases = lab.events.ended("r3");
+    assert_eq!(kinds(&phases)[0], "loading");
+    assert_eq!(kinds(&phases).last(), Some(&"done"));
+    assert_eq!(lab.fake.opens(), 2);
+}
+
+/// A run on a warm session the engine loses by `lose` ends `failed` with engine code `code`; the session is not
+/// kept, the next run loads again.
+fn fails_after(lose: fn(&Lab), code: &str) {
+    let lab = Lab::mid_warm_run();
+    lose(&lab);
+    let phases = lab.events.ended("r2");
+    assert_eq!(kinds(&phases).last(), Some(&"failed"), "{phases:?}");
+    let error = &phases.last().unwrap()["error"];
+    assert_eq!(
+        (&error["kind"], &error["subject"], &error["detail"]),
+        (&json!("unavailable"), &json!("engine"), &json!(code))
+    );
+    lab.run("r3", &["Three."]);
+    assert_eq!(kinds(&lab.events.ended("r3")).last(), Some(&"done"));
+    assert_eq!(lab.fake.opens(), 2, "{code}");
+}
+
+/// A session the engine loses is the engine's failure, never read as the person's change: `failed` with the
+/// engine's code when its source still serves it, and after a crash whatever the source says (in production a
+/// crashed session no longer serves: not loaded).
+#[test]
+fn a_session_the_engine_loses_under_a_run_fails_it() {
+    fails_after(|lab| lab.fake.engine.unload(FIRST), "notLoaded");
+    fails_after(
+        |lab| {
+            lab.fake.serving.store(false, Ordering::Relaxed);
+            lab.fake.engine.crash();
+        },
+        "crashed",
+    );
 }
 
 /// Person re-triggered: a new run cancels the running one; both end, the new one done.
@@ -538,6 +609,53 @@ fn two_runners_starting_together_both_finish() {
     }
 }
 
+/// Runner of [`Echo`] over the model service of `bench` (the production source) + its events + the lease that keeps
+/// the service offered.
+fn hosted(bench: &Bench) -> (PieceRunner<Echo>, Arc<Events>, ServiceLease) {
+    let services = Services::new();
+    let offered = services.provide(Arc::clone(&bench.host));
+    let events = Events::new(PLUGIN);
+    let cx = events.cx().with_app(AppServices::new(
+        RpcTable::new(),
+        services,
+        Arc::new(RwLock::new(AppSettings::default())),
+    ));
+    (PieceRunner::hosted(&cx), events, offered)
+}
+
+/// Production model source: the person chooses another place for models to run | removes the model while a run
+/// works on its warm session -> the model service unloads it under the run, which ends `cancelled` (never
+/// `failed`); nothing stays loaded.
+#[test]
+fn a_hosted_run_on_a_warm_session_the_model_service_unloads_ends_cancelled() {
+    let changes: [fn(&Bench); 2] = [
+        |bench| drop(bench.installs.set_cpu_only(true).unwrap()),
+        |bench| drop(bench.installs.remove(E2B).unwrap()),
+    ];
+    for change in changes {
+        let bench = Bench::fake(|| FakeEngine::new().paced(PACE));
+        bench.install(E2B);
+        bench.installs.assign(Echo::TASK, Some(E2B)).unwrap();
+        let (runner, events, _offered) = hosted(&bench);
+        let start = |run: &str, texts: &[&str]| {
+            runner
+                .start(run.to_owned(), TONE.to_owned(), pieces(texts))
+                .unwrap();
+        };
+        start("r1", &["One."]);
+        events.ended("r1");
+        start("r2", &MANY);
+        wait(|| (!events.phases("r2").is_empty()).then_some(()));
+        change(&bench);
+        let phases = events.ended("r2");
+        assert_eq!(kinds(&phases).last(), Some(&"cancelled"), "{phases:?}");
+        assert!(!kinds(&phases).contains(&"loading"), "{phases:?}");
+        assert_eq!(bench.workers.launched(), 1);
+        bench.unloaded();
+        runner.shutdown();
+    }
+}
+
 /// Production model source (`ModelHost` service): the job's own task picks the model (another job's assignment never
 /// serves it); a run loads through the service and keeps the session until that assignment changes.
 #[test]
@@ -545,15 +663,7 @@ fn a_hosted_runner_uses_the_model_assigned_to_the_jobs_task() {
     let bench = Bench::fake(FakeEngine::new);
     bench.install(E2B);
     bench.installs.assign(Task::Correction, Some(E2B)).unwrap();
-    let services = Services::new();
-    let _offered = services.provide(Arc::clone(&bench.host));
-    let events = Events::new(PLUGIN);
-    let cx = events.cx().with_app(AppServices::new(
-        RpcTable::new(),
-        Arc::clone(&services),
-        Arc::new(RwLock::new(AppSettings::default())),
-    ));
-    let runner = PieceRunner::<Echo>::hosted(&cx);
+    let (runner, events, _offered) = hosted(&bench);
     let run = |run: &str, text: &str| {
         runner
             .start(run.to_owned(), TONE.to_owned(), pieces(&[text]))

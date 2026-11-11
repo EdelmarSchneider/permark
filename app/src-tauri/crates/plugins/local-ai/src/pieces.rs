@@ -9,6 +9,10 @@
 //!   in order: too long for the context -> `tooLong`; else the job's answer ([`answer`]); `Finish::Length` ->
 //!   `length`, [`THINKING`] in the answer (thinking leak) -> `thinking`, else `output`. Cancel between pieces + inside
 //!   generate. End: `done` | `cancelled` | `failed` (stable [`IpcError`]).
+//! - Session unloaded under a run by its source (engine call answers `NotLoaded` + [`Session::serves`] no more: the
+//!   person chose another device | removed the model | moved the store) -> `cancelled`, session dropped, whoever
+//!   loaded it (this run: its load token is cancelled too); the person runs again. Any other engine error (crash,
+//!   `NotLoaded` on a session that still serves) -> `failed`.
 //! - Warm session: kept after a run, unloaded after [`IDLE`] without a run, at plugin off
 //!   ([`PieceRunner::shutdown`]: cancel + join, no thread left) and when it no longer serves (model reassigned |
 //!   released).
@@ -586,6 +590,12 @@ impl<J: PieceJob> Shared<J> {
             _ if cancel.is_cancelled() => RunPhase::Cancelled,
             Ok(()) => RunPhase::Done,
             Err(EngineError::Cancelled) => RunPhase::Cancelled,
+            // unloaded under the run by its source (the person's change in the model service): stopped, as the
+            // run that loaded the model itself is (its load token cancelled); not an engine failure. Never
+            // loaded again mid-run: no silent change of model | device under a run
+            Err(EngineError::NotLoaded) if !session.serves() => {
+                return (RunPhase::Cancelled, None);
+            }
             Err(error) => {
                 // engine trouble: never keep this session
                 return (

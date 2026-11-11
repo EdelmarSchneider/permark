@@ -13,7 +13,7 @@ use permark_core::{ErrorKind, IpcError};
 use super::installs::{catalog, serving, Held, Lab, E2B};
 use super::testrun::{engine_files, plenty, Bench};
 use crate::engine::files::tests::{pin, url};
-use crate::engine::{files, CancelToken, EngineError, FakeEngine};
+use crate::engine::{files, model_files, CancelToken, EngineError, FakeEngine, LoadOpts};
 use crate::host::{HostError, HostProgress, ModelHost, ModelSession};
 use crate::tasks::Task;
 
@@ -315,4 +315,36 @@ fn a_changed_choice_unloads_what_was_loaded_under_the_other() {
     assert!(!bench.host.serves(&next, Task::Correction));
     bench.unloaded();
     assert!(open(&bench, 512).unwrap().on_gpu());
+}
+
+/// Where a load runs is read once the runtime knows the load: the choice changing right after that read (state
+/// written, then every session released) finds the load and cancels it, no worker started for the place just
+/// left; a change before the read is the one read. Nothing in between: no load ends where the person no longer
+/// lets models run.
+#[test]
+fn a_choice_changed_right_after_a_load_read_it_cancels_the_load() {
+    let bench = Bench::fake(FakeEngine::new);
+    bench.install(E2B);
+    let installed = bench.installs.installed_model(E2B).unwrap();
+    let model = bench.host.catalog.model(E2B).unwrap();
+    let opts = || {
+        let device = bench.installs.device();
+        bench.installs.set_cpu_only(true).unwrap();
+        LoadOpts {
+            context_len: 512,
+            device,
+            threads: None,
+        }
+    };
+    let loaded = bench.runtime.load(
+        &installed.lineage,
+        &model.needs,
+        model_files(&installed, &bench.host.catalog),
+        opts,
+        &|_| {},
+        &CancelToken::new(),
+    );
+    assert_eq!(loaded, Err(EngineError::Cancelled));
+    assert_eq!(bench.workers.launched(), 0);
+    bench.unloaded();
 }
