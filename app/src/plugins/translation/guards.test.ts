@@ -3,7 +3,7 @@ import { similarity } from "../local-ai/pieces/guards";
 import type { PieceVerdict } from "../local-ai/pieces/review.svelte";
 import { pieces, type Piece } from "../local-ai/pieces/segment";
 import { around } from "../local-ai/pieces/suggestion";
-import { judge, NEAR_SAME, type Pair } from "./guards";
+import { judge, NEAR_SAME, NEAR_SAME_MIN_CHARS, type Pair } from "./guards";
 
 const TO_PT: Pair = { target: "pt-BR", source: null };
 const TO_JA: Pair = { target: "ja", source: null };
@@ -193,7 +193,37 @@ describe("judge: nearly the same text as the piece", () => {
     const br = "A equipe atualiza o projeto todas as semanas.";
     expect(similarity(br, pt)).toBeGreaterThanOrEqual(NEAR_SAME);
     expect(insert(judge(pt, only(pt), br, { target: "pt-BR", source: "pt-PT" }))).toBe(br);
-    expect(judge(pt, only(pt), br, TO_PT)).toEqual({ kind: "same" });
+  });
+
+  it("in a short piece only the same text counts: a real translation can leave nine chars in ten as they are", () => {
+    const to = (target: string): Pair => ({ target, source: null });
+    // names with one small word between them; a word spelled almost alike in both languages
+    for (const [piece, answer, target] of [
+      ["Chrome, Firefox and Safari", "Chrome, Firefox und Safari", "de"],
+      [
+        "Version 0.10.0 for Windows, macOS and Linux",
+        "Version 0.10.0 für Windows, macOS und Linux",
+        "de",
+      ],
+      ["Sistema operativo y hardware", "Sistema operativo e hardware", "pt-PT"],
+      ["Dokumentation", "Documentation", "en-US"],
+    ] as const) {
+      expect(similarity(answer, piece)).toBeGreaterThanOrEqual(NEAR_SAME);
+      expect(piece.length).toBeLessThan(NEAR_SAME_MIN_CHARS.alphabetic);
+      expect(insert(judge(piece, only(piece), answer, to(target)))).toBe(answer);
+    }
+    // a short piece between close variants is offered without the source named too
+    const pt = "A equipa actualiza o projecto todas as semanas.";
+    const br = "A equipe atualiza o projeto todas as semanas.";
+    expect(insert(judge(pt, only(pt), br, TO_PT))).toBe(br);
+    // the pieces a model reworded are long enough, in a dense script with fewer chars
+    expect(EN_PIECE.length).toBeGreaterThanOrEqual(NEAR_SAME_MIN_CHARS.alphabetic);
+    expect(JA_PIECE.length).toBeGreaterThanOrEqual(NEAR_SAME_MIN_CHARS.dense);
+    expect(JA_PIECE.length).toBeLessThan(NEAR_SAME_MIN_CHARS.alphabetic);
+    // and a short one that comes back as it is stays nothing to suggest
+    expect(judge("Dokumentation", only("Dokumentation"), "Dokumentation", to("de"))).toEqual({
+      kind: "same",
+    });
   });
 
   it("a translation between close languages is far from it, source named or not", () => {

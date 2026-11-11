@@ -9,10 +9,11 @@
 // 4. quotation marks around the whole answer that the piece does not have are taken off (the model quoting its
 //    answer): never a discard, and before 5 (a quoted copy of the piece is the piece);
 // 5. the same text as the piece -> nothing to suggest (`same`); before the script check: a name reads the same in
-//    every language. Nearly the same text (`NEAR_SAME`) too, when the run reads the source off the text: the piece
-//    was in the target already, and a model rewords such text a little instead of repeating it (a rule in the prompt
-//    did not stop it). Not when the person named the source: a translation between close variants of a language
-//    (pt-PT into pt-BR) is as close, and is what was asked for;
+//    every language. Nearly the same text (`NEAR_SAME`) too, when the run reads the source off the text and the
+//    piece is not a short one (`NEAR_SAME_MIN_CHARS`): the piece was in the target already, and a model rewords such
+//    text a little instead of repeating it (a rule in the prompt did not stop it). Not when the person named the
+//    source: a translation between close variants of a language (pt-PT into pt-BR) is as close, and is what was
+//    asked for;
 // 6. a line without text inside the answer (a note | a second answer after the translation; it would end the
 //    paragraph) -> discarded;
 // 7. script: under half of the letters in the target's script, when the runtime knows it -> discarded. Words the
@@ -24,9 +25,8 @@
 // the checks: they read the answer as the model wrote it). Not told here: a wrong language in the right script
 // (Spanish for Portuguese), and, with the source named, the piece left in its language with nothing but words of its
 // own (a word dropped, a comma added: every letter is a copy). Told wrongly as `same`, with the source read off the
-// text: a translation that changes a tenth of the piece's chars at most (names with one small word between them,
-// "Chrome, Firefox and Safari" into German; a word spelled almost alike in both languages, or the same but for its
-// letter case). The length limits are first values.
+// text: a translation of a longer piece that changes a tenth of its chars at most (a long line of names with one
+// small word between them; a paragraph between close variants of a language). The length limits are first values.
 
 import {
   letterShare,
@@ -62,6 +62,14 @@ export const MIN_SCRIPT_SHARE = 0.5;
  *  itself, a little reworded. From the answers of a real model: for text that was in the target already they were
  *  0.93 alike and more, the closest translation (Spanish into Portuguese) 0.70. */
 export const NEAR_SAME = 0.9;
+/** Shortest piece (chars; `dense`: mostly Han | Kana | Hangul, where a few chars say a word) the near-same check
+ *  reads. In a shorter one a real translation can leave nine chars in ten as they are (names with one small word
+ *  between them: "Chrome, Firefox and Safari"; a word spelled almost alike in both languages: "Dokumentation"), so
+ *  there only the same text counts. */
+export const NEAR_SAME_MIN_CHARS: Readonly<Record<"alphabetic" | "dense", number>> = {
+  alphabetic: 60,
+  dense: 20,
+};
 /** A word, as far as a copied one is told: a run of Latin letters | digits with `.` `_` `-` only between them (how a
  *  name, a file name, an identifier is written: "Node.js", "max_retries", "no-cache"; the period that ends a
  *  sentence is no part of the word before it), or a run of letters of the other scripts. Latin letters and others
@@ -206,11 +214,15 @@ function unquoted(text: string): string | null {
 }
 
 // `answer` says what `original` (the piece as written) says already: the same text, or, when the run reads the source
-// off the text (`sourceRead`), nearly the same (`NEAR_SAME`)
+// off the text (`sourceRead`) and the piece is long enough for it to say something (`NEAR_SAME_MIN_CHARS`), nearly
+// the same (`NEAR_SAME`)
 function isThePiece(answer: string, original: string, sourceRead: boolean): boolean {
   const said = folded(answer);
   const written = folded(original);
-  return said === written || (sourceRead && similarity(said, written) >= NEAR_SAME);
+  if (said === written) return true;
+  if (!sourceRead) return false;
+  const least = mostlyCjk(written) ? NEAR_SAME_MIN_CHARS.dense : NEAR_SAME_MIN_CHARS.alphabetic;
+  return written.length >= least && similarity(said, written) >= NEAR_SAME;
 }
 
 // what two texts are compared by: NFC, any run of whitespace as one space, none around
