@@ -485,16 +485,14 @@ describe("refresh", () => {
     expect(asked).toHaveBeenCalledOnce();
     // the same from the menu of the empty part of the tree
     api.probe.project.add("lost-too.md", "x");
-    root
-      .querySelector('[role="tree"]')
-      ?.dispatchEvent(
-        new MouseEvent("contextmenu", {
-          bubbles: true,
-          cancelable: true,
-          clientX: 10,
-          clientY: 10,
-        }),
-      );
+    root.querySelector('[role="tree"]')?.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 10,
+        clientY: 10,
+      }),
+    );
     await tick();
     const entry = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
       (item) => item.textContent?.trim() === "Refresh",
