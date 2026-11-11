@@ -69,6 +69,8 @@
 
   /** The keys of Refresh as the keyboard map has them now (`null`: none). */
   const refreshKeys = $derived(keyHint("explorer.refresh"));
+  /** The folder is being read again (the Refresh button shows it). */
+  const refreshing = $derived(store.refreshing.status === "reading");
   const badges = $derived(registry.visible("treeBadge", conditions.current));
   /** What plugins know about included projects (git: the branch after the node's name). */
   const facts = $derived(registry.visible("projectFacts", conditions.current));
@@ -677,13 +679,16 @@
     >
       <ChevronsDownUp size={15} />
     </button>
+    <!-- stays enabled while it works (a disabled button would drop the keyboard focus): the store takes one ask at a
+         time -->
     <button
       type="button"
-      class="icon"
+      class={["icon", refreshing && "is-busy"]}
       title={refreshKeys === null
         ? t("explorer.refresh")
         : `${t("explorer.refresh")} (${refreshKeys})`}
       aria-label={t("explorer.refresh")}
+      aria-busy={refreshing}
       onclick={() => void store.refresh()}
     >
       <RefreshCw size={15} />
@@ -1014,6 +1019,20 @@
   .icon.is-on {
     background: var(--hover);
     color: var(--text);
+  }
+  /* working: the icon is drawn in the text color, and turns where motion is welcome */
+  .icon.is-busy {
+    color: var(--text);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .icon.is-busy :global(svg) {
+      animation: pm-explorer-turn 0.9s linear infinite;
+    }
+  }
+  @keyframes pm-explorer-turn {
+    to {
+      transform: rotate(360deg);
+    }
   }
   .list {
     position: relative;

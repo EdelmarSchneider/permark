@@ -292,6 +292,37 @@ describe("the listener", () => {
     window.dispatchEvent(after);
     expect(after.defaultPrevented).toBe(false);
   });
+
+  it("a held key runs Refresh once: its repeats are taken and run nothing; a command that steps follows the key", () => {
+    const refresh = vi.fn();
+    const next = vi.fn();
+    const commands = [
+      command("explorer.refresh", { run: refresh }),
+      command("doc.nextChange", { run: next }),
+    ];
+    let now = env(commands, { "explorer.refresh": "F5", "doc.nextChange": "F7" });
+    const stop = installKeys(window, () => now);
+    window.dispatchEvent(press({ key: "F5" }));
+    for (let n = 0; n < 3; n += 1) {
+      const held = press({ key: "F5", repeat: true });
+      window.dispatchEvent(held);
+      expect(held.defaultPrevented).toBe(true);
+    }
+    expect(refresh).toHaveBeenCalledOnce();
+    // released and pressed again
+    window.dispatchEvent(press({ key: "F5" }));
+    expect(refresh).toHaveBeenCalledTimes(2);
+    // the same on a key the person gave it: taken (never the webview's own reload), not run
+    now = env(commands, { "explorer.refresh": "Mod+r", "doc.nextChange": "F7" });
+    const other = press({ key: "r", ctrlKey: true, repeat: true });
+    window.dispatchEvent(other);
+    expect(other.defaultPrevented).toBe(true);
+    expect(refresh).toHaveBeenCalledTimes(2);
+    window.dispatchEvent(press({ key: "F7" }));
+    window.dispatchEvent(press({ key: "F7", repeat: true }));
+    expect(next).toHaveBeenCalledTimes(2);
+    stop();
+  });
 });
 
 describe("mouse side buttons", () => {

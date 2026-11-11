@@ -361,16 +361,22 @@ impl Watcher {
         let mut polled = lock(&self.shared.polled);
         match document {
             Some(path) => {
-                // seed the signature: the first poll must not report a change that is none. Only while polling: with
-                // live updates a signature says "already reported", and a file shown before the events of its write
-                // had their quiet moment (a new file the app made and opens at once) would never be news
-                if polling {
-                    if let (Some(vp), Ok(meta)) = (
-                        self.shared.vault.relativize(path),
-                        std::fs::symlink_metadata(path),
-                    ) {
-                        if let Some(sig) = sig_of(path, &meta) {
-                            self.shared.sigs.set(key_of(vp.as_str()), vp.as_str(), sig);
+                if let (Some(vp), Ok(meta)) = (
+                    self.shared.vault.relativize(path),
+                    std::fs::symlink_metadata(path),
+                ) {
+                    let (key, sigs) = (key_of(vp.as_str()), &self.shared.sigs);
+                    // with live updates what the watch holds for the path stays: the file is read only for a path
+                    // it knows nothing of
+                    if polling || sigs.get(&key).is_none() {
+                        match sig_of(path, &meta) {
+                            // nothing but the polls tells of the file: what the window read is what is known, and
+                            // the first poll must not report a change that is none
+                            Some(sig) if polling => sigs.set(key, vp.as_str(), sig),
+                            // the window's reading tells the subscribers nothing: kept apart from what the watch
+                            // told (a new file the app made and shows at once is still to be news)
+                            Some(sig) => sigs.note_read(key, vp.as_str(), sig),
+                            None => {}
                         }
                     }
                 }
@@ -393,6 +399,12 @@ impl Watcher {
     #[cfg(test)]
     pub(crate) fn inject(&self, hint: Pending) {
         let _ = self.tx.send(Msg::Hint(hint));
+    }
+
+    /// Test hook: live updates stop, as when the OS watch fails with the project folder out of reach.
+    #[cfg(test)]
+    pub(crate) fn stop_live(&self) {
+        self.shared.set_unavailable("watchFailed");
     }
 }
 

@@ -130,6 +130,10 @@ export function isTypingTarget(target: EventTarget | null): boolean {
   );
 }
 
+/** Commands a held key runs once: its repeats are still the command's (taken), and run nothing. Reading the project
+ * folder again once per repeat would queue one walk of the disk after another. */
+const ONCE_PER_PRESS: ReadonlySet<string> = new Set(["explorer.refresh"]);
+
 /** Listens on `target` until the returned function is called. A reload key no command takes is taken all the same:
  * it is never left to the webview. */
 export function installKeys(
@@ -144,6 +148,7 @@ export function installKeys(
       return;
     }
     event.preventDefault();
+    if (event.repeat && ONCE_PER_PRESS.has(decision.command.id)) return;
     runSafely(decision.command);
   };
   target.addEventListener("keydown", onKey);

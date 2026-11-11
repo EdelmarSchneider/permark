@@ -137,6 +137,13 @@ fn has(changes: &[Change], path: &str, kind: &ChangeKind) -> bool {
     changes.iter().any(|c| c.path == path && &c.kind == kind)
 }
 
+/// Writes the new file `name` and waits for its report: by then the watch has looked at everything that happened
+/// before it (the OS reports in order). Returns all that was reported so far.
+fn fence(f: &Fx, name: &str) -> Vec<Change> {
+    fs::write(f.dir.path().join(name), name).unwrap();
+    wait_for(&f.seen, name, |c| c.iter().any(|c| c.path == name))
+}
+
 /// A file someone wrote is news (macOS may report a file the watch never read as created).
 fn wrote(changes: &[Change], path: &str) -> bool {
     changes
@@ -525,22 +532,18 @@ fn nothing_is_reported_for_a_touched_but_unchanged_tree() {
     let f = make(&["a.md", "docs/b.md"], true);
     // a new file written after the touches: once it is reported, the touches before it were looked at (the OS reports
     // in order). Run 39550333941 (macOS) waited 500 ms instead: the first touches came after it, as "created".
-    let fence = |name: &str| {
-        fs::write(f.dir.path().join(name), name).unwrap();
-        wait_for(&f.seen, name, |c| c.iter().any(|c| c.path == name))
-    };
     for p in ["a.md", "docs/b.md"] {
         let bytes = fs::read(f.dir.path().join(p)).unwrap();
         fs::write(f.dir.path().join(p), bytes).unwrap();
     }
-    let all = fence("fence1.md");
+    let all = fence(&f, "fence1.md");
     // the first sight of a file cannot be told from a change; a second identical write must be silent
     f.seen.lock().unwrap().clear();
     for p in ["a.md", "docs/b.md"] {
         let bytes = fs::read(f.dir.path().join(p)).unwrap();
         fs::write(f.dir.path().join(p), bytes).unwrap();
     }
-    let again = fence("fence2.md");
+    let again = fence(&f, "fence2.md");
     assert!(
         again.iter().all(|c| c.path.starts_with("fence")),
         "first: {all:?}, again: {again:?}"
@@ -821,8 +824,7 @@ fn a_file_made_through_the_projects_own_editor_is_listed_before_the_watch_report
     let sink = Arc::new(Recorder::default());
     let env = project_env(base.path(), &seen, sink.clone());
     let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
-    core.explorer().open_view("w", Some(TreeFilter::default()));
-    std::thread::sleep(Duration::from_millis(200));
+    tree_shown(&core, &seen);
     sink.take();
     // the editor plugins get (a document written back at its path): the tree is told with the write, not by the watch,
     // whose report waits for a quiet moment
@@ -844,6 +846,17 @@ fn a_file_made_through_the_projects_own_editor_is_listed_before_the_watch_report
         _ => false,
     });
     assert!(told, "the window is told");
+}
+
+/// The project's tree as window `w` shows it: built, and the OS watch settled (what it still tells of the time before
+/// it began is waited out and forgotten).
+fn tree_shown(core: &ProjectCore, seen: &Seen) {
+    core.explorer().open_view("w", Some(TreeFilter::default()));
+    assert!(
+        core.explorer().wait_built(Duration::from_secs(30)),
+        "the tree is built"
+    );
+    settle(seen);
 }
 
 /// A new file written through the project's editor with nothing but the watch to tell the tree: the write is
@@ -882,8 +895,7 @@ fn a_file_the_editor_creates_reaches_the_tree_through_the_real_watch_as_the_apps
     let seen: Seen = Arc::default();
     let env = project_env(base.path(), &seen, Arc::new(Recorder::default()));
     let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
-    core.explorer().open_view("w", Some(TreeFilter::default()));
-    std::thread::sleep(Duration::from_millis(200));
+    tree_shown(&core, &seen);
     // in a folder, a name with two dots; at the top of the project; a taken name (`(2)`)
     let copy = write_beside(
         &core,
@@ -925,8 +937,7 @@ fn a_new_file_the_window_shows_before_the_watch_reports_it_is_still_news() {
     let seen: Seen = Arc::default();
     let env = project_env(base.path(), &seen, Arc::new(Recorder::default()));
     let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
-    core.explorer().open_view("w", Some(TreeFilter::default()));
-    std::thread::sleep(Duration::from_millis(200));
+    tree_shown(&core, &seen);
     // the app writes a translated copy and shows it at once: the window names its document while the events of the
     // write still wait for their quiet moment
     let copy = write_beside(
@@ -960,6 +971,214 @@ fn a_change_of_the_document_the_window_shows_again_before_the_watch_reports_it_i
     });
 }
 
+// ---- live updates, a document shown that the watch never reported ----------------------------------------------------
+
+/// Long enough for two file operations made one after the other to be looked at together.
+const TOGETHER: Timing = Timing {
+    quiet: Duration::from_millis(300),
+    max: Duration::from_secs(3),
+    ..FAST
+};
+
+/// A watch with live updates and the file `name` shown in window `w`, as when the app opens a document: the watch
+/// has told nothing about it.
+fn shown(files: &[&str], name: &str, timing: Timing) -> (Fx, PathBuf) {
+    let f = make_with(files, true, timing);
+    assert_eq!(f.watcher.status(), LiveStatus::Available);
+    let doc = f.dir.path().join(name);
+    f.watcher.poll_document("w", Some(&doc));
+    (f, doc)
+}
+
+fn told<'a>(changes: &'a [Change], path: &str) -> Vec<&'a Change> {
+    changes.iter().filter(|c| c.path == path).collect()
+}
+
+#[test]
+fn showing_a_document_reports_nothing_by_itself() {
+    let (f, _doc) = shown(&["a.md", "pic.png"], "a.md", FAST);
+    f.watcher
+        .poll_document("v", Some(&f.dir.path().join("pic.png")));
+    // shown again (the window names its document more than once), and no longer shown
+    f.watcher
+        .poll_document("w", Some(&f.dir.path().join("a.md")));
+    f.watcher.poll_document("v", None);
+    let all = fence(&f, "fence.md");
+    assert!(all.iter().all(|c| c.path == "fence.md"), "{all:?}");
+}
+
+#[test]
+fn an_outside_change_of_a_shown_document_is_one_modified_saved_in_place_or_by_replacing_the_file() {
+    for atomic in [false, true] {
+        let (f, doc) = shown(&["a.md"], "a.md", FAST);
+        if atomic {
+            write_atomic(&doc, b"another program saved").unwrap();
+        } else {
+            fs::write(&doc, "another program saved").unwrap();
+        }
+        let all = wait_for(&f.seen, "the change", |c| {
+            c.iter().any(|c| c.path == "a.md")
+        });
+        let told = told(&all, "a.md");
+        assert_eq!(told.len(), 1, "atomic {atomic}: {all:?}");
+        assert_eq!(
+            told[0].kind,
+            ChangeKind::Modified,
+            "the window read the file before: it was there (atomic {atomic})"
+        );
+        assert!(!told[0].own);
+    }
+}
+
+#[test]
+fn a_shown_document_another_program_deletes_is_one_removed() {
+    let (f, doc) = shown(&["a.md"], "a.md", FAST);
+    fs::remove_file(&doc).unwrap();
+    let all = wait_for(&f.seen, "the removal", |c| {
+        c.iter().any(|c| c.path == "a.md")
+    });
+    let told = told(&all, "a.md");
+    assert_eq!(told.len(), 1, "{all:?}");
+    assert_eq!(told[0].kind, ChangeKind::Removed);
+    assert!(!told[0].is_dir && !told[0].own);
+}
+
+#[test]
+fn a_shown_document_moved_by_copy_and_delete_is_one_renamed() {
+    // no rename is reported (another volume in between, a sync client): a creation with the content the window read
+    // and the removal of the shown file are one move
+    let (f, doc) = shown(&["docs/", "a.md"], "a.md", TOGETHER);
+    let bytes = fs::read(&doc).unwrap();
+    fs::write(f.dir.path().join("docs/b.md"), bytes).unwrap();
+    fs::remove_file(&doc).unwrap();
+    let all = wait_for(&f.seen, "both ends", |c| {
+        c.iter().any(|c| c.path == "docs/b.md")
+            && c.iter().any(|c| {
+                c.path == "a.md"
+                    || c.kind
+                        == ChangeKind::Renamed {
+                            from: "a.md".to_owned(),
+                        }
+            })
+    });
+    assert_eq!(all.len(), 1, "{all:?}");
+    assert_eq!(all[0].path, "docs/b.md");
+    assert_eq!(
+        all[0].kind,
+        ChangeKind::Renamed {
+            from: "a.md".to_owned()
+        }
+    );
+}
+
+#[test]
+fn a_touch_of_a_shown_picture_that_leaves_its_bytes_is_no_news() {
+    // a sync client | a virus scan: the same bytes, a new time. Pictures are told apart by size + time: a report
+    // would make the viewer load the unchanged picture again
+    let (f, pic) = shown(&["pic.png"], "pic.png", FAST);
+    let later = std::time::SystemTime::now() + Duration::from_secs(90);
+    fs::File::options()
+        .write(true)
+        .open(&pic)
+        .unwrap()
+        .set_modified(later)
+        .unwrap();
+    let all = fence(&f, "fence1.md");
+    assert!(all.iter().all(|c| c.path == "fence1.md"), "{all:?}");
+    // the same bytes written again, in place
+    fs::write(&pic, fs::read(&pic).unwrap()).unwrap();
+    let all = fence(&f, "fence2.md");
+    assert!(all.iter().all(|c| c.path.starts_with("fence")), "{all:?}");
+}
+
+#[test]
+fn the_apps_own_save_of_a_shown_document_is_marked_own() {
+    let (f, doc) = shown(&["a.md"], "a.md", FAST);
+    let bytes = b"saved by the person in the app";
+    f.watcher.own().expect_write("a.md", hash(bytes));
+    write_atomic(&doc, bytes).unwrap();
+    let all = wait_for(&f.seen, "the save", |c| c.iter().any(|c| c.path == "a.md"));
+    let told = told(&all, "a.md");
+    assert_eq!(told.len(), 1, "{all:?}");
+    assert!(told[0].own, "not an outside change: {all:?}");
+    assert_eq!(told[0].kind, ChangeKind::Modified);
+}
+
+#[test]
+fn when_live_updates_stop_the_first_poll_of_a_shown_unchanged_document_reports_nothing() {
+    let (f, doc) = shown(&["a.md"], "a.md", FAST);
+    f.watcher.stop_live();
+    assert_eq!(
+        f.watcher.status(),
+        LiveStatus::Unavailable {
+            reason: "watchFailed".to_owned()
+        }
+    );
+    // several polls go by
+    let heard = quiet_for(&f.seen, 400);
+    assert!(heard.is_empty(), "silent: {heard:?}");
+    // shown again while polling: still nothing
+    f.watcher.poll_document("w", Some(&doc));
+    let heard = quiet_for(&f.seen, 300);
+    assert!(heard.is_empty(), "silent: {heard:?}");
+    // a change is told once
+    fs::write(&doc, "changed while polling").unwrap();
+    wait_for(&f.seen, "the change", |c| {
+        has(c, "a.md", &ChangeKind::Modified)
+    });
+    let after = quiet_for(&f.seen, 300);
+    assert_eq!(told(&after, "a.md").len(), 1, "{after:?}");
+}
+
+#[test]
+fn a_shown_document_another_program_moves_without_a_rename_report_is_followed_by_its_window() {
+    use crate::document::{DocChange, DocumentChanged};
+    let base = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fs::create_dir_all(project.path().join("docs")).unwrap();
+    fs::write(project.path().join("a.md"), "# A\n\nmoved along\n").unwrap();
+    let seen: Seen = Arc::default();
+    let sink = Arc::new(Recorder::default());
+    let env = project_env(base.path(), &seen, sink.clone());
+    let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
+    tree_shown(&core, &seen);
+    // the window opens the document, as the app does
+    let formats = core.formats();
+    core.documents().open("w", "a.md", &[], &formats).unwrap();
+    core.watcher()
+        .poll_document("w", Some(&project.path().join("a.md")));
+    sink.take();
+    fs::copy(
+        project.path().join("a.md"),
+        project.path().join("docs/b.md"),
+    )
+    .unwrap();
+    fs::remove_file(project.path().join("a.md")).unwrap();
+    let started = Instant::now();
+    let heard: DocumentChanged = loop {
+        let event = sink.take().into_iter().find_map(|e| match e {
+            CoreEvent::DocumentChanged(c) if c.window == "w" => Some(c),
+            _ => None,
+        });
+        if let Some(event) = event {
+            break event;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "the window hears of its document"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(heard.path, "a.md");
+    assert_eq!(
+        heard.change,
+        DocChange::Deleted {
+            moved_to: Some("docs/b.md".to_owned())
+        },
+        "the window goes where the file went"
+    );
+}
+
 #[test]
 fn a_rescan_lists_what_no_report_told() {
     let dir = tempfile::tempdir().unwrap();
@@ -991,7 +1210,6 @@ fn a_rescan_lists_what_no_report_told() {
     fs::create_dir_all(dir.path().join("Docs")).unwrap();
     fs::write(dir.path().join("Docs/new.md"), "new").unwrap();
     fs::remove_file(dir.path().join("a.md")).unwrap();
-    std::thread::sleep(Duration::from_millis(200));
     assert!(explorer.listed("Docs/new.md").is_none(), "nobody told");
     assert!(explorer.listed("a.md").is_some());
     watcher.rescan();
@@ -1027,9 +1245,7 @@ fn a_project_refresh_asks_every_part_to_read_the_folder_again() {
     let seen: Seen = Arc::default();
     let env = project_env(base.path(), &seen, Arc::new(Recorder::default()));
     let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
-    core.explorer().open_view("w", Some(TreeFilter::default()));
-    std::thread::sleep(Duration::from_millis(200));
-    assert!(seen.lock().unwrap().iter().all(|b| !b.rescan));
+    tree_shown(&core, &seen);
     core.refresh();
     let started = Instant::now();
     while !seen.lock().unwrap().iter().any(|b| b.rescan && b.bulk) {

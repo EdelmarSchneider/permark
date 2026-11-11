@@ -501,6 +501,26 @@ describe("refresh", () => {
     await vi.waitFor(() => expect(row(root, "lost-too.md")).toBeTruthy());
     expect(asked).toHaveBeenCalledTimes(2);
   });
+
+  it("the toolbar button shows it is working until the list is told, and asks once however often it is pressed", async () => {
+    const { api, root } = await render();
+    // the real backend answers at once and tells the list after its walk (the mock tells before it answers)
+    const asked = vi.spyOn(api, "treeRefresh").mockResolvedValue({ ok: true, value: null });
+    const button = root.querySelector<HTMLElement>('.bar button[aria-label="Refresh"]');
+    expect(button?.getAttribute("aria-busy")).toBe("false");
+    button?.click();
+    button?.click();
+    await tick();
+    expect(button?.getAttribute("aria-busy")).toBe("true");
+    expect(button?.classList.contains("is-busy")).toBe(true);
+    expect(asked).toHaveBeenCalledOnce();
+    // the folder was read: the window is told its list
+    asked.mockRestore();
+    await api.treeRefresh();
+    await tick();
+    expect(button?.getAttribute("aria-busy")).toBe("false");
+    expect(button?.classList.contains("is-busy")).toBe(false);
+  });
 });
 
 describe("move dialog", () => {

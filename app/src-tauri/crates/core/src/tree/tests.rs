@@ -836,6 +836,82 @@ fn a_folder_with_too_many_entries_is_listed_unopened_until_asked() {
 }
 
 #[test]
+fn folders_the_person_opened_stay_open_when_the_tree_is_read_again() {
+    let f = fixture(&[
+        ".gitignore",
+        "build/out.md",
+        "build/deep/x.md",
+        "gone/y.md",
+        "a.md",
+    ]);
+    fs::write(f.dir.path().join(".gitignore"), "build/\ngone/\n").unwrap();
+    let big = f.dir.path().join("big");
+    fs::create_dir(&big).unwrap();
+    for n in 0..=LARGE_FOLDER {
+        fs::write(big.join(format!("f{n}.md")), "").unwrap();
+    }
+    let rescan = || {
+        f.explorer.apply_batch(&FsBatch {
+            rescan: true,
+            ..FsBatch::default()
+        });
+    };
+    let listed = |path: &str| f.explorer.listed(path);
+    let open = Some(NodeKind::Dir { unlisted: None });
+    f.explorer.open_view(
+        "w",
+        Some(TreeFilter {
+            show_ignored: true,
+            ..everything()
+        }),
+    );
+    // a large folder, an ignored one, an ignored one inside it, one that goes away
+    for folder in ["big", "build", "build/deep", "gone"] {
+        f.explorer.open_folder(folder).unwrap();
+    }
+    // meanwhile, with no report: a file in each opened folder, one opened folder deleted
+    fs::write(big.join("new.md"), "").unwrap();
+    fs::write(f.dir.path().join("build/new.md"), "").unwrap();
+    fs::remove_dir_all(f.dir.path().join("gone")).unwrap();
+    f.sink.take();
+    rescan();
+    assert_eq!(listed("big"), open, "the large folder stays open");
+    assert!(listed("big/f0.md").is_some() && listed("big/new.md").is_some());
+    assert_eq!(listed("build"), open, "the ignored folder stays open");
+    assert!(f.explorer.opened_ignored("build"));
+    assert!(listed("build/out.md").is_some() && listed("build/new.md").is_some());
+    assert_eq!(listed("build/deep"), open, "and the one opened inside it");
+    assert!(listed("build/deep/x.md").is_some());
+    assert!(listed("gone").is_none() && listed("gone/y.md").is_none());
+    // the window hears what differs on disk, not folders closing
+    let told = deltas(&f, "w");
+    let removed: Vec<&str> = told
+        .iter()
+        .flat_map(|d| d.removed.iter().map(String::as_str))
+        .collect();
+    let added: Vec<&str> = told
+        .iter()
+        .flat_map(|d| d.added.iter().map(|a| a.node.path.as_str()))
+        .collect();
+    assert_eq!(removed, ["gone", "gone/y.md"]);
+    assert_eq!(added, ["big/new.md", "build/new.md"]);
+    // read again: still open
+    rescan();
+    assert_eq!(listed("big"), open);
+    assert_eq!(listed("build/deep"), open);
+    // a folder that comes back where the deleted one was is a new folder: closed
+    write(f.dir.path(), "gone/z.md");
+    rescan();
+    assert_eq!(
+        listed("gone"),
+        Some(NodeKind::Dir {
+            unlisted: Some(Unlisted::Ignored)
+        })
+    );
+    assert!(listed("gone/z.md").is_none());
+}
+
+#[test]
 fn exactly_the_limit_is_listed() {
     let f = fixture(&[]);
     let dir = f.dir.path().join("exact");
@@ -987,6 +1063,49 @@ fn a_change_that_shows_nothing_sends_nothing_but_counts_change_when_a_file_is_hi
     assert_eq!((delta.total_files, delta.shown_files), (2, 1));
     f.explorer.sync_paths(&["code.rs".to_owned()], &[]);
     assert!(deltas(&f, "w").is_empty(), "nothing changed, nothing sent");
+}
+
+#[test]
+fn reading_the_disk_again_tells_every_window_also_when_nothing_differs() {
+    let f = fixture(&["a.md", "docs/b.md"]);
+    let first = f.explorer.open_view("w", Some(everything()));
+    f.explorer.open_view("v", None);
+    f.sink.take();
+    f.explorer.apply_batch(&FsBatch {
+        rescan: true,
+        bulk: true,
+        ..FsBatch::default()
+    });
+    let mut told: Vec<(String, TreeDelta)> = f
+        .sink
+        .take()
+        .into_iter()
+        .filter_map(|e| match e {
+            CoreEvent::TreeChanged(c) => Some((c.window, c.delta)),
+            _ => None,
+        })
+        .collect();
+    told.sort_by(|a, b| a.0.cmp(&b.0));
+    let windows: Vec<&str> = told.iter().map(|(window, _)| window.as_str()).collect();
+    assert_eq!(windows, ["v", "w"], "each window hears once");
+    for (window, delta) in &told {
+        assert!(delta.is_empty() && delta.filter.is_none(), "{window}");
+        assert!(delta.bulk);
+    }
+    let delta = &told[1].1;
+    assert_eq!(delta.seq, first.seq + 1, "the next of the window's list");
+    assert_eq!((delta.total_files, delta.shown_files), (2, 2));
+    // any other batch that changes nothing for a window tells it nothing
+    f.explorer.apply_batch(&FsBatch {
+        changes: vec![Change {
+            path: "a.md".to_owned(),
+            kind: ChangeKind::Modified,
+            is_dir: false,
+            own: false,
+        }],
+        ..FsBatch::default()
+    });
+    assert!(f.sink.take().is_empty(), "nothing differs, nothing told");
 }
 
 #[test]
