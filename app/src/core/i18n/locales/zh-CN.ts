@@ -2362,6 +2362,11 @@ export default {
   "localAi.test.cancelled": "测试已停止。",
   "localAi.test.closeLabel": "关闭 {name} 的测试",
   "localAi.review.busy": "请先完成当前的审阅",
+  "localAi.review.next": "下一条建议",
+  "localAi.review.prev": "上一条建议",
+  "localAi.review.allReviewed": "已全部审阅。",
+  "localAi.review.locked.one": "{n} 个部分只能在源码中修改。",
+  "localAi.review.locked.other": "{n} 个部分只能在源码中修改。",
   // ---- correction (plugin `correction`)
   "plugin.correction.name": "校对",
   "plugin.correction.about":

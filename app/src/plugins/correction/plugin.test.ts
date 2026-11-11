@@ -45,7 +45,14 @@ describe("plugin correction", () => {
         .of("shortcut")
         .map((s) => `${s.command} ${s.keys}`)
         .sort(),
-    ).toEqual(["correction.correct Mod+Alt+k", "correction.next F7", "correction.prev Shift+F7"]);
+    ).toEqual(["correction.correct Mod+Alt+k"]);
+    // stepping through the suggestions is not its own: one pair of commands for whichever review is open
+    expect(
+      registry
+        .of("command")
+        .map((c) => c.id)
+        .sort(),
+    ).toEqual(["correction.correct", "correction.correctDocument"]);
     expect(host.disable("correction"), "contributions left after deactivate").toBe(0);
     expect(registry.items).toHaveLength(0);
     expect(correction.available).toBe(false);
@@ -94,6 +101,8 @@ describe("plugin correction", () => {
       discarded: 0,
       same: 0,
       outdated: 0,
+      locked: 0,
+      total: 1,
     };
     expect(correction.blocked).toBe(true);
     expect(state()).toEqual(Array(3).fill("Finish the current review first"));

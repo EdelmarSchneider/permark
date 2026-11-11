@@ -34,6 +34,19 @@ describe("every key with every plugin on", () => {
         expect(map.owners.get(combo)?.length, `${combo} mac=${mac}`).toBe(2);
       }
       expect(conflicts(map, requiresOf), `mac=${mac}`).toEqual([]);
+      // next | previous suggestion while editing: one pair of commands for whichever plugin's review is open
+      // (correction's | translation's), beside the reading view's next | previous change (narrower: never a conflict)
+      expect(map.owners.get("F7"), `mac=${mac}`).toEqual([
+        "doc.nextChange",
+        "local-ai.nextSuggestion",
+      ]);
+      expect(map.owners.get("Shift+F7"), `mac=${mac}`).toEqual([
+        "doc.prevChange",
+        "local-ai.prevSuggestion",
+      ]);
+      // translate where the caret is: Mod+Alt+t never reaches the app on Linux desktops (it opens a terminal)
+      expect(map.owners.get("Mod+Alt+r"), `mac=${mac}`).toEqual(["translation.here"]);
+      expect(map.owners.get("Mod+Alt+t"), `mac=${mac}`).toBeUndefined();
       expect(map.owners.get("Mod+Shift+s")).toEqual(["notes.moveToProject"]);
       expect(requiresOf("notes.moveToProject")).toEqual({
         needs: [{ need: "workspace", kinds: ["notes"] }],

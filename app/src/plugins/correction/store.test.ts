@@ -59,6 +59,7 @@ function fakeSession(initial: string): Fake {
         fake.text = fake.text.slice(0, e.from) + e.insert + fake.text.slice(e.to);
       return true;
     },
+    changeable: ({ from, to }) => fake.text.slice(from, to) !== fake.locked,
     reveal: (range) => void fake.revealed.push(range),
     marks: (ranges, current, pick) => {
       fake.marked.push({ ranges: [...ranges], current });
@@ -330,24 +331,56 @@ describe("the review", () => {
     expect(session.text).toBe(DOC);
   });
 
-  it("accept all: an edit the editor refuses drops only that one, the others go in", async () => {
+  it("accept all: an edit the editor refuses drops only that one, the others go in as one edit", async () => {
     await reviewed();
+    // refused once the answers were there (what could not change before the run was never sent)
     session.locked = "teh";
     store.acceptAll();
     expect(session.text).toBe(
       "I have a cat.\n\n```\nteh code\n```\n\nShe receives mail from teh office.\n",
     );
+    // one edit = one undo step, however many were refused
+    expect(session.applied).toHaveLength(1);
+    expect(session.applied[0]?.map((edit) => edit.insert)).toEqual(["have", "receives"]);
     expect(suggestions()).toEqual([]);
-    expect(store.review?.outdated).toBe(1);
-    // refused in the middle: the rest go in, the review ends
+    expect(store.review).toMatchObject({ outdated: 1, total: 3 });
+    // refused in the middle: the rest go in, and the bar stays to say one did not
     session.text = DOC;
     session.locked = "recieve";
+    session.applied = [];
     await reviewed();
     store.acceptAll();
     expect(session.text).toBe(
       "I have a cat.\n\n```\nteh code\n```\n\nShe recieve mail from the office.\n",
     );
-    expect(store.state.kind).toBe("closed");
+    expect(session.applied).toHaveLength(1);
+    expect(suggestions()).toEqual([]);
+    expect(store.review).toMatchObject({ outdated: 1, total: 3 });
+  });
+
+  it("accept all: every edit refused -> none goes in, all are counted", async () => {
+    await reviewed();
+    session.refuse = true;
+    store.acceptAll();
+    expect(session.text).toBe(DOC);
+    expect(session.applied).toEqual([]);
+    expect(suggestions()).toEqual([]);
+    expect(store.review?.outdated).toBe(3);
+  });
+
+  it("counts what the run found in all, whatever became of each suggestion since", async () => {
+    await store.runOver("document");
+    expect(store.review?.total).toBe(0);
+    answer(0, (t) => t.replace("has", "have"));
+    expect(store.review?.total).toBe(1);
+    answer(1, (t) => t.replace("recieve", "receives").replace("teh", "the"));
+    news({ kind: "done" });
+    store.reject();
+    store.accept();
+    session.type(session.text.indexOf("teh office"), "x");
+    store.sync();
+    expect(suggestions()).toEqual([]);
+    expect(store.review).toMatchObject({ total: 3, outdated: 1 });
   });
 
   it("accept all: a suggestion whose text no longer reads as found leaves the list and is counted", async () => {

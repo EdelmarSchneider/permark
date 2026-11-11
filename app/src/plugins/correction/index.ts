@@ -2,8 +2,8 @@
 // (plugin `local-ai`), every change reviewed before it lands. Dormant until a model is assigned: no button, no
 // palette entry, no key acts. Then, while editing, the entries of a piece review (`local-ai/pieces/entries.ts`): a
 // button with the mode switch (selection | this paragraph | whole document), Mod+Alt+K (selection, else the
-// paragraph; in review: the keyboard to the bar), F7 | Shift+F7 in review, and the review bar under the header. None
-// of them starts a run while another plugin's review is open.
+// paragraph; in review: the keyboard to the bar) and the review bar under the header. None of them starts a run while
+// another plugin's review is open. F7 | Shift+F7 in review are `local-ai`'s: one pair for whichever review is open.
 
 import SpellCheck from "@lucide/svelte/icons/spell-check";
 import { definePlugin } from "../../core/plugins/registry.svelte";
@@ -25,8 +25,6 @@ export default definePlugin({
       },
       here: { id: "correction.correct", label: "correction.command", keys: "Mod+Alt+k" },
       document: { id: "correction.correctDocument", label: "correction.commandDocument" },
-      next: { id: "correction.next", label: "correction.next", keys: "F7" },
-      prev: { id: "correction.prev", label: "correction.prev", keys: "Shift+F7" },
     });
     return () => {
       remove();

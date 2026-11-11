@@ -588,14 +588,32 @@ describe("edits handed to the editor on screen (correction)", () => {
     expect(none).toEqual([]);
   });
 
+  it("what an edit could change is the editor's to say; one that does not say takes any", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    const asked: unknown[] = [];
+    editor.changeable = (range, insert) => {
+      asked.push([range, insert]);
+      return range.from > 0;
+    };
+    expect(session.changeable({ from: 0, to: 1 })).toBe(false);
+    expect(session.changeable({ from: 2, to: 4 }, "X")).toBe(true);
+    expect(asked).toEqual([
+      [{ from: 0, to: 1 }, undefined],
+      [{ from: 2, to: 4 }, "X"],
+    ]);
+  });
+
   it("an editor without them (or none on screen) gives safe answers", async () => {
     const { session } = setup();
     expect(session.scope("document")).toBeNull();
     expect(session.apply([edit])).toBe(false);
     expect(session.composing()).toBe(false);
+    expect(session.changeable({ from: 0, to: 1 })).toBe(true);
     await open(session);
     expect(session.scope("paragraph")).toBeNull();
     expect(session.apply([edit])).toBe(false);
+    expect(session.changeable({ from: 0, to: 1 }, "X")).toBe(true);
     session.reveal({ from: 0, to: 1 });
     session.marks([{ from: 0, to: 1 }], 0, () => {});
     expect(session.markAt()).toBeNull();

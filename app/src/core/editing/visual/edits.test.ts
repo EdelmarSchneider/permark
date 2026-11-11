@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 import "./jsdomShims";
 import { undo } from "@milkdown/kit/prose/history";
-import { AllSelection, TextSelection } from "@milkdown/kit/prose/state";
+import { AllSelection, NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import { $prose } from "@milkdown/kit/utils";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Segment } from "../../../api/generated/Segment";
 import type { TextEdit } from "../session.svelte";
 import { buildDoc, compose, type Built, type Composed } from "./compose";
 import { createCore, type Core } from "./core";
-import { applyEdits, blockOf, docRange, scopeIn, selectRange } from "./edits";
+import { applyEdits, blockOf, changeable, docRange, scopeIn, selectRange } from "./edits";
 import { markAt, marksPlugin, setMarks } from "./marks";
 
 let core: Core;
@@ -133,6 +133,52 @@ describe("what a correction works on in the Edit-mode editor", () => {
   it("document: the whole text", async () => {
     await load(DOC);
     expect(scopeIn(core.view.state, now(), "document")).toEqual({ from: 0, to: DOC.length });
+  });
+});
+
+describe("what an edit could change in the Edit-mode editor", () => {
+  const TEXT = "One here.\n\nTwo there.\n\nMath $x_1\ny$ here.\n";
+
+  it("a range inside one block the editor writes; not between blocks, across two or in a locked block", async () => {
+    await load(TEXT);
+    const composed = now();
+    expect(changeable(core, composed, wordAt(TEXT, "One here."))).toBe(true);
+    expect(changeable(core, composed, wordAt(TEXT, "there"))).toBe(true);
+    const gap = TEXT.indexOf("\n\n");
+    expect(changeable(core, composed, { from: gap, to: gap + 1 })).toBe(false);
+    const across = { from: TEXT.indexOf("here."), to: TEXT.indexOf("Two") + 3 };
+    expect(changeable(core, composed, across)).toBe(false);
+    expect(changeable(core, composed, wordAt(TEXT, "Math"))).toBe(false);
+    expect(changeable(core, composed, wordAt(TEXT, "Math $x_1\ny$ here."))).toBe(false);
+  });
+
+  it("with the text to put there: what the edit itself would meet, and nothing is changed", async () => {
+    const text = "A list:\n\nSee r here.\n\n[r]: http://x\n";
+    await load(text);
+    const before = core.view.state.doc;
+    const taken = fix(text, "See", "Look");
+    // a link by reference | a paragraph turned into a heading: its block would read as something else
+    const refused = [fix(text, "r here", "[r] here"), fix(text, "A list:", "# A list:")];
+    expect(changeable(core, now(), taken, taken.insert)).toBe(true);
+    for (const edit of refused) {
+      // the place alone can be changed; this text cannot go there
+      expect(changeable(core, now(), edit)).toBe(true);
+      expect(changeable(core, now(), edit, edit.insert)).toBe(false);
+      expect(applyEdits(core, now(), [edit])).toBe(false);
+    }
+    expect(core.view.state.doc).toBe(before);
+    expect(applyEdits(core, now(), [taken])).toBe(true);
+  });
+
+  it("a locked block that is selected is a scope like any other: what may change in it is asked apart", async () => {
+    await load(TEXT);
+    const view = core.view;
+    const at = view.state.doc.child(0).nodeSize + view.state.doc.child(1).nodeSize;
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, at)));
+    const block = { from: TEXT.indexOf("Math"), to: TEXT.length - 1 };
+    expect(scopeIn(view.state, now(), "paragraph")).toEqual(block);
+    expect(scopeIn(view.state, now(), "selection")).toEqual(block);
+    expect(changeable(core, now(), block)).toBe(false);
   });
 });
 

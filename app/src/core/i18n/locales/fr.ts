@@ -2550,6 +2550,11 @@ export default {
   "localAi.test.cancelled": "Test arrêté.",
   "localAi.test.closeLabel": "Fermer le test de {name}",
   "localAi.review.busy": "Terminez d'abord la relecture en cours",
+  "localAi.review.next": "Suggestion suivante",
+  "localAi.review.prev": "Suggestion précédente",
+  "localAi.review.allReviewed": "Tout a été relu.",
+  "localAi.review.locked.one": "{n} partie ne peut être modifiée qu'en mode Source.",
+  "localAi.review.locked.other": "{n} parties ne peuvent être modifiées qu'en mode Source.",
   // ---- correction (plugin `correction`)
   "plugin.correction.name": "Correction",
   "plugin.correction.about":

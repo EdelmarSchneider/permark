@@ -2442,6 +2442,11 @@ const en = {
   "localAi.test.cancelled": "Test stopped.",
   "localAi.test.closeLabel": "Close the test of {name}",
   "localAi.review.busy": "Finish the current review first",
+  "localAi.review.next": "Next suggestion",
+  "localAi.review.prev": "Previous suggestion",
+  "localAi.review.allReviewed": "All reviewed.",
+  "localAi.review.locked.one": "{n} part can only be changed in Source.",
+  "localAi.review.locked.other": "{n} parts can only be changed in Source.",
   // ---- correction (plugin `correction`)
   "plugin.correction.name": "Correction",
   "plugin.correction.about":

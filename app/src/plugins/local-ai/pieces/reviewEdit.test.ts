@@ -5,13 +5,15 @@
 // answered yet, stay and still go into their own cell; so do suggestions around words typed elsewhere in their
 // paragraph. A change of a suggestion's own words, or of the word next to them, drops it.
 import "../../../core/editing/visual/jsdomShims";
+import { undo } from "@milkdown/kit/prose/history";
+import { NodeSelection } from "@milkdown/kit/prose/state";
 import { $prose } from "@milkdown/kit/utils";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createMockApi } from "../../../api/mock";
 import type { Segment } from "../../../api/generated/Segment";
 import { buildDoc, compose, type Built, type Composed } from "../../../core/editing/visual/compose";
 import { createCore, type Core } from "../../../core/editing/visual/core";
-import { applyEdits, scopeIn, selectRange } from "../../../core/editing/visual/edits";
+import { applyEdits, changeable, scopeIn, selectRange } from "../../../core/editing/visual/edits";
 import { markAt, marksPlugin, setMarks } from "../../../core/editing/visual/marks";
 import { PieceReview, type ReviewConfig, type Session } from "./review.svelte";
 import { pieces } from "./segment";
@@ -45,6 +47,7 @@ function editorSession(): Session {
     current: () => now().text,
     scope: (kind) => scopeIn(core.view.state, now(), kind),
     apply: (edits) => applyEdits(core, now(), edits),
+    changeable: (range, insert) => changeable(core, now(), range, insert),
     reveal: (range) => void selectRange(core.view, now(), range),
     marks: (ranges, current, pick) => setMarks(core.view, now(), ranges, current, pick),
     markAt: () => markAt(core.view.state),
@@ -79,16 +82,25 @@ function blocks(...runs: [first: number, last: number][]): Segment[] {
   }));
 }
 
-/** Opens `text` in the editor and starts a run over all of it. */
-async function reviewOf(text: string, segments: Segment[]): Promise<void> {
+/** What the backend was asked to run. */
+let runs: (typeof run)[] = [];
+
+/** Opens `text` in the editor, with a review of it that has not run yet. */
+async function opened(text: string, segments: Segment[]): Promise<void> {
   built = await buildDoc(core, text, segments);
   core.setDoc(built.doc);
   const mock = createMockApi();
   mock.probe.correction.stepMs = 1e9;
+  runs = mock.probe.correction.runs;
   store = new PieceReview(NAMED, mock, editorSession());
   await store.ask();
+}
+
+/** Opens `text` in the editor and starts a run over all of it. */
+async function reviewOf(text: string, segments: Segment[]): Promise<void> {
+  await opened(text, segments);
   await store.runOver("document");
-  const sent = mock.probe.correction.runs.at(-1);
+  const sent = runs.at(-1);
   if (!sent) throw new Error("no run sent");
   run = sent;
 }
@@ -199,6 +211,90 @@ describe("suggestions in the cells of one table, in the Edit-mode editor", () =>
     expect(shape(now().text)).toBe(
       shape(accepted.replace("other", "another").replace(/wrng(?!.*wrng)/s, "wrong")),
     );
+  });
+});
+
+describe("blocks the Edit-mode editor keeps as written", () => {
+  // an alert and a footnote's text: prose the reader shows, in blocks Edit mode does not write
+  const TEXT = [
+    "Frist line teh.",
+    "",
+    "> [!NOTE]",
+    "> Alert teh text.",
+    "",
+    "Scond line[^1].",
+    "",
+    "[^1]: Footnote teh text.",
+    "",
+  ].join("\n");
+  const SEGMENTS: Segment[] = [
+    { lineStart: 1, lineEnd: 1, kind: "paragraph", lock: null },
+    { lineStart: 3, lineEnd: 4, kind: "alert", lock: "kind" },
+    { lineStart: 6, lineEnd: 6, kind: "paragraph", lock: null },
+    { lineStart: 8, lineEnd: 8, kind: "footnote", lock: "footnote" },
+  ];
+
+  /** Selects the top-level block `index` as a click on a kept block does. */
+  function selectBlock(index: number): void {
+    const view = core.view;
+    let at = 0;
+    for (let i = 0; i < index; i++) at += view.state.doc.child(i).nodeSize;
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, at)));
+  }
+
+  it("their text is not sent: only what an accept could put in; the bar is told how many were left out", async () => {
+    await reviewOf(TEXT, SEGMENTS);
+    expect(run.pieces.map((piece) => piece.text)).toEqual(["Frist line teh.", "Scond line⟦1⟧."]);
+    expect(store.review).toMatchObject({ locked: 2, outdated: 0 });
+    answer("Frist line teh.", "Frist>First;teh>the");
+    answer("Scond line⟦1⟧.", "Scond>Second");
+    finish();
+    store.acceptAll();
+    expect(now().text).toBe(
+      TEXT.replace("Frist line teh", "First line the").replace("Scond", "Second"),
+    );
+    // nothing was refused when it came to putting it in
+    expect(store.state.kind).toBe("closed");
+  });
+
+  it("a run over one of them alone: nothing is sent, and that is what the bar is told", async () => {
+    await opened(TEXT, SEGMENTS);
+    for (const kind of ["paragraph", "selection"] as const) {
+      selectBlock(1);
+      await store.runOver(kind);
+      expect(store.state, kind).toEqual({ kind: "nothing", locked: 1 });
+    }
+    selectBlock(3);
+    await store.runHere();
+    expect(store.state).toEqual({ kind: "nothing", locked: 1 });
+    expect(runs).toEqual([]);
+  });
+});
+
+describe("accept all in the Edit-mode editor", () => {
+  const TEXT = "Frist line.\n\nSecond line teh.\n\nThird wrd here.\n\nLast lne.\n";
+
+  it("an edit the editor refuses costs the others nothing: they go in together, and one undo takes them all back", async () => {
+    await reviewOf(TEXT, blocks([1, 1], [3, 3], [5, 5], [7, 7]));
+    answer("Frist line.", "Frist>First");
+    // would turn its paragraph into a heading: the editor does not take an edit that changes what a block is
+    answer("Second line teh.", "Second># Second");
+    answer("Third wrd here.", "wrd>word");
+    answer("Last lne.", "lne>line");
+    finish();
+    expect(pending()).toHaveLength(4);
+    store.acceptAll();
+    const accepted = TEXT.replace("Frist", "First").replace("wrd", "word").replace("lne", "line");
+    expect(now().text).toBe(accepted);
+    // the refused one is gone from the list and counted; the bar stays to say so
+    expect(pending()).toEqual([]);
+    expect(store.review).toMatchObject({ outdated: 1, total: 4 });
+    const view = core.view;
+    expect(undo(view.state, view.dispatch)).toBe(true);
+    expect(now().text).toBe(TEXT);
+    expect(now().changed).toBe(0);
+    // nothing more to take back
+    expect(undo(view.state, view.dispatch)).toBe(false);
   });
 });
 

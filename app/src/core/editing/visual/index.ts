@@ -13,7 +13,7 @@ export {
   type LooksHost,
 } from "./core";
 export { LookBook, lockedLooks, type LockedRender } from "./lockedRender";
-export { applyEdits, blockOf, docRange, scopeIn, selectRange } from "./edits";
+export { applyEdits, blockOf, changeable, docRange, scopeIn, selectRange } from "./edits";
 export { markAt, marksPlugin, setMarks } from "./marks";
 export { editFinder } from "./find";
 export { emptyHint } from "./placeholder";

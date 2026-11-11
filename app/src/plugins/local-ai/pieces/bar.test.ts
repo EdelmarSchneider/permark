@@ -81,6 +81,8 @@ function state(patch: Partial<Review>): Review {
     discarded: 0,
     same: 0,
     outdated: 0,
+    locked: 0,
+    total: 0,
     ...patch,
   };
 }
@@ -111,7 +113,7 @@ afterEach(() => {
 
 describe("the piece review bar", () => {
   it("says the plugin's words: the bar's name, where the run stands, the notes, the actions", () => {
-    show({ kind: "nothing" });
+    show({ kind: "nothing", locked: 0 });
     expect(group()?.getAttribute("aria-label")).toBe(t("review.bar"));
     expect(said()).toContain(t("review.allDone"));
     show(state({ suggestions: [S1, S2], discarded: 1, outdated: 2 }));
@@ -160,6 +162,39 @@ describe("the piece review bar", () => {
     flushSync();
     show(state({ same: 3 }));
     expect(notes()).toEqual(["3 already in German"]);
+  });
+
+  it("parts the editor on screen cannot change: a note in the frame's own words; with nothing else to say, what the bar says", () => {
+    const notes = (): string[] =>
+      [...target.querySelectorAll("p.quiet")].map((note) => note.textContent ?? "");
+    show(state({ suggestions: [S1], total: 1, locked: 2, discarded: 1 }));
+    expect(notes()).toEqual(["2 parts can only be changed in Source.", tn("search.files", 1)]);
+    show(state({ suggestions: [S1], total: 1 }));
+    expect(notes()).toEqual([]);
+    // nothing was sent because of them: said in the place of the plugin's "nothing here"
+    show({ kind: "nothing", locked: 1 });
+    expect(target.querySelector('[role="status"]')?.textContent).toBe(
+      "1 part can only be changed in Source.",
+    );
+    expect(said()).not.toContain(t("review.allDone"));
+    expect(said()).toContain(t("review.done"));
+  });
+
+  it("the run's end with none left: the plugin's words when none was found, the frame's own when all are handled", () => {
+    const status = (): string => target.querySelector(".status")?.textContent ?? "";
+    show(state({}));
+    expect(status()).toBe(t("review.keptAll"));
+    show(state({ same: 2 }));
+    expect(status()).toBe(t("review.keptAll"));
+    // found, then accepted | rejected | left behind by the text
+    show(state({ total: 3, outdated: 1 }));
+    expect(status()).toBe("All reviewed.");
+    expect(target.querySelector("[aria-live]")?.textContent).toBe("All reviewed.");
+    show(state({ total: 3, suggestions: [S1] }));
+    expect(status()).toBe(tn("review.reviewing", 1));
+    // a stopped run says what it says
+    show(state({ status: { kind: "cancelled" }, total: 3 }));
+    expect(status()).toBe(tn("review.offer", 0));
   });
 
   it("an excerpt that stands on its own: drawn as the plugin draws it, no button of the frame around it", () => {

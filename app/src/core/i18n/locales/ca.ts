@@ -2518,6 +2518,11 @@ export default {
   "localAi.test.cancelled": "S'ha aturat la prova.",
   "localAi.test.closeLabel": "Tanca la prova de {name}",
   "localAi.review.busy": "Acabeu primer la revisió actual",
+  "localAi.review.next": "Suggeriment següent",
+  "localAi.review.prev": "Suggeriment anterior",
+  "localAi.review.allReviewed": "Tot revisat.",
+  "localAi.review.locked.one": "{n} part només es pot canviar al codi font.",
+  "localAi.review.locked.other": "{n} parts només es poden canviar al codi font.",
   // ---- correction (plugin `correction`)
   "plugin.correction.name": "Correcció",
   "plugin.correction.about":

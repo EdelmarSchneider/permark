@@ -2492,6 +2492,11 @@ export default {
   "localAi.test.cancelled": "Proba detida.",
   "localAi.test.closeLabel": "Pechar a proba de {name}",
   "localAi.review.busy": "Remate primeiro a revisión actual",
+  "localAi.review.next": "Suxestión seguinte",
+  "localAi.review.prev": "Suxestión anterior",
+  "localAi.review.allReviewed": "Todo revisado.",
+  "localAi.review.locked.one": "{n} parte só se pode cambiar en Fonte.",
+  "localAi.review.locked.other": "{n} partes só se poden cambiar en Fonte.",
   // ---- correction (plugin `correction`)
   "plugin.correction.name": "Corrección",
   "plugin.correction.about":

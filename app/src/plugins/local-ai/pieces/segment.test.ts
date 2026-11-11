@@ -186,6 +186,59 @@ describe("pieces", () => {
   });
 });
 
+describe("quote alerts", () => {
+  it("the marker that opens an alert is no part of a piece: the alert's text goes alone", () => {
+    const doc = "Intro teh.\n\n> [!NOTE]\n> Useful teh information.\n> More of it.\n";
+    const [, piece, ...rest] = pieces(doc);
+    expect(rest).toEqual([]);
+    expect(piece?.text).toBe("Useful teh information.\n⟦1⟧ More of it.");
+    expect(piece?.markers).toEqual([">"]);
+    expect(piece?.kind).toBe("quote");
+    expect(piece?.from).toBe(doc.indexOf("Useful"));
+    expect(piece && restore(piece.text, piece)).toBe(piece?.original);
+  });
+
+  it.each(["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION", "note", "Tip", "iMpOrTaNt"])(
+    "[!%s]: every kind the reader draws, in any letter case",
+    (kind) => {
+      const list = pieces(`> [!${kind}]\n> Teh text.\n`);
+      expect(texts(list)).toEqual(["Teh text."]);
+    },
+  );
+
+  it("a title after the marker is the first line of the text; the marker alone holds nothing to send", () => {
+    const [titled] = pieces("> [!WARNING] Teh title\n> Body teh.\n");
+    expect(titled?.text).toBe("Teh title\n⟦1⟧ Body teh.");
+    expect(titled?.original).toBe("Teh title\n> Body teh.");
+    expect(pieces("> [!NOTE]\n")).toEqual([]);
+    // a paragraph of its own after the marker's line
+    expect(texts(pieces("> [!TIP]\n>\n> Teh text.\n"))).toEqual(["Teh text."]);
+  });
+
+  it("in a list item and in a quote inside a quote", () => {
+    expect(texts(pieces("- > [!NOTE]\n  > Teh item text.\n"))).toEqual(["Teh item text."]);
+    expect(texts(pieces("> > [!TIP]\n> > Nested teh tip.\n"))).toEqual(["Nested teh tip."]);
+  });
+
+  it("the same text where the reader draws no alert stays text of its piece", () => {
+    for (const doc of [
+      // not one of the five kinds; no space | two after the `>`; not on the quote's first line
+      "> [!INFO]\n> Teh text.\n",
+      ">[!NOTE]\n> Teh text.\n",
+      ">  [!NOTE]\n> Teh text.\n",
+      "> Teh first.\n> [!NOTE]\n> More.\n",
+      // outside a quote
+      "[!NOTE]\nTeh text.\n",
+      "Teh [!NOTE] text.\n",
+    ]) {
+      const [piece] = pieces(doc);
+      expect(piece?.text, doc).toContain("[!");
+    }
+    // after the marker that opens an alert, the same text is text
+    expect(texts(pieces("> [!NOTE]\n> Teh [!NOTE] text.\n"))).toEqual(["Teh [!NOTE] text."]);
+  });
+});
+
 describe("table cells", () => {
   const TABLE = [
     "| Teh head | Size  |",

@@ -3,10 +3,12 @@
 // button, no palette entry, no key acts. Switched on: the review of this window follows the job's model
 // (`translation.available`) and reads the languages chosen before. Then, while editing, the entries of a piece review
 // (`local-ai/pieces/entries.ts`): a button with the mode switch (selection | this paragraph | whole document, then
-// the language translated into), Mod+Alt+T (selection, else the paragraph; in review: the keyboard to the bar), next
-// | previous translation in review, and the review bar under the header. A run with no language chosen yet opens the
-// language dialog first and starts on its confirm: nothing is translated into a language nobody picked. "Translate
-// to…" and the menu's language entry open the dialog to save the choice alone. Switched off: all of it is let go.
+// the language translated into), Mod+Alt+R (selection, else the paragraph; in review: the keyboard to the bar; not
+// Mod+Alt+T: Linux desktops open a terminal on it before the app sees it) and the review bar under the header; next |
+// previous translation in review are `local-ai`'s keys for whichever review is open. A run with no language chosen
+// yet opens the language dialog first and starts on its confirm: nothing is translated into a language nobody picked.
+// "Translate to…" and the menu's language entry open the dialog to save the choice alone. Switched off: all of it is
+// let go.
 
 import Languages from "@lucide/svelte/icons/languages";
 import { NO_REQUIREMENT } from "../../core/conditions/available";
@@ -66,10 +68,8 @@ export default definePlugin({
           paragraph: "translation.scope.paragraph",
           document: "translation.scope.document",
         },
-        here: { id: "translation.here", label: "translation.command", keys: "Mod+Alt+t" },
+        here: { id: "translation.here", label: "translation.command", keys: "Mod+Alt+r" },
         document: { id: "translation.document", label: "translation.commandDocument" },
-        next: { id: "translation.next", label: "translation.next" },
-        prev: { id: "translation.prev", label: "translation.prev" },
         start,
         more: () => [{ kind: "item", label: languageEntry(), run: () => languageDialog.ask() }],
       }),

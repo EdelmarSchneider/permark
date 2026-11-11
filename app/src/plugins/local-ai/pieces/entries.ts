@@ -1,9 +1,11 @@
 // The ways into a plugin's piece review, the same for every plugin that has one. Offered while a model is on the
 // plugin's job and the open document is edited: a button with the mode switch whose menu starts a run (selection |
 // this paragraph | whole document, then the plugin's own entries), the review bar under the header, and the commands:
-// "here" (the selection, else the paragraph; with suggestions to go through: the keyboard to the bar), the whole
-// document, next | previous suggestion while there are some. One review at a time in an editor: while another
-// plugin's is open the runs of this one are off (menu entries that say why, commands not offered, so their keys pass).
+// "here" (the selection, else the paragraph; with suggestions to go through: the keyboard to the bar) and the whole
+// document. One review at a time in an editor: while another plugin's is open the runs of this one are off (menu
+// entries that say why, commands not offered, so their keys pass). So the steps to the next | previous suggestion
+// are one pair of commands for whichever review is open (`contributeSteps`, added once, by plugin `local-ai`): a pair
+// per plugin would be two commands on one key.
 
 import type { Component } from "svelte";
 import { NO_REQUIREMENT } from "../../../core/conditions/available";
@@ -12,7 +14,7 @@ import { editing, type EditScope } from "../../../core/editing/session.svelte";
 import type { MenuEntry } from "../../../core/explorer/menu";
 import { t, type MessageKey } from "../../../core/i18n";
 import type { LazyComponent, PluginContext } from "../../../core/plugins/registry.svelte";
-import type { PieceReview } from "./review.svelte";
+import { openReview, type PieceReview } from "./review.svelte";
 
 /** What a run is asked over: a scope of the text, or `here` (the selection, else the paragraph: the plugin's key). */
 export type RunTarget = EditScope | "here";
@@ -33,9 +35,6 @@ export type ReviewEntries = {
   here: CommandEntry;
   /** Runs over the whole document. */
   document: CommandEntry;
-  /** Step to the next | previous suggestion. */
-  next: CommandEntry;
-  prev: CommandEntry;
   /** Starts a run the person asked for (default: at once, `startRun`); a plugin with something to ask first (a
    *  language) asks, then starts it. */
   start?: (target: RunTarget) => void;
@@ -45,32 +44,73 @@ export type ReviewEntries = {
 
 const SEPARATOR: MenuEntry = { kind: "separator" };
 
+/** The steps through the suggestions of the open review, on the keys the reading view steps through changes with. */
+const NEXT: CommandEntry = {
+  id: "local-ai.nextSuggestion",
+  label: "localAi.review.next",
+  keys: "F7",
+};
+const PREV: CommandEntry = {
+  id: "local-ai.prevSuggestion",
+  label: "localAi.review.prev",
+  keys: "Shift+F7",
+};
+
+/** The open document is edited in this window. */
+function edited(): boolean {
+  return editing.mode !== "view" && editing.path === documents.path;
+}
+
+/** Adds a command (offered while `when`) with its default key, when it has one; returns their removals. */
+function command(
+  cx: PluginContext,
+  { id, label, keys }: CommandEntry,
+  when: () => boolean,
+  run: () => void,
+): (() => void)[] {
+  return [
+    cx.contribute({ kind: "command", id, label, requires: NO_REQUIREMENT, when, run }),
+    ...(keys === undefined
+      ? []
+      : [cx.contribute({ kind: "shortcut", keys, command: id, requires: NO_REQUIREMENT })]),
+  ];
+}
+
 /** Starts the run of `review` over `target`. */
 export function startRun(review: PieceReview, target: RunTarget): void {
   void (target === "here" ? review.runHere() : review.runOver(target));
+}
+
+/** Adds the steps to the next | previous suggestion of whichever review is open in this window (F7 | Shift+F7),
+ *  offered while it has suggestions to go through; returns the removal of both. */
+export function contributeSteps(cx: PluginContext): () => void {
+  /** The review open in this window's editor, with suggestions to step through. */
+  const stepped = (): PieceReview | null => {
+    const open = edited() ? openReview() : null;
+    return open !== null && (open.review?.suggestions.length ?? 0) > 0 ? open : null;
+  };
+  const step = (entry: CommandEntry, by: 1 | -1): (() => void)[] =>
+    command(
+      cx,
+      entry,
+      () => stepped() !== null,
+      () => stepped()?.go(by),
+    );
+  const removals = [...step(NEXT, 1), ...step(PREV, -1)];
+  return () => {
+    for (const remove of removals) remove();
+  };
 }
 
 /** Adds the entries of a plugin's review; returns the removal of all of them. */
 export function contributeReview(cx: PluginContext, entries: ReviewEntries): () => void {
   const { review } = entries;
   /** A model is assigned and the open document is edited. */
-  const offered = (): boolean =>
-    review.available && editing.mode !== "view" && editing.path === documents.path;
+  const offered = (): boolean => review.available && edited();
   /** A run may start: no other plugin's review holds the editor. */
   const free = (): boolean => offered() && !review.blocked;
-  const reviewing = (): boolean => offered() && (review.review?.suggestions.length ?? 0) > 0;
   const start = entries.start ?? ((target: RunTarget) => startRun(review, target));
 
-  const command = (
-    { id, label, keys }: CommandEntry,
-    when: () => boolean,
-    run: () => void,
-  ): (() => void)[] => [
-    cx.contribute({ kind: "command", id, label, requires: NO_REQUIREMENT, when, run }),
-    ...(keys === undefined
-      ? []
-      : [cx.contribute({ kind: "shortcut", keys, command: id, requires: NO_REQUIREMENT })]),
-  ];
   const scope = (kind: EditScope): MenuEntry => {
     const busy = review.blocked;
     return {
@@ -110,10 +150,8 @@ export function contributeReview(cx: PluginContext, entries: ReviewEntries): () 
       requires: NO_REQUIREMENT,
       view: entries.bar.view,
     }),
-    ...command(entries.here, free, () => start("here")),
-    ...command(entries.document, free, () => start("document")),
-    ...command(entries.next, reviewing, () => review.go(1)),
-    ...command(entries.prev, reviewing, () => review.go(-1)),
+    ...command(cx, entries.here, free, () => start("here")),
+    ...command(cx, entries.document, free, () => start("document")),
   ];
   return () => {
     for (const remove of removals) remove();

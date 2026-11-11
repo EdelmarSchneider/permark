@@ -2618,6 +2618,12 @@ export default {
   "localAi.test.cancelled": "Test oprit.",
   "localAi.test.closeLabel": "Închide testul pentru {name}",
   "localAi.review.busy": "Termină mai întâi verificarea curentă",
+  "localAi.review.next": "Sugestia următoare",
+  "localAi.review.prev": "Sugestia anterioară",
+  "localAi.review.allReviewed": "Totul a fost verificat.",
+  "localAi.review.locked.one": "{n} parte se poate modifica doar în Sursă.",
+  "localAi.review.locked.other": "{n} de părți se pot modifica doar în Sursă.",
+  "localAi.review.locked.few": "{n} părți se pot modifica doar în Sursă.",
   // ---- correction (plugin `correction`)
   "plugin.correction.name": "Corectare",
   "plugin.correction.about":

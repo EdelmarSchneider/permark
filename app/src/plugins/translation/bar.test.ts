@@ -54,6 +54,8 @@ function review(patch: Partial<Review>): Review {
     discarded: 0,
     same: 0,
     outdated: 0,
+    locked: 0,
+    total: 0,
     ...patch,
   };
 }
@@ -123,7 +125,7 @@ describe("the translation bar", () => {
   });
 
   it("nothing to translate in the scope: says so, Done", () => {
-    show({ kind: "nothing" });
+    show({ kind: "nothing", locked: 0 });
     expect(said()).toContain("There's no text to translate here.");
     expect(group()?.getAttribute("aria-label")).toBe("Translations to review");
     expect(group()?.hasAttribute("data-translation")).toBe(true);
@@ -226,6 +228,9 @@ describe("the translation bar", () => {
     expect(said(target.querySelector(".status"))).toBe("1 translation");
     show(review({ same: 3 }));
     expect(said(target.querySelector(".status"))).toBe("Nothing to translate here.");
+    // translations were found and each one is handled since
+    show(review({ total: 2, outdated: 1 }));
+    expect(said(target.querySelector(".status"))).toBe("All reviewed.");
     show(review({ status: { kind: "cancelled" }, suggestions: [S1] }));
     expect(said(target.querySelector(".status"))).toBe("Stopped. 1 translation ready.");
     show(review({ status: { kind: "cancelled" }, suggestions: [S1, S2] }));
@@ -244,6 +249,12 @@ describe("the translation bar", () => {
       "2 parts couldn't be translated and were left as they are.",
       "3 parts were already in German.",
       "4 translations no longer apply because the text changed.",
+    ]);
+    // parts the editor on screen keeps as written were not sent
+    show(review({ suggestions: [S1], total: 1, locked: 2, outdated: 1 }));
+    expect(notes()).toEqual([
+      "2 parts can only be changed in Source.",
+      "1 translation no longer applies because the text changed.",
     ]);
     // never the words of the machinery
     expect(said()).not.toMatch(/piece|segment|output/i);

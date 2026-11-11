@@ -4,7 +4,8 @@
 // the same object, so `compose` keeps its bytes. Only the touched block is written by the editor (as typing would).
 // Text offsets -> document positions (`docRange`: reveal, correction marks): the range's text found in its block's
 // shown text (markup left out) where the text around it matches best. An inline piece kept as written (a formula, a
-// reference) is not prose: no range in its source is found, no edit may change it.
+// reference) is not prose: no range in its source is found, no edit may change it. Where an edit may go is one rule
+// (`editableBlock`), asked before a run too (`changeable`): what could not be put in is not sent to a model.
 
 import { closeHistory } from "@milkdown/kit/prose/history";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
@@ -21,6 +22,24 @@ import { pieceSources } from "./inlineSource";
 export function blockOf(composed: Composed, from: number, to: number): number | null {
   const index = composed.ranges.findIndex((r) => r !== null && r.from <= from && to <= r.to);
   return index < 0 ? null : index;
+}
+
+/** A top-level node an edit may remake: its document index, the node and its range in the composed text. */
+type EditableBlock = { index: number; node: PMNode; range: TextRange };
+
+/** The block whose text holds `from..to` when an edit may remake it; `null`: between blocks | across two | outside,
+ *  or a locked block. */
+function editableBlock(
+  doc: PMNode,
+  composed: Composed,
+  from: number,
+  to: number,
+): EditableBlock | null {
+  const index = blockOf(composed, from, to);
+  const range = index === null ? null : composed.ranges[index];
+  const node = index === null ? null : doc.maybeChild(index);
+  if (index === null || !range || !node || node.type.name === LOCKED) return null;
+  return { index, node, range };
 }
 
 /** Context chars compared on each side of a candidate (`docRange`). */
@@ -70,10 +89,9 @@ function commonHead(markdown: string, shown: string): number {
  *  range: an insertion point. `null`: outside | across blocks, a locked block, inside an inline piece's source, or not
  *  shown as such (markup inside). */
 export function docRange(doc: PMNode, composed: Composed, range: TextRange): TextRange | null {
-  const index = blockOf(composed, range.from, range.to);
-  const block = index === null ? null : composed.ranges[index];
-  const node = index === null ? null : doc.maybeChild(index);
-  if (index === null || !block || !node || node.type.name === LOCKED) return null;
+  const found = editableBlock(doc, composed, range.from, range.to);
+  if (found === null) return null;
+  const { index, node, range: block } = found;
   let start = 0;
   for (let i = 0; i < index; i++) start += doc.child(i).nodeSize;
   const shown = shownText(node, start);
@@ -130,10 +148,10 @@ export function scopeIn(state: EditorState, composed: Composed, kind: EditScope)
       const last = $to.depth === 0 ? $to.index(0) - 1 : $to.index(0);
       return span(composed, $from.index(0), last);
     }
+    // a locked block too: what an edit may change in a scope is another question (`changeable`)
     case "paragraph": {
       const index = $from.index(0);
-      const node = state.doc.maybeChild(index);
-      return node && node.type.name !== LOCKED ? span(composed, index, index) : null;
+      return state.doc.maybeChild(index) ? span(composed, index, index) : null;
     }
     case "document":
       return { from: 0, to: composed.text.length };
@@ -169,11 +187,13 @@ export function editsTr(
   const text = composed.text;
   const sorted = checkEdits(edits, text.length, (from, to) => text.slice(from, to));
   if (sorted === null) return null;
-  const byBlock = new Map<number, TextEdit[]>();
+  const byBlock = new Map<number, { block: EditableBlock; edits: TextEdit[] }>();
   for (const edit of sorted) {
-    const index = blockOf(composed, edit.from, edit.to);
-    if (index === null) return null;
-    byBlock.set(index, [...(byBlock.get(index) ?? []), edit]);
+    const block = editableBlock(state.doc, composed, edit.from, edit.to);
+    if (block === null) return null;
+    const held = byBlock.get(block.index);
+    if (held) held.edits.push(edit);
+    else byBlock.set(block.index, { block, edits: [edit] });
   }
   // the whole text once edited: a block may now use a picture by reference (written escaped: not editable)
   let edited = text;
@@ -185,11 +205,10 @@ export function editsTr(
   const at: number[] = [];
   state.doc.forEach((_, offset) => at.push(offset));
   const replaced: { from: number; to: number; node: PMNode }[] = [];
-  for (const [index, blockEdits] of byBlock) {
-    const node = state.doc.maybeChild(index);
-    const range = composed.ranges[index];
+  for (const [index, { block, edits: blockEdits }] of byBlock) {
+    const { node, range } = block;
     const pos = at[index];
-    if (!node || !range || pos === undefined || node.type.name === LOCKED) return null;
+    if (pos === undefined) return null;
     let markdown = text.slice(range.from, range.to);
     for (const edit of [...blockEdits].reverse()) {
       const from = edit.from - range.from;
@@ -213,6 +232,23 @@ export function editsTr(
     tr.replaceWith(from, to, node);
   }
   return closeHistory(tr);
+}
+
+/** An edit of `range` would go in as the document stands: the range lies in one block the editor writes itself
+ *  (`editableBlock`); with `insert`, that very edit passes every check of `editsTr`. Nothing is changed. */
+export function changeable(
+  core: Core,
+  composed: Composed,
+  range: TextRange,
+  insert?: string,
+): boolean {
+  const state = core.view.state;
+  if (insert === undefined) {
+    return editableBlock(state.doc, composed, range.from, range.to) !== null;
+  }
+  const expect = composed.text.slice(range.from, range.to);
+  const edit: TextEdit = { from: range.from, to: range.to, insert, expect };
+  return editsTr(core, state, composed, [edit]) !== null;
 }
 
 /** Puts `edits` in (see `editsTr`) as one undo step of its own: typing right after starts a new one. */

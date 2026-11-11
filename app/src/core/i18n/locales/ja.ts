@@ -2505,6 +2505,11 @@ export default {
   "localAi.test.cancelled": "テストを中止しました。",
   "localAi.test.closeLabel": "{name} のテストを閉じる",
   "localAi.review.busy": "先に現在のレビューを終えてください",
+  "localAi.review.next": "次の提案",
+  "localAi.review.prev": "前の提案",
+  "localAi.review.allReviewed": "すべてレビューしました。",
+  "localAi.review.locked.one": "{n} 個の部分はソースでのみ変更できます。",
+  "localAi.review.locked.other": "{n} 個の部分はソースでのみ変更できます。",
   // ---- correction (plugin `correction`)
   "plugin.correction.name": "校正",
   "plugin.correction.about":

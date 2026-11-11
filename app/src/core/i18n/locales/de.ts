@@ -2523,6 +2523,11 @@ export default {
   "localAi.test.cancelled": "Test abgebrochen.",
   "localAi.test.closeLabel": "Test von {name} schließen",
   "localAi.review.busy": "Zuerst die laufende Prüfung abschließen",
+  "localAi.review.next": "Nächster Vorschlag",
+  "localAi.review.prev": "Vorheriger Vorschlag",
+  "localAi.review.allReviewed": "Alles geprüft.",
+  "localAi.review.locked.one": "{n} Teil lässt sich nur im Quelltext ändern.",
+  "localAi.review.locked.other": "{n} Teile lassen sich nur im Quelltext ändern.",
   // ---- correction (plugin `correction`)
   "plugin.correction.name": "Korrektur",
   "plugin.correction.about":

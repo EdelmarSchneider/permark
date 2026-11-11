@@ -1,16 +1,18 @@
 // Review of one window over what a model proposes for the open text, piece by piece; a plugin configures it (whose
 // backend runs the pieces, which pieces to send, what an answer is worth). A run: the pieces of the editor's text in
-// the scope (the plugin's `prepare`, offsets = the editor's text, LF) go to `<plugin>.run`; news `<plugin>:run` of
-// this run only; each answer -> the plugin's `judge` -> suggestions (document offsets) merged in document order;
-// discarded answers and answers that say the same as their piece only counted, each on its own. One review at a time
-// in an editor (the marks of every plugin's review go to the editor's one layer): while one is open, another
-// plugin's does not run and says `blocked`. Offsets follow the text: own edits shift what follows exactly; any other
-// change (typing, the other editor, the editor writing a block its own way) -> prefix/suffix diff, the rest shifted,
-// suggestions | pieces touching it dropped (counted) unless their text is still told apart inside what changed
-// (`follower`).
+// the scope (the plugin's `prepare`, offsets = the editor's text, LF) go to `<plugin>.run`, except those the editor on
+// screen cannot change (`session.changeable`; Edit mode: a block kept as written), only counted: their answer could
+// not go in. News `<plugin>:run` of this run only; each answer -> the plugin's `judge` -> suggestions (document
+// offsets) merged in document order; discarded answers and answers that say the same as their piece only counted,
+// each on its own. One review at a time in an editor (the marks of every plugin's review go to the editor's one
+// layer; `openReview`: whose it is): while one is open, another plugin's does not run and says `blocked`. Offsets
+// follow the text: own edits shift what follows exactly; any other change (typing, the other editor, the editor
+// writing a block its own way) -> prefix/suffix diff, the rest shifted, suggestions | pieces touching it dropped
+// (counted) unless their text is still told apart inside what changed (`follower`).
 // Accept = one checked `session.apply` (expect = original): refused while composing -> retried shortly; refused else
-// -> dropped (counted). Accept all = one apply (one undo step); a batch refused (Edit mode: a locked block, …) ->
-// each edit alone, only the refused ones dropped. File switch | conflict | View -> review closed. Every pending
+// -> dropped (counted). Accept all = one apply (one undo step); a batch refused (Edit mode: an edit that would make
+// its block read as something else, …) -> the edits the editor says it takes (`session.changeable` with the text to
+// put in), again in one apply, only the others dropped. File switch | conflict | View -> review closed. Every pending
 // suggestion is marked in the text (`session.marks`, each time the list | current one changes; closed -> none); a click
 // on a mark makes it current, the caret left where the person put it (typing safety).
 
@@ -46,6 +48,7 @@ export type Session = Pick<
   | "current"
   | "scope"
   | "apply"
+  | "changeable"
   | "reveal"
   | "marks"
   | "markAt"
@@ -98,15 +101,22 @@ export type Review = {
   suggestions: readonly Found[];
   /** Index of the current suggestion (0 when none). */
   at: number;
+  /** Suggestions the run found in all: those left in `suggestions` and those handled since. */
+  total: number;
   /** Pieces left as they were (the model changed too much | the piece was too long). */
   discarded: number;
   /** Pieces whose answer said the same as the piece (verdict `same`). */
   same: number;
   /** Suggestions dropped because the text changed under them. */
   outdated: number;
+  /** Pieces of the scope not sent: the editor on screen cannot change their text. */
+  locked: number;
 };
 
-export type ReviewState = { kind: "closed" } | { kind: "nothing" } | ({ kind: "review" } & Review);
+/** `nothing`: the scope held no piece to send (`locked`: pieces left out because the editor on screen cannot change
+ *  their text). */
+export type ReviewState =
+  { kind: "closed" } | { kind: "nothing"; locked: number } | ({ kind: "review" } & Review);
 
 /** Wait between tries of an edit refused while text is composed (ms), and how many tries. */
 const COMPOSE_RETRY_MS = 100;
@@ -207,6 +217,16 @@ function turnOf(session: Session): Turn {
     turns.set(session, turn);
   }
   return turn;
+}
+
+/** The review open in the editor of `session` (this window's, by default); `null`: none holds it. */
+export function openReview(session: Session = editing): PieceReview | null {
+  return turnOf(session).holder;
+}
+
+/** A suggestion as the checked edit that puts it in. */
+function editOf({ from, to, insert, original }: Found): TextEdit {
+  return { from, to, insert, expect: original };
 }
 
 export class PieceReview {
@@ -381,8 +401,8 @@ export class PieceReview {
     return this.runOver(this.#session.scope("selection") === null ? "paragraph" : "selection");
   }
 
-  /** Starts a run over `kind` of the editor's text (an earlier run of this review is stopped). Nothing while another
-   *  plugin's review is open (`blocked`). */
+  /** Starts a run over `kind` of the editor's text (an earlier run of this review is stopped). Pieces the editor on
+   *  screen cannot change are left out and counted. Nothing while another plugin's review is open (`blocked`). */
   async runOver(kind: EditScope): Promise<void> {
     if (!this.available || this.blocked) return;
     this.#scope = kind;
@@ -391,14 +411,16 @@ export class PieceReview {
     const session = this.#session;
     const text = session.current();
     const range = session.scope(kind);
-    const found = range === null ? [] : this.#config.prepare(text, range);
+    const cut = range === null ? [] : this.#config.prepare(text, range);
+    const found = cut.filter((piece) => session.changeable(piece));
+    const locked = cut.length - found.length;
     this.#known = text;
     this.#path = session.path;
     this.#pieces = new Map(found.map((piece, id) => [id, piece]));
     this.#parts = found.length;
     this.#answered = 0;
     if (found.length === 0) {
-      this.state = { kind: "nothing" };
+      this.state = { kind: "nothing", locked };
       return;
     }
     const run = newRunId();
@@ -408,9 +430,11 @@ export class PieceReview {
       status: { kind: "loading", progress: 0 },
       suggestions: [],
       at: 0,
+      total: 0,
       discarded: 0,
       same: 0,
       outdated: 0,
+      locked,
     };
     const sent = await this.#api.pluginCall(`${this.#config.plugin}.run`, {
       ...this.#config.runArgs(),
@@ -583,6 +607,7 @@ export class PieceReview {
       ...review,
       suggestions: merged,
       at: current === undefined ? 0 : merged.indexOf(current),
+      total: review.total + added.length,
     };
   }
 
@@ -593,7 +618,8 @@ export class PieceReview {
     this.#status(status);
   }
 
-  /** Puts the suggestions of `keys` into the text in one edit. */
+  /** Puts the suggestions of `keys` into the text in one edit: one undo step, also when the editor takes only some
+   *  of them. */
   #put(keys: readonly number[]): void {
     const review = this.review;
     if (review === null) return;
@@ -601,32 +627,23 @@ export class PieceReview {
     if (chosen.length === 0) return;
     const text = this.#known;
     const fits = chosen.filter((s) => text.slice(s.from, s.to) === s.original);
-    const edits = fits.map(({ from, to, insert, original }): TextEdit => ({
-      from,
-      to,
-      insert,
-      expect: original,
-    }));
-    const stale = chosen.filter((s) => !fits.includes(s));
-    if (edits.length > 0 && this.#session.apply(edits)) {
-      this.#applied(fits, stale);
-      return;
-    }
-    if (edits.length > 0 && this.#session.composing()) {
+    /** `done` go in as one edit; the rest of `chosen` leaves the list, counted. */
+    const put = (done: readonly Found[]): boolean => {
+      if (done.length === 0 || !this.#session.apply(done.map(editOf))) return false;
+      this.#applied(
+        done,
+        chosen.filter((s) => !done.includes(s)),
+      );
+      return true;
+    };
+    if (put(fits)) return;
+    if (fits.length > 0 && this.#session.composing()) {
       this.#wait(keys);
       return;
     }
-    // a batch refused: one edit the editor does not take this way must not cost the others
-    if (fits.length > 1) {
-      if (stale.length > 0)
-        this.#settle(
-          review.suggestions.filter((s) => !stale.includes(s)),
-          stale.length,
-        );
-      for (const s of fits)
-        if (this.review?.suggestions.some((f) => f.key === s.key)) this.#put([s.key]);
-      return;
-    }
+    // a batch refused: one edit the editor does not take must not cost the others, and they still go in together
+    const taken = fits.filter((s) => this.#session.changeable(s, s.insert));
+    if (taken.length < fits.length && put(taken)) return;
     // the editor refused (the text moved on, a block it does not edit this way): never applied blind
     this.#settle(
       review.suggestions.filter((s) => !chosen.includes(s)),
@@ -635,7 +652,7 @@ export class PieceReview {
   }
 
   /** `done` went in: they leave the list, what follows them moves by the length change; `stale` (no longer read as
-   *  found) leave it too, counted. */
+   *  found | not taken by the editor) leave it too, counted. */
   #applied(done: readonly Found[], stale: readonly Found[]): void {
     const review = this.review;
     if (review === null) return;

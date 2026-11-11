@@ -550,6 +550,10 @@
           if (!core || !mod || !now || core.view.composing) return false;
           return mod.applyEdits(core, now, edits);
         },
+        changeable: (range, insert) => {
+          const now = composed();
+          return core && mod && now ? mod.changeable(core, now, range, insert) : false;
+        },
         reveal: (range) => reveal(range),
         marks: (ranges, current, pick) => {
           const now = composed();

@@ -29,6 +29,7 @@ function editor(initial: string): Fake {
         fake.text = fake.text.slice(0, e.from) + e.insert + fake.text.slice(e.to);
       return true;
     },
+    changeable: () => true,
     reveal: () => {},
     marks: () => {},
     markAt: () => null,

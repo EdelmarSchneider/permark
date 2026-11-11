@@ -48,6 +48,8 @@ function reviewOf(...suggestions: Found[]): Extract<ReviewState, { kind: "review
     discarded: 0,
     same: 0,
     outdated: 0,
+    locked: 0,
+    total: suggestions.length,
   };
 }
 
@@ -56,6 +58,7 @@ let host: InstanceType<typeof PluginHost> | null = null;
 afterEach(() => {
   host?.disable("translation");
   host?.disable("correction");
+  host?.disable("local-ai");
   host = null;
   mock.probe.translation.available = null;
   mock.probe.translation.prefs = { target: null, recent: [] };
@@ -66,8 +69,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** Plugins that may be on beside it. */
+type Other = "correction" | "local-ai";
+
 /** The plugin on (after `first`, when given), in a window whose model for the job is there. */
-async function on(...first: "correction"[]) {
+async function on(...first: Other[]) {
   const registry = new ContributionRegistry();
   host = new PluginHost(registry, pluginLoaders());
   for (const id of first) await host.enable(id);
@@ -76,7 +82,7 @@ async function on(...first: "correction"[]) {
 }
 
 /** The plugin on, a model on its job, the open document edited, `target` the language chosen last. */
-async function editingWith(target: string | null, ...first: "correction"[]) {
+async function editingWith(target: string | null, ...first: Other[]) {
   mock.probe.translation.prefs = { target, recent: target === null ? [] : [target] };
   const { registry } = await on(...first);
   await vi.waitFor(() => expect(translation.available).toBe(true));
@@ -207,15 +213,14 @@ describe("the ways into a translation", () => {
       "statusItem",
     ]);
     const own = registry.ownedBy("translation");
+    // not Mod+Alt+t: on Linux desktops that key opens a terminal before the app sees it
     expect(own.flatMap((c) => (c.kind === "shortcut" ? [`${c.command} ${c.keys}`] : []))).toEqual([
-      "translation.here Mod+Alt+t",
+      "translation.here Mod+Alt+r",
     ]);
     expect(own.flatMap((c) => (c.kind === "command" ? [c.id] : [])).sort()).toEqual([
       "translation.document",
       "translation.here",
       "translation.language",
-      "translation.next",
-      "translation.prev",
     ]);
     // the button after correction's, the bar right under correction's
     const [button] = registry.of("editAction").filter((a) => a.owner === "translation");
@@ -328,25 +333,43 @@ describe("the ways into a translation", () => {
     expect(runOver.mock.calls).toEqual([["document"], ["document"]]);
   });
 
-  it("stepping through the translations is offered only while they are reviewed", async () => {
-    const registry = await editingWith("de");
+  it("stepping through the suggestions: one pair of commands and keys, for whichever review is open", async () => {
+    const registry = await editingWith("de", "local-ai", "correction");
     const go = vi.spyOn(translation, "go").mockImplementation(() => {});
-    const steps = ["translation.next", "translation.prev"].map((id) => command(registry, id));
-    expect(steps.map((step) => t(step.label))).toEqual([
-      "Next translation",
-      "Previous translation",
-    ]);
-    expect(steps.map((step) => step.when?.())).toEqual([false, false]);
+    const goCorrection = vi.spyOn(correction, "go").mockImplementation(() => {});
+    const steps = ["local-ai.nextSuggestion", "local-ai.prevSuggestion"].map((id) =>
+      command(registry, id),
+    );
+    // neither review plugin has its own: two commands on one key would fight over it
+    expect(steps.map((step) => step.owner)).toEqual(["local-ai", "local-ai"]);
+    expect(
+      registry
+        .of("shortcut")
+        .filter((s) => s.keys.endsWith("F7"))
+        .map((s) => `${s.command} ${s.keys}`),
+    ).toEqual(["local-ai.nextSuggestion F7", "local-ai.prevSuggestion Shift+F7"]);
+    expect(steps.map((step) => t(step.label))).toEqual(["Next suggestion", "Previous suggestion"]);
+    const offered = (): (boolean | undefined)[] => steps.map((step) => step.when?.());
+    expect(offered()).toEqual([false, false]);
     // a run going on with nothing found yet: nothing to step through
     translation.state = { ...reviewOf(), status: { kind: "loading", progress: 0 } };
-    expect(steps.map((step) => step.when?.())).toEqual([false, false]);
+    expect(offered()).toEqual([false, false]);
     translation.state = reviewOf(S1, S2);
-    expect(steps.map((step) => step.when?.())).toEqual([true, true]);
+    expect(offered()).toEqual([true, true]);
     for (const step of steps) void step.run();
     expect(go.mock.calls).toEqual([[1], [-1]]);
+    expect(goCorrection).not.toHaveBeenCalled();
+    // correction's review open instead: the same commands step through it
+    translation.state = { kind: "closed" };
+    expect(offered()).toEqual([false, false]);
+    correction.state = reviewOf(S1, S2);
+    expect(offered()).toEqual([true, true]);
+    for (const step of steps) void step.run();
+    expect(goCorrection.mock.calls).toEqual([[1], [-1]]);
+    expect(go).toHaveBeenCalledTimes(2);
     // back in View: not offered
     editing.mode = "view";
-    expect(steps.map((step) => step.when?.())).toEqual([false, false]);
+    expect(offered()).toEqual([false, false]);
   });
 
   it("the key while its review is open moves the keyboard to the bar: no new run, no dialog", async () => {

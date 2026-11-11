@@ -2444,6 +2444,11 @@ export default {
   "localAi.test.cancelled": "테스트를 중지했습니다.",
   "localAi.test.closeLabel": "{name} 테스트 닫기",
   "localAi.review.busy": "먼저 현재 검토를 마치세요",
+  "localAi.review.next": "다음 제안",
+  "localAi.review.prev": "이전 제안",
+  "localAi.review.allReviewed": "모두 검토했습니다.",
+  "localAi.review.locked.one": "{n}개 부분은 소스에서만 변경할 수 있습니다.",
+  "localAi.review.locked.other": "{n}개 부분은 소스에서만 변경할 수 있습니다.",
   // ---- correction (plugin `correction`)
   "plugin.correction.name": "교정",
   "plugin.correction.about":

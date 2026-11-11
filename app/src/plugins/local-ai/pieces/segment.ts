@@ -3,7 +3,8 @@
 // UTF-16 offsets are the editor's. Piece = one prose block (paragraph | heading | list item | quote paragraph | the
 // text of one table cell), clipped to the scope; long blocks -> sentence groups under a char budget. Whole blocks
 // never sent: front matter, code, HTML, comments, `$$` math, link definitions. Of a table only each cell's own text
-// goes: never a pipe, the padding or the alignment row; a table the grammar does not read as one is left alone.
+// goes: never a pipe, the padding or the alignment row; a table the grammar does not read as one is left alone. Of a
+// quote alert (`> [!NOTE]`) the marker is no part of a piece: an answer cannot rewrite it and undo the alert.
 // Inline non-prose -> numbered markers `⟦n⟧` the model must copy back, each once (in the piece's order, or anywhere
 // for a plugin whose answers move the words); `restore` puts the original bytes back.
 
@@ -82,6 +83,8 @@ const HIDDEN_TEXT = [
   /\$(?!\s)[^$\n]+(?<!\s)\$(?!\d)/g,
   /[⟦⟧]/g,
 ];
+// the marker of a quote alert: the five kinds the reader draws, in any letter case
+const ALERT_MARKER = /^\[!(?:note|tip|important|warning|caution)\]/i;
 // a table's alignment row inside a paragraph: a table the reader may draw that the grammar did not read as one
 // (spaces | `\r` after the row)
 const ALIGNMENT_ROW =
@@ -190,9 +193,30 @@ function frontMatterEnd(doc: string): number {
   return 0;
 }
 
-// the block's text without heading marks, setext underline or task box
+/** Where the text of `block` starts when the block opens a quote alert as the reader takes one (comrak `alerts`):
+ *  `[!NOTE]` right after the quote's first `>` and one space, what follows on that line being the alert's title.
+ *  Past the marker; past the next line's quote marks too when the marker stands alone on its line. `null`: no alert. */
+function alertTextStart(doc: string, block: Node): number | null {
+  const quote = block.parent;
+  const mark = block.prevSibling;
+  if (quote?.name !== "Blockquote" || mark?.name !== "QuoteMark" || mark.from !== quote.from)
+    return null;
+  if (doc.slice(mark.to, block.from) !== " ") return null;
+  const marker = ALERT_MARKER.exec(doc.slice(block.from, block.to));
+  if (marker === null) return null;
+  let from = block.from + marker[0].length;
+  for (let child = block.firstChild; child; child = child.nextSibling) {
+    if (child.name !== "QuoteMark" || child.from < from) continue;
+    if (doc.slice(from, child.from).trim() !== "") break;
+    from = child.to;
+  }
+  return from;
+}
+
+// the block's text without heading marks, setext underline, task box or the marker of a quote alert
 function contentRange(doc: string, node: Node): Range {
   let { from, to } = node;
+  from = alertTextStart(doc, node) ?? from;
   const first = node.firstChild;
   const last = node.lastChild;
   if (node.name.startsWith("ATX")) {

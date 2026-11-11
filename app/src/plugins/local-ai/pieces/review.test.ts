@@ -1,13 +1,20 @@
 // @vitest-environment jsdom
 // The piece review's own rules, whatever plugin configures it: the changed range of a text, an answer that says the
-// same as its piece, one review at a time in an editor (jsdom: effects run, so what reads `blocked` is heard). A
+// same as its piece, pieces the editor on screen cannot change (never sent, counted), one review at a time in an
+// editor (jsdom: effects run, so what reads `blocked` is heard). A
 // whole review (runs, news, accept | reject, marks) is driven where a plugin configures it:
 // `plugins/correction/store.test.ts`; on the Edit-mode editor: `reviewEdit.test.ts`.
 import { flushSync } from "svelte";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createMockApi } from "../../../api/mock";
 import { observe } from "../../../core/testing/effect.svelte";
-import { changedRange, PieceReview, type ReviewConfig, type Session } from "./review.svelte";
+import {
+  changedRange,
+  openReview,
+  PieceReview,
+  type ReviewConfig,
+  type Session,
+} from "./review.svelte";
 import { pieces } from "./segment";
 
 describe("changed ranges", () => {
@@ -30,6 +37,7 @@ function holding(text: string): Session {
     current: () => text,
     scope: () => ({ from: 0, to: text.length }),
     apply: () => false,
+    changeable: () => true,
     reveal: () => {},
     marks: () => {},
     markAt: () => null,
@@ -76,7 +84,47 @@ describe("an answer that says the same as its piece", () => {
       });
     }
     store.news({ run: sent.run, phase: { kind: "done" } });
-    expect(store.review).toMatchObject({ suggestions: [], same: 2, discarded: 1, outdated: 0 });
+    expect(store.review).toMatchObject({
+      suggestions: [],
+      total: 0,
+      same: 2,
+      discarded: 1,
+      outdated: 0,
+      locked: 0,
+    });
+  });
+});
+
+describe("pieces the editor on screen cannot change", () => {
+  /** An editor that takes no edit where the text reads `kept`. */
+  const keeping = (...kept: string[]): Session => ({
+    ...holding(DOC),
+    changeable: ({ from, to }) => !kept.includes(DOC.slice(from, to)),
+  });
+
+  it("are not sent (their answer could not go in) and counted for the bar", async () => {
+    const store = await review(keeping("Not an answer."));
+    await store.runOver("document");
+    expect(mock.probe.correction.runs.at(-1)?.pieces.map((piece) => piece.text)).toEqual([
+      "Already fine.",
+      "Also fine.",
+    ]);
+    expect(store.review).toMatchObject({ locked: 1, suggestions: [] });
+  });
+
+  it("a scope that holds nothing else: no run, and the bar is told how many instead of 'nothing here'", async () => {
+    const session = keeping("Already fine.", "Not an answer.", "Also fine.");
+    const store = await review(session);
+    const other = await review(session);
+    await store.runOver("document");
+    expect(runs()).toBe(0);
+    expect(store.state).toEqual({ kind: "nothing", locked: 3 });
+    // nothing to go through: the editor is not held
+    expect(other.blocked).toBe(false);
+    // a scope with no text at all says so as ever
+    const empty = await review(holding("```\ncode\n```\n"));
+    await empty.runOver("document");
+    expect(empty.state).toEqual({ kind: "nothing", locked: 0 });
   });
 });
 
@@ -86,8 +134,11 @@ describe("one review at a time in an editor", () => {
     const first = await review(session);
     const second = await review(session);
     expect([first.blocked, second.blocked]).toEqual([false, false]);
+    expect(openReview(session)).toBeNull();
     await first.runOver("document");
     expect([first.blocked, second.blocked]).toEqual([false, true]);
+    // the one open in this editor: what the keys for the next | previous suggestion act on
+    expect(openReview(session)).toBe(first);
     await second.runOver("document");
     await second.runHere();
     expect(second.state.kind).toBe("closed");
