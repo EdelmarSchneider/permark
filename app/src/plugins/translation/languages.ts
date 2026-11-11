@@ -143,10 +143,13 @@ export const LANGUAGES: readonly string[] = [
 
 const TAG = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/;
 const TAG_MAX = 35;
-/** A language name: letters of any script and the few marks names are written with. */
-const NAME = /^[\p{Alphabetic} ()\-',.]+$/u;
+/** A language name: letters of any script and the few marks names are written with ("Serbian (Cyrillic)", "N'Ko").
+ *  No period, no comma: no name the runtime gives has one, and with them a short sentence reads as a name. */
+const NAME = /^[\p{Alphabetic} ()\-']+$/u;
 const NAME_LETTER = /\p{Alphabetic}/u;
 const NAME_MAX = 64;
+/** Most words of a language name (the English names of the languages offered have 3 at most). */
+const NAME_WORDS = 6;
 /** The apostrophe the runtime's names are written with ("N’Ko"); the backend takes the plain one. */
 const TYPOGRAPHIC_APOSTROPHE = /\u2019/g;
 
@@ -156,9 +159,15 @@ export function isTag(tag: string): boolean {
 }
 
 /** `name` may stand in the model's prompt as a language's name: a letter at least, nothing that reads as more
- *  prompt (a line break, a quote, a colon, a digit), 64 chars at most. */
+ *  prompt (a line break, a quote, a colon, a digit, a period, a comma), 64 chars and 6 words (runs of anything but
+ *  spaces) at most. */
 export function isPromptName(name: string): boolean {
-  return NAME.test(name) && NAME_LETTER.test(name) && [...name].length <= NAME_MAX;
+  return (
+    NAME.test(name) &&
+    NAME_LETTER.test(name) &&
+    [...name].length <= NAME_MAX &&
+    name.split(" ").filter((word) => word !== "").length <= NAME_WORDS
+  );
 }
 
 /** Two tags name one language, whatever their case (`pt-br` = `pt-BR`). */

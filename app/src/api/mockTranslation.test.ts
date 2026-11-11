@@ -200,8 +200,53 @@ describe("mock translation: the new file of a translated copy", () => {
     });
   });
 
-  it("refuses a name that is no plain file name", async () => {
-    for (const name of ["", "  ", "..", "a/b.md", "a\\b.md"])
-      expect(refusal(await save("docs/guide.md", name)), name).toBe("invalidData null");
+  it("refuses a name that is no plain file name, as the backend does", async () => {
+    const files = [...mock.probe.project.files.keys()];
+    for (const name of [
+      "",
+      "  ",
+      "..",
+      "a/b.md",
+      "a\\b.md",
+      "CON.md",
+      "a.md:x",
+      "a.md.",
+      "a.md ",
+      "a\u0007.md",
+      "a?.md",
+    ])
+      expect(refusal(await save("docs/guide.md", name)), JSON.stringify(name)).toBe(
+        "invalidData name",
+      );
+    expect([...mock.probe.project.files.keys()]).toEqual(files);
+  });
+
+  it("refuses a name whose extension is not the original's: the copy of a `.md` is a `.md`", async () => {
+    const files = [...mock.probe.project.files.keys()];
+    for (const [beside, name] of [
+      ["docs/guide.md", "guide.pt-BR.txt"],
+      ["docs/guide.md", "guide.md.exe"],
+      ["docs/guide.md", "guide.pt-BR"],
+      ["docs/guide.md", ".md"],
+      [".git/hooks/a.md", "pre-commit"],
+      ["LICENSE", "LICENSE.de"],
+    ] as const)
+      expect(refusal(await save(beside, name)), `${beside} ${name}`).toBe("invalidData extension");
+    expect([...mock.probe.project.files.keys()]).toEqual(files);
+    // in whatever letter case; an original without an extension gets a copy without one
+    expect(await save("docs/guide.md", "GUIDE.DE.MD")).toEqual({
+      ok: true,
+      value: { path: "docs/GUIDE.DE.MD" },
+    });
+    expect(await save("LICENSE", "LICENSE-de")).toEqual({
+      ok: true,
+      value: { path: "LICENSE-de" },
+    });
+  });
+
+  it("refuses an original that names no file", async () => {
+    expect(refusal(await save("", "guide"))).toBe("invalidData beside");
+    // the name is asked first
+    expect(refusal(await save("", "a/b"))).toBe("invalidData name");
   });
 });

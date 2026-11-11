@@ -3,19 +3,15 @@
 //! languages of the case -> outputs JSON, on the eval harness of the piece runner's test kit ([`eval`]). Step 2 (TS
 //! report: restore + guards + what was expected of each case) = `app/src/plugins/translation/eval/eval.test.ts`.
 //!
-//! - Always run: cases file shape; every case over [`FakeEngine`] into a temp outputs file, once per prompt variant
-//!   (harness check, no model).
+//! - Always run: cases file shape; every case over [`FakeEngine`] into a temp outputs file (harness check, no model).
 //! - `#[ignore]`, by hand: [`eval_the_real_model`], the REAL worker + a local chat GGUF.
-//! - Prompt variants ([`Variant`]): the app's prompt (`fewShot`) | the same without its example turns (`zeroShot`,
-//!   [`ZeroShot`]: built here, never the app's). The outputs file says which one made it.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use permark_plugin_local_ai::engine::{ChatMessage, FakeEngine, Sampling};
+use permark_plugin_local_ai::engine::FakeEngine;
 use permark_plugin_local_ai::pieces::testkit::eval::{self, Model, Outputs};
 use permark_plugin_local_ai::pieces::testkit::Fake;
-use permark_plugin_local_ai::pieces::{PieceJob, PieceResult};
-use permark_plugin_local_ai::Task;
+use permark_plugin_local_ai::pieces::PieceResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -54,8 +50,6 @@ const PAIRS: [(&str, &str); 10] = [
     ("ko", "en-US"),
     ("de", "fr"),
 ];
-/// Picks the prompt variant of [`eval_the_real_model`].
-const VARIANT: &str = "PERMARK_EVAL_VARIANT";
 
 /// The cases file (shape shared with the TS report).
 #[derive(Debug, Deserialize)]
@@ -119,63 +113,6 @@ struct Record {
     max_tokens: u32,
 }
 
-/// Outputs file (read by the TS report): the prompt variant + the run.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Run {
-    variant: Variant,
-    #[serde(flatten)]
-    outputs: Outputs<Record>,
-}
-
-/// Prompt of a run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-enum Variant {
-    /// The app's: rules + example turns + request.
-    FewShot,
-    /// Rules + request ([`ZeroShot`]).
-    ZeroShot,
-}
-
-impl Variant {
-    /// From [`VARIANT`] (not set: the app's prompt).
-    fn from_env() -> Self {
-        match std::env::var(VARIANT).ok().as_deref() {
-            None | Some("fewShot") => Self::FewShot,
-            Some("zeroShot") => Self::ZeroShot,
-            Some(other) => panic!("{VARIANT}={other}: fewShot | zeroShot"),
-        }
-    }
-}
-
-/// The translation job without its example turns: what a model does on the rules + the request alone. Compared with
-/// the app's prompt on the same cases; test-only.
-struct ZeroShot;
-
-impl PieceJob for ZeroShot {
-    type Params = Pair;
-
-    const TASK: Task = TranslationJob::TASK;
-    const CONTEXT: u32 = TranslationJob::CONTEXT;
-    const SAMPLING: Sampling = TranslationJob::SAMPLING;
-
-    fn messages(pair: &Pair, text: &str) -> Vec<ChatMessage> {
-        let mut turns = TranslationJob::messages(pair, text);
-        // the rules open, the request closes: the examples are every turn between them
-        turns.drain(1..turns.len() - 1);
-        turns
-    }
-
-    fn preamble(pair: &Pair) -> String {
-        format!("{}\n{}", prompt::SYSTEM, prompt::user_turn(pair, ""))
-    }
-
-    fn max_tokens(piece_tokens: u32) -> u32 {
-        TranslationJob::max_tokens(piece_tokens)
-    }
-}
-
 fn set() -> Set {
     serde_json::from_str(&std::fs::read_to_string(CASES).unwrap()).unwrap()
 }
@@ -199,9 +136,9 @@ fn asked() -> Vec<Asked> {
         .collect()
 }
 
-/// Every case in order on `model` with the prompt of job `J`.
-fn answered<J: PieceJob<Params = Pair>>(model: Model, cases: &[Asked]) -> Outputs<Record> {
-    eval::evaluate::<J, _, _>(
+/// Every case in order on `model`, with the app's prompt.
+fn evaluate(model: Model, cases: &[Asked]) -> Outputs<Record> {
+    eval::evaluate::<TranslationJob, _, _>(
         model,
         cases,
         |asked| (&asked.pair, asked.case.text.as_str()),
@@ -221,15 +158,6 @@ fn answered<J: PieceJob<Params = Pair>>(model: Model, cases: &[Asked]) -> Output
     .unwrap()
 }
 
-/// The run of `variant` over `cases` on `model`.
-fn run(variant: Variant, model: Model, cases: &[Asked]) -> Run {
-    let outputs = match variant {
-        Variant::FewShot => answered::<TranslationJob>(model, cases),
-        Variant::ZeroShot => answered::<ZeroShot>(model, cases),
-    };
-    Run { variant, outputs }
-}
-
 fn keys(value: &Value) -> BTreeSet<&str> {
     value
         .as_object()
@@ -239,12 +167,12 @@ fn keys(value: &Value) -> BTreeSet<&str> {
         .collect()
 }
 
-/// Cases file: about 40 cases, unique ids, every kind and every pair, tags of the crate's own shape and names the
+/// Cases file: about 50 cases, unique ids, every kind and every pair, tags of the crate's own shape and names the
 /// prompt takes, markers exact `⟦1⟧…⟦n⟧`, expectations that can hold.
 #[test]
 fn eval_cases_are_well_formed() {
     let Set { languages, cases } = set();
-    assert!((36..=48).contains(&cases.len()), "{} cases", cases.len());
+    assert!((44..=56).contains(&cases.len()), "{} cases", cases.len());
     let ids: BTreeSet<_> = cases.iter().map(|c| c.id.as_str()).collect();
     assert_eq!(ids.len(), cases.len(), "duplicate ids");
     let kinds: BTreeSet<_> = cases.iter().map(|c| c.kind.as_str()).collect();
@@ -313,97 +241,79 @@ fn eval_cases_are_well_formed() {
     }
 }
 
-/// Harness without a model: every case over [`FakeEngine`] (echo of the request) with each prompt variant -> an
-/// outputs file naming the variant, one record per case with its pair, its token counts and the runner's result.
+/// Harness without a model: every case over [`FakeEngine`] (echo of the request) with the app's prompt -> an outputs
+/// file, one record per case with its pair, its token counts and the runner's result.
 #[test]
 fn eval_runs_every_case_over_the_fake_engine_into_an_outputs_file() {
     let cases = asked();
+    let fake = Fake::new::<TranslationJob>(FakeEngine::new());
     let tmp = tempfile::tempdir().unwrap();
-    let mut prompts = Vec::new();
-    for (variant, name, turns) in [
-        (Variant::FewShot, "fewShot", 2 + 2 * prompt::FEW_SHOT.len()),
-        (Variant::ZeroShot, "zeroShot", 2),
-    ] {
-        let fake = Fake::new::<TranslationJob>(FakeEngine::new());
-        let path = tmp.path().join(format!("{name}.json"));
-        eval::write(&path, &run(variant, Model::fake(&fake), &cases));
-        let back: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-        let facts = [
-            "variant",
-            "profile",
-            "model",
-            "onGpu",
-            "loadMs",
-            "totalMs",
-            "tokPerSec",
-            "records",
+    let path = tmp.path().join("outputs.json");
+    eval::write(&path, &evaluate(Model::fake(&fake), &cases));
+    let back: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let facts = [
+        "profile",
+        "model",
+        "onGpu",
+        "loadMs",
+        "totalMs",
+        "tokPerSec",
+        "records",
+    ];
+    assert_eq!(
+        keys(&back),
+        BTreeSet::from(facts),
+        "as the report reads them"
+    );
+    assert_eq!(back["model"], "fake");
+    assert_eq!(back["onGpu"], Value::Null);
+    let records = back["records"].as_array().unwrap();
+    assert_eq!(records.len(), cases.len());
+    let requests = fake.requests.lock().unwrap();
+    assert_eq!(requests.len(), cases.len());
+    let rules = prompt::SYSTEM.split_whitespace().count();
+    for ((record, Asked { case, pair }), request) in records.iter().zip(&cases).zip(&*requests) {
+        let fields = [
+            "id",
+            "kind",
+            "from",
+            "source",
+            "target",
+            "result",
+            "ms",
+            "promptTokens",
+            "tokens",
+            "maxTokens",
         ];
-        assert_eq!(
-            keys(&back),
-            BTreeSet::from(facts),
-            "as the report reads them"
-        );
-        assert_eq!(back["variant"], name);
-        assert_eq!(back["model"], "fake");
-        assert_eq!(back["onGpu"], Value::Null);
-        let records = back["records"].as_array().unwrap();
-        assert_eq!(records.len(), cases.len());
-        let requests = fake.requests.lock().unwrap();
-        assert_eq!(requests.len(), cases.len());
-        for ((record, Asked { case, pair }), request) in records.iter().zip(&cases).zip(&*requests)
-        {
-            let fields = [
-                "id",
-                "kind",
-                "from",
-                "source",
-                "target",
-                "result",
-                "ms",
-                "promptTokens",
-                "tokens",
-                "maxTokens",
-            ];
-            assert_eq!(keys(record), BTreeSet::from(fields), "{}", case.id);
-            assert_eq!(record["id"], case.id.as_str());
-            assert_eq!(record["kind"], case.kind.as_str());
-            assert_eq!(record["from"], case.from.as_str());
-            assert_eq!(record["source"], serde_json::json!(case.source));
-            assert_eq!(record["target"], case.target.as_str());
-            // the rules, the examples of the variant, then the request for the case's languages with its piece
-            let asked = prompt::user_turn(pair, &case.text);
-            assert_eq!(request.messages.len(), turns, "{}", case.id);
-            assert_eq!(request.messages[0].content, prompt::SYSTEM);
-            assert_eq!(request.messages[turns - 1].content, asked);
-            let echo: Vec<_> = asked.split_whitespace().collect();
-            assert_eq!(record["result"]["kind"], "output", "{}", case.id);
-            assert_eq!(record["result"]["text"], echo.join(" "), "{}", case.id);
-            assert_eq!(record["tokens"], echo.len());
-            assert_eq!(record["maxTokens"], request.max_tokens);
-            let piece = u32::try_from(case.text.split_whitespace().count()).unwrap();
-            assert_eq!(request.max_tokens, prompt::max_tokens(piece), "{}", case.id);
-        }
-        prompts.push(
-            records
-                .iter()
-                .map(|r| r["promptTokens"].as_u64().unwrap())
-                .collect::<Vec<_>>(),
-        );
-        drop(requests);
-        assert_eq!(
-            fake.engine.loaded(),
-            0,
-            "the model is unloaded after its cases"
-        );
+        assert_eq!(keys(record), BTreeSet::from(fields), "{}", case.id);
+        assert_eq!(record["id"], case.id.as_str());
+        assert_eq!(record["kind"], case.kind.as_str());
+        assert_eq!(record["from"], case.from.as_str());
+        assert_eq!(record["source"], serde_json::json!(case.source));
+        assert_eq!(record["target"], case.target.as_str());
+        // the rules, then the request for the case's languages with its piece: no turn between them
+        let asked = prompt::user_turn(pair, &case.text);
+        let turns: Vec<&str> = request
+            .messages
+            .iter()
+            .map(|m| m.content.as_str())
+            .collect();
+        assert_eq!(turns, [prompt::SYSTEM, asked.as_str()], "{}", case.id);
+        let echo: Vec<_> = asked.split_whitespace().collect();
+        assert_eq!(record["result"]["kind"], "output", "{}", case.id);
+        assert_eq!(record["result"]["text"], echo.join(" "), "{}", case.id);
+        assert_eq!(record["tokens"], echo.len());
+        assert_eq!(record["promptTokens"], rules + echo.len(), "{}", case.id);
+        assert_eq!(record["maxTokens"], request.max_tokens);
+        let piece = u32::try_from(case.text.split_whitespace().count()).unwrap();
+        assert_eq!(request.max_tokens, prompt::max_tokens(piece), "{}", case.id);
     }
-    // the examples are the whole difference between the two prompts
-    let examples: usize = prompt::FEW_SHOT
-        .iter()
-        .map(|(user, answer)| user.split_whitespace().count() + answer.split_whitespace().count())
-        .sum();
-    for (few, zero) in prompts[0].iter().zip(&prompts[1]) {
-        assert_eq!(*few, zero + examples as u64);
-    }
+    drop(requests);
+    assert_eq!(
+        fake.engine.loaded(),
+        0,
+        "the model is unloaded after its cases"
+    );
 }
 
 /// The request's languages are named as the app names them: the tag with its English name, the source only when the
@@ -424,39 +334,28 @@ fn eval_requests_name_the_languages_of_each_case() {
     );
 }
 
-/// Step 1 over the REAL worker + model: every case with the prompt variant `PERMARK_EVAL_VARIANT` names (`fewShot`,
-/// the app's prompt: default | `zeroShot`: no example turns) -> outputs JSON at `PERMARK_EVAL_OUT`.
+/// Step 1 over the REAL worker + model: every case with the app's prompt -> outputs JSON at `PERMARK_EVAL_OUT`.
 ///
 /// Env: `PERMARK_WORKER` = worker build (debug override), `PERMARK_EVAL_GGUF` = chat model, `PERMARK_EVAL_PROFILE` =
-/// catalog prompt profile (default `gemma-4`), `PERMARK_EVAL_OUT` = outputs JSON path (one per model + variant),
-/// `PERMARK_EVAL_VARIANT`, `PERMARK_SMOKE_DEVICE=auto` -> GPU (never without a go for it; default CPU).
+/// catalog prompt profile (default `gemma-4`), `PERMARK_EVAL_OUT` = outputs JSON path (one per model),
+/// `PERMARK_SMOKE_DEVICE=auto` -> GPU (never without a go for it; default CPU).
 ///
 /// Run (cwd `app/`), PowerShell:
 /// ```text
 /// $env:PERMARK_WORKER="<worker exe>"; $env:PERMARK_EVAL_GGUF="<model.gguf>"
-/// $env:PERMARK_EVAL_VARIANT="fewShot"; $env:PERMARK_EVAL_OUT="F:/tmp/translation-e2b-fewShot.json"
-/// cargo test --manifest-path src-tauri/Cargo.toml -p permark-plugin-translation eval_the_real_model -- --ignored --nocapture
-/// $env:PERMARK_EVAL_VARIANT="zeroShot"; $env:PERMARK_EVAL_OUT="F:/tmp/translation-e2b-zeroShot.json"
+/// $env:PERMARK_EVAL_OUT="F:/tmp/translation-e4b.json"
 /// cargo test --manifest-path src-tauri/Cargo.toml -p permark-plugin-translation eval_the_real_model -- --ignored --nocapture
 /// ```
 /// bash:
 /// ```text
-/// PERMARK_WORKER=<worker exe> PERMARK_EVAL_GGUF=<model.gguf> PERMARK_EVAL_VARIANT=zeroShot \
-///   PERMARK_EVAL_OUT=/f/tmp/translation-e2b-zeroShot.json \
-///   cargo test --manifest-path src-tauri/Cargo.toml -p permark-plugin-translation eval_the_real_model -- --ignored --nocapture
+/// PERMARK_WORKER=<worker exe> PERMARK_EVAL_GGUF=<model.gguf> PERMARK_EVAL_OUT=/f/tmp/translation-e4b.json ///   cargo test --manifest-path src-tauri/Cargo.toml -p permark-plugin-translation eval_the_real_model -- --ignored --nocapture
 /// ```
 #[test]
 #[ignore = "needs a built worker + a local chat model (GPU never without a go for it); run by hand"]
 fn eval_the_real_model() {
-    let variant = Variant::from_env();
-    let cases = asked();
     let tmp = tempfile::tempdir().unwrap();
     let (model, out) = Model::real::<TranslationJob>(tmp.path());
-    let run = run(variant, model, &cases);
-    eval::write(&out, &run);
-    println!(
-        "{} [{variant:?}] -> {}",
-        run.outputs.summary(),
-        out.display()
-    );
+    let outputs = evaluate(model, &asked());
+    eval::write(&out, &outputs);
+    println!("{} -> {}", outputs.summary(), out.display());
 }

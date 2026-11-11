@@ -5,10 +5,10 @@
 //
 // Run (cwd `app/`; `--silent=false`: the report is the console output of a passing test, which vitest hides when a
 // tool runs it), PowerShell:
-//   $env:PERMARK_EVAL_OUT="F:/tmp/translation-e2b-fewShot.json"
+//   $env:PERMARK_EVAL_OUT="F:/tmp/translation-e4b.json"
 //   npx vitest run src/plugins/translation/eval --silent=false
 // bash:
-//   PERMARK_EVAL_OUT=/f/tmp/translation-e2b-fewShot.json npx vitest run src/plugins/translation/eval --silent=false
+//   PERMARK_EVAL_OUT=/f/tmp/translation-e4b.json npx vitest run src/plugins/translation/eval --silent=false
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -75,6 +75,10 @@ describe("translation eval set", () => {
     expect(kinds.get("en-de-list")).toBe("listItem");
     expect(kinds.get("en-ptbr-cell")).toBe("cell");
     expect(kinds.get("en-zh-cell")).toBe("cell");
+    expect(kinds.get("en-zh-cell-file")).toBe("cell");
+    expect(kinds.get("en-ja-heading")).toBe("heading");
+    // already in the target, as an item of a list
+    expect(kinds.get("es-ptbr-same")).toBe("listItem");
     expect(kinds.get("en-ptbr-alert")).toBe("quote");
     expect(kinds.get("en-de-alert")).toBe("quote");
     // an alert's marker stays out; the quote mark of its second line is a marker
@@ -152,6 +156,17 @@ describe("translation eval report", () => {
       note: "names in Latin letters",
     },
     {
+      id: "unmoved",
+      kind: "plain",
+      from: "en",
+      source: null,
+      target: "ja",
+      markdown: "Pick a folder and start writing.",
+      text: "Pick a folder and start writing.",
+      expect: "translated",
+      note: "left in English",
+    },
+    {
       id: "answered",
       kind: "request",
       from: "en",
@@ -181,15 +196,17 @@ describe("translation eval report", () => {
   };
   const outputs: EvalOutputs = {
     ...RUN,
-    variant: "zeroShot",
     records: [
       // German word order: the markers move, each still once
       said(at("moved"), "Lies zuerst den [Leitfaden]⟦2⟧ und öffne dann ⟦1⟧ im Editor."),
       said(at("already"), "As notas ficam nesta pasta."),
       said(at("echoed"), "The notes stay in this folder."),
       record(at("capped"), { kind: "discarded", reason: "length" }),
-      // a fine translation: its names in Latin letters outweigh the Japanese around them
+      // a fine translation: the names it keeps in Latin letters outnumber the Japanese letters around them, and
+      // do not count against it
       said(at("names"), "PerMark を開き、設定で Local AI を選びます。"),
+      // the piece again in other English words: not Japanese
+      said(at("unmoved"), "Choose a folder, then begin to write."),
       // an answer to the question, in the target's script and of a likely length: no guard tells it
       said(at("answered"), "HTML significa HyperText Markup Language."),
       said(at("dropped"), "Execute a sincronização uma vez por dia."),
@@ -203,29 +220,35 @@ describe("translation eval report", () => {
       ["already", "en->pt-BR", "same", true],
       ["echoed", "en->pt-BR", "same", false],
       ["capped", "en->pt-BR", "runner:length", false],
-      ["names", "en->ja", "script", false],
+      ["names", "en->ja", "ok", true],
+      ["unmoved", "en->ja", "script", false],
       ["answered", "en->pt-BR", "ok", true],
       ["dropped", "en->pt-BR", "markers", false],
     ]);
-    const [moved, , , capped, names, answered, dropped] = list;
+    const [moved, , , capped, names, unmoved, answered, dropped] = list;
     expect(moved?.translation).toBe(
       "Lies zuerst den [Leitfaden](guide.md) und öffne dann `notes.md` im Editor.",
     );
     expect([moved?.lost, moved?.banned]).toEqual([[], []]);
     expect([capped?.answer, capped?.candidate]).toEqual([null, false]);
-    expect([names?.candidate, names?.lost, names?.translation]).toEqual([true, [], null]);
+    expect([names?.candidate, names?.lost, names?.translation]).toEqual([
+      false,
+      [],
+      "PerMark を開き、設定で Local AI を選びます。",
+    ]);
+    expect([unmoved?.candidate, unmoved?.translation]).toEqual([true, null]);
     expect([answered?.lost, answered?.banned]).toEqual([["?"], ["hypertext"]]);
     expect([dropped?.candidate, dropped?.answer]).toEqual([
       true,
       "Execute a sincronização uma vez por dia.",
     ]);
     expect(tally(list)).toEqual({
-      cases: 7,
-      answered: 6,
-      ok: 2,
+      cases: 8,
+      answered: 7,
+      ok: 3,
       same: 2,
       discarded: 3,
-      met: 3,
+      met: 4,
       structure: 1,
       script: 1,
       lost: 1,
@@ -244,7 +267,7 @@ describe("translation eval report", () => {
 
   it("prints the run, the tables, the rates, what a person must look at and the translations to read", () => {
     const text = report(fixture, outputs);
-    expect(text).toContain("variant zeroShot | model fake | profile fake | gpu ?");
+    expect(text.startsWith("model fake | profile fake | gpu ?")).toBe(true);
     expect(text).toContain(
       "pair          cases    met  ok same disc struct script lost banned falseD?  tok/s",
     );
@@ -252,14 +275,14 @@ describe("translation eval report", () => {
       "en->pt-BR         5    2/5   1    2    2      1      0    1      1       1      -",
     );
     expect(text).toContain(
-      "total             7    3/7   2    2    3      1      1    1      1       2      -",
+      "total             8    4/8   3    2    3      1      1    1      1       2      -",
     );
     expect(text).toContain("kind          cases    met");
     expect(text).toContain(
       "markers           2    1/2   1    0    1      1      0    0      0       1      -",
     );
     expect(text).toContain(
-      "structure pass 5/6 (83%) | wrong script 1/6 (17%) | expectation met 3/7 (43%) | prompt 0 tok/case",
+      "structure pass 6/7 (86%) | wrong script 1/7 (14%) | expectation met 4/8 (50%) | prompt 0 tok/case",
     );
     expect(text).toContain("discards (3): markers 1, runner:length 1, script 1");
     expect(text).toContain('- echoed [plain] same: "The notes stay in this folder."');
@@ -271,9 +294,9 @@ describe("translation eval report", () => {
     );
     expect(text).toContain(
       [
-        "- names [mixed] script (names in Latin letters)",
-        "    source: Open PerMark and pick Local AI in the settings.",
-        "    answer: PerMark を開き、設定で Local AI を選びます。",
+        "- unmoved [plain] script (left in English)",
+        "    source: Pick a folder and start writing.",
+        "    answer: Choose a folder, then begin to write.",
       ].join("\n"),
     );
     expect(text).toContain(
@@ -305,7 +328,6 @@ describe("translation eval report", () => {
     const cases = evalCases(set.cases);
     const echoed: EvalOutputs = {
       ...RUN,
-      variant: "fewShot",
       records: cases.map((c) => said(c, `${request(c)} ${c.text}`.split(/\s+/).join(" "))),
     };
     const list = outcomes(cases, echoed);
@@ -316,15 +338,21 @@ describe("translation eval report", () => {
     expect(list.filter((o) => o.kind === "same").some((o) => o.met)).toBe(false);
     // an echo holds the words of its source: banned where the case bans those (Spanish left in Portuguese)
     const banned = list.filter((o) => o.banned.length > 0);
-    expect(banned.map((o) => o.pair)).toEqual(["es->pt-BR", "es->pt-BR", "es->pt-BR"]);
-    // an echo of English is not in the script of Japanese, Chinese or Arabic
+    expect(banned.map((o) => o.id)).toEqual([
+      "es-ptbr-plain",
+      "es-ptbr-heading",
+      "es-ptbr-long",
+      "es-ptbr-injection",
+    ]);
+    // an echo of English is not in the script of Japanese, Chinese or Arabic: the words of the piece are its own,
+    // the words of the request before them are not
     for (const o of list.filter(
       (x) => x.pair.startsWith("en->") && /->(ja|zh-Hans|ar)$/.test(x.pair),
     )) {
       if (o.kind !== "same") expect([o.id, o.verdict]).toEqual([o.id, "script"]);
     }
     const text = report(cases, echoed);
-    expect(text).toContain("variant fewShot | model fake");
+    expect(text.startsWith("model fake | profile fake")).toBe(true);
     for (const o of list.filter((x) => x.target === READ))
       expect(text).toContain(`[${o.id}] ${o.kind}`);
   });

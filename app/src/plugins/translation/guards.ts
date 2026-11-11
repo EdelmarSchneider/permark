@@ -12,12 +12,15 @@
 //    every language;
 // 6. a line without text inside the answer (a note | a second answer after the translation; it would end the
 //    paragraph) -> discarded;
-// 7. script: under half of the letters in the target's script, when the runtime knows it -> discarded;
+// 7. script: under half of the letters in the target's script, when the runtime knows it -> discarded. Words the
+//    answer copied from the piece are left out of the count (`WORD`): a translation keeps product and file names as
+//    they are written, and in a script that says much in few letters they outnumber the rest ("Node.jsガイド");
 // 8. length (the structure check's own, its range by how dense the scripts of the two texts are) -> discarded; last,
 //    so that an answer that is something else than a translation is told as what it is.
 // What passes is ONE suggestion for the whole piece; a piece written on one line gets its answer on one line (after
 // the checks: they read the answer as the model wrote it). Not told here: a wrong language in the right script
-// (Spanish for Portuguese). The limits are first values, not yet measured on a model's answers.
+// (Spanish for Portuguese), and the piece left in its language with nothing but words of its own (a word dropped, a
+// comma added: every letter is a copy). The length limits are first values.
 
 import { letterShare, structureVerdict, type StructureDiscard } from "../local-ai/pieces/guards";
 import type { PieceVerdict } from "../local-ai/pieces/review.svelte";
@@ -42,8 +45,14 @@ export const LENGTH_RATIO: Readonly<Record<"sameDensity" | "intoDense" | "fromDe
     /** A dense script into alphabetic text. */
     fromDense: { min: 1.0, max: 5.0 },
   };
-/** Share of an answer's letters that must be in the target's script. */
+/** Share of an answer's letters that must be in the target's script (the words it copied from the piece left out). */
 export const MIN_SCRIPT_SHARE = 0.5;
+/** A word, as far as a copied one is told: a run of Latin letters | digits with `.` `_` `-` only between them (how a
+ *  name, a file name, an identifier is written: "Node.js", "max_retries", "no-cache"; the period that ends a
+ *  sentence is no part of the word before it), or a run of letters of the other scripts. Latin letters and others
+ *  are never one word: scripts written without spaces put a name right beside their own words ("Node.jsガイド"). */
+const WORD =
+  /[\p{Script=Latin}\p{N}]+(?:[._-]+[\p{Script=Latin}\p{N}]+)*|[^\P{L}\p{Script=Latin}]+/gu;
 
 /** Openings of a chat answer instead of the translation (lowercase). Only ones that announce a translation: "here
  *  is" alone opens many a translated sentence. */
@@ -129,7 +138,7 @@ export function judge(doc: string, piece: Piece, output: string, pair: Pair): Pi
   const answer = bare !== null && unquoted(piece.original) === null ? bare : restored;
   if (folded(answer) === folded(piece.original)) return { kind: "same" };
   if (lines.includes(true)) return discard("blankLine");
-  if (offScript(unmarked(said), pair.target)) return discard("script");
+  if (offScript(unmarked(said), unmarked(piece.text), pair.target)) return discard("script");
   if (structure.kind === "discard") return structure;
   const insert = piece.original.includes("\n") ? answer : oneLine(answer);
   const { from, to, original } = piece;
@@ -186,9 +195,10 @@ function folded(text: string): string {
   return text.normalize("NFC").replace(/\s+/gu, " ").trim();
 }
 
-// under `MIN_SCRIPT_SHARE` of the letters of `text` are in the script of `target`; false when the runtime does not
-// know that script (nothing to hold the answer to)
-function offScript(text: string, target: string): boolean {
+// under `MIN_SCRIPT_SHARE` of the letters of `answer` are in the script of `target`, the words it copied from
+// `source` (the piece's text) not counted; false when the runtime does not know that script, or when no letter is
+// left to count (nothing to hold the answer to)
+function offScript(answer: string, source: string, target: string): boolean {
   const code = scriptOf(target);
   if (code === undefined) return false;
   const scripts = SCRIPTS_OF[code] ?? [code];
@@ -197,10 +207,19 @@ function offScript(text: string, target: string): boolean {
       `[${scripts.map((s) => `\\p{Script_Extensions=${s}}`).join("")}]`,
       "u",
     );
-    return letterShare(text, script) < MIN_SCRIPT_SHARE;
+    const own = withoutCopies(answer, source, script);
+    return LETTER.test(own) && letterShare(own, script) < MIN_SCRIPT_SHARE;
   } catch {
     return false;
   }
+}
+
+// `answer` without the words it copied from `source`: a word (`WORD`) that stands there exactly as here, letter
+// case included. A word with a char of the target's script (`script`: a pattern for one char) stays whatever the
+// piece holds: it counts for the target as it is.
+function withoutCopies(answer: string, source: string, script: RegExp): string {
+  const copied = new Set(source.match(WORD));
+  return answer.replace(WORD, (word) => (copied.has(word) && !script.test(word) ? "" : word));
 }
 
 // `text` on one line: each line break, with the space around it, is one space; nothing between two chars of a script

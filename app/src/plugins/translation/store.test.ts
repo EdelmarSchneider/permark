@@ -100,6 +100,26 @@ describe("a translation run", () => {
       target: { tag: "pt-BR", name: "Brazilian Portuguese" },
       source: { tag: "en-US", name: "American English" },
     });
+    // named for that run alone: its answers are judged by it, the next run reads the language off the text
+    expect(store.languages.sent?.source?.tag).toBe("en-US");
+    expect(store.languages.source).toBeNull();
+    await store.runOver("document");
+    expect(sent()[2]).toMatchObject({ target: { tag: "pt-BR" }, source: null });
+  });
+
+  it("a named source waits while no run starts (nothing to translate here)", async () => {
+    await store.languages.choose("pt-BR");
+    store.languages.from("en-US");
+    const text = session.text;
+    session.text = "```\ncode alone\n```\n";
+    await store.runOver("document");
+    expect(store.state.kind).toBe("nothing");
+    expect(sent()).toEqual([]);
+    expect(store.languages.source).toBe("en-US");
+    session.text = text;
+    await store.runOver("document");
+    expect(sent()[0]).toMatchObject({ source: { tag: "en-US" } });
+    expect(store.languages.source).toBeNull();
   });
 
   it("an answer is one suggestion for its whole piece; accepting it replaces exactly the piece", async () => {
@@ -207,6 +227,21 @@ describe("the languages of a window", () => {
     languages.from("de");
     languages.from(null);
     expect(languages.source).toBeNull();
+  });
+
+  it("a named source goes with the arguments of the run that starts next, and with no run after it", async () => {
+    const languages = store.languages;
+    // no target yet: no run can start, the source waits
+    languages.from("en-US");
+    expect(languages.runArgs()).toBeNull();
+    expect(languages.source).toBe("en-US");
+    await languages.choose("de");
+    expect(languages.runArgs()).toEqual({
+      target: { tag: "de", name: "German" },
+      source: { tag: "en-US", name: "American English" },
+    });
+    expect(languages.source).toBeNull();
+    expect(languages.runArgs()).toEqual({ target: { tag: "de", name: "German" }, source: null });
   });
 
   it("reset forgets them", async () => {

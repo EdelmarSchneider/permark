@@ -2432,6 +2432,7 @@ export default {
   "translation.scope.paragraph": "此段落",
   "translation.scope.document": "整个文档",
   "translation.menu.language": "目标语言：{language}…",
+  "translation.menu.pair": "{source} → {target}…",
   "translation.menu.choose": "选择语言…",
   "translation.next": "下一条译文",
   "translation.prev": "上一条译文",

@@ -5,7 +5,7 @@
 // translation offered | nothing to suggest, strings that must stay, strings that must not come), the rest is for a
 // person to read.
 //
-// Report: run facts + prompt variant; tables per pair and per kind; rates (structure, wrong script, expectations);
+// Report: run facts; tables per pair and per kind; rates (structure, wrong script, expectations);
 // discard reasons; one line per unmet expectation and per kept | banned string; the answers the guards dropped that
 // read like translations (false-discard candidates, for a person to label); the translations into `READ` in full.
 // Quality never fails a run; harness errors (missing | extra outputs, a case whose piece is not in its block) throw.
@@ -73,9 +73,6 @@ export type EvalCase = {
 /** A case as the cases file holds it. */
 export type RawCase = Omit<EvalCase, "kind" | "expect"> & { kind: string; expect: string };
 
-/** Prompt of a run: the app's | the same without its example turns. */
-export type Variant = "fewShot" | "zeroShot";
-
 export type EvalRecord = RunRecord & {
   kind: string;
   from: string;
@@ -87,7 +84,7 @@ export type EvalRecord = RunRecord & {
   maxTokens: number;
 };
 
-export type EvalOutputs = RunOutputs<EvalRecord> & { variant: Variant };
+export type EvalOutputs = RunOutputs<EvalRecord>;
 
 export type Outcome = {
   id: string;
@@ -316,7 +313,7 @@ export function report(cases: readonly EvalCase[], outputs: EvalOutputs): string
   const offered = strings.filter((o) => o.translation !== null).length;
   const candidates = list.filter((o) => o.candidate);
   return [
-    `variant ${outputs.variant} | ${runLine(outputs)}`,
+    runLine(outputs),
     "",
     ...tallyTable(list, { head: "pair", width: 13, key: (o) => o.pair }, tally, COLUMNS),
     "",

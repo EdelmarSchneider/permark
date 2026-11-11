@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 // The language dialog against the mock backend: what it lists (recently used, then all by name in the app's
 // language; From: detect first), the search (name here | own name | English name | tag), the keyboard, the two
-// languages it holds until confirmed, what the opener gives it (confirm label, note, what runs after), and that
-// Cancel | Esc change nothing and give the keyboard back.
+// languages it holds until confirmed (the one translated from: for the run that starts next, shown again until then),
+// what the opener gives it (confirm label, note, what runs after), and that Cancel | Esc change nothing and give the
+// keyboard back.
 import "../../core/testing/media";
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -305,7 +306,7 @@ describe("the language dialog", () => {
     expect(nameOf(current() ?? list())).toBe("German");
     press(field(), "Enter");
     expect(said(tabs()[1])).toBe("From: Detect automatically");
-    // a named language goes with the run the confirm starts
+    // a named language goes with the run that starts next: here the one the confirm starts
     type("american english");
     press(field(), "Enter");
     expect(said(tabs()[1])).toBe("From: American English");
@@ -320,7 +321,7 @@ describe("the language dialog", () => {
     ]);
   });
 
-  it("a language named to translate from is for the run the confirm starts: after it, and in the next dialog, it is read off the text again", async () => {
+  it("a language named to translate from goes with the run that starts next, and with that run alone", async () => {
     await remembered("de", ["de"]);
     const started: unknown[] = [];
     const then = (): void => void started.push(languages.runArgs());
@@ -329,29 +330,54 @@ describe("the language dialog", () => {
       click(row("American English", groups().get("All languages")));
       click(button("confirm"));
     };
+    // the confirm starts a run: that run takes the language named
     open({ then });
     name();
     expect(started).toMatchObject([{ source: { tag: "en-US" } }]);
-    // a run started without the dialog
     expect(languages.source).toBeNull();
-    expect(languages.runArgs()).toEqual({ target: { tag: "de", name: "German" }, source: null });
     // the next dialog detects until a language is named in it; confirmed as it opened, so does its run
     open({ then });
     expect(tabs().map(said)).toEqual(["To: German", "From: Detect automatically"]);
     click(button("confirm"));
     expect(started[1]).toEqual({ target: { tag: "de", name: "German" }, source: null });
-    // a dialog that only saves the choice starts no run: the language named in it is not kept for a later one
+    // a dialog that only saves the choice starts no run: the language named in it waits for the next one
     open();
     name();
-    expect(languages).toMatchObject({ target: "de", source: null });
-    // an opener that fails leaves no language named behind either
-    open({
-      then: () => {
-        throw new Error("no run");
-      },
+    expect(languages).toMatchObject({ target: "de", source: "en-US" });
+    expect(languages.runArgs()).toEqual({
+      target: { tag: "de", name: "German" },
+      source: { tag: "en-US", name: "American English" },
     });
-    expect(() => dialog.confirm("de", "en-US")).toThrow("no run");
-    expect(languages.source).toBeNull();
+    expect(languages.runArgs()).toEqual({ target: { tag: "de", name: "German" }, source: null });
+    // so does one named for a run its opener did not start after all
+    open({ then: () => {} });
+    name();
+    expect(languages.source).toBe("en-US");
+  });
+
+  it("opens on the language that waits for the next run; Cancel leaves it waiting, detecting picked again takes it back", async () => {
+    await remembered("de", ["de"]);
+    languages.from("en-US");
+    open();
+    expect(tabs().map(said)).toEqual(["To: German", "From: American English"]);
+    click(tabs()[1] ?? list());
+    const waiting = row("American English", groups().get("All languages"));
+    expect(waiting.getAttribute("aria-selected")).toBe("true");
+    expect(options()[0]?.getAttribute("aria-selected")).toBe("false");
+    // the keyboard starts on it
+    expect(current()).toBe(waiting);
+    click(button("cancel"));
+    expect(languages.source).toBe("en-US");
+    // confirmed as it opened: it still waits
+    open();
+    click(button("confirm"));
+    expect(languages.source).toBe("en-US");
+    open();
+    click(tabs()[1] ?? list());
+    click(options()[0] ?? list());
+    expect(said(tabs()[1])).toBe("From: Detect automatically");
+    click(button("confirm"));
+    expect(languages).toMatchObject({ target: "de", source: null });
   });
 
   it("choosing as the language to translate into the one named as source puts the source back to detecting", async () => {

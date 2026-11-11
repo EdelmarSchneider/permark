@@ -8,7 +8,8 @@
 // Mod+Alt+T: Linux desktops open a terminal on it before the app sees it) and the review bar under the header; next |
 // previous translation in review are `local-ai`'s keys for whichever review is open. A run with no language chosen
 // yet opens the language dialog first and starts on its confirm: nothing is translated into a language nobody picked.
-// "Translate to…" and the menu's language entry open the dialog to save the choice alone.
+// "Translate to…" and the menu's language entry open the dialog to save the choice alone; a language named there to
+// translate from goes with the run that starts next (the menu's entry shows it until then), and with none after.
 // Into a new file ("Translate to a new file…", in the button's menu and the palette, on a Markdown document): the
 // whole document, not reviewed part by part, written beside the original (`copy.svelte.ts`). The dialog always
 // opens first and names the file its language makes; the run shows in the status bar with its Cancel.
@@ -74,15 +75,19 @@ function startCopy(): void {
   });
 }
 
-/** The menu's last entry: the language translated into, by name; picking it opens the dialog. */
+/** The menu's last entry: the language translated into, by name, and before it the one named to translate from
+ *  while it waits for the next run (what that run will do, said before it starts); picking it opens the dialog. */
 function languageEntry(): MenuEntry {
-  const target = translation.languages.target;
+  const { target, source } = translation.languages;
+  const name = namesIn();
   return {
     kind: "item",
     label:
       target === null
         ? t("translation.menu.choose")
-        : t("translation.menu.language", { language: namesIn()(target) }),
+        : source === null
+          ? t("translation.menu.language", { language: name(target) })
+          : t("translation.menu.pair", { source: name(source), target: name(target) }),
     run: () => languageDialog.ask(),
   };
 }

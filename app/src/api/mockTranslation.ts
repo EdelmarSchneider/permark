@@ -1,6 +1,7 @@
 // What the translation plugin answers in the mock backend: a mock piece run (`mockPieceRun.ts`) on the model of job
 // "translation" (the run's languages checked as the backend checks them), the remembered targets (in memory) and the
-// new file of a translated copy (into the mock project, never over a file).
+// new file of a translated copy (into the mock project, never over a file; its name checked as the backend checks
+// it).
 //
 // The mock model "translates" by writing each Latin letter another way, one for one, and leaving the rest as it is
 // (markers, Markdown symbols, digits, spaces, line breaks). Target written in a script of `LETTERS` -> that script's
@@ -9,10 +10,11 @@
 // text with nothing left to write another way comes back unchanged: translating a translation again into the same
 // language shows the window's "already in that language".
 
-import { parentOf } from "../core/explorer/list";
+import { nameOf, parentOf } from "../core/explorer/list";
 import { isPromptName, isTag, sameTag, scriptOf } from "../plugins/translation/languages";
 import type { TranslationLanguage } from "./generated/TranslationLanguage";
 import type { TranslationPrefs } from "./generated/TranslationPrefs";
+import { checkName, extensionOf } from "./mockNames";
 import { MockPluginError } from "./mockOrganizing";
 import { createMockPieceRun, type PieceRunProbe, type PieceRunWiring } from "./mockPieceRun";
 import type { PluginMethods } from "./types";
@@ -80,6 +82,16 @@ function checked(language: TranslationLanguage): void {
   if (!isPromptName(language.name)) throw new MockPluginError("invalidData", null, "name");
 }
 
+// the name of a copy of `beside` as the backend takes it (Rust `translation::SaveArgs::checked`): one plain file
+// name by the app's rule for names, with the extension of the original (an original without one: a copy without one)
+function checkedCopy(beside: string, name: string): void {
+  const refused = (detail: string) => new MockPluginError("invalidData", null, detail);
+  if (checkName(name) !== null) throw refused("name");
+  const original = nameOf(beside);
+  if (original === "") throw refused("beside");
+  if (extensionOf(name) !== extensionOf(original)) throw refused("extension");
+}
+
 // stem + extension of a file name, cut at its last dot (Rust `edit::split_name`)
 function splitName(name: string): [string, string] {
   const dot = name.lastIndexOf(".");
@@ -128,8 +140,7 @@ export function createMockTranslation(
         return structuredClone(probe.prefs);
       },
       "translation.save": ({ beside, name, text }) => {
-        if (name.trim() === "" || /[/\\]/.test(name) || name === "." || name === "..")
-          throw new MockPluginError("invalidData", name);
+        checkedCopy(beside, name);
         const folder = parentOf(beside);
         const [stem, ext] = splitName(name);
         for (let n = 1; n <= NAME_TRIES; n += 1) {

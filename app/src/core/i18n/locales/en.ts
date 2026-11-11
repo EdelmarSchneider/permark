@@ -2514,6 +2514,7 @@ const en = {
   "translation.scope.paragraph": "This paragraph",
   "translation.scope.document": "Whole document",
   "translation.menu.language": "To: {language}…",
+  "translation.menu.pair": "{source} → {target}…",
   "translation.menu.choose": "Choose a language…",
   "translation.next": "Next translation",
   "translation.prev": "Previous translation",

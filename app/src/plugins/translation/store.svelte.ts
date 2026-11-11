@@ -3,8 +3,9 @@
 // Every prose piece of the scope goes to `translation.run` as `local-ai/pieces/segment.ts` cuts it, with the target
 // language (and the source when the person named it); each answer -> markers back + guards (`guards.ts`) -> one
 // suggestion for the whole piece. Languages: the target chosen last and the recent ones are the backend's
-// (`translation.prefs` | `setPrefs`); the source is named per run (the language dialog names it for the run its
-// confirm starts, `dialog.svelte.ts`), every other run reads it off the text. No run starts without a target.
+// (`translation.prefs` | `setPrefs`); the source is named for ONE run (in the language dialog, `dialog.svelte.ts`):
+// it waits for the run that starts next, goes with that run's arguments, and every run after reads the language off
+// the text again. No run starts without a target.
 
 import { api as defaultApi, type Api, type PluginMethods } from "../../api";
 import type { TranslationLanguage } from "../../api/generated/TranslationLanguage";
@@ -27,8 +28,8 @@ function named(tag: string | null): TranslationLanguage | null {
 export class Languages {
   /** Tag of the language translated into (`null`: none chosen yet -> the person is asked before a first run). */
   target = $state<string | null>(null);
-  /** Tag of the language a run starting now translates from (`null`: the model reads it off the text). Never the
-   *  target. Named for one run: whoever names it takes it back once that run has started. */
+  /** Tag of the language the run that starts next translates from (`null`: the model reads it off the text). Never
+   *  the target. Named for one run: it waits until a run takes its arguments (`runArgs`), then it is `null` again. */
   source = $state<string | null>(null);
   /** Targets chosen before, newest first. */
   recent = $state.raw<readonly string[]>([]);
@@ -69,10 +70,14 @@ export class Languages {
     this.#clearSameSource();
   }
 
-  /** What a run starting now is sent (`null`: no target yet). */
+  /** What the run that starts now is sent (`null`: no target yet, no run). Called once per run, when it starts: the
+   *  source named for it goes with these arguments and waits no more, however that run ends. */
   runArgs(): RunLanguages | null {
     const target = named(this.target);
-    return target === null ? null : { target, source: named(this.source) };
+    if (target === null) return null;
+    const source = named(this.source);
+    this.source = null;
+    return { target, source };
   }
 
   /** Forgets everything (the plugin goes off); an answer still on its way is not taken. */
@@ -131,7 +136,8 @@ export class Translation extends PieceReview {
   /** Starts a run over `kind` of the editor's text; nothing while no language to translate into is chosen (the
    *  caller asks the person for one first). */
   override runOver(kind: EditScope): Promise<void> {
-    return this.languages.runArgs() === null ? Promise.resolve() : super.runOver(kind);
+    // the run's arguments are taken when it starts (`runArgs` in the setup above), not asked for here
+    return this.languages.target === null ? Promise.resolve() : super.runOver(kind);
   }
 }
 

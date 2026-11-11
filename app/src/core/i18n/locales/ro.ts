@@ -2697,6 +2697,7 @@ export default {
   "translation.scope.paragraph": "Acest paragraf",
   "translation.scope.document": "Tot documentul",
   "translation.menu.language": "În: {language}…",
+  "translation.menu.pair": "{source} → {target}…",
   "translation.menu.choose": "Alege o limbă…",
   "translation.next": "Traducerea următoare",
   "translation.prev": "Traducerea anterioară",

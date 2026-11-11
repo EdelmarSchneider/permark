@@ -2515,6 +2515,7 @@ export default {
   "translation.scope.paragraph": "이 단락",
   "translation.scope.document": "문서 전체",
   "translation.menu.language": "대상 언어: {language}…",
+  "translation.menu.pair": "{source} → {target}…",
   "translation.menu.choose": "언어 선택…",
   "translation.next": "다음 번역",
   "translation.prev": "이전 번역",

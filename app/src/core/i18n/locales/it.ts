@@ -2575,6 +2575,7 @@ export default {
   "translation.scope.paragraph": "Questo paragrafo",
   "translation.scope.document": "Tutto il documento",
   "translation.menu.language": "In: {language}…",
+  "translation.menu.pair": "{source} → {target}…",
   "translation.menu.choose": "Scegli una lingua…",
   "translation.next": "Traduzione successiva",
   "translation.prev": "Traduzione precedente",

@@ -2576,6 +2576,7 @@ export default {
   "translation.scope.paragraph": "この段落",
   "translation.scope.document": "文書全体",
   "translation.menu.language": "翻訳先：{language}…",
+  "translation.menu.pair": "{source} → {target}…",
   "translation.menu.choose": "言語を選択…",
   "translation.next": "次の翻訳",
   "translation.prev": "前の翻訳",

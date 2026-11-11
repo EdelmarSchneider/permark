@@ -7,6 +7,8 @@ import { judge, type Pair } from "./guards";
 const TO_PT: Pair = { target: "pt-BR", source: null };
 const TO_JA: Pair = { target: "ja", source: null };
 const TO_EN: Pair = { target: "en-US", source: null };
+const TO_KO: Pair = { target: "ko", source: null };
+const TO_RU: Pair = { target: "ru", source: null };
 
 function only(doc: string): Piece {
   const [piece] = pieces(doc);
@@ -183,6 +185,7 @@ describe("judge: an answer that is more than the translation", () => {
 
 describe("judge: the target's script", () => {
   it("an answer mostly in another script is discarded", () => {
+    // the piece again in other words: the words it shares with the piece are left out, the rest tell the script
     expect(reason(judge(EN, only(EN), "The weather is really quite good today.", TO_JA))).toBe(
       "script",
     );
@@ -212,6 +215,69 @@ describe("judge: the target's script", () => {
     expect(reason(judge(EN, only(EN), "今日は PerMark の天気がとてもいいです。", TO_JA))).toBe(
       "ok",
     );
+  });
+
+  it("words the answer copied from the piece (a product name, a file name) do not count against its script", () => {
+    // 6 Latin letters of 9: the name alone would outweigh the translation around it
+    const heading = "# Node.js guide";
+    expect(insert(judge(heading, only(heading), "Node.jsガイド", TO_JA))).toBe("Node.jsガイド");
+    const app = "PerMark is a Markdown app";
+    expect(insert(judge(app, only(app), "PerMark は Markdown アプリです", TO_JA))).toBe(
+      "PerMark は Markdown アプリです",
+    );
+    // the period that ends the sentence is no part of the file name; names with `_` and `-` inside
+    const file = "Open settings.local.json.";
+    expect(
+      reason(
+        judge(file, only(file), "打开settings.local.json。", { target: "zh-Hans", source: null }),
+      ),
+    ).toBe("ok");
+    const flag = "Set max_retries or pass --no-cache.";
+    expect(
+      reason(judge(flag, only(flag), "max_retries를 설정하거나 --no-cache를 전달하세요.", TO_KO)),
+    ).toBe("ok");
+    // the same in a script written with spaces between the words
+    expect(reason(judge(app, only(app), "PerMark — это приложение Markdown", TO_RU))).toBe("ok");
+    // a name the piece itself writes right beside its own words (Korean puts the particle on it)
+    const ko = "PerMark에서 Markdown 파일을 엽니다.";
+    expect(reason(judge(ko, only(ko), "PerMarkでMarkdownファイルを開きます。", TO_JA))).toBe("ok");
+  });
+
+  it("a word in the target's script counts for it, copied or not (Chinese and Japanese share words)", () => {
+    const zh = "設定 完成";
+    expect(reason(judge(zh, only(zh), "設定 OK", TO_JA))).toBe("ok");
+    expect(reason(judge(zh, only(zh), "Setup OK", TO_JA))).toBe("script");
+  });
+
+  it("only a word written exactly as in the piece is a copy", () => {
+    const heading = "# Node.js guide";
+    const check = (output: string): string => reason(judge(heading, only(heading), output, TO_JA));
+    // another word in Latin letters, the name in another letter case, the name inside a longer word
+    expect(check("Node.js handbook 入門")).toBe("script");
+    expect(check("node.js ガイド")).toBe("script");
+    expect(check("Node.jsx ガイド")).toBe("script");
+    // an answer of copied words alone has no letter left to hold to a script (Japanese has no article)
+    const api = "# The Node.js API";
+    expect(insert(judge(api, only(api), "Node.js API", TO_JA))).toBe("Node.js API");
+  });
+
+  it("the piece left as it is says `same` before the script is asked; left in its language in other words, `script`", () => {
+    expect(judge(EN, only(EN), EN, TO_JA)).toEqual({ kind: "same" });
+    expect(reason(judge(EN, only(EN), "Today the weather is very pleasant.", TO_JA))).toBe(
+      "script",
+    );
+  });
+
+  it("a target written in Latin letters is held as before", () => {
+    const ja = "この機能は PerMark の設定ページで変更できます。";
+    const en = "You can change this feature on the settings page of PerMark.";
+    expect(insert(judge(ja, only(ja), en, TO_EN))).toBe(en);
+    // left in Japanese, in other words: the name it shares with the piece does not make it English
+    expect(reason(judge(ja, only(ja), "PerMark の設定ページでこの機能を変更します。", TO_EN))).toBe(
+      "script",
+    );
+    expect(reason(judge(EN, only(EN), PT, TO_PT))).toBe("ok");
+    expect(reason(judge(EN, only(EN), JA, TO_PT))).toBe("script");
   });
 
   it("a target whose script is not known is not held to one", () => {

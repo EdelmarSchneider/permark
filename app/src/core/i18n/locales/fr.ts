@@ -2623,6 +2623,7 @@ export default {
   "translation.scope.paragraph": "Ce paragraphe",
   "translation.scope.document": "Tout le document",
   "translation.menu.language": "Vers : {language}…",
+  "translation.menu.pair": "{source} → {target}…",
   "translation.menu.choose": "Choisir une langue…",
   "translation.next": "Traduction suivante",
   "translation.prev": "Traduction précédente",

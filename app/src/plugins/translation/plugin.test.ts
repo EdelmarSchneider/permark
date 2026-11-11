@@ -343,7 +343,7 @@ describe("the ways into a translation", () => {
     expect(runOver.mock.calls).toEqual([["document"], ["document"]]);
   });
 
-  it("a language named to translate from goes with the run its dialog starts; a run without the dialog reads it off the text", async () => {
+  it("a language named to translate from goes with the run its dialog starts; the run after it reads it off the text", async () => {
     mock.probe.translation.stepMs = 1e9;
     const registry = await editingWith(null);
     const text = "A text to translate.\n";
@@ -363,12 +363,57 @@ describe("the ways into a translation", () => {
     // the bar names the languages of the run under review, the window detects again
     expect(translation.languages.sent?.source?.tag).toBe("en-US");
     expect(translation.languages.source).toBeNull();
+    expect(itemsOf(menuOf(registry)).at(-1)?.label).toBe("To: German…");
     // the same command again: no dialog, the language chosen last, the source read off the text
     void command(registry, "translation.document").run();
     expect(languageDialog.state.status).toBe("closed");
     await vi.waitFor(() => expect(runs).toHaveLength(before + 2));
     expect(runs.at(-1)).toMatchObject({ target: { tag: "de" }, source: null });
     expect(translation.languages.sent).toMatchObject({ target: { tag: "de" }, source: null });
+  });
+
+  it("a language named to translate from in the dialog that only saves waits for the next run: the menu shows it, that run is sent it, the one after is not", async () => {
+    mock.probe.translation.stepMs = 1e9;
+    const registry = await editingWith("de");
+    const text = "A text to translate.\n";
+    vi.spyOn(editing, "current").mockReturnValue(text);
+    vi.spyOn(editing, "scope").mockImplementation((kind) =>
+      kind === "selection" ? null : { from: 0, to: text.length },
+    );
+    const runs = mock.probe.translation.runs;
+    const before = runs.length;
+    const language = (): string | undefined => itemsOf(menuOf(registry)).at(-1)?.label;
+    expect(language()).toBe("To: German…");
+    // the menu's entry and the command open the same dialog: neither starts a run
+    item(registry, "To: German…").run(false);
+    languageDialog.confirm("de", "en-US");
+    expect(runs).toHaveLength(before);
+    expect(translation.languages.source).toBe("en-US");
+    expect(language()).toBe("American English → German…");
+    expect(t("translation.menu.pair", { source: "A", target: "B" })).toBe("A → B…");
+    void command(registry, "translation.language").run();
+    languageDialog.confirm("ja", "en-US");
+    expect(language()).toBe("American English → Japanese…");
+    // the run started next, from the menu
+    item(registry, "Whole document").run(false);
+    await vi.waitFor(() => expect(runs).toHaveLength(before + 1));
+    expect(runs.at(-1)).toMatchObject({
+      target: { tag: "ja", name: "Japanese" },
+      source: { tag: "en-US", name: "American English" },
+    });
+    // the bar names the languages of the run under review; nothing waits for the next one
+    expect(translation.languages.sent?.source?.tag).toBe("en-US");
+    expect(translation.languages.source).toBeNull();
+    expect(language()).toBe("To: Japanese…");
+    item(registry, "Whole document").run(false);
+    await vi.waitFor(() => expect(runs).toHaveLength(before + 2));
+    expect(runs.at(-1)).toMatchObject({ target: { tag: "ja" }, source: null });
+    // a language that waits goes with the plugin
+    item(registry, "To: Japanese…").run(false);
+    languageDialog.confirm("ja", "de");
+    expect(translation.languages.source).toBe("de");
+    host?.disable("translation");
+    expect(translation.languages.source).toBeNull();
   });
 
   it("stepping through the suggestions: one pair of commands and keys, for whichever review is open", async () => {
