@@ -112,6 +112,7 @@ const en = {
   "condition.remedy.settings.git": "Git settings",
   // ---- explorer, file operations, filter
   "explorer.collapseAll": "Collapse all",
+  "explorer.refresh": "Refresh",
   "explorer.revealOpen": "Reveal open doc",
   "explorer.empty": "No Markdown files here yet. New files appear as soon as they are written.",
   "tree.largeFolder": "large folder",
@@ -627,6 +628,7 @@ const en = {
   "cmd.copyPath": "Copy path",
   "cmd.openExternal": "Open in external editor",
   "cmd.revealInTree": "Reveal open doc in Explorer",
+  "cmd.refreshExplorer": "Refresh Explorer",
   "cmd.searchEverywhere": "Search everywhere",
   "search.clear": "Clear search",
   "search.clearHint": "Clear (Esc)",

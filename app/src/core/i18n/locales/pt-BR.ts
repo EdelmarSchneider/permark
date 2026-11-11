@@ -115,6 +115,7 @@ export default {
   "condition.remedy.settings.git": "Configurações do git",
   // ---- explorer, file operations, filter
   "explorer.collapseAll": "Recolher tudo",
+  "explorer.refresh": "Atualizar",
   "explorer.revealOpen": "Mostrar o doc aberto",
   "explorer.empty":
     "Ainda não há arquivos Markdown aqui. Os novos arquivos aparecem assim que são gravados.",
@@ -639,6 +640,7 @@ export default {
   "cmd.copyPath": "Copiar caminho",
   "cmd.openExternal": "Abrir em editor externo",
   "cmd.revealInTree": "Mostrar o doc aberto no Explorador",
+  "cmd.refreshExplorer": "Atualizar o Explorador",
   "cmd.searchEverywhere": "Pesquisar em tudo",
   "search.clear": "Limpar pesquisa",
   "search.clearHint": "Limpar (Esc)",

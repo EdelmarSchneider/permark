@@ -357,16 +357,21 @@ impl Watcher {
 
     /// The document a window shows: polled every few seconds while live updates are unavailable. `None`: none.
     pub fn poll_document(&self, window: &str, document: Option<&Path>) {
+        let polling = matches!(*lock(&self.shared.status), LiveStatus::Unavailable { .. });
         let mut polled = lock(&self.shared.polled);
         match document {
             Some(path) => {
-                // seed the signature: the first poll must not report a change that is none
-                if let (Some(vp), Ok(meta)) = (
-                    self.shared.vault.relativize(path),
-                    std::fs::symlink_metadata(path),
-                ) {
-                    if let Some(sig) = sig_of(path, &meta) {
-                        self.shared.sigs.set(key_of(vp.as_str()), vp.as_str(), sig);
+                // seed the signature: the first poll must not report a change that is none. Only while polling: with
+                // live updates a signature says "already reported", and a file shown before the events of its write
+                // had their quiet moment (a new file the app made and opens at once) would never be news
+                if polling {
+                    if let (Some(vp), Ok(meta)) = (
+                        self.shared.vault.relativize(path),
+                        std::fs::symlink_metadata(path),
+                    ) {
+                        if let Some(sig) = sig_of(path, &meta) {
+                            self.shared.sigs.set(key_of(vp.as_str()), vp.as_str(), sig);
+                        }
                     }
                 }
                 polled.insert(window.to_owned(), path.to_path_buf());
@@ -377,16 +382,17 @@ impl Watcher {
         }
     }
 
+    /// Asks everything that keeps a picture of the disk to build it again, as when reports were lost (the system
+    /// drops them without a word when too many come at once): one bulk batch that asks to rebuild follows after the
+    /// quiet moment. For the person's "Refresh".
+    pub fn rescan(&self) {
+        let _ = self.tx.send(Msg::Rescan);
+    }
+
     /// Test hook: feeds a raw hint as if the OS had sent it.
     #[cfg(test)]
     pub(crate) fn inject(&self, hint: Pending) {
         let _ = self.tx.send(Msg::Hint(hint));
-    }
-
-    /// Test hook: an overflow.
-    #[cfg(test)]
-    pub(crate) fn inject_rescan(&self) {
-        let _ = self.tx.send(Msg::Rescan);
     }
 }
 

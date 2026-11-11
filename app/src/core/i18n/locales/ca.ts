@@ -116,6 +116,7 @@ export default {
   "condition.remedy.settings.git": "Configuració del Git",
   // ---- explorer, file operations, filter
   "explorer.collapseAll": "Plega-ho tot",
+  "explorer.refresh": "Actualitza",
   "explorer.revealOpen": "Mostra el document obert",
   "explorer.empty":
     "Aquí encara no hi ha fitxers Markdown. Els fitxers nous apareixen tan bon punt s'escriuen.",
@@ -647,6 +648,7 @@ export default {
   "cmd.copyPath": "Copia el camí",
   "cmd.openExternal": "Obre en un editor extern",
   "cmd.revealInTree": "Mostra el document obert a l'Explorador",
+  "cmd.refreshExplorer": "Actualitza l'Explorador",
   "cmd.searchEverywhere": "Cerca a tot arreu",
   "search.clear": "Esborra la cerca",
   "search.clearHint": "Esborra (Esc)",

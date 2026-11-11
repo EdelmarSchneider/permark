@@ -113,6 +113,7 @@ export default {
   "condition.remedy.settings.git": "Git 설정",
   // ---- explorer, file operations, filter
   "explorer.collapseAll": "모두 접기",
+  "explorer.refresh": "새로 고침",
   "explorer.revealOpen": "열린 문서 표시",
   "explorer.empty": "아직 Markdown 파일이 없습니다. 새 파일은 저장되는 즉시 나타납니다.",
   "tree.largeFolder": "큰 폴더",
@@ -627,6 +628,7 @@ export default {
   "cmd.copyPath": "경로 복사",
   "cmd.openExternal": "외부 편집기에서 열기",
   "cmd.revealInTree": "탐색기에서 열린 문서 표시",
+  "cmd.refreshExplorer": "탐색기 새로 고침",
   "cmd.searchEverywhere": "모든 곳 검색",
   "search.clear": "검색 지우기",
   "search.clearHint": "지우기 (Esc)",

@@ -3,7 +3,7 @@
 //! The editor sends line edits against the version it started from. A save checks that the disk still holds that
 //! version (hash), applies the edits to the file's own text (kept lines keep their bytes and endings, the encoding
 //! and BOM stay) and writes atomically, re-checking just before the rename. Every write is announced to the watch
-//! as the app's own.
+//! as the app's own; every file created is told to the project's tree at once.
 
 mod assets;
 pub mod lines;
@@ -32,6 +32,7 @@ use crate::format::{
 };
 use crate::fsx::{self, Encoding, FsxError, LineEnding};
 use crate::paths::VaultPath;
+use crate::tree::Explorer;
 use crate::watch::OwnWrites;
 
 /// What an editor starts from.
@@ -85,12 +86,15 @@ pub trait SaveObserver: Send + Sync {
     fn replaced(&self, path: &str);
 }
 
-/// Editing in one workspace: its scope, its formats, the announcements of own writes (projects).
+/// Editing in one workspace: its scope, its formats, the announcements of own writes and the tree that lists the
+/// files it creates (projects).
 pub struct Editor<'a> {
     pub scope: &'a DocScope,
     pub formats: &'a FormatRegistry,
     pub own: Option<&'a OwnWrites>,
     pub observer: Option<&'a dyn SaveObserver>,
+    /// The project's tree: told of each file the editor creates, as file operations tell it of theirs.
+    pub tree: Option<&'a Explorer>,
 }
 
 fn mtime_ms(path: &Path) -> u64 {
@@ -138,6 +142,15 @@ impl Editor<'_> {
         if let (Some(own), Some(hash)) = (self.own, hash) {
             own.retract_write(path, hash);
         }
+    }
+
+    /// The editor created the file `path`: the tree lists it now. The watch tells the same later, and not always (a
+    /// report can be lost, live updates can be unavailable).
+    fn created(&self, path: String) -> String {
+        if let Some(tree) = self.tree {
+            tree.sync_paths(std::slice::from_ref(&path), &[]);
+        }
+        path
     }
 
     /// The text an editor starts from.
@@ -335,7 +348,7 @@ impl Editor<'_> {
             }
             let announced = self.announce(&target, &bytes);
             match assets::write_new(&abs, &bytes) {
-                Ok(()) => return Ok(target),
+                Ok(()) => return Ok(self.created(target)),
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists && !exact => {
                     self.retract(&target, announced);
                 }
@@ -400,7 +413,7 @@ impl Editor<'_> {
             }
             let announced = self.announce(&target, bytes);
             match assets::write_new(&abs, bytes) {
-                Ok(()) => return Ok(target),
+                Ok(()) => return Ok(self.created(target)),
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
                     self.retract(&target, announced);
                 }
@@ -454,7 +467,7 @@ impl Editor<'_> {
             }
             let announced = self.announce(&target, bytes);
             match assets::write_new(&abs, bytes) {
-                Ok(()) => return Ok(target),
+                Ok(()) => return Ok(self.created(target)),
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
                     self.retract(&target, announced);
                 }

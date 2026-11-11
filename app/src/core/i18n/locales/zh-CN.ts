@@ -111,6 +111,7 @@ export default {
   "condition.remedy.settings.git": "git 设置",
   // ---- explorer, file operations, filter
   "explorer.collapseAll": "全部折叠",
+  "explorer.refresh": "刷新",
   "explorer.revealOpen": "定位当前文档",
   "explorer.empty": "这里还没有 Markdown 文件。新文件一写入就会出现。",
   "tree.largeFolder": "大型文件夹",
@@ -613,6 +614,7 @@ export default {
   "cmd.copyPath": "复制路径",
   "cmd.openExternal": "在外部编辑器中打开",
   "cmd.revealInTree": "在资源管理器中定位当前文档",
+  "cmd.refreshExplorer": "刷新资源管理器",
   "cmd.searchEverywhere": "全局搜索",
   "search.clear": "清除搜索",
   "search.clearHint": "清除 (Esc)",

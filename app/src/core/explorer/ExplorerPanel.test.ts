@@ -448,15 +448,20 @@ describe("context menu", () => {
     expect(labels().map((l) => l.trim())).toEqual([
       "New Markdown file...",
       "New folder...",
+      "Refresh",
       "Initialize PerMark…",
     ]);
     // asking hands the window the project's full path and name
-    document.querySelectorAll<HTMLElement>('[role="menuitem"]')[2]?.click();
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]')[3]?.click();
     await vi.waitFor(() => expect(inits).toEqual([{ path: MOCK_FOLDER, name: "demo" }]));
     // initialized: no such entry
     conditions.set({ ...neutralContext(), workspace: "project", permark: "initialized" });
     await rightClick();
-    expect(labels().map((l) => l.trim())).toEqual(["New Markdown file...", "New folder..."]);
+    expect(labels().map((l) => l.trim())).toEqual([
+      "New Markdown file...",
+      "New folder...",
+      "Refresh",
+    ]);
     document
       .querySelector('[role="menu"]')
       ?.dispatchEvent(
@@ -464,6 +469,39 @@ describe("context menu", () => {
       );
     await tick();
     expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+});
+
+describe("refresh", () => {
+  it("the toolbar button and the tree's own menu read the folder again: a file nobody told of is listed", async () => {
+    const { api, root } = await render();
+    const asked = vi.spyOn(api, "treeRefresh");
+    api.probe.project.add("lost.md", "# Lost");
+    expect(rows(root).some((r) => r.dataset["path"] === "lost.md")).toBe(false);
+    const button = root.querySelector<HTMLElement>('.bar button[aria-label="Refresh"]');
+    expect(button?.title).toBe("Refresh");
+    button?.click();
+    await vi.waitFor(() => expect(row(root, "lost.md")).toBeTruthy());
+    expect(asked).toHaveBeenCalledOnce();
+    // the same from the menu of the empty part of the tree
+    api.probe.project.add("lost-too.md", "x");
+    root
+      .querySelector('[role="tree"]')
+      ?.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 10,
+          clientY: 10,
+        }),
+      );
+    await tick();
+    const entry = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
+      (item) => item.textContent?.trim() === "Refresh",
+    );
+    entry?.click();
+    await vi.waitFor(() => expect(row(root, "lost-too.md")).toBeTruthy());
+    expect(asked).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -1038,6 +1038,13 @@ export function createMockApi(): Api & {
       tree = { ...tree, keep: path };
       return ok(null);
     },
+    // the folder read again: the list is made anew from the files and the window told what differs
+    treeRefresh: () => {
+      const no = whileOpening<null>("tree_refresh");
+      if (no) return Promise.resolve(no);
+      refreshTree();
+      return ok(null);
+    },
     treeClose: () => {
       tree = null;
       return ok(null);

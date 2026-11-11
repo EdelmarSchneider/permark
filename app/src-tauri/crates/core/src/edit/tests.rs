@@ -47,6 +47,7 @@ impl Fx {
             formats: &self.formats,
             own: Some(&self.own),
             observer: None,
+            tree: None,
         }
     }
 
@@ -428,6 +429,7 @@ fn a_single_file_workspace_edits_the_files_of_its_folder_and_puts_pictures_besid
         formats: &formats,
         own: None,
         observer: None,
+        tree: None,
     };
     let source = editor.source("only.md").unwrap();
     editor
@@ -560,6 +562,86 @@ fn a_new_file_goes_next_to_another_and_never_over_one() {
 }
 
 #[test]
+fn a_file_the_editor_creates_is_in_the_tree_at_once() {
+    use crate::events::{CoreEvent, Recorder};
+    use crate::settings::ProjectConfig;
+    use crate::tree::{Category, Explorer, FilterShow, NodeKind, TreeFilter};
+
+    let fx = Fx::new();
+    fx.write("Docs/CONCEPT-0.md", b"# Concept\r\n");
+    let sink = Arc::new(Recorder::default());
+    let vault = Vault::new(Root::open(fx.dir.path()).unwrap());
+    let explorer = Explorer::new(&vault, &ProjectConfig::default(), sink.clone(), None);
+    // the tree is built and a window shows it before anything is written; no watch runs
+    let everything = TreeFilter {
+        show: FilterShow::Everything,
+        ..TreeFilter::default()
+    };
+    explorer.open_view("w", Some(everything));
+    let editor = Editor {
+        scope: &fx.scope,
+        formats: &fx.formats,
+        own: Some(&fx.own),
+        observer: None,
+        tree: Some(&explorer),
+    };
+    let told = || -> Vec<String> {
+        sink.take()
+            .into_iter()
+            .filter_map(|event| match event {
+                CoreEvent::TreeChanged(changed) => Some(changed.delta),
+                _ => None,
+            })
+            .flat_map(|delta| delta.added.into_iter().map(|added| added.node.path))
+            .collect()
+    };
+    let markdown = Some(NodeKind::File {
+        category: Category::Markdown,
+    });
+
+    // a new file beside a document (a conversion, a translation): a name with two dots, in a folder
+    let copy = editor
+        .write_beside("Docs/CONCEPT-0.md", "CONCEPT-0.pt-BR.md", "# Conceito\n")
+        .unwrap();
+    assert_eq!(copy, "Docs/CONCEPT-0.pt-BR.md");
+    assert_eq!(explorer.listed(&copy), markdown, "listed without a watch");
+    assert_eq!(told(), [copy.as_str()], "the window is told");
+
+    // the person's copy on a conflict, and a deleted document written back at its own path
+    let mine = editor
+        .save_as("Docs/CONCEPT-0.md", "mine\n", false)
+        .unwrap();
+    assert_eq!(mine, "Docs/CONCEPT-0-mine.md");
+    assert_eq!(explorer.listed(&mine), markdown);
+    let back = editor.save_as("Docs/gone.md", "back\n", true).unwrap();
+    assert_eq!(explorer.listed(&back), markdown);
+    assert_eq!(told(), [mine.as_str(), back.as_str()]);
+
+    // a pasted picture: its folder is new too
+    let picture = editor
+        .write_asset("Docs/CONCEPT-0.md", "png", b"\x89PNG\r\n\x1a\nDATA", "img")
+        .unwrap();
+    assert_eq!(picture, "Docs/img/CONCEPT-0-1.png");
+    assert!(matches!(
+        explorer.listed("Docs/img"),
+        Some(NodeKind::Dir { unlisted: None })
+    ));
+    assert_eq!(
+        explorer.listed(&picture),
+        Some(NodeKind::File {
+            category: Category::Image
+        })
+    );
+    assert_eq!(told(), ["Docs/img", picture.as_str()]);
+
+    // a refused write tells nothing
+    assert!(editor
+        .write_beside("Docs/CONCEPT-0.md", "a/b.md", "x")
+        .is_err());
+    assert_eq!(told(), Vec::<String>::new());
+}
+
+#[test]
 fn prompt_tags_are_their_own_locked_lines_and_the_inside_stays_editable() {
     let got = kinds("<context>\nInside **bold**\n</context>\n");
     assert_eq!(
@@ -599,6 +681,7 @@ fn a_single_file_sibling_changed_on_disk_is_a_conflict_never_overwritten() {
         formats: &formats,
         own: None,
         observer: None,
+        tree: None,
     };
     let seen = editor.source("other.md").unwrap();
     // an agent | another program writes the sibling after the person opened it
@@ -639,6 +722,7 @@ fn a_single_file_never_saves_through_a_way_out() {
         formats: &formats,
         own: None,
         observer: None,
+        tree: None,
     };
     let source = editor.source("only.md").unwrap();
     let secret = outside.path().join("secret.md").display().to_string();

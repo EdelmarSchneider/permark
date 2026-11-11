@@ -376,7 +376,8 @@ impl ProjectServices {
         &self.rpc
     }
 
-    /// Runs `f` with an editor over the project (surgical saves; writes announced as the app's own).
+    /// Runs `f` with an editor over the project (surgical saves; writes announced as the app's own; files it creates
+    /// listed in the tree at once).
     pub fn with_editor<R>(&self, f: impl FnOnce(&Editor<'_>) -> R) -> R {
         let formats = self.formats();
         let editor = Editor {
@@ -384,6 +385,7 @@ impl ProjectServices {
             formats: &formats,
             own: Some(&self.own),
             observer: None,
+            tree: Some(&self.explorer),
         };
         f(&editor)
     }

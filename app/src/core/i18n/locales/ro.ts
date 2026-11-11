@@ -117,6 +117,7 @@ export default {
 
   // ---- explorer, file operations, filter
   "explorer.collapseAll": "Restrânge tot",
+  "explorer.refresh": "Reîmprospătează",
   "explorer.revealOpen": "Arată documentul deschis",
   "explorer.empty":
     "Încă nu există fișiere Markdown aici. Fișierele noi apar imediat ce sunt scrise.",
@@ -666,6 +667,7 @@ export default {
   "cmd.copyPath": "Copiază calea",
   "cmd.openExternal": "Deschide în editorul extern",
   "cmd.revealInTree": "Arată documentul deschis în Explorator",
+  "cmd.refreshExplorer": "Reîmprospătează Exploratorul",
   "cmd.searchEverywhere": "Caută peste tot",
   "search.clear": "Șterge căutarea",
   "search.clearHint": "Șterge (Esc)",

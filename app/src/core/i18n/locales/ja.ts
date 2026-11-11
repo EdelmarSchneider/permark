@@ -116,6 +116,7 @@ export default {
   "condition.remedy.settings.git": "Git の設定",
   // ---- explorer, file operations, filter
   "explorer.collapseAll": "すべて折りたたむ",
+  "explorer.refresh": "最新の情報に更新",
   "explorer.revealOpen": "開いているドキュメントを表示",
   "explorer.empty":
     "まだ Markdown ファイルはありません。新しいファイルは書き込まれるとすぐに表示されます。",
@@ -645,6 +646,7 @@ export default {
   "cmd.copyPath": "パスをコピー",
   "cmd.openExternal": "外部エディターで開く",
   "cmd.revealInTree": "開いているドキュメントをエクスプローラーで表示",
+  "cmd.refreshExplorer": "エクスプローラーを最新の情報に更新",
   "cmd.searchEverywhere": "すべての場所を検索",
   "search.clear": "検索をクリア",
   "search.clearHint": "クリア (Esc)",

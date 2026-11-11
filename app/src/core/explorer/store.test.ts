@@ -351,6 +351,7 @@ describe("loading", () => {
       "treeSetFilter",
       "treeOpenFolder",
       "treeKeep",
+      "treeRefresh",
       "treeClose",
       "projectSessionGet",
       "projectSessionSet",
@@ -373,6 +374,7 @@ describe("loading", () => {
     await store.toggle("docs");
     store.reveal("docs/guide.md");
     await store.setActive("docs/guide.md");
+    await store.refresh();
     await store.acceptCodeOffer();
     await store.declineCodeOffer();
     await store.activate("README.md");
@@ -578,6 +580,47 @@ describe("rows and selection", () => {
     store.collapseAll();
     store.revealActive();
     expect(store.isOpen("docs")).toBe(false);
+  });
+
+  it("a refresh asks the backend to read the folder again; the list follows through deltas and keeps its place", async () => {
+    const { api, store, failures } = await setup();
+    await store.toggle("docs");
+    store.select("docs/guide.md", "single");
+    const asked = vi.spyOn(api, "treeRefresh");
+    const whole = vi.spyOn(api, "treeOpen");
+    // a file the tree was never told of (a report of the watch that got lost)
+    api.probe.project.add("docs/lost.md", "# Lost");
+    expect(paths(store)).not.toContain("docs/lost.md");
+    await store.refresh();
+    expect(asked).toHaveBeenCalledOnce();
+    expect(paths(store)).toContain("docs/lost.md");
+    // no whole list asked again (the list would blink), nothing the person set is lost
+    expect(whole).not.toHaveBeenCalled();
+    expect(store.load.status).toBe("ready");
+    expect(store.isOpen("docs")).toBe(true);
+    expect(Array.from(store.selection)).toEqual(["docs/guide.md"]);
+    expect(failures).toEqual([]);
+  });
+
+  it("a refresh tells nothing while the tree is gone, and tells a real refusal", async () => {
+    let answer: ApiError | null = null;
+    const { store, failures } = await setup("ask", (api) => ({
+      ...api,
+      treeRefresh: () =>
+        answer === null ? api.treeRefresh() : Promise.resolve({ ok: false, error: answer }),
+    }));
+    const refusal = (kind: "unsupported" | "io"): ApiError => ({
+      kind: "backend",
+      command: "tree_refresh",
+      error: { kind, subject: kind === "unsupported" ? "project" : null, detail: null },
+    });
+    // another folder opening in the view: no project to read
+    answer = refusal("unsupported");
+    await store.refresh();
+    expect(failures).toEqual([]);
+    answer = refusal("io");
+    await store.refresh();
+    expect(failures.map((f) => f.kind === "backend" && f.error.kind)).toEqual(["io"]);
   });
 
   it("keeping the open document listed tells nothing while the tree is gone, and tells a real refusal", async () => {

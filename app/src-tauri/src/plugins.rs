@@ -387,6 +387,7 @@ mod tests {
             formats: &formats,
             own: None,
             observer: None,
+            tree: None,
         };
         let set = |path: &str, text: &str| ConfigEdit::Set {
             path: path.to_owned(),
@@ -451,6 +452,7 @@ mod tests {
             formats: &formats,
             own: None,
             observer: None,
+            tree: None,
         };
         let cases: [(&str, [&str; 5], &str, &str); 4] = [
             (
@@ -626,6 +628,7 @@ mod tests {
             formats: &formats,
             own: None,
             observer: None,
+            tree: None,
         };
         let mut sources = serde_json::Map::new();
         for (path, _) in documents {

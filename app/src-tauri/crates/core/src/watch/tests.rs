@@ -651,7 +651,7 @@ fn without_live_updates_the_open_document_is_polled() {
 #[test]
 fn a_rescan_request_is_a_bulk_batch_that_asks_to_rebuild() {
     let f = make(&["a.md"], true);
-    f.watcher.inject_rescan();
+    f.watcher.rescan();
     let started = Instant::now();
     loop {
         if f.seen.lock().unwrap().iter().any(|b| b.rescan && b.bulk) {
@@ -810,6 +810,236 @@ fn a_project_core_updates_the_tree_before_plugins_hear_and_tears_everything_down
         count,
         "nothing after the project closed"
     );
+}
+
+#[test]
+fn a_file_made_through_the_projects_own_editor_is_listed_before_the_watch_reports_it() {
+    let base = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fs::write(project.path().join("a.md"), "a").unwrap();
+    let seen: Seen = Arc::default();
+    let sink = Arc::new(Recorder::default());
+    let env = project_env(base.path(), &seen, sink.clone());
+    let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
+    core.explorer().open_view("w", Some(TreeFilter::default()));
+    std::thread::sleep(Duration::from_millis(200));
+    sink.take();
+    // the editor plugins get (a document written back at its path): the tree is told with the write, not by the watch,
+    // whose report waits for a quiet moment
+    let back = core
+        .services()
+        .with_editor(|editor| editor.save_as("back.md", "back\n", true))
+        .unwrap();
+    assert!(core.explorer().listed(&back).is_some(), "listed at once");
+    let reported = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|batch| batch.changes.iter().any(|c| c.path == back));
+    assert!(!reported, "the watch has not reported the file yet");
+    let told = sink.take().into_iter().any(|event| match event {
+        CoreEvent::TreeChanged(c) => {
+            c.window == "w" && c.delta.added.iter().any(|a| a.node.path == back)
+        }
+        _ => false,
+    });
+    assert!(told, "the window is told");
+}
+
+/// A new file written through the project's editor with nothing but the watch to tell the tree: the write is
+/// announced as the app's own, as the app does for a window. Returns the file's project path.
+fn write_beside(core: &ProjectCore, beside: &str, name: &str, text: &str) -> String {
+    let formats = core.formats();
+    let editor = crate::edit::Editor {
+        scope: core.documents().scope(),
+        formats: &formats,
+        own: Some(core.watcher().own().as_ref()),
+        observer: None,
+        tree: None,
+    };
+    editor.write_beside(beside, name, text).unwrap()
+}
+
+/// Waits until the project's tree lists `path` (the watch told it).
+fn listed_soon(core: &ProjectCore, path: &str) -> bool {
+    let started = Instant::now();
+    while core.explorer().listed(path).is_none() {
+        if started.elapsed() > Duration::from_secs(8) {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    true
+}
+
+#[test]
+fn a_file_the_editor_creates_reaches_the_tree_through_the_real_watch_as_the_apps_own() {
+    let base = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fs::create_dir_all(project.path().join("Docs")).unwrap();
+    fs::write(project.path().join("Docs/CONCEPT-0.md"), "# Concept\n").unwrap();
+    fs::write(project.path().join("top.md"), "top\n").unwrap();
+    let seen: Seen = Arc::default();
+    let env = project_env(base.path(), &seen, Arc::new(Recorder::default()));
+    let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
+    core.explorer().open_view("w", Some(TreeFilter::default()));
+    std::thread::sleep(Duration::from_millis(200));
+    // in a folder, a name with two dots; at the top of the project; a taken name (`(2)`)
+    let copy = write_beside(
+        &core,
+        "Docs/CONCEPT-0.md",
+        "CONCEPT-0.pt-BR.md",
+        "# Conceito\n",
+    );
+    let top = write_beside(&core, "top.md", "top.en-US.md", "top\n");
+    let again = write_beside(
+        &core,
+        "Docs/CONCEPT-0.md",
+        "CONCEPT-0.pt-BR.md",
+        "# Outra\n",
+    );
+    assert_eq!(copy, "Docs/CONCEPT-0.pt-BR.md");
+    assert_eq!(again, "Docs/CONCEPT-0.pt-BR (2).md");
+    for path in [&copy, &top, &again] {
+        assert!(listed_soon(&core, path), "the tree lists {path}");
+    }
+    // the announced content is what the watch read: each creation is the app's own, told once
+    let all = wait_for(&seen, "the plugin hears the files", |c| {
+        [&copy, &top, &again]
+            .iter()
+            .all(|path| has(c, path, &ChangeKind::Created))
+    });
+    for path in [&copy, &top, &again] {
+        let told: Vec<&Change> = all.iter().filter(|c| &c.path == path).collect();
+        assert!(told.iter().all(|c| c.own), "{told:?}");
+        assert_eq!(told.len(), 1, "{told:?}");
+    }
+}
+
+#[test]
+fn a_new_file_the_window_shows_before_the_watch_reports_it_is_still_news() {
+    let base = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fs::create_dir_all(project.path().join("Docs")).unwrap();
+    fs::write(project.path().join("Docs/CONCEPT-0.md"), "# Concept\n").unwrap();
+    let seen: Seen = Arc::default();
+    let env = project_env(base.path(), &seen, Arc::new(Recorder::default()));
+    let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
+    core.explorer().open_view("w", Some(TreeFilter::default()));
+    std::thread::sleep(Duration::from_millis(200));
+    // the app writes a translated copy and shows it at once: the window names its document while the events of the
+    // write still wait for their quiet moment
+    let copy = write_beside(
+        &core,
+        "Docs/CONCEPT-0.md",
+        "CONCEPT-0.pt-BR.md",
+        "# Conceito\n",
+    );
+    core.watcher()
+        .poll_document("w", Some(&project.path().join("Docs/CONCEPT-0.pt-BR.md")));
+    assert!(listed_soon(&core, &copy), "the tree lists {copy}");
+    wait_for(&seen, "the plugin hears the file", |c| {
+        has(c, &copy, &ChangeKind::Created)
+    });
+}
+
+#[test]
+fn a_change_of_the_document_the_window_shows_again_before_the_watch_reports_it_is_still_news() {
+    let f = make(&["a.md"], true);
+    let doc = f.dir.path().join("a.md");
+    fs::write(&doc, "one").unwrap();
+    wait_for(&f.seen, "first change", |c| {
+        c.iter().any(|c| c.path == "a.md")
+    });
+    f.seen.lock().unwrap().clear();
+    // someone saves the file and the window opens it before the quiet moment is over
+    write_atomic(&doc, b"two").unwrap();
+    f.watcher.poll_document("w", Some(&doc));
+    wait_for(&f.seen, "modified", |c| {
+        has(c, "a.md", &ChangeKind::Modified)
+    });
+}
+
+#[test]
+fn a_rescan_lists_what_no_report_told() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("a.md"), "a").unwrap();
+    let vault = Vault::new(Root::open(dir.path()).unwrap());
+    let sink = Arc::new(Recorder::default());
+    let explorer = Arc::new(Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        sink.clone(),
+        None,
+    ));
+    let hub = WatchHub::new();
+    let _sub = hub.subscribe({
+        let explorer = Arc::clone(&explorer);
+        move |batch| explorer.apply_batch(batch)
+    });
+    // no OS watch: nothing reports what happens on disk (as when a report is lost)
+    let watcher = Watcher::start_with(
+        &vault,
+        explorer.ignorers(),
+        hub,
+        Arc::new(OwnWrites::new()),
+        None,
+        FAST,
+        false,
+    );
+    explorer.open_view("w", Some(TreeFilter::default()));
+    fs::create_dir_all(dir.path().join("Docs")).unwrap();
+    fs::write(dir.path().join("Docs/new.md"), "new").unwrap();
+    fs::remove_file(dir.path().join("a.md")).unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(explorer.listed("Docs/new.md").is_none(), "nobody told");
+    assert!(explorer.listed("a.md").is_some());
+    watcher.rescan();
+    let started = Instant::now();
+    while explorer.listed("Docs/new.md").is_none() {
+        assert!(started.elapsed() < Duration::from_secs(8), "walked again");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(explorer.listed("a.md").is_none());
+    // the window is told what differs
+    let deltas: Vec<_> = sink
+        .take()
+        .into_iter()
+        .filter_map(|e| match e {
+            CoreEvent::TreeChanged(c) if c.window == "w" => Some(c.delta),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        deltas
+            .iter()
+            .any(|d| d.added.iter().any(|a| a.node.path == "Docs/new.md")
+                && d.removed.contains(&"a.md".to_owned())),
+        "{deltas:?}"
+    );
+}
+
+#[test]
+fn a_project_refresh_asks_every_part_to_read_the_folder_again() {
+    let base = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fs::write(project.path().join("a.md"), "a").unwrap();
+    let seen: Seen = Arc::default();
+    let env = project_env(base.path(), &seen, Arc::new(Recorder::default()));
+    let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
+    core.explorer().open_view("w", Some(TreeFilter::default()));
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(seen.lock().unwrap().iter().all(|b| !b.rescan));
+    core.refresh();
+    let started = Instant::now();
+    while !seen.lock().unwrap().iter().any(|b| b.rescan && b.bulk) {
+        assert!(
+            started.elapsed() < Duration::from_secs(8),
+            "the plugins hear the rescan"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(core.explorer().listed("a.md").is_some());
 }
 
 #[test]

@@ -12,8 +12,10 @@
   import GitBranch from "@lucide/svelte/icons/git-branch";
   import GitCommitHorizontal from "@lucide/svelte/icons/git-commit-horizontal";
   import ListFilter from "@lucide/svelte/icons/list-filter";
+  import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import type { ProjectRow, TreeNode } from "../../api";
+  import { keyHint } from "../commands/hint";
   import { conditions } from "../conditions/context.svelte";
   import { t, tn } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
@@ -65,6 +67,8 @@
   let suppressClick = false;
   let handledScroll = 0;
 
+  /** The keys of Refresh as the keyboard map has them now (`null`: none). */
+  const refreshKeys = $derived(keyHint("explorer.refresh"));
   const badges = $derived(registry.visible("treeBadge", conditions.current));
   /** What plugins know about included projects (git: the branch after the node's name). */
   const facts = $derived(registry.visible("projectFacts", conditions.current));
@@ -349,6 +353,13 @@
     const entries: MenuEntry[] = [
       { kind: "item", label: t("newFile.newFile"), run: () => store.beginNew("file") },
       { kind: "item", label: t("fileOps.newFolder"), run: () => store.beginNew("folder") },
+      { kind: "separator" },
+      {
+        kind: "item",
+        label: t("explorer.refresh"),
+        ...(refreshKeys === null ? {} : { hint: refreshKeys }),
+        run: () => void store.refresh(),
+      },
     ];
     if (conditions.current.permark === "notInitialized") {
       entries.push(
@@ -665,6 +676,17 @@
       onclick={() => store.collapseAll()}
     >
       <ChevronsDownUp size={15} />
+    </button>
+    <button
+      type="button"
+      class="icon"
+      title={refreshKeys === null
+        ? t("explorer.refresh")
+        : `${t("explorer.refresh")} (${refreshKeys})`}
+      aria-label={t("explorer.refresh")}
+      onclick={() => void store.refresh()}
+    >
+      <RefreshCw size={15} />
     </button>
     <button
       type="button"

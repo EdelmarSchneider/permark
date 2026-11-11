@@ -387,6 +387,7 @@ export interface Commands {
   tree_set_filter: { args: { filter: TreeFilter }; result: TreeSnapshot };
   tree_open_folder: { args: { path: string }; result: null };
   tree_keep: { args: { path: string | null }; result: null };
+  tree_refresh: { args: Record<string, never>; result: null };
   tree_close: { args: Record<string, never>; result: null };
   projects_view: { args: Record<string, never>; result: ProjectsView };
   projects_include: { args: { pick: ProjectPick }; result: IncludeOutcome };
@@ -954,6 +955,9 @@ export interface Api {
   treeOpenFolder(path: string): Promise<Result<null>>;
   /** The open document stays in the list even when the filter hides it. */
   treeKeep(path: string | null): Promise<Result<null>>;
+  /** The person's Refresh: the backend reads the project folder again (the tree, the index, git, every plugin that
+   *  keeps a picture of the disk). Answers at once; what differs arrives as `tree-changed`. */
+  treeRefresh(): Promise<Result<null>>;
   treeClose(): Promise<Result<null>>;
   /** Projects inside this window's folder: Settings > Projects + the strip. Changes arrive as `projects-changed`. */
   projectsView(): Promise<Result<ProjectsView>>;

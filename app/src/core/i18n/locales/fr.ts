@@ -119,6 +119,7 @@ export default {
 
   // ---- explorer, file operations, filter
   "explorer.collapseAll": "Tout réduire",
+  "explorer.refresh": "Actualiser",
   "explorer.revealOpen": "Afficher le document ouvert",
   "explorer.empty":
     "Aucun fichier Markdown ici pour l'instant. Les nouveaux fichiers apparaissent dès qu'ils sont écrits.",
@@ -654,6 +655,7 @@ export default {
   "cmd.copyPath": "Copier le chemin",
   "cmd.openExternal": "Ouvrir dans un éditeur externe",
   "cmd.revealInTree": "Afficher le document ouvert dans l'Explorateur",
+  "cmd.refreshExplorer": "Actualiser l'Explorateur",
   "cmd.searchEverywhere": "Rechercher partout",
   "search.clear": "Effacer la recherche",
   "search.clearHint": "Effacer (Échap)",

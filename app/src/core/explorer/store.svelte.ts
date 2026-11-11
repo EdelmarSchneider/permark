@@ -317,6 +317,15 @@ export class ExplorerStore {
     await this.#open();
   }
 
+  /** The person's Refresh: the backend reads the project folder again and tells what differs through deltas (the list
+   *  is not asked for again: it keeps its place, what is open and selected). A view with no project now (another
+   *  folder opening in it) has nothing to read. */
+  async refresh(): Promise<void> {
+    if (this.#closed) return;
+    const result = await this.#api.treeRefresh();
+    if (!result.ok && !treeGone(result.error)) this.#host.fail(result.error);
+  }
+
   #remember(): void {
     if (this.#closed) return;
     if (this.#timer !== null) clearTimeout(this.#timer);
