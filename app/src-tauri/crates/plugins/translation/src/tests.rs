@@ -501,3 +501,5 @@ fn save_writes_a_new_file_beside_the_original_and_never_over_one() {
     assert_eq!(files["docs/readme.pt-BR.md"], "# Leia-me\n");
     assert_eq!(files["docs/readme.pt-BR (2).md"], "# Leia-me\n");
 }
+
+mod eval;

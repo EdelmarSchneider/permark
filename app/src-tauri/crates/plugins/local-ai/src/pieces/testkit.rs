@@ -4,6 +4,10 @@
 //!
 //! Compiled for tests only: this crate's own, another crate's through feature `testkit` enabled from its
 //! `[dev-dependencies]` (never part of an app build).
+//!
+//! Module [`eval`]: the harness of a job's eval set (its cases answered by the fake | a real model -> outputs file).
+
+pub mod eval;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
