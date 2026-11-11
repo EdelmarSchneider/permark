@@ -5,6 +5,21 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Translate text.** While you edit a document, in Edit or in Source, the translate button next to the mode switch translates the selection, the paragraph you are in or the whole document with the local AI model you chose for translation in **Settings > Local AI**. You pick the language from a list you can search; the language of the text is found by itself, and you can name it for the next run. Each translation is shown under its original and nothing changes in your text until you accept it, one by one or all at once. Code, links, web addresses, formulas and HTML stay as written. **Ctrl+Alt+R** translates where the cursor is. Nothing leaves your computer. <!-- f: translation, editing, local-ai -->
+- **Translate to a new file.** The same menu can translate a whole document into a new file next to it, named after the language (`readme.md` becomes `readme.pt-BR.md`). Your document is not changed and an existing file is never replaced. Progress and Cancel are in the status bar, so you can keep working meanwhile. Parts the model could not translate stay in the original language, and the notice says how many. <!-- f: translation, local-ai -->
+
+### Changed
+- **Correct spelling and grammar** now also checks text in tables, cell by cell; the table itself is never touched. <!-- f: correction, editing -->
+- In Edit, parts that can only be changed in Source (alerts, footnotes and other drawn blocks) are no longer checked and then refused: the bar says how many there are. **Accept all** is always a single undo step. After you went through every suggestion the bar says so instead of "No mistakes found". <!-- f: correction, editing, edit-mode -->
+- **F7** and **Shift+F7** move through the suggestions of the review that is open, for correction and for translation. They are now the commands "Next suggestion" and "Previous suggestion"; if you had set your own keys for the two correction commands, set them again. <!-- f: correction, translation, shortcuts -->
+- Only one review is open at a time: while you review corrections the translation entries wait, and the other way round. <!-- f: correction, translation -->
+
+### Fixed
+- A suggestion waiting in the correction bar is no longer dropped when the text around it changes; it follows its own words. Before, accepting two suggestions in one table could drop the others in that table. <!-- f: correction, editing -->
+- Correction no longer sends the marker of an alert (`[!NOTE]`), the text inside an inline HTML element such as `<kbd>Ctrl</kbd>`, or a table whose separator row ends in spaces to the model, and it refuses an answer that adds links, HTML or headings the text did not have. <!-- f: correction -->
+- Using correction and translation one after the other no longer loads the AI model twice at the same time, which could fail on computers with little memory. <!-- f: local-ai -->
+
 ## [0.10.0] - 2026-11-08
 
 ### Changed
