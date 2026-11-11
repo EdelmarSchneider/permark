@@ -2529,7 +2529,7 @@ export default {
   // ---- translation (plugin `translation`)
   "plugin.translation.name": "Tradução",
   "plugin.translation.about":
-    "Traduz texto para outro idioma com um pequeno modelo de IA neste computador. Cada parte traduzida é mostrada para revisão antes de entrar, e o texto nunca sai do computador.",
+    "Traduz texto para outro idioma com um pequeno modelo de IA neste computador. Cada parte traduzida é mostrada para revisão antes de entrar, ou um documento inteiro é traduzido para um novo arquivo ao lado do original. O texto nunca sai do computador.",
   "translation.language.command": "Traduzir para…",
   "translation.language.title": "Traduzir para",
   "translation.language.to": "Para: {language}",
@@ -2588,4 +2588,18 @@ export default {
   "translation.done": "Concluir",
   "translation.retry": "Tentar de novo",
   "translation.openSettings": "Abrir configurações de IA local",
+  "translation.copy.action": "Traduzir para um novo arquivo…",
+  "translation.copy.creates": "Cria {name} ao lado deste arquivo.",
+  "translation.copy.busy": "Uma tradução para um novo arquivo está em andamento",
+  "translation.copy.progress": "Traduzindo {i} / {n}",
+  "translation.copy.cancel": "Cancelar a tradução de {name}",
+  "translation.copy.done": "Traduzido para o {language}: {name}.",
+  "translation.copy.failedParts.one":
+    "{n} parte não pôde ser traduzida e continua no idioma original.",
+  "translation.copy.failedParts.other":
+    "{n} partes não puderam ser traduzidas e continuam no idioma original.",
+  "translation.copy.same": "Nada foi traduzido: o texto já está em {language}.",
+  "translation.copy.noFile": "Nenhum arquivo foi criado.",
+  "translation.copy.stopped": "Tradução interrompida.",
+  "translation.copy.notSaved": "Não foi possível salvar o arquivo traduzido.",
 } satisfies Messages;

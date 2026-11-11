@@ -2673,7 +2673,7 @@ export default {
   // ---- translation (plugin `translation`)
   "plugin.translation.name": "Traducere",
   "plugin.translation.about":
-    "Traduce textul în altă limbă cu un model AI mic de pe acest computer. Fiecare parte tradusă e arătată pentru verificare înainte să fie aplicată, iar textul nu părăsește niciodată computerul.",
+    "Traduce textul în altă limbă cu un model AI mic de pe acest computer. Fiecare parte tradusă e arătată pentru verificare înainte să fie aplicată sau un document întreg e tradus într-un fișier nou, lângă original. Textul nu părăsește niciodată computerul.",
   "translation.language.command": "Tradu în…",
   "translation.language.title": "Tradu în",
   "translation.language.to": "În: {language}",
@@ -2738,4 +2738,20 @@ export default {
   "translation.done": "Gata",
   "translation.retry": "Încearcă din nou",
   "translation.openSettings": "Deschide setările AI local",
+  "translation.copy.action": "Tradu într-un fișier nou…",
+  "translation.copy.creates": "Creează {name} lângă acest fișier.",
+  "translation.copy.busy": "O traducere într-un fișier nou este în curs",
+  "translation.copy.progress": "Se traduce {i} / {n}",
+  "translation.copy.cancel": "Anulează traducerea pentru {name}",
+  "translation.copy.done": "Tradus în {language}: {name}.",
+  "translation.copy.failedParts.one":
+    "{n} parte nu a putut fi tradusă și rămâne în limba originală.",
+  "translation.copy.failedParts.few":
+    "{n} părți nu au putut fi traduse și rămân în limba originală.",
+  "translation.copy.failedParts.other":
+    "{n} de părți nu au putut fi traduse și rămân în limba originală.",
+  "translation.copy.same": "Nu s-a tradus nimic: textul este deja în {language}.",
+  "translation.copy.noFile": "Nu a fost creat niciun fișier.",
+  "translation.copy.stopped": "Traducere oprită.",
+  "translation.copy.notSaved": "Fișierul tradus nu a putut fi salvat.",
 } satisfies Messages & FewForms;

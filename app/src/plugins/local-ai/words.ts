@@ -250,6 +250,17 @@ export function testErrorText(error: ApiError): string {
   return key === null ? errorText(error) : t(key);
 }
 
+/** Why a plugin's run of pieces failed, in words: `noModel` (the plugin's own) for no model on its job, which the
+ *  Local AI page fixes; the Test model words for the rest (`notAvailable` = no engine built for this computer; a
+ *  missing one the run gets). */
+export function runErrorText(error: ApiError, noModel: MessageKey): string {
+  if (error.kind === "backend" && error.error.kind === "unavailable") {
+    const { subject, detail } = error.error;
+    if (subject === "model" && detail === "noModel") return t(noModel);
+  }
+  return testErrorText(error);
+}
+
 /** A short duration: "0.6 seconds", "1.8 seconds" (one decimal, the current language's unit words). */
 export function secondsText(ms: number): string {
   return new Intl.NumberFormat(language.locale, {

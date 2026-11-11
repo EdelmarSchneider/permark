@@ -3,7 +3,8 @@
 // this paragraph | whole document, then the plugin's own entries), the review bar under the header, and the commands:
 // "here" (the selection, else the paragraph; with suggestions to go through: the keyboard to the bar) and the whole
 // document. One review at a time in an editor: while another plugin's is open the runs of this one are off (menu
-// entries that say why, commands not offered, so their keys pass). So the steps to the next | previous suggestion
+// entries that say why, commands not offered, so their keys pass); the same while the plugin itself says it cannot
+// run (`busy`: its backend is on another run of its own). So the steps to the next | previous suggestion
 // are one pair of commands for whichever review is open (`contributeSteps`, added once, by plugin `local-ai`): a pair
 // per plugin would be two commands on one key.
 
@@ -40,6 +41,9 @@ export type ReviewEntries = {
   start?: (target: RunTarget) => void;
   /** The plugin's own menu entries, after the scopes. */
   more?: () => MenuEntry[];
+  /** The plugin's own reason no run may start now, in words (`null`: none): something else of it runs on its
+   *  backend, which takes one run at a time. Said with the scopes, turned off like while another review is open. */
+  busy?: () => string | null;
 };
 
 const SEPARATOR: MenuEntry = { kind: "separator" };
@@ -57,7 +61,7 @@ const PREV: CommandEntry = {
 };
 
 /** The open document is edited in this window. */
-function edited(): boolean {
+export function edited(): boolean {
   return editing.mode !== "view" && editing.path === documents.path;
 }
 
@@ -107,18 +111,21 @@ export function contributeReview(cx: PluginContext, entries: ReviewEntries): () 
   const { review } = entries;
   /** A model is assigned and the open document is edited. */
   const offered = (): boolean => review.available && edited();
-  /** A run may start: no other plugin's review holds the editor. */
-  const free = (): boolean => offered() && !review.blocked;
+  /** Why no run may start now, in words: another plugin's review holds the editor, or the plugin's own reason
+   *  (`null`: one may). */
+  const held = (): string | null =>
+    review.blocked ? t("localAi.review.busy") : (entries.busy?.() ?? null);
+  const free = (): boolean => offered() && held() === null;
   const start = entries.start ?? ((target: RunTarget) => startRun(review, target));
 
   const scope = (kind: EditScope): MenuEntry => {
-    const busy = review.blocked;
+    const why = held();
     return {
       kind: "item",
       label: t(entries.scopes[kind]),
-      disabled: busy || (kind === "selection" && editing.scope("selection") === null),
+      disabled: why !== null || (kind === "selection" && editing.scope("selection") === null),
       // said with the entry: a disabled one is still reached and read
-      ...(busy ? { detail: t("localAi.review.busy") } : {}),
+      ...(why === null ? {} : { detail: why }),
       run: () => start(kind),
     };
   };

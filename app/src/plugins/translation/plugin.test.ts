@@ -2,7 +2,8 @@
 // Plugin `translation` switched on | off: the review follows the model of job "translation" and the remembered
 // languages, and nothing is left after; dormant while no model is assigned to the job. Its ways in while a document
 // is edited: the button with the mode switch and its menu, the commands and the key; a first run asks for the
-// language; none of them runs while another plugin's review is open.
+// language; none of them runs while another plugin's review is open. "Translate to a new file…": where it is
+// offered, what it asks first, what holds it and what it holds, its place in the status bar.
 import "../../core/testing/media";
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +19,9 @@ const { api } = await import("../../api");
 const { ContributionRegistry, PluginHost, pluginLoaders } =
   await import("../../core/plugins/registry.svelte");
 const { editing } = await import("../../core/editing/session.svelte");
+const { documents } = await import("../../core/doc/document.svelte");
 const { translation } = await import("./store.svelte");
+const { copy } = await import("./copy.svelte");
 const { languageDialog } = await import("./dialog.svelte");
 const { correction } = await import("../correction/store.svelte");
 const { t } = await import("../../core/i18n");
@@ -62,9 +65,13 @@ afterEach(() => {
   host = null;
   mock.probe.translation.available = null;
   mock.probe.translation.prefs = { target: null, recent: [] };
+  mock.probe.translation.stepMs = 300;
+  mock.probe.translation.stopAll();
   editing.mode = "view";
+  editing.kind = "text";
   correction.state = { kind: "closed" };
   translation.state = { kind: "closed" };
+  copy.state = { kind: "idle" };
   languageDialog.close();
   vi.restoreAllMocks();
 });
@@ -221,6 +228,7 @@ describe("the ways into a translation", () => {
       "translation.document",
       "translation.here",
       "translation.language",
+      "translation.newFile",
     ]);
     // the button after correction's, the bar right under correction's
     const [button] = registry.of("editAction").filter((a) => a.owner === "translation");
@@ -445,5 +453,205 @@ describe("one review at a time", () => {
       false,
     ]);
     expect(command(registry, "translation.here").when?.()).toBe(true);
+  });
+});
+
+describe("translate to a new file", () => {
+  const NEW_FILE = "Translate to a new file…";
+  const RUNNING = "A translation to a new file is running";
+  /** A copy on its way. */
+  const going: typeof copy.state = {
+    kind: "running",
+    file: "guide.md",
+    status: { kind: "loading", progress: 0 },
+  };
+  const labels = (entries: MenuEntry[]): string[] =>
+    entries.map((entry) => (entry.kind === "item" ? entry.label : entry.kind));
+
+  /** The plugin on and `path` open in the editor as a Markdown document. */
+  async function editingMarkdown(path: string, ...first: Other[]) {
+    const registry = await editingWith("de", ...first);
+    editing.kind = "markdown";
+    vi.spyOn(editing, "path", "get").mockReturnValue(path);
+    vi.spyOn(documents, "path", "get").mockReturnValue(path);
+    return registry;
+  }
+
+  it("is in the menu after the scopes and a command, while a Markdown document is edited", async () => {
+    const registry = await editingWith("de");
+    const newFile = command(registry, "translation.newFile");
+    expect(t(newFile.label)).toBe(NEW_FILE);
+    // a text that is not Markdown: the review's entries alone
+    expect(labels(menuOf(registry))).not.toContain(NEW_FILE);
+    expect(newFile.when?.()).toBe(false);
+    editing.kind = "markdown";
+    expect(labels(menuOf(registry))).toEqual([
+      "Selection",
+      "This paragraph",
+      "Whole document",
+      "separator",
+      NEW_FILE,
+      "separator",
+      "To: German…",
+    ]);
+    for (const mode of ["edit", "source"] as const) {
+      editing.mode = mode;
+      expect(newFile.when?.(), mode).toBe(true);
+    }
+    editing.mode = "view";
+    expect(newFile.when?.()).toBe(false);
+  });
+
+  it("always asks for the language first, naming the file it will make; Translate starts it, Cancel nothing", async () => {
+    const registry = await editingMarkdown("docs/readme.en.md");
+    const run = vi.spyOn(copy, "run").mockResolvedValue();
+    item(registry, NEW_FILE).run(false);
+    // a language was chosen before: asked all the same
+    const asked = languageDialog.state;
+    if (asked.status !== "open") throw new Error("no dialog");
+    expect(asked.confirm).toBe("translation.action");
+    const note = (tag: string): string | null =>
+      typeof asked.note === "function" ? asked.note(tag) : asked.note;
+    expect(note("pt-BR")).toBe("Creates readme.pt-BR.md next to this file.");
+    expect(note("ja")).toBe("Creates readme.ja.md next to this file.");
+    languageDialog.close();
+    expect(run).not.toHaveBeenCalled();
+    void command(registry, "translation.newFile").run();
+    expect(languageDialog.state.status).toBe("open");
+    languageDialog.confirm("ja", null);
+    expect(languageDialog.state.status).toBe("closed");
+    expect(translation.languages.target).toBe("ja");
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it("is off while a translation review is open or a copy runs, and says why; correction's review does not hold it", async () => {
+    const registry = await editingMarkdown("docs/guide.md", "correction");
+    const run = vi.spyOn(copy, "run").mockResolvedValue();
+    const newFile = command(registry, "translation.newFile");
+    const entry = (): Item => item(registry, NEW_FILE);
+    expect(entry().disabled).not.toBe(true);
+    expect(entry().detail).toBeUndefined();
+    expect(newFile.when?.()).toBe(true);
+    // suggestions to go through
+    translation.state = reviewOf(S1);
+    expect(entry()).toMatchObject({ disabled: true, detail: "Finish the current review first" });
+    expect(newFile.when?.()).toBe(false);
+    // a run going on, nothing found yet
+    translation.state = { ...reviewOf(), status: { kind: "loading", progress: 0 } };
+    expect(entry().disabled).toBe(true);
+    expect(newFile.when?.()).toBe(false);
+    void newFile.run();
+    entry().run(false);
+    expect(languageDialog.state.status).toBe("closed");
+    translation.state = { kind: "closed" };
+    correction.state = reviewOf(S1);
+    expect(entry().disabled).not.toBe(true);
+    expect(newFile.when?.()).toBe(true);
+    correction.state = { kind: "closed" };
+    copy.state = going;
+    expect(entry()).toMatchObject({ disabled: true, detail: RUNNING });
+    expect(newFile.when?.()).toBe(false);
+    void newFile.run();
+    entry().run(false);
+    expect(languageDialog.state.status).toBe("closed");
+    expect(run).not.toHaveBeenCalled();
+    expect(t("translation.copy.busy")).toBe(RUNNING);
+  });
+
+  it("a review that opens while the language is asked for: the copy does not start", async () => {
+    const registry = await editingMarkdown("docs/guide.md");
+    const run = vi.spyOn(copy, "run").mockResolvedValue();
+    item(registry, NEW_FILE).run(false);
+    translation.state = reviewOf(S1);
+    languageDialog.confirm("ja", null);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("while a copy runs the review's entries are off and say why; the language and correction stay", async () => {
+    const registry = await editingMarkdown("docs/guide.md", "correction");
+    await vi.waitFor(() => expect(correction.available).toBe(true));
+    const runOver = vi.spyOn(translation, "runOver");
+    const runHere = vi.spyOn(translation, "runHere");
+    vi.spyOn(editing, "scope").mockReturnValue({ from: 0, to: 5 });
+    copy.state = going;
+    const items = itemsOf(menuOf(registry));
+    expect(items.map((entry) => entry.disabled === true)).toEqual([true, true, true, true, false]);
+    expect(items.map((entry) => entry.detail)).toEqual([
+      RUNNING,
+      RUNNING,
+      RUNNING,
+      RUNNING,
+      undefined,
+    ]);
+    // the commands (and with them the key) go; whatever still asks starts nothing
+    expect(command(registry, "translation.here").when?.()).toBe(false);
+    expect(command(registry, "translation.document").when?.()).toBe(false);
+    for (const label of ["Selection", "This paragraph", "Whole document"])
+      item(registry, label).run(false);
+    void command(registry, "translation.here").run();
+    void command(registry, "translation.document").run();
+    expect(runOver).not.toHaveBeenCalled();
+    expect(runHere).not.toHaveBeenCalled();
+    expect(command(registry, "translation.language").when?.()).toBe(true);
+    // a copy changes nothing in the editor: correction goes on
+    expect(
+      itemsOf(menuOf(registry, "correction.menu")).map((entry) => entry.disabled === true),
+    ).toEqual([false, false, false]);
+    expect(command(registry, "correction.correct").when?.()).toBe(true);
+    // the copy over: all of it is back
+    copy.state = { kind: "idle" };
+    expect(itemsOf(menuOf(registry)).some((entry) => entry.disabled === true)).toBe(false);
+    expect(itemsOf(menuOf(registry)).every((entry) => entry.detail === undefined)).toBe(true);
+    expect(command(registry, "translation.here").when?.()).toBe(true);
+    expect(command(registry, "translation.document").when?.()).toBe(true);
+  });
+
+  it("a first run's language confirmed after a copy started: the review does not run", async () => {
+    const registry = await editingWith(null);
+    const runOver = vi.spyOn(translation, "runOver").mockResolvedValue();
+    item(registry, "Whole document").run(false);
+    expect(languageDialog.state.status).toBe("open");
+    copy.state = going;
+    languageDialog.confirm("de", null);
+    expect(runOver).not.toHaveBeenCalled();
+  });
+
+  it("its place in the status bar shows only a copy that runs, with a Cancel that names the file", async () => {
+    const { registry } = await on();
+    const place = registry.of("statusItem").find((c) => c.id === "translation.copy");
+    const { default: Place } = (await place?.view()) ?? { default: null };
+    if (Place === null) throw new Error("no place");
+    const target = document.createElement("div");
+    document.body.append(target);
+    const app = mount(Place, { target });
+    flushSync();
+    expect(target.textContent?.trim()).toBe("");
+    copy.state = going;
+    flushSync();
+    expect(target.textContent).toContain("Getting the model ready…");
+    expect(target.querySelector("button")?.getAttribute("aria-label")).toBe(
+      "Cancel translation of guide.md",
+    );
+    copy.state = { kind: "idle" };
+    flushSync();
+    expect(target.textContent?.trim()).toBe("");
+    await unmount(app);
+    target.remove();
+  });
+
+  it("switched off mid-run: the run is stopped and nothing is left", async () => {
+    mock.probe.translation.stepMs = 1e9;
+    const registry = await editingMarkdown("docs/guide.md");
+    vi.spyOn(editing, "current").mockReturnValue("A text to translate.\n");
+    const files = [...mock.probe.project.files.keys()];
+    await copy.run();
+    const run = mock.probe.translation.runs.at(-1)?.run;
+    expect(run).toBeDefined();
+    expect(copy.running).toBe(true);
+    expect(host?.disable("translation"), "contributions left after deactivate").toBe(0);
+    expect(registry.ownedBy("translation")).toHaveLength(0);
+    expect(copy.running).toBe(false);
+    expect(mock.probe.translation.calls).toContain(`cancel ${run ?? ""}`);
+    expect([...mock.probe.project.files.keys()]).toEqual(files);
   });
 });

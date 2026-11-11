@@ -2540,7 +2540,7 @@ export default {
   // ---- translation (plugin `translation`)
   "plugin.translation.name": "Tradución",
   "plugin.translation.about":
-    "Traduce texto a outro idioma cun pequeno modelo de IA neste computador. Cada parte traducida móstrase para revisala antes de aplicala, e o texto nunca sae do computador.",
+    "Traduce texto a outro idioma cun pequeno modelo de IA neste computador. Cada parte traducida móstrase para revisala antes de aplicala, ou un documento enteiro tradúcese a un ficheiro novo a carón do orixinal. O texto nunca sae do computador.",
   "translation.language.command": "Traducir a…",
   "translation.language.title": "Traducir a",
   "translation.language.to": "A: {language}",
@@ -2599,4 +2599,17 @@ export default {
   "translation.done": "Feito",
   "translation.retry": "Tentar de novo",
   "translation.openSettings": "Abrir a configuración da IA local",
+  "translation.copy.action": "Traducir a un ficheiro novo…",
+  "translation.copy.creates": "Crea {name} a carón deste ficheiro.",
+  "translation.copy.busy": "Hai unha tradución a un ficheiro novo en curso",
+  "translation.copy.progress": "Traducindo {i} / {n}",
+  "translation.copy.cancel": "Cancelar a tradución de {name}",
+  "translation.copy.done": "Traducido ao {language}: {name}.",
+  "translation.copy.failedParts.one": "{n} parte non se puido traducir e segue no idioma orixinal.",
+  "translation.copy.failedParts.other":
+    "{n} partes non se puideron traducir e seguen no idioma orixinal.",
+  "translation.copy.same": "Non se traduciu nada: o texto xa está en {language}.",
+  "translation.copy.noFile": "Non se creou ningún ficheiro.",
+  "translation.copy.stopped": "Tradución detida.",
+  "translation.copy.notSaved": "Non foi posíbel gardar o ficheiro traducido.",
 } satisfies Messages;

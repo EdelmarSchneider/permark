@@ -2492,7 +2492,7 @@ export default {
   // ---- translation (plugin `translation`)
   "plugin.translation.name": "번역",
   "plugin.translation.about":
-    "이 컴퓨터의 작은 AI 모델로 텍스트를 다른 언어로 번역합니다. 번역된 모든 부분은 적용 전에 검토할 수 있으며, 텍스트는 컴퓨터 밖으로 나가지 않습니다.",
+    "이 컴퓨터의 작은 AI 모델로 텍스트를 다른 언어로 번역합니다. 번역된 부분을 적용 전에 하나씩 검토하거나, 문서 전체를 번역해 원본 옆에 새 파일로 만들 수 있습니다. 텍스트는 컴퓨터 밖으로 나가지 않습니다.",
   "translation.language.command": "번역할 언어…",
   "translation.language.title": "번역할 언어",
   "translation.language.to": "대상 언어: {language}",
@@ -2551,4 +2551,16 @@ export default {
   "translation.done": "완료",
   "translation.retry": "다시 시도",
   "translation.openSettings": "로컬 AI 설정 열기",
+  "translation.copy.action": "새 파일로 번역…",
+  "translation.copy.creates": "이 파일 옆에 {name}을(를) 만듭니다.",
+  "translation.copy.busy": "새 파일로 번역하는 중입니다",
+  "translation.copy.progress": "번역 중 {i} / {n}",
+  "translation.copy.cancel": "{name} 번역 취소",
+  "translation.copy.done": "{language}(으)로 번역했습니다: {name}.",
+  "translation.copy.failedParts.one": "{n}개 부분은 번역하지 못해 원래 언어로 남아 있습니다.",
+  "translation.copy.failedParts.other": "{n}개 부분은 번역하지 못해 원래 언어로 남아 있습니다.",
+  "translation.copy.same": "번역된 내용이 없습니다. 텍스트가 이미 {language}(으)로 되어 있습니다.",
+  "translation.copy.noFile": "파일을 만들지 않았습니다.",
+  "translation.copy.stopped": "번역을 중지했습니다.",
+  "translation.copy.notSaved": "번역한 파일을 저장하지 못했습니다.",
 } satisfies Messages;

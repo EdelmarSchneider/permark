@@ -2409,7 +2409,7 @@ export default {
   // ---- translation (plugin `translation`)
   "plugin.translation.name": "翻译",
   "plugin.translation.about":
-    "用这台电脑上的小型 AI 模型把文本翻译成另一种语言。每段译文都会先显示出来供审阅，文本不会离开这台电脑。",
+    "用这台电脑上的小型 AI 模型把文本翻译成另一种语言。可以在应用前逐段审阅译文，也可以把整篇文档翻译成原文件旁边的新文件。文本不会离开这台电脑。",
   "translation.language.command": "翻译为…",
   "translation.language.title": "翻译为",
   "translation.language.to": "目标语言：{language}",
@@ -2467,4 +2467,16 @@ export default {
   "translation.done": "完成",
   "translation.retry": "重试",
   "translation.openSettings": "打开本地 AI 设置",
+  "translation.copy.action": "翻译到新文件…",
+  "translation.copy.creates": "将在此文件旁创建 {name}。",
+  "translation.copy.busy": "正在翻译到新文件",
+  "translation.copy.progress": "正在翻译 {i} / {n}",
+  "translation.copy.cancel": "取消翻译 {name}",
+  "translation.copy.done": "已翻译为{language}：{name}。",
+  "translation.copy.failedParts.one": "{n} 个部分无法翻译，保留原语言。",
+  "translation.copy.failedParts.other": "{n} 个部分无法翻译，保留原语言。",
+  "translation.copy.same": "没有翻译任何内容：文本已经是{language}。",
+  "translation.copy.noFile": "未创建文件。",
+  "translation.copy.stopped": "翻译已停止。",
+  "translation.copy.notSaved": "无法保存翻译后的文件。",
 } satisfies Messages;

@@ -2491,7 +2491,7 @@ const en = {
   // ---- translation (plugin `translation`)
   "plugin.translation.name": "Translation",
   "plugin.translation.about":
-    "Translates text into another language with a small AI model on this computer. Every translated part is shown for review before it goes in, and the text never leaves the computer.",
+    "Translates text into another language with a small AI model on this computer. Every translated part is shown for review before it goes in, or a whole document is translated into a new file next to the original. The text never leaves the computer.",
   "translation.language.command": "Translate to…",
   "translation.language.title": "Translate to",
   "translation.language.to": "To: {language}",
@@ -2550,6 +2550,20 @@ const en = {
   "translation.done": "Done",
   "translation.retry": "Try again",
   "translation.openSettings": "Open Local AI settings",
+  "translation.copy.action": "Translate to a new file…",
+  "translation.copy.creates": "Creates {name} next to this file.",
+  "translation.copy.busy": "A translation to a new file is running",
+  "translation.copy.progress": "Translating {i} / {n}",
+  "translation.copy.cancel": "Cancel translation of {name}",
+  "translation.copy.done": "Translated to {language}: {name}.",
+  "translation.copy.failedParts.one":
+    "{n} part couldn't be translated and stays in the original language.",
+  "translation.copy.failedParts.other":
+    "{n} parts couldn't be translated and stay in the original language.",
+  "translation.copy.same": "Nothing was translated: the text is already in {language}.",
+  "translation.copy.noFile": "No file was created.",
+  "translation.copy.stopped": "Translation stopped.",
+  "translation.copy.notSaved": "The translated file couldn't be saved.",
 } as const;
 
 export default en;

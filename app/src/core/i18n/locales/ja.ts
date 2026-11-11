@@ -2553,7 +2553,7 @@ export default {
   // ---- translation (plugin `translation`)
   "plugin.translation.name": "翻訳",
   "plugin.translation.about":
-    "このコンピューター上の小さな AI モデルで、テキストを別の言語に翻訳します。翻訳した部分はすべて適用前に確認でき、テキストがコンピューターの外に出ることはありません。",
+    "このコンピューター上の小さな AI モデルで、テキストを別の言語に翻訳します。翻訳した部分を適用前に 1 つずつ確認することも、文書全体を翻訳して元のファイルの隣に新しいファイルを作ることもできます。テキストがコンピューターの外に出ることはありません。",
   "translation.language.command": "翻訳先の言語…",
   "translation.language.title": "翻訳先の言語",
   "translation.language.to": "翻訳先：{language}",
@@ -2612,4 +2612,16 @@ export default {
   "translation.done": "完了",
   "translation.retry": "再試行",
   "translation.openSettings": "ローカル AI の設定を開く",
+  "translation.copy.action": "新しいファイルに翻訳…",
+  "translation.copy.creates": "このファイルの隣に {name} を作成します。",
+  "translation.copy.busy": "新しいファイルへの翻訳を実行中です",
+  "translation.copy.progress": "翻訳中 {i} / {n}",
+  "translation.copy.cancel": "{name} の翻訳をキャンセル",
+  "translation.copy.done": "{language}に翻訳し、{name} を作成しました。",
+  "translation.copy.failedParts.one": "{n} 個の部分は翻訳できなかったため、元の言語のままです。",
+  "translation.copy.failedParts.other": "{n} 個の部分は翻訳できなかったため、元の言語のままです。",
+  "translation.copy.same": "何も翻訳されませんでした。テキストはすでに{language}です。",
+  "translation.copy.noFile": "ファイルは作成されませんでした。",
+  "translation.copy.stopped": "翻訳を停止しました。",
+  "translation.copy.notSaved": "翻訳したファイルを保存できませんでした。",
 } satisfies Messages;

@@ -2,7 +2,8 @@
 // backend runs the pieces, which pieces to send, what an answer is worth). A run: the pieces of the editor's text in
 // the scope (the plugin's `prepare`, offsets = the editor's text, LF) go to `<plugin>.run`, except those the editor on
 // screen cannot change (`session.changeable`; Edit mode: a block kept as written), only counted: their answer could
-// not go in. News `<plugin>:run` of this run only; each answer -> the plugin's `judge` -> suggestions (document
+// not go in. News `<plugin>:run` of this run only (`PieceRunLink`: the run's id, its news, its stop; a run that is
+// not reviewed uses it alone); each answer -> the plugin's `judge` -> suggestions (document
 // offsets) merged in document order; discarded answers and answers that say the same as their piece only counted,
 // each on its own. One review at a time in an editor (the marks of every plugin's review go to the editor's one
 // layer; `openReview`: whose it is): while one is open, another plugin's does not run and says `blocked`. Offsets
@@ -25,6 +26,7 @@ import {
   type AppPluginEvents,
   type Unlisten,
 } from "../../../api";
+import type { PieceRunPiece } from "../../../api/generated/PieceRunPiece";
 import type { PieceRunResult } from "../../../api/generated/PieceRunResult";
 import type { PieceRun } from "../../../api/generated/PieceRun";
 import {
@@ -94,6 +96,20 @@ export type RunStatus =
   | { kind: "finished" }
   | { kind: "cancelled" }
   | { kind: "failed"; error: ApiError };
+
+/** Where a run stands before its first answer: the engine being fetched | the model getting ready. */
+export type RunPreparing = Extract<RunStatus, { kind: "engine" | "loading" }>;
+/** How a run ended. */
+export type RunEnd = Extract<RunStatus, { kind: "finished" | "cancelled" | "failed" }>;
+
+/** What a run tells whoever started it. */
+export type RunHearer = {
+  preparing(status: RunPreparing): void;
+  /** The model's answer for the piece sent as `id`. */
+  answer(id: number, result: PieceRunResult): void;
+  /** The run is over: no news of it follow. */
+  end(status: RunEnd): void;
+};
 
 export type Review = {
   status: RunStatus;
@@ -202,6 +218,94 @@ function newRunId(): string {
   return globalThis.crypto.randomUUID();
 }
 
+/**
+ * A window's line to one run at a time in a plugin's backend: starts it under an id of its own, hears the news of that
+ * run alone (`<plugin>:run` carries every window's runs, and old ones), stops it. Whoever runs pieces without a
+ * review of them (a whole document translated into a new file) uses it as the review does.
+ */
+export class PieceRunLink {
+  readonly #plugin: PiecePlugin;
+  readonly #api: Api;
+  readonly #hearer: RunHearer;
+  /** Id of the run whose news count (`null`: none running). */
+  #run: string | null = null;
+
+  constructor(plugin: PiecePlugin, api: Api, hearer: RunHearer) {
+    this.#plugin = plugin;
+    this.#api = api;
+    this.#hearer = hearer;
+  }
+
+  /** Hears the plugin's run news until the returned removal runs; a window that cannot listen (no backend) hears
+   *  none. */
+  listen(): () => void {
+    const listening: Promise<Unlisten | null> = this.#api
+      .onAppPlugin(`${this.#plugin}:run`, (news) => this.news(news))
+      .catch(() => null);
+    return () => void listening.then((unlisten) => unlisten?.());
+  }
+
+  /** Starts a run over `pieces` (one still going is stopped first); `args`: what the plugin's run takes beside its
+   *  id + the pieces. A run the backend refuses ends at once (`failed`). */
+  async start(pieces: PieceRunPiece[], args: Readonly<Record<string, unknown>>): Promise<void> {
+    this.stop();
+    const run = newRunId();
+    this.#run = run;
+    const sent = await this.#api.pluginCall(`${this.#plugin}.run`, { ...args, run, pieces });
+    if (!sent.ok && this.#run === run) this.#end({ kind: "failed", error: sent.error });
+  }
+
+  /** One run's news; other runs' (other windows, old runs) are ignored. */
+  news(news: PieceRun): void {
+    if (this.#run === null || news.run !== this.#run) return;
+    const phase = news.phase;
+    switch (phase.kind) {
+      case "engine":
+        this.#hearer.preparing({
+          kind: "engine",
+          receivedBytes: phase.receivedBytes,
+          totalBytes: phase.totalBytes,
+        });
+        return;
+      case "loading":
+        this.#hearer.preparing({ kind: "loading", progress: phase.progress });
+        return;
+      case "piece":
+        this.#hearer.answer(phase.id, phase.result);
+        return;
+      case "done":
+        this.#end({ kind: "finished" });
+        return;
+      case "cancelled":
+        this.#end({ kind: "cancelled" });
+        return;
+      case "failed":
+        this.#end({
+          kind: "failed",
+          error: { kind: "backend", command: "plugin_call", error: phase.error },
+        });
+        return;
+      default:
+        return phase satisfies never;
+    }
+  }
+
+  /** Stops the run going on: its news count no more and its end is not told (the caller knows). `false`: none was
+   *  going. */
+  stop(): boolean {
+    const run = this.#run;
+    if (run === null) return false;
+    this.#run = null;
+    void this.#api.pluginCall(`${this.#plugin}.cancel`, { run });
+    return true;
+  }
+
+  #end(status: RunEnd): void {
+    this.#run = null;
+    this.#hearer.end(status);
+  }
+}
+
 /** Whose review is open in an editor (`null`: none). */
 class Turn {
   holder = $state.raw<PieceReview | null>(null);
@@ -241,8 +345,8 @@ export class PieceReview {
   readonly #session: Session;
   /** Whose review is open in the session's editor. */
   readonly #turn: Turn;
-  /** Id of the run whose news count (`null`: none running). */
-  #run: string | null = null;
+  /** The run in the plugin's backend. */
+  readonly #runs: PieceRunLink;
   /** Pieces sent and not answered yet, by id, at their offsets in `#known`. */
   #pieces = new Map<number, Piece>();
   #parts = 0;
@@ -267,6 +371,11 @@ export class PieceReview {
     this.#api = api;
     this.#session = session;
     this.#turn = turnOf(session);
+    this.#runs = new PieceRunLink(config.plugin, api, {
+      preparing: (status) => this.#status(status),
+      answer: (id, result) => this.#answer(id, result),
+      end: (status) => this.#end(status),
+    });
   }
 
   /** The plugin this review is set up for. */
@@ -313,10 +422,10 @@ export class PieceReview {
   /** Follows availability, run news and the open document until the returned teardown runs. */
   start(): () => void {
     // a window that cannot listen (no backend) stays dormant
-    const listening: Promise<Unlisten | null>[] = [
-      this.#api.onAppPlugin("local-ai:state", () => void this.ask()),
-      this.#api.onAppPlugin(`${this.#config.plugin}:run`, (news) => this.news(news)),
-    ].map((listen) => listen.catch(() => null));
+    const listening: Promise<Unlisten | null> = this.#api
+      .onAppPlugin("local-ai:state", () => void this.ask())
+      .catch(() => null);
+    const stopNews = this.#runs.listen();
     void this.ask();
     const stopWatch = $effect.root(() => {
       // the document went away | its file changed on disk under the edits | back to View
@@ -335,7 +444,8 @@ export class PieceReview {
     });
     return () => {
       stopWatch();
-      for (const off of listening) void off.then((unlisten) => unlisten?.());
+      void listening.then((unlisten) => unlisten?.());
+      stopNews();
       this.#close();
       this.available = false;
     };
@@ -349,39 +459,9 @@ export class PieceReview {
     this.available = answer.ok && answer.value.available;
   }
 
-  /** One run's news; other runs' (other windows, old runs) are ignored. */
+  /** News of the plugin's runs: only this review's own run counts. */
   news(news: PieceRun): void {
-    if (this.#run === null || news.run !== this.#run) return;
-    const phase = news.phase;
-    switch (phase.kind) {
-      case "engine":
-        this.#status({
-          kind: "engine",
-          receivedBytes: phase.receivedBytes,
-          totalBytes: phase.totalBytes,
-        });
-        return;
-      case "loading":
-        this.#status({ kind: "loading", progress: phase.progress });
-        return;
-      case "piece":
-        this.#answer(phase.id, phase.result);
-        return;
-      case "done":
-        this.#end({ kind: "finished" });
-        return;
-      case "cancelled":
-        this.#end({ kind: "cancelled" });
-        return;
-      case "failed":
-        this.#end({
-          kind: "failed",
-          error: { kind: "backend", command: "plugin_call", error: phase.error },
-        });
-        return;
-      default:
-        return phase satisfies never;
-    }
+    this.#runs.news(news);
   }
 
   // ---- runs --------------------------------------------------------------------------------------------------
@@ -406,7 +486,7 @@ export class PieceReview {
   async runOver(kind: EditScope): Promise<void> {
     if (!this.available || this.blocked) return;
     this.#scope = kind;
-    this.#stopRun();
+    this.#runs.stop();
     this.#clearWaiting();
     const session = this.#session;
     const text = session.current();
@@ -423,8 +503,6 @@ export class PieceReview {
       this.state = { kind: "nothing", locked };
       return;
     }
-    const run = newRunId();
-    this.#run = run;
     this.state = {
       kind: "review",
       status: { kind: "loading", progress: 0 },
@@ -436,15 +514,13 @@ export class PieceReview {
       outdated: 0,
       locked,
     };
-    const sent = await this.#api.pluginCall(`${this.#config.plugin}.run`, {
-      ...this.#config.runArgs(),
-      run,
-      pieces: this.#order(found, session.scope("paragraph")).map((id) => ({
+    await this.#runs.start(
+      this.#order(found, session.scope("paragraph")).map((id) => ({
         id,
         text: found[id]?.text ?? "",
       })),
-    });
-    if (!sent.ok && this.#run === run) this.#end({ kind: "failed", error: sent.error });
+      this.#config.runArgs(),
+    );
   }
 
   /** Try again after a failure: the same kind of scope, where the caret is now. */
@@ -454,10 +530,7 @@ export class PieceReview {
 
   /** Stops the run; the suggestions found so far stay. */
   cancel(): void {
-    const run = this.#run;
-    if (run === null) return;
-    void this.#api.pluginCall(`${this.#config.plugin}.cancel`, { run });
-    this.#end({ kind: "cancelled" });
+    if (this.#runs.stop()) this.#end({ kind: "cancelled" });
   }
 
   /** Done: the review closes (a run still going is stopped), the keyboard back to the editor. */
@@ -612,8 +685,7 @@ export class PieceReview {
   }
 
   /** The run's end (`status` kept with what was found). */
-  #end(status: RunStatus): void {
-    this.#run = null;
+  #end(status: RunEnd): void {
     this.#pieces.clear();
     this.#status(status);
   }
@@ -746,15 +818,8 @@ export class PieceReview {
     this.#waiting = [];
   }
 
-  #stopRun(): void {
-    const run = this.#run;
-    if (run === null) return;
-    this.#run = null;
-    void this.#api.pluginCall(`${this.#config.plugin}.cancel`, { run });
-  }
-
   #close(): void {
-    this.#stopRun();
+    this.#runs.stop();
     this.#clearWaiting();
     this.#pieces.clear();
     this.state = CLOSED;

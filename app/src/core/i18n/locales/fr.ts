@@ -2600,7 +2600,7 @@ export default {
   // ---- translation (plugin `translation`)
   "plugin.translation.name": "Traduction",
   "plugin.translation.about":
-    "Traduit le texte dans une autre langue avec un petit modèle d'IA sur cet ordinateur. Chaque partie traduite est présentée pour relecture avant d'être appliquée, et le texte ne quitte jamais l'ordinateur.",
+    "Traduit le texte dans une autre langue avec un petit modèle d'IA sur cet ordinateur. Chaque partie traduite est présentée pour relecture avant d'être appliquée, ou un document entier est traduit dans un nouveau fichier à côté de l'original. Le texte ne quitte jamais l'ordinateur.",
   "translation.language.command": "Traduire en…",
   "translation.language.title": "Traduire en",
   "translation.language.to": "Vers : {language}",
@@ -2660,4 +2660,18 @@ export default {
   "translation.done": "Terminé",
   "translation.retry": "Réessayer",
   "translation.openSettings": "Ouvrir les paramètres d'IA locale",
+  "translation.copy.action": "Traduire dans un nouveau fichier…",
+  "translation.copy.creates": "Crée {name} à côté de ce fichier.",
+  "translation.copy.busy": "Une traduction vers un nouveau fichier est en cours",
+  "translation.copy.progress": "Traduction {i} / {n}",
+  "translation.copy.cancel": "Annuler la traduction de {name}",
+  "translation.copy.done": "Traduit en {language} : {name}.",
+  "translation.copy.failedParts.one":
+    "{n} partie n'a pas pu être traduite et reste dans la langue d'origine.",
+  "translation.copy.failedParts.other":
+    "{n} parties n'ont pas pu être traduites et restent dans la langue d'origine.",
+  "translation.copy.same": "Rien n'a été traduit : le texte est déjà en {language}.",
+  "translation.copy.noFile": "Aucun fichier n'a été créé.",
+  "translation.copy.stopped": "Traduction arrêtée.",
+  "translation.copy.notSaved": "Le fichier traduit n'a pas pu être enregistré.",
 } satisfies Messages;

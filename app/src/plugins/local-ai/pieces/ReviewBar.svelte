@@ -65,12 +65,11 @@
   import { untrack, type Snippet } from "svelte";
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronUp from "@lucide/svelte/icons/chevron-up";
-  import type { ApiError } from "../../../api";
   import { isTypingTarget } from "../../../core/commands/dispatch";
   import { sizeText, t, tn } from "../../../core/i18n";
   import { ui } from "../../../core/shell/ui.svelte";
   import { LOCAL_AI_PAGE } from "../store.svelte";
-  import { percentText, testErrorText } from "../words";
+  import { percentText, runErrorText } from "../words";
   import { running, type PieceReview, type Review } from "./review.svelte";
 
   type Props = {
@@ -167,17 +166,6 @@
   /** What the bar says of `n` answers that said the same as their part. */
   function sameNote(same: NonNullable<ReviewLabels["same"]>, n: number): string {
     return typeof same === "function" ? same(n) : tn(same, n);
-  }
-
-  /** What the bar says about a failed run: the plugin's words for no model on the job (fixed on the Local AI page),
-   *  the Test model words for the rest (`notAvailable` = no engine built for this computer; a missing one the run
-   *  gets). */
-  function failureText(error: ApiError): string {
-    if (error.kind === "backend" && error.error.kind === "unavailable") {
-      const { subject, detail } = error.error;
-      if (subject === "model" && detail === "noModel") return t(labels.noModel);
-    }
-    return testErrorText(error);
   }
 
   function onkeydown(event: KeyboardEvent): void {
@@ -287,7 +275,7 @@
       {/if}
       {#if review.status.kind === "failed"}
         <div class="problem" role="alert">
-          <span>{failureText(review.status.error)}</span>
+          <span>{runErrorText(review.status.error, labels.noModel)}</span>
           <button type="button" class="btn btn--sm" onclick={() => void store.retry()}>
             {t(labels.retry)}
           </button>

@@ -2568,7 +2568,7 @@ export default {
   // ---- translation (plugin `translation`)
   "plugin.translation.name": "Traducció",
   "plugin.translation.about":
-    "Tradueix text a un altre idioma amb un model d'IA petit en aquest ordinador. Cada part traduïda es mostra per revisar-la abans d'aplicar-la, i el text no surt mai de l'ordinador.",
+    "Tradueix text a un altre idioma amb un model d'IA petit en aquest ordinador. Cada part traduïda es mostra per revisar-la abans d'aplicar-la, o bé un document sencer es tradueix a un fitxer nou al costat de l'original. El text no surt mai de l'ordinador.",
   "translation.language.command": "Tradueix a…",
   "translation.language.title": "Tradueix a",
   "translation.language.to": "A: {language}",
@@ -2627,4 +2627,18 @@ export default {
   "translation.done": "Fet",
   "translation.retry": "Torna-ho a provar",
   "translation.openSettings": "Obre la configuració de la IA local",
+  "translation.copy.action": "Tradueix a un fitxer nou…",
+  "translation.copy.creates": "Crea {name} al costat d'aquest fitxer.",
+  "translation.copy.busy": "S'està fent una traducció a un fitxer nou",
+  "translation.copy.progress": "S'està traduint {i} / {n}",
+  "translation.copy.cancel": "Cancel·la la traducció de {name}",
+  "translation.copy.done": "Traducció en {language}: {name}.",
+  "translation.copy.failedParts.one":
+    "{n} part no s'ha pogut traduir i continua en l'idioma original.",
+  "translation.copy.failedParts.other":
+    "{n} parts no s'han pogut traduir i continuen en l'idioma original.",
+  "translation.copy.same": "No s'ha traduït res: el text ja està en {language}.",
+  "translation.copy.noFile": "No s'ha creat cap fitxer.",
+  "translation.copy.stopped": "S'ha aturat la traducció.",
+  "translation.copy.notSaved": "No s'ha pogut desar el fitxer traduït.",
 } satisfies Messages;

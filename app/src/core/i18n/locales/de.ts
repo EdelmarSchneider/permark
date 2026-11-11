@@ -2572,7 +2572,7 @@ export default {
   // ---- translation (plugin `translation`)
   "plugin.translation.name": "Übersetzung",
   "plugin.translation.about":
-    "Übersetzt Text mit einem kleinen KI-Modell auf diesem Computer in eine andere Sprache. Jeder übersetzte Teil wird vor dem Übernehmen zur Prüfung angezeigt, und der Text verlässt den Computer nie.",
+    "Übersetzt Text mit einem kleinen KI-Modell auf diesem Computer in eine andere Sprache. Jeder übersetzte Teil wird vor dem Übernehmen zur Prüfung angezeigt, oder ein ganzes Dokument wird in eine neue Datei neben dem Original übersetzt. Der Text verlässt den Computer nie.",
   "translation.language.command": "Übersetzen nach …",
   "translation.language.title": "Übersetzen nach",
   "translation.language.to": "Nach: {language}",
@@ -2633,4 +2633,18 @@ export default {
   "translation.done": "Fertig",
   "translation.retry": "Erneut versuchen",
   "translation.openSettings": "Einstellungen für lokale KI öffnen",
+  "translation.copy.action": "In neue Datei übersetzen …",
+  "translation.copy.creates": "Erstellt {name} neben dieser Datei.",
+  "translation.copy.busy": "Eine Übersetzung in eine neue Datei läuft",
+  "translation.copy.progress": "Übersetzung {i} / {n}",
+  "translation.copy.cancel": "Übersetzung von {name} abbrechen",
+  "translation.copy.done": "Auf {language} übersetzt: {name}.",
+  "translation.copy.failedParts.one":
+    "{n} Teil konnte nicht übersetzt werden und bleibt in der Originalsprache.",
+  "translation.copy.failedParts.other":
+    "{n} Teile konnten nicht übersetzt werden und bleiben in der Originalsprache.",
+  "translation.copy.same": "Nichts wurde übersetzt: Der Text ist bereits auf {language}.",
+  "translation.copy.noFile": "Es wurde keine Datei erstellt.",
+  "translation.copy.stopped": "Übersetzung angehalten.",
+  "translation.copy.notSaved": "Die übersetzte Datei konnte nicht gespeichert werden.",
 } satisfies Messages;
