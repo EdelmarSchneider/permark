@@ -12,6 +12,10 @@
 //! - Warm session: kept after a run, unloaded after [`IDLE`] without a run, at plugin off
 //!   ([`PieceRunner::shutdown`]: cancel + join, no thread left) and when it no longer serves (model reassigned |
 //!   released).
+//! - Several runners in one app (one per feature plugin): before a runner loads, the idle warm sessions of the others
+//!   are unloaded (static `RUNNERS`) -> features used one after the other never hold two models; a runner with a
+//!   run asked | in progress keeps its session (never interrupted: both loaded, the memory guard of the load
+//!   decides). The released runner says nothing; its next run loads again.
 //! - Dormant: nothing runs | loads before a run; [`Models::available`] reads the state alone.
 //! - Model access ONLY through [`ModelHost`] ([`PieceRunner::hosted`]); [`Models`] | [`Session`] = seams for fakes.
 //! - Text never logged; nothing written to disk.
@@ -22,7 +26,7 @@
 pub mod testkit;
 
 use std::cell::Cell;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, Weak};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -279,9 +283,36 @@ struct State<P> {
     closed: bool,
 }
 
+/// Warm session out of `state`, unloaded after the unlock (a model worker's exit is never waited for under the state
+/// lock).
+fn unload_warm<P>(mut state: MutexGuard<'_, State<P>>) {
+    let warm = state.warm.take();
+    drop(state);
+    drop(warm);
+}
+
+/// Runners of the process that belong to an app, weak (no runner kept alive; [`PieceRunner::shutdown`] takes its own
+/// out): the ones of one app make room for each other before a load ([`Shared::make_room`]).
+///
+/// Lock order: none needed. This lock is held only to copy | change the list, a runner's state lock only inside that
+/// runner's own methods; no thread holds two of them at once -> runners loading at the same moment never wait on
+/// each other.
+static RUNNERS: Mutex<Vec<Weak<dyn Peer>>> = Mutex::new(Vec::new());
+
+/// A runner as the other runners of its app see it.
+trait Peer: Send + Sync {
+    /// Services of the runner's app (its identity: peers = runners of the same app).
+    fn app(&self) -> Option<&Arc<Services>>;
+
+    /// Unloads the warm session, unless a run is asked | on the worker (session in use | about to be: left alone).
+    fn release_idle(&self);
+}
+
 struct Shared<J: PieceJob> {
     /// Owning plugin: worker thread name + subject of the refusal while stopping.
     plugin: PluginId,
+    /// Services of the plugin's app (none: a runner without peers).
+    app: Option<Arc<Services>>,
     models: Arc<dyn Models>,
     events: PluginEvents,
     idle: Duration,
@@ -311,23 +342,26 @@ impl<J: PieceJob> PieceRunner<J> {
     /// started | loaded (dormant).
     #[must_use]
     pub fn new(cx: &PluginCx, models: Arc<dyn Models>, idle: Duration) -> Self {
-        Self {
-            shared: Arc::new(Shared {
-                plugin: cx.id.clone(),
-                models,
-                events: cx.events().clone(),
-                idle,
-                state: Mutex::new(State {
-                    pending: None,
-                    running: None,
-                    warm: None,
-                    worker: None,
-                    worker_done: false,
-                    closed: false,
-                }),
-                wake: Condvar::new(),
+        let shared = Arc::new(Shared {
+            plugin: cx.id.clone(),
+            app: cx.app().map(|app| Arc::clone(&app.services)),
+            models,
+            events: cx.events().clone(),
+            idle,
+            state: Mutex::new(State {
+                pending: None,
+                running: None,
+                warm: None,
+                worker: None,
+                worker_done: false,
+                closed: false,
             }),
+            wake: Condvar::new(),
+        });
+        if shared.app.is_some() {
+            lock(&RUNNERS).push(Arc::downgrade(&shared) as Weak<dyn Peer>);
         }
+        Self { shared }
     }
 
     /// A model is assigned to the job (state alone: nothing loaded; it may since be gone -> the run fails
@@ -409,9 +443,17 @@ impl<J: PieceJob> PieceRunner<J> {
             .is_some_and(|w| !w.is_finished())
     }
 
-    /// Plugin off: cancels the run, unloads the warm session, joins the worker (no thread left). Idempotent.
+    /// Other runners of the same app (tests: a dropped runner is none).
+    #[cfg(test)]
+    pub(crate) fn peers(&self) -> usize {
+        self.shared.peers().len()
+    }
+
+    /// Plugin off: cancels the run, unloads the warm session, joins the worker (no thread left); no longer a peer
+    /// (nothing left for the app's other runners to call). Idempotent.
     pub fn shutdown(&self) {
         let shared = &self.shared;
+        lock(&RUNNERS).retain(|runner| !std::ptr::addr_eq(runner.as_ptr(), Arc::as_ptr(shared)));
         let (worker, warm) = {
             let mut state = lock(&shared.state);
             state.closed = true;
@@ -437,7 +479,42 @@ impl<J: PieceJob> Drop for PieceRunner<J> {
     }
 }
 
+impl<J: PieceJob> Peer for Shared<J> {
+    fn app(&self) -> Option<&Arc<Services>> {
+        self.app.as_ref()
+    }
+
+    fn release_idle(&self) {
+        let state = lock(&self.state);
+        if state.pending.is_none() && state.running.is_none() {
+            unload_warm(state);
+        }
+    }
+}
+
 impl<J: PieceJob> Shared<J> {
+    /// The other runners of this runner's app (none without an app).
+    fn peers(&self) -> Vec<Arc<dyn Peer>> {
+        let Some(app) = &self.app else {
+            return Vec::new();
+        };
+        // upgraded under the list lock, looked at after it: a runner's last handle is never dropped under it
+        let runners: Vec<Arc<dyn Peer>> = lock(&RUNNERS).iter().filter_map(Weak::upgrade).collect();
+        runners
+            .into_iter()
+            .filter(|runner| !std::ptr::addr_eq(Arc::as_ptr(runner), std::ptr::from_ref(self)))
+            .filter(|runner| runner.app().is_some_and(|theirs| Arc::ptr_eq(theirs, app)))
+            .collect()
+    }
+
+    /// Before a load: the idle warm sessions of the app's other runners are unloaded (their model workers gone
+    /// before the load's memory guard reads the memory). Called without this runner's state lock (see [`RUNNERS`]).
+    fn make_room(&self) {
+        for peer in self.peers() {
+            peer.release_idle();
+        }
+    }
+
     fn emit(&self, run: &str, phase: RunPhase) {
         let news = RunNews {
             run: run.to_owned(),
@@ -459,9 +536,7 @@ impl<J: PieceJob> Shared<J> {
                     .unwrap_or_else(PoisonError::into_inner);
                 if state.closed || (timeout.timed_out() && state.pending.is_none()) {
                     state.worker_done = true;
-                    let warm = state.warm.take();
-                    drop(state);
-                    drop(warm);
+                    unload_warm(state);
                     return;
                 }
                 let Some(asked) = state.pending.take() else {
@@ -523,6 +598,7 @@ impl<J: PieceJob> Shared<J> {
     }
 
     fn open(&self, run: &str, cancel: &CancelToken) -> Result<Box<dyn Session>, IpcError> {
+        self.make_room();
         // load progress: the first value, then steps of at least PROGRESS_STEP
         let sent = Cell::new(None::<f32>);
         let progress = |news: HostProgress| match news {

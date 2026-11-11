@@ -2,13 +2,14 @@
 //! word, paced for cancel; [`RAMBLE`] in a piece -> answer cut at its cap): dormant availability, phase order (engine
 //! fetch first when missing), requests built by the job from the run's parameters, discards (length, thinking, too
 //! long), cancel, new run cancels the old one, warm session (idle unload, reassignment), plugin off (no thread,
-//! nothing loaded), production model source (`ModelHost` service, the job's own task).
+//! nothing loaded), production model source (`ModelHost` service, the job's own task), two plugins' runners in one
+//! app (a load unloads the other's idle session first, a running one is left alone, no wait on each other).
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use permark_core::plugins::{AppServices, PluginId, RpcTable, Services};
+use permark_core::plugins::{AppServices, PluginCx, PluginId, RpcTable, Services};
 use permark_core::settings::AppSettings;
 use serde_json::{json, Value};
 
@@ -16,13 +17,17 @@ use super::installs::E2B;
 use super::testrun::Bench;
 use crate::engine::{ChatMessage, FakeEngine, Role, Sampling};
 use crate::pieces::testkit::{pieces, wait, Events, Fake, RAMBLE};
-use crate::pieces::{Models, PieceJob, PieceRunner, THINKING};
+use crate::pieces::{Models, PieceJob, PieceRunner, IDLE, THINKING};
 use crate::tasks::Task;
 
 /// Plugin the test runs belong to (events `echo:run`).
 const PLUGIN: PluginId = PluginId::of("echo");
+/// Second plugin with a runner of its own in the same app (events `other:run`).
+const OTHER: PluginId = PluginId::of("other");
 const SHORT_IDLE: Duration = Duration::from_millis(150);
 const PACE: Duration = Duration::from_millis(20);
+/// Repeats of the tests where two threads meet (a rare interleaving shows up within them).
+const ROUNDS: usize = 20;
 /// System turn of [`Echo`] before the run's tone.
 const RULES: &str = "Echo the text in this tone:";
 /// Tone of the runs that do not care.
@@ -73,18 +78,35 @@ struct Lab {
 
 impl Lab {
     fn new(engine: FakeEngine) -> Self {
-        let fake = Fake::new::<Echo>(engine);
         let events = Events::new(PLUGIN);
-        let runner = PieceRunner::new(
-            &events.cx(),
-            Arc::clone(&fake) as Arc<dyn Models>,
-            SHORT_IDLE,
-        );
+        let cx = events.cx();
+        Self::over(Fake::new::<Echo>(engine), events, &cx, SHORT_IDLE)
+    }
+
+    fn over(fake: Arc<Fake>, events: Arc<Events>, cx: &PluginCx, idle: Duration) -> Self {
+        let runner = PieceRunner::new(cx, Arc::clone(&fake) as Arc<dyn Models>, idle);
         Self {
             fake,
             events,
             runner,
         }
+    }
+
+    /// Runner of `plugin` in `app` over `fake`, warm for [`IDLE`]: during a test only a peer's load | plugin off
+    /// unloads its session.
+    fn peer(plugin: PluginId, fake: &Arc<Fake>, app: &AppServices) -> Self {
+        let events = Events::new(plugin);
+        let cx = events.cx().with_app(app.clone());
+        Self::over(Arc::clone(fake), events, &cx, IDLE)
+    }
+
+    /// Runners of two plugins in one app over one model source (its counters: both runners).
+    fn pair(engine: FakeEngine) -> (Self, Self) {
+        let (fake, app) = (Fake::new::<Echo>(engine), app());
+        (
+            Self::peer(PLUGIN, &fake, &app),
+            Self::peer(OTHER, &fake, &app),
+        )
     }
 
     fn paced() -> Self {
@@ -100,6 +122,15 @@ impl Lab {
     fn loaded(&self) -> usize {
         self.fake.engine.loaded()
     }
+}
+
+/// Services of one app (plugins started with clones of it = that app's plugins).
+fn app() -> AppServices {
+    AppServices::new(
+        RpcTable::new(),
+        Services::new(),
+        Arc::new(RwLock::new(AppSettings::default())),
+    )
 }
 
 fn kinds(phases: &[Value]) -> Vec<&str> {
@@ -330,6 +361,159 @@ fn shutdown_mid_run_leaves_no_thread_and_nothing_loaded() {
         .unwrap_err();
     assert_eq!(refused.subject.as_deref(), Some("echo"));
     lab.runner.shutdown();
+}
+
+/// Two features one after the other: the first runner's idle session is unloaded before the second one loads (never
+/// two models for one feature at work); the released runner says nothing.
+#[test]
+fn a_load_unloads_the_idle_session_of_another_runner_first() {
+    let (a, b) = Lab::pair(FakeEngine::new());
+    a.run("a1", &["One."]);
+    let told = a.events.ended("a1");
+    assert_eq!(a.loaded(), 1, "kept warm");
+    b.run("b1", &["Two."]);
+    let phases = b.events.ended("b1");
+    assert_eq!(kinds(&phases)[0], "loading");
+    assert_eq!(
+        piece(&phases, 1)["result"],
+        json!({ "kind": "output", "text": "Two." })
+    );
+    assert_eq!(kinds(&phases).last(), Some(&"done"));
+    assert_eq!(b.fake.opens(), 2);
+    assert_eq!(b.fake.peak(), 1, "unloaded before the load");
+    assert_eq!(b.loaded(), 1);
+    assert_eq!(a.events.phases("a1"), told, "no news from the released one");
+}
+
+/// The released runner's next run is a cold start: loading again, then its pieces; the other's session, idle by
+/// now, goes first in turn.
+#[test]
+fn a_released_runner_loads_again_on_its_next_run() {
+    let (a, b) = Lab::pair(FakeEngine::new());
+    a.run("a1", &["One."]);
+    a.events.ended("a1");
+    b.run("b1", &["Two."]);
+    b.events.ended("b1");
+    a.run("a2", &["Three."]);
+    let phases = a.events.ended("a2");
+    assert_eq!(kinds(&phases)[0], "loading");
+    assert_eq!(
+        piece(&phases, 1)["result"],
+        json!({ "kind": "output", "text": "Three." })
+    );
+    assert_eq!(kinds(&phases).last(), Some(&"done"));
+    assert_eq!(a.fake.opens(), 3);
+    assert_eq!(a.fake.peak(), 1);
+    assert_eq!(a.loaded(), 1);
+}
+
+/// A runner answering a piece is never interrupted by another plugin's run: both models loaded, both runs done, the
+/// long answer whole.
+#[test]
+fn a_running_runner_keeps_its_session_while_another_loads() {
+    let (a, b) = Lab::pair(FakeEngine::new().paced(PACE));
+    let long = vec!["word"; 100].join(" ");
+    a.run("a1", &[&long]);
+    wait(|| (a.fake.requests.lock().unwrap().len() == 1).then_some(()));
+    b.run("b1", &["Short."]);
+    assert_eq!(kinds(&b.events.ended("b1")).last(), Some(&"done"));
+    assert_eq!(b.fake.peak(), 2, "both loaded");
+    let phases = a.events.ended("a1");
+    assert_eq!(
+        piece(&phases, 1)["result"],
+        json!({ "kind": "output", "text": long })
+    );
+    assert_eq!(kinds(&phases).last(), Some(&"done"));
+    assert_eq!(a.fake.opens(), 2);
+}
+
+/// A runner's own warm session still serves its next run (no load) after its load made a peer give up its own.
+#[test]
+fn a_runner_reuses_its_own_warm_session_beside_a_peer() {
+    let (a, b) = Lab::pair(FakeEngine::new());
+    a.run("a1", &["One."]);
+    a.events.ended("a1");
+    b.run("b1", &["Two."]);
+    b.events.ended("b1");
+    b.run("b2", &["Three."]);
+    assert_eq!(kinds(&b.events.ended("b2")), ["piece", "done"]);
+    assert_eq!(b.fake.opens(), 2);
+    assert_eq!(b.loaded(), 1);
+}
+
+/// Plugin off: the dropped runner is no longer a peer (nothing left to call); the other one runs as if alone.
+#[test]
+fn a_dropped_runner_is_no_longer_a_peer() {
+    let (a, b) = Lab::pair(FakeEngine::new());
+    assert_eq!(b.runner.peers(), 1);
+    a.run("a1", &["One."]);
+    a.events.ended("a1");
+    drop(a);
+    assert_eq!(b.runner.peers(), 0);
+    assert_eq!(b.loaded(), 0, "unloaded by its own plugin off");
+    b.run("b1", &["Two."]);
+    assert_eq!(kinds(&b.events.ended("b1")).last(), Some(&"done"));
+    assert_eq!(b.fake.opens(), 2);
+    assert_eq!(b.loaded(), 1);
+}
+
+/// Peers = runners of the same app only: another app's idle session stays loaded and serves its next run.
+#[test]
+fn a_runner_of_another_app_keeps_its_idle_session() {
+    let fake = Fake::new::<Echo>(FakeEngine::new());
+    let a = Lab::peer(PLUGIN, &fake, &app());
+    let b = Lab::peer(OTHER, &fake, &app());
+    assert_eq!((a.runner.peers(), b.runner.peers()), (0, 0));
+    a.run("a1", &["One."]);
+    a.events.ended("a1");
+    b.run("b1", &["Two."]);
+    b.events.ended("b1");
+    assert_eq!(fake.peak(), 2);
+    a.run("a2", &["Three."]);
+    assert_eq!(kinds(&a.events.ended("a2")), ["piece", "done"]);
+    assert_eq!(fake.opens(), 2);
+}
+
+/// Plugin off of an idle runner at the moment its peer starts a run: neither waits on the other (bounded), the run
+/// ends done, only its model stays loaded.
+#[test]
+fn plugin_off_of_an_idle_runner_while_a_peer_starts_never_blocks() {
+    for round in 0..ROUNDS {
+        let (a, b) = Lab::pair(FakeEngine::new());
+        a.run("a1", &["One."]);
+        a.events.ended("a1");
+        let off = std::thread::spawn(move || {
+            a.runner.shutdown();
+            a
+        });
+        b.run("b1", &["Two."]);
+        let phases = b.events.ended("b1");
+        assert_eq!(kinds(&phases).last(), Some(&"done"), "round {round}");
+        wait(|| off.is_finished().then_some(()));
+        let a = off.join().unwrap();
+        assert!(!a.runner.worker_alive(), "round {round}");
+        assert_eq!(b.loaded(), 1, "round {round}");
+    }
+}
+
+/// Two runners starting at the same moment, one of them with an idle session: neither waits on the other, both runs
+/// end done.
+#[test]
+fn two_runners_starting_together_both_finish() {
+    for round in 0..ROUNDS {
+        let (a, b) = Lab::pair(FakeEngine::new());
+        a.run("a1", &["One."]);
+        a.events.ended("a1");
+        std::thread::scope(|scope| {
+            scope.spawn(|| a.run("a2", &["Two."]));
+            b.run("b1", &["Three."]);
+        });
+        for (lab, run) in [(&a, "a2"), (&b, "b1")] {
+            let phases = lab.events.ended(run);
+            assert_eq!(kinds(&phases).last(), Some(&"done"), "round {round}");
+        }
+        assert!(b.fake.peak() <= 2, "round {round}");
+    }
 }
 
 /// Production model source (`ModelHost` service): the job's own task picks the model (another job's assignment never
