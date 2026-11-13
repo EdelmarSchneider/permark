@@ -2,11 +2,29 @@
 import "../../core/testing/media";
 import { flushSync, tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Api, PluginMethod, PluginMethods, Result } from "../../api";
+import type {
+  Api,
+  GitSnapshot,
+  PluginMethod,
+  PluginMethods,
+  Result,
+  ReviewVersions,
+  VersionGap,
+  VersionRow,
+  VersionsReason,
+} from "../../api";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
+import { MOCK_HEAD, MOCK_LONG_HISTORY } from "../../api/mockReviewVersions";
 import { PluginClient } from "../../core/plugins/client";
 import { Box } from "../../core/testing/box.svelte";
-import { ReviewStore, SEEN_MS, kindOf, type ReviewKind, type ReviewNotice } from "./store.svelte";
+import {
+  ReviewStore,
+  SEEN_MS,
+  kindOf,
+  problemText,
+  type ReviewKind,
+  type ReviewNotice,
+} from "./store.svelte";
 import type { DocumentView } from "../../api";
 import type { Reason } from "../../core/conditions/available";
 
@@ -28,6 +46,7 @@ async function setup(
     shown?: Shown;
     onScreen?: () => boolean;
     commitBlocked?: () => Reason | null;
+    unsaved?: () => boolean;
   } = {},
 ) {
   const mock = createMockApi();
@@ -49,9 +68,20 @@ async function setup(
       open();
     };
   };
+  // answers a test makes up for a method (`undefined`: the mock answers)
+  type Canned<M extends PluginMethod> = (
+    args: PluginMethods[M]["args"],
+  ) => PluginMethods[M]["result"] | undefined;
+  const canned: Partial<{ [M in PluginMethod]: Canned<M> }> = {};
+  // every call the store made, oldest first
+  type Sent<M extends PluginMethod = PluginMethod> = { method: M; args: PluginMethods[M]["args"] };
+  const sent: Sent[] = [];
+  const argsOf = <M extends PluginMethod>(method: M): PluginMethods[M]["args"][] =>
+    sent.filter((call): call is Sent<M> => call.method === method).map((call) => call.args);
   const api: Api = {
     ...mock,
     pluginCall: async <M extends PluginMethod>(method: M, args: PluginMethods[M]["args"]) => {
+      sent.push({ method, args });
       const held = holds.get(method);
       if (held !== undefined) await held;
       if (method === options.conflictOn) {
@@ -80,6 +110,11 @@ async function setup(
           },
         };
         return failure;
+      }
+      const made = canned[method]?.(args);
+      if (made !== undefined) {
+        const success: Result<PluginMethods[M]["result"]> = { ok: true, value: made };
+        return success;
       }
       return mock.pluginCall(method, args);
     },
@@ -110,10 +145,23 @@ async function setup(
         notice.onGone("dismissed");
       };
     },
+    options.unsaved ?? (() => false),
   );
   const stop = store.start();
   await settle();
-  return { mock, store, stop, shown, notes, notices, guideHash, hold, repaints: () => repaints };
+  return {
+    mock,
+    store,
+    stop,
+    shown,
+    notes,
+    notices,
+    guideHash,
+    hold,
+    canned,
+    argsOf,
+    repaints: () => repaints,
+  };
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -638,5 +686,451 @@ describe("what is reviewed by lines", () => {
     ).toBeNull();
     expect(kindOf(view({ kind: "media", media: "image", mime: "image/png" }), "a.png")).toBeNull();
     expect(kindOf(view({ kind: "notice", notice: { notice: "binary" } }), "a.bin")).toBeNull();
+  });
+});
+
+const README = "README.md";
+const readme: Shown = { path: README, hash: "ee".repeat(8), kind: "blocks" };
+const handbook: Shown = { path: MOCK_LONG_HISTORY, hash: "cc".repeat(8), kind: "blocks" };
+
+/** The list of versions on screen. */
+function listOf(store: ReviewStore) {
+  const list = store.versions;
+  if (list.status !== "open") throw new Error("the list of versions is closed");
+  return list;
+}
+
+/** The repository as it is, at another commit. */
+const movedTo = (now: GitSnapshot, oid: string): GitSnapshot => ({
+  ...now,
+  seq: now.seq + 1,
+  head: { ...now.head, oid },
+});
+
+describe("the earlier versions of a document", () => {
+  it("lists them, newest first, with what the history says about the file", async () => {
+    const { store, hold, argsOf, stop } = await setup();
+    expect(store.versions).toEqual({ status: "closed" });
+    const answer = hold("review.versions");
+    const asked = store.openVersions();
+    await settle();
+    expect(listOf(store)).toMatchObject({ path: GUIDE, loading: true, rows: [], problem: null });
+    answer();
+    await asked;
+    const list = listOf(store);
+    expect(list).toMatchObject({
+      loading: false,
+      next: null,
+      renamedFrom: "docs/manual.md",
+      cut: false,
+      problem: null,
+      note: null,
+    });
+    expect(list.rows).toHaveLength(4);
+    expect(list.rows[0]?.commit).toBe(MOCK_HEAD);
+    const times = list.rows.map((row) => row.atMs);
+    expect(times).toEqual([...times].sort((a, b) => b - a));
+    expect(argsOf("review.versions")).toEqual([{ path: GUIDE }]);
+    stop();
+  });
+
+  const REASONS: [VersionsReason, string][] = [
+    ["unavailable", "Earlier versions are not available here."],
+    ["notCommitted", "This file has not been committed to git yet."],
+    ["onlyCurrent", "There is only one version: the one you see."],
+    ["otherRepository", "This file belongs to another repository inside this folder."],
+    ["slow", "Reading the history took too long."],
+    ["failed", "The history could not be read."],
+    ["unsupported", "This file is not text, so versions cannot be compared."],
+  ];
+
+  it.each(REASONS)("no list says why: %s", async (reason, line) => {
+    const { store, canned, stop } = await setup();
+    canned["review.versions"] = () => ({ state: "unavailable", reason });
+    await store.openVersions();
+    const list = listOf(store);
+    expect(list).toMatchObject({ loading: false, rows: [], problem: { kind: reason } });
+    expect(list.problem && problemText(list.problem)).toBe(line);
+    stop();
+  });
+
+  it("unsaved text in the editor: asks to save first and reads nothing", async () => {
+    const { store, argsOf, stop } = await setup({ unsaved: () => true });
+    await store.openVersions();
+    const { problem } = listOf(store);
+    expect(problem).toEqual({ kind: "unsaved" });
+    expect(problem && problemText(problem)).toBe(
+      "Save your changes first to compare with earlier versions.",
+    );
+    expect(argsOf("review.versions")).toEqual([]);
+    stop();
+  });
+
+  it("without git or a repository: says which, and reads nothing", async () => {
+    const { store, argsOf, stop } = await setup({
+      commitBlocked: () => ({ need: "gitRepo", remedy: null }),
+      unsaved: () => true,
+    });
+    await store.openVersions();
+    const { problem } = listOf(store);
+    expect(problem).toEqual({ kind: "git", text: "This folder isn't a git repository." });
+    expect(problem && problemText(problem)).toBe("This folder isn't a git repository.");
+    expect(argsOf("review.versions")).toEqual([]);
+    expect(argsOf("git.snapshot")).toEqual([]);
+    stop();
+  });
+
+  it("a list the backend could not read is a problem; trying again reads it", async () => {
+    const failing = await setup({ conflictOn: "review.versions" });
+    await failing.store.openVersions();
+    expect(listOf(failing.store)).toMatchObject({ loading: false, problem: { kind: "failed" } });
+    failing.stop();
+
+    const { store, canned, argsOf, stop } = await setup();
+    let slow = true;
+    canned["review.versions"] = () => (slow ? { state: "unavailable", reason: "slow" } : undefined);
+    await store.openVersions();
+    expect(listOf(store).problem).toEqual({ kind: "slow" });
+    slow = false;
+    await store.retryVersions();
+    expect(listOf(store)).toMatchObject({ loading: false, problem: null });
+    expect(listOf(store).rows).toHaveLength(4);
+    expect(argsOf("review.versions")).toEqual([{ path: GUIDE }, { path: GUIDE }]);
+    stop();
+  });
+
+  it("shows more: the next pages are added in order, to the end of the history", async () => {
+    const { store, argsOf, stop } = await setup({ shown: handbook });
+    await store.openVersions();
+    const first = listOf(store);
+    expect(first.rows).toHaveLength(50);
+    expect(first.next).not.toBeNull();
+    expect(first.cut).toBe(true);
+    await store.moreVersions();
+    const second = listOf(store);
+    expect(second.rows).toHaveLength(100);
+    expect(second.rows.slice(0, 50)).toEqual(first.rows);
+    await store.moreVersions();
+    const all = listOf(store);
+    expect(all.rows).toHaveLength(120);
+    expect(all.next).toBeNull();
+    expect(new Set(all.rows.map((row) => row.commit)).size).toBe(120);
+    const times = all.rows.map((row) => row.atMs);
+    expect(times).toEqual([...times].sort((a, b) => b - a));
+    // the end of the history: nothing more is asked
+    await store.moreVersions();
+    expect(argsOf("review.versions").map((args) => args.after)).toEqual([
+      undefined,
+      first.next,
+      second.next,
+    ]);
+    stop();
+  });
+
+  it("a page with no rows that says there is more keeps the list askable", async () => {
+    const { store, canned, argsOf, stop } = await setup();
+    const row = (commit: string, atMs: number): VersionRow => ({
+      commit,
+      atMs,
+      author: "Ana Souza",
+      coAuthors: [],
+      subject: "Fix typos",
+      same: false,
+    });
+    const page = (
+      rows: VersionRow[],
+      next: number | null,
+      renamedFrom: string | null = null,
+    ): ReviewVersions => ({ state: "list", rows, next, renamedFrom, cut: false });
+    const pages = new Map<number | undefined, ReviewVersions>([
+      [undefined, page([row("a".repeat(40), 3)], 7)],
+      [7, page([], 9)],
+      [9, page([row("b".repeat(40), 1)], null, "docs/old.md")],
+    ]);
+    canned["review.versions"] = ({ after }) => pages.get(after);
+    await store.openVersions();
+    await store.moreVersions();
+    expect(listOf(store)).toMatchObject({ loading: false, next: 9, problem: null });
+    expect(listOf(store).rows).toHaveLength(1);
+    await store.moreVersions();
+    expect(listOf(store)).toMatchObject({ next: null, renamedFrom: "docs/old.md" });
+    expect(listOf(store).rows.map((r) => r.commit)).toEqual(["a".repeat(40), "b".repeat(40)]);
+    expect(argsOf("review.versions").map((args) => args.after)).toEqual([undefined, 7, 9]);
+    stop();
+  });
+
+  it("a page that comes back after the person left, or for a list closed meanwhile, is dropped", async () => {
+    const { store, shown, hold, stop } = await setup({ shown: handbook });
+    await store.openVersions();
+    let answer = hold("review.versions");
+    let asked = store.moreVersions();
+    shown.value = readme;
+    flushSync();
+    expect(store.versions).toEqual({ status: "closed" });
+    answer();
+    await asked;
+    await settle();
+    expect(store.versions).toEqual({ status: "closed" });
+    // closed and opened again while a page is on its way: the page of the list before is not added
+    shown.value = handbook;
+    await settle();
+    await store.openVersions();
+    answer = hold("review.versions");
+    asked = store.moreVersions();
+    store.closeVersions();
+    const again = store.openVersions();
+    answer();
+    await Promise.all([asked, again]);
+    expect(listOf(store).rows).toHaveLength(50);
+    stop();
+  });
+
+  it("a picked version with changes: the review opens against it, the list closes, the count is said", async () => {
+    const { store, argsOf, stop } = await setup();
+    await store.openVersions();
+    const row = listOf(store).rows[1]!;
+    const version = { version: row.commit };
+    await store.pickVersion(row);
+    expect(store.versions).toEqual({ status: "closed" });
+    expect(store.basis).toEqual(version);
+    expect(store.picked).toEqual({ commit: row.commit, atMs: row.atMs });
+    expect(store.reviewing).toMatchObject({
+      path: GUIDE,
+      basis: version,
+      canKeep: false,
+      uncommitted: true,
+    });
+    expect(store.state).toMatchObject({ status: "reviewing", at: 0 });
+    expect(store.announcement).toMatch(
+      /^Now comparing with the version of .*\d{4}.*\. \d+ changes? to review\.$/,
+    );
+    // a version is for this review only: it is never the choice the backend remembers
+    expect(argsOf("review.setBasis")).toEqual([]);
+    // each change is put back against the version, and Undo takes it back
+    const count = store.reviewing?.count ?? 0;
+    await store.revert(0);
+    expect(argsOf("review.revert").at(-1)?.basis).toEqual(version);
+    expect(store.reviewing).toMatchObject({ basis: version, count: count - 1 });
+    await store.undo();
+    expect(argsOf("review.undo").at(-1)?.basis).toEqual(version);
+    expect(store.reviewing).toMatchObject({ basis: version, count });
+    stop();
+  });
+
+  it("a version with the same text: a line says so, the list stays, nothing opens", async () => {
+    const { store, argsOf, stop } = await setup({ shown: readme });
+    await store.openVersions();
+    const row = listOf(store).rows[0]!;
+    expect(row.same).toBe(true);
+    await store.pickVersion(row);
+    expect(listOf(store).note).toBe("This version has the same text as the document now.");
+    expect(store.basis).toBe("read");
+    expect(store.picked).toBeNull();
+    expect(store.reviewing).toBeNull();
+    expect(argsOf("review.open")).toEqual([]);
+    stop();
+  });
+
+  const GAPS: [VersionGap | "unknown", string][] = [
+    ["missing", "This version is not on this computer."],
+    ["tooLarge", "This version is too large to compare (over 2 MB)."],
+    ["notText", "This version is not text, so it cannot be compared."],
+    ["unknown", "This version cannot be compared."],
+  ];
+
+  it.each(GAPS)(
+    "a version that cannot be compared (%s) says why in the list",
+    async (gap, line) => {
+      const { store, canned, argsOf, stop } = await setup();
+      await store.openVersions();
+      canned["review.status"] = ({ basis }) =>
+        typeof basis !== "object"
+          ? undefined
+          : gap === "unknown"
+            ? { state: { state: "noBasis" }, basis }
+            : { state: { state: "noBasis" }, basis, gap };
+      await store.pickVersion(listOf(store).rows[2]!);
+      expect(listOf(store).note).toBe(line);
+      expect(store.basis).toBe("read");
+      expect(store.picked).toBeNull();
+      expect(store.state.status).toBe("offer");
+      expect(argsOf("review.open")).toEqual([]);
+      stop();
+    },
+  );
+
+  it("a document too large, not text, or a version that does not open: said in the list", async () => {
+    const large = await setup();
+    await large.store.openVersions();
+    large.canned["review.status"] = ({ basis }) =>
+      typeof basis === "object" ? { state: { state: "tooLarge" }, basis } : undefined;
+    await large.store.pickVersion(listOf(large.store).rows[1]!);
+    expect(listOf(large.store).note).toBe("This document is too large to compare (over 2 MB).");
+    large.stop();
+
+    const binary = await setup();
+    await binary.store.openVersions();
+    binary.canned["review.status"] = ({ basis }) =>
+      typeof basis === "object" ? { state: { state: "unsupported" }, basis } : undefined;
+    await binary.store.pickVersion(listOf(binary.store).rows[1]!);
+    expect(listOf(binary.store).note).toBe(
+      "This file is not text, so versions cannot be compared.",
+    );
+    binary.stop();
+
+    const failing = await setup({ conflictOn: "review.open" });
+    await failing.store.openVersions();
+    await failing.store.pickVersion(listOf(failing.store).rows[1]!);
+    expect(listOf(failing.store).note).toBe("This version cannot be compared.");
+    expect(failing.store.basis).toBe("read");
+    expect(failing.store.picked).toBeNull();
+    failing.stop();
+  });
+
+  it("from an open review to a version and back to the last commit", async () => {
+    const { store, argsOf, stop } = await setup();
+    await store.begin();
+    await store.revert(0);
+    expect(store.undoable).toBe(1);
+    await store.openVersions();
+    const row = listOf(store).rows[2]!;
+    await store.pickVersion(row);
+    expect(store.reviewing?.basis).toEqual({ version: row.commit });
+    expect(store.picked).toEqual({ commit: row.commit, atMs: row.atMs });
+    // the same review goes on: what was reverted in it can still be undone
+    expect(store.undoable).toBe(1);
+    await store.setBasis("commit");
+    expect(store.basis).toBe("commit");
+    expect(store.picked).toBeNull();
+    expect(store.reviewing?.basis).toBe("commit");
+    expect(store.announcement).toMatch(/^Now comparing with the last commit\./);
+    // only the choice is told to the backend, never a version
+    expect(argsOf("review.setBasis")).toEqual([{ basis: "commit" }]);
+    await store.setBasis({ version: row.commit });
+    expect(store.basis).toBe("commit");
+    expect(argsOf("review.setBasis")).toEqual([{ basis: "commit" }]);
+    stop();
+  });
+
+  it("a picked version goes with its review: another document never opens against it", async () => {
+    const { store, shown, argsOf, stop } = await setup();
+    await store.openVersions();
+    await store.pickVersion(listOf(store).rows[1]!);
+    await store.openVersions();
+    shown.value = code;
+    await settle();
+    expect(store.basis).toBe("read");
+    expect(store.picked).toBeNull();
+    expect(store.versions).toEqual({ status: "closed" });
+    await store.begin();
+    expect(store.reviewing).toMatchObject({ path: CODE, basis: "read" });
+    const opened = argsOf("review.open").filter((args) => args.path === CODE);
+    expect(opened.map((args) => args.basis)).toEqual([undefined]);
+    stop();
+  });
+
+  it("the review closed, or everything brought back: the choice made before the pick is back", async () => {
+    const closed = await setup();
+    await closed.store.begin();
+    await closed.store.setBasis("commit");
+    await closed.store.openVersions();
+    await closed.store.pickVersion(listOf(closed.store).rows[1]!);
+    await closed.store.openVersions();
+    await closed.store.done();
+    expect(closed.store.basis).toBe("commit");
+    expect(closed.store.picked).toBeNull();
+    expect(closed.store.versions).toEqual({ status: "closed" });
+    closed.stop();
+
+    const reverted = await setup();
+    await reverted.store.openVersions();
+    const row = listOf(reverted.store).rows[1]!;
+    await reverted.store.pickVersion(row);
+    await reverted.store.revertAll();
+    expect(reverted.argsOf("review.revertAll").at(-1)?.basis).toEqual({ version: row.commit });
+    expect(reverted.store.state.status).toBe("idle");
+    expect(reverted.store.basis).toBe("read");
+    expect(reverted.store.picked).toBeNull();
+    reverted.stop();
+  });
+
+  it('"Review again" after a review against a version opens the same comparison', async () => {
+    const { store, notices, stop } = await setup();
+    await store.openVersions();
+    const row = listOf(store).rows[1]!;
+    await store.pickVersion(row);
+    await store.done();
+    expect(store.picked).toBeNull();
+    const offered = notices.splice(0, 1)[0]!;
+    offered.onGone("action");
+    offered.actions[0]!.run();
+    await settle();
+    expect(store.reviewing?.basis).toEqual({ version: row.commit });
+    expect(store.basis).toEqual({ version: row.commit });
+    expect(store.picked).toEqual({ commit: row.commit, atMs: row.atMs });
+    stop();
+  });
+
+  it("the repository at the same commit: an open list stays as it is", async () => {
+    const { store, mock, argsOf, stop } = await setup();
+    await store.openVersions();
+    await settle();
+    mock.probe.plugins.announceGit(mock.probe.plugins.git());
+    await settle();
+    expect(argsOf("review.versions")).toHaveLength(1);
+    expect(listOf(store).note).toBeNull();
+    stop();
+  });
+
+  it("the history moved: an open list is read again from its first page, and says so", async () => {
+    const { store, mock, argsOf, stop } = await setup({ shown: handbook });
+    await store.openVersions();
+    await store.moreVersions();
+    expect(listOf(store).rows).toHaveLength(100);
+    mock.probe.plugins.announceGit(movedTo(mock.probe.plugins.git(), "f".repeat(40)));
+    await settle();
+    expect(listOf(store).rows).toHaveLength(50);
+    expect(listOf(store).note).toBe("The history changed. The list was read again.");
+    expect(argsOf("review.versions").at(-1)).toEqual({ path: MOCK_LONG_HISTORY });
+    stop();
+  });
+
+  it("the history moved and the picked version is gone: back to the last commit, and a line says so", async () => {
+    const { store, mock, canned, argsOf, stop } = await setup();
+    await store.openVersions();
+    const row = listOf(store).rows[1]!;
+    await store.pickVersion(row);
+    // the version is still there: the review stays on it
+    mock.probe.plugins.announceGit(movedTo(mock.probe.plugins.git(), "e".repeat(40)));
+    await settle();
+    expect(store.picked?.commit).toBe(row.commit);
+    expect(store.basisNote).toBeNull();
+    canned["review.status"] = ({ basis }) =>
+      typeof basis === "object"
+        ? { state: { state: "noBasis" }, basis, gap: "missing" }
+        : undefined;
+    mock.probe.plugins.announceGit(movedTo(mock.probe.plugins.git(), "f".repeat(40)));
+    await settle();
+    expect(store.picked).toBeNull();
+    expect(store.basis).toBe("commit");
+    expect(store.reviewing?.basis).toBe("commit");
+    expect(store.basisNote).toBe("The history changed. Comparing with the last commit again.");
+    expect(argsOf("review.setBasis")).toEqual([{ basis: "commit" }]);
+    stop();
+  });
+
+  it("teardown closes the list, lets the version go and stops hearing the repository", async () => {
+    const { store, mock, argsOf, stop } = await setup();
+    await store.openVersions();
+    await store.pickVersion(listOf(store).rows[1]!);
+    await store.openVersions();
+    stop();
+    expect(store.versions).toEqual({ status: "closed" });
+    expect(store.picked).toBeNull();
+    expect(store.basis).toBe("read");
+    const before = argsOf("review.status").length;
+    mock.probe.plugins.announceGit(movedTo(mock.probe.plugins.git(), "f".repeat(40)));
+    await settle();
+    expect(argsOf("review.status")).toHaveLength(before);
   });
 });

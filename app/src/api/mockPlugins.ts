@@ -14,9 +14,16 @@ import type { createMockTranslation } from "./mockTranslation";
 import type { createMockLocalAi } from "./mockLocalAi";
 import type { ReviewChange } from "./generated/ReviewChange";
 import { createMockGitMembers, type GitMembersProbe } from "./mockGitMembers";
+import {
+  MOCK_HEAD,
+  mockVersionChanges,
+  mockVersions,
+  type MockFileState,
+} from "./mockReviewVersions";
 import type {
   ActivityEntry,
   BaselineKind,
+  Basis,
   FeedItem,
   GitSnapshot,
   PluginEventName,
@@ -119,7 +126,9 @@ function startCodeChanges(): ReviewChange[] {
   ];
 }
 
-type MockReview = { changes: ReviewChange[]; undo: ReviewChange[][]; unit: "blocks" | "lines" };
+/** The changes of one document against one basis. */
+type Drawn = { changes: ReviewChange[] };
+type MockReview = Drawn & { unit: "blocks" | "lines" };
 
 export function createMockPlugins(
   emit: <E extends PluginEventName>(event: E, data: PluginEvents[E]) => void,
@@ -142,7 +151,8 @@ export function createMockPlugins(
 } {
   const calls: string[] = [];
   let baseline: BaselineKind = "lastVisit";
-  let basis: PluginMethods["review.basis"]["result"] = "read";
+  /** The choice the backend remembers (a version never is: it comes with each call). */
+  let basis: Exclude<Basis, { version: string }> = "read";
   const gitFiles: GitSnapshot["files"] = [
     { path: GUIDE, letter: "modified", staged: false, from: null },
     { path: "notes/ideas.md", letter: "untracked", staged: false, from: null },
@@ -153,7 +163,7 @@ export function createMockPlugins(
     backend: "builtin",
     head: {
       branch: "main",
-      oid: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      oid: MOCK_HEAD,
       detached: false,
       unborn: false,
     },
@@ -229,8 +239,8 @@ export function createMockPlugins(
     more: 0,
   };
   const reviews = new Map<string, MockReview>([
-    [GUIDE, { changes: startChanges(), undo: [], unit: "blocks" }],
-    [CODE, { changes: startCodeChanges(), undo: [], unit: "lines" }],
+    [GUIDE, { changes: startChanges(), unit: "blocks" }],
+    [CODE, { changes: startCodeChanges(), unit: "lines" }],
   ]);
   /** What a document has against the last commit when there is nothing new against what was read. */
   const againstCommit = (path: string, asked: typeof basis): ReviewChange[] => {
@@ -240,30 +250,68 @@ export function createMockPlugins(
     }
     return startCodeChanges().slice(0, 1);
   };
+  const unitOf = (path: string): MockReview["unit"] =>
+    reviews.get(path)?.unit ?? (/\.(md|markdown)$/i.test(path) ? "blocks" : "lines");
+  /** How a file stands toward the last commit (what the git letters and the review say). */
+  const fileState = (path: string): MockFileState => {
+    const letter = gitFiles.find((file) => file.path === path)?.letter;
+    if (letter === "untracked") return "untracked";
+    return letter !== undefined || againstCommit(path, "commit").length > 0
+      ? "changed"
+      : "unchanged";
+  };
+  /** What documents have against the versions asked for so far (`<commit> <path>`): made at the first ask from
+   *  what the file has against the last commit and what the commits since the version changed. */
+  const versioned = new Map<string, Drawn>();
+  /** The changes against `asked`, held so that a revert can take some out; `null`: a version that cannot be had. */
+  const drawn = (path: string, asked: Basis): Drawn | null => {
+    if (typeof asked === "string") return reviews.get(path) ?? null;
+    const key = `${asked.version} ${path}`;
+    const known = versioned.get(key);
+    if (known) return known;
+    const since = mockVersionChanges(path, asked.version, unitOf(path));
+    if (since === null) return null;
+    const made = { changes: [...againstCommit(path, "commit"), ...since] };
+    versioned.set(key, made);
+    return made;
+  };
+  /** The basis a call goes against: the version it names, else the remembered choice. */
+  const held = (asked: Basis | undefined): Basis => (typeof asked === "object" ? asked : basis);
   const reviewView = (
     path: string,
-    asked: typeof basis = basis,
+    asked: Basis = basis,
   ): PluginMethods["review.open"]["result"] => {
-    const review = reviews.get(path);
-    const changes = againstCommit(path, asked);
+    const version = typeof asked === "object" ? drawn(path, asked) : null;
+    if (typeof asked === "object" && version === null) {
+      throw new MockPluginError("unavailable", "noBasis");
+    }
+    const changes =
+      version?.changes ?? againstCommit(path, typeof asked === "string" ? asked : basis);
     return {
       path,
       hash: path === GUIDE ? hashOfGuide() : "0000000000000000",
       basis: asked,
       asked,
-      unit: review?.unit ?? "blocks",
+      unit: unitOf(path),
       count: changes.length,
       canKeep: asked === "read",
-      uncommitted: false,
+      uncommitted: typeof asked === "object" && fileState(path) === "changed",
       changes: changes.map((c, index) => ({ ...c, index })),
     };
   };
-  /** Takes the changes of a review through `change` (the old ones can be put back by Undo). */
-  const alter = (path: string, change: (changes: ReviewChange[]) => ReviewChange[]): void => {
-    const review = reviews.get(path);
-    if (!review) return;
-    review.undo.push(review.changes);
-    review.changes = change(review.changes);
+  /** What Undo puts back, per document: the newest last. */
+  const undos = new Map<string, (() => void)[]>();
+  /** Takes the changes a document has against `asked` through `change` (Undo puts the old ones back). */
+  const alter = (
+    path: string,
+    asked: Basis,
+    change: (changes: ReviewChange[]) => ReviewChange[],
+  ): void => {
+    const target = drawn(path, asked);
+    if (!target) return;
+    const before = target.changes;
+    undos.set(path, [...(undos.get(path) ?? []), () => (target.changes = before)]);
+    target.changes = change(before);
   };
 
   const agent = createMockAgent(emit);
@@ -319,6 +367,13 @@ export function createMockPlugins(
     },
     "review.seen": () => null,
     "review.status": ({ path, basis: asked = basis }) => {
+      if (typeof asked === "object") {
+        const count = drawn(path, asked)?.changes.length;
+        if (count === undefined) {
+          return { state: { state: "noBasis" }, basis: asked, gap: "missing" };
+        }
+        return { state: count > 0 ? { state: "changes", count } : { state: "same" }, basis: asked };
+      }
       const review = reviews.get(path);
       const count = againstCommit(path, asked).length;
       const state: PluginMethods["review.status"]["result"]["state"] = review
@@ -332,33 +387,34 @@ export function createMockPlugins(
     },
     "review.open": ({ path, basis: asked }) => reviewView(path, asked),
     "review.keep": ({ path, index }) => {
-      alter(path, (all) => all.filter((_, i) => i !== index));
+      alter(path, basis, (all) => all.filter((_, i) => i !== index));
       return reviewView(path);
     },
     "review.keepAll": ({ path }) => {
-      alter(path, () => []);
+      alter(path, basis, () => []);
       return reviewView(path);
     },
-    "review.revert": ({ path, index }) => {
-      alter(path, (all) => all.filter((_, i) => i !== index));
-      return reviewView(path);
+    "review.revert": ({ path, index, basis: asked }) => {
+      alter(path, held(asked), (all) => all.filter((_, i) => i !== index));
+      return reviewView(path, held(asked));
     },
-    "review.revertAll": ({ path }) => {
-      alter(path, () => []);
-      return reviewView(path);
+    "review.revertAll": ({ path, basis: asked }) => {
+      alter(path, held(asked), () => []);
+      return reviewView(path, held(asked));
     },
-    "review.undo": ({ path }) => {
-      const review = reviews.get(path);
-      if (review) review.changes = review.undo.pop() ?? review.changes;
-      return reviewView(path);
+    "review.undo": ({ path, basis: asked }) => {
+      undos.get(path)?.pop()?.();
+      return reviewView(path, held(asked));
     },
     "review.release": () => null,
     "review.restore": () => null,
     "review.setBasis": (args) => {
-      basis = args.basis;
+      // a version is for one review: it is not remembered
+      if (typeof args.basis === "string") basis = args.basis;
       return null;
     },
     "review.basis": () => basis,
+    "review.versions": ({ path, after }) => mockVersions(path, after ?? 0, fileState(path)),
     "broken-links.repair": (args) => {
       repairs.push(args);
       const reason = nextRefusal;

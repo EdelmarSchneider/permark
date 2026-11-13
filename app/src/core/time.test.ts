@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compactRelativeFormat, relativeTime } from "./time";
+import { compactRelativeFormat, exactTime, relativeTime } from "./time";
 
 const NOW = Date.UTC(2026, 9, 19, 12, 0, 0);
 const MIN = 60_000;
@@ -36,5 +36,15 @@ describe("relativeTime", () => {
     expect(relativeTime(NOW + DAY, NOW, "en")).toBe("now");
     expect(relativeTime(0, NOW, "en")).toMatch(/years ago$/);
     expect(relativeTime(NOW, NOW, "zh-CN")).not.toBe("");
+  });
+});
+
+describe("exactTime", () => {
+  it("says the date and the time of a moment, in the language asked", () => {
+    const noon = new Date(2026, 10, 13, 12, 5).getTime();
+    expect(exactTime(noon, "en")).toMatch(/^Nov 13, 2026, 12:05\sPM$/);
+    expect(exactTime(noon, "de")).toBe("13.11.2026, 12:05");
+    expect(exactTime(noon, "pt-BR")).toMatch(/^13 de nov\. de 2026, 12:05$/);
+    expect(exactTime(noon, "ja")).toBe("2026/11/13 12:05");
   });
 });

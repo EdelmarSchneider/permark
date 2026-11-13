@@ -981,6 +981,48 @@ export default {
   "review.codeLabel": "Codice con modifiche",
   "review.fromCommit":
     "Niente di nuovo dall'ultima volta che hai guardato. Sono mostrate le modifiche dall'ultimo commit.",
+  "review.basis.version": "una versione precedente…",
+  "review.basis.picked": "la versione del {when}",
+  "review.comparing": "Confronto con la versione del {when}",
+  "review.sr.basisVersion.one":
+    "Ora il confronto è con la versione del {when}. {n} modifica da rivedere.",
+  "review.sr.basisVersion.other":
+    "Ora il confronto è con la versione del {when}. {n} modifiche da rivedere.",
+  "review.bringBack": "Ripristina questa versione",
+  "review.bringBack.warning":
+    "Le tue modifiche dopo l'ultimo commit non sono salvate in git. Ripristinando questa versione vengono sostituite. Puoi annullare finché non chiudi PerMark.",
+  "review.bringBack.confirm": "Ripristina",
+  "review.versions.command": "Mostra versioni precedenti",
+  "review.versions.menu": "Versioni precedenti…",
+  "review.versions.title": "Versioni precedenti di {name}",
+  "review.versions.list": "Versioni",
+  "review.versions.loading": "Lettura della cronologia…",
+  "review.versions.more": "Mostra di più",
+  "review.versions.same": "Stesso testo di adesso",
+  "review.versions.authors": "{author} con {others}",
+  "review.versions.compare": "Confronta",
+  "review.versions.renamed": "Le versioni precedenti con il nome {name} non sono mostrate.",
+  "review.versions.cut":
+    "Potrebbero mancare versioni più vecchie: questa è una copia parziale del repository.",
+  "review.versions.retry": "Riprova",
+  "review.versions.none.unavailable": "Le versioni precedenti non sono disponibili qui.",
+  "review.versions.none.notCommitted": "Questo file non è ancora in nessun commit di git.",
+  "review.versions.none.onlyCurrent": "C'è una sola versione: quella che vedi.",
+  "review.versions.none.otherRepository":
+    "Questo file appartiene a un altro repository dentro questa cartella.",
+  "review.versions.none.slow": "La lettura della cronologia ha richiesto troppo tempo.",
+  "review.versions.none.failed": "Non è stato possibile leggere la cronologia.",
+  "review.versions.none.unsupported":
+    "Questo file non è testo, quindi le versioni non si possono confrontare.",
+  "review.versions.none.unsaved":
+    "Salva prima le modifiche per confrontare con le versioni precedenti.",
+  "review.versions.pick.same": "Questa versione ha lo stesso testo che il documento ha adesso.",
+  "review.versions.pick.missing": "Questa versione non è su questo computer.",
+  "review.versions.pick.tooLarge": "Questa versione è troppo grande da confrontare (oltre 2 MB).",
+  "review.versions.pick.notText": "Questa versione non è testo, quindi non si può confrontare.",
+  "review.versions.pick.failed": "Questa versione non si può confrontare.",
+  "review.versions.gone": "La cronologia è cambiata. Il confronto è di nuovo con l'ultimo commit.",
+  "review.versions.reread": "La cronologia è cambiata. L'elenco è stato riletto.",
 
   // ---- organizing: tags, comments, silence, broken links
   "finder.scope.tags": "Tag",

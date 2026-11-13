@@ -984,6 +984,50 @@ export default {
   "review.codeLabel": "Code mit Änderungen",
   "review.fromCommit":
     "Seit deinem letzten Blick gibt es nichts Neues. Gezeigt wird, was sich seit dem letzten Commit geändert hat.",
+  "review.basis.version": "einer früheren Version …",
+  "review.basis.picked": "der Version vom {when}",
+  "review.comparing": "Vergleich mit der Version vom {when}",
+  "review.sr.basisVersion.one":
+    "Jetzt im Vergleich mit der Version vom {when}. {n} Änderung zu prüfen.",
+  "review.sr.basisVersion.other":
+    "Jetzt im Vergleich mit der Version vom {when}. {n} Änderungen zu prüfen.",
+  "review.bringBack": "Diese Version zurückholen",
+  "review.bringBack.warning":
+    "Deine Änderungen seit dem letzten Commit sind nicht in Git gespeichert. Wenn du diese Version zurückholst, werden sie ersetzt. Du kannst das rückgängig machen, bis du PerMark schließt.",
+  "review.bringBack.confirm": "Zurückholen",
+  "review.versions.command": "Frühere Versionen anzeigen",
+  "review.versions.menu": "Frühere Versionen …",
+  "review.versions.title": "Frühere Versionen von {name}",
+  "review.versions.list": "Versionen",
+  "review.versions.loading": "Verlauf wird gelesen …",
+  "review.versions.more": "Mehr anzeigen",
+  "review.versions.same": "Gleicher Text wie jetzt",
+  "review.versions.authors": "{author} mit {others}",
+  "review.versions.compare": "Vergleichen",
+  "review.versions.renamed": "Frühere Versionen unter dem Namen {name} werden nicht angezeigt.",
+  "review.versions.cut":
+    "Ältere Versionen können fehlen: Dies ist eine unvollständige Kopie des Repositorys.",
+  "review.versions.retry": "Erneut versuchen",
+  "review.versions.none.unavailable": "Frühere Versionen sind hier nicht verfügbar.",
+  "review.versions.none.notCommitted": "Diese Datei ist noch in keinem Git-Commit enthalten.",
+  "review.versions.none.onlyCurrent": "Es gibt nur eine Version: die, die du siehst.",
+  "review.versions.none.otherRepository":
+    "Diese Datei gehört zu einem anderen Repository in diesem Ordner.",
+  "review.versions.none.slow": "Das Lesen des Verlaufs hat zu lange gedauert.",
+  "review.versions.none.failed": "Der Verlauf konnte nicht gelesen werden.",
+  "review.versions.none.unsupported":
+    "Diese Datei ist kein Text, daher lassen sich Versionen nicht vergleichen.",
+  "review.versions.none.unsaved":
+    "Speichere zuerst deine Änderungen, um mit früheren Versionen zu vergleichen.",
+  "review.versions.pick.same": "Diese Version hat denselben Text wie das Dokument jetzt.",
+  "review.versions.pick.missing": "Diese Version ist nicht auf diesem Computer.",
+  "review.versions.pick.tooLarge": "Diese Version ist zu groß zum Vergleichen (über 2 MB).",
+  "review.versions.pick.notText":
+    "Diese Version ist kein Text und lässt sich daher nicht vergleichen.",
+  "review.versions.pick.failed": "Diese Version lässt sich nicht vergleichen.",
+  "review.versions.gone":
+    "Der Verlauf hat sich geändert. Verglichen wird wieder mit dem letzten Commit.",
+  "review.versions.reread": "Der Verlauf hat sich geändert. Die Liste wurde neu gelesen.",
 
   // ---- organizing: tags, comments, silence, broken links
   "finder.scope.tags": "Tags",

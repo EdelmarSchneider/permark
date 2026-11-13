@@ -981,6 +981,46 @@ export default {
   "review.codeLabel": "Codi amb canvis",
   "review.fromCommit":
     "No hi ha res de nou des de l'última vegada que el vau mirar. Es mostra el que ha canviat des de l'últim commit.",
+  "review.basis.version": "una versió anterior…",
+  "review.basis.picked": "la versió del {when}",
+  "review.comparing": "Es compara amb la versió del {when}",
+  "review.sr.basisVersion.one": "Ara es compara amb la versió del {when}. {n} canvi per revisar.",
+  "review.sr.basisVersion.other":
+    "Ara es compara amb la versió del {when}. {n} canvis per revisar.",
+  "review.bringBack": "Recupera aquesta versió",
+  "review.bringBack.warning":
+    "Els vostres canvis des de l'últim commit no estan desats al Git. Si recupereu aquesta versió, se substituiran. Ho podeu desfer fins que tanqueu el PerMark.",
+  "review.bringBack.confirm": "Recupera",
+  "review.versions.command": "Mostra les versions anteriors",
+  "review.versions.menu": "Versions anteriors…",
+  "review.versions.title": "Versions anteriors de {name}",
+  "review.versions.list": "Versions",
+  "review.versions.loading": "S'està llegint l'historial…",
+  "review.versions.more": "Mostra'n més",
+  "review.versions.same": "El mateix text que ara",
+  "review.versions.authors": "{author} amb {others}",
+  "review.versions.compare": "Compara",
+  "review.versions.renamed": "No es mostren les versions anteriors amb el nom {name}.",
+  "review.versions.cut":
+    "Hi poden faltar versions més antigues: això és una còpia parcial del repositori.",
+  "review.versions.retry": "Torna-ho a provar",
+  "review.versions.none.unavailable": "Les versions anteriors no estan disponibles aquí.",
+  "review.versions.none.notCommitted": "Aquest fitxer encara no és en cap commit del Git.",
+  "review.versions.none.onlyCurrent": "Només hi ha una versió: la que veieu.",
+  "review.versions.none.otherRepository":
+    "Aquest fitxer pertany a un altre repositori dins d'aquesta carpeta.",
+  "review.versions.none.slow": "La lectura de l'historial ha trigat massa.",
+  "review.versions.none.failed": "No s'ha pogut llegir l'historial.",
+  "review.versions.none.unsupported":
+    "Aquest fitxer no és text, així que les versions no es poden comparar.",
+  "review.versions.none.unsaved": "Primer deseu els canvis per comparar amb versions anteriors.",
+  "review.versions.pick.same": "Aquesta versió té el mateix text que el document ara.",
+  "review.versions.pick.missing": "Aquesta versió no és en aquest ordinador.",
+  "review.versions.pick.tooLarge": "Aquesta versió és massa gran per a comparar-la (més de 2 MB).",
+  "review.versions.pick.notText": "Aquesta versió no és text, així que no es pot comparar.",
+  "review.versions.pick.failed": "Aquesta versió no es pot comparar.",
+  "review.versions.gone": "L'historial ha canviat. Es torna a comparar amb l'últim commit.",
+  "review.versions.reread": "L'historial ha canviat. La llista s'ha tornat a llegir.",
 
   // ---- organizing: tags, comments, silence, broken links
   "finder.scope.tags": "Etiquetes",

@@ -980,6 +980,48 @@ export default {
   "review.codeLabel": "Código com alterações",
   "review.fromCommit":
     "Nada de novo desde a última vez que viu. A mostrar o que mudou desde o último commit.",
+  "review.basis.version": "uma versão anterior…",
+  "review.basis.picked": "a versão de {when}",
+  "review.comparing": "A comparar com a versão de {when}",
+  "review.sr.basisVersion.one":
+    "A comparar agora com a versão de {when}. {n} alteração para rever.",
+  "review.sr.basisVersion.other":
+    "A comparar agora com a versão de {when}. {n} alterações para rever.",
+  "review.bringBack": "Repor esta versão",
+  "review.bringBack.warning":
+    "As suas alterações desde o último commit não estão guardadas no Git. Repor esta versão substitui essas alterações. Pode anular até fechar o PerMark.",
+  "review.bringBack.confirm": "Repor",
+  "review.versions.command": "Mostrar versões anteriores",
+  "review.versions.menu": "Versões anteriores…",
+  "review.versions.title": "Versões anteriores de {name}",
+  "review.versions.list": "Versões",
+  "review.versions.loading": "A ler o histórico…",
+  "review.versions.more": "Mostrar mais",
+  "review.versions.same": "O mesmo texto de agora",
+  "review.versions.authors": "{author} com {others}",
+  "review.versions.compare": "Comparar",
+  "review.versions.renamed": "As versões anteriores com o nome {name} não são mostradas.",
+  "review.versions.cut":
+    "Podem faltar versões mais antigas: esta é uma cópia parcial do repositório.",
+  "review.versions.retry": "Tentar novamente",
+  "review.versions.none.unavailable": "As versões anteriores não estão disponíveis aqui.",
+  "review.versions.none.notCommitted": "Este ficheiro ainda não está em nenhum commit do Git.",
+  "review.versions.none.onlyCurrent": "Só existe uma versão: a que está a ver.",
+  "review.versions.none.otherRepository":
+    "Este ficheiro pertence a outro repositório dentro desta pasta.",
+  "review.versions.none.slow": "A leitura do histórico demorou demasiado.",
+  "review.versions.none.failed": "Não foi possível ler o histórico.",
+  "review.versions.none.unsupported":
+    "Este ficheiro não é texto, por isso as versões não podem ser comparadas.",
+  "review.versions.none.unsaved":
+    "Guarde primeiro as suas alterações para comparar com versões anteriores.",
+  "review.versions.pick.same": "Esta versão tem o mesmo texto que o documento tem agora.",
+  "review.versions.pick.missing": "Esta versão não está neste computador.",
+  "review.versions.pick.tooLarge": "Esta versão é demasiado grande para comparar (mais de 2 MB).",
+  "review.versions.pick.notText": "Esta versão não é texto, por isso não pode ser comparada.",
+  "review.versions.pick.failed": "Não é possível comparar esta versão.",
+  "review.versions.gone": "O histórico mudou. A comparar novamente com o último commit.",
+  "review.versions.reread": "O histórico mudou. A lista foi lida novamente.",
 
   // ---- organizing: tags, comments, silence, broken links
   "finder.scope.tags": "Etiquetas",
