@@ -595,6 +595,14 @@ fn the_reader_reads_each_file_from_its_own_repository(
         reader.0.blob_at(inner_first, "hubs/hub ü/missing.md"),
         Err(NoBlob::Missing)
     );
+    // the versions of a file are the commits of the repository that holds it
+    let versions = |path: &str| -> Vec<CommitId> {
+        let found = reader.0.file_versions(path, 0, 50).unwrap();
+        found.rows.iter().map(|row| row.commit).collect()
+    };
+    assert_eq!(versions("hubs/hub ü/doc.md"), [inner_first]);
+    assert_eq!(versions("top.md"), [outer_first]);
+    assert!(versions("hubs/hub ü/missing.md").is_empty());
 }
 
 #[test]

@@ -105,6 +105,55 @@ pub enum NoBlob {
     TooLarge,
 }
 
+/// One earlier version of a file: a commit that changed its content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileVersion {
+    pub commit: CommitId,
+    /// Hex id of the file's content at that commit (git's blob id): versions with the same id hold the same bytes.
+    pub blob: String,
+    /// When it was committed (the committer's time), ms since the epoch.
+    pub time_ms: i64,
+    /// The author's name.
+    pub author: String,
+    /// The names in the `Co-authored-by:` lines of the message: no name twice, never the author.
+    pub co_authors: Vec<String>,
+    /// The first line of the message.
+    pub subject: String,
+}
+
+/// One page of the earlier versions of a file ([`RepoReader::file_versions`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FileVersions {
+    /// Newest first.
+    pub rows: Vec<FileVersion>,
+    /// Where the next page starts: hand it back as `after` and read nothing into it (each reader counts its own
+    /// way). `None`: the end of the history was reached.
+    pub next: Option<usize>,
+    /// Blob id of the file at HEAD; `None`: HEAD has no file there.
+    pub head_blob: Option<String>,
+    /// The project path the file had before the oldest version, when that commit renamed it (the history under the
+    /// old name is not listed). Told with the page that reaches the end only.
+    pub renamed_from: Option<String>,
+    /// The repository is a shallow copy: the history may end before the file's first version.
+    pub cut: bool,
+}
+
+/// Why [`RepoReader::file_versions`] has no list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum NoVersions {
+    /// No repository, no git to ask, or a reader that knows no history.
+    #[error("the repository cannot be read")]
+    Unavailable,
+    /// The file is inside another repository below the project's (a nested repository | a submodule).
+    #[error("the file belongs to another repository inside the project")]
+    OtherRepository,
+    /// Git did not answer in time.
+    #[error("git did not answer in time")]
+    Slow,
+    #[error("git failed")]
+    Failed,
+}
+
 /// Read-only look at the repository of a project (set by the `git` plugin while it runs).
 pub trait RepoReader: Send + Sync {
     /// The file at HEAD (`path` is a project path); `None`: no repository, not committed, unreadable.
@@ -115,6 +164,21 @@ pub trait RepoReader: Send + Sync {
     /// [`NoBlob`] says why there are no bytes (a reader that knows no history: `Unavailable`).
     fn blob_at(&self, _commit: CommitId, _path: &str) -> Result<Vec<u8>, NoBlob> {
         Err(NoBlob::Unavailable)
+    }
+    /// One page of the earlier versions of the file `path` (a project path): the commits that changed its content,
+    /// newest first, merged branches included; renames are not followed. `after`: 0 for the first page, then the
+    /// `next` of the page before; `limit`: most changes of the file read for one page (a page may hold fewer rows).
+    /// A file that was never committed has an empty page.
+    ///
+    /// # Errors
+    /// [`NoVersions`] says why there is no list (a reader that knows no history: `Unavailable`).
+    fn file_versions(
+        &self,
+        _path: &str,
+        _after: usize,
+        _limit: usize,
+    ) -> Result<FileVersions, NoVersions> {
+        Err(NoVersions::Unavailable)
     }
     /// The commit HEAD points at; `None`: no repository | no commit yet.
     fn head(&self) -> Option<String> {
@@ -327,6 +391,24 @@ mod tests {
         }
         let id = CommitId::parse(&"a".repeat(40)).unwrap();
         assert_eq!(HeadOnly.blob_at(id, "a.md"), Err(NoBlob::Unavailable));
+        assert_eq!(
+            HeadOnly.file_versions("a.md", 0, 50),
+            Err(NoVersions::Unavailable)
+        );
+    }
+
+    #[test]
+    fn a_page_of_versions_is_empty_and_at_its_end_by_default() {
+        assert_eq!(
+            FileVersions::default(),
+            FileVersions {
+                rows: Vec::new(),
+                next: None,
+                head_blob: None,
+                renamed_from: None,
+                cut: false,
+            }
+        );
     }
 
     #[test]

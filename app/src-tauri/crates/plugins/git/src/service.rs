@@ -11,14 +11,15 @@ use std::time::{Duration, Instant};
 
 use permark_core::conditions::GitCondition;
 use permark_core::paths::WORKTREE_PREFIX;
-use permark_core::plugins::{CommitId, NoBlob, ProjectFacts, RepoReader};
+use permark_core::plugins::{CommitId, FileVersions, NoBlob, NoVersions, ProjectFacts, RepoReader};
 use permark_core::settings::GitBackendPref;
 use permark_core::state::{StateData, StateFile};
 use serde::{Deserialize, Serialize};
 
 use crate::builtin::BuiltinGit;
 use crate::ops::{
-    blob_or_miss, finish, repo_state, Baseline, Discovery, GitError, GitOps, RawFile, RepoLocation,
+    blob_or_miss, finish, repo_state, versions_of, Baseline, Discovery, GitError, GitOps, RawFile,
+    RepoLocation,
 };
 use crate::system::SystemGit;
 use crate::types::{BaselineInfo, BaselineKind, GitFile, GitSnapshot, WorktreeInfo};
@@ -458,7 +459,7 @@ impl GitService {
         let _ = self.tx.send(Msg::Baseline(kind));
     }
 
-    /// The repository reader other plugins use (a file at HEAD | at a commit).
+    /// The repository reader other plugins use (a file at HEAD | at a commit, the versions of a file).
     #[must_use]
     pub fn reader(&self) -> Arc<dyn RepoReader> {
         Arc::new(Reader {
@@ -513,6 +514,16 @@ impl RepoReader for Reader {
     fn blob_at(&self, commit: CommitId, path: &str) -> Result<Vec<u8>, NoBlob> {
         let (backend, location, rest) = self.place(path).ok_or(NoBlob::Unavailable)?;
         blob_or_miss(backend.blob_at(&location, commit, rest))
+    }
+
+    fn file_versions(
+        &self,
+        path: &str,
+        after: usize,
+        limit: usize,
+    ) -> Result<FileVersions, NoVersions> {
+        let (backend, location, rest) = self.place(path).ok_or(NoVersions::Unavailable)?;
+        versions_of(backend.as_ref(), &location, rest, after, limit)
     }
 
     fn head(&self) -> Option<String> {

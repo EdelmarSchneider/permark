@@ -34,9 +34,9 @@ use std::time::Duration;
 use permark_core::conditions::{GitCondition, Requirement};
 use permark_core::paths::{Root, VaultPath, WORKTREE_PREFIX};
 use permark_core::plugins::{
-    typed, CommitId, CxWorkspace, Manifest, NoArgs, NoBlob, Plugin, PluginCx, PluginError,
-    PluginId, PluginKind, PluginScope, ProjectFacts, RepoHandle, RepoReader, RpcRegistration,
-    Running, ServiceLease,
+    typed, CommitId, CxWorkspace, FileVersions, Manifest, NoArgs, NoBlob, NoVersions, Plugin,
+    PluginCx, PluginError, PluginId, PluginKind, PluginScope, ProjectFacts, RepoHandle, RepoReader,
+    RpcRegistration, Running, ServiceLease,
 };
 use permark_core::projects::{ProjectMap, ProjectUid, Projects, ProjectsSubscription};
 use permark_core::settings::GitBackendPref;
@@ -49,7 +49,7 @@ pub use members::{
     step, Env, MemberRef, Members, RepoEvent, RepoFsm, RootCommits, Schedule, MAX_LISTS,
     POOL_THREADS,
 };
-use ops::blob_or_miss;
+use ops::{blob_or_miss, versions_of};
 pub use ops::{Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_FILES};
 pub use service::{
     BackendCell, BackendChoice, ExcludedAtStart, GitService, Prefs, ServiceArgs, Timings, Visit,
@@ -228,8 +228,8 @@ impl Drop for Follower {
     }
 }
 
-/// The reader other plugins use (review's "last commit", a file at a commit): a path inside an included project with
-/// its own repository is read from that repository (path rebased), else from the root's.
+/// The reader other plugins use (review's "last commit", a file at a commit, the versions of a file): a path inside an
+/// included project with its own repository is read from that repository (path rebased), else from the root's.
 struct Routed {
     root: Arc<dyn RepoReader>,
     members: Weak<Members>,
@@ -284,6 +284,20 @@ impl RepoReader for Routed {
             |root| root.blob_at(commit, path),
         )
         .unwrap_or(Err(NoBlob::Unavailable))
+    }
+
+    fn file_versions(
+        &self,
+        path: &str,
+        after: usize,
+        limit: usize,
+    ) -> Result<FileVersions, NoVersions> {
+        self.read(
+            path,
+            |git, location, rel| versions_of(git, location, rel, after, limit),
+            |root| root.file_versions(path, after, limit),
+        )
+        .unwrap_or(Err(NoVersions::Unavailable))
     }
 
     fn head(&self) -> Option<String> {

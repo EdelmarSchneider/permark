@@ -9,14 +9,17 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use permark_core::plugins::CommitId;
+use permark_core::plugins::{CommitId, FileVersions};
 
 use crate::ops::{
-    below_prefix, finish, pathspec, prefix_of, repo_path, too_broad, Baseline, Discovery, GitError,
-    GitOps, RawFile, RawStatus, RepoLocation,
+    below_prefix, finish, pathspec, prefix_of, repo_path, shallow, too_broad, Baseline, Discovery,
+    GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_VERSIONS,
 };
-use crate::porcelain::{parse_name_status, parse_status, parse_untracked, Entry};
-use crate::types::{BackendKind, HeadInfo};
+use crate::porcelain::{
+    parse_name_status, parse_status, parse_tree_file, parse_untracked, parse_versions_log, Entry,
+    LogEntry, LOG_FORMAT,
+};
+use crate::types::{BackendKind, HeadInfo, Letter};
 
 /// How long one git call may take.
 pub const TIMEOUT: Duration = Duration::from_secs(10);
@@ -41,6 +44,48 @@ const SET: [(&str, &str); 5] = [
 
 /// Options before every command: no pager, no filesystem monitor (both are programs the config names).
 const BASE: [&str; 3] = ["--no-pager", "-c", "core.fsmonitor=false"];
+
+/// The `log` that lists the versions of a file, up to its revision and path. A repository's config can make `log` run
+/// a program or answer another way, so every such setting is fixed here: no signature check (it starts
+/// `gpg.program`), no following of renames, the first commit's changes shown, names as committed (no mailmap), no
+/// color, UTF-8. `--full-history`: a merged branch is walked even when the merge took the other side's file.
+/// `--no-use-mailmap` is the spelling every git that knows `status --porcelain=v2` takes (`--no-mailmap`: 2.27+).
+const VERSIONS_LOG: [&str; 20] = [
+    "-c",
+    "log.showSignature=false",
+    "-c",
+    "log.follow=false",
+    "-c",
+    "log.showRoot=true",
+    "log",
+    "--full-history",
+    "--no-merges",
+    "--raw",
+    "--no-abbrev",
+    "--no-renames",
+    "-z",
+    "--no-show-signature",
+    "--no-use-mailmap",
+    "--no-color",
+    "--no-ext-diff",
+    "--no-textconv",
+    "--encoding=UTF-8",
+    LOG_FORMAT,
+];
+
+/// The `diff-tree` that names the renames one commit made (its id follows). Names only, and no external diff | text
+/// conversion: no program of the config runs.
+const RENAMES_OF: [&str; 9] = [
+    "diff-tree",
+    "-r",
+    "-M",
+    "--diff-filter=R",
+    "--name-status",
+    "-z",
+    "--no-commit-id",
+    "--no-ext-diff",
+    "--no-textconv",
+];
 
 /// Variables that would point git somewhere else than the folder it is asked about.
 const SCRUBBED: [&str; 8] = [
@@ -380,6 +425,19 @@ impl SystemGit {
         Ok((out.code == Some(0)).then_some(out.stdout))
     }
 
+    /// The path (relative to the working tree) the file at `path` had before `commit` renamed it; `None`: that
+    /// commit renamed nothing to it | git failed.
+    fn renamed_in(&self, dir: &Path, commit: CommitId, path: &str) -> Option<String> {
+        let mut args = RENAMES_OF.to_vec();
+        args.push(commit.as_str());
+        let out = self.call_ok(dir, &args).ok()?;
+        parse_name_status(&out.stdout)
+            .ok()?
+            .into_iter()
+            .find(|entry| entry.letter == Letter::Renamed && entry.path == path)?
+            .from
+    }
+
     fn call_ok(&self, dir: &Path, args: &[&str]) -> Result<Output, GitError> {
         let out = self.call(dir, args)?;
         if out.code == Some(0) {
@@ -608,6 +666,74 @@ impl GitOps for SystemGit {
         path: &str,
     ) -> Result<Option<Vec<u8>>, GitError> {
         self.blob(location, commit.as_str(), path)
+    }
+
+    fn file_versions(
+        &self,
+        location: &RepoLocation,
+        path: &str,
+        after: usize,
+        limit: usize,
+    ) -> Result<FileVersions, GitError> {
+        let mut found = FileVersions {
+            cut: shallow(&location.git_dir),
+            ..FileVersions::default()
+        };
+        if path.is_empty() || path.contains('\0') {
+            return Ok(found);
+        }
+        let dir = &location.workdir;
+        let full = repo_path(&location.prefix, path);
+        // after `--`, as a literal: the path is no option, no pattern, no pathspec magic
+        let spec = format!(":(literal){full}");
+        let limit = limit.clamp(1, MAX_VERSIONS);
+        let skip = format!("--skip={after}");
+        // one change more than the page holds: whether the history goes on is known without another call
+        let count = (limit + 1).to_string();
+        let mut args = VERSIONS_LOG.to_vec();
+        args.extend([
+            skip.as_str(),
+            "-n",
+            count.as_str(),
+            "HEAD",
+            "--",
+            spec.as_str(),
+        ]);
+        let out = self.call(dir, &args)?;
+        if out.code != Some(0) {
+            // a branch without a commit has nothing to list; anything else is a failure
+            let head = self.head_info(location)?;
+            return if head.unborn && head.branch.is_some() {
+                Ok(found)
+            } else {
+                Err(GitError::Failed(first_line(&out.stderr)))
+            };
+        }
+        let mut entries = parse_versions_log(&out.stdout, &full);
+        if entries.len() > limit {
+            entries.truncate(limit);
+            found.next = Some(after.saturating_add(limit));
+        }
+        let oldest = entries.iter().rev().find(|entry| entry.version.is_some());
+        if let (
+            None,
+            Some(LogEntry {
+                version: Some(row),
+                added: true,
+            }),
+        ) = (found.next, oldest)
+        {
+            // the end of the list: a file that came with its oldest version may have come under another name
+            found.renamed_from = self
+                .renamed_in(dir, row.commit, &full)
+                .and_then(|old| below_prefix(&location.prefix, &old).map(str::to_owned));
+        }
+        found.rows = entries.into_iter().filter_map(|e| e.version).collect();
+        let tree = self.call(dir, &["ls-tree", "-z", "HEAD", "--", spec.as_str()])?;
+        if tree.code == Some(0) {
+            found.head_blob = parse_tree_file(&tree.stdout, &full);
+        }
+        Ok(found)
     }
 
     fn commit_count(&self, location: &RepoLocation, old: &str, new: &str) -> Option<u32> {

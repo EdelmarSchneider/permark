@@ -6,12 +6,17 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use permark_core::conditions::RepoState;
-use permark_core::plugins::{CommitId, NoBlob};
+use permark_core::plugins::{CommitId, FileVersion, FileVersions, NoBlob, NoVersions};
 
 use crate::types::{BackendKind, HeadInfo, Letter};
+use crate::worktrees::{common_dir, in_nested_repository};
 
 /// More changed files than this are cut off (`truncated`).
 pub const MAX_FILES: usize = 5000;
+/// Most changes of a file one page of its versions reads.
+pub const MAX_VERSIONS: usize = 500;
+/// Most co-authors kept of a commit message.
+pub const MAX_CO_AUTHORS: usize = 16;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum GitError {
@@ -108,6 +113,22 @@ pub trait GitOps: Send + Sync {
         commit: CommitId,
         path: &str,
     ) -> Result<Option<Vec<u8>>, GitError>;
+    /// One page of the versions of the file `path` (relative to the project folder), newest first by commit time.
+    /// Every commit reachable from HEAD is looked at (merged branches included); a version is a commit with at most
+    /// one parent that holds a file at the path whose content its parent does not hold there ([`is_version`]).
+    /// Renames are not followed. `after`: 0 | the `next` of the page before. `limit` (held in 1..=[`MAX_VERSIONS`]):
+    /// most changes of the path read; a commit that only deleted the file | changed its mode is such a change and no
+    /// row, so a page may hold fewer rows. No commit yet | a path that was never committed: an empty page at its end.
+    ///
+    /// # Errors
+    /// Git failed | timed out.
+    fn file_versions(
+        &self,
+        location: &RepoLocation,
+        path: &str,
+        after: usize,
+        limit: usize,
+    ) -> Result<FileVersions, GitError>;
     /// Whether the repository has the commit.
     fn commit_exists(&self, location: &RepoLocation, oid: &str) -> bool;
     /// Commits reachable from `new` and not from `old` (`None`: a commit unknown | git failed).
@@ -161,6 +182,98 @@ pub fn subject_of(message: &str) -> String {
         .find(|l| !l.is_empty())
         .unwrap_or("");
     line.chars().take(MAX_SUBJECT).collect()
+}
+
+/// Whether a tree entry with this mode is a regular file (plain | executable).
+#[must_use]
+pub const fn regular(mode: u32) -> bool {
+    mode == 0o100_644 || mode == 0o100_755
+}
+
+/// Whether a commit made a version of a file. `now`: what its tree holds at the path, `before`: what its parent's
+/// tree holds there (mode + object id; `None`: nothing). A version holds a regular file whose content the parent does
+/// not hold as a file: a commit that deleted the file or changed only its mode made none.
+#[must_use]
+pub fn is_version<I: PartialEq>(before: Option<(u32, I)>, now: Option<(u32, I)>) -> bool {
+    match now {
+        Some((mode, id)) if regular(mode) => {
+            !before.is_some_and(|(mode, held)| regular(mode) && held == id)
+        }
+        _ => false,
+    }
+}
+
+/// The names in the `Co-authored-by: Name <mail>` lines of a commit message, in order: no name twice, never
+/// `author`, each cut at [`MAX_SUBJECT`] chars, at most [`MAX_CO_AUTHORS`].
+#[must_use]
+pub fn co_authors_of(message: &str, author: &str) -> Vec<String> {
+    const KEY: &str = "co-authored-by:";
+    let mut names: Vec<String> = Vec::new();
+    for line in message.lines() {
+        // cut where the key would end, only if a character ends there (the line may hold any text)
+        let Some((_, person)) = line
+            .split_at_checked(KEY.len())
+            .filter(|(key, _)| key.eq_ignore_ascii_case(KEY))
+        else {
+            continue;
+        };
+        let name = name_of(person.split('<').next().unwrap_or(""));
+        if !name.is_empty() && name != author && !names.contains(&name) {
+            names.push(name);
+            if names.len() == MAX_CO_AUTHORS {
+                break;
+            }
+        }
+    }
+    names
+}
+
+/// A person's name as a row holds it: trimmed, cut at [`MAX_SUBJECT`] chars.
+fn name_of(text: &str) -> String {
+    text.trim().chars().take(MAX_SUBJECT).collect()
+}
+
+/// The row of a version from what a backend read of its commit: `seconds` = the committer's time, `author` = the
+/// author's name, `message` = the whole message. Both backends build their rows here, so they read alike.
+#[must_use]
+pub fn version(
+    commit: CommitId,
+    blob: String,
+    seconds: i64,
+    author: &str,
+    message: &str,
+) -> FileVersion {
+    let author = name_of(author);
+    FileVersion {
+        commit,
+        blob,
+        time_ms: seconds.saturating_mul(1000),
+        co_authors: co_authors_of(message, &author),
+        subject: subject_of(message),
+        author,
+    }
+}
+
+/// A page of the versions of a file ([`GitOps::file_versions`]) as the reader other plugins use gives it.
+///
+/// # Errors
+/// [`NoVersions`]: the file is inside another repository below this one, git was too slow, or the call failed.
+pub fn versions_of(
+    backend: &dyn GitOps,
+    location: &RepoLocation,
+    path: &str,
+    after: usize,
+    limit: usize,
+) -> Result<FileVersions, NoVersions> {
+    if in_nested_repository(&location.workdir, &repo_path(&location.prefix, path)) {
+        return Err(NoVersions::OtherRepository);
+    }
+    backend
+        .file_versions(location, path, after, limit)
+        .map_err(|error| match error {
+            GitError::Timeout => NoVersions::Slow,
+            _ => NoVersions::Failed,
+        })
 }
 
 /// `path` (relative to the working tree) below the project folder `prefix`: the part below it; `None`: outside.
@@ -242,6 +355,14 @@ pub fn repo_state(git_dir: &Path) -> RepoState {
     }
 }
 
+/// Whether the repository is a shallow copy (it holds only the newest part of the history). Git lists the commits
+/// the history is cut at in the file `shallow`, kept with the objects: a linked worktree shares the one of its
+/// common git folder.
+#[must_use]
+pub fn shallow(git_dir: &Path) -> bool {
+    common_dir(git_dir).join("shallow").exists()
+}
+
 /// Sorts by path and cuts at [`MAX_FILES`].
 pub fn finish(mut files: Vec<RawFile>) -> (Vec<RawFile>, bool) {
     files.sort_by(|a, b| a.path.cmp(&b.path));
@@ -289,6 +410,125 @@ mod tests {
         ] {
             assert_eq!(blob_or_miss(Err(failed)), Err(NoBlob::Unavailable));
         }
+    }
+
+    #[test]
+    fn a_version_is_a_file_whose_content_its_parent_does_not_hold() {
+        const FILE: u32 = 0o100_644;
+        const EXEC: u32 = 0o100_755;
+        const LINK: u32 = 0o120_000;
+        const TREE: u32 = 0o040_000;
+        const SUBMODULE: u32 = 0o160_000;
+        // (before, now, a version?)
+        let cases = [
+            (None, Some((FILE, "a")), true),
+            (None, Some((EXEC, "a")), true),
+            (Some((FILE, "a")), Some((FILE, "b")), true),
+            (Some((FILE, "a")), Some((EXEC, "b")), true),
+            // the mode only
+            (Some((FILE, "a")), Some((EXEC, "a")), false),
+            (Some((EXEC, "a")), Some((FILE, "a")), false),
+            // untouched | deleted | never there
+            (Some((FILE, "a")), Some((FILE, "a")), false),
+            (Some((FILE, "a")), None, false),
+            (None, None, false),
+            // something else than a file before: the same bytes are a new file
+            (Some((LINK, "a")), Some((FILE, "a")), true),
+            (Some((TREE, "t")), Some((FILE, "a")), true),
+            (Some((SUBMODULE, "c")), Some((EXEC, "a")), true),
+            // something else than a file now
+            (Some((FILE, "a")), Some((LINK, "b")), false),
+            (None, Some((LINK, "a")), false),
+            (None, Some((TREE, "t")), false),
+            (None, Some((SUBMODULE, "c")), false),
+        ];
+        for (before, now, expected) in cases {
+            assert_eq!(is_version(before, now), expected, "{before:?} -> {now:?}");
+        }
+        assert!(regular(FILE) && regular(EXEC));
+        assert!(!regular(LINK) && !regular(TREE) && !regular(SUBMODULE) && !regular(0));
+    }
+
+    #[test]
+    fn co_authors_are_the_names_of_the_trailer_lines() {
+        let message = "Subject\n\nBody, Co-authored-by: Nobody <n@x>\n\n\
+            Co-authored-by: Bea Ü <bea@example.com>\n\
+            co-authored-by:   Cy  \n\
+            CO-AUTHORED-BY: Ann <ann@other.example>\n\
+            Co-authored-by: Bea Ü <second@example.com>\n\
+            Co-authored-by: <only@mail>\n\
+            Co-authored-by:\n\
+            Co-authored-by: Dee <d@x> trailing\r\n\
+            Signed-off-by: Eve <e@x>\n";
+        assert_eq!(co_authors_of(message, "Ann"), ["Bea Ü", "Cy", "Dee"]);
+        assert_eq!(
+            co_authors_of(message, "Someone else"),
+            ["Bea Ü", "Cy", "Ann", "Dee"]
+        );
+        assert!(co_authors_of("Subject\n\nBody\n", "Ann").is_empty());
+        assert!(co_authors_of("", "").is_empty());
+        // a message cannot fill a row with names
+        let many = (0..100).fold(String::new(), |all, n| {
+            format!("{all}Co-authored-by: P{n} <p{n}@x>\n")
+        });
+        assert_eq!(co_authors_of(&many, "Ann").len(), MAX_CO_AUTHORS);
+        let long = format!("Co-authored-by: {} <l@x>\n", "é".repeat(MAX_SUBJECT + 50));
+        assert_eq!(
+            co_authors_of(&long, "Ann"),
+            ["é".repeat(MAX_SUBJECT)],
+            "cut at a character"
+        );
+    }
+
+    #[test]
+    fn a_row_is_built_from_what_a_backend_read_of_the_commit() {
+        let commit = CommitId::parse(&"ab".repeat(20)).unwrap();
+        let row = version(
+            commit,
+            "cd".repeat(20),
+            1_700_000_000,
+            "  Ann Ü ",
+            "\n  The subject  \n\nBody\nCo-authored-by: Bea <b@x>\nCo-authored-by: Ann Ü <a@x>\n",
+        );
+        assert_eq!(
+            row,
+            FileVersion {
+                commit,
+                blob: "cd".repeat(20),
+                time_ms: 1_700_000_000_000,
+                author: "Ann Ü".to_owned(),
+                co_authors: vec!["Bea".to_owned()],
+                subject: "The subject".to_owned(),
+            }
+        );
+        let odd = version(
+            commit,
+            String::new(),
+            i64::MAX,
+            &"n".repeat(MAX_SUBJECT + 9),
+            &"s".repeat(MAX_SUBJECT + 9),
+        );
+        assert_eq!(odd.time_ms, i64::MAX, "no overflow");
+        assert_eq!(odd.author.chars().count(), MAX_SUBJECT);
+        assert_eq!(odd.subject, subject_of(&"s".repeat(MAX_SUBJECT + 9)));
+        assert_eq!(version(commit, String::new(), -5, "", "").time_ms, -5000);
+    }
+
+    #[test]
+    fn a_shallow_copy_is_told_by_its_marker_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let git = dir.path().join("main").join(".git");
+        std::fs::create_dir_all(&git).unwrap();
+        assert!(!shallow(&git));
+        // a linked worktree keeps its objects (and the marker) in the common git folder
+        let admin = git.join("worktrees").join("w");
+        std::fs::create_dir_all(&admin).unwrap();
+        std::fs::write(admin.join("commondir"), "../..\n").unwrap();
+        assert!(!shallow(&admin));
+        std::fs::write(git.join("shallow"), format!("{}\n", "a".repeat(40))).unwrap();
+        assert!(shallow(&git));
+        assert!(shallow(&admin));
+        assert!(!shallow(&dir.path().join("nowhere")));
     }
 
     #[test]

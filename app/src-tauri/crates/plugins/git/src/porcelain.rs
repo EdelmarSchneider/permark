@@ -1,7 +1,10 @@
-//! Parsers of the machine-readable output of git (`status --porcelain=v2 -z`, `diff --name-status -z`, `ls-files -z`).
-//! Pure: bytes in, entries out. Paths are text (a name that is not UTF-8 is skipped, as the Explorer skips it).
+//! Parsers of the machine-readable output of git (`status --porcelain=v2 -z`, `diff --name-status -z`, `ls-files -z`,
+//! `log -z --raw`, `ls-tree -z`). Pure: bytes in, entries out. Paths are text (a name that is not UTF-8 is skipped, as
+//! the Explorer skips it).
 
-use crate::ops::GitError;
+use permark_core::plugins::{CommitId, FileVersion};
+
+use crate::ops::{is_version, regular, version, GitError};
 use crate::types::{HeadInfo, Letter};
 
 /// One entry of `status`: path relative to the working tree.
@@ -142,7 +145,8 @@ fn split_fields(field: &[u8], count: usize) -> Result<Vec<&str>, GitError> {
     }
 }
 
-/// Parses `git diff --name-status -z --no-renames` output: `M NUL path NUL`.
+/// Parses `git diff | diff-tree --name-status -z` output: `M NUL path NUL`; with rename detection on, a rename is
+/// `R<score> NUL old path NUL new path NUL`.
 ///
 /// # Errors
 /// A status letter without a path.
@@ -158,6 +162,18 @@ pub fn parse_name_status(output: &[u8]) -> Result<Vec<Entry>, GitError> {
             Some(b'D') => Letter::Deleted,
             Some(b'U') => Letter::Conflict,
             Some(b'M' | b'T') => Letter::Modified,
+            Some(b'R') => {
+                // the path read is the old one; the new one follows
+                if let (Some(old), Some(new)) = (text(path), fields.next().and_then(text)) {
+                    entries.push(Entry {
+                        path: new.to_owned(),
+                        letter: Letter::Renamed,
+                        staged: false,
+                        from: Some(old.to_owned()),
+                    });
+                }
+                continue;
+            }
             _ => continue,
         };
         if let Some(path) = text(path) {
@@ -186,6 +202,111 @@ pub fn parse_untracked(output: &[u8]) -> Vec<Entry> {
             from: None,
         })
         .collect()
+}
+
+/// One entry of the versions log: a commit that changed something at the path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogEntry {
+    /// The version of the file the commit made; `None`: it made none (the file deleted, only its mode changed,
+    /// something else than a file there) | the entry cannot be read.
+    pub version: Option<FileVersion>,
+    /// The commit has a parent, and that parent holds nothing at the path: the file came with this commit.
+    pub added: bool,
+}
+
+/// What the versions log prints of a commit, NUL between: id, parent ids, committer time, author name, whole message.
+pub const LOG_FORMAT: &str = "--format=%H%x00%P%x00%ct%x00%an%x00%B";
+
+/// Parses `git log -z --raw --no-abbrev --no-renames <LOG_FORMAT>` output for the file `path` (relative to the working
+/// tree): one entry per commit printed, in order. A commit is its five fields, then its raw changes, each
+/// `:<mode> <mode> <id> <id> <status> NUL <path> NUL`. Read by position only: no text of a commit (a message may look
+/// like anything) is ever taken for a field of another.
+#[must_use]
+pub fn parse_versions_log(output: &[u8], path: &str) -> Vec<LogEntry> {
+    let below = format!("{path}/");
+    let mut entries = Vec::new();
+    let mut fields = output.split(|&b| b == 0).peekable();
+    while let (Some(id), Some(parents), Some(time), Some(author), Some(message)) = (
+        fields.next(),
+        fields.next(),
+        fields.next(),
+        fields.next(),
+        fields.next(),
+    ) {
+        // the changes of the commit: the first follows a blank line
+        let mut change = None;
+        let mut folder_before = false;
+        while let Some(raw) = fields.next_if(|field| raw_line(field).is_some()) {
+            let Some(name) = fields.next() else { break };
+            if name == path.as_bytes() {
+                change = raw_line(raw).and_then(raw_change);
+            } else if name.starts_with(below.as_bytes()) {
+                folder_before = true;
+            }
+        }
+        let row = change.and_then(|(before, now)| {
+            if !is_version(before, now) {
+                return None;
+            }
+            Some(version(
+                CommitId::parse(text(id)?.trim())?,
+                object_id(now?.1)?,
+                text(time)?.trim().parse().ok()?,
+                &String::from_utf8_lossy(author),
+                &String::from_utf8_lossy(message),
+            ))
+        });
+        entries.push(LogEntry {
+            added: matches!(change, Some((None, _))) && !folder_before && !parents.is_empty(),
+            version: row,
+        });
+    }
+    entries
+}
+
+/// A raw change of a diff without the blank line `log` prints before the first one: `<mode> <mode> <id> <id>
+/// <status>`; `None`: the field is no raw change (it starts the next commit).
+fn raw_line(field: &[u8]) -> Option<&str> {
+    text(field)?.trim_start_matches('\n').strip_prefix(':')
+}
+
+/// What a tree holds at a path: file mode + object id; `None`: nothing.
+type Held<'a> = Option<(u32, &'a str)>;
+
+/// The two sides of a raw change ([`raw_line`]): what the parent holds at the path, what the commit holds.
+fn raw_change(line: &str) -> Option<(Held<'_>, Held<'_>)> {
+    let mut parts = line.split(' ');
+    let (mode_before, mode_now) = (parts.next()?, parts.next()?);
+    let (id_before, id_now) = (parts.next()?, parts.next()?);
+    let held = |mode: &str, id| {
+        let mode = u32::from_str_radix(mode, 8).ok()?;
+        Some((mode != 0).then_some((mode, id)))
+    };
+    Some((held(mode_before, id_before)?, held(mode_now, id_now)?))
+}
+
+/// A full object id as git prints it (hex digits), lowercase; `None`: anything else.
+fn object_id(text: &str) -> Option<String> {
+    (text.len() >= 40 && text.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| text.to_ascii_lowercase())
+}
+
+/// Parses `git ls-tree -z` output (`<mode> <type> <id> TAB <path> NUL`): the blob id of the regular file `path`
+/// (relative to the working tree); `None`: no such entry | something else than a file.
+#[must_use]
+pub fn parse_tree_file(output: &[u8], path: &str) -> Option<String> {
+    output.split(|&b| b == 0).find_map(|entry| {
+        let tab = entry.iter().position(|&b| b == b'\t')?;
+        let (facts, name) = (entry.get(..tab)?, entry.get(tab + 1..)?);
+        if name != path.as_bytes() {
+            return None;
+        }
+        let mut facts = text(facts)?.split(' ');
+        let (mode, _kind, id) = (facts.next()?, facts.next()?, facts.next()?);
+        regular(u32::from_str_radix(mode, 8).ok()?)
+            .then(|| object_id(id))
+            .flatten()
+    })
 }
 
 #[cfg(test)]
@@ -358,5 +479,266 @@ mod tests {
         let untracked = parse_untracked(&nul(&["u 1.md", "dir/ü.md"]));
         assert_eq!(untracked.len(), 2);
         assert!(untracked.iter().all(|e| e.letter == Letter::Untracked));
+    }
+
+    #[test]
+    fn a_detected_rename_names_its_old_and_new_path() {
+        let out = nul(&[
+            "R100",
+            "old.md",
+            "new ü.md",
+            "M",
+            "x.md",
+            "R087",
+            "a/b",
+            "c/d",
+        ]);
+        let entries = parse_name_status(&out).unwrap();
+        let got: Vec<(&str, Letter, Option<&str>)> = entries
+            .iter()
+            .map(|e| (e.path.as_str(), e.letter, e.from.as_deref()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("new ü.md", Letter::Renamed, Some("old.md")),
+                ("x.md", Letter::Modified, None),
+                ("c/d", Letter::Renamed, Some("a/b")),
+            ]
+        );
+    }
+
+    const A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const ZERO: &str = "0000000000000000000000000000000000000000";
+    const FILE: &str = "docs/a ü.md";
+
+    fn id(n: u8) -> String {
+        format!("{n:02x}").repeat(20)
+    }
+
+    /// One commit as the versions log prints it: its fields, then `"\n"` + its raw changes, each with its path.
+    fn logged(fields: [&str; 5], changes: &[(&str, &str)]) -> Vec<u8> {
+        let mut out = nul(&fields);
+        for (n, (raw, path)) in changes.iter().enumerate() {
+            if n == 0 {
+                out.push(b'\n');
+            }
+            out.extend(nul(&[raw, path]));
+        }
+        out
+    }
+
+    fn raw(old_mode: &str, new_mode: &str, old: &str, new: &str, status: &str) -> String {
+        format!(":{old_mode} {new_mode} {old} {new} {status}")
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)] // one commit per kind of change
+    fn the_versions_log_is_one_entry_per_commit() {
+        let changed = raw("100644", "100644", A, B, "M");
+        let deleted = raw("100755", "000000", B, ZERO, "D");
+        let mode_only = raw("100644", "100755", B, B, "M");
+        let added = raw("000000", "100644", ZERO, A, "A");
+        let was_a_link = raw("120000", "100644", A, A, "T");
+        let now_a_link = raw("100644", "120000", A, B, "T");
+        let mut out = Vec::new();
+        out.extend(logged(
+            [
+                &id(7),
+                &id(6),
+                "1700000007",
+                " Ann Ü ",
+                "Seventh\n\nBody\nCo-authored-by: Bea <b@x>\n",
+            ],
+            &[(&changed, FILE)],
+        ));
+        out.extend(logged(
+            [&id(6), &id(5), "1700000006", "Ann", "gone\n"],
+            &[(&deleted, FILE)],
+        ));
+        out.extend(logged(
+            [&id(5), &id(4), "1700000005", "Ann", "mode\n"],
+            &[(&mode_only, FILE)],
+        ));
+        // other paths of the commit are not this file
+        out.extend(logged(
+            [&id(4), &id(3), "1700000004", "Ann", "others\n"],
+            &[(&changed, "docs/a ü.md2"), (&changed, "docs/a ü.m")],
+        ));
+        out.extend(logged(
+            [&id(3), &id(2), "1700000003", "Ann", "a link before\n"],
+            &[(&was_a_link, FILE)],
+        ));
+        out.extend(logged(
+            [&id(2), &id(1), "1700000002", "Ann", "a link now\n"],
+            &[(&now_a_link, FILE)],
+        ));
+        // a folder of that name went in the same commit: the path was not free before
+        out.extend(logged(
+            [&id(1), &id(0), "1700000001", "Ann", "file for folder\n"],
+            &[(&deleted, "docs/a ü.md/inner.md"), (&added, FILE)],
+        ));
+        out.extend(logged(
+            [&id(0), &id(9), "1700000000", "Ann", "added\n"],
+            &[(&added, FILE)],
+        ));
+        // the root commit has no parent to have renamed the file from
+        out.extend(logged(
+            [&id(9), "", "1699999999", "Ann", "root"],
+            &[(&added, FILE)],
+        ));
+        let entries = parse_versions_log(&out, FILE);
+        let got: Vec<(Option<&str>, Option<&str>, bool)> = entries
+            .iter()
+            .map(|e| {
+                (
+                    e.version.as_ref().map(|v| v.subject.as_str()),
+                    e.version.as_ref().map(|v| v.blob.as_str()),
+                    e.added,
+                )
+            })
+            .collect();
+        assert_eq!(
+            got,
+            [
+                (Some("Seventh"), Some(B), false),
+                (None, None, false),
+                (None, None, false),
+                (None, None, false),
+                (Some("a link before"), Some(A), false),
+                (None, None, false),
+                (Some("file for folder"), Some(A), false),
+                (Some("added"), Some(A), true),
+                (Some("root"), Some(A), false),
+            ]
+        );
+        let first = entries[0].version.as_ref().unwrap();
+        assert_eq!(first.commit.as_str(), id(7));
+        assert_eq!(first.time_ms, 1_700_000_007_000);
+        assert_eq!(first.author, "Ann Ü");
+        assert_eq!(first.co_authors, ["Bea"]);
+    }
+
+    #[test]
+    fn the_text_of_a_commit_is_never_read_as_a_field_of_the_log() {
+        let changed = raw("100644", "100644", A, B, "M");
+        let hostile_message = format!("{}\n\n{changed}", id(8));
+        let mut out = Vec::new();
+        // a message that is a commit id, then a raw change; an author that looks like a raw change
+        out.extend(logged(
+            [&id(3), &id(2), "1700000003", &changed, &hostile_message],
+            &[(&changed, FILE)],
+        ));
+        // a message that is nothing but a commit id
+        out.extend(logged(
+            [&id(2), &id(1), "1700000002", "Ann", &id(8)],
+            &[(&changed, FILE)],
+        ));
+        out.extend(logged(
+            [&id(1), "", "1700000001", "Ann", ""],
+            &[(&raw("000000", "100644", ZERO, A, "A"), FILE)],
+        ));
+        let entries = parse_versions_log(&out, FILE);
+        let got: Vec<(String, String)> = entries
+            .iter()
+            .map(|e| {
+                let v = e.version.as_ref().unwrap();
+                (v.commit.to_string(), v.subject.clone())
+            })
+            .collect();
+        assert_eq!(
+            got,
+            [(id(3), id(8)), (id(2), id(8)), (id(1), String::new())]
+        );
+        assert_eq!(entries[0].version.as_ref().unwrap().author, changed);
+    }
+
+    #[test]
+    fn an_unreadable_entry_of_the_log_is_counted_and_skipped() {
+        let changed = raw("100644", "100644", A, B, "M");
+        let good = |n: u8| {
+            logged(
+                [&id(n), &id(0), "1700000000", "Ann", "ok\n"],
+                &[(&changed, FILE)],
+            )
+        };
+        let mut out = good(5);
+        // not a commit id | not a time | a raw change that is none | an object id that is none | no change at all
+        out.extend(logged(
+            ["HEAD", "", "1700000000", "Ann", "x"],
+            &[(&changed, FILE)],
+        ));
+        out.extend(logged(
+            [&id(4), "", "soon", "Ann", "x"],
+            &[(&changed, FILE)],
+        ));
+        out.extend(logged(
+            [&id(3), "", "1700000000", "Ann", "x"],
+            &[(":100644 100644", FILE)],
+        ));
+        out.extend(logged(
+            [&id(2), "", "1700000000", "Ann", "x"],
+            &[(&raw("100644", "100644", A, "not-hex", "M"), FILE)],
+        ));
+        out.extend(logged([&id(1), "", "1700000000", "Ann", "x"], &[]));
+        out.extend(good(6));
+        let entries = parse_versions_log(&out, FILE);
+        let got: Vec<Option<String>> = entries
+            .iter()
+            .map(|e| e.version.as_ref().map(|v| v.commit.to_string()))
+            .collect();
+        assert_eq!(
+            got,
+            [Some(id(5)), None, None, None, None, None, Some(id(6))]
+        );
+        // text that is not UTF-8 is read as far as it can be: no panic, the entry stays
+        let mut odd = nul(&[&id(7), "", "1700000000"]);
+        odd.extend([b'A', 0xff, b'n', 0, 0xc3, b'\n', b'x', 0xe2, 0x82, 0]);
+        odd.extend(nul(&[&format!("\n{changed}"), FILE]));
+        let entries = parse_versions_log(&odd, FILE);
+        assert_eq!(entries.len(), 1);
+        let version = entries[0].version.as_ref().unwrap();
+        assert_eq!(version.author, "A\u{fffd}n");
+        assert_eq!(version.subject, "\u{fffd}");
+        // output that stops early gives what was whole; nothing gives nothing
+        let mut cut = good(5);
+        cut.extend(nul(&[&id(4), "", "17"]));
+        assert_eq!(parse_versions_log(&cut, FILE).len(), 1);
+        let whole = good(5);
+        for end in 0..whole.len() {
+            let _ = parse_versions_log(&whole[..end], FILE);
+        }
+        assert!(parse_versions_log(b"", FILE).is_empty());
+        assert!(parse_versions_log(&[0, 0, 0], FILE).is_empty());
+    }
+
+    #[test]
+    fn the_file_of_a_tree_listing_is_named_by_its_blob_id() {
+        let line = |mode: &str, kind: &str, path: &str| format!("{mode} {kind} {A}\t{path}");
+        let file = |out: &[&str]| parse_tree_file(&nul(out), FILE);
+        assert_eq!(file(&[&line("100644", "blob", FILE)]).as_deref(), Some(A));
+        assert_eq!(file(&[&line("100755", "blob", FILE)]).as_deref(), Some(A));
+        assert_eq!(
+            file(&[
+                &line("100644", "blob", "docs/a ü.md2"),
+                &line("100644", "blob", FILE)
+            ])
+            .as_deref(),
+            Some(A)
+        );
+        // a link, a folder, a submodule, another path, garbage
+        assert_eq!(file(&[&line("120000", "blob", FILE)]), None);
+        assert_eq!(file(&[&line("040000", "tree", FILE)]), None);
+        assert_eq!(file(&[&line("160000", "commit", FILE)]), None);
+        assert_eq!(file(&[&line("100644", "blob", "docs/other.md")]), None);
+        assert_eq!(file(&[&format!("100644 blob nope\t{FILE}")]), None);
+        assert_eq!(file(&[FILE]), None);
+        assert_eq!(file(&[]), None);
+        // a name with a tab is cut at the first one only
+        assert_eq!(
+            parse_tree_file(&nul(&[&line("100644", "blob", "a\tb.md")]), "a\tb.md").as_deref(),
+            Some(A)
+        );
     }
 }

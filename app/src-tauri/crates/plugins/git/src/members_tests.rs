@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
-use permark_core::plugins::CommitId;
+use permark_core::plugins::{CommitId, FileVersions, NoVersions};
 use permark_core::state::{AppDirs, StateStore};
 
 use super::*;
@@ -363,6 +363,17 @@ impl GitOps for FakeCall {
         self.blob_at_head(location, path)
     }
 
+    /// Never answers in time.
+    fn file_versions(
+        &self,
+        _: &RepoLocation,
+        _: &str,
+        _: usize,
+        _: usize,
+    ) -> Result<FileVersions, GitError> {
+        Err(GitError::Timeout)
+    }
+
     fn commit_exists(&self, _: &RepoLocation, _: &str) -> bool {
         true
     }
@@ -493,6 +504,24 @@ fn settled(members: &Members) -> bool {
         .summaries()
         .iter()
         .all(|s| !s.pending && s.changed.is_some())
+}
+
+// ---- the reader's answer -------------------------------------------------------------------------------------------
+
+#[test]
+fn a_backend_that_times_out_on_the_versions_of_a_file_is_too_slow_for_the_reader() {
+    let dir = tempfile::tempdir().unwrap();
+    let location = RepoLocation {
+        workdir: dir.path().to_path_buf(),
+        git_dir: dir.path().join(".git"),
+        prefix: String::new(),
+    };
+    let backend = fake_backend(&Fake::new(Duration::ZERO));
+    let versions = |path: &str| crate::ops::versions_of(backend.as_ref(), &location, path, 0, 50);
+    assert_eq!(versions("a.md"), Err(NoVersions::Slow));
+    // a file of another repository below this one is not asked for at all
+    std::fs::create_dir_all(dir.path().join("inner").join(".git")).unwrap();
+    assert_eq!(versions("inner/a.md"), Err(NoVersions::OtherRepository));
 }
 
 // ---- the pool ------------------------------------------------------------------------------------------------------
