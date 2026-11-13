@@ -1,7 +1,8 @@
 //! The review service: copies of what the person read, the review that is open (`held`), the block diff of a document
 //! against its base, keep and revert (a surgical line save through the editor), undo.
 //!
-//! The base of a document is the version the person last read (a copy kept when it was read), or the last commit.
+//! The base of a document is the version the person last read (a copy kept when it was read), the last commit, or an
+//! earlier version (a commit the caller names: read from the repository each time, never kept, never remembered).
 //! Reading a changed document moves the read version to the current one; the version before is `held` for the review
 //! until it is released (the person leaves the document, or says Done), so that the changes stay to be kept or
 //! reverted. Every call that changes the file says the version it was drawn from: another version on disk = stale.
@@ -19,7 +20,9 @@ use permark_core::edit::{LineEdit, SaveOutcome};
 use permark_core::error::{ErrorKind, IpcError};
 use permark_core::format::{Block, Body, RenderCx};
 use permark_core::fsx;
-use permark_core::plugins::{PluginId, ProjectServices, RepoHandle};
+use permark_core::plugins::{
+    CommitId, FileVersion, FileVersions, NoBlob, NoVersions, PluginId, ProjectServices, RepoHandle,
+};
 use permark_core::state::{Loaded, StateData, StateFile, StateStore};
 use permark_plugin_unread::{hash_from_hex, ReadObserver, UnreadHub};
 use serde::{Deserialize, Serialize};
@@ -29,7 +32,8 @@ use crate::linediff::{self, Hunk, HunkKind};
 use crate::splice::{self, Span, Text};
 use crate::store::{CopyStore, MAX_COPY_BYTES};
 use crate::types::{
-    Basis, ReviewChange, ReviewChangeKind, ReviewState, ReviewStatus, ReviewUnit, ReviewView,
+    Basis, ReviewChange, ReviewChangeKind, ReviewState, ReviewStatus, ReviewUnit, ReviewVersions,
+    ReviewView, VersionGap, VersionRow, VersionsReason,
 };
 
 /// Copies kept at most.
@@ -40,6 +44,12 @@ const UNDO_DEPTH: usize = 20;
 const MAX_SEEN: usize = 2000;
 /// Copies waiting for the copier at most (the first look at a big project waits for it: memory stays bounded).
 const QUEUE: usize = 64;
+/// Earlier versions listed by one call.
+const VERSIONS_PAGE: usize = 50;
+/// How the pointer starts that Git LFS commits in place of a file it keeps outside the repository.
+const LFS_POINTER: &[u8] = b"version https://git-lfs.github.com/spec/v1";
+/// A pointer of Git LFS is smaller than this (its format says so): a longer text that starts the same way is a text.
+const LFS_POINTER_MAX: usize = 1024;
 
 /// `held.json`: the versions kept for the reviews that are open (document -> hash).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -150,6 +160,9 @@ struct Base {
     text: String,
     used: Basis,
 }
+
+/// Nothing to compare with. `Some`: a version was asked for, and why it cannot be compared with.
+type NoBase = Option<VersionGap>;
 
 /// Both versions rendered, and what differs.
 struct Computed {
@@ -279,6 +292,15 @@ fn invalid(subject: &str, detail: &str) -> IpcError {
         .detail(detail)
 }
 
+fn no_basis(_: NoBase) -> IpcError {
+    IpcError::new(ErrorKind::Unavailable).subject("noBasis")
+}
+
+/// Whether the committed bytes are a Git LFS pointer: text, but not the text of the file.
+fn is_lfs_pointer(bytes: &[u8]) -> bool {
+    bytes.len() < LFS_POINTER_MAX && bytes.starts_with(LFS_POINTER)
+}
+
 /// The heading path of the section a change starts in (the current text, or the old one for a removal).
 fn section_of(computed: &Computed, change: &Change, current: &str, base: &str) -> Option<String> {
     let (blocks, text, start) = if change.new.is_empty() {
@@ -369,33 +391,66 @@ impl Shared {
                 .saved_as(path, &fsx::ContentHash(current).hex())
     }
 
-    fn commit_text(&self, path: &str) -> Option<String> {
-        let repo = self.project.services.get::<RepoHandle>()?;
-        let bytes = repo.0.blob_at_head(path)?;
+    /// The text of `path` as committed, every line break as `\n`: at the last commit (`None`) or at `commit`. The
+    /// bytes are the ones the repository holds (no filter, no line-ending conversion).
+    fn commit_text(&self, path: &str, commit: Option<CommitId>) -> Result<String, VersionGap> {
+        let repo = self
+            .project
+            .services
+            .get::<RepoHandle>()
+            .ok_or(VersionGap::Missing)?;
+        let bytes = match commit {
+            None => repo.0.blob_at_head(path).ok_or(VersionGap::Missing)?,
+            Some(commit) => repo.0.blob_at(commit, path).map_err(|no| match no {
+                NoBlob::Missing | NoBlob::Unavailable => VersionGap::Missing,
+                NoBlob::TooLarge => VersionGap::TooLarge,
+            })?,
+        };
         if bytes.len() > MAX_COPY_BYTES {
-            return None;
+            return Err(VersionGap::TooLarge);
         }
-        let decoded = fsx::decode(&bytes).filter(|d| !d.lossy)?;
-        Some(permark_core::edit::lines::normalized(&decoded.text))
+        if is_lfs_pointer(&bytes) {
+            return Err(VersionGap::NotText);
+        }
+        let decoded = fsx::decode(&bytes)
+            .filter(|d| !d.lossy)
+            .ok_or(VersionGap::NotText)?;
+        Ok(permark_core::edit::lines::normalized(&decoded.text))
     }
 
-    fn base(&self, path: &str, asked: Basis) -> Option<Base> {
+    /// The base a commit gives: the last one, or the version asked for (nothing stands in for a version, and only a
+    /// version tells why it cannot be compared with).
+    fn commit_base(&self, path: &str, asked: Basis) -> Result<Base, NoBase> {
+        let (commit, used) = match asked {
+            Basis::Version(commit) => (Some(commit), asked),
+            Basis::Read | Basis::Commit => (None, Basis::Commit),
+        };
+        self.commit_text(path, commit)
+            .map(|text| Base { text, used })
+            .map_err(|gap| commit.map(|_| gap))
+    }
+
+    fn base(&self, path: &str, asked: Basis) -> Result<Base, NoBase> {
         if asked == Basis::Read {
             let hash = self.held_hash(path).or_else(|| self.hub.read_hash(path));
             if let Some(hash) = hash {
                 if let Some(text) = self.store.get(hash) {
-                    return Some(Base {
+                    return Ok(Base {
                         text,
                         used: Basis::Read,
                     });
                 }
             }
         }
-        // no read version kept (or the last commit was asked for)
-        self.commit_text(path).map(|text| Base {
-            text,
-            used: Basis::Commit,
-        })
+        // no read version kept (or a commit was asked for)
+        self.commit_base(path, asked)
+    }
+
+    /// Whether reverting everything to `base` would replace text that is in no commit: told of a version only, when
+    /// the file is not the text of the last commit (or the last commit has no such file).
+    fn uncommitted(&self, path: &str, current: &Version, base: &Base) -> bool {
+        matches!(base.used, Basis::Version(_))
+            && self.commit_text(path, None).ok().as_ref() != Some(&current.text)
     }
 
     /// The blocks of a Markdown text, rendered like the page renders them.
@@ -436,23 +491,31 @@ impl Shared {
             .is_none_or(|format| format.reads_text())
     }
 
+    /// The file as the review compares it (`Ok(None)`: gone). `Err`: the state of a file that is not compared (not
+    /// text, too large).
+    fn compared(&self, path: &str) -> Result<Result<Option<Version>, ReviewState>, IpcError> {
+        if !is_markdown(path) && !self.reads_text(path) {
+            return Ok(Err(ReviewState::Unsupported));
+        }
+        match self.current(path) {
+            Ok(current) => Ok(Ok(current)),
+            Err(e) if e.kind == ErrorKind::TooLarge => Ok(Err(ReviewState::TooLarge)),
+            Err(e) if e.kind == ErrorKind::Unsupported => Ok(Err(ReviewState::Unsupported)),
+            Err(e) => Err(e),
+        }
+    }
+
     fn status(&self, path: &str, asked: Basis) -> Result<ReviewStatus, IpcError> {
         let status = |state| ReviewStatus {
             state,
             basis: asked,
+            gap: None,
         };
         let markdown = is_markdown(path);
-        if !markdown && !self.reads_text(path) {
-            return Ok(status(ReviewState::Unsupported));
-        }
-        let current = match self.current(path) {
+        let current = match self.compared(path)? {
             Ok(Some(current)) => current,
             Ok(None) => return Ok(status(ReviewState::NoBasis)),
-            Err(e) if e.kind == ErrorKind::TooLarge => return Ok(status(ReviewState::TooLarge)),
-            Err(e) if e.kind == ErrorKind::Unsupported => {
-                return Ok(status(ReviewState::Unsupported))
-            }
-            Err(e) => return Err(e),
+            Err(state) => return Ok(status(state)),
         };
         if markdown && asked == Basis::Read && self.own_save_unreported(path, current.hash) {
             return Ok(status(ReviewState::Same));
@@ -462,8 +525,14 @@ impl Shared {
         } else {
             self.lines_base(path, asked)
         };
-        let Some(base) = base else {
-            return Ok(status(ReviewState::NoBasis));
+        let base = match base {
+            Ok(base) => base,
+            Err(gap) => {
+                return Ok(ReviewStatus {
+                    gap,
+                    ..status(ReviewState::NoBasis)
+                })
+            }
         };
         let count = if base.text == current.text {
             Some(0)
@@ -483,6 +552,7 @@ impl Shared {
         Ok(ReviewStatus {
             state,
             basis: base.used,
+            gap: None,
         })
     }
 
@@ -490,20 +560,102 @@ impl Shared {
         let current = self
             .current(path)?
             .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(path))?;
-        let no_basis = || IpcError::new(ErrorKind::Unavailable).subject("noBasis");
         if is_markdown(path) {
-            let base = self.base(path, asked).ok_or_else(no_basis)?;
+            let base = self.base(path, asked).map_err(no_basis)?;
             let computed = self
                 .compute(path, &current.text, &base.text)
                 .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject(path))?;
-            return Ok(view_of(path, &current, &base, asked, &computed));
+            let uncommitted = self.uncommitted(path, &current, &base);
+            return Ok(view_of(
+                path,
+                &current,
+                &base,
+                asked,
+                &computed,
+                uncommitted,
+            ));
         }
         if !self.reads_text(path) {
             return Err(IpcError::new(ErrorKind::Unsupported).subject(path));
         }
-        let base = self.lines_base(path, asked).ok_or_else(no_basis)?;
+        let base = self.lines_base(path, asked).map_err(no_basis)?;
         let hunks = line_hunks(&base.text, &current.text);
-        Ok(lines_view_of(path, &current, &base, asked, &hunks))
+        let uncommitted = self.uncommitted(path, &current, &base);
+        Ok(lines_view_of(
+            path,
+            &current,
+            &base,
+            asked,
+            &hunks,
+            uncommitted,
+        ))
+    }
+
+    /// One page of the earlier versions of `path`, or why there is no list.
+    fn versions(&self, path: &str, after: usize) -> Result<ReviewVersions, IpcError> {
+        let no = |reason| Ok(ReviewVersions::Unavailable { reason });
+        let Some(repo) = self.project.services.get::<RepoHandle>() else {
+            return no(VersionsReason::Unavailable);
+        };
+        // a file that is gone has its versions listed all the same: none of them is the text now
+        let Ok(current) = self.compared(path)? else {
+            return no(VersionsReason::Unsupported);
+        };
+        let page = match repo.0.file_versions(path, after, VERSIONS_PAGE) {
+            Ok(page) => page,
+            Err(why) => {
+                return no(match why {
+                    NoVersions::Unavailable => VersionsReason::Unavailable,
+                    NoVersions::OtherRepository => VersionsReason::OtherRepository,
+                    NoVersions::Slow => VersionsReason::Slow,
+                    NoVersions::Failed => VersionsReason::Failed,
+                })
+            }
+        };
+        let FileVersions {
+            rows,
+            next,
+            head_blob,
+            renamed_from,
+            cut,
+        } = page;
+        let at_head = |row: &FileVersion| head_blob.as_deref() == Some(row.blob.as_str());
+        // the text of the last commit is read once, and only when a row holds it
+        let unchanged = rows.iter().any(at_head)
+            && current.is_some_and(|current| {
+                self.commit_text(path, None)
+                    .is_ok_and(|head| head == current.text)
+            });
+        let rows: Vec<VersionRow> = rows
+            .into_iter()
+            .map(|row| VersionRow {
+                same: unchanged && at_head(&row),
+                commit: row.commit,
+                at_ms: row.time_ms,
+                author: row.author,
+                co_authors: row.co_authors,
+                subject: row.subject,
+            })
+            .collect();
+        // the whole history is in this answer: no list that shows nothing to compare with
+        if after == 0 && next.is_none() {
+            match rows.as_slice() {
+                [] if head_blob.is_none() => return no(VersionsReason::NotCommitted),
+                [] => return no(VersionsReason::OnlyCurrent),
+                // one version that is the text now is no list either, unless the answer has more to say: the name
+                // the file had before, or that a shallow copy may have cut its history
+                [only] if only.same && renamed_from.is_none() && !cut => {
+                    return no(VersionsReason::OnlyCurrent)
+                }
+                _ => {}
+            }
+        }
+        Ok(ReviewVersions::List {
+            rows,
+            next,
+            renamed_from,
+            cut,
+        })
     }
 
     // ---- the person looks at a file that is not Markdown -----------------------------------------------------
@@ -575,20 +727,19 @@ impl Shared {
         Ok(())
     }
 
-    fn lines_base(&self, path: &str, asked: Basis) -> Option<Base> {
+    fn lines_base(&self, path: &str, asked: Basis) -> Result<Base, NoBase> {
         match asked {
             // no version looked at: nothing to compare with (the first sight of a file is its baseline)
-            Basis::Read => {
-                let hash = self.held_hash(path).or_else(|| self.seen_hash(path))?;
-                self.store.get(hash).map(|text| Base {
+            Basis::Read => self
+                .held_hash(path)
+                .or_else(|| self.seen_hash(path))
+                .and_then(|hash| self.store.get(hash))
+                .map(|text| Base {
                     text,
                     used: Basis::Read,
                 })
-            }
-            Basis::Commit => self.commit_text(path).map(|text| Base {
-                text,
-                used: Basis::Commit,
-            }),
+                .ok_or(None),
+            Basis::Commit | Basis::Version(_) => self.commit_base(path, asked),
         }
     }
 
@@ -604,9 +755,8 @@ impl Shared {
                 .subject(path)
                 .detail("stale"));
         }
-        let no_basis = || IpcError::new(ErrorKind::Unavailable).subject("noBasis");
         if is_markdown(path) {
-            let base = self.base(path, asked).ok_or_else(no_basis)?;
+            let base = self.base(path, asked).map_err(no_basis)?;
             let computed = self
                 .compute(path, &current.text, &base.text)
                 .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject(path))?;
@@ -619,7 +769,7 @@ impl Shared {
         if !self.reads_text(path) {
             return Err(IpcError::new(ErrorKind::Unsupported).subject(path));
         }
-        let base = self.lines_base(path, asked).ok_or_else(no_basis)?;
+        let base = self.lines_base(path, asked).map_err(no_basis)?;
         let hunks = line_hunks(&base.text, &current.text);
         Ok(Drawn {
             current,
@@ -772,9 +922,7 @@ impl Shared {
         if self.current(path)?.is_some() {
             return Err(IpcError::new(ErrorKind::Exists).subject(path));
         }
-        let base = self
-            .base(path, Basis::Read)
-            .ok_or_else(|| IpcError::new(ErrorKind::Unavailable).subject("noBasis"))?;
+        let base = self.base(path, Basis::Read).map_err(no_basis)?;
         self.project
             .with_editor(|editor| editor.save_as(path, &base.text, true))?;
         Ok(())
@@ -836,6 +984,7 @@ fn view_of(
     base: &Base,
     asked: Basis,
     computed: &Computed,
+    uncommitted: bool,
 ) -> ReviewView {
     let changes: Vec<ReviewChange> = computed
         .changes
@@ -863,6 +1012,7 @@ fn view_of(
         unit: ReviewUnit::Blocks,
         count: u32::try_from(changes.len()).unwrap_or(u32::MAX),
         can_keep: base.used == Basis::Read,
+        uncommitted,
         changes,
     }
 }
@@ -874,6 +1024,7 @@ fn lines_view_of(
     base: &Base,
     asked: Basis,
     hunks: &[Hunk],
+    uncommitted: bool,
 ) -> ReviewView {
     let old: Vec<&str> = base.text.split('\n').collect();
     let new: Vec<&str> = current.text.split('\n').collect();
@@ -905,6 +1056,7 @@ fn lines_view_of(
         unit: ReviewUnit::Lines,
         count: u32::try_from(changes.len()).unwrap_or(u32::MAX),
         can_keep: base.used == Basis::Read,
+        uncommitted,
         changes,
     }
 }
@@ -1034,6 +1186,8 @@ impl ReviewService {
             .prefs
             .as_ref()
             .map(|file| file.load().into_value())
+            // a version is never the choice remembered: a file that names one counts for nothing
+            .filter(|prefs: &Prefs| !matches!(prefs.basis, Basis::Version(_)))
             .unwrap_or_default();
         let shared = Arc::new(Shared {
             project,
@@ -1216,7 +1370,21 @@ impl ReviewService {
         self.shared.restore(path)
     }
 
+    /// One page of the earlier versions of `path` (the commits that changed it), newest first, or why there is no
+    /// list. `after`: 0, then the `next` of the page before.
+    ///
+    /// # Errors
+    /// Outside the project | unreadable.
+    pub fn versions(&self, path: &str, after: usize) -> Result<ReviewVersions, IpcError> {
+        self.shared.versions(path, after)
+    }
+
+    /// Remembers what documents are compared with. A version belongs to the review a window has open and is never
+    /// the choice remembered: given one, nothing changes.
     pub fn set_basis(&self, basis: Basis) {
+        if matches!(basis, Basis::Version(_)) {
+            return;
+        }
         *lock(&self.shared.prefs) = Prefs { basis };
         if let Some(file) = &self.shared.files.prefs {
             let _ = file.save(&Prefs { basis });

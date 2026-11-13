@@ -20,6 +20,7 @@ const VIEW: ReviewView = {
   unit: "blocks",
   count: 2,
   canKeep: true,
+  uncommitted: false,
   changes: [],
 };
 

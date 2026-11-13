@@ -254,6 +254,7 @@ export function createMockPlugins(
       unit: review?.unit ?? "blocks",
       count: changes.length,
       canKeep: asked === "read",
+      uncommitted: false,
       changes: changes.map((c, index) => ({ ...c, index })),
     };
   };
