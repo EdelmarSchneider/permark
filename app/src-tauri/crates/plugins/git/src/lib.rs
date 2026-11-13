@@ -34,8 +34,9 @@ use std::time::Duration;
 use permark_core::conditions::{GitCondition, Requirement};
 use permark_core::paths::{Root, VaultPath, WORKTREE_PREFIX};
 use permark_core::plugins::{
-    typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
-    PluginScope, ProjectFacts, RepoHandle, RepoReader, RpcRegistration, Running, ServiceLease,
+    typed, CommitId, CxWorkspace, FileVersions, Manifest, NoArgs, NoBlob, NoVersions, Plugin,
+    PluginCx, PluginError, PluginId, PluginKind, PluginScope, ProjectFacts, RepoHandle, RepoReader,
+    RpcRegistration, Running, ServiceLease,
 };
 use permark_core::projects::{ProjectMap, ProjectUid, Projects, ProjectsSubscription};
 use permark_core::settings::GitBackendPref;
@@ -48,6 +49,7 @@ pub use members::{
     step, Env, MemberRef, Members, RepoEvent, RepoFsm, RootCommits, Schedule, MAX_LISTS,
     POOL_THREADS,
 };
+use ops::{blob_or_miss, versions_of};
 pub use ops::{Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_FILES};
 pub use service::{
     BackendCell, BackendChoice, ExcludedAtStart, GitService, Prefs, ServiceArgs, Timings, Visit,
@@ -226,8 +228,8 @@ impl Drop for Follower {
     }
 }
 
-/// The HEAD reader other plugins use (review's "last commit"): a path inside an included project with its own
-/// repository is read from that repository (path rebased), else from the root's.
+/// The reader other plugins use (review's "last commit", a file at a commit, the versions of a file): a path inside an
+/// included project with its own repository is read from that repository (path rebased), else from the root's.
 struct Routed {
     root: Arc<dyn RepoReader>,
     members: Weak<Members>,
@@ -235,27 +237,67 @@ struct Routed {
     backends: Arc<BackendCell>,
 }
 
-impl RepoReader for Routed {
-    fn blob_at_head(&self, path: &str) -> Option<Vec<u8>> {
+impl Routed {
+    /// Reads the file `path` where it belongs: inside an included project with its own repository -> `member`
+    /// (backend, that repository, the path below the project); anything else -> `root` (the root's reader).
+    /// `None`: the member's repository cannot be asked (its file is never read from the root's instead).
+    fn read<T>(
+        &self,
+        path: &str,
+        member: impl FnOnce(&dyn GitOps, &RepoLocation, &str) -> T,
+        root: impl FnOnce(&dyn RepoReader) -> T,
+    ) -> Option<T> {
         if !path.starts_with(WORKTREE_PREFIX) {
             if let Some(projects) = self.projects.as_ref().and_then(Weak::upgrade) {
                 // a member's file is read from its own repository, also right after open
                 projects.load();
                 let map = projects.snapshot();
-                if let Some(member) = git_owner(&map, path) {
+                if let Some(holder) = git_owner(&map, path) {
                     let members = self.members.upgrade()?;
-                    let location = members.location(member.uid.as_str())?;
-                    let depth = member.path.segments().count();
+                    let location = members.location(holder.uid.as_str())?;
+                    let depth = holder.path.segments().count();
                     let rel = path.split('/').skip(depth).collect::<Vec<_>>().join("/");
                     let backend = self.backends.get()?;
                     // one of the pool's places: member git work stays bounded (`projects.md` §8)
-                    return members
-                        .with_permit(|| backend.blob_at_head(&location, &rel).ok().flatten())
-                        .flatten();
+                    return members.with_permit(|| member(backend.as_ref(), &location, &rel));
                 }
             }
         }
-        self.root.blob_at_head(path)
+        Some(root(self.root.as_ref()))
+    }
+}
+
+impl RepoReader for Routed {
+    fn blob_at_head(&self, path: &str) -> Option<Vec<u8>> {
+        self.read(
+            path,
+            |git, location, rel| git.blob_at_head(location, rel).ok().flatten(),
+            |root| root.blob_at_head(path),
+        )
+        .flatten()
+    }
+
+    fn blob_at(&self, commit: CommitId, path: &str) -> Result<Vec<u8>, NoBlob> {
+        self.read(
+            path,
+            |git, location, rel| blob_or_miss(git.blob_at(location, commit, rel)),
+            |root| root.blob_at(commit, path),
+        )
+        .unwrap_or(Err(NoBlob::Unavailable))
+    }
+
+    fn file_versions(
+        &self,
+        path: &str,
+        after: usize,
+        limit: usize,
+    ) -> Result<FileVersions, NoVersions> {
+        self.read(
+            path,
+            |git, location, rel| versions_of(git, location, rel, after, limit),
+            |root| root.file_versions(path, after, limit),
+        )
+        .unwrap_or(Err(NoVersions::Unavailable))
     }
 
     fn head(&self) -> Option<String> {

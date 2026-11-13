@@ -1,7 +1,7 @@
 //! Linked worktrees of a project's repository, found by reading files (no git, no backend): they become extra roots of
 //! the project before it is built. `<common>/worktrees/<name>/gitdir` names each linked working tree.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::ops::too_broad;
 
@@ -42,6 +42,30 @@ fn git_entry(dir: &Path) -> Option<(PathBuf, bool)> {
         return Some((git_dir, true));
     }
     None
+}
+
+/// Whether the file `path` (relative to the working tree `workdir`, `/`-separated) is inside another repository
+/// below it: a folder strictly between the two has its own `.git` (a nested repository | a submodule). Read from the
+/// folders as they are now; a path that is not made of plain names looks at nothing.
+pub(crate) fn in_nested_repository(workdir: &Path, path: &str) -> bool {
+    let mut names: Vec<&str> = path.split('/').collect();
+    // the last name is the file
+    names.pop();
+    let mut folder = workdir.to_path_buf();
+    for name in names {
+        let mut parts = Path::new(name).components();
+        if !matches!(
+            (parts.next(), parts.next()),
+            (Some(Component::Normal(_)), None)
+        ) {
+            return false;
+        }
+        folder.push(name);
+        if git_entry(&folder).is_some() {
+            return true;
+        }
+    }
+    false
 }
 
 /// Where the objects and refs live: the git folder itself, or the one named by `commondir` (linked worktree).
@@ -236,5 +260,54 @@ mod tests {
         )
         .unwrap();
         assert_eq!(branch_of(dir.path()), None);
+    }
+
+    #[test]
+    fn a_file_below_a_folder_with_its_own_git_is_in_another_repository() {
+        let dir = tempfile::tempdir().unwrap();
+        let main = dir.path().join("main ü");
+        std::fs::create_dir_all(main.join(".git")).unwrap();
+        std::fs::create_dir_all(main.join("docs").join("deep")).unwrap();
+        // a nested repository, a submodule (its `.git` is a file), a folder with a `.git` that names nothing
+        let nested = main.join("docs").join("nested");
+        std::fs::create_dir_all(nested.join(".git")).unwrap();
+        std::fs::create_dir_all(main.join("module")).unwrap();
+        std::fs::write(
+            main.join("module").join(".git"),
+            "gitdir: ../.git/modules/module\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(main.join("plain")).unwrap();
+        std::fs::write(main.join("plain").join(".git"), "a note\n").unwrap();
+
+        assert!(in_nested_repository(&main, "docs/nested/a.md"));
+        assert!(
+            in_nested_repository(&main, "docs/nested/gone/deeper/a.md"),
+            "folders that are not there any more"
+        );
+        assert!(in_nested_repository(&main, "module/a.md"));
+        // the repository's own files
+        assert!(!in_nested_repository(&main, "a.md"));
+        assert!(!in_nested_repository(&main, "docs/deep/a.md"));
+        assert!(!in_nested_repository(&main, "plain/a.md"));
+        assert!(!in_nested_repository(&main, "missing/a.md"));
+        // only folders between the two count: not the working tree itself, not the path's last name
+        assert!(!in_nested_repository(&main, "docs/nested"));
+        assert!(in_nested_repository(&main.join("docs"), "nested/a.md"));
+        assert!(!in_nested_repository(&nested, "a.md"));
+        // a path that is not made of plain names looks at nothing
+        let absolute = format!("{}/a.md", nested.display()).replace('\\', "/");
+        for odd in [
+            "../main ü/docs/nested/a.md",
+            "docs/../docs/nested/a.md",
+            "./docs/nested/a.md",
+            "/docs/nested/a.md",
+            "docs//nested/a.md",
+            "docs\\nested/a.md",
+            absolute.as_str(),
+            "",
+        ] {
+            assert!(!in_nested_repository(&main, odd), "{odd:?}");
+        }
     }
 }

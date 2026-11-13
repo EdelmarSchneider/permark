@@ -31,6 +31,7 @@ function view(changes: ReviewChange[], canKeep = true): ReviewView {
     unit: "blocks",
     count: changes.length,
     canKeep,
+    uncommitted: false,
     changes,
   };
 }

@@ -1,5 +1,7 @@
 // Plugin `review`: what an agent changed since the person last read a document, shown in the page; Keep or Revert each
 // change (K | R), all of them, Undo, previous | next (P | N), Esc closes it. Needs `unread` (it follows what was read).
+// The earlier versions of a document (a list to compare with one of them) are asked for from the palette, the Explorer
+// menu of a file and the document's menu.
 
 import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { documents } from "../../core/doc/document.svelte";
@@ -13,6 +15,7 @@ import { closesReview } from "./keys";
 import { listen, startMarks } from "./marks";
 import { reviewSections } from "./sections.svelte";
 import { review } from "./store.svelte";
+import { followVersionsOf, versionsOf } from "./versionsOf.svelte";
 import "./review.css";
 
 const reviewing = (): boolean => review.state.status === "reviewing";
@@ -23,6 +26,7 @@ export default definePlugin({
   activate(cx) {
     const stop = review.start();
     const stopMarks = startMarks();
+    const stopVersionsOf = followVersionsOf();
     const command = (
       id: string,
       label: MessageKey,
@@ -138,9 +142,42 @@ export default definePlugin({
         "Shift+r",
       ),
       ...command("review.undo", "review.undo", reviewing, () => void review.undo()),
+      // draws nothing in the bar: the list of earlier versions over the window while it is open
+      cx.contribute({
+        kind: "statusItem",
+        id: "review.versions.host",
+        slot: "right",
+        order: 96,
+        requires: NO_REQUIREMENT,
+        view: () => import("./VersionsHost.svelte"),
+      }),
+      ...command(
+        "review.versions",
+        "review.versions.command",
+        () => documents.path !== null,
+        () => void review.openVersions(),
+      ),
+      cx.contribute({
+        kind: "treeMenu",
+        id: "review.versions.tree",
+        label: "review.versions.menu",
+        requires: NO_REQUIREMENT,
+        applies: (_path, isDir) => !isDir,
+        run: ([path]) => {
+          if (path !== undefined) void versionsOf(path);
+        },
+      }),
+      cx.contribute({
+        kind: "docMenu",
+        id: "review.versions.doc",
+        label: "review.versions.menu",
+        requires: NO_REQUIREMENT,
+        run: () => void review.openVersions(),
+      }),
     ];
     return () => {
       for (const remove of removals) remove();
+      stopVersionsOf();
       stopMarks();
       stop();
     };

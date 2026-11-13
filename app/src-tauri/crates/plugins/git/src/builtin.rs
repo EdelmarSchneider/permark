@@ -3,17 +3,25 @@
 
 use std::path::Path;
 use std::sync::Once;
+use std::time::{Duration, Instant};
 
-use git2::{Delta, DiffOptions, ErrorCode, ObjectType, Oid, Repository, Status, StatusOptions};
+use git2::{
+    Commit, Delta, DiffFindOptions, DiffOptions, ErrorCode, ObjectType, Oid, Repository, Sort,
+    Status, StatusOptions, Tree,
+};
+use permark_core::plugins::{CommitId, FileVersions};
 
 use crate::ops::{
-    below_prefix, finish, prefix_of, too_broad, Baseline, Discovery, GitError, GitOps, RawFile,
-    RawStatus, RepoLocation,
+    below_prefix, finish, is_version, prefix_of, regular, repo_path, shallow, too_broad, version,
+    Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_RENAME_PATHS,
+    MAX_VERSIONS,
 };
 use crate::types::{BackendKind, HeadInfo, Letter};
 
 /// Most bytes of a committed file.
 const MAX_BLOB: usize = 8 * 1024 * 1024;
+/// How long one page of the versions of a file may walk the history before it hands back what it has.
+const WALK_BUDGET: Duration = Duration::from_secs(3);
 
 static INIT: Once = Once::new();
 
@@ -205,6 +213,178 @@ fn commit_status(repo: &Repository, prefix: &str, oid: &str) -> Result<Vec<RawFi
     Ok(files)
 }
 
+/// The tree a file is read from: HEAD's (`None`), or the one of the commit the object `at` leads to (like git reading
+/// `<id>^{commit}:<path>`, a tag is followed). A tree is not read as itself: its id would name any folder of the
+/// repository, also one outside the project folder.
+fn tree_at(repo: &Repository, at: Option<Oid>) -> Result<Tree<'_>, git2::Error> {
+    match at {
+        None => repo.head()?.peel_to_tree(),
+        Some(oid) => repo.find_object(oid, None)?.peel_to_commit()?.tree(),
+    }
+}
+
+/// The read found nothing to read (no commit yet, no such object | path, an object that leads to no commit): the
+/// file is not there, which is no failure.
+fn absent(error: &git2::Error) -> bool {
+    matches!(
+        error.code(),
+        ErrorCode::UnbornBranch | ErrorCode::NotFound | ErrorCode::InvalidSpec | ErrorCode::Peel
+    )
+}
+
+/// The file `path` (relative to the project folder) as stored in the tree of HEAD (`None`) | of the object `at`.
+/// `None`: not there, not a file, or an object is not on this computer (libgit2 never fetches).
+fn blob(location: &RepoLocation, at: Option<Oid>, path: &str) -> Result<Option<Vec<u8>>, GitError> {
+    if path.contains('\0') {
+        return Ok(None);
+    }
+    let repo = open(location)?;
+    let found = tree_at(&repo, at)
+        .and_then(|tree| tree.get_path(Path::new(&repo_path(&location.prefix, path))))
+        .and_then(|entry| match entry.kind() {
+            Some(ObjectType::Blob) => repo.find_blob(entry.id()).map(Some),
+            _ => Ok(None),
+        });
+    match found {
+        Ok(Some(blob)) if blob.size() > MAX_BLOB => Err(GitError::TooLarge(MAX_BLOB)),
+        Ok(Some(blob)) => Ok(Some(blob.content().to_vec())),
+        Ok(None) => Ok(None),
+        Err(e) if absent(&e) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// What `tree` holds at `path`: file mode + object id; `None`: nothing.
+fn held(tree: &Tree<'_>, path: &Path) -> Result<Option<(u32, Oid)>, git2::Error> {
+    match tree.get_path(path) {
+        Ok(entry) => Ok(Some((
+            u32::try_from(entry.filemode()).unwrap_or_default(),
+            entry.id(),
+        ))),
+        Err(e) if e.code() == ErrorCode::NotFound => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// The path the file at `path` had in `parent` when `commit` renamed it; `None`: no rename found | the look failed |
+/// the commit changed more than [`MAX_RENAME_PATHS`] paths (the search compares every file that came with every
+/// file that went, and nothing can stop it once it runs).
+fn renamed_in(
+    repo: &Repository,
+    parent: &Commit<'_>,
+    commit: &Commit<'_>,
+    path: &str,
+) -> Option<String> {
+    let (before, now) = (parent.tree().ok()?, commit.tree().ok()?);
+    let mut diff = repo
+        .diff_tree_to_tree(Some(&before), Some(&now), None)
+        .ok()?;
+    if diff.deltas().len() > MAX_RENAME_PATHS {
+        return None;
+    }
+    // the limit is given: left out, libgit2 takes `diff.renameLimit` of the repository's config
+    let mut search = DiffFindOptions::new();
+    search.renames(true).rename_limit(MAX_RENAME_PATHS);
+    diff.find_similar(Some(&mut search)).ok()?;
+    let renamed = diff.deltas().find(|delta| {
+        delta.status() == Delta::Renamed && delta.new_file().path_bytes() == Some(path.as_bytes())
+    })?;
+    std::str::from_utf8(renamed.old_file().path_bytes()?)
+        .ok()
+        .map(str::to_owned)
+}
+
+/// One page of the versions of the file `path` ([`GitOps::file_versions`]): the commits of HEAD's history by commit
+/// time, the first `after` skipped (no tree is read for them), until the page is full and the next change is seen,
+/// or `budget` is used up. `next` = commits walked. The walk keeps no place between calls, so the skipped commits
+/// are walked again and their time is part of `budget`; a page out of time still looked at one commit after them
+/// (`next` goes forward), and an `after` past the end of the history is the end of the list.
+pub(crate) fn versions(
+    location: &RepoLocation,
+    path: &str,
+    after: usize,
+    limit: usize,
+    budget: Duration,
+) -> Result<FileVersions, GitError> {
+    let mut found = FileVersions {
+        cut: shallow(&location.git_dir),
+        ..FileVersions::default()
+    };
+    if path.is_empty() || path.contains('\0') {
+        return Ok(found);
+    }
+    let repo = open(location)?;
+    if unborn(&repo) {
+        return Ok(found);
+    }
+    let full = repo_path(&location.prefix, path);
+    let at = Path::new(&full);
+    let limit = limit.clamp(1, MAX_VERSIONS);
+    let mut walk = repo.revwalk()?;
+    walk.set_sorting(Sort::TIME)?;
+    walk.push_head()?;
+    let mut walked = 0_usize;
+    let mut changes = 0;
+    // the commit of the oldest row and its parent, when that parent holds nothing at the path
+    let mut came = None;
+    // the time runs from the first commit walked: `after` is the caller's number, and getting there is work too
+    let started = Instant::now();
+    for oid in walk {
+        if walked < after {
+            walked += 1;
+            continue;
+        }
+        let commit = repo.find_commit(oid?)?;
+        if commit.parent_count() <= 1 {
+            let parent = match commit.parent_count() {
+                0 => None,
+                _ => Some(commit.parent(0)?),
+            };
+            let now = held(&commit.tree()?, at)?;
+            let before = match &parent {
+                Some(parent) => held(&parent.tree()?, at)?,
+                None => None,
+            };
+            if now != before {
+                if changes == limit {
+                    // the page is full and the history goes on: the next page starts at this commit
+                    found.next = Some(walked);
+                    break;
+                }
+                changes += 1;
+                let row = now
+                    .filter(|_| is_version(before, now))
+                    .and_then(|(_, blob)| Some((CommitId::parse(&commit.id().to_string())?, blob)));
+                if let Some((id, blob)) = row {
+                    found.rows.push(version(
+                        id,
+                        blob.to_string(),
+                        commit.time().seconds(),
+                        &String::from_utf8_lossy(commit.author().name_bytes()),
+                        &String::from_utf8_lossy(commit.message_bytes()),
+                    ));
+                    came = parent.filter(|_| before.is_none()).map(|p| (p, commit));
+                }
+            }
+        }
+        walked += 1;
+        if started.elapsed() > budget {
+            found.next = Some(walked);
+            break;
+        }
+    }
+    if found.next.is_none() {
+        // the end of the list: a file that came with its oldest version may have come under another name
+        found.renamed_from = came
+            .and_then(|(parent, commit)| renamed_in(&repo, &parent, &commit, &full))
+            .and_then(|old| below_prefix(&location.prefix, &old).map(str::to_owned));
+    }
+    found.head_blob = held(&tree_at(&repo, None)?, at)?
+        .filter(|(mode, _)| regular(*mode))
+        .map(|(_, blob)| blob.to_string());
+    Ok(found)
+}
+
 impl GitOps for BuiltinGit {
     fn kind(&self) -> BackendKind {
         BackendKind::Builtin
@@ -261,35 +441,30 @@ impl GitOps for BuiltinGit {
         location: &RepoLocation,
         path: &str,
     ) -> Result<Option<Vec<u8>>, GitError> {
-        if path.contains(' ') {
+        blob(location, None, path)
+    }
+
+    fn blob_at(
+        &self,
+        location: &RepoLocation,
+        commit: CommitId,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        // an id of another hash length than libgit2 reads names nothing in the repository
+        let Ok(oid) = Oid::from_str(commit.as_str()) else {
             return Ok(None);
-        }
-        let repo = open(location)?;
-        let full = if location.prefix.is_empty() {
-            path.to_owned()
-        } else {
-            format!("{}/{path}", location.prefix)
         };
-        let tree = match repo.head().and_then(|head| head.peel_to_tree()) {
-            Ok(tree) => tree,
-            Err(e) if matches!(e.code(), ErrorCode::UnbornBranch | ErrorCode::NotFound) => {
-                return Ok(None)
-            }
-            Err(e) => return Err(e.into()),
-        };
-        let entry = match tree.get_path(Path::new(&full)) {
-            Ok(entry) => entry,
-            Err(e) if e.code() == ErrorCode::NotFound => return Ok(None),
-            Err(e) => return Err(e.into()),
-        };
-        if entry.kind() != Some(ObjectType::Blob) {
-            return Ok(None);
-        }
-        let blob = repo.find_blob(entry.id())?;
-        if blob.size() > MAX_BLOB {
-            return Err(GitError::TooLarge(MAX_BLOB));
-        }
-        Ok(Some(blob.content().to_vec()))
+        blob(location, Some(oid), path)
+    }
+
+    fn file_versions(
+        &self,
+        location: &RepoLocation,
+        path: &str,
+        after: usize,
+        limit: usize,
+    ) -> Result<FileVersions, GitError> {
+        versions(location, path, after, limit, WALK_BUDGET)
     }
 
     fn commit_count(&self, location: &RepoLocation, old: &str, new: &str) -> Option<u32> {

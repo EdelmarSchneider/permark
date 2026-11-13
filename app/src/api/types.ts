@@ -164,6 +164,10 @@ import type { ReviewChange } from "./generated/ReviewChange";
 import type { ReviewChangeKind } from "./generated/ReviewChangeKind";
 import type { ReviewStatus } from "./generated/ReviewStatus";
 import type { ReviewView } from "./generated/ReviewView";
+import type { ReviewVersions } from "./generated/ReviewVersions";
+import type { VersionGap } from "./generated/VersionGap";
+import type { VersionRow } from "./generated/VersionRow";
+import type { VersionsReason } from "./generated/VersionsReason";
 import type { SinceVisit } from "./generated/SinceVisit";
 import type { UnreadList } from "./generated/UnreadList";
 import type { AgentMode } from "./generated/AgentMode";
@@ -543,6 +547,8 @@ export interface PluginMethods {
   "review.restore": { args: { path: string }; result: null };
   "review.setBasis": { args: { basis: Basis }; result: null };
   "review.basis": { args: Record<string, never>; result: Basis };
+  /** One page of the earlier versions of a file; `after`: the `next` of the page before (absent: the first page). */
+  "review.versions": { args: { path: string; after?: number }; result: ReviewVersions };
   "tags.index": { args: Record<string, never>; result: TagsIndex };
   "tags.overview": { args: Record<string, never>; result: TagsOverview };
   "tags.status": { args: Record<string, never>; result: TagsStatus };
@@ -828,8 +834,12 @@ export type {
   ReviewChange,
   ReviewChangeKind,
   ReviewStatus,
+  ReviewVersions,
   ReviewView,
   SinceVisit,
+  VersionGap,
+  VersionRow,
+  VersionsReason,
 };
 export type { UnreadList };
 export type {

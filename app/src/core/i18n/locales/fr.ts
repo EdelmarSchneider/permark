@@ -996,6 +996,51 @@ export default {
   "review.codeLabel": "Code modifié",
   "review.fromCommit":
     "Rien de nouveau depuis votre dernier passage. Affichage des modifications depuis le dernier commit.",
+  "review.basis.version": "une version précédente…",
+  "review.basis.picked": "la version du {when}",
+  "review.comparing": "Comparaison avec la version du {when}",
+  "review.sr.basisVersion.one":
+    "Comparaison avec la version du {when}. {n} modification à passer en revue.",
+  "review.sr.basisVersion.other":
+    "Comparaison avec la version du {when}. {n} modifications à passer en revue.",
+  "review.bringBack": "Rétablir cette version",
+  "review.bringBack.warning":
+    "Vos modifications depuis le dernier commit ne sont pas enregistrées dans Git. Rétablir la version du {when} les remplace. Vous pouvez annuler juste après.",
+  "review.bringBack.confirm": "Rétablir",
+  "review.broughtBack": "La version du {when} a été rétablie.",
+  "review.versions.command": "Afficher les versions précédentes",
+  "review.versions.menu": "Versions précédentes…",
+  "review.versions.title": "Versions précédentes de {name}",
+  "review.versions.list": "Versions",
+  "review.versions.loading": "Lecture de l'historique…",
+  "review.versions.more": "Afficher plus",
+  "review.versions.same": "Même texte que maintenant",
+  "review.versions.authors": "{author} avec {others}",
+  "review.versions.compare": "Comparer",
+  "review.versions.renamed": "Les versions précédentes sous le nom {name} ne sont pas affichées.",
+  "review.versions.cut":
+    "Des versions plus anciennes peuvent manquer : ceci est une copie partielle du dépôt.",
+  "review.versions.retry": "Réessayer",
+  "review.versions.none.unavailable": "Les versions précédentes ne sont pas disponibles ici.",
+  "review.versions.none.notCommitted": "Ce fichier n'est pas encore enregistré dans Git.",
+  "review.versions.none.onlyCurrent": "Il n'y a qu'une seule version : celle que vous voyez.",
+  "review.versions.none.otherRepository":
+    "Ce fichier appartient à un autre dépôt situé dans ce dossier.",
+  "review.versions.none.slow": "La lecture de l'historique a pris trop de temps.",
+  "review.versions.none.failed": "L'historique n'a pas pu être lu.",
+  "review.versions.none.unsupported":
+    "Ce fichier n'est pas du texte, les versions ne peuvent donc pas être comparées.",
+  "review.versions.none.unsaved":
+    "Enregistrez d'abord vos modifications pour comparer avec des versions précédentes.",
+  "review.versions.pick.same": "Cette version a le même texte que le document actuel.",
+  "review.versions.pick.missing": "Cette version n'est pas sur cet ordinateur.",
+  "review.versions.pick.tooLarge":
+    "Cette version est trop volumineuse pour être comparée (plus de 2 Mo).",
+  "review.versions.pick.notText":
+    "Cette version n'est pas du texte, elle ne peut donc pas être comparée.",
+  "review.versions.pick.failed": "Cette version ne peut pas être comparée.",
+  "review.versions.gone": "L'historique a changé. Comparaison de nouveau avec le dernier commit.",
+  "review.versions.reread": "L'historique a changé. La liste a été relue.",
 
   // ---- organizing: tags, comments, silence, broken links
   "finder.scope.tags": "Étiquettes",

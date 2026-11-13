@@ -1023,6 +1023,51 @@ export default {
   "review.codeLabel": "Cod cu modificări",
   "review.fromCommit":
     "Nimic nou de când te-ai uitat ultima dată. Se afișează ce s-a modificat de la ultimul commit.",
+  "review.basis.version": "o versiune anterioară…",
+  "review.basis.picked": "versiunea din {when}",
+  "review.comparing": "Se compară cu versiunea din {when}",
+  "review.sr.basisVersion.one":
+    "Acum se compară cu versiunea din {when}. {n} modificare de revizuit.",
+  "review.sr.basisVersion.few":
+    "Acum se compară cu versiunea din {when}. {n} modificări de revizuit.",
+  "review.sr.basisVersion.other":
+    "Acum se compară cu versiunea din {when}. {n} de modificări de revizuit.",
+  "review.bringBack": "Adu înapoi această versiune",
+  "review.bringBack.warning":
+    "Modificările tale de la ultimul commit nu sunt salvate în git. Dacă aduci înapoi versiunea din {when}, ele sunt înlocuite. Poți anula imediat după aceea.",
+  "review.bringBack.confirm": "Adu înapoi",
+  "review.broughtBack": "Versiunea din {when} a fost adusă înapoi.",
+  "review.versions.command": "Arată versiunile anterioare",
+  "review.versions.menu": "Versiuni anterioare…",
+  "review.versions.title": "Versiuni anterioare pentru {name}",
+  "review.versions.list": "Versiuni",
+  "review.versions.loading": "Se citește istoricul…",
+  "review.versions.more": "Arată mai mult",
+  "review.versions.same": "Același text ca acum",
+  "review.versions.authors": "{author} cu {others}",
+  "review.versions.compare": "Compară",
+  "review.versions.renamed": "Versiunile anterioare cu numele {name} nu sunt afișate.",
+  "review.versions.cut":
+    "Pot lipsi versiuni mai vechi: aceasta este o copie parțială a depozitului.",
+  "review.versions.retry": "Încearcă din nou",
+  "review.versions.none.unavailable": "Versiunile anterioare nu sunt disponibile aici.",
+  "review.versions.none.notCommitted": "Acest fișier nu este încă salvat în git.",
+  "review.versions.none.onlyCurrent": "Există o singură versiune: cea pe care o vezi.",
+  "review.versions.none.otherRepository": "Acest fișier aparține altui depozit din acest dosar.",
+  "review.versions.none.slow": "Citirea istoricului a durat prea mult.",
+  "review.versions.none.failed": "Istoricul nu a putut fi citit.",
+  "review.versions.none.unsupported":
+    "Acest fișier nu este text, așa că versiunile nu pot fi comparate.",
+  "review.versions.none.unsaved":
+    "Salvează mai întâi modificările pentru a compara cu versiunile anterioare.",
+  "review.versions.pick.same": "Această versiune are același text ca documentul de acum.",
+  "review.versions.pick.missing": "Această versiune nu se află pe acest computer.",
+  "review.versions.pick.tooLarge":
+    "Această versiune este prea mare pentru a fi comparată (peste 2 MB).",
+  "review.versions.pick.notText": "Această versiune nu este text, așa că nu poate fi comparată.",
+  "review.versions.pick.failed": "Această versiune nu poate fi comparată.",
+  "review.versions.gone": "Istoricul s-a schimbat. Se compară din nou cu ultimul commit.",
+  "review.versions.reread": "Istoricul s-a schimbat. Lista a fost citită din nou.",
 
   // ---- organizing: tags, comments, silence, broken links
   "finder.scope.tags": "Etichete",

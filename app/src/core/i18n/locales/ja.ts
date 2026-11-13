@@ -981,6 +981,48 @@ export default {
   "review.codeLabel": "変更を含むコード",
   "review.fromCommit":
     "前回見た後の新しい変更はありません。最後のコミット以降の変更を表示しています。",
+  "review.basis.version": "以前のバージョン…",
+  "review.basis.picked": "{when} のバージョン",
+  "review.comparing": "{when} のバージョンと比較しています",
+  "review.sr.basisVersion.one":
+    "{when} のバージョンと比較しています。レビューする変更が {n} 件あります。",
+  "review.sr.basisVersion.other":
+    "{when} のバージョンと比較しています。レビューする変更が {n} 件あります。",
+  "review.bringBack": "このバージョンに戻す",
+  "review.bringBack.warning":
+    "最後のコミット以降の変更は git に保存されていません。{when} のバージョンに戻すと、それらの変更は置き換えられます。直後であれば元に戻せます。",
+  "review.bringBack.confirm": "戻す",
+  "review.broughtBack": "{when} のバージョンに戻しました。",
+  "review.versions.command": "以前のバージョンを表示",
+  "review.versions.menu": "以前のバージョン…",
+  "review.versions.title": "{name} の以前のバージョン",
+  "review.versions.list": "バージョン",
+  "review.versions.loading": "履歴を読み込んでいます…",
+  "review.versions.more": "もっと見る",
+  "review.versions.same": "現在と同じテキスト",
+  "review.versions.authors": "{author}（{others} と共同）",
+  "review.versions.compare": "比較",
+  "review.versions.renamed": "{name} という名前だったときの以前のバージョンは表示されません。",
+  "review.versions.cut":
+    "古いバージョンが欠けている可能性があります。これはリポジトリの部分的なコピーです。",
+  "review.versions.retry": "再試行",
+  "review.versions.none.unavailable": "ここでは以前のバージョンを利用できません。",
+  "review.versions.none.notCommitted": "このファイルはまだ git に保存されていません。",
+  "review.versions.none.onlyCurrent": "バージョンは 1 つだけです。現在表示されているものです。",
+  "review.versions.none.otherRepository":
+    "このファイルは、このフォルダー内の別のリポジトリに属しています。",
+  "review.versions.none.slow": "履歴の読み込みに時間がかかりすぎました。",
+  "review.versions.none.failed": "履歴を読み込めませんでした。",
+  "review.versions.none.unsupported":
+    "このファイルはテキストではないため、バージョンを比較できません。",
+  "review.versions.none.unsaved": "以前のバージョンと比較するには、先に変更を保存してください。",
+  "review.versions.pick.same": "このバージョンは現在のドキュメントと同じテキストです。",
+  "review.versions.pick.missing": "このバージョンはこのコンピューターにありません。",
+  "review.versions.pick.tooLarge": "このバージョンは大きすぎて比較できません（2 MB 超）。",
+  "review.versions.pick.notText": "このバージョンはテキストではないため、比較できません。",
+  "review.versions.pick.failed": "このバージョンは比較できません。",
+  "review.versions.gone": "履歴が変更されました。再び最後のコミットと比較しています。",
+  "review.versions.reread": "履歴が変更されました。一覧を読み込み直しました。",
 
   // ---- organizing: tags, comments, silence, broken links
   "finder.scope.tags": "タグ",

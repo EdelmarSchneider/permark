@@ -3,4 +3,4 @@
 /**
  * What a document is compared with.
  */
-export type Basis = "read" | "commit";
+export type Basis = "read" | "commit" | { "version": string };

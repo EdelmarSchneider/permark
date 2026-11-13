@@ -974,6 +974,48 @@ export default {
   "review.codeLabel": "Código con cambios",
   "review.fromCommit":
     "Non hai nada novo desde a última vez que mirou. Móstrase o que cambiou desde o último commit.",
+  "review.basis.version": "unha versión anterior…",
+  "review.basis.picked": "a versión do {when}",
+  "review.comparing": "Compárase coa versión do {when}",
+  "review.sr.basisVersion.one": "Agora compárase coa versión do {when}. {n} cambio para revisar.",
+  "review.sr.basisVersion.other":
+    "Agora compárase coa versión do {when}. {n} cambios para revisar.",
+  "review.bringBack": "Recuperar esta versión",
+  "review.bringBack.warning":
+    "Os seus cambios desde o último commit non están gardados en Git. Ao recuperar a versión do {when} substitúense. Pode desfacelo xusto despois.",
+  "review.bringBack.confirm": "Recuperar",
+  "review.broughtBack": "Recuperouse a versión do {when}.",
+  "review.versions.command": "Mostrar as versións anteriores",
+  "review.versions.menu": "Versións anteriores…",
+  "review.versions.title": "Versións anteriores de {name}",
+  "review.versions.list": "Versións",
+  "review.versions.loading": "Lendo o historial…",
+  "review.versions.more": "Amosar máis",
+  "review.versions.same": "O mesmo texto que agora",
+  "review.versions.authors": "{author} con {others}",
+  "review.versions.compare": "Comparar",
+  "review.versions.renamed": "Non se mostran as versións anteriores co nome {name}.",
+  "review.versions.cut":
+    "Poden faltar versións máis antigas: esta é unha copia parcial do repositorio.",
+  "review.versions.retry": "Tentar de novo",
+  "review.versions.none.unavailable": "As versións anteriores non están dispoñíbeis aquí.",
+  "review.versions.none.notCommitted": "Este ficheiro aínda non está gardado en Git.",
+  "review.versions.none.onlyCurrent": "Só hai unha versión: a que está a ver.",
+  "review.versions.none.otherRepository":
+    "Este ficheiro pertence a outro repositorio dentro deste cartafol.",
+  "review.versions.none.slow": "A lectura do historial tardou demasiado.",
+  "review.versions.none.failed": "Non se puido ler o historial.",
+  "review.versions.none.unsupported":
+    "Este ficheiro non é texto, así que as versións non se poden comparar.",
+  "review.versions.none.unsaved":
+    "Garde primeiro os seus cambios para comparar con versións anteriores.",
+  "review.versions.pick.same": "Esta versión ten o mesmo texto que o documento agora.",
+  "review.versions.pick.missing": "Esta versión non está neste computador.",
+  "review.versions.pick.tooLarge": "Esta versión é demasiado grande para comparala (máis de 2 MB).",
+  "review.versions.pick.notText": "Esta versión non é texto, así que non se pode comparar.",
+  "review.versions.pick.failed": "Esta versión non se pode comparar.",
+  "review.versions.gone": "O historial cambiou. Compárase de novo co último commit.",
+  "review.versions.reread": "O historial cambiou. A lista leuse de novo.",
 
   // ---- organizing: tags, comments, silence, broken links
   "finder.scope.tags": "Etiquetas",

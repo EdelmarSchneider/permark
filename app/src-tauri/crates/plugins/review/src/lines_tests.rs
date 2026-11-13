@@ -8,7 +8,7 @@ use permark_core::activity::{Fact, ReviewOp};
 use permark_core::ErrorKind;
 use serde_json::{json, Value};
 
-use super::tests::{wait_until, Harness};
+use super::tests::{commit, init_repo, wait_git, wait_until, Harness, T0};
 
 const CODE: &str = "fn main() {\n    println!(\"a\");\n    println!(\"b\");\n}\n\nfn helper() -> u32 {\n    1\n}\n";
 
@@ -486,4 +486,73 @@ fn hostile_calls_about_a_text_are_refused() {
         );
     }
     assert_eq!(h.read("h.rs"), CODE.replace("\"a\"", "\"A\"").as_bytes());
+}
+
+#[test]
+fn an_earlier_version_is_a_basis_for_code_too() {
+    let mut h = Harness::new(true);
+    let repo = init_repo(&h);
+    h.write("c.rs", CODE);
+    let first = commit(&repo, "first", T0);
+    h.write("c.rs", &CODE.replace("\"b\"", "\"B\""));
+    commit(&repo, "second", T0 + 60);
+    let last = CODE
+        .replace("\"b\"", "\"B\"")
+        .replace("    1\n", "    1\n    + 1\n");
+    h.write("c.rs", &last);
+    commit(&repo, "third", T0 + 120);
+    h.open();
+    wait_git(&h);
+    // never looked at: the version two commits back is asked for by its commit
+    let version = json!({"version": first});
+    assert_eq!(
+        h.review("status", json!({"path": "c.rs", "basis": version}))
+            .unwrap(),
+        json!({"state": {"state": "changes", "count": 2}, "basis": version})
+    );
+    let view = h
+        .review("open", json!({"path": "c.rs", "basis": version}))
+        .unwrap();
+    assert_eq!(view["unit"], "lines");
+    assert_eq!(view["basis"], version);
+    assert_eq!(
+        (view["canKeep"].as_bool(), view["uncommitted"].as_bool()),
+        (Some(false), Some(false))
+    );
+    let hunks = view["changes"].as_array().unwrap();
+    assert_eq!(hunks.len(), 2);
+    assert_eq!(hunks[0]["old"], json!(["    println!(\"b\");"]));
+    assert_eq!(hunks[1]["kind"], "added");
+    let change = json!({"path": "c.rs", "hash": view["hash"], "index": 0, "basis": version});
+    assert!(h.review("keep", change.clone()).is_err());
+    // one hunk reverted: only that line is the old text, and the file now holds text of no commit
+    let after = h.review("revert", change).unwrap();
+    assert_eq!(
+        (after["count"].as_u64(), after["uncommitted"].as_bool()),
+        (Some(1), Some(true))
+    );
+    let partly = CODE.replace("    1\n", "    1\n    + 1\n");
+    assert_eq!(String::from_utf8(h.read("c.rs")).unwrap(), partly);
+    // everything reverted: the file is the version
+    let done = h
+        .review(
+            "revertAll",
+            json!({"path": "c.rs", "hash": after["hash"], "basis": version}),
+        )
+        .unwrap();
+    assert_eq!(done["count"], 0);
+    assert_eq!(h.read("c.rs"), CODE.as_bytes());
+    // undo puts the text back
+    let back = h
+        .review("undo", json!({"path": "c.rs", "basis": version}))
+        .unwrap();
+    assert_eq!(back["count"], 1);
+    assert_eq!(String::from_utf8(h.read("c.rs")).unwrap(), partly);
+    // a version that cannot be had says why, for a text drawn by lines too
+    let nowhere = json!({"version": "b".repeat(40)});
+    assert_eq!(
+        h.review("status", json!({"path": "c.rs", "basis": nowhere}))
+            .unwrap(),
+        json!({"state": {"state": "noBasis"}, "basis": nowhere, "gap": "missing"})
+    );
 }

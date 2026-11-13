@@ -26,4 +26,9 @@ unit: ReviewUnit, count: number,
 /**
  * Keeping needs the read version as the base (a commit cannot be moved).
  */
-canKeep: boolean, changes: Array<ReviewChange>, };
+canKeep: boolean, 
+/**
+ * Compared with a version while the file is not what the last commit holds: reverting everything would replace
+ * text that is in no commit. Always `false` for the other bases.
+ */
+uncommitted: boolean, changes: Array<ReviewChange>, };

@@ -70,8 +70,11 @@ describe("the following plugins", () => {
       "docBar",
       "docBlocks",
       "docDecoration",
+      "docMenu",
       "outlineMark",
       "shortcut",
+      "statusItem",
+      "treeMenu",
     ]);
   });
 

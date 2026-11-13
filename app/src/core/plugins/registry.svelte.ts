@@ -195,6 +195,18 @@ export type Contribution = Owned &
         applies: (path: string, isDir: boolean) => boolean;
         run: (paths: readonly string[]) => void;
       }
+    /**
+     * An entry of the "…" menu in the header of a document, after the one that copies the document. `applies`: the
+     * documents it is offered for (absent = every one); `run` gets the path of the document the header names. The
+     * entries are listed by `id`: plugins load in no set order, and an entry keeps its place in the menu.
+     */
+    | {
+        kind: "docMenu";
+        id: string;
+        label: MessageKey;
+        applies?: (path: string) => boolean;
+        run: (path: string) => void;
+      }
     /** An entry of the page's context menu while text is selected (comment on the passage). */
     | {
         kind: "selectionMenu";
