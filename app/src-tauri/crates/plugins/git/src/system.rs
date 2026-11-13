@@ -9,9 +9,11 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use permark_core::plugins::CommitId;
+
 use crate::ops::{
-    below_prefix, finish, pathspec, prefix_of, too_broad, Baseline, Discovery, GitError, GitOps,
-    RawFile, RawStatus, RepoLocation,
+    below_prefix, finish, pathspec, prefix_of, repo_path, too_broad, Baseline, Discovery, GitError,
+    GitOps, RawFile, RawStatus, RepoLocation,
 };
 use crate::porcelain::{parse_name_status, parse_status, parse_untracked, Entry};
 use crate::types::{BackendKind, HeadInfo};
@@ -24,12 +26,21 @@ const MAX_OUTPUT: usize = 64 * 1024 * 1024;
 const MAX_BLOB: usize = 8 * 1024 * 1024;
 const MAX_STDERR: usize = 64 * 1024;
 
-/// Variables every call sets: no optional locks (a status never blocks the person's git), plain messages, no prompt.
-const SET: [(&str, &str); 3] = [
+/// Variables every call sets: no optional locks (a status never blocks the person's git), plain messages, no prompt,
+/// and no fetch of an object a partial copy of a repository left out (a fetch goes where the repository's config
+/// says, which may be a program). Two locks, because PerMark only reads what is on this computer:
+/// `GIT_NO_LAZY_FETCH` switches the fetch off (git 2.45+ reads it), and `GIT_ALLOW_PROTOCOL` is the list of
+/// transports git may use, which overrides every `protocol.*.allow` of the config: `:` names none.
+const SET: [(&str, &str); 5] = [
     ("GIT_OPTIONAL_LOCKS", "0"),
     ("LC_ALL", "C"),
     ("GIT_TERMINAL_PROMPT", "0"),
+    ("GIT_NO_LAZY_FETCH", "1"),
+    ("GIT_ALLOW_PROTOCOL", ":"),
 ];
+
+/// Options before every command: no pager, no filesystem monitor (both are programs the config names).
+const BASE: [&str; 3] = ["--no-pager", "-c", "core.fsmonitor=false"];
 
 /// Variables that would point git somewhere else than the folder it is asked about.
 const SCRUBBED: [&str; 8] = [
@@ -146,10 +157,7 @@ pub fn run_until(
     if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
         return Err(GitError::Failed("stopped".to_owned()));
     }
-    let mut all: Vec<&OsStr> = ["--no-pager", "-c", "core.fsmonitor=false"]
-        .into_iter()
-        .map(OsStr::new)
-        .collect();
+    let mut all: Vec<&OsStr> = BASE.into_iter().map(OsStr::new).collect();
     all.extend_from_slice(args);
     let mut child = Proc::start(
         exe,
@@ -339,6 +347,37 @@ impl SystemGit {
             Some(1) => Ok(Vec::new()),
             _ => Err(GitError::Failed(first_line(&out.stderr))),
         }
+    }
+
+    /// The file `path` (relative to the project folder) in the tree of `revision`, as stored (`cat-file`: no filter,
+    /// no line-ending conversion). `revision` is `HEAD` | the digits of a [`CommitId`], never a caller's text: it
+    /// cannot start an option, and git splits `<revision>:<path>` at the first colon, so the path stays a path
+    /// whatever it holds (it is looked up in the tree: no glob, no pathspec magic). `None`: git answered with a
+    /// non-zero code (no such revision | file, a folder, an object that is not on this computer).
+    fn blob(
+        &self,
+        location: &RepoLocation,
+        revision: &str,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        if path.contains('\0') {
+            return Ok(None);
+        }
+        let spec = format!("{revision}:{}", repo_path(&location.prefix, path));
+        let args = [
+            OsStr::new("cat-file"),
+            OsStr::new("blob"),
+            OsStr::new(&spec),
+        ];
+        let out = run_until(
+            &self.exe,
+            &location.workdir,
+            &args,
+            TIMEOUT,
+            MAX_BLOB,
+            self.cancel.as_deref(),
+        )?;
+        Ok((out.code == Some(0)).then_some(out.stdout))
     }
 
     fn call_ok(&self, dir: &Path, args: &[&str]) -> Result<Output, GitError> {
@@ -559,29 +598,16 @@ impl GitOps for SystemGit {
         location: &RepoLocation,
         path: &str,
     ) -> Result<Option<Vec<u8>>, GitError> {
-        if path.contains('\0') {
-            return Ok(None);
-        }
-        let full = if location.prefix.is_empty() {
-            path.to_owned()
-        } else {
-            format!("{}/{path}", location.prefix)
-        };
-        let spec = format!("HEAD:{full}");
-        let args = [
-            OsStr::new("cat-file"),
-            OsStr::new("blob"),
-            OsStr::new(&spec),
-        ];
-        let out = run_until(
-            &self.exe,
-            &location.workdir,
-            &args,
-            TIMEOUT,
-            MAX_BLOB,
-            self.cancel.as_deref(),
-        )?;
-        Ok((out.code == Some(0)).then_some(out.stdout))
+        self.blob(location, "HEAD", path)
+    }
+
+    fn blob_at(
+        &self,
+        location: &RepoLocation,
+        commit: CommitId,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        self.blob(location, commit.as_str(), path)
     }
 
     fn commit_count(&self, location: &RepoLocation, old: &str, new: &str) -> Option<u32> {

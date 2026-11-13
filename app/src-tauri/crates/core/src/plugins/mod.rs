@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub use enable::{on_ids, resolve_enabled, EnableInputs, Enablement, OffReason};
-pub use facts::{ProjectFacts, RepoHandle, RepoReader};
+pub use facts::{CommitId, NoBlob, ProjectFacts, RepoHandle, RepoReader};
 pub use files::{
     nesting, ChangeListener, FolderReveal, FolderRevealApi, FolderScan, Nesting, ProjectPlaces,
     ProjectPlacesApi, WindowFiles, WindowFilesApi,

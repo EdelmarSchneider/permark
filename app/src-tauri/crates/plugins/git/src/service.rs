@@ -11,14 +11,14 @@ use std::time::{Duration, Instant};
 
 use permark_core::conditions::GitCondition;
 use permark_core::paths::WORKTREE_PREFIX;
-use permark_core::plugins::{ProjectFacts, RepoReader};
+use permark_core::plugins::{CommitId, NoBlob, ProjectFacts, RepoReader};
 use permark_core::settings::GitBackendPref;
 use permark_core::state::{StateData, StateFile};
 use serde::{Deserialize, Serialize};
 
 use crate::builtin::BuiltinGit;
 use crate::ops::{
-    finish, repo_state, Baseline, Discovery, GitError, GitOps, RawFile, RepoLocation,
+    blob_or_miss, finish, repo_state, Baseline, Discovery, GitError, GitOps, RawFile, RepoLocation,
 };
 use crate::system::SystemGit;
 use crate::types::{BaselineInfo, BaselineKind, GitFile, GitSnapshot, WorktreeInfo};
@@ -458,7 +458,7 @@ impl GitService {
         let _ = self.tx.send(Msg::Baseline(kind));
     }
 
-    /// The repository reader other plugins use (HEAD blobs).
+    /// The repository reader other plugins use (a file at HEAD | at a commit).
     #[must_use]
     pub fn reader(&self) -> Arc<dyn RepoReader> {
         Arc::new(Reader {
@@ -481,8 +481,11 @@ struct Reader {
     shared: Arc<Shared>,
 }
 
-impl RepoReader for Reader {
-    fn blob_at_head(&self, path: &str) -> Option<Vec<u8>> {
+impl Reader {
+    /// Where the file `path` (project path) is read: the backend, the working tree holding it (`@wt/<name>/...`: that
+    /// linked worktree, else the main one) and the path below that tree. Copied out: the lock is not held while git
+    /// runs. `None`: no repository | no such worktree.
+    fn place<'p>(&self, path: &'p str) -> Option<(Arc<dyn GitOps>, RepoLocation, &'p str)> {
         let guard = self
             .shared
             .repo
@@ -497,7 +500,19 @@ impl RepoReader for Reader {
             }
             None => (&repo.main, path),
         };
-        repo.backend.blob_at_head(location, rest).ok().flatten()
+        Some((Arc::clone(&repo.backend), location.clone(), rest))
+    }
+}
+
+impl RepoReader for Reader {
+    fn blob_at_head(&self, path: &str) -> Option<Vec<u8>> {
+        let (backend, location, rest) = self.place(path)?;
+        backend.blob_at_head(&location, rest).ok().flatten()
+    }
+
+    fn blob_at(&self, commit: CommitId, path: &str) -> Result<Vec<u8>, NoBlob> {
+        let (backend, location, rest) = self.place(path).ok_or(NoBlob::Unavailable)?;
+        blob_or_miss(backend.blob_at(&location, commit, rest))
     }
 
     fn head(&self) -> Option<String> {

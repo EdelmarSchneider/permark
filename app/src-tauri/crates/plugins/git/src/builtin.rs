@@ -4,11 +4,14 @@
 use std::path::Path;
 use std::sync::Once;
 
-use git2::{Delta, DiffOptions, ErrorCode, ObjectType, Oid, Repository, Status, StatusOptions};
+use git2::{
+    Delta, DiffOptions, ErrorCode, ObjectType, Oid, Repository, Status, StatusOptions, Tree,
+};
+use permark_core::plugins::CommitId;
 
 use crate::ops::{
-    below_prefix, finish, prefix_of, too_broad, Baseline, Discovery, GitError, GitOps, RawFile,
-    RawStatus, RepoLocation,
+    below_prefix, finish, prefix_of, repo_path, too_broad, Baseline, Discovery, GitError, GitOps,
+    RawFile, RawStatus, RepoLocation,
 };
 use crate::types::{BackendKind, HeadInfo, Letter};
 
@@ -205,6 +208,46 @@ fn commit_status(repo: &Repository, prefix: &str, oid: &str) -> Result<Vec<RawFi
     Ok(files)
 }
 
+/// The tree a file is read from: HEAD's (`None`), or the one the object `at` leads to (a commit's; like git reading
+/// `<id>:<path>`, a tag is followed and a tree is itself).
+fn tree_at(repo: &Repository, at: Option<Oid>) -> Result<Tree<'_>, git2::Error> {
+    match at {
+        None => repo.head()?.peel_to_tree(),
+        Some(oid) => repo.find_object(oid, None)?.peel_to_tree(),
+    }
+}
+
+/// The read found nothing to read (no commit yet, no such object | path, an object that leads to no tree): the file
+/// is not there, which is no failure.
+fn absent(error: &git2::Error) -> bool {
+    matches!(
+        error.code(),
+        ErrorCode::UnbornBranch | ErrorCode::NotFound | ErrorCode::InvalidSpec | ErrorCode::Peel
+    )
+}
+
+/// The file `path` (relative to the project folder) as stored in the tree of HEAD (`None`) | of the object `at`.
+/// `None`: not there, not a file, or an object is not on this computer (libgit2 never fetches).
+fn blob(location: &RepoLocation, at: Option<Oid>, path: &str) -> Result<Option<Vec<u8>>, GitError> {
+    if path.contains('\0') {
+        return Ok(None);
+    }
+    let repo = open(location)?;
+    let found = tree_at(&repo, at)
+        .and_then(|tree| tree.get_path(Path::new(&repo_path(&location.prefix, path))))
+        .and_then(|entry| match entry.kind() {
+            Some(ObjectType::Blob) => repo.find_blob(entry.id()).map(Some),
+            _ => Ok(None),
+        });
+    match found {
+        Ok(Some(blob)) if blob.size() > MAX_BLOB => Err(GitError::TooLarge(MAX_BLOB)),
+        Ok(Some(blob)) => Ok(Some(blob.content().to_vec())),
+        Ok(None) => Ok(None),
+        Err(e) if absent(&e) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
+}
+
 impl GitOps for BuiltinGit {
     fn kind(&self) -> BackendKind {
         BackendKind::Builtin
@@ -261,35 +304,20 @@ impl GitOps for BuiltinGit {
         location: &RepoLocation,
         path: &str,
     ) -> Result<Option<Vec<u8>>, GitError> {
-        if path.contains(' ') {
+        blob(location, None, path)
+    }
+
+    fn blob_at(
+        &self,
+        location: &RepoLocation,
+        commit: CommitId,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        // an id of another hash length than libgit2 reads names nothing in the repository
+        let Ok(oid) = Oid::from_str(commit.as_str()) else {
             return Ok(None);
-        }
-        let repo = open(location)?;
-        let full = if location.prefix.is_empty() {
-            path.to_owned()
-        } else {
-            format!("{}/{path}", location.prefix)
         };
-        let tree = match repo.head().and_then(|head| head.peel_to_tree()) {
-            Ok(tree) => tree,
-            Err(e) if matches!(e.code(), ErrorCode::UnbornBranch | ErrorCode::NotFound) => {
-                return Ok(None)
-            }
-            Err(e) => return Err(e.into()),
-        };
-        let entry = match tree.get_path(Path::new(&full)) {
-            Ok(entry) => entry,
-            Err(e) if e.code() == ErrorCode::NotFound => return Ok(None),
-            Err(e) => return Err(e.into()),
-        };
-        if entry.kind() != Some(ObjectType::Blob) {
-            return Ok(None);
-        }
-        let blob = repo.find_blob(entry.id())?;
-        if blob.size() > MAX_BLOB {
-            return Err(GitError::TooLarge(MAX_BLOB));
-        }
-        Ok(Some(blob.content().to_vec()))
+        blob(location, Some(oid), path)
     }
 
     fn commit_count(&self, location: &RepoLocation, old: &str, new: &str) -> Option<u32> {

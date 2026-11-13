@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use permark_core::conditions::RepoState;
+use permark_core::plugins::{CommitId, NoBlob};
 
 use crate::types::{BackendKind, HeadInfo, Letter};
 
@@ -95,6 +96,18 @@ pub trait GitOps: Send + Sync {
         location: &RepoLocation,
         path: &str,
     ) -> Result<Option<Vec<u8>>, GitError>;
+    /// The file `path` (relative to the project folder) as committed at `commit`, raw (no filter, no line-ending
+    /// conversion); `None`: not there (no such commit, no such file, or the object is not on this computer: nothing
+    /// is fetched). An id that is no commit is read as git reads `<id>:<path>` (through its tree, if it leads to one).
+    ///
+    /// # Errors
+    /// Git failed, timed out or the file is too large.
+    fn blob_at(
+        &self,
+        location: &RepoLocation,
+        commit: CommitId,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, GitError>;
     /// Whether the repository has the commit.
     fn commit_exists(&self, location: &RepoLocation, oid: &str) -> bool;
     /// Commits reachable from `new` and not from `old` (`None`: a commit unknown | git failed).
@@ -123,6 +136,19 @@ pub trait GitOps: Send + Sync {
     }
 }
 
+/// A backend's answer for a file at a commit ([`GitOps::blob_at`]) as the reader other plugins use gives it.
+///
+/// # Errors
+/// [`NoBlob`]: not there, too large, or the call failed.
+pub fn blob_or_miss(read: Result<Option<Vec<u8>>, GitError>) -> Result<Vec<u8>, NoBlob> {
+    match read {
+        Ok(Some(bytes)) => Ok(bytes),
+        Ok(None) => Err(NoBlob::Missing),
+        Err(GitError::TooLarge(_)) => Err(NoBlob::TooLarge),
+        Err(_) => Err(NoBlob::Unavailable),
+    }
+}
+
 /// Longest subject kept of a commit message.
 pub const MAX_SUBJECT: usize = 200;
 
@@ -144,6 +170,16 @@ pub fn below_prefix<'a>(prefix: &str, path: &'a str) -> Option<&'a str> {
         return Some(path);
     }
     path.strip_prefix(prefix)?.strip_prefix('/')
+}
+
+/// The other way: `path` (relative to the project folder `prefix`) relative to the working tree.
+#[must_use]
+pub fn repo_path(prefix: &str, path: &str) -> String {
+    if prefix.is_empty() {
+        path.to_owned()
+    } else {
+        format!("{prefix}/{path}")
+    }
 }
 
 /// The pathspec that limits git to the project folder (`None`: the whole working tree).
@@ -228,6 +264,31 @@ mod tests {
         assert_eq!(below_prefix("docs", "other/a.md"), None);
         assert_eq!(pathspec(""), None);
         assert_eq!(pathspec("a/b").as_deref(), Some(":(literal)a/b"));
+        assert_eq!(repo_path("", "a/b.md"), "a/b.md");
+        assert_eq!(repo_path("docs/x y", "-a.md"), "docs/x y/-a.md");
+        assert_eq!(
+            below_prefix("docs", &repo_path("docs", "a.md")),
+            Some("a.md")
+        );
+    }
+
+    #[test]
+    fn a_backend_answer_for_a_file_at_a_commit_becomes_bytes_or_the_typed_miss() {
+        assert_eq!(blob_or_miss(Ok(Some(b"x".to_vec()))), Ok(b"x".to_vec()));
+        assert_eq!(blob_or_miss(Ok(Some(Vec::new()))), Ok(Vec::new()));
+        assert_eq!(blob_or_miss(Ok(None)), Err(NoBlob::Missing));
+        assert_eq!(
+            blob_or_miss(Err(GitError::TooLarge(8))),
+            Err(NoBlob::TooLarge)
+        );
+        for failed in [
+            GitError::Timeout,
+            GitError::Spawn("no git".to_owned()),
+            GitError::Failed("stopped".to_owned()),
+            GitError::Parse("?".to_owned()),
+        ] {
+            assert_eq!(blob_or_miss(Err(failed)), Err(NoBlob::Unavailable));
+        }
     }
 
     #[test]

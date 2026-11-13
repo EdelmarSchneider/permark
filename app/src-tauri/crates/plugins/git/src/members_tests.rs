@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::AtomicUsize;
 
+use permark_core::plugins::CommitId;
 use permark_core::state::{AppDirs, StateStore};
 
 use super::*;
@@ -351,6 +352,15 @@ impl GitOps for FakeCall {
     fn blob_at_head(&self, _: &RepoLocation, _: &str) -> Result<Option<Vec<u8>>, GitError> {
         self.busy();
         Ok(Some(b"committed".to_vec()))
+    }
+
+    fn blob_at(
+        &self,
+        location: &RepoLocation,
+        _: CommitId,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, GitError> {
+        self.blob_at_head(location, path)
     }
 
     fn commit_exists(&self, _: &RepoLocation, _: &str) -> bool {

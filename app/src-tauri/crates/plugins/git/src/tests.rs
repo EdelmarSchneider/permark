@@ -11,7 +11,9 @@ use git2::{IndexAddOption, Repository, Signature};
 use permark_core::conditions::{Distribution, GitCondition, RepoState};
 use permark_core::events::NoEvents;
 use permark_core::paths::Root;
-use permark_core::plugins::{PluginId, PluginRegistry, ProjectFacts, RpcCall};
+use permark_core::plugins::{
+    CommitId, NoBlob, PluginId, PluginRegistry, ProjectFacts, RepoReader, RpcCall,
+};
 use permark_core::settings::AppSettings;
 use permark_core::state::AppDirs;
 use permark_core::workspace::{CoreEnv, ProjectCore};
@@ -94,6 +96,20 @@ fn location(ops: &dyn GitOps, root: &Path) -> RepoLocation {
     match ops.discover(root, None) {
         Discovery::Repo(location) => location,
         other => panic!("no repository at {}: {other:?}", root.display()),
+    }
+}
+
+fn commit_id(hex: &str) -> CommitId {
+    CommitId::parse(hex).unwrap()
+}
+
+/// The `file://` address of a folder (a plain path is copied whole: no filter applies).
+fn file_url(folder: &Path) -> String {
+    let path = folder.to_string_lossy().replace('\\', "/");
+    if path.starts_with('/') {
+        format!("file://{path}")
+    } else {
+        format!("file:///{path}")
     }
 }
 
@@ -485,6 +501,166 @@ fn blobs_at_head_come_back_as_committed() {
 }
 
 #[test]
+fn blobs_at_a_commit_are_the_bytes_committed_then() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        // line endings go in as written, whatever this computer's git settings say
+        fx.repo
+            .config()
+            .unwrap()
+            .set_bool("core.autocrlf", false)
+            .unwrap();
+        fx.write("docs/a.md", "one\n");
+        fx.write("docs/crlf.md", "a\r\nb\r\n");
+        let first = commit_id(&fx.commit("first"));
+        fx.write("docs/a.md", "two\n");
+        let second = commit_id(&fx.commit("second"));
+        fx.write("docs/a.md", "three\n");
+        fx.write("docs/later.md", "l\n");
+        let third = commit_id(&fx.commit("third"));
+        fx.write("docs/a.md", "edited after\n");
+        let loc = location(ops, &fx.root);
+        let at = |commit: CommitId, path: &str| ops.blob_at(&loc, commit, path).unwrap();
+        assert_eq!(
+            at(first, "docs/a.md").as_deref(),
+            Some(b"one\n".as_slice()),
+            "{name}"
+        );
+        assert_eq!(
+            at(second, "docs/a.md").as_deref(),
+            Some(b"two\n".as_slice()),
+            "{name}"
+        );
+        assert_eq!(
+            at(third, "docs/a.md").as_deref(),
+            Some(b"three\n".as_slice()),
+            "{name}"
+        );
+        assert_eq!(
+            at(third, "docs/a.md"),
+            ops.blob_at_head(&loc, "docs/a.md").unwrap(),
+            "{name}: the id of HEAD"
+        );
+        assert_eq!(
+            at(first, "docs/crlf.md").as_deref(),
+            Some(b"a\r\nb\r\n".as_slice()),
+            "{name}: raw, no line-ending conversion"
+        );
+        // not there at that commit
+        assert_eq!(at(first, "docs/later.md"), None, "{name}: added later");
+        assert_eq!(at(third, "missing.md"), None, "{name}");
+        assert_eq!(at(third, "docs"), None, "{name}: a folder is no blob");
+        assert_eq!(at(third, "a\0b"), None, "{name}");
+        assert_eq!(at(third, "docs/a.md\0"), None, "{name}");
+        // well-formed ids the repository does not have
+        assert_eq!(at(commit_id(&"0".repeat(40)), "docs/a.md"), None, "{name}");
+        assert_eq!(at(commit_id(&"1".repeat(40)), "docs/a.md"), None, "{name}");
+        assert_eq!(
+            at(commit_id(&"f".repeat(64)), "docs/a.md"),
+            None,
+            "{name}: an id of the other hash length"
+        );
+        // an id that is no commit: read as git reads `<id>:<path>` (through a tree), alike in both backends
+        let tree = fx.repo.head().unwrap().peel_to_tree().unwrap();
+        assert_eq!(
+            at(commit_id(&tree.id().to_string()), "docs/a.md").as_deref(),
+            Some(b"three\n".as_slice()),
+            "{name}: a tree id"
+        );
+        let blob = tree.get_path(Path::new("docs/a.md")).unwrap().id();
+        assert_eq!(
+            at(commit_id(&blob.to_string()), "docs/a.md"),
+            None,
+            "{name}: a blob id leads to no tree"
+        );
+        // a project below the repository asks with project paths
+        let below = location(ops, &fx.root.join("docs"));
+        assert_eq!(
+            ops.blob_at(&below, first, "a.md").unwrap().as_deref(),
+            Some(b"one\n".as_slice()),
+            "{name}"
+        );
+        assert_eq!(
+            ops.blob_at(&below, first, "docs/a.md").unwrap(),
+            None,
+            "{name}: repository paths are not project paths"
+        );
+    });
+}
+
+#[test]
+fn a_committed_file_over_the_limit_is_too_large() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.write("huge.bin", &"x".repeat(8 * 1024 * 1024 + 1));
+        fx.write("small.md", "s\n");
+        let first = commit_id(&fx.commit("first"));
+        let loc = location(ops, &fx.root);
+        assert!(
+            matches!(
+                ops.blob_at(&loc, first, "huge.bin"),
+                Err(GitError::TooLarge(_))
+            ),
+            "{name}"
+        );
+        assert!(
+            matches!(
+                ops.blob_at_head(&loc, "huge.bin"),
+                Err(GitError::TooLarge(_))
+            ),
+            "{name}: at HEAD"
+        );
+        assert_eq!(
+            ops.blob_at(&loc, first, "small.md").unwrap().as_deref(),
+            Some(b"s\n".as_slice()),
+            "{name}: other files of the commit are read"
+        );
+    });
+}
+
+#[test]
+fn files_with_hostile_names_are_read_at_a_commit() {
+    let mut names = vec![
+        "ü ñ 文.md",
+        "with space.md",
+        "[x].md",
+        "-rf.md",
+        "--output=x",
+        "@{u}.md",
+        "{x}/-y [1]/é ü.md",
+    ];
+    // not valid file names on Windows
+    if !cfg!(windows) {
+        names.extend(["*.md", "what?.md", ":colon.md", "a:b.md", "{x}/:deep.md"]);
+    }
+    each(|name, ops| {
+        let fx = Fixture::new();
+        for (n, file) in names.iter().enumerate() {
+            fx.write(file, &format!("{n} then\n"));
+        }
+        let first = commit_id(&fx.commit("first"));
+        for (n, file) in names.iter().enumerate() {
+            fx.write(file, &format!("{n} now\n"));
+        }
+        fx.commit("second");
+        // asked from the repository's folder, and from a project below it
+        for root in ["", "{x}"] {
+            let loc = location(ops, &fx.root.join(root));
+            for (n, file) in names.iter().enumerate() {
+                let Some(path) = crate::ops::below_prefix(root, file) else {
+                    continue;
+                };
+                assert_eq!(
+                    ops.blob_at(&loc, first, path).unwrap(),
+                    Some(format!("{n} then\n").into_bytes()),
+                    "{name}: {path:?} below {root:?}"
+                );
+            }
+        }
+    });
+}
+
+#[test]
 fn both_backends_answer_alike() {
     let list = backends();
     if list.len() < 2 {
@@ -666,6 +842,70 @@ fn a_filter_command_from_the_repository_config_never_runs() {
     assert!(status.files.iter().all(|f| f.path != ".gitattributes"));
 }
 
+/// A partial copy of a repository names a place to fetch from, and a fetch may run a program the repository's config
+/// names: an object that is not on this computer is a miss, and stays one.
+#[test]
+fn a_file_that_was_not_downloaded_is_a_miss_and_nothing_is_fetched() {
+    let Some(exe) = find_git() else {
+        eprintln!("SKIPPED: no git executable on PATH");
+        return;
+    };
+    let fx = Fixture::new();
+    fx.repo
+        .config()
+        .unwrap()
+        .set_bool("uploadpack.allowFilter", true)
+        .unwrap();
+    fx.write("a.md", "kept at the source\n");
+    let first = commit_id(&fx.commit("first"));
+    let blob = fx
+        .repo
+        .head()
+        .unwrap()
+        .peel_to_tree()
+        .unwrap()
+        .get_name("a.md")
+        .unwrap()
+        .id();
+    let copy = fx.root.with_file_name("partial ü");
+    let url = file_url(&fx.root);
+    // a plain git call makes the copy: the plugin's own runner allows no transport at all
+    let made = std::process::Command::new(&exe)
+        .current_dir(fx.dir.path())
+        .args([
+            "-c",
+            "protocol.file.allow=always",
+            "clone",
+            "--quiet",
+            "--no-checkout",
+            "--filter=blob:none",
+            url.as_str(),
+        ])
+        .arg(&copy)
+        .output()
+        .unwrap();
+    assert!(
+        made.status.success(),
+        "no partial copy: {}",
+        String::from_utf8_lossy(&made.stderr)
+    );
+    // the copy's own config allows the transport: a default policy alone would not stop the fetch
+    Repository::open(&copy)
+        .unwrap()
+        .config()
+        .unwrap()
+        .set_str("protocol.file.allow", "always")
+        .unwrap();
+    let downloaded = || Repository::open(&copy).unwrap().odb().unwrap().exists(blob);
+    assert!(!downloaded(), "the copy came with the file");
+    each(|name, ops| {
+        let loc = location(ops, &copy);
+        assert_eq!(ops.blob_at(&loc, first, "a.md").unwrap(), None, "{name}");
+        assert_eq!(ops.blob_at_head(&loc, "a.md").unwrap(), None, "{name}");
+        assert!(!downloaded(), "{name}: the file was fetched");
+    });
+}
+
 // ---- the worker ------------------------------------------------------------------------------------------------------
 
 type Announced = Arc<Mutex<Vec<Option<GitSnapshot>>>>;
@@ -824,6 +1064,14 @@ fn a_folder_without_a_repository_waits_for_one() {
         std::thread::sleep(Duration::from_millis(300));
         assert!(running.service.snapshot().is_none(), "{name}");
         assert_eq!(running.facts.git(), GitCondition::NoRepo, "{name}");
+        assert_eq!(
+            running
+                .service
+                .reader()
+                .blob_at(commit_id(&"a".repeat(40)), "a.md"),
+            Err(NoBlob::Unavailable),
+            "{name}"
+        );
         // plain file changes do not look for a repository ...
         let _repo = Repository::init(&root).unwrap();
         running.service.trigger(Why::Files);
@@ -1042,6 +1290,75 @@ fn a_session_that_starts_before_the_first_commit_measures_against_head() {
     assert!(running.service.snapshot().unwrap().files.is_empty());
 }
 
+/// A commit made on the worktree's branch is read through either tree, and every miss says why.
+fn the_reader_answers_at_a_commit(
+    name: &str,
+    reader: &dyn RepoReader,
+    wt_dir: &Path,
+    first: CommitId,
+) {
+    let wt_repo = Repository::open(wt_dir).unwrap();
+    let mut index = wt_repo.index().unwrap();
+    index.add_path(Path::new("a.md")).unwrap();
+    index.write().unwrap();
+    let tree = wt_repo.find_tree(index.write_tree().unwrap()).unwrap();
+    let sig = Signature::now("Tester", "tester@example.com").unwrap();
+    let parent = wt_repo.head().unwrap().peel_to_commit().unwrap();
+    let second = wt_repo
+        .commit(
+            Some("HEAD"),
+            &sig,
+            &sig,
+            "in the worktree",
+            &tree,
+            &[&parent],
+        )
+        .unwrap();
+    let second = commit_id(&second.to_string());
+    for path in ["a.md", "@wt/feat/a.md"] {
+        assert_eq!(
+            reader.blob_at(first, path).as_deref(),
+            Ok(b"a\n".as_slice()),
+            "{name}: {path}"
+        );
+        assert_eq!(
+            reader.blob_at(second, path).as_deref(),
+            Ok(b"changed in the worktree\n".as_slice()),
+            "{name}: {path}"
+        );
+    }
+    assert_eq!(
+        reader.blob_at_head("@wt/feat/a.md").as_deref(),
+        Some(b"changed in the worktree\n".as_slice()),
+        "{name}: the worktree's own HEAD"
+    );
+    assert_eq!(
+        reader.blob_at(first, "@wt/nope/a.md"),
+        Err(NoBlob::Unavailable),
+        "{name}: no such worktree"
+    );
+    assert_eq!(
+        reader.blob_at(first, "@wt/feat"),
+        Err(NoBlob::Unavailable),
+        "{name}"
+    );
+    assert_eq!(
+        reader.blob_at(first, "missing.md"),
+        Err(NoBlob::Missing),
+        "{name}"
+    );
+    assert_eq!(
+        reader.blob_at(first, "@wt/feat/only there.md"),
+        Err(NoBlob::Missing),
+        "{name}: never committed"
+    );
+    assert_eq!(
+        reader.blob_at(commit_id(&"0".repeat(40)), "a.md"),
+        Err(NoBlob::Missing),
+        "{name}: no such commit"
+    );
+}
+
 #[test]
 fn linked_worktrees_are_found_listed_and_given_their_own_letters() {
     each(|name, _| {
@@ -1052,7 +1369,7 @@ fn linked_worktrees_are_found_listed_and_given_their_own_letters() {
         };
         let fx = Fixture::new();
         fx.write("a.md", "a\n");
-        fx.commit("first");
+        let first = commit_id(&fx.commit("first"));
         let wt_dir = fx.dir.path().join("wt ü");
         fx.repo.worktree("feat", &wt_dir, None).unwrap();
         let linked = linked_worktrees(&fx.root, None);
@@ -1095,6 +1412,7 @@ fn linked_worktrees_are_found_listed_and_given_their_own_letters() {
         assert_eq!(reader.blob_at_head("@wt/nope/a.md"), None);
         assert_eq!(reader.blob_at_head("@wt/feat"), None);
         assert_eq!(reader.blob_at_head("missing.md"), None);
+        the_reader_answers_at_a_commit(name, reader.as_ref(), &wt_dir, first);
     });
 }
 

@@ -12,7 +12,9 @@ use git2::{IndexAddOption, Repository, Signature};
 use permark_core::conditions::Distribution;
 use permark_core::events::NoEvents;
 use permark_core::paths::Root;
-use permark_core::plugins::{PluginId, PluginRegistry, ProjectFacts, RepoHandle, RpcCall};
+use permark_core::plugins::{
+    CommitId, NoBlob, PluginId, PluginRegistry, ProjectFacts, RepoHandle, RpcCall,
+};
 use permark_core::projects::ProjectUid;
 use permark_core::settings::AppSettings;
 use permark_core::state::AppDirs;
@@ -550,13 +552,58 @@ fn call(core: &ProjectCore, method: &str, args: serde_json::Value) -> serde_json
         .unwrap()
 }
 
+/// What review reads through the reader: a member's file comes from the member's repository, the rest from the
+/// root's, at HEAD ("last commit") and at a commit; each repository answers for its own commits only.
+fn the_reader_reads_each_file_from_its_own_repository(
+    core: &ProjectCore,
+    inner_first: git2::Oid,
+    outer_first: git2::Oid,
+) {
+    let reader = core.services().services.get::<RepoHandle>().unwrap();
+    assert_eq!(
+        reader.0.blob_at_head("hubs/hub ü/doc.md").as_deref(),
+        Some(&b"committed\n"[..])
+    );
+    assert_eq!(
+        reader.0.blob_at_head("top.md").as_deref(),
+        Some(&b"t\n"[..])
+    );
+    let inner_first = CommitId::parse(&inner_first.to_string()).unwrap();
+    let outer_first = CommitId::parse(&outer_first.to_string()).unwrap();
+    assert_eq!(
+        reader
+            .0
+            .blob_at(inner_first, "hubs/hub ü/doc.md")
+            .as_deref(),
+        Ok(&b"committed\n"[..])
+    );
+    assert_eq!(
+        reader.0.blob_at(outer_first, "top.md").as_deref(),
+        Ok(&b"t\n"[..])
+    );
+    assert_eq!(
+        reader.0.blob_at(outer_first, "hubs/hub ü/doc.md"),
+        Err(NoBlob::Missing),
+        "the root's commit is no commit of the member's repository"
+    );
+    assert_eq!(
+        reader.0.blob_at(inner_first, "top.md"),
+        Err(NoBlob::Missing),
+        "the member's commit is no commit of the root's repository"
+    );
+    assert_eq!(
+        reader.0.blob_at(inner_first, "hubs/hub ü/missing.md"),
+        Err(NoBlob::Missing)
+    );
+}
+
 #[test]
 fn an_included_project_has_its_own_repository_in_the_root_tab() {
     let (_dir, root) = base();
     let outer = Repository::init(&root).unwrap();
     write(&root, "top.md", "t\n");
     write(&root, ".gitignore", "hubs/\n");
-    commit_all(&outer, "outer");
+    let outer_first = commit_all(&outer, "outer");
     let folder = root.join("hubs").join("hub ü");
     let inner = Repository::init(&folder).unwrap();
     write(&folder, "doc.md", "committed\n");
@@ -633,16 +680,7 @@ fn an_included_project_has_its_own_repository_in_the_root_tab() {
     wait_until("member count follows", || {
         call(&core, "repos", serde_json::Value::Null)[0]["changed"] == 2
     });
-    // review's "last commit" of a member file comes from the member repository
-    let reader = core.services().services.get::<RepoHandle>().unwrap();
-    assert_eq!(
-        reader.0.blob_at_head("hubs/hub ü/doc.md").as_deref(),
-        Some(&b"committed\n"[..])
-    );
-    assert_eq!(
-        reader.0.blob_at_head("top.md").as_deref(),
-        Some(&b"t\n"[..])
-    );
+    the_reader_reads_each_file_from_its_own_repository(&core, first, outer_first);
     // the first commit is written to the record (once, batched)
     wait_until("first commit in the record", || {
         std::fs::read_to_string(root.join(".permark/projects.toml"))
