@@ -192,6 +192,8 @@ export class ReviewStore {
   #picked = $state.raw<PickedVersion | null>(null);
   /** What was compared with before a version was picked: what comes back when its review ends. */
   #choice: Choice = "read";
+  /** The review "Bring back this version" was asked for and waits for a yes (`confirming`), or null. */
+  #asked = $state.raw<ReviewView | null>(null);
   /** Reads of the list: only the newest answer is taken. */
   #listed = 0;
   /** The commit the repository is at, as last heard (`undefined`: not heard yet). */
@@ -251,6 +253,15 @@ export class ReviewStore {
   /** The earlier version the review on screen compares with, or null. */
   get picked(): PickedVersion | null {
     return this.#picked;
+  }
+
+  /**
+   * Bringing the version back waits for the person's yes: it would replace text that is in no commit. The question
+   * is about the review as it was drawn when asked. Drawn again (another comparison, a change kept | reverted, the
+   * file changed), closed, or another document shown: no question is left.
+   */
+  get confirming(): boolean {
+    return this.#asked !== null && this.#asked === this.#mine();
   }
 
   get reviewing(): ReviewView | null {
@@ -628,9 +639,33 @@ export class ReviewStore {
     this.#after(result, 0, "keptAll", false, review, view.path);
   }
 
+  /** Reverts every change. Against a version, when that would replace text that is in no commit, it asks first
+   *  (`confirming`) and writes nothing: whatever asked (the button, the palette, a key), only `confirmBringBack`
+   *  writes then. */
   async revertAll(): Promise<void> {
     const view = this.#mine();
     if (view === null) return;
+    if (view.uncommitted) {
+      this.#asked = view;
+      return;
+    }
+    await this.#revertAll(view);
+  }
+
+  /** The person's yes to the question of `revertAll`: every change is reverted. Nothing without the question up. */
+  async confirmBringBack(): Promise<void> {
+    const view = this.#asked;
+    if (view === null || !this.confirming) return;
+    this.#asked = null;
+    await this.#revertAll(view);
+  }
+
+  /** The person's no: the question goes, nothing is written. */
+  cancelBringBack(): void {
+    this.#asked = null;
+  }
+
+  async #revertAll(view: ReviewView): Promise<void> {
     const review = this.#write();
     const result = await this.#client.call("review.revertAll", {
       path: view.path,

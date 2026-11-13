@@ -1047,6 +1047,7 @@ describe("the earlier versions of a document", () => {
     const row = listOf(reverted.store).rows[1]!;
     await reverted.store.pickVersion(row);
     await reverted.store.revertAll();
+    await reverted.store.confirmBringBack();
     expect(reverted.argsOf("review.revertAll").at(-1)?.basis).toEqual({ version: row.commit });
     expect(reverted.store.state.status).toBe("idle");
     expect(reverted.store.basis).toBe("read");
@@ -1132,5 +1133,126 @@ describe("the earlier versions of a document", () => {
     mock.probe.plugins.announceGit(movedTo(mock.probe.plugins.git(), "f".repeat(40)));
     await settle();
     expect(argsOf("review.status")).toHaveLength(before);
+  });
+});
+
+describe("bringing back an earlier version", () => {
+  /** A review against the version in row `nth` of the list; the guide (the default) has text that is in no commit. */
+  async function againstVersion(shown?: Shown, nth = 1) {
+    const made = await setup(shown === undefined ? {} : { shown });
+    await made.store.openVersions();
+    const row = listOf(made.store).rows[nth]!;
+    await made.store.pickVersion(row);
+    return { ...made, row };
+  }
+
+  it("text that is in no commit would be replaced: it asks first, and only a yes writes", async () => {
+    const { store, row, argsOf, stop } = await againstVersion();
+    const view = store.reviewing;
+    expect(view?.uncommitted).toBe(true);
+    expect(store.confirming).toBe(false);
+    await store.revertAll();
+    expect(store.confirming).toBe(true);
+    expect(argsOf("review.revertAll")).toEqual([]);
+    // asked for again (the key pressed twice) is not a yes
+    await store.revertAll();
+    expect(argsOf("review.revertAll")).toEqual([]);
+    // moving between the changes leaves the question up
+    store.go(1);
+    expect(store.confirming).toBe(true);
+    await store.confirmBringBack();
+    expect(argsOf("review.revertAll")).toEqual([
+      { path: GUIDE, hash: view?.hash, basis: { version: row.commit } },
+    ]);
+    expect(store.confirming).toBe(false);
+    expect(store.state.status).toBe("idle");
+    stop();
+  });
+
+  it("a no takes the question back: nothing is written and the review stays", async () => {
+    const { store, argsOf, stop } = await againstVersion();
+    const count = store.reviewing?.count;
+    await store.revertAll();
+    store.cancelBringBack();
+    expect(store.confirming).toBe(false);
+    expect(store.reviewing?.count).toBe(count);
+    // a yes with no question up writes nothing
+    await store.confirmBringBack();
+    expect(argsOf("review.revertAll")).toEqual([]);
+    stop();
+  });
+
+  it("the question goes with what it was asked about: another document, another comparison", async () => {
+    const left = await againstVersion();
+    await left.store.revertAll();
+    expect(left.store.confirming).toBe(true);
+    left.shown.value = code;
+    expect(left.store.confirming).toBe(false);
+    await settle();
+    expect(left.store.confirming).toBe(false);
+    await left.store.confirmBringBack();
+    expect(left.argsOf("review.revertAll")).toEqual([]);
+    left.stop();
+
+    const switched = await againstVersion();
+    await switched.store.revertAll();
+    await switched.store.setBasis("commit");
+    expect(switched.store.confirming).toBe(false);
+    await switched.store.confirmBringBack();
+    expect(switched.argsOf("review.revertAll")).toEqual([]);
+    // against the last commit there is nothing to ask
+    await switched.store.revertAll();
+    expect(switched.store.confirming).toBe(false);
+    expect(switched.argsOf("review.revertAll").map((args) => args.basis)).toEqual(["commit"]);
+    switched.stop();
+
+    const repicked = await againstVersion();
+    await repicked.store.revertAll();
+    await repicked.store.openVersions();
+    await repicked.store.pickVersion(listOf(repicked.store).rows[2]!);
+    expect(repicked.store.confirming).toBe(false);
+    repicked.stop();
+  });
+
+  it("the question goes when a change is put back alone, the review closes, or the plugin stops", async () => {
+    const single = await againstVersion();
+    await single.store.revertAll();
+    await single.store.revert(0);
+    expect(single.store.reviewing).not.toBeNull();
+    expect(single.store.confirming).toBe(false);
+    expect(single.argsOf("review.revertAll")).toEqual([]);
+    single.stop();
+
+    const closed = await againstVersion();
+    await closed.store.revertAll();
+    await closed.store.done();
+    expect(closed.store.confirming).toBe(false);
+    // "Review again" opens the comparison again, not the question
+    const offered = closed.notices.splice(0, 1)[0]!;
+    offered.onGone("action");
+    offered.actions[0]!.run();
+    await settle();
+    expect(closed.store.picked).not.toBeNull();
+    expect(closed.store.confirming).toBe(false);
+    await closed.store.confirmBringBack();
+    expect(closed.argsOf("review.revertAll")).toEqual([]);
+    closed.stop();
+
+    const stopped = await againstVersion();
+    await stopped.store.revertAll();
+    stopped.stop();
+    expect(stopped.store.confirming).toBe(false);
+    await stopped.store.confirmBringBack();
+    expect(stopped.argsOf("review.revertAll")).toEqual([]);
+  });
+
+  it("a version of a file that is all in the last commit is brought back at once", async () => {
+    const { store, row, argsOf, stop } = await againstVersion(readme, 2);
+    expect(store.reviewing?.uncommitted).toBe(false);
+    await store.revertAll();
+    expect(store.confirming).toBe(false);
+    expect(argsOf("review.revertAll").map((args) => args.basis)).toEqual([{ version: row.commit }]);
+    expect(store.state.status).toBe("idle");
+    stop();
   });
 });
