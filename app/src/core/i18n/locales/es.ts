@@ -980,8 +980,9 @@ export default {
     "Ahora se compara con la versión del {when}. {n} cambios por revisar.",
   "review.bringBack": "Recuperar esta versión",
   "review.bringBack.warning":
-    "Tus cambios desde el último commit no están guardados en git. Al recuperar esta versión se reemplazan. Puedes deshacerlo hasta que cierres PerMark.",
+    "Tus cambios desde el último commit no están guardados en git. Al recuperar la versión del {when} se reemplazan. Puedes deshacerlo justo después.",
   "review.bringBack.confirm": "Recuperar",
+  "review.broughtBack": "Se recuperó la versión del {when}.",
   "review.versions.command": "Mostrar versiones anteriores",
   "review.versions.menu": "Versiones anteriores…",
   "review.versions.title": "Versiones anteriores de {name}",
@@ -996,7 +997,7 @@ export default {
     "Pueden faltar versiones más antiguas: esta es una copia parcial del repositorio.",
   "review.versions.retry": "Intentar de nuevo",
   "review.versions.none.unavailable": "Las versiones anteriores no están disponibles aquí.",
-  "review.versions.none.notCommitted": "Este archivo todavía no está en ningún commit de git.",
+  "review.versions.none.notCommitted": "Este archivo todavía no está guardado en git.",
   "review.versions.none.onlyCurrent": "Solo hay una versión: la que estás viendo.",
   "review.versions.none.otherRepository":
     "Este archivo pertenece a otro repositorio dentro de esta carpeta.",

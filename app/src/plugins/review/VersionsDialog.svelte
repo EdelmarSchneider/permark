@@ -3,11 +3,13 @@
   // line of the commit), the exact moment and who; picking one compares the document with that version. Keys in the
   // rows: Up | Down | Home | End move (they stop at the ends: rows past the last one are asked for with "Show more"),
   // Enter | Space pick; Esc closes. What the repository says (subjects, names, an old path) is drawn as text only.
+  // The version that has the text of now is no comparison: its row is dimmed, and picking it says why.
   import X from "@lucide/svelte/icons/x";
   import { tick } from "svelte";
   import type { VersionRow } from "../../api";
   import { isComposition } from "../../core/commands/combo";
   import { documents } from "../../core/doc/document.svelte";
+  import { editing } from "../../core/editing/session.svelte";
   import { language, t } from "../../core/i18n";
   import { joinNames } from "../../core/projects/model";
   import { dialogFocus } from "../../core/shell/dialogFocus";
@@ -58,7 +60,7 @@
   }
 
   async function pick(row: VersionRow | undefined): Promise<void> {
-    if (row === undefined || row.same || !ready) return;
+    if (row === undefined || !ready) return;
     await review.pickVersion(row);
     // the list is still open: a line under the rows says why, and took room from them
     await tick();
@@ -82,6 +84,13 @@
   function retry(): void {
     hold();
     void review.retryVersions();
+  }
+
+  /** Saves the text in the editor. A save that fails or meets a change on disk leaves the dialog as it is: the
+   *  editor shows it. */
+  function save(): void {
+    hold();
+    editing.save();
   }
 
   function onListKey(event: KeyboardEvent): void {
@@ -120,6 +129,15 @@
 
   // the row the keyboard is on stays in view
   $effect(showActive);
+
+  // the text in the editor reached the disk (Save here, or the editor's own save): the versions can be read now
+  $effect(() => {
+    if (list.problem?.kind !== "unsaved") return;
+    const path = list.path;
+    return editing.onSaved((saved) => {
+      if (saved === path) void review.retryVersions();
+    });
+  });
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -142,7 +160,8 @@
       onEscape: close,
     }}
   >
-    <header>
+    <!-- no <header>: inside a dialog it would be a second banner of the window for assistive tools -->
+    <div class="head">
       <h2 id="{ID}-title">{t("review.versions.title", { name })}</h2>
       <button
         type="button"
@@ -154,7 +173,7 @@
       >
         <X size={16} />
       </button>
-    </header>
+    </div>
 
     <div class="body" aria-busy={list.loading}>
       {#if rows.length > 0}
@@ -226,6 +245,10 @@
             <button type="button" class="btn btn--sm" data-action="retry" onclick={retry}>
               {t("review.versions.retry")}
             </button>
+          {:else if list.problem.kind === "unsaved"}
+            <button type="button" class="btn btn--sm" data-action="save" onclick={save}>
+              {t("edit.save")}
+            </button>
           {/if}
         </div>
       {/if}
@@ -273,7 +296,7 @@
     outline: none;
     font-size: var(--fs-ui);
   }
-  header {
+  .head {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -286,7 +309,7 @@
     font-weight: 600;
     overflow-wrap: anywhere;
   }
-  header button {
+  .head button {
     flex: none;
   }
   p {
@@ -347,9 +370,12 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .row.dim .when,
-  .row.dim .subject {
-    color: var(--muted);
+  /* the version with the text of now is no comparison: its row reads as a control that is off (as a disabled
+     button does), and the mark that says why stays clear */
+  .row.dim .line,
+  .row.dim .exact,
+  .row.dim .who {
+    opacity: 0.5;
   }
   .facts {
     grid-column: 1;

@@ -271,8 +271,11 @@ describe("bringing back an earlier version from the bar", () => {
     expect(question()?.textContent).toContain(
       "Your changes since the last commit are not saved in git.",
     );
+    // the question names the version, and promises only the undo that is offered right after
     const said = question()?.getAttribute("aria-describedby") ?? "";
-    expect(document.getElementById(said)?.textContent).toContain("You can undo it until");
+    expect(document.getElementById(said)?.textContent).toBe(
+      `Your changes since the last commit are not saved in git. Bringing back the version of ${exactTime(AT, language.locale)} replaces them. You can undo it right afterwards.`,
+    );
     // the question takes the place of the bar's actions; what is compared with stays
     expect(button("Bring back this version")).toBeUndefined();
     expect(button("Done")).toBeUndefined();

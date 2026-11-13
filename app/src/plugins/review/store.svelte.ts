@@ -138,6 +138,20 @@ export type ReviewNotice = {
  *  with, so that it opens again on the same comparison). */
 type Closed = { path: string; at: number; picked: PickedVersion | null; takeBack: () => void };
 
+/** A review that ended by putting the last of its changes back, while "Undo" is offered: what it compared with
+ *  (Undo is asked against it), and how many steps before that one Undo could still take back. */
+type Ended = {
+  path: string;
+  basis: Basis;
+  picked: PickedVersion | null;
+  undoable: number;
+  takeBack: () => void;
+};
+
+/** Pages read in a row for a list that has no row yet (a page may hold commits that are no versions): past that,
+ *  the list says that reading took too long, and "Try again" reads on. */
+const EMPTY_PAGES = 10;
+
 /** What a document is reviewed by: blocks of a page, lines of a code view, or nothing. */
 export type ReviewKind = "blocks" | "lines" | null;
 
@@ -210,6 +224,10 @@ export class ReviewStore {
   /** A review just closed with changes in it: still held while "Review again" is offered (a stray Esc loses
    *  nothing), released when that offer goes or the person leaves the document. */
   #closed: Closed | null = null;
+  /** A review just ended by a revert: the backend still holds that step while "Undo" is offered for it. */
+  #ended: Ended | null = null;
+  /** The hash of the document shown, as last seen: an open list marks the version that has that text. */
+  #shownHash: string | null = null;
   readonly #client: PluginClient;
   readonly #root: () => string | null;
   readonly #say: (text: string) => void;
@@ -332,8 +350,16 @@ export class ReviewStore {
       $effect(() => {
         const { path, hash, kind } = this.#page.shown();
         untrack(() => {
-          // a list is of the document it was asked for
-          if (this.versions.status === "open" && this.versions.path !== path) this.closeVersions();
+          const before = this.#shownHash;
+          this.#shownHash = hash;
+          const list = this.versions;
+          if (list.status === "open") {
+            // a list is of the document it was asked for
+            if (list.path !== path) this.closeVersions();
+            // the file changed under the list: which version has the text of now may be another one
+            else if (before !== null && hash !== null && before !== hash)
+              void this.#list(path, null);
+          }
           void this.#sync(kind === null ? null : path, hash);
         });
       });
@@ -366,7 +392,9 @@ export class ReviewStore {
     this.#seq += 1;
     this.#review += 1;
     this.#held = null;
+    this.#shownHash = null;
     this.#forget();
+    this.#withdrawUndo();
     this.state = { status: "idle" };
     this.undoable = 0;
     this.basisNote = null;
@@ -413,6 +441,8 @@ export class ReviewStore {
       this.#unpick();
     }
     if (this.#closed !== null && this.#closed.path !== path) this.#letGo();
+    // Undo is for the document the review ended on
+    if (this.#ended !== null && this.#ended.path !== path) this.#withdrawUndo();
     if (path === null || hash === null) {
       this.state = { status: "idle" };
       this.#page.repaint();
@@ -504,6 +534,8 @@ export class ReviewStore {
     this.#held = path;
     this.#review += 1;
     this.undoable = 0;
+    // the Undo of a review that ended before is not this review's
+    this.#withdrawUndo();
   }
 
   #show(view: ReviewView, at: number): void {
@@ -593,6 +625,56 @@ export class ReviewStore {
     if (closed === null) return;
     this.#closed = null;
     closed.takeBack();
+  }
+
+  /** The review of `path` ended with its last change put back: a quiet line says so and offers Undo (the bar that
+   *  held Undo is gone). No clock: it waits for the person, for as long as the window stays on the document. */
+  #offerUndo(path: string, basis: Basis, picked: PickedVersion | null, undoable: number): void {
+    this.#withdrawUndo();
+    const ended: Ended = { path, basis, picked, undoable, takeBack: () => undefined };
+    this.#ended = ended;
+    ended.takeBack = this.#notice({
+      text:
+        picked === null
+          ? t("review.revertedAll", { name: path.split("/").at(-1) ?? path })
+          : t("review.broughtBack", { when: exactTime(picked.atMs, language.locale) }),
+      actions: [{ label: t("review.undo"), run: () => void this.#undoEnded(ended) }],
+      onGone: (how) => {
+        if (how !== "action" && this.#ended === ended) this.#ended = null;
+      },
+    });
+  }
+
+  /** "Undo" is no longer offered for the review that ended (its notice goes). */
+  #withdrawUndo(): void {
+    const ended = this.#ended;
+    if (ended === null) return;
+    this.#ended = null;
+    ended.takeBack();
+  }
+
+  /** Undo of the step that ended a review: what it put back is taken out again, and the review is on screen as it
+   *  was before that step. Only on the document it ended on. */
+  async #undoEnded(ended: Ended): Promise<void> {
+    if (this.#ended !== ended) return;
+    this.#withdrawUndo();
+    const { path, basis, picked } = ended;
+    if (this.#page.shown().path !== path) return;
+    const review = this.#write();
+    const result = await this.#client.call("review.undo", { path, basis });
+    if (!this.#here(review, path)) return;
+    if (!result.ok) {
+      this.#say(t("review.undoStale", { name: path.split("/").at(-1) ?? path }));
+      return;
+    }
+    if (result.value.count === 0) return;
+    // the undo wrote the file: a read of the page that went out meanwhile never draws over the review
+    this.#seq += 1;
+    this.#fresh(path);
+    this.undoable = ended.undoable;
+    if (picked !== null) this.#pick(picked);
+    this.#show(result.value, 0);
+    this.announce(tn("review.sr.undone", result.value.count));
   }
 
   /** A keep | revert | undo goes out: reads sent before it are superseded. Returns the review it belongs to. */
@@ -724,17 +806,18 @@ export class ReviewStore {
     const next = result.value;
     if (next.count === 0) {
       this.announce(t("review.allDone"));
-      this.#say(
-        t(what === "keptAll" || what === "kept" ? "review.keptAll" : "review.revertedAll", {
-          name,
-        }),
-      );
+      // what the review compared with, before it goes with the review
+      const picked = this.#picked;
+      const basis: Basis = picked === null ? this.basis : { version: picked.commit };
+      const before = this.undoable - 1;
       this.state = { status: "idle" };
       this.#held = null;
       this.#review += 1;
       this.undoable = 0;
       this.#over();
       this.#page.repaint();
+      if (what === "keptAll" || what === "kept") this.#say(t("review.keptAll", { name }));
+      else this.#offerUndo(path, basis, picked, before);
       return;
     }
     this.#show(next, single ? index : 0);
@@ -908,30 +991,46 @@ export class ReviewStore {
       note,
     };
     if (this.#head === undefined) void this.#learnHead();
-    const result = await this.#client.call(
-      "review.versions",
-      after === null ? { path } : { path, after },
-    );
-    const list = this.versions;
-    // the person closed the list, asked again, or moved to another document meanwhile
-    if (asked !== this.#listed || list.status !== "open" || this.#page.shown().path !== path) {
-      return;
+    let from = after;
+    for (let read = 1; ; read++) {
+      const result = await this.#client.call(
+        "review.versions",
+        from === null ? { path } : { path, after: from },
+      );
+      const list = this.versions;
+      // the person closed the list, asked again, or moved to another document meanwhile
+      if (asked !== this.#listed || list.status !== "open" || this.#page.shown().path !== path) {
+        return;
+      }
+      if (!result.ok || result.value.state === "unavailable") {
+        const kind =
+          result.ok && result.value.state === "unavailable" ? result.value.reason : "failed";
+        this.versions = { ...list, loading: false, problem: { kind } };
+        return;
+      }
+      const page = result.value;
+      // the history may have moved between two pages: a version already listed is not listed twice
+      const listed = new Set(list.rows.map((row) => row.commit));
+      const rows =
+        after === null
+          ? page.rows
+          : [...list.rows, ...page.rows.filter((row) => !listed.has(row.commit))];
+      if (rows.length > 0 || page.next === null || read === EMPTY_PAGES) {
+        this.versions = {
+          ...list,
+          loading: false,
+          rows,
+          next: page.next,
+          renamedFrom: page.renamedFrom,
+          cut: page.cut,
+          // still no row after this many pages: it says so, and "Try again" reads on from `next`
+          problem: rows.length === 0 && page.next !== null ? { kind: "slow" } : null,
+        };
+        return;
+      }
+      // a page with no version in it and more to read: a list with no row would only offer "Show more"
+      from = page.next;
     }
-    if (!result.ok || result.value.state === "unavailable") {
-      const kind =
-        result.ok && result.value.state === "unavailable" ? result.value.reason : "failed";
-      this.versions = { ...list, loading: false, problem: { kind } };
-      return;
-    }
-    const page = result.value;
-    this.versions = {
-      ...list,
-      loading: false,
-      rows: after === null ? page.rows : [...list.rows, ...page.rows],
-      next: page.next,
-      renamedFrom: page.renamedFrom,
-      cut: page.cut,
-    };
   }
 
   /** One line on the open list (how a pick went). */
@@ -949,6 +1048,8 @@ export class ReviewStore {
     const list = this.versions;
     const { path } = this.#page.shown();
     if (list.status !== "open" || path === null || list.path !== path) return;
+    // the list knows it already (its mark): nothing is asked
+    if (row.same) return this.#tell(t("review.versions.pick.same"));
     const basis: Basis = { version: row.commit };
     const seq = ++this.#seq;
     const status = await this.#client.call("review.status", { path, basis });
@@ -991,8 +1092,9 @@ export class ReviewStore {
     if (this.#picked !== null) void this.#recheck();
   }
 
-  /** The history moved under a review against a version. The version is gone: the review goes back to the last
-   *  commit, and a note next to the choice says so. */
+  /** The history moved under a review against a version. The version is no longer on this computer: the review
+   *  goes back to the last commit, and a note next to the choice says so. Any other reason it cannot be compared
+   *  for (the file itself is gone, say) is not about the history: the review stays as it is. */
   async #recheck(): Promise<void> {
     const picked = this.#picked;
     const path = this.#mine()?.path;
@@ -1004,6 +1106,7 @@ export class ReviewStore {
     });
     if (this.#picked !== picked || this.#page.shown().path !== path) return;
     if (!status.ok || status.value.state.state !== "noBasis") return;
+    if (status.value.gap !== "missing") return;
     await this.setBasis("commit");
     if (this.#picked === null && this.basis === "commit" && this.#mine()?.path === path) {
       this.basisNote = t("review.versions.gone");

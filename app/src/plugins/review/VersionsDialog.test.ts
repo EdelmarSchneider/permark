@@ -10,7 +10,9 @@ vi.mock("../../api", async () => {
   return { api: createMockApi() };
 });
 
+const { api } = await import("../../api");
 const { documents } = await import("../../core/doc/document.svelte");
+const { editing } = await import("../../core/editing/session.svelte");
 const { language } = await import("../../core/i18n");
 const { exactTime } = await import("../../core/time");
 const { review } = await import("./store.svelte");
@@ -131,6 +133,9 @@ describe("the list of earlier versions", () => {
     expect(dialog()?.getAttribute("aria-modal")).toBe("true");
     const title = document.getElementById(dialog()?.getAttribute("aria-labelledby") ?? "");
     expect(title?.textContent).toBe("Earlier versions of guide.md");
+    // its title row is no banner of the page: a dialog holds no landmark of the window
+    expect(dialog()?.querySelector("header")).toBeNull();
+    expect(button("close")?.parentElement?.contains(title)).toBe(true);
   });
 
   it("says it is reading while the first rows are on their way", () => {
@@ -208,17 +213,29 @@ describe("the list of earlier versions", () => {
     expect(pick).toHaveBeenCalledTimes(3);
   });
 
-  it("the version with the text of now says so and cannot be picked", () => {
-    const pick = vi.spyOn(review, "pickVersion").mockResolvedValue();
-    open({ rows: [row(1, { same: true }), row(2)] });
+  it("the version with the text of now says so; a click or Enter on it says why, and asks the backend nothing", () => {
+    // the list is of the document the window shows
+    vi.spyOn(documents, "path", "get").mockReturnValue(GUIDE);
+    const sent = vi.spyOn(api, "pluginCall");
+    const rows = [row(1, { same: true }), row(2)];
+    const line = "This version has the same text as the document now.";
+    open({ rows });
     const [same, other] = options();
     expect(same?.getAttribute("aria-disabled")).toBe("true");
+    expect(same?.classList.contains("dim")).toBe(true);
     expect(same?.querySelector(".same")?.textContent).toBe("Same text as now");
     expect(other?.getAttribute("aria-disabled")).toBeNull();
+    expect(other?.classList.contains("dim")).toBe(false);
     expect(other?.querySelector(".same")).toBeNull();
     same?.click();
+    flushSync();
+    expect(target.querySelector(".note")?.textContent).toBe(line);
+    open({ rows });
+    expect(target.querySelector(".note")?.textContent).toBe("");
     key(listbox(), "Enter");
-    expect(pick).not.toHaveBeenCalled();
+    expect(target.querySelector(".note")?.textContent).toBe(line);
+    expect(dialog()).not.toBeNull();
+    expect(sent).not.toHaveBeenCalled();
   });
 
   it("no row can be picked while the page still shows another document", () => {
@@ -298,7 +315,7 @@ describe("the list of earlier versions", () => {
     const retry = vi.spyOn(review, "retryVersions").mockResolvedValue();
     const problems: [VersionsProblem, string, boolean][] = [
       [{ kind: "unavailable" }, "Earlier versions are not available here.", false],
-      [{ kind: "notCommitted" }, "This file has not been committed to git yet.", false],
+      [{ kind: "notCommitted" }, "This file is not saved in git yet.", false],
       [{ kind: "onlyCurrent" }, "There is only one version: the one you see.", false],
       [
         { kind: "otherRepository" },
@@ -321,6 +338,38 @@ describe("the list of earlier versions", () => {
     expect(retry).toHaveBeenCalledTimes(1);
     // the button goes with the problem: the keyboard is still in the dialog (Esc closes it)
     expect(dialog()?.contains(document.activeElement)).toBe(true);
+  });
+
+  it("unsaved text: Save writes it, and the list is read once the text is on disk", () => {
+    const save = vi.spyOn(editing, "save").mockImplementation(() => undefined);
+    const retry = vi.spyOn(review, "retryVersions").mockResolvedValue();
+    // what the editing session tells once a save reached the disk
+    let saved: (path: string) => void = () => undefined;
+    vi.spyOn(editing, "onSaved").mockImplementation((listener) => {
+      saved = listener;
+      return () => {
+        saved = () => undefined;
+      };
+    });
+    open({ problem: { kind: "unsaved" } });
+    expect(button("save")?.textContent?.trim()).toBe("Save");
+    button("save")?.click();
+    flushSync();
+    expect(save).toHaveBeenCalledTimes(1);
+    // a save that failed or met a change on disk tells nothing: the dialog stays as it is (the editor shows it)
+    expect(retry).not.toHaveBeenCalled();
+    expect(target.querySelector(".problem")?.textContent).toContain("Save your changes first");
+    expect(dialog()?.contains(document.activeElement)).toBe(true);
+    // another file saved is not this list's
+    saved("README.md");
+    expect(retry).not.toHaveBeenCalled();
+    saved(GUIDE);
+    expect(retry).toHaveBeenCalledTimes(1);
+    // any other reason has no Save, and hears no save
+    open({ problem: { kind: "slow" } });
+    expect(button("save")).toBeNull();
+    saved(GUIDE);
+    expect(retry).toHaveBeenCalledTimes(1);
   });
 
   it("a page that did not come leaves the rows, and Try again reads it instead of Show more", () => {

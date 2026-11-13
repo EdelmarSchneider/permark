@@ -963,8 +963,9 @@ const en = {
     "Now comparing with the version of {when}. {n} changes to review.",
   "review.bringBack": "Bring back this version",
   "review.bringBack.warning":
-    "Your changes since the last commit are not saved in git. Bringing back this version replaces them. You can undo it until you close PerMark.",
+    "Your changes since the last commit are not saved in git. Bringing back the version of {when} replaces them. You can undo it right afterwards.",
   "review.bringBack.confirm": "Bring back",
+  "review.broughtBack": "The version of {when} was brought back.",
   "review.versions.command": "Show earlier versions",
   "review.versions.menu": "Earlier versions…",
   "review.versions.title": "Earlier versions of {name}",
@@ -978,7 +979,7 @@ const en = {
   "review.versions.cut": "Older versions may be missing: this is a partial copy of the repository.",
   "review.versions.retry": "Try again",
   "review.versions.none.unavailable": "Earlier versions are not available here.",
-  "review.versions.none.notCommitted": "This file has not been committed to git yet.",
+  "review.versions.none.notCommitted": "This file is not saved in git yet.",
   "review.versions.none.onlyCurrent": "There is only one version: the one you see.",
   "review.versions.none.otherRepository":
     "This file belongs to another repository inside this folder.",

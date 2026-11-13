@@ -155,13 +155,14 @@ describe("an entry in the document's menu", () => {
     expect(plain.indexOf("Open with default app")).toBeGreaterThan(plain.indexOf(COPY));
 
     const ran: string[] = [];
-    // added out of order: the place in the menu does not follow which plugin loaded first
+    // added out of order: the place in the menu does not follow which plugin loaded first. The labels are words no
+    // plugin puts in this menu, so the test reads the same whichever plugins are running
     contribute({
       kind: "docMenu",
       id: "second.entry",
       owner,
       requires: NO_REQUIREMENT,
-      label: "review.versions.menu",
+      label: "review.versions.retry",
       run: (path) => void ran.push(`second ${path}`),
     });
     contribute({
@@ -169,7 +170,7 @@ describe("an entry in the document's menu", () => {
       id: "first.entry",
       owner,
       requires: NO_REQUIREMENT,
-      label: "review.versions.command",
+      label: "review.versions.more",
       applies: (path) => path === "README.md",
       run: (path) => void ran.push(`first ${path}`),
     });
@@ -178,19 +179,23 @@ describe("an entry in the document's menu", () => {
       id: "other.entry",
       owner,
       requires: NO_REQUIREMENT,
-      label: "convert.menu",
+      label: "review.versions.loading",
       // not for this document
       applies: (path) => path !== "README.md",
       run: (path) => void ran.push(`other ${path}`),
     });
     const labels = openMenu();
-    const added = ["Show earlier versions", "Earlier versions…"];
-    const at = labels.indexOf(COPY);
-    expect(labels.slice(at + 1, at + 3)).toEqual(added);
+    const [first, second] = ["Show more", "Try again"];
+    // after the copy, before the system's group, the two in the order of their ids (an entry of a running plugin
+    // may sit between them)
+    expect(labels.indexOf(first)).toBeGreaterThan(labels.indexOf(COPY));
+    expect(labels.indexOf(second)).toBeGreaterThan(labels.indexOf(first));
+    expect(labels.indexOf("Open with default app")).toBeGreaterThan(labels.indexOf(second));
+    expect(labels).not.toContain("Reading the history…");
     // every entry the menu had is still there, in the same order (the system's group stays last)
-    expect(labels.filter((label) => !added.includes(label))).toEqual(plain);
+    expect(labels.filter((label) => label !== first && label !== second)).toEqual(plain);
 
-    items()[at + 2]?.click();
+    items()[labels.indexOf(second)]?.click();
     flushSync();
     expect(ran).toEqual(["second README.md"]);
     expect(menu()).toBeNull();
@@ -199,6 +204,27 @@ describe("an entry in the document's menu", () => {
     for (const remove of removals.splice(0)) remove();
     expect(openMenu()).toEqual(plain);
     closeMenu();
+  });
+
+  it("an entry runs for the document the menu was opened on, also when the window shows another one by then", async () => {
+    await show("README.md");
+    await until(() => target.querySelector(".crumb.current")?.textContent === "README.md", "doc");
+    const ran: string[] = [];
+    contribute({
+      kind: "docMenu",
+      id: "late.entry",
+      owner,
+      requires: NO_REQUIREMENT,
+      label: "review.versions.retry",
+      run: (path) => void ran.push(path),
+    });
+    const labels = openMenu();
+    // a link followed by an agent, a file renamed: the document changes under the open menu
+    await show("docs/guide.md");
+    await until(() => target.querySelector(".crumb.current")?.textContent === "guide.md", "guide");
+    items()[labels.indexOf("Try again")]?.click();
+    flushSync();
+    expect(ran).toEqual(["README.md"]);
   });
 });
 

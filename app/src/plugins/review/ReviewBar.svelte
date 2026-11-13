@@ -172,7 +172,7 @@
           trapTab: false,
         }}
       >
-        <span id={warningId}>{t("review.bringBack.warning")}</span>
+        <span id={warningId}>{t("review.bringBack.warning", { when: pickedWhen ?? "" })}</span>
         <button
           type="button"
           class="btn btn--sm btn--primary"

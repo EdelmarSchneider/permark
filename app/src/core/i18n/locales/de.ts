@@ -993,8 +993,9 @@ export default {
     "Jetzt im Vergleich mit der Version vom {when}. {n} Änderungen zu prüfen.",
   "review.bringBack": "Diese Version zurückholen",
   "review.bringBack.warning":
-    "Deine Änderungen seit dem letzten Commit sind nicht in Git gespeichert. Wenn du diese Version zurückholst, werden sie ersetzt. Du kannst das rückgängig machen, bis du PerMark schließt.",
+    "Deine Änderungen seit dem letzten Commit sind nicht in Git gespeichert. Wenn du die Version vom {when} zurückholst, werden sie ersetzt. Du kannst das direkt danach rückgängig machen.",
   "review.bringBack.confirm": "Zurückholen",
+  "review.broughtBack": "Die Version vom {when} wurde zurückgeholt.",
   "review.versions.command": "Frühere Versionen anzeigen",
   "review.versions.menu": "Frühere Versionen …",
   "review.versions.title": "Frühere Versionen von {name}",
@@ -1009,7 +1010,7 @@ export default {
     "Ältere Versionen können fehlen: Dies ist eine unvollständige Kopie des Repositorys.",
   "review.versions.retry": "Erneut versuchen",
   "review.versions.none.unavailable": "Frühere Versionen sind hier nicht verfügbar.",
-  "review.versions.none.notCommitted": "Diese Datei ist noch in keinem Git-Commit enthalten.",
+  "review.versions.none.notCommitted": "Diese Datei ist noch nicht in Git gespeichert.",
   "review.versions.none.onlyCurrent": "Es gibt nur eine Version: die, die du siehst.",
   "review.versions.none.otherRepository":
     "Diese Datei gehört zu einem anderen Repository in diesem Ordner.",

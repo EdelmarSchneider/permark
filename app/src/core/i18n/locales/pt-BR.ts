@@ -980,8 +980,9 @@ export default {
     "Agora comparando com a versão de {when}. {n} mudanças para revisar.",
   "review.bringBack": "Trazer esta versão de volta",
   "review.bringBack.warning":
-    "Suas mudanças desde o último commit não estão salvas no git. Trazer esta versão de volta substitui essas mudanças. Você pode desfazer até fechar o PerMark.",
+    "Suas mudanças desde o último commit não estão salvas no git. Trazer a versão de {when} de volta substitui essas mudanças. Você pode desfazer logo em seguida.",
   "review.bringBack.confirm": "Trazer de volta",
+  "review.broughtBack": "A versão de {when} foi trazida de volta.",
   "review.versions.command": "Mostrar versões anteriores",
   "review.versions.menu": "Versões anteriores…",
   "review.versions.title": "Versões anteriores de {name}",
@@ -996,7 +997,7 @@ export default {
     "Podem faltar versões mais antigas: esta é uma cópia parcial do repositório.",
   "review.versions.retry": "Tentar de novo",
   "review.versions.none.unavailable": "As versões anteriores não estão disponíveis aqui.",
-  "review.versions.none.notCommitted": "Este arquivo ainda não está em nenhum commit do git.",
+  "review.versions.none.notCommitted": "Este arquivo ainda não está salvo no git.",
   "review.versions.none.onlyCurrent": "Só existe uma versão: a que você está vendo.",
   "review.versions.none.otherRepository":
     "Este arquivo pertence a outro repositório dentro desta pasta.",

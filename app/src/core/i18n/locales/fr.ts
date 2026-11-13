@@ -1005,8 +1005,9 @@ export default {
     "Comparaison avec la version du {when}. {n} modifications à passer en revue.",
   "review.bringBack": "Rétablir cette version",
   "review.bringBack.warning":
-    "Vos modifications depuis le dernier commit ne sont pas enregistrées dans Git. Rétablir cette version les remplace. Vous pouvez annuler jusqu'à la fermeture de PerMark.",
+    "Vos modifications depuis le dernier commit ne sont pas enregistrées dans Git. Rétablir la version du {when} les remplace. Vous pouvez annuler juste après.",
   "review.bringBack.confirm": "Rétablir",
+  "review.broughtBack": "La version du {when} a été rétablie.",
   "review.versions.command": "Afficher les versions précédentes",
   "review.versions.menu": "Versions précédentes…",
   "review.versions.title": "Versions précédentes de {name}",
@@ -1021,7 +1022,7 @@ export default {
     "Des versions plus anciennes peuvent manquer : ceci est une copie partielle du dépôt.",
   "review.versions.retry": "Réessayer",
   "review.versions.none.unavailable": "Les versions précédentes ne sont pas disponibles ici.",
-  "review.versions.none.notCommitted": "Ce fichier ne figure encore dans aucun commit Git.",
+  "review.versions.none.notCommitted": "Ce fichier n'est pas encore enregistré dans Git.",
   "review.versions.none.onlyCurrent": "Il n'y a qu'une seule version : celle que vous voyez.",
   "review.versions.none.otherRepository":
     "Ce fichier appartient à un autre dépôt situé dans ce dossier.",

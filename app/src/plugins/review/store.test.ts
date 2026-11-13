@@ -15,8 +15,10 @@ import type {
 } from "../../api";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import { MOCK_HEAD, MOCK_LONG_HISTORY } from "../../api/mockReviewVersions";
+import { language } from "../../core/i18n";
 import { PluginClient } from "../../core/plugins/client";
 import { Box } from "../../core/testing/box.svelte";
+import { exactTime } from "../../core/time";
 import {
   ReviewStore,
   SEEN_MS,
@@ -166,6 +168,14 @@ async function setup(
 
 afterEach(() => vi.restoreAllMocks());
 
+/** Presses the button of the lasting line on screen as the window does: the line goes, then its button runs. */
+async function press(notices: ReviewNotice[]): Promise<void> {
+  const offered = notices.splice(0, 1)[0]!;
+  offered.onGone("action");
+  offered.actions[0]!.run();
+  await settle();
+}
+
 describe("the review store", () => {
   it("offers the changes of a document that has some, and nothing for one that has none", async () => {
     const { store, shown, stop } = await setup();
@@ -177,7 +187,7 @@ describe("the review store", () => {
   });
 
   it("shows the changes, keeps one, takes it back, reverts the rest and ends", async () => {
-    const { store, notes, stop } = await setup();
+    const { store, notices, stop } = await setup();
     await store.begin();
     expect(store.state).toMatchObject({ status: "reviewing", at: 0 });
     expect(store.reviewing?.count).toBe(2);
@@ -189,7 +199,7 @@ describe("the review store", () => {
     expect(store.undoable).toBe(0);
     await store.revertAll();
     expect(store.state.status).toBe("idle");
-    expect(notes.some((n) => n.length > 0)).toBe(true);
+    expect(notices.map((n) => n.text)).toEqual(["All changes reverted in guide.md"]);
     stop();
   });
 
@@ -376,12 +386,101 @@ describe("the review store", () => {
     stop();
   });
 
-  it("a review closed with no changes left in it offers nothing", async () => {
+  it("a review closed with no changes left in it offers no review again", async () => {
     const { store, notices, stop } = await setup();
     await store.begin();
     await store.revertAll();
     await store.done();
+    expect(notices.flatMap((n) => n.actions.map((a) => a.label))).toEqual(["Undo"]);
+    stop();
+  });
+
+  it("every change reverted: the review ends, and the line that says so offers Undo", async () => {
+    const { store, notices, notes, argsOf, stop } = await setup();
+    await store.begin();
+    await store.revertAll();
+    expect(store.state.status).toBe("idle");
+    expect(store.undoable).toBe(0);
+    expect(notes).toEqual([]);
+    expect(notices.map((n) => [n.text, n.actions.map((a) => a.label)])).toEqual([
+      ["All changes reverted in guide.md", ["Undo"]],
+    ]);
+    await press(notices);
+    expect(argsOf("review.undo")).toEqual([{ path: GUIDE, basis: "read" }]);
+    // the review is on screen again, with what was put back
+    expect(store.state).toMatchObject({ status: "reviewing", at: 0 });
+    expect(store.reviewing).toMatchObject({ basis: "read", count: 2 });
+    expect(store.announcement).toBe("Undone. 2 changes.");
     expect(notices).toEqual([]);
+    stop();
+  });
+
+  it("the last change reverted alone ends the review the same way: Undo takes it back, then the one before", async () => {
+    const { store, notices, stop } = await setup();
+    await store.begin();
+    await store.revert(0);
+    await store.revert(0);
+    expect(store.state.status).toBe("idle");
+    await press(notices);
+    expect(store.reviewing?.count).toBe(1);
+    // the revert before it is still the bar's to undo
+    expect(store.undoable).toBe(1);
+    await store.undo();
+    expect(store.reviewing?.count).toBe(2);
+    expect(store.undoable).toBe(0);
+    stop();
+  });
+
+  it("every change kept: a plain line says so, with nothing to undo", async () => {
+    const { store, notices, notes, stop } = await setup();
+    await store.begin();
+    await store.keepAll();
+    expect(store.state.status).toBe("idle");
+    expect(notes).toEqual(["All changes kept"]);
+    expect(notices).toEqual([]);
+    stop();
+  });
+
+  it("Undo of a review that ended: a file changed since says so; the document left or the plugin off take the offer", async () => {
+    const stale = await setup({ conflictOn: "review.undo" });
+    await stale.store.begin();
+    await stale.store.revertAll();
+    await press(stale.notices);
+    expect(stale.notes).toEqual(["Can't undo: guide.md changed since."]);
+    expect(stale.store.state.status).toBe("idle");
+    stale.stop();
+
+    const left = await setup();
+    await left.store.begin();
+    await left.store.revertAll();
+    const offered = left.notices[0]!;
+    left.shown.value = { path: "README.md", hash: "ee".repeat(8), kind: "blocks" };
+    await settle();
+    expect(left.notices).toEqual([]);
+    // a press that was on its way does nothing on the other document
+    offered.actions[0]!.run();
+    await settle();
+    expect(left.argsOf("review.undo")).toEqual([]);
+    left.stop();
+
+    const off = await setup();
+    await off.store.begin();
+    await off.store.revertAll();
+    off.stop();
+    expect(off.notices).toEqual([]);
+  });
+
+  it("the page shows the file as Undo wrote it before the answer comes: the review is drawn all the same", async () => {
+    const { store, shown, notices, hold, stop } = await setup();
+    await store.begin();
+    await store.revertAll();
+    const undone = hold("review.undo");
+    const pressed = press(notices);
+    shown.value = { path: GUIDE, hash: "dd".repeat(8), kind: "blocks" };
+    await pressed;
+    undone();
+    await settle();
+    expect(store.reviewing?.count).toBe(2);
     stop();
   });
 
@@ -736,7 +835,7 @@ describe("the earlier versions of a document", () => {
 
   const REASONS: [VersionsReason, string][] = [
     ["unavailable", "Earlier versions are not available here."],
-    ["notCommitted", "This file has not been committed to git yet."],
+    ["notCommitted", "This file is not saved in git yet."],
     ["onlyCurrent", "There is only one version: the one you see."],
     ["otherRepository", "This file belongs to another repository inside this folder."],
     ["slow", "Reading the history took too long."],
@@ -827,25 +926,31 @@ describe("the earlier versions of a document", () => {
     stop();
   });
 
+  /** A version as the history tells it. */
+  const version = (commit: string, atMs: number, same = false): VersionRow => ({
+    commit,
+    atMs,
+    author: "Ana Souza",
+    coAuthors: [],
+    subject: "Fix typos",
+    same,
+  });
+  /** One page of a list. */
+  const page = (
+    rows: VersionRow[],
+    next: number | null,
+    renamedFrom: string | null = null,
+  ): ReviewVersions => ({ state: "list", rows, next, renamedFrom, cut: false });
+  const A = "a".repeat(40);
+  const B = "b".repeat(40);
+  const C = "c".repeat(40);
+
   it("a page with no rows that says there is more keeps the list askable", async () => {
     const { store, canned, argsOf, stop } = await setup();
-    const row = (commit: string, atMs: number): VersionRow => ({
-      commit,
-      atMs,
-      author: "Ana Souza",
-      coAuthors: [],
-      subject: "Fix typos",
-      same: false,
-    });
-    const page = (
-      rows: VersionRow[],
-      next: number | null,
-      renamedFrom: string | null = null,
-    ): ReviewVersions => ({ state: "list", rows, next, renamedFrom, cut: false });
     const pages = new Map<number | undefined, ReviewVersions>([
-      [undefined, page([row("a".repeat(40), 3)], 7)],
+      [undefined, page([version(A, 3)], 7)],
       [7, page([], 9)],
-      [9, page([row("b".repeat(40), 1)], null, "docs/old.md")],
+      [9, page([version(B, 1)], null, "docs/old.md")],
     ]);
     canned["review.versions"] = ({ after }) => pages.get(after);
     await store.openVersions();
@@ -854,8 +959,77 @@ describe("the earlier versions of a document", () => {
     expect(listOf(store).rows).toHaveLength(1);
     await store.moreVersions();
     expect(listOf(store)).toMatchObject({ next: null, renamedFrom: "docs/old.md" });
-    expect(listOf(store).rows.map((r) => r.commit)).toEqual(["a".repeat(40), "b".repeat(40)]);
+    expect(listOf(store).rows.map((r) => r.commit)).toEqual([A, B]);
     expect(argsOf("review.versions").map((args) => args.after)).toEqual([undefined, 7, 9]);
+    stop();
+  });
+
+  it("a page that repeats a version already listed (the history moved between two pages) adds it once", async () => {
+    const { store, canned, stop } = await setup();
+    const pages = new Map<number | undefined, ReviewVersions>([
+      [undefined, page([version(A, 3), version(B, 2)], 2)],
+      [2, page([version(B, 2), version(C, 1)], null)],
+    ]);
+    canned["review.versions"] = ({ after }) => pages.get(after);
+    await store.openVersions();
+    await store.moreVersions();
+    expect(listOf(store).rows.map((r) => r.commit)).toEqual([A, B, C]);
+    stop();
+  });
+
+  it("pages with no version in them are read through until one has some: never a lone Show more", async () => {
+    const { store, canned, argsOf, stop } = await setup();
+    const pages = new Map<number | undefined, ReviewVersions>([
+      [undefined, page([], 5)],
+      [5, page([], 9)],
+      [9, page([version(A, 1)], 12)],
+    ]);
+    canned["review.versions"] = ({ after }) => pages.get(after);
+    await store.openVersions();
+    expect(listOf(store)).toMatchObject({ loading: false, next: 12, problem: null });
+    expect(listOf(store).rows.map((r) => r.commit)).toEqual([A]);
+    expect(argsOf("review.versions").map((args) => args.after)).toEqual([undefined, 5, 9]);
+    stop();
+  });
+
+  it("ten pages in a row with no version: it stops and says so, and Try again reads on from there", async () => {
+    const { store, canned, argsOf, stop } = await setup();
+    canned["review.versions"] = ({ after }) => page([], (after ?? 0) + 1);
+    await store.openVersions();
+    const stopped = listOf(store);
+    expect(stopped).toMatchObject({
+      loading: false,
+      rows: [],
+      next: 10,
+      problem: { kind: "slow" },
+    });
+    expect(stopped.problem && problemText(stopped.problem)).toBe(
+      "Reading the history took too long.",
+    );
+    expect(argsOf("review.versions")).toHaveLength(10);
+    canned["review.versions"] = () => page([version(A, 1)], null);
+    await store.retryVersions();
+    expect(argsOf("review.versions").at(-1)).toEqual({ path: GUIDE, after: 10 });
+    expect(listOf(store)).toMatchObject({ loading: false, next: null, problem: null });
+    expect(listOf(store).rows.map((r) => r.commit)).toEqual([A]);
+    stop();
+  });
+
+  it("the file changed under an open list: it is read again from its first page, with the mark of the same text", async () => {
+    const { store, shown, canned, argsOf, stop } = await setup();
+    let same = true;
+    canned["review.versions"] = ({ after }) =>
+      after === undefined ? page([version(A, 3, same)], 2) : page([version(B, 1)], null);
+    await store.openVersions();
+    await store.moreVersions();
+    expect(listOf(store).rows.map((r) => r.same)).toEqual([true, false]);
+    // the person | an agent wrote the file: the newest version no longer has its text
+    same = false;
+    shown.value = { path: GUIDE, hash: "dd".repeat(8), kind: "blocks" };
+    await settle();
+    expect(argsOf("review.versions").map((args) => args.after)).toEqual([undefined, 2, undefined]);
+    expect(listOf(store)).toMatchObject({ loading: false, next: 2, problem: null, note: null });
+    expect(listOf(store).rows.map((r) => [r.commit, r.same])).toEqual([[A, false]]);
     stop();
   });
 
@@ -922,11 +1096,14 @@ describe("the earlier versions of a document", () => {
     await store.openVersions();
     const row = listOf(store).rows[0]!;
     expect(row.same).toBe(true);
+    const before = argsOf("review.status").length;
     await store.pickVersion(row);
     expect(listOf(store).note).toBe("This version has the same text as the document now.");
     expect(store.basis).toBe("read");
     expect(store.picked).toBeNull();
     expect(store.reviewing).toBeNull();
+    // the list said it already: the backend is not asked
+    expect(argsOf("review.status")).toHaveLength(before);
     expect(argsOf("review.open")).toEqual([]);
     stop();
   });
@@ -1120,6 +1297,33 @@ describe("the earlier versions of a document", () => {
     stop();
   });
 
+  it("the history moved and the picked version cannot be compared for another reason: the review stays on it", async () => {
+    const { store, mock, canned, argsOf, stop } = await setup();
+    await store.openVersions();
+    const row = listOf(store).rows[1]!;
+    await store.pickVersion(row);
+    // no reason told (the file itself may be gone), or one that is not about the history
+    const gaps: [VersionGap | undefined, string][] = [
+      [undefined, "e"],
+      ["notText", "f"],
+    ];
+    for (const [gap, oid] of gaps) {
+      canned["review.status"] = ({ basis }) =>
+        typeof basis !== "object"
+          ? undefined
+          : gap === undefined
+            ? { state: { state: "noBasis" }, basis }
+            : { state: { state: "noBasis" }, basis, gap };
+      mock.probe.plugins.announceGit(movedTo(mock.probe.plugins.git(), oid.repeat(40)));
+      await settle();
+      expect(store.picked?.commit, oid).toBe(row.commit);
+      expect(store.basis, oid).toEqual({ version: row.commit });
+      expect(store.basisNote, oid).toBeNull();
+    }
+    expect(argsOf("review.setBasis")).toEqual([]);
+    stop();
+  });
+
   it("teardown closes the list, lets the version go and stops hearing the repository", async () => {
     const { store, mock, argsOf, stop } = await setup();
     await store.openVersions();
@@ -1166,6 +1370,25 @@ describe("bringing back an earlier version", () => {
     ]);
     expect(store.confirming).toBe(false);
     expect(store.state.status).toBe("idle");
+    stop();
+  });
+
+  it("brought back: the line names the version and offers Undo, which opens the same comparison again", async () => {
+    const { store, row, notices, notes, argsOf, stop } = await againstVersion();
+    const count = store.reviewing?.count;
+    await store.revertAll();
+    await store.confirmBringBack();
+    expect(store.state.status).toBe("idle");
+    expect(notes).toEqual([]);
+    const when = exactTime(row.atMs, language.locale);
+    expect(notices.map((n) => [n.text, n.actions.map((a) => a.label)])).toEqual([
+      [`The version of ${when} was brought back.`, ["Undo"]],
+    ]);
+    await press(notices);
+    expect(argsOf("review.undo")).toEqual([{ path: GUIDE, basis: { version: row.commit } }]);
+    expect(store.reviewing).toMatchObject({ basis: { version: row.commit }, count });
+    expect(store.basis).toEqual({ version: row.commit });
+    expect(store.picked).toEqual({ commit: row.commit, atMs: row.atMs });
     stop();
   });
 

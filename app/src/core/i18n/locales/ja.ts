@@ -990,8 +990,9 @@ export default {
     "{when} のバージョンと比較しています。レビューする変更が {n} 件あります。",
   "review.bringBack": "このバージョンに戻す",
   "review.bringBack.warning":
-    "最後のコミット以降の変更は git に保存されていません。このバージョンに戻すと、それらの変更は置き換えられます。PerMark を閉じるまでは元に戻せます。",
+    "最後のコミット以降の変更は git に保存されていません。{when} のバージョンに戻すと、それらの変更は置き換えられます。直後であれば元に戻せます。",
   "review.bringBack.confirm": "戻す",
+  "review.broughtBack": "{when} のバージョンに戻しました。",
   "review.versions.command": "以前のバージョンを表示",
   "review.versions.menu": "以前のバージョン…",
   "review.versions.title": "{name} の以前のバージョン",
@@ -1006,7 +1007,7 @@ export default {
     "古いバージョンが欠けている可能性があります。これはリポジトリの部分的なコピーです。",
   "review.versions.retry": "再試行",
   "review.versions.none.unavailable": "ここでは以前のバージョンを利用できません。",
-  "review.versions.none.notCommitted": "このファイルはまだ git のコミットに含まれていません。",
+  "review.versions.none.notCommitted": "このファイルはまだ git に保存されていません。",
   "review.versions.none.onlyCurrent": "バージョンは 1 つだけです。現在表示されているものです。",
   "review.versions.none.otherRepository":
     "このファイルは、このフォルダー内の別のリポジトリに属しています。",

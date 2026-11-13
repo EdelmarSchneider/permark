@@ -989,8 +989,9 @@ export default {
     "Ara es compara amb la versió del {when}. {n} canvis per revisar.",
   "review.bringBack": "Recupera aquesta versió",
   "review.bringBack.warning":
-    "Els vostres canvis des de l'últim commit no estan desats al Git. Si recupereu aquesta versió, se substituiran. Ho podeu desfer fins que tanqueu el PerMark.",
+    "Els vostres canvis des de l'últim commit no estan desats al Git. Si recupereu la versió del {when}, se substituiran. Ho podeu desfer tot seguit.",
   "review.bringBack.confirm": "Recupera",
+  "review.broughtBack": "S'ha recuperat la versió del {when}.",
   "review.versions.command": "Mostra les versions anteriors",
   "review.versions.menu": "Versions anteriors…",
   "review.versions.title": "Versions anteriors de {name}",
@@ -1005,7 +1006,7 @@ export default {
     "Hi poden faltar versions més antigues: això és una còpia parcial del repositori.",
   "review.versions.retry": "Torna-ho a provar",
   "review.versions.none.unavailable": "Les versions anteriors no estan disponibles aquí.",
-  "review.versions.none.notCommitted": "Aquest fitxer encara no és en cap commit del Git.",
+  "review.versions.none.notCommitted": "Aquest fitxer encara no està desat al Git.",
   "review.versions.none.onlyCurrent": "Només hi ha una versió: la que veieu.",
   "review.versions.none.otherRepository":
     "Aquest fitxer pertany a un altre repositori dins d'aquesta carpeta.",

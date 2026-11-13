@@ -185,14 +185,17 @@
 
   /** The entries plugins add to the "…" menu for this document, by id (plugins load in no set order). */
   function pluginEntries(): MenuEntry[] {
+    // the document the menu opens on: an entry picked after the window went to another one still runs for this one,
+    // never for a document its menu was not opened for
+    const opened = path;
     return contributions
       .visible("docMenu", conditions.current)
-      .filter((entry) => entry.applies?.(path) ?? true)
+      .filter((entry) => entry.applies?.(opened) ?? true)
       .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
       .map((entry) => ({
         kind: "item" as const,
         label: t(entry.label),
-        run: () => entry.run(path),
+        run: () => entry.run(opened),
       }));
   }
 
