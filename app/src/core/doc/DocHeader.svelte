@@ -183,11 +183,25 @@
     return entries;
   }
 
+  /** The entries plugins add to the "…" menu for this document, by id (plugins load in no set order). */
+  function pluginEntries(): MenuEntry[] {
+    return contributions
+      .visible("docMenu", conditions.current)
+      .filter((entry) => entry.applies?.(path) ?? true)
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .map((entry) => ({
+        kind: "item" as const,
+        label: t(entry.label),
+        run: () => entry.run(path),
+      }));
+  }
+
   function moreMenu(event: MouseEvent): void {
     if (!(event.currentTarget instanceof Element)) return;
     const entries: MenuEntry[] = [
       ...foldedEntries(event.currentTarget),
       { kind: "item", label: t("cmd.copyDocument"), run: () => void documents.copyDocument() },
+      ...pluginEntries(),
     ];
     if (webPictures.project) {
       const on = webPictures.always;

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // What plugins can do on the page: a strip under the header, extra blocks, a listener on the page root, a badge in the
-// header, and being told which blocks a live update added or removed.
+// header, an entry in the header's menu, and being told which blocks a live update added or removed.
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Block } from "../../api";
@@ -120,6 +120,85 @@ describe("a badge in the header", () => {
     expect(target.querySelector(".doc-header .badge .sr-only")?.textContent).toBe(", changed");
     await show("docs/guide.md");
     await until(() => target.querySelector(".doc-header .badge") === null, "no badge");
+  });
+});
+
+describe("an entry in the document's menu", () => {
+  const menu = (): HTMLElement | null => target.querySelector<HTMLElement>("[role=menu]");
+  const items = (): HTMLElement[] => [
+    ...(menu()?.querySelectorAll<HTMLElement>("[role=menuitem]") ?? []),
+  ];
+
+  /** Opens the "…" menu of the header; the labels of its entries. */
+  function openMenu(): string[] {
+    target
+      .querySelector<HTMLButtonElement>(".doc-header button[aria-label='More actions']")
+      ?.click();
+    flushSync();
+    return items().map((item) => item.textContent?.trim() ?? "");
+  }
+
+  function closeMenu(): void {
+    menu()?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    flushSync();
+  }
+
+  const COPY = "Copy the whole document as text";
+
+  it("comes after the copy of the document in a set order, runs with the document's path, and goes with the plugin", async () => {
+    await show("README.md");
+    await until(() => target.querySelector(".crumb.current")?.textContent === "README.md", "doc");
+    const plain = openMenu();
+    closeMenu();
+    // the copy, then the group that opens the file with the system
+    expect(plain.indexOf(COPY)).toBeGreaterThanOrEqual(0);
+    expect(plain.indexOf("Open with default app")).toBeGreaterThan(plain.indexOf(COPY));
+
+    const ran: string[] = [];
+    // added out of order: the place in the menu does not follow which plugin loaded first
+    contribute({
+      kind: "docMenu",
+      id: "second.entry",
+      owner,
+      requires: NO_REQUIREMENT,
+      label: "review.versions.menu",
+      run: (path) => void ran.push(`second ${path}`),
+    });
+    contribute({
+      kind: "docMenu",
+      id: "first.entry",
+      owner,
+      requires: NO_REQUIREMENT,
+      label: "review.versions.command",
+      applies: (path) => path === "README.md",
+      run: (path) => void ran.push(`first ${path}`),
+    });
+    contribute({
+      kind: "docMenu",
+      id: "other.entry",
+      owner,
+      requires: NO_REQUIREMENT,
+      label: "convert.menu",
+      // not for this document
+      applies: (path) => path !== "README.md",
+      run: (path) => void ran.push(`other ${path}`),
+    });
+    const labels = openMenu();
+    const added = ["Show earlier versions", "Earlier versions…"];
+    const at = labels.indexOf(COPY);
+    expect(labels.slice(at + 1, at + 3)).toEqual(added);
+    // every entry the menu had is still there, in the same order (the system's group stays last)
+    expect(labels.filter((label) => !added.includes(label))).toEqual(plain);
+
+    items()[at + 2]?.click();
+    flushSync();
+    expect(ran).toEqual(["second README.md"]);
+    expect(menu()).toBeNull();
+
+    // the plugin goes: the menu is as it was
+    for (const remove of removals.splice(0)) remove();
+    expect(openMenu()).toEqual(plain);
+    closeMenu();
   });
 });
 
