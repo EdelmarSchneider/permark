@@ -3,7 +3,7 @@
 
 import type { Api } from "../../api";
 import { clampWidth, RIGHT, SIDEBAR } from "./layout";
-import { emptyProjectViews, parseProjectViews, type ProjectViews } from "./rightViews";
+import { emptyProjectViews, parseProjectViews, type ProjectViews } from "./arrangement";
 
 const KEYS = {
   sidebar: "layout.sidebar",
@@ -23,7 +23,7 @@ export class LayoutStore {
   rightHidden = $state(false);
   /** A project's session is being read: the panels stay off until it says (no flash of a panel it hides). */
   reading = $state(false);
-  /** The views of the right column this project opened | closed and the tab each group shows (`rightViews.ts`). */
+  /** The views of the right column this project opened | closed and the tab each group shows (`arrangement.ts`). */
   views = $state.raw<ProjectViews>(emptyProjectViews());
   /** Counts the project sessions read (each project shown = one more): the views' defaults are decided per load. */
   loads = $state(0);

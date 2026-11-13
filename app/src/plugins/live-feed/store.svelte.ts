@@ -11,7 +11,7 @@ import { conditions } from "../../core/conditions/context.svelte";
 import { changedSections } from "../../core/doc/outline";
 import { InFront } from "../../core/inFront.svelte";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
-import { rightViews } from "../../core/shell/rightViews.svelte";
+import { rightViews } from "../../core/shell/arrangement.svelte";
 import { togglePanel } from "../../core/shell/sides";
 import { silence } from "../../core/silence/silence.svelte";
 import { panelRows, pathOf, type FeedShow, type PanelRow } from "./mine";

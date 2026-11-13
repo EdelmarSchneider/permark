@@ -20,8 +20,8 @@ import { closeOwnTab } from "../shell/closeWorkspace";
 import { projects } from "../projects/instance.svelte";
 import { askInitHere } from "../shell/initProject";
 import { rightAvailable } from "../shell/layout";
-import { defaultRightViews } from "../shell/rightViews";
-import { rightViews } from "../shell/rightViews.svelte";
+import { defaultRightViews } from "../shell/arrangement";
+import { rightViews } from "../shell/arrangement.svelte";
 import {
   documentPane,
   rightSide,

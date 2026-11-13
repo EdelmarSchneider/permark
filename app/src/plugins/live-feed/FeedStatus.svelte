@@ -6,7 +6,7 @@
   import { t, tn } from "../../core/i18n";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import { liveOff } from "../../core/shell/liveSignal.svelte";
-  import { rightViews } from "../../core/shell/rightViews.svelte";
+  import { rightViews } from "../../core/shell/arrangement.svelte";
   import { followStore } from "./followLink.svelte";
   import { ACTIVE_MS, countText, feed, PANEL } from "./store.svelte";
   import { split } from "./time";

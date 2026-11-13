@@ -4,7 +4,7 @@
   // draws it (window splitter pattern, horizontal).
   import { t } from "../i18n";
   import { STEP, STEP_BIG } from "./layout";
-  import { MIN_GROUP_PX } from "./rightViews";
+  import { MIN_GROUP_PX } from "./arrangement";
 
   type Props = {
     /** The views above | below (their tab labels). */

@@ -21,7 +21,7 @@ import {
   splitOut,
   withViews,
   type RightViews,
-} from "./rightViews";
+} from "./arrangement";
 
 const views = (layout: RightViews): string[][] => layout.groups.map((g) => [...g.views]);
 const shares = (layout: RightViews): number[] =>

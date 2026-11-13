@@ -18,8 +18,8 @@ const { NO_REQUIREMENT } = await import("../conditions/available");
 const { conditions, neutralContext } = await import("../conditions/context.svelte");
 const { contributions } = await import("../plugins/instance.svelte");
 const { layout } = await import("./layout.svelte");
-const { DEFAULT_WAIT_MS, rightViews } = await import("./rightViews.svelte");
-const { defaultRightViews, LIVE_VIEW } = await import("./rightViews");
+const { DEFAULT_WAIT_MS, rightViews } = await import("./arrangement.svelte");
+const { defaultRightViews, LIVE_VIEW } = await import("./arrangement");
 
 let calls = false;
 const removals: (() => void)[] = [];

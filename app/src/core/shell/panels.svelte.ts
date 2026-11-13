@@ -1,5 +1,5 @@
 // The panels plugins contribute: tabs of the left sidebar (next to Files and Search) and the views of the right column.
-// Which sidebar tab shows lives in `ui`; the right column's arrangement in `rightViews.svelte.ts`. A panel whose plugin
+// Which sidebar tab shows lives in `ui`; the right column's arrangement in `arrangement.svelte.ts`. A panel whose plugin
 // went off | that its plugin does not offer now is not listed.
 
 import { conditions } from "../conditions/context.svelte";

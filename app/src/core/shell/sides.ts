@@ -14,8 +14,8 @@ import {
   type RightSide,
 } from "./layout";
 import { layout } from "./layout.svelte";
-import { OUTLINE, select } from "./rightViews";
-import { rightViews } from "./rightViews.svelte";
+import { OUTLINE, select } from "./arrangement";
+import { rightViews } from "./arrangement.svelte";
 import { ui } from "./ui.svelte";
 
 /** Workspaces with a sidebar: a project, the Notes. */

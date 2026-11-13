@@ -16,7 +16,7 @@
   import Frame from "./core/shell/Frame.svelte";
   import PanelToggle from "./core/shell/PanelToggle.svelte";
   import RightColumn from "./core/shell/RightColumn.svelte";
-  import { rightViews } from "./core/shell/rightViews.svelte";
+  import { rightViews } from "./core/shell/arrangement.svelte";
   import Notices from "./core/shell/Notices.svelte";
   import DefaultAppDialog from "./core/shell/DefaultAppDialog.svelte";
   import { defaultApp } from "./core/shell/defaultApp.svelte";

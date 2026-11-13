@@ -19,7 +19,7 @@ import {
   withViews,
   type DrawnGroup,
   type RightViews,
-} from "./rightViews";
+} from "./arrangement";
 import { ui } from "./ui.svelte";
 
 type Panel = ContributionOf<"panel">;

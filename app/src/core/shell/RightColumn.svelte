@@ -25,8 +25,8 @@
     resizePair,
     splitOut,
     type DrawnGroup,
-  } from "./rightViews";
-  import { rightViews } from "./rightViews.svelte";
+  } from "./arrangement";
+  import { rightViews } from "./arrangement.svelte";
   import { closeView, selectView } from "./sides";
   import ViewDivider from "./ViewDivider.svelte";
 
