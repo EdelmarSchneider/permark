@@ -5,6 +5,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- A link written after Chinese, Japanese or other non-ASCII text in a table cell that also holds an escaped pipe (`\|`) is found again: the broken-link check and search see it, and renaming a file updates it. Before, that link was skipped. <!-- f: links -->
+
 ## [0.11.0] - 2026-11-11
 
 ### Added

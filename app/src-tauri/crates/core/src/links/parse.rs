@@ -115,6 +115,14 @@ impl Lines {
         within(text, start, end)
     }
 
+    /// [`Lines::range_of`] without the requirement of whole characters: a link moved left by an escaped pipe or a tab
+    /// is placed right again by [`shifted_inline_dest`], which skips the places inside a character.
+    pub(crate) fn range_span(&self, pos: Sourcepos, text: &str) -> Option<Range<usize>> {
+        let start = self.start_of(pos.start.line)? + pos.start.column.checked_sub(1)?;
+        let end = self.start_of(pos.end.line)? + pos.end.column;
+        (start < end && end <= text.len()).then_some(start..end)
+    }
+
     /// 1-based line of a byte offset.
     pub(crate) fn line_of(&self, offset: usize) -> usize {
         self.starts.partition_point(|s| *s <= offset).max(1)
@@ -221,6 +229,10 @@ fn scan(body: &str, lines: &Lines) -> Vec<Dest> {
         let data = node.data();
         let pos = data.sourcepos;
         let moved = raised.as_ref().filter(|p| p.holds(pos.start.line));
+        let span = match moved {
+            Some(paragraph) => paragraph.range_span(pos, lines, body),
+            None => lines.range_span(pos, body),
+        };
         let range = match moved {
             Some(paragraph) => paragraph.range_of(pos, lines, body),
             None => lines.range_of(pos, body),
@@ -229,8 +241,8 @@ fn scan(body: &str, lines: &Lines) -> Vec<Dest> {
         match &data.value {
             NodeValue::Link(link) | NodeValue::Image(link) => {
                 let image = matches!(data.value, NodeValue::Image(_));
-                if let Some(range) = range {
-                    if let Some(dest) = shifted_inline_dest(body, &range, &link.url) {
+                if let Some(span) = span {
+                    if let Some(dest) = shifted_inline_dest(body, &span, &link.url) {
                         dests.push(with_kind(
                             dest,
                             if image { Kind::Image } else { Kind::Inline },
@@ -361,6 +373,13 @@ impl AfterDefinitions {
         let end = self.place(pos.end.line, pos.end.column, lines)?;
         within(text, start, end)
     }
+
+    /// [`AfterDefinitions::range_of`] without the requirement of whole characters (see [`Lines::range_span`]).
+    fn range_span(&self, pos: Sourcepos, lines: &Lines, text: &str) -> Option<Range<usize>> {
+        let start = self.place(pos.start.line, pos.start.column.checked_sub(1)?, lines)?;
+        let end = self.place(pos.end.line, pos.end.column, lines)?;
+        (start < end && end <= text.len()).then_some(start..end)
+    }
 }
 
 fn with_kind(mut dest: Dest, kind: Kind) -> Dest {
@@ -371,16 +390,22 @@ fn with_kind(mut dest: Dest, kind: Kind) -> Dest {
 // ---- inline links ------------------------------------------------------------------------------------------------
 
 /// [`inline_dest`] on the node text; when the parser's columns are off to the left (inside a table cell the parser
-/// counts an escaped pipe `\|` as one character), the same text a few bytes to the right.
+/// counts an escaped pipe `\|` as one character), the same text a few bytes to the right. Places inside a character
+/// are skipped: the shift that lands on the link is found even when an earlier one cut through a multibyte character.
 fn shifted_inline_dest(body: &str, range: &Range<usize>, url: &str) -> Option<Dest> {
+    // from bytes: `range.start` itself can be inside a character when the parser's columns are off
     let line_end = body
-        .get(range.start..)?
-        .find(['\n', '\r'])
+        .as_bytes()
+        .get(range.start..)
+        .and_then(|rest| rest.iter().position(|b| matches!(b, b'\n' | b'\r')))
         .map_or(body.len(), |at| range.start + at);
     for shift in 0..=SHIFT_LIMIT {
         let (start, end) = (range.start + shift, range.end + shift);
-        if end > line_end || !body.is_char_boundary(start) || !body.is_char_boundary(end) {
+        if end > line_end {
             break;
+        }
+        if !body.is_char_boundary(start) || !body.is_char_boundary(end) {
+            continue;
         }
         if let Some(dest) = inline_dest(&body[start..end], url, start) {
             return Some(dest);
