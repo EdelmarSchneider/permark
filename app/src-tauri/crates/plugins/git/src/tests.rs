@@ -647,19 +647,6 @@ fn blobs_at_a_commit_are_the_bytes_committed_then() {
             None,
             "{name}: an id of the other hash length"
         );
-        // an id that is no commit: read as git reads `<id>:<path>` (through a tree), alike in both backends
-        let tree = fx.repo.head().unwrap().peel_to_tree().unwrap();
-        assert_eq!(
-            at(commit_id(&tree.id().to_string()), "docs/a.md").as_deref(),
-            Some(b"three\n".as_slice()),
-            "{name}: a tree id"
-        );
-        let blob = tree.get_path(Path::new("docs/a.md")).unwrap().id();
-        assert_eq!(
-            at(commit_id(&blob.to_string()), "docs/a.md"),
-            None,
-            "{name}: a blob id leads to no tree"
-        );
         // a project below the repository asks with project paths
         let below = location(ops, &fx.root.join("docs"));
         assert_eq!(
@@ -672,6 +659,91 @@ fn blobs_at_a_commit_are_the_bytes_committed_then() {
             None,
             "{name}: repository paths are not project paths"
         );
+    });
+}
+
+/// The id of a tree names a folder of the repository, any folder: read as git reads `<tree>:<path>`, a project below
+/// the repository would reach the files beside it. Only an id that leads to a commit is read from.
+#[test]
+fn only_a_commit_names_the_place_a_file_is_read_at() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.keep_line_endings();
+        fx.write("docs/a.md", "inside\n");
+        fx.write("other/docs/a.md", "outside the project\n");
+        let first = fx.commit("first");
+        let commit = fx.commit_of(&first);
+        let tree = commit.tree().unwrap();
+        let id_at = |path: &str| tree.get_path(Path::new(path)).unwrap().id();
+        let who = Signature::now("Tester", "tester@example.com").unwrap();
+        let tag = fx
+            .repo
+            .tag("v1", commit.as_object(), &who, "tagged", false)
+            .unwrap();
+        // asked from the repository's folder, and from the project `docs`: with the id of the folder `other`, the
+        // project's `a.md` would be the file `other/docs/a.md`
+        for root in ["", "docs"] {
+            let loc = location(ops, &fx.root.join(root));
+            let at = |id: git2::Oid, path: &str| {
+                ops.blob_at(&loc, commit_id(&id.to_string()), path).unwrap()
+            };
+            let inside = crate::ops::below_prefix(root, "docs/a.md").unwrap();
+            assert_eq!(
+                at(commit.id(), inside).as_deref(),
+                Some(b"inside\n".as_slice()),
+                "{name} below {root:?}: a commit"
+            );
+            assert_eq!(
+                at(tag, inside).as_deref(),
+                Some(b"inside\n".as_slice()),
+                "{name} below {root:?}: a tag of the commit"
+            );
+            for (id, kind) in [
+                (tree.id(), "tree"),
+                (id_at("docs"), "folder"),
+                (id_at("other"), "folder beside the project"),
+                (id_at("docs/a.md"), "file"),
+            ] {
+                for path in [inside, "docs/a.md", "a.md"] {
+                    assert_eq!(
+                        at(id, path),
+                        None,
+                        "{name} below {root:?}: the id of a {kind}, {path:?}"
+                    );
+                }
+            }
+            assert_eq!(
+                ops.blob_at_head(&loc, inside).unwrap().as_deref(),
+                Some(b"inside\n".as_slice()),
+                "{name} below {root:?}: HEAD"
+            );
+        }
+        // names that read like the end of a revision (a tree made without working files: some are no file names
+        // everywhere): the path stays a path
+        let odd = ["ab:c^{d}:e.md", ":lead.md", "^{tree}", "x^{commit}:y", "}{"];
+        let mut entries = fx.repo.treebuilder(None).unwrap();
+        for file in odd {
+            let text = fx.repo.blob(file.as_bytes()).unwrap();
+            entries.insert(file, text, 0o100_644).unwrap();
+        }
+        let tree = fx.repo.find_tree(entries.write().unwrap()).unwrap();
+        let odd_commit = fx.repo.commit(None, &who, &who, "odd", &tree, &[]).unwrap();
+        let loc = location(ops, &fx.root);
+        for file in odd {
+            assert_eq!(
+                ops.blob_at(&loc, commit_id(&odd_commit.to_string()), file)
+                    .unwrap()
+                    .as_deref(),
+                Some(file.as_bytes()),
+                "{name}: {file:?}"
+            );
+            assert_eq!(
+                ops.blob_at(&loc, commit_id(&tree.id().to_string()), file)
+                    .unwrap(),
+                None,
+                "{name}: {file:?} at the id of the tree"
+            );
+        }
     });
 }
 
@@ -1141,6 +1213,97 @@ fn the_built_in_walk_hands_back_what_it_has_when_its_time_is_up() {
     }
 }
 
+/// The number a page starts after comes from the caller: any number is answered, and one past the end of the history
+/// is the end of the list.
+#[test]
+fn a_page_asked_past_the_end_of_the_history_is_empty_and_ends_the_list() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.keep_line_endings();
+        linear_history(&fx, T);
+        let loc = location(ops, &fx.root);
+        let head = whole_head(ops, &loc, "notes/linear.md");
+        assert!(head.is_some(), "{name}");
+        // the history holds 5 commits
+        for after in [
+            5,
+            6,
+            100_000,
+            usize::MAX / 2,
+            usize::MAX - 50,
+            usize::MAX - 1,
+            usize::MAX,
+        ] {
+            for limit in [0, 1, 50, usize::MAX] {
+                let started = Instant::now();
+                let past = ops
+                    .file_versions(&loc, "notes/linear.md", after, limit)
+                    .unwrap();
+                assert_eq!(
+                    (
+                        past.rows.len(),
+                        past.next,
+                        past.renamed_from,
+                        past.head_blob
+                    ),
+                    (0, None, None, head.clone()),
+                    "{name}: after {after} by {limit}"
+                );
+                assert!(
+                    started.elapsed() < Duration::from_secs(5),
+                    "{name}: after {after} by {limit}"
+                );
+            }
+        }
+    });
+}
+
+/// The walk keeps no place between calls: the commits of the pages before are walked again, and that time is part of
+/// the time a page has. A page that used its time getting to its start still looks at one commit, so it goes forward.
+#[test]
+fn the_time_of_the_built_in_walk_counts_the_commits_of_the_pages_before() {
+    const COMMITS: usize = 1500;
+    let fx = Fixture::new();
+    fx.write("a.md", "a\n");
+    let first = fx.commit_at(T, "Ann", "first");
+    // many commits that change nothing: each holds the tree of the first
+    let mut parent = fx.commit_of(&first);
+    let tree = parent.tree().unwrap();
+    for n in 1..COMMITS {
+        let who = Signature::new(
+            "Ann",
+            "author@example.com",
+            &git2::Time::new(T + i64::try_from(n).unwrap(), 0),
+        )
+        .unwrap();
+        let id = fx
+            .repo
+            .commit(None, &who, &who, "nothing", &tree, &[&parent])
+            .unwrap();
+        parent = fx.repo.find_commit(id).unwrap();
+    }
+    fx.repo
+        .reference(&fx.head_ref(), parent.id(), true, "many commits")
+        .unwrap();
+    let loc = location(&BuiltinGit, &fx.root);
+    // how long the walk over the whole history takes when no commit is looked at
+    let started = Instant::now();
+    let past = builtin::versions(&loc, "a.md", COMMITS, 50, Duration::from_secs(60)).unwrap();
+    let whole_walk = started.elapsed();
+    assert_eq!((past.rows.len(), past.next), (0, None));
+    // a page that starts near the end, with a small part of that time: the time is gone when its start is reached
+    let after = COMMITS - 300;
+    let page = builtin::versions(&loc, "a.md", after, 50, whole_walk / 8).unwrap();
+    assert_eq!(
+        (page.rows.len(), page.next),
+        (0, Some(after + 1)),
+        "the whole walk took {whole_walk:?}"
+    );
+    // with time enough it reaches the end, where the one version is
+    let last = builtin::versions(&loc, "a.md", after, 50, Duration::from_secs(60)).unwrap();
+    assert_eq!((commits(&last.rows), last.next), (vec![first], None));
+}
+
 #[test]
 fn a_file_that_was_renamed_names_the_path_it_had_before() {
     each(|name, ops| {
@@ -1192,6 +1355,86 @@ fn a_file_that_was_renamed_names_the_path_it_had_before() {
         let outside = versions(ops, &below, "new ü.md");
         assert_eq!(outside.rows, new.rows, "{name}");
         assert_eq!(outside.renamed_from, None, "{name}");
+    });
+}
+
+/// A commit on top of HEAD that moved `doc.md` to `moved.md` among `count` files deleted and as many added (no file
+/// of one set holds the text of one of the other); its id. The trees are made without working files.
+fn crowded_rename(fx: &Fixture, t: i64, count: usize) -> String {
+    let blob = |word: &str| {
+        let text = format!("{word} line\n").repeat(40);
+        fx.repo.blob(text.as_bytes()).unwrap()
+    };
+    let (doc, gone, came) = (blob("document"), blob("deleted"), blob("added"));
+    let folder = |blob: git2::Oid| {
+        let mut entries = fx.repo.treebuilder(None).unwrap();
+        for n in 0..count {
+            entries
+                .insert(format!("f{n:05}.md"), blob, 0o100_644)
+                .unwrap();
+        }
+        entries.write().unwrap()
+    };
+    let base = fx.repo.head().unwrap().peel_to_commit().unwrap();
+    let tree = |folder_name: &str, folder: git2::Oid, doc_name: &str| {
+        let mut entries = fx.repo.treebuilder(Some(&base.tree().unwrap())).unwrap();
+        entries.insert(folder_name, folder, 0o040_000).unwrap();
+        entries.insert(doc_name, doc, 0o100_644).unwrap();
+        fx.repo.find_tree(entries.write().unwrap()).unwrap()
+    };
+    let who = |seconds| {
+        Signature::new("Ann", "author@example.com", &git2::Time::new(seconds, 0)).unwrap()
+    };
+    let commit = |seconds, message: &str, tree: &git2::Tree<'_>, parent: &git2::Commit<'_>| {
+        let id = fx
+            .repo
+            .commit(
+                Some("HEAD"),
+                &who(seconds),
+                &who(seconds),
+                message,
+                tree,
+                &[parent],
+            )
+            .unwrap();
+        fx.repo.find_commit(id).unwrap()
+    };
+    let before = commit(t, "Many files", &tree("old", folder(gone), "doc.md"), &base);
+    let moved = &tree("new", folder(came), "moved.md");
+    commit(t + 10, "Move everything", moved, &before)
+        .id()
+        .to_string()
+}
+
+/// Finding the name a file had before compares every file a commit added with every file it deleted, and a
+/// repository's own `diff.renameLimit` lifts the limit of that work: a commit that changed too many paths is not
+/// searched, whatever the config says, and both backends say the same of it.
+#[test]
+fn a_commit_that_moved_thousands_of_files_is_not_searched_for_the_name_before() {
+    let fx = Fixture::new();
+    fx.keep_line_endings();
+    renamed_history(&fx, T);
+    let crowded = crowded_rename(&fx, T + 100, 3000);
+    fx.repo
+        .config()
+        .unwrap()
+        .set_str("diff.renameLimit", "1000000")
+        .unwrap();
+    each(|name, ops| {
+        let loc = location(ops, &fx.root);
+        let started = Instant::now();
+        let found = versions(ops, &loc, "moved.md");
+        let took = started.elapsed();
+        assert_eq!(commits(&found.rows), [crowded.as_str()], "{name}");
+        assert_eq!(
+            (found.renamed_from, found.next),
+            (None, None),
+            "{name}: after {took:?}"
+        );
+        assert!(took < Duration::from_secs(5), "{name}: {took:?}");
+        // a commit of a usual size is searched as before
+        let moved = versions(ops, &loc, "docs/y.md");
+        assert_eq!(moved.renamed_from.as_deref(), Some("docs/x.md"), "{name}");
     });
 }
 
@@ -1417,6 +1660,48 @@ fn the_settings_of_a_repository_do_not_change_the_list() {
         assert_eq!(commits(&before[1].rows), history.new, "{name}");
         assert_eq!(before[1].rows[0].author, "Ann Ü", "{name}");
         assert_eq!(before[1].rows[0].blob.len(), 40, "{name}");
+    });
+}
+
+/// A replace ref makes the installed git read another object in place of one; the built-in git does not know them.
+/// A repository that holds one is read as it was committed, by both backends.
+#[test]
+fn a_replaced_commit_is_read_as_it_was_committed() {
+    each(|name, ops| {
+        let fx = Fixture::new();
+        fx.keep_line_endings();
+        let [third, second, first] = linear_history(&fx, T);
+        let loc = location(ops, &fx.root);
+        let before = versions(ops, &loc, "notes/linear.md");
+        // the newest commit replaced by the first: a git that follows the ref sees a history of one commit
+        fx.repo
+            .reference(
+                &format!("refs/replace/{third}"),
+                git2::Oid::from_str(&first).unwrap(),
+                true,
+                "replace",
+            )
+            .unwrap();
+        assert_eq!(versions(ops, &loc, "notes/linear.md"), before, "{name}");
+        assert_eq!(
+            commits(&before.rows),
+            [third.clone(), second, first],
+            "{name}"
+        );
+        assert_eq!(
+            ops.blob_at(&loc, commit_id(&third), "notes/linear.md")
+                .unwrap()
+                .as_deref(),
+            Some(b"three, the longest\n".as_slice()),
+            "{name}"
+        );
+        assert_eq!(
+            ops.blob_at_head(&loc, "notes/linear.md")
+                .unwrap()
+                .as_deref(),
+            Some(b"three, the longest\n".as_slice()),
+            "{name}"
+        );
     });
 }
 
@@ -1699,6 +1984,8 @@ fn a_file_that_was_not_downloaded_is_a_miss_and_nothing_is_fetched() {
         .set_bool("uploadpack.allowFilter", true)
         .unwrap();
     fx.write("a.md", "kept at the source\n");
+    let text = "a text long enough to be found again under another name\nsecond line\nthird line\n";
+    fx.write("old.md", text);
     let first = commit_id(&fx.commit("first"));
     let blob = fx
         .repo
@@ -1709,6 +1996,15 @@ fn a_file_that_was_not_downloaded_is_a_miss_and_nothing_is_fetched() {
         .get_name("a.md")
         .unwrap()
         .id();
+    // a file renamed and changed by one commit: telling the name it had before takes the text of both
+    fx.remove("old.md");
+    fx.write("new.md", &format!("{text}fourth line\n"));
+    let second = fx.commit("second");
+    let texts = [
+        blob,
+        git2::Oid::from_str(&fx.blob_id(&first.to_string(), "old.md")).unwrap(),
+        git2::Oid::from_str(&fx.blob_id(&second, "new.md")).unwrap(),
+    ];
     let copy = fx.root.with_file_name("partial ü");
     let url = file_url(&fx.root);
     // a plain git call makes the copy: the plugin's own runner allows no transport at all
@@ -1738,13 +2034,25 @@ fn a_file_that_was_not_downloaded_is_a_miss_and_nothing_is_fetched() {
         .unwrap()
         .set_str("protocol.file.allow", "always")
         .unwrap();
-    let downloaded = || Repository::open(&copy).unwrap().odb().unwrap().exists(blob);
-    assert!(!downloaded(), "the copy came with the file");
+    let downloaded = || {
+        let copied = Repository::open(&copy).unwrap();
+        let objects = copied.odb().unwrap();
+        texts.iter().any(|text| objects.exists(*text))
+    };
+    assert!(!downloaded(), "the copy came with the files");
     each(|name, ops| {
         let loc = location(ops, &copy);
         assert_eq!(ops.blob_at(&loc, first, "a.md").unwrap(), None, "{name}");
         assert_eq!(ops.blob_at_head(&loc, "a.md").unwrap(), None, "{name}");
         assert!(!downloaded(), "{name}: the file was fetched");
+        // the versions are listed from the commits, which the copy holds; the name before is not told
+        let kept = versions(ops, &loc, "a.md");
+        assert_eq!(commits(&kept.rows), [first.to_string()], "{name}");
+        assert_eq!(kept.head_blob, Some(blob.to_string()), "{name}");
+        let renamed = versions(ops, &loc, "new.md");
+        assert_eq!(commits(&renamed.rows), [second.as_str()], "{name}");
+        assert_eq!((renamed.renamed_from, renamed.next), (None, None), "{name}");
+        assert!(!downloaded(), "{name}: a file was fetched for the list");
     });
 }
 

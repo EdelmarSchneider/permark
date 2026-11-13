@@ -13,7 +13,8 @@ use permark_core::plugins::{CommitId, FileVersions};
 
 use crate::ops::{
     below_prefix, finish, is_version, prefix_of, regular, repo_path, shallow, too_broad, version,
-    Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_VERSIONS,
+    Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_RENAME_PATHS,
+    MAX_VERSIONS,
 };
 use crate::types::{BackendKind, HeadInfo, Letter};
 
@@ -212,17 +213,18 @@ fn commit_status(repo: &Repository, prefix: &str, oid: &str) -> Result<Vec<RawFi
     Ok(files)
 }
 
-/// The tree a file is read from: HEAD's (`None`), or the one the object `at` leads to (a commit's; like git reading
-/// `<id>:<path>`, a tag is followed and a tree is itself).
+/// The tree a file is read from: HEAD's (`None`), or the one of the commit the object `at` leads to (like git reading
+/// `<id>^{commit}:<path>`, a tag is followed). A tree is not read as itself: its id would name any folder of the
+/// repository, also one outside the project folder.
 fn tree_at(repo: &Repository, at: Option<Oid>) -> Result<Tree<'_>, git2::Error> {
     match at {
         None => repo.head()?.peel_to_tree(),
-        Some(oid) => repo.find_object(oid, None)?.peel_to_tree(),
+        Some(oid) => repo.find_object(oid, None)?.peel_to_commit()?.tree(),
     }
 }
 
-/// The read found nothing to read (no commit yet, no such object | path, an object that leads to no tree): the file
-/// is not there, which is no failure.
+/// The read found nothing to read (no commit yet, no such object | path, an object that leads to no commit): the
+/// file is not there, which is no failure.
 fn absent(error: &git2::Error) -> bool {
     matches!(
         error.code(),
@@ -264,7 +266,9 @@ fn held(tree: &Tree<'_>, path: &Path) -> Result<Option<(u32, Oid)>, git2::Error>
     }
 }
 
-/// The path the file at `path` had in `parent` when `commit` renamed it; `None`: no rename found | the look failed.
+/// The path the file at `path` had in `parent` when `commit` renamed it; `None`: no rename found | the look failed |
+/// the commit changed more than [`MAX_RENAME_PATHS`] paths (the search compares every file that came with every
+/// file that went, and nothing can stop it once it runs).
 fn renamed_in(
     repo: &Repository,
     parent: &Commit<'_>,
@@ -275,8 +279,13 @@ fn renamed_in(
     let mut diff = repo
         .diff_tree_to_tree(Some(&before), Some(&now), None)
         .ok()?;
-    diff.find_similar(Some(DiffFindOptions::new().renames(true)))
-        .ok()?;
+    if diff.deltas().len() > MAX_RENAME_PATHS {
+        return None;
+    }
+    // the limit is given: left out, libgit2 takes `diff.renameLimit` of the repository's config
+    let mut search = DiffFindOptions::new();
+    search.renames(true).rename_limit(MAX_RENAME_PATHS);
+    diff.find_similar(Some(&mut search)).ok()?;
     let renamed = diff.deltas().find(|delta| {
         delta.status() == Delta::Renamed && delta.new_file().path_bytes() == Some(path.as_bytes())
     })?;
@@ -287,7 +296,9 @@ fn renamed_in(
 
 /// One page of the versions of the file `path` ([`GitOps::file_versions`]): the commits of HEAD's history by commit
 /// time, the first `after` skipped (no tree is read for them), until the page is full and the next change is seen,
-/// or `budget` is used up. `next` = commits walked: a page out of time still walked at least one.
+/// or `budget` is used up. `next` = commits walked. The walk keeps no place between calls, so the skipped commits
+/// are walked again and their time is part of `budget`; a page out of time still looked at one commit after them
+/// (`next` goes forward), and an `after` past the end of the history is the end of the list.
 pub(crate) fn versions(
     location: &RepoLocation,
     path: &str,
@@ -312,15 +323,18 @@ pub(crate) fn versions(
     let mut walk = repo.revwalk()?;
     walk.set_sorting(Sort::TIME)?;
     walk.push_head()?;
-    let mut walked = after;
+    let mut walked = 0_usize;
     let mut changes = 0;
     // the commit of the oldest row and its parent, when that parent holds nothing at the path
     let mut came = None;
-    let mut started = None;
-    for oid in walk.skip(after) {
+    // the time runs from the first commit walked: `after` is the caller's number, and getting there is work too
+    let started = Instant::now();
+    for oid in walk {
+        if walked < after {
+            walked += 1;
+            continue;
+        }
         let commit = repo.find_commit(oid?)?;
-        // the time runs from the first commit looked at: the skipped ones cost no tree
-        let started = *started.get_or_insert_with(Instant::now);
         if commit.parent_count() <= 1 {
             let parent = match commit.parent_count() {
                 0 => None,

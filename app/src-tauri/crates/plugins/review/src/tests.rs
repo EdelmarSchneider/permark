@@ -492,6 +492,41 @@ fn hostile_calls_are_refused() {
             "{path}: {error}"
         );
     }
+    // a file that is there, committed and readable, asked for by a path the open folder does not allow (out of the
+    // folder and back in, or the whole path): the list and a version as the basis are refused like every other call
+    let mut g = Harness::new(true);
+    let repo = init_repo(&g);
+    let (first, last) = three_versions(&g, &repo, "v.md");
+    g.open();
+    wait_git(&g);
+    let folder = g.root();
+    let name = folder.file_name().unwrap().to_string_lossy().into_owned();
+    let whole = folder.join("v.md").to_string_lossy().into_owned();
+    let seen = g.hash("v.md");
+    for path in [
+        format!("../{name}/v.md"),
+        format!("sub/../../{name}/v.md"),
+        "../v.md".to_owned(),
+        whole.clone(),
+        whole.replace('\\', "/"),
+    ] {
+        let version = json!({"path": path, "hash": seen, "index": 0, "basis": {"version": first}});
+        for (method, args) in [
+            ("versions", json!({"path": path})),
+            ("versions", json!({"path": path, "after": 1})),
+            ("status", version.clone()),
+            ("open", version.clone()),
+            ("revert", version.clone()),
+            ("revertAll", version.clone()),
+        ] {
+            let error = g.review(method, args).unwrap_err();
+            assert!(
+                matches!(error.kind, ErrorKind::PathEscape | ErrorKind::InvalidPath),
+                "{method} {path}: {error}"
+            );
+        }
+    }
+    assert_eq!(g.read("v.md"), last.as_bytes(), "nothing was written");
     // a full id where there is no repository to ask: nothing to compare with
     for method in ["revert", "revertAll", "open"] {
         let error = h.review(method, version(&"a".repeat(40))).unwrap_err();
@@ -1074,6 +1109,75 @@ fn only_a_version_tells_that_text_in_no_commit_would_be_replaced() {
         (view["count"].as_u64(), &view["uncommitted"]),
         (Some(1), &json!(true))
     );
+}
+
+/// The old text of every change a view draws, in order.
+fn old_text(view: &Value) -> String {
+    view["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|change| change["ghosts"].as_array().unwrap().iter())
+        .map(|ghost| ghost["html"].as_str().unwrap_or(""))
+        .collect()
+}
+
+#[test]
+fn bringing_back_a_version_does_not_forget_what_was_last_read() {
+    let mut h = Harness::new(true);
+    let repo = init_repo(&h);
+    let (first, last) = three_versions(&h, &repo, "r.md");
+    h.open();
+    h.ready("r.md");
+    wait_git(&h);
+    // an agent changes the document and the person reads it: the review keeps the text read before
+    let agents = last.replace("Second", "2nd");
+    agent_writes(&h, "r.md", &agents);
+    wait_until("the change", || h.state("r.md")["state"] == "changes");
+    h.call(
+        "unread",
+        "markRead",
+        json!({"path": "r.md", "hash": h.hash("r.md")}),
+    )
+    .unwrap();
+    let read = |h: &Harness| h.review("open", json!({"path": "r.md", "basis": "read"}));
+    let before = read(&h).unwrap();
+    assert_eq!(before["count"], 1);
+    assert!(old_text(&before).contains("Second paragraph."), "{before}");
+    // the person looks at the first version and brings it back
+    let version = json!({"version": first});
+    let view = h
+        .review("open", json!({"path": "r.md", "basis": version}))
+        .unwrap();
+    let done = h
+        .review(
+            "revertAll",
+            json!({"path": "r.md", "hash": view["hash"], "basis": version}),
+        )
+        .unwrap();
+    assert_eq!(done["count"], 0);
+    assert_eq!(h.read("r.md"), BASE_DOC.as_bytes());
+    // what was last read is still the text from before the agent's change: against it, the version differs in the
+    // two paragraphs the commits after it changed, and the agent's paragraph is the one read
+    // (asked at once, and again when the watch has reported the write)
+    for (moment, wait) in [("at once", 0), ("after the watch", 500)] {
+        std::thread::sleep(Duration::from_millis(wait));
+        let status = h
+            .review("status", json!({"path": "r.md", "basis": "read"}))
+            .unwrap();
+        assert_eq!(
+            status,
+            json!({"state": {"state": "changes", "count": 2}, "basis": "read"}),
+            "{moment}"
+        );
+        let after = read(&h).unwrap();
+        let old = old_text(&after);
+        assert!(
+            old.contains("1st paragraph.") && old.contains("3rd paragraph."),
+            "{moment}: {after}"
+        );
+        assert!(!old.contains("2nd paragraph."), "{moment}: {after}");
+    }
 }
 
 #[test]

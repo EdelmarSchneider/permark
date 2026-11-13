@@ -13,7 +13,7 @@ use permark_core::plugins::{CommitId, FileVersions};
 
 use crate::ops::{
     below_prefix, finish, pathspec, prefix_of, repo_path, shallow, too_broad, Baseline, Discovery,
-    GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_VERSIONS,
+    GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_RENAME_PATHS, MAX_VERSIONS,
 };
 use crate::porcelain::{
     parse_name_status, parse_status, parse_tree_file, parse_untracked, parse_versions_log, Entry,
@@ -28,18 +28,23 @@ const MAX_OUTPUT: usize = 64 * 1024 * 1024;
 /// Most bytes of a committed file.
 const MAX_BLOB: usize = 8 * 1024 * 1024;
 const MAX_STDERR: usize = 64 * 1024;
+/// The largest number of commits `git log --skip` takes.
+const MAX_SKIP: usize = 0x7fff_ffff;
 
 /// Variables every call sets: no optional locks (a status never blocks the person's git), plain messages, no prompt,
 /// and no fetch of an object a partial copy of a repository left out (a fetch goes where the repository's config
 /// says, which may be a program). Two locks, because PerMark only reads what is on this computer:
 /// `GIT_NO_LAZY_FETCH` switches the fetch off (git 2.45+ reads it), and `GIT_ALLOW_PROTOCOL` is the list of
 /// transports git may use, which overrides every `protocol.*.allow` of the config: `:` names none.
-const SET: [(&str, &str); 5] = [
+/// `GIT_NO_REPLACE_OBJECTS`: a replace ref (`refs/replace/<id>`) makes git read another object in place of one, and
+/// the built-in backend does not know them; every object is read as it is, so both backends tell the same history.
+const SET: [(&str, &str); 6] = [
     ("GIT_OPTIONAL_LOCKS", "0"),
     ("LC_ALL", "C"),
     ("GIT_TERMINAL_PROMPT", "0"),
     ("GIT_NO_LAZY_FETCH", "1"),
     ("GIT_ALLOW_PROTOCOL", ":"),
+    ("GIT_NO_REPLACE_OBJECTS", "1"),
 ];
 
 /// Options before every command: no pager, no filesystem monitor (both are programs the config names).
@@ -73,13 +78,13 @@ const VERSIONS_LOG: [&str; 20] = [
     LOG_FORMAT,
 ];
 
-/// The `diff-tree` that names the renames one commit made (its id follows). Names only, and no external diff | text
-/// conversion: no program of the config runs.
-const RENAMES_OF: [&str; 9] = [
+/// The `diff-tree` that names the paths one commit changed, a rename as one change (the limit of the search for
+/// renames and the commit's id follow). Names only, and no external diff | text conversion: no program of the config
+/// runs.
+const RENAMES_OF: [&str; 8] = [
     "diff-tree",
     "-r",
     "-M",
-    "--diff-filter=R",
     "--name-status",
     "-z",
     "--no-commit-id",
@@ -395,10 +400,11 @@ impl SystemGit {
     }
 
     /// The file `path` (relative to the project folder) in the tree of `revision`, as stored (`cat-file`: no filter,
-    /// no line-ending conversion). `revision` is `HEAD` | the digits of a [`CommitId`], never a caller's text: it
-    /// cannot start an option, and git splits `<revision>:<path>` at the first colon, so the path stays a path
-    /// whatever it holds (it is looked up in the tree: no glob, no pathspec magic). `None`: git answered with a
-    /// non-zero code (no such revision | file, a folder, an object that is not on this computer).
+    /// no line-ending conversion). `revision` is `HEAD` | the digits of a [`CommitId`] + `^{commit}`, never a
+    /// caller's text: it cannot start an option, and git splits `<revision>:<path>` at the first colon outside
+    /// braces, so the path stays a path whatever it holds (it is looked up in the tree: no glob, no pathspec magic).
+    /// `None`: git answered with a non-zero code (no such revision | file, a folder, an id that leads to no commit,
+    /// an object that is not on this computer).
     fn blob(
         &self,
         location: &RepoLocation,
@@ -426,13 +432,24 @@ impl SystemGit {
     }
 
     /// The path (relative to the working tree) the file at `path` had before `commit` renamed it; `None`: that
-    /// commit renamed nothing to it | git failed.
+    /// commit renamed nothing to it | git failed | the commit changed more than [`MAX_RENAME_PATHS`] paths (the
+    /// rule of the built-in backend, so both say the same of a commit).
     fn renamed_in(&self, dir: &Path, commit: CommitId, path: &str) -> Option<String> {
+        // the limit as an option: `diff.renameLimit` of the repository's config does not count
+        let limit = format!("-l{MAX_RENAME_PATHS}");
         let mut args = RENAMES_OF.to_vec();
-        args.push(commit.as_str());
+        args.extend([limit.as_str(), commit.as_str()]);
         let out = self.call_ok(dir, &args).ok()?;
-        parse_name_status(&out.stdout)
-            .ok()?
+        let changes = parse_name_status(&out.stdout).ok()?;
+        // a rename is two paths, the one that went and the one that came
+        let renames = changes
+            .iter()
+            .filter(|entry| entry.letter == Letter::Renamed)
+            .count();
+        if changes.len() + renames > MAX_RENAME_PATHS {
+            return None;
+        }
+        changes
             .into_iter()
             .find(|entry| entry.letter == Letter::Renamed && entry.path == path)?
             .from
@@ -665,7 +682,9 @@ impl GitOps for SystemGit {
         commit: CommitId,
         path: &str,
     ) -> Result<Option<Vec<u8>>, GitError> {
-        self.blob(location, commit.as_str(), path)
+        // `^{commit}`: git reads `<tree id>:<path>` too, and a tree is any folder of the repository (also one
+        // outside the project folder); only an id that leads to a commit is read from
+        self.blob(location, &format!("{}^{{commit}}", commit.as_str()), path)
     }
 
     fn file_versions(
@@ -687,7 +706,9 @@ impl GitOps for SystemGit {
         // after `--`, as a literal: the path is no option, no pattern, no pathspec magic
         let spec = format!(":(literal){full}");
         let limit = limit.clamp(1, MAX_VERSIONS);
-        let skip = format!("--skip={after}");
+        // git reads the number as an `int` and refuses a larger one: no history holds that many commits, so the
+        // largest it takes is past the end all the same
+        let skip = format!("--skip={}", after.min(MAX_SKIP));
         // one change more than the page holds: whether the history goes on is known without another call
         let count = (limit + 1).to_string();
         let mut args = VERSIONS_LOG.to_vec();

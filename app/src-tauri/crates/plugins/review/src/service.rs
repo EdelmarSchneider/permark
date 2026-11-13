@@ -906,10 +906,11 @@ impl Shared {
         self.view(path, asked)
     }
 
-    /// The review after a change: over when nothing differs any more.
+    /// The review after a change: over when nothing differs any more. A look at an earlier version ends no review:
+    /// the text held is what was last read, and the file being that version says nothing about it.
     fn finish(&self, path: &str, asked: Basis) -> Result<ReviewView, IpcError> {
         let view = self.view(path, asked)?;
-        if view.count == 0 {
+        if view.count == 0 && !matches!(asked, Basis::Version(_)) {
             self.set_held(path, None);
         }
         Ok(view)

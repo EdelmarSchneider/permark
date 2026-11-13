@@ -15,6 +15,10 @@ use crate::worktrees::{common_dir, in_nested_repository};
 pub const MAX_FILES: usize = 5000;
 /// Most changes of a file one page of its versions reads.
 pub const MAX_VERSIONS: usize = 500;
+/// Most paths a commit may have changed for the name a file had before to be looked for in it. Finding a rename
+/// compares every file the commit added with every file it deleted: a commit that changed more is not searched, and
+/// each backend passes this number as the limit of that search (not the `diff.renameLimit` of the repository).
+pub const MAX_RENAME_PATHS: usize = 1000;
 /// Most co-authors kept of a commit message.
 pub const MAX_CO_AUTHORS: usize = 16;
 
@@ -103,7 +107,8 @@ pub trait GitOps: Send + Sync {
     ) -> Result<Option<Vec<u8>>, GitError>;
     /// The file `path` (relative to the project folder) as committed at `commit`, raw (no filter, no line-ending
     /// conversion); `None`: not there (no such commit, no such file, or the object is not on this computer: nothing
-    /// is fetched). An id that is no commit is read as git reads `<id>:<path>` (through its tree, if it leads to one).
+    /// is fetched). Only an id that leads to a commit is read from (a tag of one is followed): the id of a tree names
+    /// any folder of the repository, also one outside the project folder, so it reads as not there.
     ///
     /// # Errors
     /// Git failed, timed out or the file is too large.
@@ -116,7 +121,8 @@ pub trait GitOps: Send + Sync {
     /// One page of the versions of the file `path` (relative to the project folder), newest first by commit time.
     /// Every commit reachable from HEAD is looked at (merged branches included); a version is a commit with at most
     /// one parent that holds a file at the path whose content its parent does not hold there ([`is_version`]).
-    /// Renames are not followed. `after`: 0 | the `next` of the page before. `limit` (held in 1..=[`MAX_VERSIONS`]):
+    /// Renames are not followed. `after`: 0 | the `next` of the page before (any other number is answered too: one
+    /// past the end of the history is the end of the list). `limit` (held in 1..=[`MAX_VERSIONS`]):
     /// most changes of the path read; a commit that only deleted the file | changed its mode is such a change and no
     /// row, so a page may hold fewer rows. No commit yet | a path that was never committed: an empty page at its end.
     ///
