@@ -12,6 +12,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - A built-in **Spaces** group with the no-break space, the narrow no-break space, the thin space, the figure space and the word joiner, each shown with a visible label. <!-- f: editing -->
 
 ### Changed
+- An AI agent now reads a project only while PerMark has it open. With PerMark closed, every tool of `permark mcp` says so, and `open` starts PerMark on the project, so you always see when an agent is connected. Before, the tools went on answering from the files with PerMark closed. <!-- f: agent -->
 - Links whose target is missing are underlined only while the **Broken links** plugin is on, in View and in Edit. Turn the plugin off and the marks go away at once; a click on such a link still tells you the file is not there. <!-- f: links, broken-links -->
 
 ### Fixed
