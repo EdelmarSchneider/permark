@@ -4,4 +4,4 @@ import type { By } from "./By";
 /**
  * An answer under a comment, for the window.
  */
-export type ReplyView = { atMs: number, by: By, text: string, };
+export type ReplyView = { atMs: number, by: By, text: string, editedMs: number | null, };

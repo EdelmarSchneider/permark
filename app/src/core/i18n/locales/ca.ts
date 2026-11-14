@@ -1217,6 +1217,8 @@ export default {
   "comments.sent": "S'han copiat els vostres comentaris per a l'agent: enganxeu-los al seu xat.",
   "comments.line": "línia {line}",
   "comments.reply": "Respon",
+  "comments.edit": "Edita",
+  "comments.edited": "editat",
   "comments.state.passageChanged": "Fragment canviat",
   "comments.state.passageChangedHint":
     "Aquest text ja no és al document. El comentari apunta al lloc més proper.",

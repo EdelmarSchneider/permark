@@ -583,6 +583,8 @@ export interface PluginMethods {
   "comments.setDone": { args: { id: string; done: boolean }; result: null };
   "comments.remove": { args: { id: string }; result: null };
   "comments.reply": { args: { id: string; text: string }; result: null };
+  /** `reply`: the index of the person's reply to change; absent: the comment's own text. */
+  "comments.edit": { args: { id: string; reply?: number | null; text: string }; result: null };
   "quiet.rules": { args: Record<string, never>; result: QuietMarks };
   "quiet.set": { args: { paths: string[]; interest: Interest }; result: QuietMarks };
   "broken-links.list": { args: Record<string, never>; result: BrokenReport };

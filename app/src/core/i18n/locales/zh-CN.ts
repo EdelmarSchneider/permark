@@ -1156,6 +1156,8 @@ export default {
   "comments.sent": "已复制你要发给智能体的批注——粘贴到它的聊天中即可。",
   "comments.line": "第 {line} 行",
   "comments.reply": "回复",
+  "comments.edit": "编辑",
+  "comments.edited": "已编辑",
   "comments.state.passageChanged": "文字已更改",
   "comments.state.passageChangedHint": "这段文字已不在文档中。批注指向最接近的位置。",
   "comments.state.documentGone": "文档已丢失",

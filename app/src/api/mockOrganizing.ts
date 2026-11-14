@@ -35,6 +35,7 @@ type Handlers = Pick<
   | "comments.setDone"
   | "comments.remove"
   | "comments.reply"
+  | "comments.edit"
   | "quiet.rules"
   | "quiet.set"
   | "broken-links.list"
@@ -52,7 +53,8 @@ export class MockPluginError extends Error {
       | "invalidName"
       | "intoItself"
       | "conflict"
-      | "unsupported",
+      | "unsupported"
+      | "tooLarge",
     readonly subject: string | null = null,
     readonly detail: string | null = null,
   ) {
@@ -184,8 +186,9 @@ export function createMockOrganizing(
     line: number;
     endLine: number;
     createdMs: number;
+    editedMs: number | null;
     doneMs: number | null;
-    replies: { atMs: number; by: "user" | "agent"; text: string }[];
+    replies: { atMs: number; by: "user" | "agent"; text: string; editedMs: number | null }[];
   };
   const stored: Stored[] = [];
   let next = 1;
@@ -210,6 +213,7 @@ export function createMockOrganizing(
       line: at >= 0 ? at + 1 : c.line,
       endLine: at >= 0 ? at + 1 : c.endLine,
       createdMs: c.createdMs,
+      editedMs: c.editedMs,
       state,
       done: c.doneMs !== null,
       doneMs: c.doneMs,
@@ -409,6 +413,7 @@ export function createMockOrganizing(
         line: Math.max(1, line),
         endLine: Math.max(1, endLine),
         createdMs: Date.now(),
+        editedMs: null,
         doneMs: null,
         replies: [],
       };
@@ -433,7 +438,25 @@ export function createMockOrganizing(
     "comments.reply": ({ id, text }) => {
       const c = stored.find((s) => s.id === id);
       if (!c) throw new MockPluginError("notFound", id);
-      c.replies.push({ atMs: Date.now(), by: "user", text: text.trim() });
+      c.replies.push({ atMs: Date.now(), by: "user", text: text.trim(), editedMs: null });
+      emit("comments:changed", null);
+      return null;
+    },
+    // as the backend: the person's own comment | reply only; empty or over the limit is refused, the same text is
+    // no change
+    "comments.edit": ({ id, reply, text }) => {
+      const c = stored.find((s) => s.id === id);
+      if (!c) throw new MockPluginError("notFound", id);
+      const item = reply === undefined || reply === null ? c : c.replies[reply];
+      if (!item) throw new MockPluginError("notFound", `${id}/${reply}`);
+      if ("by" in item && item.by !== "user") throw new MockPluginError("denied", "reply");
+      const kept = text.trim();
+      if (kept === "") throw new MockPluginError("invalidData", "text");
+      if ([...kept].length > (item === c ? 2000 : 1000))
+        throw new MockPluginError("tooLarge", "text");
+      if (item.text === kept) return null;
+      item.text = kept;
+      item.editedMs = Date.now();
       emit("comments:changed", null);
       return null;
     },

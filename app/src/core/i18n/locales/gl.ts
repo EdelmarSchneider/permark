@@ -1209,6 +1209,8 @@ export default {
   "comments.sent": "Copiáronse os seus comentarios para o axente: pégueos no seu chat.",
   "comments.line": "liña {line}",
   "comments.reply": "Responder",
+  "comments.edit": "Editar",
+  "comments.edited": "editado",
   "comments.state.passageChanged": "Pasaxe cambiada",
   "comments.state.passageChangedHint":
     "Este texto xa non está no documento. O comentario apunta ao lugar máis próximo.",

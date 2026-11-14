@@ -14,6 +14,7 @@ function comment(id: string, line: number, endLine = line): CommentView {
     line,
     endLine,
     createdMs: 1,
+    editedMs: null,
     state: "anchored",
     done: false,
     doneMs: null,

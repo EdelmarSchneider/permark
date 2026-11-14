@@ -1271,6 +1271,8 @@ export default {
   "comments.sent": "Comentariile tale au fost copiate pentru agent — lipește-le în chatul lui.",
   "comments.line": "rândul {line}",
   "comments.reply": "Răspuns",
+  "comments.edit": "Editează",
+  "comments.edited": "editat",
   "comments.state.passageChanged": "Pasaj modificat",
   "comments.state.passageChangedHint":
     "Acest text nu mai este în document. Comentariul indică locul cel mai apropiat.",

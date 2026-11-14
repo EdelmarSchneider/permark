@@ -1183,6 +1183,8 @@ const en = {
   "comments.sent": "Copied your comments for your agent — paste them into its chat.",
   "comments.line": "line {line}",
   "comments.reply": "Reply",
+  "comments.edit": "Edit",
+  "comments.edited": "edited",
   "comments.state.passageChanged": "Passage changed",
   "comments.state.passageChangedHint":
     "This text is no longer in the document. The comment points to the nearest place.",

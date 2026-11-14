@@ -143,6 +143,7 @@ fn comment(
         line,
         state: "anchored",
         created_ms: 1_760_000_000_000,
+        edited: false,
         done: false,
         reply: None,
     }

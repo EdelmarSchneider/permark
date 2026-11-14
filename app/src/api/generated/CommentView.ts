@@ -10,7 +10,7 @@ export type CommentView = { id: string, path: string, text: string, quote: strin
 /**
  * From 1: where the passage is now (or the best guess, see [`PassageState`]).
  */
-line: number, endLine: number, createdMs: number, state: PassageState, done: boolean, doneMs: number | null, doneBy: By | null, 
+line: number, endLine: number, createdMs: number, editedMs: number | null, state: PassageState, done: boolean, doneMs: number | null, doneBy: By | null, 
 /**
  * What the one who marked it done answered.
  */

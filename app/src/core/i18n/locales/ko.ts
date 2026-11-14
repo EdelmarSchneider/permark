@@ -1184,6 +1184,8 @@ export default {
   "comments.sent": "에이전트에게 보낼 댓글을 복사했습니다. 에이전트 채팅에 붙여 넣으세요.",
   "comments.line": "줄 {line}",
   "comments.reply": "답글",
+  "comments.edit": "편집",
+  "comments.edited": "편집됨",
   "comments.state.passageChanged": "내용 변경됨",
   "comments.state.passageChangedHint":
     "이 텍스트는 더 이상 문서에 없습니다. 댓글은 가장 가까운 위치를 가리킵니다.",

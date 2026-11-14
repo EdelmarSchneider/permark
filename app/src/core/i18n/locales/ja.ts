@@ -1217,6 +1217,8 @@ export default {
     "エージェント用にコメントをコピーしました。エージェントのチャットに貼り付けてください。",
   "comments.line": "{line} 行目",
   "comments.reply": "返信",
+  "comments.edit": "編集",
+  "comments.edited": "編集済み",
   "comments.state.passageChanged": "箇所が変更されました",
   "comments.state.passageChangedHint":
     "このテキストはもうドキュメント内にありません。コメントは最も近い場所を指しています。",

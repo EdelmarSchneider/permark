@@ -121,6 +121,7 @@ fn comment(id: &str, path: &str, quote: &str) -> CommentItem {
         line: 3,
         state: "anchored",
         created_ms: 0,
+        edited: false,
         done: false,
         reply: None,
     }
@@ -955,6 +956,29 @@ fn comments_are_listed_and_resolved_with_a_reply() {
         tools.call("list_comments", json!({ "which": "some" })),
         Err(ToolError::Invalid(_))
     ));
+}
+
+#[test]
+fn an_edited_comment_carries_a_flag() {
+    let fx = fx();
+    fx.on();
+    fx.comments.0.lock().unwrap().push(CommentItem {
+        edited: true,
+        done: true,
+        ..comment("c3", "README.md", "fixed words")
+    });
+    let tools = fx.tools();
+    let list = tools
+        .call("list_comments", json!({ "which": "all" }))
+        .unwrap();
+    let items = list["comments"].as_array().unwrap();
+    let by_id = |id: &str| items.iter().find(|c| c["id"] == id).unwrap();
+    assert!(by_id("c1").get("edited").is_none(), "only when edited");
+    assert_eq!(by_id("c3")["edited"], true);
+    let (text, _) = mcp_answer("list_comments", &list, false);
+    let row = |id: &str| text.lines().find(|l| l.starts_with(id)).unwrap().to_owned();
+    assert!(row("c3").contains("anchored+done+edited"), "{text}");
+    assert!(!row("c1").contains("+edited"), "{text}");
 }
 
 #[test]
