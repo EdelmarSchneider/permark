@@ -109,7 +109,6 @@ afterEach(() => {
   cleanups = [];
   mock.probe.plugins.organizing.reset();
   ui.closeSettingsPage();
-  ui.showSidebar("files");
   documents.setWorkspace(null);
   vi.restoreAllMocks();
 });

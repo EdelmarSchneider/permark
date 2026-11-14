@@ -20,11 +20,13 @@ import { closeOwnTab } from "../shell/closeWorkspace";
 import { projects } from "../projects/instance.svelte";
 import { askInitHere } from "../shell/initProject";
 import { rightAvailable } from "../shell/layout";
-import { defaultArrangement, withRegion } from "../shell/arrangement";
+import { defaultArrangement, FILES, SEARCH, withRegion } from "../shell/arrangement";
 import { arrangement } from "../shell/arrangement.svelte";
 import {
   documentPane,
+  hasSidebar,
   rightSide,
+  showView,
   toggleOutlinePanel,
   toggleRightPanel,
   toggleSidebar,
@@ -45,8 +47,6 @@ const PROJECT = workspace("project");
 const DOCUMENTS = workspace("project", "singleFile");
 /** What shows a document: a project, a single file, the Notes. */
 const READING = workspace("project", "singleFile", "notes");
-/** What has a sidebar: a project, the Notes. */
-const SIDEBAR = workspace("project", "notes");
 
 type Spec = {
   id: string;
@@ -168,7 +168,7 @@ const SPECS: readonly Spec[] = [
     label: "cmd.searchAll",
     keys: ["Mod+Shift+f"],
     requires: PROJECT,
-    run: () => ui.showSidebar("search"),
+    run: () => showView(SEARCH),
   },
   {
     id: "palette.open",
@@ -182,13 +182,15 @@ const SPECS: readonly Spec[] = [
     label: "cmd.explorer",
     keys: ["Mod+Shift+x"],
     requires: PROJECT,
-    run: () => ui.showSidebar("files"),
+    run: () => showView(FILES),
   },
   {
     id: "sidebar.toggle",
     label: "cmd.toggleSidebar",
     keys: ["Mod+b"],
-    requires: SIDEBAR,
+    requires: READING,
+    // where the window has something at the left: a project's views, the Notes' list, a view the person put there
+    when: () => hasSidebar(store.view),
     run: () => toggleSidebar(),
   },
   {
@@ -215,7 +217,7 @@ const SPECS: readonly Spec[] = [
     keys: ["Mod+n"],
     requires: PROJECT,
     run: () => {
-      ui.showSidebar("files");
+      showView(FILES);
       newInTree("file");
     },
   },
@@ -373,7 +375,7 @@ const SPECS: readonly Spec[] = [
     requires: PROJECT,
     when: hasDocument,
     run: () => {
-      ui.showSidebar("files");
+      showView(FILES);
       revealInTree(null);
     },
   },

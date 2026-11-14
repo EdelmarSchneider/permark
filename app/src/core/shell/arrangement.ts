@@ -444,11 +444,16 @@ export function fitSizes(total: number, shares: readonly number[], min: number):
 /**
  * The drawn groups do not fit `size` px along the stack, each at `MIN_GROUP_PX`: the region draws them as one tab
  * group (the arrangement stays as saved). The dividers take their room; so do the tab strips of a stack that runs
- * down. A size not measured yet (0) folds nothing.
+ * down (`strip`: the group draws one; by default a group of several views). A size not measured yet (0) folds nothing.
  */
-export function tooShort(size: number, groups: readonly DrawnGroup[], axis: Axis): boolean {
+export function tooShort(
+  size: number,
+  groups: readonly DrawnGroup[],
+  axis: Axis,
+  strip: (group: DrawnGroup) => boolean = (group) => group.views.length > 1,
+): boolean {
   if (groups.length < 2 || !(size > 0)) return false;
-  const strips = axis === "vertical" ? groups.filter((g) => g.views.length > 1).length : 0;
+  const strips = axis === "vertical" ? groups.filter(strip).length : 0;
   const room = size - (groups.length - 1) * DIVIDER_PX - strips * STRIP_PX;
   const shares = groups.map((g) => g.share);
   return fitSizes(room, shares, MIN_GROUP_PX) === null;

@@ -565,6 +565,10 @@ describe("sizes and tabs", () => {
     expect(tooShort(need + STRIP_PX, tabbed, "vertical")).toBe(false);
     expect(tooShort(need, tabbed, "horizontal")).toBe(false);
     expect(tooShort(need - 1, tabbed, "horizontal")).toBe(true);
+    // a group of one view that draws a strip all the same (a view without a header of its own) counts it too
+    const strip = (g: { readonly views: readonly string[] }): boolean => g.views[0] === "a";
+    expect(tooShort(need + STRIP_PX - 1, two, "vertical", strip)).toBe(true);
+    expect(tooShort(need + STRIP_PX, two, "vertical", strip)).toBe(false);
     // one group always fits; a size not measured yet folds nothing
     expect(tooShort(10, drawnGroups([group(1, "a")], all), "vertical")).toBe(false);
     expect(tooShort(0, two, "vertical")).toBe(false);

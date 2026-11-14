@@ -2,7 +2,7 @@
 // "show that comment in the tab". Runs while the page exists (a `docDecoration`).
 
 import { documents } from "../../core/doc/document.svelte";
-import { ui } from "../../core/shell/ui.svelte";
+import { showView } from "../../core/shell/sides";
 import { applyMarks, clearMarks, commentAt } from "./marks";
 import { PANEL } from "./ids";
 import { comments } from "./store.svelte";
@@ -23,7 +23,7 @@ export function decorateMargin(root: HTMLElement): () => void {
     const id = commentAt(event);
     if (id === null) return;
     comments.show(id);
-    ui.showSidebar(PANEL);
+    showView(PANEL);
   };
   root.addEventListener("click", onclick);
   return () => {

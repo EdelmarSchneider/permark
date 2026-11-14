@@ -2,16 +2,21 @@
 import "../core/testing/media";
 import { afterEach, describe, expect, it } from "vitest";
 import type { PluginId } from "../api/generated/PluginId";
+import { conditions, neutralContext } from "../core/conditions/context.svelte";
+import { contributions } from "../core/plugins/instance.svelte";
 import { ContributionRegistry, PluginHost, pluginLoaders } from "../core/plugins/registry.svelte";
 import { searchTags } from "../core/search/tags.svelte";
-import { ui } from "../core/shell/ui.svelte";
+import { FILES } from "../core/shell/arrangement";
+import { arrangement } from "../core/shell/arrangement.svelte";
+import { layout } from "../core/shell/layout.svelte";
+import { showView } from "../core/shell/sides";
 import { silence } from "../core/silence/silence.svelte";
 
 const FOLLOWING: PluginId[] = ["git", "live-feed", "follow", "unread", "review"];
 
 afterEach(() => {
-  ui.right = null;
-  ui.sidebar = "files";
+  conditions.set(neutralContext());
+  layout.setSelected([]);
 });
 
 describe("the following plugins", () => {
@@ -85,10 +90,14 @@ describe("the following plugins", () => {
     await host.enable("live-feed");
     host.disable("live-feed");
     expect(registry.of("panel").filter((p) => p.side === "right")).toEqual([]);
-    await host.enable("unread");
-    ui.showSidebar("unread.panel");
-    host.disable("unread");
-    expect(ui.sidebar).toBe("files");
+    // the sidebar tab that showed goes with its plugin: the first view of the group shows again
+    conditions.set({ ...neutralContext(), workspace: "project" });
+    const window = new PluginHost(contributions, pluginLoaders());
+    await window.enable("unread");
+    showView("unread.panel");
+    expect(arrangement.isSelected("unread.panel")).toBe(true);
+    expect(window.disable("unread")).toBe(0);
+    expect(arrangement.isSelected(FILES)).toBe(true);
   });
 
   it("every command and key they add has a free id and a label in the interface", async () => {
@@ -156,16 +165,19 @@ describe("the organizing plugins", () => {
   });
 
   it("switching off puts back the tab that was open and the search the tags narrowed", async () => {
-    const registry = new ContributionRegistry();
+    // in the window's own registry: the views of the window are the panels it lists
+    const registry = contributions;
     const host = new PluginHost(registry, pluginLoaders());
+    conditions.set({ ...neutralContext(), workspace: "project" });
     for (const id of ORGANIZING) await host.enable(id);
     for (const panel of ["tags.panel", "comments.panel", "broken-links.panel"]) {
-      ui.showSidebar(panel);
+      showView(panel);
+      expect(arrangement.isSelected(panel), panel).toBe(true);
     }
     searchTags.add("alpha");
     expect(searchTags.available).toBe(true);
     for (const id of ORGANIZING) host.disable(id);
-    expect(ui.sidebar).toBe("files");
+    expect(arrangement.isSelected(FILES)).toBe(true);
     expect(searchTags.available).toBe(false);
     expect(searchTags.selected).toEqual([]);
     expect(silence.isSilenced("anything")).toBe(false);

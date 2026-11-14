@@ -24,8 +24,17 @@ const { contributions } = await import("../plugins/instance.svelte");
 const { layout } = await import("./layout.svelte");
 const { ui } = await import("./ui.svelte");
 const { arrangement, DEFAULT_WAIT_MS } = await import("./arrangement.svelte");
-const { defaultArrangement, DIVIDER_PX, FILES, LIVE_VIEW, MIN_GROUP_PX, OUTLINE, REGIONS, SEARCH } =
-  await import("./arrangement");
+const {
+  defaultArrangement,
+  DIVIDER_PX,
+  FILES,
+  LIVE_VIEW,
+  MIN_GROUP_PX,
+  OUTLINE,
+  REGIONS,
+  SEARCH,
+  STRIP_PX,
+} = await import("./arrangement");
 
 const LEFT_VIEW = "unread.panel";
 const view = () => import("../testing/StripFirst.svelte");
@@ -386,12 +395,14 @@ describe("the views of the window", () => {
       bottom: [],
     });
     const need = 2 * MIN_GROUP_PX + DIVIDER_PX;
+    // Files and Search have no header of their own: alone in a group each keeps a tab strip, which takes room
+    const needLeft = need + 2 * STRIP_PX;
     // nothing measured yet: as arranged
     expect([arrangement.short("left"), arrangement.short("right")]).toEqual([false, false]);
     expect(viewsOf(arrangement.drawn("right"))).toEqual([[OUTLINE], [LIVE_VIEW]]);
 
     arrangement.setSize("right", need - 1);
-    arrangement.setSize("left", need);
+    arrangement.setSize("left", needLeft);
     expect([arrangement.short("left"), arrangement.short("right")]).toEqual([false, true]);
     expect(arrangement.drawn("right")).toEqual([{ at: 0, views: [OUTLINE, LIVE_VIEW], share: 1 }]);
     expect(viewsOf(arrangement.stacked("right"))).toEqual([[OUTLINE], [LIVE_VIEW]]);
@@ -400,7 +411,7 @@ describe("the views of the window", () => {
     expect(viewsOf(arrangement.saved.right)).toEqual([[OUTLINE], [LIVE_VIEW]]);
 
     arrangement.setSize("right", need);
-    arrangement.setSize("left", 100);
+    arrangement.setSize("left", needLeft - 1);
     expect([arrangement.short("left"), arrangement.short("right")]).toEqual([true, false]);
     expect(arrangement.drawn("left")).toEqual([{ at: 0, views: [FILES, SEARCH], share: 1 }]);
     expect(viewsOf(arrangement.drawn("right"))).toEqual([[OUTLINE], [LIVE_VIEW]]);

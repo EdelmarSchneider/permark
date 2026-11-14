@@ -11,10 +11,10 @@
 </script>
 
 <script lang="ts">
-  // The views of one group of the right column as tabs (Outline | Live changes): drawn by the column only when the
-  // group shows two views or more; the sidebar's views (Files | Search | plugin panels) too. Selecting shows a view,
-  // never hides it. One Tab stop: arrows move between the tabs, Enter | Space select; right click | Shift+F10 | the Menu
-  // key open the view's options.
+  // The views of one group of a region as tabs (Files | Search | plugin tabs at the left, Outline | Live changes at the
+  // right): drawn by the region when the group shows two views or more, or one view without a header of its own.
+  // Selecting shows a view, never hides it. One Tab stop: arrows move between the tabs, Enter | Space select; right
+  // click | Shift+F10 | the Menu key open the view's options.
   import { t } from "../i18n";
 
   type Props = {

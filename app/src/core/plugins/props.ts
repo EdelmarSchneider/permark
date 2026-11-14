@@ -66,7 +66,8 @@ export type OutlineWatcherProps = {
   items: readonly OutlineItem[];
 };
 
-/** The props of a view of the right column (`panel` side right): the view options button for its header. */
+/** The props of a view with a header of its own (`panel` side right, the outline): the view options button for
+ *  that header, in whatever region the view sits. */
 export type PanelViewProps = {
   viewMenu?: Snippet;
 };

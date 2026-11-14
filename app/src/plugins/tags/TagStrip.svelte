@@ -6,7 +6,7 @@
   import type { TagRefView } from "../../api";
   import { documents } from "../../core/doc/document.svelte";
   import { t } from "../../core/i18n";
-  import { ui } from "../../core/shell/ui.svelte";
+  import { showView } from "../../core/shell/sides";
   import TagChip from "./TagChip.svelte";
   import { PANEL } from "./ids";
   import { tags } from "./store.svelte";
@@ -43,7 +43,7 @@
 
   function show(name: string, event: MouseEvent): void {
     tags.pick(name, event.ctrlKey || event.metaKey);
-    ui.showSidebar(PANEL);
+    showView(PANEL);
   }
 </script>
 

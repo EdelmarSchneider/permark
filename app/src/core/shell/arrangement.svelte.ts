@@ -3,10 +3,15 @@
 // selected choices live in the layout store (its session, read behind `layout.reading`); a view the project has no
 // choice for takes its default, decided once per project load (`panel.defaultOpen`). Spec: shell.md §Frame.
 
+import FolderTree from "@lucide/svelte/icons/folder-tree";
+import ListTree from "@lucide/svelte/icons/list-tree";
+import SearchIcon from "@lucide/svelte/icons/search";
+import type { Component } from "svelte";
 import type { Api, AppSettings, SettingChange } from "../../api";
 import { conditions } from "../conditions/context.svelte";
 import { documents } from "../doc/document.svelte";
 import { reading } from "../doc/reading.svelte";
+import { t, type MessageKey } from "../i18n";
 import type { ContributionOf } from "../plugins/registry.svelte";
 import { layout } from "./layout.svelte";
 import { offeredPanels } from "./panels.svelte";
@@ -48,6 +53,12 @@ export type KnownView = {
   readonly region: Region;
   /** The person can close it (the outline, a panel of the right side); the others are always open in a project. */
   readonly closable: boolean;
+  /** It draws a header of its own (its title, its options button): alone in its group it needs no tab strip. */
+  readonly ownHeader: boolean;
+  /** Its name, as a tab says it. */
+  readonly label: MessageKey;
+  /** A small icon: a crowded tab strip shows it alone. */
+  readonly icon: Component<{ size?: number }> | undefined;
   /** The plugin's panel (`null`: a view of the core). */
   readonly panel: Panel | null;
 };
@@ -67,7 +78,11 @@ function regionOff(region: Region): boolean {
 }
 
 /** What a region reads of the window's views. */
-type Views = { readonly layout: Arrangement; isPresent(id: string): boolean };
+type Views = {
+  readonly layout: Arrangement;
+  isPresent(id: string): boolean;
+  hasStrip(group: DrawnGroup): boolean;
+};
 
 /** One region of this window: the groups it would draw, the room it measured, the groups it draws. */
 class RegionViews {
@@ -86,8 +101,13 @@ class RegionViews {
     drawnGroups(this.#views.layout[this.#region], (id) => this.#views.isPresent(id)),
   );
 
+  /** How many views of the region are present. */
+  readonly count = $derived(this.stacked.reduce((sum, group) => sum + group.views.length, 0));
+
   /** Too short for those groups along the stack. */
-  readonly short = $derived.by(() => tooShort(this.size, this.stacked, axisOf(this.#region)));
+  readonly short = $derived.by(() =>
+    tooShort(this.size, this.stacked, axisOf(this.#region), (group) => this.#views.hasStrip(group)),
+  );
 
   /** The groups drawn: `stacked`, or all in one tab group while the region is too short. */
   readonly drawn = $derived.by((): DrawnGroup[] => {
@@ -129,15 +149,33 @@ export class ArrangementStore {
    * tabs (left), the outline and the plugins' panels (right). A panel's side is only its default region.
    */
   readonly views = $derived.by((): KnownView[] => {
+    // a sidebar tab is a body alone, always open in a project; a right panel has its header and can be closed
     const panelsOf = (side: Panel["side"]): KnownView[] =>
       this.#panels
         .filter((panel) => panel.side === side)
-        .map((panel) => ({ id: panel.id, region: side, closable: side === "right", panel }));
+        .map((panel) => ({
+          id: panel.id,
+          region: side,
+          closable: side === "right",
+          ownHeader: side === "right",
+          label: panel.label,
+          icon: panel.icon,
+          panel,
+        }));
+    const core = { closable: false, ownHeader: false, panel: null } as const;
     return [
-      { id: FILES, region: "left", closable: false, panel: null },
-      { id: SEARCH, region: "left", closable: false, panel: null },
+      { ...core, id: FILES, region: "left", label: "sidebar.files", icon: FolderTree },
+      { ...core, id: SEARCH, region: "left", label: "sidebar.search", icon: SearchIcon },
       ...panelsOf("left"),
-      { id: OUTLINE, region: "right", closable: true, panel: null },
+      {
+        id: OUTLINE,
+        region: "right",
+        closable: true,
+        ownHeader: true,
+        label: "outline.tab",
+        icon: ListTree,
+        panel: null,
+      },
       ...panelsOf("right"),
     ];
   });
@@ -151,8 +189,11 @@ export class ArrangementStore {
     bottom: new RegionViews("bottom", this),
   };
 
-  /** How many views are present in the window, whatever their region. */
-  readonly presentCount = $derived(this.views.filter((view) => this.isPresent(view.id)).length);
+  /** The views present in the window, whatever their region, in the order of `views`. */
+  readonly present = $derived(this.views.filter((view) => this.isPresent(view.id)));
+
+  /** How many views are present in the window. */
+  readonly presentCount = $derived(this.present.length);
 
   /** Follows the settings of the app (boot + every change) and decides the views' defaults per project load. */
   start(api: Api): () => void {
@@ -190,6 +231,17 @@ export class ArrangementStore {
   /** The view `id` as the window knows it (undefined: none now, e.g. its plugin is off). */
   viewOf(id: string): KnownView | undefined {
     return this.views.find((view) => view.id === id);
+  }
+
+  /** The name of the view `id`, as its tab says it (a view nobody offers now: its id). */
+  nameOf(id: string): string {
+    const view = this.viewOf(id);
+    return view === undefined ? id : t(view.label);
+  }
+
+  /** The region that lists `id` now (`null`: none). */
+  regionOf(id: string): Region | null {
+    return regionOf(this.layout, id);
   }
 
   /**
@@ -242,6 +294,17 @@ export class ArrangementStore {
     return this.#regions[region].drawn;
   }
 
+  /** How many views of `region` are present. */
+  presentIn(region: Region): number {
+    return this.#regions[region].count;
+  }
+
+  /** A drawn group shows a tab strip: several views, or one that has no header of its own to name it. */
+  hasStrip(group: DrawnGroup): boolean {
+    const [only] = group.views;
+    return group.views.length > 1 || (only !== undefined && this.viewOf(only)?.ownHeader === false);
+  }
+
   /** The element of `region` measured its extent along the stack (px; 0: it is gone). */
   setSize(region: Region, px: number): void {
     this.#regions[region].size = px;
@@ -249,7 +312,7 @@ export class ArrangementStore {
 
   /** The drawn group that holds `id`, in whatever region (undefined: not drawn). */
   groupWith(id: string): DrawnGroup | undefined {
-    const region = regionOf(this.layout, id);
+    const region = this.regionOf(id);
     return region === null ? undefined : this.drawn(region).find((g) => g.views.includes(id));
   }
 
@@ -266,7 +329,7 @@ export class ArrangementStore {
 
   /** The view is on screen: present, shown by its group, its region shown, not in focus mode. */
   onScreen(id: string): boolean {
-    const region = regionOf(this.layout, id);
+    const region = this.regionOf(id);
     return region !== null && !regionOff(region) && ui.focus !== "on" && this.isSelected(id);
   }
 

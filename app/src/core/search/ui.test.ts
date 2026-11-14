@@ -12,12 +12,21 @@ Object.defineProperty(window, "matchMedia", {
   value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
 });
 Element.prototype.scrollIntoView = () => {};
+// jsdom has no layout: a region's size watcher sees nothing
+globalThis.ResizeObserver ??= class {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+};
 
 const { api } = await import("../../api");
 const { default: Finder } = await import("./Finder.svelte");
 const { default: SearchPanel } = await import("./SearchPanel.svelte");
 const { default: KeymapDialog } = await import("../shell/KeymapDialog.svelte");
-const { default: SidebarTabs } = await import("./SidebarTabs.svelte");
+const { default: ViewRegion } = await import("../shell/ViewRegion.svelte");
+const { FILES, SEARCH } = await import("../shell/arrangement");
+const { arrangement } = await import("../shell/arrangement.svelte");
+const { selectView, showView } = await import("../shell/sides");
 const { ui } = await import("../shell/ui.svelte");
 const { windowStore } = await import("../window.svelte");
 const { contributions, syncPlugins } = await import("../plugins/instance.svelte");
@@ -68,7 +77,7 @@ beforeEach(async () => {
   document.body.append(target);
   ui.closeFinder();
   ui.closeKeyboard();
-  ui.showSidebar("files");
+  selectView(FILES);
   unregister = registerCoreCommands(contributions);
 });
 
@@ -298,7 +307,7 @@ describe("Quick open and Search everywhere", () => {
 describe("the Search panel", () => {
   it("shows the documents that hold the words and opens the section on a click", async () => {
     await open();
-    ui.showSidebar("search");
+    showView(SEARCH);
     component = mount(SearchPanel, { target, props: { root: MOCK_FOLDER } });
     flushSync();
     const input = target.querySelector<HTMLInputElement>("input.field");
@@ -349,22 +358,30 @@ describe("the Search panel", () => {
 });
 
 describe("the sidebar tabs", () => {
-  it("switch between Files and Search", async () => {
-    component = mount(SidebarTabs, { target });
+  /** The left region of a project with no plugin tab: Files | Search. */
+  function mountSidebar(): void {
+    syncPlugins([]);
+    conditions.set({ ...conditions.current, workspace: "project", plugins: [] });
+    component = mount(ViewRegion, { target, props: { region: "left" } });
     flushSync();
+  }
+  const shown = (): string[] => [FILES, SEARCH].filter((id) => arrangement.isSelected(id));
+
+  it("switch between Files and Search", async () => {
+    mountSidebar();
     const [files, search] = Array.from(target.querySelectorAll<HTMLElement>('[role="tab"]'));
     expect(files?.getAttribute("aria-selected")).toBe("true");
     search?.click();
     flushSync();
-    expect(ui.sidebar).toBe("search");
+    expect(shown()).toEqual([SEARCH]);
+    expect(search?.getAttribute("aria-selected")).toBe("true");
     files?.click();
     flushSync();
-    expect(ui.sidebar).toBe("files");
+    expect(shown()).toEqual([FILES]);
   });
 
   it("are one Tab stop: arrows move between the tabs, Enter | Space (a click) selects", async () => {
-    component = mount(SidebarTabs, { target });
-    flushSync();
+    mountSidebar();
     const list = target.querySelector<HTMLElement>('[role="tablist"]');
     expect(list?.getAttribute("aria-label")).toBe("Sidebar views");
     const tabs = (): HTMLElement[] => [...target.querySelectorAll<HTMLElement>('[role="tab"]')];
@@ -379,7 +396,7 @@ describe("the sidebar tabs", () => {
     expect(document.activeElement).toBe(search);
     expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0]);
     // the focus moved, the view did not: the person selects it
-    expect(ui.sidebar).toBe("files");
+    expect(shown()).toEqual([FILES]);
     press("ArrowRight");
     expect(document.activeElement).toBe(files);
     press("End");
@@ -390,9 +407,8 @@ describe("the sidebar tabs", () => {
     expect(document.activeElement).toBe(search);
     search?.click();
     flushSync();
-    expect(ui.sidebar).toBe("search");
+    expect(shown()).toEqual([SEARCH]);
     expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0]);
-    ui.showSidebar("files");
   });
 });
 

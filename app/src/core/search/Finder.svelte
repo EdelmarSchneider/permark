@@ -20,7 +20,9 @@
   import Terminal from "@lucide/svelte/icons/terminal";
   import { t, tn, type MessageKey } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
+  import { FILES } from "../shell/arrangement";
   import { dialogFocus } from "../shell/dialogFocus";
+  import { showView } from "../shell/sides";
   import { ui, type FinderPreset } from "../shell/ui.svelte";
   import { windowStore as store } from "../window.svelte";
   import { FinderStore, type FinderHost } from "./finderStore.svelte";
@@ -75,7 +77,7 @@
       })();
     },
     reveal: (path) => {
-      ui.showSidebar("files");
+      showView(FILES);
       revealInTree(path);
     },
     openSection: (row) => documents.navigate(row.path, row.anchor, row.line),

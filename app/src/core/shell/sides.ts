@@ -1,9 +1,10 @@
-// Showing | hiding the two side panels of this window (Mod+B, Mod+Alt+B, the status bar toggles, the outline toggle):
-// the stores' state read, the pure step of `layout.ts` applied, the frame animated, the focus let go of a region that
-// hides (its controls go inert: keys reach the page).
+// Showing | hiding the regions of this window (Mod+B, Mod+Alt+B, the status bar toggles, the outline toggle) and
+// showing | selecting | closing a view in whatever region it sits: the stores' state read, the pure step of
+// `layout.ts` applied, the frame animated, the focus let go of a region that hides (its controls go inert: keys
+// reach the page).
 
 import { tick } from "svelte";
-import type { WindowView } from "../../api";
+import type { WindowView, WorkspaceView } from "../../api";
 import { reading } from "../doc/reading.svelte";
 import { windowStore } from "../window.svelte";
 import {
@@ -14,17 +15,30 @@ import {
   type RightSide,
 } from "./layout";
 import { layout } from "./layout.svelte";
-import { OUTLINE, regionOf, select } from "./arrangement";
+import { OUTLINE, SEARCH, select, type Region } from "./arrangement";
 import { arrangement } from "./arrangement.svelte";
 import { ui } from "./ui.svelte";
 
-/** Workspaces with a sidebar: a project, the Notes. */
+/** The name the frame gives each region (`data-region`). */
+const REGION_NAME: Readonly<Record<Region, string>> = {
+  left: "sidebar",
+  right: "right",
+  bottom: "bottom",
+};
+
+/** A workspace of this kind has something at the left: the Notes their own list, any other a present view arranged
+ *  there (a project: its files; a single file: only what the person put there). */
+function leftOf(kind: WorkspaceView["kind"]): boolean {
+  return kind === "notes" || arrangement.drawn("left").length > 0;
+}
+
+/** The window has a left region now (reactive when read in a `$derived`): its toggle and Mod+B apply. */
 export function hasSidebar(view: WindowView): boolean {
   switch (view.state) {
     case "showing":
-      return view.workspace.kind === "project" || view.workspace.kind === "notes";
+      return leftOf(view.workspace.kind);
     case "opening":
-      return view.showing?.kind === "project" || view.showing?.kind === "notes";
+      return view.showing !== null && leftOf(view.showing.kind);
     case "welcome":
     case "closing":
       return false;
@@ -51,13 +65,45 @@ export function rightSide(): RightSide {
 
 /** A region about to hide gives the keyboard focus to the page (it goes inert): the editor when one is open, else
  *  the document's scroller (arrows | Page keys scroll it), else the page region. */
-function letGo(region: "sidebar" | "right"): void {
+function letGo(region: Region): void {
   if (typeof document === "undefined") return;
   const active = document.activeElement;
-  if (!(active instanceof HTMLElement) || active.closest(`[data-region="${region}"]`) === null) {
-    return;
+  if (!(active instanceof HTMLElement)) return;
+  if (active.closest(`[data-region="${REGION_NAME[region]}"]`) !== null) focusPage(active);
+}
+
+/** The person hid `region`. */
+function isHidden(region: Region): boolean {
+  switch (region) {
+    case "left":
+      return layout.sidebarHidden;
+    case "right":
+      return layout.rightHidden;
+    case "bottom":
+      return layout.bottomHidden;
+    default:
+      return region satisfies never;
   }
-  focusPage(active);
+}
+
+/** `region` hides | shows (a change only): the frame animates, a region that hides lets the focus go. */
+function setHidden(region: Region, hidden: boolean): void {
+  if (hidden === isHidden(region)) return;
+  ui.animateFrame();
+  if (hidden) letGo(region);
+  switch (region) {
+    case "left":
+      layout.setSidebarHidden(hidden);
+      break;
+    case "right":
+      layout.setRightHidden(hidden);
+      break;
+    case "bottom":
+      layout.setBottomHidden(hidden);
+      break;
+    default:
+      region satisfies never;
+  }
 }
 
 /** The page region of this window (`null`: not drawn). */
@@ -84,18 +130,16 @@ function focusPage(active: HTMLElement): void {
 
 /** `id` becomes the view its group shows (its group: every view of its arrangement group). */
 export function selectView(id: string): void {
-  const region = regionOf(arrangement.layout, id);
+  const region = arrangement.regionOf(id);
   const group =
     region === null ? undefined : arrangement.layout[region].find((g) => g.views.includes(id));
   layout.setSelected(select(layout.views.selected, group?.views ?? [id], id));
+  // the Search brought forward (its tab, its command): its box takes the cursor
+  if (id === SEARCH) ui.searchFocus += 1;
 }
 
 function apply(choice: RightChoice): void {
-  if (choice.hidden !== undefined && choice.hidden !== layout.rightHidden) {
-    ui.animateFrame();
-    if (choice.hidden) letGo("right");
-    layout.setRightHidden(choice.hidden);
-  }
+  if (choice.hidden !== undefined) setHidden("right", choice.hidden);
   if (choice.outlineOn !== undefined) reading.setOutline(choice.outlineOn);
   if (choice.open !== undefined) layout.setOpen(choice.open.id, choice.open.open);
   if (choice.select !== undefined) selectView(choice.select);
@@ -103,11 +147,7 @@ function apply(choice: RightChoice): void {
 
 /** Mod+B: the sidebar hides | shows (only where there is one). */
 export function toggleSidebar(): void {
-  if (!hasSidebar(windowStore.view)) return;
-  const hide = !layout.sidebarHidden;
-  ui.animateFrame();
-  if (hide) letGo("sidebar");
-  layout.setSidebarHidden(hide);
+  if (hasSidebar(windowStore.view)) setHidden("left", !layout.sidebarHidden);
 }
 
 /** Mod+Alt+B: the right panel hides | shows. */
@@ -125,37 +165,50 @@ export function togglePanel(id: string): void {
   apply(panelStep(rightSide(), id));
 }
 
-/** Shows a view of the right column: opened (the outline turned on), selected in its group, the region shown. */
+/**
+ * Shows a view, in whatever region it sits: the region shown, the view selected in its group; one the person can
+ * close is opened too (the outline turned on). A view that is always open has no choice to remember; one nobody
+ * offers now (its plugin off) changes nothing.
+ */
 export function showView(id: string): void {
-  apply(
-    id === OUTLINE
-      ? { hidden: false, outlineOn: true, select: id }
-      : { hidden: false, open: { id, open: true }, select: id },
-  );
+  const view = arrangement.viewOf(id);
+  if (view === undefined) return;
+  setHidden(arrangement.regionOf(id) ?? view.region, false);
+  if (view.closable) {
+    if (view.panel === null) reading.setOutline(true);
+    else layout.setOpen(id, true);
+  }
+  selectView(id);
 }
 
-/** Closes a view of the right column (its place in the arrangement stays): a panel closed, the outline off. */
+/** Closes a view (its place in the arrangement stays): a panel closed, the outline off. */
 export function closeView(id: string): void {
   const active = typeof document === "undefined" ? null : document.activeElement;
   const inside =
-    active instanceof HTMLElement && active.closest(`[data-right-view="${id}"]`) !== null;
+    active instanceof HTMLElement && active.closest(`[data-view-slot="${id}"]`) !== null;
+  const region = arrangement.regionOf(id);
   if (id === OUTLINE) reading.setOutline(false);
   else layout.setOpen(id, false);
-  // the keyboard was in that view: once it is gone, the next control of the right column takes it (else the page);
-  // never the page body
+  // the keyboard was in that view: once it is gone, the next control of its region takes it (else the page); never
+  // the page body
   if (inside && active instanceof HTMLElement) {
     const was = active;
-    void tick().then(() => keepFocus(was));
+    void tick().then(() => keepFocus(was, region));
   }
 }
 
-/** After a view closed under the focus: the first control of a view still shown, else the page. */
-function keepFocus(was: HTMLElement): void {
+/** After a view closed under the focus: the first control of a view its region still shows, else the page. */
+function keepFocus(was: HTMLElement, region: Region | null): void {
   const now = document.activeElement;
   if (now instanceof HTMLElement && now !== document.body && now.isConnected) return;
-  const next = document.querySelector<HTMLElement>(
-    '[data-region="right"] [data-right-view]:not([hidden]) :is(button:not([disabled]), [tabindex="0"], input, a[href])',
-  );
-  if (next) next.focus();
-  else focusPage(was);
+  const controls = ':is(button:not([disabled]), [tabindex="0"], input, a[href])';
+  for (const group of region === null ? [] : arrangement.drawn(region)) {
+    const shown = arrangement.selectedOf(group) ?? "";
+    const next = document.querySelector<HTMLElement>(`[data-view-slot="${shown}"] ${controls}`);
+    if (next) {
+      next.focus();
+      return;
+    }
+  }
+  focusPage(was);
 }

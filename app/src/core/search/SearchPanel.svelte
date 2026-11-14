@@ -13,6 +13,8 @@
   import { projects } from "../projects/instance.svelte";
   import Badge from "../shell/Badge.svelte";
   import { badgesOf } from "./badges";
+  import { SEARCH } from "../shell/arrangement";
+  import { arrangement } from "../shell/arrangement.svelte";
   import Segments from "../shell/settings/Segments.svelte";
   import { apiErrorText } from "../errors";
   import { t, tn } from "../i18n";
@@ -91,7 +93,7 @@
 
   // Ctrl+Shift+F: the cursor goes to the box with its text selected
   $effect(() => {
-    if (ui.searchFocus > 0 && ui.sidebar === "search") {
+    if (ui.searchFocus > 0 && arrangement.isSelected(SEARCH)) {
       input?.focus();
       input?.select();
     }

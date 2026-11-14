@@ -1,13 +1,11 @@
-// Window UI state the commands act on: which sidebar view shows, the Search everywhere box, the keyboard dialog,
-// settings, find in page. Small tagged states; components read, commands call the methods.
+// Window UI state the commands act on: focus mode, the Search everywhere box, the keyboard dialog, settings, find in
+// page. Small tagged states; components read, commands call the methods. Which view a region shows is not here: the
+// arrangement of the views has it (`arrangement.svelte.ts`, `sides.ts`).
 
 import type { ClosingTab } from "../../api";
 import type { Overlay } from "../commands/dispatch";
 import type { Preset } from "../search/finderModel";
-import { layout } from "./layout.svelte";
 
-/** `files`, `search`, or the id of a panel a plugin put in the sidebar. */
-export type SidebarView = string;
 /** The three faces of the one overlay: Quick open, Search everywhere, the command palette. */
 export type FinderPreset = Preset;
 export type Finder =
@@ -54,15 +52,12 @@ export type Focus = "off" | "on";
 export const FOCUS_MOVE_MS = 260;
 
 class UiStore {
-  sidebar = $state<SidebarView>("files");
   /** Focus mode of this window (not stored: a new window or a restart starts `off`). */
   focus = $state<Focus>("off");
   /** The 260 ms after a toggle (focus mode, a side panel): the frame's tracks transition only then (dragging a splitter
    *  never animates). */
   frameMoving = $state(false);
   #moving: ReturnType<typeof setTimeout> | null = null;
-  /** The id of the plugin panel at the right of the page (`null`: none; the outline shows when it is on). */
-  right = $state<string | null>(null);
   finder = $state.raw<Finder>({ status: "closed" });
   keyboard = $state(false);
   settings = $state(false);
@@ -74,7 +69,7 @@ class UiStore {
   finding = $state(false);
   /** The window close prompt (this view is the one on screen): the tabs with unsaved edits; `null`: not asking. */
   closePrompt = $state.raw<readonly ClosingTab[] | null>(null);
-  /** Counts the requests to put the cursor in the Search panel's box. */
+  /** Counts the requests to put the cursor in the Search panel's box (the Search view brought forward). */
   searchFocus = $state(0);
   #seed = 0;
 
@@ -101,23 +96,6 @@ class UiStore {
 
   closeFinder(): void {
     this.finder = { status: "closed" };
-  }
-
-  showSidebar(view: SidebarView): void {
-    this.sidebar = view;
-    if (view === "search") this.searchFocus += 1;
-  }
-
-  /** Shows the plugin panel `id` at the right, or closes it when it is the one that shows. The right panel hidden: it
-   *  shows again, with that panel. */
-  toggleRight(id: string): void {
-    if (layout.rightHidden) {
-      this.animateFrame();
-      layout.setRightHidden(false);
-      this.right = id;
-      return;
-    }
-    this.right = this.right === id ? null : id;
   }
 
   /** The frame's tracks transition for a moment (a toggle); never while a splitter is dragged. */

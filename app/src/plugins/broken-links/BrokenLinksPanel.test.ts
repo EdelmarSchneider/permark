@@ -11,15 +11,22 @@ vi.mock("../../api", async () => {
 Object.defineProperty(window, "matchMedia", {
   value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
 });
+// jsdom has no layout: a region's size watcher sees nothing
+globalThis.ResizeObserver ??= class {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+};
 
 const { api } = await import("../../api");
 const { default: Panel } = await import("./BrokenLinksPanel.svelte");
 const { brokenLinks } = await import("./store.svelte");
 const { windowStore } = await import("../../core/window.svelte");
 const { documents } = await import("../../core/doc/document.svelte");
-const { default: SidebarTabs } = await import("../../core/search/SidebarTabs.svelte");
+const { default: ViewRegion } = await import("../../core/shell/ViewRegion.svelte");
 const { contributions } = await import("../../core/plugins/instance.svelte");
-const { ui } = await import("../../core/shell/ui.svelte");
+const { FILES, SEARCH } = await import("../../core/shell/arrangement");
+const { showView } = await import("../../core/shell/sides");
 const { NO_REQUIREMENT } = await import("../../core/conditions/available");
 const { conditions } = await import("../../core/conditions/context.svelte");
 const { syncPlugins } = await import("../../core/plugins/instance.svelte");
@@ -292,9 +299,9 @@ describe("the tabs of the sidebar", () => {
       });
     // the window started plugins of its own in the background: with them still arriving, the strip may be crowded
     syncPlugins([]);
-    conditions.set({ ...conditions.current, plugins: [] });
+    conditions.set({ ...conditions.current, workspace: "project", plugins: [] });
     const removals = [tab("a", "a.panel"), tab("b", "b.panel")];
-    component = mount(SidebarTabs, { target });
+    component = mount(ViewRegion, { target, props: { region: "left" } });
     flushSync();
     const labels = (): string[] =>
       Array.from(target.querySelectorAll('[role="tab"]')).map((t) => t.textContent?.trim() ?? "");
@@ -302,12 +309,12 @@ describe("the tabs of the sidebar", () => {
     expect(labels()[0]).toContain("Files");
     expect(labels()[1]).toBe("");
     expect(target.querySelector<HTMLElement>('[role="tab"]:nth-child(2)')?.title).toBe("Search");
-    ui.showSidebar("search");
+    showView(SEARCH);
     flushSync();
     expect(labels()[1]).toContain("Search");
     for (const remove of removals) remove();
     flushSync();
     expect(labels().every((l) => l !== "")).toBe(true);
-    ui.showSidebar("files");
+    showView(FILES);
   });
 });
