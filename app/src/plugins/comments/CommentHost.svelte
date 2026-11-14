@@ -35,7 +35,11 @@
 </script>
 
 {#if draft}
-  <CommentField />
+  <!-- the field reads its text once: a new draft (another comment's Edit, a new comment) needs a field of its own,
+       or the text typed for the first would be saved over the second -->
+  {#key draft}
+    <CommentField />
+  {/key}
 {:else if selection && at}
   <button
     type="button"

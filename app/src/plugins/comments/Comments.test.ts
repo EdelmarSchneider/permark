@@ -295,6 +295,22 @@ describe("editing a comment", () => {
     expect(target.querySelector(".edited")).toBeNull();
   });
 
+  it("starting another edit while one is open shows the other comment's text, never the first one's", async () => {
+    const { edit } = await mounted();
+    activate(edit());
+    box().value = "typed for the first comment";
+    box().dispatchEvent(new Event("input", { bubbles: true }));
+    flushSync();
+    const first = comments.all[0];
+    if (!first) throw new Error("no comment");
+    comments.beginEdit({ ...first, id: "another", text: "The other comment" }, { kind: "comment" }, null);
+    flushSync();
+    expect(box().value).toBe("The other comment");
+    press(box(), "Escape");
+    flushSync();
+    expect(comments.all[0]?.text).toBe("Say it beter");
+  });
+
   it("edits the person's reply, never the agent's", async () => {
     const { edit } = await mounted();
     void edit;
