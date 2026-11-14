@@ -509,7 +509,7 @@ fn the_journal_notes_outside_changes_only_merges_them_and_never_its_own_files() 
 }
 
 #[test]
-fn the_journal_is_written_read_back_and_never_written_by_a_reader() {
+fn the_journal_is_written_and_read_back() {
     let (_dir, store) = store();
     let time = Time::new();
     {
@@ -522,16 +522,6 @@ fn the_journal_is_written_read_back_and_never_written_by_a_reader() {
     let journal = log.snapshot();
     assert_eq!(journal.entries.len(), 2, "one close marker: {journal:?}");
     assert_eq!(journal.next, 3);
-    drop(log);
-    let reader = ActivityLog::read_only(&store, time.clock());
-    reader.person(save("b.md", &["B"]));
-    assert_eq!(reader.snapshot().entries.len(), 2);
-    let before = std::fs::read(store.file::<Journal>(JOURNAL_FILE).path()).unwrap();
-    drop(reader);
-    assert_eq!(
-        std::fs::read(store.file::<Journal>(JOURNAL_FILE).path()).unwrap(),
-        before
-    );
 }
 
 #[test]

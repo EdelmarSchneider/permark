@@ -112,8 +112,6 @@ impl Plugin for UnreadPlugin {
             explorer: Arc::clone(&project.explorer),
             roots,
             owners: started.clone(),
-            // a reader with no window leaves the picture of the last visit alone
-            visit: !cx.files_only(),
             announce: Arc::new(move |list| {
                 events.emit(
                     "changed",
@@ -121,7 +119,6 @@ impl Plugin for UnreadPlugin {
                 );
             }),
             timing: Timing::default(),
-            persist: !cx.files_only(),
             owners_known: {
                 let projects = project.projects().map(Arc::downgrade);
                 Arc::new(move || {

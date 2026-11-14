@@ -177,20 +177,16 @@ fn two_tabs_one_after_the_other_see_each_others_comments() {
     );
 }
 
-/// `permark mcp` with the window open elsewhere (files mode) reads a project's comments while the app writes them:
-/// every read sees a whole file (atomic writes), never a torn one, and the reader writes nothing.
+/// A second tab reads a project's comments while the first writes them: every read sees a whole file (atomic
+/// writes), never a torn one, and listing writes nothing.
 #[test]
-fn a_reader_with_no_window_never_sees_a_torn_file() {
+fn a_reading_tab_never_sees_a_torn_file() {
     let (_dir, root) = setup();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
     let core = opened(&root, &env);
     assert!(core.projects().wait_ready(Duration::from_secs(10)));
-    let reader = ProjectCore::from_files(
-        Root::open(&root).unwrap(),
-        &env,
-        &[permark_core::plugins::PluginId::of("comments")],
-    );
+    let reader = opened(&root, &env);
     let writer = std::thread::spawn({
         let core = Arc::clone(&core);
         move || {
@@ -215,6 +211,11 @@ fn a_reader_with_no_window_never_sees_a_torn_file() {
         last = now;
     }
     writer.join().unwrap();
+    let files = [
+        root.join(".permark/local/comments.json"),
+        root.join(MEMBER).join(".permark/local/comments.json"),
+    ];
+    let before: Vec<Vec<u8>> = files.iter().map(|f| std::fs::read(f).unwrap()).collect();
     assert_eq!(
         call(&reader, "list", json!({ "scope": "all" }))
             .unwrap()
@@ -222,6 +223,12 @@ fn a_reader_with_no_window_never_sees_a_torn_file() {
             .unwrap()
             .len(),
         32
+    );
+    drop(reader);
+    let after: Vec<Vec<u8>> = files.iter().map(|f| std::fs::read(f).unwrap()).collect();
+    assert_eq!(
+        before, after,
+        "listing and closing the reading tab write no comment"
     );
 }
 

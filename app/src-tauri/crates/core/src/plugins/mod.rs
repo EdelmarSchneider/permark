@@ -408,7 +408,6 @@ pub struct PluginCx {
     project: Option<ProjectServices>,
     app: Option<AppServices>,
     store: Option<StateStore>,
-    files_only: bool,
 }
 
 impl PluginCx {
@@ -437,7 +436,6 @@ impl PluginCx {
             project: None,
             app: None,
             store: None,
-            files_only: false,
         }
     }
 
@@ -459,19 +457,6 @@ impl PluginCx {
     pub fn with_store(mut self, store: StateStore) -> Self {
         self.store = Some(store);
         self
-    }
-
-    /// Started for a reader with no window (`permark mcp` with the app closed): the plugin answers from the files and
-    /// writes no state of its own accord (only what a caller explicitly asks, such as resolving a comment).
-    #[must_use]
-    pub fn with_files_only(mut self) -> Self {
-        self.files_only = true;
-        self
-    }
-
-    #[must_use]
-    pub fn files_only(&self) -> bool {
-        self.files_only
     }
 
     /// The state store (a plugin keeps its files under its own id: `StateStore::plugin_file` | `plugin_dir`).

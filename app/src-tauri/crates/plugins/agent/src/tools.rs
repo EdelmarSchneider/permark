@@ -1,6 +1,5 @@
 //! What each agent tool does, with no MCP and no socket in it: [`Tools::call`] checks the switch, the group and the
-//! paths, then answers from the project's services. The app's server and `permark mcp` with the app closed run this
-//! same code over the same composition (`ProjectServices`).
+//! paths, then answers from the project's services. Only the app's server runs it: `permark mcp` proxies to the app.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -71,8 +70,8 @@ pub struct Tools {
     vault: Vault,
     store: StateStore,
     services: ProjectServices,
-    /// The window's half (`get_context`, `open`): only inside the app.
-    live: Option<Arc<Live>>,
+    /// The window's half (`get_context`, `open`).
+    live: Arc<Live>,
     /// Sizes of files `map` measured: path -> (bytes, modified, size).
     sizes: crate::map::SizeCache,
 }
@@ -187,6 +186,19 @@ struct OpenArgs {
 #[serde(deny_unknown_fields)]
 struct NoArgs {}
 
+/// `open`'s arguments read as the tool reads them, checked before PerMark is started for them (the app checks the
+/// place itself).
+///
+/// # Errors
+/// `Invalid`: not `open`'s arguments, or an empty `path`.
+pub(crate) fn check_open_args(raw: &Value) -> Result<(), ToolError> {
+    let OpenArgs { path, .. } = args(raw.clone())?;
+    if path.trim().is_empty() {
+        return Err(ToolError::Invalid("path is empty".to_owned()));
+    }
+    Ok(())
+}
+
 /// Where an agent asked to show the person something (checked: a shared file of the project).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Place {
@@ -201,7 +213,7 @@ impl Tools {
         vault: Vault,
         store: StateStore,
         services: ProjectServices,
-        live: Option<Arc<Live>>,
+        live: Arc<Live>,
     ) -> Self {
         Self {
             vault,
@@ -277,7 +289,7 @@ impl Tools {
     /// Checks the switch and the group, then runs the tool.
     ///
     /// # Errors
-    /// `Off`, `Denied`, `Invalid`, `NotFound`, `NotOpen`, `Failed`.
+    /// `Off`, `Denied`, `Invalid`, `NotFound`, `Failed`.
     pub fn call(&self, tool: &str, args: Value) -> Result<Value, ToolError> {
         let group =
             group_of(tool).ok_or_else(|| ToolError::Invalid(format!("unknown tool {tool}")))?;
@@ -352,17 +364,17 @@ impl Tools {
     }
 
     /// What the person is looking at (sanitized again: the rules may have changed since it was published).
-    ///
-    /// # Errors
-    /// `NotOpen` without the app.
-    pub fn context(&self, guard: &Guard) -> Result<(WindowContext, usize), ToolError> {
-        let live = self.live.as_ref().ok_or(ToolError::NotOpen)?;
-        Ok((live.context().sanitize(guard), self.open_comments(guard)))
+    #[must_use]
+    pub fn context(&self, guard: &Guard) -> (WindowContext, usize) {
+        (
+            self.live.context().sanitize(guard),
+            self.open_comments(guard),
+        )
     }
 
     fn get_context(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
         let NoArgs {} = args(raw)?;
-        let (context, open) = self.context(guard)?;
+        let (context, open) = self.context(guard);
         let mut value =
             serde_json::to_value(&context).map_err(|e| ToolError::Failed(e.to_string()))?;
         if let Some(map) = value.as_object_mut() {
@@ -783,13 +795,12 @@ impl Tools {
                 .ok()
                 .and_then(|(_, text)| structure::heading_line(&path, &text, h))
         });
-        let live = self.live.as_ref().ok_or(ToolError::NotOpen)?;
         let place = Place {
             path,
             line: found.or(line.filter(|l| *l >= 1)),
             heading: heading.clone(),
         };
-        let shown = live.show(&place);
+        let shown = self.live.show(&place);
         let mut answer = json!({ "path": place.path, "status": shown });
         if let (Some(map), Some(_), None) = (answer.as_object_mut(), &heading, found) {
             map.insert("headingNotFound".to_owned(), json!(true));

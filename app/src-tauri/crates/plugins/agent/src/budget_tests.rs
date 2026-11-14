@@ -308,7 +308,7 @@ impl Budget {
             self.core().vault().clone(),
             self.core().store().clone(),
             self.core().services(),
-            Some(live),
+            live,
         )
     }
 }

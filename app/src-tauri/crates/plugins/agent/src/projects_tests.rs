@@ -47,7 +47,7 @@ impl Fx {
             self.core().vault().clone(),
             self.core().store(),
             self.core().services(),
-            None,
+            crate::live::Live::quiet(),
         )
     }
 }
@@ -228,7 +228,12 @@ fn opened_alone_a_member_keeps_its_roots_private_files() {
             ..ProjectChoice::default()
         })
         .unwrap();
-    let tools = Tools::new(core.vault().clone(), core.store(), core.services(), None);
+    let tools = Tools::new(
+        core.vault().clone(),
+        core.store(),
+        core.services(),
+        crate::live::Live::quiet(),
+    );
     assert!(
         hidden(&tools, "drafts/d.md"),
         "R's `drafts/` holds inside `a` opened alone"

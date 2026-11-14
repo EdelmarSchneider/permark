@@ -6,7 +6,7 @@
 //! ```text
 //!  agent --stdio--> permark mcp --local socket--> app (server of this project) --> Tools over ProjectServices
 //!                        |
-//!                        +-- app closed: Tools over ProjectCore::from_files (same composition)
+//!                        +-- app closed: every tool refused (AppClosed) but `open`, which starts the app
 //! ```
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
@@ -77,8 +77,9 @@ pub enum ToolError {
     NotFound(String),
     #[error("invalid: {0}")]
     Invalid(String),
-    #[error("PerMark is not open on this project")]
-    NotOpen,
+    /// The app does not serve the project: no tool answers from the files behind the person's back; `open` starts it.
+    #[error("PerMark is not open on this project. Ask the person to open it in PerMark, or call `open` to start PerMark on it.")]
+    AppClosed,
     /// The projects inside the folder are not known yet (the first walk runs): nothing is answered until they are
     /// (fail closed, `projects.md` §5.2).
     #[error("PerMark is still reading this folder")]
@@ -95,7 +96,7 @@ impl ToolError {
             Self::Denied { .. } | Self::DeniedBelow { .. } => "denied",
             Self::NotFound(_) => "notFound",
             Self::Invalid(_) => "invalid",
-            Self::NotOpen => "notOpen",
+            Self::AppClosed => "appClosed",
             Self::Busy => "busy",
             Self::Failed(_) => "error",
         }
@@ -116,7 +117,6 @@ impl ToolError {
             ),
             "notFound" => Self::NotFound(after("not found: ")),
             "invalid" => Self::Invalid(after("invalid: ")),
-            "notOpen" => Self::NotOpen,
             "busy" => Self::Busy,
             _ => Self::Failed(message.to_owned()),
         }
@@ -184,7 +184,7 @@ fn sync_context_file(hub: &Hub, write: bool) {
     let Ok((shared, open)) = hub
         .tools
         .guard_now(std::time::Duration::ZERO)
-        .and_then(|guard| hub.tools.context(&guard))
+        .map(|guard| hub.tools.context(&guard))
     else {
         return;
     };
@@ -244,7 +244,7 @@ impl Plugin for AgentPlugin {
             vault.clone(),
             store.clone(),
             project.clone(),
-            Some(Arc::clone(&live)),
+            Arc::clone(&live),
         );
         let hub = Hub::new(tools, Arc::clone(&project.facts), cx.events().clone());
         let endpoint = Endpoint::project(store.app_dir(), vault.main());

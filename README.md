@@ -312,8 +312,9 @@ agent asks PerMark what you did instead of rereading the project.
 | `open` | Shows you a place (a document, a line or a heading) without taking the focus from the agent's terminal, and offers a way back |
 
 Answers are short on purpose: a header line, then tab-separated rows, so an agent spends few tokens. A project's `.permark/` folder
-can narrow what an agent may do, never widen it. When PerMark is closed, the other tools still work from the files, and `open`
-starts it. With the connection off, every tool says so and explains how to turn it on.
+can narrow what an agent may do, never widen it. An agent reads a project only while PerMark has it open: with PerMark closed,
+every tool says so, and `open` starts PerMark so you see the agent connect. With the connection off, every tool says so and
+explains how to turn it on.
 
 </details>
 
