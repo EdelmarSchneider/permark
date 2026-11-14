@@ -1,27 +1,71 @@
-// The options menu of a view, one for the window: where it is open, its entries (move among the groups of the view's
-// own region, show as a tab | in a group of its own, close, reset) and what follows a move (the keyboard on the moved
-// view, the move said). A tab strip, a view's header (right click | Shift+F10 | the Menu key) and the options button
-// in that header all open this one menu; `ViewHosts` draws it.
+// The options menu of a view, one for the window: where it is open, its entries (the moves among the groups of the
+// view's own region, worded by the direction that region stacks its groups; the moves to another region; close; the
+// reset of the whole arrangement) and what follows an action (the keyboard on the view's options, the move said).
+// A tab strip (its options button; a right click | Shift+F10 | the Menu key on a tab) and a view's header (its
+// options button; the same click and keys) all open this one menu; `ViewHosts` draws it.
 
 import { tick } from "svelte";
 import type { MenuEntry } from "../explorer/menu";
-import { t } from "../i18n";
+import { t, type MessageKey } from "../i18n";
 import {
+  axisOf,
   canJoin,
   canMove,
   canSplit,
-  defaultArrangement,
+  inRegion,
   joinAsTab,
   moveView,
+  REGIONS,
   splitOut,
-  withRegion,
+  type Axis,
   type Region,
   type ViewGroup,
 } from "./arrangement";
 import { arrangement } from "./arrangement.svelte";
-import { closeView, selectView } from "./sides";
+import { closeView, focusView, moveToRegion, selectView } from "./sides";
 
-type Move = "up" | "down" | "tab" | "above" | "below";
+/** A move: how the menu names it, how the status line says it once done (`{name}`: the view). */
+type Words = { readonly label: MessageKey; readonly said: MessageKey };
+
+/**
+ * The moves inside a region, worded by the direction its groups follow each other: one group back | forth, out of a
+ * tab group into a group of its own before | after it. `folded`: why none can act while the window is too small to
+ * draw the groups apart.
+ */
+const ALONG: Readonly<
+  Record<
+    Axis,
+    {
+      readonly back: Words;
+      readonly forth: Words;
+      readonly before: Words;
+      readonly after: Words;
+      readonly folded: MessageKey;
+    }
+  >
+> = {
+  vertical: {
+    back: { label: "panel.moveUp", said: "panel.moved.up" },
+    forth: { label: "panel.moveDown", said: "panel.moved.down" },
+    before: { label: "panel.showAbove", said: "panel.moved.above" },
+    after: { label: "panel.showBelow", said: "panel.moved.below" },
+    folded: "panel.tooShort",
+  },
+  horizontal: {
+    back: { label: "panel.moveLeft", said: "panel.moved.left" },
+    forth: { label: "panel.moveRight", said: "panel.moved.right" },
+    before: { label: "panel.showOnLeft", said: "panel.moved.onLeft" },
+    after: { label: "panel.showOnRight", said: "panel.moved.onRight" },
+    folded: "panel.tooNarrow",
+  },
+};
+const AS_TAB: Words = { label: "panel.showAsTab", said: "panel.moved.tab" };
+/** The move into another region. */
+const ACROSS: Readonly<Record<Region, Words>> = {
+  left: { label: "panel.moveToLeft", said: "panel.moved.toLeft" },
+  right: { label: "panel.moveToRight", said: "panel.moved.toRight" },
+  bottom: { label: "panel.moveToBottom", said: "panel.moved.toBottom" },
+};
 
 /** The menu open for the view `id`, at a point of the window, opened from `anchor`. */
 type OpenViewMenu = {
@@ -34,9 +78,12 @@ type OpenViewMenu = {
 class ViewMenu {
   open = $state.raw<OpenViewMenu | null>(null);
 
-  /** There is something to arrange in `region`: two present views or more (else no options, no strip menu). */
-  arranging(region: Region | null): boolean {
-    return region !== null && arrangement.presentIn(region) >= 2;
+  /**
+   * The options buttons are drawn: the window has two present views or more (one view alone, a single file with its
+   * outline, keeps the screen it always had; its menu still opens by a right click | Shift+F10 | the Menu key).
+   */
+  get hasButton(): boolean {
+    return arrangement.presentCount >= 2;
   }
 
   /** Opens the options of `id` at a point (a right click, a key on a tab | header). */
@@ -58,98 +105,100 @@ class ViewMenu {
     this.open = null;
   }
 
-  /** After a move: the moved view's options (Show as tab: its tab) take the keyboard; the move is said. */
-  async #moved(id: string, what: Move): Promise<void> {
-    const name = arrangement.nameOf(id);
-    const words = {
-      up: t("panel.moved.up", { name }),
-      down: t("panel.moved.down", { name }),
-      tab: t("panel.moved.tab", { name }),
-      above: t("panel.moved.above", { name }),
-      below: t("panel.moved.below", { name }),
-    } as const;
-    arrangement.status = words[what];
+  /** Once what an action changed is drawn, the keyboard goes to the view the menu was for (`focusView`). */
+  async #focus(id: string): Promise<void> {
     await tick();
-    const target =
-      what === "tab"
-        ? document.querySelector<HTMLElement>(`[role="tab"][data-view="${id}"]`)
-        : document.querySelector<HTMLElement>(`[data-view-menu="${id}"]`);
-    target?.focus();
+    focusView(id);
   }
 
-  /** The entries for `id`: they act inside the region that lists it. A view nobody lists has none. */
-  entries(id: string): MenuEntry[] {
-    const region = arrangement.regionOf(id);
-    if (region === null) return [];
+  /** After a move: it is said, and the moved view's options take the keyboard. */
+  #moved(id: string, said: MessageKey): void {
+    arrangement.status = t(said, { name: arrangement.nameOf(id) });
+    void this.#focus(id);
+  }
+
+  /**
+   * The moves among the groups of the view's own region: alone in its group, one group back | forth or into the
+   * group beside it as a tab; a tab of a group, out into a group of its own. None while the region has one present
+   * view; all there but unable to act, under a line that says why, while a small window folds the region's groups.
+   */
+  #within(id: string, region: Region): MenuEntry[] {
+    if (arrangement.presentIn(region) < 2) return [];
     const layout = arrangement.layout;
     const mine = layout[region];
     const stacked = arrangement.stacked(region);
     const drawnAt = stacked.map((g) => g.at);
-    const short = arrangement.short(region);
+    const folded = arrangement.short(region);
+    const words = ALONG[axisOf(region)];
     const tabbed = (stacked.find((g) => g.views.includes(id))?.views.length ?? 0) > 1;
-    const arrange = (next: readonly ViewGroup[], what: Move): void => {
-      arrangement.arrange(withRegion(layout, region, next));
-      if (what === "tab") selectView(id);
-      void this.#moved(id, what);
-    };
-    const entries: MenuEntry[] = [];
-    if (short) entries.push({ kind: "heading", label: t("panel.tooShort") });
-    if (tabbed) {
-      entries.push(
-        {
-          kind: "item",
-          label: t("panel.showAbove"),
-          disabled: short || !canSplit(mine, id),
-          run: () => arrange(splitOut(mine, id, "before"), "above"),
-        },
-        {
-          kind: "item",
-          label: t("panel.showBelow"),
-          disabled: short || !canSplit(mine, id),
-          run: () => arrange(splitOut(mine, id, "after"), "below"),
-        },
-      );
-    } else {
-      entries.push(
-        {
-          kind: "item",
-          label: t("panel.moveUp"),
-          disabled: short || !canMove(mine, id, -1, drawnAt),
-          run: () => arrange(moveView(mine, id, -1, drawnAt), "up"),
-        },
-        {
-          kind: "item",
-          label: t("panel.moveDown"),
-          disabled: short || !canMove(mine, id, 1, drawnAt),
-          run: () => arrange(moveView(mine, id, 1, drawnAt), "down"),
-        },
-        {
-          kind: "item",
-          label: t("panel.showAsTab"),
-          disabled: short || !canJoin(mine, id, drawnAt),
-          run: () => arrange(joinAsTab(mine, id, drawnAt), "tab"),
-        },
-      );
-    }
-    // a view that is always open (Files, Search, a plugin's sidebar tab) has no Close
-    if (arrangement.viewOf(id)?.closable === true) {
-      entries.push(
-        { kind: "separator" },
-        { kind: "item", label: t("panel.closeView"), run: () => closeView(id) },
-      );
-    }
-    entries.push(
-      { kind: "separator" },
-      {
-        kind: "item",
-        label: t("panel.resetLayout"),
-        run: () => {
-          arrangement.arrange(withRegion(arrangement.saved, region, defaultArrangement()[region]));
-          arrangement.status = t("panel.layoutReset");
-        },
+    const item = (
+      move: Words,
+      can: boolean,
+      op: (groups: readonly ViewGroup[]) => readonly ViewGroup[],
+    ): MenuEntry => ({
+      kind: "item",
+      label: t(move.label),
+      disabled: folded || !can,
+      run: () => {
+        arrangement.arrange(inRegion(layout, id, op));
+        // the moved view is the one its group shows: its options are there to take the keyboard
+        if (!arrangement.isSelected(id)) selectView(id);
+        this.#moved(id, move.said);
       },
-    );
-    return entries;
+    });
+    const moves = tabbed
+      ? [
+          item(words.before, canSplit(mine, id), (groups) => splitOut(groups, id, "before")),
+          item(words.after, canSplit(mine, id), (groups) => splitOut(groups, id, "after")),
+        ]
+      : [
+          item(words.back, canMove(mine, id, -1, drawnAt), (groups) =>
+            moveView(groups, id, -1, drawnAt),
+          ),
+          item(words.forth, canMove(mine, id, 1, drawnAt), (groups) =>
+            moveView(groups, id, 1, drawnAt),
+          ),
+          item(AS_TAB, canJoin(mine, id, drawnAt), (groups) => joinAsTab(groups, id, drawnAt)),
+        ];
+    return folded ? [{ kind: "heading", label: t(words.folded) }, ...moves] : moves;
+  }
+
+  /**
+   * The entries for `id`, in blocks: the moves inside the region that lists it, the moves to the other regions,
+   * Close (a view the person can close), the reset of the whole arrangement. A view nobody lists has none.
+   */
+  entries(id: string): MenuEntry[] {
+    const region = arrangement.regionOf(id);
+    if (region === null) return [];
+    const blocks: MenuEntry[][] = [
+      this.#within(id, region),
+      REGIONS.filter((other) => other !== region).map((other) => ({
+        kind: "item",
+        label: t(ACROSS[other].label),
+        run: () => {
+          moveToRegion(id, other);
+          this.#moved(id, ACROSS[other].said);
+        },
+      })),
+      // a view that is always open (Files, Search, a plugin's sidebar tab) has no Close
+      arrangement.viewOf(id)?.closable === true
+        ? [{ kind: "item", label: t("panel.closeView"), run: () => closeView(id, true) }]
+        : [],
+      [
+        {
+          kind: "item",
+          label: t("panel.resetLayout"),
+          disabled: arrangement.atDefault,
+          run: () => {
+            arrangement.reset();
+            void this.#focus(id);
+          },
+        },
+      ],
+    ];
+    return blocks
+      .filter((block) => block.length > 0)
+      .flatMap((block, at): MenuEntry[] => (at === 0 ? block : [{ kind: "separator" }, ...block]));
   }
 }
 

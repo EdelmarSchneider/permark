@@ -369,6 +369,7 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 | Find in page | `Ctrl+F` |
 | Show / hide the outline | `Ctrl+Alt+O` |
 | Show / hide the sidebar (when you are not editing) / the right panel | `Ctrl+B` / `Ctrl+Alt+B` |
+| Show / hide the bottom panel (when it holds a view) | `Ctrl+J` |
 | Cycle the reading width | `Ctrl+Alt+W` |
 | Back / forward | `Alt+←` / `Alt+→` |
 | Copy reference (or selection with reference) | `Ctrl+Alt+C` |

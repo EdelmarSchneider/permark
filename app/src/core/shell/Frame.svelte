@@ -6,7 +6,7 @@
   // hidden region stays mounted (state kept) and becomes inert once faded; the page takes its room.
   import type { Snippet } from "svelte";
   import { t } from "../i18n";
-  import { BOTTOM, fit, fitBottom, PAGE_MIN_H, RIGHT, SIDEBAR, type Range } from "./layout";
+  import { BOTTOM, fit, PAGE_MIN_H, RIGHT, SIDEBAR, type Range } from "./layout";
   import Splitter from "./Splitter.svelte";
 
   type Props = {
@@ -19,11 +19,15 @@
     status: Snippet;
     sidebarWidth?: number;
     rightWidth?: number;
+    /** The bottom panel's height as it is drawn: its owner made it fit the height reported by `onCenterHeight`. */
     bottomHeight?: number;
     onSidebarWidth?: (px: number) => void;
     onRightWidth?: (px: number) => void;
     onBottomHeight?: (px: number) => void;
-    /** The person hid the sidebar | the right panel | the bottom panel. */
+    /** The center column (the page over the bottom panel) is this high now: what the bottom panel has to fit in. */
+    onCenterHeight?: (px: number) => void;
+    /** The sidebar | the right panel | the bottom panel is off: the person hid it (the bottom one also: the window
+     *  is too short for it). */
     sidebarHidden?: boolean;
     rightHidden?: boolean;
     bottomHidden?: boolean;
@@ -46,6 +50,7 @@
     onSidebarWidth = () => {},
     onRightWidth = () => {},
     onBottomHeight = () => {},
+    onCenterHeight = () => {},
     sidebarHidden = false,
     rightHidden = false,
     bottomHidden = false,
@@ -65,10 +70,9 @@
   );
 
   let centerHeight = $state(0);
-  /** The bottom panel's height as drawn: the one asked for, made to fit under the page (which keeps its minimum
-   *  height); `null`: hidden, folded by focus mode, or a window too short for even its minimum. */
+  /** The bottom panel's height as drawn; `null`: off (hidden, a window too short for it) or folded by focus mode. */
   const bottomDrawn = $derived(
-    fitBottom(centerHeight, bottom !== undefined && !bottomHidden && !focus ? bottomHeight : null),
+    bottom !== undefined && !bottomHidden && !focus ? bottomHeight : null,
   );
   /** The heights its splitter can ask for: no taller than the window gives beside the page's minimum. */
   const bottomRange = $derived<Range>({
@@ -94,7 +98,13 @@
     style:--w-right={track(panel !== undefined, widths.right)}
   >
     {#if sidebar}
-      <aside class="sidebar" class:gone={!sideOpen} data-region="sidebar" inert={!sideOpen}>
+      <aside
+        class="sidebar"
+        class:gone={!sideOpen}
+        data-region="sidebar"
+        aria-label={t("panel.sidebar")}
+        inert={!sideOpen}
+      >
         {@render sidebar()}
       </aside>
     {/if}
@@ -102,7 +112,13 @@
     <div
       class="center"
       class:has-bottom={bottom !== undefined}
-      bind:clientHeight={centerHeight}
+      bind:clientHeight={
+        null,
+        (px) => {
+          centerHeight = px ?? 0;
+          onCenterHeight(centerHeight);
+        }
+      }
       style:--h-bottom={track(bottom !== undefined, bottomDrawn)}
     >
       <main class="main" data-region="page" tabindex="-1">{@render main()}</main>
@@ -127,7 +143,13 @@
       {/if}
     </div>
     {#if panel}
-      <aside class="panel" class:gone={!rightOpen} data-region="right" inert={!rightOpen}>
+      <aside
+        class="panel"
+        class:gone={!rightOpen}
+        data-region="right"
+        aria-label={t("panel.right")}
+        inert={!rightOpen}
+      >
         {@render panel()}
       </aside>
     {/if}

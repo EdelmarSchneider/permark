@@ -1,7 +1,9 @@
 <script lang="ts">
   // A frame with plain content in every region, for the tests of focus mode, of hidden panels and of the bottom
-  // region (absent unless asked for).
+  // region (absent unless asked for). As the window does, it makes the bottom region's height fit the center column
+  // the frame reports (too short for it: off).
   import Frame from "../shell/Frame.svelte";
+  import { BOTTOM, fitBottom } from "../shell/layout";
 
   type Props = {
     focus?: boolean;
@@ -14,6 +16,7 @@
     bottomHidden?: boolean;
     bottomHeight?: number;
     onBottomHeight?: (px: number) => void;
+    onCenterHeight?: (px: number) => void;
   };
   let {
     focus = false,
@@ -24,9 +27,13 @@
     sidebarHidden = false,
     rightHidden = false,
     bottomHidden = false,
-    bottomHeight,
+    bottomHeight = BOTTOM.def,
     onBottomHeight,
+    onCenterHeight,
   }: Props = $props();
+
+  let center = $state(0);
+  const fitted = $derived(fitBottom(center, bottomHeight));
 </script>
 
 {#snippet top()}<span id="top-text">top</span>{/snippet}
@@ -45,9 +52,13 @@
   {status}
   {sidebarHidden}
   {rightHidden}
-  {bottomHidden}
-  {bottomHeight}
+  bottomHidden={bottomHidden || fitted === null}
+  bottomHeight={fitted ?? bottomHeight}
   {onBottomHeight}
+  onCenterHeight={(px) => {
+    center = px;
+    onCenterHeight?.(px);
+  }}
   {focus}
   {moving}
 />

@@ -68,7 +68,8 @@ export function regionState(region: Region): RegionState {
         ? [{ id, open: arrangement.isOpen(panel), selected: arrangement.isSelected(id) }]
         : [],
     ),
-    hidden: isHidden(region),
+    // a bottom region the window is too short to draw is off like one the person hid
+    hidden: isHidden(region) || (region === "bottom" && layout.bottomFit === null),
   };
 }
 
@@ -106,7 +107,7 @@ function letGo(region: Region): void {
   if (typeof document === "undefined") return;
   const active = document.activeElement;
   if (!(active instanceof HTMLElement)) return;
-  if (active.closest(`[data-region="${REGION_NAME[region]}"]`) !== null) focusPage(active);
+  if (active.closest(`[data-region="${REGION_NAME[region]}"]`) !== null) focusPage();
 }
 
 /** The person hid `region`. */
@@ -154,15 +155,36 @@ export function documentPane(): HTMLElement | null {
   return pageRegion()?.querySelector<HTMLElement>("[data-scroller]") ?? null;
 }
 
-/** The keyboard goes to the page: the editor when one is open, else the document scroller, else the page region. */
-function focusPage(active: HTMLElement): void {
+/** The keyboard goes to the page: the editor when one is open, else the document scroller, else the page region
+ *  (no page: what holds it lets go). */
+function focusPage(): void {
   const page = pageRegion();
   const target =
     page?.querySelector<HTMLElement>("[contenteditable='true'], .cm-content") ??
     documentPane() ??
     page;
   if (target) target.focus({ preventScroll: true });
-  else active.blur();
+  else if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+}
+
+/** The first control of the view `id` as drawn (`null`: none, or the view is not drawn). */
+function firstControl(id: string): HTMLElement | null {
+  const controls = ':is(button:not([disabled]), [tabindex="0"], input, a[href])';
+  return document.querySelector<HTMLElement>(`[data-view-slot="${id}"] ${controls}`);
+}
+
+/**
+ * The keyboard goes to the view `id`, as drawn now: its options button (in its own header, or at the end of its tab
+ * strip while it is the tab shown), else its tab, else its first control. A view that cannot take it (not drawn, its
+ * region hidden): the page. Never the page body.
+ */
+export function focusView(id: string): void {
+  const target =
+    document.querySelector<HTMLElement>(`[data-view-menu="${id}"]`) ??
+    document.querySelector<HTMLElement>(`[role="tab"][data-view="${id}"]`) ??
+    firstControl(id);
+  target?.focus();
+  if (target === null || document.activeElement !== target) focusPage();
 }
 
 /** `id` becomes the view its group shows (its group: every view of its arrangement group). */
@@ -242,34 +264,32 @@ export function moveToRegion(id: string, region: Region): void {
   selectView(id);
 }
 
-/** Closes a view (its place in the arrangement stays): a panel closed, the outline off. */
-export function closeView(id: string): void {
+/**
+ * Closes a view (its place in the arrangement stays): a panel closed, the outline off. `held`: the keyboard was on
+ * that view from outside its body (its options menu, opened from its tab strip).
+ */
+export function closeView(id: string, held = false): void {
   const active = typeof document === "undefined" ? null : document.activeElement;
   const inside =
     active instanceof HTMLElement && active.closest(`[data-view-slot="${id}"]`) !== null;
   const region = arrangement.regionOf(id);
   if (id === OUTLINE) reading.setOutline(false);
   else layout.setOpen(id, false);
-  // the keyboard was in that view: once it is gone, the next control of its region takes it (else the page); never
+  // the keyboard was on that view: once it is gone, the next control of its region takes it (else the page); never
   // the page body
-  if (inside && active instanceof HTMLElement) {
-    const was = active;
-    void tick().then(() => keepFocus(was, region));
-  }
+  if (inside || held) void tick().then(() => keepFocus(region));
 }
 
 /** After a view closed under the focus: the first control of a view its region still shows, else the page. */
-function keepFocus(was: HTMLElement, region: Region | null): void {
+function keepFocus(region: Region | null): void {
   const now = document.activeElement;
   if (now instanceof HTMLElement && now !== document.body && now.isConnected) return;
-  const controls = ':is(button:not([disabled]), [tabindex="0"], input, a[href])';
   for (const group of region === null ? [] : arrangement.drawn(region)) {
-    const shown = arrangement.selectedOf(group) ?? "";
-    const next = document.querySelector<HTMLElement>(`[data-view-slot="${shown}"] ${controls}`);
+    const next = firstControl(arrangement.selectedOf(group) ?? "");
     if (next) {
       next.focus();
       return;
     }
   }
-  focusPage(was);
+  focusPage();
 }

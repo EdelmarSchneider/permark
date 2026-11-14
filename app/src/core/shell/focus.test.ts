@@ -153,6 +153,15 @@ describe("the frame", () => {
     expect(target.querySelectorAll("[role=separator]")).toHaveLength(2);
   });
 
+  it("names its side regions for assistive tech: the sidebar, the right panel", () => {
+    component = mount(FrameHost, { target, props: {} });
+    flushSync();
+    expect(region(".sidebar")?.tagName).toBe("ASIDE");
+    expect(region(".sidebar")?.getAttribute("aria-label")).toBe("Sidebar");
+    expect(region(".panel")?.tagName).toBe("ASIDE");
+    expect(region(".panel")?.getAttribute("aria-label")).toBe("Right panel");
+  });
+
   it("in focus mode hides every region but the page: inert, still mounted, no splitters", () => {
     component = mount(FrameHost, { target, props: { focus: true } });
     flushSync();
@@ -303,6 +312,23 @@ describe("the bottom region of the frame", () => {
     // the side panels are as they were
     expect(region(".sidebar")?.inert).toBe(false);
     expect(target.querySelectorAll("[role=separator]")).toHaveLength(2);
+  });
+
+  it("says how high its center column is, with or without a bottom region: the window decides what fits", () => {
+    high(640);
+    const heights: number[] = [];
+    component = mount(FrameHost, {
+      target,
+      props: { onCenterHeight: (px: number) => heights.push(px) },
+    });
+    flushSync();
+    expect(heights.at(-1)).toBe(640);
+  });
+
+  it("draws the height it is given, never one of its own: the fit is its owner's", () => {
+    const frame = source("core/shell/Frame.svelte");
+    expect(frame).not.toContain("fitBottom");
+    expect(frame).toContain("onCenterHeight");
   });
 
   it("hidden by the person: no room, inert, still mounted, no splitter; the side panels stay", () => {

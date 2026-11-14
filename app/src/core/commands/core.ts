@@ -19,7 +19,7 @@ import {
 import { closeOwnTab } from "../shell/closeWorkspace";
 import { projects } from "../projects/instance.svelte";
 import { askInitHere } from "../shell/initProject";
-import { defaultArrangement, FILES, SEARCH, withRegion } from "../shell/arrangement";
+import { FILES, SEARCH } from "../shell/arrangement";
 import { arrangement } from "../shell/arrangement.svelte";
 import {
   documentPane,
@@ -214,11 +214,8 @@ const SPECS: readonly Spec[] = [
     id: "panel.resetLayout",
     label: "panel.resetLayoutCommand",
     requires: READING,
-    run: () => {
-      // the right column alone: the other regions stay as the person arranged them
-      arrangement.arrange(withRegion(arrangement.saved, "right", defaultArrangement().right));
-      arrangement.status = t("panel.layoutReset");
-    },
+    // the whole arrangement, as the views' menu does it
+    run: () => arrangement.reset(),
   },
   {
     id: "file.new",

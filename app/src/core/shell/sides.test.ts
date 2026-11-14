@@ -27,7 +27,7 @@ const {
   toggleRightPanel,
   toggleSidebar,
 } = await import("./sides");
-const { regionShown } = await import("./layout");
+const { BOTTOM, PAGE_MIN_H, regionShown } = await import("./layout");
 const { arrangement } = await import("./arrangement.svelte");
 const { defaultArrangement, FILES, LIVE_VIEW, moveTo, OUTLINE, SEARCH } =
   await import("./arrangement");
@@ -44,6 +44,7 @@ afterEach(() => {
   ui.resetFocus();
   conditions.set(neutralContext());
   arrangement.arrange(defaultArrangement());
+  layout.setCenterHeight(0);
   for (const remove of removals.splice(0)) remove();
 });
 
@@ -251,6 +252,27 @@ describe("the toggle of a region", () => {
     for (let i = 0; i < 101; i++) toggleBottomPanel();
     expect(layout.bottomHidden).toBe(true);
     expect(layout.views.open).toEqual({ [LIVE_VIEW]: true });
+  });
+
+  it("the bottom one in a window too short for the region: off as if hidden, its views not on screen; its toggle changes nothing", () => {
+    offerLive();
+    layout.setOpen(LIVE_VIEW, true);
+    arrangement.arrange(moveTo(defaultArrangement(), LIVE_VIEW, "bottom"));
+    expect(regionShown(regionState("bottom"))).toBe(true);
+    expect(arrangement.onScreen(LIVE_VIEW)).toBe(true);
+    layout.setCenterHeight(PAGE_MIN_H + BOTTOM.min - 1);
+    expect(hasToggle("bottom")).toBe(true);
+    expect(regionShown(regionState("bottom"))).toBe(false);
+    expect(arrangement.onScreen(LIVE_VIEW)).toBe(false);
+    // the side regions are as they were
+    expect(regionState("right").hidden).toBe(false);
+    // nothing to show in the room there is: the person's choice stays
+    toggleBottomPanel();
+    expect(layout.bottomHidden).toBe(false);
+    expect(regionShown(regionState("bottom"))).toBe(false);
+    layout.setCenterHeight(PAGE_MIN_H + BOTTOM.min);
+    expect(regionShown(regionState("bottom"))).toBe(true);
+    expect(arrangement.onScreen(LIVE_VIEW)).toBe(true);
   });
 
   it("the right one counts the views arranged at the right: with nothing present it opens the first it could show", () => {

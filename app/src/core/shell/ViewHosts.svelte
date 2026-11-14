@@ -134,9 +134,13 @@
         <Ellipsis size={14} aria-hidden="true" />
       </button>
     {/snippet}
-    <!-- a view with a header of its own shows the button there, while its region has something to arrange -->
+    <!-- a view with a header of its own shows the button there while the window has views to arrange; as a tab
+         of a group it has none: the group's strip has the one, for the tab it shows -->
+    {@const group = arrangement.groupWith(id)}
     {@const menu =
-      view?.ownHeader === true && viewMenu.arranging(arrangement.regionOf(id))
+      view?.ownHeader === true &&
+      viewMenu.hasButton &&
+      !(group !== undefined && arrangement.hasStrip(group))
         ? options
         : undefined}
     {#snippet body()}

@@ -6,6 +6,7 @@
   import FileText from "@lucide/svelte/icons/file-text";
   import SearchIcon from "@lucide/svelte/icons/search";
   import X from "@lucide/svelte/icons/x";
+  import { untrack } from "svelte";
   import { api } from "../../api";
   import { conditions } from "../conditions/context.svelte";
   import { contributions } from "../plugins/instance.svelte";
@@ -91,12 +92,16 @@
     };
   });
 
-  // Ctrl+Shift+F: the cursor goes to the box with its text selected
+  // Ctrl+Shift+F, the Search tab: the cursor goes to the box with its text selected. Once per request: the views
+  // are worked out again often (a move saved, the window's context changed) and that never takes the keyboard back
+  let answered = 0;
   $effect(() => {
-    if (ui.searchFocus > 0 && arrangement.isSelected(SEARCH)) {
-      input?.focus();
-      input?.select();
-    }
+    const asked = ui.searchFocus;
+    if (asked === answered || input === undefined) return;
+    if (!untrack(() => arrangement.isSelected(SEARCH))) return;
+    answered = asked;
+    input.focus();
+    input.select();
   });
 
   // the row the keyboard is on stays in view

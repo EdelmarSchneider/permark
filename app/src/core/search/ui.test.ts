@@ -345,6 +345,36 @@ describe("the Search panel", () => {
     conditions.set({ ...conditions.current, plugins: [] });
   });
 
+  it("takes the cursor once per request: the arrangement worked out again never takes the keyboard back", async () => {
+    await open();
+    conditions.set({ ...conditions.current, workspace: "project" });
+    showView(SEARCH);
+    component = mount(SearchPanel, { target, props: { root: MOCK_FOLDER } });
+    flushSync();
+    const input = target.querySelector<HTMLInputElement>("input.field");
+    if (!input) throw new Error("no field");
+    expect(arrangement.isSelected(SEARCH)).toBe(true);
+    expect(document.activeElement).toBe(input);
+    // the keyboard goes elsewhere (a view's options after a move)
+    const other = document.createElement("button");
+    document.body.append(other);
+    other.focus();
+    // the arrangement comes back from the settings a moment after a move: the same places, new objects
+    arrangement.arrange(JSON.parse(JSON.stringify(arrangement.saved)) as typeof arrangement.saved);
+    flushSync();
+    expect(arrangement.isSelected(SEARCH)).toBe(true);
+    expect(document.activeElement).toBe(other);
+    // the context of the window changes (git answered, a plugin switched): the same
+    conditions.set({ ...conditions.current });
+    flushSync();
+    expect(document.activeElement).toBe(other);
+    // asked for again (its command, its tab): the box takes the cursor
+    showView(SEARCH);
+    flushSync();
+    expect(document.activeElement).toBe(input);
+    other.remove();
+  });
+
   it("reports the index being built", async () => {
     await open();
     component = mount(SearchPanel, { target, props: { root: MOCK_FOLDER } });

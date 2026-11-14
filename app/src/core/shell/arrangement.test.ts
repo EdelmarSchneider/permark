@@ -17,6 +17,7 @@ import {
   groupOf,
   inRegion,
   intoGroup,
+  isDefault,
   joinAsTab,
   LIVE_VIEW,
   MAX_GROUPS,
@@ -421,6 +422,45 @@ describe("the moves inside a region", () => {
     expect(inRegion(arr, FILES, (groups) => moveView(groups, FILES, -1, [0, 1]))).toBe(arr);
     expect(inRegion(arr, "gone", () => [])).toBe(arr);
     expect(withRegion(arr, "left", arr.left)).toBe(arr);
+  });
+});
+
+describe("the default arrangement, recognized", () => {
+  /** The views a window knows: the core's, a plugin's sidebar tab, a plugin's right panel. */
+  const known = [
+    { id: FILES, region: "left" },
+    { id: SEARCH, region: "left" },
+    { id: "unread.panel", region: "left" },
+    { id: OUTLINE, region: "right" },
+    { id: LIVE_VIEW, region: "right" },
+    { id: "review.panel", region: "right" },
+  ] as const;
+
+  it("is the default itself, whether or not it lists the views known now", () => {
+    expect(isDefault(defaultArrangement(), known)).toBe(true);
+    expect(isDefault(withViews(defaultArrangement(), known), known)).toBe(true);
+    expect(isDefault(defaultArrangement(), [])).toBe(true);
+    // a share off by a rounding only
+    const def = defaultArrangement();
+    const nearly = { ...def, right: [group(0.5 + 1e-9, OUTLINE), group(0.5 - 1e-9, LIVE_VIEW)] };
+    expect(isDefault(nearly, known)).toBe(true);
+  });
+
+  it("is not once a view changed place, order, group or region, or a share changed", () => {
+    const def = withViews(defaultArrangement(), known);
+    const changed: Arrangement[] = [
+      moveTo(def, SEARCH, "right"),
+      moveTo(def, OUTLINE, "bottom"),
+      moveTo(def, "review.panel", "left"),
+      withRegion(def, "left", [group(1, SEARCH, FILES, "unread.panel")]),
+      inRegion(def, OUTLINE, (groups) => moveView(groups, OUTLINE, 1, [0, 1])),
+      inRegion(def, OUTLINE, (groups) => joinAsTab(groups, OUTLINE, [0, 1])),
+      inRegion(def, SEARCH, (groups) => splitOut(groups, SEARCH, "after")),
+      inRegion(def, OUTLINE, (groups) => resizePair(groups, 0, 1, 0.6)),
+      // a view nobody offers now, listed where the default has none
+      { ...def, bottom: [group(1, "gone.panel")] },
+    ];
+    changed.forEach((arr, i) => expect(isDefault(arr, known), `case ${i}`).toBe(false));
   });
 });
 

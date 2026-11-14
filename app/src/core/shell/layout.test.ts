@@ -470,6 +470,25 @@ describe("the hidden panels in the project session", () => {
     expect(store.bottomHidden).toBe(false);
   });
 
+  it("a window too short for the bottom panel puts it off: the height that fits, from the room the frame reports", () => {
+    const store = new LayoutStore();
+    // nothing reported yet: as asked
+    expect([store.bottomFit, store.bottomOff]).toEqual([BOTTOM.def, false]);
+    store.setCenterHeight(PAGE_MIN_H + 180);
+    expect([store.bottomFit, store.bottomOff]).toEqual([180, false]);
+    store.setCenterHeight(PAGE_MIN_H + BOTTOM.min - 1);
+    expect([store.bottomFit, store.bottomOff]).toEqual([null, true]);
+    // not the person's choice: nothing to remember, shown again once the window is tall enough
+    expect(store.bottomHidden).toBe(false);
+    expect([store.sidebarOff, store.rightOff]).toEqual([false, false]);
+    store.setCenterHeight(900);
+    expect([store.bottomFit, store.bottomOff]).toEqual([BOTTOM.def, false]);
+    store.setBottom(400);
+    expect(store.bottomFit).toBe(400);
+    store.setBottomHidden(true);
+    expect([store.bottomFit, store.bottomOff]).toEqual([400, true]);
+  });
+
   it("anything but true reads as shown; a single file | the Notes keep the choice for the window only", async () => {
     const api = createMockApi();
     for (const junk of ["yes", 1, { hidden: true }, [true], null]) {

@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 // One group's tab strip in the right column: labels + count, one Tab stop with arrows, selecting a tab that is not
-// selected, the view's options from the keyboard (shell.md §Frame, Right region).
+// selected, the view's options from the keyboard (shell.md §Frame, Right region); the options button at its end.
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ViewTabs from "./ViewTabs.svelte";
@@ -92,5 +94,93 @@ describe("a group's tabs", () => {
     expect(onmenu.mock.calls[0]?.[0]).toBe("live-feed.panel");
     key(root, { key: "ContextMenu" });
     expect(onmenu).toHaveBeenCalledTimes(2);
+  });
+
+  it("a tab that takes the focus by itself (a click, a script) keeps the Tab stop while the focus is in the strip", () => {
+    const { root } = show("outline");
+    tabs(root)[1]?.focus();
+    flushSync();
+    expect([tabs(root)[0]?.tabIndex, tabs(root)[1]?.tabIndex]).toEqual([-1, 0]);
+    key(root, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(tabs(root)[0]);
+  });
+});
+
+describe("the options button of a strip", () => {
+  const button = (root: HTMLElement): HTMLButtonElement | null =>
+    root.querySelector<HTMLButtonElement>("button[data-view-menu]");
+
+  function showWith(
+    selected: string | null,
+    more: Record<string, unknown>,
+  ): { root: HTMLElement; onmenu: ReturnType<typeof vi.fn> } {
+    const target = document.createElement("div");
+    document.body.append(target);
+    const onmenu = vi.fn();
+    component = mount(ViewTabs, {
+      target,
+      props: { views: VIEWS, selected, onselect: vi.fn(), onmenu, ...more },
+    });
+    flushSync();
+    return { root: target, onmenu };
+  }
+
+  it("is absent unless asked for; a right click on a tab opens the options all the same", () => {
+    const { root, onmenu } = show("outline");
+    expect(button(root)).toBeNull();
+    tabs(root)[1]?.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 6 }),
+    );
+    expect(onmenu).toHaveBeenCalledWith("live-feed.panel", { x: 5, y: 6 }, tabs(root)[1]);
+  });
+
+  it("sits after the tabs, outside their list, named for the selected tab; it opens that tab's options", () => {
+    const onoptions = vi.fn();
+    const { root } = showWith("live-feed.panel", { onoptions });
+    const more = button(root);
+    const strip = root.querySelector('[role="tablist"]');
+    expect(more?.getAttribute("type")).toBe("button");
+    expect(more?.getAttribute("data-view-menu")).toBe("live-feed.panel");
+    expect(more?.getAttribute("aria-label")).toBe("Live changes options");
+    expect(more?.getAttribute("title")).toBe("Live changes options");
+    expect(more?.getAttribute("aria-haspopup")).toBe("menu");
+    expect(more?.getAttribute("aria-expanded")).toBe("false");
+    // a Tab stop of its own, kept while it is not seen; never among the tabs
+    expect(more?.tabIndex).toBe(0);
+    expect(more?.hidden).toBe(false);
+    expect(strip?.contains(more)).toBe(false);
+    expect(strip?.nextElementSibling).toBe(more);
+    expect([...(strip?.children ?? [])].map((el) => el.getAttribute("role"))).toEqual([
+      "tab",
+      "tab",
+    ]);
+    more?.click();
+    expect(onoptions).toHaveBeenCalledWith("live-feed.panel", more);
+    // the arrows of the tabs are not its keys
+    more?.focus();
+    more?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    expect(document.activeElement).toBe(more);
+  });
+
+  it("says when its menu is open; nothing selected: the first tab's options", () => {
+    const { root } = showWith(null, { onoptions: vi.fn(), expanded: true });
+    expect(button(root)?.getAttribute("aria-expanded")).toBe("true");
+    expect(button(root)?.getAttribute("data-view-menu")).toBe("outline");
+    expect(button(root)?.getAttribute("aria-label")).toBe("Outline options");
+  });
+
+  it("is hidden by opacity alone until the strip is pointed at or holds the focus; always shown where nothing hovers", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/core/shell/ViewTabs.svelte"), "utf8");
+    const rule = (selector: string): string => {
+      const at = css.indexOf(`${selector} {`);
+      return at < 0 ? "" : css.slice(at, css.indexOf("}", at));
+    };
+    expect(rule("  .options")).toMatch(/opacity: 0;/);
+    expect(rule("  .options")).not.toMatch(/display|visibility/);
+    expect(rule("  .options")).toMatch(/width: 24px;[\s\S]*height: 24px;/);
+    expect(css).toMatch(
+      /\.bar:hover \.options,\s*\.bar:focus-within \.options,\s*\.options\[aria-expanded="true"\] \{\s*opacity: 1;/,
+    );
+    expect(css).toMatch(/@media \(hover: none\) \{\s*\.options \{\s*opacity: 1;/);
   });
 });

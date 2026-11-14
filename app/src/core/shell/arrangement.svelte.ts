@@ -20,6 +20,7 @@ import {
   defaultArrangement,
   drawnGroups,
   FILES,
+  isDefault,
   OUTLINE,
   parseArrangement,
   regionOf,
@@ -183,6 +184,9 @@ export class ArrangementStore {
   /** The arrangement with every view known now listed (a new plugin's view joins its default region). */
   readonly layout = $derived(withViews(this.saved, this.views));
 
+  /** The arrangement is the default one: a reset would change nothing. */
+  readonly atDefault = $derived(isDefault(this.layout, this.views));
+
   readonly #regions: Readonly<Record<Region, RegionViews>> = {
     left: new RegionViews("left", this),
     right: new RegionViews("right", this),
@@ -338,6 +342,15 @@ export class ArrangementStore {
     this.saved = next;
     if (this.#timer !== null) clearTimeout(this.#timer);
     this.#timer = setTimeout(() => this.#flush(), SAVE_DELAY_MS);
+  }
+
+  /**
+   * The whole arrangement back to the default (the groups, their order and shares, in the three regions), and said.
+   * The regions' sizes, the hidden regions and the open views are the project's: untouched.
+   */
+  reset(): void {
+    this.arrange(defaultArrangement());
+    this.status = t("panel.layoutReset");
   }
 
   #flush(): void {

@@ -3,7 +3,7 @@
 // the Notes keep them for the life of the window.
 
 import type { Api } from "../../api";
-import { BOTTOM, clampWidth, RIGHT, SIDEBAR } from "./layout";
+import { BOTTOM, clampWidth, fitBottom, RIGHT, SIDEBAR } from "./layout";
 import { emptyProjectViews, parseProjectViews, type ProjectViews } from "./arrangement";
 
 const KEYS = {
@@ -28,6 +28,12 @@ export class LayoutStore {
   rightHidden = $state(false);
   /** The person hid the bottom panel. */
   bottomHidden = $state(false);
+  /** The height of the frame's center column (the page over the bottom panel), as the frame last measured it
+   *  (px; 0: not measured yet). The window's, not the project's: a load keeps it. */
+  centerHeight = $state(0);
+  /** The bottom panel's height as drawn: the one asked for, made to fit under the page (`fitBottom`); `null`: the
+   *  window is too short for even its minimum. Worked out here alone: the frame draws it, the region's state reads it. */
+  readonly bottomFit = $derived(fitBottom(this.centerHeight, this.bottom));
   /** A project's session is being read: the panels stay off until it says (no flash of a panel it hides). */
   reading = $state(false);
   /** The views this project opened | closed and the tab each group shows, in every region (`arrangement.ts`). */
@@ -92,8 +98,15 @@ export class LayoutStore {
     return this.rightHidden || this.reading;
   }
 
+  /** The bottom panel is off screen: hidden by the person, its project's session not read yet, or squeezed out by a
+   *  window too short for it. */
   get bottomOff(): boolean {
-    return this.bottomHidden || this.reading;
+    return this.bottomHidden || this.reading || this.bottomFit === null;
+  }
+
+  /** The frame measured its center column. */
+  setCenterHeight(px: number): void {
+    this.centerHeight = px;
   }
 
   setSidebar(px: number): void {

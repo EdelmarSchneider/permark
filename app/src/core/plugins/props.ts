@@ -67,7 +67,8 @@ export type OutlineWatcherProps = {
 };
 
 /** The props of a view with a header of its own (`panel` side right, the outline): the view options button for
- *  that header, in whatever region the view sits. */
+ *  that header, in whatever region the view sits. Absent while the view is a tab of a group (its tab strip has the
+ *  button) or the only view of the window. */
 export type PanelViewProps = {
   viewMenu?: Snippet;
 };

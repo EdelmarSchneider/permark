@@ -14,7 +14,9 @@
   // The views of one group of a region as tabs (Files | Search | plugin tabs at the left, Outline | Live changes at the
   // right): drawn by the region when the group shows two views or more, or one view without a header of its own.
   // Selecting shows a view, never hides it. One Tab stop: arrows move between the tabs, Enter | Space select; right
-  // click | Shift+F10 | the Menu key open the view's options.
+  // click | Shift+F10 | the Menu key open the view's options. After the tabs, where the window has views to arrange,
+  // one options button for the tab shown: a Tab stop of its own, seen while the strip is pointed at | has the focus.
+  import Ellipsis from "@lucide/svelte/icons/ellipsis";
   import { t } from "../i18n";
 
   type Props = {
@@ -23,16 +25,31 @@
     onselect: (id: string) => void;
     /** The view's options at a point (`null`: under the tab). */
     onmenu?: (id: string, at: { x: number; y: number }, anchor: HTMLElement) => void;
+    /** The options button was pressed, for the tab shown (absent: the strip draws no button). */
+    onoptions?: (id: string, button: HTMLElement) => void;
+    /** The options of the tab shown are open. */
+    expanded?: boolean;
     /** The strip's name (default: the right panel's). */
     label?: string;
     /** Tabs that keep their labels: more make the strip crowded. */
     roomy?: number;
   };
-  let { views, selected, onselect, onmenu, label, roomy = 2 }: Props = $props();
+  let {
+    views,
+    selected,
+    onselect,
+    onmenu,
+    onoptions,
+    expanded = false,
+    label,
+    roomy = 2,
+  }: Props = $props();
 
   /** Many tabs: the ones that are not open show their icon alone (the label is the tooltip). */
   const crowded = $derived(views.length > roomy);
-  /** The tab that takes the Tab stop (the selected one until arrows move the focus). */
+  /** The tab the options button acts on: the one shown (nothing selected: the first). */
+  const shown = $derived(views.find((v) => v.id === selected) ?? views[0] ?? null);
+  /** The tab that takes the Tab stop (the selected one until the focus goes to another: arrows, a click, a script). */
   let focused = $state<string | null>(null);
   const stop = $derived(
     views.find((v) => v.id === focused)?.id ??
@@ -86,63 +103,116 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_interactive_supports_focus -->
-<div
-  class="tabs"
-  class:crowded
-  role="tablist"
-  aria-label={label ?? t("panel.tabs")}
-  bind:this={strip}
-  onkeydown={keydown}
-  onfocusout={(event) => {
-    if (!(event.relatedTarget instanceof Node) || !strip?.contains(event.relatedTarget)) {
-      focused = null;
-    }
-  }}
->
-  {#each views as view (view.id)}
-    {@const iconOnly = view.icon !== undefined && crowded && selected !== view.id}
+<div class="bar">
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
+  <div
+    class="tabs"
+    class:crowded
+    role="tablist"
+    aria-label={label ?? t("panel.tabs")}
+    bind:this={strip}
+    onkeydown={keydown}
+    onfocusin={(event) => {
+      const tab = event.target instanceof Element ? event.target.closest("[data-view]") : null;
+      focused = tab?.getAttribute("data-view") ?? focused;
+    }}
+    onfocusout={(event) => {
+      if (!(event.relatedTarget instanceof Node) || !strip?.contains(event.relatedTarget)) {
+        focused = null;
+      }
+    }}
+  >
+    {#each views as view (view.id)}
+      {@const iconOnly = view.icon !== undefined && crowded && selected !== view.id}
+      <button
+        type="button"
+        role="tab"
+        class="tab"
+        class:icon-only={iconOnly}
+        data-view={view.id}
+        tabindex={stop === view.id ? 0 : -1}
+        aria-selected={selected === view.id}
+        aria-label={iconOnly
+          ? view.badge === null
+            ? view.label
+            : `${view.label} ${view.badge}`
+          : undefined}
+        title={view.label}
+        onclick={() => {
+          if (view.id !== selected) onselect(view.id);
+        }}
+        oncontextmenu={(event) => {
+          if (onmenu === undefined || !(event.currentTarget instanceof HTMLElement)) return;
+          event.preventDefault();
+          onmenu(view.id, { x: event.clientX, y: event.clientY }, event.currentTarget);
+        }}
+      >
+        {#if view.icon}
+          {@const Icon = view.icon}
+          <Icon size={14} />
+        {/if}
+        {#if !iconOnly}<span class="label">{view.label}</span>{/if}
+        {#if view.badge !== null}{" "}<span class="badge">{view.badge}</span>{/if}
+      </button>
+    {/each}
+  </div>
+  {#if onoptions && shown}
+    {@const name = t("panel.viewMenu", { name: shown.label })}
     <button
       type="button"
-      role="tab"
-      class="tab"
-      class:icon-only={iconOnly}
-      data-view={view.id}
-      tabindex={stop === view.id ? 0 : -1}
-      aria-selected={selected === view.id}
-      aria-label={iconOnly
-        ? view.badge === null
-          ? view.label
-          : `${view.label} ${view.badge}`
-        : undefined}
-      title={view.label}
-      onclick={() => {
-        if (view.id !== selected) onselect(view.id);
-      }}
-      oncontextmenu={(event) => {
-        if (onmenu === undefined || !(event.currentTarget instanceof HTMLElement)) return;
-        event.preventDefault();
-        onmenu(view.id, { x: event.clientX, y: event.clientY }, event.currentTarget);
-      }}
+      class="icon-btn options"
+      data-view-menu={shown.id}
+      aria-label={name}
+      title={name}
+      aria-haspopup="menu"
+      aria-expanded={expanded}
+      onclick={(event) => onoptions(shown.id, event.currentTarget)}
     >
-      {#if view.icon}
-        {@const Icon = view.icon}
-        <Icon size={14} />
-      {/if}
-      {#if !iconOnly}<span class="label">{view.label}</span>{/if}
-      {#if view.badge !== null}{" "}<span class="badge">{view.badge}</span>{/if}
+      <Ellipsis size={14} aria-hidden="true" />
     </button>
-  {/each}
+  {/if}
 </div>
 
 <style>
-  .tabs {
+  /* the tabs, then the options button: one line over the views of the group */
+  .bar {
     display: flex;
     flex: none;
+    min-width: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .tabs {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
     gap: 2px;
     padding: var(--sp-2) var(--sp-2) 0;
     overflow: hidden;
-    border-bottom: 1px solid var(--border);
+  }
+  /* a 24 px target at the end of the strip. Not seen until the strip is pointed at or holds the focus: by opacity
+     alone, so it keeps its room and its Tab stop */
+  .options {
+    flex: none;
+    align-self: center;
+    width: 24px;
+    height: 24px;
+    margin-inline-end: var(--sp-2);
+    opacity: 0;
+  }
+  .bar:hover .options,
+  .bar:focus-within .options,
+  .options[aria-expanded="true"] {
+    opacity: 1;
+  }
+  .options[aria-expanded="true"] {
+    background: var(--hover);
+    color: var(--text);
+  }
+  /* nothing hovers on a touch screen: always there */
+  @media (hover: none) {
+    .options {
+      opacity: 1;
+    }
   }
   /* the open tab gives way before the others do: every tab stays reachable */
   .tab {

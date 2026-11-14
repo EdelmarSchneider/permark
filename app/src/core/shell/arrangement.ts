@@ -185,6 +185,37 @@ export function withViews(
   );
 }
 
+/** Two shares are the same but for rounding. */
+const SHARE_EPSILON = 1e-6;
+
+/**
+ * `arr` is the default arrangement: in every region the same groups, in the same order, with the same shares, once
+ * both list `views` (the views known now: one a plugin adds joins its default region in both).
+ */
+export function isDefault(
+  arr: Arrangement,
+  views: readonly { readonly id: string; readonly region: Region }[],
+): boolean {
+  const mine = withViews(arr, views);
+  const base = withViews(defaultArrangement(), views);
+  return REGIONS.every((region) => {
+    const groups = mine[region];
+    const defaults = base[region];
+    return (
+      groups.length === defaults.length &&
+      groups.every((group, at) => {
+        const other = defaults[at];
+        return (
+          other !== undefined &&
+          Math.abs(group.share - other.share) < SHARE_EPSILON &&
+          group.views.length === other.views.length &&
+          group.views.every((id, i) => id === other.views[i])
+        );
+      })
+    );
+  });
+}
+
 /** A group as drawn: its place in the region, its present views in order, its share of the drawn ones. */
 export type DrawnGroup = {
   readonly at: number;

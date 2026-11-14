@@ -29,8 +29,6 @@
   const groups = $derived(arrangement.drawn(region));
   /** The way the groups follow each other. */
   const axis = $derived(axisOf(region));
-  /** Arranging controls (the strips' menus, the headers' menus) only with two views or more. */
-  const arranging = $derived(viewMenu.arranging(region));
 
   /** The name of the region's tab strips, and how many tabs keep their labels before a strip is crowded. */
   const strips = $derived.by(() => {
@@ -140,11 +138,10 @@
     return axis === "vertical" ? { row: at, column: "1" } : { row: rows, column: at };
   }
 
-  /** Right click | Shift+F10 | the Menu key on a view's header: its options. */
+  /** Right click | Shift+F10 | the Menu key on a view's header: its options (with or without an options button). */
   function headerOf(event: Event): HTMLElement | null {
     const target = event.target;
-    if (!arranging || !(target instanceof Element)) return null;
-    return target.closest<HTMLElement>("[data-view-header]");
+    return target instanceof Element ? target.closest<HTMLElement>("[data-view-header]") : null;
   }
 
   function headerMenu(id: string, event: MouseEvent): void {
@@ -186,7 +183,9 @@
           views={tabsOf(item.place.group)}
           selected={shownIn(item.place.group)}
           onselect={selectView}
-          onmenu={arranging ? (id, at, anchor) => viewMenu.at(id, at, anchor) : undefined}
+          onmenu={(id, at, anchor) => viewMenu.at(id, at, anchor)}
+          onoptions={viewMenu.hasButton ? (id, button) => viewMenu.toggle(id, button) : undefined}
+          expanded={viewMenu.open?.id === shownIn(item.place.group)}
           label={strips.label}
           roomy={strips.roomy}
         />

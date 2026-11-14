@@ -301,10 +301,11 @@
   <Frame
     sidebarWidth={layout.sidebar}
     rightWidth={layout.right}
-    bottomHeight={layout.bottom}
+    bottomHeight={layout.bottomFit ?? layout.bottom}
     onSidebarWidth={(px) => layout.setSidebar(px)}
     onRightWidth={(px) => layout.setRight(px)}
     onBottomHeight={(px) => layout.setBottom(px)}
+    onCenterHeight={(px) => layout.setCenterHeight(px)}
     sidebarHidden={layout.sidebarOff}
     rightHidden={layout.rightOff}
     bottomHidden={layout.bottomOff}

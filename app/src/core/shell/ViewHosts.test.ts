@@ -282,19 +282,6 @@ describe("a region", () => {
     ).toBe("Right panel views");
   });
 
-  it("a view's options button shows where its region has two views or more, never on a sidebar view", async () => {
-    const host = await show();
-    const button = (): HTMLElement | null => host.querySelector(`[data-view-menu="${PROBE}"]`);
-    expect(button()).not.toBeNull();
-    layout.setOpen(OTHER, false);
-    flushSync();
-    expect(button()).toBeNull();
-    layout.setOpen(OTHER, true);
-    flushSync();
-    expect(button()).not.toBeNull();
-    expect(document.querySelectorAll("[data-view-menu]")).toHaveLength(1);
-  });
-
   it("one options menu for the window: a tab's right click and a view's button open the same one", async () => {
     const host = await show();
     const menus = (): Element[] => [...document.querySelectorAll('[role="menu"]')];
@@ -305,14 +292,28 @@ describe("a region", () => {
     host.querySelector<HTMLElement>(`[data-view-menu="${PROBE}"]`)?.click();
     flushSync();
     expect(menus()).toHaveLength(1);
-    expect(items()).toEqual(["Move up", "Move down", "Show as tab", "Close", "Reset layout"]);
+    expect(items()).toEqual([
+      "Move up",
+      "Move down",
+      "Show as tab",
+      "Move to left",
+      "Move to bottom",
+      "Close",
+      "Reset layout",
+    ]);
     // a sidebar tab: the same menu, for that view; it cannot be closed
     document
       .querySelector(`[role="tab"][data-view="${SEARCH}"]`)
       ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     flushSync();
     expect(menus()).toHaveLength(1);
-    expect(items()).toEqual(["Show above", "Show below", "Reset layout"]);
+    expect(items()).toEqual([
+      "Show above",
+      "Show below",
+      "Move to right",
+      "Move to bottom",
+      "Reset layout",
+    ]);
   });
 
   it("at the bottom puts its groups side by side: a column each, the strip over its group, an upright divider between", async () => {
@@ -336,7 +337,7 @@ describe("a region", () => {
     const strip = region.querySelector('[role="tablist"]');
     expect(strips("bottom")).toEqual([["Search"]]);
     expect(strip?.getAttribute("aria-label")).toBe("Bottom panel views");
-    expect(at(strip?.parentElement)).toEqual(["1", "1"]);
+    expect(at(strip?.closest(".strip"))).toEqual(["1", "1"]);
     expect(at(slot(SEARCH))).toEqual(["1", "2"]);
     // the divider and a view with its own header take the whole height
     const bar = region.querySelector('[role="separator"]');
@@ -346,7 +347,8 @@ describe("a region", () => {
     // seen from left to right = the Tab order
     expect(
       [...region.children].map(
-        (el) => el.getAttribute("data-view-slot") ?? el.firstElementChild?.getAttribute("role"),
+        (el) =>
+          el.getAttribute("data-view-slot") ?? el.querySelector("[role]")?.getAttribute("role"),
       ),
     ).toEqual(["tablist", SEARCH, "separator", PROBE]);
     // a side region still stacks: rows, one column

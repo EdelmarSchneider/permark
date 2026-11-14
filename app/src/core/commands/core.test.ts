@@ -108,6 +108,28 @@ describe("the core's commands", () => {
     expect(asked).toHaveBeenCalledOnce();
   });
 
+  it("reset the layout of the panels: the whole arrangement, by the store's one reset (the views' menu uses it too)", async () => {
+    const { arrangement } = await import("../shell/arrangement.svelte");
+    const { defaultArrangement, FILES, moveTo, OUTLINE, SEARCH } =
+      await import("../shell/arrangement");
+    const command = commands.find((c) => c.id === "panel.resetLayout");
+    expect(en[command?.label ?? "cmd.save"]).toBe("Reset the layout of the panels");
+    let moved = moveTo(defaultArrangement(), SEARCH, "bottom");
+    moved = moveTo(moved, OUTLINE, "left");
+    moved = { ...moved, left: [{ views: [OUTLINE, FILES], share: 1 }] };
+    arrangement.arrange(moved);
+    expect(arrangement.atDefault).toBe(false);
+    const reset = vi.spyOn(arrangement, "reset");
+    await command?.run();
+    expect(reset).toHaveBeenCalledOnce();
+    expect(arrangement.saved).toEqual(defaultArrangement());
+    expect(arrangement.atDefault).toBe(true);
+    expect(arrangement.status).toBe(en["panel.layoutReset"]);
+    expect(en["panel.layoutReset"]).toBe("Layout of the panels reset");
+    reset.mockRestore();
+    arrangement.status = "";
+  });
+
   it("switch long lines wrapping with Alt+Z: saved, said by one note that closes, twice is back", async () => {
     const keyOf = (id: string): string | undefined => shortcuts.find((s) => s.command === id)?.keys;
     expect(keyOf("doc.wrapLines")).toBe("Alt+z");
