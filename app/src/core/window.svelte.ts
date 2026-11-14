@@ -27,7 +27,9 @@ import { look } from "./look.svelte";
 import { tabs } from "./shell/tabs.svelte";
 import { ui } from "./shell/ui.svelte";
 
-export type NoticeAction = { label: string; run: () => void };
+/** A button of a notice. `run` answers a promise when its work goes on after it returns (an Undo that asks the
+ *  backend, then places the keyboard): what follows the action waits for it. */
+export type NoticeAction = { label: string; run: () => void | Promise<void> };
 
 export type Notice =
   | { id: number; kind: "openFailed"; path: string; error: IpcError }

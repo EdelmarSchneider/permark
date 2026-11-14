@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 // The views of the window are created once and moved: a view that changes group | region keeps its component (what
 // was typed, how far a list was scrolled); a region draws tab strips, slots and dividers, never a view's body.
-import { flushSync, mount, unmount } from "svelte";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "../../api";
 import type { PluginId } from "../../api/generated/PluginId";
@@ -109,6 +111,7 @@ afterEach(async () => {
   for (const remove of removals.splice(0)) remove();
   conditions.set(neutralContext());
   for (const region of REGIONS) arrangement.setSize(region, 0);
+  arrangement.say("");
   await layout.load(api, false);
   vi.restoreAllMocks();
 });
@@ -184,7 +187,6 @@ describe("a view that moves", () => {
       expect(field.value, name).toBe("typed");
       expect(list.scrollTop, name).toBe(37);
     }
-    arrangement.status = "";
   });
 
   it("gets its scroll offsets back where a browser forgets them (an element taken out of the page and put back)", async () => {
@@ -335,8 +337,8 @@ describe("a region", () => {
       "Move up",
       "Move down",
       "Show as tab",
-      "Move to left",
-      "Move to bottom",
+      "Move to sidebar",
+      "Move to bottom panel",
       "Close",
       "Layouts…",
       "Reset layout",
@@ -350,8 +352,8 @@ describe("a region", () => {
     expect(items()).toEqual([
       "Show above",
       "Show below",
-      "Move to right",
-      "Move to bottom",
+      "Move to right panel",
+      "Move to bottom panel",
       "Layouts…",
       "Reset layout",
     ]);
@@ -463,8 +465,31 @@ describe("a region", () => {
     const said = (): Element[] => [...document.querySelectorAll("[data-view-status]")];
     expect(said()).toHaveLength(1);
     expect(said()[0]?.getAttribute("role")).toBe("status");
-    arrangement.status = "Outline moved down";
-    flushSync();
+    arrangement.say("Outline moved down");
+    await tick();
+    await tick();
     expect(said()[0]?.textContent).toBe("Outline moved down");
+    // the same words again: the line is emptied first, so they are a change a screen reader announces
+    arrangement.say("Outline moved down");
+    flushSync();
+    expect(said()[0]?.textContent).toBe("");
+    await tick();
+    await tick();
+    expect(said()[0]?.textContent).toBe("Outline moved down");
+  });
+});
+
+describe("the window's template", () => {
+  it("draws the views' hosts before the frame: their scroll offsets are noted before a region draws a change", () => {
+    const app = readFileSync(resolve(process.cwd(), "src/App.svelte"), "utf8");
+    const markup = app.slice(app.indexOf("</script>"));
+    const hosts = markup.indexOf("<ViewHosts");
+    const frame = markup.indexOf("<Frame");
+    expect(hosts).toBeGreaterThan(-1);
+    expect(frame).toBeGreaterThan(-1);
+    expect(hosts).toBeLessThan(frame);
+    // one of each: no second place a region could be drawn from
+    expect(markup.split("<ViewHosts")).toHaveLength(2);
+    expect(markup.split("<Frame")).toHaveLength(2);
   });
 });

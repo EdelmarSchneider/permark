@@ -354,7 +354,7 @@
   <KeymapDialog {store} />
 {/if}
 {#if ui.layoutsDialog.status === "open"}
-  <LayoutsDialog {store} />
+  <LayoutsDialog />
 {/if}
 <DefaultAppDialog />
 {#if importFlow.state.status === "asking" || (importFlow.state.status === "planning" && importFlow.state.slow)}

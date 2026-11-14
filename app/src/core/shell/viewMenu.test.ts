@@ -27,6 +27,8 @@ const { conditions, neutralContext } = await import("../conditions/context.svelt
 const { contributions } = await import("../plugins/instance.svelte");
 const { default: RegionsHost } = await import("../testing/RegionsHost.svelte");
 const { probe } = await import("../testing/ViewProbe.svelte");
+const { windowStore } = await import("../window.svelte");
+const { BOTTOM, PAGE_MIN_H } = await import("./layout");
 const { layout } = await import("./layout.svelte");
 const { arrangement } = await import("./arrangement.svelte");
 const { defaultArrangement, DIVIDER_PX, FILES, MIN_GROUP_PX, OUTLINE, REGIONS, SEARCH } =
@@ -101,6 +103,21 @@ const stripButtons = (region: string): HTMLElement[] =>
     (button) => button.closest("[data-view-host]") === null,
   );
 const said = (): string => document.querySelector("[data-view-status]")?.textContent ?? "";
+/** Every text the window's status line holds from now on, in order. */
+function heard(): string[] {
+  const line = document.querySelector("[data-view-status]");
+  if (line === null) throw new Error("no status line");
+  const texts: string[] = [];
+  new MutationObserver(() => texts.push(line.textContent ?? "")).observe(line, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+  return texts;
+}
+/** The notice a change of the whole arrangement left. */
+const layoutNotices = () =>
+  windowStore.notices.flatMap((n) => (n.kind === "action" && n.key === "layout" ? [n] : []));
 const menuItems = (): HTMLElement[] => [
   ...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"]'),
 ];
@@ -158,7 +175,9 @@ afterEach(async () => {
   for (const remove of removals.splice(0)) remove();
   conditions.set(neutralContext());
   for (const region of REGIONS) arrangement.setSize(region, 0);
-  arrangement.status = "";
+  layout.setCenterHeight(0);
+  windowStore.dismissKey("layout");
+  arrangement.say("");
   await layout.load(api, false);
   vi.restoreAllMocks();
 });
@@ -170,8 +189,8 @@ describe("the entries of a view's menu", () => {
       "Move down",
       "Show as tab",
       "—",
-      "Move to left",
-      "Move to bottom",
+      "Move to sidebar",
+      "Move to bottom panel",
       "—",
       "Close",
       "—",
@@ -188,8 +207,8 @@ describe("the entries of a view's menu", () => {
       "Show above",
       "Show below",
       "—",
-      "Move to left",
-      "Move to bottom",
+      "Move to sidebar",
+      "Move to bottom panel",
       "—",
       "Close",
       "—",
@@ -206,8 +225,8 @@ describe("the entries of a view's menu", () => {
         "Show above",
         "Show below",
         "—",
-        "Move to right",
-        "Move to bottom",
+        "Move to right panel",
+        "Move to bottom panel",
         "—",
         "Layouts…",
         "Reset layout",
@@ -224,8 +243,8 @@ describe("the entries of a view's menu", () => {
       "Move right",
       "Show as tab",
       "—",
-      "Move to left",
-      "Move to right",
+      "Move to sidebar",
+      "Move to right panel",
       "—",
       "Layouts…",
       "Reset layout",
@@ -234,8 +253,8 @@ describe("the entries of a view's menu", () => {
       "Show on the left",
       "Show on the right",
       "—",
-      "Move to left",
-      "Move to right",
+      "Move to sidebar",
+      "Move to right panel",
       "—",
       "Close",
       "—",
@@ -247,8 +266,8 @@ describe("the entries of a view's menu", () => {
   it("a view alone in its region has nothing to arrange there: only the other regions, Close, Reset", () => {
     layout.setOpen(OTHER, false);
     expect(menuOf(PROBE)).toEqual([
-      "Move to left",
-      "Move to bottom",
+      "Move to sidebar",
+      "Move to bottom panel",
       "—",
       "Close",
       "—",
@@ -258,7 +277,7 @@ describe("the entries of a view's menu", () => {
     // the only view at the bottom
     layout.setOpen(OTHER, true);
     arrange([[FILES, SEARCH]], [[PROBE]], [[OTHER]]);
-    expect(menuOf(OTHER).slice(0, 2)).toEqual(["Move to left", "Move to right"]);
+    expect(menuOf(OTHER).slice(0, 2)).toEqual(["Move to sidebar", "Move to right panel"]);
   });
 
   it("a region with three groups takes no more: show above | below cannot act", () => {
@@ -282,7 +301,7 @@ describe("the entries of a view's menu", () => {
       "—",
     ]);
     // the moves to another region still act
-    expect(menuOf(PROBE).slice(5, 7)).toEqual(["Move to left", "Move to bottom"]);
+    expect(menuOf(PROBE).slice(5, 7)).toEqual(["Move to sidebar", "Move to bottom panel"]);
     arrange([[FILES]], [], [[SEARCH], [PROBE, OTHER]]);
     arrangement.setSize("bottom", 2 * MIN_GROUP_PX + DIVIDER_PX - 1);
     expect(menuOf(SEARCH).slice(0, 4)).toEqual([
@@ -390,8 +409,8 @@ describe("the options button", () => {
       ?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     flushSync();
     expect(menuItems().map((item) => item.textContent?.trim())).toEqual([
-      "Move to left",
-      "Move to bottom",
+      "Move to sidebar",
+      "Move to bottom panel",
       "Close",
       "Layouts…",
       "Reset layout",
@@ -418,7 +437,7 @@ describe("an action of the menu", () => {
     if (!field) throw new Error("no probe body");
     field.value = "typed";
     press(stripButtons("sidebar")[0]);
-    await pick("Move to bottom");
+    await pick("Move to bottom panel");
     expect(placed()).toEqual({ left: [[FILES, SEARCH]], right: [], bottom: [[OTHER, PROBE]] });
     expect(arrangement.isSelected(PROBE)).toBe(true);
     expect(layout.bottomHidden).toBe(false);
@@ -427,7 +446,7 @@ describe("an action of the menu", () => {
     expect(regionAt(host)).toBe("bottom");
     expect(probe.mounts).toBe(1);
     expect(field.value).toBe("typed");
-    expect(said()).toBe("Outline moved to the bottom");
+    expect(said()).toBe("Outline moved to the bottom panel");
     // the keyboard: the options of the moved view, at the end of the strip it joined
     const [button] = stripButtons("bottom");
     expect(button?.getAttribute("data-view-menu")).toBe(PROBE);
@@ -438,19 +457,19 @@ describe("an action of the menu", () => {
   it("Move to left | right: the selected tab of the last group there", async () => {
     await show();
     press(headerButton(PROBE));
-    await pick("Move to left");
+    await pick("Move to sidebar");
     expect(placed()).toEqual({ left: [[FILES, SEARCH, PROBE]], right: [[OTHER]], bottom: [] });
     expect(arrangement.isSelected(PROBE)).toBe(true);
-    expect(said()).toBe("Outline moved to the left");
+    expect(said()).toBe("Outline moved to the sidebar");
     expect(document.activeElement).toBe(stripButtons("sidebar")[0]);
     expect(document.activeElement?.getAttribute("data-view-menu")).toBe(PROBE);
 
     layout.setOpen(OTHER, false);
     flushSync();
     press(stripButtons("sidebar")[0]);
-    await pick("Move to right");
+    await pick("Move to right panel");
     expect(placed()).toEqual({ left: [[FILES, SEARCH]], right: [[OTHER, PROBE]], bottom: [] });
-    expect(said()).toBe("Outline moved to the right");
+    expect(said()).toBe("Outline moved to the right panel");
     // alone among the present views of its group: its own header has the options
     expect(document.activeElement).toBe(headerButton(PROBE));
   });
@@ -463,7 +482,7 @@ describe("an action of the menu", () => {
     press(stripButtons("bottom")[0]);
     await pick("Show on the right");
     expect(placed().bottom).toEqual([[SEARCH, OTHER], [PROBE]]);
-    expect(said()).toBe("Outline now shows on the right");
+    expect(said()).toBe("Outline now shows in its own group, on the right");
     expect(document.activeElement).toBe(headerButton(PROBE));
     press(headerButton(PROBE));
     await pick("Move left");
@@ -476,7 +495,7 @@ describe("an action of the menu", () => {
     press(stripButtons("bottom")[0]);
     await pick("Show on the left");
     expect(placed().bottom).toEqual([[SEARCH], [OTHER], [PROBE]]);
-    expect(said()).toBe("Search now shows on the left");
+    expect(said()).toBe("Search now shows in its own group, on the left");
   });
 
   it("at a side: Show as tab selects the tab, the strip's options take the keyboard", async () => {
@@ -511,9 +530,24 @@ describe("an action of the menu", () => {
     press(stripButtons("sidebar")[0]);
     const again = menuItems().find((item) => item.textContent?.trim() === "Reset layout");
     expect(again?.getAttribute("aria-disabled")).toBe("true");
+    viewMenu.close();
+    flushSync();
+
+    // the same notice as a reset from the Layouts dialog: the words said, and Undo
+    const [notice, ...more] = layoutNotices();
+    expect(more).toEqual([]);
+    expect(notice?.text).toBe("Layout of the panels reset");
+    expect(notice?.actions.map((action) => action.label)).toEqual(["Undo"]);
+    notice?.actions[0]?.run();
+    flushSync();
+    await tick();
+    await tick();
+    expect(placed()).toEqual({ left: [[SEARCH], [FILES]], right: [[OTHER]], bottom: [[PROBE]] });
+    expect(said()).toBe("Undone.");
+    expect(layoutNotices()).toEqual([]);
   });
 
-  it("Close from a strip's options: the view goes, the keyboard goes to what its region still shows", async () => {
+  it("Close from a strip's options: the view goes, it is said, the keyboard goes to what its region still shows", async () => {
     await show();
     arrange([[FILES, SEARCH]], [[PROBE, OTHER]]);
     selectView(OTHER);
@@ -521,7 +555,43 @@ describe("an action of the menu", () => {
     press(stripButtons("right")[0]);
     await pick("Close");
     expect(arrangement.isPresent(OTHER)).toBe(false);
+    expect(said()).toBe("Live changes closed");
     expect(document.activeElement).not.toBe(document.body);
     expect(slot(PROBE)?.contains(document.activeElement)).toBe(true);
+  });
+
+  it("the same move twice in a row: the status line is emptied in between, so both are announced", async () => {
+    await show();
+    arrange([[FILES]], [[PROBE], [OTHER], [SEARCH]]);
+    const texts = heard();
+    press(headerButton(PROBE));
+    await pick("Move down");
+    expect(placed().right).toEqual([[OTHER], [PROBE], [SEARCH]]);
+    press(headerButton(PROBE));
+    await pick("Move down");
+    expect(placed().right).toEqual([[OTHER], [SEARCH], [PROBE]]);
+    await tick();
+    expect(texts).toEqual(["Outline moved down", "", "Outline moved down"]);
+  });
+
+  it("a view moved to a bottom region the window is too short to show: the move is made and the way to see it said", async () => {
+    await show();
+    layout.setCenterHeight(PAGE_MIN_H + BOTTOM.min - 1);
+    expect(layout.bottomFit).toBeNull();
+    press(headerButton(PROBE));
+    await pick("Move to bottom panel");
+    expect(placed().bottom).toEqual([[PROBE]]);
+    expect(said()).toBe("Outline moved to the bottom panel. Make the window taller to show it.");
+    // any other move says what it always says
+    viewMenu.moved(PROBE, "panel.moved.toRight");
+    await tick();
+    await tick();
+    expect(said()).toBe("Outline moved to the right panel");
+    // with room for the region, the plain words
+    layout.setCenterHeight(PAGE_MIN_H + BOTTOM.min);
+    viewMenu.moved(PROBE, "panel.moved.toBottom");
+    await tick();
+    await tick();
+    expect(said()).toBe("Outline moved to the bottom panel");
   });
 });

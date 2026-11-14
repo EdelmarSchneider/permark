@@ -69,8 +69,14 @@ export function regionState(region: Region): RegionState {
         : [],
     ),
     // a bottom region the window is too short to draw is off like one the person hid
-    hidden: isHidden(region) || (region === "bottom" && layout.bottomFit === null),
+    hidden: isHidden(region) || (region === "bottom" && bottomSqueezed()),
   };
+}
+
+/** The window is too short to draw the bottom region (the page keeps its minimum height): showing it would show
+ *  nothing, so its toggle and its command cannot act until the window is taller. */
+export function bottomSqueezed(): boolean {
+  return layout.bottomFit === null;
 }
 
 /** The region the view `id` is arranged in (one no region lists: the right, where a panel opens by default). */
@@ -167,6 +173,26 @@ function focusPage(): void {
   else if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 }
 
+/** Nothing holds the keyboard: it is on the page body, or what had it left the page. */
+function adrift(): boolean {
+  const now = document.activeElement;
+  return !(now instanceof HTMLElement) || now === document.body || !now.isConnected;
+}
+
+/**
+ * The keyboard is never left on the page body once what held it is gone (a notice whose button ran, a control the
+ * arrangement no longer draws). While something holds it, nothing happens. Else it goes back to `before`, what had
+ * it earlier, when that is still in the page and takes it; else to the page.
+ */
+export function returnFocus(before: Element | null = null): void {
+  if (!adrift()) return;
+  if (before instanceof HTMLElement && before.isConnected) {
+    before.focus({ preventScroll: true });
+    if (document.activeElement === before) return;
+  }
+  focusPage();
+}
+
 /** The first control of the view `id` as drawn (`null`: none, or the view is not drawn). */
 function firstControl(id: string): HTMLElement | null {
   const controls = ':is(button:not([disabled]), [tabindex="0"], input, a[href])';
@@ -207,6 +233,8 @@ function apply(region: Region, choice: RegionChoice): void {
 /** The toggle of `region` (its key, its status bar button), where the region has one: it hides | shows; the right
  *  region with nothing present turns the outline on, else opens the first panel arranged there. */
 export function toggleRegion(region: Region): void {
+  // a bottom region the window cannot draw: a toggle would change the person's choice and show nothing
+  if (region === "bottom" && bottomSqueezed()) return;
   if (hasToggle(region)) apply(region, regionStep(regionState(region)));
 }
 
@@ -288,8 +316,7 @@ export function closeView(id: string, held = false): void {
 
 /** After a view closed under the focus: the first control of a view its region still shows, else the page. */
 function keepFocus(region: Region | null): void {
-  const now = document.activeElement;
-  if (now instanceof HTMLElement && now !== document.body && now.isConnected) return;
+  if (!adrift()) return;
   for (const group of region === null ? [] : arrangement.drawn(region)) {
     const next = firstControl(arrangement.selectedOf(group) ?? "");
     if (next) {

@@ -30,7 +30,7 @@ export type Axis = "vertical" | "horizontal";
 
 export type ViewGroup = { readonly views: readonly string[]; readonly share: number };
 /** What 0.11 saved: the right column alone. */
-export type RightViews = { readonly v: 1; readonly groups: readonly ViewGroup[] };
+type RightViews = { readonly v: 1; readonly groups: readonly ViewGroup[] };
 export type Arrangement = {
   readonly v: 2;
   readonly left: readonly ViewGroup[];
@@ -51,7 +51,7 @@ export function axisOf(region: Region): Axis {
 }
 
 /** Stacked: the outline on top, Live changes below, half each. */
-export function defaultRightViews(): RightViews {
+function defaultRightViews(): RightViews {
   return {
     v: 1,
     groups: [
@@ -118,7 +118,7 @@ function safeGroups(raw: readonly unknown[], seen: Set<string>): ViewGroup[] {
  * The right column 0.11 saved, made safe (`safeGroups`): absent | damaged | another version | nothing usable -> the
  * default.
  */
-export function parseRightViews(raw: unknown): RightViews {
+function parseRightViews(raw: unknown): RightViews {
   if (!isRecord(raw) || raw["v"] !== 1 || !Array.isArray(raw["groups"])) return defaultRightViews();
   const groups = safeGroups(raw["groups"], new Set());
   return groups.length === 0 ? defaultRightViews() : { v: 1, groups };

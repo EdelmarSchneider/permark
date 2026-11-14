@@ -2,7 +2,10 @@
   // The line between two groups of a region: drag it, or focus it and use the arrows along the stack (Up | Down for
   // groups one above the other, Left | Right for groups side by side; Shift = big steps, Home | End = one view at its
   // smallest, Enter | double click = half each). It only reports the new split; the region draws it (window splitter
-  // pattern: the bar lies across the stack).
+  // pattern: the bar lies across the stack). Its split and its real limits are published all the while it is drawn
+  // (a screen reader may read it without focusing it).
+  import { untrack } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import { t } from "../i18n";
   import { STEP, STEP_BIG } from "./layout";
   import { MIN_GROUP_PX, type Axis } from "./arrangement";
@@ -42,14 +45,28 @@
 
   function sync(): void {
     const { above, below } = measure();
+    // a group that is not drawn yet has no size: nothing to say of the split
+    if (above <= 0 || below <= 0) return;
     const both = above + below;
-    if (both <= 0) return;
     percent = Math.round((above / both) * 100);
     bounds = {
       min: Math.round((Math.min(MIN_GROUP_PX, both / 2) / both) * 100),
       max: Math.round(((both - Math.min(MIN_GROUP_PX, both / 2)) / both) * 100),
     };
   }
+
+  /**
+   * For the bar (`{@attach}`): the split and its limits are read once it is drawn, and again whenever the view
+   * before it changes size (a split moved, the window resized, the groups laid out for the first time).
+   */
+  const published: Attachment<HTMLElement> = () => {
+    untrack(sync);
+    const before = document.getElementById(controls);
+    if (before === null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(sync);
+    observer.observe(before);
+    return () => observer.disconnect();
+  };
 
   /** The group before it at `px` (kept inside both minimums). */
   function split(px: number, both: number): void {
@@ -122,6 +139,7 @@
   aria-valuemax={bounds.max}
   aria-valuetext={t("layout.viewsValue", { top, percent })}
   tabindex="0"
+  {@attach published}
   onfocus={sync}
   onpointerenter={sync}
   {onpointerdown}

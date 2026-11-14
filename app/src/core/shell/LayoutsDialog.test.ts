@@ -219,7 +219,7 @@ afterEach(async () => {
   stop();
   for (const remove of removals.splice(0)) remove();
   conditions.set(neutralContext());
-  arrangement.status = "";
+  arrangement.say("");
   await layout.load(api, false);
   vi.restoreAllMocks();
 });
@@ -583,9 +583,11 @@ describe("using a layout", () => {
     const left = notice();
     expect(left.text).toBe("Layout “Review” applied");
     left.undo();
-    flushSync();
+    await settle();
     expect(placed()).toEqual({ left: [[FILES, SEARCH]], right: [[PROBE], [OTHER]], bottom: [] });
     expect(windowSaid()).toBe("Undone.");
+    // undone: the notice went with it
+    expect(windowStore.notices.some((n) => n.kind === "action" && n.key === "layout")).toBe(false);
     expect(hostOf(PROBE)).toBe(host);
     expect(probe.mounts).toBe(1);
     expect(typed.value).toBe("typed");
@@ -644,7 +646,87 @@ describe("Reset to default", () => {
     expect(notice().text).toBe("Layout of the panels reset");
     notice().undo();
     expect(placed()).toEqual({ left: [[FILES, SEARCH]], right: [[OTHER]], bottom: [[PROBE]] });
+    await settle();
     expect(arrangement.status).toBe("Undone.");
+  });
+});
+
+describe("the row of buttons under the list", () => {
+  it("is a plain row: the dialog adds no page footer to the window's landmarks", async () => {
+    await show();
+    const box = await open();
+    expect(box.querySelectorAll("footer, header, main, nav, [role='contentinfo']")).toHaveLength(0);
+    const row = control("close").parentElement;
+    expect(row?.tagName).toBe("DIV");
+    expect(control("reset").parentElement).toBe(row);
+    expect(row?.parentElement).toBe(box);
+  });
+});
+
+describe("the line that says what an action did", () => {
+  it("goes away with the next action: a rename started, and left with Escape, shows no line of the action before", async () => {
+    await keep("Review", "Writing");
+    await show();
+    await open();
+    await click(rowButton(0, "rename"));
+    type(renameField(), "Proofing");
+    await press(renameField(), "Enter");
+    expect(said()).toBe("Layout “Proofing” saved");
+    // a rename started on another row: nothing was saved by it
+    await click(rowButton(1, "rename"));
+    expect(said()).toBe("");
+    await press(renameField(), "Escape");
+    expect(dialog()).not.toBeNull();
+    expect(said()).toBe("");
+    // a rename to the name it has, a rename cancelled: no line either
+    await click(rowButton(1, "rename"));
+    await press(renameField(), "Enter");
+    expect(said()).toBe("");
+  });
+
+  it("a delete's line and its Undo go the same way; a save that fails leaves no line of the save before", async () => {
+    await keep("A", "B");
+    await show();
+    await open();
+    await click(rowButton(0, "delete"));
+    expect(said()).toBe("Layout “A” deleted");
+    await click(rowButton(0, "rename"));
+    expect(said()).toBe("");
+    expect(dialog()?.querySelector('[data-do="undo"]')).toBeNull();
+    await press(renameField(), "Escape");
+    type(nameField(), "C");
+    await press(nameField(), "Enter");
+    expect(said()).toBe("Layout “C” saved");
+    vi.spyOn(api, "settingsSet").mockResolvedValue({
+      ok: false,
+      error: {
+        kind: "backend",
+        command: "settings_set",
+        error: { kind: "invalidData", subject: "layouts", detail: null },
+      },
+    });
+    type(nameField(), "D");
+    await press(nameField(), "Enter");
+    expect(alert()).toBe("The data isn't valid: layouts");
+    expect(said()).toBe("");
+  });
+});
+
+describe("deleting the last layout", () => {
+  it("takes the list out of the settings (no empty list is kept); Undo writes it again", async () => {
+    await keep("Review");
+    await show();
+    await open();
+    const write = vi.spyOn(api, "settingsSet");
+    await click(rowButton(0, "delete"));
+    expect(write).toHaveBeenLastCalledWith({ key: "layouts", value: null });
+    expect((await settings()).layouts).toBeNull();
+    expect(rowNames()).toEqual([]);
+    expect(dialog()?.querySelector(".empty")?.textContent?.trim()).toBe("No saved layouts yet.");
+    expect(said()).toBe("Layout “Review” deleted");
+    await click(control("undo"));
+    expect(await kept()).toEqual([["Review", REVIEW]]);
+    expect(rowNames()).toEqual(["Review"]);
   });
 });
 

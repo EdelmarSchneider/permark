@@ -85,16 +85,20 @@ function scene(): DragScene {
 /**
  * The release of a drag is not a click: the one the webview makes of it (on the handle, which held the pointer) goes
  * nowhere. `released`: the pointer is up already, the click comes within this turn; else (the drag ended while the
- * button is still down) whenever the button is let go. A new press is never swallowed.
+ * button is still down) whenever the button is let go. A new press is never swallowed. Nor is a click a key makes
+ * (Enter | Space on a button: `detail` 0), and a key pressed ends the wait: a release this window never sees (the
+ * drag ended because another window took the focus) must not cost the keyboard its next press.
  */
 function swallowClick(released: boolean): void {
-  const stop = (event: Event): void => {
+  const stop = (event: MouseEvent): void => {
+    if (event.detail === 0) return;
     event.preventDefault();
     event.stopImmediatePropagation();
   };
   const off = (): void => {
     window.removeEventListener("click", stop, true);
     window.removeEventListener("pointerdown", off, true);
+    window.removeEventListener("keydown", off, true);
     window.removeEventListener("pointerup", soon, true);
   };
   const soon = (): void => {
@@ -102,6 +106,7 @@ function swallowClick(released: boolean): void {
   };
   window.addEventListener("click", stop, true);
   window.addEventListener("pointerdown", off, true);
+  window.addEventListener("keydown", off, true);
   if (released) soon();
   else window.addEventListener("pointerup", soon, true);
 }
@@ -187,6 +192,11 @@ class ViewDrag {
   #move(event: PointerEvent): void {
     const press = this.state;
     if (press.status === "idle" || event.pointerId !== press.pointer) return;
+    // no button is down: the release happened where this window could not see it; the press is over
+    if (event.buttons === 0) {
+      this.cancel();
+      return;
+    }
     const at = { x: event.clientX, y: event.clientY };
     if (press.status === "pending") {
       if (Math.hypot(at.x - press.from.x, at.y - press.from.y) < DRAG_START_PX) return;

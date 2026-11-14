@@ -2,16 +2,15 @@
   // The Layouts dialog: the arrangements of the window's views the person saved under a name. A row per layout (Use |
   // Rename | Delete), then the arrangement shown now saved under a name (a name already kept: the button says
   // Replace before the press), then the whole arrangement back to the default. Use and the reset change the window:
-  // the dialog closes and a notice offers Undo. A delete stays here with an Undo of its own. A write that fails
-  // changes nothing and is said in the dialog.
+  // the dialog closes and a notice offers Undo (the store's, as for the reset of a view's menu). A delete stays here
+  // with an Undo of its own. A write that fails changes nothing and is said in the dialog. The line that says what
+  // an action did goes with the next action.
   import { tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import type { ApiError } from "../../api";
   import { isComposition } from "../commands/combo";
   import { apiErrorText } from "../errors";
   import { t } from "../i18n";
-  import type { WindowStore } from "../window.svelte";
-  import type { Arrangement } from "./arrangement";
   import { arrangement } from "./arrangement.svelte";
   import { dialogFocus } from "./dialogFocus";
   import {
@@ -24,9 +23,6 @@
   } from "./layouts";
   import { focusView } from "./sides";
   import { ui } from "./ui.svelte";
-
-  type Props = { store: WindowStore };
-  let { store }: Props = $props();
 
   /** The rows: all read, or the one of the layout `name` being renamed (`text`: what its field holds). */
   type Rows = { status: "viewing" } | { status: "renaming"; name: string; text: string };
@@ -101,6 +97,12 @@
     problem = apiErrorText(error);
   }
 
+  /** An action starts: the lines the one before left (what it did, why it failed) go. */
+  function begin(): void {
+    said = { kind: "nothing" };
+    problem = "";
+  }
+
   /** Once drawn, the keyboard goes to a button of the row `at`; no such row: the name field. */
   async function focusRow(at: number, button: RowButton): Promise<void> {
     await tick();
@@ -112,7 +114,7 @@
     const { name } = draft;
     if (name === null) return;
     rows = { status: "viewing" };
-    problem = "";
+    begin();
     const error = await arrangement.saveLayoutAs(name);
     if (error !== null) return fail(error);
     typed = "";
@@ -122,7 +124,7 @@
   }
 
   function startRename(layout: Layout): void {
-    problem = "";
+    begin();
     rows = { status: "renaming", name: layout.name, text: layout.name };
   }
 
@@ -151,7 +153,7 @@
   async function remove(layout: Layout): Promise<void> {
     const at = layouts.indexOf(layout);
     rows = { status: "viewing" };
-    problem = "";
+    begin();
     const error = await arrangement.deleteLayout(layout.name);
     if (error === null) said = { kind: "deleted", layout, at };
     else fail(error);
@@ -170,19 +172,12 @@
   }
 
   /**
-   * The window's arrangement changed (said in `arrangement.status`): the dialog closes and a notice offers the way
-   * back to the arrangement `before`. What opened the dialog may be gone with the old arrangement (the options
-   * button of a strip): the keyboard then goes to the view it was for, else the first one present, never the body.
+   * The window's arrangement changed (the store said it and left the notice that offers the way back): the dialog
+   * closes. What opened the dialog may be gone with the old arrangement (the options button of a strip): the
+   * keyboard then goes to the view it was for, else the first one present, never the body.
    */
-  async function changed(before: Arrangement): Promise<void> {
+  async function changed(): Promise<void> {
     ui.closeLayouts();
-    store.notifyKeyed("layout", arrangement.status, {
-      label: t("fileOps.undo"),
-      run: () => {
-        arrangement.arrange(before);
-        arrangement.status = t("fileOps.undone");
-      },
-    });
     await tick();
     const at = document.activeElement;
     if (at instanceof HTMLElement && at !== document.body) return;
@@ -191,14 +186,12 @@
   }
 
   function use(layout: Layout): void {
-    const before = arrangement.saved;
-    if (arrangement.useLayout(layout.name)) void changed(before);
+    if (arrangement.useLayout(layout.name)) void changed();
   }
 
   function reset(): void {
-    const before = arrangement.saved;
     arrangement.reset();
-    void changed(before);
+    void changed();
   }
 
   // Escape leaves a rename first: the dialog closes only when no row is being renamed
@@ -349,7 +342,8 @@
       <p class="hint" id="layouts-name-hint" aria-live="polite">{draft.hint}</p>
     </section>
 
-    <footer>
+    <!-- a plain row: a `footer` here would be a second page footer among the window's landmarks -->
+    <div class="foot">
       <button
         type="button"
         class="btn btn--ghost"
@@ -361,7 +355,7 @@
       <button type="button" class="btn" data-do="close" onclick={() => ui.closeLayouts()}
         >{t("common.close")}</button
       >
-    </footer>
+    </div>
   </div>
 </div>
 
@@ -482,7 +476,7 @@
     color: var(--git-modified-text);
     font-size: var(--fs-ui-sm);
   }
-  footer {
+  .foot {
     display: flex;
     flex-wrap: wrap;
     align-items: center;

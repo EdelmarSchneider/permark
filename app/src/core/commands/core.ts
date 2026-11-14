@@ -1,6 +1,7 @@
 // The commands and default keys the core itself contributes (owner `core`). Each acts through a store the window
 // already has; the palette, the keys and the keyboard dialog all read them from the contribution registry.
 
+import { tick } from "svelte";
 import type { WorkspaceKind } from "../../api/generated/WorkspaceKind";
 import { documents } from "../doc/document.svelte";
 import { reading, WIDTHS } from "../doc/reading.svelte";
@@ -22,9 +23,11 @@ import { askInitHere } from "../shell/initProject";
 import { FILES, SEARCH } from "../shell/arrangement";
 import { arrangement } from "../shell/arrangement.svelte";
 import {
+  bottomSqueezed,
   documentPane,
   hasSidebar,
   hasToggle,
+  returnFocus,
   showView,
   toggleBottomPanel,
   toggleOutlinePanel,
@@ -206,8 +209,8 @@ const SPECS: readonly Spec[] = [
     label: "cmd.toggleBottom",
     keys: ["Mod+j"],
     requires: READING,
-    // only while a view is present at the bottom: no region, no toggle
-    when: () => hasToggle("bottom"),
+    // only while a view is present at the bottom (no region, no toggle) and the window is tall enough to draw it
+    when: () => hasToggle("bottom") && !bottomSqueezed(),
     run: () => toggleBottomPanel(),
   },
   {
@@ -216,6 +219,19 @@ const SPECS: readonly Spec[] = [
     requires: READING,
     // the whole arrangement, as the views' menu does it
     run: () => arrangement.reset(),
+  },
+  {
+    id: "panel.undoLayout",
+    label: "panel.undoLayoutCommand",
+    requires: READING,
+    // the keyboard's way to the Undo a notice offers after the reset | a saved layout used: while that can be undone
+    when: () => arrangement.canUndo,
+    run: async () => {
+      arrangement.undo();
+      // what had the keyboard may be gone with the arrangement undone
+      await tick();
+      returnFocus();
+    },
   },
   {
     id: "panel.layouts",

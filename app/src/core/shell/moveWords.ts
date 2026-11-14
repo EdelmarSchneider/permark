@@ -49,3 +49,7 @@ export const ACROSS: Readonly<Record<Region, Words>> = {
   right: { label: "panel.moveToRight", said: "panel.moved.toRight" },
   bottom: { label: "panel.moveToBottom", said: "panel.moved.toBottom" },
 };
+
+/** Said in place of `ACROSS.bottom.said` while the window is too short to draw the bottom region: the view moved,
+ *  and how to see it. */
+export const TO_BOTTOM_UNSEEN: MessageKey = "panel.moved.toBottomHidden";

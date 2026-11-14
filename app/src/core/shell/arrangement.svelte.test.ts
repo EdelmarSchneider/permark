@@ -2,7 +2,7 @@
 // The views' defaults (design-live-follow §14.1.3): decided once per project load, a yes at once, a no only after git
 // had its time; the project's own choice always wins. The arrangement follows the settings (the three regions, else
 // the right column of 0.11) and is written back; which views are present, drawn and on screen in each region.
-import { flushSync } from "svelte";
+import { flushSync, tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api, AppSettings, DocumentView } from "../../api";
 import type { PluginId } from "../../api/generated/PluginId";
@@ -23,6 +23,7 @@ const { reading } = await import("../doc/reading.svelte");
 const { contributions } = await import("../plugins/instance.svelte");
 const { layout } = await import("./layout.svelte");
 const { ui } = await import("./ui.svelte");
+const { windowStore } = await import("../window.svelte");
 const { arrangement, DEFAULT_WAIT_MS } = await import("./arrangement.svelte");
 const {
   defaultArrangement,
@@ -70,6 +71,8 @@ beforeEach(async () => {
 
 afterEach(async () => {
   stop();
+  windowStore.dismissKey("layout");
+  arrangement.say("");
   for (const remove of removals.splice(0)) remove();
   conditions.set(neutralContext());
   documents.state = { status: "empty" };
@@ -135,6 +138,17 @@ async function settings(): Promise<AppSettings> {
 
 const viewsOf = (groups: readonly { readonly views: readonly string[] }[]): string[][] =>
   groups.map((g) => [...g.views]);
+
+/** What the status line holds once it settled (it is emptied first and filled a tick later). */
+async function said(): Promise<string> {
+  await tick();
+  await tick();
+  return arrangement.status;
+}
+
+/** The notices about the whole arrangement (one at most), each with its buttons. */
+const layoutNotices = () =>
+  windowStore.notices.flatMap((n) => (n.kind === "action" && n.key === "layout" ? [n] : []));
 
 describe("a view's default", () => {
   it("a yes while git may still answer is taken at once and kept for the load", () => {
@@ -358,6 +372,26 @@ describe("the layouts", () => {
     expect(write).toHaveBeenCalledTimes(6);
   });
 
+  it("deleting the last one takes the list out of the settings: no empty list is kept", async () => {
+    await arrangement.saveLayoutAs("Review");
+    await arrangement.saveLayoutAs("Writing");
+    const write = vi.spyOn(api, "settingsSet");
+    expect(await arrangement.deleteLayout("Review")).toBeNull();
+    expect(write).toHaveBeenLastCalledWith({
+      key: "layouts",
+      value: { v: 1, items: [{ name: "Writing", arrangement: defaultArrangement() }] },
+    });
+    const [writing] = arrangement.layouts;
+    if (writing === undefined) throw new Error("no layout");
+    expect(await arrangement.deleteLayout("Writing")).toBeNull();
+    expect(write).toHaveBeenLastCalledWith({ key: "layouts", value: null });
+    expect((await settings()).layouts).toBeNull();
+    expect(arrangement.layouts).toEqual([]);
+    // it comes back: the list is written again
+    expect(await arrangement.restoreLayout(writing, 0)).toBeNull();
+    expect(await kept()).toEqual(["Writing"]);
+  });
+
   it("a layout keeps the groups, their order and shares of the three regions, and nothing else", async () => {
     addLeftPanel();
     showOutline();
@@ -406,7 +440,7 @@ describe("the layouts", () => {
     expect(arrange).toHaveBeenCalledOnce();
     expect(arrange).toHaveBeenCalledWith(review);
     expect(arrangement.saved).toEqual(review);
-    expect(arrangement.status).toBe("Layout “Review” applied");
+    expect(await said()).toBe("Layout “Review” applied");
     expect((await settings()).panels).toBeNull();
     await vi.advanceTimersByTimeAsync(450);
     expect((await settings()).panels).toEqual(review);
@@ -417,7 +451,6 @@ describe("the layouts", () => {
     expect(arrangement.useLayout("Gone")).toBe(false);
     expect(arrange).toHaveBeenCalledOnce();
     arrange.mockRestore();
-    arrangement.status = "";
     layout.setRightHidden(false);
   });
 
@@ -441,7 +474,6 @@ describe("the layouts", () => {
     // its plugin comes on: the view is where the layout put it
     addLeftPanel();
     expect(viewsOf(arrangement.drawn("left"))).toEqual([[FILES, LEFT_VIEW]]);
-    arrangement.status = "";
   });
 
   it("a write that fails puts the list back as it was and hands the error over", async () => {
@@ -467,6 +499,112 @@ describe("the layouts", () => {
     expect(write).toHaveBeenCalledTimes(4);
     write.mockRestore();
     expect(await kept()).toEqual(["Review"]);
+  });
+});
+
+describe("a change of the whole arrangement (the reset, a saved layout used)", () => {
+  const moved = {
+    v: 2 as const,
+    left: [{ views: [FILES], share: 1 }],
+    right: [{ views: [OUTLINE, LIVE_VIEW], share: 1 }],
+    bottom: [{ views: [SEARCH], share: 1 }],
+  };
+  const tabs = { ...moved, left: [{ views: [FILES, SEARCH], share: 1 }], bottom: [] };
+
+  it("keeps the arrangement before it: undo brings that back, once, and says so", async () => {
+    expect(arrangement.canUndo).toBe(false);
+    expect(arrangement.undo()).toBe(false);
+    arrangement.arrange(moved);
+    expect(arrangement.canUndo).toBe(false);
+    arrangement.reset();
+    expect(arrangement.saved).toEqual(defaultArrangement());
+    expect(await said()).toBe("Layout of the panels reset");
+    expect(arrangement.canUndo).toBe(true);
+    expect(arrangement.undo()).toBe(true);
+    expect(arrangement.saved).toBe(moved);
+    expect(await said()).toBe("Undone.");
+    // written like any change
+    await vi.advanceTimersByTimeAsync(450);
+    expect((await settings()).panels).toEqual(moved);
+    // nothing more to undo
+    expect(arrangement.canUndo).toBe(false);
+    expect(arrangement.undo()).toBe(false);
+    expect(arrangement.saved).toEqual(moved);
+  });
+
+  it("a saved layout used can be undone the same way; its own write coming back from the settings keeps that", async () => {
+    await api.settingsSet({
+      key: "layouts",
+      value: { v: 1, items: [{ name: "Review", arrangement: moved }] },
+    });
+    arrangement.arrange(tabs);
+    expect(arrangement.useLayout("review")).toBe(true);
+    expect(arrangement.canUndo).toBe(true);
+    await vi.advanceTimersByTimeAsync(450);
+    expect((await settings()).panels).toEqual(moved);
+    expect(arrangement.canUndo).toBe(true);
+    // a layout nobody saved changes nothing
+    expect(arrangement.useLayout("Gone")).toBe(false);
+    expect(arrangement.undo()).toBe(true);
+    expect(arrangement.saved).toBe(tabs);
+  });
+
+  it("the person changes the arrangement in another way: nothing is left to undo", () => {
+    arrangement.arrange(moved);
+    arrangement.reset();
+    expect(arrangement.canUndo).toBe(true);
+    arrangement.arrange(tabs);
+    expect(arrangement.canUndo).toBe(false);
+    expect(arrangement.undo()).toBe(false);
+    expect(arrangement.saved).toBe(tabs);
+  });
+
+  it("leaves one notice with the words said and Undo; the notice goes with what it could undo", () => {
+    arrangement.arrange(moved);
+    arrangement.reset();
+    expect(layoutNotices().map((n) => n.text)).toEqual(["Layout of the panels reset"]);
+    expect(layoutNotices()[0]?.actions.map((a) => a.label)).toEqual(["Undo"]);
+    // the notice's Undo is the store's
+    layoutNotices()[0]?.actions[0]?.run();
+    expect(arrangement.saved).toBe(moved);
+    expect(arrangement.canUndo).toBe(false);
+
+    // undone another way (the command): the notice goes too
+    arrangement.reset();
+    expect(layoutNotices()).toHaveLength(1);
+    arrangement.undo();
+    expect(layoutNotices()).toEqual([]);
+
+    // a second whole change: one notice, the newest; a move by hand takes it away
+    arrangement.reset();
+    arrangement.reset();
+    expect(layoutNotices()).toHaveLength(1);
+    arrangement.arrange(tabs);
+    expect(layoutNotices()).toEqual([]);
+    // a move like any other leaves the notices of others alone
+    windowStore.notifyKeyed("other", "Kept", { label: "Undo", run: () => {} });
+    arrangement.arrange(moved);
+    expect(windowStore.notices.some((n) => n.kind === "action" && n.key === "other")).toBe(true);
+    windowStore.dismissKey("other");
+  });
+});
+
+describe("the status line", () => {
+  it("is emptied, then filled a tick later: the same words twice in a row are two changes of the line", async () => {
+    arrangement.say("Outline moved up");
+    expect(arrangement.status).toBe("");
+    expect(await said()).toBe("Outline moved up");
+    arrangement.say("Outline moved up");
+    expect(arrangement.status).toBe("");
+    expect(await said()).toBe("Outline moved up");
+  });
+
+  it("holds the last words asked for, whatever was asked just before", async () => {
+    arrangement.say("First");
+    arrangement.say("Second");
+    expect(await said()).toBe("Second");
+    arrangement.say("");
+    expect(await said()).toBe("");
   });
 });
 

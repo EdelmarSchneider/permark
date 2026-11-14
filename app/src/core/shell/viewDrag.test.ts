@@ -34,6 +34,7 @@ const { conditions, neutralContext } = await import("../conditions/context.svelt
 const { contributions } = await import("../plugins/instance.svelte");
 const { default: RegionsHost } = await import("../testing/RegionsHost.svelte");
 const { probe } = await import("../testing/ViewProbe.svelte");
+const { BOTTOM, PAGE_MIN_H } = await import("./layout");
 const { layout } = await import("./layout.svelte");
 const { arrangement } = await import("./arrangement.svelte");
 const { FILES, OUTLINE, REGIONS, SEARCH } = await import("./arrangement");
@@ -168,6 +169,8 @@ function pointer(
     bubbles: true,
     cancelable: true,
     button: 0,
+    // the main button is held from the press until the release
+    buttons: type === "pointerdown" || type === "pointermove" ? 1 : 0,
     pointerId: 1,
     pointerType: "mouse",
     isPrimary: true,
@@ -178,6 +181,13 @@ function pointer(
   on.dispatchEvent(event);
   flushSync();
   return event;
+}
+
+/** The click a webview makes of a press and its release with the pointer (one a key makes has `detail` 0: what
+ *  `el.click()` gives). */
+function mouseClick(on: Element): void {
+  on.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+  flushSync();
 }
 
 type At = readonly [x: number, y: number];
@@ -237,7 +247,8 @@ afterEach(async () => {
   for (const remove of removals.splice(0)) remove();
   conditions.set(neutralContext());
   for (const region of REGIONS) arrangement.setSize(region, 0);
-  arrangement.status = "";
+  layout.setCenterHeight(0);
+  arrangement.say("");
   await layout.load(api, false);
   vi.restoreAllMocks();
 });
@@ -253,8 +264,7 @@ describe("a press on a tab", () => {
     expect(root.hasAttribute("data-view-drag")).toBe(false);
     pointer("pointerup", search, 104, 63);
     expect(viewDrag.state.status).toBe("idle");
-    search.click();
-    flushSync();
+    mouseClick(search);
     expect(arrangement.isSelected(SEARCH)).toBe(true);
   });
 
@@ -278,8 +288,7 @@ describe("a press on a tab", () => {
       expect(layer()).toBeNull();
       pointer("pointerup", search, 500, 300, more);
     }
-    search.click();
-    flushSync();
+    mouseClick(search);
     expect(arrangement.isSelected(SEARCH)).toBe(true);
   });
 });
@@ -293,6 +302,8 @@ describe("while a view is dragged", () => {
     expect(layer()?.getAttribute("aria-hidden")).toBe("true");
     expect(ghost()?.textContent?.trim()).toBe("Search");
     expect(ghost()?.querySelector("svg")).not.toBeNull();
+    // the chip sits below-right of the pointer: what is under the pointer (a tab strip) stays readable
+    expect(ghost()?.style.transform).toBe("translate(814px, 312px)");
     expect(targets().map((el) => el.getAttribute("data-drag-target"))).toEqual(["group"]);
     const [half] = targets();
     expect([half?.style.left, half?.style.top, half?.style.width, half?.style.height]).toEqual([
@@ -301,6 +312,8 @@ describe("while a view is dragged", () => {
       "280px",
       "157px",
     ]);
+    // the half says what a drop there does, in the menu's words
+    expect(half?.textContent?.trim()).toBe("Show below");
     expect(root.getAttribute("data-view-drag")).toBe("target");
     expect(search.classList.contains("dragged")).toBe(true);
     expect(tabOf(FILES).classList.contains("dragged")).toBe(false);
@@ -319,13 +332,65 @@ describe("while a view is dragged", () => {
     // the foot of the center column: the bottom region, named as the menu names the move
     pointer("pointermove", search, 500, 660);
     expect(targets().map((el) => el.getAttribute("data-drag-target"))).toEqual(["region"]);
-    expect(targets()[0]?.textContent?.trim()).toBe("Move to bottom");
+    expect(targets()[0]?.textContent?.trim()).toBe("Move to bottom panel");
     // the words keep to the half of the edge the pointer (and the chip beside it) is not in
     const words = (): boolean | undefined =>
       targets()[0]?.querySelector(".words")?.classList.contains("first");
     expect(words()).toBe(true);
     pointer("pointermove", search, 300, 660);
     expect(words()).toBe(false);
+  });
+
+  it("the half of a view's body says the move in the menu's words, by the way its region stacks; a line between tabs says nothing", async () => {
+    await show();
+    const search = tabOf(SEARCH);
+    const words = (): Element | null => targets()[0]?.querySelector(".words") ?? null;
+    // the upper half of the probe's body, the pointer near its top: the words keep to its foot, clear of the chip
+    drag(search, [100, 60], [800, 100]);
+    expect(targets()[0]?.getAttribute("data-drag-target")).toBe("group");
+    expect(words()?.textContent).toBe("Show above");
+    expect(words()?.classList.contains("first")).toBe(false);
+    // its lower half, the pointer low in it: the words go to its head
+    pointer("pointermove", search, 800, 340);
+    expect(words()?.textContent).toBe("Show below");
+    expect(words()?.classList.contains("first")).toBe(true);
+    // a place among tabs is a line: no room for words, none drawn
+    pointer("pointermove", search, 5, 60);
+    expect(targets()[0]?.getAttribute("data-drag-target")).toBe("tab");
+    expect(words()).toBeNull();
+    viewDrag.cancel();
+    flushSync();
+
+    // at the bottom the groups sit side by side: the halves are a left and a right one
+    arrange([[FILES, SEARCH]], [[PROBE]], [[OTHER]]);
+    lay([
+      ...FRAME,
+      [stripWith(FILES), [0, 42, 260, 80]],
+      [`[role="tab"][data-view="${FILES}"]`, [8, 50, 68, 80]],
+      [`[role="tab"][data-view="${SEARCH}"]`, [70, 50, 140, 80]],
+      [`[data-view-slot="${FILES}"]`, [0, 80, 260, 676]],
+      [`[data-view-slot="${SEARCH}"]`, [0, 80, 260, 676]],
+      [`[data-view-slot="${PROBE}"]`, [720, 42, 1000, 676]],
+      [`[data-view-slot="${OTHER}"]`, [260, 436, 720, 676]],
+    ]);
+    drag(search, [100, 60], [300, 500]);
+    expect(words()?.textContent).toBe("Show on the left");
+    pointer("pointermove", search, 700, 500);
+    expect(words()?.textContent).toBe("Show on the right");
+  });
+
+  it("the chip keeps inside the window: at its right | lower edge it goes to the other side of the pointer", async () => {
+    await show();
+    const search = tabOf(SEARCH);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(120);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(26);
+    drag(search, [100, 60], [500, 300]);
+    expect(ghost()?.style.transform).toBe("translate(514px, 312px)");
+    // jsdom's window: 1024 x 768
+    pointer("pointermove", search, 1000, 300);
+    expect(ghost()?.style.transform).toBe("translate(866px, 312px)");
+    pointer("pointermove", search, 500, 760);
+    expect(ghost()?.style.transform).toBe("translate(514px, 722px)");
   });
 
   it("nothing of it stays in the page once it ends", async () => {
@@ -384,7 +449,7 @@ describe("a drop", () => {
     expect(hostOf(PROBE)).toBe(host);
     expect(probe.mounts).toBe(1);
     expect(field.value).toBe("typed");
-    expect(said()).toBe("Outline moved to the left");
+    expect(said()).toBe("Outline moved to the sidebar");
     const [button] = stripButtons("sidebar");
     expect(button?.getAttribute("data-view-menu")).toBe(PROBE);
     expect(document.activeElement).toBe(button);
@@ -397,7 +462,7 @@ describe("a drop", () => {
     await release(search, [800, 600]);
     expect(placed()).toEqual({ left: [[FILES]], right: [[PROBE], [OTHER], [SEARCH]], bottom: [] });
     expect(arrangement.isSelected(SEARCH)).toBe(true);
-    expect(said()).toBe("Search moved to the right");
+    expect(said()).toBe("Search moved to the right panel");
     // alone in its group without a header of its own: its strip's options
     const [button] = stripButtons("right");
     expect(button?.getAttribute("data-view-menu")).toBe(SEARCH);
@@ -412,7 +477,7 @@ describe("a drop", () => {
     await release(search, [500, 660]);
     expect(placed()).toEqual({ left: [[FILES]], right: [[PROBE], [OTHER]], bottom: [[SEARCH]] });
     expect(layout.bottomHidden).toBe(false);
-    expect(said()).toBe("Search moved to the bottom");
+    expect(said()).toBe("Search moved to the bottom panel");
     expect(document.activeElement).toBe(stripButtons("bottom")[0]);
   });
 
@@ -426,11 +491,11 @@ describe("a drop", () => {
     const search = tabOf(SEARCH);
     drag(search, [100, 60], [990, 300]);
     expect(targets().map((el) => el.getAttribute("data-drag-target"))).toEqual(["region"]);
-    expect(targets()[0]?.textContent?.trim()).toBe("Move to right");
+    expect(targets()[0]?.textContent?.trim()).toBe("Move to right panel");
     await release(search, [990, 300]);
     expect(placed()).toEqual({ left: [[FILES]], right: [[PROBE], [OTHER, SEARCH]], bottom: [] });
     expect(layout.rightHidden).toBe(false);
-    expect(said()).toBe("Search moved to the right");
+    expect(said()).toBe("Search moved to the right panel");
   });
 
   it("inside its own region: under the view below it; into the strip beside it as a tab", async () => {
@@ -536,12 +601,10 @@ describe("the click a drag ends with", () => {
     drag(search, [100, 60], [500, 300]);
     pointer("pointerup", search, 500, 300);
     // the webview's click on the handle that held the pointer
-    search.click();
-    flushSync();
+    mouseClick(search);
     expect(arrangement.isSelected(SEARCH)).toBe(false);
     await later();
-    search.click();
-    flushSync();
+    mouseClick(search);
     expect(arrangement.isSelected(SEARCH)).toBe(true);
   });
 
@@ -553,16 +616,100 @@ describe("the click a drag ends with", () => {
     flushSync();
     await later();
     pointer("pointerup", search, 100, 60);
-    search.click();
-    flushSync();
+    mouseClick(search);
     expect(arrangement.isSelected(SEARCH)).toBe(false);
     await later();
     // a new press is a new story
     pointer("pointerdown", search, 100, 60);
     pointer("pointerup", search, 100, 60);
-    search.click();
-    flushSync();
+    mouseClick(search);
     expect(arrangement.isSelected(SEARCH)).toBe(true);
+  });
+
+  it("the Escape that ends a drag is not the key that ends the wait: the release after it is still no click", async () => {
+    await show();
+    const search = tabOf(SEARCH);
+    drag(search, [100, 60], [500, 300]);
+    document.body.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+    flushSync();
+    expect(viewDrag.state.status).toBe("idle");
+    pointer("pointerup", search, 100, 60);
+    mouseClick(search);
+    expect(arrangement.isSelected(SEARCH)).toBe(false);
+  });
+
+  const lost: Record<string, (handle: HTMLElement) => void> = {
+    "the window lost the focus": () => window.dispatchEvent(new Event("blur")),
+    "the system took the pointer": (handle) => pointer("pointercancel", handle, 500, 300),
+  };
+  for (const [way, end] of Object.entries(lost)) {
+    it(`${way} with the button still down, its release never seen: a key's click on a button is that button's`, async () => {
+      await show();
+      const search = tabOf(SEARCH);
+      drag(search, [100, 60], [500, 300]);
+      end(search);
+      flushSync();
+      expect(viewDrag.state.status).toBe("idle");
+      // Enter | Space on a button: a click no pointer made (`detail` 0)
+      search.click();
+      flushSync();
+      expect(arrangement.isSelected(SEARCH)).toBe(true);
+    });
+  }
+
+  it("the first key pressed ends the wait for a release that never came: the next click with the pointer is a click", async () => {
+    await show();
+    const search = tabOf(SEARCH);
+    drag(search, [100, 60], [500, 300]);
+    window.dispatchEvent(new Event("blur"));
+    flushSync();
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+    mouseClick(search);
+    expect(arrangement.isSelected(SEARCH)).toBe(true);
+  });
+});
+
+describe("a press whose release the window never saw", () => {
+  it("is over at the next move with no button down: no drag starts from it", async () => {
+    await show();
+    const search = tabOf(SEARCH);
+    pointer("pointerdown", search, 100, 60);
+    expect(viewDrag.state.status).toBe("pending");
+    // the pointer comes back over the window, no button held
+    pointer("pointermove", search, 800, 300, { buttons: 0 });
+    expect(viewDrag.state.status).toBe("idle");
+    expect(layer()).toBeNull();
+    // the press is over for good: a later move with a button down is not its drag
+    pointer("pointermove", search, 800, 310);
+    expect(viewDrag.state.status).toBe("idle");
+  });
+
+  it("a drag that runs ends the same way: nothing changed, nothing of it left", async () => {
+    await show();
+    const search = tabOf(SEARCH);
+    const before = arrangement.saved;
+    drag(search, [100, 60], [800, 300]);
+    expect(viewDrag.dragged).toBe(SEARCH);
+    pointer("pointermove", search, 800, 600, { buttons: 0 });
+    expect(viewDrag.state.status).toBe("idle");
+    expect(layer()).toBeNull();
+    expect(arrangement.saved).toBe(before);
+    expect(said()).toBe("");
+  });
+});
+
+describe("a drop into a bottom region the window is too short to show", () => {
+  it("makes the move and says how to see the view", async () => {
+    await show();
+    layout.setCenterHeight(PAGE_MIN_H + BOTTOM.min - 1);
+    const search = tabOf(SEARCH);
+    drag(search, [100, 60], [500, 660]);
+    expect(targets()[0]?.textContent?.trim()).toBe("Move to bottom panel");
+    await release(search, [500, 660]);
+    expect(placed().bottom).toEqual([[SEARCH]]);
+    expect(said()).toBe("Search moved to the bottom panel. Make the window taller to show it.");
   });
 });
 

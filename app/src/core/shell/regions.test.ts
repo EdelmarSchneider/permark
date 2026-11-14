@@ -234,7 +234,7 @@ describe("a project", () => {
     expect(document.querySelector('[role="menu"]')?.getAttribute("aria-label")).toBe(
       "Outline options",
     );
-    await pick("Move to left");
+    await pick("Move to sidebar");
     expect(arrangement.saved.left).toHaveLength(1);
     expect(arrangement.saved.left[0]?.views.slice(0, 2)).toEqual([FILES, SEARCH]);
     expect(arrangement.saved.left[0]?.views.at(-1)).toBe(OUTLINE);
@@ -244,7 +244,7 @@ describe("a project", () => {
     expect(regionAt(slot(OUTLINE))).toBe("sidebar");
     expect(slot(OUTLINE)?.querySelector("[data-view-header]")).toBe(header);
     expect(document.querySelector("[data-view-status]")?.textContent).toBe(
-      "Outline moved to the left",
+      "Outline moved to the sidebar",
     );
     const [more] = stripOptions("sidebar");
     expect(more?.getAttribute("data-view-menu")).toBe(OUTLINE);
@@ -370,6 +370,64 @@ describe("a project", () => {
     expect(arrangement.onScreen(SEARCH)).toBe(true);
   });
 
+  it("a window too short for the bottom region: its toggle cannot act and says why, its command is not offered", () => {
+    const why = "Make the window taller to show the bottom panel.";
+    arrangement.arrange(moveTo(arrangement.layout, SEARCH, "bottom"));
+    flushSync();
+    const center = region("bottom")?.parentElement;
+    if (!center) throw new Error("no center column");
+    const describedBy = (): string =>
+      document.getElementById(bottomToggle()?.getAttribute("aria-describedby") ?? "")
+        ?.textContent ?? "";
+    resized(center, 900);
+    expect(bottomToggle()?.hasAttribute("aria-disabled")).toBe(false);
+    expect(bottomToggle()?.hasAttribute("aria-describedby")).toBe(false);
+    expect(bottomToggle()?.getAttribute("title")).toMatch(/^Hide bottom panel/);
+    expect(runnable(bottomCommand(), conditions.current)).toBe(true);
+
+    resized(center, PAGE_MIN_H + BOTTOM.min - 1);
+    expect(bottomToggle()?.getAttribute("aria-disabled")).toBe("true");
+    expect(bottomToggle()?.getAttribute("aria-label")).toBe("Bottom panel");
+    expect(bottomToggle()?.getAttribute("title")).toBe(why);
+    expect(describedBy()).toBe(why);
+    // still a button the keyboard reaches (it says why); a press changes nothing the person chose
+    expect((bottomToggle() as HTMLButtonElement | null)?.disabled).toBe(false);
+    bottomToggle()?.click();
+    flushSync();
+    expect(layout.bottomHidden).toBe(false);
+    expect(runnable(bottomCommand(), conditions.current)).toBe(false);
+    // hidden by the person as well: showing it would still show nothing
+    layout.setBottomHidden(true);
+    flushSync();
+    expect(bottomToggle()?.getAttribute("aria-disabled")).toBe("true");
+    expect(bottomToggle()?.getAttribute("title")).toBe(why);
+    expect(runnable(bottomCommand(), conditions.current)).toBe(false);
+    layout.setBottomHidden(false);
+
+    resized(center, 900);
+    expect(bottomToggle()?.hasAttribute("aria-disabled")).toBe(false);
+    expect(describedBy()).toBe("");
+    expect(runnable(bottomCommand(), conditions.current)).toBe(true);
+    // the other toggles never say it
+    expect(sidebarToggle()?.hasAttribute("aria-disabled")).toBe(false);
+  });
+
+  it("a view moved to a bottom region the window is too short to show: said with the way to see it", async () => {
+    showOutline();
+    await until(() => headerOptions(OUTLINE) !== null, "the outline's options");
+    const center = document.querySelector('[data-frame="center"]');
+    if (!center) throw new Error("no center column");
+    resized(center, PAGE_MIN_H + BOTTOM.min - 1);
+    headerOptions(OUTLINE)?.click();
+    flushSync();
+    await pick("Move to bottom panel");
+    expect(arrangement.regionOf(OUTLINE)).toBe("bottom");
+    expect(region("bottom")?.inert).toBe(true);
+    expect(document.querySelector("[data-view-status]")?.textContent).toBe(
+      "Outline moved to the bottom panel. Make the window taller to show it.",
+    );
+  });
+
   it("focus mode folds the bottom region with the others: only the page", () => {
     arrangement.arrange(moveTo(arrangement.layout, SEARCH, "bottom"));
     flushSync();
@@ -406,8 +464,8 @@ describe("a single file", () => {
     outline?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     flushSync();
     expect(menuItems().map((item) => item.textContent?.trim())).toEqual([
-      "Move to left",
-      "Move to bottom",
+      "Move to sidebar",
+      "Move to bottom panel",
       "Close",
       "Layouts…",
       "Reset layout",

@@ -7,7 +7,7 @@
 import FolderTree from "@lucide/svelte/icons/folder-tree";
 import ListTree from "@lucide/svelte/icons/list-tree";
 import SearchIcon from "@lucide/svelte/icons/search";
-import type { Component } from "svelte";
+import { tick, type Component } from "svelte";
 import type { Api, ApiError, AppSettings } from "../../api";
 import type { Panels } from "../../api/generated/Panels";
 import { conditions } from "../conditions/context.svelte";
@@ -15,6 +15,7 @@ import { documents } from "../doc/document.svelte";
 import { reading } from "../doc/reading.svelte";
 import { t, type MessageKey } from "../i18n";
 import type { ContributionOf } from "../plugins/registry.svelte";
+import { windowStore } from "../window.svelte";
 import { layout } from "./layout.svelte";
 import { offeredPanels } from "./panels.svelte";
 import {
@@ -51,6 +52,8 @@ type Panel = ContributionOf<"panel">;
 export const DEFAULT_WAIT_MS = 500;
 /** The arrangement is written this long after the last change (a divider dragged). */
 const SAVE_DELAY_MS = 400;
+/** The one notice about a change of the whole arrangement (a newer one takes its place). */
+const WHOLE_NOTICE = "layout";
 
 /** The arrangement in the settings: `panels`, else (never set | unreadable) the right column 0.11 saved. */
 export function arrangementOf(settings: AppSettings): Arrangement {
@@ -140,8 +143,13 @@ export class ArrangementStore {
   saved = $state.raw<Arrangement>(defaultArrangement());
   /** The arrangements saved under a name (app-wide), in the order the person saved them. */
   layouts = $state.raw<readonly Layout[]>([]);
-  /** What the last move said (a polite status). */
-  status = $state("");
+  /** What the window's polite status line holds (`say`). */
+  #status = $state("");
+  /** Counts the lines said: one said meanwhile takes the place of a line still waiting to show. */
+  #said = 0;
+  /** The arrangement before the last change of the whole (the reset, a saved layout used), while `undo` can bring
+   *  it back (`null`: nothing to undo). */
+  #before = $state.raw<Arrangement | null>(null);
   #api: Api | null = null;
   #timer: ReturnType<typeof setTimeout> | null = null;
   /** The project load whose wait for git is over (`layout.loads`; -1: none). */
@@ -221,6 +229,8 @@ export class ArrangementStore {
   /** Follows the settings of the app (boot + every change) and decides the views' defaults per project load. */
   start(api: Api): () => void {
     this.#api = api;
+    // an arrangement kept for `undo` came from the settings followed before, not from these
+    this.#before = null;
     let gone = false;
     let off: (() => void) | null = null;
     void api.settingsGet().then((result) => {
@@ -359,20 +369,76 @@ export class ArrangementStore {
     return region !== null && !regionOff(region) && ui.focus !== "on" && this.isSelected(id);
   }
 
-  /** A new arrangement: drawn at once, written a moment after the last change. */
+  /** What the last move said (a polite status). */
+  get status(): string {
+    return this.#status;
+  }
+
+  /**
+   * Says `text` in the window's polite status line. The line is emptied first and filled once that is drawn: the
+   * same words twice in a row are two changes of the line, so a screen reader announces both.
+   */
+  say(text: string): void {
+    const turn = ++this.#said;
+    this.#status = "";
+    void tick().then(() => {
+      if (turn === this.#said) this.#status = text;
+    });
+  }
+
+  /**
+   * A new arrangement: drawn at once, written a moment after the last change. A change like any other: what `undo`
+   * could bring back is no longer the arrangement before it, so it is let go with the notice that offered it.
+   */
   arrange(next: Arrangement): void {
+    if (this.#before !== null) {
+      this.#before = null;
+      windowStore.dismissKey(WHOLE_NOTICE);
+    }
     this.saved = next;
     if (this.#timer !== null) clearTimeout(this.#timer);
     this.#timer = setTimeout(() => this.#flush(), SAVE_DELAY_MS);
   }
 
   /**
-   * The whole arrangement back to the default (the groups, their order and shares, in the three regions), and said.
-   * The regions' sizes, the hidden regions and the open views are the project's: untouched.
+   * A change of the whole arrangement, the one way for all who ask (a view's menu, the palette, the Layouts dialog):
+   * `next` is drawn, `words` say it (the status line, and one notice for the window), and the arrangement before is
+   * kept for `undo`, which the notice's button and the Undo command both call.
+   */
+  #replace(next: Arrangement, words: string): void {
+    const before = this.saved;
+    this.arrange(next);
+    this.#before = before;
+    this.say(words);
+    windowStore.notifyKeyed(WHOLE_NOTICE, words, {
+      label: t("fileOps.undo"),
+      run: () => void this.undo(),
+    });
+  }
+
+  /**
+   * The whole arrangement back to the default (the groups, their order and shares, in the three regions), said, with
+   * a way back. The regions' sizes, the hidden regions and the open views are the project's: untouched.
    */
   reset(): void {
-    this.arrange(defaultArrangement());
-    this.status = t("panel.layoutReset");
+    this.#replace(defaultArrangement(), t("panel.layoutReset"));
+  }
+
+  /** The last change of the whole arrangement can still be undone. */
+  get canUndo(): boolean {
+    return this.#before !== null;
+  }
+
+  /**
+   * The arrangement from before the last change of the whole comes back (the way a move changes it), and it is said.
+   * `false`: nothing to undo (none made, undone already, or the person arranged the views another way since).
+   */
+  undo(): boolean {
+    const before = this.#before;
+    if (before === null) return false;
+    this.arrange(before);
+    this.say(t("fileOps.undone"));
+    return true;
   }
 
   #flush(): void {
@@ -394,14 +460,13 @@ export class ArrangementStore {
 
   /**
    * The window takes the arrangement of the layout `name`, the way a move changes it (`arrange`: no view is created
-   * again), and it is said. A view the layout lists that nobody offers now keeps its place for when its plugin is
-   * on. `false`: no layout of that name.
+   * again), said, with a way back. A view the layout lists that nobody offers now keeps its place for when its
+   * plugin is on. `false`: no layout of that name.
    */
   useLayout(name: string): boolean {
     const found = findLayout(this.layouts, name);
     if (found === undefined) return false;
-    this.arrange(found.arrangement);
-    this.status = t("layouts.applied", { name: found.name });
+    this.#replace(found.arrangement, t("layouts.applied", { name: found.name }));
     return true;
   }
 
@@ -420,8 +485,9 @@ export class ArrangementStore {
   }
 
   /**
-   * The list of layouts becomes `next`: shown at once and written whole (the settings field `layouts`). A write the
-   * settings refuse | that fails puts the list back as it was and answers the error. The same list: nothing written.
+   * The list of layouts becomes `next`: shown at once and written whole (the settings field `layouts`; no layout
+   * left: the field leaves the settings). A write the settings refuse | that fails puts the list back as it was and
+   * answers the error. The same list: nothing written.
    */
   async #keep(next: readonly Layout[]): Promise<ApiError | null> {
     const before = this.layouts;
@@ -431,7 +497,10 @@ export class ArrangementStore {
       name,
       arrangement: panelsOf(arrangement),
     }));
-    const result = await this.#api?.settingsSet({ key: "layouts", value: { v: 1, items } });
+    const result = await this.#api?.settingsSet({
+      key: "layouts",
+      value: items.length === 0 ? null : { v: 1, items },
+    });
     if (result === undefined || result.ok) return null;
     // still the list this change showed: the settings said nothing newer meanwhile
     if (this.layouts === next) this.layouts = before;

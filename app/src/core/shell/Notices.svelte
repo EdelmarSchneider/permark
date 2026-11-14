@@ -2,10 +2,13 @@
   // Quiet notices (bottom right of the page, left of the right panel so they never cover its lists): failed opens,
   // state set aside, settings not kept, what a file operation did. Dismissable; never block. Most close by themselves
   // (paused while the pointer | focus is on them). Esc with the keyboard in one dismisses it. Their height is published
-  // as `--notices-h` so scrolling pages keep room under their last control.
+  // as `--notices-h` so scrolling pages keep room under their last control. A notice's button that ran takes the
+  // notice away: the keyboard that was on it goes back where it came from, never to the page body.
+  import { tick } from "svelte";
   import { apiErrorText, ipcErrorText } from "../errors";
   import { t } from "../i18n";
-  import type { Notice, WindowStore } from "../window.svelte";
+  import type { Notice, NoticeAction, WindowStore } from "../window.svelte";
+  import { returnFocus } from "./sides";
 
   type Props = {
     store: WindowStore;
@@ -15,6 +18,32 @@
   let { store, rightInset = 0 }: Props = $props();
 
   let region: HTMLElement | undefined = $state();
+  /** What had the keyboard before it came into the notices (`null`: nothing did, e.g. a press with the pointer). */
+  let cameFrom: Element | null = null;
+
+  /** The focus came into a notice: from outside the notices, what had it is remembered. */
+  function entered(event: FocusEvent): void {
+    const from = event.relatedTarget;
+    if (from instanceof Node && region?.contains(from)) return;
+    cameFrom = from instanceof Element ? from : null;
+  }
+
+  /**
+   * A notice's button was pressed: the notice goes, its action runs. The button that had the keyboard is gone with
+   * the notice: once the action is done (its own work too, when it says so) and what it changed is drawn, the
+   * keyboard is where the action put it, else back on what had it before the notices, else (that is gone too) on
+   * the page.
+   */
+  async function act(id: number, action: NoticeAction): Promise<void> {
+    const before = cameFrom;
+    store.dismiss(id, "action");
+    try {
+      await action.run();
+    } finally {
+      await tick();
+      returnFocus(before);
+    }
+  }
 
   // the room the notices take at the bottom (0 when none): pages pad their end by it
   $effect(() => {
@@ -82,7 +111,10 @@
         class="notice"
         onpointerenter={() => store.holdNotice(notice.id, "pointer")}
         onpointerleave={() => store.releaseNotice(notice.id, "pointer")}
-        onfocusin={() => store.holdNotice(notice.id, "focus")}
+        onfocusin={(e) => {
+          entered(e);
+          store.holdNotice(notice.id, "focus");
+        }}
         onkeydown={(e) => {
           if (e.key !== "Escape" || e.defaultPrevented) return;
           // this notice, nothing behind it (a review, the page)
@@ -100,14 +132,7 @@
         <span class="text">{text(notice)}</span>
         {#if notice.kind === "action" || notice.kind === "timed"}
           {#each notice.actions as action (action.label)}
-            <button
-              type="button"
-              class="btn btn--sm"
-              onclick={() => {
-                store.dismiss(notice.id, "action");
-                action.run();
-              }}
-            >
+            <button type="button" class="btn btn--sm" onclick={() => void act(notice.id, action)}>
               {action.label}
             </button>
           {/each}

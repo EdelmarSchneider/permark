@@ -1,13 +1,15 @@
 <script lang="ts">
   // Show | hide a region, in the status bar: the sidebar's first on the left, the bottom panel's right after it, the
   // right panel's last on the right. Pressed = the region is on screen. Shown only where the toggle applies (App).
+  // The bottom panel's cannot act while the window is too short to draw the panel: it stays in reach of the keyboard
+  // and says what to do instead.
   import PanelBottom from "@lucide/svelte/icons/panel-bottom";
   import PanelLeft from "@lucide/svelte/icons/panel-left";
   import PanelRight from "@lucide/svelte/icons/panel-right";
   import { keyHint } from "../commands/hint";
   import { t } from "../i18n";
   import { regionShown } from "./layout";
-  import { regionState, toggleRegion } from "./sides";
+  import { bottomSqueezed, regionState, toggleRegion } from "./sides";
 
   type Props = { side: "sidebar" | "right" | "bottom" };
   let { side }: Props = $props();
@@ -45,18 +47,29 @@
   const hint = $derived(keyHint(of.command));
   const action = $derived(t(shown ? of.hide : of.show));
   const Icon = $derived(of.icon);
+  /** Why a press does nothing now (`null`: it acts). */
+  const blocked = $derived(
+    of.region === "bottom" && bottomSqueezed() ? t("panel.bottomTooShort") : null,
+  );
+  const whyId = $props.id();
 </script>
 
+<!-- `aria-disabled`, not `disabled`: the keyboard still reaches it and hears why -->
 <button
   type="button"
   class="icon-btn toggle"
   aria-label={t(of.name)}
   aria-pressed={shown}
-  title={hint === null ? action : `${action} (${hint})`}
+  aria-disabled={blocked === null ? undefined : "true"}
+  aria-describedby={blocked === null ? undefined : whyId}
+  title={blocked ?? (hint === null ? action : `${action} (${hint})`)}
   onclick={() => toggleRegion(of.region)}
 >
   <Icon size={14} strokeWidth={1.9} aria-hidden="true" />
 </button>
+{#if blocked !== null}
+  <span class="sr-only" id={whyId}>{blocked}</span>
+{/if}
 
 <style>
   .toggle {
@@ -73,5 +86,13 @@
   .toggle[aria-pressed="true"]:hover {
     background: var(--hover);
     color: var(--text);
+  }
+  /* cannot act now: the look of a disabled icon button, still a Tab stop */
+  .toggle[aria-disabled="true"],
+  .toggle[aria-disabled="true"]:hover {
+    background: transparent;
+    color: var(--muted);
+    opacity: 0.4;
+    cursor: default;
   }
 </style>

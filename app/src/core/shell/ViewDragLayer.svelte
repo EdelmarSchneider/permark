@@ -1,14 +1,15 @@
 <script lang="ts">
   // What a drag of a view shows, once for the window and only while it runs: a chip with the view's icon and name
-  // near the pointer, and the ONE place a drop would put the view (a line between two tabs, a half of a view's
-  // body, the edge of a region that is not on screen, named as the menu names that move). Pointer only: hidden from
-  // screen readers (the move is said once made; the keyboard's way is the views' menu). Nothing here moves by
-  // itself: a place to drop shows and goes at once.
+  // below the pointer, and the ONE place a drop would put the view (a line between two tabs; a half of a view's
+  // body or the edge of a region that is not on screen, each named as the menu names that move). Pointer only:
+  // hidden from screen readers (the move is said once made; the keyboard's way is the views' menu). Nothing here
+  // moves by itself: a place to drop shows and goes at once.
   import { t } from "../i18n";
+  import { axisOf } from "./arrangement";
   import { arrangement } from "./arrangement.svelte";
   import type { DragTarget, Point } from "./dragTarget";
-  import { badgePlace } from "./dropPlace";
-  import { ACROSS } from "./moveWords";
+  import { chipPlace } from "./dropPlace";
+  import { ACROSS, ALONG } from "./moveWords";
 
   type Props = { id: string; at: Point; target: DragTarget | null };
   let { id, at, target }: Props = $props();
@@ -21,16 +22,31 @@
   let height = $state(0);
   let viewWidth = $state(window.innerWidth);
   let viewHeight = $state(window.innerHeight);
-  /** The chip beside the pointer, always inside the window. */
+  /** The chip below the pointer, always inside the window. */
   const place = $derived(
-    badgePlace(at, { width, height }, { width: viewWidth, height: viewHeight }),
+    chipPlace(at, { width, height }, { width: viewWidth, height: viewHeight }),
   );
-  /** The words of an edge sit in the half of it the pointer is not in (its first half, or its last): never under
-   *  the chip. */
+  /** What a drop on the place does, in the words of the menu item that makes the same move (a line between two
+   *  tabs has no room for words). */
+  const words = $derived.by(() => {
+    switch (target?.kind) {
+      case "group":
+        return t(ALONG[axisOf(target.region)][target.side].label);
+      case "region":
+        return t(ACROSS[target.region].label);
+      default:
+        return null;
+    }
+  });
+  /** The words of a place sit in the part of it the pointer is not in (its first part, or its last): never under
+   *  the chip. The edge at the foot of the window is a low band: its words go to a side; any other place is high:
+   *  they go to its head or its foot. */
   const wordsFirst = $derived.by(() => {
-    if (target?.kind !== "region") return false;
+    if (target === null || target.kind === "tab") return false;
     const { left, top, right, bottom } = target.mark;
-    return target.region === "bottom" ? at.x > (left + right) / 2 : at.y > (top + bottom) / 2;
+    return target.kind === "region" && target.region === "bottom"
+      ? at.x > (left + right) / 2
+      : at.y > (top + bottom) / 2;
   });
 
   // the whole page while the drag runs (the stylesheet below): no text is selected under the pointer, the cursor
@@ -56,8 +72,8 @@
       style:width={`${right - left}px`}
       style:height={`${bottom - top}px`}
     >
-      {#if target.kind === "region"}
-        <span class="words" class:first={wordsFirst}>{t(ACROSS[target.region].label)}</span>
+      {#if words !== null}
+        <span class="words" class:first={wordsFirst}>{words}</span>
       {/if}
     </div>
   {/if}
@@ -107,6 +123,14 @@
     font-size: var(--fs-ui-sm);
     font-weight: 600;
     white-space: nowrap;
+  }
+  /* a half of a view's body: its words at its foot, or at its head while the pointer is low in it */
+  .group .words {
+    align-self: end;
+    margin-block: var(--sp-3);
+  }
+  .group .words.first {
+    align-self: start;
   }
   .region[data-drag-region="bottom"] .words {
     justify-self: end;

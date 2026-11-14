@@ -9,7 +9,6 @@ import {
   canMove,
   canSplit,
   defaultArrangement,
-  defaultRightViews,
   DIVIDER_PX,
   drawnGroups,
   FILES,
@@ -28,7 +27,6 @@ import {
   OUTLINE,
   parseArrangement,
   parseProjectViews,
-  parseRightViews,
   regionOf,
   REGIONS,
   resizePair,
@@ -49,8 +47,9 @@ const views = (groups: readonly ViewGroup[]): string[][] => groups.map((g) => [.
 const shares = (groups: readonly ViewGroup[]): number[] =>
   groups.map((g) => Math.round(g.share * 1000) / 1000);
 const all = (): boolean => true;
-/** The groups a v1 value reads as (the region-level ops take one region's groups). */
-const groupsOf = (raw: unknown): readonly ViewGroup[] => parseRightViews(raw).groups;
+/** The right column a value of 0.11 reads as, by the window's reader with nothing saved for the three regions
+ *  (the region-level ops take one region's groups). */
+const groupsOf = (raw: unknown): readonly ViewGroup[] => parseArrangement(undefined, raw).right;
 /** Every region's views, for one look at a whole arrangement. */
 const placed = (arr: Arrangement): Record<Region, string[][]> => ({
   left: views(arr.left),
@@ -61,9 +60,9 @@ const group = (share: number, ...ids: string[]): ViewGroup => ({ views: ids, sha
 
 describe("the saved right column of 0.11 (v1)", () => {
   it("absent, damaged or of another version: the default (stacked, outline on top, half each)", () => {
-    const def = defaultRightViews();
-    expect(views(def.groups)).toEqual([[OUTLINE], [LIVE_VIEW]]);
-    expect(shares(def.groups)).toEqual([0.5, 0.5]);
+    const def = defaultArrangement().right;
+    expect(views(def)).toEqual([[OUTLINE], [LIVE_VIEW]]);
+    expect(shares(def)).toEqual([0.5, 0.5]);
     for (const raw of [
       undefined,
       null,
@@ -75,12 +74,10 @@ describe("the saved right column of 0.11 (v1)", () => {
       { v: 1 },
       { v: 1, groups: "x" },
     ]) {
-      expect(parseRightViews(raw), JSON.stringify(raw)).toEqual(def);
+      expect(groupsOf(raw), JSON.stringify(raw)).toEqual(def);
     }
     // groups with nothing usable: the default too
-    expect(parseRightViews({ v: 1, groups: [{ views: [] }, { views: [3, ""] }, "x"] })).toEqual(
-      def,
-    );
+    expect(groupsOf({ v: 1, groups: [{ views: [] }, { views: [3, ""] }, "x"] })).toEqual(def);
   });
 
   it("a valid v1 is kept, unknown ids included (a plugin that is off finds its place again)", () => {
@@ -91,13 +88,13 @@ describe("the saved right column of 0.11 (v1)", () => {
         { views: ["outline"], share: 0.7 },
       ],
     };
-    const parsed = parseRightViews(raw);
-    expect(views(parsed.groups)).toEqual([["live-feed.panel", "future.panel"], ["outline"]]);
-    expect(shares(parsed.groups)).toEqual([0.3, 0.7]);
+    const parsed = groupsOf(raw);
+    expect(views(parsed)).toEqual([["live-feed.panel", "future.panel"], ["outline"]]);
+    expect(shares(parsed)).toEqual([0.3, 0.7]);
   });
 
   it("duplicates keep their first place; more than 3 groups join the third as tabs", () => {
-    const parsed = parseRightViews({
+    const parsed = groupsOf({
       v: 1,
       groups: [
         { views: ["a", "b"], share: 1 },
@@ -107,12 +104,12 @@ describe("the saved right column of 0.11 (v1)", () => {
         { views: ["a", "f"], share: 1 },
       ],
     });
-    expect(parsed.groups).toHaveLength(MAX_GROUPS);
-    expect(views(parsed.groups)).toEqual([["a", "b"], ["c"], ["d", "e", "f"]]);
+    expect(parsed).toHaveLength(MAX_GROUPS);
+    expect(views(parsed)).toEqual([["a", "b"], ["c"], ["d", "e", "f"]]);
   });
 
   it("shares 0, negative, not a number or summing to more than 1 are clamped and normalized", () => {
-    const parsed = parseRightViews({
+    const parsed = groupsOf({
       v: 1,
       groups: [
         { views: ["a"], share: 0 },
@@ -120,15 +117,15 @@ describe("the saved right column of 0.11 (v1)", () => {
         { views: ["c"], share: "big" },
       ],
     });
-    expect(shares(parsed.groups)).toEqual([0.333, 0.333, 0.333]);
-    const big = parseRightViews({
+    expect(shares(parsed)).toEqual([0.333, 0.333, 0.333]);
+    const big = groupsOf({
       v: 1,
       groups: [
         { views: ["a"], share: 3 },
         { views: ["b"], share: 1 },
       ],
     });
-    expect(shares(big.groups)).toEqual([0.75, 0.25]);
+    expect(shares(big)).toEqual([0.75, 0.25]);
   });
 });
 

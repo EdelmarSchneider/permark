@@ -21,8 +21,8 @@ import {
   type ViewGroup,
 } from "./arrangement";
 import { arrangement } from "./arrangement.svelte";
-import { ACROSS, ALONG, AS_TAB, type Words } from "./moveWords";
-import { closeView, focusView, moveToRegion, selectView } from "./sides";
+import { ACROSS, ALONG, AS_TAB, TO_BOTTOM_UNSEEN, type Words } from "./moveWords";
+import { bottomSqueezed, closeView, focusView, moveToRegion, selectView } from "./sides";
 import { ui } from "./ui.svelte";
 
 /** The menu open for the view `id`, at a point of the window, opened from `anchor`. */
@@ -69,10 +69,14 @@ class ViewMenu {
     focusView(id);
   }
 
-  /** After a move (an action of the menu, a view dropped): it is said, and the moved view's options take the
-   *  keyboard. */
+  /**
+   * After a move (an action of the menu, a view dropped): it is said, and the moved view's options take the
+   * keyboard. Into a bottom region the window is too short to draw: the move is made all the same, so the words
+   * add how to see the view.
+   */
   moved(id: string, said: MessageKey): void {
-    arrangement.status = t(said, { name: arrangement.nameOf(id) });
+    const unseen = said === ACROSS.bottom.said && bottomSqueezed();
+    arrangement.say(t(unseen ? TO_BOTTOM_UNSEEN : said, { name: arrangement.nameOf(id) }));
     void this.#focus(id);
   }
 
@@ -142,7 +146,16 @@ class ViewMenu {
       })),
       // a view that is always open (Files, Search, a plugin's sidebar tab) has no Close
       arrangement.viewOf(id)?.closable === true
-        ? [{ kind: "item", label: t("panel.closeView"), run: () => closeView(id, true) }]
+        ? [
+            {
+              kind: "item",
+              label: t("panel.closeView"),
+              run: () => {
+                closeView(id, true);
+                arrangement.say(t("panel.closed", { name: arrangement.nameOf(id) }));
+              },
+            },
+          ]
         : [],
       [
         { kind: "item", label: t("layouts.open"), run: () => ui.openLayouts() },
