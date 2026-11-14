@@ -6,10 +6,13 @@ import { confirmLeave } from "./guard";
 import { EditingSession, type ActiveEditor, type Hooks } from "./session.svelte";
 
 /** An editor on screen whose text the test types. */
-function fakeEditor(initial: string): ActiveEditor & { set(text: string): void } {
+function fakeEditor(
+  initial: string,
+  kind: ActiveEditor["kind"] = "source",
+): ActiveEditor & { set(text: string): void } {
   let text = initial;
   return {
-    kind: "source",
+    kind,
     text: () => text,
     changes: () => 1,
     topLine: () => 1,
@@ -304,6 +307,124 @@ describe("editing session", () => {
     expect(session.content?.text).toBe(content.text + "kept\n");
     expect(session.content?.segments?.length).toBeGreaterThan(0);
     expect(session.state.s).toBe("dirty");
+  });
+});
+
+describe("going to View asks only when the text differs from the saved text", () => {
+  /** Opens the document in `mode` with an editor of that kind on screen. */
+  async function editing(session: EditingSession, mode: "edit" | "source") {
+    const { editor: source, content } = await open(session);
+    if (mode === "source") return { editor: source, base: content.text };
+    await session.switchTo("edit");
+    const next = session.content;
+    if (!next) throw new Error("no content");
+    const editor = fakeEditor(next.text, "edit");
+    session.attach(next.seq, editor);
+    return { editor, base: content.text };
+  }
+
+  /** Switches to View; `true` once the editor let go without a prompt. */
+  async function toView(session: EditingSession): Promise<boolean> {
+    const going = session.switchTo("view");
+    const prompted = session.state.s === "unsavedPrompt";
+    if (prompted) session.answer("keepEditing");
+    await going;
+    await settle();
+    return !prompted && session.state.s === "closed" && session.mode === "view";
+  }
+
+  it.each(["source", "edit"] as const)(
+    "%s: a character typed then deleted is no change, View opens without asking",
+    async (mode) => {
+      const { api, session } = setup();
+      const { editor, base } = await editing(session, mode);
+      editor.set(base + "x");
+      session.changed();
+      await settle();
+      expect(api.probe.edit.unsaved).toBe("docs/guide.md");
+      editor.set(base);
+      session.changed();
+      await settle();
+      expect(api.probe.edit.unsaved).toBeNull();
+      expect(await toView(session)).toBe(true);
+    },
+  );
+
+  it.each(["source", "edit"] as const)(
+    "%s: several edits undone back to the saved text leave without asking",
+    async (mode) => {
+      const { api, session } = setup();
+      const { editor, base } = await editing(session, mode);
+      const unsaved = vi.spyOn(api, "editSetUnsaved");
+      for (const step of [`# New\n${base}`, `# New\n${base}more\n`, `# New\n${base}`, base]) {
+        editor.set(step);
+        session.changed();
+        await settle();
+      }
+      expect(unsaved.mock.calls.at(-1)).toEqual([null]);
+      expect(await toView(session)).toBe(true);
+    },
+  );
+
+  it("a whitespace-only change is a change: View asks", async () => {
+    const { session } = setup();
+    const { editor, base } = await editing(session, "source");
+    editor.set(base.replace("\n", " \n"));
+    session.changed();
+    await settle();
+    expect(await toView(session)).toBe(false);
+    expect(session.state.s).toBe("dirty");
+  });
+
+  it("Edit text that reads back as the saved bytes is no change", async () => {
+    const { session } = setup();
+    const { editor, base } = await editing(session, "edit");
+    // the visual editor reports changes of its document (a block remade, a mark toggled and back) while the text it
+    // composes from the blocks still reads as the saved bytes
+    editor.set(base);
+    session.changed();
+    await settle();
+    editor.set(`**${base}`);
+    session.changed();
+    editor.set(base);
+    session.changed();
+    await settle();
+    expect(session.state.s).toBe("clean");
+    expect(await toView(session)).toBe(true);
+  });
+
+  it.each(["source", "edit"] as const)(
+    "%s: View right after typing back to the saved text, before the change check ran, does not ask",
+    async (mode) => {
+      const { api, session } = setup();
+      const { editor, base } = await editing(session, mode);
+      editor.set(base + "x");
+      session.changed();
+      await settle();
+      expect(session.state.s).toBe("dirty");
+      editor.set(base);
+      session.changed();
+      expect(await toView(session)).toBe(true);
+      expect(api.probe.edit.unsaved).toBeNull();
+    },
+  );
+
+  it("text back to the saved text takes the journal entry back", async () => {
+    const { session } = setup();
+    const calls: (string | null)[] = [];
+    session.bindJournal((_path, _hash, text) => calls.push(text));
+    const { editor, base } = await editing(session, "source");
+    editor.set(base + "x");
+    session.changed();
+    await settle();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls).toEqual([base + "x"]);
+    editor.set(base);
+    session.changed();
+    await settle();
+    expect(calls).toEqual([base + "x", null]);
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(calls).toHaveLength(2);
   });
 });
 
