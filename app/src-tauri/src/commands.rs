@@ -313,6 +313,31 @@ pub fn settings_set(handle: AppHandle, change: SettingChange) -> Result<AppSetti
     Ok(state(&handle).change_setting(&change)?)
 }
 
+/// Reads the symbol groups file again (a picker | the panel | the settings opened); a change arrives as
+/// `settings-changed`.
+#[tauri::command(async)]
+pub fn characters_refresh(handle: AppHandle) {
+    state(&handle).refresh_characters();
+}
+
+/// Writes the built-in groups file when none is there; `false`: a file is there (never written over) | no name set.
+#[tauri::command(async)]
+pub fn characters_create(handle: AppHandle) -> Result<bool, IpcError> {
+    state(&handle).create_characters()
+}
+
+/// Shows the groups file (else the profile folder) in the file manager. The path comes from the settings, never from
+/// the window.
+#[tauri::command(async)]
+pub fn characters_reveal(handle: AppHandle) -> Result<(), IpcError> {
+    let target = state(&handle).characters_target();
+    handle.opener().reveal_item_in_dir(&target).map_err(|e| {
+        IpcError::new(ErrorKind::Io)
+            .subject(target.display().to_string())
+            .detail(e.to_string())
+    })
+}
+
 fn project_session(handle: &AppHandle, label: &str) -> Result<ProjectSession, IpcError> {
     match state(handle).registry.workspace_of(label) {
         Some((_, Workspace::Project(core))) => Ok(ProjectSession::new(&core.store())),
@@ -1584,6 +1609,9 @@ commands![
     recent_remove,
     settings_get,
     settings_set,
+    characters_refresh,
+    characters_create,
+    characters_reveal,
     project_session_get,
     project_session_set,
     tree_open,

@@ -240,6 +240,45 @@ describe("where a folder opens: the open_in setting", () => {
   });
 });
 
+describe("the symbol groups of the settings", () => {
+  it("follows the groups, their file and status, and the favorites from boot and every change", async () => {
+    const api = createMockApi();
+    const store = await started(api);
+    expect(store.characters.map((g) => g.name)).toContain("greek");
+    expect(store.charactersFile).toBe("characters.toml");
+    expect(store.charactersPath).toMatch(/characters\.toml$/);
+    expect(store.charactersStatus).toBe("builtin");
+    expect(store.symbolFavorites).toBeNull();
+    await api.charactersCreate();
+    expect(store.charactersStatus).toBe("read");
+    const favorites = { v: 1, chars: ["→"], groups: ["greek"] };
+    await store.changeSetting({ key: "symbolFavorites", value: favorites });
+    expect(store.symbolFavorites).toEqual(favorites);
+    await store.changeSetting({ key: "charactersFile", value: "mine.toml" });
+    expect(store.charactersFile).toBe("mine.toml");
+  });
+
+  it("asks the backend to read the groups file again, and a failure leaves the groups as they are", async () => {
+    const api = createMockApi();
+    let asked = 0;
+    const store = await started({
+      ...api,
+      charactersRefresh: () => {
+        asked++;
+        return Promise.resolve({
+          ok: false,
+          error: { kind: "window", message: "gone" },
+        } satisfies Result<null>);
+      },
+    });
+    const before = store.characters;
+    store.refreshCharacters();
+    await Promise.resolve();
+    expect(asked).toBe(1);
+    expect(store.characters).toBe(before);
+  });
+});
+
 describe("initializing a folder", () => {
   it("New project picks a folder, initializes it and opens it", async () => {
     const api = createMockApi();

@@ -604,6 +604,37 @@ describe("edits handed to the editor on screen (correction)", () => {
     ]);
   });
 
+  it("insert goes to the editor on screen as typed text, the code points as given", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    const inserted: string[] = [];
+    editor.insert = (text) => inserted.push(text) > 0;
+    editor.composing = () => false;
+    let focused = 0;
+    editor.focus = () => (focused += 1);
+    expect(session.insert("Ω")).toBe(true);
+    expect(session.insert("❤️")).toBe(true);
+    expect(inserted).toEqual(["Ω", "❤️"]);
+    // the panel that asks keeps the keyboard
+    expect(focused).toBe(0);
+    // the editor's own refusal comes back as is
+    editor.insert = () => false;
+    expect(session.insert("x")).toBe(false);
+  });
+
+  it("insert is refused with no editor, an editor without it, while composing, or for empty text", async () => {
+    const { session } = setup();
+    expect(session.insert("x")).toBe(false);
+    const { editor } = await open(session);
+    expect(session.insert("x")).toBe(false);
+    const inserted: string[] = [];
+    editor.insert = (text) => inserted.push(text) > 0;
+    expect(session.insert("")).toBe(false);
+    editor.composing = () => true;
+    expect(session.insert("x")).toBe(false);
+    expect(inserted).toEqual([]);
+  });
+
   it("an editor without them (or none on screen) gives safe answers", async () => {
     const { session } = setup();
     expect(session.scope("document")).toBeNull();

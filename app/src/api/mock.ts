@@ -92,10 +92,16 @@ function mockCharacters(): CharacterGroup[] {
     { char: "←", names: ["left arrow", "leftwards arrow"] },
     { char: "⇔", names: ["left right double arrow", "if and only if", "iff"] },
   ];
+  const spaces: CharacterEntry[] = [
+    { char: "\u00A0", names: ["no-break space", "nbsp", "non-breaking space"] },
+    { char: "\u2009", names: ["thin space"] },
+    { char: "\u2060", names: ["word joiner", "wj"] },
+  ];
   return [
     { name: "emoji", entries: emoji },
     { name: "greek", entries: greek },
     { name: "arrows", entries: arrows },
+    { name: "spaces", entries: spaces },
   ];
 }
 
@@ -118,11 +124,13 @@ function defaultSettings(): AppSettings {
     rightViews: null,
     panels: null,
     layouts: null,
+    symbolFavorites: null,
     wrapLines: true,
     imageFolder: "img",
     charactersFile: "characters.toml",
     characters: mockCharacters(),
     charactersPath: MOCK_CHARACTERS_PATH,
+    charactersStatus: "builtin",
   };
 }
 
@@ -190,6 +198,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       return { ...settings, panels: change.value };
     case "layouts":
       return { ...settings, layouts: change.value };
+    case "symbolFavorites":
+      return { ...settings, symbolFavorites: change.value };
     case "wrapLines":
       return { ...settings, wrapLines: change.value };
     case "imageFolder":
@@ -1017,6 +1027,17 @@ export function createMockApi(): Api & {
       if (change.key === "pluginEnabled") announceShell();
       return ok(settings);
     },
+    // the demo has no groups file on disk: nothing changes on a read again
+    charactersRefresh: () => ok(null),
+    // stands in for the written file: the built-ins it holds are now read from it
+    charactersCreate: () => {
+      if (settings.charactersStatus !== "builtin" || settings.charactersFile === "")
+        return ok(false);
+      settings = { ...settings, charactersStatus: "read" };
+      emit("settings-changed", { scope: { scope: "app" }, keys: ["charactersFile"], settings });
+      return ok(true);
+    },
+    charactersReveal: () => ok(null),
     projectSessionGet: (key) =>
       Promise.resolve(
         whileOpening("project_session_get") ?? { ok: true, value: session.get(key) ?? null },

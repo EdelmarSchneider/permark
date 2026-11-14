@@ -61,6 +61,10 @@ export type ActiveEditor = {
   /** All `edits` (ranges of the text now, not overlapping) in one undo step; `false` and no change when any range no
    *  longer reads its `expect`. Only `insert` goes in: nothing else of the text changes. */
   apply?(edits: readonly TextEdit[]): boolean;
+  /** Puts `text` in as if typed: over the selection (every range in Source), caret after it scrolled into view. The
+   *  keyboard stays where it is (the caller, a panel, keeps it). `false` and no change when the text cannot go there
+   *  (a block kept as written in Edit, composing, read-only). The code points go in as given (no normalization). */
+  insert?(text: string): boolean;
   /** Whether `apply` would take an edit of `range` as the text stands (Edit: not in a block kept as written); with
    *  `insert`: that very edit. Nothing changes. Absent: any range can change (Source). */
   changeable?(range: TextRange, insert?: string): boolean;
@@ -447,6 +451,14 @@ export class EditingSession {
     const editor = this.#editor;
     if (!editor?.apply || editor.composing?.() === true) return false;
     return editor.apply(edits);
+  }
+
+  /** Puts `text` into the editor on screen as if typed, without moving the keyboard there. `false` (nothing changed):
+   *  no editor takes text, it is composing, `text` is empty, or the editor refused it where the caret is. */
+  insert(text: string): boolean {
+    const editor = this.#editor;
+    if (!editor?.insert || text === "" || editor.composing?.() === true) return false;
+    return editor.insert(text);
   }
 
   /** Whether the editor on screen would take an edit of `range` (with `insert`: that very edit); one that does not

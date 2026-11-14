@@ -105,6 +105,26 @@ describe("mock backend", () => {
     expect(seen).toEqual(["tone", "pluginEnabled", "pluginEnabled"]);
   });
 
+  it("creates the groups file once: read from it after, never written again", async () => {
+    const mock = createMockApi();
+    const seen: string[] = [];
+    await mock.on("settings-changed", (e) => seen.push(e.settings.charactersStatus));
+    expect(await mock.charactersRefresh()).toEqual({ ok: true, value: null });
+    expect(seen).toEqual([]);
+    expect(await mock.charactersCreate()).toEqual({ ok: true, value: true });
+    const now = await mock.settingsGet();
+    expect(now.ok && now.value.charactersStatus).toBe("read");
+    expect(await mock.charactersCreate()).toEqual({ ok: true, value: false });
+    expect(seen).toEqual(["read"]);
+    expect(await mock.charactersReveal()).toEqual({ ok: true, value: null });
+  });
+
+  it("creates no groups file when no name is set", async () => {
+    const mock = createMockApi();
+    await mock.settingsSet({ key: "charactersFile", value: "" });
+    expect(await mock.charactersCreate()).toEqual({ ok: true, value: false });
+  });
+
   it("tells the bytes Remove data frees: local AI models, none after removal", async () => {
     const mock = createMockApi();
     const before = await mock.pluginDataBytes("local-ai");

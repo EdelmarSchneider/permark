@@ -18,6 +18,7 @@ export const KNOWN_PLUGINS = [
   "notes",
   "agent",
   "md-family",
+  "symbols",
   "word-count",
   "token-count",
   "local-ai",

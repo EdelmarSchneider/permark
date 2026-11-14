@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use toml_edit::{DocumentMut, Item, Table, Value};
 use ts_rs::TS;
 
-pub use characters::{CharacterEntry, CharacterGroup, CharactersError};
+pub use characters::{CharacterEntry, CharacterGroup, CharactersError, CharactersStatus};
 pub use installer::installer_language;
 pub use project::{
     ProjectConfig, ProjectConfigFile, ProjectSettingChange, ProjectSettings, TreeConfig, TreeShow,
@@ -193,6 +193,119 @@ pub struct Layouts {
 pub struct LayoutItem {
     pub name: String,
     pub arrangement: Panels,
+}
+
+/// The person's favorite symbols (app-wide; `[symbol_favorites]`): loose characters and whole groups (by name),
+/// each list in the order added. A group name no groups file has is kept (it draws nothing).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SymbolFavorites {
+    pub v: u32,
+    pub chars: Vec<String>,
+    pub groups: Vec<String>,
+}
+
+/// The format (`v`) of `[symbol_favorites]` this build reads and writes.
+pub const SYMBOL_FAVORITES_VERSION: u32 = 1;
+/// Most favorite characters | groups kept.
+pub const MAX_FAVORITE_CHARS: usize = 64;
+pub const MAX_FAVORITE_GROUPS: usize = 16;
+
+/// A favorite character: 1..=[`characters::MAX_ENTRY_CHARS`] code points, not only ASCII whitespace, without
+/// C0 | DEL | C1 controls or bidi embedding | isolate controls (they would reorder the text around an insert).
+fn valid_favorite_char(ch: &str) -> bool {
+    let count = ch.chars().count();
+    (1..=characters::MAX_ENTRY_CHARS).contains(&count)
+        && !ch.chars().all(|c| c.is_ascii_whitespace())
+        && !ch.chars().any(characters::is_unsafe_char)
+}
+
+/// A favorite group name: as a groups file names a group (trimmed, 1..=[`characters::MAX_GROUP_NAME_CHARS`]),
+/// without control characters.
+fn valid_favorite_group(name: &str) -> bool {
+    !name.is_empty()
+        && name.trim() == name
+        && name.chars().count() <= characters::MAX_GROUP_NAME_CHARS
+        && !name.chars().any(char::is_control)
+}
+
+/// Whether `items` holds an exact repeat.
+fn has_repeat(items: &[String]) -> bool {
+    items
+        .iter()
+        .enumerate()
+        .any(|(at, item)| items[..at].contains(item))
+}
+
+/// Write rule: the format this build writes ([`SYMBOL_FAVORITES_VERSION`], for the reasons of [`valid_panels`]);
+/// <= 64 characters and <= 16 groups, each valid, none twice (exact code points: never normalized).
+#[must_use]
+pub fn valid_symbol_favorites(favorites: &SymbolFavorites) -> bool {
+    favorites.v == SYMBOL_FAVORITES_VERSION
+        && favorites.chars.len() <= MAX_FAVORITE_CHARS
+        && favorites.groups.len() <= MAX_FAVORITE_GROUPS
+        && favorites.chars.iter().all(|ch| valid_favorite_char(ch))
+        && favorites
+            .groups
+            .iter()
+            .all(|name| valid_favorite_group(name))
+        && !has_repeat(&favorites.chars)
+        && !has_repeat(&favorites.groups)
+}
+
+/// The strings of one favorites list, leniently: each in the form `read` keeps (`None` = dropped), first
+/// occurrence of that form, the first `most`; a list that is no array reads empty.
+fn favorite_list_of(
+    item: Option<&Item>,
+    most: usize,
+    read: impl Fn(&str) -> Option<&str>,
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let Some(array) = item.and_then(Item::as_array) else {
+        return out;
+    };
+    for kept in array.iter().filter_map(Value::as_str).filter_map(read) {
+        if out.len() == most {
+            break;
+        }
+        if !out.iter().any(|seen| seen == kept) {
+            out.push(kept.to_owned());
+        }
+    }
+    out
+}
+
+/// `[symbol_favorites]` of a document, leniently: a bad | repeated entry is dropped, the rest kept (up to the
+/// limits); a hand-written group name is trimmed. No table, no `v`, or a format other than this build's (a newer
+/// one is another PerMark's) -> `None`.
+fn symbol_favorites_of(doc: &DocumentMut) -> Option<SymbolFavorites> {
+    let table = doc.get("symbol_favorites")?.as_table_like()?;
+    if version_of(table)? != SYMBOL_FAVORITES_VERSION {
+        return None;
+    }
+    Some(SymbolFavorites {
+        v: SYMBOL_FAVORITES_VERSION,
+        chars: favorite_list_of(table.get("chars"), MAX_FAVORITE_CHARS, |ch| {
+            valid_favorite_char(ch).then_some(ch)
+        }),
+        groups: favorite_list_of(table.get("groups"), MAX_FAVORITE_GROUPS, |name| {
+            let name = name.trim();
+            valid_favorite_group(name).then_some(name)
+        }),
+    })
+}
+
+/// The `[symbol_favorites]` table: `v`, `chars`, `groups`.
+fn symbol_favorites_table(favorites: &SymbolFavorites) -> Table {
+    let mut table = Table::new();
+    table.insert("v", Item::Value(Value::from(i64::from(favorites.v))));
+    for (key, list) in [("chars", &favorites.chars), ("groups", &favorites.groups)] {
+        table.insert(
+            key,
+            Item::Value(Value::Array(list.iter().map(String::as_str).collect())),
+        );
+    }
+    table
 }
 
 /// Most groups | views per group a written arrangement may hold.
@@ -448,6 +561,8 @@ pub struct AppSettings {
     pub panels: Option<Panels>,
     /// The named arrangements (`[layouts]`); `None` = absent | unreadable = no layout.
     pub layouts: Option<Layouts>,
+    /// The favorite symbols (`[symbol_favorites]`); `None` = absent | unreadable | newer format = none.
+    pub symbol_favorites: Option<SymbolFavorites>,
     /// Long lines wrap in the text viewer and the source editors (`wrap_lines`; absent = on).
     pub wrap_lines: bool,
     /// Folder under the document's folder for pasted pictures (`image_folder`). Absent = `img`.
@@ -460,6 +575,8 @@ pub struct AppSettings {
     pub characters: Vec<CharacterGroup>,
     /// Path of the groups file the groups came from ("" = the built-ins only).
     pub characters_path: String,
+    /// Where `characters` came from: the built-ins, the file, or the built-ins because the file is unusable.
+    pub characters_status: CharactersStatus,
     /// Raw `[plugins.<id>]` tables: each plugin owns its schema.
     #[serde(skip)]
     #[ts(skip)]
@@ -486,11 +603,13 @@ impl Default for AppSettings {
             right_views: None,
             panels: None,
             layouts: None,
+            symbol_favorites: None,
             wrap_lines: true,
             image_folder: "img".to_owned(),
             characters_file: characters::DEFAULT_FILE_NAME.to_owned(),
             characters: characters::defaults(),
             characters_path: String::new(),
+            characters_status: CharactersStatus::Builtin,
             plugin_tables: BTreeMap::new(),
         }
     }
@@ -533,6 +652,8 @@ pub enum SettingChange {
     Panels(Option<Panels>),
     /// The named arrangements, written whole; `None` = no layout kept (table removed).
     Layouts(Option<Layouts>),
+    /// The favorite symbols, written whole; `None` = no favorite kept (table removed).
+    SymbolFavorites(Option<SymbolFavorites>),
     WrapLines(bool),
     /// One path segment under the document's folder. Empty = beside the document.
     ImageFolder(String),
@@ -562,6 +683,7 @@ impl SettingChange {
             Self::RightViews(_) => "right_views".to_owned(),
             Self::Panels(_) => "panels".to_owned(),
             Self::Layouts(_) => "layouts".to_owned(),
+            Self::SymbolFavorites(_) => "symbol_favorites".to_owned(),
             Self::WrapLines(_) => "wrap_lines".to_owned(),
             Self::ImageFolder(_) => "image_folder".to_owned(),
             Self::CharactersFile(_) => "characters_file".to_owned(),
@@ -663,6 +785,9 @@ impl SettingChange {
             }
             Self::Panels(Some(panels)) if !valid_panels(panels) => Err(invalid("panels")),
             Self::Layouts(Some(layouts)) if !valid_layouts(layouts) => Err(invalid("layouts")),
+            Self::SymbolFavorites(Some(favorites)) if !valid_symbol_favorites(favorites) => {
+                Err(invalid("symbolFavorites"))
+            }
             Self::ImageFolder(text) => match image_folder_problem(text) {
                 Some(reason) => Err(invalid(reason)),
                 None => Ok(()),
@@ -701,12 +826,7 @@ fn valid_tokenizer_id(id: &str) -> bool {
 /// At most [`MAX_TOKENIZERS`] ids, each valid, none twice.
 #[must_use]
 pub fn valid_tokenizers(ids: &[String]) -> bool {
-    ids.len() <= MAX_TOKENIZERS
-        && ids.iter().all(|id| valid_tokenizer_id(id))
-        && ids
-            .iter()
-            .enumerate()
-            .all(|(at, id)| !ids[..at].contains(id))
+    ids.len() <= MAX_TOKENIZERS && ids.iter().all(|id| valid_tokenizer_id(id)) && !has_repeat(ids)
 }
 
 /// The ids of a `tokenizers` array, leniently: valid ones, first occurrence, the first [`MAX_TOKENIZERS`].
@@ -885,6 +1005,7 @@ impl AppSettings {
                 .and_then(Item::as_table_like)
                 .and_then(panels_of),
             layouts: layouts_of(doc),
+            symbol_favorites: symbol_favorites_of(doc),
             // a value that is not a boolean counts as not set
             wrap_lines: doc
                 .get("wrap_lines")
@@ -895,6 +1016,7 @@ impl AppSettings {
             // the groups ride on the profile file: SettingsFile attaches them (`attach_characters`)
             characters: Vec::new(),
             characters_path: String::new(),
+            characters_status: CharactersStatus::Builtin,
             plugin_tables,
         }
     }
@@ -918,8 +1040,8 @@ fn set_keeping_decor(table: &mut Table, key: &str, value: Value) {
 /// Applies a change to a document: only the bytes of that key change.
 ///
 /// # Errors
-/// `Invalid`: the document holds `[panels]` | `[layouts]` in a newer format than the one being written (nothing
-/// in the document changed).
+/// `Invalid`: the document holds `[panels]` | `[layouts]` | `[symbol_favorites]` in a newer format than the one
+/// being written (nothing in the document changed).
 pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) -> Result<(), SettingsError> {
     let root = doc.as_table_mut();
     match change {
@@ -975,6 +1097,13 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) -> Result<(),
             let fresh = layouts.as_ref().map(layouts_table);
             if !set_versioned_table(root, "layouts", written, fresh) {
                 return Err(change.invalid("layouts"));
+            }
+        }
+        SettingChange::SymbolFavorites(favorites) => {
+            let written = favorites.as_ref().map_or(SYMBOL_FAVORITES_VERSION, |f| f.v);
+            let fresh = favorites.as_ref().map(symbol_favorites_table);
+            if !set_versioned_table(root, "symbol_favorites", written, fresh) {
+                return Err(change.invalid("symbolFavorites"));
             }
         }
         SettingChange::WrapLines(on) => set_keeping_decor(root, "wrap_lines", (*on).into()),
@@ -1180,13 +1309,11 @@ impl SettingsFile {
         &self.path
     }
 
-    /// Attaches the emoji | symbol groups (and the resolved file path) to settings read from disk.
-    /// A missing | unreadable | invalid characters file falls back to the built-in defaults.
+    /// Attaches the emoji | symbol groups (with the resolved file path and where they came from) to settings read
+    /// from disk. A missing | unreadable | invalid characters file falls back to the built-in defaults.
     fn attach_characters(&self, settings: AppSettings) -> AppSettings {
-        let characters = match characters::load(&self.profile, &settings.characters_file) {
-            Ok(groups) => groups,
-            Err(_) => characters::defaults(),
-        };
+        let (characters, characters_status) =
+            characters::read(&self.profile, &settings.characters_file);
         let characters_path = if settings.characters_file.is_empty() {
             String::new()
         } else {
@@ -1198,7 +1325,43 @@ impl SettingsFile {
         AppSettings {
             characters,
             characters_path,
+            characters_status,
             ..settings
+        }
+    }
+
+    /// The groups file read again for `current` (nothing watches it: callers ask when a picker | the panel | the
+    /// settings opens). `Some`: the groups, their path or their status changed; `None`: nothing to tell.
+    #[must_use]
+    pub fn refresh_characters(&self, current: &AppSettings) -> Option<AppSettings> {
+        let fresh = self.attach_characters(current.clone());
+        (fresh.characters != current.characters
+            || fresh.characters_path != current.characters_path
+            || fresh.characters_status != current.characters_status)
+            .then_some(fresh)
+    }
+
+    /// Writes the built-in groups to the groups file `current` names, only while no file is there. `Ok(false)`: a
+    /// file is there (never written over), or the name is empty (the built-ins only, no file).
+    ///
+    /// # Errors
+    /// `Io`: the write failed.
+    pub fn create_characters(&self, current: &AppSettings) -> Result<bool, CharactersError> {
+        if current.characters_file.trim().is_empty() {
+            return Ok(false);
+        }
+        characters::create_defaults(&self.profile, &current.characters_file)
+    }
+
+    /// What "show in folder" reveals for the groups file: the file when it is there, else the profile folder.
+    #[must_use]
+    pub fn characters_target(&self, current: &AppSettings) -> PathBuf {
+        let name = current.characters_file.trim();
+        let file = self.profile.join(name);
+        if !name.is_empty() && std::fs::symlink_metadata(&file).is_ok() {
+            file
+        } else {
+            self.profile.clone()
         }
     }
 

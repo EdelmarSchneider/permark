@@ -35,6 +35,8 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_agent::plugin());
     #[cfg(feature = "plugin-md-family")]
     plugins.push(permark_plugin_md_family::plugin());
+    #[cfg(feature = "plugin-symbols")]
+    plugins.push(permark_plugin_symbols::plugin());
     #[cfg(feature = "plugin-word-count")]
     plugins.push(permark_plugin_word_count::plugin());
     #[cfg(feature = "plugin-token-count")]
@@ -138,6 +140,7 @@ mod tests {
             "correction",
             "translation",
             "md-family",
+            "symbols",
             "prompt-blocks",
             "frontmatter-card",
             "highlight",

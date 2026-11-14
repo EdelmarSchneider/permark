@@ -4,8 +4,9 @@
 
 import "../visual/jsdomShims";
 import { ensureSyntaxTree } from "@codemirror/language";
-import { EditorState } from "@codemirror/state";
-import { afterEach, describe, expect, it } from "vitest";
+import { EditorSelection, EditorState, StateEffect } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MOCK_DOCUMENT_PATHS, MOCK_EDIT_SOURCES, mockView } from "../../../api/mockDocs";
 import { createSource, headingStarts, languageFor, type SourceHost, type SourceView } from "./cm";
 
@@ -158,7 +159,86 @@ describe("Source headings for the outline", () => {
     view.showHeading(9, page);
     expect(page.scrollTop).toBe(at(starts[3] ?? -1) - 50 - 12);
   });
+});
 
+describe("Source insert from outside the editor", () => {
+  function make(text: string, readOnly = false): SourceView {
+    made?.destroy();
+    parent?.remove();
+    parent = document.createElement("div");
+    document.body.append(parent);
+    made = createSource({ parent, text, path: "notes.md", markdown: true, host });
+    if (readOnly) {
+      made.view.dispatch({
+        effects: StateEffect.appendConfig.of(EditorState.readOnly.of(true)),
+      });
+    }
+    return made;
+  }
+
+  it("inserts at the caret and replaces a selection, the code points as given, caret after", () => {
+    const view = make("one two");
+    const cm = view.view;
+    cm.dispatch({ selection: EditorSelection.cursor(4) });
+    expect(view.replaceSelection("Ω")).toBe(true);
+    expect(view.text()).toBe("one Ωtwo");
+    cm.dispatch({ selection: EditorSelection.range(5, 8) });
+    expect(view.replaceSelection("❤️ ")).toBe(true);
+    expect(view.text()).toBe("one Ω❤️ ");
+    expect(cm.state.selection.main.head).toBe(view.text().length);
+  });
+
+  it("replaces every selection range", () => {
+    const view = make("a b c");
+    // the editor keeps one range unless multiple selections are allowed
+    view.view.dispatch({
+      effects: StateEffect.appendConfig.of(EditorState.allowMultipleSelections.of(true)),
+    });
+    view.view.dispatch({
+      selection: EditorSelection.create([
+        EditorSelection.cursor(1),
+        EditorSelection.range(2, 3),
+        EditorSelection.cursor(5),
+      ]),
+    });
+    expect(view.replaceSelection("→")).toBe(true);
+    expect(view.text()).toBe("a→ → c→");
+  });
+
+  it("groups with typing in the history and leaves the keyboard where it is", () => {
+    const view = make("one");
+    const cm = view.view;
+    const focus = vi.spyOn(cm, "focus");
+    const typed: boolean[] = [];
+    cm.dispatch({
+      selection: EditorSelection.cursor(3),
+      effects: StateEffect.appendConfig.of(
+        EditorView.updateListener.of((update) => {
+          for (const tr of update.transactions) {
+            if (tr.docChanged) typed.push(tr.isUserEvent("input.type"));
+          }
+        }),
+      ),
+    });
+    view.replaceSelection("!");
+    expect(focus).not.toHaveBeenCalled();
+    expect(cm.hasFocus).toBe(false);
+    expect(typed).toEqual([true]);
+  });
+
+  it("refuses while composing and in a read-only editor; nothing changes", () => {
+    const view = make("one");
+    const composing = vi.spyOn(view.view, "composing", "get").mockReturnValue(true);
+    expect(view.replaceSelection("x")).toBe(false);
+    expect(view.text()).toBe("one");
+    composing.mockRestore();
+    const locked = make("two", true);
+    expect(locked.replaceSelection("x")).toBe(false);
+    expect(locked.text()).toBe("two");
+  });
+});
+
+describe("Source headings for plain text", () => {
   it("other text has no headings", () => {
     parent = document.createElement("div");
     document.body.append(parent);

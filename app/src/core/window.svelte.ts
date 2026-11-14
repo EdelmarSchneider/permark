@@ -6,6 +6,9 @@ import {
   api,
   type Api,
   type ApiError,
+  type AppSettings,
+  type CharacterGroup,
+  type CharactersStatus,
   type GitBackendPref,
   type IpcError,
   type LinkUpdate,
@@ -15,6 +18,7 @@ import {
   type StartIn,
   type SettingChange,
   type StateRecovered,
+  type SymbolFavorites,
   type Unlisten,
   type WindowView,
   type WorkspaceView,
@@ -170,6 +174,19 @@ export class WindowStore {
   keymap = $state.raw<Readonly<Record<string, string>>>({});
   /** The tokenizers the token count shows, first = primary (the app's choice; a project may have its own). */
   tokenizers = $state.raw<readonly string[]>([]);
+  /** The symbol + emoji groups the pickers show (the groups file, else the built-ins). */
+  characters = $state.raw<readonly CharacterGroup[]>([]);
+  /** The name of the groups file under the profile folder (setting; empty = the built-in groups only). */
+  charactersFile = $state("");
+  /** Where that file is (or would be). */
+  charactersPath = $state("");
+  /** Where `characters` came from: the built-ins, the file, or the built-ins because the file is unusable. */
+  charactersStatus = $state<CharactersStatus>("builtin");
+  /** The person's favorite symbols and groups (`null`: none kept yet). */
+  symbolFavorites = $state.raw<SymbolFavorites | null>(null);
+  /** Settings reads applied so far (boot + each `settings-changed`; not reactive): a writer that needs to know
+   *  whether the news of its own write arrived compares it with the count it saw when it wrote. */
+  settingsReads = 0;
   #nextNotice = 1;
   readonly #clocks = new Map<number, NoticeClock>();
 
@@ -190,18 +207,7 @@ export class WindowStore {
         if (e.window === this.label) this.#applyContext(e.context);
       }),
       this.#api.on("settings-changed", (e) => {
-        look.set(e.settings);
-        this.linkUpdate = e.settings.linkUpdate;
-        this.referenceTemplate = e.settings.referenceTemplate;
-        this.editMode = e.settings.editMode;
-        this.gitBackend = e.settings.gitBackend;
-        this.editor = e.settings.editor;
-        this.notesFolder = e.settings.notesFolder;
-        this.imageFolder = e.settings.imageFolder;
-        this.startIn = e.settings.startIn;
-        this.openIn = e.settings.openIn;
-        this.keymap = e.settings.keymap;
-        this.tokenizers = e.settings.tokenizers;
+        this.#applySettings(e.settings);
         void language.choose(parsePreference(e.settings.language));
       }),
       this.#api.on("open-failed", (e) => {
@@ -216,18 +222,7 @@ export class WindowStore {
       this.window = info.window;
       this.tab = info.tab;
       this.#applyContext(info.context);
-      look.set(info.settings);
-      this.linkUpdate = info.settings.linkUpdate;
-      this.referenceTemplate = info.settings.referenceTemplate;
-      this.editMode = info.settings.editMode;
-      this.gitBackend = info.settings.gitBackend;
-      this.editor = info.settings.editor;
-      this.notesFolder = info.settings.notesFolder;
-      this.imageFolder = info.settings.imageFolder;
-      this.startIn = info.settings.startIn;
-      this.openIn = info.settings.openIn;
-      this.keymap = info.settings.keymap;
-      this.tokenizers = info.settings.tokenizers;
+      this.#applySettings(info.settings);
       await language.choose(parsePreference(info.settings.language));
       for (const notice of info.notices) this.#notify({ kind: "stateRecovered", notice });
       for (const failed of info.failures) {
@@ -240,6 +235,35 @@ export class WindowStore {
       this.boot = { status: "failed", error: booted.error };
     }
     return () => offs.forEach((off) => off());
+  }
+
+  /** The settings the window follows, from the boot read and from every change (the language apart: boot waits
+   *  for it). */
+  #applySettings(settings: AppSettings): void {
+    this.settingsReads += 1;
+    look.set(settings);
+    this.linkUpdate = settings.linkUpdate;
+    this.referenceTemplate = settings.referenceTemplate;
+    this.editMode = settings.editMode;
+    this.gitBackend = settings.gitBackend;
+    this.editor = settings.editor;
+    this.notesFolder = settings.notesFolder;
+    this.imageFolder = settings.imageFolder;
+    this.startIn = settings.startIn;
+    this.openIn = settings.openIn;
+    this.keymap = settings.keymap;
+    this.tokenizers = settings.tokenizers;
+    this.characters = settings.characters;
+    this.charactersFile = settings.charactersFile;
+    this.charactersPath = settings.charactersPath;
+    this.charactersStatus = settings.charactersStatus;
+    this.symbolFavorites = settings.symbolFavorites;
+  }
+
+  /** Asks the backend to read the groups file again (its edits show without a restart); a change arrives as
+   *  `settings-changed`. A failure is left quiet: the groups already shown stay. */
+  refreshCharacters(): void {
+    void this.#api.charactersRefresh();
   }
 
   /** The conditions changed: the UI keeps them, and the plugins that came on or went off follow. */

@@ -550,6 +550,15 @@
           if (!core || !mod || !now || core.view.composing) return false;
           return mod.applyEdits(core, now, edits);
         },
+        // not `runCommand`: that gives the editor the keyboard, and the caller (a panel) keeps it. `run` refuses a
+        // selected block kept as written; the doc compare catches any other refusal on the way to the view
+        insert: (text) => {
+          if (!core || !mod || core.view.composing) return false;
+          const before = core.view.state.doc;
+          mod.run(core, { kind: "text", text });
+          refresh();
+          return core.view.state.doc !== before;
+        },
         changeable: (range, insert) => {
           const now = composed();
           // not ready: nothing to tell by, as with no editor on screen (`apply` still checks each edit)
@@ -685,6 +694,17 @@
   function applyImage(src: string, alt: string): void {
     popover = { kind: "none" };
     if (src.trim() !== "") runCommand({ kind: "image", src: src.trim(), alt });
+  }
+
+  /** The plugins' buttons in the picker's footer (none while their plugin is off). */
+  const pickerActions = $derived(contributions.visible("pickerAction", conditions.current));
+
+  /** A footer button of the picker: the popup closes and the editor takes the keyboard back before the plugin
+   *  acts, so what it opens (a panel) leaves the caret where it was. */
+  function runPickerAction(action: ContributionOf<"pickerAction">, picker: PickerKind): void {
+    popover = { kind: "none" };
+    core?.view.focus();
+    action.run(picker);
   }
 
   /** A character picked: insert at the caret and hand the keyboard back to the editor. */
@@ -838,6 +858,11 @@
         apply={applyCharacter}
         close={() => (popover = { kind: "none" })}
         popoverKey={onPopoverKey}
+        actions={pickerActions.map((action) => ({
+          id: action.id,
+          label: t(action.label),
+          run: () => runPickerAction(action, current.picker),
+        }))}
       />
     </div>
   {/if}

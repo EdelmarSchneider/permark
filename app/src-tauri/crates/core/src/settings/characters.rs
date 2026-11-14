@@ -27,8 +27,32 @@ pub const MAX_GROUP_ENTRIES: usize = 400;
 pub const MAX_ENTRY_NAMES: usize = 12;
 /// Longest search name (chars).
 pub const MAX_ENTRY_NAME_CHARS: usize = 48;
-/// Longest entry (chars: combining marks and ZWJ sequences count as one entry).
-pub const MAX_ENTRY_CHARS: usize = 8;
+/// Longest entry, in code points: room for ZWJ emoji sequences with skin tones (up to 16).
+pub const MAX_ENTRY_CHARS: usize = 16;
+
+/// A character never put in a document from a group | favorite: C0 | DEL | C1 controls, bidi embedding |
+/// override | isolate controls (inserted at the caret they hide or reorder the text around it).
+pub(crate) fn is_unsafe_char(c: char) -> bool {
+    matches!(
+        c,
+        '\u{0}'..='\u{1f}' | '\u{7f}'..='\u{9f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
+    )
+}
+
+/// Where the groups the pickers show came from.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum CharactersStatus {
+    /// No file name, or no file: the built-ins.
+    #[default]
+    Builtin,
+    /// The groups come from the file.
+    Read,
+    /// A file is there but gives no group (binary | too large | not TOML | no usable group | IO error): the
+    /// built-ins are shown and the file is ignored.
+    Unreadable,
+}
 
 /// One insertable character with the names the picker searches by.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -86,7 +110,10 @@ pub(crate) fn groups_of(doc: &DocumentMut) -> Vec<CharacterGroup> {
     rows.iter()
         .filter_map(|row| {
             let name = row.get("name")?.as_str()?.trim();
-            if name.is_empty() || name.chars().count() > MAX_GROUP_NAME_CHARS {
+            if name.is_empty()
+                || name.chars().count() > MAX_GROUP_NAME_CHARS
+                || name.chars().any(is_unsafe_char)
+            {
                 return None;
             }
             let entries = entries_of(row.get("entries")?)?;
@@ -113,13 +140,27 @@ fn entries_of(item: &Item) -> Option<Vec<CharacterEntry>> {
             .collect(),
         _ => return None,
     };
+    let mut seen: Vec<&str> = Vec::new();
     let entries = rows
         .iter()
         .filter_map(|row| {
-            let ch = row.get("char")?.as_str()?.trim();
-            if ch.is_empty() || ch.chars().count() > MAX_ENTRY_CHARS {
+            // only ASCII whitespace is trimmed: `str::trim` would also strip the Unicode spaces (no-break, thin)
+            // an entry may be made of
+            let ch = row
+                .get("char")?
+                .as_str()?
+                .trim_matches(|c: char| c.is_ascii_whitespace());
+            if ch.is_empty()
+                || ch.chars().count() > MAX_ENTRY_CHARS
+                || ch.chars().any(is_unsafe_char)
+            {
                 return None;
             }
+            // one character twice in a group would give the picker two cells of one key
+            if seen.contains(&ch) {
+                return None;
+            }
+            seen.push(ch);
             let names = row
                 .get("names")
                 .and_then(Item::as_array)
@@ -154,20 +195,30 @@ pub fn defaults() -> Vec<CharacterGroup> {
         .map_or_else(|_| Vec::new(), |doc| groups_of(&doc))
 }
 
-/// The picker groups: file `name` under the profile folder through [`fsx::read_text`]. Empty name and a
-/// missing file are not errors: the built-ins. A valid file whose groups all read empty also gives the
-/// built-ins (a picker never shows nothing).
+/// The picker groups and where they came from: file `name` under the profile folder. Empty name | missing file
+/// = the built-ins ([`CharactersStatus::Builtin`]). A file that cannot be used, a valid one whose groups all read
+/// empty included, also gives the built-ins (a picker never shows nothing), as [`CharactersStatus::Unreadable`]:
+/// the person learns their file is ignored.
+pub(crate) fn read(profile: &Path, name: &str) -> (Vec<CharacterGroup>, CharactersStatus) {
+    match from_file(profile, name) {
+        Ok(None) => (defaults(), CharactersStatus::Builtin),
+        Ok(Some(groups)) if !groups.is_empty() => (groups, CharactersStatus::Read),
+        Ok(Some(_)) | Err(_) => (defaults(), CharactersStatus::Unreadable),
+    }
+}
+
+/// The groups of file `name` under the profile folder through [`fsx::read_text`]; `None`: empty name | no file.
 ///
 /// # Errors
 /// `Unreadable`: binary | too large | not TOML. `Io`: the file cannot be read.
-pub(crate) fn load(profile: &Path, name: &str) -> Result<Vec<CharacterGroup>, CharactersError> {
+fn from_file(profile: &Path, name: &str) -> Result<Option<Vec<CharacterGroup>>, CharactersError> {
     let name = name.trim();
     if name.is_empty() {
-        return Ok(defaults());
+        return Ok(None);
     }
     let path = profile.join(name);
     if std::fs::symlink_metadata(&path).is_err() {
-        return Ok(defaults());
+        return Ok(None);
     }
     let shown = path.display().to_string();
     let text = fsx::read_text(&path, MAX_CHARACTERS_BYTES).map_err(|error| match error {
@@ -191,16 +242,37 @@ pub(crate) fn load(profile: &Path, name: &str) -> Result<Vec<CharacterGroup>, Ch
             path: shown,
             detail: "notToml",
         })?;
-    let groups = groups_of(&doc);
-    Ok(if groups.is_empty() {
-        defaults()
-    } else {
-        groups
-    })
+    Ok(Some(groups_of(&doc)))
 }
 
-/// The built-in groups: emoji, Greek, operators, relations, arrows, common units, sub/superscripts.
-const DEFAULT_CHARACTERS_TOML: &str = r#"
+/// The text of the built-in groups: what a created groups file holds.
+pub(crate) fn defaults_toml() -> &'static str {
+    DEFAULT_CHARACTERS_TOML
+}
+
+/// Writes the built-in groups to file `name` under the profile folder, only while no file is there
+/// ([`fsx::write_atomic_if_absent`]): `Ok(false)` when one is (never written over).
+///
+/// # Errors
+/// `Io`: a name the `characters_file` setting refuses (empty included) as `InvalidInput`; the write failed.
+pub(crate) fn create_defaults(profile: &Path, name: &str) -> Result<bool, CharactersError> {
+    let name = name.trim();
+    let path = profile.join(name);
+    let io = |source: io::Error| CharactersError::Io {
+        path: path.display().to_string(),
+        source,
+    };
+    // the caller validated the name; a write outside the profile folder stays impossible even if it did not
+    if name.is_empty() || super::characters_file_problem(name).is_some() {
+        return Err(io(io::Error::from(io::ErrorKind::InvalidInput)));
+    }
+    fsx::write_atomic_if_absent(&path, defaults_toml().as_bytes()).map_err(io)
+}
+
+/// The built-in groups: emoji, Greek, operators, relations, arrows, common units, sub/superscripts, spaces.
+/// Invisible characters are written as escapes so the text stays readable.
+const DEFAULT_CHARACTERS_TOML: &str = r#"# PerMark symbol and emoji groups. Edit, add or remove groups and entries; this file replaces the built-in groups.
+
 [[groups]]
 name = "emoji"
 entries = [
@@ -380,5 +452,15 @@ entries = [
   { char = "₉", names = ["subscript nine", "subscript 9"] },
   { char = "₊", names = ["subscript plus"] },
   { char = "₋", names = ["subscript minus"] },
+]
+
+[[groups]]
+name = "spaces"
+entries = [
+  { char = "\u00A0", names = ["no-break space", "nbsp", "non-breaking space"] },
+  { char = "\u202F", names = ["narrow no-break space", "nnbsp", "thin non-breaking space"] },
+  { char = "\u2009", names = ["thin space"] },
+  { char = "\u2007", names = ["figure space"] },
+  { char = "\u2060", names = ["word joiner", "wj"] },
 ]
 "#;

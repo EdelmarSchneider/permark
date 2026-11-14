@@ -82,6 +82,7 @@
         },
         scope: (kind) => made.scope(kind),
         apply: (edits) => made.apply(edits),
+        insert: (text) => made.replaceSelection(text),
         reveal: (range) => made.reveal(range),
         marks: (ranges, current, pick) => made.marks(ranges, current, pick),
         markAt: () => made.markAt(),
