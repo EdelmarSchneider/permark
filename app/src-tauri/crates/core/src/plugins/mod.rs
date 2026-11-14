@@ -461,8 +461,8 @@ impl PluginCx {
         self
     }
 
-    /// Started for a reader with no window (`permark mcp` with the app closed): the plugin answers from the files and
-    /// writes no state of its own accord (only what a caller explicitly asks, such as resolving a comment).
+    /// Started for a reader with no window (`ProjectCore::from_files`): the plugin answers from the files and writes no
+    /// state of its own accord (only what a caller explicitly asks, such as resolving a comment).
     #[must_use]
     pub fn with_files_only(mut self) -> Self {
         self.files_only = true;

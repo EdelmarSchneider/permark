@@ -344,9 +344,9 @@ impl ProjectCore {
         Self::build(root, env, None)
     }
 
-    /// The same project for a reader with no window (`permark mcp` while the app is closed): the same services, built
-    /// from the files; only the plugins in `only` that are on run, each started `files_only` (no state written of
-    /// their own accord).
+    /// The same project for a reader with no window: the same services, built from the files; only the plugins in
+    /// `only` that are on run, each started `files_only` (no state written of their own accord). No production
+    /// caller since `permark mcp` answers only through the app; tests still build a project this way.
     #[must_use]
     pub fn from_files(root: Root, env: &CoreEnv, only: &[PluginId]) -> Arc<Self> {
         Self::build(root, env, Some(only.iter().cloned().collect()))

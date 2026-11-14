@@ -177,8 +177,8 @@ fn two_tabs_one_after_the_other_see_each_others_comments() {
     );
 }
 
-/// `permark mcp` with the window open elsewhere (files mode) reads a project's comments while the app writes them:
-/// every read sees a whole file (atomic writes), never a torn one, and the reader writes nothing.
+/// A reader with no window (`ProjectCore::from_files`) reads a project's comments while the app writes them: every
+/// read sees a whole file (atomic writes), never a torn one, and the reader writes nothing.
 #[test]
 fn a_reader_with_no_window_never_sees_a_torn_file() {
     let (_dir, root) = setup();
