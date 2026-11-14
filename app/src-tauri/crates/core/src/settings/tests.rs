@@ -2020,19 +2020,17 @@ fn a_table_of_this_format_of_an_older_one_or_without_one_is_written_over() {
             "{stored}"
         );
     }
-    // the format compared is the one of the value written; a removal counts as this build's format
+    // a removal counts as this build's format; a value that claims the stored newer format is no way around it
     let ahead = "[panels]\nv = 3\nleft = []\nright = []\nbottom = []\n";
     fs::write(file.path(), ahead).unwrap();
-    assert!(file.apply(&SettingChange::Panels(Some(docked()))).is_err());
-    assert!(file.apply(&SettingChange::Panels(None)).is_err());
-    assert_eq!(fs::read_to_string(file.path()).unwrap(), ahead);
-    let newer = Panels { v: 3, ..docked() };
-    assert_eq!(
-        file.apply(&SettingChange::Panels(Some(newer.clone())))
-            .unwrap()
-            .panels,
-        Some(newer)
-    );
+    for change in [
+        SettingChange::Panels(Some(docked())),
+        SettingChange::Panels(None),
+        SettingChange::Panels(Some(Panels { v: 3, ..docked() })),
+    ] {
+        assert!(file.apply(&change).is_err(), "{change:?}");
+        assert_eq!(fs::read_to_string(file.path()).unwrap(), ahead);
+    }
     // the right column's own key keeps its rule: written whole, whatever is stored
     fs::write(file.path(), "[right_views]\nv = 99\ngroups = []\n").unwrap();
     assert_eq!(
@@ -2043,6 +2041,92 @@ fn a_table_of_this_format_of_an_older_one_or_without_one_is_written_over() {
     );
     file.apply(&SettingChange::RightViews(None)).unwrap();
     assert_eq!(file.load().right_views, None);
+}
+
+/// A value in another format would be stored but not understood here, and a higher one would shut every later
+/// write of its key out: only the formats this build writes reach the file.
+#[test]
+fn a_value_in_a_format_this_build_does_not_write_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    assert_eq!(
+        (docked().v, named().v),
+        (PANELS_VERSION, LAYOUTS_VERSION),
+        "the fixtures are in the formats written"
+    );
+    let stored = format!("theme = \"dark\"\n\n{DOCKED_TOML}\n{NAMED_TOML}");
+    fs::write(file.path(), &stored).unwrap();
+    let holding = |v: u32| {
+        let mut layouts = named();
+        layouts.items[1].arrangement.v = v;
+        layouts
+    };
+    for (word, change) in [
+        (
+            "panels",
+            SettingChange::Panels(Some(Panels { v: 99, ..docked() })),
+        ),
+        (
+            "panels",
+            SettingChange::Panels(Some(Panels { v: 1, ..docked() })),
+        ),
+        (
+            "panels",
+            SettingChange::Panels(Some(Panels {
+                v: 0,
+                ..no_panels()
+            })),
+        ),
+        (
+            "layouts",
+            SettingChange::Layouts(Some(Layouts { v: 99, ..named() })),
+        ),
+        (
+            "layouts",
+            SettingChange::Layouts(Some(Layouts {
+                v: 0,
+                items: Vec::new(),
+            })),
+        ),
+        // one layout whose arrangement is in another format
+        ("layouts", SettingChange::Layouts(Some(holding(99)))),
+        ("layouts", SettingChange::Layouts(Some(holding(1)))),
+    ] {
+        assert!(
+            matches!(
+                file.apply(&change),
+                Err(SettingsError::Invalid { ref key, ref reason }) if key == word && reason == word
+            ),
+            "{change:?}"
+        );
+        assert_eq!(
+            fs::read_to_string(file.path()).unwrap(),
+            stored,
+            "{change:?}"
+        );
+    }
+    // the formats written still go in, over what is stored
+    let saved = file
+        .apply(&SettingChange::Panels(Some(no_panels())))
+        .unwrap();
+    assert_eq!(saved.panels, Some(no_panels()));
+    let saved = file
+        .apply(&SettingChange::Layouts(Some(holding(PANELS_VERSION))))
+        .unwrap();
+    assert_eq!(saved.layouts, Some(named()));
+    let read = file.load();
+    assert_eq!(
+        (read.panels, read.layouts, read.theme),
+        (Some(no_panels()), Some(named()), ThemePref::Dark)
+    );
+    // the right column's own key carries any format number, as before
+    let other = RightViews { v: 7, ..stacked() };
+    assert_eq!(
+        file.apply(&SettingChange::RightViews(Some(other.clone())))
+            .unwrap()
+            .right_views,
+        Some(other)
+    );
 }
 
 // ---- characters file (issue #38: emoji + symbol pickers) -------------------------------------------------

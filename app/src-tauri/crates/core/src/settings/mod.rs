@@ -201,7 +201,8 @@ pub const MAX_GROUP_VIEWS: usize = 16;
 /// Most named layouts written; longest layout name, in characters.
 pub const MAX_LAYOUTS: usize = 20;
 pub const MAX_LAYOUT_NAME: usize = 40;
-/// The format (`v`) of `[panels]` | `[layouts]` this build writes: what a removal is measured by.
+/// The format (`v`) of `[panels]` | `[layouts]` this build writes: the only one a written value may carry, and
+/// what a removal is measured by.
 pub const PANELS_VERSION: u32 = 2;
 pub const LAYOUTS_VERSION: u32 = 1;
 
@@ -223,19 +224,24 @@ pub fn valid_right_views(views: &RightViews) -> bool {
     valid_view_groups(&views.groups)
 }
 
-/// Write rule: every region within the bounds of the right column ([`valid_right_views`]).
+/// Write rule: the format this build writes ([`PANELS_VERSION`]: any other would be stored without being
+/// understood here, and a higher one would shut every later write out, see `set_versioned_table`); every region
+/// within the bounds of the right column ([`valid_right_views`]).
 #[must_use]
 pub fn valid_panels(panels: &Panels) -> bool {
-    [&panels.left, &panels.right, &panels.bottom]
-        .into_iter()
-        .all(|region| valid_view_groups(region))
+    panels.v == PANELS_VERSION
+        && [&panels.left, &panels.right, &panels.bottom]
+            .into_iter()
+            .all(|region| valid_view_groups(region))
 }
 
-/// Write rule: <= 20 layouts; each name 1..=40 characters, already trimmed, without control characters; each
-/// arrangement a valid [`Panels`].
+/// Write rule: the format this build writes ([`LAYOUTS_VERSION`], for the reasons of [`valid_panels`]); <= 20
+/// layouts; each name 1..=40 characters, already trimmed, without control characters; each arrangement a valid
+/// [`Panels`] (its format included).
 #[must_use]
 pub fn valid_layouts(layouts: &Layouts) -> bool {
-    layouts.items.len() <= MAX_LAYOUTS
+    layouts.v == LAYOUTS_VERSION
+        && layouts.items.len() <= MAX_LAYOUTS
         && layouts.items.iter().all(|item| {
             let name = item.name.as_str();
             !name.is_empty()
