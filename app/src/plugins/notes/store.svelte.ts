@@ -9,6 +9,7 @@ import {
   type NoteEntry,
   type NoteList,
   type NotesIntent,
+  type ProjectId,
   type RecentFolder,
   type Version,
   type WorkspaceView,
@@ -380,16 +381,24 @@ export class NotesStore {
     await this.refresh();
   }
 
-  /** Stops sharing a note with every project (sharing itself is asked from a project's agent popover). */
-  async stopSharing(path: string): Promise<void> {
+  /** Stops sharing a note with one project, or with every project when none is named (sharing itself is asked from a
+   *  project's agent panel). */
+  async stopSharing(path: string, project?: ProjectId): Promise<void> {
     const entry = this.entries.find((e) => e.path === path);
     if (!entry || entry.kind !== "note" || entry.sharedWith.length === 0) return;
-    const result = await this.#client.call("notes.unshare", { path });
+    const result = await this.#client.call("notes.unshare", { path, project });
     if (!result.ok) {
       this.#fail(result.error);
       return;
     }
-    this.#window.notifyNote(t("notes.sharedOff", { name: shownName(entry) }));
+    const name = shownName(entry);
+    const one = entry.sharedWith.find((s) => s.project === project);
+    // a note still shared with other projects is named with the one it left
+    this.#window.notifyNote(
+      one !== undefined && entry.sharedWith.length > 1
+        ? t("notes.sharedOffWith", { name, project: one.label })
+        : t("notes.sharedOff", { name }),
+    );
     await this.refresh();
   }
 

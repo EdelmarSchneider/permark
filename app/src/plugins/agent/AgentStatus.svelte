@@ -1,7 +1,8 @@
 <script lang="ts">
   // The agent item of the status bar, only while the switch is on: a dot and "Agent" (waiting), the client's name
   // (one connected), "{n} agents" (several) or a problem. A click opens the connected agents (each with Disconnect),
-  // what is shared, the latest requests, Turn off, the setup command and the way to the settings section.
+  // the notes shared with this project (while the notes plugin is on), what is shared, the latest requests, Turn off,
+  // the setup command and the way to the settings section.
   import Bot from "@lucide/svelte/icons/bot";
   import type { AgentRequest } from "../../api";
   import { t, tn, type MessageKey } from "../../core/i18n";
@@ -10,6 +11,7 @@
   import { GROUPS } from "./groups";
   import { handOff } from "./handoff.svelte";
   import AgentList from "./AgentList.svelte";
+  import SharedNotes from "./SharedNotes.svelte";
   import { AGENT_PAGE } from "./offer.svelte";
   import { sessionRows } from "./sessions";
   import { agent } from "./store.svelte";
@@ -108,7 +110,8 @@
   $effect(() => {
     if (!agent.popover) return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== "Escape") return;
+      // a part of the popover that took the key (the notes picker closes first) keeps the popover open
+      if (e.key !== "Escape" || e.defaultPrevented) return;
       agent.popover = false;
       chip?.focus();
     };
@@ -136,6 +139,7 @@
       onclick={() => {
         copied = false;
         agent.popover = !agent.popover;
+        if (agent.popover) void agent.refreshNotes();
       }}
     >
       <span class="dot is-{phase}" aria-hidden="true"></span>
@@ -159,6 +163,10 @@
         {#if problem === null}
           <p class="label-row">{t("agent.sessions.title")}</p>
           <AgentList />
+        {/if}
+        {#if agent.sharedNotes !== null}
+          <p class="label-row">{t("agent.notes.title")}</p>
+          <SharedNotes />
         {/if}
         <p class="label-row">{t("agent.popover.shared")}</p>
         <ul class="groups">

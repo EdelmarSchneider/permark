@@ -10,7 +10,7 @@
   import { apiErrorText } from "../../core/errors";
   import { t, tn, type MessageKey } from "../../core/i18n";
   import NoteRow from "./NoteRow.svelte";
-  import { drawnOrder, shownName, type GroupId } from "./model";
+  import { drawnOrder, shownName, stopSharingItems, type GroupId } from "./model";
   import { notes as store } from "./store.svelte";
 
   const GROUP_LABEL: Record<GroupId, MessageKey> = {
@@ -58,8 +58,16 @@
     out.push(item(t("notes.rename"), () => (store.renaming = entry.path)));
     if (entry.kind === "note") {
       out.push(item(t("notes.versionsMenu"), () => void store.openVersions(entry.path)));
-      if (entry.sharedWith.length > 0)
-        out.push(item(t("notes.unshare"), () => void store.stopSharing(entry.path)));
+      for (const { project, label } of stopSharingItems(entry.sharedWith)) {
+        out.push(
+          item(
+            label === null
+              ? t("notes.stopSharing")
+              : t("notes.stopSharingWith", { project: label }),
+            () => void store.stopSharing(entry.path, project),
+          ),
+        );
+      }
       out.push(
         item(t("notes.copy"), () => void store.copyNote(entry.path)),
         item(t("notes.moveToProject"), () => void store.openMove(entry.path)),

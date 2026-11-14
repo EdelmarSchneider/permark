@@ -324,6 +324,25 @@ describe("rename, pin, share, copy", () => {
     expect(window.notices.length).toBe(said);
   });
 
+  it("stops sharing with one project only, and names it", async () => {
+    const { api, store, window } = await setup();
+    const shared = "2026-10-16 1031.md";
+    api.probe.plugins.notes.share(shared, { project: "other", label: "Other project" });
+    await store.refresh();
+    expect(store.entries.find((e) => e.path === shared)?.sharedWith.map((s) => s.label)).toEqual([
+      "permark-docs",
+      "Other project",
+    ]);
+    await store.stopSharing(shared, "other");
+    expect(store.entries.find((e) => e.path === shared)?.sharedWith.map((s) => s.label)).toEqual([
+      "permark-docs",
+    ]);
+    expect(window.notices.at(-1)).toMatchObject({
+      kind: "note",
+      text: "“Reading list” is no longer shared with Other project.",
+    });
+  });
+
   it("copies the text exactly and marks the note until it is edited", async () => {
     const written: string[] = [];
     Object.defineProperty(navigator, "clipboard", {

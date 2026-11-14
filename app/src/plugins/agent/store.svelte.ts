@@ -7,6 +7,7 @@ import type {
   AgentStatus,
   AgentWindowContext,
   PluginEvents,
+  ProjectNotes,
   Result,
 } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
@@ -35,6 +36,9 @@ export class AgentStore {
   program = $state<string | null>(null);
   /** The popover of the status item is open. */
   popover = $state(false);
+  /** The notes shared with this project and the ones that can be added; `null`: not read yet | the notes plugin is
+   *  off (then nothing about notes is drawn). */
+  sharedNotes = $state.raw<ProjectNotes | null>(null);
   #page = $state.raw<PageSelection>(null);
   #sent: AgentWindowContext | null = null;
   readonly #client: PluginClient;
@@ -71,8 +75,9 @@ export class AgentStore {
   start(): () => void {
     return $effect.root(() => {
       $effect(() => {
-        // a new project starts unknown: the last project's switch never stands for this one
+        // a new project starts unknown: the last project's switch and shares never stand for this one
         this.status = null;
+        this.sharedNotes = null;
         if (this.#root() === null) return;
         let gone = false;
         const offs: (() => void)[] = [];
@@ -172,6 +177,32 @@ export class AgentStore {
   /** Lifts the refusal: that agent pairs again on its next request. */
   async undoDisconnect(id: string): Promise<void> {
     this.#apply(await this.#client.call("agent.undoDisconnect", { id }));
+  }
+
+  /** Reads the notes shared with this project again (the popover opens, the settings section shows, a change). */
+  async refreshNotes(): Promise<void> {
+    const result = await this.#client.call("agent.sharedNotes", {});
+    this.sharedNotes = result.ok ? result.value : null;
+  }
+
+  /** Shares a note with this project's agents; false = refused (said in a notice, the list read again). */
+  async shareNote(name: string): Promise<boolean> {
+    return this.#notesChange(await this.#client.call("agent.shareNote", { name }));
+  }
+
+  /** Stops sharing a note with this project's agents; false = refused (said in a notice, the list read again). */
+  async unshareNote(name: string): Promise<boolean> {
+    return this.#notesChange(await this.#client.call("agent.unshareNote", { name }));
+  }
+
+  async #notesChange(result: Result<ProjectNotes>): Promise<boolean> {
+    if (result.ok) {
+      this.sharedNotes = result.value;
+      return true;
+    }
+    windowStore.notifyNote(t("agent.notSaved"));
+    await this.refreshNotes();
+    return false;
   }
 
   async setDefaults(): Promise<void> {

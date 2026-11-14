@@ -165,6 +165,42 @@ describe("the agent store", () => {
   });
 });
 
+describe("notes shared with the project", () => {
+  const READING = "2026-10-16 1031.md";
+  const TRIP = "2026-10-19 0907.md";
+
+  it("reads what is shared and what can be added, newest first; sharing and stopping update both", async () => {
+    const { store, stop } = await setup();
+    expect(store.sharedNotes).toBeNull();
+    await store.refreshNotes();
+    expect(store.sharedNotes?.shared.map((n) => n.id)).toEqual([READING]);
+    const candidates = store.sharedNotes?.candidates ?? [];
+    expect(candidates[0]?.id).toBe(TRIP);
+    expect(candidates.map((n) => n.id)).not.toContain(READING);
+    expect(await store.shareNote(TRIP)).toBe(true);
+    expect(store.sharedNotes?.shared.map((n) => n.id)).toEqual([TRIP, READING]);
+    expect(store.sharedNotes?.candidates.map((n) => n.id)).not.toContain(TRIP);
+    expect(await store.unshareNote(READING)).toBe(true);
+    expect(store.sharedNotes?.shared.map((n) => n.id)).toEqual([TRIP]);
+    expect(store.sharedNotes?.candidates.map((n) => n.id)).toContain(READING);
+    stop();
+  });
+
+  it("knows nothing while the notes plugin is off (nothing is drawn), and says a refused change", async () => {
+    const { api, store, stop } = await setup();
+    await api.settingsSet({ key: "pluginEnabled", value: { plugin: "notes", enabled: false } });
+    await store.refreshNotes();
+    expect(store.sharedNotes).toBeNull();
+    await api.settingsSet({ key: "pluginEnabled", value: { plugin: "notes", enabled: null } });
+    await store.refreshNotes();
+    expect(store.sharedNotes).not.toBeNull();
+    const before = windowStore.notices.length;
+    expect(await store.shareNote("gone.md")).toBe(false);
+    expect(windowStore.notices.length).toBe(before + 1);
+    stop();
+  });
+});
+
 describe("showing an agent's place", () => {
   it("moves a reading person, never one who is editing", () => {
     const navigate = vi.spyOn(documents, "navigate").mockImplementation(() => undefined);

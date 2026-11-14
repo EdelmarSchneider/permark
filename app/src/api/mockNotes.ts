@@ -55,6 +55,10 @@ export type NotesProbe = {
   recover(path: string, text: string): void;
   /** Calls the notes got, `notes.<method>`. */
   calls: string[];
+  /** A note shared with one more project (another window's project). */
+  share(name: string, project: SharedWith): void;
+  /** Notes an earlier version shared with every project, turned off by the update: `notes.takeUnshared` hands them once. */
+  unshared(names: string[]): void;
   /** The Notes folder's drive gives no file ids (FAT, some network drives): a rename that only changes case cannot be
    *  proven to keep one file, so it is refused. */
   fileIdsUnknown: boolean;
@@ -87,6 +91,8 @@ function snippetOf(text: string): string {
 export function createMockNotes(
   files: Map<string, string>,
   announceIntent: () => void = () => {},
+  /** The notes plugin is on: off, the agent's note calls answer `unavailable`, as the real backend does. */
+  on: () => boolean = () => true,
 ): {
   handlers: NotesHandlers;
   agentHandlers: AgentNotesHandlers;
@@ -448,9 +454,16 @@ export function createMockNotes(
       candidates: all.filter((n) => !isShared(n)).map(asShared),
     };
   };
+  const needOn = (): void => {
+    if (!on()) throw new MockPluginError("unavailable", "notes");
+  };
   const agentHandlers: AgentNotesHandlers = {
-    "agent.sharedNotes": () => projectNotes(),
+    "agent.sharedNotes": () => {
+      needOn();
+      return projectNotes();
+    },
     "agent.shareNote": ({ name }) => {
+      needOn();
       need(name);
       const others = (shares.get(name) ?? []).filter(
         (s) => s.project !== MOCK_NOTES_PROJECT.project,
@@ -459,6 +472,7 @@ export function createMockNotes(
       return projectNotes();
     },
     "agent.unshareNote": ({ name }) => {
+      needOn();
       handlers["notes.unshare"]({ path: name, project: MOCK_NOTES_PROJECT.project });
       return projectNotes();
     },
@@ -491,6 +505,13 @@ export function createMockNotes(
       },
       recover: (path, text) => {
         recovered.set(path, text);
+      },
+      share: (name, project) => {
+        const others = (shares.get(name) ?? []).filter((s) => s.project !== project.project);
+        shares.set(name, [...others, project]);
+      },
+      unshared: (names) => {
+        unsharedNotice = [...names];
       },
       get fileIdsUnknown() {
         return fileIdsUnknown;

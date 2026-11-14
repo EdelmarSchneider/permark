@@ -16,6 +16,7 @@ import {
   placeOf,
   shortFolder,
   shownName,
+  stopSharingItems,
 } from "./model";
 
 const NOW = new Date(2026, 9, 19, 15, 0).getTime();
@@ -214,11 +215,30 @@ describe("marks", () => {
       unsaved: true,
       changed: false,
       gone: false,
-      shared: true,
+      shared: ["Alpha"],
       copied: true,
     });
     expect(marksOf(entry({ path: "b.md", state: "gone" })).gone).toBe(true);
     expect(marksOf(entry({ path: "b.md", state: "changedOnDisk" })).changed).toBe(true);
+    expect(marksOf(entry({ path: "b.md" })).shared).toEqual([]);
+  });
+});
+
+describe("stop sharing items", () => {
+  it("offers nothing for a note shared with no project, one plain item for one, one per project for several", () => {
+    expect(stopSharingItems([])).toEqual([]);
+    expect(stopSharingItems([{ project: "p1", label: "Alpha" }])).toEqual([
+      { project: "p1", label: null },
+    ]);
+    expect(
+      stopSharingItems([
+        { project: "p1", label: "Alpha" },
+        { project: "p2", label: "Beta" },
+      ]),
+    ).toEqual([
+      { project: "p1", label: "Alpha" },
+      { project: "p2", label: "Beta" },
+    ]);
   });
 });
 
