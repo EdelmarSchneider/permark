@@ -3,6 +3,7 @@
 // selected, the view's options from the keyboard (shell.md §Frame, Right region); the options button at its end.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import Icon from "@lucide/svelte/icons/folder-tree";
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ViewTabs from "./ViewTabs.svelte";
@@ -182,5 +183,120 @@ describe("the options button of a strip", () => {
       /\.bar:hover \.options,\s*\.bar:focus-within \.options,\s*\.options\[aria-expanded="true"\] \{\s*opacity: 1;/,
     );
     expect(css).toMatch(/@media \(hover: none\) \{\s*\.options \{\s*opacity: 1;/);
+  });
+});
+
+describe("a tab as the handle of its view", () => {
+  it("reports a press with the pointer, and shows which tab is being dragged", () => {
+    const target = document.createElement("div");
+    document.body.append(target);
+    const ongrab = vi.fn();
+    component = mount(ViewTabs, {
+      target,
+      props: { views: VIEWS, selected: "outline", onselect: vi.fn(), ongrab, dragging: "outline" },
+    });
+    flushSync();
+    const [outline, live] = tabs(target);
+    const press = new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerId: 1 });
+    live?.querySelector(".label")?.dispatchEvent(press);
+    expect(ongrab).toHaveBeenCalledTimes(1);
+    expect(ongrab).toHaveBeenCalledWith("live-feed.panel", live, press);
+    expect(outline?.classList.contains("dragged")).toBe(true);
+    expect(live?.classList.contains("dragged")).toBe(false);
+    // a pen | a finger on it never scrolls the page away from under a drag
+    const css = readFileSync(resolve(process.cwd(), "src/core/shell/ViewTabs.svelte"), "utf8");
+    expect(css).toMatch(/^ {2}\.tab \{[^}]*touch-action: none;/m);
+    expect(css).toMatch(/\.tab\.dragged \{\s*opacity: 0\.\d+;/);
+  });
+});
+
+describe("a strip too narrow for its labels", () => {
+  const css = readFileSync(resolve(process.cwd(), "src/core/shell/ViewTabs.svelte"), "utf8");
+  /** The declarations of the rule that starts a line with `selector`. */
+  const rule = (selector: string): string => {
+    const at = css.split("\n").findIndex((line) => line === `  ${selector} {`);
+    return at < 0 ? "" : (css.split("\n").slice(at).join("\n").split("}")[0] ?? "");
+  };
+
+  it("the tab shown keeps its whole label: every other tab gives way before it starts to", () => {
+    // room is taken from the tabs by these weights: the one shown loses nothing while another still can
+    expect(rule(".tab")).toMatch(/flex: 0 100000 auto;/);
+    expect(rule('.tab[aria-selected="true"]')).toMatch(/flex-shrink: 1;/);
+    expect(rule('.tab[aria-selected="true"]')).not.toMatch(/min-width|max-width/);
+  });
+
+  it("another tab shortens its label down to a few letters, then shows its icon alone; without an icon the letters stay", () => {
+    const target = document.createElement("div");
+    document.body.append(target);
+    component = mount(ViewTabs, {
+      target,
+      props: {
+        views: [
+          { id: "a", label: "Files", icon: Icon, badge: null },
+          { id: "b", label: "Broken links", icon: Icon, badge: "2" },
+          { id: "c", label: "Plain", icon: undefined, badge: null },
+        ],
+        selected: "a",
+        onselect: vi.fn(),
+        roomy: 3,
+      },
+    });
+    flushSync();
+    const [a, b, c] = tabs(target);
+    expect([a, b, c].map((tab) => tab?.classList.contains("has-icon"))).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    expect([a, b, c].map((tab) => tab?.classList.contains("has-badge"))).toEqual([
+      false,
+      true,
+      false,
+    ]);
+    // three tabs at the left are not crowded: every label is in the page (the strip's width decides what shows)
+    expect([a, b, c].map((tab) => tab?.querySelector(".label")?.textContent)).toEqual([
+      "Files",
+      "Broken links",
+      "Plain",
+    ]);
+    // with an icon: never narrower than the icon; the label is whole-or-ellipsis above the floor, gone under it
+    const withIcon = rule('.tab.has-icon:not([aria-selected="true"])');
+    expect(withIcon).toMatch(/min-width: calc\(14px \+ 2 \* var\(--tab-pad\)\);/);
+    expect(rule('.tab.has-icon:not([aria-selected="true"]) .label')).toMatch(
+      /max-width: max\(0px, calc\(\(100% - var\(--label-floor\)\) \* 999\)\);/,
+    );
+    // without one: the label keeps a readable width
+    expect(rule('.tab:not(.has-icon):not([aria-selected="true"]) .label')).toMatch(
+      /min-width: 3em;/,
+    );
+  });
+
+  it("past its roomy count the strip still shows the icons alone of the tabs that are not shown", () => {
+    const target = document.createElement("div");
+    document.body.append(target);
+    component = mount(ViewTabs, {
+      target,
+      props: {
+        views: [
+          { id: "a", label: "Files", icon: Icon, badge: null },
+          { id: "b", label: "Search", icon: Icon, badge: null },
+          { id: "c", label: "Tags", icon: Icon, badge: null },
+        ],
+        selected: "b",
+        onselect: vi.fn(),
+        roomy: 2,
+      },
+    });
+    flushSync();
+    expect(tabs(target).map((tab) => tab.classList.contains("icon-only"))).toEqual([
+      true,
+      false,
+      true,
+    ]);
+    expect(tabs(target).map((tab) => tab.querySelector(".label")?.textContent ?? null)).toEqual([
+      null,
+      "Search",
+      null,
+    ]);
   });
 });

@@ -91,6 +91,7 @@
   <header class="top" inert={focus}>{@render top()}</header>
   <div
     class="body"
+    data-frame="body"
     class:has-sidebar={sidebar !== undefined}
     class:has-panel={panel !== undefined}
     bind:clientWidth={bodyWidth}
@@ -111,6 +112,7 @@
     <!-- the page over the bottom panel, between the side panels (they keep the whole height) -->
     <div
       class="center"
+      data-frame="center"
       class:has-bottom={bottom !== undefined}
       bind:clientHeight={
         null,

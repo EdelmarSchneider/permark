@@ -561,9 +561,32 @@ describe("the moves between regions", () => {
     expect(canAddGroup(full, "left")).toBe(true);
     expect(canAddGroup(full, "bottom")).toBe(true);
     expect(asGroup(full, FILES, "right", 0)).toBe(full);
-    expect(asGroup(full, "a", "right", 2)).toBe(full);
     // a move as a tab still works there
     expect(views(moveTo(full, FILES, "right").right)).toEqual([["a"], ["b"], ["c", FILES]]);
+  });
+
+  it("a view alone in a group of a full region still changes place there: its group goes with it", () => {
+    const full: Arrangement = {
+      v: 2,
+      left: [group(1, FILES, SEARCH)],
+      right: [group(0.4, "a"), group(0.3, "b", "t"), group(0.3, "c")],
+      bottom: [],
+    };
+    expect(canAddGroup(full, "right", "a")).toBe(true);
+    expect(canAddGroup(full, "right", "c")).toBe(true);
+    // a tab of a group there would make a fourth; so would a view of another region
+    expect(canAddGroup(full, "right", "t")).toBe(false);
+    expect(canAddGroup(full, "right", FILES)).toBe(false);
+    expect(canAddGroup(full, "left", "a")).toBe(true);
+    const last = asGroup(full, "a", "right", 3);
+    expect(views(last.right)).toEqual([["b", "t"], ["c"], ["a"]]);
+    expect(shares(last.right).reduce((sum, share) => sum + share, 0)).toBeCloseTo(1);
+    expect(views(asGroup(full, "c", "right", 0).right)).toEqual([["c"], ["a"], ["b", "t"]]);
+    expect(views(asGroup(full, "a", "right", 2).right)).toEqual([["b", "t"], ["a"], ["c"]]);
+    // still no fourth group, and its own place changes nothing
+    expect(asGroup(full, "t", "right", 0)).toBe(full);
+    expect(asGroup(full, "a", "right", 0)).toBe(full);
+    expect(asGroup(full, "a", "right", 1)).toBe(full);
   });
 
   it("a move that changes nothing returns the same object", () => {

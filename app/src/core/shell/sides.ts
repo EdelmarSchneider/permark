@@ -16,7 +16,7 @@ import {
   type RegionState,
 } from "./layout";
 import { layout } from "./layout.svelte";
-import { moveTo, OUTLINE, SEARCH, select, type Region } from "./arrangement";
+import { moveTo, OUTLINE, SEARCH, select, type Arrangement, type Region } from "./arrangement";
 import { arrangement } from "./arrangement.svelte";
 import { ui } from "./ui.svelte";
 
@@ -254,14 +254,20 @@ export function showView(id: string): void {
 }
 
 /**
- * Moves a view to another region: the last tab of its last group (an empty region: its first group), shown by that
- * group; a region the person hid shows again with it. A view nobody offers now stays where it is.
+ * Puts a view where a move decided (`next`: the arrangement with the view at its new place): drawn at once, the view
+ * shown by its group; a region the person hid shows again with it. A view nobody offers now stays where it is.
  */
-export function moveToRegion(id: string, region: Region): void {
+export function placeView(id: string, next: Arrangement): void {
   if (arrangement.viewOf(id) === undefined) return;
-  arrangement.arrange(moveTo(arrangement.layout, id, region));
-  setHidden(region, false);
+  arrangement.arrange(next);
+  const region = arrangement.regionOf(id);
+  if (region !== null) setHidden(region, false);
   selectView(id);
+}
+
+/** Moves a view to another region: the last tab of its last group (an empty region: its first group). */
+export function moveToRegion(id: string, region: Region): void {
+  placeView(id, moveTo(arrangement.layout, id, region));
 }
 
 /**

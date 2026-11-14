@@ -29,6 +29,10 @@
     onoptions?: (id: string, button: HTMLElement) => void;
     /** The options of the tab shown are open. */
     expanded?: boolean;
+    /** A pointer went down on a tab: the handle its view is dragged by (absent: the tabs are not handles). */
+    ongrab?: (id: string, tab: HTMLElement, event: PointerEvent) => void;
+    /** The view being dragged (its tab is dimmed). */
+    dragging?: string | null;
     /** The strip's name (default: the right panel's). */
     label?: string;
     /** Tabs that keep their labels: more make the strip crowded. */
@@ -41,6 +45,8 @@
     onmenu,
     onoptions,
     expanded = false,
+    ongrab,
+    dragging = null,
     label,
     roomy = 2,
   }: Props = $props();
@@ -129,6 +135,9 @@
         role="tab"
         class="tab"
         class:icon-only={iconOnly}
+        class:has-icon={view.icon !== undefined}
+        class:has-badge={view.badge !== null}
+        class:dragged={dragging === view.id}
         data-view={view.id}
         tabindex={stop === view.id ? 0 : -1}
         aria-selected={selected === view.id}
@@ -141,6 +150,7 @@
         onclick={() => {
           if (view.id !== selected) onselect(view.id);
         }}
+        onpointerdown={(event) => ongrab?.(view.id, event.currentTarget, event)}
         oncontextmenu={(event) => {
           if (onmenu === undefined || !(event.currentTarget instanceof HTMLElement)) return;
           event.preventDefault();
@@ -214,14 +224,18 @@
       opacity: 1;
     }
   }
-  /* the open tab gives way before the others do: every tab stays reachable */
+  /* A strip too narrow for its labels takes the room from the tabs by their weights: the tab shown loses nothing
+     while another can still give way (its weight is nothing beside theirs), so its label stays whole; with every
+     other tab at its smallest, it shortens too and every tab stays reachable. A tab is also the handle its view is
+     dragged by: a pen | a finger on it never scrolls the page away from under a drag. */
   .tab {
-    flex: 0 1 auto;
+    --tab-pad: var(--sp-3);
+    flex: 0 100000 auto;
     min-width: 0;
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 5px var(--sp-3);
+    padding: 5px var(--tab-pad);
     border: 0;
     border-bottom: 2px solid transparent;
     background: transparent;
@@ -229,22 +243,47 @@
     font: inherit;
     font-size: var(--fs-ui-sm);
     cursor: pointer;
+    touch-action: none;
+  }
+  .tab[aria-selected="true"] {
+    flex-shrink: 1;
   }
   .tab.icon-only {
+    --tab-pad: var(--sp-2);
     flex: none;
-    padding-inline: var(--sp-2);
   }
   .crowded .tab {
-    padding-inline: var(--sp-2);
+    --tab-pad: var(--sp-2);
   }
   .crowded .tab.icon-only {
-    padding-inline: 5px;
+    --tab-pad: 5px;
+  }
+  .tab.dragged {
+    opacity: 0.45;
   }
   .label {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* A tab that gives way, with an icon: its label shortens (ellipsis) down to a few letters, then goes and the icon
+     stays alone, in the middle of the room the tab still has (the tab's name is its tooltip). The room the label
+     has in the tab, less that floor, times a large number: no limit above the floor, no width under it. */
+  .tab.has-icon:not([aria-selected="true"]) {
+    --label-floor: calc(14px + 6px + 3em);
+    min-width: calc(14px + 2 * var(--tab-pad));
+    justify-content: center;
+  }
+  .tab.has-icon.has-badge:not([aria-selected="true"]) {
+    --label-floor: calc(14px + 6px + 3em + 6px + 2em);
+  }
+  .tab.has-icon:not([aria-selected="true"]) .label {
+    max-width: max(0px, calc((100% - var(--label-floor)) * 999));
+  }
+  /* without an icon its letters are all it has: a few of them stay */
+  .tab:not(.has-icon):not([aria-selected="true"]) .label {
+    min-width: 3em;
   }
   .tab:hover {
     color: var(--text);

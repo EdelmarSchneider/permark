@@ -17,55 +17,12 @@ import {
   moveView,
   REGIONS,
   splitOut,
-  type Axis,
   type Region,
   type ViewGroup,
 } from "./arrangement";
 import { arrangement } from "./arrangement.svelte";
+import { ACROSS, ALONG, AS_TAB, type Words } from "./moveWords";
 import { closeView, focusView, moveToRegion, selectView } from "./sides";
-
-/** A move: how the menu names it, how the status line says it once done (`{name}`: the view). */
-type Words = { readonly label: MessageKey; readonly said: MessageKey };
-
-/**
- * The moves inside a region, worded by the direction its groups follow each other: one group back | forth, out of a
- * tab group into a group of its own before | after it. `folded`: why none can act while the window is too small to
- * draw the groups apart.
- */
-const ALONG: Readonly<
-  Record<
-    Axis,
-    {
-      readonly back: Words;
-      readonly forth: Words;
-      readonly before: Words;
-      readonly after: Words;
-      readonly folded: MessageKey;
-    }
-  >
-> = {
-  vertical: {
-    back: { label: "panel.moveUp", said: "panel.moved.up" },
-    forth: { label: "panel.moveDown", said: "panel.moved.down" },
-    before: { label: "panel.showAbove", said: "panel.moved.above" },
-    after: { label: "panel.showBelow", said: "panel.moved.below" },
-    folded: "panel.tooShort",
-  },
-  horizontal: {
-    back: { label: "panel.moveLeft", said: "panel.moved.left" },
-    forth: { label: "panel.moveRight", said: "panel.moved.right" },
-    before: { label: "panel.showOnLeft", said: "panel.moved.onLeft" },
-    after: { label: "panel.showOnRight", said: "panel.moved.onRight" },
-    folded: "panel.tooNarrow",
-  },
-};
-const AS_TAB: Words = { label: "panel.showAsTab", said: "panel.moved.tab" };
-/** The move into another region. */
-const ACROSS: Readonly<Record<Region, Words>> = {
-  left: { label: "panel.moveToLeft", said: "panel.moved.toLeft" },
-  right: { label: "panel.moveToRight", said: "panel.moved.toRight" },
-  bottom: { label: "panel.moveToBottom", said: "panel.moved.toBottom" },
-};
 
 /** The menu open for the view `id`, at a point of the window, opened from `anchor`. */
 type OpenViewMenu = {
@@ -111,8 +68,9 @@ class ViewMenu {
     focusView(id);
   }
 
-  /** After a move: it is said, and the moved view's options take the keyboard. */
-  #moved(id: string, said: MessageKey): void {
+  /** After a move (an action of the menu, a view dropped): it is said, and the moved view's options take the
+   *  keyboard. */
+  moved(id: string, said: MessageKey): void {
     arrangement.status = t(said, { name: arrangement.nameOf(id) });
     void this.#focus(id);
   }
@@ -143,7 +101,7 @@ class ViewMenu {
         arrangement.arrange(inRegion(layout, id, op));
         // the moved view is the one its group shows: its options are there to take the keyboard
         if (!arrangement.isSelected(id)) selectView(id);
-        this.#moved(id, move.said);
+        this.moved(id, move.said);
       },
     });
     const moves = tabbed
@@ -177,7 +135,7 @@ class ViewMenu {
         label: t(ACROSS[other].label),
         run: () => {
           moveToRegion(id, other);
-          this.#moved(id, ACROSS[other].said);
+          this.moved(id, ACROSS[other].said);
         },
       })),
       // a view that is always open (Files, Search, a plugin's sidebar tab) has no Close

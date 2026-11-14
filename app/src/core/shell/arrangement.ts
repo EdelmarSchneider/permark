@@ -412,9 +412,14 @@ export function intoGroup(
   );
 }
 
-/** One more group fits in `region`. */
-export function canAddGroup(arr: Arrangement, region: Region): boolean {
-  return arr[region].length < MAX_GROUPS;
+/**
+ * One more group fits in `region`. For the view `id` (the one that would become that group): also in a full region
+ * where it sits alone in a group, which goes with it (its group changes place, no group is added).
+ */
+export function canAddGroup(arr: Arrangement, region: Region, id?: string): boolean {
+  const groups = arr[region];
+  if (groups.length < MAX_GROUPS) return true;
+  return id !== undefined && groups[groupOf(groups, id)]?.views.length === 1;
 }
 
 /**
@@ -423,7 +428,7 @@ export function canAddGroup(arr: Arrangement, region: Region): boolean {
  * already at that place: nothing changes.
  */
 export function asGroup(arr: Arrangement, id: string, region: Region, at: number): Arrangement {
-  if (!canAddGroup(arr, region)) return arr;
+  if (!canAddGroup(arr, region, id)) return arr;
   const { rest, from, gone } = lift(arr, id);
   const own = from === region ? gone : -1;
   if (own >= 0 && (at === own || at === own + 1)) return arr;

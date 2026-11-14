@@ -3,7 +3,7 @@
   // a host element that is moved into the slot its region made for it (`ViewRegion`, `viewSlots`), and back home
   // while no region draws it. A view that changes group | region is moved, never created again: what was typed, the
   // rows that are open, the filters stay; the scroll offsets a move loses are put back. Also drawn here, once for the
-  // window: the views' options menu and the line that says what a move did.
+  // window: the views' options menu, what a drag of a view shows while it runs, the line that says what a move did.
   //
   // MUST come before the frame in the window's template: the offsets are noted before the regions draw a change.
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
@@ -19,6 +19,8 @@
   import type { OnScreen, WindowStore } from "../window.svelte";
   import { FILES, OUTLINE, REGIONS, SEARCH } from "./arrangement";
   import { arrangement } from "./arrangement.svelte";
+  import { viewDrag } from "./viewDrag.svelte";
+  import ViewDragLayer from "./ViewDragLayer.svelte";
   import { viewMenu } from "./viewMenu.svelte";
   import { viewSlots } from "./viewSlots.svelte";
 
@@ -182,6 +184,10 @@
     anchor={open.anchor}
     close={() => viewMenu.close()}
   />
+{/if}
+{#if viewDrag.state.status === "dragging"}
+  {@const drag = viewDrag.state}
+  <ViewDragLayer id={drag.id} at={drag.at} target={drag.target} />
 {/if}
 <p class="sr-only" role="status" data-view-status>{arrangement.status}</p>
 

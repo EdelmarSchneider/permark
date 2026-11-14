@@ -20,6 +20,7 @@
   import { arrangement } from "./arrangement.svelte";
   import { selectView } from "./sides";
   import ViewDivider from "./ViewDivider.svelte";
+  import { viewDrag } from "./viewDrag.svelte";
   import { viewMenu } from "./viewMenu.svelte";
   import { viewSlots } from "./viewSlots.svelte";
 
@@ -159,6 +160,13 @@
     const box = event.target.getBoundingClientRect();
     viewMenu.at(id, { x: box.left, y: box.bottom + 2 }, event.target);
   }
+
+  /** A press on the header of a view alone in its group: the handle the view is dragged by (under a strip, its tab
+   *  is). */
+  function headerPress(id: string, event: PointerEvent): void {
+    const header = headerOf(event);
+    if (header !== null) viewDrag.press(id, header, event);
+  }
 </script>
 
 <div
@@ -175,6 +183,7 @@
       {@const at = cell(item.place.strip, "1")}
       <div
         class="strip"
+        data-view-strip
         style:grid-row={at.row}
         style:grid-column={at.column}
         style:height={`${STRIP_PX}px`}
@@ -186,6 +195,8 @@
           onmenu={(id, at, anchor) => viewMenu.at(id, at, anchor)}
           onoptions={viewMenu.hasButton ? (id, button) => viewMenu.toggle(id, button) : undefined}
           expanded={viewMenu.open?.id === shownIn(item.place.group)}
+          ongrab={(id, tab, event) => viewDrag.press(id, tab, event)}
+          dragging={viewDrag.dragged}
           label={strips.label}
           roomy={strips.roomy}
         />
@@ -226,6 +237,7 @@
         class="view"
         class:tabbed={item.place.strip !== null}
         class:off={!shown}
+        class:dragged={viewDrag.dragged === id}
         id={`view-${id}`}
         data-view-slot={id}
         style:grid-row={at.row}
@@ -233,6 +245,7 @@
         inert={!shown}
         oncontextmenu={(event) => headerMenu(id, event)}
         onkeydown={(event) => headerKeys(id, event)}
+        onpointerdown={item.place.strip === null ? (event) => headerPress(id, event) : undefined}
         {@attach viewSlots.slot(id)}
       ></div>
     {/if}
@@ -274,6 +287,16 @@
      nothing in it can be reached */
   .view.off {
     visibility: hidden;
+  }
+  /* the header of a view alone in its group is the handle the view is dragged by: a pen | a finger on it never
+     scrolls the page away from under a drag, a press never selects its words; dimmed while its view is dragged */
+  .view:not(.tabbed) :global([data-view-header]) {
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .view.dragged:not(.tabbed) :global([data-view-header]) {
+    opacity: 0.45;
   }
   /* a view shown as a tab: its tab names it, the header's title stays for screen readers only */
   .view.tabbed :global([data-view-header] h2) {

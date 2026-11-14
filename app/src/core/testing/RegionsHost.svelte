@@ -8,12 +8,17 @@
 </script>
 
 <ViewHosts store={windowStore} shown={null} outline={null} />
-<aside data-region="sidebar">
-  {#if arrangement.drawn("left").length > 0}<ViewRegion region="left" />{/if}
-</aside>
-<aside data-region="bottom">
-  {#if arrangement.drawn("bottom").length > 0}<ViewRegion region="bottom" />{/if}
-</aside>
-<aside data-region="right">
-  {#if arrangement.drawn("right").length > 0}<ViewRegion region="right" />{/if}
-</aside>
+<!-- the frame's body and its center column, as the frame names them -->
+<div data-frame="body">
+  <aside data-region="sidebar">
+    {#if arrangement.drawn("left").length > 0}<ViewRegion region="left" />{/if}
+  </aside>
+  <div data-frame="center">
+    <aside data-region="bottom">
+      {#if arrangement.drawn("bottom").length > 0}<ViewRegion region="bottom" />{/if}
+    </aside>
+  </div>
+  <aside data-region="right">
+    {#if arrangement.drawn("right").length > 0}<ViewRegion region="right" />{/if}
+  </aside>
+</div>
