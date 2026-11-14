@@ -4,10 +4,10 @@
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, TryLockError};
 use std::time::{Duration, Instant};
 
-use permark_core::ipc_local::{self, Endpoint, IpcLocalError};
+use permark_core::ipc_local::{self, Endpoint, IpcLocalError, Stream};
 use permark_core::paths::Root;
 use permark_core::state::{AppDirs, StateStore};
 use serde_json::{json, Value};
@@ -20,6 +20,8 @@ use crate::ToolError;
 
 /// How long `open` waits for the app it started to listen.
 pub const LAUNCH_WAIT: Duration = Duration::from_secs(25);
+/// How often a running `permark mcp` checks its session and opens it again (the app restarted, a place freed).
+pub const REPAIR_EVERY: Duration = Duration::from_secs(3);
 const LAUNCH_POLL: Duration = Duration::from_millis(200);
 
 /// Starts the app on a project.
@@ -59,8 +61,11 @@ pub struct Agent {
     project: Option<Project>,
     launcher: Launcher,
     launch_wait: Duration,
+    repair_every: Duration,
     /// The held connection that shows the app an agent is here (dropping it ends the session).
-    session: Mutex<Option<Box<dyn Send>>>,
+    session: Mutex<Option<Stream>>,
+    /// One hello at a time; the others skip instead of waiting (a tool call never waits on an app that is slow).
+    opening: Mutex<()>,
     client: Mutex<String>,
     /// Who this process is to the app, drawn once at start.
     id: SessionId,
@@ -98,7 +103,9 @@ impl Agent {
             project,
             launcher,
             launch_wait: LAUNCH_WAIT,
+            repair_every: REPAIR_EVERY,
             session: Mutex::new(None),
+            opening: Mutex::new(()),
             client: Mutex::new("agent".to_owned()),
             id: SessionId::draw(),
             folder,
@@ -136,6 +143,18 @@ impl Agent {
         self
     }
 
+    /// How often a running `permark mcp` looks at its session (tests: shorter).
+    #[must_use]
+    pub fn with_repair_every(mut self, every: Duration) -> Self {
+        self.repair_every = every;
+        self
+    }
+
+    #[must_use]
+    pub fn repair_every(&self) -> Duration {
+        self.repair_every
+    }
+
     /// The project folder (none when the working folder is not a connected project).
     #[must_use]
     pub fn root(&self) -> Option<&Root> {
@@ -160,13 +179,30 @@ impl Agent {
         client.clone_into(&mut lock(&self.client));
     }
 
-    /// Opens the session with the app when it listens and none is held (blocking I/O).
+    /// Opens the session with the app when it listens and none is held (blocking I/O). A held one the app closed
+    /// (it quit, restarted or let the session go) is dropped first. Nothing while the switch is off (read fresh) or
+    /// the person disconnected this agent. Returns at once while another hello is under way.
     pub fn ensure_session(&self) {
-        let Some(Ok(endpoint)) = self.project.as_ref().map(|p| p.endpoint.as_ref()) else {
+        let Some(project) = &self.project else {
             return;
         };
-        let mut session = lock(&self.session);
-        if session.is_some() || self.is_disconnected() {
+        let Ok(endpoint) = &project.endpoint else {
+            return;
+        };
+        let _opening = match self.opening.try_lock() {
+            Ok(guard) => guard,
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(TryLockError::WouldBlock) => return,
+        };
+        {
+            let mut session = lock(&self.session);
+            match session.as_ref() {
+                Some(stream) if !ipc_local::peer_gone(stream) => return,
+                Some(_) => drop(session.take()),
+                None => {}
+            }
+        }
+        if self.is_disconnected() || !perms::load(&project.store).is_on(project.root.path()) {
             return;
         }
         let hello = Request::Hello {
@@ -174,8 +210,9 @@ impl Agent {
             client: lock(&self.client).clone(),
             folder: self.folder.clone(),
         };
+        // the session lock is not held over the I/O: a tool call that ends the session never waits for it
         match ipc_local::open_session::<_, Response>(endpoint, &hello) {
-            Ok((Response::Ok { .. }, stream)) => *session = Some(Box::new(stream)),
+            Ok((Response::Ok { .. }, stream)) => *lock(&self.session) = Some(stream),
             Ok((Response::Error { code, message }, _)) => {
                 self.note(Err(&ToolError::from_wire(&code, &message)));
             }

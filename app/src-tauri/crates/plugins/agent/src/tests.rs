@@ -7,6 +7,7 @@
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -1293,6 +1294,175 @@ fn a_disconnected_agent_is_refused_opens_no_session_and_pairs_again_after_undo()
         .unwrap();
     late.hello("x");
     assert!(late.is_disconnected());
+}
+
+/// Like [`wait_for`], but sleeps on the runtime so the tasks spawned on it run meanwhile.
+async fn wait_on_runtime(what: impl Fn() -> bool) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if what() {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    false
+}
+
+fn runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+}
+
+fn paired(fx: &Fx, agent: &Agent) -> bool {
+    !session_of(&fx.rpc("status", Value::Null).unwrap(), agent).is_null()
+}
+
+#[test]
+fn a_running_agent_pairs_again_after_the_app_restarts_without_a_call() {
+    let mut fx = fx();
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    let agent = Arc::new(
+        Agent::discover(&fx.dirs, &fx.root, no_launch())
+            .with_repair_every(Duration::from_millis(100)),
+    );
+    runtime().block_on(async {
+        let (client, server) = tokio::io::duplex(1 << 16);
+        let serving = tokio::spawn(crate::mcp::serve(Arc::clone(&agent), server, false));
+        let (read, mut write) = tokio::io::split(client);
+        let mut read = tokio::io::BufReader::new(read);
+        exchange(&mut read, &mut write, json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": { "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": { "name": "claude-code", "version": "2" } }
+        }))
+        .await
+        .unwrap();
+        exchange(&mut read, &mut write, json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })).await;
+        assert!(wait_on_runtime(|| paired(&fx, &agent)).await);
+        // the app closes and opens the project again: the agent shows up with no tool call
+        fx.reopen();
+        assert!(
+            wait_on_runtime(|| paired(&fx, &agent)).await,
+            "paired again by itself"
+        );
+        // disconnected: the next hello is refused and the loop stops trying, across a restart too
+        fx.rpc("disconnect", json!({ "id": agent.session_id().as_str() }))
+            .unwrap();
+        assert!(wait_on_runtime(|| agent.is_disconnected()).await);
+        fx.reopen();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert!(!paired(&fx, &agent), "a disconnected agent stays out");
+        drop(write);
+        drop(read);
+        let _ = tokio::time::timeout(Duration::from_secs(5), serving).await;
+    });
+}
+
+#[test]
+fn the_pairing_loop_tries_nothing_while_the_switch_is_off() {
+    let fx = fx();
+    fx.set_choice(&ProjectChoice::default());
+    let hellos = Arc::new(AtomicUsize::new(0));
+    let seen = Arc::clone(&hellos);
+    let _listener = ipc_local::Server::spawn(fx.endpoint().listen().unwrap(), move |_: Value| {
+        seen.fetch_add(1, Ordering::AcqRel);
+        Response::of(Err(ToolError::Failed("not now".to_owned())))
+    })
+    .unwrap();
+    let agent = Arc::new(
+        Agent::discover(&fx.dirs, &fx.root, no_launch())
+            .with_repair_every(Duration::from_millis(50)),
+    );
+    assert!(agent.root().is_some());
+    runtime().block_on(async {
+        let looping = tokio::spawn(crate::mcp::keep_paired(Arc::clone(&agent)));
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert_eq!(hellos.load(Ordering::Acquire), 0, "switch off: no attempt");
+        // turned on: the loop tries again (and again after a refusal that is not a disconnect)
+        fx.on();
+        assert!(wait_on_runtime(|| hellos.load(Ordering::Acquire) >= 2).await);
+        looping.abort();
+    });
+}
+
+#[test]
+fn a_disconnect_outlives_an_app_restart_until_undone() {
+    let mut fx = fx();
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    let endpoint = fx.endpoint();
+    let hello_as = |id: &SessionId| Request::Hello {
+        session: Some(id.clone()),
+        client: "a".to_owned(),
+        folder: String::new(),
+    };
+    let refused = |id: &SessionId| {
+        let answer: Response = ipc_local::request(&endpoint, &hello_as(id)).unwrap();
+        matches!(&answer, Response::Error { code, .. } if code == "disconnected")
+    };
+    let gone = SessionId::draw();
+    fx.rpc("disconnect", json!({ "id": gone.as_str() }))
+        .unwrap();
+    // kept in the profile, never in the project folder
+    let choice = fx
+        .core()
+        .store()
+        .profile_file::<ProjectChoice>(PROJECT_FILE)
+        .path()
+        .to_path_buf();
+    assert!(choice.with_file_name("agent-refused.json").is_file());
+    assert!(!fx.root.join(".permark/local/agent-refused.json").exists());
+    fx.reopen();
+    assert!(refused(&gone), "refused after the restart");
+    fx.rpc("undoDisconnect", json!({ "id": gone.as_str() }))
+        .unwrap();
+    fx.reopen();
+    assert!(!refused(&gone), "Undo is kept too");
+    // the newest refusals are kept, the oldest forgotten
+    let ids: Vec<SessionId> = (0..33).map(|_| SessionId::draw()).collect();
+    for id in &ids {
+        fx.rpc("disconnect", json!({ "id": id.as_str() })).unwrap();
+    }
+    fx.reopen();
+    assert!(!refused(&ids[0]));
+    assert!(refused(&ids[1]));
+    assert!(refused(&ids[32]));
+}
+
+#[test]
+fn an_agent_over_the_session_cap_is_told_still_answered_and_pairs_when_a_place_frees() {
+    let fx = fx();
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    let endpoint = fx.endpoint();
+    let mut held: Vec<_> = (0..ipc_local::MAX_SESSIONS)
+        .map(|_| {
+            ipc_local::open_session::<_, Response>(&endpoint, &hello("a", ""))
+                .unwrap()
+                .1
+        })
+        .collect();
+    let count = || {
+        fx.rpc("status", Value::Null).unwrap()["sessions"]
+            .as_array()
+            .map_or(0, Vec::len)
+    };
+    assert!(wait_for(|| count() == ipc_local::MAX_SESSIONS));
+    // over the cap a hello is answered with an error, not as paired
+    let over: Response = ipc_local::request(&endpoint, &hello("b", "")).unwrap();
+    assert!(
+        matches!(&over, Response::Error { code, .. } if code == "error"),
+        "{over:?}"
+    );
+    let agent = Agent::discover(&fx.dirs, &fx.root, no_launch());
+    agent.hello("late");
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!paired(&fx, &agent));
+    assert!(!agent.is_disconnected());
+    agent.call("map", &Value::Null).unwrap();
+    held.pop();
+    assert!(wait_for(|| count() < ipc_local::MAX_SESSIONS));
+    agent.ensure_session();
+    assert!(wait_for(|| paired(&fx, &agent)));
 }
 
 #[test]

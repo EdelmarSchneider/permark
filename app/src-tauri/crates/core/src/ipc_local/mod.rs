@@ -24,7 +24,9 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use interprocess::local_socket::prelude::*;
-use interprocess::local_socket::{ListenerOptions, Name, Stream};
+/// A connection to an endpoint (callers that keep a session hold one).
+pub use interprocess::local_socket::Stream;
+use interprocess::local_socket::{ListenerOptions, Name};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -497,7 +499,7 @@ pub const FIRST_LINE_DEADLINE: Duration = Duration::from_secs(2);
 /// Connections open at once (being read, answered or held); more are dropped unread.
 pub const MAX_CONNECTIONS: usize = 32;
 /// Connections held after their answer ([`Reply::Hold`]).
-pub const MAX_SESSIONS: usize = 8;
+pub const MAX_SESSIONS: usize = 16;
 /// How often a held connection looks whether its peer left or the server stops.
 const SESSION_POLL: Duration = Duration::from_millis(200);
 /// Pause between reads of a first line that is still coming.
@@ -510,7 +512,14 @@ pub enum Reply<Resp> {
     /// Answer, then keep the connection open until the peer leaves, the server stops or `end` turns true (the
     /// server's side lets this one connection go); `guard` is dropped then (a session: the peer's presence is the
     /// point, nothing more is read).
-    Hold(Resp, Box<dyn Send>, Arc<AtomicBool>),
+    Hold {
+        answer: Resp,
+        /// Sent instead of `answer` when [`MAX_SESSIONS`] connections are held already; the connection is closed
+        /// and `guard` dropped (the peer must learn it holds no session, so it can try again later).
+        full: Resp,
+        guard: Box<dyn Send>,
+        end: Arc<AtomicBool>,
+    },
 }
 
 /// One look at a stream that must not block.
@@ -718,7 +727,7 @@ impl Server {
     }
 
     /// Like [`Server::spawn`]; the handler may also keep a connection open ([`Reply::Hold`], at most
-    /// [`MAX_SESSIONS`]: over it the answer is sent and the connection closed).
+    /// [`MAX_SESSIONS`]: over it the hold's `full` answer is sent and the connection closed).
     ///
     /// # Errors
     /// Thread spawn failure.
@@ -797,9 +806,17 @@ fn serve_one<Req, Resp>(
         Reply::Answer(answer) => {
             let _ = write_line(&mut writer, &answer);
         }
-        Reply::Hold(answer, guard, end) => {
-            let session = sessions.take();
-            if write_line(&mut writer, &answer).is_err() || session.is_none() {
+        Reply::Hold {
+            answer,
+            full,
+            guard,
+            end,
+        } => {
+            let Some(_session) = sessions.take() else {
+                let _ = write_line(&mut writer, &full);
+                return;
+            };
+            if write_line(&mut writer, &answer).is_err() {
                 return;
             }
             hold(stream, stop, &end);

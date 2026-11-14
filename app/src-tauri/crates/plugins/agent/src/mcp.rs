@@ -339,15 +339,29 @@ where
     T: IntoTransport<RoleServer, E, A>,
     E: std::error::Error + Send + Sync + 'static,
 {
-    let running = McpServer::new(agent, structured)
+    let running = McpServer::new(Arc::clone(&agent), structured)
         .serve(transport)
         .await
         .map_err(|e| McpError::Handshake(e.to_string()))?;
-    running
-        .waiting()
-        .await
-        .map_err(|e| McpError::Stopped(e.to_string()))?;
+    let pairing = tokio::spawn(keep_paired(agent));
+    let stopped = running.waiting().await;
+    pairing.abort();
+    stopped.map_err(|e| McpError::Stopped(e.to_string()))?;
     Ok(())
+}
+
+/// Keeps the app session while the agent runs: every [`Agent::repair_every`] the session is looked at and opened
+/// again when lost (the app restarted), so the person sees the agent without waiting for its next call. Never
+/// touches standard input or output; runs until dropped | aborted.
+pub async fn keep_paired(agent: Arc<Agent>) {
+    let mut every = tokio::time::interval(agent.repair_every());
+    // a check that took long (the app slow to answer) is not made up for with a burst
+    every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        every.tick().await;
+        let agent = Arc::clone(&agent);
+        let _ = tokio::task::spawn_blocking(move || agent.ensure_session()).await;
+    }
 }
 
 /// Serves MCP over standard input and output until the input closes.

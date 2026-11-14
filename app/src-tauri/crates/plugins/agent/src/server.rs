@@ -2,7 +2,7 @@
 //! stops listening. A session (a `permark mcp` that said hello) is held open; while one is, the project is
 //! `Connected`.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -11,6 +11,7 @@ use permark_core::conditions::AgentCondition;
 use permark_core::ipc_local::{Endpoint, IpcLocalError, Reply, Server};
 use permark_core::plugins::{PluginEvents, ProjectFacts};
 use permark_core::settings::ProjectConfig;
+use permark_core::state::{StateData, StateFile};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
@@ -26,6 +27,11 @@ pub const RECENT: usize = 8;
 const MAX_CLIENT_CHARS: usize = 64;
 /// Longest working folder kept (display only).
 const MAX_FOLDER_CHARS: usize = 260;
+/// Sessions the person disconnected, per project, in the profile only: an app restart must not let a disconnected
+/// agent pair again by itself, and a project's files must never lift a refusal.
+pub const REFUSED_FILE: &str = "agent-refused.json";
+/// Refusals kept; the oldest goes first (an id lives only as long as one agent process).
+const MAX_REFUSED: usize = 32;
 
 /// One line from `permark mcp`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -162,6 +168,70 @@ struct SessionInfo {
     end: Arc<AtomicBool>,
 }
 
+/// `agent-refused.json`: disconnected session ids, the oldest first.
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct RefusedIds {
+    #[serde(default)]
+    ids: Vec<String>,
+}
+
+impl StateData for RefusedIds {
+    const VERSION: u32 = 1;
+}
+
+/// The refused sessions and the file that keeps them.
+struct Refusals {
+    /// The oldest first, at most [`MAX_REFUSED`].
+    ids: Vec<SessionId>,
+    file: StateFile<RefusedIds>,
+}
+
+impl Refusals {
+    fn load(file: StateFile<RefusedIds>) -> Self {
+        // an id that does not parse is dropped alone (one bad entry never loses the others)
+        let ids = file
+            .load()
+            .into_value()
+            .ids
+            .iter()
+            .filter_map(|text| SessionId::parse(text))
+            .collect();
+        let mut refusals = Self { ids, file };
+        refusals.trim();
+        refusals
+    }
+
+    fn contains(&self, id: &SessionId) -> bool {
+        self.ids.contains(id)
+    }
+
+    fn insert(&mut self, id: SessionId) {
+        self.ids.retain(|kept| *kept != id);
+        self.ids.push(id);
+        self.trim();
+        self.save();
+    }
+
+    fn remove(&mut self, id: &SessionId) {
+        let before = self.ids.len();
+        self.ids.retain(|kept| kept != id);
+        if self.ids.len() != before {
+            self.save();
+        }
+    }
+
+    fn trim(&mut self) {
+        let over = self.ids.len().saturating_sub(MAX_REFUSED);
+        self.ids.drain(..over);
+    }
+
+    /// A failed write leaves the refusal in memory: it holds until the app restarts.
+    fn save(&self) {
+        let ids = self.ids.iter().map(|id| id.as_str().to_owned()).collect();
+        let _ = self.file.save(&RefusedIds { ids });
+    }
+}
+
 /// What the server threads and the window's calls share.
 pub struct Hub {
     pub tools: Tools,
@@ -169,8 +239,8 @@ pub struct Hub {
     events: PluginEvents,
     sessions: Mutex<BTreeMap<SessionId, SessionInfo>>,
     /// Sessions the person disconnected: refused until the agent process restarts (a new id) or the person undoes
-    /// it. Kept while the switch is off and on again, so turning it back on never lets them in silently.
-    refused: Mutex<BTreeSet<SessionId>>,
+    /// it. Kept while the switch is off and on again and across app restarts, so neither lets them in silently.
+    refused: Mutex<Refusals>,
     next: AtomicU64,
     recent: Mutex<VecDeque<RequestRecord>>,
     server: Mutex<ServerState>,
@@ -214,12 +284,13 @@ fn no_session() -> Reply<Response> {
 impl Hub {
     #[must_use]
     pub fn new(tools: Tools, facts: Arc<ProjectFacts>, events: PluginEvents) -> Arc<Self> {
+        let refused = Refusals::load(tools.store().profile_file(REFUSED_FILE));
         Arc::new(Self {
             tools,
             facts,
             events,
             sessions: Mutex::new(BTreeMap::new()),
-            refused: Mutex::new(BTreeSet::new()),
+            refused: Mutex::new(refused),
             next: AtomicU64::new(1),
             recent: Mutex::new(VecDeque::new()),
             server: Mutex::new(ServerState::Off),
@@ -270,15 +341,19 @@ impl Hub {
                     );
                 }
                 self.changed();
-                Reply::Hold(
-                    Response::Ok { value: Value::Null },
-                    Box::new(Session {
+                Reply::Hold {
+                    answer: Response::Ok { value: Value::Null },
+                    full: Response::of(Err(ToolError::Failed(
+                        "too many agents are connected to this project; this one connects when another ends"
+                            .to_owned(),
+                    ))),
+                    guard: Box::new(Session {
                         hub: Arc::downgrade(self),
                         id,
                         holder,
                     }),
                     end,
-                )
+                }
             }
             Request::Call {
                 tool,
@@ -340,6 +415,7 @@ impl Hub {
     pub fn disconnect(&self, id: &SessionId) {
         {
             let mut sessions = lock(&self.sessions);
+            // written under its own lock: two changes reach the file in the order they were made
             lock(&self.refused).insert(id.clone());
             if let Some(info) = sessions.remove(id) {
                 info.end.store(true, Ordering::Release);

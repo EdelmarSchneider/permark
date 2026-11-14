@@ -271,11 +271,14 @@ fn session_server_ending(
             text: format!("{}!", ping.text),
         };
         if ping.text == "hello" {
-            Reply::Hold(
+            Reply::Hold {
                 answer,
-                Box::new(Flag(Arc::clone(&released))),
-                Arc::clone(&end),
-            )
+                full: Ping {
+                    text: "full".into(),
+                },
+                guard: Box::new(Flag(Arc::clone(&released))),
+                end: Arc::clone(&end),
+            }
         } else {
             Reply::Answer(answer)
         }
@@ -362,24 +365,46 @@ fn stopping_the_server_ends_held_sessions() {
 }
 
 #[test]
-fn sessions_over_the_cap_are_answered_then_closed() {
+fn sessions_over_the_cap_get_the_full_answer_then_are_closed() {
+    assert_eq!(MAX_SESSIONS, 16);
     let (_d, endpoint) = endpoint();
     let released = Arc::new(AtomicBool::new(false));
     let server = session_server(&endpoint, &released);
-    let mut sessions = Vec::new();
-    for _ in 0..(MAX_SESSIONS + 2) {
-        let (answer, stream): (Ping, _) = open_session(
+    let hello = || {
+        open_session::<_, Ping>(
             &endpoint,
             &Ping {
                 text: "hello".into(),
             },
         )
-        .unwrap();
+        .unwrap()
+    };
+    let mut sessions = Vec::new();
+    for _ in 0..MAX_SESSIONS {
+        let (answer, stream) = hello();
         assert_eq!(answer.text, "hello!");
         sessions.push(stream);
     }
+    // a client over the cap must learn it holds no session (not the answer of a held one)
+    for _ in 0..2 {
+        let (answer, stream) = hello();
+        assert_eq!(answer.text, "full");
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !peer_gone(&stream) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(peer_gone(&stream), "closed by the server");
+    }
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(server.open_connections(), MAX_SESSIONS);
+    // a slot given back is taken by the next hello
+    sessions.pop();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while server.open_connections() >= MAX_SESSIONS && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let (answer, _stream) = hello();
+    assert_eq!(answer.text, "hello!");
 }
 
 #[test]
