@@ -696,6 +696,17 @@
     if (src.trim() !== "") runCommand({ kind: "image", src: src.trim(), alt });
   }
 
+  /** The plugins' buttons in the picker's footer (none while their plugin is off). */
+  const pickerActions = $derived(contributions.visible("pickerAction", conditions.current));
+
+  /** A footer button of the picker: the popup closes and the editor takes the keyboard back before the plugin
+   *  acts, so what it opens (a panel) leaves the caret where it was. */
+  function runPickerAction(action: ContributionOf<"pickerAction">, picker: PickerKind): void {
+    popover = { kind: "none" };
+    core?.view.focus();
+    action.run(picker);
+  }
+
   /** A character picked: insert at the caret and hand the keyboard back to the editor. */
   function applyCharacter(character: string): void {
     popover = { kind: "none" };
@@ -847,6 +858,11 @@
         apply={applyCharacter}
         close={() => (popover = { kind: "none" })}
         popoverKey={onPopoverKey}
+        actions={pickerActions.map((action) => ({
+          id: action.id,
+          label: t(action.label),
+          run: () => runPickerAction(action, current.picker),
+        }))}
       />
     </div>
   {/if}

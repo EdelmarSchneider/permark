@@ -567,6 +567,7 @@ export default {
   "picker.group.arrows": "Flechas",
   "picker.group.units": "Unidades",
   "picker.group.scripts": "Subíndices y superíndices",
+  "picker.group.spaces": "Espacios",
   "slash.label": "Insertar un bloque",
   "link.label": "Enlace",
   "link.target": "Enlace a (archivo o dirección web)",
@@ -604,7 +605,16 @@ export default {
     "Las imágenes pegadas se guardan en esta carpeta, junto al documento. Déjala vacía para guardarlas junto al documento.",
   "settings.charactersFile": "Archivo de grupos de símbolos",
   "settings.charactersFileHint":
-    "El archivo de la carpeta de perfil con los grupos que muestran los selectores. Déjalo vacío para usar characters.toml.",
+    "El archivo de la carpeta de perfil con los grupos que muestran los selectores y el panel de símbolos; los cambios se ven la próxima vez que se abren. Déjalo vacío para usar los grupos integrados. Un archivo que crees sustituye a los grupos integrados, así que los grupos añadidos en versiones posteriores no aparecen en él.",
+  "settings.charactersShow": "Mostrar en la carpeta",
+  "settings.charactersCreate": "Crear el archivo con los grupos integrados",
+  "settings.charactersBuiltin": "Se usan los grupos integrados. Aún no hay ningún archivo.",
+  "settings.charactersRead.one": "Se usa {n} grupo de {file}.",
+  "settings.charactersRead.other": "Se usan {n} grupos de {file}.",
+  "settings.charactersUnreadable":
+    "No se pudo leer {file}, así que se muestran los grupos integrados.",
+  "settings.charactersCreated": "Se creó {file}.",
+  "settings.charactersCreateFailed": "No se pudo crear {file}.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Abrir carpeta...",
   "cmd.openFile": "Abrir archivo...",
@@ -1626,6 +1636,7 @@ export default {
   "settings.problem.unknownPlaceholder": "Marcador desconocido. Usa {path}, {line} o {col}.",
   "settings.problem.noPath": "El comando necesita {path}.",
   "settings.problem.notInitialized": "Esta carpeta aún no tiene ajustes de PerMark.",
+  "settings.problem.tomlOnly": "Usa un nombre de archivo que termine en .toml.",
   "settings.problem.other": "Este valor no se aceptó.",
   "welcome.newProject": "Proyecto nuevo…",
   "welcome.newProjectHint": "Elige una carpeta; PerMark la prepara como proyecto.",

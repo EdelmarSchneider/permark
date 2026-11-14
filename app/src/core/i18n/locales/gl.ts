@@ -568,6 +568,7 @@ export default {
   "picker.group.arrows": "Flechas",
   "picker.group.units": "Unidades",
   "picker.group.scripts": "Subíndices e superíndices",
+  "picker.group.spaces": "Espazos",
   "slash.label": "Inserir un bloque",
   "link.label": "Ligazón",
   "link.target": "Ligazón a (ficheiro ou enderezo web)",
@@ -605,7 +606,16 @@ export default {
     "As imaxes pegadas gárdanse neste cartafol, xunto ao documento. Déixeo baleiro para gardalas xunto ao documento.",
   "settings.charactersFile": "Ficheiro de grupos de símbolos",
   "settings.charactersFileHint":
-    "O ficheiro do cartafol do perfil cos grupos que amosan os selectores. Déixao baleiro para usar characters.toml.",
+    "O ficheiro do cartafol do perfil cos grupos que amosan os selectores e o panel de símbolos; os cambios vense a próxima vez que se abren. Déixao baleiro para usar os grupos integrados. Un ficheiro que crees substitúe os grupos integrados, así que os grupos engadidos en versións posteriores non aparecen nel.",
+  "settings.charactersShow": "Amosar no cartafol",
+  "settings.charactersCreate": "Crear o ficheiro cos grupos integrados",
+  "settings.charactersBuiltin": "Úsanse os grupos integrados. Aínda non hai ningún ficheiro.",
+  "settings.charactersRead.one": "Úsase {n} grupo de {file}.",
+  "settings.charactersRead.other": "Úsanse {n} grupos de {file}.",
+  "settings.charactersUnreadable":
+    "Non se puido ler {file}, así que se amosan os grupos integrados.",
+  "settings.charactersCreated": "Creouse {file}.",
+  "settings.charactersCreateFailed": "Non se puido crear {file}.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Abrir cartafol...",
   "cmd.openFile": "Abrir ficheiro...",
@@ -1632,6 +1642,7 @@ export default {
     "Marcador de posición descoñecido. Use {path}, {line} ou {col}.",
   "settings.problem.noPath": "A orde necesita {path}.",
   "settings.problem.notInitialized": "Este cartafol aínda non ten configuración de PerMark.",
+  "settings.problem.tomlOnly": "Use un nome de ficheiro que remate en .toml.",
   "settings.problem.other": "Non se aceptou este valor.",
   "welcome.newProject": "Novo proxecto…",
   "welcome.newProjectHint": "Escolla un cartafol; PerMark configúrao como proxecto.",

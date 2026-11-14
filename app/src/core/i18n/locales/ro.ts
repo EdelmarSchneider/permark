@@ -588,6 +588,7 @@ export default {
   "picker.group.arrows": "Săgeți",
   "picker.group.units": "Unități",
   "picker.group.scripts": "Indici și exponenți",
+  "picker.group.spaces": "Spații",
   "slash.label": "Inserează un bloc",
   "link.label": "Link",
   "link.target": "Link către (fișier sau adresă web)",
@@ -628,7 +629,17 @@ export default {
     "Imaginile lipite sunt salvate în acest dosar, lângă document. Lasă gol ca să le salvezi lângă document.",
   "settings.charactersFile": "Fișierul cu grupurile de simboluri",
   "settings.charactersFileHint":
-    "Fișierul din folderul de profil cu grupurile afișate de selectoare. Lasă-l gol pentru a folosi characters.toml.",
+    "Fișierul din dosarul profilului cu grupurile pe care le arată selectoarele și panoul de simboluri; modificările apar la următoarea deschidere. Lasă-l gol pentru a folosi grupurile încorporate. Un fișier creat de tine înlocuiește grupurile încorporate, așa că grupurile adăugate în versiunile ulterioare nu apar în el.",
+  "settings.charactersShow": "Arată în dosar",
+  "settings.charactersCreate": "Creează fișierul cu grupurile încorporate",
+  "settings.charactersBuiltin": "Se folosesc grupurile încorporate. Nu există încă un fișier.",
+  "settings.charactersRead.one": "Se folosește {n} grup din {file}.",
+  "settings.charactersRead.few": "Se folosesc {n} grupuri din {file}.",
+  "settings.charactersRead.other": "Se folosesc {n} de grupuri din {file}.",
+  "settings.charactersUnreadable":
+    "{file} nu a putut fi citit, așa că se afișează grupurile încorporate.",
+  "settings.charactersCreated": "S-a creat {file}.",
+  "settings.charactersCreateFailed": "Nu s-a putut crea {file}.",
 
   // ---- search, commands, keyboard
   "cmd.openFolder": "Deschide un dosar...",
@@ -1704,6 +1715,7 @@ export default {
     "Variabilă necunoscută. Folosește {path}, {line} sau {col}.",
   "settings.problem.noPath": "Comanda are nevoie de {path}.",
   "settings.problem.notInitialized": "Acest dosar nu are încă setări PerMark.",
+  "settings.problem.tomlOnly": "Folosește un nume de fișier care se termină cu .toml.",
   "settings.problem.other": "Această valoare nu a fost acceptată.",
   "welcome.newProject": "Proiect nou…",
   "welcome.newProjectHint": "Alege un dosar; PerMark îl configurează ca proiect.",

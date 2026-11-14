@@ -6,6 +6,7 @@ import type { Manifest } from "../../api/generated/Manifest";
 import type { PluginId } from "../../api/generated/PluginId";
 import type { Block, Context, DocumentView, ProjectRow } from "../../api";
 import { available, type Requirement } from "../conditions/available";
+import type { PickerKind } from "../editing/visual/characters";
 import type { MenuEntry } from "../explorer/menu";
 import type { MessageKey } from "../i18n";
 import type { PluginPageId } from "../shell/ui.svelte";
@@ -308,6 +309,11 @@ export type Contribution = Owned &
         order?: number;
         entries: () => MenuEntry[];
       }
+    /**
+     * A button in the footer of the Edit toolbar's emoji | symbols popup, before Cancel. The popup closes and the
+     * editor keeps the keyboard, then `run` gets which popup it was.
+     */
+    | { kind: "pickerAction"; id: string; label: MessageKey; run: (picker: PickerKind) => void }
   );
 
 export type ContributionKind = Contribution["kind"];

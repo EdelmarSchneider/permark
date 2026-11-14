@@ -579,6 +579,7 @@ export default {
   "picker.group.arrows": "Flèches",
   "picker.group.units": "Unités",
   "picker.group.scripts": "Indices et exposants",
+  "picker.group.spaces": "Espaces",
   "slash.label": "Insérer un bloc",
   "link.label": "Lien",
   "link.target": "Lien vers (fichier ou adresse web)",
@@ -616,7 +617,17 @@ export default {
     "Les images collées sont enregistrées dans ce dossier, à côté du document. Laissez vide pour les enregistrer à côté du document.",
   "settings.charactersFile": "Fichier des groupes de symboles",
   "settings.charactersFileHint":
-    "Le fichier du dossier de profil contenant les groupes affichés par les sélecteurs. Laissez-le vide pour utiliser characters.toml.",
+    "Le fichier du dossier de profil contenant les groupes affichés par les sélecteurs et le panneau de symboles ; les modifications apparaissent à leur prochaine ouverture. Laissez-le vide pour utiliser les groupes intégrés. Un fichier que vous créez remplace les groupes intégrés : les groupes ajoutés dans les versions ultérieures n'y apparaissent donc pas.",
+  "settings.charactersShow": "Afficher dans le dossier",
+  "settings.charactersCreate": "Créer le fichier avec les groupes intégrés",
+  "settings.charactersBuiltin":
+    "Les groupes intégrés sont utilisés. Il n'y a pas encore de fichier.",
+  "settings.charactersRead.one": "{n} groupe utilisé depuis {file}.",
+  "settings.charactersRead.other": "{n} groupes utilisés depuis {file}.",
+  "settings.charactersUnreadable":
+    "Impossible de lire {file}, les groupes intégrés sont donc affichés.",
+  "settings.charactersCreated": "{file} a été créé.",
+  "settings.charactersCreateFailed": "Impossible de créer {file}.",
 
   // ---- search, commands, keyboard
   "cmd.openFolder": "Ouvrir un dossier...",
@@ -1668,6 +1679,7 @@ export default {
     "Espace réservé inconnu. Utilisez {path}, {line} ou {col}.",
   "settings.problem.noPath": "La commande doit contenir {path}.",
   "settings.problem.notInitialized": "Ce dossier n'a pas encore de paramètres PerMark.",
+  "settings.problem.tomlOnly": "Utilisez un nom de fichier se terminant par .toml.",
   "settings.problem.other": "Cette valeur n'a pas été acceptée.",
   "welcome.newProject": "Nouveau projet…",
   "welcome.newProjectHint": "Choisissez un dossier ; PerMark le configure comme projet.",

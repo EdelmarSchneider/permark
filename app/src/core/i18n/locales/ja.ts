@@ -571,6 +571,7 @@ export default {
   "picker.group.arrows": "矢印",
   "picker.group.units": "単位",
   "picker.group.scripts": "上付き・下付き",
+  "picker.group.spaces": "スペース",
   "slash.label": "ブロックを挿入",
   "link.label": "リンク",
   "link.target": "リンク先（ファイルまたは Web アドレス）",
@@ -608,7 +609,16 @@ export default {
     "貼り付けた画像は、ドキュメントの隣のこのフォルダーに保存されます。空にすると、ドキュメントの隣に保存されます。",
   "settings.charactersFile": "記号グループのファイル",
   "settings.charactersFileHint":
-    "ピッカーが表示するグループをまとめたファイル（プロファイルフォルダー内）。空欄なら characters.toml を使います。",
+    "記号ピッカーと記号パネルが表示するグループをまとめたファイル（プロファイルフォルダー内）。変更は次に開いたときに反映されます。空欄なら組み込みのグループを使います。作成したファイルは組み込みのグループの代わりになるため、今後のバージョンで追加されたグループは含まれません。",
+  "settings.charactersShow": "フォルダーに表示",
+  "settings.charactersCreate": "組み込みのグループでファイルを作成",
+  "settings.charactersBuiltin": "組み込みのグループを使っています。ファイルはまだありません。",
+  "settings.charactersRead.one": "{file} の {n} 個のグループを使っています。",
+  "settings.charactersRead.other": "{file} の {n} 個のグループを使っています。",
+  "settings.charactersUnreadable":
+    "{file} を読み込めなかったため、組み込みのグループを表示しています。",
+  "settings.charactersCreated": "{file} を作成しました。",
+  "settings.charactersCreateFailed": "{file} を作成できませんでした。",
   // ---- search, commands, keyboard
   "cmd.openFolder": "フォルダーを開く...",
   "cmd.openFile": "ファイルを開く...",
@@ -1642,6 +1652,7 @@ export default {
     "不明なプレースホルダーです。{path}、{line}、{col} を使用してください。",
   "settings.problem.noPath": "コマンドには {path} が必要です。",
   "settings.problem.notInitialized": "このフォルダーにはまだ PerMark の設定がありません。",
+  "settings.problem.tomlOnly": "末尾が .toml のファイル名を使ってください。",
   "settings.problem.other": "この値は受け付けられませんでした。",
   "welcome.newProject": "新しいプロジェクト…",
   "welcome.newProjectHint": "フォルダーを選ぶと、PerMark がプロジェクトとして設定します。",

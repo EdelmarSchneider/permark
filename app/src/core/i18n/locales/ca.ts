@@ -573,6 +573,7 @@ export default {
   "picker.group.arrows": "Fletxes",
   "picker.group.units": "Unitats",
   "picker.group.scripts": "Subíndexs i superíndexs",
+  "picker.group.spaces": "Espais",
   "slash.label": "Insereix un bloc",
   "link.label": "Enllaç",
   "link.target": "Enllaç a (fitxer o adreça web)",
@@ -610,7 +611,16 @@ export default {
     "Les imatges enganxades es desen en aquesta carpeta, al costat del document. Deixeu-la buida per desar-les al costat del document.",
   "settings.charactersFile": "Fitxer de grups de símbols",
   "settings.charactersFileHint":
-    "El fitxer de la carpeta del perfil amb els grups que mostren els selectors. Deixa'l buit per fer servir characters.toml.",
+    "El fitxer de la carpeta del perfil amb els grups que mostren els selectors i el tauler de símbols; els canvis es veuen la propera vegada que s'obren. Deixa'l buit per fer servir els grups integrats. Un fitxer que creïs substitueix els grups integrats, de manera que els grups afegits en versions posteriors no hi apareixen.",
+  "settings.charactersShow": "Mostra a la carpeta",
+  "settings.charactersCreate": "Crea el fitxer amb els grups integrats",
+  "settings.charactersBuiltin": "S'utilitzen els grups integrats. Encara no hi ha cap fitxer.",
+  "settings.charactersRead.one": "S'utilitza {n} grup de {file}.",
+  "settings.charactersRead.other": "S'utilitzen {n} grups de {file}.",
+  "settings.charactersUnreadable":
+    "No s'ha pogut llegir {file}, així que es mostren els grups integrats.",
+  "settings.charactersCreated": "S'ha creat {file}.",
+  "settings.charactersCreateFailed": "No s'ha pogut crear {file}.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Obre una carpeta...",
   "cmd.openFile": "Obre un fitxer...",
@@ -1646,6 +1656,7 @@ export default {
     "Marcador de posició desconegut. Feu servir {path}, {line} o {col}.",
   "settings.problem.noPath": "L'ordre necessita {path}.",
   "settings.problem.notInitialized": "Aquesta carpeta encara no té configuració del PerMark.",
+  "settings.problem.tomlOnly": "Utilitzeu un nom de fitxer acabat en .toml.",
   "settings.problem.other": "No s'ha acceptat aquest valor.",
   "welcome.newProject": "Projecte nou…",
   "welcome.newProjectHint": "Trieu una carpeta; el PerMark la configura com a projecte.",

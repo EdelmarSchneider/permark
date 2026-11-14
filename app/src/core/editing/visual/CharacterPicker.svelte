@@ -1,11 +1,25 @@
+<script lang="ts" module>
+  /** A button of the footer, before Cancel (the plugins' picker actions). */
+  export type PickerFootAction = { id: string; label: string; run: () => void };
+</script>
+
 <script lang="ts">
   // The popup behind the toolbar's emoji + symbols buttons: the groups the settings payload ships, searchable by
-  // name. The payload is the source (no character table here), the filtering is `characters.ts` over
-  // `core/search/fuzzy.ts`, and a click hands the character to the editor through the `run` path.
-  import { api } from "../../../api";
-  import type { CharacterGroup } from "../../../api";
-  import { t, type MessageKey } from "../../i18n";
-  import { scanGroups, type PickerKind } from "./characters";
+  // name, by the character itself or by its code point. The window's settings store holds the groups (no
+  // subscription of its own here), the filtering is `characters.ts` over `core/search/fuzzy.ts`, and a click hands
+  // the character to the editor through the `run` path.
+  import { onMount } from "svelte";
+  import { t } from "../../i18n";
+  import { windowStore } from "../../window.svelte";
+  import {
+    cellLabel,
+    codePoints,
+    entryName,
+    groupLabel,
+    isInvisible,
+    scanGroups,
+    type PickerKind,
+  } from "./characters";
 
   type Props = {
     /** The payload's emoji group, or the symbol groups. */
@@ -16,51 +30,17 @@
     close: () => void;
     /** The editor's popover key handling (Escape closes, focus returns). */
     popoverKey: (event: KeyboardEvent) => void;
+    /** Buttons the footer shows before Cancel. */
+    actions?: readonly PickerFootAction[];
   };
-  let { kind, apply, close, popoverKey }: Props = $props();
+  let { kind, apply, close, popoverKey, actions = [] }: Props = $props();
 
-  let groups = $state.raw<CharacterGroup[]>([]);
   let query = $state("");
 
-  const shown = $derived(scanGroups(kind, groups, query));
+  const shown = $derived(scanGroups(kind, windowStore.characters, query));
 
-  /** The groups the groups file names these get a label of their own; any other name shows as it is. */
-  const GROUP_KEYS: Record<string, MessageKey> = {
-    emoji: "picker.group.emoji",
-    greek: "picker.group.greek",
-    operators: "picker.group.operators",
-    relations: "picker.group.relations",
-    arrows: "picker.group.arrows",
-    units: "picker.group.units",
-    scripts: "picker.group.scripts",
-  };
-
-  const labelOf = (name: string): string => {
-    const key = GROUP_KEYS[name.trim().toLowerCase()];
-    return key === undefined ? name : t(key);
-  };
-
-  // The groups, as the settings ship them: the boot read plus every settings change, like the shell's own
-  // settings-following store (`core/shell/arrangement.svelte.ts`).
-  $effect(() => {
-    let gone = false;
-    let off: (() => void) | null = null;
-    void api.settingsGet().then((result) => {
-      if (!gone && result.ok) groups = result.value.characters;
-    });
-    void api
-      .on("settings-changed", (event) => {
-        groups = event.settings.characters;
-      })
-      .then((stop) => {
-        if (gone) stop();
-        else off = stop;
-      });
-    return () => {
-      gone = true;
-      off?.();
-    };
-  });
+  // edits to the groups file show when a picker opens, without a restart
+  onMount(() => windowStore.refreshCharacters());
 </script>
 
 <div class="picker">
@@ -78,17 +58,21 @@
   {#if shown.length === 0}
     <p class="picker__empty">{t("picker.empty")}</p>
   {:else}
-    {#each shown as group (group.name)}
-      {@const label = labelOf(group.name)}
+    {#each shown as group, at (at)}
+      {@const label = groupLabel(group.name)}
       <div class="picker__group" role="group" aria-label={label}>
         <h3 class="picker__title">{label}</h3>
         <div class="picker__grid">
-          {#each group.entries as entry (entry.char)}
+          <!-- keyed by place: a groups file may list one character in several groups and a query lists both -->
+          {#each group.entries as entry, index (index)}
+            {@const name = entryName(entry)}
             <button
               type="button"
               class="picker__char"
-              title={entry.names[0] ?? entry.char}
-              onclick={() => apply(entry.char)}>{entry.char}</button
+              class:picker__char--invisible={isInvisible(entry.char)}
+              aria-label={name}
+              title={`${name} · ${codePoints(entry.char)}`}
+              onclick={() => apply(entry.char)}>{cellLabel(entry)}</button
             >
           {/each}
         </div>
@@ -149,6 +133,15 @@
   }
   .picker__char:hover {
     background: var(--hover);
+  }
+  /* an invisible character draws as a small name in a dotted box, so the cell does not look empty */
+  .picker__char--invisible {
+    border: 1px dotted var(--muted);
+    color: var(--muted);
+    /* five capitals fit a 2rem cell */
+    font-size: calc(var(--fs-ui-xs) - 1px);
+    letter-spacing: -0.04em;
+    overflow: hidden;
   }
   .picker__empty {
     margin: 0;

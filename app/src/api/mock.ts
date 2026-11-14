@@ -92,10 +92,16 @@ function mockCharacters(): CharacterGroup[] {
     { char: "←", names: ["left arrow", "leftwards arrow"] },
     { char: "⇔", names: ["left right double arrow", "if and only if", "iff"] },
   ];
+  const spaces: CharacterEntry[] = [
+    { char: "\u00A0", names: ["no-break space", "nbsp", "non-breaking space"] },
+    { char: "\u2009", names: ["thin space"] },
+    { char: "\u2060", names: ["word joiner", "wj"] },
+  ];
   return [
     { name: "emoji", entries: emoji },
     { name: "greek", entries: greek },
     { name: "arrows", entries: arrows },
+    { name: "spaces", entries: spaces },
   ];
 }
 

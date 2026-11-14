@@ -573,6 +573,7 @@ export default {
   "picker.group.arrows": "Pfeile",
   "picker.group.units": "Einheiten",
   "picker.group.scripts": "Hoch- und Tiefstellungen",
+  "picker.group.spaces": "Leerzeichen",
   "slash.label": "Block einfügen",
   "link.label": "Link",
   "link.target": "Link zu (Datei oder Webadresse)",
@@ -610,7 +611,17 @@ export default {
     "Eingefügte Bilder werden in diesem Ordner neben dem Dokument gespeichert. Leer lassen, um sie neben dem Dokument zu speichern.",
   "settings.charactersFile": "Datei für Symbolgruppen",
   "settings.charactersFileHint":
-    "Die Datei im Profilordner mit den Gruppen der Auswahlmenüs. Leer lassen, um characters.toml zu verwenden.",
+    "Die Datei im Profilordner mit den Gruppen, die die Symbolauswahl und das Symbolfeld zeigen; Änderungen erscheinen beim nächsten Öffnen. Leer lassen, um die eingebauten Gruppen zu verwenden. Eine erstellte Datei ersetzt die eingebauten Gruppen, daher erscheinen später hinzugefügte Gruppen nicht darin.",
+  "settings.charactersShow": "Im Ordner anzeigen",
+  "settings.charactersCreate": "Datei mit den eingebauten Gruppen erstellen",
+  "settings.charactersBuiltin":
+    "Die eingebauten Gruppen werden verwendet. Es gibt noch keine Datei.",
+  "settings.charactersRead.one": "{n} Gruppe aus {file} wird verwendet.",
+  "settings.charactersRead.other": "{n} Gruppen aus {file} werden verwendet.",
+  "settings.charactersUnreadable":
+    "{file} konnte nicht gelesen werden, daher werden die eingebauten Gruppen angezeigt.",
+  "settings.charactersCreated": "{file} wurde erstellt.",
+  "settings.charactersCreateFailed": "{file} konnte nicht erstellt werden.",
   // ---- search, commands, keyboard
   "cmd.openFolder": "Ordner öffnen ...",
   "cmd.openFile": "Datei öffnen ...",
@@ -1651,6 +1662,7 @@ export default {
     "Unbekannter Platzhalter. Möglich sind {path}, {line} und {col}.",
   "settings.problem.noPath": "Der Befehl braucht {path}.",
   "settings.problem.notInitialized": "Dieser Ordner hat noch keine PerMark-Einstellungen.",
+  "settings.problem.tomlOnly": "Verwende einen Dateinamen, der auf .toml endet.",
   "settings.problem.other": "Dieser Wert wurde nicht angenommen.",
   "welcome.newProject": "Neues Projekt …",
   "welcome.newProjectHint": "Ordner wählen; PerMark richtet ihn als Projekt ein.",

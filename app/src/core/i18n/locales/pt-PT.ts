@@ -572,6 +572,7 @@ export default {
   "picker.group.arrows": "Setas",
   "picker.group.units": "Unidades",
   "picker.group.scripts": "Subscritos e sobrescritos",
+  "picker.group.spaces": "Espaços",
   "slash.label": "Inserir um bloco",
   "link.label": "Ligação",
   "link.target": "Ligação para (ficheiro ou endereço web)",
@@ -609,7 +610,16 @@ export default {
     "As imagens coladas são guardadas nesta pasta, junto ao documento. Deixe em branco para as guardar junto ao documento.",
   "settings.charactersFile": "Ficheiro de grupos de símbolos",
   "settings.charactersFileHint":
-    "O ficheiro da pasta do perfil com os grupos que os seletores mostram. Deixe-o vazio para usar characters.toml.",
+    "O ficheiro na pasta do perfil com os grupos que os seletores e o painel de símbolos mostram; as alterações aparecem da próxima vez que forem abertos. Deixe vazio para usar os grupos integrados. Um ficheiro criado por si substitui os grupos integrados, por isso os grupos adicionados em versões posteriores não aparecem nele.",
+  "settings.charactersShow": "Mostrar na pasta",
+  "settings.charactersCreate": "Criar o ficheiro com os grupos integrados",
+  "settings.charactersBuiltin": "A usar os grupos integrados. Ainda não existe ficheiro.",
+  "settings.charactersRead.one": "A usar {n} grupo de {file}.",
+  "settings.charactersRead.other": "A usar {n} grupos de {file}.",
+  "settings.charactersUnreadable":
+    "Não foi possível ler {file}, por isso são mostrados os grupos integrados.",
+  "settings.charactersCreated": "{file} criado.",
+  "settings.charactersCreateFailed": "Não foi possível criar {file}.",
 
   // ---- search, commands, keyboard
   "cmd.openFolder": "Abrir pasta...",
@@ -1644,6 +1654,7 @@ export default {
   "settings.problem.unknownPlaceholder": "Marcador desconhecido. Use {path}, {line} ou {col}.",
   "settings.problem.noPath": "O comando precisa de {path}.",
   "settings.problem.notInitialized": "Esta pasta ainda não tem definições do PerMark.",
+  "settings.problem.tomlOnly": "Use um nome de ficheiro terminado em .toml.",
   "settings.problem.other": "Este valor não foi aceite.",
   "welcome.newProject": "Novo projeto…",
   "welcome.newProjectHint": "Escolha uma pasta; o PerMark prepara-a como projeto.",
