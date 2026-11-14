@@ -1,5 +1,5 @@
-// Window UI state the commands act on: focus mode, the Search everywhere box, the keyboard dialog, settings, find in
-// page. Small tagged states; components read, commands call the methods. Which view a region shows is not here: the
+// Window UI state the commands act on: focus mode, the Search everywhere box, the keyboard dialog, the Layouts dialog,
+// settings, find in page. Small tagged states; components read, commands call the methods. Which view a region shows is not here: the
 // arrangement of the views has it (`arrangement.svelte.ts`, `sides.ts`).
 
 import type { ClosingTab } from "../../api";
@@ -44,6 +44,8 @@ export type SettingsPage = { status: "closed" } | { status: "open"; section: Set
  *  set up (New project; otherwise it is the project shown already). */
 export type InitDialog =
   { status: "closed" } | { status: "asking"; path: string; name: string; opens: boolean };
+/** The Layouts dialog: the arrangements of the views saved under a name. */
+export type LayoutsDialog = { status: "closed" } | { status: "open" };
 
 /** Focus mode: only the page. */
 export type Focus = "off" | "on";
@@ -66,6 +68,7 @@ class UiStore {
    *  screen (a write to the page state would draw the section again). */
   #contentFocus: SettingsSection | null = null;
   initDialog = $state.raw<InitDialog>({ status: "closed" });
+  layoutsDialog = $state.raw<LayoutsDialog>({ status: "closed" });
   finding = $state(false);
   /** The window close prompt (this view is the one on screen): the tabs with unsaved edits; `null`: not asking. */
   closePrompt = $state.raw<readonly ClosingTab[] | null>(null);
@@ -80,7 +83,8 @@ class UiStore {
       this.finder.status === "open" ||
       this.keyboard ||
       this.settingsPage.status === "open" ||
-      this.initDialog.status === "asking";
+      this.initDialog.status === "asking" ||
+      this.layoutsDialog.status === "open";
     return box ? "box" : "none";
   }
 
@@ -177,6 +181,15 @@ class UiStore {
 
   closeInit(): void {
     this.initDialog = { status: "closed" };
+  }
+
+  openLayouts(): void {
+    this.settings = false;
+    this.layoutsDialog = { status: "open" };
+  }
+
+  closeLayouts(): void {
+    this.layoutsDialog = { status: "closed" };
   }
 
   openKeyboard(): void {

@@ -1,6 +1,6 @@
 // The options menu of a view, one for the window: where it is open, its entries (the moves among the groups of the
 // view's own region, worded by the direction that region stacks its groups; the moves to another region; close; the
-// reset of the whole arrangement) and what follows an action (the keyboard on the view's options, the move said).
+// saved layouts and the reset of the whole arrangement) and what follows an action (the keyboard on the view's options, the move said).
 // A tab strip (its options button; a right click | Shift+F10 | the Menu key on a tab) and a view's header (its
 // options button; the same click and keys) all open this one menu; `ViewHosts` draws it.
 
@@ -23,6 +23,7 @@ import {
 import { arrangement } from "./arrangement.svelte";
 import { ACROSS, ALONG, AS_TAB, type Words } from "./moveWords";
 import { closeView, focusView, moveToRegion, selectView } from "./sides";
+import { ui } from "./ui.svelte";
 
 /** The menu open for the view `id`, at a point of the window, opened from `anchor`. */
 type OpenViewMenu = {
@@ -123,7 +124,8 @@ class ViewMenu {
 
   /**
    * The entries for `id`, in blocks: the moves inside the region that lists it, the moves to the other regions,
-   * Close (a view the person can close), the reset of the whole arrangement. A view nobody lists has none.
+   * Close (a view the person can close), the whole arrangement (the Layouts dialog, the reset). A view nobody lists
+   * has none.
    */
   entries(id: string): MenuEntry[] {
     const region = arrangement.regionOf(id);
@@ -143,6 +145,7 @@ class ViewMenu {
         ? [{ kind: "item", label: t("panel.closeView"), run: () => closeView(id, true) }]
         : [],
       [
+        { kind: "item", label: t("layouts.open"), run: () => ui.openLayouts() },
         {
           kind: "item",
           label: t("panel.resetLayout"),

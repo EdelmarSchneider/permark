@@ -71,7 +71,8 @@ export function defaultArrangement(): Arrangement {
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+/** A saved value is a table (not a list, not a plain value). */
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -124,16 +125,14 @@ export function parseRightViews(raw: unknown): RightViews {
 }
 
 /**
- * The saved arrangement, made safe. `panels` readable (this version, three lists): each region by `safeGroups`, a
- * view listed twice anywhere keeps its first place (`REGIONS` order), an empty region stays empty. Anything else
- * (absent, damaged, another version): the default left, the right column as 0.11 saved it (`rightViews`), no bottom.
+ * One saved arrangement (the window's own, a named layout's), made safe: readable (this version, three lists) ->
+ * each region by `safeGroups`, a view listed twice anywhere keeps its first place (`REGIONS` order), an empty region
+ * stays empty. Anything else (absent, damaged, another version): `null`.
  */
-export function parseArrangement(panels: unknown, rightViews: unknown): Arrangement {
-  if (!isRecord(panels) || panels["v"] !== 2) return fromRightViews(rightViews);
+export function readArrangement(panels: unknown): Arrangement | null {
+  if (!isRecord(panels) || panels["v"] !== 2) return null;
   const { left, right, bottom } = panels;
-  if (!Array.isArray(left) || !Array.isArray(right) || !Array.isArray(bottom)) {
-    return fromRightViews(rightViews);
-  }
+  if (!Array.isArray(left) || !Array.isArray(right) || !Array.isArray(bottom)) return null;
   const seen = new Set<string>();
   return {
     v: 2,
@@ -141,6 +140,14 @@ export function parseArrangement(panels: unknown, rightViews: unknown): Arrangem
     right: safeGroups(right, seen),
     bottom: safeGroups(bottom, seen),
   };
+}
+
+/**
+ * The window's saved arrangement, made safe: `panels` when readable (`readArrangement`), else the default left, the
+ * right column as 0.11 saved it (`rightViews`), no bottom.
+ */
+export function parseArrangement(panels: unknown, rightViews: unknown): Arrangement {
+  return readArrangement(panels) ?? fromRightViews(rightViews);
 }
 
 function fromRightViews(rightViews: unknown): Arrangement {

@@ -274,6 +274,202 @@ describe("the arrangement", () => {
   });
 });
 
+describe("the layouts", () => {
+  /** An arrangement apart from the default: Search at the bottom, the outline and Live changes as tabs. */
+  const review = {
+    v: 2 as const,
+    left: [{ views: [FILES], share: 1 }],
+    right: [{ views: [OUTLINE, LIVE_VIEW], share: 1 }],
+    bottom: [{ views: [SEARCH], share: 1 }],
+  };
+  const names = (): string[] => arrangement.layouts.map((item) => item.name);
+  /** The names of the layouts the settings hold now. */
+  const kept = async (): Promise<string[]> =>
+    ((await settings()).layouts?.items ?? []).map((item) => item.name);
+
+  it("are read when the window starts and whenever the settings change; a list this build cannot read is none", async () => {
+    expect(arrangement.layouts).toEqual([]);
+    const saved = { v: 1, items: [{ name: "Review", arrangement: review }] };
+    await api.settingsSet({ key: "layouts", value: saved });
+    expect(arrangement.layouts).toEqual([{ name: "Review", arrangement: review }]);
+    // a window that starts later, on another profile: its own list
+    stop();
+    api = createMockApi();
+    await api.settingsSet({
+      key: "layouts",
+      value: { v: 1, items: [{ name: "Writing", arrangement: review }] },
+    });
+    stop = arrangement.start(api);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(names()).toEqual(["Writing"]);
+    // a newer format: no layout here, the settings as they are
+    const newer = { ...saved, v: 2 };
+    await api.settingsSet({ key: "layouts", value: newer });
+    expect(arrangement.layouts).toEqual([]);
+    const after = await settings();
+    expect(after.layouts).toEqual(newer);
+    expect([after.panels, after.theme]).toEqual([null, "system"]);
+  });
+
+  it("reading them writes nothing", async () => {
+    await api.settingsSet({
+      key: "layouts",
+      value: { v: 1, items: [{ name: "Review", arrangement: review }] },
+    });
+    const write = vi.spyOn(api, "settingsSet");
+    stop();
+    stop = arrangement.start(api);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(names()).toEqual(["Review"]);
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("each change is written at once: the whole list, under the one key", async () => {
+    const write = vi.spyOn(api, "settingsSet");
+    arrangement.arrange(review);
+    expect(await arrangement.saveLayoutAs("  Review ")).toBeNull();
+    expect(write).toHaveBeenLastCalledWith({
+      key: "layouts",
+      value: { v: 1, items: [{ name: "Review", arrangement: review }] },
+    });
+    expect(names()).toEqual(["Review"]);
+    arrangement.arrange(defaultArrangement());
+    expect(await arrangement.saveLayoutAs("Writing")).toBeNull();
+    expect(await kept()).toEqual(["Review", "Writing"]);
+    // the same name in another spelling: replaced in place
+    expect(await arrangement.saveLayoutAs("REVIEW")).toBeNull();
+    expect(await kept()).toEqual(["REVIEW", "Writing"]);
+    expect((await settings()).layouts?.items[0]?.arrangement).toEqual(defaultArrangement());
+    expect(await arrangement.renameLayout("review", "Proofing")).toBeNull();
+    expect(await kept()).toEqual(["Proofing", "Writing"]);
+    const [proofing] = arrangement.layouts;
+    if (proofing === undefined) throw new Error("no layout");
+    expect(await arrangement.deleteLayout("proofing")).toBeNull();
+    expect(await kept()).toEqual(["Writing"]);
+    expect(await arrangement.restoreLayout(proofing, 0)).toBeNull();
+    expect(await kept()).toEqual(["Proofing", "Writing"]);
+    expect(names()).toEqual(["Proofing", "Writing"]);
+    expect(write.mock.calls.map(([change]) => change.key)).toEqual(Array(6).fill("layouts"));
+
+    // what changes nothing writes nothing
+    expect(await arrangement.renameLayout("Proofing", "WRITING")).toBeNull();
+    expect(await arrangement.deleteLayout("Gone")).toBeNull();
+    expect(await arrangement.saveLayoutAs("   ")).toBeNull();
+    expect(write).toHaveBeenCalledTimes(6);
+  });
+
+  it("a layout keeps the groups, their order and shares of the three regions, and nothing else", async () => {
+    addLeftPanel();
+    showOutline();
+    layout.setOpen(LIVE_VIEW, true);
+    layout.setRightHidden(true);
+    layout.setSelected([SEARCH]);
+    arrangement.arrange({
+      v: 2,
+      left: [
+        { views: [SEARCH], share: 0.25 },
+        { views: [FILES], share: 0.75 },
+      ],
+      right: [{ views: [LIVE_VIEW, OUTLINE], share: 1 }],
+      bottom: [],
+    });
+    await arrangement.saveLayoutAs("Review");
+    // every view the window knows is listed: the plugin's tab joined the last group of its region
+    expect((await settings()).layouts).toStrictEqual({
+      v: 1,
+      items: [
+        {
+          name: "Review",
+          arrangement: {
+            v: 2,
+            left: [
+              { views: [SEARCH], share: 0.25 },
+              { views: [FILES, LEFT_VIEW], share: 0.75 },
+            ],
+            right: [{ views: [LIVE_VIEW, OUTLINE], share: 1 }],
+            bottom: [],
+          },
+        },
+      ],
+    });
+  });
+
+  it("using one arranges the window the way a move does: drawn at once, written a moment later, said", async () => {
+    await api.settingsSet({
+      key: "layouts",
+      value: { v: 1, items: [{ name: "Review", arrangement: review }] },
+    });
+    layout.setRightHidden(true);
+    layout.setSelected([SEARCH]);
+    const arrange = vi.spyOn(arrangement, "arrange");
+    expect(arrangement.useLayout("REVIEW")).toBe(true);
+    expect(arrange).toHaveBeenCalledOnce();
+    expect(arrange).toHaveBeenCalledWith(review);
+    expect(arrangement.saved).toEqual(review);
+    expect(arrangement.status).toBe("Layout “Review” applied");
+    expect((await settings()).panels).toBeNull();
+    await vi.advanceTimersByTimeAsync(450);
+    expect((await settings()).panels).toEqual(review);
+    // what the project chose is not a layout's to change
+    expect(layout.rightHidden).toBe(true);
+    expect(layout.views.selected).toEqual([SEARCH]);
+    // no layout of that name: nothing happens
+    expect(arrangement.useLayout("Gone")).toBe(false);
+    expect(arrange).toHaveBeenCalledOnce();
+    arrange.mockRestore();
+    arrangement.status = "";
+    layout.setRightHidden(false);
+  });
+
+  it("one that lists a view nobody offers now is used as it is: the view's place waits for its plugin", async () => {
+    const withPlugin = {
+      v: 2,
+      left: [{ views: [FILES, LEFT_VIEW], share: 1 }],
+      right: [{ views: [OUTLINE], share: 1 }],
+      bottom: [{ views: [SEARCH, LIVE_VIEW], share: 1 }],
+    };
+    await api.settingsSet({
+      key: "layouts",
+      value: { v: 1, items: [{ name: "With a plugin", arrangement: withPlugin }] },
+    });
+    expect(arrangement.viewOf(LEFT_VIEW)).toBeUndefined();
+    expect(arrangement.useLayout("With a plugin")).toBe(true);
+    expect(arrangement.saved).toEqual(withPlugin);
+    expect(viewsOf(arrangement.drawn("left"))).toEqual([[FILES]]);
+    await vi.advanceTimersByTimeAsync(450);
+    expect((await settings()).panels).toEqual(withPlugin);
+    // its plugin comes on: the view is where the layout put it
+    addLeftPanel();
+    expect(viewsOf(arrangement.drawn("left"))).toEqual([[FILES, LEFT_VIEW]]);
+    arrangement.status = "";
+  });
+
+  it("a write that fails puts the list back as it was and hands the error over", async () => {
+    await arrangement.saveLayoutAs("Review");
+    const before = arrangement.layouts;
+    const [first] = before;
+    if (first === undefined) throw new Error("no layout");
+    const error = {
+      kind: "backend" as const,
+      command: "settings_set" as const,
+      error: { kind: "invalidData" as const, subject: "layouts", detail: null },
+    };
+    const write = vi.spyOn(api, "settingsSet").mockResolvedValue({ ok: false, error });
+    const saving = arrangement.saveLayoutAs("Writing");
+    // shown at once, taken back when the write is refused
+    expect(names()).toEqual(["Review", "Writing"]);
+    expect(await saving).toEqual(error);
+    expect(arrangement.layouts).toBe(before);
+    expect(await arrangement.renameLayout("Review", "Proofing")).toEqual(error);
+    expect(await arrangement.deleteLayout("Review")).toEqual(error);
+    expect(await arrangement.restoreLayout({ ...first, name: "Other" }, 0)).toEqual(error);
+    expect(arrangement.layouts).toBe(before);
+    expect(write).toHaveBeenCalledTimes(4);
+    write.mockRestore();
+    expect(await kept()).toEqual(["Review"]);
+  });
+});
+
 describe("the views of the window", () => {
   it("every view has a default region; only the outline and the right panels can be closed", () => {
     addLeftPanel();

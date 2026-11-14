@@ -218,6 +218,13 @@ const SPECS: readonly Spec[] = [
     run: () => arrangement.reset(),
   },
   {
+    id: "panel.layouts",
+    label: "layouts.open",
+    requires: READING,
+    // the one dialog of the saved arrangements; the views' menu opens it too
+    run: () => ui.openLayouts(),
+  },
+  {
     id: "file.new",
     label: "cmd.newFile",
     keys: ["Mod+n"],

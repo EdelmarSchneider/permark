@@ -409,6 +409,7 @@ describe("a single file", () => {
       "Move to left",
       "Move to bottom",
       "Close",
+      "Layouts…",
       "Reset layout",
     ]);
     expect(menuItems().at(-1)?.getAttribute("aria-disabled")).toBe("true");

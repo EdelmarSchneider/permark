@@ -148,6 +148,45 @@ describe("a view that moves", () => {
     same("right", "back at the right");
   });
 
+  it("by a saved layout used, and by the next one, is the same component", async () => {
+    const host = await show();
+    const field = host.querySelector<HTMLInputElement>(".probe-field");
+    const list = host.querySelector<HTMLElement>(".probe-list");
+    if (!field || !list) throw new Error("no probe body");
+    field.value = "typed";
+    list.scrollTop = 37;
+    const groups = (list: Groups) =>
+      list.map((views) => ({ views: [...views], share: 1 / list.length }));
+    const layoutOf = (name: string, left: Groups, right: Groups, bottom: Groups) => ({
+      name,
+      arrangement: { v: 2, left: groups(left), right: groups(right), bottom: groups(bottom) },
+    });
+    await api.settingsSet({
+      key: "layouts",
+      value: {
+        v: 1,
+        items: [
+          layoutOf("Bottom", [[FILES, SEARCH]], [[OTHER]], [[PROBE]]),
+          layoutOf("Left", [[PROBE], [FILES, SEARCH]], [[OTHER]], []),
+        ],
+      },
+    });
+    for (const [name, region] of [
+      ["Bottom", "bottom"],
+      ["Left", "sidebar"],
+    ] as const) {
+      expect(arrangement.useLayout(name)).toBe(true);
+      flushSync();
+      expect(hostsOf(PROBE), name).toEqual([host]);
+      expect(slot(PROBE)?.contains(host), name).toBe(true);
+      expect(regionAt(host), name).toBe(region);
+      expect(probe.mounts, `${name}: created once`).toBe(1);
+      expect(field.value, name).toBe("typed");
+      expect(list.scrollTop, name).toBe(37);
+    }
+    arrangement.status = "";
+  });
+
   it("gets its scroll offsets back where a browser forgets them (an element taken out of the page and put back)", async () => {
     const host = await show();
     const list = host.querySelector<HTMLElement>(".probe-list");
@@ -299,6 +338,7 @@ describe("a region", () => {
       "Move to left",
       "Move to bottom",
       "Close",
+      "Layouts…",
       "Reset layout",
     ]);
     // a sidebar tab: the same menu, for that view; it cannot be closed
@@ -312,6 +352,7 @@ describe("a region", () => {
       "Show below",
       "Move to right",
       "Move to bottom",
+      "Layouts…",
       "Reset layout",
     ]);
   });

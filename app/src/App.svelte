@@ -31,6 +31,7 @@
   import { installWindowKeys } from "./core/commands/install";
   import Finder from "./core/search/Finder.svelte";
   import KeymapDialog from "./core/shell/KeymapDialog.svelte";
+  import LayoutsDialog from "./core/shell/LayoutsDialog.svelte";
   import { answerInit } from "./core/shell/initProject";
   import { layout } from "./core/shell/layout.svelte";
   import { hasSidebar, hasToggle } from "./core/shell/sides";
@@ -351,6 +352,9 @@
 {/if}
 {#if ui.keyboard}
   <KeymapDialog {store} />
+{/if}
+{#if ui.layoutsDialog.status === "open"}
+  <LayoutsDialog {store} />
 {/if}
 <DefaultAppDialog />
 {#if importFlow.state.status === "asking" || (importFlow.state.status === "planning" && importFlow.state.slow)}

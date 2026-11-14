@@ -175,6 +175,7 @@ describe("the entries of a view's menu", () => {
       "—",
       "Close",
       "—",
+      "Layouts…",
       "Reset layout",
     ]);
     // the last drawn group cannot go further down
@@ -192,6 +193,7 @@ describe("the entries of a view's menu", () => {
       "—",
       "Close",
       "—",
+      "Layouts…",
       "Reset layout",
     ]);
   });
@@ -207,6 +209,7 @@ describe("the entries of a view's menu", () => {
         "Move to right",
         "Move to bottom",
         "—",
+        "Layouts…",
         "Reset layout",
       ]);
     }
@@ -224,6 +227,7 @@ describe("the entries of a view's menu", () => {
       "Move to left",
       "Move to right",
       "—",
+      "Layouts…",
       "Reset layout",
     ]);
     expect(menuOf(PROBE)).toEqual([
@@ -235,6 +239,7 @@ describe("the entries of a view's menu", () => {
       "—",
       "Close",
       "—",
+      "Layouts…",
       "Reset layout",
     ]);
   });
@@ -247,6 +252,7 @@ describe("the entries of a view's menu", () => {
       "—",
       "Close",
       "—",
+      "Layouts…",
       "Reset layout",
     ]);
     // the only view at the bottom
@@ -295,8 +301,10 @@ describe("the entries of a view's menu", () => {
   it("Reset layout cannot act while the arrangement is the default one", () => {
     arrangement.arrange(defaultArrangement());
     expect(menuOf(SEARCH).at(-1)).toBe("Reset layout (off)");
+    // the saved layouts are offered either way
+    expect(menuOf(SEARCH).at(-2)).toBe("Layouts…");
     arrange([[SEARCH, FILES]], [[PROBE], [OTHER]]);
-    expect(menuOf(SEARCH).at(-1)).toBe("Reset layout");
+    expect(menuOf(SEARCH).slice(-2)).toEqual(["Layouts…", "Reset layout"]);
   });
 
   it("a view no region lists has no entries", () => {
@@ -385,6 +393,7 @@ describe("the options button", () => {
       "Move to left",
       "Move to bottom",
       "Close",
+      "Layouts…",
       "Reset layout",
     ]);
     // Shift+F10 on something in the header opens it too

@@ -1,13 +1,15 @@
 // The views of this window and where they sit: the arrangement (app-wide, from the settings: three regions), which
-// views are present (open + with content), the groups each region draws, what is on screen. The project's open |
-// selected choices live in the layout store (its session, read behind `layout.reading`); a view the project has no
-// choice for takes its default, decided once per project load (`panel.defaultOpen`). Spec: shell.md §Frame.
+// views are present (open + with content), the groups each region draws, what is on screen; and the arrangements the
+// person saved under a name (app-wide too). The project's open | selected choices live in the layout store (its
+// session, read behind `layout.reading`); a view the project has no choice for takes its default, decided once per
+// project load (`panel.defaultOpen`). Spec: shell.md §Frame.
 
 import FolderTree from "@lucide/svelte/icons/folder-tree";
 import ListTree from "@lucide/svelte/icons/list-tree";
 import SearchIcon from "@lucide/svelte/icons/search";
 import type { Component } from "svelte";
-import type { Api, AppSettings, SettingChange } from "../../api";
+import type { Api, ApiError, AppSettings } from "../../api";
+import type { Panels } from "../../api/generated/Panels";
 import { conditions } from "../conditions/context.svelte";
 import { documents } from "../doc/document.svelte";
 import { reading } from "../doc/reading.svelte";
@@ -31,8 +33,16 @@ import {
   type Arrangement,
   type DrawnGroup,
   type Region,
-  type ViewGroup,
 } from "./arrangement";
+import {
+  deleteLayout,
+  findLayout,
+  parseLayouts,
+  renameLayout,
+  restoreLayout,
+  saveLayout,
+  type Layout,
+} from "./layouts";
 import { ui } from "./ui.svelte";
 
 type Panel = ContributionOf<"panel">;
@@ -45,6 +55,13 @@ const SAVE_DELAY_MS = 400;
 /** The arrangement in the settings: `panels`, else (never set | unreadable) the right column 0.11 saved. */
 export function arrangementOf(settings: AppSettings): Arrangement {
   return parseArrangement(settings.panels, settings.rightViews);
+}
+
+/** An arrangement as the settings take it: lists of their own, nothing but the three regions. */
+function panelsOf(arr: Arrangement): Panels {
+  const copy = (groups: Arrangement[Region]): Panels[Region] =>
+    groups.map((g) => ({ views: [...g.views], share: g.share }));
+  return { v: 2, left: copy(arr.left), right: copy(arr.right), bottom: copy(arr.bottom) };
 }
 
 /** A view the window knows now: a core one, or a panel its plugin offers. */
@@ -121,6 +138,8 @@ class RegionViews {
 export class ArrangementStore {
   /** As saved (app-wide). */
   saved = $state.raw<Arrangement>(defaultArrangement());
+  /** The arrangements saved under a name (app-wide), in the order the person saved them. */
+  layouts = $state.raw<readonly Layout[]>([]);
   /** What the last move said (a polite status). */
   status = $state("");
   #api: Api | null = null;
@@ -205,12 +224,15 @@ export class ArrangementStore {
     let gone = false;
     let off: (() => void) | null = null;
     void api.settingsGet().then((result) => {
-      if (!gone && result.ok) this.saved = arrangementOf(result.value);
+      if (gone || !result.ok) return;
+      this.saved = arrangementOf(result.value);
+      this.layouts = parseLayouts(result.value.layouts);
     });
     void api
       .on("settings-changed", (event) => {
         // our own write comes back: the arrangement shown is newer than a write still waiting
         if (this.#timer === null) this.saved = arrangementOf(event.settings);
+        this.layouts = parseLayouts(event.settings.layouts);
       })
       .then((stop) => {
         if (gone) stop();
@@ -359,14 +381,61 @@ export class ArrangementStore {
     this.#timer = null;
     // the settings field `panels`: a failed write keeps the arrangement for this run. The field 0.11 wrote
     // (`rightViews`) is left as it is: an older build on the same profile still finds its column.
-    const copy = (groups: readonly ViewGroup[]): { views: string[]; share: number }[] =>
-      groups.map((g) => ({ views: [...g.views], share: g.share }));
-    const { left, right, bottom } = this.saved;
-    const change: SettingChange = {
-      key: "panels",
-      value: { v: 2, left: copy(left), right: copy(right), bottom: copy(bottom) },
-    };
-    void this.#api?.settingsSet(change);
+    void this.#api?.settingsSet({ key: "panels", value: panelsOf(this.saved) });
+  }
+
+  /**
+   * The arrangement shown is kept under `name` (every view known now listed; nothing of the project: no sizes, no
+   * hidden | open | selected state). A layout of that name, in any spelling, is replaced.
+   */
+  saveLayoutAs(name: string): Promise<ApiError | null> {
+    return this.#keep(saveLayout(this.layouts, name, this.layout));
+  }
+
+  /**
+   * The window takes the arrangement of the layout `name`, the way a move changes it (`arrange`: no view is created
+   * again), and it is said. A view the layout lists that nobody offers now keeps its place for when its plugin is
+   * on. `false`: no layout of that name.
+   */
+  useLayout(name: string): boolean {
+    const found = findLayout(this.layouts, name);
+    if (found === undefined) return false;
+    this.arrange(found.arrangement);
+    this.status = t("layouts.applied", { name: found.name });
+    return true;
+  }
+
+  /** The layout `from` is called `to` (refused while another layout has that name). */
+  renameLayout(from: string, to: string): Promise<ApiError | null> {
+    return this.#keep(renameLayout(this.layouts, from, to));
+  }
+
+  deleteLayout(name: string): Promise<ApiError | null> {
+    return this.#keep(deleteLayout(this.layouts, name));
+  }
+
+  /** A deleted layout comes back at the place it had (`at`). */
+  restoreLayout(layout: Layout, at: number): Promise<ApiError | null> {
+    return this.#keep(restoreLayout(this.layouts, layout, at));
+  }
+
+  /**
+   * The list of layouts becomes `next`: shown at once and written whole (the settings field `layouts`). A write the
+   * settings refuse | that fails puts the list back as it was and answers the error. The same list: nothing written.
+   */
+  async #keep(next: readonly Layout[]): Promise<ApiError | null> {
+    const before = this.layouts;
+    if (next === before) return null;
+    this.layouts = next;
+    const items = next.map(({ name, arrangement }) => ({
+      name,
+      arrangement: panelsOf(arrangement),
+    }));
+    const result = await this.#api?.settingsSet({ key: "layouts", value: { v: 1, items } });
+    if (result === undefined || result.ok) return null;
+    // still the list this change showed: the settings said nothing newer meanwhile
+    if (this.layouts === next) this.layouts = before;
+    return result.error;
   }
 }
 
