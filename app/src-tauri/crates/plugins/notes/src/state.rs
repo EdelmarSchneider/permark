@@ -8,8 +8,9 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use permark_core::notes::is_loose_id;
-use permark_core::state::StateData;
+use permark_core::fsx::FolderIdentity;
+use permark_core::notes::{is_loose_id, ProjectKey};
+use permark_core::state::{ProjectId, StateData};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -62,14 +63,49 @@ pub struct LooseEntry {
     pub stamp: Stamp,
 }
 
+/// A note shared with the agents of one project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Share {
+    /// The note's file name.
+    pub note: String,
+    pub project: ProjectId,
+    /// The project folder when the note was shared; `None`: its volume gave no identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<FolderIdentity>,
+    /// The project folder's name then, shown next to the note.
+    #[serde(default)]
+    pub label: String,
+}
+
+impl Share {
+    /// Whether this share reaches `project` now. Fails closed: a recorded folder must be the same folder now, and a
+    /// folder whose identity cannot be read now is not the recorded one.
+    #[must_use]
+    pub fn reaches(&self, project: &ProjectKey) -> bool {
+        self.project == project.id
+            && match (self.folder, project.folder) {
+                (Some(recorded), Some(now)) => recorded.same(now),
+                (Some(_), None) => false,
+                (None, _) => true,
+            }
+    }
+}
+
 /// The state of one notes folder.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FolderState {
     /// Keys of the pinned notes in the person's order: a note's file name, a loose file's `@file/<id>`.
     pub pins: Vec<String>,
-    /// File names of the notes shared with agents.
+    /// File names of notes shared with every agent by earlier versions. Read only to be turned off
+    /// ([`FolderState::unshare_app_wide`]): sharing is per project now, and no note is shared again without the person.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub shared: Vec<String>,
+    /// Notes shared with one project each, in the order they were shared.
+    pub shares: Vec<Share>,
+    /// Notes whose app-wide sharing was turned off and the person was not told yet.
+    pub unshared_notice: Vec<String>,
     /// Notes copied out and how they looked then.
     pub copied: BTreeMap<String, Stamp>,
     pub loose: Vec<LooseEntry>,
@@ -89,19 +125,83 @@ impl FolderState {
         self.pins.iter().any(|p| p == key)
     }
 
+    /// Whether note `name` is shared with `project` now (see [`Share::reaches`]).
     #[must_use]
-    pub fn is_shared(&self, name: &str) -> bool {
-        self.shared.iter().any(|s| s == name)
+    pub fn is_shared_with(&self, project: &ProjectKey, name: &str) -> bool {
+        self.shares
+            .iter()
+            .any(|share| share.note == name && share.reaches(project))
+    }
+
+    /// The shares of note `name`.
+    #[must_use]
+    pub fn shares_of(&self, name: &str) -> Vec<Share> {
+        self.shares
+            .iter()
+            .filter(|share| share.note == name)
+            .cloned()
+            .collect()
+    }
+
+    /// Shares note `name` with `project` as its folder is now; an older share with that project is replaced.
+    pub fn share(&mut self, project: &ProjectKey, name: &str) {
+        self.shares
+            .retain(|share| !(share.note == name && share.project == project.id));
+        self.shares.push(Share {
+            note: name.to_owned(),
+            project: project.id.clone(),
+            folder: project.folder,
+            label: project.label.clone(),
+        });
+    }
+
+    /// Stops sharing note `name` with `project` (`None`: with every project).
+    pub fn unshare(&mut self, project: Option<&ProjectId>, name: &str) {
+        self.shares
+            .retain(|share| !(share.note == name && project.is_none_or(|p| share.project == *p)));
+    }
+
+    /// Puts back `shares` (taken from a note that was deleted) for the note now named `name`; a project the note is
+    /// shared with meanwhile keeps that share.
+    pub fn restore_shares(&mut self, shares: &[Share], name: &str) {
+        for share in shares {
+            if !self
+                .shares
+                .iter()
+                .any(|s| s.note == name && s.project == share.project)
+            {
+                self.shares.push(Share {
+                    note: name.to_owned(),
+                    ..share.clone()
+                });
+            }
+        }
+    }
+
+    /// Turns off the app-wide sharing earlier versions kept: those notes go to the notice list, none stays shared.
+    /// Returns whether anything changed (the state is to be saved then, once).
+    pub fn unshare_app_wide(&mut self) -> bool {
+        if self.shared.is_empty() {
+            return false;
+        }
+        let names = std::mem::take(&mut self.shared);
+        self.unshared_notice.extend(names);
+        dedupe(&mut self.unshared_notice);
+        true
     }
 
     /// A note or loose file was renamed (`from` -> `to`): what is kept about it follows.
     pub fn rename(&mut self, from: &str, to: &str) {
-        for list in [&mut self.pins, &mut self.shared] {
-            for item in list.iter_mut().filter(|item| item.as_str() == from) {
-                to.clone_into(item);
-            }
-            dedupe(list);
+        for item in self.pins.iter_mut().filter(|item| item.as_str() == from) {
+            to.clone_into(item);
         }
+        dedupe(&mut self.pins);
+        for share in self.shares.iter_mut().filter(|share| share.note == from) {
+            to.clone_into(&mut share.note);
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        self.shares
+            .retain(|share| seen.insert((share.note.clone(), share.project.clone())));
         if let Some(stamp) = self.copied.remove(from) {
             self.copied.insert(to.to_owned(), stamp);
         }
@@ -113,7 +213,7 @@ impl FolderState {
     /// Forgets what is kept about notes that are not there any more (`exists` says which are).
     pub fn retain_existing(&mut self, exists: impl Fn(&str) -> bool) {
         self.pins.retain(|key| exists(key));
-        self.shared.retain(|name| exists(name));
+        self.shares.retain(|share| exists(&share.note));
         self.copied.retain(|name, _| exists(name));
         if self.open.as_deref().is_some_and(|key| !exists(key)) {
             self.open = None;
@@ -197,6 +297,7 @@ pub fn read_legacy(folder: &Path) -> Option<FolderState> {
             .filter(|s| !s.is_empty())
             .map(str::to_owned),
         imported: true,
+        ..FolderState::default()
     })
 }
 
@@ -321,37 +422,136 @@ mod tests {
         );
     }
 
+    /// A project folder under `parent` and its key.
+    fn project(parent: &Path, name: &str) -> ProjectKey {
+        let folder = parent.join(name);
+        std::fs::create_dir_all(&folder).unwrap();
+        ProjectKey::of(&permark_core::paths::Root::open(&folder).unwrap())
+    }
+
     #[test]
     fn a_rename_is_followed_by_every_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = project(tmp.path(), "p");
+        let q = project(tmp.path(), "q");
         let mut state = FolderState {
             pins: vec!["a.md".into(), "b.md".into()],
-            shared: vec!["a.md".into()],
             open: Some("a.md".into()),
             ..FolderState::default()
         };
+        state.share(&p, "a.md");
+        state.share(&q, "a.md");
+        state.share(&p, "b.md");
         state.copied.insert("a.md".into(), Stamp::default());
         state.rename("a.md", "c.md");
         assert_eq!(state.pins, ["c.md", "b.md"]);
-        assert_eq!(state.shared, ["c.md"]);
+        assert!(state.is_shared_with(&p, "c.md") && state.is_shared_with(&q, "c.md"));
+        assert!(!state.is_shared_with(&p, "a.md"));
         assert!(state.copied.contains_key("c.md") && !state.copied.contains_key("a.md"));
         assert_eq!(state.open.as_deref(), Some("c.md"));
-        // renamed onto a name already pinned: one pin
+        // renamed onto a name already pinned | shared with the same project: one pin, one share
         state.rename("b.md", "c.md");
         assert_eq!(state.pins, ["c.md"]);
+        assert_eq!(state.shares_of("c.md").len(), 2);
     }
 
     #[test]
     fn what_is_kept_about_gone_notes_is_forgotten() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = project(tmp.path(), "p");
         let mut state = FolderState {
             pins: vec!["a.md".into(), "gone.md".into()],
-            shared: vec!["gone.md".into()],
             open: Some("gone.md".into()),
             ..FolderState::default()
         };
+        state.share(&p, "gone.md");
+        state.share(&p, "a.md");
         state.copied.insert("gone.md".into(), Stamp::default());
         state.retain_existing(|key| key == "a.md");
         assert_eq!(state.pins, ["a.md"]);
-        assert!(state.shared.is_empty() && state.copied.is_empty());
+        assert_eq!(state.shares.len(), 1);
+        assert_eq!(state.shares[0].note, "a.md");
+        assert!(state.copied.is_empty());
         assert!(state.open.is_none());
+    }
+
+    #[test]
+    fn a_share_reaches_only_its_project_and_only_the_same_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = project(tmp.path(), "p");
+        let q = project(tmp.path(), "q");
+        let mut state = FolderState::default();
+        state.share(&p, "a.md");
+        assert!(state.is_shared_with(&p, "a.md"));
+        assert!(!state.is_shared_with(&q, "a.md"), "another project");
+        assert!(!state.is_shared_with(&p, "b.md"), "another note");
+        assert_eq!(state.shares[0].label, "p");
+        let recorded = FolderIdentity {
+            volume: 7,
+            file: 11,
+            born: Some(13),
+        };
+        let mut state = FolderState::default();
+        let at = |folder| ProjectKey {
+            folder,
+            ..p.clone()
+        };
+        state.share(&at(Some(recorded)), "a.md");
+        assert!(state.is_shared_with(&at(Some(recorded)), "a.md"));
+        // another folder at the same path (deleted and made again): not shared
+        let other = FolderIdentity {
+            born: Some(14),
+            ..recorded
+        };
+        assert!(!state.is_shared_with(&at(Some(other)), "a.md"));
+        let moved = FolderIdentity {
+            file: 12,
+            ..recorded
+        };
+        assert!(!state.is_shared_with(&at(Some(moved)), "a.md"));
+        // recorded with an identity, none readable now: fails closed
+        let unknown = at(None);
+        assert!(!state.is_shared_with(&unknown, "a.md"));
+        // recorded without an identity (a volume with none): the id alone decides
+        let mut plain = FolderState::default();
+        plain.share(&unknown, "a.md");
+        assert!(plain.is_shared_with(&unknown, "a.md") && plain.is_shared_with(&p, "a.md"));
+        assert!(!plain.is_shared_with(&q, "a.md"));
+    }
+
+    #[test]
+    fn sharing_again_replaces_and_unsharing_takes_one_project_or_all() {
+        let tmp = tempfile::tempdir().unwrap();
+        let p = project(tmp.path(), "p");
+        let q = project(tmp.path(), "q");
+        let mut state = FolderState::default();
+        state.share(&p, "a.md");
+        state.share(&p, "a.md");
+        state.share(&q, "a.md");
+        assert_eq!(state.shares_of("a.md").len(), 2);
+        state.unshare(Some(&q.id), "a.md");
+        assert!(state.is_shared_with(&p, "a.md") && !state.is_shared_with(&q, "a.md"));
+        state.share(&q, "a.md");
+        state.unshare(None, "a.md");
+        assert!(state.shares.is_empty());
+    }
+
+    #[test]
+    fn app_wide_shares_of_earlier_versions_are_turned_off_once_and_kept_for_the_notice() {
+        let mut state = FolderState {
+            shared: vec!["a.md".into(), "b.md".into()],
+            ..FolderState::default()
+        };
+        assert!(state.unshare_app_wide());
+        assert!(state.shared.is_empty() && state.shares.is_empty());
+        assert_eq!(state.unshared_notice, ["a.md", "b.md"]);
+        assert!(!state.unshare_app_wide(), "once");
+        // the legacy field is not written back
+        let json = serde_json::to_value(&state).unwrap();
+        assert!(json.get("shared").is_none(), "{json}");
+        // a file of an earlier version loads with its shares
+        let old: FolderState = serde_json::from_str(r#"{ "shared": ["x.md"] }"#).unwrap();
+        assert_eq!(old.shared, ["x.md"]);
+        assert!(old.shares.is_empty());
     }
 }

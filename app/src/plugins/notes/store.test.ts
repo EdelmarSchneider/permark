@@ -311,13 +311,17 @@ describe("rename, pin, share, copy", () => {
     expect(store.entries.find((e) => e.path === FIRST)?.pinned).toBe(false);
   });
 
-  it("shares a note with agents and says so", async () => {
+  it("stops sharing a note with every project and says so", async () => {
     const { store, window } = await setup();
-    await store.toggleShare(FIRST);
-    expect(store.entries.find((e) => e.path === FIRST)?.shared).toBe(true);
+    const shared = "2026-10-16 1031.md";
+    expect(store.entries.find((e) => e.path === shared)?.sharedWith).toHaveLength(1);
+    await store.stopSharing(shared);
+    expect(store.entries.find((e) => e.path === shared)?.sharedWith).toEqual([]);
     expect(window.notices.at(-1)).toMatchObject({ kind: "note" });
-    await store.toggleShare(FIRST);
-    expect(store.entries.find((e) => e.path === FIRST)?.shared).toBe(false);
+    // a note shared with nobody: nothing to stop, nothing said
+    const said = window.notices.length;
+    await store.stopSharing(FIRST);
+    expect(window.notices.length).toBe(said);
   });
 
   it("copies the text exactly and marks the note until it is edited", async () => {

@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use permark_core::edit::{Editor, LineEdit, SaveOutcome};
 use permark_core::error::ErrorKind;
 use permark_core::format::FormatRegistry;
-use permark_core::notes::{loose_key, NotesScope};
+use permark_core::notes::{loose_key, NotesScope, ProjectKey};
 use permark_core::paths::Root;
 use permark_core::state::{AppDirs, StateStore};
 
@@ -101,6 +101,13 @@ fn names(f: &Fx) -> Vec<String> {
         .iter()
         .map(|e| e.path.clone())
         .collect()
+}
+
+/// A project folder next to the notes and the key the app derives from it.
+fn project(f: &Fx, name: &str) -> ProjectKey {
+    let folder = f.tmp.path().join("projects").join(name);
+    std::fs::create_dir_all(&folder).unwrap();
+    ProjectKey::of(&Root::open(&folder).unwrap())
 }
 
 fn loose_file(dir: &Path, name: &str, text: &str) -> PathBuf {
@@ -254,8 +261,11 @@ fn undo_puts_notes_back_with_their_text_time_and_marks() {
     let f = fx();
     note(&f, "keep.md", "# Keep", 900);
     note(&f, "gone.md", "# Gone\nline\r\nCRLF", 800);
+    let p = project(&f, "p");
+    let q = project(&f, "q");
     f.service.set_pinned("gone.md", true).unwrap();
-    f.service.set_shared("gone.md", true).unwrap();
+    f.service.share(&p, "gone.md").unwrap();
+    f.service.share(&q, "gone.md").unwrap();
     let before = std::fs::metadata(f.notes.join("gone.md"))
         .unwrap()
         .modified()
@@ -265,7 +275,8 @@ fn undo_puts_notes_back_with_their_text_time_and_marks() {
     assert!(!f.notes.join("gone.md").exists());
     assert_eq!(names(&f), ["keep.md"]);
     let state = f.service.ctx().read(Clone::clone);
-    assert!(state.pins.is_empty() && state.shared.is_empty());
+    assert!(state.pins.is_empty() && state.shares.is_empty());
+    assert!(f.service.shared_notes(&p).is_empty());
     let back = f.service.undo_delete(deleted.undo_id.unwrap()).unwrap();
     assert_eq!(back, ["gone.md"]);
     assert_eq!(
@@ -283,7 +294,8 @@ fn undo_puts_notes_back_with_their_text_time_and_marks() {
     assert!(drift.as_millis() < 5, "{drift:?}");
     let state = f.service.ctx().read(Clone::clone);
     assert_eq!(state.pins, ["gone.md"]);
-    assert_eq!(state.shared, ["gone.md"]);
+    assert!(state.is_shared_with(&p, "gone.md") && state.is_shared_with(&q, "gone.md"));
+    assert_eq!(state.shares.len(), 2);
     // the undo is used up
     assert!(f.service.undo_delete(deleted.undo_id.unwrap()).is_err());
 }
@@ -358,8 +370,9 @@ fn only_notes_of_the_folder_can_be_deleted_whatever_the_path_says() {
 fn a_rename_keeps_everything_the_notes_know_about_the_note() {
     let f = fx();
     note(&f, "a.md", "# A", 100);
+    let p = project(&f, "p");
     f.service.set_pinned("a.md", true).unwrap();
-    f.service.set_shared("a.md", true).unwrap();
+    f.service.share(&p, "a.md").unwrap();
     f.service.mark_copied("a.md").unwrap();
     f.service.buffer("a.md", "0123", Some("typed"), 5).unwrap();
     f.service.before_replace("a.md", b"# A", 100);
@@ -368,7 +381,9 @@ fn a_rename_keeps_everything_the_notes_know_about_the_note() {
     assert!(f.notes.join("plans for may.md").is_file() && !f.notes.join("a.md").exists());
     let state = f.service.ctx().read(Clone::clone);
     assert_eq!(state.pins, ["plans for may.md"]);
-    assert_eq!(state.shared, ["plans for may.md"]);
+    assert!(state.is_shared_with(&p, "plans for may.md"));
+    assert_eq!(f.service.shared_notes(&p)[0].id, "plans for may.md");
+    assert!(f.service.read_shared(&p, "a.md").is_err());
     assert!(state.copied.contains_key("plans for may.md"));
     assert_eq!(f.service.versions("plans for may.md").unwrap().len(), 1);
     assert!(f.service.versions("a.md").unwrap().is_empty());
@@ -417,32 +432,102 @@ fn a_rename_refuses_names_that_are_taken_or_not_names() {
 // ---- share, copy ------------------------------------------------------------------------------------------------------------
 
 #[test]
-fn an_agent_sees_only_the_notes_the_person_shared_one_by_one() {
+fn an_agent_sees_only_the_notes_the_person_shared_with_its_project_one_by_one() {
     let f = fx();
     note(&f, "public.md", "# Shared one\nbody", 10);
     note(&f, "private.md", "# Secret", 10);
-    f.service.set_shared("public.md", true).unwrap();
-    let shared = f.service.shared_notes();
+    let p = project(&f, "Alpha");
+    let q = project(&f, "Beta");
+    f.service.share(&p, "public.md").unwrap();
+    let shared = f.service.shared_notes(&p);
     assert_eq!(shared.len(), 1);
     assert_eq!(shared[0].id, "public.md");
     assert_eq!(shared[0].title, "Shared one");
     assert_eq!(
-        f.service.read_shared("public.md").unwrap(),
+        f.service.read_shared(&p, "public.md").unwrap(),
         "# Shared one\nbody"
     );
     for id in ["private.md", "../outside.md", "", "@file/0a1b2c3d/x.md"] {
-        assert!(f.service.read_shared(id).is_err(), "{id}");
+        assert!(f.service.read_shared(&p, id).is_err(), "{id}");
     }
-    assert!(f
+    // another project sees nothing
+    assert!(f.service.shared_notes(&q).is_empty());
+    assert!(f.service.read_shared(&q, "public.md").is_err());
+    // the row says with which projects
+    let row = f
         .service
         .list(1)
         .entries
-        .iter()
-        .any(|e| e.shared && e.path == "public.md"));
-    // sharing stops at once
-    f.service.set_shared("public.md", false).unwrap();
-    assert!(f.service.shared_notes().is_empty());
-    assert!(f.service.read_shared("public.md").is_err());
+        .into_iter()
+        .find(|e| e.path == "public.md")
+        .unwrap();
+    assert_eq!(row.shared_with.len(), 1);
+    assert_eq!(row.shared_with[0].label, "Alpha");
+    assert_eq!(row.shared_with[0].project, p.id);
+    // sharing with one project stops at once, the other keeps it
+    f.service.share(&q, "public.md").unwrap();
+    f.service.unshare("public.md", Some(&p.id)).unwrap();
+    assert!(f.service.shared_notes(&p).is_empty());
+    assert!(f.service.read_shared(&p, "public.md").is_err());
+    assert_eq!(f.service.shared_notes(&q).len(), 1);
+    // with every project
+    f.service.unshare("public.md", None).unwrap();
+    assert!(f.service.shared_notes(&q).is_empty());
+}
+
+#[test]
+fn a_project_folder_made_again_at_the_same_path_sees_nothing() {
+    let f = fx();
+    note(&f, "public.md", "# Shared", 10);
+    let p = project(&f, "p");
+    f.service.share(&p, "public.md").unwrap();
+    // the same project id, another folder on disk
+    let replaced = ProjectKey {
+        folder: p.folder.map(|id| permark_core::fsx::FolderIdentity {
+            file: id.file.wrapping_add(1),
+            ..id
+        }),
+        ..p.clone()
+    };
+    if p.folder.is_some() {
+        assert!(f.service.shared_notes(&replaced).is_empty());
+        assert!(f.service.read_shared(&replaced, "public.md").is_err());
+        // the folder cannot be identified now: not shared either
+        let unknown = ProjectKey {
+            folder: None,
+            ..p.clone()
+        };
+        assert!(f.service.shared_notes(&unknown).is_empty());
+        assert!(f.service.read_shared(&unknown, "public.md").is_err());
+    }
+    assert_eq!(f.service.shared_notes(&p).len(), 1);
+}
+
+#[test]
+fn the_picker_lists_every_note_newest_first_and_no_loose_file() {
+    let f = fx();
+    note(&f, "old.md", "# Old", 300);
+    note(&f, "new.md", "# New", 10);
+    note(&f, "mid.md", "# Mid", 100);
+    f.service.set_pinned("old.md", true).unwrap();
+    let file = loose_file(&f.tmp.path().join("elsewhere"), "x.md", "x");
+    f.service
+        .open_file(&file.display().to_string(), 10)
+        .unwrap();
+    let picked: Vec<(String, String)> = f
+        .service
+        .candidates()
+        .into_iter()
+        .map(|n| (n.id, n.title))
+        .collect();
+    assert_eq!(
+        picked,
+        [
+            ("new.md".to_owned(), "New".to_owned()),
+            ("mid.md".to_owned(), "Mid".to_owned()),
+            ("old.md".to_owned(), "Old".to_owned())
+        ]
+    );
 }
 
 #[test]
@@ -453,10 +538,12 @@ fn a_loose_file_can_never_be_shared() {
         .service
         .open_file(&file.display().to_string(), 10)
         .unwrap();
+    let p = project(&f, "p");
     assert_eq!(
-        f.service.set_shared(&path, true).unwrap_err().kind,
+        f.service.share(&p, &path).unwrap_err().kind,
         ErrorKind::Unsupported
     );
+    assert!(f.service.shared_notes(&p).is_empty());
 }
 
 #[test]
@@ -1158,14 +1245,17 @@ fn the_folder_of_0_5_opens_as_it_is_and_its_side_data_is_carried_over_once() {
     assert_eq!(list.entries[0].path, "2026-10-16 1031.md");
     assert!(list.entries[0].pinned);
     assert!(list.entries[1].kind == EntryKind::File && list.entries[1].pinned);
-    let shared = list
+    let was_shared = list
         .entries
         .iter()
         .find(|e| e.path == "2026-10-16 0140.md")
         .unwrap();
-    assert!(shared.shared && shared.title == "Beneficiary");
+    // shared with every agent in 0.5: not shared any more, the person is told once
+    assert!(was_shared.shared_with.is_empty() && was_shared.title == "Beneficiary");
     assert_eq!(list.open.as_deref(), Some("2026-10-16 0140.md"));
-    assert_eq!(f.service.shared_notes().len(), 1);
+    assert!(f.service.shared_notes(&project(&f, "p")).is_empty());
+    assert_eq!(f.service.take_unshared(), ["2026-10-16 0140.md"]);
+    assert!(f.service.take_unshared().is_empty());
     // the old file is untouched
     assert_eq!(
         std::fs::read(f.notes.join(".permark").join("notes.json")).unwrap(),
@@ -1186,6 +1276,42 @@ fn the_folder_of_0_5_opens_as_it_is_and_its_side_data_is_carried_over_once() {
     let state = again.ctx().read(Clone::clone);
     assert!(state.pins.contains(&"2026-10-16 1032.md".to_owned()));
     assert!(state.imported);
+}
+
+#[test]
+fn app_wide_shares_of_an_earlier_version_are_turned_off_once_and_told_once() {
+    let f = fx();
+    note(&f, "a.md", "# A", 10);
+    note(&f, "b.md", "# B", 10);
+    // what an earlier version kept in the profile
+    f.service.ctx().update(|s| {
+        s.shared = vec!["a.md".into(), "b.md".into()];
+    });
+    let reopen = || {
+        NotesService::open(
+            places(f.tmp.path()),
+            f.store.clone(),
+            NotesScope::new(),
+            Box::new({
+                let notes = f.notes.display().to_string();
+                move || notes.clone()
+            }),
+        )
+    };
+    let again = reopen();
+    let state = again.ctx().read(Clone::clone);
+    assert!(state.shared.is_empty() && state.shares.is_empty());
+    assert!(again.shared_notes(&project(&f, "p")).is_empty());
+    assert!(again
+        .list(1)
+        .entries
+        .iter()
+        .all(|e| e.shared_with.is_empty()));
+    // the notice survives a restart until a window takes it, then it is gone for good
+    let third = reopen();
+    assert_eq!(third.take_unshared(), ["a.md", "b.md"]);
+    assert!(third.take_unshared().is_empty());
+    assert!(reopen().take_unshared().is_empty());
 }
 
 #[test]
@@ -1334,9 +1460,15 @@ fn a_binary_file_named_like_a_note_has_no_title_and_does_not_break_the_list() {
 fn state_with_hostile_keys_is_forgotten_not_followed() {
     let f = fx();
     note(&f, "a.md", "a", 10);
+    let p = project(&f, "p");
     f.service.ctx().update(|s| {
         s.pins = vec!["../../etc/passwd".into(), "a.md".into(), "@file/zz".into()];
-        s.shared = vec!["../outside.md".into()];
+        s.shares.push(crate::state::Share {
+            note: "../outside.md".into(),
+            project: p.id.clone(),
+            folder: p.folder,
+            label: "p".into(),
+        });
         s.loose.push(LooseEntry {
             id: "0a1b2c3d".into(),
             path: "/definitely/not/there.md".into(),
@@ -1346,7 +1478,8 @@ fn state_with_hostile_keys_is_forgotten_not_followed() {
     });
     let list = f.service.list(1);
     assert!(list.entries.iter().any(|e| e.path == "a.md" && e.pinned));
-    assert!(f.service.shared_notes().is_empty());
+    assert!(f.service.shared_notes(&p).is_empty());
+    assert!(f.service.read_shared(&p, "../outside.md").is_err());
     let row = list
         .entries
         .iter()
@@ -1442,13 +1575,38 @@ mod plugin {
                 .kind,
             ErrorKind::NotFound
         );
-        // agents may ask the shared notes
-        call(&rpc, "setShared", json!({ "path": "a.md", "shared": true })).unwrap();
+        // the agent area shares a note with its project and asks for it; a window can only stop sharing
+        let folder = tmp.path().join("project");
+        std::fs::create_dir_all(&folder).unwrap();
+        let key = ProjectKey::of(&Root::open(&folder).unwrap());
         let api = services
             .get::<permark_core::notes::SharedNotesApi>()
             .unwrap();
-        assert_eq!(api.0.list().len(), 1);
-        assert_eq!(api.0.read("a.md").unwrap(), "# Hello\nworld");
+        assert!(api.0.candidates().iter().any(|n| n.id == "a.md"));
+        api.0.share(&key, "a.md").unwrap();
+        assert_eq!(api.0.list(&key).len(), 1);
+        assert_eq!(api.0.read(&key, "a.md").unwrap(), "# Hello\nworld");
+        let list = call(&rpc, "list", json!({})).unwrap();
+        let row = list["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["path"] == "a.md")
+            .unwrap()
+            .clone();
+        assert_eq!(row["sharedWith"][0]["label"], "project");
+        assert!(call(&rpc, "setShared", json!({ "path": "a.md", "shared": true })).is_err());
+        call(
+            &rpc,
+            "unshare",
+            json!({ "path": "a.md", "project": row["sharedWith"][0]["project"] }),
+        )
+        .unwrap();
+        assert!(api.0.list(&key).is_empty());
+        api.0.share(&key, "a.md").unwrap();
+        call(&rpc, "unshare", json!({ "path": "a.md" })).unwrap();
+        assert!(api.0.read(&key, "a.md").is_err());
+        assert_eq!(call(&rpc, "takeUnshared", json!({})).unwrap(), json!([]));
         assert!(scope.observer().is_some());
 
         // a changed setting reaches the running plugin

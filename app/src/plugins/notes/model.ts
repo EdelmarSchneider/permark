@@ -181,7 +181,7 @@ export function marksOf(note: NoteEntry): RowMarks {
     unsaved: note.state === "unsaved",
     changed: note.state === "changedOnDisk",
     gone: note.state === "gone",
-    shared: note.shared,
+    shared: note.sharedWith.length > 0,
     copied: note.copied,
   };
 }

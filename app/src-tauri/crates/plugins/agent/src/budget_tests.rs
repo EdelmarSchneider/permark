@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use permark_core::conditions::Distribution;
 use permark_core::events::NoEvents;
-use permark_core::notes::{SharedNote, SharedNotes, SharedNotesApi};
+use permark_core::notes::{ProjectKey, SharedNote, SharedNotes, SharedNotesApi};
 use permark_core::organizing::{
     CommentBook, CommentFilter, CommentItem, CommentsApi, TagCount, TagLookup, TagsApi,
     TagsSummary, UnreadApi, UnreadLookup, UnreadNow,
@@ -169,7 +169,7 @@ impl UnreadLookup for Unread {
 struct Notes;
 
 impl SharedNotes for Notes {
-    fn list(&self) -> Vec<SharedNote> {
+    fn list(&self, _: &ProjectKey) -> Vec<SharedNote> {
         vec![
             SharedNote {
                 id: "2026-10-15 1432.md".to_owned(),
@@ -183,10 +183,17 @@ impl SharedNotes for Notes {
             },
         ]
     }
-    fn read(&self, id: &str) -> Result<String, IpcError> {
+    fn read(&self, _: &ProjectKey, id: &str) -> Result<String, IpcError> {
         Ok(format!(
             "# {id}\n\n- Check the retry policy.\n- Ask about the release notes.\n"
         ))
+    }
+    fn share(&self, _: &ProjectKey, _: &str) -> Result<(), IpcError> {
+        Ok(())
+    }
+    fn unshare(&self, _: &ProjectKey, _: &str) {}
+    fn candidates(&self) -> Vec<SharedNote> {
+        Vec::new()
     }
 }
 

@@ -12,6 +12,9 @@ import type {
   NotesIntent,
   PluginMethod,
   PluginMethods,
+  ProjectNotes,
+  SharedNote,
+  SharedWith,
   Version,
 } from "./types";
 
@@ -19,8 +22,15 @@ type NotesMethod = Extract<PluginMethod, `notes.${string}`>;
 export type NotesHandlers = {
   [M in NotesMethod]: (args: PluginMethods[M]["args"]) => PluginMethods[M]["result"];
 };
+type AgentNotesMethod = "agent.sharedNotes" | "agent.shareNote" | "agent.unshareNote";
+/** The agent popover's note calls: answered here, where the shares are kept (as the real notes plugin keeps them). */
+export type AgentNotesHandlers = {
+  [M in AgentNotesMethod]: (args: PluginMethods[M]["args"]) => PluginMethods[M]["result"];
+};
 
 export const MOCK_NOTES_FOLDER = "C:/Users/demo/Documents/PerMark Notes";
+/** The mock project every agent call speaks for (the app derives it from the folder it serves). */
+export const MOCK_NOTES_PROJECT: SharedWith = { project: "mock-project", label: "permark-docs" };
 
 type MockNote = { name: string; text: string; modifiedMs: number };
 type MockLoose = {
@@ -79,6 +89,7 @@ export function createMockNotes(
   announceIntent: () => void = () => {},
 ): {
   handlers: NotesHandlers;
+  agentHandlers: AgentNotesHandlers;
   probe: NotesProbe;
 } {
   const now = Date.now();
@@ -109,13 +120,18 @@ export function createMockNotes(
   );
   seed("2026-09-02 1700.md", "# Recipe: lentil soup\n\nOnion, carrot, lentils.\n", 47 * day);
   let pins = ["2026-10-18 1855.md"];
-  const shared = new Set(["2026-10-16 1031.md"]);
+  /** The projects each note is shared with. */
+  const shares = new Map<string, SharedWith[]>([["2026-10-16 1031.md", [MOCK_NOTES_PROJECT]]]);
+  let unsharedNotice: string[] = [];
   const copied = new Set(["2026-09-02 1700.md"]);
   const recovered = new Map<string, string>();
   const loose = new Map<string, MockLoose>();
   const versions = new Map<string, (Version & { text: string })[]>();
   const journal = new Map<string, string>();
-  const deleted = new Map<number, { name: string; note: MockNote; pinned: boolean }[]>();
+  const deleted = new Map<
+    number,
+    { name: string; note: MockNote; pinned: boolean; shares: SharedWith[] }[]
+  >();
   const calls: string[] = [];
   let nextUndo = 1;
   let folderStatus: FolderInfo["status"] = { status: "ready" };
@@ -136,7 +152,7 @@ export function createMockNotes(
     modifiedMs: n.modifiedMs,
     size: n.text.length,
     pinned: pins.includes(n.name),
-    shared: shared.has(n.name),
+    sharedWith: shares.get(n.name) ?? [],
     copied: copied.has(n.name),
     recovered: recovered.has(n.name),
     folder: null,
@@ -152,7 +168,7 @@ export function createMockNotes(
     modifiedMs: l.modifiedMs,
     size: l.text.length,
     pinned: pins.includes(`@file/${l.id}`),
-    shared: false,
+    sharedWith: [],
     copied: false,
     recovered: false,
     folder: l.folder,
@@ -189,10 +205,16 @@ export function createMockNotes(
     versions.set(name, kept);
   };
   const remove = (names: string[]): Deleted => {
-    const gone = names.map((name) => ({ name, note: need(name), pinned: pins.includes(name) }));
+    const gone = names.map((name) => ({
+      name,
+      note: need(name),
+      pinned: pins.includes(name),
+      shares: shares.get(name) ?? [],
+    }));
     for (const { name } of gone) {
       notes.delete(name);
       files.delete(name);
+      shares.delete(name);
     }
     pins = pins.filter((p) => !names.includes(p));
     const undoId = nextUndo++;
@@ -237,10 +259,11 @@ export function createMockNotes(
       const gone = deleted.get(undoId);
       if (!gone) throw new MockPluginError("notFound", "undo");
       deleted.delete(undoId);
-      return gone.map(({ name, note, pinned }) => {
+      return gone.map(({ name, note, pinned, shares: kept }) => {
         notes.set(name, note);
         files.set(name, note.text);
         if (pinned) pins.push(name);
+        if (kept.length > 0) shares.set(name, kept);
         return name;
       });
     },
@@ -257,6 +280,9 @@ export function createMockNotes(
       files.set(next, textOf(path));
       files.delete(path);
       pins = pins.map((p) => (p === path ? next : p));
+      const kept = shares.get(path);
+      shares.delete(path);
+      if (kept) shares.set(next, kept);
       return next;
     },
     "notes.setPinned": ({ path, pinned }) => {
@@ -272,11 +298,19 @@ export function createMockNotes(
       pins = [...keys, ...pins.filter((p) => !keys.includes(p))];
       return null;
     },
-    "notes.setShared": ({ path, shared: on }) => {
-      need(path);
-      if (on) shared.add(path);
-      else shared.delete(path);
+    "notes.unshare": ({ path, project }) => {
+      if (path.startsWith("@file/")) throw new MockPluginError("unsupported", path);
+      const left = (shares.get(path) ?? []).filter(
+        (s) => project !== undefined && s.project !== project,
+      );
+      if (left.length > 0) shares.set(path, left);
+      else shares.delete(path);
       return null;
+    },
+    "notes.takeUnshared": () => {
+      const taken = unsharedNotice;
+      unsharedNotice = [];
+      return taken;
     },
     "notes.markCopied": ({ path }) => {
       need(path);
@@ -400,7 +434,38 @@ export function createMockNotes(
     },
   };
 
+  const asShared = (n: MockNote): SharedNote => ({
+    id: n.name,
+    title: titleOf(n.text),
+    updatedMs: n.modifiedMs,
+  });
+  const projectNotes = (): ProjectNotes => {
+    const isShared = (n: MockNote): boolean =>
+      (shares.get(n.name) ?? []).some((s) => s.project === MOCK_NOTES_PROJECT.project);
+    const all = [...notes.values()].sort((a, b) => b.modifiedMs - a.modifiedMs);
+    return {
+      shared: all.filter(isShared).map(asShared),
+      candidates: all.filter((n) => !isShared(n)).map(asShared),
+    };
+  };
+  const agentHandlers: AgentNotesHandlers = {
+    "agent.sharedNotes": () => projectNotes(),
+    "agent.shareNote": ({ name }) => {
+      need(name);
+      const others = (shares.get(name) ?? []).filter(
+        (s) => s.project !== MOCK_NOTES_PROJECT.project,
+      );
+      shares.set(name, [...others, MOCK_NOTES_PROJECT]);
+      return projectNotes();
+    },
+    "agent.unshareNote": ({ name }) => {
+      handlers["notes.unshare"]({ path: name, project: MOCK_NOTES_PROJECT.project });
+      return projectNotes();
+    },
+  };
+
   return {
+    agentHandlers,
     handlers: new Proxy(handlers, {
       get: (target, key: string) => {
         const fn = target[key as NotesMethod];

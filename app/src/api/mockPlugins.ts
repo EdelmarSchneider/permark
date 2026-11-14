@@ -322,6 +322,7 @@ export function createMockPlugins(
     ...organizing.handlers,
     ...agent.handlers,
     ...notes.handlers,
+    ...notes.agentHandlers,
     ...distribution,
     "git.snapshot": ({ project }) => (project ? members.snapshot(project) : snapshot()),
     "git.refresh": ({ project }) => {

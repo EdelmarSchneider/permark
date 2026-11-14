@@ -15,7 +15,7 @@ use permark_core::conditions::{AgentCondition, Distribution};
 use permark_core::events::{CoreEvent, EventSink};
 use permark_core::fsx::FolderIdentity;
 use permark_core::ipc_local::{self, Endpoint};
-use permark_core::notes::{SharedNote, SharedNotes, SharedNotesApi};
+use permark_core::notes::{ProjectKey, SharedNote, SharedNotes, SharedNotesApi};
 use permark_core::organizing::{
     CommentBook, CommentFilter, CommentItem, CommentsApi, SilenceApi, SilenceLookup, TagCount,
     TagLookup, TagsApi, TagsSummary, UnreadApi, UnreadLookup, UnreadNow,
@@ -25,7 +25,7 @@ use permark_core::plugins::{
     CxWorkspace, PluginCx, PluginId, PluginRegistry, RpcCall, ServiceLease,
 };
 use permark_core::settings::AppSettings;
-use permark_core::state::{AppDirs, StateStore};
+use permark_core::state::{AppDirs, ProjectId, StateStore};
 use permark_core::workspace::{CoreEnv, ProjectCore};
 use permark_core::{ErrorKind, IpcError};
 use serde_json::{json, Value};
@@ -179,10 +179,15 @@ impl UnreadLookup for Unread {
     }
 }
 
-struct Notes;
+/// The person's notes, shared per project like the `notes` plugin does (by project id); remembers the keys it was
+/// asked with.
+struct Notes {
+    shares: Mutex<Vec<(ProjectId, String)>>,
+    asked: Mutex<Vec<ProjectKey>>,
+}
 
-impl SharedNotes for Notes {
-    fn list(&self) -> Vec<SharedNote> {
+impl Notes {
+    fn all() -> Vec<SharedNote> {
         vec![
             SharedNote {
                 id: "2026-10-15 1432.md".to_owned(),
@@ -194,14 +199,74 @@ impl SharedNotes for Notes {
                 title: "Long".to_owned(),
                 updated_ms: 0,
             },
+            SharedNote {
+                id: "private.md".to_owned(),
+                title: "Private".to_owned(),
+                updated_ms: 0,
+            },
         ]
     }
-    fn read(&self, id: &str) -> Result<String, IpcError> {
+
+    /// The first two notes shared with `project`.
+    fn shared_with(project: &ProjectId) -> Self {
+        Self {
+            shares: Mutex::new(
+                ["2026-10-15 1432.md", "long.md"]
+                    .into_iter()
+                    .map(|n| (project.clone(), n.to_owned()))
+                    .collect(),
+            ),
+            asked: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn is_shared(&self, project: &ProjectKey, id: &str) -> bool {
+        self.asked.lock().unwrap().push(project.clone());
+        self.shares
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|(p, n)| *p == project.id && n == id)
+    }
+}
+
+impl SharedNotes for Notes {
+    fn list(&self, project: &ProjectKey) -> Vec<SharedNote> {
+        Self::all()
+            .into_iter()
+            .filter(|n| self.is_shared(project, &n.id))
+            .collect()
+    }
+    fn read(&self, project: &ProjectKey, id: &str) -> Result<String, IpcError> {
+        if !self.is_shared(project, id) {
+            return Err(IpcError::new(ErrorKind::NotFound));
+        }
         match id {
             "2026-10-15 1432.md" => Ok("Deploy with password: hunter2\n".to_owned()),
             "long.md" => Ok("a line of the long note\n".repeat(5_000)),
+            "private.md" => Ok("private\n".to_owned()),
             _ => Err(IpcError::new(ErrorKind::NotFound)),
         }
+    }
+    fn share(&self, project: &ProjectKey, id: &str) -> Result<(), IpcError> {
+        if !Self::all().iter().any(|n| n.id == id) {
+            return Err(IpcError::new(ErrorKind::NotFound));
+        }
+        self.unshare(project, id);
+        self.shares
+            .lock()
+            .unwrap()
+            .push((project.id.clone(), id.to_owned()));
+        Ok(())
+    }
+    fn unshare(&self, project: &ProjectKey, id: &str) {
+        self.shares
+            .lock()
+            .unwrap()
+            .retain(|(p, n)| !(*p == project.id && n == id));
+    }
+    fn candidates(&self) -> Vec<SharedNote> {
+        Self::all()
     }
 }
 
@@ -213,6 +278,8 @@ struct Fx {
     core: Option<Arc<ProjectCore>>,
     sink: Arc<Rec>,
     comments: Arc<Comments>,
+    notes: Arc<Notes>,
+    notes_lease: Option<ServiceLease>,
     _leases: Vec<ServiceLease>,
 }
 
@@ -267,6 +334,10 @@ fn fx() -> Fx {
         comment("c2", "private/secret.md", "launch code"),
     ])));
     let services = core.services();
+    let notes = Arc::new(Notes::shared_with(&ProjectId::of(core.root())));
+    let notes_lease = Some(env.services().provide(Arc::new(SharedNotesApi(
+        Arc::clone(&notes) as Arc<dyn SharedNotes>
+    ))));
     let leases = vec![
         services.services.provide(Arc::new(TagsApi(Arc::new(Tags)))),
         services
@@ -278,8 +349,6 @@ fn fx() -> Fx {
         services
             .services
             .provide(Arc::new(UnreadApi(Arc::new(Unread)))),
-        env.services()
-            .provide(Arc::new(SharedNotesApi(Arc::new(Notes)))),
     ];
     assert!(core.search().wait_ready(Duration::from_secs(10)));
     Fx {
@@ -290,6 +359,8 @@ fn fx() -> Fx {
         core: Some(core),
         sink,
         comments,
+        notes,
+        notes_lease,
         _leases: leases,
     }
 }
@@ -2319,4 +2390,104 @@ fn comment_and_context_headings_leave_as_written() {
     );
     let rendered = crate::render::render("get_context", &context);
     assert!(rendered.contains("Password: qz8secret"), "{rendered}");
+}
+
+#[test]
+fn notes_reach_the_agent_of_the_project_they_are_shared_with_only() {
+    let fx = fx();
+    fx.on();
+    let tools = fx.tools();
+    let listed = tools.call("list_notes", Value::Null).unwrap();
+    assert_eq!(listed["notes"].as_array().unwrap().len(), 2, "{listed}");
+    // every question names this server's own folder
+    let own = ProjectKey::of(fx.core().root());
+    assert!(fx.notes.asked.lock().unwrap().iter().all(|k| *k == own));
+    assert!(not_found(
+        tools.call("read_note", json!({ "note": "private.md" }))
+    ));
+    // the notes shared with another project stay with it
+    fx.notes.shares.lock().unwrap().clear();
+    fx.notes.shares.lock().unwrap().push((
+        ProjectId::of(&Root::open(&fx.dirs.profile).unwrap()),
+        "long.md".to_owned(),
+    ));
+    let listed = tools.call("list_notes", Value::Null).unwrap();
+    assert!(listed["notes"].as_array().unwrap().is_empty(), "{listed}");
+    assert!(not_found(
+        tools.call("read_note", json!({ "note": "long.md" }))
+    ));
+}
+
+#[test]
+fn the_popover_shares_and_unshares_notes_with_its_own_project() {
+    let fx = fx();
+    let notes = fx.rpc("sharedNotes", Value::Null).unwrap();
+    let ids = |list: &Value| -> Vec<String> {
+        list.as_array()
+            .unwrap()
+            .iter()
+            .map(|n| n["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(ids(&notes["shared"]), ["2026-10-15 1432.md", "long.md"]);
+    assert_eq!(
+        ids(&notes["candidates"]),
+        ["private.md"],
+        "shared ones are not offered again"
+    );
+    let after = fx
+        .rpc("shareNote", json!({ "name": "private.md" }))
+        .unwrap();
+    assert_eq!(ids(&after["shared"]).len(), 3);
+    assert!(ids(&after["candidates"]).is_empty());
+    let after = fx.rpc("unshareNote", json!({ "name": "long.md" })).unwrap();
+    assert_eq!(ids(&after["shared"]), ["2026-10-15 1432.md", "private.md"]);
+    // a window names a note, never a project: an extra field changes nothing
+    fx.rpc(
+        "shareNote",
+        json!({ "name": "long.md", "project": "elsewhere" }),
+    )
+    .unwrap();
+    let own = ProjectKey::of(fx.core().root());
+    assert!(fx.notes.asked.lock().unwrap().iter().all(|k| *k == own));
+    assert!(fx
+        .notes
+        .shares
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|(p, _)| *p == own.id));
+    assert_eq!(
+        fx.rpc("shareNote", json!({ "name": "nope.md" }))
+            .unwrap_err()
+            .kind,
+        ErrorKind::NotFound
+    );
+}
+
+#[test]
+fn with_the_notes_off_the_tools_and_the_popover_refuse_cleanly() {
+    let mut fx = fx();
+    fx.on();
+    fx.notes_lease.take();
+    let tools = fx.tools();
+    assert_eq!(
+        tools.call("list_notes", Value::Null),
+        Err(ToolError::Invalid("notes are off".to_owned()))
+    );
+    assert_eq!(
+        tools.call("read_note", json!({ "note": "long.md" })),
+        Err(ToolError::Invalid("notes are off".to_owned()))
+    );
+    for (method, args) in [
+        ("sharedNotes", Value::Null),
+        ("shareNote", json!({ "name": "long.md" })),
+        ("unshareNote", json!({ "name": "long.md" })),
+    ] {
+        assert_eq!(
+            fx.rpc(method, args).unwrap_err().kind,
+            ErrorKind::Unavailable,
+            "{method}"
+        );
+    }
 }

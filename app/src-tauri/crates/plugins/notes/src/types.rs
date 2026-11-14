@@ -1,5 +1,6 @@
 //! What the notes service says to the window: plain data, one shape per answer.
 
+use permark_core::state::ProjectId;
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -47,8 +48,8 @@ pub struct NoteEntry {
     #[ts(type = "number")]
     pub size: u64,
     pub pinned: bool,
-    /// Shared with agents.
-    pub shared: bool,
+    /// The projects whose agents it is shared with (empty: none).
+    pub shared_with: Vec<SharedWith>,
     /// Copied out and not edited since.
     pub copied: bool,
     /// Text typed and never saved was found after a crash.
@@ -59,6 +60,17 @@ pub struct NoteEntry {
     pub state: Option<LooseState>,
     /// A loose file: text that was typed is kept and not in the file.
     pub pending: bool,
+}
+
+/// A project a note is shared with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SharedWith {
+    /// What `notes.unshare` takes to stop sharing with this project only.
+    pub project: ProjectId,
+    /// The project folder's name when the note was shared.
+    pub label: String,
 }
 
 /// The notes folder and what is in it, in the order the list shows: pinned (the person's order), the other notes

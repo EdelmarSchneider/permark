@@ -23,6 +23,7 @@ pub mod handoff;
 pub mod live;
 pub mod map;
 pub mod mcp;
+pub mod notes;
 pub mod perms;
 #[cfg(test)]
 mod projects_edge_tests;
@@ -370,6 +371,22 @@ impl Plugin for AgentPlugin {
                 sync_context_file(&h, true);
                 Ok(())
             }),
+        ));
+        // notes shared with this project: the key is this plugin's own folder, whatever window asks
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "sharedNotes",
+            typed(move |_: NoArgs, _| notes::project_notes(&h.tools)),
+        ));
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "shareNote",
+            typed(move |args: notes::NoteArgs, _| notes::share(&h.tools, &args)),
+        ));
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "unshareNote",
+            typed(move |args: notes::NoteArgs, _| notes::unshare(&h.tools, &args)),
         ));
         // the hand-off: the dialog's content, then the confirm that freezes the package and sets the checkpoint
         let h = Arc::clone(&hub);

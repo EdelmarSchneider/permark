@@ -380,17 +380,16 @@ export class NotesStore {
     await this.refresh();
   }
 
-  async toggleShare(path: string): Promise<void> {
+  /** Stops sharing a note with every project (sharing itself is asked from a project's agent popover). */
+  async stopSharing(path: string): Promise<void> {
     const entry = this.entries.find((e) => e.path === path);
-    if (!entry || entry.kind !== "note") return;
-    const result = await this.#client.call("notes.setShared", { path, shared: !entry.shared });
+    if (!entry || entry.kind !== "note" || entry.sharedWith.length === 0) return;
+    const result = await this.#client.call("notes.unshare", { path });
     if (!result.ok) {
       this.#fail(result.error);
       return;
     }
-    this.#window.notifyNote(
-      t(entry.shared ? "notes.sharedOff" : "notes.sharedOn", { name: shownName(entry) }),
-    );
+    this.#window.notifyNote(t("notes.sharedOff", { name: shownName(entry) }));
     await this.refresh();
   }
 

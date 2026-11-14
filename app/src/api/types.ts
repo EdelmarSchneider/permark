@@ -216,6 +216,10 @@ import type { LooseState } from "./generated/LooseState";
 import type { MoveUndone } from "./generated/MoveUndone";
 import type { Moved } from "./generated/Moved";
 import type { NoteEntry } from "./generated/NoteEntry";
+import type { ProjectId } from "./generated/ProjectId";
+import type { ProjectNotes } from "./generated/ProjectNotes";
+import type { SharedNote } from "./generated/SharedNote";
+import type { SharedWith } from "./generated/SharedWith";
 import type { NoteList } from "./generated/NoteList";
 import type { NotesIntent } from "./generated/NotesIntent";
 import type { NotesSummary } from "./generated/NotesSummary";
@@ -600,7 +604,10 @@ export interface PluginMethods {
   "notes.rename": { args: { path: string; name: string }; result: string };
   "notes.setPinned": { args: { path: string; pinned: boolean }; result: null };
   "notes.setPinOrder": { args: { order: string[] }; result: null };
-  "notes.setShared": { args: { path: string; shared: boolean }; result: null };
+  /** Stops sharing a note with one project (`project`: its id from `NoteEntry.sharedWith`) or with all. */
+  "notes.unshare": { args: { path: string; project?: ProjectId }; result: null };
+  /** Notes whose app-wide sharing (earlier versions) was turned off, told once: taking them clears them. */
+  "notes.takeUnshared": { args: Record<string, never>; result: string[] };
   "notes.markCopied": { args: { path: string }; result: null };
   "notes.deleteCopied": { args: Record<string, never>; result: Deleted };
   "notes.opened": { args: { path: string | null }; result: null };
@@ -637,6 +644,10 @@ export interface PluginMethods {
   "agent.setDefaults": { args: Record<string, never>; result: null };
   "agent.publish": { args: { context: AgentWindowContext }; result: null };
   "agent.setup": { args: Record<string, never>; result: string | null };
+  /** Notes shared with this window's project + the person's other notes (newest first); the project is the app's. */
+  "agent.sharedNotes": { args: Record<string, never>; result: ProjectNotes };
+  "agent.shareNote": { args: { name: string }; result: ProjectNotes };
+  "agent.unshareNote": { args: { name: string }; result: ProjectNotes };
   "agent.handOffPreview": { args: { checked?: number[] }; result: HandOffPreview };
   "agent.handOffConfirm": { args: { upto: number; checked: number[] }; result: HandOffDone };
   "shell-integration.state": { args: Record<string, never>; result: ShellState };
@@ -873,6 +884,10 @@ export type {
   NoteList,
   NotesIntent,
   NotesSummary,
+  ProjectId,
+  ProjectNotes,
+  SharedNote,
+  SharedWith,
   Version,
 };
 export type {

@@ -28,12 +28,15 @@ use std::sync::Arc;
 
 use permark_core::conditions::Requirement;
 use permark_core::error::IpcError;
-use permark_core::notes::{NotesScope, ObserverLease, SharedNote, SharedNotes, SharedNotesApi};
+use permark_core::notes::{
+    NotesScope, ObserverLease, ProjectKey, SharedNote, SharedNotes, SharedNotesApi,
+};
 use permark_core::plugins::{
     typed, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope,
     RpcRegistration, Running, ServiceLease,
 };
 use permark_core::settings::AppSettings;
+use permark_core::state::ProjectId;
 use serde::Deserialize;
 
 pub use folder::{FolderInfo, FolderStatus, Places};
@@ -43,6 +46,7 @@ pub use names::Moment;
 pub use service::{now_ms, NotesService};
 pub use types::{
     Deleted, EntryKind, LooseState, MoveUndone, Moved, NoteEntry, NoteList, NotesSummary,
+    SharedWith,
 };
 pub use versions::Version;
 
@@ -105,9 +109,11 @@ struct OrderArgs {
 }
 
 #[derive(Deserialize)]
-struct ShareArgs {
+struct UnshareArgs {
     path: String,
-    shared: bool,
+    /// One project; absent: every project.
+    #[serde(default)]
+    project: Option<ProjectId>,
 }
 
 #[derive(Deserialize)]
@@ -149,16 +155,29 @@ struct MoveArgs {
     name: String,
 }
 
-/// What an agent may ask of the notes: the ones the person shared.
+/// What an agent area may ask of the notes: the ones the person shared with its project.
 struct Shared(Arc<NotesService>);
 
 impl SharedNotes for Shared {
-    fn list(&self) -> Vec<SharedNote> {
-        self.0.shared_notes()
+    fn list(&self, project: &ProjectKey) -> Vec<SharedNote> {
+        self.0.shared_notes(project)
     }
 
-    fn read(&self, id: &str) -> Result<String, IpcError> {
-        self.0.read_shared(id)
+    fn read(&self, project: &ProjectKey, id: &str) -> Result<String, IpcError> {
+        self.0.read_shared(project, id)
+    }
+
+    fn share(&self, project: &ProjectKey, id: &str) -> Result<(), IpcError> {
+        self.0.share(project, id)
+    }
+
+    fn unshare(&self, project: &ProjectKey, id: &str) {
+        // a name that is not a note is shared with nobody: nothing to stop
+        let _ = self.0.unshare(id, Some(&project.id));
+    }
+
+    fn candidates(&self) -> Vec<SharedNote> {
+        self.0.candidates()
     }
 }
 
@@ -308,8 +327,13 @@ fn register(serve: &mut Serve<'_>, service: &Arc<NotesService>) {
     );
     let s = Arc::clone(service);
     serve(
-        "setShared",
-        typed(move |args: ShareArgs, _| s.set_shared(&args.path, args.shared)),
+        "unshare",
+        typed(move |args: UnshareArgs, _| s.unshare(&args.path, args.project.as_ref())),
+    );
+    let s = Arc::clone(service);
+    serve(
+        "takeUnshared",
+        typed(move |_: NoArgs, _| Ok(s.take_unshared())),
     );
     let s = Arc::clone(service);
     serve(

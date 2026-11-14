@@ -57,12 +57,10 @@
     }
     out.push(item(t("notes.rename"), () => (store.renaming = entry.path)));
     if (entry.kind === "note") {
+      out.push(item(t("notes.versionsMenu"), () => void store.openVersions(entry.path)));
+      if (entry.sharedWith.length > 0)
+        out.push(item(t("notes.unshare"), () => void store.stopSharing(entry.path)));
       out.push(
-        item(t("notes.versionsMenu"), () => void store.openVersions(entry.path)),
-        item(
-          entry.shared ? t("notes.unshare") : t("notes.share"),
-          () => void store.toggleShare(entry.path),
-        ),
         item(t("notes.copy"), () => void store.copyNote(entry.path)),
         item(t("notes.moveToProject"), () => void store.openMove(entry.path)),
       );

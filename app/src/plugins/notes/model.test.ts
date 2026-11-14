@@ -30,7 +30,7 @@ function entry(over: Partial<NoteEntry> & { path: string }): NoteEntry {
     modifiedMs: NOW,
     size: 1,
     pinned: false,
-    shared: false,
+    sharedWith: [],
     copied: false,
     recovered: false,
     folder: null,
@@ -201,7 +201,13 @@ describe("names and places", () => {
 describe("marks", () => {
   it("reads the row's state", () => {
     const marks = marksOf(
-      entry({ path: "a.md", recovered: true, shared: true, copied: true, state: "unsaved" }),
+      entry({
+        path: "a.md",
+        recovered: true,
+        sharedWith: [{ project: "p1", label: "Alpha" }],
+        copied: true,
+        state: "unsaved",
+      }),
     );
     expect(marks).toEqual({
       recovered: true,
