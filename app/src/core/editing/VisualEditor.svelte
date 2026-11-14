@@ -550,6 +550,15 @@
           if (!core || !mod || !now || core.view.composing) return false;
           return mod.applyEdits(core, now, edits);
         },
+        // not `runCommand`: that gives the editor the keyboard, and the caller (a panel) keeps it. `run` refuses a
+        // selected block kept as written; the doc compare catches any other refusal on the way to the view
+        insert: (text) => {
+          if (!core || !mod || core.view.composing) return false;
+          const before = core.view.state.doc;
+          mod.run(core, { kind: "text", text });
+          refresh();
+          return core.view.state.doc !== before;
+        },
         changeable: (range, insert) => {
           const now = composed();
           // not ready: nothing to tell by, as with no editor on screen (`apply` still checks each edit)

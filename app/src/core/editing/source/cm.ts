@@ -199,6 +199,9 @@ export type SourceView = {
   showHeading(index: number, page?: HTMLElement): void;
   selection(): string;
   insert(text: string, at?: number): void;
+  /** `text` over every selection range as typing would put it (one history step with typing), scrolled into view; the
+   *  keyboard stays where it is. `false` (no change) while composing or read-only. */
+  replaceSelection(text: string): boolean;
   /** Long lines wrap (the setting) or scroll sideways. */
   setWrap(on: boolean): void;
   /** The range `kind` covers now (`ActiveEditor.scope`). */
@@ -398,6 +401,14 @@ export function createSource(options: {
         selection: EditorSelection.cursor(pos + text.length),
       });
       view.focus();
+    },
+    replaceSelection: (text) => {
+      if (view.composing || view.state.readOnly) return false;
+      view.dispatch(view.state.replaceSelection(text), {
+        scrollIntoView: true,
+        userEvent: "input.type",
+      });
+      return true;
     },
     setWrap: (on) =>
       view.dispatch({ effects: wrapping.reconfigure(on ? EditorView.lineWrapping : []) }),
