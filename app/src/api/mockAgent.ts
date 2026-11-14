@@ -23,6 +23,7 @@ type Handlers = Pick<
   | "agent.undoDisconnect"
   | "agent.setDefaults"
   | "agent.publish"
+  | "agent.focused"
   | "agent.setup"
   | "agent.handOffPreview"
   | "agent.handOffConfirm"
@@ -31,6 +32,8 @@ type Handlers = Pick<
 export type AgentProbe = {
   /** What the window published, oldest first. */
   published: AgentWindowContext[];
+  /** How often the window said the person turned to it. */
+  readonly focused: number;
   /** A client connects (or `null`: every one leaves); `id` names another session (more than one agent). */
   connect(client: string | null, id?: string): void;
   /** Sessions the person disconnected (refused until undone). */
@@ -108,6 +111,7 @@ export function createMockAgent(
   let failure: string | null = null;
   let recent: AgentRequest[] = [];
   const published: AgentWindowContext[] = [];
+  let focused = 0;
   const handedOff: { upto: number; checked: number[] }[] = [];
   const status = (): AgentStatus => ({
     enabled,
@@ -153,6 +157,10 @@ export function createMockAgent(
       published.push(context);
       return null;
     },
+    "agent.focused": () => {
+      focused += 1;
+      return null;
+    },
     "agent.setup": () => "C:\\Program Files\\PerMark\\PerMark.exe",
     "agent.handOffPreview": ({ checked }): HandOffPreview => {
       if (handedOff.length > 0) return { state: "nothing" };
@@ -188,6 +196,9 @@ export function createMockAgent(
     handlers,
     probe: {
       published,
+      get focused() {
+        return focused;
+      },
       setEnabled: (on) => {
         enabled = on;
         replaced = false;

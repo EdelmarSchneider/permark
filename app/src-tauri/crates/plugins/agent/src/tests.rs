@@ -412,11 +412,15 @@ impl Fx {
     }
 
     fn rpc(&self, method: &str, args: Value) -> Result<Value, IpcError> {
+        self.rpc_from("w", method, args)
+    }
+
+    fn rpc_from(&self, window: &str, method: &str, args: Value) -> Result<Value, IpcError> {
         self.core().rpc().call(
             "agent",
             method,
             &RpcCall {
-                window: "w".to_owned(),
+                window: window.to_owned(),
                 args,
             },
         )
@@ -863,17 +867,20 @@ fn every_text_reaches_the_agent_as_written() {
     let all = search.to_string();
     assert!(all.contains("README.md"), "{all}");
     assert!(!all.contains("<hidden>"), "{all}");
-    live.publish(WindowContext {
-        doc: Some("README.md".to_owned()),
-        mode: Mode::View,
-        section: None,
-        selection: Some(Selection {
-            text: "export GITHUB_TOKEN=ghp_abc and more".to_owned(),
-            lines: Some((3, 3)),
-            cut: false,
-        }),
-        unsaved: false,
-    });
+    live.publish(
+        "w",
+        WindowContext {
+            doc: Some("README.md".to_owned()),
+            mode: Mode::View,
+            section: None,
+            selection: Some(Selection {
+                text: "export GITHUB_TOKEN=ghp_abc and more".to_owned(),
+                lines: Some((3, 3)),
+                cut: false,
+            }),
+            unsaved: false,
+        },
+    );
     let context = tools.call("get_context", Value::Null).unwrap();
     assert_eq!(
         context["selection"]["text"],
@@ -908,15 +915,18 @@ fn the_context_drops_a_document_agents_do_not_get() {
         "C:\\x.md",
         ".permark/config.toml",
     ] {
-        live.publish(WindowContext {
-            doc: Some(doc.to_owned()),
-            selection: Some(Selection {
-                text: "the launch code".to_owned(),
-                lines: None,
-                cut: false,
-            }),
-            ..WindowContext::default()
-        });
+        live.publish(
+            "w",
+            WindowContext {
+                doc: Some(doc.to_owned()),
+                selection: Some(Selection {
+                    text: "the launch code".to_owned(),
+                    lines: None,
+                    cut: false,
+                }),
+                ..WindowContext::default()
+            },
+        );
         let context = tools.call("get_context", Value::Null).unwrap();
         assert!(
             context.get("doc").is_none() && context.get("selection").is_none(),
@@ -924,19 +934,22 @@ fn the_context_drops_a_document_agents_do_not_get() {
         );
     }
     // a huge selection is cut, headings are one line each
-    live.publish(WindowContext {
-        doc: Some("docs/plan.md".to_owned()),
-        section: Some(crate::context::Section {
-            heading_path: vec!["Plan\nwith a break".to_owned(), "Rollout".to_owned()],
-            lines: Some((3, 1)),
-        }),
-        selection: Some(Selection {
-            text: "x".repeat(10_000),
-            lines: Some((1, 2)),
-            cut: false,
-        }),
-        ..WindowContext::default()
-    });
+    live.publish(
+        "w",
+        WindowContext {
+            doc: Some("docs/plan.md".to_owned()),
+            section: Some(crate::context::Section {
+                heading_path: vec!["Plan\nwith a break".to_owned(), "Rollout".to_owned()],
+                lines: Some((3, 1)),
+            }),
+            selection: Some(Selection {
+                text: "x".repeat(10_000),
+                lines: Some((1, 2)),
+                cut: false,
+            }),
+            ..WindowContext::default()
+        },
+    );
     let context = tools.call("get_context", Value::Null).unwrap();
     assert_eq!(
         context["selection"]["text"].as_str().unwrap().len(),
@@ -963,12 +976,15 @@ fn open_shows_a_place_and_never_moves_a_person_who_is_editing() {
         )
         .unwrap();
     assert_eq!(shown["status"], "shown");
-    live.publish(WindowContext {
-        doc: Some("README.md".to_owned()),
-        mode: Mode::Edit,
-        unsaved: true,
-        ..WindowContext::default()
-    });
+    live.publish(
+        "w",
+        WindowContext {
+            doc: Some("README.md".to_owned()),
+            mode: Mode::Edit,
+            unsaved: true,
+            ..WindowContext::default()
+        },
+    );
     let deferred = tools
         .call("open", json!({ "path": "docs/plan.md", "line": 5 }))
         .unwrap();
@@ -977,7 +993,7 @@ fn open_shows_a_place_and_never_moves_a_person_who_is_editing() {
     assert_eq!(events.len(), 2);
     assert_eq!(
         events[0],
-        json!({ "path": "docs/plan.md", "line": 3, "heading": "Plan > Rollout" })
+        json!({ "path": "docs/plan.md", "line": 3, "heading": "Plan > Rollout", "window": null })
     );
     assert_eq!(events[1]["line"], 5);
     let missing = tools
@@ -992,6 +1008,73 @@ fn open_shows_a_place_and_never_moves_a_person_who_is_editing() {
         tools.call("open", json!({ "path": "private/secret.md" }))
     ));
     assert_eq!(fx.sink.named("agent:open").len(), 3);
+    assert_eq!(events[1]["window"], "w");
+}
+
+#[test]
+fn several_windows_the_one_used_last_is_answered_and_shown_to() {
+    let fx = fx();
+    fx.on();
+    let live = fx.live();
+    let tools = fx.tools_with(Arc::clone(&live));
+    let at = |doc: &str, mode: Mode| WindowContext {
+        doc: Some(doc.to_owned()),
+        mode,
+        ..WindowContext::default()
+    };
+    live.publish("a", at("README.md", Mode::View));
+    live.publish("b", at("docs/plan.md", Mode::Edit));
+    live.focused("a");
+    live.focused("b");
+    let doc = |tools: &Tools| tools.call("get_context", Value::Null).unwrap()["doc"].clone();
+    assert_eq!(doc(&tools), "docs/plan.md");
+    let open = json!({ "path": "docs/plan.md" });
+    assert_eq!(
+        tools.call("open", open.clone()).unwrap()["status"],
+        "deferred"
+    );
+    live.focused("a");
+    assert_eq!(doc(&tools), "README.md");
+    assert_eq!(tools.call("open", open.clone()).unwrap()["status"], "shown");
+    live.focused("b");
+    live.forget("b");
+    assert_eq!(doc(&tools), "README.md", "b gone: a speaks again");
+    tools.call("open", open).unwrap();
+    let targets: Vec<Value> = fx
+        .sink
+        .named("agent:open")
+        .iter()
+        .map(|e| e["window"].clone())
+        .collect();
+    assert_eq!(targets, [json!("b"), json!("a"), json!("a")]);
+}
+
+#[test]
+fn the_window_rpcs_name_their_caller_and_a_gone_caller_is_forgotten() {
+    let fx = fx();
+    let file = fx.root.join(".permark/local").join(crate::CONTEXT_FILE);
+    let publish = |window: &str, doc: &str| {
+        fx.rpc_from(
+            window,
+            "publish",
+            json!({ "context": { "doc": doc, "mode": "view" } }),
+        )
+        .unwrap();
+    };
+    let written = || std::fs::read_to_string(&file).unwrap();
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    publish("a", "README.md");
+    publish("b", "docs/plan.md");
+    assert!(written().contains("docs/plan.md"));
+    fx.rpc_from("a", "focused", json!({})).unwrap();
+    assert!(written().contains("README.md"), "{}", written());
+    fx.rpc_from("b", "focused", json!({})).unwrap();
+    assert!(written().contains("docs/plan.md"));
+    fx.core().rpc().caller_gone("b");
+    // any write of the file shows what the remaining window shows
+    fx.rpc("setGroup", json!({ "group": "context", "on": true }))
+        .unwrap();
+    assert!(written().contains("README.md"), "{}", written());
 }
 
 #[test]
@@ -2374,14 +2457,17 @@ fn comment_and_context_headings_leave_as_written() {
         json!(["Ops", "Password: qz8secret"]),
         "{list}"
     );
-    live.publish(WindowContext {
-        doc: Some("docs/plan.md".to_owned()),
-        section: Some(crate::context::Section {
-            heading_path: vec!["Ops".to_owned(), "Password: qz8secret".to_owned()],
-            lines: Some((1, 2)),
-        }),
-        ..WindowContext::default()
-    });
+    live.publish(
+        "w",
+        WindowContext {
+            doc: Some("docs/plan.md".to_owned()),
+            section: Some(crate::context::Section {
+                heading_path: vec!["Ops".to_owned(), "Password: qz8secret".to_owned()],
+                lines: Some((1, 2)),
+            }),
+            ..WindowContext::default()
+        },
+    );
     let context = tools.call("get_context", Value::Null).unwrap();
     assert_eq!(
         context["section"]["headingPath"],

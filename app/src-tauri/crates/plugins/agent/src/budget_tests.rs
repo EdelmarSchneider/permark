@@ -298,20 +298,23 @@ impl Budget {
         )
         .with_project(self.core().services());
         let live = Arc::new(Live::new(cx.events().clone()));
-        live.publish(WindowContext {
-            doc: Some("docs/plan.md".to_owned()),
-            mode: Mode::View,
-            section: Some(Section {
-                heading_path: vec!["Plan".to_owned(), "Rollout".to_owned()],
-                lines: Some((15, 25)),
-            }),
-            selection: Some(Selection {
-                text: "Ship the beta on Friday to the first ten teams.".to_owned(),
-                lines: Some((17, 17)),
-                cut: false,
-            }),
-            unsaved: false,
-        });
+        live.publish(
+            "w",
+            WindowContext {
+                doc: Some("docs/plan.md".to_owned()),
+                mode: Mode::View,
+                section: Some(Section {
+                    heading_path: vec!["Plan".to_owned(), "Rollout".to_owned()],
+                    lines: Some((15, 25)),
+                }),
+                selection: Some(Selection {
+                    text: "Ship the beta on Friday to the first ten teams.".to_owned(),
+                    lines: Some((17, 17)),
+                    cut: false,
+                }),
+                unsaved: false,
+            },
+        );
         Tools::new(
             self.core().vault().clone(),
             self.core().store().clone(),

@@ -58,8 +58,11 @@ export class AgentStore {
     this.#show = show ?? showPlace;
   }
 
+  // derived: effects that follow the switch run again only when it turns, not on every status the backend sends
+  readonly #enabled = $derived(this.status?.enabled === true);
+
   get enabled(): boolean {
-    return this.status?.enabled === true;
+    return this.#enabled;
   }
 
   /** Connected agents, the earliest first (none unless the server listens). */
@@ -86,7 +89,12 @@ export class AgentStore {
           else offs.push(stop);
         };
         void this.#client.on("agent:status", (status) => (this.status = status)).then(keep);
-        void this.#client.on("agent:open", (place) => this.#show(place)).then(keep);
+        // with the project in several windows, only the one the person used last shows the place
+        void this.#client
+          .on("agent:open", (place) => {
+            if (place.window === null || place.window === windowStore.label) this.#show(place);
+          })
+          .then(keep);
         void this.#client.on("agent:ask", (ask) => this.#offer(ask.group)).then(keep);
         void this.#client.call("agent.status", {}).then((result) => {
           if (!gone && result.ok) this.status = result.value;
@@ -108,6 +116,14 @@ export class AgentStore {
           document.removeEventListener("selectionchange", read);
           this.#page = null;
         };
+      });
+      // the person turning to this window makes it the one the agent hears about, only while the switch is on
+      $effect(() => {
+        if (!this.enabled) return;
+        const focused = (): void => void this.#client.call("agent.focused", {});
+        if (document.hasFocus()) focused();
+        window.addEventListener("focus", focused);
+        return () => window.removeEventListener("focus", focused);
       });
       // publishing what the person looks at, a moment after it changes, only while the switch is on
       $effect(() => {

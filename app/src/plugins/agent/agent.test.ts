@@ -154,13 +154,55 @@ describe("the agent store", () => {
 
   it("hands a place an agent asks for to the window, and offers resolving once asked", async () => {
     const { api, stop, shown } = await setup();
-    api.probe.plugins.announce("agent:open", { path: "docs/guide.md", line: 3, heading: null });
+    const place = { path: "docs/guide.md", line: 3, heading: null, window: null };
+    api.probe.plugins.announce("agent:open", place);
     await settle();
-    expect(shown).toEqual([{ path: "docs/guide.md", line: 3, heading: null }]);
+    expect(shown).toEqual([place]);
     const before = windowStore.notices.length;
     api.probe.plugins.announce("agent:ask", { group: "comments.resolve" });
     await settle();
     expect(windowStore.notices.length).toBe(before + 1);
+    stop();
+  });
+
+  it("shows a place only when it is meant for this window (or for every window)", async () => {
+    const label = windowStore.label;
+    windowStore.label = "view-1";
+    const { api, stop, shown } = await setup();
+    try {
+      const at = (window: string | null): Place => ({
+        path: "a.md",
+        line: 1,
+        heading: null,
+        window,
+      });
+      api.probe.plugins.announce("agent:open", at("view-2"));
+      api.probe.plugins.announce("agent:open", at("view-1"));
+      api.probe.plugins.announce("agent:open", at(null));
+      await settle();
+      expect(shown.map((p) => p.window)).toEqual(["view-1", null]);
+    } finally {
+      stop();
+      windowStore.label = label;
+    }
+  });
+
+  it("tells the backend when the person turns to the window, only while the switch is on", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const { api, store, stop } = await setup();
+    window.dispatchEvent(new Event("focus"));
+    expect(api.probe.plugins.agent.focused).toBe(0);
+    await store.setEnabled(true);
+    await settle();
+    expect(api.probe.plugins.agent.focused).toBe(1);
+    window.dispatchEvent(new Event("focus"));
+    await settle();
+    expect(api.probe.plugins.agent.focused).toBe(2);
+    await store.setEnabled(false);
+    await settle();
+    window.dispatchEvent(new Event("focus"));
+    await settle();
+    expect(api.probe.plugins.agent.focused).toBe(2);
     stop();
   });
 });
@@ -204,11 +246,11 @@ describe("notes shared with the project", () => {
 describe("showing an agent's place", () => {
   it("moves a reading person, never one who is editing", () => {
     const navigate = vi.spyOn(documents, "navigate").mockImplementation(() => undefined);
-    showPlace({ path: "docs/guide.md", line: 7, heading: null });
+    showPlace({ path: "docs/guide.md", line: 7, heading: null, window: null });
     expect(navigate).toHaveBeenCalledWith("docs/guide.md", null, 7);
     editing.mode = "edit";
     const before = windowStore.notices.length;
-    showPlace({ path: "docs/guide.md", line: 9, heading: null });
+    showPlace({ path: "docs/guide.md", line: 9, heading: null, window: null });
     expect(navigate).toHaveBeenCalledTimes(1);
     const notice = windowStore.notices[windowStore.notices.length - 1];
     expect(windowStore.notices.length).toBe(before + 1);

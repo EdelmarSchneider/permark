@@ -366,12 +366,30 @@ impl Plugin for AgentPlugin {
         let l = Arc::clone(&live);
         registrations.extend(cx.rpc(
             "publish",
-            typed(move |args: PublishArgs, _| {
-                l.publish(args.context);
+            typed(move |args: PublishArgs, call| {
+                l.publish(&call.window, args.context);
                 sync_context_file(&h, true);
                 Ok(())
             }),
         ));
+        // several windows of one project: the one the person turned to last speaks for them
+        let h = Arc::clone(&hub);
+        let l = Arc::clone(&live);
+        registrations.extend(cx.rpc(
+            "focused",
+            typed(move |_: NoArgs, call| {
+                l.focused(&call.window);
+                sync_context_file(&h, true);
+                Ok(())
+            }),
+        ));
+        // a window that lets go of the project takes its word with it (quick: called under the registry's lock)
+        let gone = Arc::downgrade(&live);
+        registrations.extend(cx.on_caller_gone(Arc::new(move |caller: &str| {
+            if let Some(live) = gone.upgrade() {
+                live.forget(caller);
+            }
+        })));
         // notes shared with this project: the key is this plugin's own folder, whatever window asks
         let h = Arc::clone(&hub);
         registrations.extend(cx.rpc(

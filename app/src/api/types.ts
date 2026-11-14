@@ -643,6 +643,8 @@ export interface PluginMethods {
   "agent.undoDisconnect": { args: { id: string }; result: AgentStatus };
   "agent.setDefaults": { args: Record<string, never>; result: null };
   "agent.publish": { args: { context: AgentWindowContext }; result: null };
+  /** This window is the one the person turned to: its context is answered, only it shows a place. */
+  "agent.focused": { args: Record<string, never>; result: null };
   "agent.setup": { args: Record<string, never>; result: string | null };
   /** Notes shared with this window's project + the person's other notes (newest first); the project is the app's. */
   "agent.sharedNotes": { args: Record<string, never>; result: ProjectNotes };
@@ -787,7 +789,13 @@ export interface PluginEvents {
   "quiet:changed": QuietMarks;
   "broken-links:changed": BrokenSummary;
   "agent:status": AgentStatus;
-  "agent:open": { path: string; line: number | null; heading: string | null };
+  /** `window`: the label of the window that shows it; `null` = every window of the project (none known yet). */
+  "agent:open": {
+    path: string;
+    line: number | null;
+    heading: string | null;
+    window: string | null;
+  };
   "agent:ask": { group: string };
 }
 export type PluginEventName = keyof PluginEvents;
