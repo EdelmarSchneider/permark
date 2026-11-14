@@ -3,7 +3,11 @@
 /**
  * One request an agent made.
  */
-export type AgentRequest = { tool: string, subject: string | null, atMs: number, 
+export type AgentRequest = { 
+/**
+ * The session that asked.
+ */
+session: string, tool: string, subject: string | null, atMs: number, 
 /**
  * `ok | denied | notFound | invalid | error`.
  */

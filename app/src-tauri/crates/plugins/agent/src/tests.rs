@@ -34,6 +34,7 @@ use crate::context::{Mode, Selection, WindowContext};
 use crate::live::Live;
 use crate::perms::{self, Group, ProjectChoice, PROJECT_FILE};
 use crate::server::{Request, Response};
+use crate::session::SessionId;
 use crate::tools::Tools;
 use crate::ToolError;
 
@@ -1024,20 +1025,19 @@ fn the_switch_starts_the_server_sessions_connect_and_off_stops_it() {
     let fx = fx();
     let endpoint = fx.endpoint();
     assert_eq!(fx.core().facts().agent(), AgentCondition::Off);
-    assert!(
-        ipc_local::request::<_, Response>(&endpoint, &Request::Hello { client: "x".into() })
-            .is_err()
-    );
+    assert!(ipc_local::request::<_, Response>(&endpoint, &hello("x", "")).is_err());
     let status = fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
     assert_eq!(status["server"]["state"], "listening");
     assert_eq!(fx.core().facts().agent(), AgentCondition::On);
     // a call over the socket answers like the tools
+    let caller = SessionId::draw();
     let answer: Response = ipc_local::request(
         &endpoint,
         &Request::Call {
             tool: "read".into(),
             args: json!({ "path": "../outside.md" }),
             client: "t".into(),
+            session: Some(caller.clone()),
         },
     )
     .unwrap();
@@ -1048,36 +1048,163 @@ fn the_switch_starts_the_server_sessions_connect_and_off_stops_it() {
             message: "not found: ../outside.md".into()
         }
     );
-    let (hello, session): (Response, _) = ipc_local::open_session(
-        &endpoint,
-        &Request::Hello {
-            client: "Claude Code\u{7}".into(),
-        },
-    )
-    .unwrap();
+    let (hello, session): (Response, _) =
+        ipc_local::open_session(&endpoint, &hello("Claude Code\u{7}", "")).unwrap();
     assert!(matches!(hello, Response::Ok { .. }));
     assert!(wait_for(|| fx.core().facts().agent()
         == AgentCondition::Connected {
             client: "Claude Code".into()
         }));
     let status = fx.rpc("status", Value::Null).unwrap();
-    assert_eq!(status["clients"], json!(["Claude Code"]));
+    let sessions = status["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0]["name"], "Claude Code");
+    assert_eq!(status["recent"][0]["session"], caller.as_str());
     assert_eq!(status["recent"][0]["tool"], "read");
     assert_eq!(status["recent"][0]["outcome"], "notFound");
     drop(session);
     assert!(wait_for(|| fx.core().facts().agent() == AgentCondition::On));
     fx.rpc("setEnabled", json!({ "enabled": false })).unwrap();
     assert_eq!(fx.core().facts().agent(), AgentCondition::Off);
-    assert!(ipc_local::request::<_, Response>(
-        &endpoint,
-        &Request::Call {
-            tool: "read".into(),
-            args: Value::Null,
-            client: String::new()
-        }
-    )
-    .is_err());
+    assert!(ipc_local::request::<_, Response>(&endpoint, &call("read")).is_err());
     assert!(!fx.sink.named("agent:status").is_empty());
+}
+
+/// A hello from a fresh session.
+fn hello(client: &str, folder: &str) -> Request {
+    Request::Hello {
+        session: Some(SessionId::draw()),
+        client: client.to_owned(),
+        folder: folder.to_owned(),
+    }
+}
+
+/// A call from a fresh session.
+fn call(tool: &str) -> Request {
+    Request::Call {
+        tool: tool.to_owned(),
+        args: Value::Null,
+        client: String::new(),
+        session: Some(SessionId::draw()),
+    }
+}
+
+/// The status entry of `agent`'s session.
+fn session_of(status: &Value, agent: &Agent) -> Value {
+    status["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["id"] == agent.session_id().as_str())
+        .cloned()
+        .unwrap_or(Value::Null)
+}
+
+#[test]
+fn two_agents_on_one_project_are_two_sessions_with_their_own_id_folder_and_last_call() {
+    let fx = fx();
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    let first = Agent::discover(&fx.dirs, &fx.root, no_launch());
+    let second = Agent::discover(&fx.dirs, &fx.root.join("docs"), no_launch());
+    assert_ne!(first.session_id(), second.session_id());
+    assert_eq!(first.folder(), "");
+    assert_eq!(second.folder(), "docs");
+    first.hello("Claude Code");
+    second.hello("Codex");
+    assert!(wait_for(|| fx.rpc("status", Value::Null).unwrap()
+        ["sessions"]
+        .as_array()
+        .is_some_and(|s| s.len() == 2)));
+    let status = fx.rpc("status", Value::Null).unwrap();
+    let (a, b) = (session_of(&status, &first), session_of(&status, &second));
+    assert_eq!(
+        (a["name"].clone(), a["folder"].clone()),
+        (json!("Claude Code"), json!(""))
+    );
+    assert_eq!(
+        (b["name"].clone(), b["folder"].clone()),
+        (json!("Codex"), json!("docs"))
+    );
+    assert!(a["startedMs"].as_u64().is_some_and(|ms| ms > 0));
+    assert_eq!(
+        (a["lastCallMs"].clone(), b["lastCallMs"].clone()),
+        (Value::Null, Value::Null)
+    );
+    // the first one to say hello names the project's condition
+    assert_eq!(
+        fx.core().facts().agent(),
+        AgentCondition::Connected {
+            client: "Claude Code".into()
+        }
+    );
+    // a call counts for its own session only, and its record names it
+    second
+        .call("search", &json!({ "query": "launch" }))
+        .unwrap();
+    let status = fx.rpc("status", Value::Null).unwrap();
+    assert!(session_of(&status, &second)["lastCallMs"]
+        .as_u64()
+        .is_some());
+    assert_eq!(session_of(&status, &first)["lastCallMs"], Value::Null);
+    assert_eq!(status["recent"][0]["session"], second.session_id().as_str());
+    assert_eq!(status["recent"][0]["tool"], "search");
+}
+
+#[test]
+fn a_session_said_hello_again_outlives_its_earlier_connection() {
+    let fx = fx();
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    let endpoint = fx.endpoint();
+    let id = SessionId::draw();
+    let again = |client: &str| Request::Hello {
+        session: Some(id.clone()),
+        client: client.to_owned(),
+        folder: String::new(),
+    };
+    let (_, earlier): (Response, _) = ipc_local::open_session(&endpoint, &again("a")).unwrap();
+    let (_, later): (Response, _) = ipc_local::open_session(&endpoint, &again("b")).unwrap();
+    let names = || {
+        fx.rpc("status", Value::Null).unwrap()["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["name"].as_str().unwrap_or_default().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert!(wait_for(|| names() == ["b"]), "one entry per id");
+    drop(earlier);
+    std::thread::sleep(Duration::from_millis(600));
+    assert_eq!(
+        names(),
+        ["b"],
+        "the earlier connection ending leaves the newer one"
+    );
+    drop(later);
+    assert!(wait_for(|| names().is_empty()));
+}
+
+#[test]
+fn requests_without_a_valid_session_id_are_refused() {
+    let fx = fx();
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    let endpoint = fx.endpoint();
+    for line in [
+        json!({ "kind": "hello", "client": "x" }),
+        json!({ "kind": "hello", "client": "x", "session": "SHORT" }),
+        json!({ "kind": "hello", "client": "x", "session": 12_345_678 }),
+        json!({ "kind": "call", "tool": "map" }),
+        json!({ "kind": "call", "tool": "map", "session": "../../abcdefgh" }),
+    ] {
+        let answer: Response = ipc_local::request(&endpoint, &line).unwrap();
+        assert!(
+            matches!(&answer, Response::Error { code, .. } if code == "invalid"),
+            "{line}: {answer:?}"
+        );
+    }
+    let status = fx.rpc("status", Value::Null).unwrap();
+    assert_eq!(status["sessions"], json!([]));
+    assert_eq!(status["recent"], json!([]), "a refused call runs no tool");
+    assert_eq!(fx.core().facts().agent(), AgentCondition::On);
 }
 
 #[test]
@@ -1099,17 +1226,9 @@ fn closing_the_project_stops_the_server() {
     fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
     let endpoint = fx.endpoint();
     let (_hello, _session): (Response, _) =
-        ipc_local::open_session(&endpoint, &Request::Hello { client: "a".into() }).unwrap();
+        ipc_local::open_session(&endpoint, &hello("a", "")).unwrap();
     fx.core.take();
-    assert!(ipc_local::request::<_, Response>(
-        &endpoint,
-        &Request::Call {
-            tool: "read".into(),
-            args: Value::Null,
-            client: String::new()
-        }
-    )
-    .is_err());
+    assert!(ipc_local::request::<_, Response>(&endpoint, &call("read")).is_err());
 }
 
 #[test]

@@ -793,8 +793,8 @@ export function createMockApi(): Api & {
     const condition: Context["agent"] =
       view.workspace.kind !== "project" || !agent.enabled
         ? { status: "off" }
-        : agent.clients[0] !== undefined
-          ? { status: "connected", client: agent.clients[0] }
+        : agent.sessions[0] !== undefined
+          ? { status: "connected", client: agent.sessions[0].name }
           : { status: "on" };
     const over = view.workspace.kind === "project" ? contextOver : {};
     return { ...base, workspace: kinds[view.workspace.kind], agent: condition, ...over } as Context;

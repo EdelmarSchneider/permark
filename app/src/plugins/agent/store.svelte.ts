@@ -53,7 +53,7 @@ export class AgentStore {
   }
 
   get connected(): string[] {
-    return this.status?.server.state === "listening" ? this.status.clients : [];
+    return this.status?.server.state === "listening" ? this.status.sessions.map((s) => s.name) : [];
   }
 
   /** Follows the project of the window until the returned teardown runs. */

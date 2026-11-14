@@ -557,6 +557,36 @@ fn poll_read(stream: &Stream, buf: &mut [u8]) -> Polled {
     }
 }
 
+/// Whether the other end of `stream` closed (or the stream broke), looked at without blocking. Never consumes
+/// anything: Windows asks the pipe how many bytes wait (`PeekNamedPipe`, no buffer), Unix peeks one byte
+/// (`MSG_PEEK | MSG_DONTWAIT`), so a line still on its way stays for the reader. Bytes waiting = not gone yet (a peer
+/// that wrote, then closed, reads as gone once the reader took them).
+#[must_use]
+pub fn peer_gone(stream: &Stream) -> bool {
+    #[cfg(windows)]
+    {
+        peek::available(stream).is_err()
+    }
+    #[cfg(unix)]
+    {
+        use rustix::io::Errno;
+        use rustix::net::{recv, RecvFlags};
+        use std::os::fd::AsFd;
+        let Stream::UdSocket(socket) = stream;
+        let mut byte = [0_u8; 1];
+        match recv(
+            socket.as_fd(),
+            &mut byte[..],
+            RecvFlags::PEEK | RecvFlags::DONTWAIT,
+        ) {
+            Ok((0, _)) => true,
+            Ok(_) => false,
+            // EWOULDBLOCK = EAGAIN on the supported Unix systems
+            Err(e) => e != Errno::AGAIN && e != Errno::INTR,
+        }
+    }
+}
+
 /// Reads one JSON line that must be complete by `deadline` (polled without blocking: a peer that sends nothing,
 /// or one byte at a time, cannot hold the thread longer).
 ///

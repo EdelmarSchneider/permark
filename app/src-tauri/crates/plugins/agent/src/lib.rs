@@ -30,6 +30,7 @@ mod projects_edge_tests;
 mod projects_tests;
 pub mod render;
 pub mod server;
+pub mod session;
 pub mod structure;
 #[cfg(test)]
 mod tests;

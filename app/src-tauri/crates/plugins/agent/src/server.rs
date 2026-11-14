@@ -16,6 +16,7 @@ use serde_json::Value;
 use ts_rs::TS;
 
 use crate::perms::{self, Access, Group};
+use crate::session::{self, SessionId};
 use crate::tools::Tools;
 use crate::ToolError;
 
@@ -23,13 +24,23 @@ use crate::ToolError;
 pub const RECENT: usize = 8;
 /// Longest client name kept.
 const MAX_CLIENT_CHARS: usize = 64;
+/// Longest working folder kept (display only).
+const MAX_FOLDER_CHARS: usize = 260;
 
 /// One line from `permark mcp`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Request {
     /// Opens a session: the connection is held while the client runs.
-    Hello { client: String },
+    Hello {
+        /// `None` = missing | malformed on the wire: refused.
+        #[serde(default, deserialize_with = "session::lenient")]
+        session: Option<SessionId>,
+        client: String,
+        /// The client's working folder relative to the project root, `/`-separated (`""` = the root).
+        #[serde(default)]
+        folder: String,
+    },
     /// One tool call.
     Call {
         tool: String,
@@ -37,6 +48,8 @@ pub enum Request {
         args: Value,
         #[serde(default)]
         client: String,
+        #[serde(default, deserialize_with = "session::lenient")]
+        session: Option<SessionId>,
     },
 }
 
@@ -76,12 +89,32 @@ pub enum ServerState {
 #[serde(rename_all = "camelCase")]
 #[ts(export, rename = "AgentRequest")]
 pub struct RequestRecord {
+    /// The session that asked.
+    #[ts(type = "string")]
+    pub session: SessionId,
     pub tool: String,
     pub subject: Option<String>,
     #[ts(type = "number")]
     pub at_ms: u64,
     /// `ok | denied | notFound | invalid | error`.
     pub outcome: String,
+}
+
+/// One connected agent (a `permark mcp` process that said hello and is still running).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AgentSession {
+    #[ts(type = "string")]
+    pub id: SessionId,
+    /// The name the client gave itself (not verified).
+    pub name: String,
+    #[ts(type = "number")]
+    pub started_ms: u64,
+    /// Working folder relative to the project root, `/`-separated; empty = the root.
+    pub folder: String,
+    #[ts(type = "number | null")]
+    pub last_call_ms: Option<u64>,
 }
 
 /// What the status item, its popover and the settings show.
@@ -94,7 +127,8 @@ pub struct AgentStatus {
     /// The switch was turned on for another folder that stood at this path (shown off, with why).
     pub replaced: bool,
     pub server: ServerState,
-    pub clients: Vec<String>,
+    /// Connected agents, the earliest first.
+    pub sessions: Vec<AgentSession>,
     /// Group id -> on (the person's choice, default when not chosen).
     pub groups: BTreeMap<String, bool>,
     /// Groups the project's `.permark/config.toml` denies.
@@ -108,12 +142,30 @@ fn now_ms() -> u64 {
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
+/// Printable text of at most `max` chars (a client's self-declared words, shown in the app).
+fn clean(text: &str, max: usize) -> String {
+    let text: String = text.chars().filter(|c| !c.is_control()).take(max).collect();
+    text.trim().to_owned()
+}
+
+/// What the hub knows of one session.
+struct SessionInfo {
+    name: String,
+    started_ms: u64,
+    folder_rel: String,
+    last_call_ms: Option<u64>,
+    /// Which held connection keeps the session (a hello again replaces it; only that one's end removes it).
+    holder: u64,
+    /// Order of the first hello (milliseconds tie).
+    order: u64,
+}
+
 /// What the server threads and the window's calls share.
 pub struct Hub {
     pub tools: Tools,
     facts: Arc<ProjectFacts>,
     events: PluginEvents,
-    sessions: Mutex<BTreeMap<u64, String>>,
+    sessions: Mutex<BTreeMap<SessionId, SessionInfo>>,
     next: AtomicU64,
     recent: Mutex<VecDeque<RequestRecord>>,
     server: Mutex<ServerState>,
@@ -126,16 +178,32 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// Ends a session when dropped (peer gone or server stopped).
 struct Session {
     hub: Weak<Hub>,
-    id: u64,
+    id: SessionId,
+    holder: u64,
 }
 
 impl Drop for Session {
     fn drop(&mut self) {
         if let Some(hub) = self.hub.upgrade() {
-            lock(&hub.sessions).remove(&self.id);
+            {
+                let mut sessions = lock(&hub.sessions);
+                if sessions
+                    .get(&self.id)
+                    .is_some_and(|s| s.holder == self.holder)
+                {
+                    sessions.remove(&self.id);
+                }
+            }
             hub.changed();
         }
     }
+}
+
+/// The refusal of a request that names no valid session.
+fn no_session() -> Reply<Response> {
+    Reply::Answer(Response::of(Err(ToolError::Invalid(
+        "no valid session id; restart the agent with this version of PerMark".to_owned(),
+    ))))
 }
 
 impl Hub {
@@ -155,37 +223,67 @@ impl Hub {
     /// One request line.
     fn handle(self: &Arc<Self>, request: Request) -> Reply<Response> {
         match request {
-            Request::Hello { client } => {
-                let client: String = client
-                    .chars()
-                    .filter(|c| !c.is_control())
-                    .take(MAX_CLIENT_CHARS)
-                    .collect();
-                let client = if client.trim().is_empty() {
-                    "agent".to_owned()
-                } else {
-                    client.trim().to_owned()
-                };
-                let id = self.next.fetch_add(1, Ordering::Relaxed);
-                lock(&self.sessions).insert(id, client);
+            Request::Hello {
+                session: Some(id),
+                client,
+                folder,
+            } => {
+                let name = Some(clean(&client, MAX_CLIENT_CHARS))
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or_else(|| "agent".to_owned());
+                let holder = self.next.fetch_add(1, Ordering::Relaxed);
+                {
+                    // a call made before the hello still counts as the session's last call
+                    let last_call = lock(&self.recent)
+                        .iter()
+                        .find(|r| r.session == id)
+                        .map(|r| r.at_ms);
+                    let mut sessions = lock(&self.sessions);
+                    // the same process again (its held connection was lost): it keeps its start and last call
+                    let (started_ms, last_call_ms, order) = sessions
+                        .get(&id)
+                        .map_or((now_ms(), last_call, holder), |s| {
+                            (s.started_ms, s.last_call_ms, s.order)
+                        });
+                    sessions.insert(
+                        id.clone(),
+                        SessionInfo {
+                            name,
+                            started_ms,
+                            folder_rel: clean(&folder, MAX_FOLDER_CHARS),
+                            last_call_ms,
+                            holder,
+                            order,
+                        },
+                    );
+                }
                 self.changed();
                 Reply::Hold(
                     Response::Ok { value: Value::Null },
                     Box::new(Session {
                         hub: Arc::downgrade(self),
                         id,
+                        holder,
                     }),
                 )
             }
-            Request::Call { tool, args, .. } => Reply::Answer(Response::of(self.call(&tool, args))),
+            Request::Call {
+                tool,
+                args,
+                session: Some(id),
+                ..
+            } => Reply::Answer(Response::of(self.call(&id, &tool, args))),
+            Request::Hello { session: None, .. } | Request::Call { session: None, .. } => {
+                no_session()
+            }
         }
     }
 
-    /// Runs a tool and notes it for the popover.
+    /// Runs a tool for `session` and notes it for the popover.
     ///
     /// # Errors
     /// What the tool answers.
-    pub fn call(&self, tool: &str, args: Value) -> Result<Value, ToolError> {
+    pub fn call(&self, session: &SessionId, tool: &str, args: Value) -> Result<Value, ToolError> {
         let subject = ["path", "query", "id", "note", "tag"]
             .iter()
             .find_map(|key| args.get(*key).and_then(Value::as_str))
@@ -202,12 +300,17 @@ impl Hub {
             Ok(_) => "ok",
             Err(error) => error.code(),
         };
+        let at_ms = now_ms();
+        if let Some(info) = lock(&self.sessions).get_mut(session) {
+            info.last_call_ms = Some(at_ms);
+        }
         {
             let mut recent = lock(&self.recent);
             recent.push_front(RequestRecord {
+                session: session.clone(),
                 tool: tool.chars().take(40).collect(),
                 subject,
-                at_ms: now_ms(),
+                at_ms,
                 outcome: outcome.to_owned(),
             });
             recent.truncate(RECENT);
@@ -239,7 +342,7 @@ impl Hub {
             enabled: choice.is_on(root),
             replaced: choice.replaced(root),
             server: lock(&self.server).clone(),
-            clients: lock(&self.sessions).values().cloned().collect(),
+            sessions: self.sessions(),
             groups: Group::ALL
                 .into_iter()
                 .map(|g| {
@@ -260,12 +363,29 @@ impl Hub {
         }
     }
 
+    /// Connected agents, the earliest first.
+    fn sessions(&self) -> Vec<AgentSession> {
+        let sessions = lock(&self.sessions);
+        let mut list: Vec<(&SessionId, &SessionInfo)> = sessions.iter().collect();
+        list.sort_by_key(|(_, s)| s.order);
+        list.into_iter()
+            .map(|(id, s)| AgentSession {
+                id: id.clone(),
+                name: s.name.clone(),
+                started_ms: s.started_ms,
+                folder: s.folder_rel.clone(),
+                last_call_ms: s.last_call_ms,
+            })
+            .collect()
+    }
+
     /// Recomputes the project's agent condition and tells the windows.
     pub fn changed(&self) {
-        let condition = match (&*lock(&self.server), lock(&self.sessions).values().next()) {
-            (ServerState::Listening, Some(client)) => AgentCondition::Connected {
-                client: client.clone(),
-            },
+        let first = self.sessions().into_iter().next();
+        let condition = match (&*lock(&self.server), first) {
+            (ServerState::Listening, Some(first)) => {
+                AgentCondition::Connected { client: first.name }
+            }
             (ServerState::Listening, None) => AgentCondition::On,
             (ServerState::Off | ServerState::Error { .. }, _) => AgentCondition::Off,
         };

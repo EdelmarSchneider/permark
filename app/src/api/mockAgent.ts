@@ -4,6 +4,7 @@
 import type { HandOffSessionView } from "./generated/HandOffSessionView";
 import type {
   AgentRequest,
+  AgentSession,
   AgentStatus,
   HandOffPreview,
   AgentWindowContext,
@@ -98,7 +99,7 @@ export function createMockAgent(
   const groups: Record<string, boolean> = Object.fromEntries(
     GROUPS.map((g) => [g, !DEFAULT_OFF.has(g)]),
   );
-  let clients: string[] = [];
+  let sessions: AgentSession[] = [];
   let failure: string | null = null;
   let recent: AgentRequest[] = [];
   const published: AgentWindowContext[] = [];
@@ -111,7 +112,7 @@ export function createMockAgent(
       : failure !== null
         ? { state: "error", reason: failure }
         : { state: "listening" },
-    clients: enabled ? clients : [],
+    sessions: enabled ? sessions : [],
     groups: { ...groups },
     denied: [],
     recent,
@@ -122,7 +123,7 @@ export function createMockAgent(
     "agent.setEnabled": ({ enabled: on }) => {
       enabled = on;
       replaced = false;
-      if (!on) clients = [];
+      if (!on) sessions = [];
       announce();
       return status();
     },
@@ -174,13 +175,13 @@ export function createMockAgent(
       setEnabled: (on) => {
         enabled = on;
         replaced = false;
-        if (!on) clients = [];
+        if (!on) sessions = [];
         announce();
       },
       replaceFolder: () => {
         enabled = false;
         replaced = true;
-        clients = [];
+        sessions = [];
         announce();
       },
       fail: (reason) => {
@@ -188,7 +189,18 @@ export function createMockAgent(
         announce();
       },
       connect: (client) => {
-        clients = client === null ? [] : [client];
+        sessions =
+          client === null
+            ? []
+            : [
+                {
+                  id: "mocksession01",
+                  name: client,
+                  startedMs: Date.now(),
+                  folder: "",
+                  lastCallMs: null,
+                },
+              ];
         announce();
       },
       request: (record) => {

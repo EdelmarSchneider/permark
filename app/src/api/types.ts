@@ -175,6 +175,7 @@ import type { AgentRequest } from "./generated/AgentRequest";
 import type { AgentSection } from "./generated/AgentSection";
 import type { AgentSelection } from "./generated/AgentSelection";
 import type { AgentServerState } from "./generated/AgentServerState";
+import type { AgentSession } from "./generated/AgentSession";
 import type { AgentStatus } from "./generated/AgentStatus";
 import type { AgentWindowContext } from "./generated/AgentWindowContext";
 import type { ActivityEntry } from "./generated/ActivityEntry";
@@ -853,6 +854,7 @@ export type {
   AgentSection,
   AgentSelection,
   AgentServerState,
+  AgentSession,
   AgentStatus,
   AgentWindowContext,
 };

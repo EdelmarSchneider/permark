@@ -353,3 +353,40 @@ fn project_endpoints_differ_per_project_and_profile() {
     assert_ne!(ea, Endpoint::project(&other.profile, &ra).unwrap());
     assert_ne!(ea, Endpoint::app(&dirs).unwrap());
 }
+
+/// Polls `check` for up to 5 s.
+fn within(check: impl Fn() -> bool) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if check() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    false
+}
+
+#[test]
+fn peer_gone_sees_a_closed_peer_and_leaves_waiting_data_to_the_reader() {
+    let (_d, endpoint) = endpoint();
+    let listening = endpoint.listen().unwrap();
+    let client = endpoint.connect().unwrap();
+    let mut server = listening.accept_trusted().unwrap().unwrap();
+    // an open idle peer is not gone
+    assert!(!peer_gone(&client));
+    write_line(
+        &mut server,
+        &Ping {
+            text: "kept".into(),
+        },
+    )
+    .unwrap();
+    // looking twice with data waiting neither reports the peer gone nor eats the line
+    assert!(!peer_gone(&client));
+    assert!(!peer_gone(&client));
+    let line: Ping = read_line_by(&client, Instant::now() + Duration::from_secs(5)).unwrap();
+    assert_eq!(line.text, "kept");
+    assert!(!peer_gone(&client));
+    drop(server);
+    assert!(within(|| peer_gone(&client)), "a closed peer is seen");
+}

@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use crate::context::WindowContext;
 use crate::perms;
 use crate::server::{Request, Response};
+use crate::session::SessionId;
 use crate::ToolError;
 
 /// How long `open` waits for the app it started to listen.
@@ -40,6 +41,18 @@ fn dunce_canonical(path: &Path) -> Option<PathBuf> {
     Root::open(path).ok().map(|root| root.path().to_path_buf())
 }
 
+/// `working_folder` relative to `root`, `/`-separated (`""` = the root itself).
+fn folder_in(root: &Root, working_folder: &Path) -> Option<String> {
+    let start = dunce_canonical(working_folder)?;
+    let rest = start.strip_prefix(root.path()).ok()?;
+    Some(
+        rest.components()
+            .map(|c| c.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/"),
+    )
+}
+
 /// The project an agent works in, and how to reach it.
 pub struct Agent {
     project: Option<Project>,
@@ -48,6 +61,10 @@ pub struct Agent {
     /// The held connection that shows the app an agent is here (dropping it ends the session).
     session: Mutex<Option<Box<dyn Send>>>,
     client: Mutex<String>,
+    /// Who this process is to the app, drawn once at start.
+    id: SessionId,
+    /// The working folder relative to the project root, `/`-separated (`""` = the root or no project).
+    folder: String,
 }
 
 struct Project {
@@ -69,13 +86,31 @@ impl Agent {
             endpoint: Endpoint::project(&dirs.profile, &root).map_err(|e| e.to_string()),
             root,
         });
+        let folder = project
+            .as_ref()
+            .and_then(|p| folder_in(&p.root, working_folder))
+            .unwrap_or_default();
         Self {
             project,
             launcher,
             launch_wait: LAUNCH_WAIT,
             session: Mutex::new(None),
             client: Mutex::new("agent".to_owned()),
+            id: SessionId::draw(),
+            folder,
         }
+    }
+
+    /// This process's session id.
+    #[must_use]
+    pub fn session_id(&self) -> &SessionId {
+        &self.id
+    }
+
+    /// The working folder relative to the project root (`""` = the root).
+    #[must_use]
+    pub fn folder(&self) -> &str {
+        &self.folder
     }
 
     #[must_use]
@@ -118,7 +153,9 @@ impl Agent {
             return;
         }
         let hello = Request::Hello {
+            session: Some(self.id.clone()),
             client: lock(&self.client).clone(),
+            folder: self.folder.clone(),
         };
         if let Ok((Response::Ok { .. }, stream)) =
             ipc_local::open_session::<_, Response>(endpoint, &hello)
@@ -137,6 +174,7 @@ impl Agent {
             tool: tool.to_owned(),
             args: args.clone(),
             client: lock(&self.client).clone(),
+            session: Some(self.id.clone()),
         };
         match ipc_local::request::<_, Response>(endpoint, &request)? {
             Response::Ok { value } => Ok(Ok(value)),

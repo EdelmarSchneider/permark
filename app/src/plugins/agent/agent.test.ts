@@ -139,7 +139,13 @@ describe("the agent store", () => {
     const { api, store, stop } = await setup();
     await store.setEnabled(true);
     api.probe.plugins.agent.connect("Claude Code");
-    api.probe.plugins.agent.request({ tool: "search", subject: "retry", atMs: 1, outcome: "ok" });
+    api.probe.plugins.agent.request({
+      session: "mocksession01",
+      tool: "search",
+      subject: "retry",
+      atMs: 1,
+      outcome: "ok",
+    });
     await settle();
     expect(store.connected).toEqual(["Claude Code"]);
     expect(store.status?.recent[0]?.tool).toBe("search");
