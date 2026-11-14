@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use permark_core::fsx::file_identity;
+use permark_core::fsx::FolderIdentity;
 use permark_core::state::{Loaded, StateData, StateStore};
 use serde::{Deserialize, Serialize};
 
@@ -79,7 +79,7 @@ pub struct ProjectChoice {
     /// created | cloned again at the same path must not inherit the person's choice. Absent (written before, or the
     /// identity was unknown then) -> the path alone decides.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub folder: Option<FolderId>,
+    pub folder: Option<FolderIdentity>,
 }
 
 // `folder` is optional with a default: files written before it load as they are, so the format version stays.
@@ -87,74 +87,30 @@ impl StateData for ProjectChoice {
     const VERSION: u32 = 1;
 }
 
-/// A folder's identity on its volume (`fsx::file_identity`): kept across a rename on the same volume, new for a
-/// folder created again at the same path. Compare with [`FolderId::same_folder`], not `==`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FolderId {
-    pub volume: u64,
-    pub file: u64,
-    /// Creation time, nanoseconds since the UNIX epoch, when the platform gives one. Unix file systems (ext4) may hand
-    /// a folder deleted and created again at once the same inode, so volume + file alone can match a new folder;
-    /// its creation time differs. Absent in grants recorded by earlier builds.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub created: Option<u64>,
-}
-
-impl FolderId {
-    /// `None`: unknown (gone, refused, or a volume with no real ids).
-    #[must_use]
-    pub fn of(root: &Path) -> Option<Self> {
-        let (volume, file) = file_identity(root)?;
-        // `symlink_metadata`: a link is named itself, as `file_identity` does
-        let created = std::fs::symlink_metadata(root)
-            .and_then(|meta| meta.created())
-            .ok()
-            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-            .and_then(|since| u64::try_from(since.as_nanos()).ok());
-        Some(Self {
-            volume,
-            file,
-            created,
-        })
-    }
-
-    /// Volume + file match, and the creation time too when both sides have one (one side without it: an earlier
-    /// build recorded it, or the platform does not give it now -> volume + file decide).
-    #[must_use]
-    pub fn same_folder(self, other: Self) -> bool {
-        self.volume == other.volume
-            && self.file == other.file
-            && match (self.created, other.created) {
-                (Some(a), Some(b)) => a == b,
-                _ => true,
-            }
-    }
-}
-
 impl ProjectChoice {
     /// Whether agents may be answered for the folder at `root` now: the switch on, for this very folder. Nothing
     /// recorded when it was turned on -> the path alone decides.
     #[must_use]
     pub fn is_on(&self, root: &Path) -> bool {
-        self.on_with(FolderId::of(root))
+        self.on_with(FolderIdentity::of(root))
     }
 
     /// The switch was turned on for another folder that stood at this path, or for a folder whose identity cannot be
     /// read now (the app shows it off, with why; the person turns it on again).
     #[must_use]
     pub fn replaced(&self, root: &Path) -> bool {
-        self.replaced_with(FolderId::of(root))
+        self.replaced_with(FolderIdentity::of(root))
     }
 
-    fn on_with(&self, current: Option<FolderId>) -> bool {
+    fn on_with(&self, current: Option<FolderIdentity>) -> bool {
         self.enabled && !self.replaced_with(current)
     }
 
-    fn replaced_with(&self, current: Option<FolderId>) -> bool {
+    fn replaced_with(&self, current: Option<FolderIdentity>) -> bool {
         // recorded but unreadable now fails closed: the folder can no longer be shown to be the one connected
         self.enabled
             && match (self.folder, current) {
-                (Some(then), Some(now)) => !then.same_folder(now),
+                (Some(then), Some(now)) => !then.same(now),
                 (Some(_), None) => true,
                 (None, _) => false,
             }
@@ -227,7 +183,7 @@ pub fn adopt_folder(store: &StateStore, root: &Path) {
     if !choice.enabled || choice.folder.is_some() {
         return;
     }
-    let Some(folder) = FolderId::of(root) else {
+    let Some(folder) = FolderIdentity::of(root) else {
         return;
     };
     choice.folder = Some(folder);
@@ -311,7 +267,7 @@ mod tests {
         assert_eq!(clean(&raw).len(), 1);
     }
 
-    fn on_for(folder: Option<FolderId>) -> ProjectChoice {
+    fn on_for(folder: Option<FolderIdentity>) -> ProjectChoice {
         ProjectChoice {
             enabled: true,
             folder,
@@ -320,11 +276,11 @@ mod tests {
     }
 
     #[allow(clippy::unnecessary_wraps)] // reads as the field it fills
-    fn id(file: u64, created: Option<u64>) -> Option<FolderId> {
-        Some(FolderId {
+    fn id(file: u64, born: Option<u64>) -> Option<FolderIdentity> {
+        Some(FolderIdentity {
             volume: 7,
             file,
-            created,
+            born,
         })
     }
 
@@ -368,11 +324,23 @@ mod tests {
     }
 
     #[test]
-    fn a_grant_recorded_without_a_creation_time_loads_and_matches() {
-        let old: FolderId = serde_json::from_str(r#"{"volume":7,"file":1}"#).unwrap();
-        assert_eq!(old.created, None);
-        assert!(on_for(Some(old)).on_with(id(1, Some(5))));
-        assert!(!serde_json::to_string(&old).unwrap().contains("created"));
+    fn grants_recorded_by_earlier_builds_load_and_compare_as_before() {
+        let old: ProjectChoice =
+            serde_json::from_str(r#"{"enabled":true,"folder":{"volume":7,"file":1,"created":3}}"#)
+                .unwrap();
+        assert_eq!(old.folder, id(1, Some(3)));
+        assert!(old.on_with(id(1, Some(3))));
+        assert!(old.replaced_with(id(1, Some(4))), "another creation time");
+        assert!(old.on_with(id(1, None)));
+        assert!(serde_json::to_string(&old)
+            .unwrap()
+            .contains(r#""folder":{"volume":7,"file":1,"created":3}"#));
+        let older: ProjectChoice =
+            serde_json::from_str(r#"{"enabled":true,"folder":{"volume":7,"file":1}}"#).unwrap();
+        assert_eq!(older.folder, id(1, None));
+        assert!(older.on_with(id(1, Some(5))));
+        assert!(older.replaced_with(id(2, Some(5))));
+        assert!(!serde_json::to_string(&older).unwrap().contains("created"));
     }
 
     #[test]
@@ -380,11 +348,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let first = dir.path().join("proj");
         std::fs::create_dir(&first).unwrap();
-        let Some(id) = FolderId::of(&first) else {
+        let Some(id) = FolderIdentity::of(&first) else {
             return; // a volume without ids: nothing to compare
         };
         #[cfg(windows)]
-        assert!(id.created.is_some(), "NTFS keeps creation times");
+        assert!(id.born.is_some(), "NTFS keeps creation times");
         let choice = on_for(Some(id));
         assert!(choice.is_on(&first));
         let moved = dir.path().join("moved");
@@ -434,7 +402,7 @@ mod tests {
     fn adopting_records_the_folder_once_and_only_for_a_switch_that_is_on() {
         let dir = tempfile::tempdir().unwrap();
         let (store, root) = store_in(dir.path());
-        let Some(id) = FolderId::of(&root) else {
+        let Some(id) = FolderIdentity::of(&root) else {
             return;
         };
         adopt_folder(&store, &root);
@@ -446,7 +414,7 @@ mod tests {
         adopt_folder(&store, &root);
         assert_eq!(load(&store).folder, Some(id));
         // another folder recorded already: never written over (that one stays replaced)
-        let other = FolderId {
+        let other = FolderIdentity {
             file: id.file ^ 1,
             ..id
         };

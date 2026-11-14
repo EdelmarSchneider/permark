@@ -39,6 +39,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use permark_core::conditions::Requirement;
+use permark_core::fsx::FolderIdentity;
 use permark_core::ipc_local::Endpoint;
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
@@ -210,7 +211,7 @@ fn set_enabled(hub: &Hub, enabled: bool) -> Result<(), IpcError> {
     }
     choice.enabled = enabled;
     choice.folder = if enabled {
-        perms::FolderId::of(hub.tools.vault_root().path())
+        FolderIdentity::of(hub.tools.vault_root().path())
     } else {
         None
     };

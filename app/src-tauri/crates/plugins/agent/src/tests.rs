@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use permark_core::conditions::{AgentCondition, Distribution};
 use permark_core::events::{CoreEvent, EventSink};
+use permark_core::fsx::FolderIdentity;
 use permark_core::ipc_local::{self, Endpoint};
 use permark_core::notes::{SharedNote, SharedNotes, SharedNotesApi};
 use permark_core::organizing::{
@@ -30,7 +31,7 @@ use serde_json::{json, Value};
 use crate::cli::{Agent, Composed};
 use crate::context::{Mode, Selection, WindowContext};
 use crate::live::Live;
-use crate::perms::{self, FolderId, Group, ProjectChoice, PROJECT_FILE};
+use crate::perms::{self, Group, ProjectChoice, PROJECT_FILE};
 use crate::server::{Request, Response};
 use crate::tools::Tools;
 use crate::ToolError;
@@ -1298,11 +1299,11 @@ impl Fx {
 #[test]
 fn a_folder_created_again_at_the_same_path_does_not_inherit_the_connection() {
     let mut fx = fx();
-    let Some(now) = FolderId::of(&fx.root) else {
+    let Some(now) = FolderIdentity::of(&fx.root) else {
         return; // a volume without ids: the path alone decides, as before
     };
     // the person connected the folder that stood at this path before
-    let before = FolderId {
+    let before = FolderIdentity {
         file: now.file ^ 1,
         ..now
     };
@@ -1365,7 +1366,7 @@ fn a_folder_created_again_at_the_same_path_does_not_inherit_the_connection() {
 #[test]
 fn an_earlier_grant_gets_the_folder_only_when_the_app_opens_the_project() {
     let mut fx = fx();
-    let Some(now) = FolderId::of(&fx.root) else {
+    let Some(now) = FolderIdentity::of(&fx.root) else {
         return;
     };
     let file = fx
@@ -1407,14 +1408,14 @@ fn a_replaced_folder_inside_a_connected_one_never_falls_through_to_the_parent() 
     let fx = fx();
     fx.on();
     let child = fx.root.join("docs");
-    let Some(now) = FolderId::of(&child) else {
+    let Some(now) = FolderIdentity::of(&child) else {
         return;
     };
     set_child_choice(
         &fx,
         &ProjectChoice {
             enabled: true,
-            folder: Some(FolderId {
+            folder: Some(FolderIdentity {
                 file: now.file ^ 1,
                 ..now
             }),
