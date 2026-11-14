@@ -255,13 +255,27 @@ impl Drop for Flag {
 }
 
 fn session_server(endpoint: &Endpoint, released: &Arc<AtomicBool>) -> Server {
+    session_server_ending(endpoint, released, &Arc::new(AtomicBool::new(false)))
+}
+
+/// Holds every "hello"; setting `end` lets every held connection go.
+fn session_server_ending(
+    endpoint: &Endpoint,
+    released: &Arc<AtomicBool>,
+    end: &Arc<AtomicBool>,
+) -> Server {
     let released = Arc::clone(released);
+    let end = Arc::clone(end);
     Server::spawn_with(endpoint.listen().unwrap(), move |ping: Ping| {
         let answer = Ping {
             text: format!("{}!", ping.text),
         };
         if ping.text == "hello" {
-            Reply::Hold(answer, Box::new(Flag(Arc::clone(&released))))
+            Reply::Hold(
+                answer,
+                Box::new(Flag(Arc::clone(&released))),
+                Arc::clone(&end),
+            )
         } else {
             Reply::Answer(answer)
         }
@@ -296,6 +310,35 @@ fn a_held_session_ends_when_the_peer_leaves() {
         std::thread::sleep(Duration::from_millis(20));
     }
     assert!(released.load(Ordering::Acquire));
+}
+
+#[test]
+fn the_end_flag_of_a_held_session_closes_it_from_the_server_side() {
+    let (_d, endpoint) = endpoint();
+    let released = Arc::new(AtomicBool::new(false));
+    let end = Arc::new(AtomicBool::new(false));
+    let server = session_server_ending(&endpoint, &released, &end);
+    let (_answer, stream): (Ping, _) = open_session(
+        &endpoint,
+        &Ping {
+            text: "hello".into(),
+        },
+    )
+    .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!released.load(Ordering::Acquire));
+    assert!(!peer_gone(&stream));
+    end.store(true, Ordering::Release);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !(released.load(Ordering::Acquire) && peer_gone(&stream)) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(released.load(Ordering::Acquire), "guard dropped");
+    assert!(peer_gone(&stream), "the client sees its connection closed");
+    // the server keeps answering others
+    let other: Ping = request(&endpoint, &Ping { text: "a".into() }).unwrap();
+    assert_eq!(other.text, "a!");
+    drop(server);
 }
 
 #[test]

@@ -85,6 +85,11 @@ pub enum ToolError {
     /// (fail closed, `projects.md` §5.2).
     #[error("PerMark is still reading this folder")]
     Busy,
+    /// The person ended this session in the app: its id is refused until the agent process restarts (a new id).
+    #[error(
+        "the person disconnected this agent from this project; restarting the agent connects again"
+    )]
+    Disconnected,
     #[error("{0}")]
     Failed(String),
 }
@@ -99,6 +104,7 @@ impl ToolError {
             Self::Invalid(_) => "invalid",
             Self::AppClosed => "appClosed",
             Self::Busy => "busy",
+            Self::Disconnected => "disconnected",
             Self::Failed(_) => "error",
         }
     }
@@ -119,6 +125,7 @@ impl ToolError {
             "notFound" => Self::NotFound(after("not found: ")),
             "invalid" => Self::Invalid(after("invalid: ")),
             "busy" => Self::Busy,
+            "disconnected" => Self::Disconnected,
             _ => Self::Failed(message.to_owned()),
         }
     }
@@ -151,6 +158,17 @@ struct EnabledArgs {
 struct GroupArgs {
     group: String,
     on: bool,
+}
+
+#[derive(Deserialize)]
+struct SessionArgs {
+    id: String,
+}
+
+impl SessionArgs {
+    fn id(&self) -> Result<session::SessionId, IpcError> {
+        session::SessionId::parse(&self.id).ok_or_else(|| invalid("id"))
+    }
 }
 
 #[derive(Deserialize)]
@@ -281,6 +299,22 @@ impl Plugin for AgentPlugin {
                 )?;
                 h.changed();
                 sync_context_file(&h, true);
+                Ok(h.status())
+            }),
+        ));
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "disconnect",
+            typed(move |args: SessionArgs, _| {
+                h.disconnect(&args.id()?);
+                Ok(h.status())
+            }),
+        ));
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "undoDisconnect",
+            typed(move |args: SessionArgs, _| {
+                h.undo_disconnect(&args.id()?);
                 Ok(h.status())
             }),
         ));

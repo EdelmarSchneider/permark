@@ -1184,6 +1184,118 @@ fn a_session_said_hello_again_outlives_its_earlier_connection() {
 }
 
 #[test]
+fn disconnect_ends_one_session_and_refuses_its_id_until_undone() {
+    let fx = fx();
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    let endpoint = fx.endpoint();
+    let gone = SessionId::draw();
+    let hello_as = |id: &SessionId| Request::Hello {
+        session: Some(id.clone()),
+        client: "a".to_owned(),
+        folder: String::new(),
+    };
+    let (_, stream): (Response, _) = ipc_local::open_session(&endpoint, &hello_as(&gone)).unwrap();
+    let other = Agent::discover(&fx.dirs, &fx.root, no_launch());
+    other.hello("Codex");
+    let count = || {
+        fx.rpc("status", Value::Null).unwrap()["sessions"]
+            .as_array()
+            .map_or(0, Vec::len)
+    };
+    assert!(wait_for(|| count() == 2));
+    let status = fx
+        .rpc("disconnect", json!({ "id": gone.as_str() }))
+        .unwrap();
+    let ids: Vec<Value> = status["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].clone())
+        .collect();
+    assert_eq!(ids, [json!(other.session_id().as_str())], "only that one");
+    // the app closes the held connection itself
+    assert!(wait_for(|| ipc_local::peer_gone(&stream)));
+    let call_as = |id: &SessionId| Request::Call {
+        tool: "map".to_owned(),
+        args: Value::Null,
+        client: String::new(),
+        session: Some(id.clone()),
+    };
+    let disconnected = |answer: &Response| matches!(answer, Response::Error { code, .. } if code == "disconnected");
+    let again: Response = ipc_local::request(&endpoint, &hello_as(&gone)).unwrap();
+    assert!(disconnected(&again), "{again:?}");
+    let answer: Response = ipc_local::request(&endpoint, &call_as(&gone)).unwrap();
+    assert!(disconnected(&answer), "{answer:?}");
+    assert_eq!(count(), 1, "a refused hello opens nothing");
+    // the other agent keeps working
+    other.call("map", &Value::Null).unwrap();
+    // switching off and on keeps the refusal
+    fx.rpc("setEnabled", json!({ "enabled": false })).unwrap();
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    let answer: Response = ipc_local::request(&endpoint, &call_as(&gone)).unwrap();
+    assert!(disconnected(&answer), "{answer:?}");
+    // Undo lifts it: the next hello pairs again
+    fx.rpc("undoDisconnect", json!({ "id": gone.as_str() }))
+        .unwrap();
+    let (back, _stream): (Response, _) =
+        ipc_local::open_session(&endpoint, &hello_as(&gone)).unwrap();
+    assert!(matches!(back, Response::Ok { .. }));
+    assert!(wait_for(|| fx.rpc("status", Value::Null).unwrap()
+        ["sessions"]
+        .as_array()
+        .is_some_and(|s| s.iter().any(|s| s["id"] == gone.as_str()))));
+    assert!(fx.rpc("disconnect", json!({ "id": "BAD" })).is_err());
+}
+
+#[test]
+fn a_disconnected_agent_is_refused_opens_no_session_and_pairs_again_after_undo() {
+    let fx = fx();
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    let agent = Agent::discover(&fx.dirs, &fx.root, no_launch());
+    agent.hello("Claude Code");
+    assert!(wait_for(|| !session_of(
+        &fx.rpc("status", Value::Null).unwrap(),
+        &agent
+    )
+    .is_null()));
+    fx.rpc("disconnect", json!({ "id": agent.session_id().as_str() }))
+        .unwrap();
+    assert!(!agent.is_disconnected());
+    assert_eq!(
+        agent.call("map", &Value::Null),
+        Err(ToolError::Disconnected)
+    );
+    assert!(agent.is_disconnected());
+    // while refused, no session is opened
+    agent.ensure_session();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(session_of(&fx.rpc("status", Value::Null).unwrap(), &agent).is_null());
+    assert_eq!(
+        agent.call("map", &Value::Null),
+        Err(ToolError::Disconnected)
+    );
+    // the person undoes it: the next call goes through and pairs again
+    fx.rpc(
+        "undoDisconnect",
+        json!({ "id": agent.session_id().as_str() }),
+    )
+    .unwrap();
+    agent.call("map", &Value::Null).unwrap();
+    assert!(!agent.is_disconnected());
+    assert!(wait_for(|| !session_of(
+        &fx.rpc("status", Value::Null).unwrap(),
+        &agent
+    )
+    .is_null()));
+    // a hello refused tells the client too
+    let late = Agent::discover(&fx.dirs, &fx.root, no_launch());
+    fx.rpc("disconnect", json!({ "id": late.session_id().as_str() }))
+        .unwrap();
+    late.hello("x");
+    assert!(late.is_disconnected());
+}
+
+#[test]
 fn requests_without_a_valid_session_id_are_refused() {
     let fx = fx();
     fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
@@ -1644,6 +1756,7 @@ fn wire_errors_come_back_as_the_same_errors() {
         ToolError::NotFound("a b".into()),
         ToolError::Invalid("x".into()),
         ToolError::Failed("boom".into()),
+        ToolError::Disconnected,
         ToolError::Denied {
             group: crate::perms::Group::Find,
             first_ask: false,

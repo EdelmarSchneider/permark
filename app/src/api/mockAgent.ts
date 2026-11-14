@@ -19,6 +19,8 @@ type Handlers = Pick<
   | "agent.status"
   | "agent.setEnabled"
   | "agent.setGroup"
+  | "agent.disconnect"
+  | "agent.undoDisconnect"
   | "agent.setDefaults"
   | "agent.publish"
   | "agent.setup"
@@ -29,8 +31,10 @@ type Handlers = Pick<
 export type AgentProbe = {
   /** What the window published, oldest first. */
   published: AgentWindowContext[];
-  /** A client connects (or `null`: it leaves). */
-  connect(client: string | null): void;
+  /** A client connects (or `null`: every one leaves); `id` names another session (more than one agent). */
+  connect(client: string | null, id?: string): void;
+  /** Sessions the person disconnected (refused until undone). */
+  refused: Set<string>;
   /** An agent asked something. */
   request(record: AgentRequest): void;
   /** The switch turned from outside the window (another window, the palette of another view). */
@@ -100,6 +104,7 @@ export function createMockAgent(
     GROUPS.map((g) => [g, !DEFAULT_OFF.has(g)]),
   );
   let sessions: AgentSession[] = [];
+  const refused = new Set<string>();
   let failure: string | null = null;
   let recent: AgentRequest[] = [];
   const published: AgentWindowContext[] = [];
@@ -129,6 +134,17 @@ export function createMockAgent(
     },
     "agent.setGroup": ({ group, on }) => {
       if (GROUPS.includes(group)) groups[group] = on;
+      announce();
+      return status();
+    },
+    "agent.disconnect": ({ id }) => {
+      refused.add(id);
+      sessions = sessions.filter((s) => s.id !== id);
+      announce();
+      return status();
+    },
+    "agent.undoDisconnect": ({ id }) => {
+      refused.delete(id);
       announce();
       return status();
     },
@@ -188,21 +204,21 @@ export function createMockAgent(
         failure = reason;
         announce();
       },
-      connect: (client) => {
-        sessions =
-          client === null
-            ? []
-            : [
-                {
-                  id: "mocksession01",
-                  name: client,
-                  startedMs: Date.now(),
-                  folder: "",
-                  lastCallMs: null,
-                },
-              ];
+      connect: (client, id = "mocksession01") => {
+        if (client === null) sessions = [];
+        else if (!refused.has(id)) {
+          const session = {
+            id,
+            name: client,
+            startedMs: Date.now(),
+            folder: "",
+            lastCallMs: null,
+          };
+          sessions = [...sessions.filter((s) => s.id !== id), session];
+        }
         announce();
       },
+      refused,
       request: (record) => {
         recent = [record, ...recent].slice(0, 8);
         announce();

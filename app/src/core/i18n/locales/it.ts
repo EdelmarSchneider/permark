@@ -1480,6 +1480,23 @@ export default {
   "agent.status.error": "Agente: non disponibile",
   "agent.status.hintIdle": "Connessione con gli agenti attiva — nessun agente collegato",
   "agent.status.hintConnected": "Agente collegato: {client}",
+  "agent.sessions.title": "Agenti collegati",
+  "agent.sessions.started": "Avviato {when}",
+  "agent.sessions.root": "radice del progetto",
+  "agent.sessions.last": "Ultima richiesta: {tool} · {when}",
+  "agent.sessions.lastAt": "Ultima richiesta: {when}",
+  "agent.sessions.noRequests": "Ancora nessuna richiesta",
+  "agent.sessions.disconnect": "Scollega",
+  "agent.sessions.disconnectAria": "Scollega {name}",
+  "agent.sessions.disconnectHint":
+    "Toglie l'accesso a questo agente finché non viene riavviato. Disattiva ferma tutti gli agenti.",
+  "agent.sessions.disconnected": "{name} scollegato.",
+  "agent.sessions.empty":
+    "Un agente si collega quando viene avviato nella cartella di questo progetto.",
+  "agent.status.many.one": "{n} agente",
+  "agent.status.many.other": "{n} agenti",
+  "agent.status.hintMany.one": "{n} agente collegato",
+  "agent.status.hintMany.other": "{n} agenti collegati",
   "agent.popover.idle": "Attiva — in attesa di un agente.",
   "agent.popover.connected": "Collegato: {clients}",
   "agent.popover.inUse":

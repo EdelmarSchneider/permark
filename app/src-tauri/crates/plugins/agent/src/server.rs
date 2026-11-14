@@ -2,8 +2,8 @@
 //! stops listening. A session (a `permark mcp` that said hello) is held open; while one is, the project is
 //! `Connected`.
 
-use std::collections::{BTreeMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -158,6 +158,8 @@ struct SessionInfo {
     holder: u64,
     /// Order of the first hello (milliseconds tie).
     order: u64,
+    /// Set = the server lets the held connection go (the person disconnected the session).
+    end: Arc<AtomicBool>,
 }
 
 /// What the server threads and the window's calls share.
@@ -166,6 +168,9 @@ pub struct Hub {
     facts: Arc<ProjectFacts>,
     events: PluginEvents,
     sessions: Mutex<BTreeMap<SessionId, SessionInfo>>,
+    /// Sessions the person disconnected: refused until the agent process restarts (a new id) or the person undoes
+    /// it. Kept while the switch is off and on again, so turning it back on never lets them in silently.
+    refused: Mutex<BTreeSet<SessionId>>,
     next: AtomicU64,
     recent: Mutex<VecDeque<RequestRecord>>,
     server: Mutex<ServerState>,
@@ -214,6 +219,7 @@ impl Hub {
             facts,
             events,
             sessions: Mutex::new(BTreeMap::new()),
+            refused: Mutex::new(BTreeSet::new()),
             next: AtomicU64::new(1),
             recent: Mutex::new(VecDeque::new()),
             server: Mutex::new(ServerState::Off),
@@ -232,13 +238,18 @@ impl Hub {
                     .filter(|n| !n.is_empty())
                     .unwrap_or_else(|| "agent".to_owned());
                 let holder = self.next.fetch_add(1, Ordering::Relaxed);
+                let end = Arc::new(AtomicBool::new(false));
                 {
                     // a call made before the hello still counts as the session's last call
                     let last_call = lock(&self.recent)
                         .iter()
                         .find(|r| r.session == id)
                         .map(|r| r.at_ms);
+                    // looked at under the sessions lock: a disconnect in between cannot leave a refused id listed
                     let mut sessions = lock(&self.sessions);
+                    if lock(&self.refused).contains(&id) {
+                        return Reply::Answer(Response::of(Err(ToolError::Disconnected)));
+                    }
                     // the same process again (its held connection was lost): it keeps its start and last call
                     let (started_ms, last_call_ms, order) = sessions
                         .get(&id)
@@ -254,6 +265,7 @@ impl Hub {
                             last_call_ms,
                             holder,
                             order,
+                            end: Arc::clone(&end),
                         },
                     );
                 }
@@ -265,6 +277,7 @@ impl Hub {
                         id,
                         holder,
                     }),
+                    end,
                 )
             }
             Request::Call {
@@ -284,6 +297,10 @@ impl Hub {
     /// # Errors
     /// What the tool answers.
     pub fn call(&self, session: &SessionId, tool: &str, args: Value) -> Result<Value, ToolError> {
+        // refused before anything runs or is recorded
+        if lock(&self.refused).contains(session) {
+            return Err(ToolError::Disconnected);
+        }
         let subject = ["path", "query", "id", "note", "tag"]
             .iter()
             .find_map(|key| args.get(*key).and_then(Value::as_str))
@@ -317,6 +334,24 @@ impl Hub {
         }
         self.changed();
         result
+    }
+
+    /// The person ends one session: its held connection closes and its id is refused from now on.
+    pub fn disconnect(&self, id: &SessionId) {
+        {
+            let mut sessions = lock(&self.sessions);
+            lock(&self.refused).insert(id.clone());
+            if let Some(info) = sessions.remove(id) {
+                info.end.store(true, Ordering::Release);
+            }
+        }
+        self.changed();
+    }
+
+    /// Lifts a refusal (Undo): that agent's next hello pairs again.
+    pub fn undo_disconnect(&self, id: &SessionId) {
+        lock(&self.refused).remove(id);
+        self.changed();
     }
 
     /// The first time resolving is asked for and is off: the person is offered it once.

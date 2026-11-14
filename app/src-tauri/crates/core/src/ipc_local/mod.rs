@@ -507,9 +507,10 @@ const READ_POLL: Duration = Duration::from_millis(5);
 pub enum Reply<Resp> {
     /// Answer, then close.
     Answer(Resp),
-    /// Answer, then keep the connection open until the peer leaves or the server stops; `guard` is dropped then
-    /// (a session: the peer's presence is the point, nothing more is read).
-    Hold(Resp, Box<dyn Send>),
+    /// Answer, then keep the connection open until the peer leaves, the server stops or `end` turns true (the
+    /// server's side lets this one connection go); `guard` is dropped then (a session: the peer's presence is the
+    /// point, nothing more is read).
+    Hold(Resp, Box<dyn Send>, Arc<AtomicBool>),
 }
 
 /// One look at a stream that must not block.
@@ -796,24 +797,24 @@ fn serve_one<Req, Resp>(
         Reply::Answer(answer) => {
             let _ = write_line(&mut writer, &answer);
         }
-        Reply::Hold(answer, guard) => {
+        Reply::Hold(answer, guard, end) => {
             let session = sessions.take();
             if write_line(&mut writer, &answer).is_err() || session.is_none() {
                 return;
             }
-            hold(stream, stop);
+            hold(stream, stop, &end);
             drop(guard);
         }
     }
 }
 
-/// Waits until the peer leaves (EOF | error) or the server stops; anything the peer sends is ignored.
-fn hold(stream: &Stream, stop: &AtomicBool) {
+/// Waits until the peer leaves (EOF | error), the server stops or `end` is set; anything the peer sends is ignored.
+fn hold(stream: &Stream, stop: &AtomicBool, end: &AtomicBool) {
     if poll_mode(stream, true).is_err() {
         return;
     }
     let mut sink = [0_u8; 256];
-    while !stop.load(Ordering::Acquire) {
+    while !stop.load(Ordering::Acquire) && !end.load(Ordering::Acquire) {
         match poll_read(stream, &mut sink) {
             Polled::Closed => return,
             Polled::Data(_) => {}

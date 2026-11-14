@@ -20,6 +20,8 @@ const { contributions } = await import("../../core/plugins/instance.svelte");
 const { conditions } = await import("../../core/conditions/context.svelte");
 const { agent } = await import("./store.svelte");
 const { AGENT_PAGE } = await import("./offer.svelte");
+const { default: AgentStatus } = await import("./AgentStatus.svelte");
+const { t } = await import("../../core/i18n");
 
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
 const store = windowStore;
@@ -85,6 +87,7 @@ afterEach(async () => {
   if (agent.enabled) await agent.setEnabled(false);
   mock.probe.plugins.agent.fail(null);
   mock.probe.plugins.agent.connect(null);
+  mock.probe.plugins.agent.refused.clear();
   await store.changeSetting({ key: "pluginEnabled", value: { plugin: "agent", enabled: null } });
 });
 
@@ -132,7 +135,7 @@ describe("Settings > AI agents", () => {
     await until(() => text(target).includes("claude mcp add permark --"), "the command");
     const copy = button("Copy");
     await until(() => document.activeElement === copy, "focus on the first Copy");
-    expect(text(target.querySelector('[role="status"]'))).toBe(
+    expect(Array.from(target.querySelectorAll('[role="status"]')).map(text)).toContain(
       "Sharing is on. Connect your agent with the steps below.",
     );
     // more ways, folded
@@ -299,5 +302,95 @@ describe("the gear popover row", () => {
     component = mount(SettingsPopover, { target, props: { store, close: () => {} } });
     await tick();
     expect(text(target)).not.toContain("AI agents");
+  });
+});
+
+describe("the connected agents", () => {
+  const disconnectOf = (name: string): HTMLButtonElement => {
+    const found = target.querySelector<HTMLButtonElement>(
+      `button[aria-label="Disconnect ${name}"]`,
+    );
+    if (!found) throw new Error(`no Disconnect for ${name}`);
+    return found;
+  };
+
+  it("lists each agent; Disconnect ends one, leaves an Undo notice and moves focus along the list", async () => {
+    await open();
+    mountPage(AGENT_PAGE);
+    await agent.setEnabled(true);
+    await until(() => text(target).includes(t("agent.sessions.empty")), "the empty list");
+    const probe = mock.probe.plugins.agent;
+    probe.connect("Claude Code", "sessionaaaa");
+    probe.connect("Claude Code", "sessionbbbb");
+    probe.connect("Codex", "sessioncccc");
+    probe.request({
+      session: "sessioncccc",
+      tool: "search",
+      subject: null,
+      atMs: Date.now(),
+      outcome: "ok",
+    });
+    await until(
+      () => target.querySelectorAll("button[data-disconnect]").length === 3,
+      "three rows",
+    );
+    const names = Array.from(target.querySelectorAll(".agents .name")).map(text);
+    expect(names).toEqual(["Claude Code", "Claude Code · 2", "Codex"]);
+    expect(text(target)).toContain("Started now · project root");
+    expect(text(target)).toContain("Last request: search · now");
+    expect(text(target)).toContain("No requests yet");
+    expect(target.querySelector('[role="region"][aria-label="Connected agents"]')).not.toBeNull();
+    // the second one goes: the next row's button takes the focus
+    disconnectOf("Claude Code · 2").click();
+    await until(() => document.activeElement === disconnectOf("Codex"), "focus on the next row");
+    expect(probe.refused.has("sessionbbbb")).toBe(true);
+    expect(agent.sessions.map((s) => s.id)).toEqual(["sessionaaaa", "sessioncccc"]);
+    const notice = windowStore.notices.at(-1);
+    expect(notice?.kind === "action" && notice.key).toBe("agent.disconnect.sessionbbbb");
+    expect(notice?.kind === "action" && notice.text).toBe("Claude Code · 2 disconnected.");
+    expect(text(target.querySelector('.agents [role="status"]'))).toBe(
+      "Claude Code · 2 disconnected.",
+    );
+    // the last row goes: the previous one; then the empty text
+    disconnectOf("Codex").click();
+    await until(
+      () => document.activeElement === disconnectOf("Claude Code"),
+      "focus on the previous row",
+    );
+    disconnectOf("Claude Code").click();
+    await until(
+      () => text(document.activeElement) === t("agent.sessions.empty"),
+      "focus on the empty text",
+    );
+    // Undo lifts the refusal: that agent can pair again
+    if (notice?.kind === "action") await notice.actions[0]?.run();
+    expect(probe.refused.has("sessionbbbb")).toBe(false);
+    probe.connect("Claude Code", "sessionbbbb");
+    await until(() => agent.sessions.length === 1, "paired again");
+  });
+
+  it("the status item says Agent, the name, or how many", async () => {
+    await open();
+    await agent.setEnabled(true);
+    component = mount(AgentStatus, { target });
+    const chip = (): HTMLButtonElement | null => target.querySelector(".chip");
+    await until(() => text(chip()) === "Agent", "none");
+    mock.probe.plugins.agent.connect("Claude Code", "sessionaaaa");
+    await until(() => text(chip()) === "Claude Code", "one");
+    mock.probe.plugins.agent.connect("Codex", "sessionbbbb");
+    await until(() => text(chip()) === "2 agents", "two");
+    expect(chip()?.title).toBe("2 agents connected");
+    // the popover lists them and starts the keyboard on its first control
+    chip()?.click();
+    flushSync();
+    await until(
+      () => target.querySelectorAll(".popover button[data-disconnect]").length === 2,
+      "listed",
+    );
+    expect(document.activeElement?.closest(".popover")).not.toBeNull();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    flushSync();
+    expect(target.querySelector(".popover")).toBeNull();
+    expect(document.activeElement).toBe(chip());
   });
 });

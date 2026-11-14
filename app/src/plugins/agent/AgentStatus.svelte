@@ -1,15 +1,17 @@
 <script lang="ts">
   // The agent item of the status bar, only while the switch is on: a dot and "Agent" (waiting), the client's name
-  // (connected) or a problem. A click opens what is shared, the latest requests, Turn off, the setup command and the
-  // way to the settings section.
+  // (one connected), "{n} agents" (several) or a problem. A click opens the connected agents (each with Disconnect),
+  // what is shared, the latest requests, Turn off, the setup command and the way to the settings section.
   import Bot from "@lucide/svelte/icons/bot";
   import type { AgentRequest } from "../../api";
-  import { t, type MessageKey } from "../../core/i18n";
+  import { t, tn, type MessageKey } from "../../core/i18n";
   import { ui } from "../../core/shell/ui.svelte";
   import { claudeCodeCommand } from "./setup";
   import { GROUPS } from "./groups";
   import { handOff } from "./handoff.svelte";
+  import AgentList from "./AgentList.svelte";
   import { AGENT_PAGE } from "./offer.svelte";
+  import { sessionRows } from "./sessions";
   import { agent } from "./store.svelte";
 
   const status = $derived(agent.status);
@@ -22,10 +24,25 @@
   });
   const label = $derived(
     phase === "connected"
-      ? (clients[0] ?? "")
+      ? clients.length > 1
+        ? tn("agent.status.many", clients.length)
+        : (clients[0] ?? "")
       : phase === "error"
         ? t("agent.status.error")
         : t("agent.status.idle"),
+  );
+  const hint = $derived(
+    phase !== "connected"
+      ? t("agent.status.hintIdle")
+      : clients.length > 1
+        ? tn("agent.status.hintMany", clients.length)
+        : t("agent.status.hintConnected", { client: label }),
+  );
+  /** With several agents a request names who asked. */
+  const askers = $derived(
+    clients.length > 1
+      ? new Map(sessionRows(agent.sessions, []).map((row) => [row.session.id, row.label]))
+      : null,
   );
   const problem = $derived.by(() => {
     const server = status?.server;
@@ -57,6 +74,7 @@
   }
 
   let box: HTMLElement | undefined = $state();
+  let chip: HTMLButtonElement | undefined = $state();
   let copied = $state(false);
 
   /** The status bar clips what overflows it, so the popover is fixed and put above the item. */
@@ -66,6 +84,11 @@
     const left = Math.min(anchor.left, window.innerWidth - node.offsetWidth - 8);
     node.style.left = `${String(Math.max(8, left))}px`;
     node.style.bottom = `${String(window.innerHeight - anchor.top + 6)}px`;
+  }
+
+  /** Opened: the keyboard starts on its first control. */
+  function focusFirst(node: HTMLElement): void {
+    node.querySelector<HTMLElement>("button, [tabindex='0']")?.focus();
   }
 
   async function copySetup(): Promise<void> {
@@ -85,7 +108,9 @@
   $effect(() => {
     if (!agent.popover) return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") agent.popover = false;
+      if (e.key !== "Escape") return;
+      agent.popover = false;
+      chip?.focus();
     };
     const onPointer = (e: PointerEvent): void => {
       if (box && e.target instanceof Node && !box.contains(e.target)) agent.popover = false;
@@ -104,11 +129,10 @@
     <button
       type="button"
       class="chip"
+      bind:this={chip}
       aria-haspopup="dialog"
       aria-expanded={agent.popover}
-      title={phase === "connected"
-        ? t("agent.status.hintConnected", { client: label })
-        : t("agent.status.hintIdle")}
+      title={hint}
       onclick={() => {
         copied = false;
         agent.popover = !agent.popover;
@@ -119,17 +143,23 @@
       <span class="label">{label}</span>
     </button>
     {#if agent.popover}
-      <div class="popover" role="dialog" aria-label={t("agent.title")} use:above>
+      <div class="popover" role="dialog" aria-label={t("agent.title")} use:above use:focusFirst>
         <p class="title">{t("agent.title")}</p>
         <p class="line" role="status">
           {#if problem !== null}
             {problem}
+          {:else if phase === "connected" && clients.length > 1}
+            {hint}
           {:else if phase === "connected"}
             {t("agent.popover.connected", { clients: clients.join(", ") })}
           {:else}
             {t("agent.popover.idle")}
           {/if}
         </p>
+        {#if problem === null}
+          <p class="label-row">{t("agent.sessions.title")}</p>
+          <AgentList />
+        {/if}
         <p class="label-row">{t("agent.popover.shared")}</p>
         <ul class="groups">
           {#each shared as group (group.id)}
@@ -143,6 +173,9 @@
           <ul class="recent">
             {#each status?.recent ?? [] as request, i (i)}
               <li>
+                {#if askers?.has(request.session)}
+                  <span class="who">{askers.get(request.session)}</span>
+                {/if}
                 <span class="tool">{request.tool}</span>
                 <span class="subject" title={request.subject ?? ""}>{request.subject ?? ""}</span>
                 {#if outcome(request) !== null}
@@ -243,6 +276,8 @@
     box-shadow: var(--shadow-pop);
     font-size: var(--fs-ui-sm);
     white-space: normal;
+    max-height: calc(100vh - 80px);
+    overflow: auto;
   }
   .title {
     margin: 0 0 var(--sp-2);
@@ -282,6 +317,14 @@
   }
   .tool {
     font-family: var(--font-code);
+  }
+  .who {
+    flex: none;
+    max-width: 12ch;
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .subject {
     flex: 1;

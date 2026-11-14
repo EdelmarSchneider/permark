@@ -240,6 +240,9 @@ pub fn error(tool: &str, error: &ToolError) -> String {
         ToolError::Busy => {
             "ERR busy: PerMark still reading this folder -> retry in a few seconds".to_owned()
         }
+        ToolError::Disconnected => {
+            "ERR disconnected: the person disconnected this agent from this project -> do not retry; tell the person; restarting the agent connects again".to_owned()
+        }
         ToolError::Failed(why) => format!("ERR error: {} -> retry later", one(why)),
     }
 }
@@ -800,6 +803,7 @@ mod tests {
             error("resolve_comment", &ToolError::NotFound("c9".to_owned())),
             error("read", &ToolError::Busy),
             error("search", &ToolError::AppClosed),
+            error("map", &ToolError::Disconnected),
         ];
         for line in &lines {
             assert!(line.starts_with("ERR "), "{line}");
@@ -819,6 +823,10 @@ mod tests {
         assert_eq!(
             lines[7],
             "ERR appClosed: PerMark not open on this project -> ask person to open it in PerMark, or call open to start it"
+        );
+        assert_eq!(
+            lines[8],
+            "ERR disconnected: the person disconnected this agent from this project -> do not retry; tell the person; restarting the agent connects again"
         );
         assert!(matches!(
             ToolError::from_wire("busy", &ToolError::Busy.to_string()),

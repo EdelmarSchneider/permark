@@ -3,6 +3,7 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -65,6 +66,9 @@ pub struct Agent {
     id: SessionId,
     /// The working folder relative to the project root, `/`-separated (`""` = the root or no project).
     folder: String,
+    /// The app's last answer was a refusal of this session (the person disconnected it): no session is opened
+    /// while set. Calls still go to the app, so an Undo there lets the next call through (and clears this).
+    disconnected: AtomicBool,
 }
 
 struct Project {
@@ -98,6 +102,7 @@ impl Agent {
             client: Mutex::new("agent".to_owned()),
             id: SessionId::draw(),
             folder,
+            disconnected: AtomicBool::new(false),
         }
     }
 
@@ -111,6 +116,18 @@ impl Agent {
     #[must_use]
     pub fn folder(&self) -> &str {
         &self.folder
+    }
+
+    /// The app refused this session (the person disconnected it): stop opening sessions.
+    #[must_use]
+    pub fn is_disconnected(&self) -> bool {
+        self.disconnected.load(Ordering::Acquire)
+    }
+
+    /// Remembers whether the app's answer refused this session (any other answer = not refused any more).
+    fn note(&self, answer: Result<(), &ToolError>) {
+        let refused = answer.is_err_and(|e| *e == ToolError::Disconnected);
+        self.disconnected.store(refused, Ordering::Release);
     }
 
     #[must_use]
@@ -149,7 +166,7 @@ impl Agent {
             return;
         };
         let mut session = lock(&self.session);
-        if session.is_some() {
+        if session.is_some() || self.is_disconnected() {
             return;
         }
         let hello = Request::Hello {
@@ -157,10 +174,12 @@ impl Agent {
             client: lock(&self.client).clone(),
             folder: self.folder.clone(),
         };
-        if let Ok((Response::Ok { .. }, stream)) =
-            ipc_local::open_session::<_, Response>(endpoint, &hello)
-        {
-            *session = Some(Box::new(stream));
+        match ipc_local::open_session::<_, Response>(endpoint, &hello) {
+            Ok((Response::Ok { .. }, stream)) => *session = Some(Box::new(stream)),
+            Ok((Response::Error { code, message }, _)) => {
+                self.note(Err(&ToolError::from_wire(&code, &message)));
+            }
+            Err(_) => {}
         }
     }
 
@@ -177,8 +196,15 @@ impl Agent {
             session: Some(self.id.clone()),
         };
         match ipc_local::request::<_, Response>(endpoint, &request)? {
-            Response::Ok { value } => Ok(Ok(value)),
-            Response::Error { code, message } => Ok(Err(ToolError::from_wire(&code, &message))),
+            Response::Ok { value } => {
+                self.note(Ok(()));
+                Ok(Ok(value))
+            }
+            Response::Error { code, message } => {
+                let error = ToolError::from_wire(&code, &message);
+                self.note(Err(&error));
+                Ok(Err(error))
+            }
         }
     }
 
@@ -200,7 +226,12 @@ impl Agent {
             .map_err(|why| ToolError::Failed(why.clone()))?;
         match self.proxy(endpoint, tool, args) {
             Ok(answer) => {
-                self.ensure_session();
+                if self.is_disconnected() {
+                    // the app already closed its end
+                    lock(&self.session).take();
+                } else {
+                    self.ensure_session();
+                }
                 answer
             }
             Err(IpcLocalError::Unreachable { .. }) => {

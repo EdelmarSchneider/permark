@@ -2,7 +2,13 @@
 // context it publishes while the switch is on (debounced), and the places an agent asks to show. Dormant while off:
 // nothing is published and nothing is shown but the settings section, its gear row and the once-only offer.
 
-import type { AgentStatus, AgentWindowContext, PluginEvents, Result } from "../../api";
+import type {
+  AgentSession,
+  AgentStatus,
+  AgentWindowContext,
+  PluginEvents,
+  Result,
+} from "../../api";
 import { documents } from "../../core/doc/document.svelte";
 import { editing } from "../../core/editing/session.svelte";
 import { t } from "../../core/i18n";
@@ -52,8 +58,13 @@ export class AgentStore {
     return this.status?.enabled === true;
   }
 
+  /** Connected agents, the earliest first (none unless the server listens). */
+  get sessions(): AgentSession[] {
+    return this.status?.server.state === "listening" ? this.status.sessions : [];
+  }
+
   get connected(): string[] {
-    return this.status?.server.state === "listening" ? this.status.sessions.map((s) => s.name) : [];
+    return this.sessions.map((s) => s.name);
   }
 
   /** Follows the project of the window until the returned teardown runs. */
@@ -140,6 +151,27 @@ export class AgentStore {
 
   async setGroup(group: string, on: boolean): Promise<void> {
     this.#apply(await this.#client.call("agent.setGroup", { group, on }));
+  }
+
+  /** Ends one agent's access (its id is refused until it restarts); a notice offers Undo. `name` = as listed. */
+  async disconnect(id: string, name: string): Promise<boolean> {
+    const ok = this.#apply(await this.#client.call("agent.disconnect", { id }));
+    if (ok) {
+      windowStore.notifyKeyed(
+        `agent.disconnect.${id}`,
+        t("agent.sessions.disconnected", { name }),
+        {
+          label: t("fileOps.undo"),
+          run: () => this.undoDisconnect(id),
+        },
+      );
+    }
+    return ok;
+  }
+
+  /** Lifts the refusal: that agent pairs again on its next request. */
+  async undoDisconnect(id: string): Promise<void> {
+    this.#apply(await this.#client.call("agent.undoDisconnect", { id }));
   }
 
   async setDefaults(): Promise<void> {

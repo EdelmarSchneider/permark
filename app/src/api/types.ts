@@ -632,6 +632,8 @@ export interface PluginMethods {
   "agent.status": { args: Record<string, never>; result: AgentStatus };
   "agent.setEnabled": { args: { enabled: boolean }; result: AgentStatus };
   "agent.setGroup": { args: { group: string; on: boolean }; result: AgentStatus };
+  "agent.disconnect": { args: { id: string }; result: AgentStatus };
+  "agent.undoDisconnect": { args: { id: string }; result: AgentStatus };
   "agent.setDefaults": { args: Record<string, never>; result: null };
   "agent.publish": { args: { context: AgentWindowContext }; result: null };
   "agent.setup": { args: Record<string, never>; result: string | null };
