@@ -314,6 +314,11 @@ export type Contribution = Owned &
      * editor keeps the keyboard, then `run` gets which popup it was.
      */
     | { kind: "pickerAction"; id: string; label: MessageKey; run: (picker: PickerKind) => void }
+    /**
+     * While one is present, View and Edit mark the links whose target is missing (underline + tooltip). No lookup
+     * while none is present; a click on a link still checks its own target. The plugin that checks links offers it.
+     */
+    | { kind: "linkMarks"; id: string }
   );
 
 export type ContributionKind = Contribution["kind"];

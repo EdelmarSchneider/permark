@@ -11,7 +11,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **Symbol groups file in Settings.** **Settings > Editing** shows which groups the pickers use, opens the folder of the groups file and creates the file with the built-in groups for you to edit. Changes to the file show the next time a picker or the panel opens. <!-- f: editing, settings -->
 - A built-in **Spaces** group with the no-break space, the narrow no-break space, the thin space, the figure space and the word joiner, each shown with a visible label. <!-- f: editing -->
 
+### Changed
+- Links whose target is missing are underlined only while the **Broken links** plugin is on, in View and in Edit. Turn the plugin off and the marks go away at once; a click on such a link still tells you the file is not there. <!-- f: links, broken-links -->
+
 ### Fixed
+- The AI agent connection now belongs to the folder you turned it on for. If that folder is deleted and another one is created or cloned at the same place, agents are no longer allowed there: the connection shows as off, says why, and you turn it on again if you want it. Connections made with earlier versions keep working. <!-- f: agent -->
 - The groups file no longer drops entries that are special spaces, such as the no-break space, and accepts longer emoji sequences, such as people with skin tones. A character listed twice in one group no longer breaks the picker. <!-- f: editing -->
 
 ## [0.12.0] - 2026-11-14

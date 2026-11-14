@@ -4,43 +4,16 @@
 //! disk (same file id) -> the entry follows it (one `moved` row; no gone, no new-project strip). No match by the end of
 //! the window -> gone, and the waiting folders are offered as usual. Pure: the caller gives the time.
 
-use std::path::Path;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 use super::fsm::{Presence, ProjectMarker};
 use super::uid::ProjectUid;
+use crate::fsx::FolderIdentity;
 use crate::paths::VaultPath;
 
 /// Twice the watch's longest batch (`watch::Timing::max`, 1 s): the second half of a split move lands in the batch
 /// after the first one's, at most one `max` later.
 pub(super) const GRACE: Duration = Duration::from_secs(2);
-
-/// One folder on disk, across a rename on the same volume: volume + file id; creation time where the system keeps
-/// one (a freed file id given to a new folder at once gets another creation time).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct FolderId {
-    volume: u64,
-    file: u64,
-    born: Option<SystemTime>,
-}
-
-impl FolderId {
-    /// The folder at `abs` (never through a link); `None`: unknown.
-    pub(super) fn of(abs: &Path) -> Option<Self> {
-        let (volume, file) = crate::fsx::file_identity(abs)?;
-        let born = std::fs::symlink_metadata(abs).ok()?.created().ok();
-        Some(Self { volume, file, born })
-    }
-
-    fn same(self, other: Self) -> bool {
-        self.volume == other.volume
-            && self.file == other.file
-            && match (self.born, other.born) {
-                (Some(a), Some(b)) => a == b,
-                _ => true,
-            }
-    }
-}
 
 /// An included entry whose folder is not on disk now, held as here until `until`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,7 +22,7 @@ pub(super) struct Vanished {
     /// What it was while here (the map keeps it).
     pub marker: ProjectMarker,
     /// Its folder while here; `None`: unknown (the name | first-commit rule pairs it).
-    pub id: Option<FolderId>,
+    pub id: Option<FolderIdentity>,
 }
 
 /// An entry not on disk this pass: still held (`Some`) or gone. `held`: its running window; `was`: its presence
@@ -57,7 +30,7 @@ pub(super) struct Vanished {
 pub(super) fn hold(
     held: Option<&Vanished>,
     was: Option<&Presence>,
-    id: Option<FolderId>,
+    id: Option<FolderIdentity>,
     now: Instant,
 ) -> Option<Vanished> {
     match (held, was) {
@@ -76,7 +49,7 @@ pub(super) fn hold(
 pub(super) struct Left<'a> {
     pub uid: &'a ProjectUid,
     pub path: &'a VaultPath,
-    pub id: Option<FolderId>,
+    pub id: Option<FolderIdentity>,
     pub first_commit: Option<&'a str>,
 }
 
@@ -84,7 +57,7 @@ pub(super) struct Left<'a> {
 #[derive(Debug)]
 pub(super) struct Came<'a> {
     pub path: &'a VaultPath,
-    pub id: Option<FolderId>,
+    pub id: Option<FolderIdentity>,
     /// Its root commit, when learned already.
     pub root_commit: Option<&'a str>,
 }
@@ -137,8 +110,8 @@ mod tests {
     }
 
     #[allow(clippy::unnecessary_wraps)] // reads as the field it fills
-    fn id(file: u64) -> Option<FolderId> {
-        Some(FolderId {
+    fn id(file: u64) -> Option<FolderIdentity> {
+        Some(FolderIdentity {
             volume: 7,
             file,
             born: None,
@@ -203,23 +176,6 @@ mod tests {
             root_commit: Some("c0ffee"),
         }];
         assert!(pair(&left, &came).is_empty(), "another folder");
-    }
-
-    #[test]
-    fn a_reused_file_id_with_another_birth_is_another_folder() {
-        let t = SystemTime::UNIX_EPOCH;
-        let old = FolderId {
-            volume: 1,
-            file: 2,
-            born: Some(t),
-        };
-        let new = FolderId {
-            born: Some(t + Duration::from_secs(1)),
-            ..old
-        };
-        assert!(!old.same(new));
-        assert!(old.same(FolderId { born: None, ..old }));
-        assert!(!old.same(FolderId { volume: 3, ..old }));
     }
 
     #[test]
@@ -303,20 +259,5 @@ mod tests {
             root_commit: None,
         }];
         assert_eq!(pair(&left, &came), vec![(a, 0)]);
-    }
-
-    #[test]
-    fn a_real_folder_keeps_its_id_across_a_rename_and_a_new_one_differs() {
-        let dir = tempfile::tempdir().unwrap();
-        let a = dir.path().join("a b ü");
-        std::fs::create_dir(&a).unwrap();
-        let before = FolderId::of(&a).unwrap();
-        let b = dir.path().join("moved");
-        std::fs::rename(&a, &b).unwrap();
-        assert_eq!(FolderId::of(&a), None, "gone: unknown");
-        assert!(FolderId::of(&b).unwrap().same(before));
-        let c = dir.path().join("fresh");
-        std::fs::create_dir(&c).unwrap();
-        assert!(!FolderId::of(&c).unwrap().same(before));
     }
 }

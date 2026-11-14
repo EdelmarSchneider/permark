@@ -89,7 +89,10 @@ pub struct RequestRecord {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct AgentStatus {
+    /// The switch is on for this folder.
     pub enabled: bool,
+    /// The switch was turned on for another folder that stood at this path (shown off, with why).
+    pub replaced: bool,
     pub server: ServerState,
     pub clients: Vec<String>,
     /// Group id -> on (the person's choice, default when not chosen).
@@ -229,10 +232,12 @@ impl Hub {
     #[must_use]
     pub fn status(&self) -> AgentStatus {
         let choice = perms::load(self.tools.store());
+        let root = self.tools.vault_root().path();
         let config = ProjectConfig::load(self.tools.vault_root());
         let effective = perms::effective(&choice.groups, &config.agent_deny);
         AgentStatus {
-            enabled: choice.enabled,
+            enabled: choice.is_on(root),
+            replaced: choice.replaced(root),
             server: lock(&self.server).clone(),
             clients: lock(&self.sessions).values().cloned().collect(),
             groups: Group::ALL
@@ -297,7 +302,7 @@ impl Switch {
 
     /// Makes the listener match the switch in the profile.
     pub fn apply(&self) {
-        let on = perms::load(self.hub.tools.store()).enabled;
+        let on = perms::load(self.hub.tools.store()).is_on(self.hub.tools.vault_root().path());
         let mut server = lock(&self.server);
         match (on, server.is_some()) {
             (true, true) | (false, false) => {

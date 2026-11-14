@@ -1391,6 +1391,8 @@ export default {
   "agent.switch": "이 프로젝트를 에이전트와 공유",
   "agent.switchHint":
     "연결한 에이전트(Claude Code나 Cursor처럼 MCP를 지원하는 AI 도구)가 지금 보고 있는 내용과 변경된 내용을 확인하고, 이 프로젝트의 파일을 검색하고 읽으며, 댓글과 공유한 메모를 읽고, 특정 위치를 보여 줄 수 있습니다. 이 컴퓨터에서만 작동합니다. .aiignore에 적은 파일은 에이전트에게 전달되지 않으며, 에이전트는 PerMark를 통해 파일을 편집하지 않습니다. 이는 에이전트가 PerMark에서 받는 내용에만 해당합니다. 에이전트는 여전히 컴퓨터의 파일을 직접 열 수 있습니다.",
+  "agent.folderReplaced":
+    "연결한 후 이 폴더가 바뀌었습니다. 여기에서 에이전트를 허용하려면 연결을 다시 켜세요.",
   "agent.groups": "에이전트가 할 수 있는 작업",
   "agent.group.context": "보고 있는 내용 확인",
   "agent.group.changes": "변경된 내용 확인",

@@ -1487,6 +1487,8 @@ export default {
   "agent.switch": "Partajează acest proiect cu agenții",
   "agent.switchHint":
     "Un agent pe care îl conectezi (un instrument AI compatibil cu MCP, cum ar fi Claude Code sau Cursor) poate vedea ce ai pe ecran și ce s-a modificat, poate căuta și citi fișierele acestui proiect, îți poate citi comentariile și notele pe care le partajezi și îți poate arăta un loc. Doar pe acest computer. Fișierele listate în .aiignore rămân în afara accesului lor, iar agenții nu editează niciodată fișiere prin PerMark. Acest lucru acoperă doar ce primesc agenții de la PerMark: un agent poate deschide în continuare singur fișiere de pe computerul tău.",
+  "agent.folderReplaced":
+    "Acest folder s-a schimbat de când l-ai conectat. Activează din nou conexiunea pentru a permite agenți aici.",
   "agent.groups": "Ce pot face agenții",
   "agent.group.context": "Să vadă ce ai pe ecran",
   "agent.group.changes": "Să vadă ce s-a modificat",

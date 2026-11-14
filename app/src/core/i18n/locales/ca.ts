@@ -1427,6 +1427,8 @@ export default {
   "agent.switch": "Comparteix aquest projecte amb agents",
   "agent.switchHint":
     "Un agent que connecteu (una eina d'IA compatible amb MCP, com ara Claude Code o Cursor) pot veure el que esteu mirant i què ha canviat, cercar i llegir els fitxers d'aquest projecte, llegir els vostres comentaris i les notes que compartiu, i mostrar-vos un lloc. Només en aquest ordinador. Els fitxers que llista .aiignore queden fora del seu abast, i els agents mai no editen fitxers a través del PerMark. Això només cobreix el que els agents obtenen del PerMark: un agent encara pot obrir fitxers del vostre ordinador pel seu compte.",
+  "agent.folderReplaced":
+    "Aquesta carpeta ha canviat des que la vau connectar. Torneu a activar la connexió per permetre-hi agents.",
   "agent.groups": "Què poden fer els agents",
   "agent.group.context": "Veure el que esteu mirant",
   "agent.group.changes": "Veure què ha canviat",

@@ -201,6 +201,7 @@ fn map_says_unread_only_when_the_person_shares_changes() {
             enabled: true,
             groups,
             resolve_asked: false,
+            folder: None,
         })
         .unwrap();
     let (value, text) = call(&fx, "map", json!({})).unwrap();

@@ -338,6 +338,7 @@
         return result.ok ? result.value : null;
       },
       promptText: () => promptText,
+      linkMarks: () => linkMarks,
       refTitle: (paths, line) => {
         const { editorSet, mod } = documents.decorator.refSetup();
         const [first] = paths;
@@ -598,6 +599,8 @@
 
   /** View marks `{{variables}}` and `@file` references while the prompt-blocks plugin is on. */
   const promptText = $derived(conditions.current.plugins.includes("prompt-blocks"));
+  /** View marks links whose target is missing while a plugin that checks links offers it. */
+  const linkMarks = $derived(contributions.visible("linkMarks", conditions.current).length > 0);
   /** The plugins on, and the card one of them offers (it comes once its plugin's module is loaded). */
   const pluginsOn = $derived(conditions.current.plugins.join(" "));
   const cardOn = $derived(contributions.visible("frontMatterCard", conditions.current)[0]);
@@ -612,9 +615,11 @@
   /** What a code reference's tooltip offers depends on whether an editor is chosen. */
   const editorSet = $derived(documents.decorator.refSetup().editorSet);
 
-  // prompt text switched or the editor setting changed while editing: the inline looks are drawn again
+  // prompt text | missing-link marks switched or the editor setting changed while editing: the inline looks are
+  // drawn again
   $effect(() => {
     void promptText;
+    void linkMarks;
     void editorSet;
     untrack(() => {
       if (core && mod) mod.repaintLooks(core.view);

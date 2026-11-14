@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub use decode::{decode, Decoded, Encoding, LineEnding, BINARY_SNIFF};
 
@@ -66,6 +66,48 @@ pub fn file_identity(path: &Path) -> Option<(u64, u64)> {
     {
         let _ = path;
         None
+    }
+}
+
+/// One folder on disk, across a rename on the same volume: [`file_identity`] plus the creation time where the
+/// platform keeps one. Unix file systems (ext4) may hand a folder deleted and created again at once the same inode,
+/// so volume + file alone can match a new folder; its creation time differs. Compare with [`FolderIdentity::same`],
+/// not `==`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FolderIdentity {
+    pub volume: u64,
+    pub file: u64,
+    /// Creation time, nanoseconds since the UNIX epoch; `None`: not given by the platform, or recorded by a build
+    /// that did not keep it. Stored as `created`: identities already saved in the profile keep loading, and builds
+    /// that wrote them still read the creation time.
+    #[serde(rename = "created", default, skip_serializing_if = "Option::is_none")]
+    pub born: Option<u64>,
+}
+
+impl FolderIdentity {
+    /// The folder at `path`, a link named itself (as [`file_identity`]); `None`: unknown (gone, refused, or a volume
+    /// with no real ids).
+    #[must_use]
+    pub fn of(path: &Path) -> Option<Self> {
+        let (volume, file) = file_identity(path)?;
+        let born = std::fs::symlink_metadata(path)
+            .and_then(|meta| meta.created())
+            .ok()
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .and_then(|since| u64::try_from(since.as_nanos()).ok());
+        Some(Self { volume, file, born })
+    }
+
+    /// Volume + file match, and the creation time too when both sides have one (one side without it: recorded by an
+    /// earlier build, or not given now -> volume + file decide).
+    #[must_use]
+    pub fn same(self, other: Self) -> bool {
+        self.volume == other.volume
+            && self.file == other.file
+            && match (self.born, other.born) {
+                (Some(a), Some(b)) => a == b,
+                _ => true,
+            }
     }
 }
 
@@ -501,6 +543,66 @@ fn discard(tmp: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reused_file_id_with_another_birth_is_another_folder() {
+        let old = FolderIdentity {
+            volume: 1,
+            file: 2,
+            born: Some(100),
+        };
+        assert!(!old.same(FolderIdentity {
+            born: Some(200),
+            ..old
+        }));
+        assert!(old.same(FolderIdentity { born: None, ..old }));
+        assert!(FolderIdentity { born: None, ..old }.same(old));
+        assert!(!old.same(FolderIdentity { volume: 3, ..old }));
+        assert!(!old.same(FolderIdentity { file: 3, ..old }));
+    }
+
+    #[test]
+    fn a_real_folder_keeps_its_identity_across_a_rename_and_a_new_one_differs() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a b ü");
+        std::fs::create_dir(&a).unwrap();
+        let Some(before) = FolderIdentity::of(&a) else {
+            return; // a volume without ids: nothing to compare
+        };
+        #[cfg(windows)]
+        assert!(before.born.is_some(), "NTFS keeps creation times");
+        let b = dir.path().join("moved");
+        std::fs::rename(&a, &b).unwrap();
+        assert_eq!(FolderIdentity::of(&a), None, "gone: unknown");
+        assert!(FolderIdentity::of(&b).unwrap().same(before));
+        let c = dir.path().join("fresh");
+        std::fs::create_dir(&c).unwrap();
+        assert!(!FolderIdentity::of(&c).unwrap().same(before));
+    }
+
+    #[test]
+    fn a_folder_identity_is_stored_under_the_names_earlier_builds_wrote() {
+        let with: FolderIdentity =
+            serde_json::from_str(r#"{"volume":1,"file":2,"created":3}"#).unwrap();
+        assert_eq!(
+            with,
+            FolderIdentity {
+                volume: 1,
+                file: 2,
+                born: Some(3)
+            }
+        );
+        assert_eq!(
+            serde_json::to_string(&with).unwrap(),
+            r#"{"volume":1,"file":2,"created":3}"#
+        );
+        let without: FolderIdentity = serde_json::from_str(r#"{"volume":1,"file":2}"#).unwrap();
+        assert_eq!(without.born, None);
+        assert_eq!(
+            serde_json::to_string(&without).unwrap(),
+            r#"{"volume":1,"file":2}"#
+        );
+    }
 
     /// A target held open without sharing: the rename is retried, and each attempt asks the check again.
     #[cfg(windows)]

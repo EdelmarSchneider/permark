@@ -1427,6 +1427,8 @@ export default {
   "agent.switch": "Partilhar este projeto com agentes",
   "agent.switchHint":
     "Um agente que ligar (uma ferramenta de IA compatível com MCP, como o Claude Code ou o Cursor) pode ver o que está a ver e o que mudou, pesquisar e ler os ficheiros deste projeto, ler os seus comentários e as notas que partilhar, e mostrar-lhe um local. Só neste computador. Os ficheiros listados no .aiignore ficam fora do seu alcance, e os agentes nunca editam ficheiros através do PerMark. Isto abrange apenas o que os agentes obtêm do PerMark: um agente pode continuar a abrir ficheiros no seu computador por si próprio.",
+  "agent.folderReplaced":
+    "Esta pasta mudou desde que a ligou. Volte a ativar a ligação para permitir agentes aqui.",
   "agent.groups": "O que os agentes podem fazer",
   "agent.group.context": "Ver o que está a ver",
   "agent.group.changes": "Ver o que mudou",

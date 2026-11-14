@@ -18,7 +18,7 @@ use super::fsm::{
     self, AgentChoice, Candidate, Event, Found, Inputs, Membership, MissingReason, NotMoved,
     Presence, ProjectMarker, RecEntry, RootAnswer, MAX_ANSWERS, MEMBERSHIP_FILE,
 };
-use super::grace::{self, Came, FolderId, Left, Vanished};
+use super::grace::{self, Came, Left, Vanished};
 use super::map::{within, AgentRules, AncestorRules, MemberInfo, ProjectMap};
 use super::owners::{OwnerSlot, Owners, OwnersChange};
 use super::record::{self, HiddenRule, RecordOp, RecordRead, RecordSkip, SkippedEntry};
@@ -30,6 +30,7 @@ use super::view::{
 };
 use super::vocabulary::{self, TagStatus, VocabKind, VocabRead, Vocabularies};
 use crate::events::{CoreEvent, EventSink};
+use crate::fsx::FolderIdentity;
 use crate::paths::{Root, VaultPath, CASE_INSENSITIVE};
 use crate::settings::ProjectConfig;
 use crate::state::{AppDirs, StateFile, StateStore, PERMARK_DIR};
@@ -190,7 +191,7 @@ struct MemberRes {
     inner: Vec<(VaultPath, ProjectUid)>,
     has_record: bool,
     /// Its folder on disk (a move split across watch batches pairs by it; `grace.rs`).
-    id: Option<FolderId>,
+    id: Option<FolderIdentity>,
     /// Its own tag | category lists (local to it; `projects.md` §7.1).
     vocab: vocabulary::Vocab,
 }
@@ -233,7 +234,7 @@ fn load_member(dirs: &AppDirs, abs: &Path) -> MemberRes {
         },
         inner,
         has_record: !matches!(read, RecordRead::Absent),
-        id: FolderId::of(abs),
+        id: FolderIdentity::of(abs),
         vocab: vocabulary::read(abs).vocab().cloned().unwrap_or_default(),
     }
 }
@@ -1526,9 +1527,9 @@ impl Projects {
         if waiting.is_empty() {
             return (Vec::new(), Vec::new());
         }
-        let ids: Vec<Option<FolderId>> = waiting
+        let ids: Vec<Option<FolderIdentity>> = waiting
             .iter()
-            .map(|f| FolderId::of(&abs_of(self.root.path(), &f.path)))
+            .map(|f| FolderIdentity::of(&abs_of(self.root.path(), &f.path)))
             .collect();
         let firsts: Vec<Option<String>> = inner
             .vanished

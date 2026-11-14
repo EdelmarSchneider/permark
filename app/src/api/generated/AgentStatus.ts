@@ -5,7 +5,15 @@ import type { AgentServerState } from "./AgentServerState";
 /**
  * What the status item, its popover and the settings show.
  */
-export type AgentStatus = { enabled: boolean, server: AgentServerState, clients: Array<string>, 
+export type AgentStatus = { 
+/**
+ * The switch is on for this folder.
+ */
+enabled: boolean, 
+/**
+ * The switch was turned on for another folder that stood at this path (shown off, with why).
+ */
+replaced: boolean, server: AgentServerState, clients: Array<string>, 
 /**
  * Group id -> on (the person's choice, default when not chosen).
  */

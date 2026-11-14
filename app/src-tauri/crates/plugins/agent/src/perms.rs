@@ -2,7 +2,9 @@
 //! `agent-defaults.json` for new projects); a project's `.permark/config.toml` may only take groups away.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
+use permark_core::fsx::FolderIdentity;
 use permark_core::state::{Loaded, StateData, StateStore};
 use serde::{Deserialize, Serialize};
 
@@ -73,10 +75,46 @@ pub struct ProjectChoice {
     /// The person was offered `comments.resolve` once already.
     #[serde(default)]
     pub resolve_asked: bool,
+    /// The folder the switch was turned on for. The file is keyed by the folder's path only: a folder deleted and
+    /// created | cloned again at the same path must not inherit the person's choice. Absent (written before, or the
+    /// identity was unknown then) -> the path alone decides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<FolderIdentity>,
 }
 
+// `folder` is optional with a default: files written before it load as they are, so the format version stays.
 impl StateData for ProjectChoice {
     const VERSION: u32 = 1;
+}
+
+impl ProjectChoice {
+    /// Whether agents may be answered for the folder at `root` now: the switch on, for this very folder. Nothing
+    /// recorded when it was turned on -> the path alone decides.
+    #[must_use]
+    pub fn is_on(&self, root: &Path) -> bool {
+        self.on_with(FolderIdentity::of(root))
+    }
+
+    /// The switch was turned on for another folder that stood at this path, or for a folder whose identity cannot be
+    /// read now (the app shows it off, with why; the person turns it on again).
+    #[must_use]
+    pub fn replaced(&self, root: &Path) -> bool {
+        self.replaced_with(FolderIdentity::of(root))
+    }
+
+    fn on_with(&self, current: Option<FolderIdentity>) -> bool {
+        self.enabled && !self.replaced_with(current)
+    }
+
+    fn replaced_with(&self, current: Option<FolderIdentity>) -> bool {
+        // recorded but unreadable now fails closed: the folder can no longer be shown to be the one connected
+        self.enabled
+            && match (self.folder, current) {
+                (Some(then), Some(now)) => !then.same(now),
+                (Some(_), None) => true,
+                (None, _) => false,
+            }
+    }
 }
 
 /// `agent-defaults.json`: the groups a project starts with.
@@ -132,6 +170,24 @@ pub fn load(store: &StateStore) -> ProjectChoice {
         Loaded::Found(choice) => choice,
         Loaded::Missing | Loaded::Recovered { .. } => ProjectChoice::default(),
     }
+}
+
+/// The app opened the project at `root`: a switch turned on before folders were recorded gets this folder's
+/// identity, once. Only the app's project start calls it, never an agent's tool call (an agent's `open` may start the
+/// app, and that start records it); a failed write is retried at the next open.
+pub fn adopt_folder(store: &StateStore, root: &Path) {
+    let file = store.profile_file::<ProjectChoice>(PROJECT_FILE);
+    let Loaded::Found(mut choice) = file.load() else {
+        return;
+    };
+    if !choice.enabled || choice.folder.is_some() {
+        return;
+    }
+    let Some(folder) = FolderIdentity::of(root) else {
+        return;
+    };
+    choice.folder = Some(folder);
+    let _ = file.save(&choice);
 }
 
 /// Whether the profile holds a choice for the project of `store` (a project PerMark has been used on).
@@ -209,5 +265,164 @@ mod tests {
         raw.insert("find".to_owned(), true);
         raw.insert("write".to_owned(), true);
         assert_eq!(clean(&raw).len(), 1);
+    }
+
+    fn on_for(folder: Option<FolderIdentity>) -> ProjectChoice {
+        ProjectChoice {
+            enabled: true,
+            folder,
+            ..ProjectChoice::default()
+        }
+    }
+
+    #[allow(clippy::unnecessary_wraps)] // reads as the field it fills
+    fn id(file: u64, born: Option<u64>) -> Option<FolderIdentity> {
+        Some(FolderIdentity {
+            volume: 7,
+            file,
+            born,
+        })
+    }
+
+    #[test]
+    fn the_switch_holds_only_for_the_folder_it_was_turned_on_for() {
+        let a = id(1, None);
+        let b = id(2, None);
+        assert!(on_for(a).on_with(a));
+        assert!(!on_for(a).on_with(b), "another folder at the same path");
+        assert!(on_for(a).replaced_with(b));
+        // nothing recorded then: the path alone decides, as before
+        assert!(on_for(None).on_with(b));
+        assert!(on_for(None).on_with(None));
+        assert!(!on_for(None).replaced_with(b));
+        // recorded then, unreadable now: fails closed (the person turns it on again)
+        assert!(!on_for(a).on_with(None));
+        assert!(on_for(a).replaced_with(None));
+        // off is off, never "replaced"
+        let off = ProjectChoice {
+            folder: a,
+            ..ProjectChoice::default()
+        };
+        assert!(!off.on_with(a));
+        assert!(!off.replaced_with(b));
+        assert!(!off.replaced_with(None));
+    }
+
+    #[test]
+    fn a_reused_volume_and_file_id_with_another_creation_time_is_another_folder() {
+        let then = id(1, Some(100));
+        assert!(on_for(then).on_with(id(1, Some(100))));
+        assert!(
+            on_for(then).replaced_with(id(1, Some(200))),
+            "inode reused by a folder created again"
+        );
+        assert!(!on_for(then).on_with(id(1, Some(200))));
+        // a creation time on one side only (recorded by an earlier build | not given now): volume + file decide
+        assert!(on_for(id(1, None)).on_with(id(1, Some(200))));
+        assert!(on_for(then).on_with(id(1, None)));
+        assert!(on_for(then).replaced_with(id(2, Some(100))));
+    }
+
+    #[test]
+    fn grants_recorded_by_earlier_builds_load_and_compare_as_before() {
+        let old: ProjectChoice =
+            serde_json::from_str(r#"{"enabled":true,"folder":{"volume":7,"file":1,"created":3}}"#)
+                .unwrap();
+        assert_eq!(old.folder, id(1, Some(3)));
+        assert!(old.on_with(id(1, Some(3))));
+        assert!(old.replaced_with(id(1, Some(4))), "another creation time");
+        assert!(old.on_with(id(1, None)));
+        assert!(serde_json::to_string(&old)
+            .unwrap()
+            .contains(r#""folder":{"volume":7,"file":1,"created":3}"#));
+        let older: ProjectChoice =
+            serde_json::from_str(r#"{"enabled":true,"folder":{"volume":7,"file":1}}"#).unwrap();
+        assert_eq!(older.folder, id(1, None));
+        assert!(older.on_with(id(1, Some(5))));
+        assert!(older.replaced_with(id(2, Some(5))));
+        assert!(!serde_json::to_string(&older).unwrap().contains("created"));
+    }
+
+    #[test]
+    fn a_folder_created_again_at_the_path_is_another_folder_and_a_renamed_one_is_the_same() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("proj");
+        std::fs::create_dir(&first).unwrap();
+        let Some(id) = FolderIdentity::of(&first) else {
+            return; // a volume without ids: nothing to compare
+        };
+        #[cfg(windows)]
+        assert!(id.born.is_some(), "NTFS keeps creation times");
+        let choice = on_for(Some(id));
+        assert!(choice.is_on(&first));
+        let moved = dir.path().join("moved");
+        std::fs::rename(&first, &moved).unwrap();
+        // created while the old one still exists: the new folder cannot reuse its id
+        std::fs::create_dir(&first).unwrap();
+        assert!(!choice.is_on(&first));
+        assert!(choice.replaced(&first));
+        assert!(choice.is_on(&moved), "a rename keeps the identity");
+        assert!(!choice.replaced(&moved));
+    }
+
+    fn store_in(dir: &Path) -> (StateStore, std::path::PathBuf) {
+        let folder = dir.join("proj");
+        std::fs::create_dir_all(&folder).unwrap();
+        let root = permark_core::paths::Root::open(&folder).unwrap();
+        let dirs = permark_core::state::AppDirs::under(&dir.join("state"));
+        (
+            StateStore::for_project(&dirs, &root),
+            root.path().to_path_buf(),
+        )
+    }
+
+    fn write_raw(store: &StateStore, json: &str) {
+        let file = store.profile_file::<ProjectChoice>(PROJECT_FILE);
+        std::fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+        std::fs::write(file.path(), json).unwrap();
+    }
+
+    #[test]
+    fn a_grant_from_an_earlier_version_loads_and_stays_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, root) = store_in(dir.path());
+        write_raw(&store, r#"{"version":1,"data":{"enabled":true}}"#);
+        assert!(matches!(
+            store.profile_file::<ProjectChoice>(PROJECT_FILE).load(),
+            Loaded::Found(ProjectChoice { folder: None, .. })
+        ));
+        assert!(load(&store).is_on(&root));
+        // an off choice never gains a folder by being saved again
+        assert!(!serde_json::to_string(&ProjectChoice::default())
+            .unwrap()
+            .contains("folder"));
+    }
+
+    #[test]
+    fn adopting_records_the_folder_once_and_only_for_a_switch_that_is_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, root) = store_in(dir.path());
+        let Some(id) = FolderIdentity::of(&root) else {
+            return;
+        };
+        adopt_folder(&store, &root);
+        assert!(!known(&store), "no choice: nothing written");
+        write_raw(&store, r#"{"version":1,"data":{"enabled":false}}"#);
+        adopt_folder(&store, &root);
+        assert_eq!(load(&store).folder, None, "off: nothing recorded");
+        write_raw(&store, r#"{"version":1,"data":{"enabled":true}}"#);
+        adopt_folder(&store, &root);
+        assert_eq!(load(&store).folder, Some(id));
+        // another folder recorded already: never written over (that one stays replaced)
+        let other = FolderIdentity {
+            file: id.file ^ 1,
+            ..id
+        };
+        store
+            .profile_file::<ProjectChoice>(PROJECT_FILE)
+            .save(&on_for(Some(other)))
+            .unwrap();
+        adopt_folder(&store, &root);
+        assert_eq!(load(&store).folder, Some(other));
     }
 }

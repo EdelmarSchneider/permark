@@ -39,6 +39,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use permark_core::conditions::Requirement;
+use permark_core::fsx::FolderIdentity;
 use permark_core::ipc_local::Endpoint;
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
@@ -200,7 +201,8 @@ fn sync_context_file(hub: &Hub, write: bool) {
     }
 }
 
-/// Turns the switch: the first time on, the project starts from the app's defaults.
+/// Turns the switch: the first time on, the project starts from the app's defaults. On binds it to this folder (a
+/// folder created again at the path later is not connected); off forgets the folder.
 fn set_enabled(hub: &Hub, enabled: bool) -> Result<(), IpcError> {
     let store = hub.tools.store();
     let mut choice = perms::load(store);
@@ -208,6 +210,11 @@ fn set_enabled(hub: &Hub, enabled: bool) -> Result<(), IpcError> {
         choice.groups = perms::clean(&perms::defaults(store));
     }
     choice.enabled = enabled;
+    choice.folder = if enabled {
+        FolderIdentity::of(hub.tools.vault_root().path())
+    } else {
+        None
+    };
     saved(
         store
             .profile_file::<ProjectChoice>(perms::PROJECT_FILE)
@@ -230,6 +237,8 @@ impl Plugin for AgentPlugin {
                 reason: "needs a project".to_owned(),
             });
         };
+        // before the switch is read: a choice saved before folders were recorded binds to the folder the app opened
+        perms::adopt_folder(store, vault.main().path());
         let live = Arc::new(Live::new(cx.events().clone()));
         let tools = Tools::new(
             vault.clone(),

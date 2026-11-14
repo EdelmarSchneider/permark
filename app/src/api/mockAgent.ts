@@ -34,6 +34,8 @@ export type AgentProbe = {
   request(record: AgentRequest): void;
   /** The switch turned from outside the window (another window, the palette of another view). */
   setEnabled(on: boolean): void;
+  /** The folder was deleted and created again at its path since the switch went on: shown off, with why. */
+  replaceFolder(): void;
   /** The server fails to start (`inUse`: another PerMark serves the project; any other text: the reason) | runs. */
   fail(reason: string | null): void;
   status(): AgentStatus;
@@ -92,6 +94,7 @@ export function createMockAgent(
   emit: <E extends PluginEventName>(event: E, data: PluginEvents[E]) => void,
 ): { handlers: Handlers; probe: AgentProbe } {
   let enabled = false;
+  let replaced = false;
   const groups: Record<string, boolean> = Object.fromEntries(
     GROUPS.map((g) => [g, !DEFAULT_OFF.has(g)]),
   );
@@ -102,6 +105,7 @@ export function createMockAgent(
   const handedOff: { upto: number; checked: number[] }[] = [];
   const status = (): AgentStatus => ({
     enabled,
+    replaced,
     server: !enabled
       ? { state: "off" }
       : failure !== null
@@ -117,6 +121,7 @@ export function createMockAgent(
     "agent.status": () => status(),
     "agent.setEnabled": ({ enabled: on }) => {
       enabled = on;
+      replaced = false;
       if (!on) clients = [];
       announce();
       return status();
@@ -168,7 +173,14 @@ export function createMockAgent(
       published,
       setEnabled: (on) => {
         enabled = on;
+        replaced = false;
         if (!on) clients = [];
+        announce();
+      },
+      replaceFolder: () => {
+        enabled = false;
+        replaced = true;
+        clients = [];
         announce();
       },
       fail: (reason) => {

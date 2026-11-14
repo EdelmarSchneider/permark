@@ -263,6 +263,7 @@ impl Budget {
                 enabled: true,
                 groups,
                 resolve_asked: false,
+                folder: None,
             })
             .unwrap();
         Self {

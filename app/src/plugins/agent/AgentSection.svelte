@@ -119,6 +119,9 @@
         <span>{stateText}</span>
       </p>
       {#if phase === "off"}
+        {#if status.replaced}
+          <p class="about">{t("agent.folderReplaced")}</p>
+        {/if}
         <p class="about">{t("agent.switchHint")}</p>
         <div class="actions">
           <button

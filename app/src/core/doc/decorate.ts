@@ -1,6 +1,7 @@
 // Work a block does when it comes near the screen: embeds (code highlighting, formulas, diagrams) are mounted,
-// links are looked up (a missing target is marked), code references become links (to the file, here or in the editor).
-// Nothing here runs for blocks far from the screen, so a long document opens at once.
+// links are looked up while a plugin that checks links is on (a missing target is marked), code references become
+// links (to the file, here or in the editor). Nothing here runs for blocks far from the screen, so a long document
+// opens at once.
 
 import { mount, unmount, type Component } from "svelte";
 import type { Api, LinkTarget } from "../../api";
@@ -113,6 +114,10 @@ export class Decorator {
   #mounted = new Map<HTMLElement, Mounted>();
   /** Blocks that are near the screen (and so have their embeds). */
   #near = new Set<HTMLElement>();
+  /** Missing links are marked (a plugin that checks links is on). */
+  #linkMarks = false;
+  /** Links marked missing, with the title each had before (a link may carry a title of its own). */
+  #marked = new Map<HTMLAnchorElement, string | null>();
 
   /** Read when a reference is marked (its tooltip says what a click does). */
   refSetup: RefSetup = () => ({ editorSet: false, mod: "Ctrl" });
@@ -125,6 +130,26 @@ export class Decorator {
   setDocument(path: string | null): void {
     this.#doc = path;
     this.links.forDocument(path);
+    for (const a of this.#marked.keys()) if (!a.isConnected) this.#marked.delete(a);
+  }
+
+  /**
+   * Missing links are marked or not (a plugin that checks links came or went): the blocks near the screen are marked
+   * at once, the others when they come near; switched off, every mark and its tooltip go.
+   */
+  setLinkMarks(on: boolean): void {
+    if (on === this.#linkMarks) return;
+    this.#linkMarks = on;
+    if (on) {
+      for (const block of this.#near) this.#decorateLinks(block);
+      return;
+    }
+    for (const [a, title] of this.#marked) {
+      a.classList.remove("is-missing");
+      if (title === null) a.removeAttribute("title");
+      else a.title = title;
+    }
+    this.#marked.clear();
   }
 
   /** The embeds on offer changed (a plugin came or went): mount the new ones, take down the ones that left. */
@@ -158,6 +183,7 @@ export class Decorator {
   dispose(): void {
     for (const element of [...this.#mounted.keys()]) this.#unmountOne(element);
     this.#near.clear();
+    this.#marked.clear();
   }
 
   // ---- embeds ------------------------------------------------------------------------------------------------
@@ -229,15 +255,20 @@ export class Decorator {
   // ---- links -------------------------------------------------------------------------------------------------
 
   #decorateLinks(block: HTMLElement): void {
+    // nothing to mark: no lookup either (a click asks for its own link)
+    if (!this.#linkMarks) return;
     const anchors = Array.from(block.querySelectorAll<HTMLAnchorElement>("a[href]")).filter(
       (a) => isLocalHref(a.getAttribute("href")) && !a.classList.contains("anchor"),
     );
     if (anchors.length === 0) return;
     const hrefs = anchors.map((a) => a.getAttribute("href") ?? "");
     void this.links.resolve(hrefs).then((targets) => {
+      // switched off while the answer was on its way
+      if (!this.#linkMarks) return;
       anchors.forEach((a, at) => {
         const target = targets[at];
         if (target?.type !== "missing") return;
+        if (!this.#marked.has(a)) this.#marked.set(a, a.getAttribute("title"));
         a.classList.add("is-missing");
         a.title = t("link.missing", { path: target.path });
       });

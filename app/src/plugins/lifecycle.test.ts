@@ -161,7 +161,7 @@ describe("the organizing plugins", () => {
       "treeBadge",
     ]);
     expect(await kinds("quiet")).toEqual(["command", "treeBadge", "treeMenu"]);
-    expect(await kinds("broken-links")).toEqual(["command", "panel", "shortcut"]);
+    expect(await kinds("broken-links")).toEqual(["command", "linkMarks", "panel", "shortcut"]);
   });
 
   it("switching off puts back the tab that was open and the search the tags narrowed", async () => {
