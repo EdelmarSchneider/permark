@@ -5,7 +5,7 @@
   import SearchIcon from "@lucide/svelte/icons/search";
   import { t } from "../i18n";
   import { activeSidebar, leftPanels } from "../shell/panels.svelte";
-  import RightTabs, { type TabView } from "../shell/RightTabs.svelte";
+  import ViewTabs, { type TabView } from "../shell/ViewTabs.svelte";
   import { ui } from "../shell/ui.svelte";
 
   const views = $derived<TabView[]>([
@@ -21,7 +21,7 @@
 </script>
 
 <!-- three tabs keep their labels; more show the closed ones as icons -->
-<RightTabs
+<ViewTabs
   {views}
   selected={activeSidebar()}
   onselect={(id) => ui.showSidebar(id)}

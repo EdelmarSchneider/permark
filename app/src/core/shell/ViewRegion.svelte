@@ -12,7 +12,7 @@
   import type { MenuEntry } from "../explorer/menu";
   import { t } from "../i18n";
   import type { PanelViewProps } from "../plugins/props";
-  import RightTabs, { type TabView } from "./RightTabs.svelte";
+  import ViewTabs, { type TabView } from "./ViewTabs.svelte";
   import {
     canJoin,
     canMove,
@@ -264,7 +264,7 @@
   {#each items as item (item.key)}
     {#if item.kind === "strip"}
       <div class="strip" style:grid-row={item.place.strip}>
-        <RightTabs
+        <ViewTabs
           views={tabsOf(item.place.group)}
           selected={shownIn(item.place.group)}
           onselect={selectView}

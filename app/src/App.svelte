@@ -15,7 +15,7 @@
   import FocusExit from "./core/shell/FocusExit.svelte";
   import Frame from "./core/shell/Frame.svelte";
   import PanelToggle from "./core/shell/PanelToggle.svelte";
-  import RightColumn from "./core/shell/RightColumn.svelte";
+  import ViewRegion from "./core/shell/ViewRegion.svelte";
   import { arrangement } from "./core/shell/arrangement.svelte";
   import Notices from "./core/shell/Notices.svelte";
   import DefaultAppDialog from "./core/shell/DefaultAppDialog.svelte";
@@ -270,7 +270,7 @@
 {/snippet}
 
 {#snippet panel()}
-  <RightColumn {outline} />
+  <ViewRegion {outline} />
 {/snippet}
 
 {#snippet main()}

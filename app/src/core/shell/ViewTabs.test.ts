@@ -3,7 +3,7 @@
 // selected, the view's options from the keyboard (shell.md §Frame, Right region).
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import RightTabs from "./RightTabs.svelte";
+import ViewTabs from "./ViewTabs.svelte";
 
 let component: Record<string, unknown> | null = null;
 
@@ -19,7 +19,7 @@ function show(
 ): { root: HTMLElement; onselect: typeof onselect; onmenu: typeof onmenu } {
   const target = document.createElement("div");
   document.body.append(target);
-  component = mount(RightTabs, { target, props: { views: VIEWS, selected, onselect, onmenu } });
+  component = mount(ViewTabs, { target, props: { views: VIEWS, selected, onselect, onmenu } });
   flushSync();
   return { root: target, onselect, onmenu };
 }
