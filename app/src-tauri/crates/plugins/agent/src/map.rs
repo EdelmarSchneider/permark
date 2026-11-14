@@ -192,6 +192,7 @@ pub fn map(
         .map(|(dir, (files, bytes))| json!({ "path": dir, "files": files, "size_tok": bytes.div_ceil(4) }))
         .collect();
     let mut answer = json!({
+        "project": tools.vault_root().name(),
         "path": if folder.is_empty() { ".".to_owned() } else { folder },
         "depth": depth,
         "files": files,

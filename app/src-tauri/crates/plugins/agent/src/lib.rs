@@ -37,6 +37,7 @@ mod tests;
 pub mod tools;
 
 use std::borrow::Cow;
+use std::fmt::Write as _;
 use std::sync::Arc;
 
 use permark_core::conditions::Requirement;
@@ -90,8 +91,35 @@ pub enum ToolError {
         "the person disconnected this agent from this project; restarting the agent connects again"
     )]
     Disconnected,
+    /// The agent's working folder is in no connected project: only the agent's side says this (never sent by the
+    /// app). `below` = connected projects under the working folder, relative to it, newest first: a hint, it grants
+    /// nothing.
+    #[error("no connected PerMark project here: {}", not_connected_remedy(below))]
+    NotConnected { below: Vec<String> },
     #[error("{0}")]
     Failed(String),
+}
+
+/// Most folders a [`ToolError::NotConnected`] names; the rest are counted.
+const BELOW_SHOWN: usize = 5;
+
+/// What to do when no connected project holds the working folder (one line: a folder name with whitespace or a
+/// line break is quoted like any header value).
+pub(crate) fn not_connected_remedy(below: &[String]) -> String {
+    if below.is_empty() {
+        return "ask the person to turn on the agent connection for a project, then start the agent in that folder"
+            .to_owned();
+    }
+    let shown: Vec<_> = below
+        .iter()
+        .take(BELOW_SHOWN)
+        .map(|folder| format::value(folder))
+        .collect();
+    let mut text = format!("start the agent in one of: {}", shown.join(", "));
+    if below.len() > BELOW_SHOWN {
+        let _ = write!(text, " and {} more", below.len() - BELOW_SHOWN);
+    }
+    text
 }
 
 impl ToolError {
@@ -105,6 +133,7 @@ impl ToolError {
             Self::AppClosed => "appClosed",
             Self::Busy => "busy",
             Self::Disconnected => "disconnected",
+            Self::NotConnected { .. } => "notConnected",
             Self::Failed(_) => "error",
         }
     }

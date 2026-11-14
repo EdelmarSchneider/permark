@@ -243,6 +243,10 @@ pub fn error(tool: &str, error: &ToolError) -> String {
         ToolError::Disconnected => {
             "ERR disconnected: the person disconnected this agent from this project -> do not retry; tell the person; restarting the agent connects again".to_owned()
         }
+        ToolError::NotConnected { below } => format!(
+            "ERR notConnected: no connected PerMark project here -> {}",
+            crate::not_connected_remedy(below)
+        ),
         ToolError::Failed(why) => format!("ERR error: {} -> retry later", one(why)),
     }
 }
@@ -253,6 +257,7 @@ fn get_context(data: &Value) -> String {
     let heading = section.map(|x| strings(x, "headingPath").join(" > "));
     let selection = data.get("selection").filter(|v| v.is_object());
     let mut out = Header::new("get_context")
+        .opt("project", data.get("project").and_then(Value::as_str))
         .flag("nodoc", doc.is_empty())
         .opt("doc", (!doc.is_empty()).then_some(doc))
         .opt("mode", (!doc.is_empty()).then(|| s(data, "mode")))
@@ -616,6 +621,7 @@ fn map(data: &Value) -> String {
     let files = list(data, "files");
     let cut = list(data, "dirs_cut");
     let mut out = Header::new("map")
+        .opt("project", data.get("project").and_then(Value::as_str))
         .kv("path", s(data, "path"))
         .opt("depth", u(data, "depth"))
         .kv("n", n_of(files))
@@ -804,6 +810,13 @@ mod tests {
             error("read", &ToolError::Busy),
             error("search", &ToolError::AppClosed),
             error("map", &ToolError::Disconnected),
+            error("map", &ToolError::NotConnected { below: vec![] }),
+            error(
+                "map",
+                &ToolError::NotConnected {
+                    below: vec!["two\nlines/".to_owned()],
+                },
+            ),
         ];
         for line in &lines {
             assert!(line.starts_with("ERR "), "{line}");
@@ -832,6 +845,17 @@ mod tests {
             ToolError::from_wire("busy", &ToolError::Busy.to_string()),
             ToolError::Busy
         ));
+    }
+
+    #[test]
+    fn a_long_list_of_projects_below_is_cut() {
+        let below = ["a", "b", "c", "d", "e", "f", "g"]
+            .map(|n| format!("{n}/"))
+            .to_vec();
+        assert_eq!(
+            error("read", &ToolError::NotConnected { below }),
+            "ERR notConnected: no connected PerMark project here -> start the agent in one of: a/, b/, c/, d/, e/ and 2 more"
+        );
     }
 
     #[test]

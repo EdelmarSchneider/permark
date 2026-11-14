@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 
 use permark_core::ipc_local::{self, Endpoint, IpcLocalError, Stream};
 use permark_core::paths::Root;
+use permark_core::session::RecentStore;
 use permark_core::state::{AppDirs, StateStore};
+use serde::Deserialize as _;
 use serde_json::{json, Value};
 
 use crate::context::WindowContext;
@@ -31,13 +33,38 @@ pub type Launcher = Arc<dyn Fn(&Path) -> io::Result<()> + Send + Sync>;
 /// that choice was made for another folder that stood at its path: the search never goes on to a folder above it.
 #[must_use]
 pub fn discover(dirs: &AppDirs, start: &Path) -> Option<Root> {
+    let (root, store) = nearest_known(dirs, start)?;
+    (!perms::load(&store).replaced(root.path())).then_some(root)
+}
+
+/// The nearest folder at or above `start` the person made a choice for (on, off or replaced since).
+fn nearest_known(dirs: &AppDirs, start: &Path) -> Option<(Root, StateStore)> {
     let start = dunce_canonical(start)?;
-    let (root, store) = start.ancestors().find_map(|folder| {
+    start.ancestors().find_map(|folder| {
         let root = Root::open(folder).ok()?;
         let store = StateStore::for_project(dirs, &root);
         perms::known(&store).then_some((root, store))
-    })?;
-    (!perms::load(&store).replaced(root.path())).then_some(root)
+    })
+}
+
+/// Connected projects below `start` among the recent folders, newest first, `/`-separated relative to `start` with
+/// a trailing `/`. Only a pointer for the agent's refusal: the switch of each is read fresh and nothing is granted.
+fn connected_below(dirs: &AppDirs, start: &Path) -> Vec<String> {
+    let Ok(start) = Root::open(start) else {
+        return Vec::new();
+    };
+    RecentStore::new(&StateStore::app(dirs))
+        .list()
+        .into_iter()
+        .filter(|recent| !recent.missing)
+        .filter_map(|recent| Root::open(Path::new(&recent.path)).ok())
+        .filter_map(|root| {
+            let rel = folder_in(&start, root.path()).filter(|rel| !rel.is_empty())?;
+            perms::load(&StateStore::for_project(dirs, &root))
+                .is_on(root.path())
+                .then(|| format!("{rel}/"))
+        })
+        .collect()
 }
 
 fn dunce_canonical(path: &Path) -> Option<PathBuf> {
@@ -59,6 +86,10 @@ fn folder_in(root: &Root, working_folder: &Path) -> Option<String> {
 /// The project an agent works in, and how to reach it.
 pub struct Agent {
     project: Option<Project>,
+    /// No folder at or above the working folder was ever connected: the connected projects below it (found once at
+    /// start). None while in a project, and for a folder whose choice was made for another folder at its path (that
+    /// one answers `Off`, never pointing elsewhere).
+    outside: Option<Vec<String>>,
     launcher: Launcher,
     launch_wait: Duration,
     repair_every: Duration,
@@ -87,20 +118,27 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 impl Agent {
-    /// Finds the project of `working_folder` (none: every tool says the connection is off).
+    /// Finds the project of `working_folder` (none: every tool refuses, naming connected projects below it).
     #[must_use]
     pub fn discover(dirs: &AppDirs, working_folder: &Path, launcher: Launcher) -> Self {
-        let project = discover(dirs, working_folder).map(|root| Project {
-            store: StateStore::for_project(dirs, &root),
-            endpoint: Endpoint::project(&dirs.profile, &root).map_err(|e| e.to_string()),
-            root,
-        });
+        let known = nearest_known(dirs, working_folder);
+        let outside = known
+            .is_none()
+            .then(|| connected_below(dirs, working_folder));
+        let project = known
+            .filter(|(root, store)| !perms::load(store).replaced(root.path()))
+            .map(|(root, store)| Project {
+                endpoint: Endpoint::project(&dirs.profile, &root).map_err(|e| e.to_string()),
+                store,
+                root,
+            });
         let folder = project
             .as_ref()
             .and_then(|p| folder_in(&p.root, working_folder))
             .unwrap_or_default();
         Self {
             project,
+            outside,
             launcher,
             launch_wait: LAUNCH_WAIT,
             repair_every: REPAIR_EVERY,
@@ -252,7 +290,10 @@ impl Agent {
     /// What the tool answers, or why nothing could.
     pub fn call(&self, tool: &str, args: &Value) -> Result<Value, ToolError> {
         let Some(project) = &self.project else {
-            return Err(ToolError::Off);
+            return Err(self
+                .outside
+                .clone()
+                .map_or(ToolError::Off, |below| ToolError::NotConnected { below }));
         };
         if !perms::load(&project.store).is_on(project.root.path()) {
             return Err(ToolError::Off);
@@ -329,15 +370,24 @@ impl Agent {
         let value = self
             .call("get_context", &Value::Null)
             .map_err(|e| e.to_string())?;
-        let open = value
-            .get("openComments")
-            .and_then(Value::as_u64)
-            .unwrap_or(0);
-        let context: WindowContext = serde_json::from_value(value).map_err(|e| e.to_string())?;
-        context
-            .summary(usize::try_from(open).unwrap_or(usize::MAX))
-            .ok_or_else(|| "no document is open in PerMark".to_owned())
+        context_text(&value)
     }
+}
+
+/// The `permark context` sentence of a `get_context` answer, led by the project's name when it has one.
+pub(crate) fn context_text(value: &Value) -> Result<String, String> {
+    let open = value
+        .get("openComments")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let context = WindowContext::deserialize(value).map_err(|e| e.to_string())?;
+    let line = context
+        .summary(usize::try_from(open).unwrap_or(usize::MAX))
+        .ok_or_else(|| "no document is open in PerMark".to_owned())?;
+    Ok(match value.get("project").and_then(Value::as_str) {
+        Some(project) => format!("Project {}: {line}", crate::format::value(project)),
+        None => line,
+    })
 }
 
 /// The running program, as it can be started again (an AppImage is named by the file the person started).

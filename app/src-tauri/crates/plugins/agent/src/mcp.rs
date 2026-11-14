@@ -20,7 +20,7 @@ use crate::render;
 /// What the agent reads before any tool: when to use them, how to read the answers, who decides. Static: nothing of a
 /// project ever goes in here.
 pub const INSTRUCTIONS: &str = "\
-PerMark v=1: use these tools when the task involves the document the person has open in PerMark, their selection, comments, unread changes, what they did since the last hand-off (activity), or finding something in this project.
+PerMark v=1: use these tools when the task involves the document the person has open in PerMark, their selection, comments, unread changes, what they did since the last hand-off (activity), or finding something in this project (`project=` of get_context | map names it).
 Structure before content: map -> outline (size_tok per part) -> read at=<part>; search with budget= caps tokens.
 Answers: line 1 `<tool> k=v`; `#cols` then tab-separated rows (full paths); `--` starts a sub-table; `~` = approximate; last line `…cut next=` | `…trimmed` when shortened.
 Bare word in line 1 = flag set (`unsaved` = has unsaved edits). Continue a cut answer: pass the `next` value as is (`read at=<next>`, `activity since=<next>`).

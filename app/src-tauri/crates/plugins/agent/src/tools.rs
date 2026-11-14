@@ -379,6 +379,8 @@ impl Tools {
             serde_json::to_value(&context).map_err(|e| ToolError::Failed(e.to_string()))?;
         if let Some(map) = value.as_object_mut() {
             map.retain(|_, v| !v.is_null());
+            // the project is the app's own fact, not the window's: a window never names it
+            map.insert("project".to_owned(), json!(self.vault_root().name()));
             map.insert("openComments".to_owned(), json!(open));
         }
         Ok(value)
