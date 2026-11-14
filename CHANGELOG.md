@@ -5,6 +5,15 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Symbols panel.** A panel of symbols and emoji that stays beside the document while you write. Open it with the command "Show or hide the symbols panel" or with **Keep open in a panel** in the toolbar's symbol and emoji pickers. A click puts the character at the cursor, in Edit and in Source, and you keep typing where you were; from the keyboard, Enter inserts it and you stay in the panel. Search finds a symbol by name, by the character itself or by its code (`U+2192`). Groups fold away, and the panel can sit in the sidebar, the right panel or the bottom panel like any other. <!-- f: editing, side-panels -->
+- **Favorite symbols.** Right-click a symbol (or press the Menu key on it) to keep it at the top of the panel, or use the star on a group to keep the whole group there. Favorites are kept in the app settings. <!-- f: editing -->
+- **Symbol groups file in Settings.** **Settings > Editing** shows which groups the pickers use, opens the folder of the groups file and creates the file with the built-in groups for you to edit. Changes to the file show the next time a picker or the panel opens. <!-- f: editing, settings -->
+- A built-in **Spaces** group with the no-break space, the narrow no-break space, the thin space, the figure space and the word joiner, each shown with a visible label. <!-- f: editing -->
+
+### Fixed
+- The groups file no longer drops entries that are special spaces, such as the no-break space, and accepts longer emoji sequences, such as people with skin tones. A character listed twice in one group no longer breaks the picker. <!-- f: editing -->
+
 ## [0.12.0] - 2026-11-14
 
 ### Added
