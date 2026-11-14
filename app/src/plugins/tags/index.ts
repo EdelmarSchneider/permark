@@ -7,7 +7,7 @@ import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { documents } from "../../core/doc/document.svelte";
 import { definePlugin } from "../../core/plugins/registry.svelte";
 import { searchTags } from "../../core/search/tags.svelte";
-import { ui } from "../../core/shell/ui.svelte";
+import { showView } from "../../core/shell/sides";
 import { PANEL } from "./ids";
 import { tags } from "./store.svelte";
 
@@ -77,7 +77,7 @@ export default definePlugin({
         id: "tags.show",
         label: "tags.show",
         requires: NO_REQUIREMENT,
-        run: () => ui.showSidebar(PANEL),
+        run: () => showView(PANEL),
       }),
       cx.contribute({
         kind: "treeMenu",
@@ -94,7 +94,6 @@ export default definePlugin({
       for (const remove of removals) remove();
       searchTags.setProvider(null);
       tags.closeEditor();
-      if (ui.sidebar === PANEL) ui.showSidebar("files");
       stop();
     };
   },

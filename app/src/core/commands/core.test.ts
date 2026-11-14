@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../api", async () => {
@@ -106,6 +107,76 @@ describe("the core's commands", () => {
     setExplorer(null);
     await refresh?.run();
     expect(asked).toHaveBeenCalledOnce();
+  });
+
+  it("reset the layout of the panels: the whole arrangement, by the store's one reset (the views' menu uses it too)", async () => {
+    const { arrangement } = await import("../shell/arrangement.svelte");
+    const { defaultArrangement, FILES, moveTo, OUTLINE, SEARCH } =
+      await import("../shell/arrangement");
+    const command = commands.find((c) => c.id === "panel.resetLayout");
+    expect(en[command?.label ?? "cmd.save"]).toBe("Reset the layout of the panels");
+    let moved = moveTo(defaultArrangement(), SEARCH, "bottom");
+    moved = moveTo(moved, OUTLINE, "left");
+    moved = { ...moved, left: [{ views: [OUTLINE, FILES], share: 1 }] };
+    arrangement.arrange(moved);
+    expect(arrangement.atDefault).toBe(false);
+    const reset = vi.spyOn(arrangement, "reset");
+    await command?.run();
+    expect(reset).toHaveBeenCalledOnce();
+    expect(arrangement.saved).toEqual(defaultArrangement());
+    expect(arrangement.atDefault).toBe(true);
+    await tick();
+    await tick();
+    expect(arrangement.status).toBe(en["panel.layoutReset"]);
+    expect(en["panel.layoutReset"]).toBe("Layout of the panels reset");
+    // the same notice as the reset of the views' menu and of the Layouts dialog: the words said, and Undo
+    const { windowStore } = await import("../window.svelte");
+    const notices = () =>
+      windowStore.notices.flatMap((n) => (n.kind === "action" && n.key === "layout" ? [n] : []));
+    expect(notices().map((n) => n.text)).toEqual([en["panel.layoutReset"]]);
+    expect(notices()[0]?.actions.map((action) => action.label)).toEqual([en["fileOps.undo"]]);
+    notices()[0]?.actions[0]?.run();
+    expect(arrangement.saved).toBe(moved);
+    expect(notices()).toEqual([]);
+    reset.mockRestore();
+    arrangement.say("");
+  });
+
+  it("undo the last layout change: offered only while one can be undone, by the store's one undo (the notice uses it too)", async () => {
+    const { arrangement } = await import("../shell/arrangement.svelte");
+    const { defaultArrangement, moveTo, SEARCH } = await import("../shell/arrangement");
+    const command = commands.find((c) => c.id === "panel.undoLayout");
+    expect(en[command?.label ?? "cmd.save"]).toBe("Undo the last layout change");
+    expect(command?.inPalette).not.toBe(false);
+    expect(command?.requires).toEqual({
+      needs: [{ need: "workspace", kinds: ["project", "singleFile", "notes"] }],
+      prefers: [],
+    });
+    const moved = moveTo(defaultArrangement(), SEARCH, "bottom");
+    const other = moveTo(defaultArrangement(), SEARCH, "right");
+    arrangement.arrange(moved);
+    expect(command?.when?.()).toBe(false);
+    arrangement.reset();
+    expect(command?.when?.()).toBe(true);
+    // the person arranged the views another way since: nothing to undo
+    arrangement.arrange(other);
+    expect(command?.when?.()).toBe(false);
+
+    arrangement.reset();
+    expect(command?.when?.()).toBe(true);
+    // the keyboard is nowhere (the palette that ran the command is gone): it goes to the page, never the body
+    document.body.innerHTML = '<main data-region="page" tabindex="-1">The page</main>';
+    const undo = vi.spyOn(arrangement, "undo");
+    await command?.run();
+    expect(undo).toHaveBeenCalledOnce();
+    expect(arrangement.saved).toBe(other);
+    expect(command?.when?.()).toBe(false);
+    expect(document.activeElement).toBe(document.querySelector('[data-region="page"]'));
+    await tick();
+    expect(arrangement.status).toBe(en["fileOps.undone"]);
+    undo.mockRestore();
+    arrangement.say("");
+    document.body.innerHTML = "";
   });
 
   it("switch long lines wrapping with Alt+Z: saved, said by one note that closes, twice is back", async () => {

@@ -288,11 +288,11 @@ impl Shell {
         }
         self.env
             .sink
-            .emit(CoreEvent::SettingsChanged(SettingsChanged {
+            .emit(CoreEvent::SettingsChanged(Box::new(SettingsChanged {
                 scope: SettingsScope::App,
                 keys: vec![change.key()],
                 settings: settings.clone(),
-            }));
+            })));
         Ok(settings)
     }
 

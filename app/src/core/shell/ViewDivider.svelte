@@ -1,34 +1,53 @@
 <script lang="ts">
-  // The line between two groups of the right column: drag it, or focus it and use Up | Down (Shift = big steps, Home |
-  // End = one view at its smallest, Enter | double click = half each). It only reports the new split; the column
-  // draws it (window splitter pattern, horizontal).
+  // The line between two groups of a region: drag it, or focus it and use the arrows along the stack (Up | Down for
+  // groups one above the other, Left | Right for groups side by side; Shift = big steps, Home | End = one view at its
+  // smallest, Enter | double click = half each). It only reports the new split; the region draws it (window splitter
+  // pattern: the bar lies across the stack). Its split and its real limits are published all the while it is drawn
+  // (a screen reader may read it without focusing it).
+  import { untrack } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import { t } from "../i18n";
   import { STEP, STEP_BIG } from "./layout";
-  import { MIN_GROUP_PX } from "./rightViews";
+  import { MIN_GROUP_PX, type Axis } from "./arrangement";
 
   type Props = {
-    /** The views above | below (their tab labels). */
+    /** The views before | after it along the stack: above | below, or left | right (their tab labels). */
     top: string;
     bottom: string;
-    /** The element of the view above (`aria-controls`). */
+    /** The element of the view before it (`aria-controls`). */
     controls: string;
-    /** Heights now of the groups above | below, as drawn. */
+    /** Sizes now along the stack of the groups before | after it, as drawn. */
     measure: () => { above: number; below: number };
-    /** The new split: the share of both heights the group above takes (0..1). */
+    /** The new split: the share of both sizes the group before it takes (0..1). */
     onsplit: (ratio: number) => void;
+    /** The way the region stacks its groups (default: one above the other). */
+    axis?: Axis;
   };
-  let { top, bottom, controls, measure, onsplit }: Props = $props();
+  let { top, bottom, controls, measure, onsplit, axis = "vertical" }: Props = $props();
 
+  /** Per stack: the keys that move the bar back | on, the bar's own direction. */
+  const STACKS = {
+    vertical: { back: "ArrowUp", on: "ArrowDown", bar: "horizontal" },
+    horizontal: { back: "ArrowLeft", on: "ArrowRight", bar: "vertical" },
+  } as const;
+
+  const of = $derived(STACKS[axis]);
   let dragging = $state(false);
-  let origin = { y: 0, above: 0, both: 0 };
+  let origin = { at: 0, above: 0, both: 0 };
   /** The split now, for assistive tech (re-read after every change). */
   let percent = $state(50);
   let bounds = $state({ min: 0, max: 100 });
 
+  /** Where the pointer is along the stack. */
+  function along(e: PointerEvent): number {
+    return axis === "vertical" ? e.clientY : e.clientX;
+  }
+
   function sync(): void {
     const { above, below } = measure();
+    // a group that is not drawn yet has no size: nothing to say of the split
+    if (above <= 0 || below <= 0) return;
     const both = above + below;
-    if (both <= 0) return;
     percent = Math.round((above / both) * 100);
     bounds = {
       min: Math.round((Math.min(MIN_GROUP_PX, both / 2) / both) * 100),
@@ -36,7 +55,20 @@
     };
   }
 
-  /** The group above at `px` (kept inside both minimums). */
+  /**
+   * For the bar (`{@attach}`): the split and its limits are read once it is drawn, and again whenever the view
+   * before it changes size (a split moved, the window resized, the groups laid out for the first time).
+   */
+  const published: Attachment<HTMLElement> = () => {
+    untrack(sync);
+    const before = document.getElementById(controls);
+    if (before === null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(sync);
+    observer.observe(before);
+    return () => observer.disconnect();
+  };
+
+  /** The group before it at `px` (kept inside both minimums). */
   function split(px: number, both: number): void {
     if (both <= 0) return;
     const least = Math.min(MIN_GROUP_PX, both / 2);
@@ -49,14 +81,14 @@
     if (e.button !== 0) return;
     e.preventDefault();
     const { above, below } = measure();
-    origin = { y: e.clientY, above, both: above + below };
+    origin = { at: along(e), above, both: above + below };
     dragging = true;
     if (e.currentTarget instanceof Element) e.currentTarget.setPointerCapture(e.pointerId);
   }
 
   function onpointermove(e: PointerEvent): void {
     if (!dragging) return;
-    split(origin.above + e.clientY - origin.y, origin.both);
+    split(origin.above + along(e) - origin.at, origin.both);
   }
 
   function onpointerup(e: PointerEvent): void {
@@ -71,10 +103,10 @@
     const both = above + below;
     const step = e.shiftKey ? STEP_BIG : STEP;
     switch (e.key) {
-      case "ArrowUp":
+      case of.back:
         split(above - step, both);
         break;
-      case "ArrowDown":
+      case of.on:
         split(above + step, both);
         break;
       case "Home":
@@ -99,7 +131,7 @@
   class="divider"
   class:is-dragging={dragging}
   role="separator"
-  aria-orientation="horizontal"
+  aria-orientation={of.bar}
   aria-controls={controls}
   aria-label={t("layout.resizeViews", { top, bottom })}
   aria-valuenow={percent}
@@ -107,6 +139,7 @@
   aria-valuemax={bounds.max}
   aria-valuetext={t("layout.viewsValue", { top, percent })}
   tabindex="0"
+  {@attach published}
   onfocus={sync}
   onpointerenter={sync}
   {onpointerdown}
@@ -129,22 +162,39 @@
     touch-action: none;
     outline: none;
   }
+  .divider[aria-orientation="vertical"] {
+    cursor: col-resize;
+  }
   .divider::after {
     content: "";
     position: absolute;
+    background: var(--border);
+  }
+  .divider[aria-orientation="horizontal"]::after {
     top: 3px;
     right: 0;
     left: 0;
     height: 1px;
-    background: var(--border);
+  }
+  .divider[aria-orientation="vertical"]::after {
+    top: 0;
+    bottom: 0;
+    left: 3px;
+    width: 1px;
   }
   .divider:hover::after,
   .divider.is-dragging::after {
     background: var(--accent-muted);
   }
   .divider:focus-visible::after {
+    background: var(--accent);
+  }
+  .divider[aria-orientation="horizontal"]:focus-visible::after {
     top: 1px;
     height: 5px;
-    background: var(--accent);
+  }
+  .divider[aria-orientation="vertical"]:focus-visible::after {
+    left: 1px;
+    width: 5px;
   }
 </style>

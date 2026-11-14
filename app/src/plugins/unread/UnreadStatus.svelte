@@ -1,7 +1,7 @@
 <script lang="ts">
   // The number of unread documents in the status bar; a click shows the list. Nothing when everything is read.
   import { tn } from "../../core/i18n";
-  import { ui } from "../../core/shell/ui.svelte";
+  import { showView } from "../../core/shell/sides";
   import { unread } from "./store.svelte";
 
   const count = $derived(unread.unread.length);
@@ -12,7 +12,7 @@
     type="button"
     class="chip"
     title={tn("unread.statusHint", count)}
-    onclick={() => ui.showSidebar("unread.panel")}
+    onclick={() => showView("unread.panel")}
   >
     <span class="dot" aria-hidden="true"></span>
     {tn("unread.status", count)}

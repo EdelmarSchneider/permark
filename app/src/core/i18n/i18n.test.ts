@@ -269,6 +269,85 @@ describe.each(LOCALES.filter((locale) => locale !== "en"))("the %s table", (loca
   });
 });
 
+describe("the words of a view moved to another region", () => {
+  /** Per region: its name, the menu item that sends a view there, what is said once there, other lines naming it. */
+  const REGIONS = [
+    { name: "panel.sidebar", item: "panel.moveToLeft", said: "panel.moved.toLeft", more: [] },
+    {
+      name: "panel.right",
+      item: "panel.moveToRight",
+      said: "panel.moved.toRight",
+      more: ["panel.tabs"],
+    },
+    {
+      name: "panel.bottom",
+      item: "panel.moveToBottom",
+      said: "panel.moved.toBottom",
+      more: ["panel.bottomTabs", "panel.bottomTooShort", "panel.moved.toBottomHidden"],
+    },
+  ] as const;
+  const MOVED = KEYS.filter((key) => key.startsWith("panel.moved.") || key === "panel.closed");
+
+  it("in English name the region, apart from the moves among the groups of one region", () => {
+    expect([en["panel.moveToLeft"], en["panel.moveToRight"], en["panel.moveToBottom"]]).toEqual([
+      "Move to sidebar",
+      "Move to right panel",
+      "Move to bottom panel",
+    ]);
+    expect([en["panel.moveLeft"], en["panel.moveRight"]]).toEqual(["Move left", "Move right"]);
+    expect(
+      [
+        "panel.moved.toLeft",
+        "panel.moved.toRight",
+        "panel.moved.toBottom",
+        "panel.moved.toBottomHidden",
+        "panel.moved.onLeft",
+        "panel.moved.onRight",
+        "panel.closed",
+      ].map((key) => english[key]),
+    ).toEqual([
+      "{name} moved to the sidebar",
+      "{name} moved to the right panel",
+      "{name} moved to the bottom panel",
+      "{name} moved to the bottom panel. Make the window taller to show it.",
+      "{name} now shows in its own group, on the left",
+      "{name} now shows in its own group, on the right",
+      "{name} closed",
+    ]);
+    expect(en["panel.bottomTooShort"]).toBe("Make the window taller to show the bottom panel.");
+    expect(en["panel.undoLayoutCommand"]).toBe("Undo the last layout change");
+  });
+
+  it.each(LOCALES)("in %s use the word the region is called by", async (locale) => {
+    const result = await loadTable(locale);
+    if (result.status !== "loaded") throw new Error(`${locale}: ${result.status}`);
+    const table: Record<string, string> = result.table;
+    for (const { name, item, said, more } of REGIONS) {
+      // the noun of the region's name (its last word; a name written without spaces is one word)
+      const noun = (table[name] ?? "").split(/\s+/).at(-1)?.toLowerCase() ?? "";
+      expect(noun, `${locale} ${name}`).not.toBe("");
+      for (const key of [item, said, ...more]) {
+        expect((table[key] ?? "").toLowerCase(), `${locale} ${key}`).toContain(noun);
+      }
+    }
+  });
+
+  // where a participle | a verb would have to agree with the view's name (its gender, its number), the name stands
+  // apart and nothing agrees with it
+  it.each(["pt-BR", "pt-PT", "es", "fr", "it", "ca", "gl", "ro"] as const)(
+    "in %s say a move without a word that agrees with the view's name",
+    async (locale) => {
+      const result = await loadTable(locale);
+      if (result.status !== "loaded") throw new Error(`${locale}: ${result.status}`);
+      const table: Record<string, string> = result.table;
+      expect(MOVED.length).toBeGreaterThan(12);
+      for (const key of MOVED) {
+        expect(table[key], `${locale} ${key}`).toMatch(/^\{name\} ?: /);
+      }
+    },
+  );
+});
+
 describe("the ja table's style", () => {
   it("writes ？ and ： full-width after Japanese text, and keeps the Git term worktree in English", async () => {
     const result = await loadTable("ja");

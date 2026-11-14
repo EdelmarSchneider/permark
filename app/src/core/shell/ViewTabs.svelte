@@ -1,0 +1,309 @@
+<script module lang="ts">
+  import type { Component } from "svelte";
+
+  /** A tab: the view's id, its label, its icon (crowded strips show it alone), a short count. */
+  export type TabView = {
+    id: string;
+    label: string;
+    icon: Component<{ size?: number }> | undefined;
+    badge: string | null;
+  };
+</script>
+
+<script lang="ts">
+  // The views of one group of a region as tabs (Files | Search | plugin tabs at the left, Outline | Live changes at the
+  // right): drawn by the region when the group shows two views or more, or one view without a header of its own.
+  // Selecting shows a view, never hides it. One Tab stop: arrows move between the tabs, Enter | Space select; right
+  // click | Shift+F10 | the Menu key open the view's options. After the tabs, where the window has views to arrange,
+  // one options button for the tab shown: a Tab stop of its own, seen while the strip is pointed at | has the focus.
+  import Ellipsis from "@lucide/svelte/icons/ellipsis";
+  import { t } from "../i18n";
+
+  type Props = {
+    views: readonly TabView[];
+    selected: string | null;
+    onselect: (id: string) => void;
+    /** The view's options at a point (`null`: under the tab). */
+    onmenu?: (id: string, at: { x: number; y: number }, anchor: HTMLElement) => void;
+    /** The options button was pressed, for the tab shown (absent: the strip draws no button). */
+    onoptions?: (id: string, button: HTMLElement) => void;
+    /** The options of the tab shown are open. */
+    expanded?: boolean;
+    /** A pointer went down on a tab: the handle its view is dragged by (absent: the tabs are not handles). */
+    ongrab?: (id: string, tab: HTMLElement, event: PointerEvent) => void;
+    /** The view being dragged (its tab is dimmed). */
+    dragging?: string | null;
+    /** The strip's name (default: the right panel's). */
+    label?: string;
+    /** Tabs that keep their labels: more make the strip crowded. */
+    roomy?: number;
+  };
+  let {
+    views,
+    selected,
+    onselect,
+    onmenu,
+    onoptions,
+    expanded = false,
+    ongrab,
+    dragging = null,
+    label,
+    roomy = 2,
+  }: Props = $props();
+
+  /** Many tabs: the ones that are not open show their icon alone (the label is the tooltip). */
+  const crowded = $derived(views.length > roomy);
+  /** The tab the options button acts on: the one shown (nothing selected: the first). */
+  const shown = $derived(views.find((v) => v.id === selected) ?? views[0] ?? null);
+  /** The tab that takes the Tab stop (the selected one until the focus goes to another: arrows, a click, a script). */
+  let focused = $state<string | null>(null);
+  const stop = $derived(
+    views.find((v) => v.id === focused)?.id ??
+      views.find((v) => v.id === selected)?.id ??
+      views[0]?.id ??
+      null,
+  );
+  let strip: HTMLElement | undefined = $state();
+
+  function tabOf(id: string | null): HTMLElement | null {
+    return strip?.querySelector<HTMLElement>(`[data-view="${id ?? ""}"]`) ?? null;
+  }
+
+  function menuAt(id: string, el: HTMLElement): void {
+    const box = el.getBoundingClientRect();
+    onmenu?.(id, { x: box.left, y: box.bottom }, el);
+  }
+
+  function keydown(event: KeyboardEvent): void {
+    if ((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu") {
+      const el = tabOf(stop);
+      if (el !== null && stop !== null) {
+        event.preventDefault();
+        menuAt(stop, el);
+      }
+      return;
+    }
+    const at = views.findIndex((v) => v.id === stop);
+    const last = views.length - 1;
+    let to: number;
+    switch (event.key) {
+      case "ArrowRight":
+        to = at >= last ? 0 : at + 1;
+        break;
+      case "ArrowLeft":
+        to = at <= 0 ? last : at - 1;
+        break;
+      case "Home":
+        to = 0;
+        break;
+      case "End":
+        to = last;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    const id = views[to]?.id ?? null;
+    focused = id;
+    tabOf(id)?.focus();
+  }
+</script>
+
+<div class="bar">
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
+  <div
+    class="tabs"
+    class:crowded
+    role="tablist"
+    aria-label={label ?? t("panel.tabs")}
+    bind:this={strip}
+    onkeydown={keydown}
+    onfocusin={(event) => {
+      const tab = event.target instanceof Element ? event.target.closest("[data-view]") : null;
+      focused = tab?.getAttribute("data-view") ?? focused;
+    }}
+    onfocusout={(event) => {
+      if (!(event.relatedTarget instanceof Node) || !strip?.contains(event.relatedTarget)) {
+        focused = null;
+      }
+    }}
+  >
+    {#each views as view (view.id)}
+      {@const iconOnly = view.icon !== undefined && crowded && selected !== view.id}
+      <button
+        type="button"
+        role="tab"
+        class="tab"
+        class:icon-only={iconOnly}
+        class:has-icon={view.icon !== undefined}
+        class:has-badge={view.badge !== null}
+        class:dragged={dragging === view.id}
+        data-view={view.id}
+        tabindex={stop === view.id ? 0 : -1}
+        aria-selected={selected === view.id}
+        aria-label={iconOnly
+          ? view.badge === null
+            ? view.label
+            : `${view.label} ${view.badge}`
+          : undefined}
+        title={view.label}
+        onclick={() => {
+          if (view.id !== selected) onselect(view.id);
+        }}
+        onpointerdown={(event) => ongrab?.(view.id, event.currentTarget, event)}
+        oncontextmenu={(event) => {
+          if (onmenu === undefined || !(event.currentTarget instanceof HTMLElement)) return;
+          event.preventDefault();
+          onmenu(view.id, { x: event.clientX, y: event.clientY }, event.currentTarget);
+        }}
+      >
+        {#if view.icon}
+          {@const Icon = view.icon}
+          <Icon size={14} />
+        {/if}
+        {#if !iconOnly}<span class="label">{view.label}</span>{/if}
+        {#if view.badge !== null}{" "}<span class="badge">{view.badge}</span>{/if}
+      </button>
+    {/each}
+  </div>
+  {#if onoptions && shown}
+    {@const name = t("panel.viewMenu", { name: shown.label })}
+    <button
+      type="button"
+      class="icon-btn options"
+      data-view-menu={shown.id}
+      aria-label={name}
+      title={name}
+      aria-haspopup="menu"
+      aria-expanded={expanded}
+      onclick={(event) => onoptions(shown.id, event.currentTarget)}
+    >
+      <Ellipsis size={14} aria-hidden="true" />
+    </button>
+  {/if}
+</div>
+
+<style>
+  /* the tabs, then the options button: one line over the views of the group */
+  .bar {
+    display: flex;
+    flex: none;
+    min-width: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .tabs {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 2px;
+    padding: var(--sp-2) var(--sp-2) 0;
+    overflow: hidden;
+  }
+  /* a 24 px target at the end of the strip. Not seen until the strip is pointed at or holds the focus: by opacity
+     alone, so it keeps its room and its Tab stop */
+  .options {
+    flex: none;
+    align-self: center;
+    width: 24px;
+    height: 24px;
+    margin-inline-end: var(--sp-2);
+    opacity: 0;
+  }
+  .bar:hover .options,
+  .bar:focus-within .options,
+  .options[aria-expanded="true"] {
+    opacity: 1;
+  }
+  .options[aria-expanded="true"] {
+    background: var(--hover);
+    color: var(--text);
+  }
+  /* nothing hovers on a touch screen: always there */
+  @media (hover: none) {
+    .options {
+      opacity: 1;
+    }
+  }
+  /* A strip too narrow for its labels takes the room from the tabs by their weights: the tab shown loses nothing
+     while another can still give way (its weight is nothing beside theirs), so its label stays whole; with every
+     other tab at its smallest, it shortens too and every tab stays reachable. A tab is also the handle its view is
+     dragged by: a pen | a finger on it never scrolls the page away from under a drag. */
+  .tab {
+    --tab-pad: var(--sp-3);
+    flex: 0 100000 auto;
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px var(--tab-pad);
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: var(--fs-ui-sm);
+    cursor: pointer;
+    touch-action: none;
+  }
+  .tab[aria-selected="true"] {
+    flex-shrink: 1;
+  }
+  .tab.icon-only {
+    --tab-pad: var(--sp-2);
+    flex: none;
+  }
+  .crowded .tab {
+    --tab-pad: var(--sp-2);
+  }
+  .crowded .tab.icon-only {
+    --tab-pad: 5px;
+  }
+  .tab.dragged {
+    opacity: 0.45;
+  }
+  .label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* A tab that gives way, with an icon: its label shortens (ellipsis) down to a few letters, then goes and the icon
+     stays alone, in the middle of the room the tab still has (the tab's name is its tooltip). The room the label
+     has in the tab, less that floor, times a large number: no limit above the floor, no width under it. */
+  .tab.has-icon:not([aria-selected="true"]) {
+    --label-floor: calc(14px + 6px + 3em);
+    min-width: calc(14px + 2 * var(--tab-pad));
+    justify-content: center;
+  }
+  .tab.has-icon.has-badge:not([aria-selected="true"]) {
+    --label-floor: calc(14px + 6px + 3em + 6px + 2em);
+  }
+  .tab.has-icon:not([aria-selected="true"]) .label {
+    max-width: max(0px, calc((100% - var(--label-floor)) * 999));
+  }
+  /* without an icon its letters are all it has: a few of them stay */
+  .tab:not(.has-icon):not([aria-selected="true"]) .label {
+    min-width: 3em;
+  }
+  .tab:hover {
+    color: var(--text);
+  }
+  .tab[aria-selected="true"] {
+    border-bottom-color: var(--accent);
+    color: var(--text);
+    font-weight: 600;
+  }
+  .badge {
+    flex: none;
+    min-width: 16px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--accent-fg);
+    font-size: var(--fs-ui-xs);
+    font-weight: 600;
+    line-height: 16px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+</style>

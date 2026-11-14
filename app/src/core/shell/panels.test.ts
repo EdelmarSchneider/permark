@@ -1,11 +1,22 @@
 // @vitest-environment jsdom
 import "../testing/media";
-import { afterEach, describe, expect, it } from "vitest";
-import { contributions } from "../plugins/instance.svelte";
-import { NO_REQUIREMENT } from "../conditions/available";
-import { activeSidebar, leftPanels, rightPanels } from "./panels.svelte";
-import { ui } from "./ui.svelte";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PluginId } from "../../api/generated/PluginId";
+
+vi.mock("../../api", async () => {
+  const { createMockApi } = await import("../../api/mock");
+  return { api: createMockApi() };
+});
+
+const { api } = await import("../../api");
+const { NO_REQUIREMENT } = await import("../conditions/available");
+const { conditions, neutralContext } = await import("../conditions/context.svelte");
+const { contributions } = await import("../plugins/instance.svelte");
+const { FILES, SEARCH } = await import("./arrangement");
+const { arrangement } = await import("./arrangement.svelte");
+const { layout } = await import("./layout.svelte");
+const { offeredPanels } = await import("./panels.svelte");
+const { showView } = await import("./sides");
 
 const removals: (() => void)[] = [];
 const view = () => import("../testing/StripFirst.svelte");
@@ -25,34 +36,49 @@ function panel(id: string, side: "left" | "right", owner = "test", offered?: () 
   );
 }
 
+const idsOf = (side: "left" | "right"): string[] =>
+  offeredPanels()
+    .filter((p) => p.side === side)
+    .map((p) => p.id);
+
 afterEach(() => {
   for (const remove of removals.splice(0)) remove();
-  ui.sidebar = "files";
+  conditions.set(neutralContext());
+  void layout.load(api, false);
 });
 
 describe("plugin panels", () => {
-  it("are listed by side, and the view that shows falls back to Files when its plugin is gone", () => {
+  it("are listed with their side, and the tab that shows falls back to Files when its plugin is gone", () => {
+    conditions.set({ ...neutralContext(), workspace: "project" });
     panel("a.panel", "left");
     panel("b.panel", "right");
-    expect(leftPanels().map((p) => p.id)).toEqual(["a.panel"]);
-    expect(rightPanels().map((p) => p.id)).toEqual(["b.panel"]);
-    ui.showSidebar("a.panel");
-    expect(activeSidebar()).toBe("a.panel");
-    ui.showSidebar("search");
-    expect(activeSidebar()).toBe("search");
-    ui.showSidebar("gone.panel");
-    expect(activeSidebar()).toBe("files");
+    expect(idsOf("left")).toEqual(["a.panel"]);
+    expect(idsOf("right")).toEqual(["b.panel"]);
+    const shown = (): string[] =>
+      [FILES, SEARCH, "a.panel"].filter((id) => arrangement.isSelected(id));
+    expect(shown()).toEqual([FILES]);
+    showView("a.panel");
+    expect(shown()).toEqual(["a.panel"]);
+    showView(SEARCH);
+    expect(shown()).toEqual([SEARCH]);
+    showView("a.panel");
+    // its plugin goes off: the first view of the group shows again
+    for (const remove of removals.splice(0)) remove();
+    expect(shown()).toEqual([FILES]);
+    // a view nobody offers selects nothing
+    showView("gone.panel");
+    expect(shown()).toEqual([FILES]);
   });
 
   it("a dormant panel is not listed until its plugin offers it", () => {
     const state = { offered: false };
     panel("b.panel", "right", "test", () => state.offered);
     panel("c.panel", "left", "test", () => state.offered);
-    expect(rightPanels()).toEqual([]);
-    expect(leftPanels()).toEqual([]);
+    expect(idsOf("right")).toEqual([]);
+    expect(idsOf("left")).toEqual([]);
     state.offered = true;
-    expect(rightPanels().map((p) => p.id)).toEqual(["b.panel"]);
-    expect(leftPanels().map((p) => p.id)).toEqual(["c.panel"]);
+    expect(idsOf("right")).toEqual(["b.panel"]);
+    expect(idsOf("left")).toEqual(["c.panel"]);
   });
 
   it("keep one order whatever order the plugins finished loading in", () => {
@@ -60,22 +86,12 @@ describe("plugin panels", () => {
     panel("tags.panel", "left", "tags");
     panel("broken.panel", "left", "broken-links");
     panel("tags.second", "left", "tags");
-    expect(leftPanels().map((p) => p.id)).toEqual([
-      "broken.panel",
-      "tags.panel",
-      "tags.second",
-      "unread.panel",
-    ]);
+    expect(idsOf("left")).toEqual(["broken.panel", "tags.panel", "tags.second", "unread.panel"]);
     for (const remove of removals.splice(0)) remove();
     panel("broken.panel", "left", "broken-links");
     panel("tags.panel", "left", "tags");
     panel("tags.second", "left", "tags");
     panel("unread.panel", "left", "unread");
-    expect(leftPanels().map((p) => p.id)).toEqual([
-      "broken.panel",
-      "tags.panel",
-      "tags.second",
-      "unread.panel",
-    ]);
+    expect(idsOf("left")).toEqual(["broken.panel", "tags.panel", "tags.second", "unread.panel"]);
   });
 });

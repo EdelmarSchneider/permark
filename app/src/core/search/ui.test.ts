@@ -12,12 +12,21 @@ Object.defineProperty(window, "matchMedia", {
   value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
 });
 Element.prototype.scrollIntoView = () => {};
+// jsdom has no layout: a region's size watcher sees nothing
+globalThis.ResizeObserver ??= class {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+};
 
 const { api } = await import("../../api");
 const { default: Finder } = await import("./Finder.svelte");
 const { default: SearchPanel } = await import("./SearchPanel.svelte");
 const { default: KeymapDialog } = await import("../shell/KeymapDialog.svelte");
-const { default: SidebarTabs } = await import("./SidebarTabs.svelte");
+const { default: ViewRegion } = await import("../shell/ViewRegion.svelte");
+const { FILES, SEARCH } = await import("../shell/arrangement");
+const { arrangement } = await import("../shell/arrangement.svelte");
+const { selectView, showView } = await import("../shell/sides");
 const { ui } = await import("../shell/ui.svelte");
 const { windowStore } = await import("../window.svelte");
 const { contributions, syncPlugins } = await import("../plugins/instance.svelte");
@@ -68,7 +77,7 @@ beforeEach(async () => {
   document.body.append(target);
   ui.closeFinder();
   ui.closeKeyboard();
-  ui.showSidebar("files");
+  selectView(FILES);
   unregister = registerCoreCommands(contributions);
 });
 
@@ -298,7 +307,7 @@ describe("Quick open and Search everywhere", () => {
 describe("the Search panel", () => {
   it("shows the documents that hold the words and opens the section on a click", async () => {
     await open();
-    ui.showSidebar("search");
+    showView(SEARCH);
     component = mount(SearchPanel, { target, props: { root: MOCK_FOLDER } });
     flushSync();
     const input = target.querySelector<HTMLInputElement>("input.field");
@@ -336,6 +345,36 @@ describe("the Search panel", () => {
     conditions.set({ ...conditions.current, plugins: [] });
   });
 
+  it("takes the cursor once per request: the arrangement worked out again never takes the keyboard back", async () => {
+    await open();
+    conditions.set({ ...conditions.current, workspace: "project" });
+    showView(SEARCH);
+    component = mount(SearchPanel, { target, props: { root: MOCK_FOLDER } });
+    flushSync();
+    const input = target.querySelector<HTMLInputElement>("input.field");
+    if (!input) throw new Error("no field");
+    expect(arrangement.isSelected(SEARCH)).toBe(true);
+    expect(document.activeElement).toBe(input);
+    // the keyboard goes elsewhere (a view's options after a move)
+    const other = document.createElement("button");
+    document.body.append(other);
+    other.focus();
+    // the arrangement comes back from the settings a moment after a move: the same places, new objects
+    arrangement.arrange(JSON.parse(JSON.stringify(arrangement.saved)) as typeof arrangement.saved);
+    flushSync();
+    expect(arrangement.isSelected(SEARCH)).toBe(true);
+    expect(document.activeElement).toBe(other);
+    // the context of the window changes (git answered, a plugin switched): the same
+    conditions.set({ ...conditions.current });
+    flushSync();
+    expect(document.activeElement).toBe(other);
+    // asked for again (its command, its tab): the box takes the cursor
+    showView(SEARCH);
+    flushSync();
+    expect(document.activeElement).toBe(input);
+    other.remove();
+  });
+
   it("reports the index being built", async () => {
     await open();
     component = mount(SearchPanel, { target, props: { root: MOCK_FOLDER } });
@@ -349,22 +388,30 @@ describe("the Search panel", () => {
 });
 
 describe("the sidebar tabs", () => {
-  it("switch between Files and Search", async () => {
-    component = mount(SidebarTabs, { target });
+  /** The left region of a project with no plugin tab: Files | Search. */
+  function mountSidebar(): void {
+    syncPlugins([]);
+    conditions.set({ ...conditions.current, workspace: "project", plugins: [] });
+    component = mount(ViewRegion, { target, props: { region: "left" } });
     flushSync();
+  }
+  const shown = (): string[] => [FILES, SEARCH].filter((id) => arrangement.isSelected(id));
+
+  it("switch between Files and Search", async () => {
+    mountSidebar();
     const [files, search] = Array.from(target.querySelectorAll<HTMLElement>('[role="tab"]'));
     expect(files?.getAttribute("aria-selected")).toBe("true");
     search?.click();
     flushSync();
-    expect(ui.sidebar).toBe("search");
+    expect(shown()).toEqual([SEARCH]);
+    expect(search?.getAttribute("aria-selected")).toBe("true");
     files?.click();
     flushSync();
-    expect(ui.sidebar).toBe("files");
+    expect(shown()).toEqual([FILES]);
   });
 
   it("are one Tab stop: arrows move between the tabs, Enter | Space (a click) selects", async () => {
-    component = mount(SidebarTabs, { target });
-    flushSync();
+    mountSidebar();
     const list = target.querySelector<HTMLElement>('[role="tablist"]');
     expect(list?.getAttribute("aria-label")).toBe("Sidebar views");
     const tabs = (): HTMLElement[] => [...target.querySelectorAll<HTMLElement>('[role="tab"]')];
@@ -379,7 +426,7 @@ describe("the sidebar tabs", () => {
     expect(document.activeElement).toBe(search);
     expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0]);
     // the focus moved, the view did not: the person selects it
-    expect(ui.sidebar).toBe("files");
+    expect(shown()).toEqual([FILES]);
     press("ArrowRight");
     expect(document.activeElement).toBe(files);
     press("End");
@@ -390,9 +437,8 @@ describe("the sidebar tabs", () => {
     expect(document.activeElement).toBe(search);
     search?.click();
     flushSync();
-    expect(ui.sidebar).toBe("search");
+    expect(shown()).toEqual([SEARCH]);
     expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, 0]);
-    ui.showSidebar("files");
   });
 });
 
@@ -444,10 +490,11 @@ describe("the keyboard dialog", () => {
     button(rowOf("Save"), "Change")?.click();
     flushSync();
     expect(rowOf("Save").textContent).toContain("Press the new keys");
-    press(window, "j", { ctrlKey: true, code: "KeyJ" });
-    await until(() => store.keymap["edit.save"] === "Mod+j", "stored");
+    // keys no command holds
+    press(window, "k", { ctrlKey: true, code: "KeyK" });
+    await until(() => store.keymap["edit.save"] === "Mod+k", "stored");
     flushSync();
-    expect(rowOf("Save").querySelector("kbd")?.textContent).toBe("Ctrl+J");
+    expect(rowOf("Save").querySelector("kbd")?.textContent).toBe("Ctrl+K");
     expect(button(rowOf("Save"), "Reset")).toBeDefined();
     button(rowOf("Save"), "Reset")?.click();
     await until(() => store.keymap["edit.save"] === undefined, "back to the default");

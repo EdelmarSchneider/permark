@@ -41,7 +41,7 @@
   };
 
   // The groups, as the settings ship them: the boot read plus every settings change, like the shell's own
-  // settings-following store (`core/shell/rightViews.svelte.ts`).
+  // settings-following store (`core/shell/arrangement.svelte.ts`).
   $effect(() => {
     let gone = false;
     let off: (() => void) | null = null;

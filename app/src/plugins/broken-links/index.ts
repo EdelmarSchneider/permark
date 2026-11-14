@@ -5,7 +5,7 @@
 import Unlink from "@lucide/svelte/icons/unlink";
 import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { definePlugin } from "../../core/plugins/registry.svelte";
-import { ui } from "../../core/shell/ui.svelte";
+import { showView } from "../../core/shell/sides";
 import { PANEL } from "./ids";
 import { brokenLinks } from "./store.svelte";
 
@@ -28,7 +28,7 @@ export default definePlugin({
         id: "brokenLinks.show",
         label: "brokenLinks.show",
         requires: NO_REQUIREMENT,
-        run: () => ui.showSidebar(PANEL),
+        run: () => showView(PANEL),
       }),
       cx.contribute({
         kind: "shortcut",
@@ -39,7 +39,6 @@ export default definePlugin({
     ];
     return () => {
       for (const remove of removals) remove();
-      if (ui.sidebar === PANEL) ui.showSidebar("files");
       stop();
     };
   },

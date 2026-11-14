@@ -159,7 +159,7 @@ pub struct RightViews {
     pub groups: Vec<ViewGroup>,
 }
 
-/// One group of the right column: one view, or several shown as tabs.
+/// One group of a region: one view, or several shown as tabs.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct ViewGroup {
@@ -167,15 +167,50 @@ pub struct ViewGroup {
     pub share: f64,
 }
 
+/// The arrangement of every region (app-wide; `[panels]`): per region, groups of view ids, each a share of the
+/// region's extent. Shape rules (duplicates, unknown ids, normalizing) are the frontend's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Panels {
+    pub v: u32,
+    pub left: Vec<ViewGroup>,
+    pub right: Vec<ViewGroup>,
+    pub bottom: Vec<ViewGroup>,
+}
+
+/// The arrangements the person saved under a name (app-wide; `[layouts]`). Rules across the list (the same name
+/// twice, case | normalization folding) are the frontend's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct Layouts {
+    pub v: u32,
+    pub items: Vec<LayoutItem>,
+}
+
+/// One named arrangement.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct LayoutItem {
+    pub name: String,
+    pub arrangement: Panels,
+}
+
 /// Most groups | views per group a written arrangement may hold.
 pub const MAX_VIEW_GROUPS: usize = 3;
 pub const MAX_GROUP_VIEWS: usize = 16;
+/// Most named layouts written; longest layout name, in characters.
+pub const MAX_LAYOUTS: usize = 20;
+pub const MAX_LAYOUT_NAME: usize = 40;
+/// The format (`v`) of `[panels]` | `[layouts]` this build writes: the only one a written value may carry, and
+/// what a removal is measured by.
+pub const PANELS_VERSION: u32 = 2;
+pub const LAYOUTS_VERSION: u32 = 1;
 
-/// Write rule: <= 3 groups, <= 16 views each, view ids like command ids, shares finite 0..=1.
-#[must_use]
-pub fn valid_right_views(views: &RightViews) -> bool {
-    views.groups.len() <= MAX_VIEW_GROUPS
-        && views.groups.iter().all(|group| {
+/// Write rule of one stack of groups (the right column | a region): <= 3 groups, <= 16 views each, view ids like
+/// command ids, shares finite 0..=1.
+fn valid_view_groups(groups: &[ViewGroup]) -> bool {
+    groups.len() <= MAX_VIEW_GROUPS
+        && groups.iter().all(|group| {
             group.views.len() <= MAX_GROUP_VIEWS
                 && group.views.iter().all(|id| valid_command_id(id))
                 && group.share.is_finite()
@@ -183,12 +218,44 @@ pub fn valid_right_views(views: &RightViews) -> bool {
         })
 }
 
-/// `[right_views]` of a document, leniently: anything unreadable (wrong types, no `v`, a share that is no number)
-/// -> `None` (the frontend's default). Array of inline tables or `[[right_views.groups]]` both read.
-fn right_views_of(doc: &DocumentMut) -> Option<RightViews> {
-    let table = doc.get("right_views")?.as_table_like()?;
-    let v = u32::try_from(table.get("v")?.as_integer()?).ok()?;
-    let groups: Vec<&dyn toml_edit::TableLike> = match table.get("groups")? {
+/// Write rule: <= 3 groups, <= 16 views each, view ids like command ids, shares finite 0..=1.
+#[must_use]
+pub fn valid_right_views(views: &RightViews) -> bool {
+    valid_view_groups(&views.groups)
+}
+
+/// Write rule: the format this build writes ([`PANELS_VERSION`]: any other would be stored without being
+/// understood here, and a higher one would shut every later write out, see `set_versioned_table`); every region
+/// within the bounds of the right column ([`valid_right_views`]).
+#[must_use]
+pub fn valid_panels(panels: &Panels) -> bool {
+    panels.v == PANELS_VERSION
+        && [&panels.left, &panels.right, &panels.bottom]
+            .into_iter()
+            .all(|region| valid_view_groups(region))
+}
+
+/// Write rule: the format this build writes ([`LAYOUTS_VERSION`], for the reasons of [`valid_panels`]); <= 20
+/// layouts; each name 1..=40 characters, already trimmed, without control characters; each arrangement a valid
+/// [`Panels`] (its format included).
+#[must_use]
+pub fn valid_layouts(layouts: &Layouts) -> bool {
+    layouts.v == LAYOUTS_VERSION
+        && layouts.items.len() <= MAX_LAYOUTS
+        && layouts.items.iter().all(|item| {
+            let name = item.name.as_str();
+            !name.is_empty()
+                && name.trim() == name
+                && name.chars().count() <= MAX_LAYOUT_NAME
+                && !name.chars().any(char::is_control)
+                && valid_panels(&item.arrangement)
+        })
+}
+
+/// The tables of an array, in both spellings: an array of inline tables | `[[an.array]]` of tables. `None`: no
+/// array, or an element that is no table.
+fn rows_of(item: &Item) -> Option<Vec<&dyn toml_edit::TableLike>> {
+    match item {
         Item::Value(Value::Array(array)) => array
             .iter()
             .map(|value| {
@@ -196,14 +263,25 @@ fn right_views_of(doc: &DocumentMut) -> Option<RightViews> {
                     .as_inline_table()
                     .map(|t| t as &dyn toml_edit::TableLike)
             })
-            .collect::<Option<_>>()?,
-        Item::ArrayOfTables(array) => array
-            .iter()
-            .map(|t| t as &dyn toml_edit::TableLike)
             .collect(),
-        _ => return None,
-    };
-    let groups = groups
+        Item::ArrayOfTables(array) => Some(
+            array
+                .iter()
+                .map(|t| t as &dyn toml_edit::TableLike)
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
+/// The format number `v` of a settings table; `None`: absent | no whole number from 0 on.
+fn version_of(table: &dyn toml_edit::TableLike) -> Option<u32> {
+    u32::try_from(table.get("v")?.as_integer()?).ok()
+}
+
+/// One stack of groups, leniently: anything unreadable in it (wrong types, a share that is no number) -> `None`.
+fn view_groups_of(item: &Item) -> Option<Vec<ViewGroup>> {
+    rows_of(item)?
         .into_iter()
         .map(|group| {
             let views = group
@@ -220,28 +298,110 @@ fn right_views_of(doc: &DocumentMut) -> Option<RightViews> {
                 .or_else(|| share.as_integer().map(|n| n as f64))?;
             share.is_finite().then_some(ViewGroup { views, share })
         })
-        .collect::<Option<Vec<ViewGroup>>>()?;
-    Some(RightViews { v, groups })
+        .collect()
+}
+
+/// One stack of groups as an array of inline tables: `[{ views = [..], share = n }, ..]`.
+fn view_groups_value(groups: &[ViewGroup]) -> Value {
+    Value::Array(
+        groups
+            .iter()
+            .map(|group| {
+                let mut inline = toml_edit::InlineTable::new();
+                inline.insert(
+                    "views",
+                    Value::Array(group.views.iter().map(String::as_str).collect()),
+                );
+                inline.insert("share", Value::from(group.share));
+                Value::InlineTable(inline)
+            })
+            .collect(),
+    )
+}
+
+/// `[right_views]` of a document, leniently: anything unreadable (wrong types, no `v`, a share that is no number)
+/// -> `None` (the frontend's default). Array of inline tables or `[[right_views.groups]]` both read.
+fn right_views_of(doc: &DocumentMut) -> Option<RightViews> {
+    let table = doc.get("right_views")?.as_table_like()?;
+    Some(RightViews {
+        v: version_of(table)?,
+        groups: view_groups_of(table.get("groups")?)?,
+    })
 }
 
 /// The `[right_views]` table of an arrangement: `v`, then `groups` as an array of inline tables.
 fn right_views_table(views: &RightViews) -> Table {
     let mut table = Table::new();
     table.insert("v", Item::Value(Value::from(i64::from(views.v))));
-    let groups: toml_edit::Array = views
-        .groups
+    table.insert("groups", Item::Value(view_groups_value(&views.groups)));
+    table
+}
+
+/// A `[panels]` table (the key itself | the `arrangement` of a layout), leniently: no `v`, a region absent |
+/// unreadable -> `None`. Each region reads in both spellings (`left = [{ .. }]` | `[[panels.left]]`).
+fn panels_of(table: &dyn toml_edit::TableLike) -> Option<Panels> {
+    Some(Panels {
+        v: version_of(table)?,
+        left: view_groups_of(table.get("left")?)?,
+        right: view_groups_of(table.get("right")?)?,
+        bottom: view_groups_of(table.get("bottom")?)?,
+    })
+}
+
+/// A `[panels]` table: `v`, then each region as an array of inline tables.
+fn panels_table(panels: &Panels) -> Table {
+    let mut table = Table::new();
+    table.insert("v", Item::Value(Value::from(i64::from(panels.v))));
+    for (region, groups) in [
+        ("left", &panels.left),
+        ("right", &panels.right),
+        ("bottom", &panels.bottom),
+    ] {
+        table.insert(region, Item::Value(view_groups_value(groups)));
+    }
+    table
+}
+
+/// `[layouts]` of a document, leniently: no `v`, no list, one unreadable layout (a name that is no string, an
+/// unreadable arrangement) -> `None` (no layout). `[[layouts.items]]` or an array of inline tables both read.
+fn layouts_of(doc: &DocumentMut) -> Option<Layouts> {
+    let table = doc.get("layouts")?.as_table_like()?;
+    let items = rows_of(table.get("items")?)?
+        .into_iter()
+        .map(|item| {
+            Some(LayoutItem {
+                name: item.get("name")?.as_str()?.to_owned(),
+                arrangement: panels_of(item.get("arrangement")?.as_table_like()?)?,
+            })
+        })
+        .collect::<Option<Vec<LayoutItem>>>()?;
+    Some(Layouts {
+        v: version_of(table)?,
+        items,
+    })
+}
+
+/// The `[layouts]` table: `v`, then one `[[layouts.items]]` per layout (`name`, its `arrangement` as a table).
+fn layouts_table(layouts: &Layouts) -> Table {
+    let mut table = Table::new();
+    table.insert("v", Item::Value(Value::from(i64::from(layouts.v))));
+    let items: toml_edit::ArrayOfTables = layouts
+        .items
         .iter()
-        .map(|group| {
-            let mut inline = toml_edit::InlineTable::new();
-            inline.insert(
-                "views",
-                Value::Array(group.views.iter().map(String::as_str).collect()),
-            );
-            inline.insert("share", Value::from(group.share));
-            Value::InlineTable(inline)
+        .map(|item| {
+            let mut row = Table::new();
+            row.insert("name", Item::Value(Value::from(item.name.as_str())));
+            row.insert("arrangement", Item::Table(panels_table(&item.arrangement)));
+            row
         })
         .collect();
-    table.insert("groups", Item::Value(Value::Array(groups)));
+    // an array of tables without a table writes no line: the empty list would read back as absent
+    let items = if items.is_empty() {
+        Item::Value(Value::Array(toml_edit::Array::new()))
+    } else {
+        Item::ArrayOfTables(items)
+    };
+    table.insert("items", items);
     table
 }
 
@@ -284,6 +444,10 @@ pub struct AppSettings {
     pub plugins: BTreeMap<PluginId, bool>,
     /// The right column's arrangement (`[right_views]`); `None` = absent | unreadable = the frontend's default.
     pub right_views: Option<RightViews>,
+    /// The arrangement of every region (`[panels]`); `None` = absent | unreadable = the frontend's default.
+    pub panels: Option<Panels>,
+    /// The named arrangements (`[layouts]`); `None` = absent | unreadable = no layout.
+    pub layouts: Option<Layouts>,
     /// Long lines wrap in the text viewer and the source editors (`wrap_lines`; absent = on).
     pub wrap_lines: bool,
     /// Folder under the document's folder for pasted pictures (`image_folder`). Absent = `img`.
@@ -320,6 +484,8 @@ impl Default for AppSettings {
             tokenizers: Vec::new(),
             plugins: BTreeMap::new(),
             right_views: None,
+            panels: None,
+            layouts: None,
             wrap_lines: true,
             image_folder: "img".to_owned(),
             characters_file: characters::DEFAULT_FILE_NAME.to_owned(),
@@ -363,6 +529,10 @@ pub enum SettingChange {
     },
     /// The right column's arrangement, written whole; `None` = back to the default (table removed).
     RightViews(Option<RightViews>),
+    /// The arrangement of every region, written whole; `None` = back to the default (table removed).
+    Panels(Option<Panels>),
+    /// The named arrangements, written whole; `None` = no layout kept (table removed).
+    Layouts(Option<Layouts>),
     WrapLines(bool),
     /// One path segment under the document's folder. Empty = beside the document.
     ImageFolder(String),
@@ -390,6 +560,8 @@ impl SettingChange {
             Self::Tokenizers(_) => "plugins.token-count.tokenizers".to_owned(),
             Self::PluginEnabled { plugin, .. } => format!("plugins.{plugin}.enabled"),
             Self::RightViews(_) => "right_views".to_owned(),
+            Self::Panels(_) => "panels".to_owned(),
+            Self::Layouts(_) => "layouts".to_owned(),
             Self::WrapLines(_) => "wrap_lines".to_owned(),
             Self::ImageFolder(_) => "image_folder".to_owned(),
             Self::CharactersFile(_) => "characters_file".to_owned(),
@@ -463,15 +635,20 @@ impl From<SettingsError> for IpcError {
 }
 
 impl SettingChange {
+    /// The refusal of this change (`reason`: a word the UI can word).
+    fn invalid(&self, reason: &str) -> SettingsError {
+        SettingsError::Invalid {
+            key: self.key(),
+            reason: reason.to_owned(),
+        }
+    }
+
     /// Refuses values that must never reach the file.
     ///
     /// # Errors
     /// `Invalid`: reference template too long; editor command that is not a valid template.
     pub fn validate(&self) -> Result<(), SettingsError> {
-        let invalid = |reason: &str| SettingsError::Invalid {
-            key: self.key(),
-            reason: reason.to_owned(),
-        };
+        let invalid = |reason: &str| self.invalid(reason);
         match self {
             Self::ReferenceTemplate(text) if text.chars().count() > MAX_REFERENCE_TEMPLATE => {
                 Err(invalid("tooLong"))
@@ -484,6 +661,8 @@ impl SettingChange {
             Self::RightViews(Some(views)) if !valid_right_views(views) => {
                 Err(invalid("rightViews"))
             }
+            Self::Panels(Some(panels)) if !valid_panels(panels) => Err(invalid("panels")),
+            Self::Layouts(Some(layouts)) if !valid_layouts(layouts) => Err(invalid("layouts")),
             Self::ImageFolder(text) => match image_folder_problem(text) {
                 Some(reason) => Err(invalid(reason)),
                 None => Ok(()),
@@ -701,6 +880,11 @@ impl AppSettings {
             keymap,
             plugins,
             right_views: right_views_of(doc),
+            panels: doc
+                .get("panels")
+                .and_then(Item::as_table_like)
+                .and_then(panels_of),
+            layouts: layouts_of(doc),
             // a value that is not a boolean counts as not set
             wrap_lines: doc
                 .get("wrap_lines")
@@ -732,7 +916,11 @@ fn set_keeping_decor(table: &mut Table, key: &str, value: Value) {
 }
 
 /// Applies a change to a document: only the bytes of that key change.
-pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
+///
+/// # Errors
+/// `Invalid`: the document holds `[panels]` | `[layouts]` in a newer format than the one being written (nothing
+/// in the document changed).
+pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) -> Result<(), SettingsError> {
     let root = doc.as_table_mut();
     match change {
         SettingChange::Language(v) => set_keeping_decor(root, "language", v.as_str().into()),
@@ -772,7 +960,23 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
         SettingChange::PluginEnabled { plugin, enabled } => {
             set_plugin_key(root, plugin, "enabled", enabled.map(Value::from));
         }
-        SettingChange::RightViews(views) => set_right_views(root, views.as_ref()),
+        SettingChange::RightViews(views) => {
+            set_table(root, "right_views", views.as_ref().map(right_views_table));
+        }
+        SettingChange::Panels(panels) => {
+            let written = panels.as_ref().map_or(PANELS_VERSION, |p| p.v);
+            let fresh = panels.as_ref().map(panels_table);
+            if !set_versioned_table(root, "panels", written, fresh) {
+                return Err(change.invalid("panels"));
+            }
+        }
+        SettingChange::Layouts(layouts) => {
+            let written = layouts.as_ref().map_or(LAYOUTS_VERSION, |l| l.v);
+            let fresh = layouts.as_ref().map(layouts_table);
+            if !set_versioned_table(root, "layouts", written, fresh) {
+                return Err(change.invalid("layouts"));
+            }
+        }
         SettingChange::WrapLines(on) => set_keeping_decor(root, "wrap_lines", (*on).into()),
         // empty stays in the file: removing the key would read back as the default `img`
         SettingChange::ImageFolder(v) => set_keeping_decor(root, "image_folder", v.trim().into()),
@@ -781,6 +985,7 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
             set_keeping_decor(root, "characters_file", v.trim().into());
         }
     }
+    Ok(())
 }
 
 /// Absent or not a single path segment: `img`. A stored empty string stays empty (beside the document).
@@ -836,21 +1041,36 @@ fn characters_file_problem(text: &str) -> Option<&'static str> {
     (extension_of(name).as_deref() != Some("toml")).then_some("tomlOnly")
 }
 
-/// Writes | removes `[right_views]` whole; an existing table keeps its place (and its header comment).
-fn set_right_views(root: &mut Table, views: Option<&RightViews>) {
-    let Some(views) = views else {
-        root.remove("right_views");
+/// Writes | removes (`None`) a table of the root whole (`[right_views]`, `[panels]`, `[layouts]`); an existing
+/// table keeps its place (and its header comment).
+fn set_table(root: &mut Table, key: &str, fresh: Option<Table>) {
+    let Some(fresh) = fresh else {
+        root.remove(key);
         return;
     };
-    let fresh = right_views_table(views);
-    if let Some(Item::Table(table)) = root.get_mut("right_views") {
+    if let Some(Item::Table(table)) = root.get_mut(key) {
         table.clear();
-        for (key, item) in fresh {
-            table.insert(&key, item);
+        for (name, item) in fresh {
+            table.insert(&name, item);
         }
     } else {
-        root.insert("right_views", Item::Table(fresh));
+        root.insert(key, Item::Table(fresh));
     }
+}
+
+/// [`set_table`] for a table that carries its format number `v`. One stored in a newer format than `written`
+/// is another PerMark's (this build may not even read it): never written over | removed, `false` = left as it
+/// is. A stored table without a readable `v` gives way like any other.
+fn set_versioned_table(root: &mut Table, key: &str, written: u32, fresh: Option<Table>) -> bool {
+    let newer = root
+        .get(key)
+        .and_then(Item::as_table_like)
+        .and_then(version_of)
+        .is_some_and(|stored| stored > written);
+    if !newer {
+        set_table(root, key, fresh);
+    }
+    !newer
 }
 
 fn set_keymap(root: &mut Table, command: &str, combo: Option<&str>) {
@@ -1066,21 +1286,22 @@ impl SettingsFile {
             return Ok(None);
         }
         let doc = edit_file(&self.path, |doc| {
-            for change in &changes {
-                apply_change(doc, change);
-            }
+            changes
+                .iter()
+                .try_for_each(|change| apply_change(doc, change))
         })?;
         Ok(Some(self.attach_characters(AppSettings::from_doc(&doc))))
     }
 }
 
 /// Reads a settings file fresh (hand edits kept; a file that is not TOML is moved to `<name>.broken-<ms>` first),
-/// lets `change` edit the document, writes it back atomically (line endings of an all-CRLF file kept). A file that
-/// cannot be read as text (too large, not UTF-8, locked) is an error and stays as it is: it may be fine and only
-/// unreadable now, so it is never set aside or reset.
+/// lets `change` edit the document, writes it back atomically (line endings of an all-CRLF file kept). A change
+/// that refuses what it read is an error and nothing is written. A file that cannot be read as text (too large,
+/// not UTF-8, locked) is an error and stays as it is: it may be fine and only unreadable now, so it is never set
+/// aside or reset.
 pub(crate) fn edit_file(
     path: &Path,
-    change: impl FnOnce(&mut DocumentMut),
+    change: impl FnOnce(&mut DocumentMut) -> Result<(), SettingsError>,
 ) -> Result<DocumentMut, SettingsError> {
     let io = |source: io::Error| SettingsError::Io {
         path: path.display().to_string(),
@@ -1102,7 +1323,7 @@ pub(crate) fn edit_file(
             DocumentMut::new()
         }
     };
-    change(&mut doc);
+    change(&mut doc)?;
     let original = original.unwrap_or_default();
     write_atomic(path, render(&doc, &original).as_bytes()).map_err(io)?;
     Ok(doc)

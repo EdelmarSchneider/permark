@@ -5,7 +5,6 @@
   import DocumentArea from "./core/doc/DocumentArea.svelte";
   import { documents } from "./core/doc/document.svelte";
   import { look } from "./core/look.svelte";
-  import ExplorerSidebar from "./core/explorer/ExplorerSidebar.svelte";
   import ImportAsk from "./core/explorer/ImportAsk.svelte";
   import ImportProgress from "./core/explorer/ImportProgress.svelte";
   import { importFlow } from "./core/explorer/importWindow.svelte";
@@ -15,8 +14,9 @@
   import FocusExit from "./core/shell/FocusExit.svelte";
   import Frame from "./core/shell/Frame.svelte";
   import PanelToggle from "./core/shell/PanelToggle.svelte";
-  import RightColumn from "./core/shell/RightColumn.svelte";
-  import { rightViews } from "./core/shell/rightViews.svelte";
+  import ViewHosts from "./core/shell/ViewHosts.svelte";
+  import ViewRegion from "./core/shell/ViewRegion.svelte";
+  import { arrangement } from "./core/shell/arrangement.svelte";
   import Notices from "./core/shell/Notices.svelte";
   import DefaultAppDialog from "./core/shell/DefaultAppDialog.svelte";
   import { defaultApp } from "./core/shell/defaultApp.svelte";
@@ -30,20 +30,17 @@
   import { editing } from "./core/editing/session.svelte";
   import { installWindowKeys } from "./core/commands/install";
   import Finder from "./core/search/Finder.svelte";
-  import SearchPanel from "./core/search/SearchPanel.svelte";
-  import SidebarTabs from "./core/search/SidebarTabs.svelte";
   import KeymapDialog from "./core/shell/KeymapDialog.svelte";
+  import LayoutsDialog from "./core/shell/LayoutsDialog.svelte";
   import { answerInit } from "./core/shell/initProject";
-  import { rightAvailable } from "./core/shell/layout";
   import { layout } from "./core/shell/layout.svelte";
-  import { hasSidebar, rightSide } from "./core/shell/sides";
+  import { hasSidebar, hasToggle } from "./core/shell/sides";
   import { tabs } from "./core/shell/tabs.svelte";
   import { ui } from "./core/shell/ui.svelte";
   import { conditions } from "./core/conditions/context.svelte";
   import { contributions } from "./core/plugins/instance.svelte";
   import { windowTitle } from "./core/title";
   import StatusItems from "./core/shell/StatusItems.svelte";
-  import { activeSidebar, leftPanels } from "./core/shell/panels.svelte";
   import { windowStore as store } from "./core/window.svelte";
   import { projects } from "./core/projects/instance.svelte";
 
@@ -54,9 +51,15 @@
 
   /** What the window shows now; while opening, what stays on screen (its document included). */
   const shown = $derived(store.screen);
+  /** A region has a view to draw (the frame draws a region by what is present, not by the kind of workspace). */
+  const leftDrawn = $derived(arrangement.drawn("left").length > 0);
+  const rightDrawn = $derived(arrangement.drawn("right").length > 0);
+  const bottomDrawn = $derived(arrangement.drawn("bottom").length > 0);
+  /** The window has a left region: a view to draw there, or the Notes' own list. */
+  const leftShown = $derived(hasSidebar(store.view));
   /** The room the right panel takes on screen (0: none): notices keep clear of it. */
   const rightInset = $derived(
-    rightViews.drawn.length > 0 && !layout.rightOff && ui.focus !== "on" ? layout.right : 0,
+    rightDrawn && !layout.rightOff && ui.focus !== "on" ? layout.right : 0,
   );
 
   const openingName = $derived.by(() => {
@@ -98,7 +101,6 @@
     contributions.visible("workspaceView", conditions.current).find((v) => v.workspace === "notes"),
   );
   const notesOn = $derived(conditions.current.plugins.includes("notes"));
-  const sidebarView = $derived(activeSidebar());
 
   /** The outline of the document shown, when it has one and the panel is on. */
   const outline = $derived.by(() => {
@@ -114,8 +116,8 @@
     });
   });
 
-  // the right column's arrangement (app settings) and its views' defaults per project load
-  $effect(() => rightViews.start(api));
+  // the arrangement of the views (app settings) and their defaults per project load
+  $effect(() => arrangement.start(api));
 
   // the core's commands and keys live in the registry while the window does; one key listener runs them
   $effect(() => installWindowKeys());
@@ -240,35 +242,22 @@
 {/snippet}
 
 {#snippet sidebar()}
-  {#if shown?.workspace.kind === "project"}
-    {#key shown.workspace.id}
-      <SidebarTabs />
-      <!-- both views stay alive: the Explorer keeps its list and place while the Search shows -->
-      <div class="view" class:off={sidebarView !== "files"} inert={sidebarView !== "files"}>
-        <ExplorerSidebar {store} document={shown.document} />
-      </div>
-      <div class="view" class:off={sidebarView !== "search"} inert={sidebarView !== "search"}>
-        <SearchPanel root={shown.workspace.root} />
-      </div>
-      {#each leftPanels() as plugin (plugin.owner + plugin.id)}
-        <div class="view" class:off={sidebarView !== plugin.id} inert={sidebarView !== plugin.id}>
-          {#await plugin.view() then loaded}
-            {@const PanelView = loaded.default}
-            <PanelView />
-          {/await}
-        </div>
-      {/each}
-    {/key}
-  {:else if shown?.workspace.kind === "notes" && notesView}
+  <!-- the Notes' own list is not a view: it keeps the top of the region, the views arranged here show under it -->
+  {#if shown?.workspace.kind === "notes" && notesView}
     {#await notesView.sidebar() then loaded}
       {@const Sidebar = loaded.default}
       <Sidebar />
     {/await}
   {/if}
+  {#if leftDrawn}<ViewRegion region="left" />{/if}
 {/snippet}
 
 {#snippet panel()}
-  <RightColumn {outline} />
+  <ViewRegion region="right" />
+{/snippet}
+
+{#snippet bottom()}
+  <ViewRegion region="bottom" />
 {/snippet}
 
 {#snippet main()}
@@ -296,29 +285,35 @@
 
 {#snippet status()}
   <div class="slot left">
-    {#if hasSidebar(store.view)}<PanelToggle side="sidebar" />{/if}
+    {#if leftShown}<PanelToggle side="sidebar" />{/if}
+    {#if shown !== null && hasToggle("bottom")}<PanelToggle side="bottom" />{/if}
     <StatusItems slot="left" />
   </div>
   <div class="slot center"><StatusItems slot="center" /></div>
   <div class="slot right">
     <StatusItems slot="right" /><span>{versionText}</span>
-    {#if shown !== null && rightAvailable(rightSide())}<PanelToggle side="right" />{/if}
+    {#if shown !== null && hasToggle("right")}<PanelToggle side="right" />{/if}
   </div>
 {/snippet}
 
+<!-- before the frame: the views note their scroll offsets before a region draws a change -->
+<ViewHosts {store} {shown} {outline} />
 {#if store.boot.status !== "booting"}
   <Frame
     sidebarWidth={layout.sidebar}
     rightWidth={layout.right}
+    bottomHeight={layout.bottomFit ?? layout.bottom}
     onSidebarWidth={(px) => layout.setSidebar(px)}
     onRightWidth={(px) => layout.setRight(px)}
+    onBottomHeight={(px) => layout.setBottom(px)}
+    onCenterHeight={(px) => layout.setCenterHeight(px)}
     sidebarHidden={layout.sidebarOff}
     rightHidden={layout.rightOff}
+    bottomHidden={layout.bottomOff}
     {top}
-    sidebar={shown?.workspace.kind === "project" || shown?.workspace.kind === "notes"
-      ? sidebar
-      : undefined}
-    panel={rightViews.drawn.length > 0 ? panel : undefined}
+    sidebar={leftShown ? sidebar : undefined}
+    bottom={bottomDrawn ? bottom : undefined}
+    panel={rightDrawn ? panel : undefined}
     focus={ui.focus === "on"}
     moving={ui.frameMoving}
     {main}
@@ -357,6 +352,9 @@
 {/if}
 {#if ui.keyboard}
   <KeymapDialog {store} />
+{/if}
+{#if ui.layoutsDialog.status === "open"}
+  <LayoutsDialog />
 {/if}
 <DefaultAppDialog />
 {#if importFlow.state.status === "asking" || (importFlow.state.status === "planning" && importFlow.state.slow)}
@@ -414,23 +412,11 @@
     flex: none;
     margin-left: auto;
   }
-  .view {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-  }
   .off {
     display: grid;
     place-items: center;
     flex: 1;
     color: var(--muted);
-  }
-  .view.off {
-    flex: none;
-    height: 0;
-    overflow: hidden;
-    visibility: hidden;
   }
   .opening {
     position: absolute;
