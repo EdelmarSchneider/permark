@@ -6,11 +6,14 @@ import {
   GROUP_RENDER_CAP,
   QUERY_RENDER_CAP,
   cellLabel,
+  cellName,
   codePoints,
   entryName,
   groupsFor,
   groupLabel,
+  isBlankQuery,
   isInvisible,
+  matchEntries,
   scanGroups,
 } from "./characters";
 
@@ -185,5 +188,31 @@ describe("the label of a group", () => {
     expect(groupLabel(" Greek ")).toBe("Greek");
     expect(groupLabel("My marks")).toBe("My marks");
     expect(groupLabel("constructor")).toBe("constructor");
+  });
+});
+
+describe("matching a list of entries", () => {
+  it("ranks like a picker group, keeps the list on a blank query and has no cap", () => {
+    const list = [entry("β", "beta"), entry("→", "rightwards arrow"), entry("α", "alpha")];
+    expect(matchEntries("alpha", list).map((e) => e.char)).toEqual(["α"]);
+    expect(matchEntries("U+2192", list).map((e) => e.char)).toEqual(["→"]);
+    expect(matchEntries(" \t", list)).toEqual(list);
+    const many = Array.from({ length: QUERY_RENDER_CAP + 5 }, (_, n) => entry(`${n}`, "same"));
+    expect(matchEntries("same", many)).toHaveLength(QUERY_RENDER_CAP + 5);
+  });
+
+  it("a pasted no-break space is a query, ASCII blanks are none", () => {
+    expect(isBlankQuery(" \n")).toBe(true);
+    expect(isBlankQuery("\u00a0")).toBe(false);
+  });
+});
+
+describe("the name of a cell", () => {
+  it("is the entry's name; an invisible one whose label the name lacks says the label first", () => {
+    expect(cellName(entry("α", "alpha"))).toBe("alpha");
+    expect(cellName(entry("\u2009", "thin space"))).toBe("thin space");
+    expect(cellName(entry("\u202F", "narrow no-break space", "nnbsp"))).toBe(
+      "NNBSP, narrow no-break space",
+    );
   });
 });

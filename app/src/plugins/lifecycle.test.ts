@@ -237,6 +237,35 @@ describe("the notes plugin", () => {
   });
 });
 
+describe("the symbols plugin", () => {
+  it("adds its panel, its command and the popup's button, dormant, and leaves nothing when off", async () => {
+    const registry = new ContributionRegistry();
+    const host = new PluginHost(registry, pluginLoaders());
+    await host.enable("symbols");
+    const found = [...new Set(registry.ownedBy("symbols").map((c) => c.kind))].sort();
+    expect(found).toEqual(["command", "panel", "pickerAction"]);
+    // a fresh profile shows no panel: it opens only when the person asks
+    const panel = registry.of("panel").find((p) => p.id === "symbols.panel");
+    expect(panel?.side).toBe("right");
+    expect(panel?.defaultOpen).toBeUndefined();
+    expect(registry.of("shortcut")).toEqual([]);
+    expect(host.disable("symbols"), "contributions left after deactivate").toBe(0);
+    expect(registry.items).toHaveLength(0);
+  });
+
+  it("the popup's button shows the panel; switching off takes it away", async () => {
+    const window = new PluginHost(contributions, pluginLoaders());
+    await window.enable("symbols");
+    // not a view of the window until the person asks for it
+    expect(arrangement.viewOf("symbols.panel")).toBeUndefined();
+    const [keepOpen] = contributions.of("pickerAction");
+    keepOpen?.run("symbols");
+    expect(arrangement.isSelected("symbols.panel")).toBe(true);
+    expect(window.disable("symbols")).toBe(0);
+    expect(arrangement.viewOf("symbols.panel")).toBeUndefined();
+  });
+});
+
 describe("the config format plugins", () => {
   const FORMATS: [PluginId, string, string[], string[]][] = [
     ["fmt-toml", "toml", ["Cargo.toml", "pyproject.toml"], ["a.json", "toml"]],

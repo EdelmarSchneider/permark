@@ -163,7 +163,7 @@ export function documentPane(): HTMLElement | null {
 
 /** The keyboard goes to the page: the editor when one is open, else the document scroller, else the page region
  *  (no page: what holds it lets go). */
-function focusPage(): void {
+export function focusPage(): void {
   const page = pageRegion();
   const target =
     page?.querySelector<HTMLElement>("[contenteditable='true'], .cm-content") ??

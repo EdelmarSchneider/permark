@@ -97,6 +97,31 @@ export function groupsFor(kind: PickerKind, groups: readonly CharacterGroup[]): 
     : groups.filter((group) => !isEmoji(group));
 }
 
+/** The entries that answer a query that is not blank, best tier first, the given order breaking the ties. */
+function ranked(ask: Asked, entries: readonly CharacterEntry[]): CharacterEntry[] {
+  const hits: { entry: CharacterEntry; tier: number; at: number }[] = [];
+  entries.forEach((entry, at) => {
+    const tier = bestTier(ask, entry);
+    if (tier !== null) hits.push({ entry, tier, at });
+  });
+  hits.sort((a, b) => b.tier - a.tier || a.at - b.at);
+  return hits.map((hit) => hit.entry);
+}
+
+/** Whether `query` asks nothing: empty, or ASCII whitespace only (a pasted no-break space is a query). */
+export function isBlankQuery(query: string): boolean {
+  return asked(query).text === "";
+}
+
+/**
+ * The entries of a list that answer `query` the way a picker matches a group (the pasted character, its code
+ * point, a name), best first, the list's order breaking the ties; a blank query keeps them all. No cap.
+ */
+export function matchEntries(query: string, entries: readonly CharacterEntry[]): CharacterEntry[] {
+  const ask = asked(query);
+  return ask.text === "" ? [...entries] : ranked(ask, entries);
+}
+
 /**
  * What a picker shows: on an empty (or ASCII-blank) query, the groups of the kind in payload order, each sliced
  * to `GROUP_RENDER_CAP`; on a query, the entries that are the pasted character, start with the code point it
@@ -120,14 +145,8 @@ export function scanGroups(
   let room = QUERY_RENDER_CAP;
   for (const group of picked) {
     if (room <= 0) break;
-    const hits: { entry: CharacterEntry; tier: number; at: number }[] = [];
-    group.entries.forEach((entry, at) => {
-      const tier = bestTier(ask, entry);
-      if (tier !== null) hits.push({ entry, tier, at });
-    });
-    if (hits.length === 0) continue;
-    hits.sort((a, b) => b.tier - a.tier || a.at - b.at);
-    const entries = hits.slice(0, room).map((hit) => hit.entry);
+    const entries = ranked(ask, group.entries).slice(0, room);
+    if (entries.length === 0) continue;
     room -= entries.length;
     shown.push({ name: group.name, entries });
   }
@@ -164,6 +183,17 @@ export function codePoints(char: string): string {
 /** What an entry is called: its first name, else every code point it is made of. */
 export function entryName(entry: CharacterEntry): string {
   return entry.names[0] ?? [...entry.char].map(codePointText).join(" ");
+}
+
+/**
+ * What a cell is called for a screen reader: the entry's name; for an invisible one that draws a short label the
+ * name does not hold ("NNBSP"), the label first, so the words on the cell are part of its name (WCAG 2.5.3).
+ */
+export function cellName(entry: CharacterEntry): string {
+  const name = entryName(entry);
+  if (!isInvisible(entry.char)) return name;
+  const label = cellLabel(entry);
+  return name.toLowerCase().includes(label.toLowerCase()) ? name : `${label}, ${name}`;
 }
 
 /**

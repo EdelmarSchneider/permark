@@ -13,6 +13,7 @@
   import { windowStore } from "../../window.svelte";
   import {
     cellLabel,
+    cellName,
     codePoints,
     entryName,
     groupLabel,
@@ -70,7 +71,7 @@
               type="button"
               class="picker__char"
               class:picker__char--invisible={isInvisible(entry.char)}
-              aria-label={name}
+              aria-label={cellName(entry)}
               title={`${name} · ${codePoints(entry.char)}`}
               onclick={() => apply(entry.char)}>{cellLabel(entry)}</button
             >
@@ -80,6 +81,11 @@
     {/each}
   {/if}
   <div class="picker__foot">
+    {#each actions as action (action.id)}
+      <button type="button" class="btn btn--sm btn--ghost" onclick={action.run}
+        >{action.label}</button
+      >
+    {/each}
     <button type="button" class="btn btn--sm btn--ghost" onclick={close}
       >{t("common.cancel")}</button
     >
