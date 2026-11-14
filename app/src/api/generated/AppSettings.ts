@@ -3,8 +3,10 @@ import type { CharacterGroup } from "./CharacterGroup";
 import type { EditModePref } from "./EditModePref";
 import type { GitBackendPref } from "./GitBackendPref";
 import type { LanguagePref } from "./LanguagePref";
+import type { Layouts } from "./Layouts";
 import type { LinkUpdate } from "./LinkUpdate";
 import type { OpenIn } from "./OpenIn";
+import type { Panels } from "./Panels";
 import type { PluginId } from "./PluginId";
 import type { RightViews } from "./RightViews";
 import type { StartIn } from "./StartIn";
@@ -51,6 +53,14 @@ plugins: { [key in PluginId]: boolean },
  * The right column's arrangement (`[right_views]`); `None` = absent | unreadable = the frontend's default.
  */
 rightViews: RightViews | null, 
+/**
+ * The arrangement of every region (`[panels]`); `None` = absent | unreadable = the frontend's default.
+ */
+panels: Panels | null, 
+/**
+ * The named arrangements (`[layouts]`); `None` = absent | unreadable = no layout.
+ */
+layouts: Layouts | null, 
 /**
  * Long lines wrap in the text viewer and the source editors (`wrap_lines`; absent = on).
  */

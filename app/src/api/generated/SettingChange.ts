@@ -2,8 +2,10 @@
 import type { EditModePref } from "./EditModePref";
 import type { GitBackendPref } from "./GitBackendPref";
 import type { LanguagePref } from "./LanguagePref";
+import type { Layouts } from "./Layouts";
 import type { LinkUpdate } from "./LinkUpdate";
 import type { OpenIn } from "./OpenIn";
+import type { Panels } from "./Panels";
 import type { PluginId } from "./PluginId";
 import type { RightViews } from "./RightViews";
 import type { StartIn } from "./StartIn";
@@ -13,4 +15,4 @@ import type { Tone } from "./Tone";
 /**
  * One change of one key.
  */
-export type SettingChange = { "key": "language", "value": LanguagePref } | { "key": "theme", "value": ThemePref } | { "key": "tone", "value": Tone } | { "key": "startIn", "value": StartIn } | { "key": "linkUpdate", "value": LinkUpdate } | { "key": "editMode", "value": EditModePref } | { "key": "openIn", "value": OpenIn } | { "key": "gitBackend", "value": GitBackendPref } | { "key": "notesFolder", "value": string } | { "key": "referenceTemplate", "value": string } | { "key": "editor", "value": string } | { "key": "keymap", "value": { command: string, combo: string | null, } } | { "key": "tokenizers", "value": Array<string> } | { "key": "pluginEnabled", "value": { plugin: PluginId, enabled: boolean | null, } } | { "key": "rightViews", "value": RightViews | null } | { "key": "wrapLines", "value": boolean } | { "key": "imageFolder", "value": string } | { "key": "charactersFile", "value": string };
+export type SettingChange = { "key": "language", "value": LanguagePref } | { "key": "theme", "value": ThemePref } | { "key": "tone", "value": Tone } | { "key": "startIn", "value": StartIn } | { "key": "linkUpdate", "value": LinkUpdate } | { "key": "editMode", "value": EditModePref } | { "key": "openIn", "value": OpenIn } | { "key": "gitBackend", "value": GitBackendPref } | { "key": "notesFolder", "value": string } | { "key": "referenceTemplate", "value": string } | { "key": "editor", "value": string } | { "key": "keymap", "value": { command: string, combo: string | null, } } | { "key": "tokenizers", "value": Array<string> } | { "key": "pluginEnabled", "value": { plugin: PluginId, enabled: boolean | null, } } | { "key": "rightViews", "value": RightViews | null } | { "key": "panels", "value": Panels | null } | { "key": "layouts", "value": Layouts | null } | { "key": "wrapLines", "value": boolean } | { "key": "imageFolder", "value": string } | { "key": "charactersFile", "value": string };
