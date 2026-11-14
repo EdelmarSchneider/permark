@@ -6,7 +6,7 @@
 //! ```text
 //!  agent --stdio--> permark mcp --local socket--> app (server of this project) --> Tools over ProjectServices
 //!                        |
-//!                        +-- app closed: Tools over ProjectCore::from_files (same composition)
+//!                        +-- app closed: every tool refused (AppClosed) but `open`, which starts the app
 //! ```
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
@@ -79,6 +79,9 @@ pub enum ToolError {
     Invalid(String),
     #[error("PerMark is not open on this project")]
     NotOpen,
+    /// The app does not serve the project: no tool answers from the files behind the person's back; `open` starts it.
+    #[error("PerMark is not open on this project. Ask the person to open it in PerMark, or call `open` to start PerMark on it.")]
+    AppClosed,
     /// The projects inside the folder are not known yet (the first walk runs): nothing is answered until they are
     /// (fail closed, `projects.md` §5.2).
     #[error("PerMark is still reading this folder")]
@@ -96,6 +99,7 @@ impl ToolError {
             Self::NotFound(_) => "notFound",
             Self::Invalid(_) => "invalid",
             Self::NotOpen => "notOpen",
+            Self::AppClosed => "appClosed",
             Self::Busy => "busy",
             Self::Failed(_) => "error",
         }

@@ -237,6 +237,9 @@ pub fn error(tool: &str, error: &ToolError) -> String {
         ToolError::NotOpen => {
             "ERR notOpen: PerMark not open on this project -> ask person to open it".to_owned()
         }
+        ToolError::AppClosed => {
+            "ERR appClosed: PerMark not open on this project -> ask person to open it in PerMark, or call open to start it".to_owned()
+        }
         ToolError::Busy => {
             "ERR busy: PerMark still reading this folder -> retry in a few seconds".to_owned()
         }
@@ -801,6 +804,7 @@ mod tests {
             error("map", &ToolError::Failed("x".to_owned())),
             error("resolve_comment", &ToolError::NotFound("c9".to_owned())),
             error("read", &ToolError::Busy),
+            error("search", &ToolError::AppClosed),
         ];
         for line in &lines {
             assert!(line.starts_with("ERR "), "{line}");
@@ -816,6 +820,10 @@ mod tests {
         assert_eq!(
             lines[7],
             "ERR busy: PerMark still reading this folder -> retry in a few seconds"
+        );
+        assert_eq!(
+            lines[8],
+            "ERR appClosed: PerMark not open on this project -> ask person to open it in PerMark, or call open to start it"
         );
         assert!(matches!(
             ToolError::from_wire("busy", &ToolError::Busy.to_string()),

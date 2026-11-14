@@ -283,33 +283,6 @@ fn record_written_after_decline_keeps_project_out() {
     );
 }
 
-/// Files mode (`permark mcp`, app closed): the first call waits for the walk the same way.
-#[test]
-fn files_mode_first_call_never_reads_not_included_project() {
-    bounded(BIG_TREE_LIMIT, files_mode_first_call_body);
-}
-
-fn files_mode_first_call_body() {
-    let (dir, root) = tmp();
-    write(&root, "hubs/x/.git/HEAD", "ref: refs/heads/main\n");
-    write(&root, "hubs/x/secret.md", "# secret\n");
-    big_tree(&root);
-    let env = env(dir.path());
-    share(&env, &root);
-    let core = ProjectCore::from_files(
-        Root::open(&root).unwrap(),
-        &env,
-        std::slice::from_ref(&crate::ID),
-    );
-    let early_ready = core.projects_view().ready;
-    let early = read(&tools(&core), "hubs/x/secret.md");
-    drop(core);
-    assert!(
-        early_ready || matches!(early, Err(ToolError::NotFound(_) | ToolError::Busy)),
-        "files mode, first call read a not-included project: {early:?}"
-    );
-}
-
 /// Fail closed (B1): a map that is not ready hides every path, lists included; the published context waits for nothing.
 #[test]
 fn a_map_not_ready_hides_everything() {

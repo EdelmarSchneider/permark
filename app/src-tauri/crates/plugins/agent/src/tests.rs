@@ -1,7 +1,8 @@
 #![allow(clippy::assert_is_empty)]
 
 //! The agent connection over a real project core (search index, vault, state store) with the organizing services
-//! played by small fakes: switch, groups, hidden paths, open, server sessions, proxy and files mode.
+//! played by small fakes: switch, groups, hidden paths, open, server sessions, proxy and the refusal while the app is
+//! closed.
 
 use std::collections::HashSet;
 use std::fmt::Write as _;
@@ -28,7 +29,7 @@ use permark_core::workspace::{CoreEnv, ProjectCore};
 use permark_core::{ErrorKind, IpcError};
 use serde_json::{json, Value};
 
-use crate::cli::{Agent, Composed};
+use crate::cli::Agent;
 use crate::context::{Mode, Selection, WindowContext};
 use crate::live::Live;
 use crate::perms::{self, Group, ProjectChoice, PROJECT_FILE};
@@ -1181,25 +1182,8 @@ fn the_context_file_exists_only_while_the_context_group_is_on() {
 }
 
 #[test]
-fn the_agent_proxies_to_the_app_and_falls_back_to_the_files() {
+fn the_agent_proxies_to_the_app_and_refuses_while_it_is_closed() {
     let fx = fx();
-    let composed_calls = Arc::new(Mutex::new(0_u32));
-    let compose: crate::cli::Compose = {
-        let core = Arc::clone(fx.core());
-        let calls = Arc::clone(&composed_calls);
-        Arc::new(move |_root: &Root| {
-            *calls.lock().unwrap() += 1;
-            Ok(Composed {
-                tools: Tools::new(
-                    core.vault().clone(),
-                    core.store().clone(),
-                    core.services(),
-                    None,
-                ),
-                keep: Box::new(()),
-            })
-        })
-    };
     let started_roots = Arc::new(Mutex::new(Vec::<PathBuf>::new()));
     let launcher: crate::cli::Launcher = {
         let started_roots = Arc::clone(&started_roots);
@@ -1220,38 +1204,46 @@ fn the_agent_proxies_to_the_app_and_falls_back_to_the_files() {
     };
     let working = fx.root.join("docs");
     // not connected yet: an unknown folder is off
-    let agent = Agent::discover(
-        &fx.dirs,
-        &working,
-        Arc::clone(&compose),
-        Arc::clone(&launcher),
-    );
+    let agent = Agent::discover(&fx.dirs, &working, Arc::clone(&launcher));
     assert!(agent.root().is_none());
     assert_eq!(
         agent.call("search", &json!({ "query": "x" })),
         Err(ToolError::Off)
     );
-    // connected (switch on in the profile) but the app does not listen: files mode
+    // connected (switch on in the profile) but the app does not listen: every tool but `open` is refused, even
+    // where the project's files would answer
     fx.on();
-    let agent = Agent::discover(&fx.dirs, &working, compose, launcher)
-        .with_launch_wait(Duration::from_secs(5));
+    let agent =
+        Agent::discover(&fx.dirs, &working, launcher).with_launch_wait(Duration::from_secs(5));
     assert_eq!(
         agent.root().map(|r| r.path().to_path_buf()),
         Some(fx.root.clone())
     );
-    let search = agent.call("search", &json!({ "query": "launch" })).unwrap();
-    assert!(!search["hits"].as_array().unwrap().is_empty());
-    assert_eq!(
-        agent.call("get_context", &Value::Null),
-        Err(ToolError::NotOpen)
+    for (tool, args) in [
+        ("map", Value::Null),
+        ("search", json!({ "query": "launch" })),
+        ("read", json!({ "path": "docs/plan.md" })),
+        ("get_context", Value::Null),
+    ] {
+        assert_eq!(agent.call(tool, &args), Err(ToolError::AppClosed), "{tool}");
+    }
+    assert!(
+        started_roots.lock().unwrap().is_empty(),
+        "only open starts the app"
     );
-    assert_eq!(*composed_calls.lock().unwrap(), 1, "composed once");
-    // open with the app closed: the place is checked first, then the app is started and the place handed over
-    assert!(matches!(
-        agent.call("open", &json!({ "path": "private/secret.md" })),
-        Err(ToolError::NotFound(_))
-    ));
+    let line = agent.context_line().unwrap_err();
+    assert_eq!(line, ToolError::AppClosed.to_string());
+    assert!(line.contains("call `open`"), "{line}");
+    // the switch off wins over the closed app
+    fx.set_choice(&ProjectChoice::default());
+    assert_eq!(agent.call("map", &Value::Null), Err(ToolError::Off));
+    assert_eq!(
+        agent.call("open", &json!({ "path": "docs/plan.md" })),
+        Err(ToolError::Off)
+    );
     assert!(started_roots.lock().unwrap().is_empty());
+    fx.on();
+    // open with the app closed: the app is started and the place handed over once it listens
     let opened = agent
         .call("open", &json!({ "path": "docs/plan.md" }))
         .unwrap();
@@ -1266,6 +1258,12 @@ fn the_agent_proxies_to_the_app_and_falls_back_to_the_files() {
     let status = fx.rpc("status", Value::Null).unwrap();
     assert_eq!(status["recent"][0]["tool"], "open");
     assert!(agent.context_line().is_err(), "no document open");
+    // the app checks the place
+    assert!(matches!(
+        agent.call("open", &json!({ "path": "private/secret.md" })),
+        Err(ToolError::NotFound(_))
+    ));
+    assert_eq!(started_roots.lock().unwrap().len(), 1, "started once");
     // the switch off in the profile: off at once, the app not asked
     fx.rpc("setEnabled", json!({ "enabled": false })).unwrap();
     assert_eq!(
@@ -1274,11 +1272,8 @@ fn the_agent_proxies_to_the_app_and_falls_back_to_the_files() {
     );
 }
 
-fn unused_files() -> (crate::cli::Compose, crate::cli::Launcher) {
-    (
-        Arc::new(|_: &Root| Err("files mode not expected".to_owned())),
-        Arc::new(|_: &Path| Ok(())),
-    )
+fn no_launch() -> crate::cli::Launcher {
+    Arc::new(|_: &Path| Ok(()))
 }
 
 impl Fx {
@@ -1323,13 +1318,7 @@ fn a_folder_created_again_at_the_same_path_does_not_inherit_the_connection() {
     assert_eq!(status["enabled"], false);
     assert_eq!(status["replaced"], true);
     // the agent's side with the app closed: not a connected folder
-    let (compose, launcher) = unused_files();
-    let agent = Agent::discover(
-        &fx.dirs,
-        &fx.root,
-        Arc::clone(&compose),
-        Arc::clone(&launcher),
-    );
+    let agent = Agent::discover(&fx.dirs, &fx.root, no_launch());
     assert!(agent.root().is_none());
     assert_eq!(
         agent.call("search", &json!({ "query": "x" })),
@@ -1340,7 +1329,7 @@ fn a_folder_created_again_at_the_same_path_does_not_inherit_the_connection() {
         folder: Some(now),
         ..connected_before.clone()
     });
-    let agent = Agent::discover(&fx.dirs, &fx.root, compose, launcher);
+    let agent = Agent::discover(&fx.dirs, &fx.root, no_launch());
     assert!(agent.root().is_some());
     fx.set_choice(&connected_before);
     assert_eq!(
@@ -1376,8 +1365,7 @@ fn an_earlier_grant_gets_the_folder_only_when_the_app_opens_the_project() {
     std::fs::create_dir_all(file.path().parent().unwrap()).unwrap();
     std::fs::write(file.path(), r#"{"version":1,"data":{"enabled":true}}"#).unwrap();
     // the agent's calls alone record nothing (an agent's `open` may start the app, whose start records it)
-    let (compose, launcher) = unused_files();
-    let agent = Agent::discover(&fx.dirs, &fx.root, compose, launcher);
+    let agent = Agent::discover(&fx.dirs, &fx.root, no_launch());
     assert!(agent.root().is_some());
     let _ = agent.call("search", &json!({ "query": "x" }));
     assert_eq!(fx.stored().folder, None);
@@ -1423,8 +1411,7 @@ fn a_replaced_folder_inside_a_connected_one_never_falls_through_to_the_parent() 
         },
     );
     assert!(crate::cli::discover(&fx.dirs, &child).is_none());
-    let (compose, launcher) = unused_files();
-    let agent = Agent::discover(&fx.dirs, &child, compose, launcher);
+    let agent = Agent::discover(&fx.dirs, &child, no_launch());
     assert!(agent.root().is_none());
     assert_eq!(
         agent.call("search", &json!({ "query": "launch" })),
@@ -1441,8 +1428,7 @@ fn an_off_folder_inside_a_connected_one_is_its_own_project_and_answers_off() {
         crate::cli::discover(&fx.dirs, &fx.root.join("docs")).map(|r| r.path().to_path_buf()),
         Some(child.clone())
     );
-    let (compose, launcher) = unused_files();
-    let agent = Agent::discover(&fx.dirs, &child, compose, launcher);
+    let agent = Agent::discover(&fx.dirs, &child, no_launch());
     assert_eq!(agent.root().map(|r| r.path().to_path_buf()), Some(child));
     assert_eq!(
         agent.call("search", &json!({ "query": "launch" })),
@@ -1542,13 +1528,7 @@ async fn exchange(
 fn mcp_client_name_from_a_request_survives_a_late_initialized() {
     use crate::mcp::{Heard, McpServer};
     let fx = fx();
-    let compose: crate::cli::Compose = Arc::new(|_: &Root| Err("not used".to_owned()));
-    let agent = Arc::new(Agent::discover(
-        &fx.dirs,
-        &fx.root,
-        compose,
-        Arc::new(|_: &Path| Ok(())),
-    ));
+    let agent = Arc::new(Agent::discover(&fx.dirs, &fx.root, no_launch()));
     // handlers run concurrently: `notifications/initialized` handled after a call that named itself
     let server = McpServer::new(Arc::clone(&agent), false);
     assert!(server.hear(Heard::Request("meta-client".to_owned())));
@@ -1574,26 +1554,10 @@ fn mcp_client_name_from_a_request_survives_a_late_initialized() {
 #[allow(clippy::too_many_lines)] // one session: handshake, list, calls, errors, with and without structured content
 fn mcp_initialize_list_and_call_over_stdio_lines() {
     let fx = fx();
-    fx.on();
+    // the app serves the project: tools answer only through it
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
     for structured in [false, true] {
-        let core = Arc::clone(fx.core());
-        let compose: crate::cli::Compose = Arc::new(move |_root: &Root| {
-            Ok(Composed {
-                tools: Tools::new(
-                    core.vault().clone(),
-                    core.store().clone(),
-                    core.services(),
-                    None,
-                ),
-                keep: Box::new(()),
-            })
-        });
-        let agent = Arc::new(Agent::discover(
-            &fx.dirs,
-            &fx.root,
-            compose,
-            Arc::new(|_: &Path| Ok(())),
-        ));
+        let agent = Arc::new(Agent::discover(&fx.dirs, &fx.root, no_launch()));
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()

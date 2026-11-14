@@ -1,7 +1,6 @@
 //! The agent's side, with no window: which project the working folder belongs to, whether the app serves it (then
-//! calls go there) or not (then the same tools answer from the files), and `permark context`.
+//! calls go there) or not (then only `open` acts: it starts the app), and `permark context`.
 
-use std::any::Any;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -15,21 +14,12 @@ use serde_json::{json, Value};
 use crate::context::WindowContext;
 use crate::perms;
 use crate::server::{Request, Response};
-use crate::tools::Tools;
 use crate::ToolError;
 
 /// How long `open` waits for the app it started to listen.
 pub const LAUNCH_WAIT: Duration = Duration::from_secs(25);
 const LAUNCH_POLL: Duration = Duration::from_millis(200);
 
-/// The tools over the project's files, and what must live as long as they do (core env, project core).
-pub struct Composed {
-    pub tools: Tools,
-    pub keep: Box<dyn Any + Send + Sync>,
-}
-
-/// Builds the files-mode composition for a project (the app crate knows the plugins of the build).
-pub type Compose = Arc<dyn Fn(&Root) -> Result<Composed, String> + Send + Sync>;
 /// Starts the app on a project.
 pub type Launcher = Arc<dyn Fn(&Path) -> io::Result<()> + Send + Sync>;
 
@@ -53,10 +43,8 @@ fn dunce_canonical(path: &Path) -> Option<PathBuf> {
 /// The project an agent works in, and how to reach it.
 pub struct Agent {
     project: Option<Project>,
-    compose: Compose,
     launcher: Launcher,
     launch_wait: Duration,
-    files: Mutex<Option<Arc<Composed>>>,
     /// The held connection that shows the app an agent is here (dropping it ends the session).
     session: Mutex<Option<Box<dyn Send>>>,
     client: Mutex<String>,
@@ -75,12 +63,7 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 impl Agent {
     /// Finds the project of `working_folder` (none: every tool says the connection is off).
     #[must_use]
-    pub fn discover(
-        dirs: &AppDirs,
-        working_folder: &Path,
-        compose: Compose,
-        launcher: Launcher,
-    ) -> Self {
+    pub fn discover(dirs: &AppDirs, working_folder: &Path, launcher: Launcher) -> Self {
         let project = discover(dirs, working_folder).map(|root| Project {
             store: StateStore::for_project(dirs, &root),
             endpoint: Endpoint::project(&dirs.profile, &root).map_err(|e| e.to_string()),
@@ -88,10 +71,8 @@ impl Agent {
         });
         Self {
             project,
-            compose,
             launcher,
             launch_wait: LAUNCH_WAIT,
-            files: Mutex::new(None),
             session: Mutex::new(None),
             client: Mutex::new("agent".to_owned()),
         }
@@ -163,17 +144,8 @@ impl Agent {
         }
     }
 
-    fn files(&self, project: &Project) -> Result<Arc<Composed>, ToolError> {
-        let mut files = lock(&self.files);
-        if let Some(composed) = files.as_ref() {
-            return Ok(Arc::clone(composed));
-        }
-        let composed = Arc::new((self.compose)(&project.root).map_err(ToolError::Failed)?);
-        *files = Some(Arc::clone(&composed));
-        Ok(composed)
-    }
-
-    /// One tool call: the switch (read fresh), then the app when it serves the project, else the files.
+    /// One tool call: the switch (read fresh), then the app when it serves the project, else a refusal (`open`
+    /// starts the app).
     ///
     /// # Errors
     /// What the tool answers, or why nothing could.
@@ -196,12 +168,11 @@ impl Agent {
             Err(IpcLocalError::Unreachable { .. }) => {
                 // the app is not serving this project: a session held before is gone
                 lock(&self.session).take();
-                let composed = self.files(project)?;
-                match composed.tools.call(tool, args.clone()) {
-                    Err(ToolError::NotOpen) if tool == "open" => {
-                        self.start_and_open(project, endpoint, args)
-                    }
-                    other => other,
+                // only `open` acts while the app is closed, and visibly: it brings the app up
+                if tool == "open" {
+                    self.start_and_open(project, endpoint, args)
+                } else {
+                    Err(ToolError::AppClosed)
                 }
             }
             Err(IpcLocalError::Untrusted(why)) => Err(ToolError::Failed(format!(
@@ -211,7 +182,7 @@ impl Agent {
         }
     }
 
-    /// The place was checked against the files; start the app on the project and hand the place over once it listens.
+    /// Starts the app on the project and hands the place over once it listens (the app checks the place).
     fn start_and_open(
         &self,
         project: &Project,
