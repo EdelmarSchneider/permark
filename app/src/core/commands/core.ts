@@ -1,6 +1,7 @@
 // The commands and default keys the core itself contributes (owner `core`). Each acts through a store the window
 // already has; the palette, the keys and the keyboard dialog all read them from the contribution registry.
 
+import { tick } from "svelte";
 import type { WorkspaceKind } from "../../api/generated/WorkspaceKind";
 import { documents } from "../doc/document.svelte";
 import { reading, WIDTHS } from "../doc/reading.svelte";
@@ -19,15 +20,25 @@ import {
 import { closeOwnTab } from "../shell/closeWorkspace";
 import { projects } from "../projects/instance.svelte";
 import { askInitHere } from "../shell/initProject";
-import { rightAvailable } from "../shell/layout";
-import { defaultRightViews } from "../shell/rightViews";
-import { rightViews } from "../shell/rightViews.svelte";
-import { rightSide, toggleOutlinePanel, toggleRightPanel, toggleSidebar } from "../shell/sides";
+import { FILES, SEARCH } from "../shell/arrangement";
+import { arrangement } from "../shell/arrangement.svelte";
+import {
+  bottomSqueezed,
+  documentPane,
+  hasSidebar,
+  hasToggle,
+  returnFocus,
+  showView,
+  toggleBottomPanel,
+  toggleOutlinePanel,
+  toggleRightPanel,
+  toggleSidebar,
+} from "../shell/sides";
 import { tabs } from "../shell/tabs.svelte";
 import { ui } from "../shell/ui.svelte";
 import { conditions } from "../conditions/context.svelte";
 import { stepChange } from "./changes";
-import { isTypingTarget } from "./dispatch";
+import { isTextTarget, isTypingTarget } from "./dispatch";
 import { windowStore as store } from "../window.svelte";
 import { NO_REQUIREMENT, type Requirement } from "../conditions/available";
 
@@ -39,8 +50,6 @@ const PROJECT = workspace("project");
 const DOCUMENTS = workspace("project", "singleFile");
 /** What shows a document: a project, a single file, the Notes. */
 const READING = workspace("project", "singleFile", "notes");
-/** What has a sidebar: a project, the Notes. */
-const SIDEBAR = workspace("project", "notes");
 
 type Spec = {
   id: string;
@@ -59,6 +68,14 @@ const canEdit = (): boolean => (hasDocument() && editBlockedReason() === null) |
 function cycleWidth(): void {
   const at = WIDTHS.indexOf(reading.width);
   reading.setWidth(WIDTHS[(at + 1) % WIDTHS.length] ?? "comfortable");
+}
+
+/** Selects the document shown in View: what its pane holds, nothing else. No document | an editor open (the keyboard
+ * outside it) | no page on screen: nothing is selected. */
+function selectDocument(): void {
+  if (!readable()) return;
+  const pane = documentPane();
+  if (pane !== null) window.getSelection()?.selectAllChildren(pane);
 }
 
 /** `tab.select1..8` (Mod+1..8): tab n of this window; none there -> nothing. */
@@ -154,7 +171,7 @@ const SPECS: readonly Spec[] = [
     label: "cmd.searchAll",
     keys: ["Mod+Shift+f"],
     requires: PROJECT,
-    run: () => ui.showSidebar("search"),
+    run: () => showView(SEARCH),
   },
   {
     id: "palette.open",
@@ -168,13 +185,15 @@ const SPECS: readonly Spec[] = [
     label: "cmd.explorer",
     keys: ["Mod+Shift+x"],
     requires: PROJECT,
-    run: () => ui.showSidebar("files"),
+    run: () => showView(FILES),
   },
   {
     id: "sidebar.toggle",
     label: "cmd.toggleSidebar",
     keys: ["Mod+b"],
-    requires: SIDEBAR,
+    requires: READING,
+    // where the window has something at the left: a project's views, the Notes' list, a view the person put there
+    when: () => hasSidebar(store.view),
     run: () => toggleSidebar(),
   },
   {
@@ -182,17 +201,44 @@ const SPECS: readonly Spec[] = [
     label: "cmd.toggleRight",
     keys: ["Mod+Alt+b"],
     requires: READING,
-    when: () => rightAvailable(rightSide()),
+    when: () => hasToggle("right"),
     run: () => toggleRightPanel(),
+  },
+  {
+    id: "panel.toggleBottom",
+    label: "cmd.toggleBottom",
+    keys: ["Mod+j"],
+    requires: READING,
+    // only while a view is present at the bottom (no region, no toggle) and the window is tall enough to draw it
+    when: () => hasToggle("bottom") && !bottomSqueezed(),
+    run: () => toggleBottomPanel(),
   },
   {
     id: "panel.resetLayout",
     label: "panel.resetLayoutCommand",
     requires: READING,
-    run: () => {
-      rightViews.arrange(defaultRightViews());
-      rightViews.status = t("panel.layoutReset");
+    // the whole arrangement, as the views' menu does it
+    run: () => arrangement.reset(),
+  },
+  {
+    id: "panel.undoLayout",
+    label: "panel.undoLayoutCommand",
+    requires: READING,
+    // the keyboard's way to the Undo a notice offers after the reset | a saved layout used: while that can be undone
+    when: () => arrangement.canUndo,
+    run: async () => {
+      arrangement.undo();
+      // what had the keyboard may be gone with the arrangement undone
+      await tick();
+      returnFocus();
     },
+  },
+  {
+    id: "panel.layouts",
+    label: "layouts.open",
+    requires: READING,
+    // the one dialog of the saved arrangements; the views' menu opens it too
+    run: () => ui.openLayouts(),
   },
   {
     id: "file.new",
@@ -200,7 +246,7 @@ const SPECS: readonly Spec[] = [
     keys: ["Mod+n"],
     requires: PROJECT,
     run: () => {
-      ui.showSidebar("files");
+      showView(FILES);
       newInTree("file");
     },
   },
@@ -285,6 +331,18 @@ const SPECS: readonly Spec[] = [
     run: toggleWrap,
   },
   {
+    // in text (a field, an editor) the key stays the text's own select-all; everywhere else it is this command, so
+    // the webview never selects the window around the document (the bars, the panels). The Explorer list takes the
+    // key before this for its rows.
+    id: "doc.selectAll",
+    label: "cmd.selectAll",
+    keys: ["Mod+a"],
+    requires: READING,
+    inPalette: false,
+    when: () => !isTextTarget(document.activeElement),
+    run: selectDocument,
+  },
+  {
     id: "edit.diagramPanel",
     label: "cmd.diagramPanel",
     requires: READING,
@@ -346,7 +404,7 @@ const SPECS: readonly Spec[] = [
     requires: PROJECT,
     when: hasDocument,
     run: () => {
-      ui.showSidebar("files");
+      showView(FILES);
       revealInTree(null);
     },
   },

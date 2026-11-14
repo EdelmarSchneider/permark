@@ -39,7 +39,8 @@ export const NOTICE_MS = 8000;
 /** Pause before an announcement is set (the region was emptied first: the same words twice are said twice). */
 const SAY_MS = 50;
 
-export type NoticeAction = { label: string; run: () => void };
+/** A button of a notice (`run` answers a promise when its work goes on: what follows the action waits for it). */
+export type NoticeAction = { label: string; run: () => void | Promise<void> };
 /** How a notice went: its button ran, it was dismissed | timed out | pushed out by newer ones. */
 export type NoticeGone = "action" | "dismissed" | "timeout" | "pushedOut";
 export type TimedNotice = {
@@ -609,7 +610,8 @@ export class ProjectsStore {
       actions:
         undo === null
           ? []
-          : [{ label: t("fileOps.undo"), run: () => void this.#undo(undo, included) }],
+          : // the window waits for the undo: its own place for the keyboard (`refocus`) comes first
+            [{ label: t("fileOps.undo"), run: () => this.#undo(undo, included) }],
       closeAfterMs: NOTICE_MS,
     });
     return true;

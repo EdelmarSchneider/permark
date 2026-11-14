@@ -12,7 +12,8 @@
 
   type Props = {
     items: readonly OutlineItem[];
-    /** The view options button of the right column (drawn with two views or more). */
+    /** The view options button for this header (given while the outline is alone in its group and the window has
+     *  views to arrange). */
     viewMenu?: Snippet;
   };
   let { items, viewMenu }: Props = $props();

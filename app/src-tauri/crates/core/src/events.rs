@@ -71,7 +71,8 @@ pub enum CoreEvent {
     WindowChanged(WindowChanged),
     /// To one window.
     ContextChanged(ContextChanged),
-    SettingsChanged(SettingsChanged),
+    /// Boxed: the settings are several times the size of any other payload, and every event is moved by value.
+    SettingsChanged(Box<SettingsChanged>),
     /// To one window.
     OpenFailed(OpenFailed),
     /// To one window: its Explorer list changed.

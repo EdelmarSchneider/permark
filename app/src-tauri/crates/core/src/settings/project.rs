@@ -416,7 +416,10 @@ impl ProjectConfigFile {
                 reason: "link".to_owned(),
             });
         }
-        let doc = edit_file(&self.path, |doc| apply_project_change(doc, change))?;
+        let doc = edit_file(&self.path, |doc| {
+            apply_project_change(doc, change);
+            Ok(())
+        })?;
         Ok(ProjectConfig::from_doc(&doc))
     }
 }

@@ -24,6 +24,11 @@ export function readerDate(text: string, locale: string): string {
     : date.toLocaleDateString(locale, { dateStyle: "long" });
 }
 
+/** The date and the time of a moment (ms) as readers of `locale` write them: "Nov 13, 2026, 4:57 PM". */
+export function exactTime(ms: number, locale: string): string {
+  return new Date(ms).toLocaleString(locale, { dateStyle: "medium", timeStyle: "short" });
+}
+
 /** `then` seen from `now` (both in ms); `locale` is a BCP 47 tag. A moment ahead of `now` reads as "now". */
 export function relativeTime(then: number, now: number, locale: string): string {
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });

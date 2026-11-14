@@ -5,6 +5,24 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-14
+
+### Added
+- **Earlier versions of a document.** In a folder that is a git repository, **Earlier versions…** lists the versions of a document: every commit that changed it, newest first, with when, what and who. You find it in the document's "…" menu, in a file's menu in the Explorer and as the command "Show earlier versions". Pick a version and the review shows what differs between it and the document now: **Revert** brings back one change, **Bring back this version** the whole text. "Compare with" in the review bar offers the same choice next to "what I read" and "the last commit". PerMark only reads git: it never commits, bringing a version back changes only the file, and you can undo it. When there is nothing to list, the list says why, for example that the file is not saved in git yet. A file that was renamed lists its versions since then and names the path it had before. <!-- f: review-changes, git-status -->
+- **Arrange the panels.** Files, Search, the tabs that plugins add, the Outline and Live changes can now sit in the sidebar, in the right panel or in a new bottom panel under the document. Drag a panel by its tab (or by its title when it stands alone), or use its "…" menu: **Move to sidebar**, **Move to right panel**, **Move to bottom panel**, show it as a tab or in a group of its own. Each of the three areas holds up to three groups, with a divider to resize them. A panel you move keeps what it shows: the search you typed, the folders you opened, your place in a list. The bottom panel appears when you put a panel there; **Ctrl+J** (Cmd+J on macOS) and a button in the status bar hide and show it. The arrangement is the same in every project, and **Reset layout** brings back the default. <!-- f: side-panels, keyboard-shortcuts -->
+- **Layouts.** **Layouts…** in a panel's "…" menu, also a command, saves the current arrangement under a name, switches to a saved one, and renames and deletes them. Switching and resetting can be undone, from the notice or with the command "Undo the last layout change". <!-- f: side-panels -->
+
+### Changed
+- When a **Revert** ends a review, the notice now offers **Undo**. Before, the review closed and that last revert could no longer be undone. <!-- f: review-changes -->
+- The sidebar remembers the tab you last used in each project, as the right panel already did. Before, it opened on Files every time. <!-- f: side-panels -->
+- **Reset layout** now resets the arrangement of all panels, not only the right panel, and can be undone. <!-- f: side-panels -->
+
+### Fixed
+- Reading a repository can no longer make git download anything. In a partial copy of a repository, looking at a file could fetch its missing parts from the place the repository's own settings name, and such a fetch could start a program. PerMark's git calls now never use the network. <!-- f: git-status -->
+- "Compare with: the last commit" no longer compares a file kept in Git LFS with its pointer text; it says there is nothing to compare with. <!-- f: review-changes -->
+- A link written after Chinese, Japanese or other non-ASCII text in a table cell that also holds an escaped pipe (`\|`) is now found: the broken-link check and search see it, and renaming a file updates it. Before, that link was skipped. <!-- f: links -->
+- **Ctrl+A** (Cmd+A on macOS) no longer selects everything in the window, such as the top bar, the Explorer and the status bar. In View it selects the document only, and in the Explorer it selects every file and folder in the list. In text fields and in the editors it works as before. <!-- f: explorer, shortcuts -->
+
 ## [0.11.0] - 2026-11-11
 
 ### Added

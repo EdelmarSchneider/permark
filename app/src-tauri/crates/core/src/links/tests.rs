@@ -302,6 +302,24 @@ fn an_escaped_pipe_does_not_split_a_table_cell_or_shift_the_links_after_it() {
 }
 
 #[test]
+fn a_table_link_after_non_ascii_text_and_an_escaped_pipe_is_still_found() {
+    // the parser counts an escaped pipe as one column but it takes two bytes, so the link can start inside a
+    // character: the shift that reaches it has to be tried, not dropped
+    for (text, want) in [
+        (
+            "| a | b |\n|---|---|\n| x | `a\\|b` 中文[t](x.md) |\n",
+            ["x.md"],
+        ),
+        (
+            "| 门禁 | 入口 | 覆盖 |\n| --- | --- | --- |\n| 硬编码文案 + copy 引用漂移 | `pnpm check:nexus-ui-text[:staged\\|:all\\|:ratchet]` → [check-nexus-ui-hardcoded-text.ts](x.md) | `src/app/(app)/nexus/` |\n",
+            ["x.md"],
+        ),
+    ] {
+        assert_eq!(raws(text), want, "{text:?}");
+    }
+}
+
+#[test]
 fn html_attributes_are_destinations_and_comments_are_not() {
     let text = "<img src=\"a/b.png\" alt='x'>\n\n<a href='c.md'>t</a> and <video src=d.mp4 poster=\"p.png\"></video>\n\n<!-- <a href=\"hidden.md\"> -->\n\n<div data-href=\"nope.md\" HREF=\"upper.md\"></div>\n";
     assert_eq!(

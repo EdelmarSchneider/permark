@@ -59,6 +59,7 @@ function reviewView(hash: string): ReviewView {
     unit: "lines",
     count: CHANGES.length,
     canKeep: true,
+    uncommitted: false,
     changes: CHANGES,
   };
 }

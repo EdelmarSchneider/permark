@@ -116,6 +116,8 @@ function defaultSettings(): AppSettings {
     keymap: {},
     plugins: {},
     rightViews: null,
+    panels: null,
+    layouts: null,
     wrapLines: true,
     imageFolder: "img",
     charactersFile: "characters.toml",
@@ -184,6 +186,10 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
     }
     case "rightViews":
       return { ...settings, rightViews: change.value };
+    case "panels":
+      return { ...settings, panels: change.value };
+    case "layouts":
+      return { ...settings, layouts: change.value };
     case "wrapLines":
       return { ...settings, wrapLines: change.value };
     case "imageFolder":

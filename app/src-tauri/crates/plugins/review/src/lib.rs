@@ -35,7 +35,8 @@ pub use service::{Files, HeldFile, Prefs, ReviewService, SeenDoc, SeenFile};
 pub use splice::{edit_for, invert, CannotSplice, Span, Text};
 pub use store::{CopyStore, MAX_COPY_BYTES};
 pub use types::{
-    Basis, ReviewChange, ReviewChangeKind, ReviewState, ReviewStatus, ReviewUnit, ReviewView,
+    Basis, ReviewChange, ReviewChangeKind, ReviewState, ReviewStatus, ReviewUnit, ReviewVersions,
+    ReviewView, VersionGap, VersionRow, VersionsReason,
 };
 
 const ID: PluginId = PluginId::of("review");
@@ -107,6 +108,13 @@ struct UndoArgs {
 #[derive(Deserialize)]
 struct BasisArg {
     basis: Basis,
+}
+
+#[derive(Deserialize)]
+struct VersionsArgs {
+    path: String,
+    /// Where the page starts: the `next` of the page before (none: the first page).
+    after: Option<usize>,
 }
 
 /// A project path from outside, checked.
@@ -219,6 +227,13 @@ impl Plugin for ReviewPlugin {
         ));
         let s = Arc::clone(&service);
         registrations.extend(cx.rpc("basis", typed(move |_: NoArgs, _| Ok(s.basis()))));
+        let s = Arc::clone(&service);
+        registrations.extend(cx.rpc(
+            "versions",
+            typed(move |args: VersionsArgs, _| {
+                s.versions(&checked(&args.path)?, args.after.unwrap_or(0))
+            }),
+        ));
         Ok(Box::new(ReviewRunning {
             registrations,
             service: Some(service),

@@ -92,6 +92,11 @@ export type Contribution = Owned &
     | {
         kind: "panel";
         id: string;
+        /**
+         * What kind of view it is, and the region it goes to while the arrangement does not place it elsewhere.
+         * `left`: a sidebar tab (a body alone: its tab names it; in a project only, always open). `right`: a panel
+         * with a header of its own, that the person opens | closes.
+         */
         side: "left" | "right";
         label: MessageKey;
         /** A small icon: the tab shows it alone while another tab is the open one and the strip is crowded. */
@@ -99,7 +104,7 @@ export type Contribution = Owned &
         view: LazyComponent;
         /** Reactive; false = not drawn (no tab, no panel: dormant until the project calls for it). Absent = true. */
         offered?: () => boolean;
-        /** Reactive; a short count after the tab label in the right tab strip (`null`: none). */
+        /** Reactive; a short count after the label of its tab (`null`: none). */
         badge?: () => string | null;
         /**
          * Side right: open when the project has no choice for it yet (absent = false); asked once per project load.
@@ -194,6 +199,18 @@ export type Contribution = Owned &
         label: MessageKey;
         applies: (path: string, isDir: boolean) => boolean;
         run: (paths: readonly string[]) => void;
+      }
+    /**
+     * An entry of the "…" menu in the header of a document, after the one that copies the document. `applies`: the
+     * documents it is offered for (absent = every one); `run` gets the path of the document the header names. The
+     * entries are listed by `id`: plugins load in no set order, and an entry keeps its place in the menu.
+     */
+    | {
+        kind: "docMenu";
+        id: string;
+        label: MessageKey;
+        applies?: (path: string) => boolean;
+        run: (path: string) => void;
       }
     /** An entry of the page's context menu while text is selected (comment on the passage). */
     | {

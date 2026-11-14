@@ -501,6 +501,21 @@ export class ExplorerStore {
     this.focus = path;
   }
 
+  /** Select all: every row the list shows now (files and folders, inside open folders too), which is what Home, then
+   *  Shift+End reaches. The row the keyboard is on stays; with none (or one a closed folder took away) the first row
+   *  takes it, and a Shift + arrow | click after it extends from there. */
+  selectAll(): void {
+    const keys = this.rows.filter((r) => r.type === "node").map(rowKey);
+    const first = keys[0];
+    const last = keys[keys.length - 1];
+    if (first === undefined || last === undefined) return;
+    this.selection = new Set(rangeBetween(this.rows, first, last));
+    if (this.focus === null || !keys.includes(this.focus)) {
+      this.focus = first;
+      this.#anchor = first;
+    }
+  }
+
   /** Arrow keys: the row `step` away from the focused one (clamped). */
   move(step: number, extend: boolean): void {
     const keys = this.rows.filter((r) => r.type === "node").map(rowKey);

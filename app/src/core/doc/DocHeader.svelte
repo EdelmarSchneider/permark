@@ -18,8 +18,9 @@
   import { conditions } from "../conditions/context.svelte";
   import { contributions } from "../plugins/instance.svelte";
   import Badge from "../shell/Badge.svelte";
+  import { OUTLINE } from "../shell/arrangement";
   import { outlineShown } from "../shell/layout";
-  import { rightSide, toggleOutlinePanel } from "../shell/sides";
+  import { regionStateOf, toggleOutlinePanel } from "../shell/sides";
   import { compactRelativeFormat } from "../time";
   import { documents } from "./document.svelte";
   import { headerFit } from "./headerFit";
@@ -183,11 +184,28 @@
     return entries;
   }
 
+  /** The entries plugins add to the "…" menu for this document, by id (plugins load in no set order). */
+  function pluginEntries(): MenuEntry[] {
+    // the document the menu opens on: an entry picked after the window went to another one still runs for this one,
+    // never for a document its menu was not opened for
+    const opened = path;
+    return contributions
+      .visible("docMenu", conditions.current)
+      .filter((entry) => entry.applies?.(opened) ?? true)
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .map((entry) => ({
+        kind: "item" as const,
+        label: t(entry.label),
+        run: () => entry.run(opened),
+      }));
+  }
+
   function moreMenu(event: MouseEvent): void {
     if (!(event.currentTarget instanceof Element)) return;
     const entries: MenuEntry[] = [
       ...foldedEntries(event.currentTarget),
       { kind: "item", label: t("cmd.copyDocument"), run: () => void documents.copyDocument() },
+      ...pluginEntries(),
     ];
     if (webPictures.project) {
       const on = webPictures.always;
@@ -332,7 +350,7 @@
       class="icon-btn"
       title={t("outline.label")}
       aria-label={t("outline.label")}
-      aria-pressed={outlineShown(rightSide())}
+      aria-pressed={outlineShown(regionStateOf(OUTLINE))}
       onclick={() => toggleOutlinePanel()}
     >
       <AlignLeft size={16} />

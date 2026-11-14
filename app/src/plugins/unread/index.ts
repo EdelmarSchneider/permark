@@ -5,7 +5,7 @@ import Mail from "@lucide/svelte/icons/mail";
 import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { documents } from "../../core/doc/document.svelte";
 import { definePlugin } from "../../core/plugins/registry.svelte";
-import { ui } from "../../core/shell/ui.svelte";
+import { showView } from "../../core/shell/sides";
 import { isDocument, unread } from "./store.svelte";
 
 const PANEL = "unread.panel";
@@ -34,7 +34,7 @@ export default definePlugin({
                 text,
                 open: () => {
                   unread.showOnly({ folder: row.path, name: row.name });
-                  ui.showSidebar(PANEL);
+                  showView(PANEL);
                 },
               };
         },
@@ -61,7 +61,7 @@ export default definePlugin({
         id: "unread.show",
         label: "unread.show",
         requires: NO_REQUIREMENT,
-        run: () => ui.showSidebar(PANEL),
+        run: () => showView(PANEL),
       }),
       cx.contribute({
         kind: "command",
@@ -141,7 +141,6 @@ export default definePlugin({
     ];
     return () => {
       for (const remove of removals) remove();
-      if (ui.sidebar === PANEL) ui.showSidebar("files");
       stop();
     };
   },

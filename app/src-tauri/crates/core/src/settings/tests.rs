@@ -10,7 +10,7 @@ fn doc(text: &str) -> DocumentMut {
 
 fn applied(text: &str, change: &SettingChange) -> String {
     let mut d = doc(text);
-    apply_change(&mut d, change);
+    apply_change(&mut d, change).unwrap();
     render(&d, text)
 }
 
@@ -1416,6 +1416,716 @@ fn the_arrangement_change_wire_format() {
     assert_eq!(
         serde_json::from_str::<SettingChange>(r#"{"key":"rightViews"}"#).unwrap(),
         SettingChange::RightViews(None)
+    );
+}
+
+/// The exact bytes of a written `[right_views]`: its groups go through the writer the regions of `[panels]` share.
+#[test]
+fn the_arrangement_table_is_written_in_one_shape() {
+    assert_eq!(
+        applied(
+            "theme = \"dark\"\n",
+            &SettingChange::RightViews(Some(stacked()))
+        ),
+        "theme = \"dark\"\n\n[right_views]\nv = 1\ngroups = [{ views = [\"outline\"], share = 0.5 }, { views = [\"live-feed.panel\"], share = 0.5 }]\n"
+    );
+}
+
+// ---- panels + layouts: the arrangement of every region, and the named arrangements -----------------------------
+
+fn view_group(views: &[&str], share: f64) -> ViewGroup {
+    ViewGroup {
+        views: views.iter().map(|v| (*v).to_owned()).collect(),
+        share,
+    }
+}
+
+fn docked() -> Panels {
+    Panels {
+        v: 2,
+        left: vec![view_group(&["files", "search"], 1.0)],
+        right: vec![
+            view_group(&["outline"], 0.5),
+            view_group(&["live-feed.panel"], 0.5),
+        ],
+        bottom: Vec::new(),
+    }
+}
+
+fn no_panels() -> Panels {
+    Panels {
+        v: 2,
+        left: Vec::new(),
+        right: Vec::new(),
+        bottom: Vec::new(),
+    }
+}
+
+fn named() -> Layouts {
+    Layouts {
+        v: 1,
+        items: vec![
+            LayoutItem {
+                name: "Writing".to_owned(),
+                arrangement: docked(),
+            },
+            LayoutItem {
+                name: "Revisão ampla".to_owned(),
+                arrangement: Panels {
+                    bottom: vec![view_group(&["outline", "files"], 1.0)],
+                    ..no_panels()
+                },
+            },
+        ],
+    }
+}
+
+/// `[panels]` as `docked()` is written.
+const DOCKED_TOML: &str = "[panels]\nv = 2\nleft = [{ views = [\"files\", \"search\"], share = 1.0 }]\nright = [{ views = [\"outline\"], share = 0.5 }, { views = [\"live-feed.panel\"], share = 0.5 }]\nbottom = []\n";
+
+/// `[layouts]` as `named()` is written: one `[[layouts.items]]` per layout, its arrangement in a table below it.
+const NAMED_TOML: &str = "[layouts]\nv = 1\n\n[[layouts.items]]\nname = \"Writing\"\n\n[layouts.items.arrangement]\nv = 2\nleft = [{ views = [\"files\", \"search\"], share = 1.0 }]\nright = [{ views = [\"outline\"], share = 0.5 }, { views = [\"live-feed.panel\"], share = 0.5 }]\nbottom = []\n\n[[layouts.items]]\nname = \"Revisão ampla\"\n\n[layouts.items.arrangement]\nv = 2\nleft = []\nright = []\nbottom = [{ views = [\"outline\", \"files\"], share = 1.0 }]\n";
+
+#[test]
+fn a_settings_file_without_panels_reads_none_and_gains_only_its_table() {
+    let old = AppSettings::from_doc(&doc(SETTINGS_0_6_4));
+    assert_eq!(old.panels, None);
+    let text = applied(SETTINGS_0_6_4, &SettingChange::Panels(Some(docked())));
+    assert_eq!(
+        text,
+        format!("{SETTINGS_0_6_4}\r\n{}", DOCKED_TOML.replace('\n', "\r\n"))
+    );
+    let read = AppSettings::from_doc(&doc(&text));
+    assert_eq!(read.panels, Some(docked()));
+    assert_eq!(read.theme, ThemePref::Dark);
+    assert_eq!(read.right_views, None);
+    // back to the default: the table goes, the file is as it was
+    assert_eq!(applied(&text, &SettingChange::Panels(None)), SETTINGS_0_6_4);
+    assert_eq!(
+        applied(SETTINGS_0_6_4, &SettingChange::Panels(None)),
+        SETTINGS_0_6_4
+    );
+}
+
+#[test]
+fn changed_panels_keep_their_place_and_the_rest_of_the_file() {
+    let text = "theme = \"light\"\n\n# where the views sit\n[panels]\nv = 2\nleft = [{ views = [\"files\"], share = 1 }]\nright = []\nbottom = []\n\n[keymap]\n\"tab.close\" = \"Mod+W\"\n";
+    // a whole number share (hand-written) reads as a fraction
+    assert_eq!(
+        AppSettings::from_doc(&doc(text)).panels,
+        Some(Panels {
+            left: vec![view_group(&["files"], 1.0)],
+            ..no_panels()
+        })
+    );
+    assert_eq!(
+        applied(text, &SettingChange::Panels(Some(docked()))),
+        format!("theme = \"light\"\n\n# where the views sit\n{DOCKED_TOML}\n[keymap]\n\"tab.close\" = \"Mod+W\"\n")
+    );
+}
+
+#[test]
+fn unreadable_panels_read_as_none_and_the_rest_survives() {
+    for bad in [
+        "[panels]\nleft = []\nright = []\nbottom = []\n",
+        "[panels]\nv = -1\nleft = []\nright = []\nbottom = []\n",
+        "[panels]\nv = \"2\"\nleft = []\nright = []\nbottom = []\n",
+        "[panels]\nv = 2\n",
+        "[panels]\nv = 2\nleft = []\nright = []\n",
+        "[panels]\nv = 2\nleft = \"files\"\nright = []\nbottom = []\n",
+        "[panels]\nv = 2\nleft = []\nright = [1, 2]\nbottom = []\n",
+        "[panels]\nv = 2\nleft = [{ views = \"files\", share = 0.5 }]\nright = []\nbottom = []\n",
+        "[panels]\nv = 2\nleft = []\nright = [{ views = [1], share = 0.5 }]\nbottom = []\n",
+        "[panels]\nv = 2\nleft = []\nright = []\nbottom = [{ views = [\"outline\"] }]\n",
+        "[panels]\nv = 2\nleft = [{ views = [\"files\"], share = \"half\" }]\nright = []\nbottom = []\n",
+        "[panels]\nv = 2\nleft = []\nright = [{ views = [\"outline\"], share = nan }]\nbottom = []\n",
+        "[panels]\nv = 2\nleft = []\nright = []\nbottom = [{ views = [\"outline\"], share = inf }]\n",
+        "panels = 3\n",
+    ] {
+        // the keys around it read on: the old arrangement of the right column too
+        let text = format!("theme = \"dark\"\n{bad}\n[right_views]\nv = 1\ngroups = []\n");
+        let read = AppSettings::from_doc(&doc(&text));
+        assert_eq!(read.panels, None, "{bad}");
+        assert_eq!(read.theme, ThemePref::Dark, "{bad}");
+        assert_eq!(
+            read.right_views,
+            Some(RightViews {
+                v: 1,
+                groups: Vec::new()
+            }),
+            "{bad}"
+        );
+    }
+    // the other spelling of an array of tables reads too; an unknown key inside is ignored
+    let text = "[panels]\nv = 3\nmine = true\nright = []\nbottom = []\n\n[[panels.left]]\nviews = [\"files\", \"x:y\"]\nshare = 0.25\n\n[[panels.left]]\nviews = []\nshare = 0.75\n";
+    assert_eq!(
+        AppSettings::from_doc(&doc(text)).panels,
+        Some(Panels {
+            v: 3,
+            left: vec![view_group(&["files", "x:y"], 0.25), view_group(&[], 0.75)],
+            ..no_panels()
+        })
+    );
+    assert_eq!(
+        AppSettings::from_doc(&doc(
+            "panels = { v = 2, left = [], right = [], bottom = [] }\n"
+        ))
+        .panels,
+        Some(no_panels())
+    );
+}
+
+#[test]
+fn panels_out_of_bounds_are_refused_before_they_reach_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    fs::write(file.path(), "theme = \"dark\"\n").unwrap();
+    let long = "x".repeat(65);
+    let many: Vec<&str> = vec!["a"; 17];
+    for bad in [
+        vec![view_group(&["a"], 0.25); 4],
+        vec![view_group(&many, 1.0)],
+        vec![view_group(&[""], 1.0)],
+        vec![view_group(&[long.as_str()], 1.0)],
+        vec![view_group(&["a b"], 1.0)],
+        vec![view_group(&["ü"], 1.0)],
+        vec![view_group(&["a"], 1.5)],
+        vec![view_group(&["a"], -0.1)],
+        vec![view_group(&["a"], f64::NAN)],
+        vec![view_group(&["a"], f64::INFINITY)],
+    ] {
+        // one rule for every region
+        for panels in [
+            Panels {
+                left: bad.clone(),
+                ..docked()
+            },
+            Panels {
+                right: bad.clone(),
+                ..docked()
+            },
+            Panels {
+                bottom: bad.clone(),
+                ..docked()
+            },
+        ] {
+            let change = SettingChange::Panels(Some(panels));
+            assert!(
+                matches!(file.apply(&change), Err(SettingsError::Invalid { ref reason, .. }) if reason == "panels"),
+                "{change:?}"
+            );
+        }
+    }
+    assert_eq!(
+        fs::read_to_string(file.path()).unwrap(),
+        "theme = \"dark\"\n"
+    );
+    // in bounds: the most groups in every region at once; an empty arrangement is a value too
+    let full = Panels {
+        v: 2,
+        left: vec![view_group(&["a"], 0.3); 3],
+        right: vec![view_group(&["b"], 0.3); 3],
+        bottom: vec![view_group(&["c"], 0.3); 3],
+    };
+    let saved = file
+        .apply(&SettingChange::Panels(Some(full.clone())))
+        .unwrap();
+    assert_eq!(saved.panels, Some(full.clone()));
+    assert_eq!(file.load().panels, Some(full));
+    file.apply(&SettingChange::Panels(Some(no_panels())))
+        .unwrap();
+    assert_eq!(file.load().panels, Some(no_panels()));
+    assert_eq!(file.load().theme, ThemePref::Dark);
+}
+
+#[test]
+fn the_panels_change_wire_format() {
+    let json = r#"{"key":"panels","value":{"v":2,"left":[{"views":["files","search"],"share":1.0}],"right":[{"views":["outline"],"share":0.5},{"views":["live-feed.panel"],"share":0.5}],"bottom":[]}}"#;
+    let change: SettingChange = serde_json::from_str(json).unwrap();
+    assert_eq!(change, SettingChange::Panels(Some(docked())));
+    assert_eq!(change.key(), "panels");
+    assert_eq!(serde_json::to_string(&change).unwrap(), json);
+    let reset: SettingChange = serde_json::from_str(r#"{"key":"panels","value":null}"#).unwrap();
+    assert_eq!(reset, SettingChange::Panels(None));
+    // no value at all = the reset (serde reads an absent `Option` content as `None`)
+    assert_eq!(
+        serde_json::from_str::<SettingChange>(r#"{"key":"panels"}"#).unwrap(),
+        SettingChange::Panels(None)
+    );
+    for bad in [
+        r#"{"key":"panels","value":{"left":[],"right":[],"bottom":[]}}"#,
+        r#"{"key":"panels","value":{"v":2,"left":[],"right":[]}}"#,
+        r#"{"key":"panels","value":{"v":2,"left":[{"views":"files","share":1}],"right":[],"bottom":[]}}"#,
+    ] {
+        assert!(serde_json::from_str::<SettingChange>(bad).is_err(), "{bad}");
+    }
+    let settings = serde_json::to_value(AppSettings::default()).unwrap();
+    assert_eq!(settings["panels"], serde_json::Value::Null);
+    let settings = serde_json::to_value(AppSettings {
+        panels: Some(docked()),
+        ..AppSettings::default()
+    })
+    .unwrap();
+    assert_eq!(settings["panels"]["left"][0]["views"][1], "search");
+    assert_eq!(settings["panels"]["v"], 2);
+}
+
+#[test]
+fn the_right_column_and_the_panels_are_written_apart() {
+    let right = "[right_views]\nv = 1\ngroups = [{ views = [\"outline\"], share = 1.0 }]\n";
+    let text = format!("# mine\n{right}\n{DOCKED_TOML}");
+    let read = AppSettings::from_doc(&doc(&text));
+    let outline = RightViews {
+        v: 1,
+        groups: vec![view_group(&["outline"], 1.0)],
+    };
+    assert_eq!(read.right_views, Some(outline.clone()));
+    assert_eq!(read.panels, Some(docked()));
+    // a change of one leaves the bytes of the other
+    assert_eq!(
+        applied(&text, &SettingChange::Panels(Some(no_panels()))),
+        format!("# mine\n{right}\n[panels]\nv = 2\nleft = []\nright = []\nbottom = []\n")
+    );
+    assert_eq!(
+        applied(&text, &SettingChange::RightViews(Some(stacked()))),
+        format!("# mine\n[right_views]\nv = 1\ngroups = [{{ views = [\"outline\"], share = 0.5 }}, {{ views = [\"live-feed.panel\"], share = 0.5 }}]\n\n{DOCKED_TOML}")
+    );
+    // and each goes on its own
+    let alone = AppSettings::from_doc(&doc(&applied(&text, &SettingChange::Panels(None))));
+    assert_eq!((alone.right_views, alone.panels), (Some(outline), None));
+    let alone = AppSettings::from_doc(&doc(&applied(&text, &SettingChange::RightViews(None))));
+    assert_eq!((alone.right_views, alone.panels), (None, Some(docked())));
+}
+
+#[test]
+fn a_settings_file_without_layouts_reads_none_and_gains_only_its_table() {
+    let old = AppSettings::from_doc(&doc(SETTINGS_0_6_4));
+    assert_eq!(old.layouts, None);
+    let text = applied(SETTINGS_0_6_4, &SettingChange::Layouts(Some(named())));
+    assert_eq!(
+        text,
+        format!("{SETTINGS_0_6_4}\r\n{}", NAMED_TOML.replace('\n', "\r\n"))
+    );
+    let read = AppSettings::from_doc(&doc(&text));
+    assert_eq!(read.layouts, Some(named()));
+    assert_eq!(read.theme, ThemePref::Dark);
+    assert_eq!(read.panels, None);
+    // no layout left to keep: the table goes with everything under it, the file is as it was
+    assert_eq!(
+        applied(&text, &SettingChange::Layouts(None)),
+        SETTINGS_0_6_4
+    );
+    assert_eq!(
+        applied(SETTINGS_0_6_4, &SettingChange::Layouts(None)),
+        SETTINGS_0_6_4
+    );
+}
+
+#[test]
+fn changed_layouts_keep_their_place_and_the_rest_of_the_file() {
+    let around = |layouts: &str| {
+        format!("theme = \"light\"\n\n# my layouts\n{layouts}\n{DOCKED_TOML}\n[keymap]\n\"tab.close\" = \"Mod+W\"\n")
+    };
+    let text = around("[layouts]\nv = 1\n\n[[layouts.items]]\nname = \"Old\"\n\n[layouts.items.arrangement]\nv = 2\nleft = []\nright = []\nbottom = []\n");
+    assert_eq!(
+        AppSettings::from_doc(&doc(&text)).layouts,
+        Some(Layouts {
+            v: 1,
+            items: vec![LayoutItem {
+                name: "Old".to_owned(),
+                arrangement: no_panels(),
+            }],
+        })
+    );
+    // written whole: the layouts of before are gone, the tables after it stay after it
+    let out = applied(&text, &SettingChange::Layouts(Some(named())));
+    assert_eq!(out, around(NAMED_TOML));
+    let read = AppSettings::from_doc(&doc(&out));
+    assert_eq!(read.layouts, Some(named()));
+    assert_eq!(read.panels, Some(docked()));
+    // fewer layouts, then none: an empty list is written as one
+    let mut one = named();
+    one.items.truncate(1);
+    let out = applied(&out, &SettingChange::Layouts(Some(one.clone())));
+    assert!(!out.contains("Revisão"), "{out}");
+    assert_eq!(AppSettings::from_doc(&doc(&out)).layouts, Some(one));
+    let empty = Layouts {
+        v: 1,
+        items: Vec::new(),
+    };
+    let out = applied(&out, &SettingChange::Layouts(Some(empty.clone())));
+    assert_eq!(out, around("[layouts]\nv = 1\nitems = []\n"));
+    assert_eq!(AppSettings::from_doc(&doc(&out)).layouts, Some(empty));
+    // and filled again from the empty list
+    assert_eq!(
+        applied(&out, &SettingChange::Layouts(Some(named()))),
+        around(NAMED_TOML)
+    );
+}
+
+#[test]
+fn unreadable_layouts_read_as_none_and_the_rest_survives() {
+    const EMPTY: &str = "{ v = 2, left = [], right = [], bottom = [] }";
+    for bad in [
+        "[layouts]\nitems = []\n".to_owned(),
+        "[layouts]\nv = -1\nitems = []\n".to_owned(),
+        "[layouts]\nv = \"1\"\nitems = []\n".to_owned(),
+        "[layouts]\nv = 1\n".to_owned(),
+        "[layouts]\nv = 1\nitems = \"Writing\"\n".to_owned(),
+        "[layouts]\nv = 1\nitems = [1, 2]\n".to_owned(),
+        format!("[layouts]\nv = 1\nitems = [{{ name = 5, arrangement = {EMPTY} }}]\n"),
+        format!("[layouts]\nv = 1\nitems = [{{ arrangement = {EMPTY} }}]\n"),
+        "[layouts]\nv = 1\nitems = [{ name = \"a\" }]\n".to_owned(),
+        "[layouts]\nv = 1\nitems = [{ name = \"a\", arrangement = 3 }]\n".to_owned(),
+        "[layouts]\nv = 1\nitems = [{ name = \"a\", arrangement = { left = [], right = [], bottom = [] } }]\n".to_owned(),
+        "[layouts]\nv = 1\nitems = [{ name = \"a\", arrangement = { v = 2, left = [{ views = [\"x\"], share = \"half\" }], right = [], bottom = [] } }]\n".to_owned(),
+        // one damaged layout damages the list
+        "[layouts]\nv = 1\n\n[[layouts.items]]\nname = \"whole\"\n\n[layouts.items.arrangement]\nv = 2\nleft = []\nright = []\nbottom = []\n\n[[layouts.items]]\nname = \"damaged\"\n".to_owned(),
+        "layouts = 3\n".to_owned(),
+    ] {
+        let text = format!("theme = \"dark\"\n{bad}\n{DOCKED_TOML}");
+        let read = AppSettings::from_doc(&doc(&text));
+        assert_eq!(read.layouts, None, "{bad}");
+        assert_eq!(read.theme, ThemePref::Dark, "{bad}");
+        assert_eq!(read.panels, Some(docked()), "{bad}");
+    }
+    // damaged panels leave the layouts readable
+    let text = format!("[panels]\nv = 2\n\n{NAMED_TOML}");
+    let read = AppSettings::from_doc(&doc(&text));
+    assert_eq!((read.panels, read.layouts), (None, Some(named())));
+    // inline tables read too; an unknown key inside is ignored
+    let text = format!("[layouts]\nv = 4\nmine = true\nitems = [{{ name = \"a\", color = \"red\", arrangement = {EMPTY} }}]\n");
+    assert_eq!(
+        AppSettings::from_doc(&doc(&text)).layouts,
+        Some(Layouts {
+            v: 4,
+            items: vec![LayoutItem {
+                name: "a".to_owned(),
+                arrangement: no_panels(),
+            }],
+        })
+    );
+}
+
+#[test]
+fn layouts_out_of_bounds_are_refused_before_they_reach_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    fs::write(file.path(), "theme = \"dark\"\n").unwrap();
+    let item = |name: &str| LayoutItem {
+        name: name.to_owned(),
+        arrangement: docked(),
+    };
+    let holding = |arrangement: Panels| LayoutItem {
+        name: "held".to_owned(),
+        arrangement,
+    };
+    for items in [
+        (0..21).map(|n| item(&format!("Layout {n}"))).collect(),
+        vec![item("")],
+        vec![item("   ")],
+        vec![item(" Writing")],
+        vec![item("Writing\u{a0}")],
+        vec![item(&"x".repeat(41))],
+        vec![item("two\nlines")],
+        vec![item("a\tb")],
+        vec![item("a\u{7f}b")],
+        vec![item("a\u{9b}b")],
+        // the arrangement of a layout follows the rule of `[panels]`
+        vec![
+            item("fine"),
+            holding(Panels {
+                bottom: vec![view_group(&["a"], 0.25); 4],
+                ..docked()
+            }),
+        ],
+        vec![holding(Panels {
+            left: vec![view_group(&["a b"], 1.0)],
+            ..docked()
+        })],
+        vec![holding(Panels {
+            right: vec![view_group(&["a"], f64::NAN)],
+            ..docked()
+        })],
+    ] {
+        let change = SettingChange::Layouts(Some(Layouts { v: 1, items }));
+        assert!(
+            matches!(file.apply(&change), Err(SettingsError::Invalid { ref reason, .. }) if reason == "layouts"),
+            "{change:?}"
+        );
+    }
+    assert_eq!(
+        fs::read_to_string(file.path()).unwrap(),
+        "theme = \"dark\"\n"
+    );
+    // in bounds: the most layouts; the longest name counts characters, not bytes; spaces inside a name
+    let mut items: Vec<LayoutItem> = (0..19).map(|n| item(&format!("Layout {n}"))).collect();
+    items.push(item(&"ã".repeat(40)));
+    let full = Layouts { v: 1, items };
+    let saved = file
+        .apply(&SettingChange::Layouts(Some(full.clone())))
+        .unwrap();
+    assert_eq!(saved.layouts, Some(full.clone()));
+    assert_eq!(file.load().layouts, Some(full));
+    assert_eq!(file.load().theme, ThemePref::Dark);
+}
+
+#[test]
+fn the_layouts_change_wire_format() {
+    let json = r#"{"key":"layouts","value":{"v":1,"items":[{"name":"Writing","arrangement":{"v":2,"left":[{"views":["files","search"],"share":1.0}],"right":[{"views":["outline"],"share":0.5},{"views":["live-feed.panel"],"share":0.5}],"bottom":[]}}]}}"#;
+    let mut one = named();
+    one.items.truncate(1);
+    let change: SettingChange = serde_json::from_str(json).unwrap();
+    assert_eq!(change, SettingChange::Layouts(Some(one.clone())));
+    assert_eq!(change.key(), "layouts");
+    assert_eq!(serde_json::to_string(&change).unwrap(), json);
+    let reset: SettingChange = serde_json::from_str(r#"{"key":"layouts","value":null}"#).unwrap();
+    assert_eq!(reset, SettingChange::Layouts(None));
+    assert_eq!(
+        serde_json::from_str::<SettingChange>(r#"{"key":"layouts"}"#).unwrap(),
+        SettingChange::Layouts(None)
+    );
+    for bad in [
+        r#"{"key":"layouts","value":{"items":[]}}"#,
+        r#"{"key":"layouts","value":{"v":1}}"#,
+        r#"{"key":"layouts","value":{"v":1,"items":[{"name":"a"}]}}"#,
+        r#"{"key":"layouts","value":{"v":1,"items":[{"name":5,"arrangement":{"v":2,"left":[],"right":[],"bottom":[]}}]}}"#,
+    ] {
+        assert!(serde_json::from_str::<SettingChange>(bad).is_err(), "{bad}");
+    }
+    let settings = serde_json::to_value(AppSettings::default()).unwrap();
+    assert_eq!(settings["layouts"], serde_json::Value::Null);
+    let settings = serde_json::to_value(AppSettings {
+        layouts: Some(one),
+        ..AppSettings::default()
+    })
+    .unwrap();
+    assert_eq!(settings["layouts"]["items"][0]["name"], "Writing");
+    assert_eq!(
+        settings["layouts"]["items"][0]["arrangement"]["right"][1]["views"][0],
+        "live-feed.panel"
+    );
+}
+
+/// The two changes of a key that holds a format number: a value in this build's format, and the removal.
+fn changes_of(key: &str) -> [SettingChange; 2] {
+    if key == "panels" {
+        [
+            SettingChange::Panels(Some(docked())),
+            SettingChange::Panels(None),
+        ]
+    } else {
+        [
+            SettingChange::Layouts(Some(named())),
+            SettingChange::Layouts(None),
+        ]
+    }
+}
+
+#[test]
+fn a_table_of_a_newer_format_is_never_written_over_or_removed() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    for (key, table) in [
+        // the shape of today, then shapes this build cannot read
+        (
+            "panels",
+            "[panels]\nv = 99\nleft = []\nright = []\nbottom = []\n",
+        ),
+        ("panels", "[panels]\nv = 3\ntop = { views = [\"files\"] }\n"),
+        ("panels", "panels = { v = 3, docks = 4 }\n"),
+        ("layouts", "[layouts]\nv = 99\nitems = []\n"),
+        (
+            "layouts",
+            "[layouts]\nv = 2\n\n[layouts.saved.Writing]\nleft = [\"files\"]\n",
+        ),
+    ] {
+        let stored = format!("theme = \"dark\" # night\n# from a newer PerMark\n{table}\n[keymap]\n\"tab.close\" = \"Mod+W\"\n");
+        fs::write(file.path(), &stored).unwrap();
+        for change in changes_of(key) {
+            assert!(
+                matches!(
+                    file.apply(&change),
+                    Err(SettingsError::Invalid { key: ref at, ref reason }) if at == key && reason == key
+                ),
+                "{change:?} over {table}"
+            );
+            assert_eq!(
+                fs::read_to_string(file.path()).unwrap(),
+                stored,
+                "{change:?} over {table}"
+            );
+            // the document itself is refused before anything in it changes
+            let mut held = doc(&stored);
+            assert!(apply_change(&mut held, &change).is_err(), "{change:?}");
+            assert_eq!(held.to_string(), stored, "{change:?} over {table}");
+        }
+        // the keys around it are written as ever, and the newer table stays as it is
+        let saved = file.apply(&SettingChange::Tone(Tone::Paper)).unwrap();
+        assert_eq!((saved.theme, saved.tone), (ThemePref::Dark, Tone::Paper));
+        let text = fs::read_to_string(file.path()).unwrap();
+        assert!(
+            text.contains(&format!("# from a newer PerMark\n{table}")),
+            "{text}"
+        );
+        assert!(
+            text.ends_with("\n[keymap]\n\"tab.close\" = \"Mod+W\"\n"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn a_table_of_this_format_of_an_older_one_or_without_one_is_written_over() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    for (key, stored) in [
+        (
+            "panels",
+            "[panels]\nv = 2\nleft = []\nright = []\nbottom = []\n",
+        ),
+        (
+            "panels",
+            "[panels]\nv = 1\nleft = []\nright = []\nbottom = []\n",
+        ),
+        (
+            "panels",
+            "[panels]\nv = \"x\"\nleft = []\nright = []\nbottom = []\n",
+        ),
+        ("panels", "[panels]\nleft = []\nright = []\nbottom = []\n"),
+        ("panels", "[panels]\nv = -99\n"),
+        ("panels", "[panels]\nv = 99.5\n"),
+        ("panels", "panels = 99\n"),
+        ("layouts", "[layouts]\nv = 1\nitems = []\n"),
+        ("layouts", "[layouts]\nv = 0\nitems = []\n"),
+        ("layouts", "[layouts]\nv = \"x\"\nitems = []\n"),
+        ("layouts", "[layouts]\nitems = []\n"),
+        ("layouts", "layouts = 99\n"),
+    ] {
+        let [write, remove] = changes_of(key);
+        let written = if key == "panels" {
+            (Some(docked()), None)
+        } else {
+            (None, Some(named()))
+        };
+        fs::write(file.path(), stored).unwrap();
+        let saved = file.apply(&write).unwrap();
+        assert_eq!((saved.panels, saved.layouts), written, "{stored}");
+        let read = file.load();
+        assert_eq!((read.panels, read.layouts), written, "{stored}");
+        fs::write(file.path(), stored).unwrap();
+        file.apply(&remove).unwrap();
+        assert!(
+            !fs::read_to_string(file.path()).unwrap().contains(key),
+            "{stored}"
+        );
+    }
+    // a removal counts as this build's format; a value that claims the stored newer format is no way around it
+    let ahead = "[panels]\nv = 3\nleft = []\nright = []\nbottom = []\n";
+    fs::write(file.path(), ahead).unwrap();
+    for change in [
+        SettingChange::Panels(Some(docked())),
+        SettingChange::Panels(None),
+        SettingChange::Panels(Some(Panels { v: 3, ..docked() })),
+    ] {
+        assert!(file.apply(&change).is_err(), "{change:?}");
+        assert_eq!(fs::read_to_string(file.path()).unwrap(), ahead);
+    }
+    // the right column's own key keeps its rule: written whole, whatever is stored
+    fs::write(file.path(), "[right_views]\nv = 99\ngroups = []\n").unwrap();
+    assert_eq!(
+        file.apply(&SettingChange::RightViews(Some(stacked())))
+            .unwrap()
+            .right_views,
+        Some(stacked())
+    );
+    file.apply(&SettingChange::RightViews(None)).unwrap();
+    assert_eq!(file.load().right_views, None);
+}
+
+/// A value in another format would be stored but not understood here, and a higher one would shut every later
+/// write of its key out: only the formats this build writes reach the file.
+#[test]
+fn a_value_in_a_format_this_build_does_not_write_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    assert_eq!(
+        (docked().v, named().v),
+        (PANELS_VERSION, LAYOUTS_VERSION),
+        "the fixtures are in the formats written"
+    );
+    let stored = format!("theme = \"dark\"\n\n{DOCKED_TOML}\n{NAMED_TOML}");
+    fs::write(file.path(), &stored).unwrap();
+    let holding = |v: u32| {
+        let mut layouts = named();
+        layouts.items[1].arrangement.v = v;
+        layouts
+    };
+    for (word, change) in [
+        (
+            "panels",
+            SettingChange::Panels(Some(Panels { v: 99, ..docked() })),
+        ),
+        (
+            "panels",
+            SettingChange::Panels(Some(Panels { v: 1, ..docked() })),
+        ),
+        (
+            "panels",
+            SettingChange::Panels(Some(Panels {
+                v: 0,
+                ..no_panels()
+            })),
+        ),
+        (
+            "layouts",
+            SettingChange::Layouts(Some(Layouts { v: 99, ..named() })),
+        ),
+        (
+            "layouts",
+            SettingChange::Layouts(Some(Layouts {
+                v: 0,
+                items: Vec::new(),
+            })),
+        ),
+        // one layout whose arrangement is in another format
+        ("layouts", SettingChange::Layouts(Some(holding(99)))),
+        ("layouts", SettingChange::Layouts(Some(holding(1)))),
+    ] {
+        assert!(
+            matches!(
+                file.apply(&change),
+                Err(SettingsError::Invalid { ref key, ref reason }) if key == word && reason == word
+            ),
+            "{change:?}"
+        );
+        assert_eq!(
+            fs::read_to_string(file.path()).unwrap(),
+            stored,
+            "{change:?}"
+        );
+    }
+    // the formats written still go in, over what is stored
+    let saved = file
+        .apply(&SettingChange::Panels(Some(no_panels())))
+        .unwrap();
+    assert_eq!(saved.panels, Some(no_panels()));
+    let saved = file
+        .apply(&SettingChange::Layouts(Some(holding(PANELS_VERSION))))
+        .unwrap();
+    assert_eq!(saved.layouts, Some(named()));
+    let read = file.load();
+    assert_eq!(
+        (read.panels, read.layouts, read.theme),
+        (Some(no_panels()), Some(named()), ThemePref::Dark)
+    );
+    // the right column's own key carries any format number, as before
+    let other = RightViews { v: 7, ..stacked() };
+    assert_eq!(
+        file.apply(&SettingChange::RightViews(Some(other.clone())))
+            .unwrap()
+            .right_views,
+        Some(other)
     );
 }
 

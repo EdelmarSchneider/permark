@@ -1,0 +1,511 @@
+// The views of this window and where they sit: the arrangement (app-wide, from the settings: three regions), which
+// views are present (open + with content), the groups each region draws, what is on screen; and the arrangements the
+// person saved under a name (app-wide too). The project's open | selected choices live in the layout store (its
+// session, read behind `layout.reading`); a view the project has no choice for takes its default, decided once per
+// project load (`panel.defaultOpen`). Spec: shell.md §Frame.
+
+import FolderTree from "@lucide/svelte/icons/folder-tree";
+import ListTree from "@lucide/svelte/icons/list-tree";
+import SearchIcon from "@lucide/svelte/icons/search";
+import { tick, type Component } from "svelte";
+import type { Api, ApiError, AppSettings } from "../../api";
+import type { Panels } from "../../api/generated/Panels";
+import { conditions } from "../conditions/context.svelte";
+import { documents } from "../doc/document.svelte";
+import { reading } from "../doc/reading.svelte";
+import { t, type MessageKey } from "../i18n";
+import type { ContributionOf } from "../plugins/registry.svelte";
+import { windowStore } from "../window.svelte";
+import { layout } from "./layout.svelte";
+import { offeredPanels } from "./panels.svelte";
+import {
+  axisOf,
+  defaultArrangement,
+  drawnGroups,
+  FILES,
+  isDefault,
+  OUTLINE,
+  parseArrangement,
+  regionOf,
+  SEARCH,
+  selectedIn,
+  tooShort,
+  withViews,
+  type Arrangement,
+  type DrawnGroup,
+  type Region,
+} from "./arrangement";
+import {
+  deleteLayout,
+  findLayout,
+  parseLayouts,
+  renameLayout,
+  restoreLayout,
+  saveLayout,
+  type Layout,
+} from "./layouts";
+import { ui } from "./ui.svelte";
+
+type Panel = ContributionOf<"panel">;
+
+/** How long the views' defaults wait for git to answer after a project shows. */
+export const DEFAULT_WAIT_MS = 500;
+/** The arrangement is written this long after the last change (a divider dragged). */
+const SAVE_DELAY_MS = 400;
+/** The one notice about a change of the whole arrangement (a newer one takes its place). */
+const WHOLE_NOTICE = "layout";
+
+/** The arrangement in the settings: `panels`, else (never set | unreadable) the right column 0.11 saved. */
+export function arrangementOf(settings: AppSettings): Arrangement {
+  return parseArrangement(settings.panels, settings.rightViews);
+}
+
+/** An arrangement as the settings take it: lists of their own, nothing but the three regions. */
+function panelsOf(arr: Arrangement): Panels {
+  const copy = (groups: Arrangement[Region]): Panels[Region] =>
+    groups.map((g) => ({ views: [...g.views], share: g.share }));
+  return { v: 2, left: copy(arr.left), right: copy(arr.right), bottom: copy(arr.bottom) };
+}
+
+/** A view the window knows now: a core one, or a panel its plugin offers. */
+export type KnownView = {
+  readonly id: string;
+  /** Where it goes while no region lists it. */
+  readonly region: Region;
+  /** The person can close it (the outline, a panel of the right side); the others are always open in a project. */
+  readonly closable: boolean;
+  /** It draws a header of its own (its title, its options button): alone in its group it needs no tab strip. */
+  readonly ownHeader: boolean;
+  /** Its name, as a tab says it. */
+  readonly label: MessageKey;
+  /** A small icon: a crowded tab strip shows it alone. */
+  readonly icon: Component<{ size?: number }> | undefined;
+  /** The plugin's panel (`null`: a view of the core). */
+  readonly panel: Panel | null;
+};
+
+/** The region is off screen: hidden by the person, or its project's session not read yet. */
+function regionOff(region: Region): boolean {
+  switch (region) {
+    case "left":
+      return layout.sidebarOff;
+    case "right":
+      return layout.rightOff;
+    case "bottom":
+      return layout.bottomOff;
+    default:
+      return region satisfies never;
+  }
+}
+
+/** What a region reads of the window's views. */
+type Views = {
+  readonly layout: Arrangement;
+  isPresent(id: string): boolean;
+  hasStrip(group: DrawnGroup): boolean;
+};
+
+/** One region of this window: the groups it would draw, the room it measured, the groups it draws. */
+class RegionViews {
+  /** The region's extent along its stack as last measured (px; 0: not drawn | not measured yet). */
+  size = $state(0);
+  readonly #region: Region;
+  readonly #views: Views;
+
+  constructor(region: Region, views: Views) {
+    this.#region = region;
+    this.#views = views;
+  }
+
+  /** The groups with a present view, along the stack as arranged. */
+  readonly stacked = $derived.by(() =>
+    drawnGroups(this.#views.layout[this.#region], (id) => this.#views.isPresent(id)),
+  );
+
+  /** How many views of the region are present. */
+  readonly count = $derived(this.stacked.reduce((sum, group) => sum + group.views.length, 0));
+
+  /** Too short for those groups along the stack. */
+  readonly short = $derived.by(() =>
+    tooShort(this.size, this.stacked, axisOf(this.#region), (group) => this.#views.hasStrip(group)),
+  );
+
+  /** The groups drawn: `stacked`, or all in one tab group while the region is too short. */
+  readonly drawn = $derived.by((): DrawnGroup[] => {
+    const groups = this.stacked;
+    if (!this.short) return groups;
+    return [{ at: groups[0]?.at ?? 0, views: groups.flatMap((g) => g.views), share: 1 }];
+  });
+}
+
+export class ArrangementStore {
+  /** As saved (app-wide). */
+  saved = $state.raw<Arrangement>(defaultArrangement());
+  /** The arrangements saved under a name (app-wide), in the order the person saved them. */
+  layouts = $state.raw<readonly Layout[]>([]);
+  /** What the window's polite status line holds (`say`). */
+  #status = $state("");
+  /** Counts the lines said: one said meanwhile takes the place of a line still waiting to show. */
+  #said = 0;
+  /** The arrangement before the last change of the whole (the reset, a saved layout used), while `undo` can bring
+   *  it back (`null`: nothing to undo). */
+  #before = $state.raw<Arrangement | null>(null);
+  #api: Api | null = null;
+  #timer: ReturnType<typeof setTimeout> | null = null;
+  /** The project load whose wait for git is over (`layout.loads`; -1: none). */
+  #decided = $state(-1);
+  /** Defaults taken for the load `#latchedFor`, by view id. */
+  #latched = new Map<string, boolean>();
+  #latchedFor = -1;
+
+  /** The load the defaults belong to: a project shown, its session read, its context known (-1: not yet). */
+  readonly #load = $derived(
+    !layout.reading && conditions.current.workspace === "project" ? layout.loads : -1,
+  );
+
+  /** The panels offered now (plugin on, `offered()`), of both sides, in a fixed order. */
+  readonly #panels = $derived(offeredPanels());
+
+  /** The document shown has an outline. */
+  readonly hasOutline = $derived.by(() => {
+    const view = documents.view;
+    return view?.body.kind === "markdown" && view.body.outline.length > 0;
+  });
+
+  /**
+   * Every view the window knows now, in the order a fresh arrangement lists them: Files, Search and the plugins'
+   * tabs (left), the outline and the plugins' panels (right). A panel's side is only its default region.
+   */
+  readonly views = $derived.by((): KnownView[] => {
+    // a sidebar tab is a body alone, always open in a project; a right panel has its header and can be closed
+    const panelsOf = (side: Panel["side"]): KnownView[] =>
+      this.#panels
+        .filter((panel) => panel.side === side)
+        .map((panel) => ({
+          id: panel.id,
+          region: side,
+          closable: side === "right",
+          ownHeader: side === "right",
+          label: panel.label,
+          icon: panel.icon,
+          panel,
+        }));
+    const core = { closable: false, ownHeader: false, panel: null } as const;
+    return [
+      { ...core, id: FILES, region: "left", label: "sidebar.files", icon: FolderTree },
+      { ...core, id: SEARCH, region: "left", label: "sidebar.search", icon: SearchIcon },
+      ...panelsOf("left"),
+      {
+        id: OUTLINE,
+        region: "right",
+        closable: true,
+        ownHeader: true,
+        label: "outline.tab",
+        icon: ListTree,
+        panel: null,
+      },
+      ...panelsOf("right"),
+    ];
+  });
+
+  /** The arrangement with every view known now listed (a new plugin's view joins its default region). */
+  readonly layout = $derived(withViews(this.saved, this.views));
+
+  /** The arrangement is the default one: a reset would change nothing. */
+  readonly atDefault = $derived(isDefault(this.layout, this.views));
+
+  readonly #regions: Readonly<Record<Region, RegionViews>> = {
+    left: new RegionViews("left", this),
+    right: new RegionViews("right", this),
+    bottom: new RegionViews("bottom", this),
+  };
+
+  /** The views present in the window, whatever their region, in the order of `views`. */
+  readonly present = $derived(this.views.filter((view) => this.isPresent(view.id)));
+
+  /** How many views are present in the window. */
+  readonly presentCount = $derived(this.present.length);
+
+  /** Follows the settings of the app (boot + every change) and decides the views' defaults per project load. */
+  start(api: Api): () => void {
+    this.#api = api;
+    // an arrangement kept for `undo` came from the settings followed before, not from these
+    this.#before = null;
+    let gone = false;
+    let off: (() => void) | null = null;
+    void api.settingsGet().then((result) => {
+      if (gone || !result.ok) return;
+      this.saved = arrangementOf(result.value);
+      this.layouts = parseLayouts(result.value.layouts);
+    });
+    void api
+      .on("settings-changed", (event) => {
+        // our own write comes back: the arrangement shown is newer than a write still waiting
+        if (this.#timer === null) this.saved = arrangementOf(event.settings);
+        this.layouts = parseLayouts(event.settings.layouts);
+      })
+      .then((stop) => {
+        if (gone) stop();
+        else off = stop;
+      });
+    const stopDefaults = $effect.root(() => {
+      $effect(() => {
+        const load = this.#load;
+        if (load < 0) return;
+        const timer = setTimeout(() => (this.#decided = load), DEFAULT_WAIT_MS);
+        return () => clearTimeout(timer);
+      });
+    });
+    return () => {
+      gone = true;
+      off?.();
+      stopDefaults();
+      this.#flush();
+    };
+  }
+
+  /** The view `id` as the window knows it (undefined: none now, e.g. its plugin is off). */
+  viewOf(id: string): KnownView | undefined {
+    return this.views.find((view) => view.id === id);
+  }
+
+  /** The name of the view `id`, as its tab says it (a view nobody offers now: its id). */
+  nameOf(id: string): string {
+    const view = this.viewOf(id);
+    return view === undefined ? id : t(view.label);
+  }
+
+  /** The region that lists `id` now (`null`: none). */
+  regionOf(id: string): Region | null {
+    return regionOf(this.layout, id);
+  }
+
+  /**
+   * Whether `panel` opens when the project has no choice for it: its `defaultOpen()`, taken once per project load.
+   * While git may still answer (`DEFAULT_WAIT_MS`), a yes is taken at once and a no waits.
+   */
+  defaultOf(panel: Panel): boolean {
+    const load = this.#load;
+    if (load < 0 || panel.defaultOpen === undefined) return false;
+    if (this.#latchedFor !== load) {
+      this.#latched = new Map();
+      this.#latchedFor = load;
+    }
+    const known = this.#latched.get(panel.id);
+    if (known !== undefined) return known;
+    const now = panel.defaultOpen();
+    if (now || this.#decided === load) this.#latched.set(panel.id, now);
+    return now;
+  }
+
+  /** The panel is open for this project (its choice, else its default). */
+  isOpen(panel: Panel): boolean {
+    const chosen = layout.views.open[panel.id];
+    return typeof chosen === "boolean" ? chosen : this.defaultOf(panel);
+  }
+
+  /**
+   * The view is present. One that cannot be closed (Files, Search, a plugin's sidebar tab): in a project window,
+   * always. The outline: when the document has one and it is on. A panel that can be closed: when open.
+   */
+  isPresent(id: string): boolean {
+    const view = this.viewOf(id);
+    if (view === undefined) return false;
+    if (!view.closable) return conditions.current.workspace === "project";
+    return view.panel === null ? this.hasOutline && reading.outline : this.isOpen(view.panel);
+  }
+
+  /** The groups of `region` with a present view, along its stack as arranged. */
+  stacked(region: Region): readonly DrawnGroup[] {
+    return this.#regions[region].stacked;
+  }
+
+  /** `region` is too short for its groups along the stack: they are drawn as one tab group. */
+  short(region: Region): boolean {
+    return this.#regions[region].short;
+  }
+
+  /** The groups `region` draws: `stacked`, or all in one tab group while it is too short. */
+  drawn(region: Region): readonly DrawnGroup[] {
+    return this.#regions[region].drawn;
+  }
+
+  /** How many views of `region` are present. */
+  presentIn(region: Region): number {
+    return this.#regions[region].count;
+  }
+
+  /** A drawn group shows a tab strip: several views, or one that has no header of its own to name it. */
+  hasStrip(group: DrawnGroup): boolean {
+    const [only] = group.views;
+    return group.views.length > 1 || (only !== undefined && this.viewOf(only)?.ownHeader === false);
+  }
+
+  /** The element of `region` measured its extent along the stack (px; 0: it is gone). */
+  setSize(region: Region, px: number): void {
+    this.#regions[region].size = px;
+  }
+
+  /** The drawn group that holds `id`, in whatever region (undefined: not drawn). */
+  groupWith(id: string): DrawnGroup | undefined {
+    const region = this.regionOf(id);
+    return region === null ? undefined : this.drawn(region).find((g) => g.views.includes(id));
+  }
+
+  /** The view a drawn group shows. */
+  selectedOf(group: DrawnGroup): string | null {
+    return selectedIn(group.views, layout.views.selected);
+  }
+
+  /** The view is the one its group shows (a present view alone in its group, or the selected tab). */
+  isSelected(id: string): boolean {
+    const group = this.groupWith(id);
+    return group !== undefined && this.selectedOf(group) === id;
+  }
+
+  /** The view is on screen: present, shown by its group, its region shown, not in focus mode. */
+  onScreen(id: string): boolean {
+    const region = this.regionOf(id);
+    return region !== null && !regionOff(region) && ui.focus !== "on" && this.isSelected(id);
+  }
+
+  /** What the last move said (a polite status). */
+  get status(): string {
+    return this.#status;
+  }
+
+  /**
+   * Says `text` in the window's polite status line. The line is emptied first and filled once that is drawn: the
+   * same words twice in a row are two changes of the line, so a screen reader announces both.
+   */
+  say(text: string): void {
+    const turn = ++this.#said;
+    this.#status = "";
+    void tick().then(() => {
+      if (turn === this.#said) this.#status = text;
+    });
+  }
+
+  /**
+   * A new arrangement: drawn at once, written a moment after the last change. A change like any other: what `undo`
+   * could bring back is no longer the arrangement before it, so it is let go with the notice that offered it.
+   */
+  arrange(next: Arrangement): void {
+    if (this.#before !== null) {
+      this.#before = null;
+      windowStore.dismissKey(WHOLE_NOTICE);
+    }
+    this.saved = next;
+    if (this.#timer !== null) clearTimeout(this.#timer);
+    this.#timer = setTimeout(() => this.#flush(), SAVE_DELAY_MS);
+  }
+
+  /**
+   * A change of the whole arrangement, the one way for all who ask (a view's menu, the palette, the Layouts dialog):
+   * `next` is drawn, `words` say it (the status line, and one notice for the window), and the arrangement before is
+   * kept for `undo`, which the notice's button and the Undo command both call.
+   */
+  #replace(next: Arrangement, words: string): void {
+    const before = this.saved;
+    this.arrange(next);
+    this.#before = before;
+    this.say(words);
+    windowStore.notifyKeyed(WHOLE_NOTICE, words, {
+      label: t("fileOps.undo"),
+      run: () => void this.undo(),
+    });
+  }
+
+  /**
+   * The whole arrangement back to the default (the groups, their order and shares, in the three regions), said, with
+   * a way back. The regions' sizes, the hidden regions and the open views are the project's: untouched.
+   */
+  reset(): void {
+    this.#replace(defaultArrangement(), t("panel.layoutReset"));
+  }
+
+  /** The last change of the whole arrangement can still be undone. */
+  get canUndo(): boolean {
+    return this.#before !== null;
+  }
+
+  /**
+   * The arrangement from before the last change of the whole comes back (the way a move changes it), and it is said.
+   * `false`: nothing to undo (none made, undone already, or the person arranged the views another way since).
+   */
+  undo(): boolean {
+    const before = this.#before;
+    if (before === null) return false;
+    this.arrange(before);
+    this.say(t("fileOps.undone"));
+    return true;
+  }
+
+  #flush(): void {
+    if (this.#timer === null) return;
+    clearTimeout(this.#timer);
+    this.#timer = null;
+    // the settings field `panels`: a failed write keeps the arrangement for this run. The field 0.11 wrote
+    // (`rightViews`) is left as it is: an older build on the same profile still finds its column.
+    void this.#api?.settingsSet({ key: "panels", value: panelsOf(this.saved) });
+  }
+
+  /**
+   * The arrangement shown is kept under `name` (every view known now listed; nothing of the project: no sizes, no
+   * hidden | open | selected state). A layout of that name, in any spelling, is replaced.
+   */
+  saveLayoutAs(name: string): Promise<ApiError | null> {
+    return this.#keep(saveLayout(this.layouts, name, this.layout));
+  }
+
+  /**
+   * The window takes the arrangement of the layout `name`, the way a move changes it (`arrange`: no view is created
+   * again), said, with a way back. A view the layout lists that nobody offers now keeps its place for when its
+   * plugin is on. `false`: no layout of that name.
+   */
+  useLayout(name: string): boolean {
+    const found = findLayout(this.layouts, name);
+    if (found === undefined) return false;
+    this.#replace(found.arrangement, t("layouts.applied", { name: found.name }));
+    return true;
+  }
+
+  /** The layout `from` is called `to` (refused while another layout has that name). */
+  renameLayout(from: string, to: string): Promise<ApiError | null> {
+    return this.#keep(renameLayout(this.layouts, from, to));
+  }
+
+  deleteLayout(name: string): Promise<ApiError | null> {
+    return this.#keep(deleteLayout(this.layouts, name));
+  }
+
+  /** A deleted layout comes back at the place it had (`at`). */
+  restoreLayout(layout: Layout, at: number): Promise<ApiError | null> {
+    return this.#keep(restoreLayout(this.layouts, layout, at));
+  }
+
+  /**
+   * The list of layouts becomes `next`: shown at once and written whole (the settings field `layouts`; no layout
+   * left: the field leaves the settings). A write the settings refuse | that fails puts the list back as it was and
+   * answers the error. The same list: nothing written.
+   */
+  async #keep(next: readonly Layout[]): Promise<ApiError | null> {
+    const before = this.layouts;
+    if (next === before) return null;
+    this.layouts = next;
+    const items = next.map(({ name, arrangement }) => ({
+      name,
+      arrangement: panelsOf(arrangement),
+    }));
+    const result = await this.#api?.settingsSet({
+      key: "layouts",
+      value: items.length === 0 ? null : { v: 1, items },
+    });
+    if (result === undefined || result.ok) return null;
+    // still the list this change showed: the settings said nothing newer meanwhile
+    if (this.layouts === next) this.layouts = before;
+    return result.error;
+  }
+}
+
+export const arrangement = new ArrangementStore();

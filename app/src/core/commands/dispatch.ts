@@ -37,6 +37,18 @@ function isReloadKey(event: Pick<KeyEventLike, "key">): boolean {
   return event.key === "F5";
 }
 
+/** The select-all chord, as `comboFromEvent` writes it. */
+const SELECT_ALL = "Mod+a";
+
+/** Mod+A where no text has the keyboard: the webview selects every text of the window on it by itself (the bars, the
+ * panels, the lists). In a field | an editor it is the text's own select-all, and stays so. */
+export function isStraySelectAll(
+  event: KeyEventLike & { target?: EventTarget | null },
+  mac: boolean,
+): boolean {
+  return comboFromEvent(event, mac) === SELECT_ALL && !isTextTarget(event.target ?? null);
+}
+
 /**
  * What a key press does. Passes (the browser and the widgets keep the key) when: another handler already took it,
  * a question | a modal dialog other than a box is open (Ctrl+S must not save behind it, Ctrl+W must not close the tab
@@ -120,31 +132,57 @@ function runSafely(command: CommandItem): void {
   }
 }
 
+/** The editors: Edit (`contenteditable`), Source (CodeMirror). */
+const EDITOR = "[contenteditable=''], [contenteditable='true'], .cm-content";
+
+/** `input` kinds that hold no text: buttons, a box to tick, a slider, the pickers. */
+const NO_TEXT_INPUTS: ReadonlySet<string> = new Set([
+  "button",
+  "checkbox",
+  "color",
+  "file",
+  "image",
+  "radio",
+  "range",
+  "reset",
+  "submit",
+]);
+
 /** Whether keys typed now go into text (a field, a text area, an editor). */
 export function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
-  return (
-    target.closest(
-      "input, textarea, select, [contenteditable=''], [contenteditable='true'], .cm-content",
-    ) !== null
-  );
+  return target.closest(`input, textarea, select, ${EDITOR}`) !== null;
+}
+
+/** Whether the keyboard is in text that select-all selects: a text field, a text area, an editor. Narrower than
+ * `isTypingTarget`: a box to tick, a slider, a choice list keep their plain keys (Space, arrows, letters) but hold no
+ * text, so select-all there would be the webview's, over the whole window. A box inside an editor is the editor's. */
+export function isTextTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  const field = target.closest("input, textarea");
+  if (field !== null && !(field instanceof HTMLInputElement && NO_TEXT_INPUTS.has(field.type))) {
+    return true;
+  }
+  return target.closest(EDITOR) !== null;
 }
 
 /** Commands a held key runs once: its repeats are still the command's (taken), and run nothing. Reading the project
  * folder again once per repeat would queue one walk of the disk after another. */
 const ONCE_PER_PRESS: ReadonlySet<string> = new Set(["explorer.refresh"]);
 
-/** Listens on `target` until the returned function is called. A reload key no command takes is taken all the same:
- * it is never left to the webview. */
+/** Listens on `target` until the returned function is called. A reload key no command takes is taken all the same,
+ * and so is a select-all outside text (a dialog | a box | a question owns the input, the window has no document
+ * command): neither is ever left to the webview. */
 export function installKeys(
   target: Pick<Window, "addEventListener" | "removeEventListener">,
   env: (event: KeyboardEvent) => KeyEnv,
 ): () => void {
   const onKey = (event: Event): void => {
     if (!(event instanceof KeyboardEvent)) return;
-    const decision = resolveKey(event, env(event));
+    const now = env(event);
+    const decision = resolveKey(event, now);
     if (decision.kind !== "run") {
-      if (isReloadKey(event)) event.preventDefault();
+      if (isReloadKey(event) || isStraySelectAll(event, now.mac)) event.preventDefault();
       return;
     }
     event.preventDefault();

@@ -536,6 +536,12 @@
         if (modifier && !e.shiftKey) void store.undo();
         else handled = false;
         break;
+      case "a":
+      case "A":
+        // taken also when the list is empty: left alone, the key would select the document | the whole window
+        if (modifier && !e.shiftKey && !e.altKey) store.selectAll();
+        else handled = false;
+        break;
       default:
         handled = false;
     }

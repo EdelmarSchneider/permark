@@ -27,6 +27,9 @@ const { default: InitDialog } = await import("./InitDialog.svelte");
 const { default: TopBar } = await import("./TopBar.svelte");
 const { default: PanelToggle } = await import("./PanelToggle.svelte");
 const { layout } = await import("./layout.svelte");
+const { arrangement } = await import("./arrangement.svelte");
+const { defaultArrangement, moveTo } = await import("./arrangement");
+const { NO_REQUIREMENT } = await import("../conditions/available");
 const { closeHere } = await import("./closeWorkspace");
 const { default: CloseWindowDialog } = await import("./CloseWindowDialog.svelte");
 const { default: Welcome } = await import("./Welcome.svelte");
@@ -1096,6 +1099,70 @@ describe("the side panels", () => {
   afterEach(() => {
     layout.setSidebarHidden(false);
     layout.setRightHidden(false);
+    layout.setBottomHidden(false);
+    arrangement.arrange(defaultArrangement());
+  });
+
+  it("Ctrl+J and the status bar toggle hide | show the bottom panel; the focus in it moves to the page", async () => {
+    await open();
+    const stopKeys = installWindowKeys();
+    // a view the person opened, arranged at the bottom
+    const remove = contributions.register({
+      kind: "panel",
+      id: "probe.panel",
+      owner: "live-feed",
+      side: "right",
+      label: "live.label",
+      requires: NO_REQUIREMENT,
+      view: () => import("../testing/StripFirst.svelte"),
+    });
+    layout.setOpen("probe.panel", true);
+    arrangement.arrange(moveTo(arrangement.layout, "probe.panel", "bottom"));
+    component = mount(PanelToggle, { target, props: { side: "bottom" } });
+    flushSync();
+    const toggle = target.querySelector<HTMLElement>("button.toggle")!;
+    expect(toggle.getAttribute("aria-label")).toBe("Bottom panel");
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(toggle.getAttribute("title")).toBe("Hide bottom panel (Ctrl+J)");
+    // something in the bottom panel holds the focus
+    const region = document.createElement("aside");
+    region.dataset.region = "bottom";
+    const inside = document.createElement("button");
+    region.append(inside);
+    const page = document.createElement("main");
+    page.dataset.region = "page";
+    const scroller = document.createElement("div");
+    scroller.dataset.scroller = "";
+    scroller.tabIndex = -1;
+    page.append(scroller);
+    document.body.append(page, region);
+    inside.focus();
+    press(window, "j", { ctrlKey: true });
+    expect(layout.bottomHidden).toBe(true);
+    expect([layout.sidebarHidden, layout.rightHidden]).toEqual([false, false]);
+    expect(ui.frameMoving).toBe(true);
+    expect(document.activeElement, "the page's scroller has the focus").toBe(scroller);
+    flushSync();
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(toggle.getAttribute("title")).toBe("Show bottom panel (Ctrl+J)");
+    toggle.click();
+    expect(layout.bottomHidden).toBe(false);
+    // the focus elsewhere stays where it is
+    scroller.focus();
+    press(window, "j", { ctrlKey: true });
+    expect(layout.bottomHidden).toBe(true);
+    expect(document.activeElement).toBe(scroller);
+    // the view closed: no bottom panel, the key does nothing
+    layout.setBottomHidden(false);
+    layout.setOpen("probe.panel", false);
+    const command = contributions.of("command").find((c) => c.id === "panel.toggleBottom")!;
+    expect(command.when?.()).toBe(false);
+    press(window, "j", { ctrlKey: true });
+    expect(layout.bottomHidden).toBe(false);
+    region.remove();
+    page.remove();
+    remove();
+    stopKeys();
   });
 
   it("Ctrl+B and the status bar toggle hide | show the sidebar; the focus in it moves to the page", async () => {

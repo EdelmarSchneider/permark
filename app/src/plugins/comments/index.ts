@@ -5,7 +5,7 @@
 import MessageSquare from "@lucide/svelte/icons/message-square";
 import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { definePlugin } from "../../core/plugins/registry.svelte";
-import { ui } from "../../core/shell/ui.svelte";
+import { showView } from "../../core/shell/sides";
 import { PANEL } from "./ids";
 import { decorateMargin } from "./margin.svelte";
 import { readSelection } from "./marks";
@@ -34,7 +34,7 @@ export default definePlugin({
                 text,
                 open: () => {
                   comments.showOnly({ folder: row.path, name: row.name });
-                  ui.showSidebar(PANEL);
+                  showView(PANEL);
                 },
               };
         },
@@ -94,7 +94,7 @@ export default definePlugin({
         id: "comments.show",
         label: "comments.show",
         requires: NO_REQUIREMENT,
-        run: () => ui.showSidebar(PANEL),
+        run: () => showView(PANEL),
       }),
       cx.contribute({
         kind: "command",
@@ -108,7 +108,6 @@ export default definePlugin({
     return () => {
       for (const remove of removals) remove();
       comments.cancel();
-      if (ui.sidebar === PANEL) ui.showSidebar("files");
       stop();
     };
   },
