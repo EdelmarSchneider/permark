@@ -6,6 +6,7 @@ import {
   hasGroup,
   MAX_FAVORITE_CHARS,
   MAX_FAVORITE_GROUPS,
+  MAX_GROUP_NAME_CHARS,
   withChar,
   withGroup,
   withoutChar,
@@ -58,6 +59,28 @@ describe("favorite characters", () => {
     expect(withChar(null, family)?.chars).toEqual([family]);
   });
 
+  it("refuses blank, control and bidi-control characters like the settings do", () => {
+    for (const bad of [
+      " ",
+      " \t",
+      "\n",
+      "a\u0007",
+      "\u007f",
+      "\u0085",
+      "\u009f",
+      "‪",
+      "x‮",
+      "⁦",
+      "⁩",
+    ]) {
+      expect(withChar(null, bad), JSON.stringify(bad)).toBeNull();
+    }
+    // Unicode spaces and the marks that are no embedding | override stay insertable
+    for (const good of [" ", " ", " ", "⁠", "‏", "©"]) {
+      expect(withChar(null, good)?.chars, JSON.stringify(good)).toEqual([good]);
+    }
+  });
+
   it("never changes the value it got", () => {
     const f = favorites(["α"]);
     withChar(f, "β");
@@ -91,5 +114,19 @@ describe("pinned groups", () => {
       Array.from({ length: MAX_FAVORITE_GROUPS }, (_, n) => `g${n}`),
     );
     expect(withGroup(full, "greek")).toBe(full);
+  });
+
+  it("refuses a name no groups file could give: untrimmed, with controls, too long", () => {
+    for (const bad of [
+      " greek",
+      "greek ",
+      "gr\teek",
+      "a\u0085",
+      "x".repeat(MAX_GROUP_NAME_CHARS + 1),
+    ]) {
+      expect(withGroup(null, bad), JSON.stringify(bad)).toBeNull();
+    }
+    const longest = "x".repeat(MAX_GROUP_NAME_CHARS);
+    expect(withGroup(null, longest)?.groups).toEqual([longest]);
   });
 });

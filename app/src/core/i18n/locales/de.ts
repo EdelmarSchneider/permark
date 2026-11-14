@@ -595,7 +595,8 @@ export default {
   "symbols.addedGroup": "Gruppe {group} zu Favoriten hinzugefügt",
   "symbols.removedGroup": "Gruppe {group} aus Favoriten entfernt",
   "symbols.favoriteRefused": "Das kann nicht als Favorit gespeichert werden.",
-  "symbols.menu": "Symboloptionen",
+  "symbols.keepGroup": "Gruppe {group} als Favorit behalten",
+  "symbols.menuFor": "Optionen für {name}",
   "plugin.symbols.name": "Symbole",
   "plugin.symbols.about":
     "Ein Bereich mit Symbolen und Emoji, der neben dem Dokument bleibt; ein Klick fügt eines an der Einfügemarke ein.",
@@ -641,6 +642,7 @@ export default {
   "settings.charactersCreate": "Datei mit den eingebauten Gruppen erstellen",
   "settings.charactersBuiltin":
     "Die eingebauten Gruppen werden verwendet. Es gibt noch keine Datei.",
+  "settings.charactersBuiltinOnly": "Die eingebauten Gruppen werden verwendet.",
   "settings.charactersRead.one": "{n} Gruppe aus {file} wird verwendet.",
   "settings.charactersRead.other": "{n} Gruppen aus {file} werden verwendet.",
   "settings.charactersUnreadable":

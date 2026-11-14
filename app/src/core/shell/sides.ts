@@ -174,7 +174,7 @@ export function focusPage(): void {
 }
 
 /** Nothing holds the keyboard: it is on the page body, or what had it left the page. */
-function adrift(): boolean {
+export function adrift(): boolean {
   const now = document.activeElement;
   return !(now instanceof HTMLElement) || now === document.body || !now.isConnected;
 }

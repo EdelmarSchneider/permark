@@ -576,7 +576,8 @@ const en = {
   "symbols.addedGroup": "Added the group {group} to favorites",
   "symbols.removedGroup": "Removed the group {group} from favorites",
   "symbols.favoriteRefused": "That cannot be kept as a favorite.",
-  "symbols.menu": "Symbol options",
+  "symbols.keepGroup": "Keep the group {group} as a favorite",
+  "symbols.menuFor": "Options for {name}",
   "plugin.symbols.name": "Symbols",
   "plugin.symbols.about":
     "A panel of symbols and emoji that stays beside the document; a click inserts one at the caret.",
@@ -620,6 +621,7 @@ const en = {
   "settings.charactersShow": "Show in folder",
   "settings.charactersCreate": "Create the file with the built-in groups",
   "settings.charactersBuiltin": "Using the built-in groups. There is no file yet.",
+  "settings.charactersBuiltinOnly": "Using the built-in groups.",
   "settings.charactersRead.one": "Using {n} group from {file}.",
   "settings.charactersRead.other": "Using {n} groups from {file}.",
   "settings.charactersUnreadable": "{file} could not be read, so the built-in groups are shown.",

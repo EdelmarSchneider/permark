@@ -1,7 +1,7 @@
 // The one tab stop of the symbols panel and where the keys move it.
 import { describe, expect, it } from "vitest";
 import type { CharacterEntry, CharacterGroup } from "../../api";
-import { cellKey, headerKey, keptStop, moveFrom, stopsOf } from "./keys";
+import { cellKey, headerKey, keptStop, moveFrom, relatedStop, stopsOf } from "./keys";
 import { sectionsOf } from "./model";
 
 function entry(char: string): CharacterEntry {
@@ -64,5 +64,17 @@ describe("the stop kept over a redraw", () => {
     expect(keptStop(stops, cellKey("removed", 0))).toBe(stops[0]?.key);
     expect(keptStop(stops, null)).toBe(stops[0]?.key);
     expect(keptStop([], null)).toBeNull();
+  });
+
+  it("a favorite gone from the top: the same character in its own group, else nothing related", () => {
+    const without = stopsOf(sectionsOf(GROUPS, null, "", new Set(["emoji"])));
+    const gone = cellKey("\u0000favorites", 0);
+    expect(relatedStop(without, gone, "β")).toBe(cellKey("greek", 1));
+    expect(keptStop(without, gone, "β")).toBe(cellKey("greek", 1));
+    // a character no group holds: nothing related (the panel then puts the keyboard on the favorites title)
+    expect(relatedStop(without, gone, "★")).toBeNull();
+    expect(keptStop(without, gone, "★")).toBe(without[0]?.key);
+    // the stop itself still there wins over the character
+    expect(relatedStop(stops, cellKey("greek", 0), "β")).toBe(cellKey("greek", 0));
   });
 });

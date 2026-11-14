@@ -30,6 +30,15 @@ pub const MAX_ENTRY_NAME_CHARS: usize = 48;
 /// Longest entry, in code points: room for ZWJ emoji sequences with skin tones (up to 16).
 pub const MAX_ENTRY_CHARS: usize = 16;
 
+/// A character never put in a document from a group | favorite: C0 | DEL | C1 controls, bidi embedding |
+/// override | isolate controls (inserted at the caret they hide or reorder the text around it).
+pub(crate) fn is_unsafe_char(c: char) -> bool {
+    matches!(
+        c,
+        '\u{0}'..='\u{1f}' | '\u{7f}'..='\u{9f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
+    )
+}
+
 /// Where the groups the pickers show came from.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
@@ -101,7 +110,10 @@ pub(crate) fn groups_of(doc: &DocumentMut) -> Vec<CharacterGroup> {
     rows.iter()
         .filter_map(|row| {
             let name = row.get("name")?.as_str()?.trim();
-            if name.is_empty() || name.chars().count() > MAX_GROUP_NAME_CHARS {
+            if name.is_empty()
+                || name.chars().count() > MAX_GROUP_NAME_CHARS
+                || name.chars().any(is_unsafe_char)
+            {
                 return None;
             }
             let entries = entries_of(row.get("entries")?)?;
@@ -138,7 +150,10 @@ fn entries_of(item: &Item) -> Option<Vec<CharacterEntry>> {
                 .get("char")?
                 .as_str()?
                 .trim_matches(|c: char| c.is_ascii_whitespace());
-            if ch.is_empty() || ch.chars().count() > MAX_ENTRY_CHARS {
+            if ch.is_empty()
+                || ch.chars().count() > MAX_ENTRY_CHARS
+                || ch.chars().any(is_unsafe_char)
+            {
                 return None;
             }
             // one character twice in a group would give the picker two cells of one key

@@ -184,6 +184,9 @@ export class WindowStore {
   charactersStatus = $state<CharactersStatus>("builtin");
   /** The person's favorite symbols and groups (`null`: none kept yet). */
   symbolFavorites = $state.raw<SymbolFavorites | null>(null);
+  /** Settings reads applied so far (boot + each `settings-changed`; not reactive): a writer that needs to know
+   *  whether the news of its own write arrived compares it with the count it saw when it wrote. */
+  settingsReads = 0;
   #nextNotice = 1;
   readonly #clocks = new Map<number, NoticeClock>();
 
@@ -237,6 +240,7 @@ export class WindowStore {
   /** The settings the window follows, from the boot read and from every change (the language apart: boot waits
    *  for it). */
   #applySettings(settings: AppSettings): void {
+    this.settingsReads += 1;
     look.set(settings);
     this.linkUpdate = settings.linkUpdate;
     this.referenceTemplate = settings.referenceTemplate;

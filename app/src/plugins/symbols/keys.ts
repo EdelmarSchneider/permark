@@ -4,8 +4,10 @@
 
 import type { Section } from "./model";
 
-/** A group header or a cell; `section` is the key of the section it belongs to. */
-export type Stop = { key: string; kind: "header" | "cell"; section: string };
+/** A group header or a cell (with its character); `section` is the key of the section it belongs to. */
+export type Stop =
+  | { key: string; kind: "header"; section: string }
+  | { key: string; kind: "cell"; section: string; char: string };
 
 /** The moves that do not need the drawn grid. */
 export type Move =
@@ -39,8 +41,13 @@ export function stopsOf(sections: readonly Section[]): Stop[] {
     if (section.kind === "group") {
       stops.push({ key: headerKey(section.key), kind: "header", section: section.key });
     }
-    section.entries.forEach((_, index) => {
-      stops.push({ key: cellKey(section.key, index), kind: "cell", section: section.key });
+    section.entries.forEach((entry, index) => {
+      stops.push({
+        key: cellKey(section.key, index),
+        kind: "cell",
+        section: section.key,
+        char: entry.char,
+      });
     });
   }
   return stops;
@@ -76,15 +83,30 @@ export function moveFrom(stops: readonly Stop[], current: string, move: Move): s
 }
 
 /**
- * The stop that holds the tab stop now: `wanted` while the list still has it; else its section's header, else its
- * section's first cell (a group collapsed, a character gone), else the first stop (`null`: an empty list).
+ * The stop that stands for `wanted` after a redraw: `wanted` while the list still has it; else a cell of the same
+ * character `char` in another section (a favorite removed from the top: the character in its own group); else its
+ * section's header, else its section's first cell (a group collapsed, a character gone); `null`: nothing related.
  */
-export function keptStop(stops: readonly Stop[], wanted: string | null): string | null {
-  if (wanted !== null) {
-    if (stops.some((stop) => stop.key === wanted)) return wanted;
-    const section = wanted.slice(0, wanted.lastIndexOf(SEP));
-    const same = stops.find((stop) => stop.section === section);
+export function relatedStop(
+  stops: readonly Stop[],
+  wanted: string | null,
+  char: string | null = null,
+): string | null {
+  if (wanted === null) return null;
+  if (stops.some((stop) => stop.key === wanted)) return wanted;
+  const section = wanted.slice(0, wanted.lastIndexOf(SEP));
+  if (char !== null) {
+    const same = stops.find((s) => s.kind === "cell" && s.char === char && s.section !== section);
     if (same !== undefined) return same.key;
   }
-  return stops[0]?.key ?? null;
+  return stops.find((stop) => stop.section === section)?.key ?? null;
+}
+
+/** The stop that holds the tab stop now: the one related to `wanted`, else the first (`null`: an empty list). */
+export function keptStop(
+  stops: readonly Stop[],
+  wanted: string | null,
+  char: string | null = null,
+): string | null {
+  return relatedStop(stops, wanted, char) ?? stops[0]?.key ?? null;
 }

@@ -593,7 +593,8 @@ export default {
   "symbols.addedGroup": "グループ「{group}」をお気に入りに追加しました",
   "symbols.removedGroup": "グループ「{group}」をお気に入りから削除しました",
   "symbols.favoriteRefused": "これはお気に入りにできません。",
-  "symbols.menu": "記号のオプション",
+  "symbols.keepGroup": "グループ「{group}」をお気に入りに残す",
+  "symbols.menuFor": "{name} のオプション",
   "plugin.symbols.name": "記号",
   "plugin.symbols.about":
     "ドキュメントの横に表示される記号と絵文字のパネル。クリックするとカーソル位置に挿入されます。",
@@ -638,6 +639,7 @@ export default {
   "settings.charactersShow": "フォルダーに表示",
   "settings.charactersCreate": "組み込みのグループでファイルを作成",
   "settings.charactersBuiltin": "組み込みのグループを使っています。ファイルはまだありません。",
+  "settings.charactersBuiltinOnly": "組み込みのグループを使っています。",
   "settings.charactersRead.one": "{file} の {n} 個のグループを使っています。",
   "settings.charactersRead.other": "{file} の {n} 個のグループを使っています。",
   "settings.charactersUnreadable":

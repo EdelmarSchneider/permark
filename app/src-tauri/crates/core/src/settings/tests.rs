@@ -2263,6 +2263,32 @@ fn group_entries_keep_unicode_spaces_and_long_sequences_and_drop_repeats() {
 }
 
 #[test]
+fn group_entries_and_names_with_control_or_bidi_characters_are_dropped() {
+    let dir = tempfile::tempdir().unwrap();
+    let profile = dir.path().join("profile");
+    fs::create_dir_all(&profile).unwrap();
+    // a control or bidi override inserted at the caret would reorder | hide the text around it
+    let text = "[[groups]]\nname = \"mine\"\nentries = [\n\
+         { char = \"a\\u0007\" },\n\
+         { char = \"\\u007F\" },\n\
+         { char = \"\\u0085\" },\n\
+         { char = \"\\u202E\" },\n\
+         { char = \"x\\u2067\" },\n\
+         { char = \"\u{2192}\" },\n\
+         { char = \"\u{200F}\" },\n]\n\n\
+         [[groups]]\nname = \"bad\\u202Ename\"\nentries = [{ char = \"\u{2605}\" }]\n\n\
+         [[groups]]\nname = \"tab\\tname\"\nentries = [{ char = \"\u{2605}\" }]\n";
+    fs::write(profile.join("chars.toml"), text).unwrap();
+    let (groups, status) = characters::read(&profile, "chars.toml");
+    assert_eq!(status, CharactersStatus::Read);
+    let names: Vec<&str> = groups.iter().map(|g| g.name.as_str()).collect();
+    assert_eq!(names, ["mine"]);
+    let chars: Vec<&str> = groups[0].entries.iter().map(|e| e.char.as_str()).collect();
+    // the right-to-left mark (U+200F) is no embedding | override: kept
+    assert_eq!(chars, ["\u{2192}", "\u{200f}"]);
+}
+
+#[test]
 fn the_built_ins_hold_a_spaces_group_after_scripts_and_no_repeats() {
     let built = characters::defaults();
     let names: Vec<&str> = built.iter().map(|g| g.name.as_str()).collect();

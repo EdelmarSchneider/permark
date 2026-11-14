@@ -64,36 +64,58 @@
     imageFolderProblem = await store.trySetting({ key: "imageFolder", value });
   }
 
+  /** How long "Created {file}." stays before the line shows the steady status of the file. A timer, not the next
+   *  settings change: the create's own `settings-changed` lands before its answer, and no later change may come. */
+  const CREATED_MS = 4000;
+  let createdTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function tellCharacters(news: typeof charactersNews): void {
+    if (createdTimer !== null) clearTimeout(createdTimer);
+    createdTimer = null;
+    charactersNews = news;
+    if (news?.kind === "created") {
+      createdTimer = setTimeout(() => {
+        createdTimer = null;
+        charactersNews = null;
+      }, CREATED_MS);
+    }
+  }
+
   async function setCharactersFile(value: string): Promise<void> {
-    charactersNews = null;
+    tellCharacters(null);
     charactersFileProblem = await store.trySetting({ key: "charactersFile", value });
   }
 
   async function revealCharacters(): Promise<void> {
     const result = await api.charactersReveal();
-    charactersNews = result.ok ? null : { kind: "failed", text: apiErrorText(result.error) };
+    tellCharacters(result.ok ? null : { kind: "failed", text: apiErrorText(result.error) });
   }
 
   async function createCharacters(): Promise<void> {
     const file = store.charactersFile;
     const result = await api.charactersCreate();
     if (!result.ok) {
-      charactersNews = { kind: "failed", text: t("settings.charactersCreateFailed", { file }) };
+      tellCharacters({ kind: "failed", text: t("settings.charactersCreateFailed", { file }) });
       return;
     }
     if (result.value) {
-      charactersNews = { kind: "created" };
+      tellCharacters({ kind: "created" });
       // the Create button goes with the file's arrival: the keyboard moves to the button that stays
       showCharacters?.focus();
     } else {
       // a file appeared since the page read the status: read it
-      charactersNews = null;
+      tellCharacters(null);
       store.refreshCharacters();
     }
   }
 
   // edits to the groups file show in the status line without a restart
-  onMount(() => store.refreshCharacters());
+  onMount(() => {
+    store.refreshCharacters();
+    return () => {
+      if (createdTimer !== null) clearTimeout(createdTimer);
+    };
+  });
 
   async function setEditor(command: string): Promise<void> {
     editorProblem = await store.trySetting({ key: "editor", value: command });
@@ -176,6 +198,8 @@
         <span class="problem"
           >{t("settings.charactersUnreadable", { file: store.charactersFile })}</span
         >
+      {:else if store.charactersFile.trim() === ""}
+        {t("settings.charactersBuiltinOnly")}
       {:else}
         {t("settings.charactersBuiltin")}
       {/if}

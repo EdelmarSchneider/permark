@@ -589,7 +589,8 @@ export default {
   "symbols.addedGroup": "Grupo {group} añadido a favoritos",
   "symbols.removedGroup": "Grupo {group} quitado de favoritos",
   "symbols.favoriteRefused": "Eso no se puede guardar como favorito.",
-  "symbols.menu": "Opciones del símbolo",
+  "symbols.keepGroup": "Mantener el grupo {group} en favoritos",
+  "symbols.menuFor": "Opciones de {name}",
   "plugin.symbols.name": "Símbolos",
   "plugin.symbols.about":
     "Un panel de símbolos y emoji que queda junto al documento; un clic inserta uno en el cursor.",
@@ -634,6 +635,7 @@ export default {
   "settings.charactersShow": "Mostrar en la carpeta",
   "settings.charactersCreate": "Crear el archivo con los grupos integrados",
   "settings.charactersBuiltin": "Se usan los grupos integrados. Aún no hay ningún archivo.",
+  "settings.charactersBuiltinOnly": "Se usan los grupos integrados.",
   "settings.charactersRead.one": "Se usa {n} grupo de {file}.",
   "settings.charactersRead.other": "Se usan {n} grupos de {file}.",
   "settings.charactersUnreadable":

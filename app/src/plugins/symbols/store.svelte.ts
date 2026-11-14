@@ -68,33 +68,58 @@ export class SymbolsStore {
   }
 
   /** Adds the character to the favorites, or removes it when it is one; said in the status line. */
-  async toggleChar(entry: CharacterEntry): Promise<void> {
-    const current = windowStore.symbolFavorites;
-    const had = hasChar(current, entry.char);
-    const next = had ? withoutChar(current, entry.char) : withChar(current, entry.char);
-    const name = entryName(entry);
-    await this.#write(
-      current,
-      next,
-      t(had ? "symbols.removedFavorite" : "symbols.addedFavorite", { name }),
-    );
+  toggleChar(entry: CharacterEntry): Promise<void> {
+    return this.#step((current) => {
+      const had = hasChar(current, entry.char);
+      const name = entryName(entry);
+      return {
+        next: had ? withoutChar(current, entry.char) : withChar(current, entry.char),
+        done: t(had ? "symbols.removedFavorite" : "symbols.addedFavorite", { name }),
+      };
+    });
   }
 
   /** Pins the group (by its name in the groups file), or unpins it; said in the status line. */
-  async toggleGroup(name: string): Promise<void> {
-    const current = windowStore.symbolFavorites;
-    const had = hasGroup(current, name);
-    const next = had ? withoutGroup(current, name) : withGroup(current, name);
-    const group = groupLabel(name);
-    await this.#write(
-      current,
-      next,
-      t(had ? "symbols.removedGroup" : "symbols.addedGroup", { group }),
-    );
+  toggleGroup(name: string): Promise<void> {
+    return this.#step((current) => {
+      const had = hasGroup(current, name);
+      const group = groupLabel(name);
+      return {
+        next: had ? withoutGroup(current, name) : withGroup(current, name),
+        done: t(had ? "symbols.removedGroup" : "symbols.addedGroup", { group }),
+      };
+    });
   }
 
-  /** One settings write; the window's value follows from `settings-changed` (no copy kept here). A step that
-   *  changed nothing was one the settings would refuse (a toggle never repeats an add). */
+  /** The writes in flight, one after the other. */
+  #queue: Promise<void> = Promise.resolve();
+  /** The last write that landed: the window's settings read count when it started, and the value it wrote. */
+  #wrote: { reads: number; value: SymbolFavorites | null } | null = null;
+
+  /** The value a step starts from: what the last write wrote while no settings news came since it started (its
+   *  own `settings-changed` is still on the way), else the window's (that news, or another window's change). */
+  #latest(): SymbolFavorites | null {
+    const wrote = this.#wrote;
+    return wrote !== null && windowStore.settingsReads === wrote.reads
+      ? wrote.value
+      : windowStore.symbolFavorites;
+  }
+
+  /** Queues one change: each step reads what the one before it wrote, so quick toggles never lose one. */
+  #step(
+    change: (current: SymbolFavorites | null) => { next: SymbolFavorites | null; done: string },
+  ): Promise<void> {
+    const run = this.#queue.then(async () => {
+      const current = this.#latest();
+      const { next, done } = change(current);
+      await this.#write(current, next, done);
+    });
+    this.#queue = run.catch(() => {});
+    return run;
+  }
+
+  /** One settings write; the window's value follows from `settings-changed`. A step that changed nothing was one
+   *  the settings would refuse (a toggle never repeats an add). */
   async #write(
     current: SymbolFavorites | null,
     next: SymbolFavorites | null,
@@ -104,9 +129,12 @@ export class SymbolsStore {
       arrangement.say(t("symbols.favoriteRefused"));
       return;
     }
+    const reads = windowStore.settingsReads;
     const refused = await windowStore.trySetting({ key: "symbolFavorites", value: next });
-    if (refused === null) arrangement.say(done);
-    else if (reasonCode(refused) === "symbolFavorites")
+    if (refused === null) {
+      this.#wrote = { reads, value: next };
+      arrangement.say(done);
+    } else if (reasonCode(refused) === "symbolFavorites")
       arrangement.say(t("symbols.favoriteRefused"));
     else arrangement.say(t("settings.notSaved", { message: apiErrorText(refused) }));
   }
@@ -117,6 +145,7 @@ export class SymbolsStore {
     this.collapsed = DEFAULT_COLLAPSED;
     this.reveal = null;
     this.called = false;
+    this.#wrote = null;
   }
 }
 

@@ -12,8 +12,37 @@ export const MAX_FAVORITE_CHARS = 64;
 export const MAX_FAVORITE_GROUPS = 16;
 /** Longest favorite character in code points (mirrors `settings::characters::MAX_ENTRY_CHARS`). */
 export const MAX_FAVORITE_CODE_POINTS = 16;
+/** Longest group name (mirrors `settings::characters::MAX_GROUP_NAME_CHARS`). */
+export const MAX_GROUP_NAME_CHARS = 48;
 
 const VERSION = 1;
+
+/** C0 | DEL | C1 controls, bidi embedding | override | isolate controls: inserted at the caret they hide or reorder
+ *  the text around it (mirrors `settings::characters::is_unsafe_char`). */
+const UNSAFE = /[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/u;
+/** What Rust's `char::is_ascii_whitespace` accepts (no vertical tab). */
+const ASCII_BLANK = /^[ \t\n\f\r]+$/;
+
+/** A character the settings keep (mirrors `settings::valid_favorite_char`). */
+function validChar(char: string): boolean {
+  const length = [...char].length;
+  return (
+    length >= 1 &&
+    length <= MAX_FAVORITE_CODE_POINTS &&
+    !ASCII_BLANK.test(char) &&
+    !UNSAFE.test(char)
+  );
+}
+
+/** A group name the settings keep, as a groups file names a group (mirrors `settings::valid_favorite_group`). */
+function validGroup(name: string): boolean {
+  return (
+    name !== "" &&
+    name.trim() === name &&
+    [...name].length <= MAX_GROUP_NAME_CHARS &&
+    !/\p{Cc}/u.test(name)
+  );
+}
 
 export function hasChar(favorites: SymbolFavorites | null, char: string): boolean {
   return favorites?.chars.includes(char) ?? false;
@@ -35,9 +64,9 @@ function next(
 
 export function withChar(favorites: SymbolFavorites | null, char: string): SymbolFavorites | null {
   const chars = favorites?.chars ?? [];
-  const length = [...char].length;
-  if (length === 0 || length > MAX_FAVORITE_CODE_POINTS) return favorites;
-  if (chars.includes(char) || chars.length >= MAX_FAVORITE_CHARS) return favorites;
+  if (!validChar(char) || chars.includes(char) || chars.length >= MAX_FAVORITE_CHARS) {
+    return favorites;
+  }
   return next(favorites, [...chars, char], favorites?.groups ?? []);
 }
 
@@ -55,7 +84,7 @@ export function withoutChar(
 
 export function withGroup(favorites: SymbolFavorites | null, name: string): SymbolFavorites | null {
   const groups = favorites?.groups ?? [];
-  if (name === "" || groups.includes(name) || groups.length >= MAX_FAVORITE_GROUPS) {
+  if (!validGroup(name) || groups.includes(name) || groups.length >= MAX_FAVORITE_GROUPS) {
     return favorites;
   }
   return next(favorites, favorites?.chars ?? [], [...groups, name]);

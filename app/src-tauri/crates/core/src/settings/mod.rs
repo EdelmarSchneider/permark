@@ -217,9 +217,7 @@ fn valid_favorite_char(ch: &str) -> bool {
     let count = ch.chars().count();
     (1..=characters::MAX_ENTRY_CHARS).contains(&count)
         && !ch.chars().all(|c| c.is_ascii_whitespace())
-        && !ch.chars().any(|c| {
-            matches!(c, '\u{0}'..='\u{1f}' | '\u{7f}'..='\u{9f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
-        })
+        && !ch.chars().any(characters::is_unsafe_char)
 }
 
 /// A favorite group name: as a groups file names a group (trimmed, 1..=[`characters::MAX_GROUP_NAME_CHARS`]),
@@ -1042,8 +1040,8 @@ fn set_keeping_decor(table: &mut Table, key: &str, value: Value) {
 /// Applies a change to a document: only the bytes of that key change.
 ///
 /// # Errors
-/// `Invalid`: the document holds `[panels]` | `[layouts]` | `[symbol_favorites]` in a newer format than the one being written (nothing
-/// in the document changed).
+/// `Invalid`: the document holds `[panels]` | `[layouts]` | `[symbol_favorites]` in a newer format than the one
+/// being written (nothing in the document changed).
 pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) -> Result<(), SettingsError> {
     let root = doc.as_table_mut();
     match change {

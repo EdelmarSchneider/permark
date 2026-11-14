@@ -576,7 +576,8 @@ export default {
   "symbols.addedGroup": "{group} 그룹을 즐겨찾기에 추가했습니다",
   "symbols.removedGroup": "{group} 그룹을 즐겨찾기에서 제거했습니다",
   "symbols.favoriteRefused": "즐겨찾기로 저장할 수 없습니다.",
-  "symbols.menu": "기호 옵션",
+  "symbols.keepGroup": "{group} 그룹을 즐겨찾기로 유지",
+  "symbols.menuFor": "{name} 옵션",
   "plugin.symbols.name": "기호",
   "plugin.symbols.about":
     "문서 옆에 머무는 기호와 이모지 패널입니다. 클릭하면 커서 위치에 삽입됩니다.",
@@ -620,6 +621,7 @@ export default {
   "settings.charactersShow": "폴더에서 보기",
   "settings.charactersCreate": "기본 제공 그룹으로 파일 만들기",
   "settings.charactersBuiltin": "기본 제공 그룹을 사용 중입니다. 아직 파일이 없습니다.",
+  "settings.charactersBuiltinOnly": "기본 제공 그룹을 사용 중입니다.",
   "settings.charactersRead.one": "{file}의 그룹 {n}개를 사용 중입니다.",
   "settings.charactersRead.other": "{file}의 그룹 {n}개를 사용 중입니다.",
   "settings.charactersUnreadable": "{file}을(를) 읽을 수 없어 기본 제공 그룹을 표시합니다.",

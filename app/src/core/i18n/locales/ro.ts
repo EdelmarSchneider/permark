@@ -610,7 +610,8 @@ export default {
   "symbols.addedGroup": "Grupul {group} adăugat la favorite",
   "symbols.removedGroup": "Grupul {group} eliminat din favorite",
   "symbols.favoriteRefused": "Acesta nu poate fi păstrat ca favorit.",
-  "symbols.menu": "Opțiunile simbolului",
+  "symbols.keepGroup": "Păstrează grupul {group} la favorite",
+  "symbols.menuFor": "Opțiuni pentru {name}",
   "plugin.symbols.name": "Simboluri",
   "plugin.symbols.about":
     "Un panou de simboluri și emoji care rămâne lângă document; un clic inserează unul la cursor.",
@@ -658,6 +659,7 @@ export default {
   "settings.charactersShow": "Arată în dosar",
   "settings.charactersCreate": "Creează fișierul cu grupurile încorporate",
   "settings.charactersBuiltin": "Se folosesc grupurile încorporate. Nu există încă un fișier.",
+  "settings.charactersBuiltinOnly": "Se folosesc grupurile încorporate.",
   "settings.charactersRead.one": "Se folosește {n} grup din {file}.",
   "settings.charactersRead.few": "Se folosesc {n} grupuri din {file}.",
   "settings.charactersRead.other": "Se folosesc {n} de grupuri din {file}.",

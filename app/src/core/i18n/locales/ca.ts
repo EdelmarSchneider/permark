@@ -595,7 +595,8 @@ export default {
   "symbols.addedGroup": "Grup {group} afegit als preferits",
   "symbols.removedGroup": "Grup {group} tret dels preferits",
   "symbols.favoriteRefused": "Això no es pot desar com a preferit.",
-  "symbols.menu": "Opcions del símbol",
+  "symbols.keepGroup": "Mantén el grup {group} als preferits",
+  "symbols.menuFor": "Opcions de {name}",
   "plugin.symbols.name": "Símbols",
   "plugin.symbols.about":
     "Un tauler de símbols i emoji que es queda al costat del document; un clic n'insereix un al cursor.",
@@ -640,6 +641,7 @@ export default {
   "settings.charactersShow": "Mostra a la carpeta",
   "settings.charactersCreate": "Crea el fitxer amb els grups integrats",
   "settings.charactersBuiltin": "S'utilitzen els grups integrats. Encara no hi ha cap fitxer.",
+  "settings.charactersBuiltinOnly": "S'utilitzen els grups integrats.",
   "settings.charactersRead.one": "S'utilitza {n} grup de {file}.",
   "settings.charactersRead.other": "S'utilitzen {n} grups de {file}.",
   "settings.charactersUnreadable":

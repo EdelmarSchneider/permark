@@ -6,10 +6,10 @@ import { conditions, neutralContext } from "../core/conditions/context.svelte";
 import { contributions } from "../core/plugins/instance.svelte";
 import { ContributionRegistry, PluginHost, pluginLoaders } from "../core/plugins/registry.svelte";
 import { searchTags } from "../core/search/tags.svelte";
-import { FILES } from "../core/shell/arrangement";
+import { defaultArrangement, FILES } from "../core/shell/arrangement";
 import { arrangement } from "../core/shell/arrangement.svelte";
 import { layout } from "../core/shell/layout.svelte";
-import { showView } from "../core/shell/sides";
+import { closeView, showView } from "../core/shell/sides";
 import { silence } from "../core/silence/silence.svelte";
 
 const FOLLOWING: PluginId[] = ["git", "live-feed", "follow", "unread", "review"];
@@ -238,6 +238,9 @@ describe("the notes plugin", () => {
 });
 
 describe("the symbols plugin", () => {
+  // the panel's open | closed choice is the project's: no test leaves its choice to the next
+  afterEach(() => layout.setOpen("symbols.panel", false));
+
   it("adds its panel, its command and the popup's button, dormant, and leaves nothing when off", async () => {
     const registry = new ContributionRegistry();
     const host = new PluginHost(registry, pluginLoaders());
@@ -263,6 +266,42 @@ describe("the symbols plugin", () => {
     expect(arrangement.isSelected("symbols.panel")).toBe(true);
     expect(window.disable("symbols")).toBe(0);
     expect(arrangement.viewOf("symbols.panel")).toBeUndefined();
+  });
+
+  it("the palette command shows the panel, then hides it", async () => {
+    const window = new PluginHost(contributions, pluginLoaders());
+    await window.enable("symbols");
+    const toggle = contributions.of("command").find((c) => c.id === "symbols.toggle");
+    toggle?.run();
+    expect(arrangement.isSelected("symbols.panel")).toBe(true);
+    toggle?.run();
+    expect(arrangement.isPresent("symbols.panel")).toBe(false);
+    expect(window.disable("symbols")).toBe(0);
+  });
+
+  it("a saved arrangement that lists the panel shows nothing until the person asks, then it opens there", async () => {
+    arrangement.saved = {
+      ...defaultArrangement(),
+      bottom: [{ views: ["symbols.panel"], share: 1 }],
+    };
+    try {
+      const window = new PluginHost(contributions, pluginLoaders());
+      await window.enable("symbols");
+      // the layout names it, yet a window where nobody asked for it shows no trace of it
+      expect(arrangement.viewOf("symbols.panel")).toBeUndefined();
+      expect(arrangement.isPresent("symbols.panel")).toBe(false);
+      expect(arrangement.drawn("bottom")).toEqual([]);
+      contributions
+        .of("command")
+        .find((c) => c.id === "symbols.toggle")
+        ?.run();
+      expect(arrangement.regionOf("symbols.panel")).toBe("bottom");
+      expect(arrangement.isSelected("symbols.panel")).toBe(true);
+      closeView("symbols.panel");
+      expect(window.disable("symbols")).toBe(0);
+    } finally {
+      arrangement.saved = defaultArrangement();
+    }
   });
 });
 

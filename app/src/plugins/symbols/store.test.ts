@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // Favorite writes of the symbols panel: one settings write per change, said in the window's status line; a refusal
-// is said too and nothing else changes (the value comes back only through `settings-changed`).
+// is said too and nothing else changes (the value comes back only through `settings-changed`). Quick changes are
+// written one after the other, each from the value the one before it wrote.
 import "../../core/testing/media";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApiError, SettingChange, SymbolFavorites } from "../../api";
@@ -10,6 +11,12 @@ import { symbols } from "./store.svelte";
 
 function favorites(chars: string[], groups: string[] = []): SymbolFavorites {
   return { v: 1, chars, groups };
+}
+
+/** What `settings-changed` does to the window: a new read of the settings. */
+function news(value: SymbolFavorites | null): void {
+  windowStore.settingsReads += 1;
+  windowStore.symbolFavorites = value;
 }
 
 function spies(refusal: ApiError | null = null) {
@@ -24,6 +31,7 @@ function spies(refusal: ApiError | null = null) {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  symbols.reset();
   windowStore.symbolFavorites = null;
 });
 
@@ -36,7 +44,7 @@ describe("favorite writes", () => {
     // the local value is never changed: the new one arrives from the settings
     expect(windowStore.symbolFavorites).toBeNull();
 
-    windowStore.symbolFavorites = favorites(["α"], ["greek"]);
+    news(favorites(["α"], ["greek"]));
     await symbols.toggleChar({ char: "α", names: ["alpha"] });
     expect(writes.at(-1)).toEqual({ key: "symbolFavorites", value: favorites([], ["greek"]) });
     expect(said).toHaveBeenLastCalledWith("Removed alpha from favorites");
@@ -44,7 +52,7 @@ describe("favorite writes", () => {
 
   it("removing the last favorite removes the key", async () => {
     const { writes } = spies();
-    windowStore.symbolFavorites = favorites(["α"]);
+    news(favorites(["α"]));
     await symbols.toggleChar({ char: "α", names: [] });
     expect(writes).toEqual([{ key: "symbolFavorites", value: null }]);
   });
@@ -54,10 +62,64 @@ describe("favorite writes", () => {
     await symbols.toggleGroup("greek");
     expect(writes).toEqual([{ key: "symbolFavorites", value: favorites([], ["greek"]) }]);
     expect(said).toHaveBeenLastCalledWith("Added the group Greek to favorites");
-    windowStore.symbolFavorites = favorites([], ["greek"]);
+    news(favorites([], ["greek"]));
     await symbols.toggleGroup("greek");
     expect(writes.at(-1)).toEqual({ key: "symbolFavorites", value: null });
     expect(said).toHaveBeenLastCalledWith("Removed the group Greek from favorites");
+  });
+
+  it("two quick toggles keep both, before the settings news of the first arrives", async () => {
+    const { writes } = spies();
+    await Promise.all([
+      symbols.toggleChar({ char: "α", names: ["alpha"] }),
+      symbols.toggleGroup("greek"),
+    ]);
+    expect(writes).toEqual([
+      { key: "symbolFavorites", value: favorites(["α"]) },
+      { key: "symbolFavorites", value: favorites(["α"], ["greek"]) },
+    ]);
+    // once news landed, the next step starts from it (another window may have changed it too)
+    news(favorites(["α", "β"], ["greek"]));
+    await symbols.toggleChar({ char: "α", names: ["alpha"] });
+    expect(writes.at(-1)).toEqual({
+      key: "symbolFavorites",
+      value: favorites(["β"], ["greek"]),
+    });
+  });
+
+  it("news that arrives while a write is on its way wins over the value written", async () => {
+    const writes: SettingChange[] = [];
+    vi.spyOn(windowStore, "trySetting").mockImplementation((change) => {
+      writes.push(change);
+      // the backend sends `settings-changed` before it answers
+      news(change.key === "symbolFavorites" ? change.value : null);
+      return Promise.resolve(null);
+    });
+    vi.spyOn(arrangement, "say").mockImplementation(() => {});
+    await symbols.toggleChar({ char: "α", names: [] });
+    // another window cleared every favorite
+    news(null);
+    await symbols.toggleChar({ char: "β", names: [] });
+    expect(writes.at(-1)).toEqual({ key: "symbolFavorites", value: favorites(["β"]) });
+  });
+
+  it("a write waits for the one before it", async () => {
+    const writes: SettingChange[] = [];
+    const gate: { release: (() => void) | null } = { release: null };
+    vi.spyOn(windowStore, "trySetting").mockImplementation((change) => {
+      writes.push(change);
+      if (writes.length > 1) return Promise.resolve(null);
+      return new Promise((resolve) => (gate.release = () => resolve(null)));
+    });
+    vi.spyOn(arrangement, "say").mockImplementation(() => {});
+    const first = symbols.toggleChar({ char: "α", names: [] });
+    const second = symbols.toggleChar({ char: "β", names: [] });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(writes).toHaveLength(1);
+    gate.release?.();
+    await Promise.all([first, second]);
+    expect(writes.at(-1)).toEqual({ key: "symbolFavorites", value: favorites(["α", "β"]) });
   });
 
   it("a refused write is said politely", async () => {

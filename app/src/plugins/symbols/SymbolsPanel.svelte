@@ -25,10 +25,10 @@
   import type { MenuEntry } from "../../core/explorer/menu";
   import { t } from "../../core/i18n";
   import { arrangement } from "../../core/shell/arrangement.svelte";
-  import { closeView, focusPage } from "../../core/shell/sides";
+  import { adrift, closeView, focusPage } from "../../core/shell/sides";
   import { windowStore } from "../../core/window.svelte";
   import { hasChar, hasGroup } from "./favorites";
-  import { cellKey, headerKey, keptStop, moveFrom, stopsOf, type Stop } from "./keys";
+  import { cellKey, headerKey, keptStop, moveFrom, relatedStop, stopsOf, type Stop } from "./keys";
   import { canInsert, sectionsOf, type FavoritesSection, type GroupSection } from "./model";
   import { PANEL, symbols } from "./store.svelte";
 
@@ -39,6 +39,8 @@
   let { viewMenu }: Props = $props();
 
   const uid = $props.id();
+  /** The note under the search (why a click inserts nothing now): each cell points at it while it shows. */
+  const noteId = `${uid}-note`;
 
   /** How long a cell glows after it put its character in. */
   const FLASH_MS = 400;
@@ -55,9 +57,11 @@
   const querying = $derived(!isBlankQuery(symbols.query));
   /** A query nothing answers (the favorites section is left out then too). */
   const nothing = $derived(querying && !sections.some((s) => s.kind !== "divider"));
-  /** The stop the person moved to last; `active` is the one that holds the tab stop as the list stands. */
+  /** The stop the person moved to last (and its character, for a cell); `active` is the one that holds the tab stop
+   *  as the list stands. */
   let wanted = $state<string | null>(null);
-  const active = $derived(keptStop(stops, wanted));
+  let wantedChar = $state<string | null>(null);
+  const active = $derived(keptStop(stops, wanted, wantedChar));
   const insertable = $derived(
     canInsert(editingNow() ? editing.mode : "view", documents.path !== null),
   );
@@ -79,16 +83,35 @@
     };
   });
 
-  // a redraw (the settings changed, a group closed) that took away the element with the keyboard: the stop kept
-  // for it takes the keyboard, never the page body
+  /** The element with the keyboard went away | moved in a redraw: the stop related to the one wanted takes it (the
+   *  same character in its own group, the same header), else the favorites title (the last favorite went), else the
+   *  first stop; never the page body. */
+  function refocus(): void {
+    if (list === undefined) return;
+    const related = relatedStop(stops, wanted, wantedChar);
+    const target =
+      (related !== null ? elementOf(related) : null) ??
+      list.querySelector<HTMLElement>("[data-favorites-title]") ??
+      (active !== null ? elementOf(active) : null);
+    target?.focus();
+  }
+
+  // a redraw (the settings changed, a group closed) under the keyboard
   $effect.pre(() => {
     void stops;
     if (list === undefined || !list.contains(document.activeElement)) return;
     void tick().then(() => {
-      if (list === undefined || list.contains(document.activeElement)) return;
-      if (active !== null) elementOf(active)?.focus();
+      if (list !== undefined && !list.contains(document.activeElement)) refocus();
     });
   });
+
+  /** A favorite change from the menu: the menu gives the keyboard back to the element it was for, which the change
+   *  may take away (the last favorite, a group moving down); then the stop related to it takes the keyboard. */
+  async function favorite(write: () => Promise<void>): Promise<void> {
+    await write();
+    await tick();
+    if (adrift()) refocus();
+  }
 
   // opened from the emoji popup: its group comes into view once drawn
   $effect(() => {
@@ -107,9 +130,16 @@
     return null;
   }
 
+  /** `key` becomes the stop the person wants. */
+  function want(key: string, char: string | null): void {
+    wanted = key;
+    wantedChar = char;
+  }
+
   async function focusStop(key: string | null): Promise<void> {
     if (key === null) return;
-    wanted = key;
+    const stop = stops.find((s) => s.key === key);
+    want(key, stop?.kind === "cell" ? stop.char : null);
     await tick();
     const el = elementOf(key);
     el?.focus();
@@ -117,7 +147,7 @@
   }
 
   function insert(entry: CharacterEntry, key: string): void {
-    wanted = key;
+    want(key, entry.char);
     if (insertable !== "ok" || !editing.insert(entry.char)) return;
     flashed = key;
     if (flashTimer !== null) clearTimeout(flashTimer);
@@ -126,12 +156,23 @@
   }
 
   function toggle(section: GroupSection): void {
-    wanted = headerKey(section.key);
+    want(headerKey(section.key), null);
     symbols.setExpanded(section.key, !section.expanded);
   }
 
-  /** The favorites menu open now (`null`: none). */
-  let menu = $state.raw<{ x: number; y: number; entries: MenuEntry[] } | null>(null);
+  /** The favorites menu open now (`null`: none); `label` names what it is for. */
+  let menu = $state.raw<{ x: number; y: number; label: string; entries: MenuEntry[] } | null>(null);
+
+  /** What a cell's | header's menu is for: the character's name | the group's label. */
+  type MenuFor = { label: string; entries: () => MenuEntry[] };
+
+  function cellMenu(entry: CharacterEntry, section: FavoritesSection | GroupSection): MenuFor {
+    return { label: entryName(entry), entries: () => cellEntries(entry, section) };
+  }
+
+  function headerMenu(section: GroupSection): MenuFor {
+    return { label: groupLabel(section.name), entries: () => [groupItem(section.name)] };
+  }
 
   function groupItem(name: string): MenuEntry {
     const group = groupLabel(name);
@@ -139,7 +180,7 @@
     return {
       kind: "item",
       label: t(pinned ? "symbols.removeGroup" : "symbols.addGroup", { group }),
-      run: () => void symbols.toggleGroup(name),
+      run: () => void favorite(() => symbols.toggleGroup(name)),
     };
   }
 
@@ -148,32 +189,38 @@
     entry: CharacterEntry,
     section: FavoritesSection | GroupSection,
   ): MenuEntry[] {
-    const favorite = hasChar(windowStore.symbolFavorites, entry.char);
+    const kept = hasChar(windowStore.symbolFavorites, entry.char);
     const char: MenuEntry = {
       kind: "item",
-      label: t(favorite ? "symbols.removeFavorite" : "symbols.addFavorite"),
-      run: () => void symbols.toggleChar(entry),
+      label: t(kept ? "symbols.removeFavorite" : "symbols.addFavorite"),
+      run: () => void favorite(() => symbols.toggleChar(entry)),
     };
     return section.kind === "group"
       ? [char, { kind: "separator" }, groupItem(section.name)]
       : [char];
   }
 
-  /** Right click: the menu at the pointer. */
-  function pointerMenu(event: MouseEvent, entries: () => MenuEntry[]): void {
+  function openMenu(x: number, y: number, target: MenuFor): void {
+    menu = { x, y, label: t("symbols.menuFor", { name: target.label }), entries: target.entries() };
+  }
+
+  /** Right click: the menu at the pointer. On a group header the header takes the keyboard first (the press never
+   *  did), so closing the menu leaves the keyboard on what it was for. */
+  function pointerMenu(event: MouseEvent, target: MenuFor, focus = false): void {
     event.preventDefault();
-    menu = { x: event.clientX, y: event.clientY, entries: entries() };
+    if (focus && event.currentTarget instanceof HTMLElement) event.currentTarget.focus();
+    openMenu(event.clientX, event.clientY, target);
   }
 
   /** Shift+F10 | the Menu key: the menu under the element with the keyboard (which gets it back on close). Taken
    *  here, so the view region never sees it as a call for the view's options. */
-  function keyMenu(event: KeyboardEvent, entries: () => MenuEntry[]): void {
+  function keyMenu(event: KeyboardEvent, target: MenuFor): void {
     if (!((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu")) return;
     if (!(event.currentTarget instanceof HTMLElement)) return;
     event.preventDefault();
     event.stopPropagation();
     const box = event.currentTarget.getBoundingClientRect();
-    menu = { x: box.left, y: box.bottom + 2, entries: entries() };
+    openMenu(box.left, box.bottom + 2, target);
   }
 
   /** A press on a cell | header never takes the keyboard: the editor keeps its caret, selection and IME. */
@@ -321,12 +368,13 @@
         data-section={section.key}
         aria-label={cellName(entry)}
         aria-disabled={insertable === "ok" ? undefined : "true"}
+        aria-describedby={noteKey === null ? undefined : noteId}
         title={t("picker.tip", { name, code: codePoints(entry.char) })}
         onclick={() => insert(entry, key)}
-        oncontextmenu={(event) => pointerMenu(event, () => cellEntries(entry, section))}
-        onkeydown={(event) => keyMenu(event, () => cellEntries(entry, section))}
+        oncontextmenu={(event) => pointerMenu(event, cellMenu(entry, section))}
+        onkeydown={(event) => keyMenu(event, cellMenu(entry, section))}
         onfocus={() => {
-          wanted = key;
+          want(key, entry.char);
           focused = entry;
         }}
         onblur={() => (focused = null)}
@@ -338,8 +386,21 @@
 {/snippet}
 
 <section class="symbols" aria-label={t("symbols.label")}>
+  <!-- narrow, the view's buttons sit on the title's line and the search on the next: they come first in the DOM so
+       the tab order follows the lines; wide (the bottom region) the CSS order puts the search beside the title -->
   <header data-view-header>
     <h2 title={t("symbols.label")}>{t("symbols.label")}</h2>
+    <span class="spacer"></span>
+    <div class="tools">
+      {@render viewMenu?.()}
+      <button
+        type="button"
+        class="icon close"
+        aria-label={t("symbols.close")}
+        title={t("symbols.close")}
+        onclick={() => closeView(PANEL)}>×</button
+      >
+    </div>
     <input
       bind:this={search}
       class="search"
@@ -350,18 +411,9 @@
       onkeydown={searchKey}
     />
     <p class="peek head-peek" aria-hidden="true">{@render peekLine()}</p>
-    <span class="spacer"></span>
-    {@render viewMenu?.()}
-    <button
-      type="button"
-      class="icon close"
-      aria-label={t("symbols.close")}
-      title={t("symbols.close")}
-      onclick={() => closeView(PANEL)}>×</button
-    >
   </header>
   {#if noteKey !== null}
-    <p class="note">{t(noteKey)}</p>
+    <p class="note" id={noteId}>{t(noteKey)}</p>
   {/if}
   <!-- the keys of the list (arrows, Home | End, a letter to the search) are on the group that holds the cells -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -379,7 +431,10 @@
         <hr class="divider" />
       {:else if section.kind === "favorites"}
         <div class="section">
-          <h3 class="title fav-title" {id}>{t("symbols.favorites")}</h3>
+          <!-- reached by script only: the keyboard lands here when the last favorite it was on went away -->
+          <h3 class="title fav-title" {id} tabindex="-1" data-favorites-title>
+            {t("symbols.favorites")}
+          </h3>
           {#if section.entries.length === 0}
             <p class="hint">{t("symbols.favoritesEmpty")}</p>
           {:else}
@@ -401,9 +456,9 @@
               data-kind="header"
               data-section={section.key}
               onclick={() => toggle(section)}
-              onfocus={() => (wanted = key)}
-              oncontextmenu={(event) => pointerMenu(event, () => [groupItem(section.name)])}
-              onkeydown={(event) => keyMenu(event, () => [groupItem(section.name)])}
+              onfocus={() => want(key, null)}
+              oncontextmenu={(event) => pointerMenu(event, headerMenu(section), true)}
+              onkeydown={(event) => keyMenu(event, headerMenu(section))}
             >
               <ChevronRight size={14} class="chevron" aria-hidden="true" />
               <span class="title">{group}</span>
@@ -415,9 +470,9 @@
               class="icon star"
               tabindex="-1"
               aria-pressed={section.pinned}
-              aria-label={t(section.pinned ? "symbols.removeGroup" : "symbols.addGroup", { group })}
-              title={t(section.pinned ? "symbols.removeGroup" : "symbols.addGroup", { group })}
-              onclick={() => void symbols.toggleGroup(section.name)}
+              aria-label={t("symbols.keepGroup", { group })}
+              title={t("symbols.keepGroup", { group })}
+              onclick={() => void favorite(() => symbols.toggleGroup(section.name))}
             >
               <Star size={14} aria-hidden="true" fill={section.pinned ? "currentColor" : "none"} />
             </button>
@@ -440,7 +495,7 @@
         x={menu.x}
         y={menu.y}
         entries={menu.entries}
-        label={t("symbols.menu")}
+        label={menu.label}
         close={() => (menu = null)}
       />
     {/key}
@@ -483,9 +538,13 @@
   header > .spacer {
     flex: 1 1 0;
   }
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+  }
   /* narrow: the search on a line of its own under the title */
   header > .search {
-    order: 1;
     flex: 1 1 100%;
     min-width: 0;
     height: 2rem;
@@ -690,12 +749,16 @@
   /* wide (the bottom region): the search and the peek line in the header row, each group a row [title | grid] */
   @container (min-width: 520px) {
     header > .search {
-      order: 0;
+      order: 1;
       flex: 0 1 16rem;
     }
     header > .head-peek {
+      order: 2;
       display: flex;
       flex: 1 1 0;
+    }
+    header > .tools {
+      order: 3;
     }
     header > .spacer,
     .foot-peek {
