@@ -1,38 +1,68 @@
-// The right column's arrangement + a project's views, pure: what was saved made safe (saved data survives updates),
-// what is drawn, the menu's moves, heights (shell.md §Frame, Right region; design-live-follow §14.7 #20).
+// The arrangement of the window's views + a project's views, pure: what was saved made safe (saved data survives
+// updates), what is drawn, the moves inside a region and between regions, sizes.
 import { describe, expect, it } from "vitest";
 import {
+  asGroup,
+  axisOf,
+  canAddGroup,
   canJoin,
   canMove,
   canSplit,
+  defaultArrangement,
   defaultRightViews,
+  DIVIDER_PX,
   drawnGroups,
-  fitHeights,
+  FILES,
+  fitSizes,
+  groupOf,
+  inRegion,
+  intoGroup,
   joinAsTab,
   LIVE_VIEW,
   MAX_GROUPS,
+  MIN_GROUP_PX,
+  moveTo,
   moveView,
+  normalize,
   OUTLINE,
+  parseArrangement,
   parseProjectViews,
   parseRightViews,
+  regionOf,
+  REGIONS,
   resizePair,
+  SEARCH,
   select,
   selectedIn,
   splitOut,
+  STRIP_PX,
+  tooShort,
+  withRegion,
   withViews,
-  type RightViews,
+  type Arrangement,
+  type Region,
+  type ViewGroup,
 } from "./arrangement";
 
-const views = (layout: RightViews): string[][] => layout.groups.map((g) => [...g.views]);
-const shares = (layout: RightViews): number[] =>
-  layout.groups.map((g) => Math.round(g.share * 1000) / 1000);
+const views = (groups: readonly ViewGroup[]): string[][] => groups.map((g) => [...g.views]);
+const shares = (groups: readonly ViewGroup[]): number[] =>
+  groups.map((g) => Math.round(g.share * 1000) / 1000);
 const all = (): boolean => true;
+/** The groups a v1 value reads as (the region-level ops take one region's groups). */
+const groupsOf = (raw: unknown): readonly ViewGroup[] => parseRightViews(raw).groups;
+/** Every region's views, for one look at a whole arrangement. */
+const placed = (arr: Arrangement): Record<Region, string[][]> => ({
+  left: views(arr.left),
+  right: views(arr.right),
+  bottom: views(arr.bottom),
+});
+const group = (share: number, ...ids: string[]): ViewGroup => ({ views: ids, share });
 
-describe("the saved arrangement", () => {
+describe("the saved right column of 0.11 (v1)", () => {
   it("absent, damaged or of another version: the default (stacked, outline on top, half each)", () => {
     const def = defaultRightViews();
-    expect(views(def)).toEqual([[OUTLINE], [LIVE_VIEW]]);
-    expect(shares(def)).toEqual([0.5, 0.5]);
+    expect(views(def.groups)).toEqual([[OUTLINE], [LIVE_VIEW]]);
+    expect(shares(def.groups)).toEqual([0.5, 0.5]);
     for (const raw of [
       undefined,
       null,
@@ -61,8 +91,8 @@ describe("the saved arrangement", () => {
       ],
     };
     const parsed = parseRightViews(raw);
-    expect(views(parsed)).toEqual([["live-feed.panel", "future.panel"], ["outline"]]);
-    expect(shares(parsed)).toEqual([0.3, 0.7]);
+    expect(views(parsed.groups)).toEqual([["live-feed.panel", "future.panel"], ["outline"]]);
+    expect(shares(parsed.groups)).toEqual([0.3, 0.7]);
   });
 
   it("duplicates keep their first place; more than 3 groups join the third as tabs", () => {
@@ -77,7 +107,7 @@ describe("the saved arrangement", () => {
       ],
     });
     expect(parsed.groups).toHaveLength(MAX_GROUPS);
-    expect(views(parsed)).toEqual([["a", "b"], ["c"], ["d", "e", "f"]]);
+    expect(views(parsed.groups)).toEqual([["a", "b"], ["c"], ["d", "e", "f"]]);
   });
 
   it("shares 0, negative, not a number or summing to more than 1 are clamped and normalized", () => {
@@ -89,7 +119,7 @@ describe("the saved arrangement", () => {
         { views: ["c"], share: "big" },
       ],
     });
-    expect(shares(parsed)).toEqual([0.333, 0.333, 0.333]);
+    expect(shares(parsed.groups)).toEqual([0.333, 0.333, 0.333]);
     const big = parseRightViews({
       v: 1,
       groups: [
@@ -97,37 +127,205 @@ describe("the saved arrangement", () => {
         { views: ["b"], share: 1 },
       ],
     });
-    expect(shares(big)).toEqual([0.75, 0.25]);
+    expect(shares(big.groups)).toEqual([0.75, 0.25]);
+  });
+});
+
+describe("the saved arrangement (three regions)", () => {
+  const custom = {
+    v: 1,
+    groups: [
+      { views: [LIVE_VIEW, "future.panel"], share: 0.3 },
+      { views: [OUTLINE], share: 0.7 },
+    ],
+  };
+
+  it("the default: Files | Search as tabs on the left, the outline over Live changes on the right, no bottom", () => {
+    const def = defaultArrangement();
+    expect(def.v).toBe(2);
+    expect(placed(def)).toEqual({
+      left: [[FILES, SEARCH]],
+      right: [[OUTLINE], [LIVE_VIEW]],
+      bottom: [],
+    });
+    expect(shares(def.left)).toEqual([1]);
+    expect(shares(def.right)).toEqual([0.5, 0.5]);
+    expect(REGIONS).toEqual(["left", "right", "bottom"]);
+  });
+
+  it("a readable value is kept: unknown ids, empty regions, each region's shares normalized on its own", () => {
+    const parsed = parseArrangement(
+      {
+        v: 2,
+        left: [
+          { views: [FILES], share: 3 },
+          { views: [SEARCH, "future.panel"], share: 1 },
+        ],
+        right: [],
+        bottom: [
+          { views: [OUTLINE], share: 0.2 },
+          { views: [LIVE_VIEW], share: 0.2 },
+        ],
+      },
+      custom,
+    );
+    expect(placed(parsed)).toEqual({
+      left: [[FILES], [SEARCH, "future.panel"]],
+      right: [],
+      bottom: [[OUTLINE], [LIVE_VIEW]],
+    });
+    expect(shares(parsed.left)).toEqual([0.75, 0.25]);
+    expect(shares(parsed.bottom)).toEqual([0.5, 0.5]);
+    // nothing listed at all is readable too: every region stays empty
+    expect(placed(parseArrangement({ v: 2, left: [], right: [], bottom: [] }, custom))).toEqual({
+      left: [],
+      right: [],
+      bottom: [],
+    });
+  });
+
+  it("a view listed twice keeps its first place across the regions (left, right, bottom)", () => {
+    const parsed = parseArrangement(
+      {
+        v: 2,
+        left: [{ views: ["a", "b", "a"], share: 1 }],
+        right: [
+          { views: ["b"], share: 1 },
+          { views: ["c", "a"], share: 1 },
+        ],
+        bottom: [{ views: ["c", "d"], share: 1 }],
+      },
+      null,
+    );
+    expect(placed(parsed)).toEqual({ left: [["a", "b"]], right: [["c"]], bottom: [["d"]] });
+    expect(shares(parsed.right)).toEqual([1]);
+  });
+
+  it("more than 3 groups in a region join its third as tabs; empty and unusable groups are dropped", () => {
+    const parsed = parseArrangement(
+      {
+        v: 2,
+        left: [{ views: [] }, "x", { views: [3, ""] }, { views: ["z"], share: 1 }],
+        right: [],
+        bottom: [
+          { views: ["a"], share: 1 },
+          { views: ["b"], share: 1 },
+          { views: ["c"], share: 1 },
+          { views: ["d"], share: 1 },
+          { views: ["e", "f"], share: 1 },
+        ],
+      },
+      null,
+    );
+    expect(parsed.bottom).toHaveLength(MAX_GROUPS);
+    expect(placed(parsed)).toEqual({
+      left: [["z"]],
+      right: [],
+      bottom: [["a"], ["b"], ["c", "d", "e", "f"]],
+    });
+    expect(shares(parsed.bottom)).toEqual([0.333, 0.333, 0.333]);
+  });
+
+  it("absent, damaged or of another version: the default left, the right column as 0.11 saved it, no bottom", () => {
+    for (const raw of [
+      undefined,
+      null,
+      "x",
+      3,
+      [],
+      {},
+      { v: 2 },
+      { v: 2, left: [], right: "x", bottom: [] },
+      { v: 2, left: [], right: [] },
+      { v: 1, left: [], right: [], bottom: [] },
+      { v: 3, left: [], right: [], bottom: [] },
+      custom,
+    ]) {
+      const parsed = parseArrangement(raw, custom);
+      expect(placed(parsed), JSON.stringify(raw)).toEqual({
+        left: [[FILES, SEARCH]],
+        right: [[LIVE_VIEW, "future.panel"], [OUTLINE]],
+        bottom: [],
+      });
+      expect(shares(parsed.right), JSON.stringify(raw)).toEqual([0.3, 0.7]);
+    }
+    // neither key readable: the default
+    for (const old of [undefined, null, "x", { v: 2, groups: [] }]) {
+      expect(parseArrangement(null, old), JSON.stringify(old)).toEqual(defaultArrangement());
+    }
   });
 });
 
 describe("what is drawn", () => {
-  it("lists new views as tabs of the last group", () => {
-    const layout = withViews(defaultRightViews(), [OUTLINE, LIVE_VIEW, "comments.panel"]);
-    expect(views(layout)).toEqual([[OUTLINE], [LIVE_VIEW, "comments.panel"]]);
-    expect(withViews(layout, [OUTLINE])).toBe(layout);
+  const known = [
+    { id: FILES, region: "left" },
+    { id: SEARCH, region: "left" },
+    { id: OUTLINE, region: "right" },
+    { id: LIVE_VIEW, region: "right" },
+  ] as const;
+
+  it("lists new views as tabs of the last group of their default region", () => {
+    const def = defaultArrangement();
+    expect(withViews(def, known)).toBe(def);
+    const more = withViews(def, [
+      ...known,
+      { id: "unread.panel", region: "left" },
+      { id: "comments.panel", region: "right" },
+      { id: "tags.panel", region: "left" },
+    ]);
+    expect(placed(more)).toEqual({
+      left: [[FILES, SEARCH, "unread.panel", "tags.panel"]],
+      right: [[OUTLINE], [LIVE_VIEW, "comments.panel"]],
+      bottom: [],
+    });
+    expect(shares(more.right)).toEqual([0.5, 0.5]);
+    expect(withViews(more, known)).toBe(more);
   });
 
-  it("draws only groups with a present view; their shares fill the column (auto-adjust)", () => {
-    const layout = parseRightViews({
+  it("an empty region gets its first group; a view listed in another region stays where the person put it", () => {
+    const moved: Arrangement = {
+      v: 2,
+      left: [],
+      right: [group(1, FILES, OUTLINE)],
+      bottom: [],
+    };
+    const listed = withViews(moved, [...known, { id: "log.panel", region: "bottom" }]);
+    expect(placed(listed)).toEqual({
+      left: [[SEARCH]],
+      right: [[FILES, OUTLINE, LIVE_VIEW]],
+      bottom: [["log.panel"]],
+    });
+    expect(shares(listed.left)).toEqual([1]);
+    expect(shares(listed.bottom)).toEqual([1]);
+    // the same view named twice is listed once
+    const twice = withViews(moved, [
+      { id: "x", region: "bottom" },
+      { id: "x", region: "left" },
+    ]);
+    expect(placed(twice)).toEqual({ left: [], right: [[FILES, OUTLINE]], bottom: [["x"]] });
+  });
+
+  it("draws only groups with a present view; their shares fill the region (auto-adjust)", () => {
+    const groups = groupsOf({
       v: 1,
       groups: [
         { views: [OUTLINE], share: 0.6 },
         { views: [LIVE_VIEW], share: 0.4 },
       ],
     });
-    const both = drawnGroups(layout, all);
+    const both = drawnGroups(groups, all);
     expect(both.map((g) => g.share)).toEqual([0.6, 0.4]);
     // a document without headings: Live takes the whole column; the saved shares stay
-    const liveOnly = drawnGroups(layout, (id) => id !== OUTLINE);
+    const liveOnly = drawnGroups(groups, (id) => id !== OUTLINE);
     expect(liveOnly).toEqual([{ at: 1, views: [LIVE_VIEW], share: 1 }]);
-    expect(shares(layout)).toEqual([0.6, 0.4]);
-    expect(drawnGroups(layout, () => false)).toEqual([]);
+    expect(shares(groups)).toEqual([0.6, 0.4]);
+    expect(drawnGroups(groups, () => false)).toEqual([]);
+    expect(drawnGroups([], all)).toEqual([]);
   });
 });
 
-describe("the menu's moves", () => {
-  const three = parseRightViews({
+describe("the moves inside a region", () => {
+  const three = groupsOf({
     v: 1,
     groups: [
       { views: ["a"], share: 0.5 },
@@ -137,7 +335,7 @@ describe("the menu's moves", () => {
   });
   const drawnAt = [0, 1, 2];
 
-  it("move up | down swaps with the drawn neighbor (shares travel); none at the ends", () => {
+  it("move before | after swaps with the drawn neighbor (shares travel); none at the ends", () => {
     expect(canMove(three, "a", -1, drawnAt)).toBe(false);
     expect(canMove(three, "c", 1, drawnAt)).toBe(false);
     const up = moveView(three, "b", -1, drawnAt);
@@ -149,30 +347,31 @@ describe("the menu's moves", () => {
     expect(moveView(three, "a", -1, drawnAt)).toBe(three);
   });
 
-  it("show as tab joins the group above (the top one: below), its share goes along", () => {
+  it("show as tab joins the group before (the first one: the group after), its share goes along", () => {
     const joined = joinAsTab(three, "b", drawnAt);
     expect(views(joined)).toEqual([["a", "b"], ["c"]]);
     expect(shares(joined)).toEqual([0.8, 0.2]);
     const top = joinAsTab(three, "a", drawnAt);
     expect(views(top)).toEqual([["b", "a"], ["c"]]);
     expect(canJoin(three, "a", [0])).toBe(false);
+    expect(joinAsTab(three, "a", [0])).toBe(three);
   });
 
-  it("show above | below splits a tab group in two halves; never past 3 groups", () => {
-    const tabs = parseRightViews({ v: 1, groups: [{ views: [OUTLINE, LIVE_VIEW], share: 1 }] });
+  it("show before | after splits a tab group in two halves; never past 3 groups", () => {
+    const tabs = groupsOf({ v: 1, groups: [{ views: [OUTLINE, LIVE_VIEW], share: 1 }] });
     expect(canSplit(tabs, LIVE_VIEW)).toBe(true);
-    const below = splitOut(tabs, OUTLINE, "below");
-    expect(views(below)).toEqual([[LIVE_VIEW], [OUTLINE]]);
-    expect(shares(below)).toEqual([0.5, 0.5]);
-    const above = splitOut(tabs, LIVE_VIEW, "above");
-    expect(views(above)).toEqual([[LIVE_VIEW], [OUTLINE]]);
+    const after = splitOut(tabs, OUTLINE, "after");
+    expect(views(after)).toEqual([[LIVE_VIEW], [OUTLINE]]);
+    expect(shares(after)).toEqual([0.5, 0.5]);
+    const before = splitOut(tabs, LIVE_VIEW, "before");
+    expect(views(before)).toEqual([[LIVE_VIEW], [OUTLINE]]);
     expect(canSplit(three, "a")).toBe(false);
-    const full = parseRightViews({
+    const full = groupsOf({
       v: 1,
       groups: [{ views: ["a", "b"] }, { views: ["c"] }, { views: ["d"] }],
     });
     expect(canSplit(full, "a")).toBe(false);
-    expect(splitOut(full, "a", "above")).toBe(full);
+    expect(splitOut(full, "a", "before")).toBe(full);
   });
 
   it("a divider shares two groups' room anew; the others keep theirs", () => {
@@ -181,17 +380,200 @@ describe("the menu's moves", () => {
     expect(resizePair(three, 0, 1, Number.NaN)).toBe(three);
     expect(shares(resizePair(three, 0, 1, 2))).toEqual([0.8, 0, 0.2]);
   });
+
+  it("the same moves act in the left and the bottom region; the other regions stay as they are", () => {
+    const arr: Arrangement = {
+      v: 2,
+      left: [group(0.5, FILES), group(0.5, SEARCH)],
+      right: defaultArrangement().right,
+      bottom: [group(1, "a", "b")],
+    };
+    expect(REGIONS.map((region) => axisOf(region))).toEqual(["vertical", "vertical", "horizontal"]);
+    expect([regionOf(arr, SEARCH), regionOf(arr, "b"), regionOf(arr, "gone")]).toEqual([
+      "left",
+      "bottom",
+      null,
+    ]);
+    expect(groupOf(arr.left, SEARCH)).toBe(1);
+
+    const swapped = inRegion(arr, SEARCH, (groups) => moveView(groups, SEARCH, -1, [0, 1]));
+    expect(placed(swapped)).toEqual({
+      left: [[SEARCH], [FILES]],
+      right: [[OUTLINE], [LIVE_VIEW]],
+      bottom: [["a", "b"]],
+    });
+    expect(swapped.right).toBe(arr.right);
+    expect(swapped.bottom).toBe(arr.bottom);
+
+    const tabbed = inRegion(arr, FILES, (groups) => joinAsTab(groups, FILES, [0, 1]));
+    expect(views(tabbed.left)).toEqual([[SEARCH, FILES]]);
+    expect(shares(tabbed.left)).toEqual([1]);
+
+    const beside = inRegion(arr, "b", (groups) => splitOut(groups, "b", "before"));
+    expect(views(beside.bottom)).toEqual([["b"], ["a"]]);
+    expect(shares(beside.bottom)).toEqual([0.5, 0.5]);
+    expect(beside.left).toBe(arr.left);
+
+    const wider = withRegion(beside, "bottom", resizePair(beside.bottom, 0, 1, 0.7));
+    expect(shares(wider.bottom)).toEqual([0.7, 0.3]);
+
+    // nothing changed -> the same object
+    expect(inRegion(arr, FILES, (groups) => moveView(groups, FILES, -1, [0, 1]))).toBe(arr);
+    expect(inRegion(arr, "gone", () => [])).toBe(arr);
+    expect(withRegion(arr, "left", arr.left)).toBe(arr);
+  });
 });
 
-describe("heights and tabs", () => {
-  it("fit the column with each group >= its minimum, or say it is too short", () => {
-    expect(fitHeights(600, [0.5, 0.5], 120)).toEqual([300, 300]);
-    expect(fitHeights(400, [0.9, 0.1], 120)).toEqual([280, 120]);
-    expect(fitHeights(239, [0.5, 0.5], 120)).toBeNull();
-    expect(fitHeights(500, [], 120)).toEqual([]);
-    const three = fitHeights(401, [0.2, 0.3, 0.5], 120) ?? [];
+describe("the moves between regions", () => {
+  const arr: Arrangement = {
+    v: 2,
+    left: [group(1, FILES, SEARCH)],
+    right: [group(0.6, OUTLINE), group(0.4, LIVE_VIEW, "c")],
+    bottom: [],
+  };
+
+  it("move to a region: the last tab of its last group; an empty region gets its first group", () => {
+    const left = moveTo(arr, "c", "left");
+    expect(placed(left)).toEqual({
+      left: [[FILES, SEARCH, "c"]],
+      right: [[OUTLINE], [LIVE_VIEW]],
+      bottom: [],
+    });
+    expect(shares(left.left)).toEqual([1]);
+    expect(shares(left.right)).toEqual([0.6, 0.4]);
+
+    const down = moveTo(arr, FILES, "bottom");
+    expect(placed(down)).toEqual({
+      left: [[SEARCH]],
+      right: [[OUTLINE], [LIVE_VIEW, "c"]],
+      bottom: [[FILES]],
+    });
+    expect(shares(down.bottom)).toEqual([1]);
+    expect(down.right).toBe(arr.right);
+  });
+
+  it("a group left empty goes: its region's shares fill the room again", () => {
+    const moved = moveTo(arr, OUTLINE, "left");
+    expect(placed(moved)).toEqual({
+      left: [[FILES, SEARCH, OUTLINE]],
+      right: [[LIVE_VIEW, "c"]],
+      bottom: [],
+    });
+    expect(shares(moved.right)).toEqual([1]);
+    // the last view of a region leaves: the region is empty
+    const empty = moveTo(moveTo(arr, FILES, "right"), SEARCH, "right");
+    expect(placed(empty)).toEqual({
+      left: [],
+      right: [[OUTLINE], [LIVE_VIEW, "c", FILES, SEARCH]],
+      bottom: [],
+    });
+  });
+
+  it("into a given group at a given tab; places are those of the arrangement before the move", () => {
+    expect(views(intoGroup(arr, "c", "left", 0, 1).left)).toEqual([[FILES, "c", SEARCH]]);
+    expect(views(intoGroup(arr, "c", "left", 0, 0).left)).toEqual([["c", FILES, SEARCH]]);
+    expect(views(intoGroup(arr, "c", "left", 0, 99).left)).toEqual([[FILES, SEARCH, "c"]]);
+    // its own region: the group before the target goes, the target is still the one meant
+    const joined = intoGroup(arr, OUTLINE, "right", 1, 1);
+    expect(views(joined.right)).toEqual([[LIVE_VIEW, OUTLINE, "c"]]);
+    expect(shares(joined.right)).toEqual([1]);
+    // its own group: the tab changes place
+    expect(views(intoGroup(arr, LIVE_VIEW, "right", 1, 2).right)).toEqual([
+      [OUTLINE],
+      ["c", LIVE_VIEW],
+    ]);
+    expect(views(intoGroup(arr, "c", "right", 1, 0).right)).toEqual([[OUTLINE], ["c", LIVE_VIEW]]);
+  });
+
+  it("as a group of its own: half of a neighbor's share; the whole of an empty region", () => {
+    const first = asGroup(arr, "c", "left", 0);
+    expect(placed(first)).toEqual({
+      left: [["c"], [FILES, SEARCH]],
+      right: [[OUTLINE], [LIVE_VIEW]],
+      bottom: [],
+    });
+    expect(shares(first.left)).toEqual([0.5, 0.5]);
+    expect(views(asGroup(arr, "c", "left", 1).left)).toEqual([[FILES, SEARCH], ["c"]]);
+    expect(views(asGroup(arr, "c", "left", 99).left)).toEqual([[FILES, SEARCH], ["c"]]);
+    // between two groups: the larger neighbor gives half of its share
+    const between = asGroup(arr, FILES, "right", 1);
+    expect(views(between.right)).toEqual([[OUTLINE], [FILES], [LIVE_VIEW, "c"]]);
+    expect(shares(between.right)).toEqual([0.3, 0.3, 0.4]);
+    expect(views(between.left)).toEqual([[SEARCH]]);
+    const alone = asGroup(arr, "c", "bottom", 0);
+    expect(views(alone.bottom)).toEqual([["c"]]);
+    expect(shares(alone.bottom)).toEqual([1]);
+    // inside its own region: out of a tab group, or a group changing place
+    expect(views(asGroup(arr, "c", "right", 0).right)).toEqual([["c"], [OUTLINE], [LIVE_VIEW]]);
+    const last = asGroup(arr, OUTLINE, "right", 2);
+    expect(views(last.right)).toEqual([[LIVE_VIEW, "c"], [OUTLINE]]);
+    expect(shares(last.right)).toEqual([0.5, 0.5]);
+  });
+
+  it("never past 3 groups in a region", () => {
+    const full: Arrangement = {
+      v: 2,
+      left: [group(1, FILES, SEARCH)],
+      right: [group(0.4, "a"), group(0.3, "b"), group(0.3, "c")],
+      bottom: [],
+    };
+    expect(canAddGroup(full, "right")).toBe(false);
+    expect(canAddGroup(full, "left")).toBe(true);
+    expect(canAddGroup(full, "bottom")).toBe(true);
+    expect(asGroup(full, FILES, "right", 0)).toBe(full);
+    expect(asGroup(full, "a", "right", 2)).toBe(full);
+    // a move as a tab still works there
+    expect(views(moveTo(full, FILES, "right").right)).toEqual([["a"], ["b"], ["c", FILES]]);
+  });
+
+  it("a move that changes nothing returns the same object", () => {
+    // already the last tab of the last group; alone in the only group
+    expect(moveTo(arr, "c", "right")).toBe(arr);
+    expect(moveTo(arr, SEARCH, "left")).toBe(arr);
+    const single = moveTo(arr, FILES, "bottom");
+    expect(moveTo(single, FILES, "bottom")).toBe(single);
+    // the tab it already is; a group that is not there
+    expect(intoGroup(arr, FILES, "left", 0, 0)).toBe(arr);
+    expect(intoGroup(arr, FILES, "left", 0, 1)).toBe(arr);
+    expect(intoGroup(arr, FILES, "right", 5, 0)).toBe(arr);
+    expect(intoGroup(arr, FILES, "bottom", 0, 0)).toBe(arr);
+    // a group already at that place (before | after itself)
+    expect(asGroup(arr, OUTLINE, "right", 0)).toBe(arr);
+    expect(asGroup(arr, OUTLINE, "right", 1)).toBe(arr);
+  });
+});
+
+describe("sizes and tabs", () => {
+  it("fit the region with each group >= its minimum, or say it is too short", () => {
+    expect(fitSizes(600, [0.5, 0.5], 120)).toEqual([300, 300]);
+    expect(fitSizes(400, [0.9, 0.1], 120)).toEqual([280, 120]);
+    expect(fitSizes(239, [0.5, 0.5], 120)).toBeNull();
+    expect(fitSizes(500, [], 120)).toEqual([]);
+    const three = fitSizes(401, [0.2, 0.3, 0.5], 120) ?? [];
     expect(three.reduce((a, b) => a + b, 0)).toBe(401);
     expect(Math.min(...three)).toBeGreaterThanOrEqual(120);
+  });
+
+  it("groups that do not fit along the stack fold into tabs: 210 px each, the dividers, the strips of a stack that runs down", () => {
+    const two = drawnGroups([group(0.5, "a"), group(0.5, "b")], all);
+    const need = 2 * MIN_GROUP_PX + DIVIDER_PX;
+    expect(tooShort(need, two, "vertical")).toBe(false);
+    expect(tooShort(need - 1, two, "vertical")).toBe(true);
+    // a tab group's strip takes room of a stack that runs down, none of groups side by side
+    const tabbed = drawnGroups([group(0.5, "a", "c"), group(0.5, "b")], all);
+    expect(tooShort(need + STRIP_PX - 1, tabbed, "vertical")).toBe(true);
+    expect(tooShort(need + STRIP_PX, tabbed, "vertical")).toBe(false);
+    expect(tooShort(need, tabbed, "horizontal")).toBe(false);
+    expect(tooShort(need - 1, tabbed, "horizontal")).toBe(true);
+    // one group always fits; a size not measured yet folds nothing
+    expect(tooShort(10, drawnGroups([group(1, "a")], all), "vertical")).toBe(false);
+    expect(tooShort(0, two, "vertical")).toBe(false);
+    expect(tooShort(Number.NaN, two, "vertical")).toBe(false);
+  });
+
+  it("shares are clamped and sum 1; no group, no share", () => {
+    expect(shares(normalize([group(3, "a"), group(1, "b")]))).toEqual([0.75, 0.25]);
+    expect(normalize([])).toEqual([]);
   });
 
   it("the selected tab of a group: its choice among the present views, else the first", () => {

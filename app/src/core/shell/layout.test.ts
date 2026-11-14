@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockApi } from "../../api/mock";
 import {
+  BOTTOM,
   clampWidth,
   fit,
+  fitBottom,
   keyWidth,
   outlineShown,
   PAGE_MIN,
+  PAGE_MIN_H,
   panelShown,
   RIGHT,
   rightAvailable,
@@ -57,6 +60,29 @@ describe("panel widths", () => {
     // only one panel: it alone gives way
     expect(fit(PAGE_MIN + 250, null, 400)).toEqual({ sidebar: null, right: 250 });
     expect(fit(PAGE_MIN + 250, 400, null)).toEqual({ sidebar: 250, right: null });
+  });
+
+  it("the bottom panel's height: the page keeps its minimum height, the panel gives way down to its own", () => {
+    expect([BOTTOM.min, BOTTOM.def, PAGE_MIN_H]).toEqual([120, 240, 220]);
+    // room for all: as asked (inside its range)
+    expect(fitBottom(900, 240)).toBe(240);
+    expect(fitBottom(900, 300.4)).toBe(300);
+    expect(fitBottom(900, 10)).toBe(BOTTOM.min);
+    expect(fitBottom(PAGE_MIN_H + 240, 240)).toBe(240);
+    // a short window: the panel is squeezed, the page keeps its 220
+    expect(fitBottom(PAGE_MIN_H + 239, 240)).toBe(239);
+    expect(fitBottom(400, 240)).toBe(180);
+    expect(fitBottom(PAGE_MIN_H + BOTTOM.min, 600)).toBe(BOTTOM.min);
+    // a height past what any window holds is cut to the room left
+    expect(fitBottom(700, 99999)).toBe(700 - PAGE_MIN_H);
+    // not even its minimum fits: not drawn
+    expect(fitBottom(PAGE_MIN_H + BOTTOM.min - 1, 240)).toBeNull();
+    expect(fitBottom(100, 240)).toBeNull();
+    // no bottom panel, no height; an unknown window size leaves the height as asked
+    expect(fitBottom(900, null)).toBeNull();
+    expect(fitBottom(0, 240)).toBe(240);
+    expect(fitBottom(Number.NaN, 240)).toBe(240);
+    expect(fitBottom(900, Number.NaN)).toBe(BOTTOM.def);
   });
 
   it("keys: arrows by 16 | 64 with Shift, Home | End = limits, Enter = default, others pass", () => {
@@ -112,6 +138,44 @@ describe("the layout store", () => {
     const saved = await api.projectSessionGet("layout.right");
     expect(saved.ok && saved.value).toEqual({ a: 1 });
     expect(store.right).toBe(400);
+  });
+
+  it("the bottom panel's height is kept like the widths: read, clamped, written; junk reads as the default", async () => {
+    const api = createMockApi();
+    await api.projectSessionSet("layout.bottom", 333);
+    const store = new LayoutStore();
+    expect(store.bottom).toBe(BOTTOM.def);
+    await store.load(api, true);
+    expect(store.bottom).toBe(333);
+    store.setBottom(10);
+    expect(store.bottom).toBe(BOTTOM.min);
+    store.setBottom(400.4);
+    expect(store.bottom).toBe(400);
+    const before = await api.projectSessionGet("layout.bottom");
+    expect(before.ok && before.value).toBe(333);
+    await vi.advanceTimersByTimeAsync(450);
+    const saved = await api.projectSessionGet("layout.bottom");
+    expect(saved.ok && saved.value).toBe(400);
+    // the other sizes are written beside it, as they were
+    const sidebar = await api.projectSessionGet("layout.sidebar");
+    expect(sidebar.ok && sidebar.value).toBe(SIDEBAR.def);
+    for (const junk of ["tall", { a: 1 }, [300], true, null]) {
+      await api.projectSessionSet("layout.bottom", junk);
+      const again = new LayoutStore();
+      await again.load(api, true);
+      expect(again.bottom, JSON.stringify(junk)).toBe(BOTTOM.def);
+    }
+    await api.projectSessionSet("layout.bottom", 99999);
+    await store.load(api, true);
+    expect(store.bottom).toBe(BOTTOM.max);
+    // a single file keeps it for the window only; the next workspace starts at the default
+    await store.load(api, false);
+    expect(store.bottom).toBe(BOTTOM.def);
+    store.setBottom(300);
+    await vi.advanceTimersByTimeAsync(1000);
+    const kept = await api.projectSessionGet("layout.bottom");
+    expect(kept.ok && kept.value).toBe(99999);
+    expect(store.bottom).toBe(300);
   });
 
   it("a workspace that was left cannot overwrite the next one with its widths", async () => {
@@ -324,6 +388,54 @@ describe("the hidden panels in the project session", () => {
     const again = new LayoutStore();
     await again.load(api, true);
     expect([again.sidebarHidden, again.rightHidden]).toEqual([true, true]);
+  });
+
+  it("the bottom panel hides on its own: off while the session is read, kept in the project, only true counts", async () => {
+    const api = createMockApi();
+    await session061(api);
+    const store = new LayoutStore();
+    const loading = store.load(api, true);
+    expect(store.bottomOff).toBe(true);
+    await loading;
+    expect([store.bottomHidden, store.bottomOff]).toEqual([false, false]);
+    store.setBottomHidden(true);
+    expect([store.bottomOff, store.sidebarOff, store.rightOff]).toEqual([true, false, false]);
+    const early = await api.projectSessionGet("layout.bottom-hidden");
+    expect(early.ok && early.value).toBeNull();
+    await vi.advanceTimersByTimeAsync(450);
+    const [bottom, side, right] = await Promise.all([
+      api.projectSessionGet("layout.bottom-hidden"),
+      api.projectSessionGet("layout.sidebar-hidden"),
+      api.projectSessionGet("layout.right-hidden"),
+    ]);
+    expect([bottom.ok && bottom.value, side.ok && side.value, right.ok && right.value]).toEqual([
+      true,
+      false,
+      false,
+    ]);
+    const again = new LayoutStore();
+    await again.load(api, true);
+    expect([again.bottomHidden, again.sidebarHidden, again.rightHidden]).toEqual([
+      true,
+      false,
+      false,
+    ]);
+    for (const junk of ["yes", 1, { hidden: true }, [true], null]) {
+      await api.projectSessionSet("layout.bottom-hidden", junk);
+      const other = new LayoutStore();
+      await other.load(api, true);
+      expect(other.bottomHidden, JSON.stringify(junk)).toBe(false);
+    }
+    // a single file | the Notes: for the window only, the next workspace starts shown
+    await store.load(api, false);
+    expect(store.bottomHidden).toBe(false);
+    store.setBottomHidden(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    const kept = await api.projectSessionGet("layout.bottom-hidden");
+    expect(kept.ok && kept.value).toBeNull();
+    expect(store.bottomHidden).toBe(true);
+    await store.load(api, false);
+    expect(store.bottomHidden).toBe(false);
   });
 
   it("anything but true reads as shown; a single file | the Notes keep the choice for the window only", async () => {

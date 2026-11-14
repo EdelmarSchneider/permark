@@ -14,8 +14,8 @@ import {
   type RightSide,
 } from "./layout";
 import { layout } from "./layout.svelte";
-import { OUTLINE, select } from "./arrangement";
-import { rightViews } from "./arrangement.svelte";
+import { OUTLINE, regionOf, select } from "./arrangement";
+import { arrangement } from "./arrangement.svelte";
 import { ui } from "./ui.svelte";
 
 /** Workspaces with a sidebar: a project, the Notes. */
@@ -36,14 +36,15 @@ export function hasSidebar(view: WindowView): boolean {
 /** The right region as the stores have it now (reactive when read in a `$derived`). */
 export function rightSide(): RightSide {
   return {
-    hasOutline: rightViews.hasOutline,
+    hasOutline: arrangement.hasOutline,
     outlineOn: reading.outline,
-    outlineSelected: rightViews.isSelected(OUTLINE),
-    panels: rightViews.panels.map((panel) => ({
-      id: panel.id,
-      open: rightViews.isOpen(panel),
-      selected: rightViews.isSelected(panel.id),
-    })),
+    outlineSelected: arrangement.isSelected(OUTLINE),
+    // the panels the person opens | closes (those of the right side)
+    panels: arrangement.views.flatMap(({ id, closable, panel }) =>
+      closable && panel !== null
+        ? [{ id, open: arrangement.isOpen(panel), selected: arrangement.isSelected(id) }]
+        : [],
+    ),
     hidden: layout.rightHidden,
   };
 }
@@ -83,7 +84,9 @@ function focusPage(active: HTMLElement): void {
 
 /** `id` becomes the view its group shows (its group: every view of its arrangement group). */
 export function selectView(id: string): void {
-  const group = rightViews.layout.groups.find((g) => g.views.includes(id));
+  const region = regionOf(arrangement.layout, id);
+  const group =
+    region === null ? undefined : arrangement.layout[region].find((g) => g.views.includes(id));
   layout.setSelected(select(layout.views.selected, group?.views ?? [id], id));
 }
 

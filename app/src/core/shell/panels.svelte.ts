@@ -1,6 +1,6 @@
 // The panels plugins contribute: tabs of the left sidebar (next to Files and Search) and the views of the right column.
-// Which sidebar tab shows lives in `ui`; the right column's arrangement in `arrangement.svelte.ts`. A panel whose plugin
-// went off | that its plugin does not offer now is not listed.
+// Which sidebar tab shows lives in `ui`; where each view sits (its region and group) in `arrangement.svelte.ts`. A panel
+// whose plugin went off | that its plugin does not offer now is not listed.
 
 import { conditions } from "../conditions/context.svelte";
 import { contributions } from "../plugins/instance.svelte";
@@ -27,22 +27,19 @@ export function isOffered(panel: Panel): boolean {
   return panel.offered?.() ?? true;
 }
 
-/** Tabs plugins add to the sidebar, in a fixed order (`stableOrder`). */
-export function leftPanels(): Panel[] {
-  return stableOrder(
-    contributions
-      .visible("panel", conditions.current)
-      .filter((p) => p.side === "left" && isOffered(p)),
-  );
+/** The panels plugins offer now, of both sides, in a fixed order (`stableOrder`). */
+export function offeredPanels(): Panel[] {
+  return stableOrder(contributions.visible("panel", conditions.current).filter(isOffered));
 }
 
-/** Panels plugins add at the right of the page, in a fixed order (`stableOrder`). */
+/** Tabs plugins add to the sidebar, in the same fixed order. */
+export function leftPanels(): Panel[] {
+  return offeredPanels().filter((p) => p.side === "left");
+}
+
+/** Panels plugins add at the right of the page, in the same fixed order. */
 export function rightPanels(): Panel[] {
-  return stableOrder(
-    contributions
-      .visible("panel", conditions.current)
-      .filter((p) => p.side === "right" && isOffered(p)),
-  );
+  return offeredPanels().filter((p) => p.side === "right");
 }
 
 /** The sidebar view that shows: a core one, or a plugin tab that still exists; else Files. */

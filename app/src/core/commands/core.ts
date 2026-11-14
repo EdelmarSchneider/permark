@@ -20,8 +20,8 @@ import { closeOwnTab } from "../shell/closeWorkspace";
 import { projects } from "../projects/instance.svelte";
 import { askInitHere } from "../shell/initProject";
 import { rightAvailable } from "../shell/layout";
-import { defaultRightViews } from "../shell/arrangement";
-import { rightViews } from "../shell/arrangement.svelte";
+import { defaultArrangement, withRegion } from "../shell/arrangement";
+import { arrangement } from "../shell/arrangement.svelte";
 import {
   documentPane,
   rightSide,
@@ -204,8 +204,9 @@ const SPECS: readonly Spec[] = [
     label: "panel.resetLayoutCommand",
     requires: READING,
     run: () => {
-      rightViews.arrange(defaultRightViews());
-      rightViews.status = t("panel.layoutReset");
+      // the right column alone: the other regions stay as the person arranged them
+      arrangement.arrange(withRegion(arrangement.saved, "right", defaultArrangement().right));
+      arrangement.status = t("panel.layoutReset");
     },
   },
   {

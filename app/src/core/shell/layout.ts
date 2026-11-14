@@ -1,21 +1,32 @@
-// Panel widths: limits, clamping and fitting into the window; what a show | hide toggle of a side panel does. Pure; the
-// store is `layout.svelte.ts`.
+// Panel sizes (the side panels' widths, the bottom panel's height): limits, clamping and fitting into the window; what
+// a show | hide toggle of a side panel does. Pure; the store is `layout.svelte.ts`.
 
 export type Range = { readonly min: number; readonly max: number; readonly def: number };
 
 export const SIDEBAR: Range = { min: 200, max: 480, def: 260 };
 export const RIGHT: Range = { min: 220, max: 560, def: 280 };
+/** The bottom panel's height. Its maximum only bounds a saved value: what is drawn is cut by the window (`fitBottom`). */
+export const BOTTOM: Range = { min: 120, max: 2000, def: 240 };
 /** The page keeps at least this much while the panels can still give way: room for the document header folded
  *  (`doc/headerFit.ts`) and a readable column, so the panels yield before the page gets cramped. */
 export const PAGE_MIN = 560;
+/** The page keeps at least this height over the bottom panel: its header and a few lines of the document. */
+export const PAGE_MIN_H = 220;
 /** One arrow key press, and with Shift. */
 export const STEP = 16;
 export const STEP_BIG = 64;
 
-/** A width inside its range (a number that is not finite = the default). */
+/** A panel's size (a width, the bottom panel's height) inside its range (a number that is not finite = the default). */
 export function clampWidth(range: Range, value: number): number {
   if (!Number.isFinite(value)) return range.def;
   return Math.min(range.max, Math.max(range.min, Math.round(value)));
+}
+
+/** A panel gives way by up to `over` px, never under its minimum: what it keeps, and what is still over. */
+function giveWay(size: number | null, range: Range, over: number): [number | null, number] {
+  if (size === null || over <= 0) return [size, over];
+  const give = Math.min(over, size - range.min);
+  return [size - give, over - give];
 }
 
 /**
@@ -28,18 +39,23 @@ export function fit(
   right: number | null,
 ): { sidebar: number | null; right: number | null } {
   if (!Number.isFinite(total) || total <= 0) return { sidebar, right };
-  let side = sidebar === null ? null : clampWidth(SIDEBAR, sidebar);
-  let panel = right === null ? null : clampWidth(RIGHT, right);
-  let over = (side ?? 0) + (panel ?? 0) + PAGE_MIN - total;
-  if (over > 0 && panel !== null) {
-    const give = Math.min(over, panel - RIGHT.min);
-    panel -= give;
-    over -= give;
-  }
-  if (over > 0 && side !== null) {
-    side -= Math.min(over, side - SIDEBAR.min);
-  }
-  return { sidebar: side, right: panel };
+  const side = sidebar === null ? null : clampWidth(SIDEBAR, sidebar);
+  const panel = right === null ? null : clampWidth(RIGHT, right);
+  const [fitRight, over] = giveWay(panel, RIGHT, (side ?? 0) + (panel ?? 0) + PAGE_MIN - total);
+  const [fitSidebar] = giveWay(side, SIDEBAR, over);
+  return { sidebar: fitSidebar, right: fitRight };
+}
+
+/**
+ * The bottom panel's height that fits `total` pixels of body height: the page keeps [`PAGE_MIN_H`], the panel gives
+ * way down to its minimum; `null` when even that does not fit (the panel is not drawn) or there is no bottom panel.
+ * A body height not known yet leaves the height as asked.
+ */
+export function fitBottom(total: number, bottom: number | null): number | null {
+  if (bottom === null || !Number.isFinite(total) || total <= 0) return bottom;
+  const asked = clampWidth(BOTTOM, bottom);
+  const [height, over] = giveWay(asked, BOTTOM, asked + PAGE_MIN_H - total);
+  return over > 0 ? null : height;
 }
 
 /** The key a splitter understands, as a change of the width (`null`: not its key). `grow` = the panel grows to the

@@ -11,7 +11,7 @@ import { conditions } from "../../core/conditions/context.svelte";
 import { changedSections } from "../../core/doc/outline";
 import { InFront } from "../../core/inFront.svelte";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
-import { rightViews } from "../../core/shell/arrangement.svelte";
+import { arrangement } from "../../core/shell/arrangement.svelte";
 import { togglePanel } from "../../core/shell/sides";
 import { silence } from "../../core/silence/silence.svelte";
 import { panelRows, pathOf, type FeedShow, type PanelRow } from "./mine";
@@ -127,7 +127,7 @@ export class FeedStore {
     this.#root = root;
     this.#shown = shown;
     this.#session = session;
-    this.#onScreen = onScreen ?? (() => rightViews.onScreen(PANEL) && this.#front.value);
+    this.#onScreen = onScreen ?? (() => arrangement.onScreen(PANEL) && this.#front.value);
   }
 
   /** The project calls for the feed: an outside change was seen (remembered), or it has git | agent files. */

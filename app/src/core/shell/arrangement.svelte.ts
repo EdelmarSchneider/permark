@@ -1,7 +1,7 @@
-// The right column of this window: the arrangement (app-wide, from the settings), which views are present (open +
-// with content), the groups drawn, what is on screen. The project's open | selected choices live in the layout store
-// (its session, read behind `layout.reading`); a view the project has no choice for takes its default, decided once
-// per project load (`panel.defaultOpen`). Spec: shell.md §Frame (Right region).
+// The views of this window and where they sit: the arrangement (app-wide, from the settings: three regions), which
+// views are present (open + with content), the groups each region draws, what is on screen. The project's open |
+// selected choices live in the layout store (its session, read behind `layout.reading`); a view the project has no
+// choice for takes its default, decided once per project load (`panel.defaultOpen`). Spec: shell.md §Frame.
 
 import type { Api, AppSettings, SettingChange } from "../../api";
 import { conditions } from "../conditions/context.svelte";
@@ -9,16 +9,23 @@ import { documents } from "../doc/document.svelte";
 import { reading } from "../doc/reading.svelte";
 import type { ContributionOf } from "../plugins/registry.svelte";
 import { layout } from "./layout.svelte";
-import { rightPanels } from "./panels.svelte";
+import { offeredPanels } from "./panels.svelte";
 import {
-  defaultRightViews,
+  axisOf,
+  defaultArrangement,
   drawnGroups,
+  FILES,
   OUTLINE,
-  parseRightViews,
+  parseArrangement,
+  regionOf,
+  SEARCH,
   selectedIn,
+  tooShort,
   withViews,
+  type Arrangement,
   type DrawnGroup,
-  type RightViews,
+  type Region,
+  type ViewGroup,
 } from "./arrangement";
 import { ui } from "./ui.svelte";
 
@@ -29,16 +36,70 @@ export const DEFAULT_WAIT_MS = 500;
 /** The arrangement is written this long after the last change (a divider dragged). */
 const SAVE_DELAY_MS = 400;
 
-/** The arrangement in the settings (`rightViews`; `null` = never set | unreadable: the default). */
-export function arrangementOf(settings: AppSettings): RightViews {
-  return parseRightViews(settings.rightViews);
+/** The arrangement in the settings: `panels`, else (never set | unreadable) the right column 0.11 saved. */
+export function arrangementOf(settings: AppSettings): Arrangement {
+  return parseArrangement(settings.panels, settings.rightViews);
 }
 
-export class RightViewsStore {
+/** A view the window knows now: a core one, or a panel its plugin offers. */
+export type KnownView = {
+  readonly id: string;
+  /** Where it goes while no region lists it. */
+  readonly region: Region;
+  /** The person can close it (the outline, a panel of the right side); the others are always open in a project. */
+  readonly closable: boolean;
+  /** The plugin's panel (`null`: a view of the core). */
+  readonly panel: Panel | null;
+};
+
+/** The region is off screen: hidden by the person, or its project's session not read yet. */
+function regionOff(region: Region): boolean {
+  switch (region) {
+    case "left":
+      return layout.sidebarOff;
+    case "right":
+      return layout.rightOff;
+    case "bottom":
+      return layout.bottomOff;
+    default:
+      return region satisfies never;
+  }
+}
+
+/** What a region reads of the window's views. */
+type Views = { readonly layout: Arrangement; isPresent(id: string): boolean };
+
+/** One region of this window: the groups it would draw, the room it measured, the groups it draws. */
+class RegionViews {
+  /** The region's extent along its stack as last measured (px; 0: not drawn | not measured yet). */
+  size = $state(0);
+  readonly #region: Region;
+  readonly #views: Views;
+
+  constructor(region: Region, views: Views) {
+    this.#region = region;
+    this.#views = views;
+  }
+
+  /** The groups with a present view, along the stack as arranged. */
+  readonly stacked = $derived.by(() =>
+    drawnGroups(this.#views.layout[this.#region], (id) => this.#views.isPresent(id)),
+  );
+
+  /** Too short for those groups along the stack. */
+  readonly short = $derived.by(() => tooShort(this.size, this.stacked, axisOf(this.#region)));
+
+  /** The groups drawn: `stacked`, or all in one tab group while the region is too short. */
+  readonly drawn = $derived.by((): DrawnGroup[] => {
+    const groups = this.stacked;
+    if (!this.short) return groups;
+    return [{ at: groups[0]?.at ?? 0, views: groups.flatMap((g) => g.views), share: 1 }];
+  });
+}
+
+export class ArrangementStore {
   /** As saved (app-wide). */
-  arrangement = $state.raw<RightViews>(defaultRightViews());
-  /** The column is too short for its groups one above the other: they are drawn as one tab group. */
-  short = $state(false);
+  saved = $state.raw<Arrangement>(defaultArrangement());
   /** What the last move said (a polite status). */
   status = $state("");
   #api: Api | null = null;
@@ -54,8 +115,8 @@ export class RightViewsStore {
     !layout.reading && conditions.current.workspace === "project" ? layout.loads : -1,
   );
 
-  /** The right panels offered now (plugin on, `offered()`), in a fixed order. */
-  readonly panels = $derived(rightPanels());
+  /** The panels offered now (plugin on, `offered()`), of both sides, in a fixed order. */
+  readonly #panels = $derived(offeredPanels());
 
   /** The document shown has an outline. */
   readonly hasOutline = $derived.by(() => {
@@ -63,20 +124,35 @@ export class RightViewsStore {
     return view?.body.kind === "markdown" && view.body.outline.length > 0;
   });
 
-  /** The arrangement with every view known now listed (a new plugin's view joins the last group). */
-  readonly layout = $derived(
-    withViews(this.arrangement, [OUTLINE, ...this.panels.map((p) => p.id)]),
-  );
-
-  /** The groups with a present view, one above the other as arranged. */
-  readonly stacked = $derived(drawnGroups(this.layout, (id) => this.isPresent(id)));
-
-  /** The groups drawn: `stacked`, or all in one tab group while the column is too short. */
-  readonly drawn = $derived.by((): DrawnGroup[] => {
-    const groups = this.stacked;
-    if (!this.short || groups.length < 2) return groups;
-    return [{ at: groups[0]?.at ?? 0, views: groups.flatMap((g) => g.views), share: 1 }];
+  /**
+   * Every view the window knows now, in the order a fresh arrangement lists them: Files, Search and the plugins'
+   * tabs (left), the outline and the plugins' panels (right). A panel's side is only its default region.
+   */
+  readonly views = $derived.by((): KnownView[] => {
+    const panelsOf = (side: Panel["side"]): KnownView[] =>
+      this.#panels
+        .filter((panel) => panel.side === side)
+        .map((panel) => ({ id: panel.id, region: side, closable: side === "right", panel }));
+    return [
+      { id: FILES, region: "left", closable: false, panel: null },
+      { id: SEARCH, region: "left", closable: false, panel: null },
+      ...panelsOf("left"),
+      { id: OUTLINE, region: "right", closable: true, panel: null },
+      ...panelsOf("right"),
+    ];
   });
+
+  /** The arrangement with every view known now listed (a new plugin's view joins its default region). */
+  readonly layout = $derived(withViews(this.saved, this.views));
+
+  readonly #regions: Readonly<Record<Region, RegionViews>> = {
+    left: new RegionViews("left", this),
+    right: new RegionViews("right", this),
+    bottom: new RegionViews("bottom", this),
+  };
+
+  /** How many views are present in the window, whatever their region. */
+  readonly presentCount = $derived(this.views.filter((view) => this.isPresent(view.id)).length);
 
   /** Follows the settings of the app (boot + every change) and decides the views' defaults per project load. */
   start(api: Api): () => void {
@@ -84,12 +160,12 @@ export class RightViewsStore {
     let gone = false;
     let off: (() => void) | null = null;
     void api.settingsGet().then((result) => {
-      if (!gone && result.ok) this.arrangement = arrangementOf(result.value);
+      if (!gone && result.ok) this.saved = arrangementOf(result.value);
     });
     void api
       .on("settings-changed", (event) => {
         // our own write comes back: the arrangement shown is newer than a write still waiting
-        if (this.#timer === null) this.arrangement = arrangementOf(event.settings);
+        if (this.#timer === null) this.saved = arrangementOf(event.settings);
       })
       .then((stop) => {
         if (gone) stop();
@@ -109,6 +185,11 @@ export class RightViewsStore {
       stopDefaults();
       this.#flush();
     };
+  }
+
+  /** The view `id` as the window knows it (undefined: none now, e.g. its plugin is off). */
+  viewOf(id: string): KnownView | undefined {
+    return this.views.find((view) => view.id === id);
   }
 
   /**
@@ -135,16 +216,41 @@ export class RightViewsStore {
     return typeof chosen === "boolean" ? chosen : this.defaultOf(panel);
   }
 
-  /** The view is present: the outline when the document has one and it is on; a panel offered + open. */
+  /**
+   * The view is present. One that cannot be closed (Files, Search, a plugin's sidebar tab): in a project window,
+   * always. The outline: when the document has one and it is on. A panel that can be closed: when open.
+   */
   isPresent(id: string): boolean {
-    if (id === OUTLINE) return this.hasOutline && reading.outline;
-    const panel = this.panels.find((p) => p.id === id);
-    return panel !== undefined && this.isOpen(panel);
+    const view = this.viewOf(id);
+    if (view === undefined) return false;
+    if (!view.closable) return conditions.current.workspace === "project";
+    return view.panel === null ? this.hasOutline && reading.outline : this.isOpen(view.panel);
   }
 
-  /** The drawn group that holds `id` (undefined: not drawn). */
+  /** The groups of `region` with a present view, along its stack as arranged. */
+  stacked(region: Region): readonly DrawnGroup[] {
+    return this.#regions[region].stacked;
+  }
+
+  /** `region` is too short for its groups along the stack: they are drawn as one tab group. */
+  short(region: Region): boolean {
+    return this.#regions[region].short;
+  }
+
+  /** The groups `region` draws: `stacked`, or all in one tab group while it is too short. */
+  drawn(region: Region): readonly DrawnGroup[] {
+    return this.#regions[region].drawn;
+  }
+
+  /** The element of `region` measured its extent along the stack (px; 0: it is gone). */
+  setSize(region: Region, px: number): void {
+    this.#regions[region].size = px;
+  }
+
+  /** The drawn group that holds `id`, in whatever region (undefined: not drawn). */
   groupWith(id: string): DrawnGroup | undefined {
-    return this.drawn.find((g) => g.views.includes(id));
+    const region = regionOf(this.layout, id);
+    return region === null ? undefined : this.drawn(region).find((g) => g.views.includes(id));
   }
 
   /** The view a drawn group shows. */
@@ -158,14 +264,15 @@ export class RightViewsStore {
     return group !== undefined && this.selectedOf(group) === id;
   }
 
-  /** The view is on screen: present, shown by its group, the region shown, not in focus mode. */
+  /** The view is on screen: present, shown by its group, its region shown, not in focus mode. */
   onScreen(id: string): boolean {
-    return !layout.rightOff && ui.focus !== "on" && this.isSelected(id);
+    const region = regionOf(this.layout, id);
+    return region !== null && !regionOff(region) && ui.focus !== "on" && this.isSelected(id);
   }
 
   /** A new arrangement: drawn at once, written a moment after the last change. */
-  arrange(next: RightViews): void {
-    this.arrangement = next;
+  arrange(next: Arrangement): void {
+    this.saved = next;
     if (this.#timer !== null) clearTimeout(this.#timer);
     this.#timer = setTimeout(() => this.#flush(), SAVE_DELAY_MS);
   }
@@ -174,14 +281,17 @@ export class RightViewsStore {
     if (this.#timer === null) return;
     clearTimeout(this.#timer);
     this.#timer = null;
-    // the settings field `rightViews` (core.md §settings): a failed write keeps the layout for this run
-    const { v, groups } = this.arrangement;
+    // the settings field `panels`: a failed write keeps the arrangement for this run. The field 0.11 wrote
+    // (`rightViews`) is left as it is: an older build on the same profile still finds its column.
+    const copy = (groups: readonly ViewGroup[]): { views: string[]; share: number }[] =>
+      groups.map((g) => ({ views: [...g.views], share: g.share }));
+    const { left, right, bottom } = this.saved;
     const change: SettingChange = {
-      key: "rightViews",
-      value: { v, groups: groups.map((g) => ({ views: [...g.views], share: g.share })) },
+      key: "panels",
+      value: { v: 2, left: copy(left), right: copy(right), bottom: copy(bottom) },
     };
     void this.#api?.settingsSet(change);
   }
 }
 
-export const rightViews = new RightViewsStore();
+export const arrangement = new ArrangementStore();

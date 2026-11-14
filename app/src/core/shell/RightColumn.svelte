@@ -5,7 +5,7 @@
   // strips appear only with two views or more. Spec: shell.md §Frame (Right region).
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
   import ListTree from "@lucide/svelte/icons/list-tree";
-  import { tick, type Component } from "svelte";
+  import { onDestroy, tick, type Component } from "svelte";
   import type { OutlineItem } from "../../api";
   import OutlinePanel from "../doc/OutlinePanel.svelte";
   import ContextMenu from "../explorer/ContextMenu.svelte";
@@ -17,41 +17,39 @@
     canJoin,
     canMove,
     canSplit,
-    defaultRightViews,
+    defaultArrangement,
+    DIVIDER_PX,
     joinAsTab,
-    MIN_GROUP_PX,
     moveView,
     OUTLINE,
     resizePair,
     splitOut,
+    withRegion,
     type DrawnGroup,
+    type Region,
+    type ViewGroup,
   } from "./arrangement";
-  import { rightViews } from "./arrangement.svelte";
+  import { arrangement } from "./arrangement.svelte";
   import { closeView, selectView } from "./sides";
   import ViewDivider from "./ViewDivider.svelte";
 
   type Props = { outline: readonly OutlineItem[] | null };
   let { outline }: Props = $props();
 
-  /** A tab strip's height (px), for the "too short" check. */
-  const STRIP_PX = 32;
-  /** The divider's track: its own room (the line in its middle), so it never covers a row of a view. */
-  const DIVIDER_PX = 7;
+  /** The region this column draws. */
+  const REGION: Region = "right";
 
-  let height = $state(0);
-  const groups = $derived(rightViews.drawn);
+  const groups = $derived(arrangement.drawn(REGION));
   const present = $derived(groups.flatMap((g) => g.views));
   /** Arranging controls (options, dividers, strips) only with two views or more. */
   const arranging = $derived(present.length >= 2);
 
-  // too short for the groups one above the other: drawn as one tab group (the arrangement stays as saved)
-  $effect(() => {
-    const stacked = rightViews.stacked;
-    const strips = stacked.filter((g) => g.views.length > 1).length;
-    const need =
-      stacked.length * MIN_GROUP_PX + (stacked.length - 1) * DIVIDER_PX + strips * STRIP_PX;
-    rightViews.short = stacked.length > 1 && height > 0 && height < need;
-  });
+  // the column's height decides whether its groups fit one above the other (else one tab group): the store works
+  // that out from the size reported here; a column that is gone has no size
+  function measured(px: number | null | undefined): void {
+    arrangement.setSize(REGION, px ?? 0);
+  }
+  onDestroy(() => measured(0));
 
   type Placed = {
     group: DrawnGroup;
@@ -106,13 +104,13 @@
 
   function labelOf(id: string): string {
     if (id === OUTLINE) return t("outline.tab");
-    const panel = rightViews.panels.find((p) => p.id === id);
-    return panel === undefined ? id : t(panel.label);
+    const panel = arrangement.viewOf(id)?.panel;
+    return panel ? t(panel.label) : id;
   }
 
   function tabsOf(group: DrawnGroup): TabView[] {
     return group.views.map((id) => {
-      const panel = rightViews.panels.find((p) => p.id === id);
+      const panel = arrangement.viewOf(id)?.panel;
       return {
         id,
         label: labelOf(id),
@@ -124,7 +122,7 @@
 
   /** The view a group shows: alone, or its selected tab. */
   function shownIn(group: DrawnGroup): string | null {
-    return rightViews.selectedOf(group);
+    return arrangement.selectedOf(group);
   }
 
   function heightOf(group: DrawnGroup): number {
@@ -159,7 +157,7 @@
       above: t("panel.moved.above", { name }),
       below: t("panel.moved.below", { name }),
     } as const;
-    rightViews.status = words[what];
+    arrangement.status = words[what];
     await tick();
     const target =
       what === "tab"
@@ -169,13 +167,17 @@
   }
 
   function entriesFor(id: string): MenuEntry[] {
-    const layout = rightViews.layout;
-    const stacked = rightViews.stacked;
+    const layout = arrangement.layout;
+    const mine = layout[REGION];
+    const stacked = arrangement.stacked(REGION);
     const drawnAt = stacked.map((g) => g.at);
-    const short = rightViews.short;
+    const short = arrangement.short(REGION);
     const tabbed = (stacked.find((g) => g.views.includes(id))?.views.length ?? 0) > 1;
-    const arrange = (next: typeof layout, what: "up" | "down" | "tab" | "above" | "below") => {
-      rightViews.arrange(next);
+    const arrange = (
+      next: readonly ViewGroup[],
+      what: "up" | "down" | "tab" | "above" | "below",
+    ) => {
+      arrangement.arrange(withRegion(layout, REGION, next));
       if (what === "tab") selectView(id);
       void moved(id, what);
     };
@@ -186,14 +188,14 @@
         {
           kind: "item",
           label: t("panel.showAbove"),
-          disabled: short || !canSplit(layout, id),
-          run: () => arrange(splitOut(layout, id, "above"), "above"),
+          disabled: short || !canSplit(mine, id),
+          run: () => arrange(splitOut(mine, id, "before"), "above"),
         },
         {
           kind: "item",
           label: t("panel.showBelow"),
-          disabled: short || !canSplit(layout, id),
-          run: () => arrange(splitOut(layout, id, "below"), "below"),
+          disabled: short || !canSplit(mine, id),
+          run: () => arrange(splitOut(mine, id, "after"), "below"),
         },
       );
     } else {
@@ -201,20 +203,20 @@
         {
           kind: "item",
           label: t("panel.moveUp"),
-          disabled: short || !canMove(layout, id, -1, drawnAt),
-          run: () => arrange(moveView(layout, id, -1, drawnAt), "up"),
+          disabled: short || !canMove(mine, id, -1, drawnAt),
+          run: () => arrange(moveView(mine, id, -1, drawnAt), "up"),
         },
         {
           kind: "item",
           label: t("panel.moveDown"),
-          disabled: short || !canMove(layout, id, 1, drawnAt),
-          run: () => arrange(moveView(layout, id, 1, drawnAt), "down"),
+          disabled: short || !canMove(mine, id, 1, drawnAt),
+          run: () => arrange(moveView(mine, id, 1, drawnAt), "down"),
         },
         {
           kind: "item",
           label: t("panel.showAsTab"),
-          disabled: short || !canJoin(layout, id, drawnAt),
-          run: () => arrange(joinAsTab(layout, id, drawnAt), "tab"),
+          disabled: short || !canJoin(mine, id, drawnAt),
+          run: () => arrange(joinAsTab(mine, id, drawnAt), "tab"),
         },
       );
     }
@@ -226,8 +228,8 @@
         kind: "item",
         label: t("panel.resetLayout"),
         run: () => {
-          rightViews.arrange(defaultRightViews());
-          rightViews.status = t("panel.layoutReset");
+          arrangement.arrange(withRegion(arrangement.saved, REGION, defaultArrangement()[REGION]));
+          arrangement.status = t("panel.layoutReset");
         },
       },
     );
@@ -258,7 +260,7 @@
   }
 </script>
 
-<div class="column" bind:clientHeight={height} style:grid-template-rows={plan.tracks}>
+<div class="column" bind:clientHeight={null, measured} style:grid-template-rows={plan.tracks}>
   {#each items as item (item.key)}
     {#if item.kind === "strip"}
       <div class="strip" style:grid-row={item.place.strip}>
@@ -279,8 +281,17 @@
           controls={`right-view-${top}`}
           measure={() => ({ above: heightOf(item.place.group), below: heightOf(item.next.group) })}
           onsplit={(ratio) =>
-            rightViews.arrange(
-              resizePair(rightViews.layout, item.place.group.at, item.next.group.at, ratio),
+            arrangement.arrange(
+              withRegion(
+                arrangement.layout,
+                REGION,
+                resizePair(
+                  arrangement.layout[REGION],
+                  item.place.group.at,
+                  item.next.group.at,
+                  ratio,
+                ),
+              ),
             )}
         />
       </div>
@@ -318,7 +329,7 @@
               viewMenu={arranging ? options : undefined}
             />{/if}
         {:else}
-          {@const panel = rightViews.panels.find((p) => p.id === id)}
+          {@const panel = arrangement.viewOf(id)?.panel}
           {#if panel}
             {#await panel.view() then loaded}
               {@const PanelView = loaded.default as unknown as Component<PanelViewProps>}
@@ -329,7 +340,7 @@
       </div>
     {/if}
   {/each}
-  <p class="sr-only" role="status">{rightViews.status}</p>
+  <p class="sr-only" role="status">{arrangement.status}</p>
 </div>
 
 {#if menu}

@@ -16,7 +16,7 @@
   import Frame from "./core/shell/Frame.svelte";
   import PanelToggle from "./core/shell/PanelToggle.svelte";
   import RightColumn from "./core/shell/RightColumn.svelte";
-  import { rightViews } from "./core/shell/arrangement.svelte";
+  import { arrangement } from "./core/shell/arrangement.svelte";
   import Notices from "./core/shell/Notices.svelte";
   import DefaultAppDialog from "./core/shell/DefaultAppDialog.svelte";
   import { defaultApp } from "./core/shell/defaultApp.svelte";
@@ -54,9 +54,11 @@
 
   /** What the window shows now; while opening, what stays on screen (its document included). */
   const shown = $derived(store.screen);
+  /** The right region has a view to draw. */
+  const rightDrawn = $derived(arrangement.drawn("right").length > 0);
   /** The room the right panel takes on screen (0: none): notices keep clear of it. */
   const rightInset = $derived(
-    rightViews.drawn.length > 0 && !layout.rightOff && ui.focus !== "on" ? layout.right : 0,
+    rightDrawn && !layout.rightOff && ui.focus !== "on" ? layout.right : 0,
   );
 
   const openingName = $derived.by(() => {
@@ -114,8 +116,8 @@
     });
   });
 
-  // the right column's arrangement (app settings) and its views' defaults per project load
-  $effect(() => rightViews.start(api));
+  // the arrangement of the views (app settings) and their defaults per project load
+  $effect(() => arrangement.start(api));
 
   // the core's commands and keys live in the registry while the window does; one key listener runs them
   $effect(() => installWindowKeys());
@@ -318,7 +320,7 @@
     sidebar={shown?.workspace.kind === "project" || shown?.workspace.kind === "notes"
       ? sidebar
       : undefined}
-    panel={rightViews.drawn.length > 0 ? panel : undefined}
+    panel={rightDrawn ? panel : undefined}
     focus={ui.focus === "on"}
     moving={ui.frameMoving}
     {main}
