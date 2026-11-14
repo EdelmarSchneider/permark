@@ -82,6 +82,9 @@ that save themselves.
   of the file stays as it is.
 - **Made for long reading.** A light, dark or system theme, with softer light tones (Paper, Sage, Gray). Three reading widths, an
   outline to jump between sections, and Focus mode (`Ctrl+Alt+F`), which leaves only the page.
+- **Panels where you want them.** Files, Search, the Outline and the other panels can sit in the sidebar, in the right panel or in
+  a bottom panel under the document. Drag a panel by its tab, or use its "…" menu. **Layouts…** saves an arrangement under a name,
+  and **Reset layout** brings back the default.
 - **View, Edit, Source.** One switch in the header. **View** is for reading. **Edit** changes the page as it looks, with a toolbar
   and a `/` block menu. **Source** shows the raw file, every byte, with find and replace and go to line. A switch beside the modes
   draws a Mermaid or PlantUML diagram next to its text while you type (off until you turn it on).
@@ -118,6 +121,9 @@ You decide what stays: keep or revert each change, comment on any passage, and s
 - **Review, change by change.** When a document changed since you last read it, a quiet bar says how many changes there are.
   **Review** shows each one in place: block by block in Markdown, line by line in code, logs, data and config files. Choose
   **Keep** or **Revert** for each (`K`, `R`), or for all at once. Compare with what you last read, or with the last commit.
+- **Earlier versions.** In a folder that is a git repository, **Earlier versions…** lists every commit that changed a document.
+  Pick one and the review shows what differs from the document now: **Revert** brings back one change, **Bring back this version**
+  the whole text. Only the file changes, and you can undo it.
 - **Comments an agent can mark done.** Select a passage and press `C`. With the agent connection on, your agent reads your open
   comments and marks them done with a reply. **Send to agent** copies them as a prompt for any agent chat. Comments are yours alone.
 - **Only what you changed is saved.** Edit and Source rewrite only the blocks you changed. Every other byte stays as its author,
@@ -430,6 +436,9 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 
 **PerMark 0.6** rebuilt the whole program. Every release is in the [CHANGELOG](CHANGELOG.md).
 
+- **0.12.0:** panels you arrange yourself, in the sidebar, the right panel or a new bottom panel, with layouts you save by name; and the earlier versions of a document, from git.
+- **0.11.0:** translation with a local AI model, in the editor or into a new file; correction inside tables; and Refresh (`F5`) in the Explorer.
+- **0.10.0:** Edit shows formulas, diagrams, alerts and other special blocks the way View does.
 - **0.9.0:** small AI models that run on your computer, offline, and spelling and grammar correction with them.
 - **0.8.0:** pictures you paste are saved next to the document, emoji and symbols in the editor, and View, Edit or Source stays as you left it.
 - **0.7.1:** seven more interface languages (Japanese, Korean, French, European Portuguese, Catalan, Galician and Romanian).
