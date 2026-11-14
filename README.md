@@ -195,7 +195,7 @@ The Windows installers may also download Microsoft's WebView2 component while th
 - **Not a code editor.** No completion, refactoring, build, run or debug. Real code work opens in your own editor.
 - **Not an agent.** It does not run, host or replace your AI agents. It shows what your AI writes, and you decide what stays. The small
   local models it can use work only for PerMark's own features, such as correcting your text.
-- **Not tested by hand on macOS or Linux.** PerMark 0.6 was tested by hand on Windows; the macOS and Linux builds are checked automatically.
+- **Not tested by hand on macOS or Linux.** PerMark is tested by hand on Windows; the macOS and Linux builds are checked automatically.
 
 ## Why Markdown
 
@@ -207,7 +207,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 
 ## Install
 
-Windows, macOS and Linux. PerMark 0.6 was tested by hand on Windows; the macOS and Linux builds are checked automatically.
+Windows, macOS and Linux. PerMark is tested by hand on Windows; the macOS and Linux builds are checked automatically.
 Installers are not code-signed, so your system shows a warning the first time you install or open it.
 
 | System | Get it |
