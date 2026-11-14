@@ -1,5 +1,5 @@
-// View's inline looks in Edit: links to missing files, code references (`src/main.rs:12`), heading anchors and, with
-// the prompt-blocks plugin on, `{{variables}}` and `@file` references. Found by View's own rules (`doc/codeRefs.ts`,
+// View's inline looks in Edit: links to missing files (while a plugin that checks links is on), code references
+// (`src/main.rs:12`), heading anchors and, with the prompt-blocks plugin on, `{{variables}}` and `@file` references. Found by View's own rules (`doc/codeRefs.ts`,
 // `doc/decorate.ts`) and the renderer's (`promptText.ts`), drawn with View's classes: decorations around the text, a
 // widget for the anchor, and a class on the editor's own `a` | `code` element where View marks that element. The
 // document never changes; the editor's own elements tell ProseMirror to ignore those class changes.
@@ -35,6 +35,8 @@ export type LooksHost = {
   codeRefs(written: readonly string[]): Promise<readonly (readonly string[])[] | null>;
   /** View marks `{{variables}}` and `@file` references in this document (the prompt-blocks plugin is on). */
   promptText(): boolean;
+  /** View marks links whose target is missing (a plugin that checks links is on); off, they are not even asked. */
+  linkMarks(): boolean;
   refTitle(paths: readonly string[], line: number | null): string;
   missingTitle(path: string): string;
   /** Ctrl | Cmd + click on a reference: opened as View's click opens it (`at`: where, for a menu of several files). */
@@ -49,6 +51,7 @@ export const noLooks: LooksHost = {
   links: (hrefs) => Promise.resolve(hrefs.map(() => null)),
   codeRefs: () => Promise.resolve(null),
   promptText: () => false,
+  linkMarks: () => false,
   refTitle: () => "",
   missingTitle: () => "",
   openRef: () => {},
@@ -247,7 +250,7 @@ function blockLooks(
       }),
     );
   }
-  for (const link of found.links) {
+  for (const link of host.linkMarks() ? found.links : []) {
     const target = answers.links.get(link.href);
     if (target === undefined) ask.links.add(link.href);
     else if (target.type === "missing") {
