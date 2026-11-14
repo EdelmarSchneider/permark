@@ -118,11 +118,13 @@ function defaultSettings(): AppSettings {
     rightViews: null,
     panels: null,
     layouts: null,
+    symbolFavorites: null,
     wrapLines: true,
     imageFolder: "img",
     charactersFile: "characters.toml",
     characters: mockCharacters(),
     charactersPath: MOCK_CHARACTERS_PATH,
+    charactersStatus: "builtin",
   };
 }
 
@@ -190,6 +192,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       return { ...settings, panels: change.value };
     case "layouts":
       return { ...settings, layouts: change.value };
+    case "symbolFavorites":
+      return { ...settings, symbolFavorites: change.value };
     case "wrapLines":
       return { ...settings, wrapLines: change.value };
     case "imageFolder":

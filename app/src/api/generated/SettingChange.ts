@@ -9,10 +9,11 @@ import type { Panels } from "./Panels";
 import type { PluginId } from "./PluginId";
 import type { RightViews } from "./RightViews";
 import type { StartIn } from "./StartIn";
+import type { SymbolFavorites } from "./SymbolFavorites";
 import type { ThemePref } from "./ThemePref";
 import type { Tone } from "./Tone";
 
 /**
  * One change of one key.
  */
-export type SettingChange = { "key": "language", "value": LanguagePref } | { "key": "theme", "value": ThemePref } | { "key": "tone", "value": Tone } | { "key": "startIn", "value": StartIn } | { "key": "linkUpdate", "value": LinkUpdate } | { "key": "editMode", "value": EditModePref } | { "key": "openIn", "value": OpenIn } | { "key": "gitBackend", "value": GitBackendPref } | { "key": "notesFolder", "value": string } | { "key": "referenceTemplate", "value": string } | { "key": "editor", "value": string } | { "key": "keymap", "value": { command: string, combo: string | null, } } | { "key": "tokenizers", "value": Array<string> } | { "key": "pluginEnabled", "value": { plugin: PluginId, enabled: boolean | null, } } | { "key": "rightViews", "value": RightViews | null } | { "key": "panels", "value": Panels | null } | { "key": "layouts", "value": Layouts | null } | { "key": "wrapLines", "value": boolean } | { "key": "imageFolder", "value": string } | { "key": "charactersFile", "value": string };
+export type SettingChange = { "key": "language", "value": LanguagePref } | { "key": "theme", "value": ThemePref } | { "key": "tone", "value": Tone } | { "key": "startIn", "value": StartIn } | { "key": "linkUpdate", "value": LinkUpdate } | { "key": "editMode", "value": EditModePref } | { "key": "openIn", "value": OpenIn } | { "key": "gitBackend", "value": GitBackendPref } | { "key": "notesFolder", "value": string } | { "key": "referenceTemplate", "value": string } | { "key": "editor", "value": string } | { "key": "keymap", "value": { command: string, combo: string | null, } } | { "key": "tokenizers", "value": Array<string> } | { "key": "pluginEnabled", "value": { plugin: PluginId, enabled: boolean | null, } } | { "key": "rightViews", "value": RightViews | null } | { "key": "panels", "value": Panels | null } | { "key": "layouts", "value": Layouts | null } | { "key": "symbolFavorites", "value": SymbolFavorites | null } | { "key": "wrapLines", "value": boolean } | { "key": "imageFolder", "value": string } | { "key": "charactersFile", "value": string };

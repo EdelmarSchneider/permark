@@ -2140,23 +2140,19 @@ fn the_groups_file_parses_from_the_profile_with_the_built_ins_as_fallback() {
     let profile = dir.path().join("profile");
     fs::create_dir_all(&profile).unwrap();
     // empty name | missing file = the built-ins
-    assert_eq!(
-        characters::load(&profile, "").unwrap(),
-        characters::defaults()
-    );
-    assert_eq!(
-        characters::load(&profile, "characters.toml").unwrap(),
-        characters::defaults()
-    );
-    // a file that is not TOML: the typed error, never a silent default
+    let builtin = (characters::defaults(), CharactersStatus::Builtin);
+    assert_eq!(characters::read(&profile, ""), builtin);
+    assert_eq!(characters::read(&profile, "characters.toml"), builtin);
+    // a file that is not TOML: the built-ins, and the status says the file was not used
     fs::write(profile.join("bad.toml"), "name = [[[").unwrap();
-    assert!(matches!(
-        characters::load(&profile, "bad.toml"),
-        Err(CharactersError::Unreadable { .. })
-    ));
+    assert_eq!(
+        characters::read(&profile, "bad.toml"),
+        (characters::defaults(), CharactersStatus::Unreadable)
+    );
     // a written file: both spellings parse, names are trimmed
     fs::write(profile.join("chars.toml"), GROUPS_MINE).unwrap();
-    let groups = characters::load(&profile, "chars.toml").unwrap();
+    let (groups, status) = characters::read(&profile, "chars.toml");
+    assert_eq!(status, CharactersStatus::Read);
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].name, "mine");
     assert_eq!(groups[0].entries.len(), 1);
@@ -2228,4 +2224,412 @@ fn characters_file_is_validated_written_and_read_back() {
     assert_eq!(cleared.characters_path, "");
     let text = fs::read_to_string(file.path()).unwrap();
     assert!(text.contains("characters_file = \"\""), "{text:?}");
+}
+
+/// An emoji of ten code points (kiss, two skin tones): one entry, longer than the old eight-character limit.
+const KISS: &str =
+    "\u{1F468}\u{1F3FB}\u{200D}\u{2764}\u{FE0F}\u{200D}\u{1F48B}\u{200D}\u{1F468}\u{1F3FC}";
+
+fn group_file(entries: &str) -> String {
+    format!("[[groups]]\nname = \"mine\"\nentries = [\n{entries}]\n")
+}
+
+#[test]
+fn group_entries_keep_unicode_spaces_and_long_sequences_and_drop_repeats() {
+    let dir = tempfile::tempdir().unwrap();
+    let profile = dir.path().join("profile");
+    fs::create_dir_all(&profile).unwrap();
+    let long: String = "\u{2192}".repeat(characters::MAX_ENTRY_CHARS + 1);
+    let text = group_file(&format!(
+        "{{ char = \"\u{a0}\", names = [\"nbsp\"] }},\n\
+         {{ char = \"\u{2009}\" }},\n\
+         {{ char = \"\\u202F\" }},\n\
+         {{ char = \"  \" }},\n\
+         {{ char = \"\" }},\n\
+         {{ char = \"\\t\" }},\n\
+         {{ char = \"{KISS}\" }},\n\
+         {{ char = \"{long}\" }},\n\
+         {{ char = \"\u{2605}\", names = [\"first\"] }},\n\
+         {{ char = \"\u{2605}\", names = [\"second\"] }},\n"
+    ));
+    fs::write(profile.join("chars.toml"), text).unwrap();
+    let (groups, status) = characters::read(&profile, "chars.toml");
+    assert_eq!(status, CharactersStatus::Read);
+    let chars: Vec<&str> = groups[0].entries.iter().map(|e| e.char.as_str()).collect();
+    assert_eq!(chars, ["\u{a0}", "\u{2009}", "\u{202f}", KISS, "\u{2605}"]);
+    // the first of a repeated character is kept, with its own names
+    assert_eq!(groups[0].entries[4].names, ["first"]);
+    assert_eq!(characters::MAX_ENTRY_CHARS, 16);
+}
+
+#[test]
+fn the_built_ins_hold_a_spaces_group_after_scripts_and_no_repeats() {
+    let built = characters::defaults();
+    let names: Vec<&str> = built.iter().map(|g| g.name.as_str()).collect();
+    let scripts = names.iter().position(|n| *n == "scripts").unwrap();
+    assert_eq!(names.get(scripts + 1), Some(&"spaces"));
+    let spaces: Vec<&str> = built[scripts + 1]
+        .entries
+        .iter()
+        .map(|e| e.char.as_str())
+        .collect();
+    assert_eq!(
+        spaces,
+        ["\u{a0}", "\u{202f}", "\u{2009}", "\u{2007}", "\u{2060}"]
+    );
+    assert!(built[scripts + 1]
+        .entries
+        .iter()
+        .all(|e| !e.names.is_empty()));
+    for group in &built {
+        let chars: Vec<&str> = group.entries.iter().map(|e| e.char.as_str()).collect();
+        let mut unique = chars.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), chars.len(), "{}", group.name);
+    }
+    // the text a created file gets: a header comment, the built-ins, invisible characters as escapes
+    let text = characters::defaults_toml();
+    assert!(text.starts_with("# PerMark"), "{text}");
+    assert!(text.contains("\\u00A0") && !text.contains('\u{a0}'));
+    let parsed: DocumentMut = text.parse().unwrap();
+    assert_eq!(characters::groups_of(&parsed), built);
+}
+
+#[test]
+fn creating_the_groups_file_writes_the_built_ins_once_and_never_over_a_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    let profile = dir.path().join("profile");
+    let target = profile.join(characters::DEFAULT_FILE_NAME);
+    let current = file.load();
+    assert_eq!(current.characters_status, CharactersStatus::Builtin);
+    assert_eq!(file.characters_target(&current), profile);
+    assert!(file.create_characters(&current).unwrap());
+    assert_eq!(
+        fs::read_to_string(&target).unwrap(),
+        characters::defaults_toml()
+    );
+    assert_eq!(file.characters_target(&current), target);
+    // the created file reads back as the built-ins, now from the file
+    let read = file.refresh_characters(&current).unwrap();
+    assert_eq!(read.characters_status, CharactersStatus::Read);
+    assert_eq!(read.characters, characters::defaults());
+    assert_eq!(read.characters_path, target.display().to_string());
+    // a file is there: never written over, kept byte for byte
+    let mine = "# mine\r\n[[groups]]\r\nname = \"x\"\r\nentries = [{ char = \"\u{a0}\" }]\r\n";
+    fs::write(&target, mine).unwrap();
+    assert!(!file.create_characters(&read).unwrap());
+    assert_eq!(fs::read_to_string(&target).unwrap(), mine);
+    // empty name = the built-ins only: nothing written
+    fs::remove_file(&target).unwrap();
+    let none = file
+        .apply(&SettingChange::CharactersFile(String::new()))
+        .unwrap();
+    assert!(!file.create_characters(&none).unwrap());
+    assert_eq!(file.characters_target(&none), profile);
+    assert!(!target.exists());
+    // a name the setting refuses is refused here too
+    for bad in ["", "a/b", "..", "chars.json"] {
+        assert!(characters::create_defaults(&profile, bad).is_err(), "{bad}");
+    }
+    let mut names: Vec<String> = fs::read_dir(&profile)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["settings.toml"]);
+}
+
+#[test]
+fn the_groups_status_tells_built_ins_file_read_and_file_unreadable() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    let target = dir
+        .path()
+        .join("profile")
+        .join(characters::DEFAULT_FILE_NAME);
+    assert_eq!(file.load().characters_status, CharactersStatus::Builtin);
+    for (bytes, status) in [
+        (GROUPS_MINE.as_bytes().to_vec(), CharactersStatus::Read),
+        (b"name = [[[".to_vec(), CharactersStatus::Unreadable),
+        // valid TOML without one usable group: the person's file is ignored, so it says so
+        (b"x = 1\n".to_vec(), CharactersStatus::Unreadable),
+        (b"\x00\x01\x02binary".to_vec(), CharactersStatus::Unreadable),
+    ] {
+        fs::write(&target, &bytes).unwrap();
+        let s = file.load();
+        assert_eq!(s.characters_status, status, "{bytes:?}");
+        if status == CharactersStatus::Unreadable {
+            assert_eq!(s.characters, characters::defaults());
+        }
+    }
+    let cleared = file
+        .apply(&SettingChange::CharactersFile(String::new()))
+        .unwrap();
+    assert_eq!(cleared.characters_status, CharactersStatus::Builtin);
+    let payload = serde_json::to_value(&cleared).unwrap();
+    assert_eq!(payload["charactersStatus"], "builtin");
+    assert_eq!(payload["symbolFavorites"], serde_json::Value::Null);
+}
+
+#[test]
+fn a_refresh_follows_the_groups_file_and_says_nothing_when_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    let target = dir
+        .path()
+        .join("profile")
+        .join(characters::DEFAULT_FILE_NAME);
+    let current = file.load();
+    assert_eq!(file.refresh_characters(&current), None);
+    fs::write(&target, GROUPS_MINE).unwrap();
+    let mine = file.refresh_characters(&current).unwrap();
+    assert_eq!(
+        (mine.characters.len(), mine.characters_status),
+        (2, CharactersStatus::Read)
+    );
+    assert_eq!(
+        AppSettings {
+            characters: current.characters.clone(),
+            characters_status: current.characters_status,
+            ..mine.clone()
+        },
+        current,
+        "only the groups change"
+    );
+    assert_eq!(file.refresh_characters(&mine), None);
+    fs::write(&target, group_file("{ char = \"\u{2605}\" },\n")).unwrap();
+    let edited = file.refresh_characters(&mine).unwrap();
+    assert_eq!(edited.characters[0].entries[0].char, "\u{2605}");
+    fs::remove_file(&target).unwrap();
+    let gone = file.refresh_characters(&edited).unwrap();
+    assert_eq!(
+        (gone.characters, gone.characters_status),
+        (characters::defaults(), CharactersStatus::Builtin)
+    );
+}
+
+// ---- symbol favorites --------------------------------------------------------------------------------------
+
+fn favorites() -> SymbolFavorites {
+    SymbolFavorites {
+        v: SYMBOL_FAVORITES_VERSION,
+        chars: list(&["\u{2192}", "\u{a0}", KISS]),
+        groups: list(&["greek", "a group no file has"]),
+    }
+}
+
+fn favorites_change(value: Option<SymbolFavorites>) -> SettingChange {
+    SettingChange::SymbolFavorites(value)
+}
+
+#[test]
+fn symbol_favorites_round_trip_surgically_and_go_away_on_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    let stored = "theme = \"dark\" # night\n\n[keymap]\n\"tab.close\" = \"Mod+W\"\n";
+    fs::write(file.path(), stored).unwrap();
+    assert_eq!(file.load().symbol_favorites, None);
+    let saved = file.apply(&favorites_change(Some(favorites()))).unwrap();
+    assert_eq!(saved.symbol_favorites, Some(favorites()));
+    assert_eq!(saved.theme, ThemePref::Dark);
+    let text = fs::read_to_string(file.path()).unwrap();
+    assert!(text.starts_with(stored), "{text}");
+    assert!(text.contains("[symbol_favorites]\nv = 1\n"), "{text}");
+    assert_eq!(file.load().symbol_favorites, Some(favorites()));
+    // written again: the table keeps its place
+    let mut more = favorites();
+    more.chars.push("\u{2605}".to_owned());
+    file.apply(&favorites_change(Some(more.clone()))).unwrap();
+    assert_eq!(file.load().symbol_favorites, Some(more));
+    file.apply(&favorites_change(None)).unwrap();
+    assert_eq!(fs::read_to_string(file.path()).unwrap(), stored);
+    assert_eq!(file.load().symbol_favorites, None);
+    // the wire format
+    let json = r#"{"key":"symbolFavorites","value":{"v":1,"chars":["→"],"groups":["greek"]}}"#;
+    let change: SettingChange = serde_json::from_str(json).unwrap();
+    assert_eq!(
+        change,
+        favorites_change(Some(SymbolFavorites {
+            v: 1,
+            chars: list(&["\u{2192}"]),
+            groups: list(&["greek"]),
+        }))
+    );
+    assert_eq!(change.key(), "symbol_favorites");
+    assert_eq!(serde_json::to_string(&change).unwrap(), json);
+    let reset: SettingChange =
+        serde_json::from_str(r#"{"key":"symbolFavorites","value":null}"#).unwrap();
+    assert_eq!(reset, favorites_change(None));
+}
+
+#[test]
+fn symbol_favorites_read_leniently_dropping_bad_and_repeated_entries() {
+    let long_char = "\u{2192}".repeat(characters::MAX_ENTRY_CHARS + 1);
+    let long_name = "g".repeat(characters::MAX_GROUP_NAME_CHARS + 1);
+    let text = format!(
+        "[symbol_favorites]\nv = 1\n\
+         chars = [\"\u{2192}\", 3, \"\", \"  \", \"\\u0007\", \"\\u202E\", \"\\u0085\", \"\u{2192}\", \"{long_char}\", \"{KISS}\"]\n\
+         groups = [\"greek\", \" arrows \", \"\", 5, \"greek\", \"{long_name}\"]\n"
+    );
+    let read = AppSettings::from_doc(&doc(&text)).symbol_favorites.unwrap();
+    assert_eq!(read.chars, list(&["\u{2192}", KISS]));
+    assert_eq!(read.groups, list(&["greek", "arrows"]));
+    // more than the limits: the first ones are kept
+    let many: Vec<String> = (0..70)
+        .map(|i| format!("\"{}\"", char::from_u32(0x2190 + i).unwrap()))
+        .collect();
+    let groups: Vec<String> = (0..20).map(|i| format!("\"g{i}\"")).collect();
+    let text = format!(
+        "[symbol_favorites]\nv = 1\nchars = [{}]\ngroups = [{}]\n",
+        many.join(", "),
+        groups.join(", ")
+    );
+    let read = AppSettings::from_doc(&doc(&text)).symbol_favorites.unwrap();
+    assert_eq!(
+        (read.chars.len(), read.groups.len()),
+        (MAX_FAVORITE_CHARS, MAX_FAVORITE_GROUPS)
+    );
+    assert_eq!(read.chars[0], "\u{2190}");
+    // a list that is no list reads empty, the other list survives
+    let read = AppSettings::from_doc(&doc(
+        "[symbol_favorites]\nv = 1\nchars = 3\ngroups = [\"greek\"]\n",
+    ))
+    .symbol_favorites
+    .unwrap();
+    assert_eq!((read.chars.len(), read.groups), (0, list(&["greek"])));
+    // unreadable | another format: none, and the rest of the file survives
+    for bad in [
+        "symbol_favorites = 3\n",
+        "[symbol_favorites]\nchars = []\ngroups = []\n",
+        "[symbol_favorites]\nv = \"1\"\nchars = []\n",
+        "[symbol_favorites]\nv = 0\nchars = []\n",
+        "[symbol_favorites]\nv = 2\nchars = [\"\u{2192}\"]\n",
+    ] {
+        let s = AppSettings::from_doc(&doc(&format!("theme = \"dark\"\n{bad}")));
+        assert_eq!(s.symbol_favorites, None, "{bad}");
+        assert_eq!(s.theme, ThemePref::Dark, "{bad}");
+    }
+}
+
+#[test]
+fn symbol_favorites_out_of_bounds_are_refused_before_they_reach_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    let stored = "theme = \"dark\"\n";
+    fs::write(file.path(), stored).unwrap();
+    let with_chars = |chars: Vec<String>| SymbolFavorites {
+        chars,
+        ..favorites()
+    };
+    let with_groups = |groups: Vec<String>| SymbolFavorites {
+        groups,
+        ..favorites()
+    };
+    let numbered = |n: u32| -> Vec<String> {
+        (0..n)
+            .map(|i| char::from_u32(0x2190 + i).unwrap().to_string())
+            .collect()
+    };
+    let named = |n: usize| -> Vec<String> { (0..n).map(|i| format!("g{i}")).collect() };
+    let mut bad: Vec<SymbolFavorites> = [
+        "",
+        " ",
+        "\t",
+        "\u{0}",
+        "\u{7}",
+        "\u{1f}",
+        "\u{7f}",
+        "\u{80}",
+        "\u{85}",
+        "\u{9f}",
+        "\u{202a}",
+        "\u{202e}",
+        "\u{2066}",
+        "\u{2069}",
+        "a\u{202e}b",
+    ]
+    .into_iter()
+    .map(|c| with_chars(list(&[c])))
+    .collect();
+    bad.extend([
+        with_chars(list(&[&"\u{2192}".repeat(characters::MAX_ENTRY_CHARS + 1)])),
+        with_chars(list(&["\u{2192}", "\u{2192}"])),
+        with_chars(numbered(65)),
+        with_groups(named(MAX_FAVORITE_GROUPS + 1)),
+        with_groups(list(&["greek", "greek"])),
+        with_groups(list(&[""])),
+        with_groups(list(&[" greek"])),
+        with_groups(list(&["a\u{7}b"])),
+        with_groups(vec!["g".repeat(characters::MAX_GROUP_NAME_CHARS + 1)]),
+        SymbolFavorites {
+            v: 2,
+            ..favorites()
+        },
+        SymbolFavorites {
+            v: 0,
+            ..favorites()
+        },
+    ]);
+    for value in bad {
+        let change = favorites_change(Some(value.clone()));
+        assert!(
+            matches!(
+                file.apply(&change),
+                Err(SettingsError::Invalid { ref key, ref reason }) if key == "symbol_favorites" && reason == "symbolFavorites"
+            ),
+            "{value:?}"
+        );
+        assert_eq!(
+            fs::read_to_string(file.path()).unwrap(),
+            stored,
+            "{value:?}"
+        );
+    }
+    // in bounds: the most chars and groups, the longest char (code points) and group name
+    let full = SymbolFavorites {
+        v: SYMBOL_FAVORITES_VERSION,
+        chars: {
+            let mut chars = numbered(63);
+            chars.push(KISS.to_owned() + "\u{2192}\u{2192}\u{2192}\u{2192}\u{2192}\u{2192}");
+            chars
+        },
+        groups: {
+            let mut groups = named(15);
+            groups.push("g".repeat(characters::MAX_GROUP_NAME_CHARS));
+            groups
+        },
+    };
+    assert_eq!(full.chars[63].chars().count(), characters::MAX_ENTRY_CHARS);
+    assert_eq!(
+        file.apply(&favorites_change(Some(full.clone())))
+            .unwrap()
+            .symbol_favorites,
+        Some(full)
+    );
+}
+
+#[test]
+fn symbol_favorites_of_a_newer_format_are_never_written_over_or_removed() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    let stored = "theme = \"dark\"\n\n[symbol_favorites]\nv = 2\nchars = [\"x\"]\nstars = 4\n";
+    fs::write(file.path(), stored).unwrap();
+    assert_eq!(file.load().symbol_favorites, None);
+    for change in [favorites_change(Some(favorites())), favorites_change(None)] {
+        assert!(
+            matches!(
+                file.apply(&change),
+                Err(SettingsError::Invalid { ref key, ref reason }) if key == "symbol_favorites" && reason == "symbolFavorites"
+            ),
+            "{change:?}"
+        );
+        assert_eq!(fs::read_to_string(file.path()).unwrap(), stored);
+    }
+    // the keys around it are written as ever
+    file.apply(&SettingChange::Tone(Tone::Paper)).unwrap();
+    assert!(fs::read_to_string(file.path())
+        .unwrap()
+        .contains("[symbol_favorites]\nv = 2\nchars = [\"x\"]\nstars = 4\n"));
 }

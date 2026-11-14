@@ -395,6 +395,20 @@ pub fn write_atomic_if_unchanged(path: &Path, bytes: &[u8], seen: ContentHash) -
     })
 }
 
+/// [`write_atomic_checked`] that only creates: `bytes` land at `path` only while nothing (file, folder, link) is
+/// there. Same residual check-then-rename window as [`write_atomic_if_unchanged`]: a writer landing between the
+/// check and the rename is replaced. `Ok(false)`: something is at the path, untouched.
+///
+/// # Errors
+/// IO failure; temp removed, target untouched.
+pub fn write_atomic_if_absent(path: &Path, bytes: &[u8]) -> io::Result<bool> {
+    write_atomic_checked(path, bytes, || match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(false),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(true),
+        Err(e) => Err(e),
+    })
+}
+
 /// Moves `from` over `to` durably (Windows: `MoveFileExW` replace + write-through; Unix: rename + folder fsync),
 /// retrying transient locks ([`RETRY_DELAYS`]). Both on one volume (a finished download next to its part).
 ///
@@ -570,6 +584,24 @@ mod tests {
         assert!(write_atomic_if_unchanged(&path, b"mine", seen).unwrap());
         assert_eq!(std::fs::read(&path).unwrap(), b"mine");
         assert_eq!(names_in(dir.path()), ["a.md"]);
+    }
+
+    #[test]
+    fn a_write_if_absent_creates_once_and_never_replaces_what_is_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("new dir").join("a.toml");
+        assert!(write_atomic_if_absent(&path, b"mine").unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), b"mine");
+        // a file is there now: left byte for byte, no temp behind
+        assert!(!write_atomic_if_absent(&path, b"other").unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), b"mine");
+        assert_eq!(names_in(path.parent().unwrap()), ["a.toml"]);
+        // a folder of that name counts as something there too
+        let folder = dir.path().join("taken.toml");
+        std::fs::create_dir(&folder).unwrap();
+        assert!(!write_atomic_if_absent(&folder, b"mine").unwrap());
+        assert!(folder.is_dir());
+        assert_eq!(names_in(dir.path()), ["new dir", "taken.toml"]);
     }
 
     #[test]
