@@ -2,8 +2,11 @@
   // The view "Symbols": the favorites, then the groups of the settings payload (symbols, then emoji), searchable like
   // the toolbar's pickers. A click | Enter on a character puts it in at the caret of the open editor: a click leaves
   // the keyboard in the editor (the press never takes it), a key leaves it here. One tab stop for the whole list
-  // (the stop roves over the headers and the cells); the keys follow the grid as drawn.
+  // (the stop roves over the headers and the cells); the keys follow the grid as drawn. A right click | Shift+F10 |
+  // the Menu key on a cell or a group header opens the favorites menu (the view's own options stay on its header);
+  // the star on a group header pins | unpins the group by pointer.
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
+  import Star from "@lucide/svelte/icons/star";
   import { onMount, tick, type Snippet } from "svelte";
   import type { CharacterEntry } from "../../api";
   import { documents } from "../../core/doc/document.svelte";
@@ -18,12 +21,15 @@
     isBlankQuery,
     isInvisible,
   } from "../../core/editing/visual/characters";
+  import ContextMenu from "../../core/explorer/ContextMenu.svelte";
+  import type { MenuEntry } from "../../core/explorer/menu";
   import { t } from "../../core/i18n";
   import { arrangement } from "../../core/shell/arrangement.svelte";
   import { closeView, focusPage } from "../../core/shell/sides";
   import { windowStore } from "../../core/window.svelte";
+  import { hasChar, hasGroup } from "./favorites";
   import { cellKey, headerKey, keptStop, moveFrom, stopsOf, type Stop } from "./keys";
-  import { canInsert, sectionsOf, type GroupSection } from "./model";
+  import { canInsert, sectionsOf, type FavoritesSection, type GroupSection } from "./model";
   import { PANEL, symbols } from "./store.svelte";
 
   type Props = {
@@ -122,6 +128,52 @@
   function toggle(section: GroupSection): void {
     wanted = headerKey(section.key);
     symbols.setExpanded(section.key, !section.expanded);
+  }
+
+  /** The favorites menu open now (`null`: none). */
+  let menu = $state.raw<{ x: number; y: number; entries: MenuEntry[] } | null>(null);
+
+  function groupItem(name: string): MenuEntry {
+    const group = groupLabel(name);
+    const pinned = hasGroup(windowStore.symbolFavorites, name);
+    return {
+      kind: "item",
+      label: t(pinned ? "symbols.removeGroup" : "symbols.addGroup", { group }),
+      run: () => void symbols.toggleGroup(name),
+    };
+  }
+
+  /** A cell's menu: the character; in a group (not the favorites section), the group too. */
+  function cellEntries(
+    entry: CharacterEntry,
+    section: FavoritesSection | GroupSection,
+  ): MenuEntry[] {
+    const favorite = hasChar(windowStore.symbolFavorites, entry.char);
+    const char: MenuEntry = {
+      kind: "item",
+      label: t(favorite ? "symbols.removeFavorite" : "symbols.addFavorite"),
+      run: () => void symbols.toggleChar(entry),
+    };
+    return section.kind === "group"
+      ? [char, { kind: "separator" }, groupItem(section.name)]
+      : [char];
+  }
+
+  /** Right click: the menu at the pointer. */
+  function pointerMenu(event: MouseEvent, entries: () => MenuEntry[]): void {
+    event.preventDefault();
+    menu = { x: event.clientX, y: event.clientY, entries: entries() };
+  }
+
+  /** Shift+F10 | the Menu key: the menu under the element with the keyboard (which gets it back on close). Taken
+   *  here, so the view region never sees it as a call for the view's options. */
+  function keyMenu(event: KeyboardEvent, entries: () => MenuEntry[]): void {
+    if (!((event.key === "F10" && event.shiftKey) || event.key === "ContextMenu")) return;
+    if (!(event.currentTarget instanceof HTMLElement)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const box = event.currentTarget.getBoundingClientRect();
+    menu = { x: box.left, y: box.bottom + 2, entries: entries() };
   }
 
   /** A press on a cell | header never takes the keyboard: the editor keeps its caret, selection and IME. */
@@ -253,10 +305,10 @@
   {/if}
 {/snippet}
 
-{#snippet cells(entries: readonly CharacterEntry[], sectionKey: string, labelledBy: string)}
+{#snippet cells(section: FavoritesSection | GroupSection, labelledBy: string)}
   <div class="grid" role="group" aria-labelledby={labelledBy}>
-    {#each entries as entry, index (index)}
-      {@const key = cellKey(sectionKey, index)}
+    {#each section.entries as entry, index (index)}
+      {@const key = cellKey(section.key, index)}
       {@const name = entryName(entry)}
       <button
         type="button"
@@ -266,11 +318,13 @@
         tabindex={key === active ? 0 : -1}
         data-stop={key}
         data-kind="cell"
-        data-section={sectionKey}
+        data-section={section.key}
         aria-label={cellName(entry)}
         aria-disabled={insertable === "ok" ? undefined : "true"}
-        title={`${name} · ${codePoints(entry.char)}`}
+        title={t("picker.tip", { name, code: codePoints(entry.char) })}
         onclick={() => insert(entry, key)}
+        oncontextmenu={(event) => pointerMenu(event, () => cellEntries(entry, section))}
+        onkeydown={(event) => keyMenu(event, () => cellEntries(entry, section))}
         onfocus={() => {
           wanted = key;
           focused = entry;
@@ -329,30 +383,47 @@
           {#if section.entries.length === 0}
             <p class="hint">{t("symbols.favoritesEmpty")}</p>
           {:else}
-            {@render cells(section.entries, section.key, id)}
+            {@render cells(section, id)}
           {/if}
         </div>
       {:else}
         {@const key = headerKey(section.key)}
+        {@const group = groupLabel(section.name)}
         <div class="section">
-          <button
-            type="button"
-            class="head"
-            {id}
-            aria-expanded={section.expanded}
-            tabindex={key === active ? 0 : -1}
-            data-stop={key}
-            data-kind="header"
-            data-section={section.key}
-            onclick={() => toggle(section)}
-            onfocus={() => (wanted = key)}
-          >
-            <ChevronRight size={14} class="chevron" aria-hidden="true" />
-            <span class="title">{groupLabel(section.name)}</span>
-            <span class="count">{section.total}</span>
-          </button>
+          <div class="head-row">
+            <button
+              type="button"
+              class="head"
+              {id}
+              aria-expanded={section.expanded}
+              tabindex={key === active ? 0 : -1}
+              data-stop={key}
+              data-kind="header"
+              data-section={section.key}
+              onclick={() => toggle(section)}
+              onfocus={() => (wanted = key)}
+              oncontextmenu={(event) => pointerMenu(event, () => [groupItem(section.name)])}
+              onkeydown={(event) => keyMenu(event, () => [groupItem(section.name)])}
+            >
+              <ChevronRight size={14} class="chevron" aria-hidden="true" />
+              <span class="title">{group}</span>
+              <span class="count">{section.total}</span>
+            </button>
+            <!-- by pointer only: the keyboard reaches the same choice through the header's menu -->
+            <button
+              type="button"
+              class="icon star"
+              tabindex="-1"
+              aria-pressed={section.pinned}
+              aria-label={t(section.pinned ? "symbols.removeGroup" : "symbols.addGroup", { group })}
+              title={t(section.pinned ? "symbols.removeGroup" : "symbols.addGroup", { group })}
+              onclick={() => void symbols.toggleGroup(section.name)}
+            >
+              <Star size={14} aria-hidden="true" fill={section.pinned ? "currentColor" : "none"} />
+            </button>
+          </div>
           {#if section.expanded}
-            {@render cells(section.entries, section.key, id)}
+            {@render cells(section, id)}
           {/if}
         </div>
       {/if}
@@ -362,6 +433,18 @@
     {/if}
   </div>
   <p class="peek foot-peek" aria-hidden="true">{@render peekLine()}</p>
+  {#if menu !== null}
+    <!-- outside the list: the menu's own keys never reach the list's -->
+    {#key menu}
+      <ContextMenu
+        x={menu.x}
+        y={menu.y}
+        entries={menu.entries}
+        label={t("symbols.menu")}
+        close={() => (menu = null)}
+      />
+    {/key}
+  {/if}
 </section>
 
 <style>
@@ -463,8 +546,15 @@
     margin: 0;
     padding: 2px 0;
   }
+  .head-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+    min-width: 0;
+  }
   .head {
     display: flex;
+    flex: 1 1 auto;
     align-items: center;
     gap: var(--sp-1);
     min-width: 0;
@@ -486,6 +576,19 @@
   }
   .head[aria-expanded="true"] :global(.chevron) {
     transform: rotate(90deg);
+  }
+  /* the star shows on the header's hover | focus, and always on a pinned group */
+  .star {
+    flex: none;
+    opacity: 0;
+  }
+  .head-row:hover .star,
+  .head-row:focus-within .star,
+  .star[aria-pressed="true"] {
+    opacity: 1;
+  }
+  .star[aria-pressed="true"] {
+    color: var(--accent);
   }
   .count {
     flex: none;

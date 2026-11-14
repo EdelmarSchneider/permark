@@ -4,10 +4,21 @@
 // toggle can open) only once the person asked for it in this window, or while it is open for the project: a window
 // that never used it shows nothing new.
 
-import { groupsFor, type PickerKind } from "../../core/editing/visual/characters";
+import type { CharacterEntry, SymbolFavorites } from "../../api";
+import {
+  groupsFor,
+  groupLabel,
+  entryName,
+  type PickerKind,
+} from "../../core/editing/visual/characters";
+import { apiErrorText } from "../../core/errors";
+import { t } from "../../core/i18n";
+import { arrangement } from "../../core/shell/arrangement.svelte";
 import { layout } from "../../core/shell/layout.svelte";
+import { reasonCode } from "../../core/shell/settings/problems";
 import { showView, togglePanel } from "../../core/shell/sides";
 import { windowStore } from "../../core/window.svelte";
+import { hasChar, hasGroup, withChar, withGroup, withoutChar, withoutGroup } from "./favorites";
 import { DEFAULT_COLLAPSED } from "./model";
 
 /** The id of the symbols panel. */
@@ -54,6 +65,50 @@ export class SymbolsStore {
       }
     }
     showView(PANEL);
+  }
+
+  /** Adds the character to the favorites, or removes it when it is one; said in the status line. */
+  async toggleChar(entry: CharacterEntry): Promise<void> {
+    const current = windowStore.symbolFavorites;
+    const had = hasChar(current, entry.char);
+    const next = had ? withoutChar(current, entry.char) : withChar(current, entry.char);
+    const name = entryName(entry);
+    await this.#write(
+      current,
+      next,
+      t(had ? "symbols.removedFavorite" : "symbols.addedFavorite", { name }),
+    );
+  }
+
+  /** Pins the group (by its name in the groups file), or unpins it; said in the status line. */
+  async toggleGroup(name: string): Promise<void> {
+    const current = windowStore.symbolFavorites;
+    const had = hasGroup(current, name);
+    const next = had ? withoutGroup(current, name) : withGroup(current, name);
+    const group = groupLabel(name);
+    await this.#write(
+      current,
+      next,
+      t(had ? "symbols.removedGroup" : "symbols.addedGroup", { group }),
+    );
+  }
+
+  /** One settings write; the window's value follows from `settings-changed` (no copy kept here). A step that
+   *  changed nothing was one the settings would refuse (a toggle never repeats an add). */
+  async #write(
+    current: SymbolFavorites | null,
+    next: SymbolFavorites | null,
+    done: string,
+  ): Promise<void> {
+    if (next === current) {
+      arrangement.say(t("symbols.favoriteRefused"));
+      return;
+    }
+    const refused = await windowStore.trySetting({ key: "symbolFavorites", value: next });
+    if (refused === null) arrangement.say(done);
+    else if (reasonCode(refused) === "symbolFavorites")
+      arrangement.say(t("symbols.favoriteRefused"));
+    else arrangement.say(t("settings.notSaved", { message: apiErrorText(refused) }));
   }
 
   /** The plugin is switched off: nothing of this window's panel state is left. */

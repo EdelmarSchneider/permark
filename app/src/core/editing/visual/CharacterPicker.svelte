@@ -72,7 +72,7 @@
               class="picker__char"
               class:picker__char--invisible={isInvisible(entry.char)}
               aria-label={cellName(entry)}
-              title={`${name} · ${codePoints(entry.char)}`}
+              title={t("picker.tip", { name, code: codePoints(entry.char) })}
               onclick={() => apply(entry.char)}>{cellLabel(entry)}</button
             >
           {/each}
