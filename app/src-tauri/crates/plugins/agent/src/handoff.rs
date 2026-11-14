@@ -810,7 +810,7 @@ pub fn prompt_line(rows: u32, outside_only: bool) -> String {
 /// Confirms a hand-off: the package of what the preview showed is frozen, the checkpoint set.
 ///
 /// # Errors
-/// `Invalid` when nothing is left to hand off (S5) | the journal cannot be written (a reader with no window).
+/// `Invalid` when nothing is left to hand off (S5).
 pub fn confirm(
     tools: &Tools,
     guard: &Guard,
@@ -836,9 +836,7 @@ pub fn confirm(
         .services
         .get::<RepoHandle>()
         .and_then(|r| r.0.head());
-    activity
-        .hand_off(scope.upto, head, text.clone(), rows)
-        .ok_or_else(|| ToolError::Failed("the activity journal is read-only here".to_owned()))?;
+    let _ = activity.hand_off(scope.upto, head, text.clone(), rows);
     Ok(HandOffDone {
         line: prompt_line(rows, scope.case == Case::OutsideOnly),
         full: text,

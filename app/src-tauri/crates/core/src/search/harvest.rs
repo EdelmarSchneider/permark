@@ -161,7 +161,7 @@ impl Harvest {
 
     // ---- the index pass ------------------------------------------------------------------------------------------
 
-    /// The cache's places (`None`: no cache, a reader with no window). The cache of every owner is read now: what it
+    /// The cache's places (`None`: no cache). The cache of every owner is read now: what it
     /// holds shows at once, the pass replaces it as it reads.
     pub fn use_cache(&self, source: Option<OwnersSource>) {
         if let Some(source) = &source {

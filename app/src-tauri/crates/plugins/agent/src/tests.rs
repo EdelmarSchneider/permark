@@ -324,7 +324,11 @@ impl Fx {
         Arc::new(Live::new(cx.events().clone()))
     }
 
-    fn tools(&self, live: Option<Arc<Live>>) -> Tools {
+    fn tools(&self) -> Tools {
+        self.tools_with(self.live())
+    }
+
+    fn tools_with(&self, live: Arc<Live>) -> Tools {
         Tools::new(
             self.core().vault().clone(),
             self.core().store().clone(),
@@ -357,7 +361,7 @@ fn not_found(result: Result<Value, ToolError>) -> bool {
 #[test]
 fn every_tool_is_off_until_the_person_turns_it_on() {
     let fx = fx();
-    let tools = fx.tools(Some(fx.live()));
+    let tools = fx.tools();
     for (tool, _) in crate::tools::TOOLS {
         assert_eq!(
             tools.call(
@@ -393,7 +397,7 @@ fn nothing_in_the_project_can_switch_it_on() {
         ".permark/agent.json",
         "{\"version\":1,\"data\":{\"enabled\":true}}",
     );
-    let tools = fx.tools(None);
+    let tools = fx.tools();
     assert_eq!(
         tools.call("search", json!({ "query": "launch" })),
         Err(ToolError::Off)
@@ -418,7 +422,7 @@ fn a_denied_group_gets_the_exact_error() {
         ".permark/config.toml",
         "[agent]\ndeny = [\"find\", \"notes\"]\n",
     );
-    let tools = fx.tools(None);
+    let tools = fx.tools();
     let error = tools
         .call("read", json!({ "path": "README.md" }))
         .unwrap_err();
@@ -474,7 +478,7 @@ fn paths_outside_hidden_or_through_links_are_not_found() {
     fx.on();
     let outside = fx.root.parent().unwrap().join("outside.md");
     std::fs::write(&outside, "# Outside\n\nsecret\n").unwrap();
-    let tools = fx.tools(None);
+    let tools = fx.tools();
     let escapes = [
         "../outside.md".to_owned(),
         "docs/../../outside.md".to_owned(),
@@ -562,7 +566,7 @@ fn paths_outside_hidden_or_through_links_are_not_found() {
 fn device_names_huge_or_binary_files_and_other_spellings_never_get_through() {
     let fx = fx();
     fx.on();
-    let tools = fx.tools(None);
+    let tools = fx.tools();
     // device names are never opened as devices: not found (or refused), never a hang
     for path in [
         "docs/CON.md",
@@ -635,7 +639,7 @@ fn huge_outlines_notes_and_comment_lists_stay_under_the_ceiling_in_both_modes() 
     use crate::format::CEILING_CHARS;
     let fx = fx();
     fx.on();
-    let tools = fx.tools(None);
+    let tools = fx.tools();
     let words = "word ".repeat(30);
     let doc = (0..3_000).fold(String::new(), |mut text, i| {
         let _ = write!(text, "## Part {i} {words}\n\ntext\n\n");
@@ -708,7 +712,7 @@ fn huge_outlines_notes_and_comment_lists_stay_under_the_ceiling_in_both_modes() 
 fn hidden_files_never_reach_any_list_or_snippet() {
     let fx = fx();
     fx.on();
-    let tools = fx.tools(None);
+    let tools = fx.tools();
     let hidden = ["private/", "denied/", ".permark", ".git"];
     let check = |value: &Value| {
         let text = value.to_string();
@@ -775,7 +779,7 @@ fn every_text_reaches_the_agent_as_written() {
         folder: None,
     });
     let live = fx.live();
-    let tools = fx.tools(Some(Arc::clone(&live)));
+    let tools = fx.tools_with(Arc::clone(&live));
     let read = tools.call("read", json!({ "path": "README.md" })).unwrap();
     assert!(
         read["text"].as_str().unwrap().contains("API_KEY=sekret123"),
@@ -823,7 +827,7 @@ fn the_context_drops_a_document_agents_do_not_get() {
     let fx = fx();
     fx.on();
     let live = fx.live();
-    let tools = fx.tools(Some(Arc::clone(&live)));
+    let tools = fx.tools_with(Arc::clone(&live));
     for doc in [
         "private/secret.md",
         "../outside.md",
@@ -870,11 +874,6 @@ fn the_context_drops_a_document_agents_do_not_get() {
         context["section"]["lines"].is_null(),
         "lines out of order dropped"
     );
-    // without the app there is no context
-    assert_eq!(
-        fx.tools(None).call("get_context", Value::Null),
-        Err(ToolError::NotOpen)
-    );
 }
 
 #[test]
@@ -882,7 +881,7 @@ fn open_shows_a_place_and_never_moves_a_person_who_is_editing() {
     let fx = fx();
     fx.on();
     let live = fx.live();
-    let tools = fx.tools(Some(Arc::clone(&live)));
+    let tools = fx.tools_with(Arc::clone(&live));
     let shown = tools
         .call(
             "open",
@@ -932,7 +931,7 @@ fn comments_are_listed_and_resolved_with_a_reply() {
         resolve_asked: true,
         folder: None,
     });
-    let tools = fx.tools(None);
+    let tools = fx.tools();
     let list = tools.call("list_comments", Value::Null).unwrap();
     assert_eq!(list["comments"].as_array().unwrap().len(), 1);
     assert_eq!(
@@ -962,7 +961,7 @@ fn comments_are_listed_and_resolved_with_a_reply() {
 fn malformed_arguments_are_invalid_never_a_panic() {
     let fx = fx();
     fx.on();
-    let tools = fx.tools(None);
+    let tools = fx.tools();
     for (tool, args) in [
         ("read", json!({})),
         ("read", json!({ "path": 3 })),
@@ -1243,6 +1242,20 @@ fn the_agent_proxies_to_the_app_and_refuses_while_it_is_closed() {
     );
     assert!(started_roots.lock().unwrap().is_empty());
     fx.on();
+    // arguments the tool would refuse never start the app
+    for args in [
+        Value::Null,
+        json!({ "path": "" }),
+        json!({ "path": "  " }),
+        json!({ "path": 3 }),
+        json!({ "line": 2 }),
+    ] {
+        assert!(
+            matches!(agent.call("open", &args), Err(ToolError::Invalid(_))),
+            "{args}"
+        );
+    }
+    assert!(started_roots.lock().unwrap().is_empty());
     // open with the app closed: the app is started and the place handed over once it listens
     let opened = agent
         .call("open", &json!({ "path": "docs/plan.md" }))
@@ -1308,7 +1321,7 @@ fn a_folder_created_again_at_the_same_path_does_not_inherit_the_connection() {
         ..ProjectChoice::default()
     };
     fx.set_choice(&connected_before);
-    let tools = fx.tools(None);
+    let tools = fx.tools();
     assert_eq!(
         tools.call("search", json!({ "query": "launch" })),
         Err(ToolError::Off)
@@ -1369,7 +1382,7 @@ fn an_earlier_grant_gets_the_folder_only_when_the_app_opens_the_project() {
     assert!(agent.root().is_some());
     let _ = agent.call("search", &json!({ "query": "x" }));
     assert_eq!(fx.stored().folder, None);
-    assert!(fx.tools(None).allows(Group::Context));
+    assert!(fx.tools().allows(Group::Context));
     // the app opens the project: recorded once, still on
     fx.reopen();
     let stored = fx.stored();
@@ -1485,7 +1498,6 @@ fn the_context_line_is_one_sentence() {
 fn wire_errors_come_back_as_the_same_errors() {
     for error in [
         ToolError::Off,
-        ToolError::NotOpen,
         ToolError::NotFound("a b".into()),
         ToolError::Invalid("x".into()),
         ToolError::Failed("boom".into()),
@@ -1699,7 +1711,7 @@ fn the_outline_sizes_every_part_and_counts_tokens_only_when_the_plugin_serves() 
         "docs/sized.md",
         "# Top\n\nIntro API_KEY=sekret123\n\n## Part\n\nBody text.\n",
     );
-    let tools = fx.tools(None);
+    let tools = fx.tools();
     // no token count plugin: sizes by the core estimator, no tokens, no tokenizer named
     let plain = tools
         .call("outline", json!({ "path": "docs/sized.md" }))
@@ -1756,7 +1768,7 @@ fn silenced_paths_stay_visible_to_agents() {
     // silence quiets the person's attention only; the agent sees the path like any other
     let fx = fx();
     fx.on();
-    let tools = fx.tools(None);
+    let tools = fx.tools();
     let read = tools.call("read", json!({ "path": "quiet/q.md" })).unwrap();
     assert!(read["text"].as_str().unwrap().contains("launch"), "{read}");
     assert!(tools
@@ -1779,7 +1791,7 @@ fn comment_and_context_headings_leave_as_written() {
     fx.comments.0.lock().unwrap()[0].heading_path =
         vec!["Ops".to_owned(), "Password: qz8secret".to_owned()];
     let live = fx.live();
-    let tools = fx.tools(Some(Arc::clone(&live)));
+    let tools = fx.tools_with(Arc::clone(&live));
     let list = tools.call("list_comments", Value::Null).unwrap();
     assert_eq!(
         list["comments"][0]["headingPath"],

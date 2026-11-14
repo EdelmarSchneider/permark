@@ -234,9 +234,6 @@ pub fn error(tool: &str, error: &ToolError) -> String {
             }
         ),
         ToolError::Invalid(why) => format!("ERR invalid: {} -> fix the arguments", one(why)),
-        ToolError::NotOpen => {
-            "ERR notOpen: PerMark not open on this project -> ask person to open it".to_owned()
-        }
         ToolError::AppClosed => {
             "ERR appClosed: PerMark not open on this project -> ask person to open it in PerMark, or call open to start it".to_owned()
         }
@@ -800,7 +797,6 @@ mod tests {
                 &ToolError::NotFound("docs/my plan.md".to_owned()),
             ),
             error("search", &ToolError::Invalid("limit\nis bad".to_owned())),
-            error("get_context", &ToolError::NotOpen),
             error("map", &ToolError::Failed("x".to_owned())),
             error("resolve_comment", &ToolError::NotFound("c9".to_owned())),
             error("read", &ToolError::Busy),
@@ -816,13 +812,13 @@ mod tests {
             "ERR denied: group comments.resolve off in this project -> ask person; NEVER retry around it"
         );
         assert!(lines[2].contains("\"docs/my plan.md\""));
-        assert_eq!(lines[6], "ERR notFound: c9 -> check ids with list_comments");
+        assert_eq!(lines[5], "ERR notFound: c9 -> check ids with list_comments");
         assert_eq!(
-            lines[7],
+            lines[6],
             "ERR busy: PerMark still reading this folder -> retry in a few seconds"
         );
         assert_eq!(
-            lines[8],
+            lines[7],
             "ERR appClosed: PerMark not open on this project -> ask person to open it in PerMark, or call open to start it"
         );
         assert!(matches!(

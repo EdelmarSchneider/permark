@@ -247,12 +247,8 @@ pub struct ServiceArgs {
     pub roots: Vec<String>,
     /// Where the read state lives: the opened folder + each included project (`projects.md` §9.2).
     pub owners: Owners,
-    /// Keep the picture of the last visit (`visit.json`; a reader with no window leaves it alone).
-    pub visit: bool,
     pub announce: Announce,
     pub timing: Timing,
-    /// `false`: a reader with no window (`files_only`): `read.json` is read, never written.
-    pub persist: bool,
     /// Waits until the folder's projects keep their own state (their owners known): the first look counts each
     /// project's documents against its own read state (a project with none starts read, no flood of dots).
     pub owners_known: Arc<dyn Fn() + Send + Sync>,
@@ -265,8 +261,6 @@ struct Files {
     owners: Owners,
     /// The owners are changing: writes wait.
     paused: bool,
-    persist: bool,
-    visit: bool,
     /// Per owner: entries that lie in a deeper owner (kept as written, unused while it is included).
     read_dormant: Vec<BTreeMap<String, String>>,
     visit_dormant: Vec<BTreeMap<String, String>>,
@@ -314,13 +308,11 @@ fn own_and_dormant(
 }
 
 impl Files {
-    fn new(owners: Owners, persist: bool, visit: bool) -> Self {
+    fn new(owners: Owners) -> Self {
         let n = owners.slots().len();
         Self {
             owners,
             paused: false,
-            persist,
-            visit,
             read_dormant: vec![BTreeMap::new(); n],
             visit_dormant: vec![BTreeMap::new(); n],
             written: vec![None; n],
@@ -357,9 +349,6 @@ impl Files {
 
     /// The last-visit picture over every owner (the opened folder's time; `None`: no owner has one).
     fn load_visit(&mut self) -> Option<VisitFile> {
-        if !self.visit {
-            return None;
-        }
         let owners = self.owners.clone();
         let mut out: Option<VisitFile> = None;
         for i in 0..owners.slots().len() {
@@ -386,7 +375,7 @@ impl Files {
     /// wrote there meanwhile (for the tracker).
     fn save_read(&mut self, saved: BTreeMap<String, u64>) -> Vec<Learned> {
         let mut learned = Vec::new();
-        if !self.persist || self.paused {
+        if self.paused {
             return learned;
         }
         let owners = self.owners.clone();
@@ -440,7 +429,7 @@ impl Files {
 
     /// Writes each owner's picture of this visit (on top of the file as it is now: another tab's documents stay).
     fn save_visit(&self, current: BTreeMap<String, u64>, at_ms: u64) {
-        if !self.visit || self.paused {
+        if self.paused {
             return;
         }
         for (i, part) in self.owners.split(current).into_iter().enumerate() {
@@ -484,7 +473,7 @@ impl std::fmt::Debug for UnreadService {
 impl UnreadService {
     #[must_use]
     pub fn start(args: ServiceArgs) -> Self {
-        let mut files = Files::new(args.owners.clone(), args.persist, args.visit);
+        let mut files = Files::new(args.owners.clone());
         // no state yet, or a damaged one: an owner with no read state
         let (root, members) = files.load_read();
         let last_visit = files.load_visit();
@@ -542,8 +531,7 @@ impl UnreadService {
                     if !files.paused && files.owners.same(owners) {
                         return;
                     }
-                    let (persist, visit) = (files.persist, files.visit);
-                    *files = Files::new((*owners).clone(), persist, visit);
+                    *files = Files::new((*owners).clone());
                     let read = files.load_read();
                     // the picture of the last visit stays as it was at open; the dormant entries of the new
                     // owners' files are kept when it is written
@@ -787,9 +775,6 @@ impl Worker {
     }
 
     fn save(&mut self) {
-        if !self.args.persist {
-            return;
-        }
         let tracker = lock(&self.tracker);
         // nothing is saved before the baseline is taken
         if tracker.baseline_pending() {

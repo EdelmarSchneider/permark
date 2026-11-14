@@ -145,7 +145,7 @@ pub fn tool_list() -> Vec<Tool> {
         .annotate(reading.clone()),
         Tool::new(
             "open",
-            "Show the person a document in PerMark (line or heading) without taking focus; starts PerMark if closed.",
+            "Show the person a document in PerMark (line or heading) without taking focus; starts PerMark if closed (only tool that works then).",
             schema(json!({ "type": "object", "properties": {
                 "path": path(),
                 "line": int("Line from 1."),

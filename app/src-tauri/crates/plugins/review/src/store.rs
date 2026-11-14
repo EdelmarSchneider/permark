@@ -35,8 +35,6 @@ pub struct CopyStore {
     id: PluginId,
     /// See [`CopyStore::hold`].
     busy: Arc<Mutex<()>>,
-    /// `false`: a reader with no window (`files_only`): copies are read, never written or deleted.
-    writes: bool,
 }
 
 impl CopyStore {
@@ -46,23 +44,7 @@ impl CopyStore {
             store,
             id,
             busy: Arc::default(),
-            writes: true,
         }
-    }
-
-    /// The same copies, read only.
-    #[must_use]
-    pub fn read_only(self) -> Self {
-        Self {
-            writes: false,
-            ..self
-        }
-    }
-
-    /// Whether this store writes (the review's own files follow it).
-    #[must_use]
-    pub fn writes(&self) -> bool {
-        self.writes
     }
 
     /// Held from putting a copy until the version that needs it is recorded, and from listing the copies still needed
@@ -105,9 +87,6 @@ impl CopyStore {
         if self.has(hash) {
             return true;
         }
-        if !self.writes {
-            return false;
-        }
         self.file(hash)
             .save(&CopyFile {
                 text: text.to_owned(),
@@ -124,9 +103,6 @@ impl CopyStore {
 
     /// Deletes the copies no version in `keep` needs. Returns how many went.
     pub fn remove_unused(&self, keep: &HashSet<u64>) -> usize {
-        if !self.writes {
-            return 0;
-        }
         let Ok(entries) = std::fs::read_dir(self.folder()) else {
             return 0;
         };

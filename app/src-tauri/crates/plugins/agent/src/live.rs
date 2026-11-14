@@ -23,6 +23,22 @@ impl Live {
         }
     }
 
+    /// Tests: a window half whose events go nowhere.
+    #[cfg(test)]
+    pub(crate) fn quiet() -> std::sync::Arc<Self> {
+        let cx = permark_core::plugins::PluginCx::new(
+            crate::ID,
+            permark_core::plugins::CxWorkspace::App,
+            std::path::PathBuf::new(),
+            None,
+            permark_core::conditions::Context::welcome(
+                permark_core::conditions::Distribution::Direct,
+            ),
+            std::sync::Arc::new(permark_core::events::NoEvents),
+        );
+        std::sync::Arc::new(Self::new(cx.events().clone()))
+    }
+
     /// The window's latest word (sanitized when it is answered, never trusted as it is).
     pub fn publish(&self, context: WindowContext) {
         *self.context.lock().unwrap_or_else(PoisonError::into_inner) = context;

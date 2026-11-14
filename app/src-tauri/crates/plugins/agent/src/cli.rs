@@ -189,6 +189,8 @@ impl Agent {
         endpoint: &Endpoint,
         args: &Value,
     ) -> Result<Value, ToolError> {
+        // arguments the tool would refuse start nothing
+        crate::tools::check_open_args(args)?;
         (self.launcher)(project.root.path())
             .map_err(|e| ToolError::Failed(format!("PerMark could not be started: {e}")))?;
         let deadline = Instant::now() + self.launch_wait;

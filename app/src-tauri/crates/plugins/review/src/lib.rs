@@ -149,8 +149,6 @@ impl Plugin for ReviewPlugin {
                 prefs: cx.state_file("prefs.json"),
                 seen: cx.state_file("seen.json"),
             },
-            // a reader with no window writes no copies, `held` or `seen` of its own accord
-            !cx.files_only(),
         ));
         let mut registrations: Vec<RpcRegistration> = Vec::new();
         let s = Arc::clone(&service);

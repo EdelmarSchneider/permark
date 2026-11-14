@@ -55,7 +55,12 @@ fn open_ready(env: &CoreEnv, root: &Path) -> Arc<ProjectCore> {
 }
 
 fn tools(core: &Arc<ProjectCore>) -> Tools {
-    Tools::new(core.vault().clone(), core.store(), core.services(), None)
+    Tools::new(
+        core.vault().clone(),
+        core.store(),
+        core.services(),
+        crate::live::Live::quiet(),
+    )
 }
 
 fn read(tools: &Tools, path: &str) -> Result<(), ToolError> {
