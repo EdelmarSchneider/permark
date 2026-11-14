@@ -1,6 +1,7 @@
 // View's inline looks in Edit: links to missing files (while a plugin that checks links is on), code references
-// (`src/main.rs:12`), heading anchors and, with the prompt-blocks plugin on, `{{variables}}` and `@file` references. Found by View's own rules (`doc/codeRefs.ts`,
-// `doc/decorate.ts`) and the renderer's (`promptText.ts`), drawn with View's classes: decorations around the text, a
+// (`src/main.rs:12`), heading anchors and, with the prompt-blocks plugin on, `{{variables}}` and `@file` references.
+// Found by View's own rules (`doc/codeRefs.ts`, `doc/decorate.ts`) and the renderer's (`promptText.ts`), drawn with
+// View's classes: decorations around the text, a
 // widget for the anchor, and a class on the editor's own `a` | `code` element where View marks that element. The
 // document never changes; the editor's own elements tell ProseMirror to ignore those class changes.
 //

@@ -1,6 +1,7 @@
 // Work a block does when it comes near the screen: embeds (code highlighting, formulas, diagrams) are mounted,
 // links are looked up while a plugin that checks links is on (a missing target is marked), code references become
-// links (to the file, here or in the editor). Nothing here runs for blocks far from the screen, so a long document opens at once.
+// links (to the file, here or in the editor). Nothing here runs for blocks far from the screen, so a long document
+// opens at once.
 
 import { mount, unmount, type Component } from "svelte";
 import type { Api, LinkTarget } from "../../api";

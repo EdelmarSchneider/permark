@@ -1363,7 +1363,7 @@ fn a_folder_created_again_at_the_same_path_does_not_inherit_the_connection() {
 }
 
 #[test]
-fn an_earlier_grant_gets_the_folder_when_the_app_opens_it_never_from_the_agent() {
+fn an_earlier_grant_gets_the_folder_only_when_the_app_opens_the_project() {
     let mut fx = fx();
     let Some(now) = FolderId::of(&fx.root) else {
         return;
@@ -1374,7 +1374,7 @@ fn an_earlier_grant_gets_the_folder_when_the_app_opens_it_never_from_the_agent()
         .profile_file::<ProjectChoice>(PROJECT_FILE);
     std::fs::create_dir_all(file.path().parent().unwrap()).unwrap();
     std::fs::write(file.path(), r#"{"version":1,"data":{"enabled":true}}"#).unwrap();
-    // the agent alone: connected as before, nothing recorded
+    // the agent's calls alone record nothing (an agent's `open` may start the app, whose start records it)
     let (compose, launcher) = unused_files();
     let agent = Agent::discover(&fx.dirs, &fx.root, compose, launcher);
     assert!(agent.root().is_some());
@@ -1389,6 +1389,64 @@ fn an_earlier_grant_gets_the_folder_when_the_app_opens_it_never_from_the_agent()
     let status = fx.rpc("status", Value::Null).unwrap();
     assert_eq!(status["enabled"], true);
     assert_eq!(status["server"]["state"], "listening");
+}
+
+/// Saves `choice` for the folder `docs` inside the project (a project of its own for the agent's search).
+fn set_child_choice(fx: &Fx, choice: &ProjectChoice) -> PathBuf {
+    let child = fx.root.join("docs");
+    let root = Root::open(&child).unwrap();
+    permark_core::state::StateStore::for_project(&fx.dirs, &root)
+        .profile_file::<ProjectChoice>(PROJECT_FILE)
+        .save(choice)
+        .unwrap();
+    root.path().to_path_buf()
+}
+
+#[test]
+fn a_replaced_folder_inside_a_connected_one_never_falls_through_to_the_parent() {
+    let fx = fx();
+    fx.on();
+    let child = fx.root.join("docs");
+    let Some(now) = FolderId::of(&child) else {
+        return;
+    };
+    set_child_choice(
+        &fx,
+        &ProjectChoice {
+            enabled: true,
+            folder: Some(FolderId {
+                file: now.file ^ 1,
+                ..now
+            }),
+            ..ProjectChoice::default()
+        },
+    );
+    assert!(crate::cli::discover(&fx.dirs, &child).is_none());
+    let (compose, launcher) = unused_files();
+    let agent = Agent::discover(&fx.dirs, &child, compose, launcher);
+    assert!(agent.root().is_none());
+    assert_eq!(
+        agent.call("search", &json!({ "query": "launch" })),
+        Err(ToolError::Off)
+    );
+}
+
+#[test]
+fn an_off_folder_inside_a_connected_one_is_its_own_project_and_answers_off() {
+    let fx = fx();
+    fx.on();
+    let child = set_child_choice(&fx, &ProjectChoice::default());
+    assert_eq!(
+        crate::cli::discover(&fx.dirs, &fx.root.join("docs")).map(|r| r.path().to_path_buf()),
+        Some(child.clone())
+    );
+    let (compose, launcher) = unused_files();
+    let agent = Agent::discover(&fx.dirs, &child, compose, launcher);
+    assert_eq!(agent.root().map(|r| r.path().to_path_buf()), Some(child));
+    assert_eq!(
+        agent.call("search", &json!({ "query": "launch" })),
+        Err(ToolError::Off)
+    );
 }
 
 #[test]
