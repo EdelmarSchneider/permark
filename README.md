@@ -88,8 +88,8 @@ that save themselves.
 - **View, Edit, Source.** One switch in the header. **View** is for reading. **Edit** changes the page as it looks, with a toolbar
   and a `/` block menu. **Source** shows the raw file, every byte, with find and replace and go to line. A switch beside the modes
   draws a Mermaid or PlantUML diagram next to its text while you type (off until you turn it on).
-- **Honest about Edit.** Edit keeps math, diagrams, HTML and footnotes as written: **Edit in Source** opens them. Edit does not draw
-  pictures that are files next to the document; View and Source do.
+- **Special blocks, drawn in Edit too.** Formulas, diagrams, alerts, footnotes and HTML look in Edit exactly as they do in View.
+  Click one to edit its text right there, with a live preview. A picture you paste is saved next to the document, and Edit draws it.
 - **Notes that save themselves.** Click **Notes**, next to Settings, or press `Ctrl+Shift+N` for a new note from anywhere in PerMark, and type. No name to choose, no folder to pick, no save prompt.
   Notes are plain Markdown files you own, and **Copy** puts a drafted prompt on the clipboard as exact Markdown.
 
