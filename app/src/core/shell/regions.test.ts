@@ -31,6 +31,8 @@ const { documents } = await import("../doc/document.svelte");
 const { layout } = await import("./layout.svelte");
 const { arrangement } = await import("./arrangement.svelte");
 const { defaultArrangement, FILES, moveTo, OUTLINE, SEARCH } = await import("./arrangement");
+const { showView } = await import("./sides");
+const { ui } = await import("./ui.svelte");
 
 let app: Record<string, unknown> | null = null;
 
@@ -46,11 +48,17 @@ const regionAt = (el: Element | null): string | null =>
   el?.closest("[data-region]")?.getAttribute("data-region") ?? null;
 const sidebarToggle = (): HTMLElement | null =>
   document.querySelector<HTMLElement>('footer button.toggle[aria-label="Sidebar"]');
-const toggleCommand = () => {
-  const command = contributions.of("command").find((c) => c.id === "sidebar.toggle");
+const bottomToggle = (): HTMLElement | null =>
+  document.querySelector<HTMLElement>('footer button.toggle[aria-label="Bottom panel"]');
+const bottomBar = (): HTMLElement | null =>
+  document.querySelector<HTMLElement>('[role="separator"][data-side="bottom"]');
+const commandOf = (id: string) => {
+  const command = contributions.of("command").find((c) => c.id === id);
   if (!command) throw new Error("no command");
   return command;
 };
+const toggleCommand = () => commandOf("sidebar.toggle");
+const bottomCommand = () => commandOf("panel.toggleBottom");
 
 /** A document with a heading is on screen (the outline has something to list). */
 function showOutline(): void {
@@ -92,6 +100,8 @@ beforeAll(async () => {
 afterEach(() => {
   arrangement.arrange(defaultArrangement());
   layout.setSidebarHidden(false);
+  layout.setBottomHidden(false);
+  ui.resetFocus();
   flushSync();
 });
 
@@ -150,6 +160,82 @@ describe("a project", () => {
     expect(regionAt(slot(SEARCH))).toBe("sidebar");
     expect(slot(SEARCH)?.contains(box)).toBe(true);
     expect(box.value).toBe("ideas");
+  });
+
+  it("no bottom region by default: no band, no splitter, no toggle, its command not offered", () => {
+    expect(region("bottom")).toBeNull();
+    expect(bottomBar()).toBeNull();
+    expect(bottomToggle()).toBeNull();
+    expect(runnable(bottomCommand(), conditions.current)).toBe(false);
+  });
+
+  it("a view arranged at the bottom brings the region under the page: band, splitter, toggle after the sidebar's", () => {
+    showOutline();
+    const box = slot(SEARCH)?.querySelector<HTMLInputElement>('input[type="search"]');
+    arrangement.arrange(moveTo(arrangement.layout, SEARCH, "bottom"));
+    flushSync();
+    expect(regionAt(slot(SEARCH))).toBe("bottom");
+    // the same Search, moved
+    expect(box && slot(SEARCH)?.contains(box)).toBe(true);
+    expect(region("bottom")?.inert).toBe(false);
+    expect(region("bottom")?.querySelector('[role="tablist"]')?.getAttribute("aria-label")).toBe(
+      "Bottom panel views",
+    );
+    // between the side columns, after the page
+    expect(
+      [...document.querySelectorAll("[data-region]")].map((el) => el.getAttribute("data-region")),
+    ).toEqual(["sidebar", "page", "bottom", "right"]);
+    expect(bottomBar()).not.toBeNull();
+    expect(bottomToggle()?.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      [...document.querySelectorAll("footer button.toggle")].map((el) =>
+        el.getAttribute("aria-label"),
+      ),
+    ).toEqual(["Sidebar", "Bottom panel", "Right panel"]);
+    expect(sidebarToggle()?.nextElementSibling).toBe(bottomToggle());
+    expect(runnable(bottomCommand(), conditions.current)).toBe(true);
+  });
+
+  it("the bottom region hides | shows on its own (its command, its toggle); a view shown in it shows it again", () => {
+    arrangement.arrange(moveTo(arrangement.layout, SEARCH, "bottom"));
+    flushSync();
+    void bottomCommand().run();
+    flushSync();
+    expect(layout.bottomHidden).toBe(true);
+    expect([layout.sidebarHidden, layout.rightHidden]).toEqual([false, false]);
+    // still there, out of reach, no room, no splitter
+    expect(region("bottom")?.inert).toBe(true);
+    expect(slot(SEARCH)?.querySelector('input[type="search"]')).not.toBeNull();
+    expect(bottomBar()).toBeNull();
+    expect(bottomToggle()?.getAttribute("aria-pressed")).toBe("false");
+    expect(arrangement.onScreen(SEARCH)).toBe(false);
+    bottomToggle()?.click();
+    flushSync();
+    expect(layout.bottomHidden).toBe(false);
+    expect(region("bottom")?.inert).toBe(false);
+    void bottomCommand().run();
+    showView(SEARCH);
+    flushSync();
+    expect(layout.bottomHidden).toBe(false);
+    expect(arrangement.onScreen(SEARCH)).toBe(true);
+    // the last view leaves: the region goes, its toggle with it
+    arrangement.arrange(defaultArrangement());
+    flushSync();
+    expect(region("bottom")).toBeNull();
+    expect(bottomToggle()).toBeNull();
+  });
+
+  it("focus mode folds the bottom region with the others: only the page", () => {
+    arrangement.arrange(moveTo(arrangement.layout, SEARCH, "bottom"));
+    flushSync();
+    ui.setFocus("on");
+    flushSync();
+    expect(region("bottom")?.inert).toBe(true);
+    expect(bottomBar()).toBeNull();
+    expect(arrangement.onScreen(SEARCH)).toBe(false);
+    ui.resetFocus();
+    flushSync();
+    expect(region("bottom")?.inert).toBe(false);
   });
 });
 

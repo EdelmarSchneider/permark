@@ -460,10 +460,11 @@ describe("the keyboard dialog", () => {
     button(rowOf("Save"), "Change")?.click();
     flushSync();
     expect(rowOf("Save").textContent).toContain("Press the new keys");
-    press(window, "j", { ctrlKey: true, code: "KeyJ" });
-    await until(() => store.keymap["edit.save"] === "Mod+j", "stored");
+    // keys no command holds
+    press(window, "k", { ctrlKey: true, code: "KeyK" });
+    await until(() => store.keymap["edit.save"] === "Mod+k", "stored");
     flushSync();
-    expect(rowOf("Save").querySelector("kbd")?.textContent).toBe("Ctrl+J");
+    expect(rowOf("Save").querySelector("kbd")?.textContent).toBe("Ctrl+K");
     expect(button(rowOf("Save"), "Reset")).toBeDefined();
     button(rowOf("Save"), "Reset")?.click();
     await until(() => store.keymap["edit.save"] === undefined, "back to the default");

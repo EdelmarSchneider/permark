@@ -11,13 +11,13 @@ import {
   PAGE_MIN_H,
   panelShown,
   RIGHT,
-  rightAvailable,
-  rightShown,
+  regionAvailable,
+  regionShown,
   SIDEBAR,
   toggleOutline,
   togglePanel,
-  toggleRight,
-  type RightSide,
+  toggleRegion,
+  type RegionState,
   type SidePanel,
 } from "./layout";
 import { LayoutStore } from "./layout.svelte";
@@ -86,19 +86,34 @@ describe("panel widths", () => {
   });
 
   it("keys: arrows by 16 | 64 with Shift, Home | End = limits, Enter = default, others pass", () => {
-    expect(keyWidth("ArrowRight", false, 260, SIDEBAR, true)).toBe(276);
-    expect(keyWidth("ArrowLeft", false, 260, SIDEBAR, true)).toBe(244);
-    expect(keyWidth("ArrowRight", true, 260, SIDEBAR, true)).toBe(324);
+    expect(keyWidth("ArrowRight", false, 260, SIDEBAR, "right")).toBe(276);
+    expect(keyWidth("ArrowLeft", false, 260, SIDEBAR, "right")).toBe(244);
+    expect(keyWidth("ArrowRight", true, 260, SIDEBAR, "right")).toBe(324);
     // the right panel grows to the left
-    expect(keyWidth("ArrowLeft", false, 280, RIGHT, false)).toBe(296);
-    expect(keyWidth("ArrowRight", false, 280, RIGHT, false)).toBe(264);
-    expect(keyWidth("ArrowLeft", true, 280, SIDEBAR, true)).toBe(216);
-    expect(keyWidth("ArrowLeft", true, 210, SIDEBAR, true)).toBe(SIDEBAR.min);
-    expect(keyWidth("Home", false, 300, SIDEBAR, true)).toBe(SIDEBAR.min);
-    expect(keyWidth("End", false, 300, SIDEBAR, true)).toBe(SIDEBAR.max);
-    expect(keyWidth("Enter", false, 300, SIDEBAR, true)).toBe(SIDEBAR.def);
-    expect(keyWidth("a", false, 300, SIDEBAR, true)).toBeNull();
-    expect(keyWidth("Tab", false, 300, SIDEBAR, true)).toBeNull();
+    expect(keyWidth("ArrowLeft", false, 280, RIGHT, "left")).toBe(296);
+    expect(keyWidth("ArrowRight", false, 280, RIGHT, "left")).toBe(264);
+    expect(keyWidth("ArrowLeft", true, 280, SIDEBAR, "right")).toBe(216);
+    expect(keyWidth("ArrowLeft", true, 210, SIDEBAR, "right")).toBe(SIDEBAR.min);
+    expect(keyWidth("Home", false, 300, SIDEBAR, "right")).toBe(SIDEBAR.min);
+    expect(keyWidth("End", false, 300, SIDEBAR, "right")).toBe(SIDEBAR.max);
+    expect(keyWidth("Enter", false, 300, SIDEBAR, "right")).toBe(SIDEBAR.def);
+    expect(keyWidth("a", false, 300, SIDEBAR, "right")).toBeNull();
+    expect(keyWidth("Tab", false, 300, SIDEBAR, "right")).toBeNull();
+  });
+
+  it("keys of the bottom panel's edge: Up makes it taller, Down shorter; each edge takes only its own arrows", () => {
+    expect(keyWidth("ArrowUp", false, 240, BOTTOM, "up")).toBe(256);
+    expect(keyWidth("ArrowDown", false, 240, BOTTOM, "up")).toBe(224);
+    expect(keyWidth("ArrowUp", true, 240, BOTTOM, "up")).toBe(304);
+    expect(keyWidth("ArrowDown", true, 150, BOTTOM, "up")).toBe(BOTTOM.min);
+    expect(keyWidth("Home", false, 300, BOTTOM, "up")).toBe(BOTTOM.min);
+    expect(keyWidth("End", false, 300, BOTTOM, "up")).toBe(BOTTOM.max);
+    expect(keyWidth("Enter", false, 300, BOTTOM, "up")).toBe(BOTTOM.def);
+    // across its bar: not its keys (they stay with whatever else reads them)
+    expect(keyWidth("ArrowLeft", false, 240, BOTTOM, "up")).toBeNull();
+    expect(keyWidth("ArrowRight", true, 240, BOTTOM, "up")).toBeNull();
+    expect(keyWidth("ArrowUp", false, 260, SIDEBAR, "right")).toBeNull();
+    expect(keyWidth("ArrowDown", false, 280, RIGHT, "left")).toBeNull();
   });
 });
 
@@ -191,14 +206,15 @@ describe("the layout store", () => {
   });
 });
 
-describe("showing | hiding the right panel", () => {
+describe("showing | hiding a region", () => {
   const live = (over: Partial<SidePanel> = {}): SidePanel => ({
     id: "live-feed.panel",
     open: false,
     selected: true,
     ...over,
   });
-  const side = (over: Partial<RightSide> = {}): RightSide => ({
+  const side = (over: Partial<RegionState> = {}): RegionState => ({
+    fixed: false,
     hasOutline: true,
     outlineOn: true,
     outlineSelected: true,
@@ -208,44 +224,60 @@ describe("showing | hiding the right panel", () => {
   });
 
   it("shows when a view is present (the outline when on, an open panel); hidden shows nothing", () => {
-    expect(rightShown(side())).toBe(true);
-    expect(rightShown(side({ outlineOn: false }))).toBe(false);
-    expect(rightShown(side({ outlineOn: false, panels: [live({ open: true })] }))).toBe(true);
-    expect(rightShown(side({ outlineOn: false, panels: [live()] }))).toBe(false);
-    expect(rightShown(side({ hasOutline: false }))).toBe(false);
-    expect(rightShown(side({ hidden: true }))).toBe(false);
-    expect(rightShown(side({ hidden: true, panels: [live({ open: true })] }))).toBe(false);
-    expect(rightAvailable(side({ hasOutline: false }))).toBe(false);
-    expect(rightAvailable(side({ hasOutline: false, panels: [live()] }))).toBe(true);
-    expect(rightAvailable(side({ hidden: true, outlineOn: false }))).toBe(true);
+    expect(regionShown(side())).toBe(true);
+    expect(regionShown(side({ outlineOn: false }))).toBe(false);
+    expect(regionShown(side({ outlineOn: false, panels: [live({ open: true })] }))).toBe(true);
+    expect(regionShown(side({ outlineOn: false, panels: [live()] }))).toBe(false);
+    expect(regionShown(side({ hasOutline: false }))).toBe(false);
+    expect(regionShown(side({ hidden: true }))).toBe(false);
+    expect(regionShown(side({ hidden: true, panels: [live({ open: true })] }))).toBe(false);
+    expect(regionAvailable(side({ hasOutline: false }))).toBe(false);
+    expect(regionAvailable(side({ hasOutline: false, panels: [live()] }))).toBe(true);
+    expect(regionAvailable(side({ hidden: true, outlineOn: false }))).toBe(true);
   });
 
   it("the toggle hides what shows, shows what is hidden, and never does nothing visible", () => {
-    expect(toggleRight(side())).toEqual({ hidden: true });
-    expect(toggleRight(side({ hidden: true }))).toEqual({ hidden: false });
+    expect(toggleRegion(side())).toEqual({ hidden: true });
+    expect(toggleRegion(side({ hidden: true }))).toEqual({ hidden: false });
     // shown again with nothing present: the outline turns on
-    expect(toggleRight(side({ outlineOn: false }))).toEqual({
+    expect(toggleRegion(side({ outlineOn: false }))).toEqual({
       hidden: false,
       outlineOn: true,
       select: "outline",
     });
-    expect(toggleRight(side({ hidden: true, outlineOn: false }))).toEqual({
+    expect(toggleRegion(side({ hidden: true, outlineOn: false }))).toEqual({
       hidden: false,
       outlineOn: true,
       select: "outline",
     });
     // an open panel: it shows again, the outline choice stays
     expect(
-      toggleRight(side({ hidden: true, outlineOn: false, panels: [live({ open: true })] })),
+      toggleRegion(side({ hidden: true, outlineOn: false, panels: [live({ open: true })] })),
     ).toEqual({ hidden: false });
     // no outline, nothing open: the first offered panel opens
-    expect(toggleRight(side({ hasOutline: false, panels: [live()] }))).toEqual({
+    expect(toggleRegion(side({ hasOutline: false, panels: [live()] }))).toEqual({
       hidden: false,
       open: { id: "live-feed.panel", open: true },
       select: "live-feed.panel",
     });
     // nothing it could show: no change
-    expect(toggleRight(side({ hasOutline: false, hidden: true }))).toEqual({});
+    expect(toggleRegion(side({ hasOutline: false, hidden: true }))).toEqual({});
+  });
+
+  it("a region with a view that is always open (Files, the Notes' list): its toggle only hides | shows", () => {
+    const files = side({ fixed: true, hasOutline: false });
+    expect([regionAvailable(files), regionShown(files)]).toEqual([true, true]);
+    expect(regionShown({ ...files, hidden: true })).toBe(false);
+    expect(toggleRegion(files)).toEqual({ hidden: true });
+    expect(toggleRegion({ ...files, hidden: true })).toEqual({ hidden: false });
+    // an outline arranged beside it that is off stays off: the region had something to show
+    expect(toggleRegion(side({ fixed: true, outlineOn: false }))).toEqual({ hidden: true });
+    expect(toggleRegion(side({ fixed: true, outlineOn: false, hidden: true }))).toEqual({
+      hidden: false,
+    });
+    expect(toggleRegion(side({ fixed: true, hasOutline: false, panels: [live()] }))).toEqual({
+      hidden: true,
+    });
   });
 
   it("the outline toggle: on screen -> off; else on, selected, the region shown (an open panel stays open)", () => {
@@ -297,10 +329,10 @@ describe("showing | hiding the right panel", () => {
 
   it("rapid toggles alternate and end where an even | odd count says", () => {
     let now = side();
-    for (let i = 0; i < 101; i++) now = { ...now, ...toggleRight(now) };
-    expect(rightShown(now)).toBe(false);
-    now = { ...now, ...toggleRight(now) };
-    expect(rightShown(now)).toBe(true);
+    for (let i = 0; i < 101; i++) now = { ...now, ...toggleRegion(now) };
+    expect(regionShown(now)).toBe(false);
+    now = { ...now, ...toggleRegion(now) };
+    expect(regionShown(now)).toBe(true);
   });
 });
 

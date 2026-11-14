@@ -19,14 +19,14 @@ import {
 import { closeOwnTab } from "../shell/closeWorkspace";
 import { projects } from "../projects/instance.svelte";
 import { askInitHere } from "../shell/initProject";
-import { rightAvailable } from "../shell/layout";
 import { defaultArrangement, FILES, SEARCH, withRegion } from "../shell/arrangement";
 import { arrangement } from "../shell/arrangement.svelte";
 import {
   documentPane,
   hasSidebar,
-  rightSide,
+  hasToggle,
   showView,
+  toggleBottomPanel,
   toggleOutlinePanel,
   toggleRightPanel,
   toggleSidebar,
@@ -198,8 +198,17 @@ const SPECS: readonly Spec[] = [
     label: "cmd.toggleRight",
     keys: ["Mod+Alt+b"],
     requires: READING,
-    when: () => rightAvailable(rightSide()),
+    when: () => hasToggle("right"),
     run: () => toggleRightPanel(),
+  },
+  {
+    id: "panel.toggleBottom",
+    label: "cmd.toggleBottom",
+    keys: ["Mod+j"],
+    requires: READING,
+    // only while a view is present at the bottom: no region, no toggle
+    when: () => hasToggle("bottom"),
+    run: () => toggleBottomPanel(),
   },
   {
     id: "panel.resetLayout",

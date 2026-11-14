@@ -28,7 +28,7 @@ const { default: RegionsHost } = await import("../testing/RegionsHost.svelte");
 const { probe } = await import("../testing/ViewProbe.svelte");
 const { layout } = await import("./layout.svelte");
 const { arrangement } = await import("./arrangement.svelte");
-const { FILES, REGIONS, SEARCH } = await import("./arrangement");
+const { DIVIDER_PX, FILES, MIN_GROUP_PX, REGIONS, SEARCH } = await import("./arrangement");
 const { selectView } = await import("./sides");
 
 /** A right panel with a header of its own, a field and a list (the probe); a second right panel; a sidebar tab. */
@@ -56,10 +56,10 @@ function panel(id: string, side: "left" | "right", view: () => Promise<unknown>)
 }
 
 type Groups = readonly (readonly string[])[];
-/** The arrangement with these groups (equal shares) left and right, nothing at the bottom. */
-function arrange(left: Groups, right: Groups): void {
+/** The arrangement with these groups (equal shares) left, right and at the bottom. */
+function arrange(left: Groups, right: Groups, bottom: Groups = []): void {
   const groups = (list: Groups) => list.map((views) => ({ views, share: 1 / list.length }));
-  arrangement.arrange({ v: 2, left: groups(left), right: groups(right), bottom: [] });
+  arrangement.arrange({ v: 2, left: groups(left), right: groups(right), bottom: groups(bottom) });
   flushSync();
 }
 
@@ -140,6 +140,10 @@ describe("a view that moves", () => {
     same("sidebar", "a tab of the left region");
     arrange([[PROBE], [FILES, SEARCH]], [[OTHER]]);
     same("sidebar", "a group of its own at the left");
+    arrange([[FILES, SEARCH]], [[OTHER]], [[PROBE]]);
+    same("bottom", "alone at the bottom");
+    arrange([[FILES]], [], [[SEARCH], [OTHER, PROBE]]);
+    same("bottom", "a tab of a group beside another at the bottom");
     arrange([[FILES, SEARCH]], [[PROBE], [OTHER]]);
     same("right", "back at the right");
   });
@@ -309,6 +313,106 @@ describe("a region", () => {
     flushSync();
     expect(menus()).toHaveLength(1);
     expect(items()).toEqual(["Show above", "Show below", "Reset layout"]);
+  });
+
+  it("at the bottom puts its groups side by side: a column each, the strip over its group, an upright divider between", async () => {
+    await show();
+    arrange([[FILES]], [[OTHER]], [[SEARCH], [PROBE]]);
+    const region = document.querySelector<HTMLElement>('[data-view-region="bottom"]');
+    if (region === null) throw new Error("no bottom region");
+    const at = (el: Element | null | undefined): string[] => {
+      const style = el instanceof HTMLElement ? el.style : null;
+      return [
+        style?.getPropertyValue("grid-column") ?? "",
+        style?.getPropertyValue("grid-row") ?? "",
+      ];
+    };
+    // the groups' shares are widths; the rows are the strips' and the contents' (the stylesheet's)
+    expect(region.style.getPropertyValue("grid-template-columns")).toBe(
+      `minmax(0, 50.000fr) ${DIVIDER_PX}px minmax(0, 50.000fr)`,
+    );
+    expect(region.style.getPropertyValue("grid-template-rows")).toBe("");
+    // Search has no header of its own: its strip sits over it, in its column
+    const strip = region.querySelector('[role="tablist"]');
+    expect(strips("bottom")).toEqual([["Search"]]);
+    expect(strip?.getAttribute("aria-label")).toBe("Bottom panel views");
+    expect(at(strip?.parentElement)).toEqual(["1", "1"]);
+    expect(at(slot(SEARCH))).toEqual(["1", "2"]);
+    // the divider and a view with its own header take the whole height
+    const bar = region.querySelector('[role="separator"]');
+    expect(bar?.getAttribute("aria-orientation")).toBe("vertical");
+    expect(at(bar?.parentElement)).toEqual(["2", "1 / -1"]);
+    expect(at(slot(PROBE))).toEqual(["3", "1 / -1"]);
+    // seen from left to right = the Tab order
+    expect(
+      [...region.children].map(
+        (el) => el.getAttribute("data-view-slot") ?? el.firstElementChild?.getAttribute("role"),
+      ),
+    ).toEqual(["tablist", SEARCH, "separator", PROBE]);
+    // a side region still stacks: rows, one column
+    const right = document.querySelector<HTMLElement>('[data-view-region="right"]');
+    expect(right?.style.getPropertyValue("grid-template-columns")).toBe("");
+    expect(right?.style.getPropertyValue("grid-template-rows")).not.toBe("");
+  });
+
+  it("at the bottom its divider moves the widths: the shares are saved", async () => {
+    await show();
+    arrange([[FILES, SEARCH]], [], [[PROBE], [OTHER]]);
+    const bar = document.querySelector<HTMLElement>('[data-region="bottom"] [role="separator"]');
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+      width: 400,
+      height: 240,
+    } as DOMRect);
+    bar?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    flushSync();
+    expect(arrangement.saved.bottom.map((group) => group.share)).toEqual([0.52, 0.48]);
+    expect(arrangement.saved.bottom.map((group) => group.views)).toEqual([[PROBE], [OTHER]]);
+  });
+
+  it("at the bottom too narrow for its groups (210 px each) shows them as one tab group; as arranged again when wide", async () => {
+    await show();
+    arrange([[FILES]], [], [[SEARCH], [PROBE], [OTHER]]);
+    const need = 3 * MIN_GROUP_PX + 2 * DIVIDER_PX;
+    const separators = (): number =>
+      document.querySelectorAll('[data-region="bottom"] [role="separator"]').length;
+    expect(separators()).toBe(2);
+    arrangement.setSize("bottom", need - 1);
+    flushSync();
+    expect(strips("bottom")).toEqual([["Search", "Live changes", "Live changes"]]);
+    expect(separators()).toBe(0);
+    expect(
+      document
+        .querySelector<HTMLElement>('[data-view-region="bottom"]')
+        ?.style.getPropertyValue("grid-template-columns"),
+    ).toBe("minmax(0, 100.000fr)");
+    // what the person arranged is untouched
+    expect(arrangement.saved.bottom.map((group) => group.views)).toEqual([
+      [SEARCH],
+      [PROBE],
+      [OTHER],
+    ]);
+    arrangement.setSize("bottom", need);
+    flushSync();
+    expect(strips("bottom")).toEqual([["Search"]]);
+    expect(separators()).toBe(2);
+  });
+
+  it("measures the room along its own stack: the bottom its width, a side region its height", async () => {
+    const wide = vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(400);
+    const high = vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(900);
+    arrange([[FILES], [SEARCH]], [], [[PROBE], [OTHER]]);
+    await show();
+    // 400 px wide: no room for two groups side by side; 900 px high: room for two, one above the other
+    expect(strips("bottom")).toEqual([["Live changes", "Live changes"]]);
+    expect(strips("sidebar")).toEqual([["Files"], ["Search"]]);
+    await unmount(component as Record<string, unknown>);
+    component = null;
+    for (const region of REGIONS) arrangement.setSize(region, 0);
+    wide.mockReturnValue(900);
+    high.mockReturnValue(400);
+    await show();
+    expect(strips("bottom")).toEqual([]);
+    expect(strips("sidebar")).toEqual([["Files", "Search"]]);
   });
 
   it("says what a move did in one place for the whole window", async () => {

@@ -1,5 +1,5 @@
 // Panel sizes (the side panels' widths, the bottom panel's height): limits, clamping and fitting into the window; what
-// a show | hide toggle of a side panel does. Pure; the store is `layout.svelte.ts`.
+// a show | hide toggle of a region does. Pure; the store is `layout.svelte.ts`.
 
 export type Range = { readonly min: number; readonly max: number; readonly def: number };
 
@@ -58,21 +58,32 @@ export function fitBottom(total: number, bottom: number | null): number | null {
   return over > 0 ? null : height;
 }
 
-/** The key a splitter understands, as a change of the width (`null`: not its key). `grow` = the panel grows to the
- *  right (the sidebar's edge) or to the left (the right panel's edge). */
+/** The way a panel grows from the edge its splitter sits on: the sidebar to the right, the right panel to the left,
+ *  the bottom panel up. */
+export type Grow = "right" | "left" | "up";
+
+/** The arrow keys of a splitter: the one that makes its panel larger, the one that makes it smaller. */
+const ARROWS: Readonly<Record<Grow, { readonly more: string; readonly less: string }>> = {
+  right: { more: "ArrowRight", less: "ArrowLeft" },
+  left: { more: "ArrowLeft", less: "ArrowRight" },
+  up: { more: "ArrowUp", less: "ArrowDown" },
+};
+
+/** The key a splitter understands, as a change of its panel's size (`null`: not its key; the arrows across its bar
+ *  are not). */
 export function keyWidth(
   key: string,
   shift: boolean,
   width: number,
   range: Range,
-  growsRight: boolean,
+  grows: Grow,
 ): number | null {
   const step = shift ? STEP_BIG : STEP;
   switch (key) {
-    case "ArrowRight":
-      return clampWidth(range, width + (growsRight ? step : -step));
-    case "ArrowLeft":
-      return clampWidth(range, width + (growsRight ? -step : step));
+    case ARROWS[grows].more:
+      return clampWidth(range, width + step);
+    case ARROWS[grows].less:
+      return clampWidth(range, width - step);
     case "Home":
       return range.min;
     case "End":
@@ -84,45 +95,49 @@ export function keyWidth(
   }
 }
 
-/** A right panel offered now: whether it is open, and whether it is the view its group shows (selected). */
+/** A panel offered now that the person opens | closes: whether it is open, and whether it is the view its group shows
+ *  (selected). */
 export type SidePanel = { readonly id: string; readonly open: boolean; readonly selected: boolean };
 
-/** What decides the right region: the document's outline, the panels plugins offer, the person's choices. */
-export type RightSide = {
-  /** The document shown has an outline. */
+/** What decides one region (left | right | bottom): the views arranged in it, the person's choices. */
+export type RegionState = {
+  /** Something that is always open shows there: a view the person cannot close (Files, Search, a plugin's sidebar
+   *  tab), the Notes' own list. */
+  fixed: boolean;
+  /** The outline is arranged there and the document shown has one. */
   hasOutline: boolean;
   /** The outline is on (`reading.outline`). */
   outlineOn: boolean;
   /** The outline is the view its group shows (not a tab behind another). */
   outlineSelected: boolean;
-  /** The right panels offered now, in column order. */
+  /** The panels arranged there that are offered now, in the order of the window's views. */
   panels: readonly SidePanel[];
-  /** The person hid the right panel. */
+  /** The person hid the region. */
   hidden: boolean;
 };
 
-/** The right region has something it could show (a toggle there would change the screen). */
-export function rightAvailable(side: RightSide): boolean {
-  return side.hasOutline || side.panels.length > 0;
+/** The region has something it could show (a toggle there would change the screen). */
+export function regionAvailable(side: RegionState): boolean {
+  return side.fixed || side.hasOutline || side.panels.length > 0;
 }
 
-/** Some view is present: the outline (when on), an open panel. */
-function anyPresent(side: RightSide): boolean {
-  return (side.hasOutline && side.outlineOn) || side.panels.some((p) => p.open);
+/** Some view is present: one that is always open, the outline (when on), an open panel. */
+function anyPresent(side: RegionState): boolean {
+  return side.fixed || (side.hasOutline && side.outlineOn) || side.panels.some((p) => p.open);
 }
 
-/** The right region is on screen: not hidden, with a present view. */
-export function rightShown(side: RightSide): boolean {
+/** The region is on screen: not hidden, with a present view. */
+export function regionShown(side: RegionState): boolean {
   return !side.hidden && anyPresent(side);
 }
 
 /** The outline is on screen now. */
-export function outlineShown(side: RightSide): boolean {
+export function outlineShown(side: RegionState): boolean {
   return !side.hidden && side.hasOutline && side.outlineOn && side.outlineSelected;
 }
 
 /** The panel `id` is on screen now. */
-export function panelShown(side: RightSide, id: string): boolean {
+export function panelShown(side: RegionState, id: string): boolean {
   const panel = side.panels.find((p) => p.id === id);
   return !side.hidden && panel !== undefined && panel.open && panel.selected;
 }
@@ -131,18 +146,18 @@ export function panelShown(side: RightSide, id: string): boolean {
  * The person's choices after a step (absent = unchanged): the region hidden, the outline on, a panel opened | closed,
  * the view selected in its group.
  */
-export type RightChoice = {
+export type RegionChoice = {
   hidden?: boolean;
   outlineOn?: boolean;
   open?: { id: string; open: boolean };
   select?: string;
 };
 
-/** The right-panel toggle: shown -> hidden; hidden -> shown; nothing present -> the outline turns on (else the first
+/** A region's toggle: shown -> hidden; hidden -> shown; nothing present -> the outline turns on (else the first
  *  offered panel opens); nothing it could show -> no change. */
-export function toggleRight(side: RightSide): RightChoice {
-  if (rightShown(side)) return { hidden: true };
-  if (!rightAvailable(side)) return {};
+export function toggleRegion(side: RegionState): RegionChoice {
+  if (regionShown(side)) return { hidden: true };
+  if (!regionAvailable(side)) return {};
   if (anyPresent(side)) return { hidden: false };
   if (side.hasOutline) return { hidden: false, outlineOn: true, select: "outline" };
   const first = side.panels[0];
@@ -152,13 +167,13 @@ export function toggleRight(side: RightSide): RightChoice {
 }
 
 /** The outline toggle: on screen -> off; else on, selected in its group, the region shown. */
-export function toggleOutline(side: RightSide): RightChoice {
+export function toggleOutline(side: RegionState): RegionChoice {
   if (outlineShown(side)) return { outlineOn: false };
   return { hidden: false, outlineOn: true, select: "outline" };
 }
 
 /** A panel's toggle: on screen -> closed; open but not on screen -> selected + shown (never closed); closed -> open. */
-export function togglePanel(side: RightSide, id: string): RightChoice {
+export function togglePanel(side: RegionState, id: string): RegionChoice {
   if (panelShown(side, id)) return { open: { id, open: false } };
   const panel = side.panels.find((p) => p.id === id);
   if (panel?.open === true) return { hidden: false, select: id };

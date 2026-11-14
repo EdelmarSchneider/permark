@@ -17,8 +17,13 @@ globalThis.ResizeObserver ??= class {
   disconnect(): void {}
 };
 
+// jsdom has no pointer capture: a handle that is dragged asks for it
+Element.prototype.setPointerCapture ??= () => {};
+Element.prototype.releasePointerCapture ??= () => {};
+
 const { default: FrameHost } = await import("../testing/FrameHost.svelte");
 const { default: FocusExit } = await import("./FocusExit.svelte");
+const { BOTTOM, PAGE_MIN_H } = await import("./layout");
 const { ui, FOCUS_MOVE_MS } = await import("./ui.svelte");
 const { ContributionRegistry } = await import("../plugins/registry.svelte");
 const { registerCoreCommands } = await import("../commands/core");
@@ -208,13 +213,185 @@ describe("the frame", () => {
       ".frame.focus .top",
       ".sidebar.gone",
       ".panel.gone",
+      ".bottom.gone",
       ".frame.moving .body",
+      ".frame.moving .center",
     ]) {
       expect(reduced, selector).toContain(selector);
     }
     expect(reduced).toContain("transition: none");
     const area = source("core/doc/DocumentArea.svelte");
     expect(area.slice(area.indexOf("prefers-reduced-motion"))).toContain("transition: none");
+  });
+});
+
+describe("the bottom region of the frame", () => {
+  const region = (selector: string): HTMLElement | null => target.querySelector(selector);
+  const bottom = (): HTMLElement | null => region('[data-region="bottom"]');
+  /** The room the center column gives the bottom region. */
+  const track = (): string => region(".center")?.style.getPropertyValue("--h-bottom") ?? "";
+  const bar = (): HTMLElement | null => region('[role=separator][data-side="bottom"]');
+  /** The center column is this high (jsdom has no layout). */
+  const high = (px: number): void => {
+    vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(px);
+  };
+
+  it("is absent while nothing is drawn there: no band, no splitter, the page alone in the center column", () => {
+    component = mount(FrameHost, { target, props: {} });
+    flushSync();
+    expect(bottom()).toBeNull();
+    expect(bar()).toBeNull();
+    expect(track()).toBe("");
+    expect(region(".main")?.parentElement).toBe(region(".center"));
+    expect(target.querySelectorAll("[role=separator]")).toHaveLength(2);
+  });
+
+  it("sits under the page, between the side columns, at the height asked for; its splitter lies on its top edge", () => {
+    component = mount(FrameHost, { target, props: { bottom: true, bottomHeight: 300 } });
+    flushSync();
+    expect(bottom()?.tagName).toBe("ASIDE");
+    expect(bottom()?.getAttribute("aria-label")).toBe("Bottom panel");
+    expect(bottom()?.inert).toBe(false);
+    expect(track()).toBe("300px");
+    // the Tab order: sidebar, page, bottom, right
+    expect(
+      [...target.querySelectorAll("[data-region]")].map((el) => el.getAttribute("data-region")),
+    ).toEqual(["sidebar", "page", "bottom", "right"]);
+    // in the center column: the side columns keep the whole height
+    expect(bottom()?.parentElement).toBe(region(".center"));
+    expect(region(".sidebar")?.parentElement).toBe(region(".body"));
+    expect(region(".panel")?.parentElement).toBe(region(".body"));
+    expect(bar()?.parentElement).toBe(region(".center"));
+    expect(bar()?.getAttribute("aria-orientation")).toBe("horizontal");
+    expect(bar()?.getAttribute("aria-label")).toBe("Resize the bottom panel");
+    expect(bar()?.getAttribute("aria-valuenow")).toBe("300");
+    expect(bar()?.getAttribute("aria-valuemin")).toBe(String(BOTTOM.min));
+    // the side panels' handles stay upright
+    expect(
+      [...target.querySelectorAll('[role=separator]:not([data-side="bottom"])')].map((el) =>
+        el.getAttribute("aria-orientation"),
+      ),
+    ).toEqual(["vertical", "vertical"]);
+  });
+
+  it("starts at its default height", () => {
+    component = mount(FrameHost, { target, props: { bottom: true } });
+    flushSync();
+    expect(track()).toBe(`${BOTTOM.def}px`);
+  });
+
+  it("gives way to the page in a short window: the page keeps its minimum height", () => {
+    high(PAGE_MIN_H + 180);
+    component = mount(FrameHost, { target, props: { bottom: true, bottomHeight: 240 } });
+    flushSync();
+    expect(track()).toBe("180px");
+    expect(bottom()?.inert).toBe(false);
+    expect(bar()?.getAttribute("aria-valuenow")).toBe("180");
+    // no taller than the window lets it be
+    expect(bar()?.getAttribute("aria-valuemax")).toBe("180");
+  });
+
+  it("a window too short for even its minimum: not drawn (no room, inert, no splitter), still mounted", () => {
+    high(PAGE_MIN_H + BOTTOM.min - 1);
+    component = mount(FrameHost, { target, props: { bottom: true, bottomHeight: 240 } });
+    flushSync();
+    expect(track()).toBe("0px");
+    expect(bottom()?.inert).toBe(true);
+    expect(bottom()?.classList.contains("gone")).toBe(true);
+    expect(region("#bottom-button")).not.toBeNull();
+    expect(bar()).toBeNull();
+    // the side panels are as they were
+    expect(region(".sidebar")?.inert).toBe(false);
+    expect(target.querySelectorAll("[role=separator]")).toHaveLength(2);
+  });
+
+  it("hidden by the person: no room, inert, still mounted, no splitter; the side panels stay", () => {
+    component = mount(FrameHost, { target, props: { bottom: true, bottomHidden: true } });
+    flushSync();
+    expect(track()).toBe("0px");
+    expect(bottom()?.inert).toBe(true);
+    expect(bottom()?.classList.contains("gone")).toBe(true);
+    expect(region("#bottom-button")).not.toBeNull();
+    expect(bar()).toBeNull();
+    expect(region(".sidebar")?.inert).toBe(false);
+    expect(region(".panel")?.inert).toBe(false);
+    expect(target.querySelectorAll("[role=separator]")).toHaveLength(2);
+  });
+
+  it("focus mode folds it with the side panels: only the page", () => {
+    component = mount(FrameHost, { target, props: { bottom: true, focus: true } });
+    flushSync();
+    expect(track()).toBe("0px");
+    expect(bottom()?.inert).toBe(true);
+    expect(region("#bottom-button")).not.toBeNull();
+    expect(Boolean(region(".main")?.inert)).toBe(false);
+    expect(target.querySelectorAll("[role=separator]")).toHaveLength(0);
+  });
+
+  it("its splitter: Up | Down by 16 | 64 with Shift, Home | End = the limits, Enter | double click = the default", () => {
+    high(700);
+    const asked: number[] = [];
+    component = mount(FrameHost, {
+      target,
+      props: { bottom: true, bottomHeight: 300, onBottomHeight: (px: number) => asked.push(px) },
+    });
+    flushSync();
+    const key = (name: string, shiftKey = false): number | undefined => {
+      const event = new KeyboardEvent("keydown", {
+        key: name,
+        shiftKey,
+        bubbles: true,
+        cancelable: true,
+      });
+      bar()?.dispatchEvent(event);
+      return event.defaultPrevented ? asked.at(-1) : undefined;
+    };
+    expect(key("ArrowUp")).toBe(316);
+    expect(key("ArrowDown")).toBe(284);
+    expect(key("ArrowUp", true)).toBe(364);
+    expect(key("ArrowDown", true)).toBe(236);
+    expect(key("Home")).toBe(BOTTOM.min);
+    // the tallest the window gives: the page keeps its minimum
+    expect(key("End")).toBe(700 - PAGE_MIN_H);
+    expect(key("Enter")).toBe(BOTTOM.def);
+    // across the bar: not its keys
+    expect(key("ArrowLeft")).toBeUndefined();
+    expect(key("ArrowRight")).toBeUndefined();
+    bar()?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(asked.at(-1)).toBe(BOTTOM.def);
+    expect(asked).toHaveLength(8);
+  });
+
+  it("its splitter dragged: up makes it taller, down shorter, never taller than the window gives", () => {
+    high(700);
+    const asked: number[] = [];
+    component = mount(FrameHost, {
+      target,
+      props: { bottom: true, bottomHeight: 300, onBottomHeight: (px: number) => asked.push(px) },
+    });
+    flushSync();
+    const pointer = (type: string, clientX: number, clientY: number): void => {
+      bar()?.dispatchEvent(
+        new PointerEvent(type, { button: 0, pointerId: 1, clientX, clientY, bubbles: true }),
+      );
+    };
+    // not held: a pointer passing over it changes nothing
+    pointer("pointermove", 400, 380);
+    expect(asked).toEqual([]);
+    pointer("pointerdown", 400, 400);
+    pointer("pointermove", 400, 360);
+    expect(asked.at(-1)).toBe(340);
+    pointer("pointermove", 400, 450);
+    expect(asked.at(-1)).toBe(250);
+    // sideways: nothing of its own
+    pointer("pointermove", 900, 450);
+    expect(asked.at(-1)).toBe(250);
+    pointer("pointermove", 400, -500);
+    expect(asked.at(-1)).toBe(700 - PAGE_MIN_H);
+    pointer("pointerup", 400, -500);
+    const count = asked.length;
+    pointer("pointermove", 400, 300);
+    expect(asked).toHaveLength(count);
   });
 });
 

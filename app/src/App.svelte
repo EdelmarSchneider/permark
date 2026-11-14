@@ -32,9 +32,8 @@
   import Finder from "./core/search/Finder.svelte";
   import KeymapDialog from "./core/shell/KeymapDialog.svelte";
   import { answerInit } from "./core/shell/initProject";
-  import { rightAvailable } from "./core/shell/layout";
   import { layout } from "./core/shell/layout.svelte";
-  import { hasSidebar, rightSide } from "./core/shell/sides";
+  import { hasSidebar, hasToggle } from "./core/shell/sides";
   import { tabs } from "./core/shell/tabs.svelte";
   import { ui } from "./core/shell/ui.svelte";
   import { conditions } from "./core/conditions/context.svelte";
@@ -54,6 +53,7 @@
   /** A region has a view to draw (the frame draws a region by what is present, not by the kind of workspace). */
   const leftDrawn = $derived(arrangement.drawn("left").length > 0);
   const rightDrawn = $derived(arrangement.drawn("right").length > 0);
+  const bottomDrawn = $derived(arrangement.drawn("bottom").length > 0);
   /** The window has a left region: a view to draw there, or the Notes' own list. */
   const leftShown = $derived(hasSidebar(store.view));
   /** The room the right panel takes on screen (0: none): notices keep clear of it. */
@@ -255,6 +255,10 @@
   <ViewRegion region="right" />
 {/snippet}
 
+{#snippet bottom()}
+  <ViewRegion region="bottom" />
+{/snippet}
+
 {#snippet main()}
   {#if shown?.workspace.kind === "project" || shown?.workspace.kind === "singleFile"}
     <DocumentArea workspace={shown.workspace} document={shown.document} {store} />
@@ -281,12 +285,13 @@
 {#snippet status()}
   <div class="slot left">
     {#if leftShown}<PanelToggle side="sidebar" />{/if}
+    {#if shown !== null && hasToggle("bottom")}<PanelToggle side="bottom" />{/if}
     <StatusItems slot="left" />
   </div>
   <div class="slot center"><StatusItems slot="center" /></div>
   <div class="slot right">
     <StatusItems slot="right" /><span>{versionText}</span>
-    {#if shown !== null && rightAvailable(rightSide())}<PanelToggle side="right" />{/if}
+    {#if shown !== null && hasToggle("right")}<PanelToggle side="right" />{/if}
   </div>
 {/snippet}
 
@@ -296,12 +301,16 @@
   <Frame
     sidebarWidth={layout.sidebar}
     rightWidth={layout.right}
+    bottomHeight={layout.bottom}
     onSidebarWidth={(px) => layout.setSidebar(px)}
     onRightWidth={(px) => layout.setRight(px)}
+    onBottomHeight={(px) => layout.setBottom(px)}
     sidebarHidden={layout.sidebarOff}
     rightHidden={layout.rightOff}
+    bottomHidden={layout.bottomOff}
     {top}
     sidebar={leftShown ? sidebar : undefined}
+    bottom={bottomDrawn ? bottom : undefined}
     panel={rightDrawn ? panel : undefined}
     focus={ui.focus === "on"}
     moving={ui.frameMoving}

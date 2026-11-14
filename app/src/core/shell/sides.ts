@@ -1,21 +1,22 @@
-// Showing | hiding the regions of this window (Mod+B, Mod+Alt+B, the status bar toggles, the outline toggle) and
-// showing | selecting | closing a view in whatever region it sits: the stores' state read, the pure step of
-// `layout.ts` applied, the frame animated, the focus let go of a region that hides (its controls go inert: keys
-// reach the page).
+// Showing | hiding the regions of this window (Mod+B, Mod+Alt+B, Mod+J, the status bar toggles, the outline toggle)
+// and showing | selecting | moving | closing a view in whatever region it sits: the stores' state read, the pure step
+// of `layout.ts` applied to the view's own region, the frame animated, the focus let go of a region that hides (its
+// controls go inert: keys reach the page).
 
 import { tick } from "svelte";
 import type { WindowView, WorkspaceView } from "../../api";
 import { reading } from "../doc/reading.svelte";
 import { windowStore } from "../window.svelte";
 import {
+  regionAvailable,
   toggleOutline,
   togglePanel as panelStep,
-  toggleRight,
-  type RightChoice,
-  type RightSide,
+  toggleRegion as regionStep,
+  type RegionChoice,
+  type RegionState,
 } from "./layout";
 import { layout } from "./layout.svelte";
-import { OUTLINE, SEARCH, select, type Region } from "./arrangement";
+import { moveTo, OUTLINE, SEARCH, select, type Region } from "./arrangement";
 import { arrangement } from "./arrangement.svelte";
 import { ui } from "./ui.svelte";
 
@@ -47,20 +48,56 @@ export function hasSidebar(view: WindowView): boolean {
   }
 }
 
-/** The right region as the stores have it now (reactive when read in a `$derived`). */
-export function rightSide(): RightSide {
+/** `region` as the stores have it now (reactive when read in a `$derived`): the views arranged in it, the person's
+ *  choices. */
+export function regionState(region: Region): RegionState {
+  const here = (id: string): boolean => arrangement.regionOf(id) === region;
   return {
-    hasOutline: arrangement.hasOutline,
+    // at the left the Notes' own list too (not a view)
+    fixed:
+      (region === "left" && windowStore.screen?.workspace.kind === "notes") ||
+      arrangement
+        .stacked(region)
+        .some((group) => group.views.some((id) => arrangement.viewOf(id)?.closable === false)),
+    hasOutline: arrangement.hasOutline && here(OUTLINE),
     outlineOn: reading.outline,
     outlineSelected: arrangement.isSelected(OUTLINE),
-    // the panels the person opens | closes (those of the right side)
+    // the panels the person opens | closes
     panels: arrangement.views.flatMap(({ id, closable, panel }) =>
-      closable && panel !== null
+      closable && panel !== null && here(id)
         ? [{ id, open: arrangement.isOpen(panel), selected: arrangement.isSelected(id) }]
         : [],
     ),
-    hidden: layout.rightHidden,
+    hidden: isHidden(region),
   };
+}
+
+/** The region the view `id` is arranged in (one no region lists: the right, where a panel opens by default). */
+function regionWith(id: string): Region {
+  return arrangement.regionOf(id) ?? "right";
+}
+
+/** The state of the region the view `id` is arranged in (reactive when read in a `$derived`). */
+export function regionStateOf(id: string): RegionState {
+  return regionState(regionWith(id));
+}
+
+/**
+ * `region` has its toggle now (the status bar's button, its command; reactive when read in a `$derived`). The left
+ * and the bottom region: while they are there (a present view; at the left the Notes' list too). The right one also
+ * while it only could show something: its toggle then turns the outline on, else opens the first panel.
+ */
+export function hasToggle(region: Region): boolean {
+  switch (region) {
+    case "left":
+      return hasSidebar(windowStore.view);
+    case "right":
+      return regionAvailable(regionState(region));
+    case "bottom":
+      return arrangement.presentIn(region) > 0;
+    default:
+      return region satisfies never;
+  }
 }
 
 /** A region about to hide gives the keyboard focus to the page (it goes inert): the editor when one is open, else
@@ -138,31 +175,44 @@ export function selectView(id: string): void {
   if (id === SEARCH) ui.searchFocus += 1;
 }
 
-function apply(choice: RightChoice): void {
-  if (choice.hidden !== undefined) setHidden("right", choice.hidden);
+function apply(region: Region, choice: RegionChoice): void {
+  if (choice.hidden !== undefined) setHidden(region, choice.hidden);
   if (choice.outlineOn !== undefined) reading.setOutline(choice.outlineOn);
   if (choice.open !== undefined) layout.setOpen(choice.open.id, choice.open.open);
   if (choice.select !== undefined) selectView(choice.select);
 }
 
+/** The toggle of `region` (its key, its status bar button), where the region has one: it hides | shows; the right
+ *  region with nothing present turns the outline on, else opens the first panel arranged there. */
+export function toggleRegion(region: Region): void {
+  if (hasToggle(region)) apply(region, regionStep(regionState(region)));
+}
+
 /** Mod+B: the sidebar hides | shows (only where there is one). */
 export function toggleSidebar(): void {
-  if (hasSidebar(windowStore.view)) setHidden("left", !layout.sidebarHidden);
+  toggleRegion("left");
 }
 
 /** Mod+Alt+B: the right panel hides | shows. */
 export function toggleRightPanel(): void {
-  apply(toggleRight(rightSide()));
+  toggleRegion("right");
 }
 
-/** Mod+Alt+O, the header's outline button: the outline shows | hides (a hidden right panel shows again with it). */
+/** Mod+J: the bottom panel hides | shows (only while a view is present there). */
+export function toggleBottomPanel(): void {
+  toggleRegion("bottom");
+}
+
+/** Mod+Alt+O, the header's outline button: the outline shows | hides (its region, when hidden, shows again with it). */
 export function toggleOutlinePanel(): void {
-  apply(toggleOutline(rightSide()));
+  const region = regionWith(OUTLINE);
+  apply(region, toggleOutline(regionState(region)));
 }
 
 /** A panel's toggle (its chip, its command): on screen -> closed; open elsewhere -> brought forward; closed -> open. */
 export function togglePanel(id: string): void {
-  apply(panelStep(rightSide(), id));
+  const region = regionWith(id);
+  apply(region, panelStep(regionState(region), id));
 }
 
 /**
@@ -178,6 +228,17 @@ export function showView(id: string): void {
     if (view.panel === null) reading.setOutline(true);
     else layout.setOpen(id, true);
   }
+  selectView(id);
+}
+
+/**
+ * Moves a view to another region: the last tab of its last group (an empty region: its first group), shown by that
+ * group; a region the person hid shows again with it. A view nobody offers now stays where it is.
+ */
+export function moveToRegion(id: string, region: Region): void {
+  if (arrangement.viewOf(id) === undefined) return;
+  arrangement.arrange(moveTo(arrangement.layout, id, region));
+  setHidden(region, false);
   selectView(id);
 }
 

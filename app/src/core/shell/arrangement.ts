@@ -19,8 +19,8 @@ export const MIN_SHARE = 0.05;
 export const MIN_GROUP_PX = 210;
 /** The divider's track between two drawn groups: its own room, so it never covers a row of a view. */
 export const DIVIDER_PX = 7;
-/** The height of a group's tab strip. */
-export const STRIP_PX = 32;
+/** The height of a group's tab strip: the region draws it this high (its tabs' own height, 38.4 px, as whole pixels). */
+export const STRIP_PX = 38;
 
 export type Region = "left" | "right" | "bottom";
 /** Every region, in the order a view listed twice keeps its place. */
