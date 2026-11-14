@@ -59,6 +59,9 @@ pub struct Reply {
     pub at_ms: u64,
     pub by: By,
     pub text: String,
+    /// When the person last changed the text (absent: never changed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edited_ms: Option<u64>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
@@ -93,6 +96,9 @@ pub struct Comment {
     /// The document, in the project's form (`/` separators, `@wt/<name>/` inside a linked worktree).
     pub path: String,
     pub text: String,
+    /// When the person last changed the text (absent: never changed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edited_ms: Option<u64>,
     pub anchor: Anchor,
     pub created_ms: u64,
     #[serde(default)]
@@ -147,6 +153,8 @@ pub struct ReplyView {
     pub at_ms: u64,
     pub by: By,
     pub text: String,
+    #[ts(type = "number | null")]
+    pub edited_ms: Option<u64>,
 }
 
 /// A comment with its place worked out against the document as it is now.
@@ -164,6 +172,8 @@ pub struct CommentView {
     pub end_line: u32,
     #[ts(type = "number")]
     pub created_ms: u64,
+    #[ts(type = "number | null")]
+    pub edited_ms: Option<u64>,
     pub state: PassageState,
     pub done: bool,
     #[ts(type = "number | null")]

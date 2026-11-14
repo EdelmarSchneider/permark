@@ -25,6 +25,7 @@ function comment(over: Partial<CommentView>): CommentView {
     line: 12,
     endLine: 12,
     createdMs: 1000,
+    editedMs: null,
     state: "anchored",
     done: false,
     doneMs: null,

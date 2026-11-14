@@ -81,6 +81,8 @@ pub struct CommentItem {
     /// `anchored | moved | passageChanged | documentMissing`.
     pub state: &'static str,
     pub created_ms: u64,
+    /// The person changed the text after writing it.
+    pub edited: bool,
     pub done: bool,
     /// What the one who marked it done answered.
     pub reply: Option<String>,

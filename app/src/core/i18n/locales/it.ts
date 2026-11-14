@@ -1220,6 +1220,8 @@ export default {
     "I tuoi commenti per il tuo agente sono stati copiati: incollali nella sua chat.",
   "comments.line": "riga {line}",
   "comments.reply": "Risposta",
+  "comments.edit": "Modifica",
+  "comments.edited": "modificato",
   "comments.state.passageChanged": "Passaggio modificato",
   "comments.state.passageChangedHint":
     "Questo testo non è più nel documento. Il commento rimanda al punto più vicino.",

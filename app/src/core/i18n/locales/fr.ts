@@ -1240,6 +1240,8 @@ export default {
     "Vos commentaires ont été copiés pour votre agent : collez-les dans sa conversation.",
   "comments.line": "ligne {line}",
   "comments.reply": "Répondre",
+  "comments.edit": "Modifier",
+  "comments.edited": "modifié",
   "comments.state.passageChanged": "Passage modifié",
   "comments.state.passageChangedHint":
     "Ce texte ne figure plus dans le document. Le commentaire pointe vers l'endroit le plus proche.",

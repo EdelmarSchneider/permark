@@ -625,6 +625,9 @@ impl Tools {
                 if let (Some(reply), Some(map)) = (c.reply, item.as_object_mut()) {
                     map.insert("reply".to_owned(), json!(reply));
                 }
+                if let (true, Some(map)) = (c.edited, item.as_object_mut()) {
+                    map.insert("edited".to_owned(), json!(true));
+                }
                 item
             })
             .collect();

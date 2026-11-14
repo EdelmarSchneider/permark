@@ -24,17 +24,35 @@ import {
 export const RELOAD_MS = 120;
 /** The longest comment, in characters. */
 export const MAX_CHARS = 2000;
+/** The longest reply, in characters. */
+export const MAX_REPLY_CHARS = 1000;
 
-/** A comment being written: the passage it is about. */
-export type Draft = {
-  path: string;
-  quote: string;
-  headingPath: readonly string[];
-  line: number;
-  endLine: number;
-  /** Where the passage is on screen (the field goes under it). */
-  rect: DOMRect | null;
-};
+/** The text an edit changes: the comment's own, or the reply at `index` under it. */
+export type EditTarget = { kind: "comment" } | { kind: "reply"; index: number };
+
+/** What the field holds: a new comment on a passage, or the person's text being edited. */
+export type Draft =
+  | {
+      kind: "new";
+      path: string;
+      quote: string;
+      headingPath: readonly string[];
+      line: number;
+      endLine: number;
+      /** Where the passage is on screen (the field goes under it). */
+      rect: DOMRect | null;
+    }
+  | {
+      kind: "edit";
+      id: string;
+      target: EditTarget;
+      /** The comment's passage (shown above the field). */
+      quote: string;
+      /** The text as it is now (the field starts with it). */
+      text: string;
+      /** Where the comment is on screen. */
+      rect: DOMRect | null;
+    };
 
 export class CommentsStore {
   all = $state.raw<readonly CommentView[]>([]);
@@ -185,6 +203,7 @@ export class CommentsStore {
     const start = Math.min(...lines.map((b) => b.lineStart));
     const end = Math.max(...lines.map((b) => b.lineEnd));
     this.draft = {
+      kind: "new",
       path,
       quote,
       headingPath: first === null ? [] : headingPathAt(blocks, view.body.outline, first),
@@ -199,10 +218,22 @@ export class CommentsStore {
     this.draft = null;
   }
 
-  /** Saves the comment being written. `true` when it is kept (the field closes). */
+  /** Opens the field on the person's text (the comment's own, or one of the person's replies). */
+  beginEdit(comment: CommentView, target: EditTarget, rect: DOMRect | null): void {
+    const text = target.kind === "comment" ? comment.text : comment.replies[target.index]?.text;
+    if (text === undefined) return;
+    this.draft = { kind: "edit", id: comment.id, target, quote: comment.quote, text, rect };
+  }
+
+  /** Saves the comment being written | edited. `true` when it is kept (the field closes). */
   async save(text: string): Promise<boolean> {
     const draft = this.draft;
     if (draft === null || text.trim() === "") return false;
+    if (draft.kind === "edit") {
+      const kept = await this.edit(draft.id, draft.target, text);
+      if (kept && this.draft === draft) this.draft = null;
+      return kept;
+    }
     const result = await this.#client.call("comments.add", {
       path: draft.path,
       quote: draft.quote,
@@ -235,6 +266,19 @@ export class CommentsStore {
   async reply(id: string, text: string): Promise<boolean> {
     if (text.trim() === "") return false;
     const result = await this.#client.call("comments.reply", { id, text });
+    if (!result.ok) {
+      this.#fail(result.error);
+      return false;
+    }
+    await this.load();
+    return true;
+  }
+
+  /** Changes the text of the person's comment | reply. */
+  async edit(id: string, target: EditTarget, text: string): Promise<boolean> {
+    if (text.trim() === "") return false;
+    const reply = target.kind === "reply" ? target.index : null;
+    const result = await this.#client.call("comments.edit", { id, reply, text: text.trim() });
     if (!result.ok) {
       this.#fail(result.error);
       return false;

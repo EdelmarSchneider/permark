@@ -484,6 +484,7 @@ describe("detail card counts lead to the project's items (F8)", () => {
       state: "anchored" as const,
       done: false,
       doneMs: null,
+      editedMs: null,
       doneBy: null,
       reply: null,
       replies: [],

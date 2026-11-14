@@ -30,7 +30,7 @@ use permark_core::IpcError;
 use serde::Deserialize;
 
 pub use model::{Comment, CommentScope, CommentView, PassageState};
-pub use service::{CommentsService, NewComment};
+pub use service::{CommentsService, EditTarget, NewComment};
 
 const ID: PluginId = PluginId::of("comments");
 /// The file in the project's local state.
@@ -90,6 +90,15 @@ struct IdArgs {
 #[derive(Deserialize)]
 struct ReplyArgs {
     id: String,
+    text: String,
+}
+
+#[derive(Deserialize)]
+struct EditArgs {
+    id: String,
+    /// The index of the reply whose text changes; absent: the comment's own text.
+    #[serde(default)]
+    reply: Option<usize>,
     text: String,
 }
 
@@ -208,6 +217,15 @@ impl Plugin for CommentsPlugin {
                 Ok(())
             }),
         ));
+        // a text change is not a journal fact: the journal's comment ops are read by older versions too
+        let s = Arc::clone(&service);
+        registrations.extend(cx.rpc(
+            "edit",
+            typed(move |args: EditArgs, _| {
+                let target = args.reply.map_or(EditTarget::Comment, EditTarget::Reply);
+                s.edit(&args.id, target, &args.text)
+            }),
+        ));
         let lease = project
             .services
             .provide(Arc::new(CommentsApi(Arc::new(Book(Arc::clone(&service))))));
@@ -270,6 +288,7 @@ impl CommentBook for Book {
                 heading_path: view.heading_path,
                 line: view.line,
                 created_ms: view.created_ms,
+                edited: view.edited_ms.is_some(),
                 done: view.done,
                 reply: view.reply,
             })

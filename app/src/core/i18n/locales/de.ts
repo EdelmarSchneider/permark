@@ -1225,6 +1225,8 @@ export default {
     "Die Kommentare für den Agenten wurden kopiert und können in seinen Chat eingefügt werden.",
   "comments.line": "Zeile {line}",
   "comments.reply": "Antwort",
+  "comments.edit": "Bearbeiten",
+  "comments.edited": "bearbeitet",
   "comments.state.passageChanged": "Stelle geändert",
   "comments.state.passageChangedHint":
     "Dieser Text steht nicht mehr im Dokument. Der Kommentar zeigt auf die nächstgelegene Stelle.",

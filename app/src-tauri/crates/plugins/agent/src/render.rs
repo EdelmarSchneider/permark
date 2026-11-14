@@ -544,11 +544,10 @@ fn list_comments(data: &Value) -> String {
                     s(c, "path"),
                     u(c, "line").map(|l| l.to_string()).unwrap_or_default()
                 ),
-                if b(c, "done") {
-                    format!("{state}+done")
-                } else {
-                    state.to_owned()
-                },
+                [("done", "+done"), ("edited", "+edited")]
+                    .iter()
+                    .filter(|(key, _)| b(c, key))
+                    .fold(state.to_owned(), |flags, (_, flag)| flags + flag),
                 s(c, "quote").to_owned(),
                 s(c, "text").to_owned(),
                 strings(c, "headingPath").join(" > "),

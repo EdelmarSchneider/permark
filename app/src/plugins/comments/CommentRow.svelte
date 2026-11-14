@@ -1,16 +1,19 @@
 <script lang="ts">
   // One comment in the Comments tab: where it is, the quoted passage, what was written, the answers under it, and what
-  // can be done with it (go to the passage, mark done | open again, reply, send to the agent, delete).
+  // can be done with it (go to the passage, mark done | open again, reply, edit the person's text, send to the agent,
+  // delete).
   import CornerDownRight from "@lucide/svelte/icons/corner-down-right";
   import Check from "@lucide/svelte/icons/check";
+  import Pencil from "@lucide/svelte/icons/pencil";
   import Reply from "@lucide/svelte/icons/reply";
   import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
   import Send from "@lucide/svelte/icons/send";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import type { CommentView } from "../../api";
   import { language, t } from "../../core/i18n";
+  import { exactTime } from "../../core/time";
   import { excerpt, trail } from "./model";
-  import { comments } from "./store.svelte";
+  import { comments, type EditTarget } from "./store.svelte";
 
   type Props = { comment: CommentView; marked?: boolean };
   let { comment, marked = false }: Props = $props();
@@ -24,12 +27,13 @@
       .filter((part) => part !== "")
       .join(" · "),
   );
-  const when = $derived(
-    new Date(comment.createdMs).toLocaleString(language.locale, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }),
-  );
+  const when = $derived(exactTime(comment.createdMs, language.locale));
+
+  /** The field opens under this comment; closing it gives the focus back to the Edit button that opened it. */
+  function edit(button: HTMLElement, target: EditTarget): void {
+    const rect = button.closest("article")?.getBoundingClientRect() ?? null;
+    comments.beginEdit(comment, target, rect);
+  }
 
   async function sendReply(): Promise<void> {
     if (await comments.reply(comment.id, draft)) {
@@ -74,6 +78,11 @@
   <p class="text">{comment.text}</p>
   <p class="when">
     {when}
+    {#if comment.editedMs !== null}
+      · <span class="edited" title={exactTime(comment.editedMs, language.locale)}
+        >{t("comments.edited")}</span
+      >
+    {/if}
     {#if comment.done}
       · {comment.doneBy === "agent" ? t("comments.doneByAgent") : t("comments.doneByYou")}
     {/if}
@@ -81,11 +90,30 @@
   {#if comment.reply !== null}
     <p class="reply"><CornerDownRight size={12} aria-hidden="true" /> {comment.reply}</p>
   {/if}
-  {#each comment.replies as reply (reply.atMs + reply.text)}
+  <!-- by place: replies are only ever added at the end, and an edited reply keeps its Edit button (and focus) -->
+  {#each comment.replies as reply, index (index)}
     <p class="reply">
       <CornerDownRight size={12} aria-hidden="true" />
       <span class="by">{reply.by === "agent" ? t("comments.byAgent") : t("comments.byYou")}</span>
-      {reply.text}
+      <span class="said">
+        {reply.text}
+        {#if reply.editedMs !== null}
+          <span class="edited" title={exactTime(reply.editedMs, language.locale)}
+            >{t("comments.edited")}</span
+          >
+        {/if}
+      </span>
+      {#if reply.by === "user"}
+        <button
+          type="button"
+          class="icon small"
+          title={t("comments.edit")}
+          aria-label={t("comments.edit")}
+          onclick={(e) => edit(e.currentTarget, { kind: "reply", index })}
+        >
+          <Pencil size={12} />
+        </button>
+      {/if}
     </p>
   {/each}
 
@@ -135,6 +163,15 @@
         onclick={() => (replying = true)}
       >
         <Reply size={14} />
+      </button>
+      <button
+        type="button"
+        class="icon"
+        title={t("comments.edit")}
+        aria-label={t("comments.edit")}
+        onclick={(e) => edit(e.currentTarget, { kind: "comment" })}
+      >
+        <Pencil size={14} />
       </button>
       {#if !comment.done}
         <button
@@ -250,6 +287,19 @@
   .by {
     color: var(--muted);
     font-weight: 600;
+  }
+  .said {
+    flex: 1;
+    min-width: 0;
+  }
+  .edited {
+    color: var(--faint);
+    font-size: var(--fs-ui-xs);
+  }
+  .icon.small {
+    width: 20px;
+    height: 20px;
+    flex: none;
   }
   textarea {
     width: 100%;
