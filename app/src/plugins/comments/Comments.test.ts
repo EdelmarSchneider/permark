@@ -303,7 +303,11 @@ describe("editing a comment", () => {
     flushSync();
     const first = comments.all[0];
     if (!first) throw new Error("no comment");
-    comments.beginEdit({ ...first, id: "another", text: "The other comment" }, { kind: "comment" }, null);
+    comments.beginEdit(
+      { ...first, id: "another", text: "The other comment" },
+      { kind: "comment" },
+      null,
+    );
     flushSync();
     expect(box().value).toBe("The other comment");
     press(box(), "Escape");
