@@ -1021,6 +1021,17 @@ export function createMockApi(): Api & {
       if (change.key === "pluginEnabled") announceShell();
       return ok(settings);
     },
+    // the demo has no groups file on disk: nothing changes on a read again
+    charactersRefresh: () => ok(null),
+    // stands in for the written file: the built-ins it holds are now read from it
+    charactersCreate: () => {
+      if (settings.charactersStatus !== "builtin" || settings.charactersFile === "")
+        return ok(false);
+      settings = { ...settings, charactersStatus: "read" };
+      emit("settings-changed", { scope: { scope: "app" }, keys: ["charactersFile"], settings });
+      return ok(true);
+    },
+    charactersReveal: () => ok(null),
     projectSessionGet: (key) =>
       Promise.resolve(
         whileOpening("project_session_get") ?? { ok: true, value: session.get(key) ?? null },

@@ -385,6 +385,9 @@ export interface Commands {
   recent_remove: { args: { path: string }; result: null };
   settings_get: { args: Record<string, never>; result: AppSettings };
   settings_set: { args: { change: SettingChange }; result: AppSettings };
+  characters_refresh: { args: Record<string, never>; result: null };
+  characters_create: { args: Record<string, never>; result: boolean };
+  characters_reveal: { args: Record<string, never>; result: null };
   project_session_get: { args: { key: string }; result: JsonValue | null };
   project_session_set: { args: { key: string; value: JsonValue | null }; result: null };
   tree_open: { args: { filter: TreeFilter | null }; result: TreeSnapshot };
@@ -961,6 +964,12 @@ export interface Api {
   recentRemove(path: string): Promise<Result<null>>;
   settingsGet(): Promise<Result<AppSettings>>;
   settingsSet(change: SettingChange): Promise<Result<AppSettings>>;
+  /** Reads the symbol groups file again; a change arrives as `settings-changed`, none = nothing. */
+  charactersRefresh(): Promise<Result<null>>;
+  /** Writes the built-in groups file when none is there; `false`: a file is there (never written over) | no name set. */
+  charactersCreate(): Promise<Result<boolean>>;
+  /** Shows the groups file (else the profile folder) in the file manager; the backend picks the path. */
+  charactersReveal(): Promise<Result<null>>;
   projectSessionGet(key: string): Promise<Result<JsonValue | null>>;
   projectSessionSet(key: string, value: JsonValue | null): Promise<Result<null>>;
   /** This window's Explorer list: `null` filter = the project's default. Changes arrive as `tree-changed`. */
