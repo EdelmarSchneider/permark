@@ -1391,6 +1391,8 @@ const en = {
   "agent.switch": "Share this project with agents",
   "agent.switchHint":
     "An agent you connect (an AI tool that supports MCP, such as Claude Code or Cursor) can see what you're looking at and what changed, search and read this project's files, read your comments and the notes you share, and show you a place. Only on this computer. Files listed in .aiignore stay out of their reach, and agents never edit files through PerMark. This covers only what agents get from PerMark: an agent can still open files on your computer by itself.",
+  "agent.folderReplaced":
+    "This folder changed since you connected it. Turn the connection on again to allow agents here.",
   "agent.groups": "What agents may do",
   "agent.group.context": "See what you're looking at",
   "agent.group.changes": "See what changed",

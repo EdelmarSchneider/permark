@@ -154,6 +154,25 @@ describe("Settings > AI agents", () => {
     );
   });
 
+  it("a folder created again at its path shows off, says why, and goes back on with the one button", async () => {
+    await open();
+    mountPage(AGENT_PAGE);
+    await until(() => text(target).includes("Off for this project"), "state card");
+    expect(text(target)).not.toContain("This folder changed since you connected it.");
+    mock.probe.plugins.agent.replaceFolder();
+    await until(
+      () =>
+        text(target).includes(
+          "This folder changed since you connected it. Turn the connection on again to allow agents here.",
+        ),
+      "the note",
+    );
+    expect(text(target)).toContain("Off for this project");
+    button("Share this project with agents").click();
+    await until(() => text(target).includes("On · waiting for an agent"), "on");
+    expect(text(target)).not.toContain("This folder changed since you connected it.");
+  });
+
   it("names the connected client, and a server error with its reason and a mark (not color only)", async () => {
     await open();
     mountPage(AGENT_PAGE);

@@ -151,6 +151,7 @@ mod tests {
                     .into_iter()
                     .collect(),
                 resolve_asked: true,
+                folder: None,
             })
             .unwrap();
         let comments = store.raw_file("comments.json");
@@ -286,6 +287,7 @@ users[2]{name,token}:
                 enabled: true,
                 groups: [("find".to_owned(), true)].into_iter().collect(),
                 resolve_asked: true,
+                folder: None,
             })
             .unwrap();
         let composed = compose(dirs.clone())(&root).unwrap();

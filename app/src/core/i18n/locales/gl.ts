@@ -1418,6 +1418,8 @@ export default {
   "agent.switch": "Compartir este proxecto cos axentes",
   "agent.switchHint":
     "Un axente que conecte (unha ferramenta de IA compatíbel con MCP, como Claude Code ou Cursor) pode ver o que está a mirar e o que cambiou, buscar e ler os ficheiros deste proxecto, ler os seus comentarios e as notas que comparta, e mostrarlle un lugar. Só neste computador. Os ficheiros que lista .aiignore quedan fóra do seu alcance, e os axentes nunca editan ficheiros a través de PerMark. Isto só abrangue o que os axentes obteñen de PerMark: un axente aínda pode abrir ficheiros do seu computador pola súa conta.",
+  "agent.folderReplaced":
+    "Este cartafol cambiou desde que o conectou. Volva activar a conexión para permitir axentes aquí.",
   "agent.groups": "O que poden facer os axentes",
   "agent.group.context": "Ver o que está a mirar",
   "agent.group.changes": "Ver o que cambiou",

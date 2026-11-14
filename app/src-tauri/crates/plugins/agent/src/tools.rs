@@ -260,12 +260,12 @@ impl Tools {
         }))
     }
 
-    /// Whether `group` is open now: the switch on and the group on for this project (read fresh, the project's
-    /// denial counted).
+    /// Whether `group` is open now: the switch on for this folder and the group on for this project (read fresh, the
+    /// project's denial counted).
     #[must_use]
     pub fn allows(&self, group: Group) -> bool {
         let choice = perms::load(&self.store);
-        choice.enabled
+        choice.is_on(self.vault.main().path())
             && perms::effective(
                 &choice.groups,
                 &ProjectConfig::load(self.vault.main()).agent_deny,
@@ -282,7 +282,7 @@ impl Tools {
         let group =
             group_of(tool).ok_or_else(|| ToolError::Invalid(format!("unknown tool {tool}")))?;
         let choice = perms::load(&self.store);
-        if !choice.enabled {
+        if !choice.is_on(self.vault.main().path()) {
             return Err(ToolError::Off);
         }
         let config = ProjectConfig::load(self.vault.main());

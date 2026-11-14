@@ -1435,6 +1435,8 @@ export default {
   "agent.switch": "Dieses Projekt mit Agenten teilen",
   "agent.switchHint":
     "Ein verbundener Agent (ein KI-Werkzeug mit MCP-Unterstützung, etwa Claude Code oder Cursor) sieht, was gerade angezeigt wird und was sich geändert hat, kann die Dateien dieses Projekts suchen und lesen, Kommentare und geteilte Notizen lesen und eine Stelle zeigen. Nur auf diesem Computer. Dateien, die in .aiignore stehen, bleiben außer Reichweite, und Agenten bearbeiten nie Dateien über PerMark. Das gilt nur für das, was Agenten von PerMark bekommen: Ein Agent kann Dateien auf diesem Computer weiterhin selbst öffnen.",
+  "agent.folderReplaced":
+    "Dieser Ordner hat sich geändert, seit Sie ihn verbunden haben. Schalten Sie die Verbindung wieder ein, um hier Agenten zuzulassen.",
   "agent.groups": "Was Agenten dürfen",
   "agent.group.context": "Sehen, was angezeigt wird",
   "agent.group.changes": "Sehen, was sich geändert hat",

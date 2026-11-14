@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use permark_core::ipc_local::{self, Endpoint, IpcLocalError};
 use permark_core::paths::Root;
-use permark_core::state::{AppDirs, ProjectId, StateStore};
+use permark_core::state::{AppDirs, StateStore};
 use serde_json::{json, Value};
 
 use crate::context::WindowContext;
@@ -33,20 +33,17 @@ pub type Compose = Arc<dyn Fn(&Root) -> Result<Composed, String> + Send + Sync>;
 /// Starts the app on a project.
 pub type Launcher = Arc<dyn Fn(&Path) -> io::Result<()> + Send + Sync>;
 
-/// The nearest folder at or above `start` that the person connected (its profile folder has `agent.json`).
+/// The nearest folder at or above `start` that the person connected (its profile folder has `agent.json`). None when
+/// that choice was made for another folder that stood at its path: the search never goes on to a folder above it.
 #[must_use]
-pub fn discover(profile: &Path, start: &Path) -> Option<Root> {
+pub fn discover(dirs: &AppDirs, start: &Path) -> Option<Root> {
     let start = dunce_canonical(start)?;
-    start.ancestors().find_map(|folder| {
+    let (root, store) = start.ancestors().find_map(|folder| {
         let root = Root::open(folder).ok()?;
-        let id = ProjectId::of(&root);
-        profile
-            .join("projects")
-            .join(id.as_str())
-            .join(perms::PROJECT_FILE)
-            .is_file()
-            .then_some(root)
-    })
+        let store = StateStore::for_project(dirs, &root);
+        perms::known(&store).then_some((root, store))
+    })?;
+    (!perms::load(&store).replaced(root.path())).then_some(root)
 }
 
 fn dunce_canonical(path: &Path) -> Option<PathBuf> {
@@ -84,7 +81,7 @@ impl Agent {
         compose: Compose,
         launcher: Launcher,
     ) -> Self {
-        let project = discover(&dirs.profile, working_folder).map(|root| Project {
+        let project = discover(dirs, working_folder).map(|root| Project {
             store: StateStore::for_project(dirs, &root),
             endpoint: Endpoint::project(&dirs.profile, &root).map_err(|e| e.to_string()),
             root,
@@ -184,7 +181,7 @@ impl Agent {
         let Some(project) = &self.project else {
             return Err(ToolError::Off);
         };
-        if !perms::load(&project.store).enabled {
+        if !perms::load(&project.store).is_on(project.root.path()) {
             return Err(ToolError::Off);
         }
         let endpoint = project

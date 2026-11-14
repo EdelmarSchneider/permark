@@ -1449,6 +1449,8 @@ export default {
   "agent.switch": "Partager ce projet avec les agents",
   "agent.switchHint":
     "Un agent que vous connectez (un outil d'IA compatible MCP, comme Claude Code ou Cursor) peut voir ce que vous regardez et ce qui a changé, rechercher et lire les fichiers de ce projet, lire vos commentaires et les notes que vous partagez, et vous montrer un emplacement. Uniquement sur cet ordinateur. Les fichiers listés dans .aiignore restent hors de leur portée, et les agents ne modifient jamais de fichiers via PerMark. Cela ne couvre que ce que les agents obtiennent de PerMark : un agent peut toujours ouvrir lui-même des fichiers sur votre ordinateur.",
+  "agent.folderReplaced":
+    "Ce dossier a changé depuis que vous l'avez connecté. Réactivez la connexion pour autoriser les agents ici.",
   "agent.groups": "Ce que les agents peuvent faire",
   "agent.group.context": "Voir ce que vous regardez",
   "agent.group.changes": "Voir ce qui a changé",
