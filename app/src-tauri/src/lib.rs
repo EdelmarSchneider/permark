@@ -10,6 +10,7 @@ mod files;
 mod nav;
 mod open;
 mod plugins;
+mod print;
 mod saver;
 mod shell;
 mod sink;
@@ -94,7 +95,10 @@ pub fn run(request: OpenRequest) -> Result<(), StartError> {
         .plugin(tauri_plugin_dialog::init())
         // used from Rust only (validated paths): no permission is granted to the windows
         .plugin(tauri_plugin_opener::init())
-        .register_asynchronous_uri_scheme_protocol(assets::SCHEME, assets::handle);
+        .register_asynchronous_uri_scheme_protocol(assets::SCHEME, assets::handle)
+        // export pages: each served only to its own hidden page window
+        .manage(print::Pages::default())
+        .register_asynchronous_uri_scheme_protocol(print::SCHEME, print::handle);
     // signed self-updates (direct builds; the plugin `updates` drives it, from Rust only: no window permission)
     #[cfg(feature = "plugin-updates")]
     let app = app.plugin(tauri_plugin_updater::Builder::new().build());
@@ -123,6 +127,10 @@ pub fn run(request: OpenRequest) -> Result<(), StartError> {
 }
 
 fn on_window_event(handle: &tauri::AppHandle, label: &str, event: &WindowEvent) {
+    // an export page window is none of the person's windows (no geometry, no session, no close prompt)
+    if print::is_sheet(label) {
+        return;
+    }
     let shell = shell::state(handle);
     match event {
         WindowEvent::Moved(_) => {

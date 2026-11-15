@@ -49,6 +49,7 @@ permark-plugin-fmt-properties = { path = "crates/plugins/fmt-properties" }
 permark-plugin-fmt-ignore = { path = "crates/plugins/fmt-ignore" }
 permark-plugin-fmt-toon = { path = "crates/plugins/fmt-toon" }
 permark-plugin-convert = { path = "crates/plugins/convert" }
+permark-plugin-export = { path = "crates/plugins/export" }
 permark-plugin-shell-integration = { path = "crates/plugins/shell-integration" }
 permark-plugin-updates = { path = "crates/plugins/updates" }
 serde = { version = "1", features = ["derive"] }
@@ -136,7 +137,7 @@ name = "permark_lib"
 # default = the direct build; `store` = the Microsoft Store build (`--no-default-features --features store`): the
 # store updates the app and the package declares the file manager entries.
 default = ["common", "plugin-updates", "plugin-shell-integration"]
-common = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-symbols", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-token-count", "plugin-local-ai", "plugin-correction", "plugin-translation", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore", "plugin-fmt-toon", "plugin-convert"]
+common = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-symbols", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-token-count", "plugin-local-ai", "plugin-correction", "plugin-translation", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore", "plugin-fmt-toon", "plugin-convert", "plugin-export"]
 plugin-git = ["dep:permark-plugin-git"]
 plugin-live-feed = ["dep:permark-plugin-live-feed"]
 # follow needs the feed; review needs unread (a build without the dependency has no plugin that needs it)
@@ -169,6 +170,7 @@ plugin-fmt-properties = ["dep:permark-plugin-fmt-properties"]
 plugin-fmt-ignore = ["dep:permark-plugin-fmt-ignore"]
 plugin-fmt-toon = ["dep:permark-plugin-fmt-toon"]
 plugin-convert = ["plugin-fmt-toon", "dep:permark-plugin-convert"]
+plugin-export = ["dep:permark-plugin-export"]
 plugin-text-view = ["dep:permark-plugin-text-view"]
 plugin-tags = ["dep:permark-plugin-tags"]
 plugin-quiet = ["dep:permark-plugin-quiet"]
@@ -179,6 +181,8 @@ plugin-agent = ["dep:permark-plugin-agent"]
 plugin-updates = ["dep:permark-plugin-updates", "dep:tauri-plugin-updater"]
 plugin-shell-integration = ["dep:permark-plugin-shell-integration"]
 store = ["common"]
+# tests that open a real system web view (`cargo test --lib --features webview-tests -- --ignored`); never in a build
+webview-tests = []
 
 [build-dependencies]
 tauri-build = { version = "2.5", features = [] }
@@ -214,6 +218,7 @@ permark-plugin-fmt-properties = { workspace = true, optional = true }
 permark-plugin-fmt-ignore = { workspace = true, optional = true }
 permark-plugin-fmt-toon = { workspace = true, optional = true }
 permark-plugin-convert = { workspace = true, optional = true }
+permark-plugin-export = { workspace = true, optional = true }
 permark-plugin-text-view = { workspace = true, optional = true }
 permark-plugin-tags = { workspace = true, optional = true }
 permark-plugin-quiet = { workspace = true, optional = true }
@@ -238,6 +243,11 @@ ureq = { version = "3.4", default-features = false, features = ["rustls", "platf
 # downloads credential (e.g. Hugging Face token) in the OS store: Windows Credential Manager, macOS Keychain, Secret Service
 # (zbus, pure-Rust crypto). `v1` = these three platform stores.
 keyring = { version = "4.2", default-features = false, features = ["v1"] }
+
+# export: PDF | print through the system web view, at the versions wry uses (one copy of each in the lock)
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.39.1"
+windows = { workspace = true, features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_WindowsAndMessaging"] }
 
 [dev-dependencies]
 tempfile.workspace = true

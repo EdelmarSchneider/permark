@@ -52,6 +52,13 @@ impl WindowFiles for ShellFiles {
         })
     }
 
+    fn locate(&self, window: &str, path: &str) -> Result<PathBuf, IpcError> {
+        let window = self.window(window)?;
+        with_editor(&self.handle, &window, |editor, _| {
+            editor.scope.resolve(path).map(|(_, abs)| abs)
+        })
+    }
+
     fn write_beside(
         &self,
         window: &str,

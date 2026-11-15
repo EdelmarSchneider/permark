@@ -4,6 +4,7 @@
 mod enable;
 mod facts;
 mod files;
+mod print;
 mod registry;
 mod rpc;
 mod services;
@@ -24,6 +25,10 @@ pub use facts::{
 pub use files::{
     nesting, ChangeListener, FolderReveal, FolderRevealApi, FolderScan, Nesting, ProjectPlaces,
     ProjectPlacesApi, WindowFiles, WindowFilesApi,
+};
+pub use print::{
+    output_path, write_output, HtmlPrinter, HtmlPrinterApi, Margins, Orientation, Origin,
+    OutputKind, PageBox, PageSetup, PageSize, PrintCapabilities, PrintError, Saved,
 };
 pub use registry::{PluginRegistry, RegistryError};
 pub use rpc::{typed, GoneHandler, NoArgs, RpcCall, RpcHandler, RpcRegistration, RpcTable};

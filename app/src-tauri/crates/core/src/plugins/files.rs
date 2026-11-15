@@ -31,6 +31,16 @@ pub trait WindowFiles: Send + Sync {
     /// No such window | outside | missing | too large | not text.
     fn read(&self, window: &str, path: &str, cap: u64) -> Result<String, IpcError>;
 
+    /// Where the existing file `path` of the workspace of `window` is on disk (checked against the window's
+    /// boundary), for a plugin that names a document to the system (a Save dialog's start folder).
+    ///
+    /// # Errors
+    /// No such window | outside | missing.
+    fn locate(&self, window: &str, path: &str) -> Result<PathBuf, IpcError> {
+        let _ = (window, path);
+        Err(IpcError::new(ErrorKind::Unavailable).subject("files"))
+    }
+
     /// A new file `name` next to `beside` in the workspace of `window`, never over a file (a taken name gets ` (2)`).
     /// Returns its path.
     ///

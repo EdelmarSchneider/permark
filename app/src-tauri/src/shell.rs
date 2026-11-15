@@ -56,6 +56,8 @@ pub struct Shell {
     _files: Vec<ServiceLease>,
     /// The downloads network + credential store (`DownloadKit`), for plugins fetching pinned files.
     _downloads: ServiceLease,
+    /// PDF | HTML | print through the system web view (`HtmlPrinterApi`), for the export plugin.
+    _print: ServiceLease,
 }
 
 /// The file manager entries go with their plugin (off = leaves nothing behind); quitting the app leaves them.
@@ -167,6 +169,7 @@ impl Shell {
         let updater = None;
         let files = crate::files::provide(&env, &handle);
         let downloads = crate::downloads_http::provide(&env);
+        let print = crate::print::provide(&env, &handle);
         env.apply_app_plugins();
         let app_store = StateStore::app(dirs);
         Self {
@@ -186,6 +189,7 @@ impl Shell {
             _updater: updater,
             _files: files,
             _downloads: downloads,
+            _print: print,
         }
     }
 

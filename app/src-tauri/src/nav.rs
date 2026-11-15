@@ -1,4 +1,5 @@
 //! Navigation guard: a window never leaves the app page (a stray link would replace the app and lose unsaved work).
+//! An export page window goes to its page only.
 
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Url, Wry};
@@ -18,7 +19,13 @@ pub fn is_app_url(url: &Url, dev_url: Option<&Url>) -> bool {
 
 pub fn guard(dev_url: Option<Url>) -> TauriPlugin<Wry> {
     Builder::new("navigation-guard")
-        .on_navigation(move |_webview, url| is_app_url(url, dev_url.as_ref()))
+        .on_navigation(move |webview, url| {
+            if crate::print::is_sheet(webview.label()) {
+                crate::print::is_page_url(url)
+            } else {
+                is_app_url(url, dev_url.as_ref())
+            }
+        })
         .build()
 }
 

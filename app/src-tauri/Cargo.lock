@@ -3316,6 +3316,7 @@ dependencies = [
  "permark-plugin-comments",
  "permark-plugin-convert",
  "permark-plugin-correction",
+ "permark-plugin-export",
  "permark-plugin-fmt-dotenv",
  "permark-plugin-fmt-ignore",
  "permark-plugin-fmt-ini",
@@ -3360,6 +3361,8 @@ dependencies = [
  "thiserror 2.0.21",
  "ts-rs",
  "ureq",
+ "webview2-com",
+ "windows",
 ]
 
 [[package]]
@@ -3465,6 +3468,17 @@ version = "0.12.0"
 dependencies = [
  "permark-core",
  "permark-plugin-local-ai",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ts-rs",
+]
+
+[[package]]
+name = "permark-plugin-export"
+version = "0.12.0"
+dependencies = [
+ "permark-core",
  "serde",
  "serde_json",
  "tempfile",
