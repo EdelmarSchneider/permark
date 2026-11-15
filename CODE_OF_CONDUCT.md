@@ -36,7 +36,7 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement, the project maintainer, either with GitHub's "Report content" option on the comment, issue or pull request, or by a private message through the contact options on the maintainer's GitHub profile ([github.com/EdelmarSchneider](https://github.com/EdelmarSchneider)). Reports are kept confidential. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement, the project maintainer, through the contact options on the maintainer's GitHub profile ([github.com/EdelmarSchneider](https://github.com/EdelmarSchneider)). Reports are kept confidential. Serious abuse can also be reported to GitHub with the "Report content" option on the comment, issue or pull request. All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 
