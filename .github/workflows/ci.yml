@@ -60,7 +60,7 @@ jobs:
         working-directory: app
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       # The system libraries the Tauri crates link against on Linux.
       - name: Install Linux dependencies
@@ -76,13 +76,13 @@ jobs:
       # Saved from develop only: every branch, pull request and tag can restore develop's caches, but nothing else can
       # restore theirs, and the repository's 10 GB cache budget evicts the useful ones first when everything saves.
       - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: app/src-tauri
           save-if: ${{ github.ref == 'refs/heads/develop' }}
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24
           cache: npm

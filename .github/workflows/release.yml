@@ -57,7 +57,7 @@ jobs:
     steps:
       # Fails when the tag does not exist, so no release can make a new tag.
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ env.TAG }}
 
@@ -155,7 +155,7 @@ jobs:
     steps:
       - name: Checkout
         if: env.RUN_THIS == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ env.TAG }}
 
@@ -187,7 +187,7 @@ jobs:
 
       - name: Set up Node
         if: env.RUN_THIS == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24
           cache: npm
@@ -214,7 +214,7 @@ jobs:
       # tauri-action names them). `latest.json` is written by `publish`.
       - name: Build and upload the installers
         if: env.RUN_THIS == 'true'
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Signs the updater artifacts (the matching public key is in tauri.conf.json). The key has no password.
@@ -240,7 +240,7 @@ jobs:
       ID: ${{ needs.draft.outputs.id }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ env.TAG }}
 
@@ -310,7 +310,7 @@ jobs:
       REF: ${{ github.event_name == 'workflow_dispatch' && (inputs.msix_ref || inputs.tag) || github.ref_name }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ env.REF }}
 
@@ -319,7 +319,7 @@ jobs:
         run: rustup toolchain install
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24
           cache: npm
@@ -354,7 +354,7 @@ jobs:
         run: ./scripts/build-msix.ps1 -Build -OutDir "$env:RUNNER_TEMP\msix"
 
       - name: Keep the package
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: PerMark-msix-${{ steps.pack.outputs.version }}
           path: ${{ steps.pack.outputs.msix }}

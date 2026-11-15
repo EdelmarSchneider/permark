@@ -63,7 +63,7 @@ jobs:
     steps:
       # Fails when the tag does not exist, so no release can make a new tag.
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ env.TAG }}
           persist-credentials: false
@@ -133,7 +133,7 @@ jobs:
     steps:
       - name: Checkout
         if: env.RUN_THIS == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ env.TAG }}
           persist-credentials: false
@@ -311,7 +311,7 @@ jobs:
 
       - name: Upload the files as an artifact
         if: env.RUN_THIS == 'true'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: worker-${{ matrix.platform }}-${{ matrix.variant }}
           path: ${{ runner.temp }}/out
@@ -334,7 +334,7 @@ jobs:
       ID: ${{ needs.draft.outputs.id }}
     steps:
       - name: Download the artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: worker-*
           path: ${{ runner.temp }}/in
