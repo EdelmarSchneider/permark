@@ -227,6 +227,7 @@ describe("plugin host", () => {
       "quiet",
       "review",
       "shell-integration",
+      "spelling",
       "symbols",
       "tags",
       "text-view",
