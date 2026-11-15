@@ -41,6 +41,7 @@ export const KNOWN_PLUGINS = [
   "fmt-ignore",
   "fmt-toon",
   "convert",
+  "export",
   "text-view",
   "shell-integration",
   "updates",

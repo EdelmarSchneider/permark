@@ -47,6 +47,9 @@ describe("every key with every plugin on", () => {
       // translate where the caret is: Mod+Alt+t never reaches the app on Linux desktops (it opens a terminal)
       expect(map.owners.get("Mod+Alt+r"), `mac=${mac}`).toEqual(["translation.here"]);
       expect(map.owners.get("Mod+Alt+t"), `mac=${mac}`).toBeUndefined();
+      // print the shown document; Mod+p stays Quick open
+      expect(map.owners.get("Mod+Alt+p"), `mac=${mac}`).toEqual(["export.print"]);
+      expect(map.owners.get("Mod+p"), `mac=${mac}`).toEqual(["search.quickOpen"]);
       expect(map.owners.get("Mod+Shift+s")).toEqual(["notes.moveToProject"]);
       expect(requiresOf("notes.moveToProject")).toEqual({
         needs: [{ need: "workspace", kinds: ["notes"] }],
