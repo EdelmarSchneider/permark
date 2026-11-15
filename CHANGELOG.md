@@ -21,6 +21,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - An AI agent now reads a project only while PerMark has it open. With PerMark closed, every tool of `permark mcp` says so, and `open` starts PerMark on the project, so you always see when an agent is connected. Before, the tools went on answering from the files with PerMark closed. <!-- f: agent -->
 - Links whose target is missing are underlined only while the **Broken links** plugin is on, in View and in Edit. Turn the plugin off and the marks go away at once; a click on such a link still tells you the file is not there. <!-- f: links, broken-links -->
 - Removing a missing project from the list now keeps its Undo notice until you close it. <!-- f: projects -->
+- Spanish and Simplified Chinese use one consistent word for Settings, agents and comments. <!-- f: i18n -->
 
 ### Fixed
 - The AI agent connection now belongs to the folder you turned it on for. If that folder is deleted and another one is created or cloned at the same place, agents are no longer allowed there: the connection shows as off, says why, and you turn it on again if you want it. Connections made with earlier versions keep working. <!-- f: agent -->
