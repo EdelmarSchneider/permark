@@ -17,10 +17,17 @@
 ;    settings. The choice is remembered as HKCU\Software\PerMark\OpenWithMenu and \NewMarkdownMenu (1 on, 0 off): an
 ;    update keeps it (rewrites what is on so it points at the new files, never adds what is off).
 ;
+; 4. COMMAND LINE. "Add the permark command to PATH", a check box on the welcome page, off unless an earlier install
+;    recorded it on: the install folder goes once at the end of the user's PATH (HKCU\Environment\Path), so `permark mcp`
+;    and `permark context` run from any terminal started afterwards. The choice is remembered as
+;    HKCU\Software\PerMark\AddToPath (1 on, 0 off) and the entry written as \PathEntry: only that entry is ever removed
+;    (box unticked, uninstall), never one the person wrote. An update leaves PATH as it is. A PATH this installer cannot
+;    rewrite whole (see "Command line" below) is never changed: the installer says so and names the folder to add.
+;
 ; Uninstalling removes everything above (and the keys it leaves empty); with "Delete the application data" it also removes
 ; HKCU\Software\PerMark and PerMark's folders in the profile. An update's uninstall step removes nothing.
 ; The layout is the one the app writes (crates/plugins/shell-integration, crates/core/src/desktop); a Rust test keeps them
-; equal. A test installer may define the three roots below before including this file.
+; equal. A test installer may define the four roots below before including this file (path-check.nsi does).
 
 !ifndef PERMARK_APP_KEY
   !define PERMARK_APP_KEY "Software\PerMark"
@@ -31,10 +38,15 @@
 !ifndef PERMARK_REGAPPS_KEY
   !define PERMARK_REGAPPS_KEY "Software\RegisteredApplications"
 !endif
+!ifndef PERMARK_ENV_KEY
+  !define PERMARK_ENV_KEY "Environment"
+!endif
 
 !define PERMARK_MENU_CHOICE "OpenWithMenu"
 !define PERMARK_NEW_CHOICE "NewMarkdownMenu"
 !define PERMARK_TYPES_CHOICE "DefaultTypes"
+!define PERMARK_PATH_CHOICE "AddToPath"
+!define PERMARK_PATH_ENTRY "PathEntry"
 !define PERMARK_DEFAULT_APPS "ms-settings:defaultapps?registeredAppUser=PerMark"
 
 ; ---- Words ----------------------------------------------------------------------------------------------------------
@@ -152,6 +164,48 @@ LangString NewMarkdownOption 2070 "Adicionar “Novo ficheiro Markdown” ao men
 LangString NewMarkdownOption 1027 "Afegeix «Fitxer Markdown nou» al menú contextual de les carpetes"
 LangString NewMarkdownOption 1110 "Engadir «Novo ficheiro Markdown» ao menú contextual dos cartafoles"
 LangString NewMarkdownOption 1048 "Adaugă „Fișier Markdown nou” în meniul de clic dreapta al dosarelor"
+
+LangString PathOption 1033 "Add the permark command to PATH"
+LangString PathOption 1046 "Adicionar o comando permark ao PATH"
+LangString PathOption 3082 "Agregar el comando permark al PATH"
+LangString PathOption 1031 "Den Befehl permark zum PATH hinzufügen"
+LangString PathOption 2052 "将 permark 命令添加到 PATH"
+LangString PathOption 1040 "Aggiungi il comando permark al PATH"
+LangString PathOption 1041 "permark コマンドを PATH に追加"
+LangString PathOption 1042 "permark 명령을 PATH에 추가"
+LangString PathOption 1036 "Ajouter la commande permark au PATH"
+LangString PathOption 2070 "Adicionar o comando permark ao PATH"
+LangString PathOption 1027 "Afegeix l'ordre permark al PATH"
+LangString PathOption 1110 "Engadir a orde permark ao PATH"
+LangString PathOption 1048 "Adaugă comanda permark în PATH"
+
+LangString PathNotAdded 1033 "The permark command was not added to PATH: the installer cannot change your PATH safely (it is probably too long). To use the command, add this folder to PATH yourself:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1046 "O comando permark não foi adicionado ao PATH: o instalador não consegue alterar seu PATH com segurança (provavelmente ele é longo demais). Para usar o comando, adicione você mesmo esta pasta ao PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 3082 "El comando permark no se agregó al PATH: el instalador no puede modificar su PATH de forma segura (probablemente es demasiado largo). Para usar el comando, agregue usted mismo esta carpeta al PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1031 "Der Befehl permark wurde nicht zum PATH hinzugefügt: Das Setup kann Ihren PATH nicht sicher ändern (er ist wahrscheinlich zu lang). Um den Befehl zu verwenden, fügen Sie diesen Ordner selbst zum PATH hinzu:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 2052 "permark 命令未添加到 PATH：安装程序无法安全地修改您的 PATH（可能太长）。如需使用该命令，请自行将此文件夹添加到 PATH：$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1040 "Il comando permark non è stato aggiunto al PATH: il programma di installazione non può modificare il PATH in modo sicuro (probabilmente è troppo lungo). Per usare il comando, aggiungi tu stesso questa cartella al PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1041 "permark コマンドは PATH に追加されませんでした。セットアップは PATH を安全に変更できません (長すぎる可能性があります)。コマンドを使うには、このフォルダーを自分で PATH に追加してください:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1042 "permark 명령이 PATH에 추가되지 않았습니다. 설치 프로그램이 PATH를 안전하게 변경할 수 없습니다 (너무 길 수 있습니다). 명령을 사용하려면 이 폴더를 직접 PATH에 추가하세요:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1036 "La commande permark n'a pas été ajoutée au PATH : le programme d'installation ne peut pas modifier votre PATH sans risque (il est probablement trop long). Pour utiliser la commande, ajoutez vous-même ce dossier au PATH :$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 2070 "O comando permark não foi adicionado ao PATH: o programa de configuração não consegue alterar o seu PATH em segurança (provavelmente é demasiado longo). Para usar o comando, adicione esta pasta ao PATH manualmente:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1027 "L'ordre permark no s'ha afegit al PATH: l'instal·lador no pot modificar el PATH de manera segura (probablement és massa llarg). Per a fer servir l'ordre, afegiu vós mateix aquesta carpeta al PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1110 "A orde permark non se engadiu ao PATH: o instalador non pode modificar o seu PATH de forma segura (probablemente é demasiado longo). Para usar a orde, engada vostede mesmo este cartafol ao PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1048 "Comanda permark nu a fost adăugată în PATH: programul de instalare nu poate modifica PATH-ul în siguranță (probabil este prea lung). Pentru a folosi comanda, adaugă singur acest dosar în PATH:$\r$\n$\r$\n$PermarkPathDir"
+
+LangString PathNotRemoved 1033 "The permark command was not removed from PATH: the uninstaller cannot change your PATH safely (it is probably too long). You can remove this folder from PATH yourself:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1046 "O comando permark não foi removido do PATH: o desinstalador não consegue alterar seu PATH com segurança (provavelmente ele é longo demais). Você pode remover esta pasta do PATH manualmente:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 3082 "El comando permark no se quitó del PATH: el desinstalador no puede modificar su PATH de forma segura (probablemente es demasiado largo). Puede quitar usted mismo esta carpeta del PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1031 "Der Befehl permark wurde nicht aus dem PATH entfernt: Die Deinstallation kann Ihren PATH nicht sicher ändern (er ist wahrscheinlich zu lang). Sie können diesen Ordner selbst aus dem PATH entfernen:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 2052 "permark 命令未从 PATH 中移除：卸载程序无法安全地修改您的 PATH（可能太长）。您可以自行从 PATH 中移除此文件夹：$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1040 "Il comando permark non è stato rimosso dal PATH: il programma di disinstallazione non può modificare il PATH in modo sicuro (probabilmente è troppo lungo). Puoi rimuovere tu stesso questa cartella dal PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1041 "permark コマンドは PATH から削除されませんでした。アンインストーラーは PATH を安全に変更できません (長すぎる可能性があります)。このフォルダーは自分で PATH から削除できます:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1042 "permark 명령이 PATH에서 제거되지 않았습니다. 제거 프로그램이 PATH를 안전하게 변경할 수 없습니다 (너무 길 수 있습니다). 이 폴더는 직접 PATH에서 제거할 수 있습니다:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1036 "La commande permark n'a pas été retirée du PATH : le programme de désinstallation ne peut pas modifier votre PATH sans risque (il est probablement trop long). Vous pouvez retirer vous-même ce dossier du PATH :$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 2070 "O comando permark não foi removido do PATH: o programa de desinstalação não consegue alterar o seu PATH em segurança (provavelmente é demasiado longo). Pode remover esta pasta do PATH manualmente:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1027 "L'ordre permark no s'ha tret del PATH: el desinstal·lador no pot modificar el PATH de manera segura (probablement és massa llarg). Podeu treure vós mateix aquesta carpeta del PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1110 "A orde permark non se quitou do PATH: o desinstalador non pode modificar o seu PATH de forma segura (probablemente é demasiado longo). Pode quitar vostede mesmo este cartafol do PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1048 "Comanda permark nu a fost eliminată din PATH: programul de dezinstalare nu poate modifica PATH-ul în siguranță (probabil este prea lung). Poți elimina singur acest dosar din PATH:$\r$\n$\r$\n$PermarkPathDir"
 
 LangString PermarkAbout 1033 "Read, write and organize Markdown and the files around it."
 LangString PermarkAbout 1046 "Leia, escreva e organize Markdown e os arquivos ao redor dele."
@@ -277,6 +331,7 @@ LangString TypeProperties 1048 "Fișier de proprietăți"
 ; "1" | "0" ticked on the welcome page; "" when the page did not show (silent, passive, update).
 Var PermarkMenu
 Var PermarkNew
+Var PermarkPath
 ; "markdown;json;" ticked on the welcome page; "" when the page did not show.
 Var PermarkTypes
 Var PermarkExe
@@ -284,6 +339,7 @@ Var PermarkLabel
 Var PermarkNewLabel
 Var PermarkMenuBox
 Var PermarkNewBox
+Var PermarkPathBox
 Var PermarkBoxMarkdown
 Var PermarkBoxText
 Var PermarkBoxJson
@@ -292,6 +348,12 @@ Var PermarkBoxYaml
 Var PermarkBoxToml
 Var PermarkBoxIni
 Var PermarkBoxProperties
+; the PATH steps (see "Command line")
+Var PermarkPathType
+Var PermarkPathValue
+Var PermarkPathKept
+Var PermarkPathFound
+Var PermarkPathDir
 
 ; ---- Open with: ProgIDs, the extensions' lists, the app's capabilities ----------------------------------------------
 
@@ -428,8 +490,8 @@ Var PermarkBoxProperties
 ; ---- Choices --------------------------------------------------------------------------------------------------------
 
 ; VAR ("1" on, "0" off, "" leave alone) when the page did not ask: the recorded choice; a fresh install that cannot ask
-; (silent, passive) takes the default (on); an update with nothing recorded changes nothing.
-!macro PERMARK_RESOLVE VAR CHOICE
+; (silent, passive) takes DEFAULT; an update with nothing recorded changes nothing.
+!macro PERMARK_RESOLVE VAR CHOICE DEFAULT
   ${If} ${VAR} == ""
     ClearErrors
     ReadRegDWORD $R0 HKCU "${PERMARK_APP_KEY}" "${CHOICE}"
@@ -437,7 +499,7 @@ Var PermarkBoxProperties
       ${If} $UpdateMode = 1
         StrCpy ${VAR} ""
       ${Else}
-        StrCpy ${VAR} "1"
+        StrCpy ${VAR} "${DEFAULT}"
       ${EndIf}
     ${Else}
       StrCpy ${VAR} "$R0"
@@ -458,7 +520,7 @@ Var PermarkBoxProperties
 !macroend
 
 !macro PERMARK_ENTRY_APPLY VAR CHOICE OP KEY INSTALLER_TEXT LABELVAR
-  !insertmacro PERMARK_RESOLVE ${VAR} "${CHOICE}"
+  !insertmacro PERMARK_RESOLVE ${VAR} "${CHOICE}" "1"
   ${If} ${VAR} == "1"
     !insertmacro PERMARK_TEXT ${LABELVAR} "${KEY}" "${INSTALLER_TEXT}"
     !insertmacro ${OP} WRITE
@@ -470,14 +532,242 @@ Var PermarkBoxProperties
   ${EndIf}
 !macroend
 
-; ---- The welcome page: short text, the types, the two entries -------------------------------------------------------
-; Everything under the page's title sits in fixed boxes (dialog units, x 120..315, y 42..185 of 193), each as tall as the
+; ---- Command line: the install folder on the user's PATH ------------------------------------------------------------
+; Per user (the install is): HKCU\Environment\Path only, never the machine's PATH. NSIS strings hold NSIS_MAX_STRLEN - 1
+; characters (1023 in the NSIS Tauri uses). ReadRegStr gives "" for a longer value, and a string built past the limit is
+; cut short: writing either back would wipe the person's other entries, the classic installer PATH damage. So the value's
+; type and size are read first, a PATH that could not be rewritten whole is never written, and every write keeps the type
+; the value had (REG_EXPAND_SZ keeps entries such as %USERPROFILE%\bin unexpanded).
+
+; PermarkPathType = "2" REG_EXPAND_SZ | "1" REG_SZ, with PermarkPathValue = the PATH as stored; "0" = no PATH value yet;
+; "" = it cannot be changed safely (too long for an NSIS string, or not text).
+!macro PERMARK_PATH_READ
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  StrCpy $PermarkPathType ""
+  StrCpy $PermarkPathValue ""
+  ; 0x80000001 = HKEY_CURRENT_USER, 0x1 = KEY_QUERY_VALUE; result 2 = ERROR_FILE_NOT_FOUND
+  System::Call 'advapi32::RegOpenKeyExW(p 0x80000001, w "${PERMARK_ENV_KEY}", i 0, i 0x1, *p .r1) i .r0'
+  ${If} $0 = 2
+    StrCpy $PermarkPathType "0"
+  ${ElseIf} $0 = 0
+    ; no buffer: only the type ($2) and the size in bytes with the closing NUL ($3), whatever the length
+    System::Call 'advapi32::RegQueryValueExW(p r1, w "Path", p 0, *i .r2, p 0, *i .r3) i .r0'
+    System::Call 'advapi32::RegCloseKey(p r1)'
+    ${If} $0 = 2
+      StrCpy $PermarkPathType "0"
+    ${ElseIf} $0 = 0
+      IntOp $3 $3 / 2
+      ${If} $3 < ${NSIS_MAX_STRLEN}
+        ${If} $2 = 1
+        ${OrIf} $2 = 2
+          ClearErrors
+          ReadRegStr $PermarkPathValue HKCU "${PERMARK_ENV_KEY}" "Path"
+          ${IfNot} ${Errors}
+            StrCpy $PermarkPathType $2
+          ${EndIf}
+        ${EndIf}
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+!macroend
+
+; VAR as entries are compared: outer quotes off, variables expanded, closing backslashes off (NSIS compares strings
+; without case, as Windows compares paths). VAR != $R0.
+!macro PERMARK_PATH_NORMAL VAR
+  Push $R0
+  StrCpy $R0 ${VAR} 1
+  ${If} $R0 == '"'
+    StrCpy ${VAR} ${VAR} "" 1
+    StrCpy $R0 ${VAR} "" -1
+    ${If} $R0 == '"'
+      StrCpy ${VAR} ${VAR} -1
+    ${EndIf}
+  ${EndIf}
+  ExpandEnvStrings ${VAR} ${VAR}
+  ${Do}
+    StrCpy $R0 ${VAR} "" -1
+    ${If} $R0 != "\"
+      ${ExitDo}
+    ${EndIf}
+    StrCpy ${VAR} ${VAR} -1
+  ${Loop}
+  Pop $R0
+!macroend
+
+; Walks PermarkPathValue entry by entry. PermarkPathFound = "1" when an entry is the folder PermarkPathDir (normalized);
+; PermarkPathKept = the value without those entries, every other entry and separator as it was (empty ones too).
+!macro PERMARK_PATH_SCAN
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  StrCpy $PermarkPathKept ""
+  StrCpy $PermarkPathFound "0"
+  ; $0 = position, $1 = the character there, $2 = the entry so far, $3 = entries kept
+  StrCpy $0 0
+  StrCpy $2 ""
+  StrCpy $3 0
+  ${Do}
+    StrCpy $1 $PermarkPathValue 1 $0
+    ${If} $1 == ";"
+    ${OrIf} $1 == ""
+      StrCpy $4 $2
+      !insertmacro PERMARK_PATH_NORMAL $4
+      ${If} $4 == $PermarkPathDir
+        StrCpy $PermarkPathFound "1"
+      ${Else}
+        ${If} $3 > 0
+          StrCpy $PermarkPathKept "$PermarkPathKept;"
+        ${EndIf}
+        StrCpy $PermarkPathKept "$PermarkPathKept$2"
+        IntOp $3 $3 + 1
+      ${EndIf}
+      ${If} $1 == ""
+        ${ExitDo}
+      ${EndIf}
+      StrCpy $2 ""
+    ${Else}
+      StrCpy $2 "$2$1"
+    ${EndIf}
+    IntOp $0 $0 + 1
+  ${Loop}
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+!macroend
+
+; Writes PermarkPathValue with the type the PATH had; a new PATH gets REG_EXPAND_SZ, Windows' own type for it.
+!macro PERMARK_PATH_WRITE
+  ClearErrors
+  ${If} $PermarkPathType == "1"
+    WriteRegStr HKCU "${PERMARK_ENV_KEY}" "Path" "$PermarkPathValue"
+  ${Else}
+    WriteRegExpandStr HKCU "${PERMARK_ENV_KEY}" "Path" "$PermarkPathValue"
+  ${EndIf}
+!macroend
+
+; Explorer reloads the environment on this message, so terminals started afterwards see the new PATH (open ones keep
+; theirs). SMTO_ABORTIFHUNG (0x2): a hung window is skipped instead of holding the installer up.
+!macro PERMARK_PATH_ANNOUNCE
+  System::Call 'user32::SendMessageTimeoutW(p ${HWND_BROADCAST}, i ${WM_SETTINGCHANGE}, p 0, w "Environment", i 0x2, i 5000, p 0)'
+!macroend
+
+; Adds $INSTDIR at the end of the PATH unless an entry already is that folder (then nothing is recorded: the entry is not
+; the installer's to remove). The folder written is recorded as \PathEntry.
+!macro PERMARK_PATH_ADD
+  Push $0
+  Push $1
+  StrCpy $PermarkPathDir "$INSTDIR"
+  !insertmacro PERMARK_PATH_NORMAL $PermarkPathDir
+  !insertmacro PERMARK_PATH_READ
+  StrCpy $PermarkPathFound "0"
+  ${If} $PermarkPathType != ""
+    !insertmacro PERMARK_PATH_SCAN
+  ${EndIf}
+  ${If} $PermarkPathFound != "1"
+    ; the new value (old value, ";", folder) must stay readable by ReadRegStr, which holds NSIS_MAX_STRLEN - 2
+    ; characters (it keeps one for the closing NUL): else no later uninstall could remove the entry
+    StrLen $0 $PermarkPathValue
+    StrLen $1 $PermarkPathDir
+    IntOp $0 $0 + $1
+    IntOp $0 $0 + 2
+    ; a ";" in the folder's name would split it into two entries
+    ${StrLoc} $1 "$PermarkPathDir" ";" ">"
+    ${If} $PermarkPathType == ""
+    ${OrIf} $0 >= ${NSIS_MAX_STRLEN}
+    ${OrIf} $1 != ""
+      DetailPrint "$(PathNotAdded)"
+      ${If} $PassiveMode <> 1
+        MessageBox MB_ICONINFORMATION|MB_OK "$(PathNotAdded)" /SD IDOK
+      ${EndIf}
+    ${Else}
+      ${If} $PermarkPathValue != ""
+        StrCpy $1 $PermarkPathValue "" -1
+        ${If} $1 != ";"
+          StrCpy $PermarkPathValue "$PermarkPathValue;"
+        ${EndIf}
+      ${EndIf}
+      StrCpy $PermarkPathValue "$PermarkPathValue$PermarkPathDir"
+      !insertmacro PERMARK_PATH_WRITE
+      ${IfNot} ${Errors}
+        WriteRegStr HKCU "${PERMARK_APP_KEY}" "${PERMARK_PATH_ENTRY}" "$PermarkPathDir"
+        !insertmacro PERMARK_PATH_ANNOUNCE
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
+  Pop $1
+  Pop $0
+!macroend
+
+; Removes the recorded entry (every entry that is that folder) and the record. A PATH that cannot be rewritten whole is
+; left as it is and the record kept, so a later uninstall can still remove the entry. A PATH left empty is deleted: only
+; the installer's entry was in it.
+!macro PERMARK_PATH_REMOVE
+  ReadRegStr $PermarkPathDir HKCU "${PERMARK_APP_KEY}" "${PERMARK_PATH_ENTRY}"
+  ${If} $PermarkPathDir != ""
+    !insertmacro PERMARK_PATH_NORMAL $PermarkPathDir
+    !insertmacro PERMARK_PATH_READ
+    ${If} $PermarkPathType == ""
+      DetailPrint "$(PathNotRemoved)"
+      ${If} $PassiveMode <> 1
+        MessageBox MB_ICONINFORMATION|MB_OK "$(PathNotRemoved)" /SD IDOK
+      ${EndIf}
+    ${Else}
+      ${If} $PermarkPathType != "0"
+        !insertmacro PERMARK_PATH_SCAN
+        ${If} $PermarkPathFound == "1"
+          ${If} $PermarkPathKept == ""
+            DeleteRegValue HKCU "${PERMARK_ENV_KEY}" "Path"
+          ${Else}
+            StrCpy $PermarkPathValue $PermarkPathKept
+            !insertmacro PERMARK_PATH_WRITE
+          ${EndIf}
+          !insertmacro PERMARK_PATH_ANNOUNCE
+        ${EndIf}
+      ${EndIf}
+      DeleteRegValue HKCU "${PERMARK_APP_KEY}" "${PERMARK_PATH_ENTRY}"
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
+!macroend
+
+; Asked on the welcome page: done as ticked. Not asked: an update leaves PATH as it is (same folder; an entry the person
+; removed by hand stays removed); a silent | passive install adds the entry only when an earlier install recorded it on.
+!macro PERMARK_PATH_APPLY
+  ${If} $PermarkPath != ""
+  ${OrIf} $UpdateMode <> 1
+    !insertmacro PERMARK_RESOLVE $PermarkPath "${PERMARK_PATH_CHOICE}" "0"
+    ${If} $PermarkPath == "1"
+      !insertmacro PERMARK_PATH_ADD
+      WriteRegDWORD HKCU "${PERMARK_APP_KEY}" "${PERMARK_PATH_CHOICE}" 1
+    ${Else}
+      !insertmacro PERMARK_PATH_REMOVE
+      WriteRegDWORD HKCU "${PERMARK_APP_KEY}" "${PERMARK_PATH_CHOICE}" 0
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+; ---- The welcome page: short text, the types, the three entries -----------------------------------------------------
+; Everything under the page's title sits in fixed boxes (dialog units, x 120..315, y 42..192 of 193), each as tall as the
 ; longest of the six languages needs, so no text can run into the next control (the template's own text label is one 130u
 ; box, tall enough to cover the grid below it; ours stays empty and our boxes replace it):
 ;   42  the welcome text: two paragraphs, <= 6 lines
 ;   96  the title of the check grid, <= 3 lines (it carries the sentence "Windows asks you to confirm")
 ;  123  the grid: 2 rows of 4 boxes, widths 52 + 44 + 42 + 57 (the last holds "Properties", the widest label)
-;  150  the two entries, 2 lines each
+;  147  the two file manager entries, 2 lines each
+;  181  the PATH option, 1 line (the shortest words on the page: no language wraps them)
 ; Windows CJK fonts make a line ~8.5u, Latin ~8u; the lines above are measured in all six languages with the dialog font.
 
 !define MUI_WELCOMEPAGE_TEXT " "
@@ -513,11 +803,12 @@ Var PermarkBoxProperties
   ${EndIf}
 !macroend
 
-!macro PERMARK_ENTRY_BOX VAR Y H LABEL CHOICE
+; ticked as recorded by an earlier install, else as DEFAULT (1 | 0)
+!macro PERMARK_ENTRY_BOX VAR Y H LABEL CHOICE DEFAULT
   ClearErrors
   ReadRegDWORD $0 HKCU "${PERMARK_APP_KEY}" "${CHOICE}"
   ${If} ${Errors}
-    StrCpy $0 1
+    StrCpy $0 ${DEFAULT}
   ${EndIf}
   ${NSD_CreateCheckbox} 120u ${Y} 195u ${H} "${LABEL}"
   Pop ${VAR}
@@ -525,6 +816,16 @@ Var PermarkBoxProperties
   !insertmacro PERMARK_RAISE ${VAR}
   ${If} $0 <> 0
     ${NSD_Check} ${VAR}
+  ${EndIf}
+!macroend
+
+; VAR = "1" | "0" as BOX was left
+!macro PERMARK_ENTRY_READ BOX VAR
+  ${NSD_GetState} ${BOX} $0
+  ${If} $0 = ${BST_CHECKED}
+    StrCpy ${VAR} "1"
+  ${Else}
+    StrCpy ${VAR} "0"
   ${EndIf}
 !macroend
 
@@ -553,8 +854,9 @@ Function PermarkWelcomeShow
   !insertmacro PERMARK_TYPE_BOX $PermarkBoxIni 216u 134u 42u "INI" ";ini"
   !insertmacro PERMARK_TYPE_BOX $PermarkBoxProperties 258u 134u 57u "$(PermarkProperties)" ";properties"
 
-  !insertmacro PERMARK_ENTRY_BOX $PermarkMenuBox 150u 16u "$(OpenWithMenuOption)" "${PERMARK_MENU_CHOICE}"
-  !insertmacro PERMARK_ENTRY_BOX $PermarkNewBox 168u 17u "$(NewMarkdownOption)" "${PERMARK_NEW_CHOICE}"
+  !insertmacro PERMARK_ENTRY_BOX $PermarkMenuBox 147u 16u "$(OpenWithMenuOption)" "${PERMARK_MENU_CHOICE}" 1
+  !insertmacro PERMARK_ENTRY_BOX $PermarkNewBox 164u 17u "$(NewMarkdownOption)" "${PERMARK_NEW_CHOICE}" 1
+  !insertmacro PERMARK_ENTRY_BOX $PermarkPathBox 181u 11u "$(PathOption)" "${PERMARK_PATH_CHOICE}" 0
   Pop $R9
   Pop $R8
   Pop $0
@@ -562,18 +864,9 @@ FunctionEnd
 
 Function PermarkWelcomeLeave
   Push $0
-  ${NSD_GetState} $PermarkMenuBox $0
-  ${If} $0 = ${BST_CHECKED}
-    StrCpy $PermarkMenu "1"
-  ${Else}
-    StrCpy $PermarkMenu "0"
-  ${EndIf}
-  ${NSD_GetState} $PermarkNewBox $0
-  ${If} $0 = ${BST_CHECKED}
-    StrCpy $PermarkNew "1"
-  ${Else}
-    StrCpy $PermarkNew "0"
-  ${EndIf}
+  !insertmacro PERMARK_ENTRY_READ $PermarkMenuBox $PermarkMenu
+  !insertmacro PERMARK_ENTRY_READ $PermarkNewBox $PermarkNew
+  !insertmacro PERMARK_ENTRY_READ $PermarkPathBox $PermarkPath
   ; "none;" marks "the page asked and nothing was ticked" (not the same as "not asked")
   StrCpy $PermarkTypes ""
   !insertmacro PERMARK_TYPE_READ $PermarkBoxMarkdown "markdown"
@@ -644,6 +937,7 @@ FunctionEnd
 
   !insertmacro PERMARK_ENTRY_APPLY $PermarkMenu "${PERMARK_MENU_CHOICE}" PERMARK_MENU "Directory\shell\PerMark" "$(OpenWithMenuLabel)" $PermarkLabel
   !insertmacro PERMARK_ENTRY_APPLY $PermarkNew "${PERMARK_NEW_CHOICE}" PERMARK_NEW "Directory\shell\PerMarkNew" "$(NewMarkdownLabel)" $PermarkNewLabel
+  !insertmacro PERMARK_PATH_APPLY
 
   !insertmacro UPDATEFILEASSOC
 
@@ -673,6 +967,8 @@ FunctionEnd
     !insertmacro PERMARK_TYPES DELETE
     !insertmacro PERMARK_CAPABILITIES_DELETE
     !insertmacro UPDATEFILEASSOC
+    ; before the application data goes: the record names the PATH entry to remove (the choice itself stays recorded)
+    !insertmacro PERMARK_PATH_REMOVE
   ${EndIf}
 
   ; "Delete the application data": the recorded language and choices, and PerMark's folders in the profile
