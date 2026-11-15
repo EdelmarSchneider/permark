@@ -1,6 +1,8 @@
 //! The packaging files name each other: the Store manifest, the shell extension, the packaging script, the Store overlay,
 //! the platform overlays and the installer. Nothing here installs anything; these tests keep them from drifting apart.
 
+use std::collections::BTreeMap;
+
 use permark_core::desktop::FileGroup;
 
 const MANIFEST: &str = include_str!("../msstore/AppxManifest.xml");
@@ -13,6 +15,11 @@ const MACOS: &str = include_str!("../tauri.macos.conf.json");
 const LINUX: &str = include_str!("../tauri.linux.conf.json");
 const DESKTOP: &str = include_str!("../linux/permark.desktop");
 const WORKSPACE: &str = include_str!("../Cargo.toml");
+const HOOKS: &str = include_str!("../installer/hooks.nsh");
+/// Windows language ids of `bundle.windows.nsis.languages`, in the same order.
+const INSTALLER_LANGUAGE_IDS: [u32; 13] = [
+    1033, 1046, 3082, 1031, 2052, 1040, 1041, 1042, 1036, 2070, 1027, 1110, 1048,
+];
 /// Installer languages Tauri does not translate (`bundle.windows.nsis.customLanguageFiles`).
 const CUSTOM_LANGUAGES: [(&str, &str); 3] = [
     (
@@ -206,4 +213,64 @@ fn the_custom_installer_languages_are_listed_and_carry_both_spellings_of_the_ins
         assert!(new.is_some(), "{name}.nsh lacks chooseHowToInstall");
         assert_eq!(new, value("choowHowToInstall"), "{name}.nsh");
     }
+}
+
+#[test]
+fn every_text_of_the_installer_hooks_is_in_every_installer_language() {
+    let config = json(CONFIG);
+    let languages = config["bundle"]["windows"]["nsis"]["languages"]
+        .as_array()
+        .map_or(0, Vec::len);
+    assert_eq!(languages, INSTALLER_LANGUAGE_IDS.len());
+    // `LangString <key> <language id> "<text>"`
+    let mut texts: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
+    for line in HOOKS.lines() {
+        let Some(rest) = line.strip_prefix("LangString ") else {
+            continue;
+        };
+        let mut parts = rest.splitn(3, ' ');
+        let (Some(key), Some(id)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        let id = id.parse().unwrap_or(0);
+        texts.entry(key).or_default().push(id);
+    }
+    // the PATH option and what it tells the person when it leaves the PATH alone
+    for key in ["PathOption", "PathNotAdded", "PathNotRemoved"] {
+        assert!(texts.contains_key(key), "hooks.nsh lacks {key}");
+    }
+    let mut expected = INSTALLER_LANGUAGE_IDS.to_vec();
+    expected.sort_unstable();
+    for (key, mut ids) in texts {
+        ids.sort_unstable();
+        assert_eq!(ids, expected, "{key}");
+    }
+}
+
+#[test]
+fn the_path_option_is_off_by_default_per_user_and_never_cuts_a_long_path() {
+    // the user's PATH only: nothing machine-wide, no administrator rights
+    assert!(HOOKS.contains(r#"!define PERMARK_ENV_KEY "Environment""#));
+    assert!(!HOOKS.contains("HKLM"));
+    // off unless an earlier install recorded it on: on the welcome page and in a silent install
+    assert!(HOOKS.contains(r#""${PERMARK_PATH_CHOICE}" 0"#));
+    assert!(HOOKS.contains(r#"PERMARK_RESOLVE $PermarkPath "${PERMARK_PATH_CHOICE}" "0""#));
+    // the size is read before the text, and the new value has to fit an NSIS string
+    assert!(HOOKS.contains("RegQueryValueExW"));
+    assert!(HOOKS.contains("${NSIS_MAX_STRLEN}"));
+    // the PATH is written in one place only, with the type it had
+    let writes: Vec<&str> = HOOKS
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| line.contains(r#""${PERMARK_ENV_KEY}" "Path""#) && line.starts_with("Write"))
+        .collect();
+    assert_eq!(writes.len(), 2, "{writes:?}");
+    assert!(writes.iter().any(|line| line.starts_with("WriteRegStr ")));
+    assert!(writes
+        .iter()
+        .any(|line| line.starts_with("WriteRegExpandStr ")));
+    // terminals started afterwards see the change
+    assert!(HOOKS.contains(
+        r#"SendMessageTimeoutW(p ${HWND_BROADCAST}, i ${WM_SETTINGCHANGE}, p 0, w "Environment""#
+    ));
 }
