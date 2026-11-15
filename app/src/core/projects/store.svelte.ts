@@ -46,13 +46,14 @@ export type NoticeGone = "action" | "dismissed" | "timeout" | "pushedOut";
 export type TimedNotice = {
   text: string;
   actions: readonly NoticeAction[];
-  closeAfterMs: number;
+  /** Absent: no clock, the notice stays until dismissed (a keyboard user can reach its button at any time). */
+  closeAfterMs?: number;
   onGone?: (how: NoticeGone) => void;
 };
 
 /** What the store needs from its window. */
 export type ProjectsHost = {
-  /** A quiet notice (closes by itself; announced politely). */
+  /** A quiet notice (closes by itself after `closeAfterMs`, else stays until dismissed; announced politely). */
   notice(notice: TimedNotice): void;
   /** A failed action, in words. */
   fail(text: string): void;
@@ -416,9 +417,10 @@ export class ProjectsStore {
     }
   }
 
-  /** "Remove from list" of a missing project: the row goes at once, a notice offers Undo; the entry leaves the list
-   *  when the notice goes (Undo: it never left; its id and rules stay as they were). Closed window | other folder
-   *  before that: the entry stays. */
+  /** "Remove from list" of a missing project: the row goes at once, a notice offers Undo and stays until dismissed (no
+   *  clock: the removal never commits before a keyboard user could reach Undo); the entry leaves the list when the
+   *  notice goes (Undo: it never left; its id and rules stay as they were). Closed window | other folder before that:
+   *  the entry stays. */
   remove(row: ProjectRow): void {
     const uid = row.uid;
     if (uid === null || this.removing.has(uid)) return;
@@ -430,7 +432,6 @@ export class ProjectsStore {
       actions: [
         { label: t("fileOps.undo"), run: () => this.#keep(uid, row.key, name, generation) },
       ],
-      closeAfterMs: NOTICE_MS,
       onGone: (how) => {
         if (how !== "action") void this.#commitRemove(uid, generation);
       },
