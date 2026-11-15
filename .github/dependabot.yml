@@ -10,5 +10,8 @@ updates:
       actions:
         patterns:
           - "*"
+        # The release build action changes how release assets are made: it gets a pull request of its own.
+        exclude-patterns:
+          - "tauri-apps/tauri-action"
     commit-message:
       prefix: ci
