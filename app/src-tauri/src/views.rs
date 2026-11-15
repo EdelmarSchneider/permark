@@ -192,7 +192,7 @@ fn page_color(handle: &AppHandle, native: &tauri::Window) -> tauri::window::Colo
         ThemePref::System => native.theme().is_ok_and(|t| t == tauri::Theme::Dark),
     };
     let (r, g, b) = match (dark, settings.tone) {
-        (true, _) => (0x16, 0x17, 0x1a),
+        (true, _) => (0x14, 0x15, 0x19),
         (false, Tone::White) => (0xff, 0xff, 0xff),
         (false, Tone::Paper) => (0xf6, 0xf0, 0xe1),
         (false, Tone::Sage) => (0xea, 0xf1, 0xe3),

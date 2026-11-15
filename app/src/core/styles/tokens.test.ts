@@ -10,6 +10,61 @@ function stack(lang: string, name: string): string[] {
   return value.split(",").map((family) => family.trim().replace(/"/g, ""));
 }
 
+/** The custom properties declared in the first block whose selector is `selector`. */
+function block(selector: string): Record<string, string> {
+  const body = css.replace(/\r\n/g, "\n").split(`${selector} {`)[1]?.split("}")[0] ?? "";
+  const props: Record<string, string> = {};
+  for (const match of body.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/--([\w-]+):\s*([^;]+);/g))
+    props[match[1] ?? ""] = (match[2] ?? "").trim();
+  return props;
+}
+
+/** A token's color as sRGB channels, following `var(--x)` inside the same theme. */
+function rgb(theme: Record<string, string>, name: string): number[] {
+  let value = theme[name] ?? "";
+  for (let hops = 0; value.startsWith("var(--") && hops < 4; hops++)
+    value = theme[value.slice(6, -1)] ?? "";
+  const hex = /^#([0-9a-f]{6})$/i.exec(value)?.[1];
+  if (hex === undefined) throw new Error(`--${name} is not a #rrggbb color: "${value}"`);
+  return [0, 2, 4].map((at) => parseInt(hex.slice(at, at + 2), 16));
+}
+
+/** WCAG 2 contrast ratio of two sRGB colors. */
+function contrast(a: number[], b: number[]): number {
+  const luminance = ([r = 0, g = 0, b = 0]: number[]): number => {
+    const lin = (c: number) =>
+      c / 255 <= 0.03928 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4;
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  };
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return ((hi ?? 0) + 0.05) / ((lo ?? 0) + 0.05);
+}
+
+describe("text contrast of every theme and light tone", () => {
+  const light = block(':root,\n[data-theme="light"]');
+  const themes: Record<string, Record<string, string>> = {
+    light,
+    dark: block('[data-theme="dark"]'),
+  };
+  for (const tone of ["paper", "sage", "gray"])
+    themes[tone] = { ...light, ...block(`:root[data-tone="${tone}"]:not([data-theme="dark"])`) };
+
+  for (const [name, theme] of Object.entries(themes)) {
+    it(`${name}: text, muted, faint and accent text keep 4.5:1 on the page, both surfaces and menus`, () => {
+      for (const bg of ["bg", "surface", "surface-2", "pop"])
+        for (const fg of ["text", "muted", "faint", "accent-text"])
+          expect(
+            contrast(rgb(theme, fg), rgb(theme, bg)),
+            `--${fg} on --${bg}`,
+          ).toBeGreaterThanOrEqual(4.5);
+      expect(
+        contrast(rgb(theme, "accent-fg"), rgb(theme, "accent")),
+        "--accent-fg on --accent",
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+});
+
 describe("CJK font stacks", () => {
   // system-ui can be a font with Chinese Han shapes (Linux): the language's own fonts must come first
   for (const [lang, own] of [
