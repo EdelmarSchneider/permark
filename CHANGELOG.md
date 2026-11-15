@@ -24,6 +24,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ### Fixed
 - The AI agent connection now belongs to the folder you turned it on for. If that folder is deleted and another one is created or cloned at the same place, agents are no longer allowed there: the connection shows as off, says why, and you turn it on again if you want it. Connections made with earlier versions keep working. <!-- f: agent -->
 - The groups file no longer drops entries that are special spaces, such as the no-break space, and accepts longer emoji sequences, such as people with skin tones. A character listed twice in one group no longer breaks the picker. <!-- f: editing -->
+- A file that fails to open in the same tab shows its error once, not twice. <!-- f: tabs -->
+- Text files, such as logs, reopen at the line you left instead of at the top. <!-- f: text-view -->
+- After you dismiss a notice with the keyboard, or close Settings or the keyboard shortcuts list with Esc, the keyboard goes back where it was instead of being lost. <!-- f: accessibility -->
 
 ## [0.12.0] - 2026-11-14
 
