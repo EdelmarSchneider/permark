@@ -232,12 +232,17 @@ describe("the settings page", () => {
         .join(",")} / ${conditions.current.plugins.join(",")}`,
     );
     mountPage("integration");
-    await until(() => target.querySelectorAll("section.group").length >= 5, "groups");
-    const headings = Array.from(target.querySelectorAll("section.group h3")).map((h) =>
-      h.textContent?.trim(),
+    const shown = () =>
+      Array.from(target.querySelectorAll("section.group h3")).map((h) => h.textContent?.trim());
+    // plugin sections arrive as their plugins activate, in no fixed order: wait for the ones checked below
+    const expected = ["File manager", "Updates", "Git", "Notes"];
+    await until(
+      () => expected.every((name) => shown().includes(name)),
+      `groups ${shown().join(",")}`,
     );
+    const headings = shown();
     expect(headings[0]).toBe("Default app");
-    expect(headings).toEqual(expect.arrayContaining(["File manager", "Updates", "Git", "Notes"]));
+    expect(headings).toEqual(expect.arrayContaining(expected));
     // the agent connection has its own section (Settings > AI agents)
     expect(headings).not.toContain("Agent connection");
     // Windows: who opens the files now, and the way to Windows' own page
