@@ -8,7 +8,7 @@ describe("page rule", () => {
   const a4 = { widthMm: 210, heightMm: 297, marginMm: 19.05 };
 
   it("size and margins from the page box; the printable height for figures", () => {
-    const rule = pageRule(a4, false);
+    const rule = pageRule(a4, false, false);
     expect(rule).toContain("@page { size: 210mm 297mm; margin: 19.05mm; }");
     expect(rule).toContain("--page-h: 258.9mm;");
     expect(rule).not.toContain("@bottom-center");
@@ -18,6 +18,13 @@ describe("page rule", () => {
     expect(pageRule(a4, true)).toContain(
       '@bottom-center { content: counter(page) " / " counter(pages);',
     );
+  });
+
+  it("where the web view sets the margins itself: size only, no margin boxes, same printable height", () => {
+    const rule = pageRule(a4, true, true);
+    expect(rule).toContain("@page { size: 210mm 297mm; margin: 0; }");
+    expect(rule).not.toContain("@bottom-center");
+    expect(rule).toContain("--page-h: 258.9mm;");
   });
 });
 

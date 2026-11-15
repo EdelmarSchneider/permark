@@ -11,4 +11,9 @@ pdf: boolean, print: boolean,
 /**
  * The page's CSS page-number boxes (`@page { @bottom-center }`) show in the output.
  */
-pageNumbers: boolean, };
+pageNumbers: boolean, 
+/**
+ * The paper's size and margins are set natively (the web view ignores the page's `@page` size and margins): the
+ * page's CSS keeps `margin: 0` so a web view that starts honoring it does not add a second margin.
+ */
+nativeMargins: boolean, };

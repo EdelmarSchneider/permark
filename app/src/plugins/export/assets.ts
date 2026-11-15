@@ -1,7 +1,7 @@
 // Files an export page carries inside itself as data URIs (pictures, sound, video, fonts), so it needs nothing else
 // to show: no project folder, no network.
 
-/** Biggest sound | video file an HTML page carries inside itself. */
+/** Biggest file (picture, sound, video) an export page carries inside itself. */
 export const MEDIA_MAX_BYTES = 25 * 1024 * 1024;
 
 /** Bytes turned into text per step (the argument list of `String.fromCharCode` stays small). */
@@ -28,16 +28,42 @@ function mimeOf(response: Response, name: string): string {
   return /\.svg$/i.test(name) ? "image/svg+xml" : "application/octet-stream";
 }
 
+/** The body of `response`, or null once it passes `max` bytes (the rest is never read). */
+async function readUpTo(response: Response, max: number): Promise<Uint8Array | null> {
+  if (response.body === null) return new Uint8Array(0);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      void reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return bytes;
+}
+
 /**
  * The file at `url` (the page's own asset URL | a `blob:` URL the window already holds) as a data URI. A file over
- * `max` bytes is not read (its declared size decides when the answer gives one).
+ * `max` bytes (default [`MEDIA_MAX_BYTES`]) is not read: its declared size decides when the answer gives one, else
+ * reading stops once it passes the limit.
  */
 export async function fetchDataUri(
   url: string,
   options: { max?: number; signal?: AbortSignal | undefined } = {},
 ): Promise<Fetched> {
   if (url.startsWith("data:")) return { status: "ok", uri: url };
-  const max = options.max ?? Number.POSITIVE_INFINITY;
+  const max = options.max ?? MEDIA_MAX_BYTES;
   let response: Response;
   try {
     response = await fetch(url, options.signal ? { signal: options.signal } : undefined);
@@ -51,8 +77,8 @@ export async function fetchDataUri(
     void response.body?.cancel();
     return { status: "tooLarge" };
   }
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.length > max) return { status: "tooLarge" };
+  const bytes = await readUpTo(response, max);
+  if (bytes === null) return { status: "tooLarge" };
   return { status: "ok", uri: dataUri(bytes, mimeOf(response, url)) };
 }
 

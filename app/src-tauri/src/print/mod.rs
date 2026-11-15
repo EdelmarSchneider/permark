@@ -46,7 +46,7 @@ pub const SCHEME: &str = "pm-export";
 const LABEL_PREFIX: &str = "export-";
 /// The page as served: nothing but itself and what it carries inline (no script, nothing fetched).
 const PAGE_POLICY: &str = "default-src 'none'; img-src data:; media-src data:; font-src data:; \
-                           style-src 'unsafe-inline'";
+                           style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
 /// A page that never finishes loading is given up (a long document with many pictures takes a few seconds).
 const LOAD_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -65,14 +65,15 @@ fn page_url() -> Option<Url> {
     Url::parse(&text).ok()
 }
 
-/// A page window may go to its page only. (Compared part by part: the origin of a custom scheme URL is opaque and
-/// equals no other.)
+/// A page window may go to its page only, without a query (a jump to an anchor of the page stays allowed). (Compared
+/// part by part: the origin of a custom scheme URL is opaque and equals no other.)
 pub fn is_page_url(url: &Url) -> bool {
     page_url().is_some_and(|page| {
         page.scheme() == url.scheme()
             && page.host_str() == url.host_str()
             && page.port_or_known_default() == url.port_or_known_default()
             && url.path() == "/"
+            && url.query().is_none()
     })
 }
 
@@ -113,11 +114,28 @@ pub fn handle(
     request: Request<Vec<u8>>,
     responder: UriSchemeResponder,
 ) {
-    let page = (request.uri().path() == "/")
-        .then(|| context.app_handle().try_state::<Pages>())
+    let pages = context.app_handle().try_state::<Pages>();
+    let answer = respond(
+        pages.as_deref(),
+        context.webview_label(),
+        request.uri().path(),
+    );
+    if let Ok(response) = answer {
+        responder.respond(response);
+    }
+}
+
+/// The answer to `label` asking for `path`: its own page at `/` when it is a page window, else 404.
+fn respond(
+    pages: Option<&Pages>,
+    label: &str,
+    path: &str,
+) -> tauri::http::Result<Response<Vec<u8>>> {
+    let page = (path == "/" && is_sheet(label))
+        .then_some(pages)
         .flatten()
-        .and_then(|pages| pages.page(context.webview_label()));
-    let response = match page {
+        .and_then(|pages| pages.page(label));
+    match page {
         Some(html) => Response::builder()
             .status(StatusCode::OK)
             .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
@@ -127,9 +145,6 @@ pub fn handle(
         None => Response::builder()
             .status(StatusCode::NOT_FOUND)
             .body(Vec::new()),
-    };
-    if let Ok(response) = response {
-        responder.respond(response);
     }
 }
 
@@ -264,20 +279,48 @@ impl Drop for Sheet {
     }
 }
 
+/// Window -> the file last written for it: the only file Open | Show in folder ever touch. A closed window's entry goes
+/// with it.
+#[derive(Default)]
+struct Written(Mutex<HashMap<String, PathBuf>>);
+
+impl Written {
+    fn lock(&self) -> MutexGuard<'_, HashMap<String, PathBuf>> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn keep(&self, window: &str, path: PathBuf) {
+        self.lock().insert(window.to_owned(), path);
+    }
+
+    /// The file last written for `window`, still on disk.
+    fn last(&self, window: &str) -> Result<PathBuf, PrintError> {
+        let path = self
+            .lock()
+            .get(window)
+            .cloned()
+            .ok_or(PrintError::NothingWritten)?;
+        if path.is_file() {
+            Ok(path)
+        } else {
+            Err(PrintError::Gone(path))
+        }
+    }
+
+    fn forget(&self, window: &str) {
+        self.lock().remove(window);
+    }
+}
+
 /// The shell's printer: renders through the system web view, writes what the person chose.
 struct ShellPrinter {
     handle: AppHandle,
     /// The web view data folder of the app's views.
     data_dir: Option<PathBuf>,
-    /// Window -> the file last written for it: the only file Open | Show in folder ever touch.
-    written: Mutex<HashMap<String, PathBuf>>,
+    written: Written,
 }
 
 impl ShellPrinter {
-    fn written(&self) -> MutexGuard<'_, HashMap<String, PathBuf>> {
-        self.written.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
     /// The Save dialog on the asking window, in the source's folder with the source's name; the chosen path checked.
     /// `None`: the person cancelled.
     fn ask(&self, origin: &Origin, kind: OutputKind) -> Result<Option<PathBuf>, PrintError> {
@@ -286,6 +329,8 @@ impl ShellPrinter {
             .dialog()
             .file()
             .set_file_name(origin.suggested_name(kind))
+            // the filter is also the default extension: Windows and macOS add it themselves and ask before replacing
+            // that file; where the dialog cannot (GTK), `output_path` refuses an added name that exists
             .add_filter(kind.ext().to_uppercase(), &[kind.ext()]);
         if let Some(folder) = origin.folder() {
             dialog = dialog.set_directory(folder);
@@ -307,21 +352,8 @@ impl ShellPrinter {
     }
 
     fn keep(&self, origin: &Origin, path: PathBuf) -> Saved {
-        self.written().insert(origin.window.clone(), path.clone());
+        self.written.keep(&origin.window, path.clone());
         Saved::Saved { path }
-    }
-
-    fn last(&self, window: &str) -> Result<PathBuf, PrintError> {
-        let path = self
-            .written()
-            .get(window)
-            .cloned()
-            .ok_or(PrintError::NothingWritten)?;
-        if path.is_file() {
-            Ok(path)
-        } else {
-            Err(PrintError::Gone(path))
-        }
     }
 }
 
@@ -354,24 +386,46 @@ impl HtmlPrinter for ShellPrinter {
         Ok(self.keep(origin, path))
     }
 
-    fn save_html(&self, html: &str, origin: &Origin) -> Result<Saved, PrintError> {
+    fn save_html(
+        &self,
+        html: &str,
+        origin: &Origin,
+        cancel: &AtomicBool,
+    ) -> Result<Saved, PrintError> {
         let Some(path) = self.ask(origin, OutputKind::Html)? else {
             return Ok(Saved::Cancelled);
         };
+        // cancelled while the dialog was open: the person's Cancel wins over the path chosen in it
+        if cancel.load(Ordering::SeqCst) {
+            return Ok(Saved::Cancelled);
+        }
         write_output(&path, html.as_bytes())?;
         Ok(self.keep(origin, path))
     }
 
-    fn print(&self, html: String, setup: &PageSetup) -> Result<(), PrintError> {
+    fn print(
+        &self,
+        html: String,
+        setup: &PageSetup,
+        cancel: &AtomicBool,
+    ) -> Result<(), PrintError> {
         if !native::CAPABILITIES.print {
             return Err(PrintError::Unsupported);
         }
         let sheet = Sheet::open(&self.handle, html, self.data_dir.clone())?;
+        // the page loads before any dialog shows: a Cancel meanwhile means no dialog at all
+        if cancel.load(Ordering::SeqCst) {
+            return Ok(());
+        }
         native::print(&sheet, *setup)
     }
 
+    fn forget(&self, window: &str) {
+        self.written.forget(window);
+    }
+
     fn open(&self, window: &str) -> Result<(), PrintError> {
-        let path = self.last(window)?;
+        let path = self.written.last(window)?;
         // a path this printer wrote itself, ending in `.pdf` | `.html`: never a program
         self.handle
             .opener()
@@ -383,7 +437,7 @@ impl HtmlPrinter for ShellPrinter {
     }
 
     fn reveal(&self, window: &str) -> Result<(), PrintError> {
-        let path = self.last(window)?;
+        let path = self.written.last(window)?;
         self.handle
             .opener()
             .reveal_item_in_dir(&path)
@@ -399,7 +453,7 @@ pub fn provide(env: &CoreEnv, handle: &AppHandle) -> ServiceLease {
     let printer = ShellPrinter {
         handle: handle.clone(),
         data_dir: crate::views::data_directory(env),
-        written: Mutex::new(HashMap::new()),
+        written: Written::default(),
     };
     env.services()
         .provide(Arc::new(HtmlPrinterApi(Arc::new(printer))))

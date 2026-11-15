@@ -10,13 +10,10 @@ import { Decorator, type EmbedLookup } from "../../core/doc/decorate";
 import { enhanceBlock, type EnhanceEnv } from "../../core/doc/enhance";
 import { webPictures } from "../../core/doc/webPictures.svelte";
 import { contributions } from "../../core/plugins/instance.svelte";
-import { fetchDataUri, MEDIA_MAX_BYTES } from "./assets";
+import { fetchDataUri } from "./assets";
 import { exportCss } from "./look";
 
 export type ExportTarget = "paper" | "html";
-
-/** Where a build is (for a progress notice). */
-export type ExportStep = "reading" | "drawing" | "files" | "styles";
 
 /** Something of the document the page could not carry (the person is told). */
 export type ExportNote = { kind: "picture" | "webPicture" | "video" | "audio"; name: string };
@@ -41,15 +38,14 @@ export type ExportOptions = {
   page?: PageBox;
   /** "n / total" at the bottom of each page (paper; only where the web view draws page boxes). */
   pageNumbers: boolean;
+  /** The web view puts the page box's margins itself (paper): the page rule asks for none of its own. */
+  nativeMargins?: boolean;
   /** The reading view's enhance environment (where the window loads project files from). */
   env: EnhanceEnv;
   /** The embeds on offer; absent: the ones the reading view uses now. */
   embeds?: EmbedLookup;
   words?: ExportWords;
   signal?: AbortSignal;
-  progress?: (step: ExportStep) => void;
-  /** Language of the page; absent: the window's. */
-  lang?: string;
   /** Longest wait for embeds to finish drawing; a diagram not drawn by then shows the error. */
   settleMs?: number;
 };
@@ -61,7 +57,7 @@ export type ExportOutcome =
   | { status: "cancelled" };
 
 const CSP =
-  "default-src 'none'; img-src data:; media-src data:; font-src data:; style-src 'unsafe-inline'";
+  "default-src 'none'; img-src data:; media-src data:; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'";
 /** Blocks built (and embeds started) per turn: the window keeps answering during a long document. */
 const SLICE = 200;
 const SETTLE_MS = 60_000;
@@ -71,8 +67,11 @@ const POLL_MS = 30;
 /** Embeds that say they are still drawing: a diagram's figure, a code block waiting for its colors. */
 const BUSY = ".figure.is-pending, [aria-busy='true']";
 const KEPT_LINK = /^(?:https?:|mailto:|#)/i;
-/** App-only marks and controls: a static page has no use for them. */
-const APP_ONLY = "script, button, a.anchor";
+/**
+ * App-only marks and controls, and elements that load | send | redirect on their own: a static page has no use for
+ * them (the page's own head tags are added after cleaning).
+ */
+const APP_ONLY = "script, button, a.anchor, iframe, object, embed, form, base, link, meta";
 const APP_ATTRS = new Set([
   "tabindex",
   "contenteditable",
@@ -114,6 +113,24 @@ class Stage {
   }
 }
 
+/** Settles once `work` does, `signal` aborts or `until` passes, whichever comes first (`work` may never settle). */
+function within(
+  work: Promise<unknown>,
+  until: number,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  return new Promise((resolve) => {
+    const finish = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, Math.max(0, until - Date.now()));
+    signal?.addEventListener("abort", finish, { once: true });
+    work.then(finish, finish);
+  });
+}
+
 /** Waits until no embed of `roots` is busy and nothing changed for a moment, or until `until`. */
 async function settle(roots: HTMLElement[], until: number, signal?: AbortSignal): Promise<void> {
   let changed = Date.now();
@@ -148,7 +165,6 @@ export async function buildExport(
   options: ExportOptions,
 ): Promise<ExportOutcome> {
   const { signal } = options;
-  options.progress?.("reading");
   const result = await api.openDocument(path, []);
   if (signal?.aborted) return cancelled;
   if (!result.ok) return { status: "failed", error: result.error };
@@ -202,7 +218,6 @@ export async function buildExport(
       });
     }
 
-    options.progress?.("drawing");
     for (const stage of stages) {
       const decorator = new Decorator(api, { theme: stage === dark ? "dark" : "light" });
       decorators.push(decorator);
@@ -213,11 +228,13 @@ export async function buildExport(
         if (at % SLICE === SLICE - 1) await turn(signal);
       }
     }
-    for (const decorator of decorators) await decorator.idle();
+    // one deadline for loading and drawing: a library import that never ends holds neither Cancel nor the build
+    const until = Date.now() + (options.settleMs ?? SETTLE_MS);
+    await within(Promise.all(decorators.map((decorator) => decorator.idle())), until, signal);
     signal?.throwIfAborted();
     await settle(
       stages.map((stage) => stage.body),
-      Date.now() + (options.settleMs ?? SETTLE_MS),
+      until,
       signal,
     );
     signal?.throwIfAborted();
@@ -229,13 +246,11 @@ export async function buildExport(
     const words = options.words ?? ENGLISH_WORDS;
     clean(page, words);
 
-    options.progress?.("files");
     const notes: ExportNote[] = [];
     await inlinePictures(page, files, notes, signal);
     await inlineMedia(page, files, options.target, words, notes, signal);
     signal?.throwIfAborted();
 
-    options.progress?.("styles");
     const css = await exportCss(page, options);
     signal?.throwIfAborted();
     dropAttributes(page, css);
@@ -243,7 +258,7 @@ export async function buildExport(
       status: "done",
       html: serialize(page, css, {
         title: view.name.replace(/\.[^.]+$/, ""),
-        lang: options.lang ?? document.documentElement.lang,
+        lang: document.documentElement.lang,
         paper,
       }),
       notes,
@@ -384,9 +399,7 @@ async function inlineMedia(
       let inside = true;
       for (const source of sources) {
         const src = source.getAttribute("src") ?? "";
-        const got = files.has(src)
-          ? await fetchDataUri(src, { max: MEDIA_MAX_BYTES, signal })
-          : null;
+        const got = files.has(src) ? await fetchDataUri(src, { signal }) : null;
         if (got?.status !== "ok") {
           inside = false;
           break;

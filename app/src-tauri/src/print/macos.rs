@@ -31,6 +31,7 @@ pub const CAPABILITIES: PrintCapabilities = PrintCapabilities {
     pdf: true,
     print: true,
     page_numbers: false,
+    native_margins: true,
 };
 
 const POINTS_PER_MM: f64 = 72.0 / 25.4;

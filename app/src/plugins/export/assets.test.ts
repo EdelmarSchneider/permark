@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { dataUri, fetchDataUri, inlineFontUrls } from "./assets";
+import { dataUri, fetchDataUri, inlineFontUrls, MEDIA_MAX_BYTES } from "./assets";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -32,6 +32,24 @@ describe("data URIs", () => {
     expect(await fetchDataUri("http://x/v.mp4", { max: 10 })).toEqual({ status: "tooLarge" });
     answer(20, { "content-type": "video/mp4" });
     expect(await fetchDataUri("http://x/v.mp4", { max: 10 })).toEqual({ status: "tooLarge" });
+  });
+
+  it("without a declared size, reading stops once the limit is passed", async () => {
+    let pulled = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(new Uint8Array(4).fill(66));
+      },
+    });
+    vi.stubGlobal("fetch", () => Promise.resolve(new Response(endless)));
+    expect(await fetchDataUri("http://x/v.mp4", { max: 10 })).toEqual({ status: "tooLarge" });
+    expect(pulled).toBeLessThan(10);
+  });
+
+  it("pictures are capped too: the default limit is the media one", async () => {
+    answer(1, { "content-type": "image/png", "content-length": String(MEDIA_MAX_BYTES + 1) });
+    expect(await fetchDataUri("http://x/a.png")).toEqual({ status: "tooLarge" });
   });
 
   it("an error answer or a refused request is a failure; a data URI is kept as is", async () => {

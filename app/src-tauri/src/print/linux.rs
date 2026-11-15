@@ -20,6 +20,7 @@ pub const CAPABILITIES: PrintCapabilities = PrintCapabilities {
     pdf: true,
     print: true,
     page_numbers: false,
+    native_margins: true,
 };
 
 /// Whether `script`, run in the page, comes out true.
@@ -42,18 +43,25 @@ fn evaluate(sheet: &Sheet, script: &'static str) -> Result<bool, PrintError> {
 /// The loaded page's fonts and pictures are ready.
 ///
 /// `WebKitGTK` runs no script at all, the host's included, while scripts are off: they are turned on for the host
-/// only, with every script of the page itself (elements, event attributes, `javascript:` links) still off.
+/// only, with every script of the page itself (elements, event attributes, `javascript:` links) still off, and turned
+/// off again once the page has settled (printing needs none).
 pub(super) fn settle(sheet: &Sheet) -> Result<(), PrintError> {
-    let rx = on_webview(sheet, |webview, tx| {
+    scripts(sheet, true)?;
+    until(SETTLE_TIMEOUT, || evaluate(sheet, SETTLED))?;
+    scripts(sheet, false)
+}
+
+/// Turns the host's scripts on | off; the page's own scripts stay off either way.
+fn scripts(sheet: &Sheet, on: bool) -> Result<(), PrintError> {
+    let rx = on_webview(sheet, move |webview, tx| {
         let settings = WebViewExt::settings(&webview.inner())
             .ok_or_else(|| "the web view has no settings".to_owned())?;
         settings.set_enable_javascript_markup(false);
-        settings.set_enable_javascript(true);
+        settings.set_enable_javascript(on);
         let _ = tx.send(Ok(()));
         Ok::<(), String>(())
     })?;
-    wait(&rx, SETTLE_TIMEOUT)?;
-    until(SETTLE_TIMEOUT, || evaluate(sheet, SETTLED))
+    wait(&rx, SETTLE_TIMEOUT)
 }
 
 /// The paper of `setup` (its page box has the orientation applied already) with its margins: `WebKitGTK` lays the

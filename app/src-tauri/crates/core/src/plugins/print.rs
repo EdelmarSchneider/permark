@@ -128,6 +128,7 @@ pub struct PageBox {
 }
 
 /// What the system web view of this build can do.
+#[allow(clippy::struct_excessive_bools)] // independent facts of one web view, not a state machine
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -137,6 +138,9 @@ pub struct PrintCapabilities {
     pub print: bool,
     /// The page's CSS page-number boxes (`@page { @bottom-center }`) show in the output.
     pub page_numbers: bool,
+    /// The paper's size and margins are set natively (the web view ignores the page's `@page` size and margins): the
+    /// page's CSS keeps `margin: 0` so a web view that starts honoring it does not add a second margin.
+    pub native_margins: bool,
 }
 
 /// What the person is writing: picks the dialog's start folder, its default name and its filter.
@@ -192,7 +196,7 @@ pub enum Saved {
         #[ts(type = "string")]
         path: PathBuf,
     },
-    /// The person closed the dialog: nothing written.
+    /// The person closed the dialog | cancelled before the write: nothing written.
     Cancelled,
 }
 
@@ -259,17 +263,27 @@ pub trait HtmlPrinter: Send + Sync {
         cancel: &AtomicBool,
     ) -> Result<Saved, PrintError>;
 
-    /// Asks where to save and writes `html` there as it is.
+    /// Asks where to save and writes `html` there as it is. `cancel` set by the time the dialog closes: nothing
+    /// written.
     ///
     /// # Errors
     /// A bad | refused target | the write failed (nothing left behind).
-    fn save_html(&self, html: &str, origin: &Origin) -> Result<Saved, PrintError>;
+    fn save_html(
+        &self,
+        html: &str,
+        origin: &Origin,
+        cancel: &AtomicBool,
+    ) -> Result<Saved, PrintError>;
 
-    /// Shows the system's print dialog for `html` laid out as `setup`.
+    /// Shows the system's print dialog for `html` laid out as `setup`. `cancel` set while the page loads: no dialog.
     ///
     /// # Errors
     /// Unsupported | the web view failed.
-    fn print(&self, html: String, setup: &PageSetup) -> Result<(), PrintError>;
+    fn print(&self, html: String, setup: &PageSetup, cancel: &AtomicBool)
+        -> Result<(), PrintError>;
+
+    /// `window` is gone: the file last written for it is forgotten (Open | Show in folder no longer reach it).
+    fn forget(&self, window: &str);
 
     /// Opens the file last written for `window` in the system's default program.
     ///
@@ -292,7 +306,7 @@ pub struct HtmlPrinterApi(pub Arc<dyn HtmlPrinter>);
 /// (added when missing), an existing folder, never the source document (one file under two names counts).
 ///
 /// # Errors
-/// Relative | no folder | the source.
+/// Relative | no folder | the extension had to be added and that file exists | the source.
 pub fn output_path(chosen: &Path, kind: OutputKind, source: &Path) -> Result<PathBuf, PrintError> {
     let shown = || chosen.display().to_string();
     if !chosen.is_absolute() || chosen.file_name().is_none() {
@@ -309,7 +323,8 @@ pub fn output_path(chosen: &Path, kind: OutputKind, source: &Path) -> Result<Pat
         name.push(kind.ext());
         PathBuf::from(name)
     };
-    if !path.parent().is_some_and(Path::is_dir) || path.is_dir() {
+    // an added extension names a file the dialog never asked to replace: refused rather than overwritten unasked
+    if !path.parent().is_some_and(Path::is_dir) || path.is_dir() || (!has_ext && path.exists()) {
         return Err(PrintError::BadTarget(path.display().to_string()));
     }
     let same = match fsx::same_file(&path, source) {
@@ -423,6 +438,24 @@ mod tests {
         assert_eq!(pdf("a.txt").unwrap(), dir.path().join("a.txt.pdf"));
         let html = output_path(&dir.path().join("a.htm"), OutputKind::Html, &source).unwrap();
         assert_eq!(html, dir.path().join("a.htm.html"));
+    }
+
+    #[test]
+    fn an_added_extension_never_replaces_a_file_the_dialog_did_not_ask_about() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("a.md");
+        std::fs::write(&source, "# a").unwrap();
+        let taken = dir.path().join("report.pdf");
+        std::fs::write(&taken, b"kept").unwrap();
+        // the dialog confirmed "report"; "report.pdf" exists and was never offered for replacing
+        let refused = output_path(&dir.path().join("report"), OutputKind::Pdf, &source);
+        assert!(matches!(refused, Err(PrintError::BadTarget(_))));
+        assert_eq!(std::fs::read(&taken).unwrap(), b"kept");
+        // chosen with its extension: the dialog asked, the person agreed
+        assert_eq!(
+            output_path(&taken, OutputKind::Pdf, &source).unwrap(),
+            taken
+        );
     }
 
     #[test]

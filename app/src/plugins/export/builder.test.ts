@@ -95,19 +95,19 @@ afterEach(() => {
 
 describe("export page", () => {
   it("is one standalone page: doctype, language, title, CSP, no script, no handler", async () => {
+    document.documentElement.lang = "pt-BR";
     const html = await build(
       await apiWith(
         '<h2 id="one">One</h2>',
         '<p onclick="steal()">text <a href="https://example.org" onmouseover="x()">web</a></p>',
         "<script>alert(1)</script>",
       ),
-      { lang: "pt-BR" },
-    );
+    ).finally(() => document.documentElement.removeAttribute("lang"));
     expect(html.startsWith("<!doctype html>")).toBe(true);
     expect(html).toContain('<html lang="pt-BR"');
     expect(html).toContain("<title>guide</title>");
     expect(html).toContain(
-      `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; media-src data:; font-src data:; style-src 'unsafe-inline'">`,
+      `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; media-src data:; font-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">`,
     );
     expect(html).toContain('<main class="md md-body">');
     expect(html).not.toMatch(/<script/i);
@@ -158,6 +158,47 @@ describe("export page", () => {
     expect(outcome.html).not.toMatch(/<img/);
     expect(outcome.html).toContain("Lost");
     expect(outcome.notes).toEqual([{ kind: "picture", name: "gone.png" }]);
+  });
+
+  it("a picture over 25 MB is not carried: its description and a note", async () => {
+    serve({ "huge.png": { bytes: 30 * 1024 * 1024, type: "image/png" } });
+    const outcome = await run(await apiWith('<p><img src="pm-asset:huge.png" alt="Huge"></p>'));
+    if (outcome.status !== "done") throw new Error("not built");
+    expect(outcome.html).not.toMatch(/<img/);
+    expect(outcome.html).toContain("Huge");
+    expect(outcome.notes).toEqual([{ kind: "picture", name: "huge.png" }]);
+  });
+
+  it("hostile block HTML: no handler, script link, frame, form, base, stray asset or web fetch survives", async () => {
+    const asked = serve({ "..%2Fx": { bytes: 3, type: "image/png" } });
+    const outcome = await run(
+      await apiWith(
+        '<p><img src="pm-asset:gone.png" onerror="steal()" alt="Bad"></p>',
+        '<p><a href="javascript:steal()">js link</a></p>',
+        '<p><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><a xlink:href="javascript:steal()"><text>svg link</text></a></svg></p>',
+        '<div><iframe src="https://example.org/frame"></iframe></div>',
+        '<div><form action="https://example.org/post"><input name="q"></form></div>',
+        '<div><base href="https://example.org/"><link rel="stylesheet" href="https://example.org/s.css"><meta http-equiv="refresh" content="0;url=https://example.org"></div>',
+        '<div><object data="https://example.org/o"></object><embed src="https://example.org/e"></div>',
+        '<p><img src="http://pm-asset.localhost/1/..%2Fx" alt="Stray"></p>',
+        '<p><span class="remote-image" role="img" data-url="https://example.org/never.png" aria-label="Never">Never</span></p>',
+      ),
+    );
+    if (outcome.status !== "done") throw new Error("not built");
+    const { html } = outcome;
+    const body = html.slice(html.indexOf("<body"));
+    expect(html).not.toMatch(/\son[a-z]+=/i);
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toMatch(/<(?:iframe|form|base|object|embed|link)\b/i);
+    expect(body).not.toMatch(/<meta\b/i);
+    expect(html).not.toContain("pm-asset.localhost");
+    expect(html).not.toContain("example.org");
+    expect(html).toContain("js link");
+    expect(html).toContain("svg link");
+    expect(html).toContain("Stray");
+    expect(html).toContain("Never");
+    // only the page's own asset URL was read; the stray one and the web picture never were
+    expect(asked).toEqual(["http://pm-asset.localhost/1/gone.png"]);
   });
 
   it("a web picture: only one already fetched in this window comes in; the others stay a chip and a note", async () => {
@@ -241,6 +282,25 @@ describe("export page", () => {
     expect(web).toContain('<meta name="color-scheme" content="light dark">');
   });
 
+  it("paper where the web view sets the margins itself: no page margins, same printable width", async () => {
+    const api = await apiWith("<p>text</p>");
+    let width = "";
+    const observer = new MutationObserver(() => {
+      const stage = document.querySelector<HTMLElement>(".pm-export-stage");
+      if (stage) width = stage.style.width;
+    });
+    observer.observe(document.body, { childList: true });
+    const html = await build(api, {
+      target: "paper",
+      page: A5,
+      pageNumbers: true,
+      nativeMargins: true,
+    }).finally(() => observer.disconnect());
+    expect(html).toContain("@page { size: 148mm 210mm; margin: 0; }");
+    expect(html).not.toContain("@bottom-center");
+    expect(width).toBe(`${148 - 2 * 12.7}mm`);
+  });
+
   it("HTML: each diagram twice, light and dark, the reader's preference picks one", async () => {
     const html = await build(
       await apiWith('<pre><code class="language-mermaid">graph TD; A--&gt;B</code></pre>'),
@@ -304,22 +364,32 @@ describe("export page", () => {
     expect(document.body.children).toHaveLength(0);
   });
 
-  it("cancel while drawing: the copy of the page goes too", async () => {
+  /** An embed whose code never arrives (a hung import). */
+  const hungEmbeds: EmbedLookup = (language) =>
+    language === "mermaid" ? () => new Promise(() => {}) : undefined;
+  const hungDiagram = '<pre><code class="language-mermaid">graph TD; A--&gt;B</code></pre>';
+
+  it("cancel while an embed is still loading: the run ends and the copy of the page goes too", async () => {
     const controller = new AbortController();
-    const outcome = run(
-      await apiWith('<pre><code class="language-mermaid">graph TD; A--&gt;B</code></pre>'),
-      {
-        embeds: diagramEmbeds,
-        signal: controller.signal,
-        progress: (step) => {
-          if (step === "drawing") {
-            expect(document.body.children.length).toBeGreaterThan(0);
-            controller.abort();
-          }
-        },
-      },
-    );
+    const outcome = run(await apiWith(hungDiagram), {
+      embeds: hungEmbeds,
+      signal: controller.signal,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(document.body.children.length).toBeGreaterThan(0);
+    controller.abort();
     expect((await outcome).status).toBe("cancelled");
+    expect(document.body.children).toHaveLength(0);
+  });
+
+  it("an embed that never loads cannot hold the build past its deadline", async () => {
+    const outcome = await run(await apiWith(hungDiagram), {
+      embeds: hungEmbeds,
+      target: "paper",
+      page: A5,
+      settleMs: 50,
+    });
+    expect(outcome.status).toBe("done");
     expect(document.body.children).toHaveLength(0);
   });
 

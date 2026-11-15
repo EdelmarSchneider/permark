@@ -3,8 +3,9 @@
 //! checks on the chosen path and the atomic write. The page setup (paper, orientation, margins, page numbers) is
 //! remembered app-wide in the plugin's own state file.
 //!
-//! RPC: `setup.get` | `setup.set`, `capabilities`, `saveHtml`, `savePdf`, `print`, `cancel` (a PDF still rendering is
-//! dropped, nothing written), `open` | `reveal` (the file last written for the window, nothing else).
+//! RPC: `setup.get` | `setup.set`, `capabilities`, `saveHtml`, `savePdf`, `print`, `cancel` (the window's run in
+//! progress: nothing written | no print dialog; a file already written stays `saved`), `open` | `reveal` (the file
+//! last written for the window, nothing else).
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -106,7 +107,7 @@ struct Export {
 struct Shared {
     app: AppServices,
     file: Option<StateFile<Remembered>>,
-    /// Window -> the cancel flag of its PDF in progress.
+    /// Window -> the cancel flag of its run in progress (PDF | HTML | print).
     running: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
@@ -154,17 +155,42 @@ impl Shared {
         })
     }
 
-    fn save_pdf(&self, args: PdfArgs, window: &str) -> Result<Saved, IpcError> {
-        let printer = self.printer()?;
-        let origin = self.origin(window, &args.source)?;
+    /// Runs `job` with the window's cancel flag registered for its whole run (`cancel` reaches it).
+    fn cancellable<T>(&self, window: &str, job: impl FnOnce(&AtomicBool) -> T) -> T {
         let cancel = Arc::new(AtomicBool::new(false));
         self.lock().insert(window.to_owned(), Arc::clone(&cancel));
-        let saved = printer.0.save_pdf(args.html, &args.setup, &origin, &cancel);
+        let result = job(&cancel);
         let mut running = self.lock();
         if running.get(window).is_some_and(|c| Arc::ptr_eq(c, &cancel)) {
             running.remove(window);
         }
+        result
+    }
+
+    fn save_pdf(&self, args: PdfArgs, window: &str) -> Result<Saved, IpcError> {
+        let printer = self.printer()?;
+        let origin = self.origin(window, &args.source)?;
+        let saved = self.cancellable(window, |cancel| {
+            printer.0.save_pdf(args.html, &args.setup, &origin, cancel)
+        });
         Ok(saved?)
+    }
+
+    fn save_html(&self, args: &HtmlArgs, window: &str) -> Result<Saved, IpcError> {
+        let printer = self.printer()?;
+        let origin = self.origin(window, &args.source)?;
+        let saved = self.cancellable(window, |cancel| {
+            printer.0.save_html(&args.html, &origin, cancel)
+        });
+        Ok(saved?)
+    }
+
+    fn print(&self, args: PrintArgs, window: &str) -> Result<(), IpcError> {
+        let printer = self.printer()?;
+        let outcome = self.cancellable(window, |cancel| {
+            printer.0.print(args.html, &args.setup, cancel)
+        });
+        Ok(outcome?)
     }
 
     fn cancel(&self, window: &str) {
@@ -216,10 +242,7 @@ impl Plugin for Export {
         let s = Arc::clone(&shared);
         rpc.extend(cx.rpc(
             "saveHtml",
-            typed(move |args: HtmlArgs, call| {
-                let origin = s.origin(&call.window, &args.source)?;
-                Ok(s.printer()?.0.save_html(&args.html, &origin)?)
-            }),
+            typed(move |args: HtmlArgs, call| s.save_html(&args, &call.window)),
         ));
         let s = Arc::clone(&shared);
         rpc.extend(cx.rpc(
@@ -229,7 +252,7 @@ impl Plugin for Export {
         let s = Arc::clone(&shared);
         rpc.extend(cx.rpc(
             "print",
-            typed(move |args: PrintArgs, _| Ok(s.printer()?.0.print(args.html, &args.setup)?)),
+            typed(move |args: PrintArgs, call| s.print(args, &call.window)),
         ));
         let s = Arc::clone(&shared);
         rpc.extend(cx.rpc(

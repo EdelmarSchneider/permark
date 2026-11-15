@@ -24,6 +24,7 @@ pub const CAPABILITIES: PrintCapabilities = PrintCapabilities {
     pdf: true,
     print: true,
     page_numbers: true,
+    native_margins: false,
 };
 
 /// After the dialog closed: time for the web view to hand the job to the spooler before its window goes.

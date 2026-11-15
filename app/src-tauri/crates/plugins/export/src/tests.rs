@@ -62,9 +62,11 @@ enum Asked {
     },
     Open(String),
     Reveal(String),
+    /// The run before this one saw its cancel flag set and stopped.
+    Dropped,
 }
 
-/// A printer that records; a PDF waits for `release` when one is given (a render in progress).
+/// A printer that records; a run waits for `release` when one is given (a dialog open | a render in progress).
 #[derive(Default)]
 struct Printer {
     asked: Mutex<Vec<Asked>>,
@@ -78,6 +80,7 @@ impl HtmlPrinter for Printer {
             pdf: true,
             print: true,
             page_numbers: true,
+            native_margins: false,
         }
     }
 
@@ -93,35 +96,37 @@ impl HtmlPrinter for Printer {
             setup: *setup,
             origin: origin.clone(),
         });
-        if let Some(started) = self.started.lock().unwrap().take() {
-            started.send(()).unwrap();
-        }
-        if let Some(release) = self.release.lock().unwrap().take() {
-            release.recv().unwrap();
-        }
-        if cancel.load(Ordering::SeqCst) {
-            return Ok(Saved::Cancelled);
-        }
-        Ok(Saved::Saved {
-            path: origin.source.with_extension("pdf"),
-        })
+        Ok(self.finish(cancel, origin.source.with_extension("pdf")))
     }
 
-    fn save_html(&self, html: &str, origin: &Origin) -> Result<Saved, PrintError> {
+    fn save_html(
+        &self,
+        html: &str,
+        origin: &Origin,
+        cancel: &AtomicBool,
+    ) -> Result<Saved, PrintError> {
         self.asked.lock().unwrap().push(Asked::Html {
             html: html.to_owned(),
             origin: origin.clone(),
         });
-        Ok(Saved::Cancelled)
+        Ok(self.finish(cancel, origin.source.with_extension("html")))
     }
 
-    fn print(&self, html: String, setup: &PageSetup) -> Result<(), PrintError> {
+    fn print(
+        &self,
+        html: String,
+        setup: &PageSetup,
+        cancel: &AtomicBool,
+    ) -> Result<(), PrintError> {
         self.asked.lock().unwrap().push(Asked::Print {
             html,
             setup: *setup,
         });
+        self.finish(cancel, PathBuf::new());
         Ok(())
     }
+
+    fn forget(&self, _window: &str) {}
 
     fn open(&self, window: &str) -> Result<(), PrintError> {
         self.asked
@@ -137,6 +142,23 @@ impl HtmlPrinter for Printer {
             .unwrap()
             .push(Asked::Reveal(window.to_owned()));
         Ok(())
+    }
+}
+
+impl Printer {
+    /// Waits for `release` (when given), then writes to `path` unless the run was cancelled meanwhile.
+    fn finish(&self, cancel: &AtomicBool, path: PathBuf) -> Saved {
+        if let Some(started) = self.started.lock().unwrap().take() {
+            started.send(()).unwrap();
+        }
+        if let Some(release) = self.release.lock().unwrap().take() {
+            release.recv().unwrap();
+        }
+        if cancel.load(Ordering::SeqCst) {
+            self.asked.lock().unwrap().push(Asked::Dropped);
+            return Saved::Cancelled;
+        }
+        Saved::Saved { path }
     }
 }
 
@@ -317,7 +339,7 @@ fn html_print_open_and_reveal_go_to_the_printer_for_the_asking_window() {
             json!({ "html": "<p>h</p>", "source": "docs/a.md" })
         )
         .unwrap(),
-        json!({ "outcome": "cancelled" })
+        json!({ "outcome": "saved", "path": h.source().with_extension("html").display().to_string() })
     );
     h.call(
         "print",
@@ -349,36 +371,47 @@ fn html_print_open_and_reveal_go_to_the_printer_for_the_asking_window() {
     );
     assert_eq!(
         h.call("capabilities", Value::Null).unwrap(),
-        json!({ "pdf": true, "print": true, "pageNumbers": true })
+        json!({ "pdf": true, "print": true, "pageNumbers": true, "nativeMargins": false })
     );
 }
 
-/// A PDF of window `w-1` in progress while `canceller` asks to cancel: what the call answers.
-fn pdf_cancelled_by(canceller: &str) -> Value {
+/// A run of window `w-1` (`method` with `args`) in progress while `canceller` asks to cancel: what the call answers
+/// and whether the printer stopped before its output.
+fn cancelled_by(method: &'static str, args: Value, canceller: &str) -> (Value, bool) {
     let h = Harness::start();
     let (release_tx, release_rx) = mpsc::channel();
     let (started_tx, started_rx) = mpsc::channel();
     *h.printer.release.lock().unwrap() = Some(release_rx);
     *h.printer.started.lock().unwrap() = Some(started_tx);
     let rpc = Arc::clone(&h.rpc);
-    let worker = std::thread::spawn(move || {
-        call(
-            &rpc,
-            "w-1",
-            "savePdf",
-            json!({ "html": "x", "source": "docs/a.md", "setup": PageSetup::default() }),
-        )
-    });
+    let worker = std::thread::spawn(move || call(&rpc, "w-1", method, args));
     started_rx.recv().unwrap();
     call(&h.rpc, canceller, "cancel", Value::Null).unwrap();
     release_tx.send(()).unwrap();
-    worker.join().unwrap().unwrap()
+    let answer = worker.join().unwrap().unwrap();
+    (answer, h.asked().contains(&Asked::Dropped))
 }
 
 #[test]
-fn cancel_drops_the_pdf_of_its_own_window_only() {
-    assert_eq!(pdf_cancelled_by("w-1"), json!({ "outcome": "cancelled" }));
-    assert_eq!(pdf_cancelled_by("w-2")["outcome"], "saved");
+fn cancel_stops_the_run_of_its_own_window_only() {
+    let pdf = || json!({ "html": "x", "source": "docs/a.md", "setup": PageSetup::default() });
+    let html = || json!({ "html": "x", "source": "docs/a.md" });
+    let print = || json!({ "html": "x", "setup": PageSetup::default() });
+    for (method, args) in [("savePdf", pdf()), ("saveHtml", html())] {
+        assert_eq!(
+            cancelled_by(method, args.clone(), "w-1"),
+            (json!({ "outcome": "cancelled" }), true),
+            "{method}"
+        );
+        let (answer, dropped) = cancelled_by(method, args, "w-2");
+        assert_eq!(
+            (answer["outcome"].as_str(), dropped),
+            (Some("saved"), false),
+            "{method}"
+        );
+    }
+    assert_eq!(cancelled_by("print", print(), "w-1"), (Value::Null, true));
+    assert_eq!(cancelled_by("print", print(), "w-2"), (Value::Null, false));
 }
 
 #[test]

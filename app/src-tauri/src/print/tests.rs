@@ -24,6 +24,63 @@ fn a_page_window_goes_to_its_page_only() {
         is_page_url(&Url::parse(&http).unwrap())
     );
     assert!(other(&format!("{SCHEME}://elsewhere/")));
+    // the page with a query is another resource; the secure form of the scheme is no page either
+    assert!(other(&format!("{page}?x=1")));
+    assert!(other(&format!("https://{SCHEME}.localhost/")));
+    // a jump to an anchor of the page stays on it
+    assert!(is_page_url(&Url::parse(&format!("{page}#part")).unwrap()));
+}
+
+#[test]
+fn the_scheme_answers_a_page_window_at_its_root_only() {
+    let pages = Pages::default();
+    let label = pages.add("<p>a</p>".to_owned());
+    // a page stored under a work window's label still never reaches it
+    pages
+        .lock()
+        .insert("main".to_owned(), Arc::new("<p>m</p>".to_owned()));
+    let status = |pages: Option<&Pages>, label: &str, path: &str| {
+        respond(pages, label, path).unwrap().status()
+    };
+    let served = respond(Some(&pages), &label, "/").unwrap();
+    assert_eq!(served.status(), StatusCode::OK);
+    assert_eq!(served.body(), b"<p>a</p>");
+    assert_eq!(
+        served.headers()[header::CONTENT_SECURITY_POLICY],
+        PAGE_POLICY
+    );
+    assert!(PAGE_POLICY.contains("base-uri 'none'") && PAGE_POLICY.contains("form-action 'none'"));
+    assert_eq!(status(Some(&pages), &label, "/x"), StatusCode::NOT_FOUND);
+    assert_eq!(status(Some(&pages), "main", "/"), StatusCode::NOT_FOUND);
+    assert_eq!(status(Some(&pages), "w-1", "/"), StatusCode::NOT_FOUND);
+    assert_eq!(
+        status(Some(&pages), "export-99", "/"),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(status(None, &label, "/"), StatusCode::NOT_FOUND);
+}
+
+#[test]
+fn a_written_file_is_reachable_until_its_view_is_forgotten() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("a.pdf");
+    std::fs::write(&file, b"%PDF").unwrap();
+    let written = Written::default();
+    assert!(matches!(
+        written.last("view-1"),
+        Err(PrintError::NothingWritten)
+    ));
+    written.keep("view-1", file.clone());
+    written.keep("view-2", file.clone());
+    assert_eq!(written.last("view-1").unwrap(), file);
+    written.forget("view-1");
+    assert!(matches!(
+        written.last("view-1"),
+        Err(PrintError::NothingWritten)
+    ));
+    assert_eq!(written.last("view-2").unwrap(), file);
+    std::fs::remove_file(&file).unwrap();
+    assert!(matches!(written.last("view-2"), Err(PrintError::Gone(_))));
 }
 
 #[test]

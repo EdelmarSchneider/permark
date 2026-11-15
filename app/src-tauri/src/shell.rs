@@ -10,7 +10,7 @@ use permark_core::events::{CoreEvent, EventSink, OpenFailed, SettingsChanged, St
 use permark_core::ipc_local::{Listening, Server};
 use permark_core::open::{OpenAck, OpenRequest};
 use permark_core::paths::Root;
-use permark_core::plugins::{PluginId, ServiceLease};
+use permark_core::plugins::{HtmlPrinterApi, PluginId, ServiceLease};
 use permark_core::session::{
     app_session_file, AppSession, Geometry, RecentStore, SavedNotes, SavedWindow,
 };
@@ -255,6 +255,11 @@ impl Shell {
         let mut delivery = lock(&self.delivery);
         delivery.listening.remove(view);
         delivery.pending.remove(view);
+        drop(delivery);
+        // the file an export wrote for this view: nothing can open | show it any more, and the map must not grow
+        if let Some(printer) = self.env.services().get::<HtmlPrinterApi>() {
+            printer.0.forget(view);
+        }
     }
 
     /// Loads the saved session (corrupt -> notice).

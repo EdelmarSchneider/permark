@@ -9,6 +9,7 @@ pub const CAPABILITIES: PrintCapabilities = PrintCapabilities {
     pdf: false,
     print: false,
     page_numbers: false,
+    native_margins: false,
 };
 
 pub(super) fn settle(_sheet: &Sheet) -> Result<(), PrintError> {

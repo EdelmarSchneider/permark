@@ -32,17 +32,28 @@ const KATEX_FONTS: FontFiles = import.meta.glob<string>(
 /** Characters only the latin-ext font files hold (the latin files cover Western European text). */
 const LATIN_EXT = /[Ā-˿ᴀ-ỿⱠ-Ɀ꜠-ꟿ]/;
 
-export type LookOptions = { target: "paper" | "html"; page?: PageBox; pageNumbers: boolean };
+export type LookOptions = {
+  target: "paper" | "html";
+  page?: PageBox;
+  pageNumbers: boolean;
+  nativeMargins?: boolean;
+};
 
 const mm = (value: number): string => `${Number(value.toFixed(2))}mm`;
 
-/** The paper's page rule (size and margins of the page box), with "n / total" at the bottom when asked. */
-export function pageRule(page: PageBox, numbers: boolean): string {
-  const count = numbers
-    ? ' @bottom-center { content: counter(page) " / " counter(pages); font: 9pt var(--font-reading); color: var(--muted); }'
-    : "";
+/**
+ * The paper's page rule (size and margins of the page box), with "n / total" at the bottom when asked. Where the web
+ * view puts the margins itself (`nativeMargins`) the rule asks for none: CSS margins would add to them, and margin
+ * boxes need a CSS margin. The printable height stays: the native margins take the same room.
+ */
+export function pageRule(page: PageBox, numbers: boolean, nativeMargins = false): string {
+  const count =
+    numbers && !nativeMargins
+      ? ' @bottom-center { content: counter(page) " / " counter(pages); font: 9pt var(--font-reading); color: var(--muted); }'
+      : "";
+  const margin = nativeMargins ? "0" : mm(page.marginMm);
   return [
-    `@page { size: ${mm(page.widthMm)} ${mm(page.heightMm)}; margin: ${mm(page.marginMm)};${count} }`,
+    `@page { size: ${mm(page.widthMm)} ${mm(page.heightMm)}; margin: ${margin};${count} }`,
     `:root { --page-h: ${mm(page.heightMm - 2 * page.marginMm)}; }`,
   ].join("\n");
 }
@@ -153,7 +164,7 @@ export async function exportCss(root: Element, options: LookOptions): Promise<st
   if (options.target === "html") parts.push(darkPreference(tokens));
   parts.push(markdown, highlight, math, componentRules(root), paper);
   if (options.target === "paper" && options.page) {
-    parts.push(pageRule(options.page, options.pageNumbers));
+    parts.push(pageRule(options.page, options.pageNumbers, options.nativeMargins));
   }
   return parts.filter((part) => part !== "").join("\n");
 }

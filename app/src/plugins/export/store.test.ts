@@ -15,7 +15,12 @@ const { PluginClient } = await import("../../core/plugins/client");
 const { MockPluginError } = await import("../../api/mockOrganizing");
 const { ExportStore, exporter } = await import("./store.svelte");
 const { default: SetupDialog } = await import("./SetupDialog.svelte");
+const { ContributionRegistry, PluginHost, pluginLoaders } =
+  await import("../../core/plugins/registry.svelte");
+const { buildKeymap, commandsFor } = await import("../../core/commands/keymap");
+const { documents } = await import("../../core/doc/document.svelte");
 
+import type { Api } from "../../api";
 import type { NoticeAction } from "../../core/window.svelte";
 import type { ExportOptions, ExportOutcome } from "./builder";
 import type { ExportDeps } from "./store.svelte";
@@ -29,9 +34,11 @@ type Shown = { text: string; actions: readonly NoticeAction[]; lasting: boolean;
 /** Notices as the window would show them (the last one shown is the last of `shown`). */
 function notices() {
   const shown: Shown[] = [];
+  const dismissedKeys: string[] = [];
   let next = 1;
   return {
     shown,
+    dismissedKeys,
     notifyKeyed: (_key: string, text: string, ...actions: NoticeAction[]) => {
       shown.push({ text, actions, lasting: false, id: next++ });
     },
@@ -44,7 +51,9 @@ function notices() {
       const at = shown.findIndex((n) => n.id === id);
       if (at >= 0) shown.splice(at, 1);
     },
-    dismissKey: () => {},
+    dismissKey: (key: string) => {
+      dismissedKeys.push(key);
+    },
   };
 }
 
@@ -54,11 +63,22 @@ const done = (notes: number = 0): ExportOutcome => ({
   notes: Array.from({ length: notes }, (_, i) => ({ kind: "picture" as const, name: `p${i}.png` })),
 });
 
-function setup(over: Partial<ExportDeps> = {}) {
+/** `during` runs as each backend call is made (before the backend answers it). */
+function setup(over: Partial<ExportDeps> = {}, during?: (method: string) => void) {
   const notes = notices();
   const built: ExportOptions[] = [];
+  const backend: Api =
+    during === undefined
+      ? mock
+      : {
+          ...mock,
+          pluginCall: (method, args) => {
+            during(method);
+            return mock.pluginCall(method, args);
+          },
+        };
   const store = new ExportStore({
-    client: new PluginClient(mock, () => null),
+    client: new PluginClient(backend, () => null),
     build: (_path, options) => {
       built.push(options);
       return Promise.resolve(done());
@@ -70,7 +90,7 @@ function setup(over: Partial<ExportDeps> = {}) {
     progressAfterMs: 60_000,
     ...over,
   });
-  return { store, notes: notes.shown, built };
+  return { store, notes: notes.shown, dismissedKeys: notes.dismissedKeys, built };
 }
 
 const last = (shown: Shown[]): Shown | undefined => shown.at(-1);
@@ -81,7 +101,7 @@ beforeEach(() => {
   probe.next = null;
   probe.fail = null;
   probe.saved.clear();
-  probe.capabilities = { pdf: true, print: true, pageNumbers: true };
+  probe.capabilities = { pdf: true, print: true, pageNumbers: true, nativeMargins: false };
 });
 
 describe("the export flow", () => {
@@ -142,7 +162,7 @@ describe("the export flow", () => {
   });
 
   it("no page numbers where the web view cannot draw them, whatever the setup says", async () => {
-    probe.capabilities = { pdf: true, print: true, pageNumbers: false };
+    probe.capabilities = { pdf: true, print: true, pageNumbers: false, nativeMargins: false };
     const { store, built } = setup();
     await store.start("print", DOC);
     await store.go("print");
@@ -212,6 +232,55 @@ describe("the export flow", () => {
       expect(store.state.status).toBe("closed");
     }
   });
+
+  it("Cancel while the file is being saved: a file already written is reported Saved", async () => {
+    for (const entry of ["html", "pdf"] as const) {
+      probe.calls.length = 0;
+      let store: InstanceType<typeof ExportStore> | null = null;
+      const made = setup({}, (method) => {
+        if (method === "export.saveHtml" || method === "export.savePdf") store?.cancel();
+      });
+      store = made.store;
+      await store.start(entry, DOC);
+      if (entry === "pdf") await store.go("pdf");
+      expect(probe.calls, entry).toContain("cancel");
+      const notice = last(made.notes);
+      expect(notice?.text, entry).toBe(`Saved guide.${entry}.`);
+      expect(notice?.actions.map((a) => a.label)).toEqual(["Open", "Show in folder"]);
+      expect(store.state.status).toBe("closed");
+    }
+  });
+
+  it("Cancel while the print dialog is open: the backend is told, no notice follows, the flow ends", async () => {
+    let store: InstanceType<typeof ExportStore> | null = null;
+    const made = setup({}, (method) => {
+      if (method !== "export.print") return;
+      store?.cancel();
+      // the stopped print answers with an error: it is no failure the person must read
+      probe.fail = new MockPluginError("unavailable", "print");
+    });
+    store = made.store;
+    await store.start("print", DOC);
+    await store.go("print");
+    expect(probe.calls).toEqual(expect.arrayContaining(["print", "cancel"]));
+    expect(made.notes).toEqual([]);
+    expect(store.state.status).toBe("closed");
+  });
+
+  it("the paper rule leaves the margins to a web view that sets them itself", async () => {
+    probe.capabilities = { pdf: true, print: true, pageNumbers: false, nativeMargins: true };
+    const { store, built } = setup();
+    await store.start("pdf", DOC);
+    await store.go("pdf");
+    expect(built[0]?.nativeMargins).toBe(true);
+  });
+
+  it("switched off: the Saved notice goes too (its buttons would reach a plugin that is gone)", async () => {
+    const { store, dismissedKeys } = setup();
+    await store.start("html", DOC);
+    store.close();
+    expect(dismissedKeys).toEqual(["export"]);
+  });
 });
 
 describe("the page setup dialog", () => {
@@ -223,7 +292,7 @@ describe("the page setup dialog", () => {
   });
 
   it("the entry the person came from is the primary button; page numbers say when unavailable", async () => {
-    probe.capabilities = { pdf: true, print: true, pageNumbers: false };
+    probe.capabilities = { pdf: true, print: true, pageNumbers: false, nativeMargins: false };
     component = mount(SetupDialog, { target: document.body });
     await exporter.start("print", DOC);
     flushSync();
@@ -261,5 +330,29 @@ describe("the page setup dialog", () => {
     flushSync();
     expect(exporter.state.status).toBe("closed");
     expect(document.querySelector(".dialog")).toBeNull();
+  });
+
+  it("Mod+Alt+P on the shown Markdown document opens the page setup with Print as the primary button", async () => {
+    const registry = new ContributionRegistry();
+    const host = new PluginHost(registry, pluginLoaders());
+    await host.enable("export");
+    try {
+      await documents.show(DOC);
+      const ids = registry.of("command").map((c) => c.id);
+      const shortcuts = registry.of("shortcut").map((s) => ({ command: s.command, keys: s.keys }));
+      const owners = commandsFor(buildKeymap(shortcuts, {}, ids), "Mod+Alt+p");
+      expect(owners).toEqual(["export.print"]);
+      const command = registry.of("command").find((c) => c.id === owners[0]);
+      expect(command?.when?.()).toBe(true);
+      component = mount(SetupDialog, { target: document.body });
+      await command?.run();
+      await vi.waitFor(() => expect(exporter.state.status).toBe("setup"));
+      flushSync();
+      expect(exporter.state.status === "setup" && exporter.state.entry).toBe("print");
+      expect(document.querySelector(".dialog .btn--primary")?.textContent?.trim()).toBe("Print…");
+    } finally {
+      host.disable("export");
+      await documents.show(null);
+    }
   });
 });

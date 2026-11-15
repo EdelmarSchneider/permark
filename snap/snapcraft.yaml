@@ -40,10 +40,13 @@ apps:
     #   first; web pictures a document names, per click | per project). The update check is off inside a snap (the
     #   Store updates it). No `network-bind`: the app listens on no TCP | UDP port (agent connection = stdio + a local
     #   Unix socket in the snap's runtime folder). Checked 2026-10-22 against the code + Cargo.lock (no server crate).
+    # - cups: Print… reaches the person's printers through the CUPS socket (print only, no printer administration;
+    #   connects automatically, unlike `cups-control`). Save as PDF needs no plug.
     plugs:
       - home
       - removable-media
       - network
+      - cups
     environment:
       WEBKIT_DISABLE_COMPOSITING_MODE: "1"
 

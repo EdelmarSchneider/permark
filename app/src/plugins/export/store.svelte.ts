@@ -175,11 +175,14 @@ export class ExportStore {
     });
   }
 
-  /** Cancel: the dialog closes; a run stops (the build at its next step, a PDF still rendering is dropped). */
+  /**
+   * Cancel: the dialog closes; a run stops (the build at its next step; the backend drops a PDF still rendering and
+   * closes its Save | print dialog, a file already written stays and is reported).
+   */
   cancel(): void {
     const s = this.state;
     if (s.status === "setup") {
-      this.close();
+      this.state = { status: "closed" };
       return;
     }
     if (s.status !== "running" || this.#run === null) return;
@@ -187,7 +190,7 @@ export class ExportStore {
     void this.#deps.client.call("export.cancel", {});
   }
 
-  /** Everything goes (the plugin is switched off). */
+  /** Everything goes (the plugin is switched off), the last notice too: its buttons would call a gone backend. */
   close(): void {
     if (this.#run !== null) {
       this.#run.controller.abort();
@@ -195,12 +198,17 @@ export class ExportStore {
     }
     this.#endRun();
     this.state = { status: "closed" };
+    this.#deps.notices.dismissKey(KEY);
   }
 
   async #execute(
     entry: Entry,
     path: string,
-    paper: { setup: PageSetup; page: PageBox; capabilities: PrintCapabilities } | null,
+    paper: {
+      setup: PageSetup;
+      page: PageBox;
+      capabilities: PrintCapabilities;
+    } | null,
   ): Promise<void> {
     const controller = new AbortController();
     const back = this.state;
@@ -222,6 +230,7 @@ export class ExportStore {
         target: paper === null ? "html" : "paper",
         ...(paper === null ? {} : { page: paper.page }),
         pageNumbers: paper !== null && paper.setup.pageNumbers && paper.capabilities.pageNumbers,
+        nativeMargins: paper !== null && paper.capabilities.nativeMargins === true,
         env: this.#deps.env(),
         words: words(),
         signal: controller.signal,
@@ -248,7 +257,10 @@ export class ExportStore {
     if (entry === "print") {
       if (paper === null) return done(null);
       const printed = await this.#deps.client.call("export.print", { html, setup: paper.setup });
-      if (!printed.ok) return done(failureText(entry, path, printed.error));
+      // a print stopped by Cancel ends quietly: whatever it answers is no failure to read
+      if (!printed.ok && !controller.signal.aborted) {
+        return done(failureText(entry, path, printed.error));
+      }
       return done(null);
     }
     const saved =
@@ -260,9 +272,14 @@ export class ExportStore {
             setup: paper.setup,
           });
     if (this.#run?.controller !== controller) return;
-    if (!saved.ok) return done(failureText(entry, path, saved.error));
-    if (controller.signal.aborted) return done(t("export.canceled"));
+    if (!saved.ok) {
+      return done(
+        controller.signal.aborted ? t("export.canceled") : failureText(entry, path, saved.error),
+      );
+    }
+    // a file written before Cancel arrived is on disk: it is reported Saved, never Canceled
     if (saved.value.outcome === "cancelled") {
+      if (controller.signal.aborted) return done(t("export.canceled"));
       // the person closed the Save dialog: back to the page setup they came from
       done(null);
       if (back.status === "setup") this.state = { ...back, busy: false };
