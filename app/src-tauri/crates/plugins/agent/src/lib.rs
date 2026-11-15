@@ -23,6 +23,7 @@ pub mod handoff;
 pub mod live;
 pub mod map;
 pub mod mcp;
+pub mod notes;
 pub mod perms;
 #[cfg(test)]
 mod projects_edge_tests;
@@ -30,12 +31,14 @@ mod projects_edge_tests;
 mod projects_tests;
 pub mod render;
 pub mod server;
+pub mod session;
 pub mod structure;
 #[cfg(test)]
 mod tests;
 pub mod tools;
 
 use std::borrow::Cow;
+use std::fmt::Write as _;
 use std::sync::Arc;
 
 use permark_core::conditions::Requirement;
@@ -84,8 +87,40 @@ pub enum ToolError {
     /// (fail closed, `projects.md` §5.2).
     #[error("PerMark is still reading this folder")]
     Busy,
+    /// The person ended this session in the app: its id is refused until the agent process restarts (a new id).
+    #[error(
+        "the person disconnected this agent from this project; restarting the agent connects again"
+    )]
+    Disconnected,
+    /// The agent's working folder is in no connected project: only the agent's side says this (never sent by the
+    /// app). `below` = connected projects under the working folder, relative to it, newest first: a hint, it grants
+    /// nothing.
+    #[error("no connected PerMark project here: {}", not_connected_remedy(below))]
+    NotConnected { below: Vec<String> },
     #[error("{0}")]
     Failed(String),
+}
+
+/// Most folders a [`ToolError::NotConnected`] names; the rest are counted.
+const BELOW_SHOWN: usize = 5;
+
+/// What to do when no connected project holds the working folder (one line: a folder name with whitespace or a
+/// line break is quoted like any header value).
+pub(crate) fn not_connected_remedy(below: &[String]) -> String {
+    if below.is_empty() {
+        return "ask the person to turn on the agent connection for a project, then start the agent in that folder"
+            .to_owned();
+    }
+    let shown: Vec<_> = below
+        .iter()
+        .take(BELOW_SHOWN)
+        .map(|folder| format::value(folder))
+        .collect();
+    let mut text = format!("start the agent in one of: {}", shown.join(", "));
+    if below.len() > BELOW_SHOWN {
+        let _ = write!(text, " and {} more", below.len() - BELOW_SHOWN);
+    }
+    text
 }
 
 impl ToolError {
@@ -98,6 +133,8 @@ impl ToolError {
             Self::Invalid(_) => "invalid",
             Self::AppClosed => "appClosed",
             Self::Busy => "busy",
+            Self::Disconnected => "disconnected",
+            Self::NotConnected { .. } => "notConnected",
             Self::Failed(_) => "error",
         }
     }
@@ -118,6 +155,7 @@ impl ToolError {
             "notFound" => Self::NotFound(after("not found: ")),
             "invalid" => Self::Invalid(after("invalid: ")),
             "busy" => Self::Busy,
+            "disconnected" => Self::Disconnected,
             _ => Self::Failed(message.to_owned()),
         }
     }
@@ -150,6 +188,17 @@ struct EnabledArgs {
 struct GroupArgs {
     group: String,
     on: bool,
+}
+
+#[derive(Deserialize)]
+struct SessionArgs {
+    id: String,
+}
+
+impl SessionArgs {
+    fn id(&self) -> Result<session::SessionId, IpcError> {
+        session::SessionId::parse(&self.id).ok_or_else(|| invalid("id"))
+    }
 }
 
 #[derive(Deserialize)]
@@ -285,6 +334,22 @@ impl Plugin for AgentPlugin {
         ));
         let h = Arc::clone(&hub);
         registrations.extend(cx.rpc(
+            "disconnect",
+            typed(move |args: SessionArgs, _| {
+                h.disconnect(&args.id()?);
+                Ok(h.status())
+            }),
+        ));
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "undoDisconnect",
+            typed(move |args: SessionArgs, _| {
+                h.undo_disconnect(&args.id()?);
+                Ok(h.status())
+            }),
+        ));
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
             "setDefaults",
             typed(move |_: NoArgs, _| {
                 // the groups of this project become the defaults of new projects
@@ -301,11 +366,45 @@ impl Plugin for AgentPlugin {
         let l = Arc::clone(&live);
         registrations.extend(cx.rpc(
             "publish",
-            typed(move |args: PublishArgs, _| {
-                l.publish(args.context);
+            typed(move |args: PublishArgs, call| {
+                l.publish(&call.window, args.context);
                 sync_context_file(&h, true);
                 Ok(())
             }),
+        ));
+        // several windows of one project: the one the person turned to last speaks for them
+        let h = Arc::clone(&hub);
+        let l = Arc::clone(&live);
+        registrations.extend(cx.rpc(
+            "focused",
+            typed(move |_: NoArgs, call| {
+                l.focused(&call.window);
+                sync_context_file(&h, true);
+                Ok(())
+            }),
+        ));
+        // a window that lets go of the project takes its word with it (quick: called under the registry's lock)
+        let gone = Arc::downgrade(&live);
+        registrations.extend(cx.on_caller_gone(Arc::new(move |caller: &str| {
+            if let Some(live) = gone.upgrade() {
+                live.forget(caller);
+            }
+        })));
+        // notes shared with this project: the key is this plugin's own folder, whatever window asks
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "sharedNotes",
+            typed(move |_: NoArgs, _| notes::project_notes(&h.tools)),
+        ));
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "shareNote",
+            typed(move |args: notes::NoteArgs, _| notes::share(&h.tools, &args)),
+        ));
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "unshareNote",
+            typed(move |args: notes::NoteArgs, _| notes::unshare(&h.tools, &args)),
         ));
         // the hand-off: the dialog's content, then the confirm that freezes the package and sets the checkpoint
         let h = Arc::clone(&hub);

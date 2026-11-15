@@ -175,6 +175,7 @@ import type { AgentRequest } from "./generated/AgentRequest";
 import type { AgentSection } from "./generated/AgentSection";
 import type { AgentSelection } from "./generated/AgentSelection";
 import type { AgentServerState } from "./generated/AgentServerState";
+import type { AgentSession } from "./generated/AgentSession";
 import type { AgentStatus } from "./generated/AgentStatus";
 import type { AgentWindowContext } from "./generated/AgentWindowContext";
 import type { ActivityEntry } from "./generated/ActivityEntry";
@@ -215,6 +216,10 @@ import type { LooseState } from "./generated/LooseState";
 import type { MoveUndone } from "./generated/MoveUndone";
 import type { Moved } from "./generated/Moved";
 import type { NoteEntry } from "./generated/NoteEntry";
+import type { ProjectId } from "./generated/ProjectId";
+import type { ProjectNotes } from "./generated/ProjectNotes";
+import type { SharedNote } from "./generated/SharedNote";
+import type { SharedWith } from "./generated/SharedWith";
 import type { NoteList } from "./generated/NoteList";
 import type { NotesIntent } from "./generated/NotesIntent";
 import type { NotesSummary } from "./generated/NotesSummary";
@@ -599,7 +604,10 @@ export interface PluginMethods {
   "notes.rename": { args: { path: string; name: string }; result: string };
   "notes.setPinned": { args: { path: string; pinned: boolean }; result: null };
   "notes.setPinOrder": { args: { order: string[] }; result: null };
-  "notes.setShared": { args: { path: string; shared: boolean }; result: null };
+  /** Stops sharing a note with one project (`project`: its id from `NoteEntry.sharedWith`) or with all. */
+  "notes.unshare": { args: { path: string; project?: ProjectId }; result: null };
+  /** Notes whose app-wide sharing (earlier versions) was turned off, told once: taking them clears them. */
+  "notes.takeUnshared": { args: Record<string, never>; result: string[] };
   "notes.markCopied": { args: { path: string }; result: null };
   "notes.deleteCopied": { args: Record<string, never>; result: Deleted };
   "notes.opened": { args: { path: string | null }; result: null };
@@ -631,9 +639,17 @@ export interface PluginMethods {
   "agent.status": { args: Record<string, never>; result: AgentStatus };
   "agent.setEnabled": { args: { enabled: boolean }; result: AgentStatus };
   "agent.setGroup": { args: { group: string; on: boolean }; result: AgentStatus };
+  "agent.disconnect": { args: { id: string }; result: AgentStatus };
+  "agent.undoDisconnect": { args: { id: string }; result: AgentStatus };
   "agent.setDefaults": { args: Record<string, never>; result: null };
   "agent.publish": { args: { context: AgentWindowContext }; result: null };
+  /** This window is the one the person turned to: its context is answered, only it shows a place. */
+  "agent.focused": { args: Record<string, never>; result: null };
   "agent.setup": { args: Record<string, never>; result: string | null };
+  /** Notes shared with this window's project + the person's other notes (newest first); the project is the app's. */
+  "agent.sharedNotes": { args: Record<string, never>; result: ProjectNotes };
+  "agent.shareNote": { args: { name: string }; result: ProjectNotes };
+  "agent.unshareNote": { args: { name: string }; result: ProjectNotes };
   "agent.handOffPreview": { args: { checked?: number[] }; result: HandOffPreview };
   "agent.handOffConfirm": { args: { upto: number; checked: number[] }; result: HandOffDone };
   "shell-integration.state": { args: Record<string, never>; result: ShellState };
@@ -773,7 +789,13 @@ export interface PluginEvents {
   "quiet:changed": QuietMarks;
   "broken-links:changed": BrokenSummary;
   "agent:status": AgentStatus;
-  "agent:open": { path: string; line: number | null; heading: string | null };
+  /** `window`: the label of the window that shows it; `null` = every window of the project (none known yet). */
+  "agent:open": {
+    path: string;
+    line: number | null;
+    heading: string | null;
+    window: string | null;
+  };
   "agent:ask": { group: string };
 }
 export type PluginEventName = keyof PluginEvents;
@@ -853,6 +875,7 @@ export type {
   AgentSection,
   AgentSelection,
   AgentServerState,
+  AgentSession,
   AgentStatus,
   AgentWindowContext,
 };
@@ -869,6 +892,10 @@ export type {
   NoteList,
   NotesIntent,
   NotesSummary,
+  ProjectId,
+  ProjectNotes,
+  SharedNote,
+  SharedWith,
   Version,
 };
 export type {

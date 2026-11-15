@@ -139,7 +139,13 @@ describe("the agent store", () => {
     const { api, store, stop } = await setup();
     await store.setEnabled(true);
     api.probe.plugins.agent.connect("Claude Code");
-    api.probe.plugins.agent.request({ tool: "search", subject: "retry", atMs: 1, outcome: "ok" });
+    api.probe.plugins.agent.request({
+      session: "mocksession01",
+      tool: "search",
+      subject: "retry",
+      atMs: 1,
+      outcome: "ok",
+    });
     await settle();
     expect(store.connected).toEqual(["Claude Code"]);
     expect(store.status?.recent[0]?.tool).toBe("search");
@@ -148,25 +154,139 @@ describe("the agent store", () => {
 
   it("hands a place an agent asks for to the window, and offers resolving once asked", async () => {
     const { api, stop, shown } = await setup();
-    api.probe.plugins.announce("agent:open", { path: "docs/guide.md", line: 3, heading: null });
+    const place = { path: "docs/guide.md", line: 3, heading: null, window: null };
+    api.probe.plugins.announce("agent:open", place);
     await settle();
-    expect(shown).toEqual([{ path: "docs/guide.md", line: 3, heading: null }]);
+    expect(shown).toEqual([place]);
     const before = windowStore.notices.length;
     api.probe.plugins.announce("agent:ask", { group: "comments.resolve" });
     await settle();
     expect(windowStore.notices.length).toBe(before + 1);
     stop();
   });
+
+  it("shows a place only when it is meant for this window (or for every window)", async () => {
+    const label = windowStore.label;
+    windowStore.label = "view-1";
+    const { api, stop, shown } = await setup();
+    try {
+      const at = (window: string | null): Place => ({
+        path: "a.md",
+        line: 1,
+        heading: null,
+        window,
+      });
+      api.probe.plugins.announce("agent:open", at("view-2"));
+      api.probe.plugins.announce("agent:open", at("view-1"));
+      api.probe.plugins.announce("agent:open", at(null));
+      await settle();
+      expect(shown.map((p) => p.window)).toEqual(["view-1", null]);
+    } finally {
+      stop();
+      windowStore.label = label;
+    }
+  });
+
+  it("tells the backend when the person turns to the window, only while the switch is on", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const { api, store, stop } = await setup();
+    window.dispatchEvent(new Event("focus"));
+    expect(api.probe.plugins.agent.focused).toBe(0);
+    await store.setEnabled(true);
+    await settle();
+    expect(api.probe.plugins.agent.focused).toBe(1);
+    window.dispatchEvent(new Event("focus"));
+    await settle();
+    expect(api.probe.plugins.agent.focused).toBe(2);
+    await store.setEnabled(false);
+    await settle();
+    window.dispatchEvent(new Event("focus"));
+    await settle();
+    expect(api.probe.plugins.agent.focused).toBe(2);
+    stop();
+  });
+});
+
+describe("notes shared with the project", () => {
+  const READING = "2026-10-16 1031.md";
+  const TRIP = "2026-10-19 0907.md";
+
+  it("reads what is shared and what can be added, newest first; sharing and stopping update both", async () => {
+    const { store, stop } = await setup();
+    expect(store.sharedNotes).toBeNull();
+    await store.refreshNotes();
+    expect(store.sharedNotes?.shared.map((n) => n.id)).toEqual([READING]);
+    const candidates = store.sharedNotes?.candidates ?? [];
+    expect(candidates[0]?.id).toBe(TRIP);
+    expect(candidates.map((n) => n.id)).not.toContain(READING);
+    expect(await store.shareNote(TRIP)).toBe(true);
+    expect(store.sharedNotes?.shared.map((n) => n.id)).toEqual([TRIP, READING]);
+    expect(store.sharedNotes?.candidates.map((n) => n.id)).not.toContain(TRIP);
+    expect(await store.unshareNote(READING)).toBe(true);
+    expect(store.sharedNotes?.shared.map((n) => n.id)).toEqual([TRIP]);
+    expect(store.sharedNotes?.candidates.map((n) => n.id)).toContain(READING);
+    stop();
+  });
+
+  it("knows nothing while the notes plugin is off (nothing is drawn), and says a refused change", async () => {
+    const { api, store, stop } = await setup();
+    await api.settingsSet({ key: "pluginEnabled", value: { plugin: "notes", enabled: false } });
+    await store.refreshNotes();
+    expect(store.sharedNotes).toBeNull();
+    await api.settingsSet({ key: "pluginEnabled", value: { plugin: "notes", enabled: null } });
+    await store.refreshNotes();
+    expect(store.sharedNotes).not.toBeNull();
+    const before = windowStore.notices.length;
+    expect(await store.shareNote("gone.md")).toBe(false);
+    expect(windowStore.notices.length).toBe(before + 1);
+    stop();
+  });
+
+  it("drops an answer that arrives after the window turned to another project", async () => {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "thisTab");
+    let root: string | null = MOCK_FOLDER;
+    const store = new AgentStore(new PluginClient(api, () => root), () => root);
+    // answers wait until the test lets them go
+    const real = api.pluginCall.bind(api);
+    const waiting: (() => void)[] = [];
+    vi.spyOn(api, "pluginCall").mockImplementation((method, args) =>
+      real(method, args).then(
+        (answer) => new Promise((resolve) => waiting.push(() => resolve(answer))),
+      ),
+    );
+    const letGo = async (): Promise<void> => {
+      await vi.waitFor(() => expect(waiting.length).toBeGreaterThan(0));
+      waiting.shift()?.();
+    };
+    const reading = store.refreshNotes();
+    root = "/elsewhere";
+    await letGo();
+    await reading;
+    expect(store.sharedNotes).toBeNull();
+    root = MOCK_FOLDER;
+    const sharing = store.shareNote(TRIP);
+    root = "/elsewhere";
+    await letGo();
+    await sharing;
+    expect(store.sharedNotes).toBeNull();
+    // the same project: taken
+    root = MOCK_FOLDER;
+    const again = store.refreshNotes();
+    await letGo();
+    await again;
+    expect(store.sharedNotes?.shared.map((n) => n.id)).toContain(TRIP);
+  });
 });
 
 describe("showing an agent's place", () => {
   it("moves a reading person, never one who is editing", () => {
     const navigate = vi.spyOn(documents, "navigate").mockImplementation(() => undefined);
-    showPlace({ path: "docs/guide.md", line: 7, heading: null });
+    showPlace({ path: "docs/guide.md", line: 7, heading: null, window: null });
     expect(navigate).toHaveBeenCalledWith("docs/guide.md", null, 7);
     editing.mode = "edit";
     const before = windowStore.notices.length;
-    showPlace({ path: "docs/guide.md", line: 9, heading: null });
+    showPlace({ path: "docs/guide.md", line: 9, heading: null, window: null });
     expect(navigate).toHaveBeenCalledTimes(1);
     const notice = windowStore.notices[windowStore.notices.length - 1];
     expect(windowStore.notices.length).toBe(before + 1);

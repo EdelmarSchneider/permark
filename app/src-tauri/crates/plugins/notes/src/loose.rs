@@ -170,7 +170,7 @@ impl NotesService {
                         modified_ms: now.map_or(0, |s| s.modified_ms),
                         size: now.map_or(0, |s| s.size),
                         pinned: pins.contains(&key),
-                        shared: false,
+                        shared_with: Vec::new(),
                         copied: false,
                         recovered: false,
                         folder: Some(folder_label(abs, home.as_deref())),

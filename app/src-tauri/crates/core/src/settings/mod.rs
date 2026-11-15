@@ -14,7 +14,9 @@ use serde::{Deserialize, Serialize};
 use toml_edit::{DocumentMut, Item, Table, Value};
 use ts_rs::TS;
 
-pub use characters::{CharacterEntry, CharacterGroup, CharactersError, CharactersStatus};
+pub use characters::{
+    is_unsafe_char, CharacterEntry, CharacterGroup, CharactersError, CharactersStatus,
+};
 pub use installer::installer_language;
 pub use project::{
     ProjectConfig, ProjectConfigFile, ProjectSettingChange, ProjectSettings, TreeConfig, TreeShow,

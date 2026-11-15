@@ -142,9 +142,10 @@
           {#if entry.pinned}<span title={t("notes.pinnedMark")}
               ><Pin size={11} aria-label={t("notes.pinnedMark")} /></span
             >{/if}
-          {#if marks.shared}<span title={t("notes.sharedMark")}
-              ><Share2 size={11} aria-label={t("notes.sharedMark")} /></span
-            >{/if}
+          {#if marks.shared.length > 0}
+            {@const sharedWith = t("notes.sharedWith", { projects: marks.shared.join(", ") })}
+            <span title={sharedWith}><Share2 size={11} aria-label={sharedWith} /></span>
+          {/if}
           {#if marks.copied}<span title={t("notes.copiedMark")}
               ><Copy size={11} aria-label={t("notes.copiedMark")} /></span
             >{/if}

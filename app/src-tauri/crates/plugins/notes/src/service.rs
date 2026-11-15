@@ -15,10 +15,10 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use permark_core::error::{ErrorKind, IpcError};
 use permark_core::fsx;
-use permark_core::notes::{loose_key, parse_loose, NotesScope};
+use permark_core::notes::{loose_key, parse_loose, NotesScope, ProjectKey, SharedNote};
 use permark_core::paths::{fold, Root};
 use permark_core::plugins::PluginId;
-use permark_core::state::{Loaded, StateFile, StateStore};
+use permark_core::state::{Loaded, ProjectId, StateFile, StateStore};
 
 use crate::folder::{create as create_folder, info_of, FolderInfo, FolderStatus, Places, Resolved};
 use crate::journal::{Entry as JournalEntry, Journal};
@@ -26,9 +26,9 @@ use crate::names::{
     copy_base, first_free, is_note_name, name_problem, note_stem, numbered, restored_stem, Moment,
     EXTENSION, MAX_TRIES,
 };
-use crate::state::{read_legacy, FolderState, Stamp};
+use crate::state::{read_legacy, FolderState, Share, Stamp};
 use crate::text::{head_of, is_blank, snippet_of, title_of};
-use crate::types::{Deleted, EntryKind, NoteEntry, NoteList, NotesSummary};
+use crate::types::{Deleted, EntryKind, NoteEntry, NoteList, NotesSummary, SharedWith};
 use crate::versions::{note_id, Cadence, Version, VersionStore};
 
 pub(crate) const ID: PluginId = PluginId::of("notes");
@@ -66,7 +66,8 @@ pub(crate) struct DeletedNote {
     pub unsaved: Option<JournalEntry>,
     pub modified_ms: u64,
     pub pinned: bool,
-    pub shared: bool,
+    /// The projects it was shared with: they come back with the note.
+    pub shares: Vec<Share>,
 }
 
 #[derive(Debug)]
@@ -176,12 +177,18 @@ impl NotesService {
             Loaded::Found(state) => state,
             Loaded::Missing | Loaded::Recovered { .. } => FolderState::default(),
         };
+        let mut changed = false;
         if !state.imported {
             // 0.5 kept pins, shared notes and loose files in the folder: carried over once, the old file untouched
             state = read_legacy(&resolved.path).unwrap_or(FolderState {
                 imported: true,
                 ..state
             });
+            changed = true;
+        }
+        // sharing with every agent (earlier versions) ends here; the person is told which notes, once
+        changed |= state.unshare_app_wide();
+        if changed {
             let _ = file.save(&state);
         }
         Arc::new(Ctx {
@@ -422,8 +429,8 @@ impl NotesService {
         let Ok(dir) = std::fs::read_dir(ctx.folder()) else {
             return (notes, names, !ctx.folder().exists() && info.is_default);
         };
-        let (pins, shared, copied) =
-            ctx.read(|s| (s.pins.clone(), s.shared.clone(), s.copied.clone()));
+        let (pins, shares, copied) =
+            ctx.read(|s| (s.pins.clone(), s.shares.clone(), s.copied.clone()));
         let mut titles = lock(&ctx.titles);
         for entry in dir.filter_map(Result::ok) {
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -465,7 +472,7 @@ impl NotesService {
                 path: name.clone(),
                 kind: EntryKind::Note,
                 pinned: pins.contains(&name),
-                shared: shared.contains(&name),
+                shared_with: shared_with(&shares, &name),
                 copied: copied.get(&name) == Some(&stamp),
                 recovered,
                 title: cached.title,
@@ -591,13 +598,13 @@ impl NotesService {
                 .then(|| fsx::retry(&fsx::RETRY_DELAYS, || std::fs::read(&abs)).ok())
                 .flatten();
             keepable &= bytes.is_some();
-            let (pinned, shared) = ctx.read(|s| (s.is_pinned(&name), s.is_shared(&name)));
+            let (pinned, shares) = ctx.read(|s| (s.is_pinned(&name), s.shares_of(&name)));
             batch.push(DeletedNote {
                 modified_ms: Stamp::of_meta(&meta).modified_ms,
                 bytes,
                 unsaved: Self::unsaved_entry(&ctx, &name, &abs),
                 pinned,
-                shared,
+                shares,
                 name,
             });
             files.push(abs);
@@ -610,7 +617,7 @@ impl NotesService {
         ctx.update(|state| {
             for name in &names {
                 state.pins.retain(|p| p != name);
-                state.shared.retain(|s| s != name);
+                state.unshare(None, name);
                 state.copied.remove(name);
                 if state.open.as_deref() == Some(name) {
                     state.open = None;
@@ -704,9 +711,7 @@ impl NotesService {
             if note.pinned && !state.pins.contains(&name) {
                 state.pins.push(name.clone());
             }
-            if note.shared && !state.shared.contains(&name) {
-                state.shared.push(name.clone());
-            }
+            state.restore_shares(&note.shares, &name);
         });
         Ok(name)
     }
@@ -799,20 +804,23 @@ impl NotesService {
         });
     }
 
-    /// Shares a note with agents, or stops sharing it. Only notes, one by one; a loose file never reaches an agent.
+    /// Stops sharing a note with one project (`None`: with every project). Only revokes: sharing is asked from the
+    /// project's side, where the app knows the project folder itself.
     ///
     /// # Errors
-    /// Not a note there.
-    pub fn set_shared(&self, path: &str, shared: bool) -> Result<(), IpcError> {
-        let ctx = self.ctx();
-        let (name, _) = Self::existing_note(&ctx, path)?;
-        ctx.update(|state| {
-            state.shared.retain(|s| *s != name);
-            if shared {
-                state.shared.push(name);
-            }
-        });
+    /// Not a note name; `Unsupported` for a loose file.
+    pub fn unshare(&self, path: &str, project: Option<&ProjectId>) -> Result<(), IpcError> {
+        let Target::Note(name) = Self::target(path)? else {
+            return Err(IpcError::new(ErrorKind::Unsupported).subject(path));
+        };
+        self.ctx().update(|state| state.unshare(project, &name));
         Ok(())
+    }
+
+    /// The notes whose sharing with every agent was turned off and the person was not told yet; told once.
+    pub fn take_unshared(&self) -> Vec<String> {
+        self.ctx()
+            .update(|state| std::mem::take(&mut state.unshared_notice))
     }
 
     /// The note was copied out: it shows as copied until it is edited.
@@ -1117,18 +1125,23 @@ impl NotesService {
         self.loose_saved(path);
     }
 
-    /// The notes the person shared, as an agent may list them (the agent area builds a service over the profile and
-    /// the folder for this when no window answers).
+    /// The notes shared with `project`, as its agent may list them (fail closed: see [`crate::state::Share::reaches`]).
     #[must_use]
-    pub fn shared_notes(&self) -> Vec<permark_core::notes::SharedNote> {
+    pub fn shared_notes(&self, project: &ProjectKey) -> Vec<SharedNote> {
         let ctx = self.ctx();
-        let shared = ctx.read(|s| s.shared.clone());
-        shared
+        let names: Vec<String> = ctx.read(|s| {
+            s.shares
+                .iter()
+                .filter(|share| share.reaches(project))
+                .map(|share| share.note.clone())
+                .collect()
+        });
+        names
             .into_iter()
             .filter_map(|name| {
                 let abs = ctx.note_path(&name);
                 let stamp = Stamp::of(&abs)?;
-                Some(permark_core::notes::SharedNote {
+                Some(SharedNote {
                     title: title_of(&head_of(&abs)),
                     updated_ms: stamp.modified_ms,
                     id: name,
@@ -1137,17 +1150,63 @@ impl NotesService {
             .collect()
     }
 
-    /// The text of a shared note as it is on disk. A note that is not shared does not exist for an agent.
+    /// The text of a note shared with `project` as it is on disk. A note not shared with it does not exist for its
+    /// agent.
     ///
     /// # Errors
     /// `NotFound` (not shared | not there), unreadable.
-    pub fn read_shared(&self, id: &str) -> Result<String, IpcError> {
+    pub fn read_shared(&self, project: &ProjectKey, id: &str) -> Result<String, IpcError> {
         let ctx = self.ctx();
-        if !ctx.read(|s| s.is_shared(id)) {
+        if !ctx.read(|s| s.is_shared_with(project, id)) {
             return Err(IpcError::new(ErrorKind::NotFound).subject(id));
         }
         let (_, abs) = Self::existing_note(&ctx, id)?;
         let bytes = fsx::read_bytes(&abs, 6 * 1024 * 1024).map_err(IpcError::from)?;
         Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
+
+    /// Shares a note with `project`, the folder it is now. Only notes, one by one; a loose file never reaches an agent.
+    ///
+    /// # Errors
+    /// Not a note there; `Unsupported` for a loose file.
+    pub fn share(&self, project: &ProjectKey, path: &str) -> Result<(), IpcError> {
+        let ctx = self.ctx();
+        let (name, _) = Self::existing_note(&ctx, path)?;
+        ctx.update(|state| state.share(project, &name));
+        Ok(())
+    }
+
+    /// The notes that can be shared, newest first.
+    #[must_use]
+    pub fn candidates(&self) -> Vec<SharedNote> {
+        let mut notes: Vec<SharedNote> = self
+            .list(now_ms())
+            .entries
+            .into_iter()
+            .filter(|entry| entry.kind == EntryKind::Note)
+            .map(|entry| SharedNote {
+                id: entry.name,
+                title: entry.title,
+                updated_ms: entry.modified_ms,
+            })
+            .collect();
+        notes.sort_by(|a, b| {
+            b.updated_ms
+                .cmp(&a.updated_ms)
+                .then_with(|| a.id.cmp(&b.id))
+        });
+        notes
+    }
+}
+
+/// The projects a note is shared with, as its row shows them.
+fn shared_with(shares: &[Share], name: &str) -> Vec<SharedWith> {
+    shares
+        .iter()
+        .filter(|share| share.note == name)
+        .map(|share| SharedWith {
+            project: share.project.clone(),
+            label: share.label.clone(),
+        })
+        .collect()
 }

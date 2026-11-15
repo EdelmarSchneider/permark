@@ -499,9 +499,13 @@ export function createMockApi(): Api & {
       if (view.state === "showing") announceTabs();
     },
   });
-  const notes = createMockNotes(noteFiles, () => {
-    for (const handler of appListeners["notes:intent"]) handler(null);
-  });
+  const notes = createMockNotes(
+    noteFiles,
+    () => {
+      for (const handler of appListeners["notes:intent"]) handler(null);
+    },
+    () => settings.plugins["notes"] !== false,
+  );
   const appListeners: { [E in AppPluginEventName]: Set<(payload: AppPluginEvents[E]) => void> } = {
     "updates:state": new Set(),
     "token-count:state": new Set(),
@@ -793,8 +797,8 @@ export function createMockApi(): Api & {
     const condition: Context["agent"] =
       view.workspace.kind !== "project" || !agent.enabled
         ? { status: "off" }
-        : agent.clients[0] !== undefined
-          ? { status: "connected", client: agent.clients[0] }
+        : agent.sessions[0] !== undefined
+          ? { status: "connected", client: agent.sessions[0].name }
           : { status: "on" };
     const over = view.workspace.kind === "project" ? contextOver : {};
     return { ...base, workspace: kinds[view.workspace.kind], agent: condition, ...over } as Context;
@@ -1394,3 +1398,13 @@ export function createMockApi(): Api & {
 }
 
 export const mockApi = createMockApi();
+
+// `dev:mock` opened with `?unshared` shows the notice about sharing an update turned off (once, like the app)
+if (typeof location !== "undefined" && new URLSearchParams(location.search).has("unshared")) {
+  mockApi.probe.plugins.notes.unshared([
+    "2026-10-19 0907.md",
+    "2026-10-18 1855.md",
+    "2026-10-19 0815.md",
+    "2026-09-02 1700.md",
+  ]);
+}

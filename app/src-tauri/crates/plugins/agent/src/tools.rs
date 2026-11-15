@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
 use permark_core::fsx;
-use permark_core::notes::SharedNotesApi;
+use permark_core::notes::{ProjectKey, SharedNotesApi};
 use permark_core::organizing::{CommentFilter, CommentsApi, TagsApi, UnreadApi};
 use permark_core::paths::Vault;
 use permark_core::plugins::ProjectServices;
@@ -379,6 +379,8 @@ impl Tools {
             serde_json::to_value(&context).map_err(|e| ToolError::Failed(e.to_string()))?;
         if let Some(map) = value.as_object_mut() {
             map.retain(|_, v| !v.is_null());
+            // the project is the app's own fact, not the window's: a window never names it
+            map.insert("project".to_owned(), json!(self.vault_root().name()));
             map.insert("openComments".to_owned(), json!(open));
         }
         Ok(value)
@@ -658,10 +660,20 @@ impl Tools {
         Ok(json!({ "resolved": id }))
     }
 
+    /// The notes service while the `notes` plugin runs.
+    #[must_use]
+    pub fn shared_notes(&self) -> Option<Arc<SharedNotesApi>> {
+        self.services.app_services.get::<SharedNotesApi>()
+    }
+
+    /// The project notes are shared with: always this server's own folder, never one a window or an agent names.
+    #[must_use]
+    pub fn notes_key(&self) -> ProjectKey {
+        ProjectKey::of(self.vault_root())
+    }
+
     fn notes(&self) -> Result<Arc<SharedNotesApi>, ToolError> {
-        self.services
-            .app_services
-            .get::<SharedNotesApi>()
+        self.shared_notes()
             .ok_or_else(|| ToolError::Invalid("notes are off".to_owned()))
     }
 
@@ -670,7 +682,7 @@ impl Tools {
         let notes: Vec<Value> = self
             .notes()?
             .0
-            .list()
+            .list(&self.notes_key())
             .into_iter()
             .map(|n| json!({ "note": n.id, "title": n.title, "updated": iso(n.updated_ms) }))
             .collect();
@@ -680,13 +692,14 @@ impl Tools {
     fn read_note(&self, raw: Value) -> Result<Value, ToolError> {
         let NoteArgs { note } = args(raw)?;
         let api = self.notes()?;
-        let shared = api.0.list();
+        let key = self.notes_key();
+        let shared = api.0.list(&key);
         let Some(found) = shared.iter().find(|n| n.id == note) else {
             return Err(ToolError::NotFound(note));
         };
         let text = api
             .0
-            .read(&note)
+            .read(&key, &note)
             .map_err(|_| ToolError::NotFound(note.clone()))?;
         // a note longer than one read: its start, and how many characters are left
         let (shown, cut) = crate::context::cut_chars(&text, MAX_READ_CHARS);

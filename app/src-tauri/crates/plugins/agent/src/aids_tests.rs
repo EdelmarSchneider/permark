@@ -101,7 +101,7 @@ fn map_lists_files_by_path_with_facts_and_counts_folders_past_depth() {
         ])
     );
     assert!(text.starts_with(
-        "map path=. depth=1 n=2 total=2\n#cols path size_tok flags tags description\n"
+        "map project=atlas path=. depth=1 n=2 total=2\n#cols path size_tok flags tags description\n"
     ));
     assert!(text.contains("\n-- dirs_cut n=4\n#cols path files size_tok\n"));
     assert!(!text.contains("private"), "{text}");
@@ -154,7 +154,10 @@ fn map_takes_every_root_spelling_and_never_escapes() {
     for path in ["", " ", ".", "./", "/", "//", "\\", "\\\\", " / ", "./."] {
         let (value, text) = call(&fx, "map", json!({ "path": path, "depth": 1 })).unwrap();
         assert_eq!(value, root, "{path:?}");
-        assert!(text.starts_with("map path=. depth=1 "), "{path:?}: {text}");
+        assert!(
+            text.starts_with("map project=atlas path=. depth=1 "),
+            "{path:?}: {text}"
+        );
     }
     for path in [
         "/..",

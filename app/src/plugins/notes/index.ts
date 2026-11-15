@@ -2,11 +2,15 @@
 // versions, crash recovery, loose files, sharing with agents and moving into a project. Turned off, the welcome screen
 // shows no notes, the top bar has no Notes button and the Notes cannot be opened.
 
+import { remedyAction } from "../../core/commands/remedy";
 import { NO_REQUIREMENT, type Requirement } from "../../core/conditions/available";
+import { conditions } from "../../core/conditions/context.svelte";
+import { pluginClient } from "../../core/plugins/client";
 import { definePlugin } from "../../core/plugins/registry.svelte";
 import { windowStore } from "../../core/window.svelte";
 import { inNotes } from "./open";
 import { notes, showInNotes } from "./store.svelte";
+import { tellUnshared } from "./unshared";
 
 const IN_NOTES: Requirement = { needs: [{ need: "workspace", kinds: ["notes"] }], prefers: [] };
 
@@ -180,8 +184,16 @@ export default definePlugin({
         }),
       ]),
     ];
+    // sharing an earlier version turned off: said once, in the first window that starts
+    void tellUnshared(pluginClient, windowStore, () => {
+      const here = conditions.current;
+      if (here.workspace !== "project" || !here.plugins.includes("agent")) return null;
+      // the agent plugin's own command opens its panel (looked up at the click: it may load after this plugin)
+      return () => remedyAction("agent.openSettings")?.();
+    });
     return () => {
       for (const remove of removals) remove();
+      windowStore.dismissKey("notes.unshared");
     };
   },
 });

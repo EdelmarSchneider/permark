@@ -255,13 +255,43 @@ impl Drop for Flag {
 }
 
 fn session_server(endpoint: &Endpoint, released: &Arc<AtomicBool>) -> Server {
+    session_server_ending(
+        endpoint,
+        released,
+        &Arc::new(AtomicBool::new(false)),
+        &Arc::new(AtomicUsize::new(0)),
+    )
+}
+
+/// Holds every "hello"; setting `end` lets every held connection go; `made` counts the guards made (one per
+/// connection actually held).
+fn session_server_ending(
+    endpoint: &Endpoint,
+    released: &Arc<AtomicBool>,
+    end: &Arc<AtomicBool>,
+    made: &Arc<AtomicUsize>,
+) -> Server {
     let released = Arc::clone(released);
+    let end = Arc::clone(end);
+    let made = Arc::clone(made);
     Server::spawn_with(endpoint.listen().unwrap(), move |ping: Ping| {
         let answer = Ping {
             text: format!("{}!", ping.text),
         };
         if ping.text == "hello" {
-            Reply::Hold(answer, Box::new(Flag(Arc::clone(&released))))
+            let released = Arc::clone(&released);
+            let made = Arc::clone(&made);
+            Reply::Hold {
+                answer,
+                full: Ping {
+                    text: "full".into(),
+                },
+                held: Box::new(move || {
+                    made.fetch_add(1, Ordering::AcqRel);
+                    Box::new(Flag(released))
+                }),
+                end: Arc::clone(&end),
+            }
         } else {
             Reply::Answer(answer)
         }
@@ -299,6 +329,35 @@ fn a_held_session_ends_when_the_peer_leaves() {
 }
 
 #[test]
+fn the_end_flag_of_a_held_session_closes_it_from_the_server_side() {
+    let (_d, endpoint) = endpoint();
+    let released = Arc::new(AtomicBool::new(false));
+    let end = Arc::new(AtomicBool::new(false));
+    let server = session_server_ending(&endpoint, &released, &end, &Arc::new(AtomicUsize::new(0)));
+    let (_answer, stream): (Ping, _) = open_session(
+        &endpoint,
+        &Ping {
+            text: "hello".into(),
+        },
+    )
+    .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!released.load(Ordering::Acquire));
+    assert!(!peer_gone(&stream));
+    end.store(true, Ordering::Release);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !(released.load(Ordering::Acquire) && peer_gone(&stream)) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(released.load(Ordering::Acquire), "guard dropped");
+    assert!(peer_gone(&stream), "the client sees its connection closed");
+    // the server keeps answering others
+    let other: Ping = request(&endpoint, &Ping { text: "a".into() }).unwrap();
+    assert_eq!(other.text, "a!");
+    drop(server);
+}
+
+#[test]
 fn stopping_the_server_ends_held_sessions() {
     let (_d, endpoint) = endpoint();
     let released = Arc::new(AtomicBool::new(false));
@@ -319,24 +378,54 @@ fn stopping_the_server_ends_held_sessions() {
 }
 
 #[test]
-fn sessions_over_the_cap_are_answered_then_closed() {
+fn sessions_over_the_cap_get_the_full_answer_then_are_closed() {
+    assert_eq!(MAX_SESSIONS, 16);
     let (_d, endpoint) = endpoint();
     let released = Arc::new(AtomicBool::new(false));
-    let server = session_server(&endpoint, &released);
-    let mut sessions = Vec::new();
-    for _ in 0..(MAX_SESSIONS + 2) {
-        let (answer, stream): (Ping, _) = open_session(
+    let made = Arc::new(AtomicUsize::new(0));
+    let server = session_server_ending(
+        &endpoint,
+        &released,
+        &Arc::new(AtomicBool::new(false)),
+        &made,
+    );
+    let hello = || {
+        open_session::<_, Ping>(
             &endpoint,
             &Ping {
                 text: "hello".into(),
             },
         )
-        .unwrap();
+        .unwrap()
+    };
+    let mut sessions = Vec::new();
+    for _ in 0..MAX_SESSIONS {
+        let (answer, stream) = hello();
         assert_eq!(answer.text, "hello!");
         sessions.push(stream);
     }
+    // a client over the cap must learn it holds no session (not the answer of a held one)
+    for _ in 0..2 {
+        let (answer, stream) = hello();
+        assert_eq!(answer.text, "full");
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !peer_gone(&stream) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(peer_gone(&stream), "closed by the server");
+    }
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(server.open_connections(), MAX_SESSIONS);
+    // the server's side never learned of the ones over the cap: no guard was made for them
+    assert_eq!(made.load(Ordering::Acquire), MAX_SESSIONS);
+    // a slot given back is taken by the next hello
+    sessions.pop();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while server.open_connections() >= MAX_SESSIONS && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let (answer, _stream) = hello();
+    assert_eq!(answer.text, "hello!");
 }
 
 #[test]
@@ -352,4 +441,41 @@ fn project_endpoints_differ_per_project_and_profile() {
     assert_ne!(ea, Endpoint::project(&dirs.profile, &rb).unwrap());
     assert_ne!(ea, Endpoint::project(&other.profile, &ra).unwrap());
     assert_ne!(ea, Endpoint::app(&dirs).unwrap());
+}
+
+/// Polls `check` for up to 5 s.
+fn within(check: impl Fn() -> bool) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if check() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    false
+}
+
+#[test]
+fn peer_gone_sees_a_closed_peer_and_leaves_waiting_data_to_the_reader() {
+    let (_d, endpoint) = endpoint();
+    let listening = endpoint.listen().unwrap();
+    let client = endpoint.connect().unwrap();
+    let mut server = listening.accept_trusted().unwrap().unwrap();
+    // an open idle peer is not gone
+    assert!(!peer_gone(&client));
+    write_line(
+        &mut server,
+        &Ping {
+            text: "kept".into(),
+        },
+    )
+    .unwrap();
+    // looking twice with data waiting neither reports the peer gone nor eats the line
+    assert!(!peer_gone(&client));
+    assert!(!peer_gone(&client));
+    let line: Ping = read_line_by(&client, Instant::now() + Duration::from_secs(5)).unwrap();
+    assert_eq!(line.text, "kept");
+    assert!(!peer_gone(&client));
+    drop(server);
+    assert!(within(|| peer_gone(&client)), "a closed peer is seen");
 }

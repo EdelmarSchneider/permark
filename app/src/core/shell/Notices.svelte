@@ -160,10 +160,13 @@
     gap: var(--sp-2);
     width: min(420px, calc(100vw - var(--notices-right, 0px) - 2 * var(--sp-4)));
   }
+  /* the buttons wrap under the text, right-aligned, once they would squeeze it into a narrow column */
   .notice {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--sp-3);
+    justify-content: flex-end;
+    gap: var(--sp-2) var(--sp-3);
     padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
@@ -172,7 +175,7 @@
     animation: pm-fade var(--dur) var(--ease);
   }
   .text {
-    flex: 1;
+    flex: 1 1 14rem;
     min-width: 0;
     overflow-wrap: anywhere;
   }

@@ -24,7 +24,9 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use interprocess::local_socket::prelude::*;
-use interprocess::local_socket::{ListenerOptions, Name, Stream};
+/// A connection to an endpoint (callers that keep a session hold one).
+pub use interprocess::local_socket::Stream;
+use interprocess::local_socket::{ListenerOptions, Name};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -497,7 +499,7 @@ pub const FIRST_LINE_DEADLINE: Duration = Duration::from_secs(2);
 /// Connections open at once (being read, answered or held); more are dropped unread.
 pub const MAX_CONNECTIONS: usize = 32;
 /// Connections held after their answer ([`Reply::Hold`]).
-pub const MAX_SESSIONS: usize = 8;
+pub const MAX_SESSIONS: usize = 16;
 /// How often a held connection looks whether its peer left or the server stops.
 const SESSION_POLL: Duration = Duration::from_millis(200);
 /// Pause between reads of a first line that is still coming.
@@ -507,9 +509,19 @@ const READ_POLL: Duration = Duration::from_millis(5);
 pub enum Reply<Resp> {
     /// Answer, then close.
     Answer(Resp),
-    /// Answer, then keep the connection open until the peer leaves or the server stops; `guard` is dropped then
-    /// (a session: the peer's presence is the point, nothing more is read).
-    Hold(Resp, Box<dyn Send>),
+    /// Answer, then keep the connection open until the peer leaves, the server stops or `end` turns true (the
+    /// server's side lets this one connection go). `held` runs once the connection is held (a slot was free), just
+    /// before the answer goes out; the guard it returns is dropped when the hold ends (a session: the peer's
+    /// presence is the point, nothing more is read).
+    Hold {
+        answer: Resp,
+        /// Sent instead of `answer` when [`MAX_SESSIONS`] connections are held already; the connection is closed
+        /// and `held` never runs (the peer must learn it holds no session, so it can try again later; the server's
+        /// side never lists it).
+        full: Resp,
+        held: Box<dyn FnOnce() -> Box<dyn Send> + Send>,
+        end: Arc<AtomicBool>,
+    },
 }
 
 /// One look at a stream that must not block.
@@ -554,6 +566,36 @@ fn poll_read(stream: &Stream, buf: &mut [u8]) -> Polled {
             Polled::Empty
         }
         Err(_) => Polled::Closed,
+    }
+}
+
+/// Whether the other end of `stream` closed (or the stream broke), looked at without blocking. Never consumes
+/// anything: Windows asks the pipe how many bytes wait (`PeekNamedPipe`, no buffer), Unix peeks one byte
+/// (`MSG_PEEK | MSG_DONTWAIT`), so a line still on its way stays for the reader. Bytes waiting = not gone yet (a peer
+/// that wrote, then closed, reads as gone once the reader took them).
+#[must_use]
+pub fn peer_gone(stream: &Stream) -> bool {
+    #[cfg(windows)]
+    {
+        peek::available(stream).is_err()
+    }
+    #[cfg(unix)]
+    {
+        use rustix::io::Errno;
+        use rustix::net::{recv, RecvFlags};
+        use std::os::fd::AsFd;
+        let Stream::UdSocket(socket) = stream;
+        let mut byte = [0_u8; 1];
+        match recv(
+            socket.as_fd(),
+            &mut byte[..],
+            RecvFlags::PEEK | RecvFlags::DONTWAIT,
+        ) {
+            Ok((0, _)) => true,
+            Ok(_) => false,
+            // EWOULDBLOCK = EAGAIN on the supported Unix systems
+            Err(e) => e != Errno::AGAIN && e != Errno::INTR,
+        }
     }
 }
 
@@ -687,7 +729,7 @@ impl Server {
     }
 
     /// Like [`Server::spawn`]; the handler may also keep a connection open ([`Reply::Hold`], at most
-    /// [`MAX_SESSIONS`]: over it the answer is sent and the connection closed).
+    /// [`MAX_SESSIONS`]: over it the hold's `full` answer is sent and the connection closed).
     ///
     /// # Errors
     /// Thread spawn failure.
@@ -766,24 +808,33 @@ fn serve_one<Req, Resp>(
         Reply::Answer(answer) => {
             let _ = write_line(&mut writer, &answer);
         }
-        Reply::Hold(answer, guard) => {
-            let session = sessions.take();
-            if write_line(&mut writer, &answer).is_err() || session.is_none() {
+        Reply::Hold {
+            answer,
+            full,
+            held,
+            end,
+        } => {
+            let Some(_session) = sessions.take() else {
+                let _ = write_line(&mut writer, &full);
                 return;
+            };
+            // made before the answer: a peer told it is held finds itself listed
+            let guard = held();
+            if write_line(&mut writer, &answer).is_ok() {
+                hold(stream, stop, &end);
             }
-            hold(stream, stop);
             drop(guard);
         }
     }
 }
 
-/// Waits until the peer leaves (EOF | error) or the server stops; anything the peer sends is ignored.
-fn hold(stream: &Stream, stop: &AtomicBool) {
+/// Waits until the peer leaves (EOF | error), the server stops or `end` is set; anything the peer sends is ignored.
+fn hold(stream: &Stream, stop: &AtomicBool, end: &AtomicBool) {
     if poll_mode(stream, true).is_err() {
         return;
     }
     let mut sink = [0_u8; 256];
-    while !stop.load(Ordering::Acquire) {
+    while !stop.load(Ordering::Acquire) && !end.load(Ordering::Acquire) {
         match poll_read(stream, &mut sink) {
             Polled::Closed => return,
             Polled::Data(_) => {}

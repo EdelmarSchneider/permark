@@ -12,7 +12,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **Edit a comment.** **Edit** on your comment, or on one of your replies, opens the same field you wrote it in. Save with Enter or Ctrl+Enter, or leave it with Esc. The comment keeps its place, its replies and whether it is done, and it shows "edited" with the time as a tooltip. Agents read the new text and see that it was edited. <!-- f: comments -->
 - A built-in **Spaces** group with the no-break space, the narrow no-break space, the thin space, the figure space and the word joiner, each shown with a visible label. <!-- f: editing -->
 
+- **See and manage connected agents.** The agent panel of a project lists every connected agent: its name, when it started, the folder it works in and its last request. **Disconnect** ends one agent's access, with Undo; a disconnected agent stays out until it is started again, even after PerMark restarts. The status bar shows the agent's name, or how many agents are connected. When PerMark restarts, agents that are still running connect again by themselves. <!-- f: agent -->
+- An agent now knows which project it works with: `get_context` and `map` name it. An agent started outside a connected project is told which connected projects are below its folder. <!-- f: agent -->
+
 ### Changed
+- **Notes are shared with agents one project at a time.** Share a note from the project's agent panel (**+ Add note**); only that project's agents can read it, and the note shows "Shared with" and the project. Notes that were shared with every project before are no longer shared, and PerMark tells you which ones once. <!-- f: agent, notes -->
 - An AI agent now reads a project only while PerMark has it open. With PerMark closed, every tool of `permark mcp` says so, and `open` starts PerMark on the project, so you always see when an agent is connected. Before, the tools went on answering from the files with PerMark closed. <!-- f: agent -->
 - Links whose target is missing are underlined only while the **Broken links** plugin is on, in View and in Edit. Turn the plugin off and the marks go away at once; a click on such a link still tells you the file is not there. <!-- f: links, broken-links -->
 
