@@ -568,7 +568,9 @@ export default {
   "toolbar.quote": "Citat",
   "toolbar.table": "Tabel",
   "toolbar.tableInsert": "Inserează un tabel (3 x 3)",
+  "toolbar.tableAddRowAbove": "Adaugă un rând deasupra",
   "toolbar.tableAddRow": "Adaugă un rând dedesubt",
+  "toolbar.tableAddColumnLeft": "Adaugă o coloană la stânga",
   "toolbar.tableAddColumn": "Adaugă o coloană la dreapta",
   "toolbar.tableDeleteRow": "Șterge rândul",
   "toolbar.tableDeleteColumn": "Șterge coloana",
@@ -1707,6 +1709,7 @@ export default {
   "plugins.choice.off": "Dezactivat în acest proiect",
   "plugins.dataNotRemoved": "Datele nu au putut fi eliminate: {message}",
   "plugins.dataRemoved": "Datele pluginului {name} au fost eliminate.",
+  "plugins.failedToStart": "Pluginul {name} nu a putut porni. {reason}",
   "plugins.inProject": "În acest proiect",
   "plugins.intro":
     "Activează sau dezactivează funcții. Un plugin dezactivat nu lasă nimic în urmă.",
@@ -2296,7 +2299,8 @@ export default {
   "settings.openInTab": "Filă nouă",
   "settings.openInThis": "Această filă",
   "settings.openInNew": "Fereastră nouă",
-  "settings.openInHint": "Dacă este deja deschis, PerMark îl arată acolo unde este.",
+  "settings.openInHint":
+    "Dacă este deja deschis, PerMark îl arată acolo unde este. Fișierele și dosarele deschise din afara PerMark (un terminal, un dublu clic, Deschide cu) nu înlocuiesc niciodată fila curentă; se deschid într-o filă sau fereastră nouă.",
   "switcher.close": "Închide",
   "switcher.closeOne": "Închide {name}",
   "switcher.label": "Filele acestei ferestre",

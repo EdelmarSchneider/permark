@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::activity::{system_clock, ActivityLog};
 use crate::conditions::{Context, Distribution};
 use crate::document::{DocScope, Documents};
-use crate::events::{CoreEvent, EventSink};
+use crate::events::{CoreEvent, EventSink, PluginFailed};
 use crate::fileops::FileOps;
 use crate::format::FormatRegistry;
 use crate::notes::{NotesCore, NotesScope};
@@ -219,9 +219,8 @@ impl CoreEnv {
                 ))
             });
         for failure in failures {
-            self.sink.emit(CoreEvent::PluginFailed {
-                message: failure.to_string(),
-            });
+            self.sink
+                .emit(CoreEvent::PluginFailed(PluginFailed::new(failure, None)));
         }
     }
 
@@ -926,10 +925,13 @@ impl ProjectCore {
                 .unwrap_or_else(PoisonError::into_inner)
                 .formats_changed();
         }
+        // named as the project's views name it (`WorkspaceView::Project.root`)
+        let root = self.root().path().display().to_string();
         for failure in failures {
-            env.sink.emit(CoreEvent::PluginFailed {
-                message: failure.to_string(),
-            });
+            env.sink.emit(CoreEvent::PluginFailed(PluginFailed::new(
+                failure,
+                Some(root.clone()),
+            )));
         }
     }
 }

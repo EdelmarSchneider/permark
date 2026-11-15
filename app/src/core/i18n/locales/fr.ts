@@ -559,7 +559,9 @@ export default {
   "toolbar.quote": "Citation",
   "toolbar.table": "Tableau",
   "toolbar.tableInsert": "Insérer un tableau (3 x 3)",
+  "toolbar.tableAddRowAbove": "Ajouter une ligne au-dessus",
   "toolbar.tableAddRow": "Ajouter une ligne en dessous",
+  "toolbar.tableAddColumnLeft": "Ajouter une colonne à gauche",
   "toolbar.tableAddColumn": "Ajouter une colonne à droite",
   "toolbar.tableDeleteRow": "Supprimer la ligne",
   "toolbar.tableDeleteColumn": "Supprimer la colonne",
@@ -1667,6 +1669,7 @@ export default {
   "plugins.choice.off": "Désactivé dans ce projet",
   "plugins.dataNotRemoved": "Impossible de supprimer les données : {message}",
   "plugins.dataRemoved": "Données de {name} supprimées.",
+  "plugins.failedToStart": "{name} n'a pas pu démarrer. {reason}",
   "plugins.inProject": "Dans ce projet",
   "plugins.intro":
     "Activez ou désactivez des fonctionnalités. Un plugin désactivé ne laisse aucune trace.",
@@ -2239,7 +2242,8 @@ export default {
   "settings.openInTab": "Un nouvel onglet",
   "settings.openInThis": "Cet onglet",
   "settings.openInNew": "Une nouvelle fenêtre",
-  "settings.openInHint": "Déjà ouvert : PerMark l'affiche là où il se trouve.",
+  "settings.openInHint":
+    "Déjà ouvert : PerMark l'affiche là où il se trouve. Les fichiers et dossiers ouverts depuis l'extérieur de PerMark (un terminal, un double-clic, Ouvrir avec) ne remplacent jamais l'onglet actuel ; ils s'ouvrent dans un nouvel onglet ou une nouvelle fenêtre.",
   "switcher.close": "Fermer",
   "switcher.closeOne": "Fermer {name}",
   "switcher.label": "Onglets de cette fenêtre",

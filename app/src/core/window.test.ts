@@ -122,6 +122,42 @@ describe("window open flow", () => {
   });
 });
 
+describe("a plugin that cannot start", () => {
+  const error = { kind: "internal", subject: "git", detail: "needs a project" } as const;
+
+  it("is told once by its name and why, in the windows of its project only", async () => {
+    const api = createMockApi();
+    const store = await started(api);
+    await store.openFolder();
+    const root = store.root;
+    expect(root).not.toBeNull();
+    api.emit("plugin-failed", { plugin: "git", root: "D:/another project", error });
+    expect(store.notices).toHaveLength(0);
+    api.emit("plugin-failed", { plugin: "git", root, error });
+    api.emit("plugin-failed", { plugin: "git", root, error });
+    expect(store.notices).toHaveLength(1);
+    const notice = store.notices[0];
+    const text = notice?.kind === "action" ? notice.text : "";
+    expect(text).toContain("Git");
+    expect(text).toContain("needs a project");
+    // another plugin is another notice; an App-scope one (no project) reaches every window
+    api.emit("plugin-failed", { plugin: "updates", root: null, error });
+    expect(store.notices).toHaveLength(2);
+  });
+
+  it("is told while its project is still opening in this view", async () => {
+    const api = createMockApi();
+    const store = await started(api);
+    api.emit("window-changed", {
+      window: "main",
+      tab: null,
+      view: { state: "opening", target: { kind: "project", path: "C:/slow" }, showing: null },
+    });
+    api.emit("plugin-failed", { plugin: "tags", root: "C:/slow", error });
+    expect(store.notices).toHaveLength(1);
+  });
+});
+
 describe("in-place open: what stays on screen", () => {
   const docs = {
     kind: "project" as const,

@@ -141,6 +141,27 @@ pub enum PluginError {
     Start { id: PluginId, reason: String },
 }
 
+impl PluginError {
+    #[must_use]
+    pub fn plugin(&self) -> &PluginId {
+        match self {
+            Self::Start { id, .. } => id,
+        }
+    }
+}
+
+/// A start failure is the plugin's own wiring | state, not the person's input: `Internal`, the plugin's reason as
+/// detail (not translated: it comes from the plugin).
+impl From<PluginError> for crate::error::IpcError {
+    fn from(error: PluginError) -> Self {
+        match error {
+            PluginError::Start { id, reason } => Self::new(crate::error::ErrorKind::Internal)
+                .subject(id.to_string())
+                .detail(reason),
+        }
+    }
+}
+
 /// A started plugin. `Drop` = teardown: threads joined, watchers removed, sockets closed (RAII).
 pub trait Running: Send {
     /// The app settings changed (App scope; called with the new settings, quick).

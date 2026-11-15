@@ -16,15 +16,27 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 - **See and manage connected agents.** The agent panel of a project lists every connected agent: its name, when it started, the folder it works in and its last request. **Disconnect** ends one agent's access, with Undo; a disconnected agent stays out until it is started again, even after PerMark restarts. The status bar shows the agent's name, or how many agents are connected. When PerMark restarts, agents that are still running connect again by themselves. <!-- f: agent -->
 - An agent now knows which project it works with: `get_context` and `map` name it. An agent started outside a connected project is told which connected projects are below its folder. <!-- f: agent -->
+- In Edit, a table's menu can add a row above and a column to the left. <!-- f: editing, edit-mode -->
+- **Add `permark` to PATH on Windows.** The installer's welcome page has a new option, **Add the permark command to PATH** (off unless you chose it before), so `permark mcp` and `permark context` work in any terminal you open afterwards. Uninstalling takes the entry out again, and updates leave your PATH as it is. If your PATH is too long to change safely, the installer leaves it untouched and shows you the folder to add yourself. <!-- f: windows-installer -->
 
 ### Changed
 - **Notes are shared with agents one project at a time.** Share a note from the project's agent panel (**+ Add note**); only that project's agents can read it, and the note shows "Shared with" and the project. Notes that were shared with every project before are no longer shared, and PerMark tells you which ones once. <!-- f: agent, notes -->
 - An AI agent now reads a project only while PerMark has it open. With PerMark closed, every tool of `permark mcp` says so, and `open` starts PerMark on the project, so you always see when an agent is connected. Before, the tools went on answering from the files with PerMark closed. <!-- f: agent -->
 - Links whose target is missing are underlined only while the **Broken links** plugin is on, in View and in Edit. Turn the plugin off and the marks go away at once; a click on such a link still tells you the file is not there. <!-- f: links, broken-links -->
+- Removing a missing project from the list now keeps its Undo notice until you close it. <!-- f: projects -->
+- Spanish and Simplified Chinese use one consistent word for Settings, agents and comments. <!-- f: i18n -->
+- An `.opencode` folder (where the opencode coding agent keeps its project setup) now counts as a file for AI agents, like `AGENTS.md` or a `.claude` folder. In such a project the Live changes panel shows by itself below the outline, and PerMark offers once to share the project with your agent. <!-- f: live-feed, agent-connection -->
+
+### Deprecated
+- This is the last version with a Windows `.msi` installer. If you installed PerMark from an `.msi`, uninstall it and install the `-setup.exe`: your settings and notes stay. Settings live in your user profile, and notes in their own folder (`Documents\PerMark Notes`, unless you chose another one). You can also get PerMark from the Microsoft Store instead; the Store version keeps settings of its own, so you choose them again there, and your notes and documents are still where they were. <!-- f: windows-installer -->
 
 ### Fixed
 - The AI agent connection now belongs to the folder you turned it on for. If that folder is deleted and another one is created or cloned at the same place, agents are no longer allowed there: the connection shows as off, says why, and you turn it on again if you want it. Connections made with earlier versions keep working. <!-- f: agent -->
 - The groups file no longer drops entries that are special spaces, such as the no-break space, and accepts longer emoji sequences, such as people with skin tones. A character listed twice in one group no longer breaks the picker. <!-- f: editing -->
+- A file that fails to open in the same tab shows its error once, not twice. <!-- f: tabs -->
+- Text files, such as logs, reopen at the line you left instead of at the top. <!-- f: text-view -->
+- After you dismiss a notice with the keyboard, or close Settings or the keyboard shortcuts list with Esc, the keyboard goes back where it was instead of being lost. <!-- f: accessibility -->
+- When a plugin you turned on cannot start, PerMark now tells you which one and why, instead of failing silently. <!-- f: plugins -->
 
 ## [0.12.0] - 2026-11-14
 

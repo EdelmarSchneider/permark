@@ -85,15 +85,21 @@ pub fn run(handle: &AppHandle, outcome: Outcome) {
     for (ticket, reference) in outcome.loads {
         let handle = handle.clone();
         std::thread::spawn(move || {
-            let _ = load(&handle, ticket, &reference);
+            let _ = load(&handle, ticket, &reference, false);
         });
     }
     state(handle).saver.poke();
 }
 
 /// Builds + binds a reserved open. A tab whose first open failed closes (its view would show the Welcome) and the
-/// window's view on screen tells why; a newer open winning stays quiet.
-fn load(handle: &AppHandle, ticket: Ticket, reference: &WorkspaceRef) -> Result<(), IpcError> {
+/// window's view on screen tells why; a newer open winning stays quiet. `answered`: the asking view gets the error as
+/// the reply to its own call, so an `open-failed` event goes only when that view is gone (else it would tell twice).
+fn load(
+    handle: &AppHandle,
+    ticket: Ticket,
+    reference: &WorkspaceRef,
+    answered: bool,
+) -> Result<(), IpcError> {
     let shell = state(handle);
     let view = ticket.view().to_owned();
     match shell.registry.load(ticket, reference) {
@@ -115,7 +121,8 @@ fn load(handle: &AppHandle, ticket: Ticket, reference: &WorkspaceRef) -> Result<
                     run(handle, shell.registry.close_tab(place.tab));
                     report_in_window(handle, &place.window, &path, error.clone());
                 }
-                _ => report(handle, &view, &path, error.clone()),
+                _ if !answered => report(handle, &view, &path, error.clone()),
+                _ => {}
             }
             Err(error)
         }
@@ -228,7 +235,7 @@ pub fn open_placed(
                 Ok(focused(&place))
             }
             Begin::Ticket(ticket) => {
-                load(handle, ticket, reference)?;
+                load(handle, ticket, reference, true)?;
                 Ok(OpenOutcome::Opened {
                     view: shell
                         .registry

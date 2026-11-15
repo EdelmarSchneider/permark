@@ -14,6 +14,8 @@ export type DialogFocusOptions = {
   onEscape?: () => void;
   /** The focus goes back to what had it before the dialog opened (default true). */
   restoreFocus?: boolean;
+  /** Where the focus goes back to when what had it is gone by the close (opened from a popover that closed). */
+  fallback?: () => HTMLElement | null;
   /** Tab | Shift+Tab cycle the dialog's controls (default true). False: the dialog gives Tab a meaning of its own
    *  (and so never lets it move the focus out). */
   trapTab?: boolean;
@@ -101,9 +103,9 @@ export function dialogFocus(
     },
     destroy() {
       off();
-      if (current.restoreFocus !== false && opener?.isConnected && !node.contains(opener)) {
-        opener.focus();
-      }
+      if (current.restoreFocus === false) return;
+      if (opener?.isConnected && !node.contains(opener)) opener.focus();
+      else current.fallback?.()?.focus();
     },
   };
 }

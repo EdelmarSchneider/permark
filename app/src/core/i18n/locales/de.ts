@@ -553,7 +553,9 @@ export default {
   "toolbar.quote": "Zitat",
   "toolbar.table": "Tabelle",
   "toolbar.tableInsert": "Tabelle einfügen (3 x 3)",
+  "toolbar.tableAddRowAbove": "Zeile darüber einfügen",
   "toolbar.tableAddRow": "Zeile darunter einfügen",
+  "toolbar.tableAddColumnLeft": "Spalte links einfügen",
   "toolbar.tableAddColumn": "Spalte rechts einfügen",
   "toolbar.tableDeleteRow": "Zeile löschen",
   "toolbar.tableDeleteColumn": "Spalte löschen",
@@ -1650,6 +1652,7 @@ export default {
   "plugins.choice.off": "In diesem Projekt aus",
   "plugins.dataNotRemoved": "Die Daten konnten nicht entfernt werden: {message}",
   "plugins.dataRemoved": "Daten von {name} entfernt.",
+  "plugins.failedToStart": "{name} konnte nicht starten. {reason}",
   "plugins.inProject": "In diesem Projekt",
   "plugins.intro":
     "Funktionen ein- oder ausschalten. Ein ausgeschaltetes Plugin hinterlässt nichts.",
@@ -2215,7 +2218,8 @@ export default {
   "settings.openInTab": "Neuer Tab",
   "settings.openInThis": "Dieser Tab",
   "settings.openInNew": "Neues Fenster",
-  "settings.openInHint": "Bereits geöffnet: PerMark zeigt es dort, wo es ist.",
+  "settings.openInHint":
+    "Bereits geöffnet: PerMark zeigt es dort, wo es ist. Dateien und Ordner, die von außerhalb von PerMark geöffnet werden (ein Terminal, ein Doppelklick, Öffnen mit), ersetzen nie den aktuellen Tab; sie öffnen sich in einem neuen Tab oder Fenster.",
   "switcher.close": "Schließen",
   "switcher.closeOne": "{name} schließen",
   "switcher.label": "Tabs dieses Fensters",

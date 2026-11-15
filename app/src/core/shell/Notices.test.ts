@@ -66,6 +66,8 @@ describe("after a notice's button ran", () => {
     if (!found) throw new Error(`no button ${label}`);
     return found;
   }
+  /** Every pending step is done (the last notice going takes the whole region with it: more than two ticks). */
+  const drawn = (): Promise<void> => new Promise((done) => setTimeout(done, 0));
   /** The keyboard goes to the button, the button is pressed, what that changed is drawn. */
   async function pressed(button: HTMLButtonElement): Promise<void> {
     button.focus();
@@ -150,6 +152,46 @@ describe("after a notice's button ran", () => {
     await tick();
     await tick();
     expect(document.activeElement).toBe(asked);
+  });
+
+  it("Dismiss (Enter | a click) and Esc take the notice away the same way: the keyboard goes back", async () => {
+    const outside = control("Options");
+    page();
+    const { store, target } = shown(0);
+    store.notifyAction("Deleted a.md", { label: "Undo", run: () => {} });
+    flushSync();
+    outside.focus();
+    const dismiss = buttonOf(target, "Dismiss");
+    await pressed(dismiss);
+    expect(dismiss.isConnected).toBe(false);
+    expect(document.activeElement).toBe(outside);
+
+    outside.focus();
+    const undo = buttonOf(target, "Undo");
+    undo.focus();
+    const esc = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    undo.dispatchEvent(esc);
+    flushSync();
+    await drawn();
+    expect(esc.defaultPrevented).toBe(true);
+    expect(undo.isConnected).toBe(false);
+    expect(document.activeElement).toBe(outside);
+  });
+
+  it("Esc on a notice when what had the keyboard is gone: the page takes it", async () => {
+    const outside = control("Options");
+    const main = page();
+    const { target } = shown(0);
+    outside.focus();
+    const dismiss = buttonOf(target, "Dismiss");
+    dismiss.focus();
+    outside.remove();
+    dismiss.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
+    flushSync();
+    await drawn();
+    expect(document.activeElement).toBe(main);
   });
 
   it("an action that puts the keyboard somewhere keeps it there", async () => {

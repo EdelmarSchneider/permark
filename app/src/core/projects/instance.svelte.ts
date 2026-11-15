@@ -25,7 +25,12 @@ export async function refocusExplorer(): Promise<void> {
 }
 
 export const projects = new ProjectsStore(api, {
-  notice: (notice) => void windowStore().then((w) => w.notifyTimed(notice)),
+  notice: ({ closeAfterMs, onGone = () => {}, ...body }) =>
+    void windowStore().then((w) =>
+      closeAfterMs === undefined
+        ? w.notifyLasting({ ...body, onGone })
+        : w.notifyTimed({ ...body, closeAfterMs, onGone }),
+    ),
   fail: (text) => void windowStore().then((w) => w.notifyNote(text)),
   openSettings: () => ui.openSettingsPage("projects"),
   closeSettings: () => ui.closeSettingsPage(),

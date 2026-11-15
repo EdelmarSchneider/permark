@@ -28,7 +28,7 @@ impl EventSink for TauriSink {
             CoreEvent::IndexProgress(e) => serde_json::to_value(e),
             CoreEvent::ProjectsChanged(e) => serde_json::to_value(e),
             CoreEvent::PluginsChanged => Ok(serde_json::Value::Null),
-            CoreEvent::PluginFailed { message } => Ok(serde_json::Value::String(message)),
+            CoreEvent::PluginFailed(e) => serde_json::to_value(e),
             CoreEvent::Plugin { payload, .. } => Ok(payload),
         };
         let Ok(payload) = payload else {

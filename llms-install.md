@@ -11,7 +11,7 @@ Choose the command for the operating system in use:
 scoop bucket add permark https://github.com/EdelmarSchneider/scoop-permark
 scoop install permark
 ```
-Scoop puts `permark` on `PATH`. Without Scoop: download `PerMark_<version>_x64-setup.exe` from the [latest release](https://github.com/EdelmarSchneider/permark/releases/latest) and run it (current user, no administrator rights). A `winget` package is not available yet.
+Scoop puts `permark` on `PATH`. Without Scoop: download `PerMark_<version>_x64-setup.exe` from the [latest release](https://github.com/EdelmarSchneider/permark/releases/latest) and run it (current user, no administrator rights); tick **Add the permark command to PATH** on its first page to put `permark` on `PATH`. A `winget` package is not available yet.
 
 ### macOS
 ```bash
@@ -27,7 +27,7 @@ rm -f /tmp/permark.deb
 ```
 
 ## Step 2: Verify the Binary
-Verify that `permark` is on `PATH` (or at its standard install path). A direct install on Windows or macOS does not put `permark` on `PATH`: then use the full path in the `command` of Step 3.
+Verify that `permark` is on `PATH` (or at its standard install path). A direct install on macOS, or on Windows without the installer's PATH option, does not put `permark` on `PATH`: then use the full path in the `command` of Step 3.
 - **Windows:** `permark` (or `%LOCALAPPDATA%\PerMark\permark.exe`)
 - **macOS:** `permark` (or `/Applications/PerMark.app/Contents/MacOS/permark`)
 - **Linux:** `/usr/bin/permark`

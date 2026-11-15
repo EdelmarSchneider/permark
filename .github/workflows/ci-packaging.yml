@@ -69,7 +69,7 @@ jobs:
         working-directory: app
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install Rust (pinned)
         run: rustup toolchain install
@@ -77,13 +77,13 @@ jobs:
       # Saved from develop only: every branch, pull request and tag can restore develop's caches, but nothing else can
       # restore theirs, and the repository's 10 GB cache budget evicts the useful ones first when everything saves.
       - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: app/src-tauri
           save-if: ${{ github.ref == 'refs/heads/develop' }}
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -118,7 +118,7 @@ jobs:
         os: [windows-latest, ubuntu-22.04, macos-latest]
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # `cargo about` reads the dependency tree through cargo, which needs the toolchain app/rust-toolchain.toml pins.
       - name: Install Rust (pinned)
@@ -126,7 +126,7 @@ jobs:
         run: rustup toolchain install
 
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm

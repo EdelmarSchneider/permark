@@ -552,7 +552,9 @@ export default {
   "toolbar.quote": "Citação",
   "toolbar.table": "Tabela",
   "toolbar.tableInsert": "Inserir tabela (3 x 3)",
+  "toolbar.tableAddRowAbove": "Adicionar linha acima",
   "toolbar.tableAddRow": "Adicionar linha abaixo",
+  "toolbar.tableAddColumnLeft": "Adicionar coluna à esquerda",
   "toolbar.tableAddColumn": "Adicionar coluna à direita",
   "toolbar.tableDeleteRow": "Eliminar linha",
   "toolbar.tableDeleteColumn": "Eliminar coluna",
@@ -1641,6 +1643,7 @@ export default {
   "plugins.choice.off": "Desativado neste projeto",
   "plugins.dataNotRemoved": "Não foi possível remover os dados: {message}",
   "plugins.dataRemoved": "Os dados de {name} foram removidos.",
+  "plugins.failedToStart": "Não foi possível iniciar {name}. {reason}",
   "plugins.inProject": "Neste projeto",
   "plugins.intro":
     "Ative ou desative funcionalidades. Um plug-in desativado não deixa nada para trás.",
@@ -2198,7 +2201,8 @@ export default {
   "settings.openInTab": "Novo separador",
   "settings.openInThis": "Este separador",
   "settings.openInNew": "Nova janela",
-  "settings.openInHint": "Se já estiver aberto, o PerMark mostra-o onde está.",
+  "settings.openInHint":
+    "Se já estiver aberto, o PerMark mostra-o onde está. Ficheiros e pastas abertos a partir de fora do PerMark (um terminal, um duplo clique, Abrir com) nunca substituem o separador atual; abrem num novo separador ou numa nova janela.",
   "switcher.close": "Fechar",
   "switcher.closeOne": "Fechar {name}",
   "switcher.label": "Separadores desta janela",

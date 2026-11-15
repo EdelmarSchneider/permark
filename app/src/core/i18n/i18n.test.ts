@@ -359,3 +359,34 @@ describe("the ja table's style", () => {
     }
   });
 });
+
+// one word per thing across a table: a reader who meets two words looks for two things
+describe("the es table's words", () => {
+  it("calls the settings Configuraci\u00f3n and speaks to the reader as t\u00fa, never usted", async () => {
+    const result = await loadTable("es");
+    if (result.status !== "loaded") throw new Error(`es: ${result.status}`);
+    expect([result.table["header.settings"], result.table["settings.title"]]).toEqual([
+      "Configuraci\u00f3n",
+      "Configuraci\u00f3n",
+    ]);
+    // the usted forms the table once mixed in, the verbs as a clause's first word (mid-clause "guarde" can be a
+    // third-person subjunctive); one setting ("ajuste") and a preset ("preajuste") stay
+    const usted =
+      /\busted\b|\ble (permite|pide)\b|(^|[.,;:]\s*)(elija|guarde|reinicie|descargue|edite)\b/iu;
+    for (const [key, value] of Object.entries(result.table)) {
+      expect(value, `es ${key}`).not.toMatch(/\bajustes\b/iu);
+      expect(value, `es ${key}`).not.toMatch(usted);
+    }
+  });
+});
+
+describe("the zh-CN table's words", () => {
+  it("calls an AI agent \u667a\u80fd\u4f53 and a comment on a passage \u6279\u6ce8", async () => {
+    const result = await loadTable("zh-CN");
+    if (result.status !== "loaded") throw new Error(`zh-CN: ${result.status}`);
+    for (const [key, value] of Object.entries(result.table)) {
+      expect(value, `zh-CN ${key}`).not.toContain("\u4ee3\u7406");
+      expect(value, `zh-CN ${key}`).not.toContain("\u8bc4\u8bba");
+    }
+  });
+});
