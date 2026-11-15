@@ -331,7 +331,7 @@
     overflow-y: auto;
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--bg);
+    background: var(--pop);
     color: var(--text);
     box-shadow: var(--shadow-pop);
     font-size: var(--fs-ui-sm);

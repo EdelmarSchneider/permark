@@ -267,7 +267,7 @@
     padding: var(--sp-3);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-card);
-    background: var(--surface);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
     font-size: var(--fs-ui);
   }

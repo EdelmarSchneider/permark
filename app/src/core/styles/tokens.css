@@ -11,10 +11,12 @@
   --sp-6: 32px;
   --sp-7: 48px;
   --sp-8: 64px;
-  /* radius: small marks (badges, inline code) < controls < rows, chips, tabs < cards, code blocks, tables */
+  /* radius: small marks (badges, inline code) < controls < rows, chips, tabs < menus < cards, code blocks, tables */
   --radius-sm: 4px;
   --radius-control: 6px;
   --radius-surface: 8px;
+  /* menus (items inside at --radius-control, 6 px padding around them) */
+  --radius-menu: 10px;
   --radius-card: 12px;
   /* type */
   --font-ui:
@@ -151,6 +153,8 @@
   --zebra: #fafafc;
   --shadow-pop: 0 12px 32px rgb(27 29 55 / 0.14), 0 2px 6px rgb(27 29 55 / 0.08);
   --shadow-chip: 0 1px 2px rgb(27 29 55 / 0.08);
+  /* the primary button: a light top edge and a little depth in the accent's own hue */
+  --shadow-primary: inset 0 1px 0 rgb(255 255 255 / 0.2), 0 1px 2px rgb(49 46 129 / 0.3);
   --backdrop: rgb(27 29 35 / 0.28);
   /* behind a picture with transparency (the image viewer), and behind a video */
   --checker-a: #ffffff;
@@ -287,6 +291,8 @@
   /* a faint light ring: a dark menu still shows its edge on a dark page */
   --shadow-pop: 0 14px 36px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.04);
   --shadow-chip: 0 1px 2px rgb(0 0 0 / 0.4);
+  /* the light accent needs no glow: the top edge and a dark drop only */
+  --shadow-primary: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 1px 2px rgb(0 0 0 / 0.5);
   --backdrop: rgb(0 0 0 / 0.45);
   --checker-a: #23262e;
   --checker-b: #2e313a;

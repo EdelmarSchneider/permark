@@ -136,7 +136,7 @@
     padding: 4px 6px;
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--surface);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
     animation: pm-fade var(--dur-fast) var(--ease);
   }

@@ -2,6 +2,11 @@
   // The top of every window, one calm row: this window's tabs as chips, the Open button (folder, file, new project,
   // Notes, recent folders), the buttons plugins add (the Notes) and the settings. A window without tabs shows the app's name instead of the chips and the
   // Welcome page holds the actions.
+  import FileText from "@lucide/svelte/icons/file-text";
+  import Folder from "@lucide/svelte/icons/folder";
+  import FolderOpen from "@lucide/svelte/icons/folder-open";
+  import FolderPlus from "@lucide/svelte/icons/folder-plus";
+  import NotebookPen from "@lucide/svelte/icons/notebook-pen";
   import Plus from "@lucide/svelte/icons/plus";
   import Settings from "@lucide/svelte/icons/settings";
   import { keyHint } from "../commands/hint";
@@ -38,24 +43,33 @@
   const entries = $derived.by((): MenuEntry[] => {
     const hint = (id: string): string | undefined => keyHint(id) ?? undefined;
     const list: MenuEntry[] = [
+      // the Welcome's buttons' icons: one look per action
       {
         kind: "item",
         label: t("welcome.openFolder"),
+        icon: FolderOpen,
         hint: hint("app.openFolder"),
         run: () => void store.openFolder(),
       },
       {
         kind: "item",
         label: t("welcome.openFile"),
+        icon: FileText,
         hint: hint("app.openFile"),
         run: () => void store.openFile(),
       },
-      { kind: "item", label: t("welcome.newProject"), run: () => void newProject(store) },
+      {
+        kind: "item",
+        label: t("welcome.newProject"),
+        icon: FolderPlus,
+        run: () => void newProject(store),
+      },
     ];
     if (notes) {
       list.push({
         kind: "item",
         label: t("notes.title"),
+        icon: NotebookPen,
         // where they are already, else by the setting
         run: () => void store.openNotes(),
       });
@@ -67,6 +81,7 @@
         list.push({
           kind: "item",
           label: folder.name,
+          icon: Folder,
           detail: folder.path,
           // where it is already, else by the setting; Shift -> a new window
           run: (shift) => void store.open(folder.path, shift ? "newWindow" : undefined),
@@ -102,7 +117,7 @@
       aria-expanded={menu !== null}
       onclick={toggleMenu}
     >
-      <Plus size={16} strokeWidth={2} aria-hidden="true" />
+      <Plus size={16} strokeWidth={menu === null ? 1.8 : 2} aria-hidden="true" />
     </button>
   {:else}
     <span class="brand">{t("app.name")}</span>
@@ -125,7 +140,7 @@
     aria-expanded={ui.settings}
     onclick={() => ui.toggleSettings()}
   >
-    <Settings size={16} strokeWidth={1.9} aria-hidden="true" />
+    <Settings size={16} strokeWidth={ui.settings ? 2 : 1.8} aria-hidden="true" />
   </button>
 </div>
 {#if menu}
@@ -163,7 +178,7 @@
     height: 30px;
     padding: 0;
     border: 1px solid transparent;
-    border-radius: 9px;
+    border-radius: var(--radius-surface);
     background: transparent;
     color: var(--muted);
     cursor: pointer;
@@ -175,13 +190,6 @@
   .icon[aria-expanded="true"] {
     background: var(--hover);
     color: var(--text);
-  }
-  .open {
-    border: 1px dashed var(--border-strong);
-  }
-  .open:hover,
-  .open[aria-expanded="true"] {
-    border-style: solid;
   }
   @media (prefers-reduced-motion: reduce) {
     .icon {

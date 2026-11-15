@@ -46,7 +46,7 @@ input {
 ::-webkit-scrollbar-thumb {
   background-color: var(--faint);
   border: 3px solid transparent;
-  border-radius: 10px;
+  border-radius: 999px;
   background-clip: padding-box;
   min-height: 40px;
   min-width: 40px;

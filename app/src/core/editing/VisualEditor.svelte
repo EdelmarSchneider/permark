@@ -999,7 +999,7 @@
     padding: var(--sp-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--surface);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .host :global(.pm-inline__field) {
@@ -1106,7 +1106,7 @@
     width: calc(100% - 2 * var(--sp-4));
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--surface);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .popover--picker {
@@ -1136,10 +1136,10 @@
     min-width: 200px;
     max-height: 280px;
     overflow-y: auto;
-    padding: 4px;
+    padding: 6px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--bg);
+    border-radius: var(--radius-menu);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .slash button {

@@ -122,7 +122,7 @@
     padding: 3px 8px;
     border: 1px solid var(--git-deleted);
     border-radius: 4px;
-    background: var(--bg);
+    background: var(--pop);
     color: var(--git-deleted-text);
     font-size: var(--fs-ui-xs);
     box-shadow: var(--shadow-pop);

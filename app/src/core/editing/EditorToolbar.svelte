@@ -344,10 +344,10 @@
     display: flex;
     flex-direction: column;
     min-width: 180px;
-    padding: 4px;
+    padding: 6px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--bg);
+    border-radius: var(--radius-menu);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .menu button {

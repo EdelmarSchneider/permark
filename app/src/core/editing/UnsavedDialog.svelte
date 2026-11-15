@@ -69,7 +69,7 @@
     width: min(440px, 100%);
     padding: var(--sp-5);
     border-radius: var(--radius-card);
-    background: var(--bg);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
     outline: none;
   }
