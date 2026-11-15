@@ -15,6 +15,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 - **See and manage connected agents.** The agent panel of a project lists every connected agent: its name, when it started, the folder it works in and its last request. **Disconnect** ends one agent's access, with Undo; a disconnected agent stays out until it is started again, even after PerMark restarts. The status bar shows the agent's name, or how many agents are connected. When PerMark restarts, agents that are still running connect again by themselves. <!-- f: agent -->
 - An agent now knows which project it works with: `get_context` and `map` name it. An agent started outside a connected project is told which connected projects are below its folder. <!-- f: agent -->
+- In Edit, a table's menu can add a row above and a column to the left. <!-- f: editing, edit-mode -->
 
 ### Changed
 - **Notes are shared with agents one project at a time.** Share a note from the project's agent panel (**+ Add note**); only that project's agents can read it, and the note shows "Shared with" and the project. Notes that were shared with every project before are no longer shared, and PerMark tells you which ones once. <!-- f: agent, notes -->
