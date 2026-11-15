@@ -2142,7 +2142,8 @@ export default {
   "settings.openInTab": "새 탭",
   "settings.openInThis": "현재 탭",
   "settings.openInNew": "새 창",
-  "settings.openInHint": "이미 열려 있으면 PerMark가 열려 있는 위치를 보여 줍니다.",
+  "settings.openInHint":
+    "이미 열려 있으면 PerMark가 열려 있는 위치를 보여 줍니다. PerMark 밖(터미널, 더블클릭, 연결 프로그램)에서 연 파일과 폴더는 현재 탭을 바꾸지 않고 새 탭이나 새 창에서 열립니다.",
   "switcher.close": "닫기",
   "switcher.closeOne": "{name} 닫기",
   "switcher.label": "이 창의 탭",

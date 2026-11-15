@@ -2208,7 +2208,8 @@ export default {
   "settings.openInTab": "Una pestanya nova",
   "settings.openInThis": "Aquesta pestanya",
   "settings.openInNew": "Una finestra nova",
-  "settings.openInHint": "Si ja és oberta, el PerMark la mostra on és.",
+  "settings.openInHint":
+    "Si ja és oberta, el PerMark la mostra on és. Els fitxers i les carpetes que s'obren des de fora del PerMark (un terminal, un doble clic, Obre amb) mai no substitueixen la pestanya actual; s'obren en una pestanya o finestra nova.",
   "switcher.close": "Tanca",
   "switcher.closeOne": "Tanca {name}",
   "switcher.label": "Pestanyes d'aquesta finestra",

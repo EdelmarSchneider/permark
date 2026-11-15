@@ -2242,7 +2242,8 @@ export default {
   "settings.openInTab": "Un nouvel onglet",
   "settings.openInThis": "Cet onglet",
   "settings.openInNew": "Une nouvelle fenêtre",
-  "settings.openInHint": "Déjà ouvert : PerMark l'affiche là où il se trouve.",
+  "settings.openInHint":
+    "Déjà ouvert : PerMark l'affiche là où il se trouve. Les fichiers et dossiers ouverts depuis l'extérieur de PerMark (un terminal, un double-clic, Ouvrir avec) ne remplacent jamais l'onglet actuel ; ils s'ouvrent dans un nouvel onglet ou une nouvelle fenêtre.",
   "switcher.close": "Fermer",
   "switcher.closeOne": "Fermer {name}",
   "switcher.label": "Onglets de cette fenêtre",

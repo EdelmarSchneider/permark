@@ -2197,7 +2197,8 @@ export default {
   "settings.openInTab": "Nuova scheda",
   "settings.openInThis": "Questa scheda",
   "settings.openInNew": "Nuova finestra",
-  "settings.openInHint": "Già aperto: PerMark lo mostra dove si trova.",
+  "settings.openInHint":
+    "Già aperto: PerMark lo mostra dove si trova. File e cartelle aperti dall'esterno di PerMark (un terminale, un doppio clic, Apri con) non sostituiscono mai la scheda attuale; si aprono in una nuova scheda o finestra.",
   "switcher.close": "Chiudi",
   "switcher.closeOne": "Chiudi {name}",
   "switcher.label": "Schede di questa finestra",

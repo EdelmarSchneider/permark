@@ -2201,7 +2201,8 @@ export default {
   "settings.openInTab": "Novo separador",
   "settings.openInThis": "Este separador",
   "settings.openInNew": "Nova janela",
-  "settings.openInHint": "Se já estiver aberto, o PerMark mostra-o onde está.",
+  "settings.openInHint":
+    "Se já estiver aberto, o PerMark mostra-o onde está. Ficheiros e pastas abertos a partir de fora do PerMark (um terminal, um duplo clique, Abrir com) nunca substituem o separador atual; abrem num novo separador ou numa nova janela.",
   "switcher.close": "Fechar",
   "switcher.closeOne": "Fechar {name}",
   "switcher.label": "Separadores desta janela",

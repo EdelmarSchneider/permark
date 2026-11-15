@@ -2187,7 +2187,8 @@ export default {
   "settings.openInTab": "Nueva pestaña",
   "settings.openInThis": "Esta pestaña",
   "settings.openInNew": "Nueva ventana",
-  "settings.openInHint": "Ya abierto: PerMark lo muestra donde está.",
+  "settings.openInHint":
+    "Ya abierto: PerMark lo muestra donde está. Los archivos y carpetas abiertos desde fuera de PerMark (un terminal, un doble clic, Abrir con) nunca reemplazan la pestaña actual; se abren en una pestaña o ventana nueva.",
   "switcher.close": "Cerrar",
   "switcher.closeOne": "Cerrar {name}",
   "switcher.label": "Pestañas de esta ventana",

@@ -2190,7 +2190,8 @@ export default {
   "settings.openInTab": "Nova lapela",
   "settings.openInThis": "Esta lapela",
   "settings.openInNew": "Nova xanela",
-  "settings.openInHint": "Se xa está aberto, PerMark móstrao onde estea.",
+  "settings.openInHint":
+    "Se xa está aberto, PerMark móstrao onde estea. Os ficheiros e cartafoles abertos desde fóra de PerMark (un terminal, un dobre clic, Abrir con) nunca substitúen a lapela actual; ábrense nunha lapela ou xanela nova.",
   "switcher.close": "Pechar",
   "switcher.closeOne": "Pechar {name}",
   "switcher.label": "Lapelas desta xanela",

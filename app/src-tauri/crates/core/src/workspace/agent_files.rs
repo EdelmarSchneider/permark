@@ -5,7 +5,7 @@
 use crate::paths::{Vault, VaultPath};
 
 /// Names checked at the root, in this order; a trailing `/` = a folder. `SKILL.md` + skills live under `.claude/`.
-pub const AGENT_FILES: [&str; 9] = [
+pub const AGENT_FILES: [&str; 10] = [
     "AGENTS.md",
     "CLAUDE.md",
     "GEMINI.md",
@@ -14,6 +14,7 @@ pub const AGENT_FILES: [&str; 9] = [
     ".windsurfrules",
     ".claude/",
     ".cursor/",
+    ".opencode/",
     ".github/copilot-instructions.md",
 ];
 
@@ -92,10 +93,20 @@ mod tests {
     }
 
     #[test]
+    fn an_opencode_folder_counts() {
+        // opencode keeps its project agents, commands and plugins in `.opencode/`
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".opencode/agent")).unwrap();
+        write(dir.path(), "AGENTS.md");
+        assert_eq!(agent_files(&vault(dir.path())), ["AGENTS.md", ".opencode/"]);
+    }
+
+    #[test]
     fn the_wrong_kind_does_not_count() {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir_all(dir.path().join("AGENTS.md")).unwrap();
         write(dir.path(), ".claude");
+        write(dir.path(), ".opencode");
         fs::create_dir_all(dir.path().join(".github/copilot-instructions.md")).unwrap();
         assert_eq!(agent_files(&vault(dir.path())), Vec::<String>::new());
     }

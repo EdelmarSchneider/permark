@@ -23,6 +23,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Links whose target is missing are underlined only while the **Broken links** plugin is on, in View and in Edit. Turn the plugin off and the marks go away at once; a click on such a link still tells you the file is not there. <!-- f: links, broken-links -->
 - Removing a missing project from the list now keeps its Undo notice until you close it. <!-- f: projects -->
 - Spanish and Simplified Chinese use one consistent word for Settings, agents and comments. <!-- f: i18n -->
+- An `.opencode` folder (where the opencode coding agent keeps its project setup) now counts as a file for AI agents, like `AGENTS.md` or a `.claude` folder. In such a project the Live changes panel shows by itself below the outline, and PerMark offers once to share the project with your agent. <!-- f: live-feed, agent-connection -->
 
 ### Deprecated
 - This is the last version with a Windows `.msi` installer. If you installed PerMark from an `.msi`, uninstall it and install the `-setup.exe`: your settings and notes stay. Settings live in your user profile, and notes in their own folder (`Documents\PerMark Notes`, unless you chose another one). You can also get PerMark from the Microsoft Store instead; the Store version keeps settings of its own, so you choose them again there, and your notes and documents are still where they were. <!-- f: windows-installer -->
