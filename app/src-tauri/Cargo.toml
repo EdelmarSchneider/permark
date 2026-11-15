@@ -249,6 +249,22 @@ keyring = { version = "4.2", default-features = false, features = ["v1"] }
 webview2-com = "0.39.1"
 windows = { workspace = true, features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_WindowsAndMessaging"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { version = "2.0.2", features = ["v2_40"] }
+gtk = "0.18.2"
+javascriptcore-rs = "1.1.2"
+# the private folder the GTK file printer writes the PDF into
+tempfile.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.5"
+block2 = "0.6.2"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSError", "NSGeometry", "NSDictionary", "NSString", "NSURL", "NSValue"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "objc2-core-foundation", "NSPrintInfo", "NSPrintOperation", "NSResponder", "NSView", "NSWindow"] }
+objc2-web-kit = { version = "0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "WKWebView"] }
+# the private folder the print operation saves the PDF into
+tempfile.workspace = true
+
 [dev-dependencies]
 tempfile.workspace = true
 

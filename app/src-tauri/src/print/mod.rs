@@ -5,12 +5,20 @@
 //! script, and loads from the `pm-export` scheme, which serves only the one page waiting for that window, from memory
 //! (no file, no network, no size limit of a navigate-to-string).
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 mod unsupported;
 #[cfg(windows)]
 mod windows;
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+use linux as native;
+#[cfg(target_os = "macos")]
+use macos as native;
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 use unsupported as native;
 #[cfg(windows)]
 use windows as native;
@@ -18,8 +26,9 @@ use windows as native;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{mpsc, Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
 
 use permark_core::plugins::{
     output_path, write_output, HtmlPrinter, HtmlPrinterApi, Origin, OutputKind, PageSetup,
@@ -56,9 +65,15 @@ fn page_url() -> Option<Url> {
     Url::parse(&text).ok()
 }
 
-/// A page window may go to its page only.
+/// A page window may go to its page only. (Compared part by part: the origin of a custom scheme URL is opaque and
+/// equals no other.)
 pub fn is_page_url(url: &Url) -> bool {
-    page_url().is_some_and(|page| page.origin() == url.origin() && url.path() == "/")
+    page_url().is_some_and(|page| {
+        page.scheme() == url.scheme()
+            && page.host_str() == url.host_str()
+            && page.port_or_known_default() == url.port_or_known_default()
+            && url.path() == "/"
+    })
 }
 
 /// The pages waiting to be served, one per page window (app state, read by the scheme handler).
@@ -120,6 +135,61 @@ pub fn handle(
 
 fn failed(error: impl std::fmt::Display) -> PrintError {
     PrintError::Render(error.to_string())
+}
+
+/// Fonts and pictures of a loaded page given up on after this (data URIs: they decode, nothing is fetched).
+const SETTLE_TIMEOUT: Duration = Duration::from_secs(60);
+/// A long document (hundreds of pages, many pictures) still renders within this.
+const RENDER_TIMEOUT: Duration = Duration::from_secs(600);
+/// How long the system print dialog may stay open.
+const PRINT_TIMEOUT: Duration = Duration::from_secs(3600);
+const POLL: Duration = Duration::from_millis(50);
+
+/// Every font face loaded and every picture decoded (the page runs no script of its own; this runs as the host's).
+const SETTLED: &str = "document.readyState === 'complete' && document.fonts.status === 'loaded' \
+                       && Array.from(document.images).every((i) => i.complete)";
+
+/// What the web view sent back from its own thread: a value | why it failed.
+type Answer<T> = Result<T, String>;
+
+/// Runs `start` on the UI thread with the page's web view; its answer comes through the channel it is given.
+fn on_webview<T: Send + 'static, E: std::fmt::Display>(
+    sheet: &Sheet,
+    start: impl FnOnce(&tauri::webview::PlatformWebview, Sender<Answer<T>>) -> Result<(), E>
+        + Send
+        + 'static,
+) -> Result<Receiver<Answer<T>>, PrintError> {
+    let (tx, rx) = mpsc::channel();
+    sheet
+        .window()?
+        .with_webview(move |webview| {
+            if let Err(error) = start(&webview, tx.clone()) {
+                let _ = tx.send(Err(error.to_string()));
+            }
+        })
+        .map_err(failed)?;
+    Ok(rx)
+}
+
+fn wait<T>(rx: &Receiver<Answer<T>>, timeout: Duration) -> Result<T, PrintError> {
+    rx.recv_timeout(timeout)
+        .map_err(|_| failed("the web view did not answer"))?
+        .map_err(PrintError::Render)
+}
+
+/// Polls `ready` until it says yes, at most `timeout`.
+fn until(
+    timeout: Duration,
+    mut ready: impl FnMut() -> Result<bool, PrintError>,
+) -> Result<(), PrintError> {
+    let deadline = Instant::now() + timeout;
+    while !ready()? {
+        if Instant::now() >= deadline {
+            return Err(failed("the page did not settle"));
+        }
+        std::thread::sleep(POLL);
+    }
+    Ok(())
 }
 
 /// A page loaded in its own hidden window; dropping it closes the window and forgets the page.

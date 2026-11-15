@@ -3309,7 +3309,14 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 name = "permark"
 version = "0.12.0"
 dependencies = [
+ "block2",
+ "gtk",
+ "javascriptcore-rs",
  "keyring",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-web-kit",
  "permark-core",
  "permark-plugin-agent",
  "permark-plugin-broken-links",
@@ -3361,6 +3368,7 @@ dependencies = [
  "thiserror 2.0.21",
  "ts-rs",
  "ureq",
+ "webkit2gtk",
  "webview2-com",
  "windows",
 ]

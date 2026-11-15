@@ -4,8 +4,7 @@
 // inside `with_webview`, on interfaces the web view handed out.
 #![allow(unsafe_code)]
 
-use std::sync::mpsc::{self, Receiver, Sender};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use permark_core::plugins::{PageSetup, PrintCapabilities, PrintError};
 use tauri::webview::PlatformWebview;
@@ -17,7 +16,9 @@ use webview2_com::{ExecuteScriptCompletedHandler, PrintToPdfStreamCompletedHandl
 use windows::core::{Interface, HSTRING};
 use windows::Win32::System::Com::IStream;
 
-use super::{failed, Sheet};
+use super::{
+    on_webview, until, wait, Sheet, PRINT_TIMEOUT, RENDER_TIMEOUT, SETTLED, SETTLE_TIMEOUT,
+};
 
 pub const CAPABILITIES: PrintCapabilities = PrintCapabilities {
     pdf: true,
@@ -25,54 +26,16 @@ pub const CAPABILITIES: PrintCapabilities = PrintCapabilities {
     page_numbers: true,
 };
 
-/// Fonts and pictures of a loaded page given up on after this (data URIs: they decode, nothing is fetched).
-const SETTLE_TIMEOUT: Duration = Duration::from_secs(60);
-/// A long document (hundreds of pages, many pictures) still renders within this.
-const RENDER_TIMEOUT: Duration = Duration::from_secs(600);
-/// How long the system print dialog may stay open.
-const PRINT_TIMEOUT: Duration = Duration::from_secs(3600);
 /// After the dialog closed: time for the web view to hand the job to the spooler before its window goes.
 const SPOOL_GRACE: Duration = Duration::from_secs(5);
-const POLL: Duration = Duration::from_millis(50);
-
 const MM_PER_INCH: f64 = 25.4;
 
-/// Every font face loaded and every picture decoded (the page runs no script of its own; this runs as the host's).
-const SETTLED: &str = "document.readyState === 'complete' && document.fonts.status === 'loaded' \
-                       && Array.from(document.images).every((i) => i.complete)";
 /// Any script: while the print dialog is up the page answers none (it stays in print), the first answer after it
 /// means the dialog closed. (A page event like `afterprint` never runs: page scripts are off.)
 const ANSWER: &str = "true";
 
-type Answer<T> = Result<T, String>;
-
 fn core(webview: &PlatformWebview) -> windows::core::Result<ICoreWebView2> {
     unsafe { webview.controller().CoreWebView2() }
-}
-
-/// Runs `start` on the UI thread with the web view; its answer comes through the channel it is given.
-fn on_webview<T: Send + 'static>(
-    sheet: &Sheet,
-    start: impl FnOnce(&PlatformWebview, Sender<Answer<T>>) -> windows::core::Result<()>
-        + Send
-        + 'static,
-) -> Result<Receiver<Answer<T>>, PrintError> {
-    let (tx, rx) = mpsc::channel();
-    sheet
-        .window()?
-        .with_webview(move |webview| {
-            if let Err(error) = start(&webview, tx.clone()) {
-                let _ = tx.send(Err(error.to_string()));
-            }
-        })
-        .map_err(failed)?;
-    Ok(rx)
-}
-
-fn wait<T>(rx: &Receiver<Answer<T>>, timeout: Duration) -> Result<T, PrintError> {
-    rx.recv_timeout(timeout)
-        .map_err(|_| failed("the web view did not answer"))?
-        .map_err(PrintError::Render)
 }
 
 /// The JSON value of `script` run in the page, waited for at most `timeout`.
@@ -87,21 +50,11 @@ fn evaluate(sheet: &Sheet, script: &'static str, timeout: Duration) -> Result<St
     wait(&rx, timeout)
 }
 
-/// Waits until `script` answers `true` (polled), at most `timeout` (one answer may take that long too).
-fn until(sheet: &Sheet, script: &'static str, timeout: Duration) -> Result<(), PrintError> {
-    let deadline = Instant::now() + timeout;
-    while evaluate(sheet, script, timeout)? != "true" {
-        if Instant::now() >= deadline {
-            return Err(failed("the page did not settle"));
-        }
-        std::thread::sleep(POLL);
-    }
-    Ok(())
-}
-
 /// The loaded page's fonts and pictures are ready.
 pub(super) fn settle(sheet: &Sheet) -> Result<(), PrintError> {
-    until(sheet, SETTLED, SETTLE_TIMEOUT)
+    until(SETTLE_TIMEOUT, || {
+        Ok(evaluate(sheet, SETTLED, SETTLE_TIMEOUT)? == "true")
+    })
 }
 
 /// The page as a PDF of `setup`'s paper. Margins are the page's (`@page`, where the page-number boxes live): the
@@ -162,7 +115,7 @@ pub(super) fn print(sheet: &Sheet, _setup: PageSetup) -> Result<(), PrintError> 
         let core: ICoreWebView2_16 = core(webview)?.cast()?;
         core.ShowPrintUI(COREWEBVIEW2_PRINT_DIALOG_KIND_SYSTEM)?;
         let _ = tx.send(Ok(()));
-        Ok(())
+        windows::core::Result::Ok(())
     })?;
     wait(&rx, SETTLE_TIMEOUT)?;
     evaluate(sheet, ANSWER, PRINT_TIMEOUT)?;

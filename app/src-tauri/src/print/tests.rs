@@ -16,6 +16,14 @@ fn a_page_window_goes_to_its_page_only() {
     assert!(other(&format!("{page}other")));
     assert!(other("http://tauri.localhost/"));
     assert!(other("data:text/html,<p>x</p>"));
+    // both spellings of the scheme (web views differ): only the one this system uses is the page
+    let custom = format!("{SCHEME}://localhost/");
+    let http = format!("http://{SCHEME}.localhost/");
+    assert_ne!(
+        is_page_url(&Url::parse(&custom).unwrap()),
+        is_page_url(&Url::parse(&http).unwrap())
+    );
+    assert!(other(&format!("{SCHEME}://elsewhere/")));
 }
 
 #[test]
@@ -36,11 +44,11 @@ fn each_page_is_served_to_its_own_window_until_forgotten() {
 }
 
 /// A 1 x 1 PNG, drawn large.
-#[cfg(all(windows, feature = "webview-tests"))]
+#[cfg(all(any(windows, target_os = "linux"), feature = "webview-tests"))]
 const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
 
 /// Three A5 landscape pages: a picture, an inline SVG, a page counter in the bottom margin.
-#[cfg(all(windows, feature = "webview-tests"))]
+#[cfg(all(any(windows, target_os = "linux"), feature = "webview-tests"))]
 fn sample() -> String {
     let filler = "<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore \
                   et dolore magna aliqua.</p>"
@@ -117,13 +125,51 @@ fn cancel_print_dialog(before: &[(isize, String)]) -> bool {
     false
 }
 
+/// Closes the print dialog the next print call shows; whether one showed.
+#[cfg(all(windows, feature = "webview-tests"))]
+fn dialog_closer(_handle: &AppHandle) -> std::thread::JoinHandle<bool> {
+    let before = top_windows();
+    std::thread::spawn(move || cancel_print_dialog(&before))
+}
+
+/// Closes the print dialog the next print call shows; whether one showed. The dialog runs its own loop on the UI
+/// thread, which serves `GLib` timers but no app task: a timer is set before the dialog opens and answers Cancel.
+#[cfg(all(target_os = "linux", feature = "webview-tests"))]
+fn dialog_closer(handle: &AppHandle) -> std::thread::JoinHandle<bool> {
+    use gtk::glib::ControlFlow;
+    use gtk::prelude::{Cast, DialogExt, ObjectExt, WidgetExt};
+
+    let (tx, rx) = mpsc::channel();
+    let _ = handle.run_on_main_thread(move || {
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        gtk::glib::timeout_add_local(Duration::from_millis(500), move || {
+            let dialog = gtk::Window::list_toplevels()
+                .into_iter()
+                .filter(|w| w.is_visible() && w.type_().name() == "GtkPrintUnixDialog")
+                .find_map(|w| w.downcast::<gtk::Dialog>().ok());
+            if let Some(dialog) = dialog {
+                dialog.response(gtk::ResponseType::Cancel);
+                let _ = tx.send(true);
+                return ControlFlow::Break;
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = tx.send(false);
+                return ControlFlow::Break;
+            }
+            ControlFlow::Continue
+        });
+    });
+    std::thread::spawn(move || rx.recv_timeout(Duration::from_secs(30)).unwrap_or(false))
+}
+
 /// The real web view (one app per process: both steps in one test).
-/// - PDF: a hidden page window renders three A5 landscape pages with a picture, an SVG and page numbers.
+/// - PDF: a hidden page window renders three A5 landscape pages with a picture, an SVG and (where the web view draws
+///   them) page numbers.
 /// - Print: the system print dialog shows for a hidden page window; closing it ends the print call.
 ///
 /// Run (from `app/src-tauri`): `cargo test --lib --features webview-tests print::tests -- --ignored --nocapture`;
 /// `PERMARK_PRINT_OUT=<file.pdf>` keeps the PDF to look at. Puts a print dialog on screen for a moment.
-#[cfg(all(windows, feature = "webview-tests"))]
+#[cfg(all(any(windows, target_os = "linux"), feature = "webview-tests"))]
 #[test]
 #[ignore = "opens a real system web view and the print dialog"]
 fn a_hidden_page_window_renders_a_paged_pdf_and_prints() {
@@ -154,9 +200,16 @@ fn a_hidden_page_window_renders_a_paged_pdf_and_prints() {
         let loaded = started.elapsed();
         let bytes = sheet.and_then(|sheet| native::pdf(&sheet, setup));
         let pdf = (bytes, loaded, started.elapsed());
+        println!(
+            "PDF step: {:?} in {:?}",
+            pdf.0.as_ref().map(Vec::len),
+            pdf.2
+        );
+        if let (Ok(bytes), Some(out)) = (&pdf.0, std::env::var_os("PERMARK_PRINT_OUT")) {
+            let _ = std::fs::write(out, bytes);
+        }
         // print: the dialog the page window opens is closed again from here
-        let before = top_windows();
-        let closer = std::thread::spawn(move || cancel_print_dialog(&before));
+        let closer = dialog_closer(&worker);
         let started = Instant::now();
         let printed = Sheet::open(&worker, sample(), Some(data_dir))
             .and_then(|sheet| native::print(&sheet, setup));
@@ -186,19 +239,16 @@ fn a_hidden_page_window_renders_a_paged_pdf_and_prints() {
         "loaded in {loaded:?}, PDF of {} bytes in {total:?}; print dialog shown: {shown}, print call {print_time:?}",
         bytes.len()
     );
-    if let Some(out) = std::env::var_os("PERMARK_PRINT_OUT") {
-        std::fs::write(out, &bytes).unwrap();
-    }
     assert!(bytes.starts_with(b"%PDF-"));
     let text = String::from_utf8_lossy(&bytes);
     let pages = text.matches("/Type /Page").count() - text.matches("/Type /Pages").count();
     assert_eq!(pages, 3, "three pages");
-    // A5 landscape: 595 x 420 points
-    assert_eq!(
-        text.matches("/MediaBox [0 0 594.95996 420]").count(),
-        3,
-        "A5 landscape pages"
-    );
+    // A5 landscape: 595 x 420 points, as each web view writes it
+    #[cfg(windows)]
+    let a5_landscape = "/MediaBox [0 0 594.95996 420]";
+    #[cfg(target_os = "linux")]
+    let a5_landscape = "/MediaBox [0 0 595 420]";
+    assert_eq!(text.matches(a5_landscape).count(), 3, "A5 landscape pages");
     assert!(shown, "the print dialog showed");
     printed.unwrap();
 }

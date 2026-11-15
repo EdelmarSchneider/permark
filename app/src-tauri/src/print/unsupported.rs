@@ -1,5 +1,5 @@
-//! Systems whose web view backend is not built yet (`WebKitGTK`, `WKWebView`): PDF and printing are not available
-//! (each call answers `Unsupported`; the export plugin shows that).
+//! Systems without a print backend here (neither `WebView2`, `WebKitGTK` on Linux nor `WKWebView` on macOS): PDF and
+//! printing are not available (each call answers `Unsupported`; the export plugin shows that).
 
 use permark_core::plugins::{PageSetup, PrintCapabilities, PrintError};
 
