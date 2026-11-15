@@ -159,6 +159,22 @@ describe("the settings page", () => {
     expect(ui.settingsPage.status).toBe("closed");
   });
 
+  it("opened from the quick settings (gone by then): closing it puts the keyboard on the gear", async () => {
+    await open();
+    const gear = document.createElement("button");
+    gear.setAttribute("data-settings-trigger", "");
+    const allSettings = document.createElement("button");
+    document.body.append(gear, allSettings);
+    allSettings.focus();
+    mountPage("reading");
+    // the popover holding "All settings" closes as the page opens
+    allSettings.remove();
+    press(target.querySelector<HTMLElement>(".page")!, "Escape");
+    await unmount(component!);
+    component = null;
+    expect(document.activeElement).toBe(gear);
+  });
+
   it("the section list is a keyboard list: arrows move the section and the focus", async () => {
     await open();
     mountPage("reading");

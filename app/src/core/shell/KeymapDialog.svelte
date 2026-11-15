@@ -116,7 +116,12 @@
     aria-modal="true"
     aria-labelledby="keymap-title"
     tabindex="-1"
-    use:dialogFocus={{ initial: "[data-initial]", onEscape }}
+    use:dialogFocus={{
+      initial: "[data-initial]",
+      onEscape,
+      // Opened from the quick settings, which close as it opens: the gear is the way back.
+      fallback: () => document.querySelector<HTMLElement>("[data-settings-trigger]"),
+    }}
   >
     <header>
       <h2 id="keymap-title">{t("keymap.title")}</h2>

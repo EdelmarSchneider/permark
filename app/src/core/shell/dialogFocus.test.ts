@@ -187,4 +187,21 @@ describe("focus on close", () => {
     expect(() => second.close()).not.toThrow();
     expect(document.activeElement).not.toBe(opener);
   });
+
+  it("an opener that is gone (a popover that closed): the fallback takes it", () => {
+    const gear = document.createElement("button");
+    document.body.append(gear);
+    const { close } = open(THREE, { fallback: () => gear });
+    opener.remove();
+    close();
+    expect(document.activeElement).toBe(gear);
+  });
+
+  it("an opener still on the page wins over the fallback", () => {
+    const gear = document.createElement("button");
+    document.body.append(gear);
+    const { close } = open(THREE, { fallback: () => gear });
+    close();
+    expect(document.activeElement).toBe(opener);
+  });
 });

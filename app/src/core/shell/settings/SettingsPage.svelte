@@ -78,6 +78,11 @@
     );
   }
 
+  /** "All settings" sits in the quick settings, which close as the page opens: the gear is the way back. */
+  function gear(): HTMLElement | null {
+    return document.querySelector<HTMLElement>("[data-settings-trigger]");
+  }
+
   function onnavkey(e: KeyboardEvent): void {
     const step =
       e.key === "ArrowDown" || e.key === "ArrowRight"
@@ -105,7 +110,7 @@
     aria-label={t("settings.title")}
     tabindex="-1"
     bind:this={page}
-    use:dialogFocus={{ initial: entry, onEscape }}
+    use:dialogFocus={{ initial: entry, onEscape, fallback: gear }}
   >
     <header class="bar">
       <h2>{t("settings.title")}</h2>
