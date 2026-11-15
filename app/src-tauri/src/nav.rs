@@ -4,6 +4,15 @@
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Url, Wry};
 
+/// The dev server that serves the UI in debug builds; release builds have none.
+pub fn dev_url() -> Option<Url> {
+    if cfg!(debug_assertions) {
+        Url::parse("http://localhost:1420").ok()
+    } else {
+        None
+    }
+}
+
 /// The app's own page: bundled UI (`tauri://localhost`, `http(s)://tauri.localhost`) or the dev server (debug).
 pub fn is_app_url(url: &Url, dev_url: Option<&Url>) -> bool {
     match url.scheme() {

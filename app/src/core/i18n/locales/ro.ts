@@ -2974,6 +2974,7 @@ export default {
   "export.pdfFailed": "PDF-ul nu a putut fi creat. Folosește Tipărește și alege Salvează ca PDF.",
   "export.printFailed": "Fereastra de tipărire nu a putut fi deschisă.",
   "export.isSource": "Documentul însuși nu poate fi înlocuit. Alege alt nume.",
+  "export.exists": "Există deja un fișier numit {name}. Alege alt nume.",
   "export.unsupported": "PDF-ul și tipărirea nu sunt disponibile pe acest sistem.",
   "export.buildFailed": "Documentul nu a putut fi pregătit.",
   "export.notMarkdown": "Doar documentele Markdown pot fi salvate ca PDF sau HTML.",

@@ -2839,6 +2839,7 @@ export default {
   "export.pdfFailed": "Impossibile creare il PDF. Usa Stampa e scegli Salva come PDF.",
   "export.printFailed": "Impossibile aprire la finestra di stampa.",
   "export.isSource": "Il documento stesso non può essere sostituito. Scegli un altro nome.",
+  "export.exists": "Esiste già un file chiamato {name}. Scegli un altro nome.",
   "export.unsupported": "PDF e stampa non sono disponibili su questo sistema.",
   "export.buildFailed": "Impossibile preparare il documento.",
   "export.notMarkdown": "Solo i documenti Markdown possono essere salvati come PDF o HTML.",

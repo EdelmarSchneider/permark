@@ -2823,6 +2823,7 @@ export default {
   "export.pdfFailed": "No se pudo crear el PDF. Usa Imprimir y elige Guardar como PDF.",
   "export.printFailed": "No se pudo abrir el cuadro de impresión.",
   "export.isSource": "No se puede reemplazar el propio documento. Elige otro nombre.",
+  "export.exists": "Ya existe un archivo llamado {name}. Elige otro nombre.",
   "export.unsupported": "El PDF y la impresión no están disponibles en este sistema.",
   "export.buildFailed": "No se pudo preparar el documento.",
   "export.notMarkdown": "Solo los documentos Markdown se pueden guardar como PDF o HTML.",

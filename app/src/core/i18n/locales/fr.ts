@@ -2893,6 +2893,7 @@ export default {
     "Impossible de créer le PDF. Utilisez Imprimer et choisissez Enregistrer en PDF.",
   "export.printFailed": "Impossible d'ouvrir la fenêtre d'impression.",
   "export.isSource": "Le document lui-même ne peut pas être remplacé. Choisissez un autre nom.",
+  "export.exists": "Un fichier nommé {name} existe déjà. Choisissez un autre nom.",
   "export.unsupported": "Le PDF et l'impression ne sont pas disponibles sur ce système.",
   "export.buildFailed": "Impossible de préparer le document.",
   "export.notMarkdown": "Seuls les documents Markdown peuvent être enregistrés en PDF ou en HTML.",

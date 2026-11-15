@@ -203,6 +203,36 @@ describe("the export flow", () => {
     expect(store.state.status).toBe("closed");
   });
 
+  it("Cancel of a build that never ends frees the flow: the next run works", async () => {
+    let hang = true;
+    const { store, notes: shown } = setup({
+      build: () => (hang ? new Promise<ExportOutcome>(() => {}) : Promise.resolve(done())),
+    });
+    const run = store.start("html", DOC);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(store.state.status).toBe("running");
+    store.cancel();
+    await run;
+    expect(store.state.status).toBe("closed");
+    expect(last(shown)?.text).toBe("Canceled.");
+    hang = false;
+    await store.start("html", DOC);
+    expect(probe.calls).toEqual(["cancel", "saveHtml"]);
+    expect(last(shown)?.text).toBe("Saved guide.html.");
+  });
+
+  it("a build that throws ends the run: the next run works", async () => {
+    let fail = true;
+    const { store, notes: shown } = setup({
+      build: () => (fail ? Promise.reject(new Error("boom")) : Promise.resolve(done())),
+    });
+    await store.start("html", DOC);
+    expect(store.state.status).toBe("closed");
+    fail = false;
+    await store.start("html", DOC);
+    expect(last(shown)?.text).toBe("Saved guide.html.");
+  });
+
   it("left-out items are counted in the Saved notice", async () => {
     const { store, notes: shown } = setup({ build: () => Promise.resolve(done(2)) });
     await store.start("html", DOC);
@@ -218,6 +248,10 @@ describe("the export flow", () => {
       [
         new MockPluginError("conflict", null, "source"),
         "The document itself can't be replaced. Choose another name.",
+      ],
+      [
+        new MockPluginError("conflict", "C:\\x\\guide.html", "exists"),
+        "A file named guide.html already exists. Choose another name.",
       ],
       [
         new MockPluginError("unsupported", "print"),

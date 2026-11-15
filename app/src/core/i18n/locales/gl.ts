@@ -2825,6 +2825,7 @@ export default {
   "export.pdfFailed": "Non se puido crear o PDF. Usa Imprimir e escolle Gardar como PDF.",
   "export.printFailed": "Non se puido abrir o diálogo de impresión.",
   "export.isSource": "Non se pode substituír o propio documento. Escolle outro nome.",
+  "export.exists": "Xa existe un ficheiro chamado {name}. Escolle outro nome.",
   "export.unsupported": "O PDF e a impresión non están dispoñibles neste sistema.",
   "export.buildFailed": "Non se puido preparar o documento.",
   "export.notMarkdown": "Só os documentos Markdown se poden gardar como PDF ou HTML.",

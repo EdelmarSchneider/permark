@@ -64,6 +64,7 @@ const SETTLE_MS = 60_000;
 /** The page counts as drawn once nothing in it changed for this long (and no embed says it is busy). */
 const QUIET_MS = 150;
 const POLL_MS = 30;
+const DECODE_MS = 10_000;
 /** Embeds that say they are still drawing: a diagram's figure, a code block waiting for its colors. */
 const BUSY = ".figure.is-pending, [aria-busy='true']";
 const KEPT_LINK = /^(?:https?:|mailto:|#)/i;
@@ -324,14 +325,15 @@ function standIn(img: Element, name: string): void {
   img.replaceWith(document.createTextNode(img.getAttribute("alt") || name));
 }
 
-async function decodes(img: HTMLImageElement): Promise<boolean> {
+/** Whether the web view can draw the picture; one that takes longer than `DECODE_MS` counts as unreadable. */
+async function decodes(img: HTMLImageElement, signal: AbortSignal | undefined): Promise<boolean> {
   if (typeof img.decode !== "function") return true;
-  try {
-    await img.decode();
-    return true;
-  } catch {
-    return false;
-  }
+  let ok = false;
+  const decoded = img.decode().then(() => {
+    ok = true;
+  });
+  await within(decoded, Date.now() + DECODE_MS, signal);
+  return ok;
 }
 
 async function inlinePictures(
@@ -350,8 +352,12 @@ async function inlinePictures(
         ? await fetchDataUri(src, { signal })
         : ({ status: "failed" } as const);
     if (got.status === "ok") {
+      // a lazy picture off screen (this copy is never on screen) is never loaded: its decode would never settle
+      img.setAttribute("loading", "eager");
       img.setAttribute("src", got.uri);
-      if (await decodes(img)) continue;
+      const drawn = await decodes(img, signal);
+      signal?.throwIfAborted();
+      if (drawn) continue;
     }
     standIn(img, name);
     notes.push({ kind: "picture", name });

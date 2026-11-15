@@ -207,6 +207,8 @@ pub enum PrintError {
     Unsupported,
     #[error("the chosen file is not a usable place: {0}")]
     BadTarget(String),
+    #[error("{0} already exists and was not chosen to be replaced")]
+    Taken(PathBuf),
     #[error("the chosen file is the document itself")]
     IsSource,
     #[error("nothing written yet")]
@@ -229,6 +231,9 @@ impl From<PrintError> for IpcError {
         match error {
             PrintError::Unsupported => IpcError::new(ErrorKind::Unsupported).subject("print"),
             PrintError::BadTarget(path) => IpcError::new(ErrorKind::InvalidPath).subject(path),
+            PrintError::Taken(path) => IpcError::new(ErrorKind::Conflict)
+                .subject(path.display().to_string())
+                .detail("exists"),
             PrintError::IsSource => IpcError::new(ErrorKind::Conflict).detail("source"),
             PrintError::NothingWritten => IpcError::new(ErrorKind::NotFound).subject("output"),
             PrintError::Gone(path) => {
@@ -323,9 +328,12 @@ pub fn output_path(chosen: &Path, kind: OutputKind, source: &Path) -> Result<Pat
         name.push(kind.ext());
         PathBuf::from(name)
     };
-    // an added extension names a file the dialog never asked to replace: refused rather than overwritten unasked
-    if !path.parent().is_some_and(Path::is_dir) || path.is_dir() || (!has_ext && path.exists()) {
+    if !path.parent().is_some_and(Path::is_dir) || path.is_dir() {
         return Err(PrintError::BadTarget(path.display().to_string()));
+    }
+    // an added extension names a file the dialog never asked to replace: refused rather than overwritten unasked
+    if !has_ext && path.exists() {
+        return Err(PrintError::Taken(path));
     }
     let same = match fsx::same_file(&path, source) {
         SameFile::Yes => true,
@@ -449,7 +457,12 @@ mod tests {
         std::fs::write(&taken, b"kept").unwrap();
         // the dialog confirmed "report"; "report.pdf" exists and was never offered for replacing
         let refused = output_path(&dir.path().join("report"), OutputKind::Pdf, &source);
-        assert!(matches!(refused, Err(PrintError::BadTarget(_))));
+        assert!(matches!(&refused, Err(PrintError::Taken(path)) if *path == taken));
+        // its own reason over IPC: the window can name the file and ask for another name
+        let error = IpcError::from(refused.unwrap_err());
+        assert_eq!(error.kind, ErrorKind::Conflict);
+        assert_eq!(error.detail.as_deref(), Some("exists"));
+        assert_eq!(error.subject, Some(taken.display().to_string()));
         assert_eq!(std::fs::read(&taken).unwrap(), b"kept");
         // chosen with its extension: the dialog asked, the person agreed
         assert_eq!(

@@ -2839,6 +2839,7 @@ export default {
     "PDF を作成できませんでした。印刷を選び、「PDF として保存」を選んでください。",
   "export.printFailed": "印刷ダイアログを開けませんでした。",
   "export.isSource": "ドキュメント自体は置き換えられません。別の名前を選んでください。",
+  "export.exists": "{name} という名前のファイルはすでにあります。別の名前を選んでください。",
   "export.unsupported": "このシステムでは PDF と印刷を使用できません。",
   "export.buildFailed": "ドキュメントを準備できませんでした。",
   "export.notMarkdown": "PDF または HTML として保存できるのは Markdown ドキュメントだけです。",

@@ -58,9 +58,16 @@ export function pageRule(page: PageBox, numbers: boolean, nativeMargins = false)
   ].join("\n");
 }
 
+/**
+ * The rule of the dark theme's tokens. A built app holds its styles minified: the attribute's value may lose its
+ * quotes (`[data-theme=dark]{`), so quoted, single-quoted and bare values all count. Only a rule of its own counts:
+ * `:not([data-theme=dark]){` ends in `)`, never in `]`.
+ */
+const DARK_RULE = /\[data-theme\s*=\s*(["']?)dark\1\s*\]\s*\{([^}]*)\}/;
+
 /** The dark theme's tokens on the root when the reader prefers dark (the app scopes them by `data-theme`). */
 export function darkPreference(css: string): string {
-  const body = /\[data-theme="dark"\]\s*\{([^}]*)\}/.exec(css)?.[1];
+  const body = DARK_RULE.exec(css)?.[2];
   return body === undefined ? "" : `@media (prefers-color-scheme: dark) {\n:root {${body}}\n}`;
 }
 

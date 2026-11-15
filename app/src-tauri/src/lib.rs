@@ -85,13 +85,8 @@ pub fn run(request: OpenRequest) -> Result<(), StartError> {
         Instance::Forwarded => return Ok(()),
         Instance::Primary(listening) => listening,
     };
-    let dev_url = if cfg!(debug_assertions) {
-        tauri::Url::parse("http://localhost:1420").ok()
-    } else {
-        None
-    };
     let app = tauri::Builder::default()
-        .plugin(nav::guard(dev_url))
+        .plugin(nav::guard(nav::dev_url()))
         .plugin(tauri_plugin_dialog::init())
         // used from Rust only (validated paths): no permission is granted to the windows
         .plugin(tauri_plugin_opener::init())

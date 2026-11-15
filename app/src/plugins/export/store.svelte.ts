@@ -61,6 +61,9 @@ export type ExportDeps = {
 
 const KEY = "export";
 
+/** A PDF | print run's paper: the chosen setup, its page box, what the web view can do. */
+type Paper = { setup: PageSetup; page: PageBox; capabilities: PrintCapabilities };
+
 /** The builder is loaded on first use: the plugin stays dormant until the person asks. */
 async function buildWithPage(path: string, options: ExportOptions): Promise<ExportOutcome> {
   const { buildExport } = await import("./builder");
@@ -100,8 +103,14 @@ function progressKey(entry: Entry): MessageKey {
 /** Why a save | print failed, in words that say what to do. */
 function failureText(entry: Entry, path: string, error: ApiError): string {
   if (error.kind !== "backend") return apiErrorText(error);
-  const { kind, detail } = error.error;
+  const { kind, subject, detail } = error.error;
   if (kind === "conflict" && detail === "source") return t("export.isSource");
+  // the extension added to the chosen name hit a file the Save dialog never offered to replace
+  if (kind === "conflict" && detail === "exists") {
+    return t("export.exists", {
+      name: subject === null ? outputName(path, entry) : fileName(subject),
+    });
+  }
   if (kind === "unsupported") return t("export.unsupported");
   if (entry === "print") return t("export.printFailed");
   if (entry === "pdf" && kind === "internal") return t("export.pdfFailed");
@@ -201,15 +210,7 @@ export class ExportStore {
     this.#deps.notices.dismissKey(KEY);
   }
 
-  async #execute(
-    entry: Entry,
-    path: string,
-    paper: {
-      setup: PageSetup;
-      page: PageBox;
-      capabilities: PrintCapabilities;
-    } | null,
-  ): Promise<void> {
+  async #execute(entry: Entry, path: string, paper: Paper | null): Promise<void> {
     const controller = new AbortController();
     const back = this.state;
     this.state = { status: "running", entry, path };
@@ -224,9 +225,34 @@ export class ExportStore {
       if (text !== null) this.#deps.notices.notifyKeyed(KEY, text, ...actions);
     };
 
+    try {
+      await this.#steps(entry, path, paper, back, controller, done);
+    } finally {
+      // whatever a step did (threw, never answered Cancel), the flow is free for the next run
+      if (this.#run?.controller === controller) {
+        this.#endRun();
+        this.state = { status: "closed" };
+      }
+    }
+  }
+
+  async #steps(
+    entry: Entry,
+    path: string,
+    paper: Paper | null,
+    back: ExportState,
+    controller: AbortController,
+    done: (text: string | null, ...actions: NoticeAction[]) => void,
+  ): Promise<void> {
+    // Cancel ends the build at once, even one stuck where it cannot see the signal
+    const stopped = new Promise<ExportOutcome>((resolve) => {
+      controller.signal.addEventListener("abort", () => resolve({ status: "cancelled" }), {
+        once: true,
+      });
+    });
     let outcome: ExportOutcome;
     try {
-      outcome = await this.#deps.build(path, {
+      const built = this.#deps.build(path, {
         target: paper === null ? "html" : "paper",
         ...(paper === null ? {} : { page: paper.page }),
         pageNumbers: paper !== null && paper.setup.pageNumbers && paper.capabilities.pageNumbers,
@@ -235,6 +261,7 @@ export class ExportStore {
         words: words(),
         signal: controller.signal,
       });
+      outcome = await Promise.race([built, stopped]);
     } catch {
       done(controller.signal.aborted ? t("export.canceled") : t("export.buildFailed"));
       return;

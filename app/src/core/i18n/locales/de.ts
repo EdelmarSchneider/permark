@@ -2866,6 +2866,7 @@ export default {
     "Das PDF konnte nicht erstellt werden. Wähle Drucken und dann „Als PDF speichern“.",
   "export.printFailed": "Der Druckdialog konnte nicht geöffnet werden.",
   "export.isSource": "Das Dokument selbst kann nicht ersetzt werden. Wähle einen anderen Namen.",
+  "export.exists": "Eine Datei namens {name} gibt es bereits. Wähle einen anderen Namen.",
   "export.unsupported": "PDF und Drucken sind auf diesem System nicht verfügbar.",
   "export.buildFailed": "Das Dokument konnte nicht vorbereitet werden.",
   "export.notMarkdown": "Nur Markdown-Dokumente können als PDF oder HTML gespeichert werden.",

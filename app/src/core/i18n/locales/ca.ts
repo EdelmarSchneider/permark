@@ -2855,6 +2855,7 @@ export default {
   "export.pdfFailed": "No s'ha pogut crear el PDF. Fes servir Imprimeix i tria Desa com a PDF.",
   "export.printFailed": "No s'ha pogut obrir el diàleg d'impressió.",
   "export.isSource": "No es pot substituir el mateix document. Tria un altre nom.",
+  "export.exists": "Ja existeix un fitxer anomenat {name}. Tria un altre nom.",
   "export.unsupported": "El PDF i la impressió no estan disponibles en aquest sistema.",
   "export.buildFailed": "No s'ha pogut preparar el document.",
   "export.notMarkdown": "Només els documents Markdown es poden desar com a PDF o HTML.",

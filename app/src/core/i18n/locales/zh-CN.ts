@@ -2677,6 +2677,7 @@ export default {
   "export.pdfFailed": "无法生成 PDF。请使用打印并选择另存为 PDF。",
   "export.printFailed": "无法打开打印对话框。",
   "export.isSource": "不能替换文档本身。请选择其他名称。",
+  "export.exists": "已存在名为 {name} 的文件。请选择其他名称。",
   "export.unsupported": "此系统不支持 PDF 和打印。",
   "export.buildFailed": "无法准备文档。",
   "export.notMarkdown": "只有 Markdown 文档可以保存为 PDF 或 HTML。",

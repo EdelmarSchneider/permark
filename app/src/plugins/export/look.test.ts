@@ -37,6 +37,17 @@ describe("dark preference", () => {
     expect(css).toContain("--bg: #111;");
     expect(css).not.toContain("#fff");
   });
+
+  it("finds the dark tokens in minified styles too (a built app's), quoted or not", () => {
+    for (const dark of ["[data-theme=dark]", "[data-theme='dark']", '[data-theme="dark"]']) {
+      const tokens = `:root,[data-theme=light]{--bg:#fff}:root[data-tone=paper]:not(${dark}){--bg:#eee}${dark}{color-scheme:dark;--bg:#111}`;
+      const css = darkPreference(tokens);
+      expect(css, dark).toBe(
+        "@media (prefers-color-scheme: dark) {\n:root {color-scheme:dark;--bg:#111}\n}",
+      );
+    }
+    expect(darkPreference(":root{--bg:#fff}[data-theme=darker]{--bg:#000}")).toBe("");
+  });
 });
 
 describe("component rules", () => {

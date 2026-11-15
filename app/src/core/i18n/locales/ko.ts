@@ -2769,6 +2769,7 @@ export default {
   "export.pdfFailed": "PDF를 만들지 못했습니다. 인쇄를 선택한 뒤 PDF로 저장을 고르세요.",
   "export.printFailed": "인쇄 대화 상자를 열지 못했습니다.",
   "export.isSource": "문서 자체는 바꿀 수 없습니다. 다른 이름을 고르세요.",
+  "export.exists": "{name} 이름의 파일이 이미 있습니다. 다른 이름을 고르세요.",
   "export.unsupported": "이 시스템에서는 PDF와 인쇄를 사용할 수 없습니다.",
   "export.buildFailed": "문서를 준비하지 못했습니다.",
   "export.notMarkdown": "Markdown 문서만 PDF 또는 HTML로 저장할 수 있습니다.",

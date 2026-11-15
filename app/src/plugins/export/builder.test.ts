@@ -393,6 +393,70 @@ describe("export page", () => {
     expect(document.body.children).toHaveLength(0);
   });
 
+  /** `decode` as a web view does it: a picture marked lazy that is not on screen never settles. */
+  function decodeLike(answer: (img: HTMLImageElement) => Promise<void>): () => void {
+    Object.defineProperty(HTMLImageElement.prototype, "decode", {
+      configurable: true,
+      value(this: HTMLImageElement) {
+        return answer(this);
+      },
+    });
+    return () => {
+      Reflect.deleteProperty(HTMLImageElement.prototype, "decode");
+    };
+  }
+  const never = (): Promise<void> => new Promise(() => {});
+
+  it("a picture the reading view marks lazy is still read and carried", async () => {
+    serve({ "pics/a.png": { bytes: 8, type: "image/png" } });
+    const restore = decodeLike((img) =>
+      img.getAttribute("loading") === "lazy" ? never() : Promise.resolve(),
+    );
+    const outcome = await run(
+      await apiWith('<p><img src="pm-asset:pics%2Fa.png" alt="A"></p>'),
+    ).finally(restore);
+    if (outcome.status !== "done") throw new Error("not built");
+    expect(outcome.html).toMatch(/<img[^>]+src="data:image\/png;base64,/);
+    expect(outcome.html).not.toContain("loading=");
+    expect(outcome.notes).toEqual([]);
+  });
+
+  it("cancel while a picture is decoding ends the run", async () => {
+    serve({ "pics/a.png": { bytes: 8, type: "image/png" } });
+    const controller = new AbortController();
+    const restore = decodeLike(() => {
+      setTimeout(() => controller.abort(), 0);
+      return never();
+    });
+    const outcome = await run(await apiWith('<p><img src="pm-asset:pics%2Fa.png" alt="A"></p>'), {
+      signal: controller.signal,
+    }).finally(restore);
+    expect(outcome.status).toBe("cancelled");
+    expect(document.body.children).toHaveLength(0);
+  });
+
+  it("a picture that never decodes stops holding the build: its description and a note", async () => {
+    serve({ "pics/a.png": { bytes: 8, type: "image/png" } });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let decoding = false;
+    const restore = decodeLike(() => {
+      decoding = true;
+      return never();
+    });
+    try {
+      const outcome = run(await apiWith('<p><img src="pm-asset:pics%2Fa.png" alt="A"></p>'));
+      await vi.waitFor(() => expect(decoding).toBe(true));
+      await vi.advanceTimersByTimeAsync(10_000);
+      const ended = await outcome;
+      if (ended.status !== "done") throw new Error("not built");
+      expect(ended.html).not.toMatch(/<img/);
+      expect(ended.notes).toEqual([{ kind: "picture", name: "a.png" }]);
+    } finally {
+      restore();
+      vi.useRealTimers();
+    }
+  });
+
   it("a document that cannot be read is a failure with its error", async () => {
     const api = createMockApi();
     const outcome = await buildExport(api, "nowhere/missing.md", {

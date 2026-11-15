@@ -96,12 +96,15 @@ export function assetUrl(
   return version === null ? base : `${base}?v=${encodeURIComponent(version)}`;
 }
 
-/** A plugin method: the key is `<plugin>.<method>`; the backend takes the two parts. */
+/** A plugin method: the key is `<plugin>.<method>`; the backend takes the two parts. Plugin ids hold no dot, method
+ *  names may (`setup.get`): split at the first dot only. */
 async function pluginCall<M extends PluginMethod>(
   method: M,
   args: PluginMethods[M]["args"],
 ): Promise<Result<PluginMethods[M]["result"]>> {
-  const [plugin = "", name = ""] = method.split(".", 2);
+  const dot = method.indexOf(".");
+  const plugin = dot < 0 ? method : method.slice(0, dot);
+  const name = dot < 0 ? "" : method.slice(dot + 1);
   try {
     const value = await invoke<PluginMethods[M]["result"]>("plugin_call", {
       plugin,

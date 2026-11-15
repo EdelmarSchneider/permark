@@ -2770,6 +2770,7 @@ const en = {
   "export.pdfFailed": "Couldn't make the PDF. Try Print and choose Save as PDF.",
   "export.printFailed": "Couldn't open the print dialog.",
   "export.isSource": "The document itself can't be replaced. Choose another name.",
+  "export.exists": "A file named {name} already exists. Choose another name.",
   "export.unsupported": "PDF and printing are not available on this system.",
   "export.buildFailed": "Couldn't prepare the document.",
   "export.notMarkdown": "Only Markdown documents can be saved as PDF or HTML.",
