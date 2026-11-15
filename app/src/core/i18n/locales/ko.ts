@@ -1470,6 +1470,8 @@ export default {
   "agent.migrated.more.other": "{names} 외 {n}개",
   "agent.migrated.ok": "확인",
   "agent.migrated.open": "에이전트 패널 열기",
+  "agent.migratedShort":
+    "이제 메모는 프로젝트별로 에이전트와 공유되므로 이전 공유가 꺼졌습니다: {names}.",
   "agent.status.many.one": "에이전트 {n}개",
   "agent.status.many.other": "에이전트 {n}개",
   "agent.status.hintMany.one": "에이전트 {n}개 연결됨",

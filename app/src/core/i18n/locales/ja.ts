@@ -1508,6 +1508,8 @@ export default {
   "agent.migrated.more.other": "{names} ほか {n} 件",
   "agent.migrated.ok": "了解",
   "agent.migrated.open": "エージェントパネルを開く",
+  "agent.migratedShort":
+    "メモはプロジェクトごとにエージェントと共有するようになったため、以前の共有は停止しました：{names}。",
   "agent.status.many.one": "エージェント {n} 個",
   "agent.status.many.other": "エージェント {n} 個",
   "agent.status.hintMany.one": "{n} 個のエージェントが接続中",

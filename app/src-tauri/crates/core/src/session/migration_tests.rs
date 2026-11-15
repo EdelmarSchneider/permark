@@ -311,7 +311,7 @@ fn a_0_6_recent_list_lists_shares_plainly_once() {
     let (_base, store) = store();
     std::fs::write(store.dir().join("recent.json"), RECENT_0_6).unwrap();
     let recent = RecentStore::new(&store);
-    let list = listed(recent.load(), |_| true);
+    let list = listed(recent.load(), |_| true, |_| true);
     if cfg!(windows) {
         let shown: Vec<(&str, &str, u64)> = list
             .iter()
@@ -411,5 +411,39 @@ fn a_missing_0_6_share_is_named_plainly() {
     assert_eq!(
         plan.windows[0].missing,
         [r"\\wsl.localhost\Ubuntu-24.04\tmp\gone"]
+    );
+}
+
+/// Only the entries a caller wants are looked at on disk: a folder on an offline network drive that is not wanted
+/// never stalls the list.
+#[test]
+fn only_wanted_recent_folders_are_looked_at_on_disk() {
+    let list = RecentList {
+        entries: ["/work/a", "/elsewhere/b", "/work/c"]
+            .iter()
+            .map(|path| RecentEntry {
+                path: (*path).to_owned(),
+                name: (*path).to_owned(),
+                opened_ms: 1,
+            })
+            .collect(),
+    };
+    let looked = std::cell::RefCell::new(Vec::new());
+    let shown = listed(
+        list,
+        |path| path.starts_with("/work"),
+        |path| {
+            looked.borrow_mut().push(path.to_path_buf());
+            true
+        },
+    );
+    let paths: Vec<&str> = shown.iter().map(|r| r.path.as_str()).collect();
+    assert_eq!(paths, ["/work/a", "/work/c"]);
+    assert_eq!(
+        looked.into_inner(),
+        [
+            std::path::PathBuf::from("/work/a"),
+            std::path::PathBuf::from("/work/c")
+        ]
     );
 }

@@ -28,6 +28,7 @@
   let list: HTMLUListElement | null = $state(null);
   let add: HTMLButtonElement | null = $state(null);
   let field: HTMLInputElement | null = $state(null);
+  let back: HTMLButtonElement | null = $state(null);
 
   /** Candidates the search keeps, still newest first (a picker of recent notes, not a ranking). */
   const shown = $derived(
@@ -47,7 +48,12 @@
     active = 0;
     picking = true;
     await tick();
-    field?.focus();
+    keepKeyboard();
+  }
+
+  /** The keyboard in the picker: on the search field, or on Back while there is nothing to search (never the page). */
+  function keepKeyboard(): void {
+    (field ?? back)?.focus();
   }
 
   async function closePicker(): Promise<void> {
@@ -62,6 +68,8 @@
     said = t("agent.notes.added", { name: titleOf(note) });
     // the shared one leaves the list: the keyboard stays at its place, on the next one
     active = Math.max(Math.min(active, shown.length - 1), 0);
+    await tick();
+    if (picking) keepKeyboard();
   }
 
   async function stop(note: SharedNote, index: number): Promise<void> {
@@ -134,7 +142,13 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="picker" onkeydown={onPickerKey}>
       <div class="picker-head">
-        <button type="button" class="link" data-back onclick={() => void closePicker()}>
+        <button
+          type="button"
+          class="link"
+          data-back
+          bind:this={back}
+          onclick={() => void closePicker()}
+        >
           ‹ {t("agent.notes.back")}
         </button>
       </div>
@@ -170,6 +184,7 @@
               class:active={current?.id === note.id}
               {title}
               onpointermove={() => (active = shown.indexOf(note))}
+              onmousedown={(e) => e.preventDefault()}
               onclick={() => void share(note)}
             >
               {title}

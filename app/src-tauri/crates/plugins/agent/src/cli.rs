@@ -24,6 +24,9 @@ use crate::ToolError;
 pub const LAUNCH_WAIT: Duration = Duration::from_secs(25);
 /// How often a running `permark mcp` checks its session and opens it again (the app restarted, a place freed).
 pub const REPAIR_EVERY: Duration = Duration::from_secs(3);
+/// While the person keeps this agent disconnected, every this many checks one hello still asks the app: an Undo there
+/// pairs the agent again without waiting for its next tool call (the app answers a refusal at once).
+pub const ASK_AGAIN_EVERY: u32 = 5;
 const LAUNCH_POLL: Duration = Duration::from_millis(200);
 
 /// Starts the app on a project.
@@ -53,8 +56,9 @@ fn connected_below(dirs: &AppDirs, start: &Path) -> Vec<String> {
     let Ok(start) = Root::open(start) else {
         return Vec::new();
     };
+    // compared as written before any disk access: a recent folder elsewhere (an offline network drive) is never opened
     RecentStore::new(&StateStore::app(dirs))
-        .list()
+        .list_where(|path| path != start.path() && path.starts_with(start.path()))
         .into_iter()
         .filter(|recent| !recent.missing)
         .filter_map(|recent| Root::open(Path::new(&recent.path)).ok())
@@ -103,7 +107,8 @@ pub struct Agent {
     /// The working folder relative to the project root, `/`-separated (`""` = the root or no project).
     folder: String,
     /// The app's last answer was a refusal of this session (the person disconnected it): no session is opened
-    /// while set. Calls still go to the app, so an Undo there lets the next call through (and clears this).
+    /// while set, except the pairing loop's occasional [`Agent::ask_again`]. Calls still go to the app, so an Undo
+    /// there lets the next call | hello through (and clears this).
     disconnected: AtomicBool,
 }
 
@@ -221,6 +226,16 @@ impl Agent {
     /// (it quit, restarted or let the session go) is dropped first. Nothing while the switch is off (read fresh) or
     /// the person disconnected this agent. Returns at once while another hello is under way.
     pub fn ensure_session(&self) {
+        self.open_session(false);
+    }
+
+    /// Like [`Agent::ensure_session`], but also while this agent was disconnected: one hello asks the app whether
+    /// that still holds (an answer other than the refusal pairs it again).
+    pub fn ask_again(&self) {
+        self.open_session(true);
+    }
+
+    fn open_session(&self, past_refusal: bool) {
         let Some(project) = &self.project else {
             return;
         };
@@ -240,7 +255,9 @@ impl Agent {
                 None => {}
             }
         }
-        if self.is_disconnected() || !perms::load(&project.store).is_on(project.root.path()) {
+        if (self.is_disconnected() && !past_refusal)
+            || !perms::load(&project.store).is_on(project.root.path())
+        {
             return;
         }
         let hello = Request::Hello {
@@ -250,7 +267,10 @@ impl Agent {
         };
         // the session lock is not held over the I/O: a tool call that ends the session never waits for it
         match ipc_local::open_session::<_, Response>(endpoint, &hello) {
-            Ok((Response::Ok { .. }, stream)) => *lock(&self.session) = Some(stream),
+            Ok((Response::Ok { .. }, stream)) => {
+                self.note(Ok(()));
+                *lock(&self.session) = Some(stream);
+            }
             Ok((Response::Error { code, message }, _)) => {
                 self.note(Err(&ToolError::from_wire(&code, &message)));
             }
@@ -267,7 +287,6 @@ impl Agent {
         let request = Request::Call {
             tool: tool.to_owned(),
             args: args.clone(),
-            client: lock(&self.client).clone(),
             session: Some(self.id.clone()),
         };
         match ipc_local::request::<_, Response>(endpoint, &request)? {

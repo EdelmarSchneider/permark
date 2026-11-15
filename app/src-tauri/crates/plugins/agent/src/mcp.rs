@@ -14,7 +14,7 @@ use rmcp::transport::IntoTransport;
 use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt};
 use serde_json::{json, Value};
 
-use crate::cli::Agent;
+use crate::cli::{Agent, ASK_AGAIN_EVERY};
 use crate::render;
 
 /// What the agent reads before any tool: when to use them, how to read the answers, who decides. Static: nothing of a
@@ -351,16 +351,27 @@ where
 }
 
 /// Keeps the app session while the agent runs: every [`Agent::repair_every`] the session is looked at and opened
-/// again when lost (the app restarted), so the person sees the agent without waiting for its next call. Never
-/// touches standard input or output; runs until dropped | aborted.
+/// again when lost (the app restarted), so the person sees the agent without waiting for its next call. While the
+/// person keeps it disconnected, every [`ASK_AGAIN_EVERY`]th look still asks the app once (an Undo there pairs it).
+/// Never touches standard input or output; runs until dropped | aborted.
 pub async fn keep_paired(agent: Arc<Agent>) {
     let mut every = tokio::time::interval(agent.repair_every());
     // a check that took long (the app slow to answer) is not made up for with a burst
     every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut looks: u32 = 0;
     loop {
         every.tick().await;
+        looks = looks.wrapping_add(1);
+        let ask_again = looks.is_multiple_of(ASK_AGAIN_EVERY);
         let agent = Arc::clone(&agent);
-        let _ = tokio::task::spawn_blocking(move || agent.ensure_session()).await;
+        let _ = tokio::task::spawn_blocking(move || {
+            if ask_again {
+                agent.ask_again();
+            } else {
+                agent.ensure_session();
+            }
+        })
+        .await;
     }
 }
 

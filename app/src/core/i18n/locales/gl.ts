@@ -1498,6 +1498,8 @@ export default {
   "agent.migrated.more.other": "{names} e {n} máis",
   "agent.migrated.ok": "Entendido",
   "agent.migrated.open": "Abrir o panel do axente",
+  "agent.migratedShort":
+    "Agora as notas compártense cos axentes proxecto a proxecto, así que a compartición anterior desactivouse: {names}.",
   "agent.status.many.one": "{n} axente",
   "agent.status.many.other": "{n} axentes",
   "agent.status.hintMany.one": "{n} axente conectado",

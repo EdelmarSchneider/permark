@@ -24,6 +24,7 @@ const { default: AgentStatus } = await import("./AgentStatus.svelte");
 
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
 const READING = "2026-10-16 1031.md";
+const TRIP = "2026-10-19 0907.md";
 
 let target: HTMLElement;
 let component: Record<string, unknown> | null = null;
@@ -69,6 +70,8 @@ const addButton = (): HTMLButtonElement | null =>
   target.querySelector<HTMLButtonElement>("button[data-add-note]");
 const field = (): HTMLInputElement | null =>
   target.querySelector<HTMLInputElement>(".shared-notes input[type=search]");
+const backButton = (): HTMLButtonElement | null =>
+  target.querySelector<HTMLButtonElement>("button[data-back]");
 const options = (): string[] => Array.from(target.querySelectorAll('[role="option"]')).map(text);
 const said = (): string => text(target.querySelector('.shared-notes [role="status"]'));
 
@@ -144,8 +147,13 @@ describe("notes shared with the project, in the popover", () => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
     flushSync();
     expect(options()).toEqual(["Recipe: lentil soup"]);
+    // a pointer press on an option leaves the keyboard in the search field
+    const press = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+    target.querySelector('[role="option"]')?.dispatchEvent(press);
+    expect(press.defaultPrevented).toBe(true);
     target.querySelector<HTMLElement>('[role="option"]')?.click();
     await until(() => rows().length === 3, "shared by a click");
+    expect(document.activeElement).toBe(field());
     // Escape closes the picker only; focus back on Add note; the next Escape closes the popover
     key(field(), "Escape");
     expect(field()).toBeNull();
@@ -165,16 +173,28 @@ describe("notes shared with the project, in the popover", () => {
     target.querySelector<HTMLButtonElement>("button[data-back]")?.click();
     flushSync();
     expect(field()).toBeNull();
-    // every other note gone (put back at the end: the mock outlives the test)
+    // one note left to add (the others put back at the end: the mock outlives the test)
     const held = new Map(mock.probe.plugins.notes.notes);
     for (const name of held.keys()) {
-      if (name !== READING) mock.probe.plugins.notes.notes.delete(name);
+      if (name !== READING && name !== TRIP) mock.probe.plugins.notes.notes.delete(name);
     }
     await agent.refreshNotes();
     addButton()?.click();
     flushSync();
+    await until(() => document.activeElement === field(), "focus in the search field");
+    expect(options()).toEqual(["Trip to São Paulo"]);
+    // the last one added: the field goes, the keyboard lands on Back, never on the page
+    key(field(), "Enter");
+    await until(() => rows().length === 2, "shared by Enter");
     expect(text(target.querySelector(".shared-notes"))).toContain("You have no notes yet.");
+    await until(() => document.activeElement === backButton(), "focus on Back");
+    // opened with nothing to add: the keyboard starts on Back
+    backButton()?.click();
+    flushSync();
+    addButton()?.click();
+    flushSync();
     expect(options()).toEqual([]);
+    await until(() => document.activeElement === backButton(), "focus on Back when empty");
     for (const [name, note] of held) mock.probe.plugins.notes.notes.set(name, note);
   });
 
@@ -202,6 +222,17 @@ describe("notes shared with the project, in the popover", () => {
       "No notes shared. Agents here can read only the notes you add.",
     );
     await until(() => document.activeElement === addButton(), "focus on Add note");
+  });
+
+  it("opens with the keyboard on the popover itself, never on a Disconnect", async () => {
+    await open();
+    mock.probe.plugins.agent.connect("Claude Code");
+    await until(() => agent.sessions.length === 1, "one agent connected");
+    await openPopover();
+    const popover = target.querySelector(".popover");
+    await until(() => document.activeElement === popover, "focus on the popover");
+    expect(target.querySelector("button[data-disconnect]")).not.toBeNull();
+    mock.probe.plugins.agent.connect(null);
   });
 
   it("draws nothing while the notes plugin is off", async () => {

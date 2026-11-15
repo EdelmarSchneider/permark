@@ -88,9 +88,10 @@
     node.style.bottom = `${String(window.innerHeight - anchor.top + 6)}px`;
   }
 
-  /** Opened: the keyboard starts on its first control. */
-  function focusFirst(node: HTMLElement): void {
-    node.querySelector<HTMLElement>("button, [tabindex='0']")?.focus();
+  /** Opened: the keyboard starts on the popover itself (its name is read out); its first control may be a
+   *  Disconnect, which Enter must never press by accident. Tab goes on to the controls. */
+  function focusSelf(node: HTMLElement): void {
+    node.focus();
   }
 
   async function copySetup(): Promise<void> {
@@ -147,7 +148,14 @@
       <span class="label">{label}</span>
     </button>
     {#if agent.popover}
-      <div class="popover" role="dialog" aria-label={t("agent.title")} use:above use:focusFirst>
+      <div
+        class="popover"
+        role="dialog"
+        aria-label={t("agent.title")}
+        tabindex="-1"
+        use:above
+        use:focusSelf
+      >
         <p class="title">{t("agent.title")}</p>
         <p class="line" role="status">
           {#if problem !== null}
@@ -286,6 +294,10 @@
     white-space: normal;
     max-height: calc(100vh - 80px);
     overflow: auto;
+  }
+  /* focused on open to start the keyboard there: no ring for a pointer open */
+  .popover:focus:not(:focus-visible) {
+    outline: none;
   }
   .title {
     margin: 0 0 var(--sp-2);

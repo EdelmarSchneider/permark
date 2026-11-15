@@ -1470,6 +1470,8 @@ const en = {
   "agent.migrated.more.other": "{names} and {n} more",
   "agent.migrated.ok": "Got it",
   "agent.migrated.open": "Open agent panel",
+  "agent.migratedShort":
+    "Notes are now shared with agents one project at a time, so earlier sharing was turned off: {names}.",
   "agent.status.many.one": "{n} agent",
   "agent.status.many.other": "{n} agents",
   "agent.status.hintMany.one": "{n} agent connected",

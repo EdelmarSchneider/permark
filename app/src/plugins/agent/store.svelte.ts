@@ -195,23 +195,30 @@ export class AgentStore {
     this.#apply(await this.#client.call("agent.undoDisconnect", { id }));
   }
 
-  /** Reads the notes shared with this project again (the popover opens, the settings section shows, a change). */
+  /** Reads the notes shared with this project again (the popover opens, the settings section shows, a change). An
+   *  answer that comes after the window turned to another project is dropped (it was that project's list). */
   async refreshNotes(): Promise<void> {
+    const root = this.#root();
     const result = await this.#client.call("agent.sharedNotes", {});
+    if (this.#root() !== root) return;
     this.sharedNotes = result.ok ? result.value : null;
   }
 
   /** Shares a note with this project's agents; false = refused (said in a notice, the list read again). */
   async shareNote(name: string): Promise<boolean> {
-    return this.#notesChange(await this.#client.call("agent.shareNote", { name }));
+    return this.#notesChange(() => this.#client.call("agent.shareNote", { name }));
   }
 
   /** Stops sharing a note with this project's agents; false = refused (said in a notice, the list read again). */
   async unshareNote(name: string): Promise<boolean> {
-    return this.#notesChange(await this.#client.call("agent.unshareNote", { name }));
+    return this.#notesChange(() => this.#client.call("agent.unshareNote", { name }));
   }
 
-  async #notesChange(result: Result<ProjectNotes>): Promise<boolean> {
+  async #notesChange(change: () => Promise<Result<ProjectNotes>>): Promise<boolean> {
+    const root = this.#root();
+    const result = await change();
+    // the window turned to another project meanwhile: the answer is the earlier project's list
+    if (this.#root() !== root) return result.ok;
     if (result.ok) {
       this.sharedNotes = result.value;
       return true;

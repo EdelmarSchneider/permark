@@ -543,7 +543,17 @@ fn a_loose_file_can_never_be_shared() {
         f.service.share(&p, &path).unwrap_err().kind,
         ErrorKind::Unsupported
     );
+    // a path out of the notes folder names no note, even when a file is there
+    write(&f.tmp.path().join("x.md"), "outside");
+    for bad in ["../x.md", "..\\x.md", "sub/../../x.md", "@file/zz/x.md"] {
+        let kind = f.service.share(&p, bad).unwrap_err().kind;
+        assert!(
+            matches!(kind, ErrorKind::NotFound | ErrorKind::Unsupported),
+            "{bad}: {kind:?}"
+        );
+    }
     assert!(f.service.shared_notes(&p).is_empty());
+    assert!(f.service.read_shared(&p, "../x.md").is_err());
 }
 
 #[test]

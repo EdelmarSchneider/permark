@@ -1515,6 +1515,8 @@ export default {
   "agent.migrated.more.other": "{names} und {n} weitere",
   "agent.migrated.ok": "Verstanden",
   "agent.migrated.open": "Agenten-Panel öffnen",
+  "agent.migratedShort":
+    "Notizen werden jetzt mit Agenten Projekt für Projekt geteilt, daher wurde das bisherige Teilen ausgeschaltet: {names}.",
   "agent.status.many.one": "{n} Agent",
   "agent.status.many.other": "{n} Agenten",
   "agent.status.hintMany.one": "{n} Agent verbunden",

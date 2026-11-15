@@ -13,7 +13,7 @@ function setup() {
 }
 
 const keyed = (window: WindowStore) =>
-  window.notices.filter((n) => n.kind === "action" && n.key === "notes.unshared");
+  window.notices.filter((n) => n.kind === "action" && n.text.startsWith("Notes are now shared"));
 
 describe("the notice about sharing turned off by the update", () => {
   it("names the notes once, by title, with Got it and Open agent panel in a project window", async () => {
@@ -27,6 +27,8 @@ describe("the notice about sharing turned off by the update", () => {
     );
     const labels = notice?.kind === "action" ? notice.actions.map((a) => a.label) : [];
     expect(labels).toEqual(["Got it", "Open agent panel"]);
+    // told once: it waits for the person instead of closing by itself
+    expect(notice?.kind === "action" && notice.lasting).toBe(true);
     if (notice?.kind === "action") await notice.actions[1]?.run();
     expect(open).toHaveBeenCalledOnce();
     // the next start (another window, the app again) says nothing
@@ -39,9 +41,11 @@ describe("the notice about sharing turned off by the update", () => {
     api.probe.plugins.notes.unshared(["a.md", "b.md", "c.md", "d.md", "e.md"]);
     await tellUnshared(client, window, () => null);
     const [notice] = keyed(window);
-    expect(notice?.kind === "action" && notice.text).toContain(
-      "turned off: a, b, c and 2 more. Share",
+    // no agent panel to point to: the text does not send the person there
+    expect(notice?.kind === "action" && notice.text).toBe(
+      "Notes are now shared with agents one project at a time, so earlier sharing was turned off: a, b, c and 2 more.",
     );
+    expect(notice?.kind === "action" && notice.lasting).toBe(true);
     expect(notice?.kind === "action" && notice.actions.map((a) => a.label)).toEqual(["Got it"]);
   });
 

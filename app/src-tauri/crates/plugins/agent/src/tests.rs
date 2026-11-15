@@ -1191,7 +1191,6 @@ fn the_switch_starts_the_server_sessions_connect_and_off_stops_it() {
         &Request::Call {
             tool: "read".into(),
             args: json!({ "path": "../outside.md" }),
-            client: "t".into(),
             session: Some(caller.clone()),
         },
     )
@@ -1239,7 +1238,6 @@ fn call(tool: &str) -> Request {
     Request::Call {
         tool: tool.to_owned(),
         args: Value::Null,
-        client: String::new(),
         session: Some(SessionId::draw()),
     }
 }
@@ -1306,7 +1304,7 @@ fn two_agents_on_one_project_are_two_sessions_with_their_own_id_folder_and_last_
 }
 
 #[test]
-fn a_session_said_hello_again_outlives_its_earlier_connection() {
+fn a_session_said_hello_again_outlives_its_earlier_connection_which_the_app_lets_go() {
     let fx = fx();
     fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
     let endpoint = fx.endpoint();
@@ -1327,6 +1325,9 @@ fn a_session_said_hello_again_outlives_its_earlier_connection() {
             .collect::<Vec<_>>()
     };
     assert!(wait_for(|| names() == ["b"]), "one entry per id");
+    // the replaced connection is closed by the app: no connection of the id is left that a disconnect cannot end
+    assert!(wait_for(|| ipc_local::peer_gone(&earlier)));
+    assert!(!ipc_local::peer_gone(&later));
     drop(earlier);
     std::thread::sleep(Duration::from_millis(600));
     assert_eq!(
@@ -1334,8 +1335,84 @@ fn a_session_said_hello_again_outlives_its_earlier_connection() {
         ["b"],
         "the earlier connection ending leaves the newer one"
     );
-    drop(later);
-    assert!(wait_for(|| names().is_empty()));
+    fx.rpc("disconnect", json!({ "id": id.as_str() })).unwrap();
+    assert!(wait_for(|| ipc_local::peer_gone(&later)));
+    assert!(names().is_empty());
+}
+
+#[test]
+fn a_hello_over_the_cap_changes_nothing_the_app_shows() {
+    let fx = fx();
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    let endpoint = fx.endpoint();
+    let live = SessionId::draw();
+    let hello_as = |id: &SessionId, client: &str| Request::Hello {
+        session: Some(id.clone()),
+        client: client.to_owned(),
+        folder: String::new(),
+    };
+    let mut held = vec![
+        ipc_local::open_session::<_, Response>(&endpoint, &hello_as(&live, "live"))
+            .unwrap()
+            .1,
+    ];
+    for _ in 1..ipc_local::MAX_SESSIONS {
+        held.push(
+            ipc_local::open_session::<_, Response>(&endpoint, &hello("a", ""))
+                .unwrap()
+                .1,
+        );
+    }
+    let names = || {
+        fx.rpc("status", Value::Null).unwrap()["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["name"].as_str().unwrap_or_default().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert!(wait_for(|| names().len() == ipc_local::MAX_SESSIONS));
+    std::thread::sleep(Duration::from_millis(300));
+    let told = fx.sink.named("agent:status").len();
+    // a new agent and the live one again, both over the cap: neither is listed nor told to the windows
+    for request in [
+        hello_as(&SessionId::draw(), "new"),
+        hello_as(&live, "again"),
+    ] {
+        let over: Response = ipc_local::request(&endpoint, &request).unwrap();
+        assert!(
+            matches!(&over, Response::Error { code, .. } if code == "error"),
+            "{over:?}"
+        );
+    }
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(fx.sink.named("agent:status").len(), told, "no change told");
+    let now = names();
+    assert_eq!(now.len(), ipc_local::MAX_SESSIONS);
+    assert!(
+        now.contains(&"live".to_owned()),
+        "the live one stays listed"
+    );
+    assert!(!now.iter().any(|n| n == "new" || n == "again"));
+    assert!(!ipc_local::peer_gone(&held[0]), "and keeps its connection");
+}
+
+#[test]
+fn an_agent_name_and_folder_lose_bidi_and_control_characters() {
+    let fx = fx();
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    let (_, _session): (Response, _) = ipc_local::open_session(
+        &fx.endpoint(),
+        &hello("Claude\u{202e}edoC\u{2066}\u{7}", "docs\u{202d}/a\u{2069}"),
+    )
+    .unwrap();
+    assert!(wait_for(|| fx.rpc("status", Value::Null).unwrap()
+        ["sessions"]
+        .as_array()
+        .is_some_and(|s| s.len() == 1)));
+    let status = fx.rpc("status", Value::Null).unwrap();
+    assert_eq!(status["sessions"][0]["name"], "ClaudeedoC");
+    assert_eq!(status["sessions"][0]["folder"], "docs/a");
 }
 
 #[test]
@@ -1373,7 +1450,6 @@ fn disconnect_ends_one_session_and_refuses_its_id_until_undone() {
     let call_as = |id: &SessionId| Request::Call {
         tool: "map".to_owned(),
         args: Value::Null,
-        client: String::new(),
         session: Some(id.clone()),
     };
     let disconnected = |answer: &Response| matches!(answer, Response::Error { code, .. } if code == "disconnected");
@@ -1507,6 +1583,17 @@ fn a_running_agent_pairs_again_after_the_app_restarts_without_a_call() {
         fx.reopen();
         tokio::time::sleep(Duration::from_millis(500)).await;
         assert!(!paired(&fx, &agent), "a disconnected agent stays out");
+        // the person undoes it: the agent shows up again with no tool call
+        fx.rpc(
+            "undoDisconnect",
+            json!({ "id": agent.session_id().as_str() }),
+        )
+        .unwrap();
+        assert!(
+            wait_on_runtime(|| paired(&fx, &agent)).await,
+            "paired again after Undo"
+        );
+        assert!(!agent.is_disconnected());
         drop(write);
         drop(read);
         let _ = tokio::time::timeout(Duration::from_secs(5), serving).await;
@@ -1581,6 +1668,53 @@ fn a_disconnect_outlives_an_app_restart_until_undone() {
     assert!(!refused(&ids[0]));
     assert!(refused(&ids[1]));
     assert!(refused(&ids[32]));
+}
+
+#[test]
+fn a_damaged_refusals_file_loads_without_the_bad_parts() {
+    let mut fx = fx();
+    fx.rpc("setEnabled", json!({ "enabled": true })).unwrap();
+    let endpoint = fx.endpoint();
+    let refused = |id: &SessionId| {
+        let answer: Response = ipc_local::request(
+            &endpoint,
+            &Request::Hello {
+                session: Some(id.clone()),
+                client: "a".to_owned(),
+                folder: String::new(),
+            },
+        )
+        .unwrap();
+        matches!(&answer, Response::Error { code, .. } if code == "disconnected")
+    };
+    let gone = SessionId::draw();
+    fx.rpc("disconnect", json!({ "id": gone.as_str() }))
+        .unwrap();
+    let file = fx
+        .core()
+        .store()
+        .profile_file::<ProjectChoice>(PROJECT_FILE)
+        .path()
+        .with_file_name("agent-refused.json");
+    // a malformed id beside a good one: only the bad one is dropped
+    let text = std::fs::read_to_string(&file).unwrap();
+    let quoted = format!("\"{}\"", gone.as_str());
+    assert!(text.contains(&quoted), "{text}");
+    std::fs::write(
+        &file,
+        text.replace(&quoted, &format!("\"../BAD id\", {quoted}")),
+    )
+    .unwrap();
+    fx.reopen();
+    assert!(refused(&gone), "the good id is still refused");
+    // not JSON at all: nobody is refused, nothing panics
+    std::fs::write(&file, b"\xff{ not json").unwrap();
+    fx.reopen();
+    assert!(!refused(&gone));
+    assert_eq!(
+        fx.rpc("status", Value::Null).unwrap()["server"]["state"],
+        "listening"
+    );
 }
 
 #[test]

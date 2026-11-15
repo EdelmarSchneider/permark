@@ -1433,6 +1433,7 @@ export default {
   "agent.migrated.more.other": "{names} 等 {n} 个",
   "agent.migrated.ok": "知道了",
   "agent.migrated.open": "打开智能体面板",
+  "agent.migratedShort": "笔记现在按项目逐一与智能体共享，因此之前的共享已关闭：{names}。",
   "agent.status.many.one": "{n} 个智能体",
   "agent.status.many.other": "{n} 个智能体",
   "agent.status.hintMany.one": "已连接 {n} 个智能体",

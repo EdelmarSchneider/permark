@@ -510,14 +510,16 @@ pub enum Reply<Resp> {
     /// Answer, then close.
     Answer(Resp),
     /// Answer, then keep the connection open until the peer leaves, the server stops or `end` turns true (the
-    /// server's side lets this one connection go); `guard` is dropped then (a session: the peer's presence is the
-    /// point, nothing more is read).
+    /// server's side lets this one connection go). `held` runs once the connection is held (a slot was free), just
+    /// before the answer goes out; the guard it returns is dropped when the hold ends (a session: the peer's
+    /// presence is the point, nothing more is read).
     Hold {
         answer: Resp,
         /// Sent instead of `answer` when [`MAX_SESSIONS`] connections are held already; the connection is closed
-        /// and `guard` dropped (the peer must learn it holds no session, so it can try again later).
+        /// and `held` never runs (the peer must learn it holds no session, so it can try again later; the server's
+        /// side never lists it).
         full: Resp,
-        guard: Box<dyn Send>,
+        held: Box<dyn FnOnce() -> Box<dyn Send> + Send>,
         end: Arc<AtomicBool>,
     },
 }
@@ -809,17 +811,18 @@ fn serve_one<Req, Resp>(
         Reply::Hold {
             answer,
             full,
-            guard,
+            held,
             end,
         } => {
             let Some(_session) = sessions.take() else {
                 let _ = write_line(&mut writer, &full);
                 return;
             };
-            if write_line(&mut writer, &answer).is_err() {
-                return;
+            // made before the answer: a peer told it is held finds itself listed
+            let guard = held();
+            if write_line(&mut writer, &answer).is_ok() {
+                hold(stream, stop, &end);
             }
-            hold(stream, stop, &end);
             drop(guard);
         }
     }

@@ -31,8 +31,10 @@ pub const MAX_ENTRY_NAME_CHARS: usize = 48;
 pub const MAX_ENTRY_CHARS: usize = 16;
 
 /// A character never put in a document from a group | favorite: C0 | DEL | C1 controls, bidi embedding |
-/// override | isolate controls (inserted at the caret they hide or reorder the text around it).
-pub(crate) fn is_unsafe_char(c: char) -> bool {
+/// override | isolate controls (inserted at the caret they hide or reorder the text around it). Also kept out of
+/// names an outside program gives itself before the app shows them.
+#[must_use]
+pub fn is_unsafe_char(c: char) -> bool {
     matches!(
         c,
         '\u{0}'..='\u{1f}' | '\u{7f}'..='\u{9f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'

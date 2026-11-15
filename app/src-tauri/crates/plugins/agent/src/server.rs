@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use permark_core::conditions::AgentCondition;
 use permark_core::ipc_local::{Endpoint, IpcLocalError, Reply, Server};
 use permark_core::plugins::{PluginEvents, ProjectFacts};
-use permark_core::settings::ProjectConfig;
+use permark_core::settings::{is_unsafe_char, ProjectConfig};
 use permark_core::state::{StateData, StateFile};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -52,8 +52,6 @@ pub enum Request {
         tool: String,
         #[serde(default)]
         args: Value,
-        #[serde(default)]
-        client: String,
         #[serde(default, deserialize_with = "session::lenient")]
         session: Option<SessionId>,
     },
@@ -148,9 +146,14 @@ fn now_ms() -> u64 {
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
-/// Printable text of at most `max` chars (a client's self-declared words, shown in the app).
+/// Printable text of at most `max` chars (a client's self-declared words, shown in the app): no control characters,
+/// no bidi controls (they would reorder what the app shows around them).
 fn clean(text: &str, max: usize) -> String {
-    let text: String = text.chars().filter(|c| !c.is_control()).take(max).collect();
+    let text: String = text
+        .chars()
+        .filter(|c| !c.is_control() && !is_unsafe_char(*c))
+        .take(max)
+        .collect();
     text.trim().to_owned()
 }
 
@@ -305,53 +308,20 @@ impl Hub {
                 client,
                 folder,
             } => {
-                let name = Some(clean(&client, MAX_CLIENT_CHARS))
-                    .filter(|n| !n.is_empty())
-                    .unwrap_or_else(|| "agent".to_owned());
-                let holder = self.next.fetch_add(1, Ordering::Relaxed);
-                let end = Arc::new(AtomicBool::new(false));
-                {
-                    // a call made before the hello still counts as the session's last call
-                    let last_call = lock(&self.recent)
-                        .iter()
-                        .find(|r| r.session == id)
-                        .map(|r| r.at_ms);
-                    // looked at under the sessions lock: a disconnect in between cannot leave a refused id listed
-                    let mut sessions = lock(&self.sessions);
-                    if lock(&self.refused).contains(&id) {
-                        return Reply::Answer(Response::of(Err(ToolError::Disconnected)));
-                    }
-                    // the same process again (its held connection was lost): it keeps its start and last call
-                    let (started_ms, last_call_ms, order) = sessions
-                        .get(&id)
-                        .map_or((now_ms(), last_call, holder), |s| {
-                            (s.started_ms, s.last_call_ms, s.order)
-                        });
-                    sessions.insert(
-                        id.clone(),
-                        SessionInfo {
-                            name,
-                            started_ms,
-                            folder_rel: clean(&folder, MAX_FOLDER_CHARS),
-                            last_call_ms,
-                            holder,
-                            order,
-                            end: Arc::clone(&end),
-                        },
-                    );
+                if lock(&self.refused).contains(&id) {
+                    return Reply::Answer(Response::of(Err(ToolError::Disconnected)));
                 }
-                self.changed();
+                let hub = Arc::clone(self);
+                let end = Arc::new(AtomicBool::new(false));
+                let flag = Arc::clone(&end);
                 Reply::Hold {
                     answer: Response::Ok { value: Value::Null },
                     full: Response::of(Err(ToolError::Failed(
                         "too many agents are connected to this project; this one connects when another ends"
                             .to_owned(),
                     ))),
-                    guard: Box::new(Session {
-                        hub: Arc::downgrade(self),
-                        id,
-                        holder,
-                    }),
+                    // listed only once the connection is held: a hello over the cap shows | tells nothing
+                    held: Box::new(move || hub.hold(id, &client, &folder, flag)),
                     end,
                 }
             }
@@ -359,12 +329,67 @@ impl Hub {
                 tool,
                 args,
                 session: Some(id),
-                ..
             } => Reply::Answer(Response::of(self.call(&id, &tool, args))),
             Request::Hello { session: None, .. } | Request::Call { session: None, .. } => {
                 no_session()
             }
         }
+    }
+
+    /// Lists the session whose connection is now held; the guard it returns ends the session when dropped.
+    fn hold(
+        self: &Arc<Self>,
+        id: SessionId,
+        client: &str,
+        folder: &str,
+        end: Arc<AtomicBool>,
+    ) -> Box<dyn Send> {
+        let name = Some(clean(client, MAX_CLIENT_CHARS))
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| "agent".to_owned());
+        let holder = self.next.fetch_add(1, Ordering::Relaxed);
+        {
+            // a call made before the hello still counts as the session's last call
+            let last_call = lock(&self.recent)
+                .iter()
+                .find(|r| r.session == id)
+                .map(|r| r.at_ms);
+            // looked at under the sessions lock: a disconnect since the hello was read lets the connection go at
+            // once and never leaves a refused id listed
+            let mut sessions = lock(&self.sessions);
+            if lock(&self.refused).contains(&id) {
+                end.store(true, Ordering::Release);
+                return Box::new(());
+            }
+            // the same process again (its held connection was lost): it keeps its start and last call
+            let (started_ms, last_call_ms, order) = sessions
+                .get(&id)
+                .map_or((now_ms(), last_call, holder), |s| {
+                    (s.started_ms, s.last_call_ms, s.order)
+                });
+            let earlier = sessions.insert(
+                id.clone(),
+                SessionInfo {
+                    name,
+                    started_ms,
+                    folder_rel: clean(folder, MAX_FOLDER_CHARS),
+                    last_call_ms,
+                    holder,
+                    order,
+                    end,
+                },
+            );
+            // its earlier connection, if still held here, is let go: a disconnect then ends every connection of the id
+            if let Some(earlier) = earlier {
+                earlier.end.store(true, Ordering::Release);
+            }
+        }
+        self.changed();
+        Box::new(Session {
+            hub: Arc::downgrade(self),
+            id,
+            holder,
+        })
     }
 
     /// Runs a tool for `session` and notes it for the popover.

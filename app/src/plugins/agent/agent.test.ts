@@ -241,6 +241,42 @@ describe("notes shared with the project", () => {
     expect(windowStore.notices.length).toBe(before + 1);
     stop();
   });
+
+  it("drops an answer that arrives after the window turned to another project", async () => {
+    const api = createMockApi();
+    await api.openPath(MOCK_FOLDER, "thisTab");
+    let root: string | null = MOCK_FOLDER;
+    const store = new AgentStore(new PluginClient(api, () => root), () => root);
+    // answers wait until the test lets them go
+    const real = api.pluginCall.bind(api);
+    const waiting: (() => void)[] = [];
+    vi.spyOn(api, "pluginCall").mockImplementation((method, args) =>
+      real(method, args).then(
+        (answer) => new Promise((resolve) => waiting.push(() => resolve(answer))),
+      ),
+    );
+    const letGo = async (): Promise<void> => {
+      await vi.waitFor(() => expect(waiting.length).toBeGreaterThan(0));
+      waiting.shift()?.();
+    };
+    const reading = store.refreshNotes();
+    root = "/elsewhere";
+    await letGo();
+    await reading;
+    expect(store.sharedNotes).toBeNull();
+    root = MOCK_FOLDER;
+    const sharing = store.shareNote(TRIP);
+    root = "/elsewhere";
+    await letGo();
+    await sharing;
+    expect(store.sharedNotes).toBeNull();
+    // the same project: taken
+    root = MOCK_FOLDER;
+    const again = store.refreshNotes();
+    await letGo();
+    await again;
+    expect(store.sharedNotes?.shared.map((n) => n.id)).toContain(TRIP);
+  });
 });
 
 describe("showing an agent's place", () => {

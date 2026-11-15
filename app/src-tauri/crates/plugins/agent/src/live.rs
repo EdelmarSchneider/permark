@@ -93,13 +93,16 @@ impl Live {
         windows.contexts.remove(window);
     }
 
-    /// What the window the person used last shows (empty until it has published).
+    /// What the window the person used last shows. A focused window that has not published yet is skipped: the one
+    /// used before it still knows what the person sees (empty until any window has published).
     #[must_use]
     pub fn context(&self) -> WindowContext {
         let windows = self.lock();
         windows
-            .current()
-            .and_then(|w| windows.contexts.get(w))
+            .order
+            .iter()
+            .rev()
+            .find_map(|w| windows.contexts.get(w))
             .cloned()
             .unwrap_or_default()
     }
@@ -179,5 +182,16 @@ mod tests {
         live.focused("a");
         live.publish("c", at("c.md"));
         assert_eq!(doc(&live).as_deref(), Some("a.md"));
+    }
+
+    #[test]
+    fn a_focused_window_that_has_not_published_does_not_hide_the_others() {
+        let live = Live::quiet();
+        live.publish("a", at("a.md"));
+        live.focused("a");
+        live.focused("new");
+        assert_eq!(doc(&live).as_deref(), Some("a.md"));
+        live.publish("new", at("new.md"));
+        assert_eq!(doc(&live).as_deref(), Some("new.md"));
     }
 }

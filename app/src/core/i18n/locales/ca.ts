@@ -1509,6 +1509,8 @@ export default {
   "agent.migrated.more.other": "{names} i {n} més",
   "agent.migrated.ok": "Entesos",
   "agent.migrated.open": "Obre el tauler de l'agent",
+  "agent.migratedShort":
+    "Ara les notes es comparteixen amb agents projecte a projecte, així que la compartició anterior s'ha desactivat: {names}.",
   "agent.status.many.one": "{n} agent",
   "agent.status.many.other": "{n} agents",
   "agent.status.hintMany.one": "{n} agent connectat",

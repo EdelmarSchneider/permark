@@ -1506,6 +1506,8 @@ export default {
   "agent.migrated.more.other": "{names} e mais {n}",
   "agent.migrated.ok": "Percebi",
   "agent.migrated.open": "Abrir painel do agente",
+  "agent.migratedShort":
+    "As notas passam a ser partilhadas com agentes um projeto de cada vez, por isso a partilha anterior foi desligada: {names}.",
   "agent.status.many.one": "{n} agente",
   "agent.status.many.other": "{n} agentes",
   "agent.status.hintMany.one": "{n} agente ligado",

@@ -1530,6 +1530,8 @@ export default {
   "agent.migrated.more.other": "{names} et {n} autres",
   "agent.migrated.ok": "Compris",
   "agent.migrated.open": "Ouvrir le panneau de l'agent",
+  "agent.migratedShort":
+    "Les notes sont désormais partagées avec les agents projet par projet ; le partage précédent a donc été désactivé : {names}.",
   "agent.status.many.one": "{n} agent",
   "agent.status.many.other": "{n} agents",
   "agent.status.hintMany.one": "{n} agent connecté",

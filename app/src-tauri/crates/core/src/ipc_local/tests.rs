@@ -255,28 +255,41 @@ impl Drop for Flag {
 }
 
 fn session_server(endpoint: &Endpoint, released: &Arc<AtomicBool>) -> Server {
-    session_server_ending(endpoint, released, &Arc::new(AtomicBool::new(false)))
+    session_server_ending(
+        endpoint,
+        released,
+        &Arc::new(AtomicBool::new(false)),
+        &Arc::new(AtomicUsize::new(0)),
+    )
 }
 
-/// Holds every "hello"; setting `end` lets every held connection go.
+/// Holds every "hello"; setting `end` lets every held connection go; `made` counts the guards made (one per
+/// connection actually held).
 fn session_server_ending(
     endpoint: &Endpoint,
     released: &Arc<AtomicBool>,
     end: &Arc<AtomicBool>,
+    made: &Arc<AtomicUsize>,
 ) -> Server {
     let released = Arc::clone(released);
     let end = Arc::clone(end);
+    let made = Arc::clone(made);
     Server::spawn_with(endpoint.listen().unwrap(), move |ping: Ping| {
         let answer = Ping {
             text: format!("{}!", ping.text),
         };
         if ping.text == "hello" {
+            let released = Arc::clone(&released);
+            let made = Arc::clone(&made);
             Reply::Hold {
                 answer,
                 full: Ping {
                     text: "full".into(),
                 },
-                guard: Box::new(Flag(Arc::clone(&released))),
+                held: Box::new(move || {
+                    made.fetch_add(1, Ordering::AcqRel);
+                    Box::new(Flag(released))
+                }),
                 end: Arc::clone(&end),
             }
         } else {
@@ -320,7 +333,7 @@ fn the_end_flag_of_a_held_session_closes_it_from_the_server_side() {
     let (_d, endpoint) = endpoint();
     let released = Arc::new(AtomicBool::new(false));
     let end = Arc::new(AtomicBool::new(false));
-    let server = session_server_ending(&endpoint, &released, &end);
+    let server = session_server_ending(&endpoint, &released, &end, &Arc::new(AtomicUsize::new(0)));
     let (_answer, stream): (Ping, _) = open_session(
         &endpoint,
         &Ping {
@@ -369,7 +382,13 @@ fn sessions_over_the_cap_get_the_full_answer_then_are_closed() {
     assert_eq!(MAX_SESSIONS, 16);
     let (_d, endpoint) = endpoint();
     let released = Arc::new(AtomicBool::new(false));
-    let server = session_server(&endpoint, &released);
+    let made = Arc::new(AtomicUsize::new(0));
+    let server = session_server_ending(
+        &endpoint,
+        &released,
+        &Arc::new(AtomicBool::new(false)),
+        &made,
+    );
     let hello = || {
         open_session::<_, Ping>(
             &endpoint,
@@ -397,6 +416,8 @@ fn sessions_over_the_cap_get_the_full_answer_then_are_closed() {
     }
     std::thread::sleep(Duration::from_millis(300));
     assert_eq!(server.open_connections(), MAX_SESSIONS);
+    // the server's side never learned of the ones over the cap: no guard was made for them
+    assert_eq!(made.load(Ordering::Acquire), MAX_SESSIONS);
     // a slot given back is taken by the next hello
     sessions.pop();
     let deadline = Instant::now() + Duration::from_secs(3);

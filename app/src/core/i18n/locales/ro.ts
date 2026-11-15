@@ -1568,6 +1568,8 @@ export default {
   "agent.migrated.more.other": "{names} și încă {n}",
   "agent.migrated.ok": "Am înțeles",
   "agent.migrated.open": "Deschide panoul agentului",
+  "agent.migratedShort":
+    "Notele se partajează acum cu agenții câte un proiect pe rând, așa că partajarea de dinainte a fost oprită: {names}.",
   "agent.status.many.one": "{n} agent",
   "agent.status.many.few": "{n} agenți",
   "agent.status.many.other": "{n} de agenți",

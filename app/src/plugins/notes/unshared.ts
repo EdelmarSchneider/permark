@@ -27,12 +27,16 @@ export async function tellUnshared(
         })
       : names.join(", ");
   const open = openAgent();
-  window.notifyKeyed(
-    "notes.unshared",
-    t("agent.migrated", { names: shown }),
-    { label: t("agent.migrated.ok"), run: () => {} },
-    ...(open === null ? [] : [{ label: t("agent.migrated.open"), run: open }]),
-  );
+  // told only once: it waits for the person instead of closing by itself; with no agent panel here, the text does
+  // not send the person to one
+  window.notifyLasting({
+    text: t(open === null ? "agent.migratedShort" : "agent.migrated", { names: shown }),
+    actions: [
+      { label: t("agent.migrated.ok"), run: () => {} },
+      ...(open === null ? [] : [{ label: t("agent.migrated.open"), run: open }]),
+    ],
+    onGone: () => {},
+  });
 }
 
 /** The notes' titles as the list shows them; a note the list no longer has keeps its file name. */
