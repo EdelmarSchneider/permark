@@ -70,8 +70,11 @@ export type BlockTransform = (blocks: readonly Block[], view: DocumentView) => r
 /** A button of a quiet note. */
 export type HookAction = { label: string; run: () => void };
 
-/** A line of a text document (or of a sheet) to bring into view, told to the viewer that shows it. */
-export type LineRequest = { path: string; line: number; seq: number };
+/**
+ * A line of a text document (or of a sheet) to bring into view, told to the viewer that shows it. `restore`: the line
+ * the reader left at the top of the pane (it goes back to the top, untinted), not a place someone asked for.
+ */
+export type LineRequest = { path: string; line: number; seq: number; restore?: boolean };
 
 export type Hooks = {
   /** A quiet note for the person. */
@@ -354,11 +357,15 @@ export class DocumentController {
     if (fresh && result.value.body.kind !== "markdown" && this.#line !== null) {
       this.#askLine(result.value.path, this.#line);
       this.#line = null;
+    } else if (fresh && result.value.body.kind === "text") {
+      // the text viewer keeps its place as the line at the top (pixels change with wrapping and long files)
+      const kept = reading.scrollOf(result.value.path);
+      if (kept !== null) this.#askLine(result.value.path, kept, true);
     }
   }
 
-  #askLine(path: string, line: number): void {
-    this.lineRequest = { path, line, seq: ++this.#lineSeq };
+  #askLine(path: string, line: number, restore = false): void {
+    this.lineRequest = { path, line, seq: ++this.#lineSeq, restore };
   }
 
   /** A text document was read again: tells who listens which lines are different now. */
@@ -524,10 +531,12 @@ export class DocumentController {
     if (scroller) scroller.scrollTop = reading.scrollOf(view.path) ?? 0;
   }
 
-  /** Remembers where the document is left. */
+  /** Remembers where the page of blocks is left. Only while it shows the document named: another viewer keeps its
+   *  own place (a text view: a line), which the pane's scroll would overwrite. */
   #leave(): void {
     const scroller = this.host.scroller;
-    if (this.#shown !== null && scroller) reading.remember(this.#shown, scroller.scrollTop);
+    if (this.#shown !== null && scroller && this.current?.body.kind === "markdown")
+      reading.remember(this.#shown, scroller.scrollTop);
   }
 
   /** The reader scrolled: remember the place, find the heading. */
