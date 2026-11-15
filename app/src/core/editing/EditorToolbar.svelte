@@ -200,8 +200,20 @@
         <button
           type="button"
           role="menuitem"
+          disabled={!format.table || format.tableHeader}
+          onclick={() => table({ kind: "addRowAbove" })}>{t("toolbar.tableAddRowAbove")}</button
+        >
+        <button
+          type="button"
+          role="menuitem"
           disabled={!format.table}
           onclick={() => table({ kind: "addRow" })}>{t("toolbar.tableAddRow")}</button
+        >
+        <button
+          type="button"
+          role="menuitem"
+          disabled={!format.table}
+          onclick={() => table({ kind: "addColumnLeft" })}>{t("toolbar.tableAddColumnLeft")}</button
         >
         <button
           type="button"
