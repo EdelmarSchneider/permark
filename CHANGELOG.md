@@ -30,6 +30,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - A file that fails to open in the same tab shows its error once, not twice. <!-- f: tabs -->
 - Text files, such as logs, reopen at the line you left instead of at the top. <!-- f: text-view -->
 - After you dismiss a notice with the keyboard, or close Settings or the keyboard shortcuts list with Esc, the keyboard goes back where it was instead of being lost. <!-- f: accessibility -->
+- When a plugin you turned on cannot start, PerMark now tells you which one and why, instead of failing silently. <!-- f: plugins -->
 
 ## [0.12.0] - 2026-11-14
 

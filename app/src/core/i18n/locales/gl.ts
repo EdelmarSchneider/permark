@@ -1633,6 +1633,7 @@ export default {
   "plugins.choice.off": "Desactivado neste proxecto",
   "plugins.dataNotRemoved": "Non foi posíbel quitar os datos: {message}",
   "plugins.dataRemoved": "Quitáronse os datos de {name}.",
+  "plugins.failedToStart": "{name} non se puido iniciar. {reason}",
   "plugins.inProject": "Neste proxecto",
   "plugins.intro": "Active ou desactive funcións. Un complemento desactivado non deixa nada atrás.",
   "plugins.kind.feature": "Funcións",

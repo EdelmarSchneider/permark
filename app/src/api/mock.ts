@@ -324,6 +324,7 @@ export function createMockApi(): Api & {
     "view-moved": new Set(),
     "import-progress": new Set(),
     "plugins-changed": new Set(),
+    "plugin-failed": new Set(),
     "index-progress": new Set(),
     "projects-changed": new Set(),
   };

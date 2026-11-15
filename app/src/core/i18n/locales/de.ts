@@ -1652,6 +1652,7 @@ export default {
   "plugins.choice.off": "In diesem Projekt aus",
   "plugins.dataNotRemoved": "Die Daten konnten nicht entfernt werden: {message}",
   "plugins.dataRemoved": "Daten von {name} entfernt.",
+  "plugins.failedToStart": "{name} konnte nicht starten. {reason}",
   "plugins.inProject": "In diesem Projekt",
   "plugins.intro":
     "Funktionen ein- oder ausschalten. Ein ausgeschaltetes Plugin hinterlässt nichts.",

@@ -1558,6 +1558,7 @@ export default {
   "plugins.choice.off": "在此项目中关闭",
   "plugins.dataNotRemoved": "无法移除数据：{message}",
   "plugins.dataRemoved": "已移除 {name} 的数据。",
+  "plugins.failedToStart": "{name} 无法启动。{reason}",
   "plugins.inProject": "在此项目中",
   "plugins.intro": "开启或关闭功能。关闭的插件不会留下任何东西。",
   "plugins.kind.feature": "功能",

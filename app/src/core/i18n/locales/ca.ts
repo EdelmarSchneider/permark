@@ -1647,6 +1647,7 @@ export default {
   "plugins.choice.off": "Desactivat en aquest projecte",
   "plugins.dataNotRemoved": "No s'han pogut eliminar les dades: {message}",
   "plugins.dataRemoved": "S'han eliminat les dades de {name}.",
+  "plugins.failedToStart": "{name} no s'ha pogut iniciar. {reason}",
   "plugins.inProject": "En aquest projecte",
   "plugins.intro": "Activeu o desactiveu funcions. Un connector desactivat no deixa cap rastre.",
   "plugins.kind.feature": "Funcions",

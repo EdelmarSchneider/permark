@@ -126,6 +126,7 @@ import type { MoveSpec } from "./generated/MoveSpec";
 import type { NewKind } from "./generated/NewKind";
 import type { OpenFailed } from "./generated/OpenFailed";
 import type { OutlineItem } from "./generated/OutlineItem";
+import type { PluginFailed } from "./generated/PluginFailed";
 import type { PathResults } from "./generated/PathResults";
 import type { Recent } from "./generated/Recent";
 import type { SearchOptions } from "./generated/SearchOptions";
@@ -964,6 +965,8 @@ export interface Events {
   "save-requested": ViewRequest;
   "view-moved": ViewMoved;
   "plugins-changed": null;
+  /** A plugin that is on could not start: the window of `root` tells it (`root` null: an App-scope one, every window). */
+  "plugin-failed": PluginFailed;
   "index-progress": IndexProgress;
   /** The projects of a folder changed: the window showing `root` reads `projectsView` again. */
   "projects-changed": ProjectsChanged;

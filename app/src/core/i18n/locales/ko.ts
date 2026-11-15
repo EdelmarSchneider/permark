@@ -1599,6 +1599,7 @@ export default {
   "plugins.choice.off": "이 프로젝트에서 꺼짐",
   "plugins.dataNotRemoved": "데이터를 제거할 수 없습니다: {message}",
   "plugins.dataRemoved": "{name}의 데이터를 제거했습니다.",
+  "plugins.failedToStart": "{name}을(를) 시작할 수 없습니다. {reason}",
   "plugins.inProject": "이 프로젝트에서",
   "plugins.intro": "기능을 켜거나 끕니다. 꺼진 플러그인은 아무것도 남기지 않습니다.",
   "plugins.kind.feature": "기능",

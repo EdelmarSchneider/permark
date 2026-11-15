@@ -6,6 +6,7 @@ use ts_rs::TS;
 
 use crate::conditions::Context;
 use crate::document::DocumentChanged;
+use crate::plugins::{PluginError, PluginId};
 use crate::settings::{AppSettings, SettingsScope};
 use crate::tree::TreeChanged;
 use crate::workspace::{TabId, WindowSummary, WindowView};
@@ -64,6 +65,28 @@ pub struct OpenFailed {
     pub error: crate::error::IpcError,
 }
 
+/// A plugin that is on could not start (it + its dependents stay off). `root`: the project it was started for, as
+/// the window names its folder (a window compares it with its project's); `None`: an App-scope plugin, every window.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PluginFailed {
+    pub plugin: PluginId,
+    pub root: Option<String>,
+    pub error: crate::error::IpcError,
+}
+
+impl PluginFailed {
+    #[must_use]
+    pub fn new(failure: PluginError, root: Option<String>) -> Self {
+        Self {
+            plugin: failure.plugin().clone(),
+            root,
+            error: failure.into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum CoreEvent {
     WindowsChanged(WindowsChanged),
@@ -84,9 +107,8 @@ pub enum CoreEvent {
     /// The projects of a folder changed (all windows; the payload names the folder): read `projects_view` again.
     ProjectsChanged(crate::projects::ProjectsChanged),
     PluginsChanged,
-    PluginFailed {
-        message: String,
-    },
+    /// All windows; the payload names the project (none: an App-scope plugin).
+    PluginFailed(PluginFailed),
     /// Plugin event: name already prefixed `<id>:`.
     Plugin {
         name: String,
@@ -109,7 +131,7 @@ impl CoreEvent {
             Self::IndexProgress(_) => "index-progress",
             Self::ProjectsChanged(_) => "projects-changed",
             Self::PluginsChanged => "plugins-changed",
-            Self::PluginFailed { .. } => "plugin-failed",
+            Self::PluginFailed(_) => "plugin-failed",
             Self::Plugin { name, .. } => name,
         }
     }
