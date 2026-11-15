@@ -95,7 +95,7 @@ jobs:
             ### Install
             | Platform | Download |
             | --- | --- |
-            | Windows | the `-setup.exe` installer (recommended). The `.msi` stays for updating copies that were installed from a 0.5 `.msi` |
+            | Windows | the `-setup.exe` installer (recommended). This is the last version with an `.msi`: if you installed PerMark from an `.msi`, uninstall it and install the `-setup.exe`; your settings and notes stay |
             | macOS | the universal `.dmg` (Apple silicon and Intel) |
             | Linux | the `.AppImage`, `.deb` or `.rpm` |
 

@@ -3,6 +3,8 @@
 Thanks for your interest. PerMark is created and maintained by Edelmar Schneider, who sets its direction and has
 the final say on what gets merged. Issues, ideas and pull requests are welcome.
 
+Everyone who takes part in the project is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Before you start
 - For anything bigger than a small fix, open an issue first so we can agree on the approach.
 - The product is tool-agnostic: features rely on the file system and git, never on one specific AI tool.

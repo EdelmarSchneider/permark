@@ -24,6 +24,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Removing a missing project from the list now keeps its Undo notice until you close it. <!-- f: projects -->
 - Spanish and Simplified Chinese use one consistent word for Settings, agents and comments. <!-- f: i18n -->
 
+### Deprecated
+- This is the last version with a Windows `.msi` installer. If you installed PerMark from an `.msi`, uninstall it and install the `-setup.exe`: your settings and notes stay. Settings live in your user profile, and notes in their own folder (`Documents\PerMark Notes`, unless you chose another one). You can also get PerMark from the Microsoft Store instead; the Store version keeps settings of its own, so you choose them again there, and your notes and documents are still where they were. <!-- f: windows-installer -->
+
 ### Fixed
 - The AI agent connection now belongs to the folder you turned it on for. If that folder is deleted and another one is created or cloned at the same place, agents are no longer allowed there: the connection shows as off, says why, and you turn it on again if you want it. Connections made with earlier versions keep working. <!-- f: agent -->
 - The groups file no longer drops entries that are special spaces, such as the no-break space, and accepts longer emoji sequences, such as people with skin tones. A character listed twice in one group no longer breaks the picker. <!-- f: editing -->
