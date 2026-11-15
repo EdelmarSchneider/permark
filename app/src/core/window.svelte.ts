@@ -25,9 +25,11 @@ import {
 } from "../api";
 import { conditions } from "./conditions/context.svelte";
 import { confirmLeave } from "./editing/guard";
+import { ipcErrorText } from "./errors";
 import { restartPlugins, syncPlugins } from "./plugins/instance.svelte";
 import { language, parsePreference, t } from "./i18n";
 import { look } from "./look.svelte";
+import { nameKey } from "./shell/settings/pluginsModel";
 import { tabs } from "./shell/tabs.svelte";
 import { ui } from "./shell/ui.svelte";
 
@@ -214,6 +216,16 @@ export class WindowStore {
         if (e.window === this.label)
           this.#notify({ kind: "openFailed", path: e.path, error: e.error });
       }),
+      this.#api.on("plugin-failed", (e) => {
+        if (e.root !== null && !this.#isProject(e.root)) return;
+        const key = nameKey(e.plugin);
+        const name = key === null ? e.plugin : t(key);
+        // one notice per plugin: a start retried (a setting changed) takes the place of the last one
+        this.notifyKeyed(
+          `plugin-failed:${e.plugin}`,
+          t("plugins.failedToStart", { name, reason: ipcErrorText(e.error) }),
+        );
+      }),
     ]);
     const booted = await this.#api.windowBoot();
     if (booted.ok) {
@@ -270,6 +282,15 @@ export class WindowStore {
   #applyContext(context: Parameters<typeof conditions.set>[0]): void {
     conditions.set(context);
     syncPlugins(context.plugins);
+  }
+
+  /** Whether `root` is the project this view shows or is opening (its plugins start before it is shown). */
+  #isProject(root: string): boolean {
+    const view = this.view;
+    return (
+      root === this.root ||
+      (view.state === "opening" && view.target.kind === "project" && view.target.path === root)
+    );
   }
 
   #showView(view: WindowView): void {

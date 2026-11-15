@@ -1,9 +1,9 @@
 use super::*;
 use crate::conditions::Distribution;
-use crate::events::Recorder;
+use crate::events::{CoreEvent, PluginFailed, Recorder, WindowChanged};
 use crate::paths::Root;
 use crate::plugins::fake::{Fake, Log};
-use crate::plugins::{Plugin, PluginRegistry, PluginScope};
+use crate::plugins::{Plugin, PluginId, PluginRegistry, PluginScope};
 use crate::settings::AppSettings;
 use crate::state::AppDirs;
 
@@ -587,6 +587,80 @@ fn the_notes_open_only_while_the_notes_plugin_is_on_and_in_one_place() {
     );
     // the session leaves the Notes tab out (it keeps `notes.open`)
     assert_eq!(on.registry.session_windows()[0].tabs, []);
+}
+
+// ---- plugins that cannot start ----------------------------------------------------------------------------------
+
+fn failures(events: &[CoreEvent]) -> Vec<PluginFailed> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            CoreEvent::PluginFailed(failed) => Some(failed.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_plugin_that_cannot_start_is_told_by_id_with_a_typed_error_and_the_project_it_was_for() {
+    let log = Log::default();
+    let f = fx_with(
+        vec![
+            Arc::new(
+                Fake::new("updates", PluginScope::App, &[])
+                    .with_log(&log)
+                    .failing(),
+            ),
+            Arc::new(
+                Fake::new("git", PluginScope::Project, &[])
+                    .with_log(&log)
+                    .failing(),
+            ),
+            Arc::new(Fake::new("tags", PluginScope::Project, &[]).with_log(&log)),
+        ],
+        log,
+    );
+    let _ = f.sink.take();
+    // an App-scope plugin belongs to no project: every window hears it
+    f.registry.env().apply_app_plugins();
+    let app = failures(&f.sink.take());
+    assert_eq!(app.len(), 1, "{app:?}");
+    assert_eq!(app[0].plugin, PluginId::of("updates"));
+    assert_eq!(app[0].root, None);
+    assert_eq!(app[0].error.kind, ErrorKind::Internal);
+    assert_eq!(app[0].error.detail.as_deref(), Some("fake failure"));
+
+    let dir = tempfile::tempdir().unwrap();
+    let (_, view) = tab(&f, "main", &project(dir.path())).unwrap();
+    let events = f.sink.take();
+    let failed = failures(&events);
+    assert_eq!(failed.len(), 1, "only the plugin that failed: {failed:?}");
+    assert_eq!(failed[0].plugin, PluginId::of("git"));
+    // named the way the view names its project: while it opens, and once it shows it
+    let opening = events.iter().find_map(|e| match e {
+        CoreEvent::WindowChanged(WindowChanged {
+            view:
+                WindowView::Opening {
+                    target: WorkspaceRefDto::Project { path },
+                    ..
+                },
+            ..
+        }) => Some(path.clone()),
+        _ => None,
+    });
+    assert!(opening.is_some());
+    assert_eq!(failed[0].root, opening);
+    let Some(WindowView::Showing {
+        workspace: WorkspaceView::Project { root, .. },
+        ..
+    }) = f.registry.window_view(&view)
+    else {
+        panic!("the project is not shown")
+    };
+    assert_eq!(failed[0].root.as_deref(), Some(root.as_str()));
+    let wire = serde_json::to_value(&failed[0]).unwrap();
+    assert_eq!(wire["plugin"], "git");
+    assert_eq!(wire["error"]["kind"], "internal");
 }
 
 // ---- lazy restore + tab switching -------------------------------------------------------------------------------

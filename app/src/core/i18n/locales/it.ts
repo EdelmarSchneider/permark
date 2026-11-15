@@ -1642,6 +1642,7 @@ export default {
   "plugins.choice.off": "Disattivato in questo progetto",
   "plugins.dataNotRemoved": "Impossibile rimuovere i dati: {message}",
   "plugins.dataRemoved": "Dati di {name} rimossi.",
+  "plugins.failedToStart": "Impossibile avviare {name}. {reason}",
   "plugins.inProject": "In questo progetto",
   "plugins.intro": "Attiva o disattiva le funzioni. Un plugin disattivato non lascia nulla.",
   "plugins.kind.feature": "Funzioni",

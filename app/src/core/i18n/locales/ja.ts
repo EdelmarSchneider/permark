@@ -1644,6 +1644,7 @@ export default {
   "plugins.choice.off": "このプロジェクトでオフ",
   "plugins.dataNotRemoved": "データを削除できませんでした：{message}",
   "plugins.dataRemoved": "{name} のデータを削除しました。",
+  "plugins.failedToStart": "{name} を開始できませんでした。{reason}",
   "plugins.inProject": "このプロジェクト",
   "plugins.intro": "機能をオンまたはオフにします。オフのプラグインは何も残しません。",
   "plugins.kind.feature": "機能",

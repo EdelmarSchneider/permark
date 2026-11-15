@@ -1667,6 +1667,7 @@ export default {
   "plugins.choice.off": "Désactivé dans ce projet",
   "plugins.dataNotRemoved": "Impossible de supprimer les données : {message}",
   "plugins.dataRemoved": "Données de {name} supprimées.",
+  "plugins.failedToStart": "{name} n'a pas pu démarrer. {reason}",
   "plugins.inProject": "Dans ce projet",
   "plugins.intro":
     "Activez ou désactivez des fonctionnalités. Un plugin désactivé ne laisse aucune trace.",

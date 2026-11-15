@@ -1626,6 +1626,7 @@ export default {
   "plugins.choice.off": "Desligado neste projeto",
   "plugins.dataNotRemoved": "Não foi possível remover os dados: {message}",
   "plugins.dataRemoved": "Dados de {name} removidos.",
+  "plugins.failedToStart": "Não foi possível iniciar {name}. {reason}",
   "plugins.inProject": "Neste projeto",
   "plugins.intro": "Ligue ou desligue recursos. Um plugin desligado não deixa nada para trás.",
   "plugins.kind.feature": "Recursos",

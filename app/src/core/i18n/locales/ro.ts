@@ -1707,6 +1707,7 @@ export default {
   "plugins.choice.off": "Dezactivat în acest proiect",
   "plugins.dataNotRemoved": "Datele nu au putut fi eliminate: {message}",
   "plugins.dataRemoved": "Datele pluginului {name} au fost eliminate.",
+  "plugins.failedToStart": "Pluginul {name} nu a putut porni. {reason}",
   "plugins.inProject": "În acest proiect",
   "plugins.intro":
     "Activează sau dezactivează funcții. Un plugin dezactivat nu lasă nimic în urmă.",

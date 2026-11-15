@@ -1598,6 +1598,7 @@ const en = {
   "plugins.choice.off": "Off in this project",
   "plugins.dataNotRemoved": "Couldn't remove the data: {message}",
   "plugins.dataRemoved": "Removed the data of {name}.",
+  "plugins.failedToStart": "{name} couldn't start. {reason}",
   "plugins.inProject": "In this project",
   "plugins.intro": "Turn features on or off. A plugin that is off leaves nothing behind.",
   "plugins.kind.feature": "Features",
