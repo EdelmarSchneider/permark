@@ -78,7 +78,13 @@ export function createMockExport(): {
 } {
   const probe: ExportProbe = {
     stored: null,
-    capabilities: { pdf: true, print: true, pageNumbers: true, nativeMargins: false },
+    capabilities: {
+      pdf: true,
+      print: true,
+      pageNumbers: true,
+      nativeMargins: false,
+      snapNeedsCups: false,
+    },
     next: null,
     fail: null,
     calls: [],

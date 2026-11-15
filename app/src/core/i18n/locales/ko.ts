@@ -2752,6 +2752,7 @@ export default {
   "export.pageNumbers": "페이지 번호",
   "export.pageNumbers.unavailable": "이 시스템에서는 페이지 번호를 사용할 수 없습니다.",
   "export.lightNote": "테마와 관계없이 밝은 색으로 인쇄됩니다.",
+  "export.snapCups": "프린터로 인쇄하려면 CUPS snap을 설치하세요:",
   "export.savePdf": "PDF 저장…",
   "export.print": "인쇄…",
   "export.unsaved": "먼저 변경 내용을 저장하세요. PDF, HTML, 인쇄는 저장된 파일을 사용합니다.",

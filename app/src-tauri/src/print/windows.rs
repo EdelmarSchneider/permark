@@ -25,7 +25,12 @@ pub const CAPABILITIES: PrintCapabilities = PrintCapabilities {
     print: true,
     page_numbers: true,
     native_margins: false,
+    snap_needs_cups: false,
 };
+
+pub const fn capabilities() -> PrintCapabilities {
+    CAPABILITIES
+}
 
 /// After the dialog closed: time for the web view to hand the job to the spooler before its window goes.
 const SPOOL_GRACE: Duration = Duration::from_secs(5);

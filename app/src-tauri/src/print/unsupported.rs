@@ -10,7 +10,12 @@ pub const CAPABILITIES: PrintCapabilities = PrintCapabilities {
     print: false,
     page_numbers: false,
     native_margins: false,
+    snap_needs_cups: false,
 };
+
+pub const fn capabilities() -> PrintCapabilities {
+    CAPABILITIES
+}
 
 pub(super) fn settle(_sheet: &Sheet) -> Result<(), PrintError> {
     Err(PrintError::Unsupported)

@@ -361,7 +361,7 @@ impl ShellPrinter {
 
 impl HtmlPrinter for ShellPrinter {
     fn capabilities(&self) -> PrintCapabilities {
-        native::CAPABILITIES
+        native::capabilities()
     }
 
     fn save_pdf(

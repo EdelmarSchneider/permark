@@ -2807,6 +2807,7 @@ export default {
   "export.pageNumbers": "Números de páxina",
   "export.pageNumbers.unavailable": "Os números de páxina non están dispoñibles neste sistema.",
   "export.lightNote": "Imprímese en cores claras, sexa cal sexa o teu tema.",
+  "export.snapCups": "Para imprimir nas túas impresoras, instala o snap de CUPS:",
   "export.savePdf": "Gardar PDF…",
   "export.print": "Imprimir…",
   "export.unsaved":

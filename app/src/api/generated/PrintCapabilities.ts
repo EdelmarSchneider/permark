@@ -17,4 +17,9 @@ pageNumbers: boolean,
  * out for the paper less the page's `@page` margins): the page's CSS names the same margins and draws no margin
  * boxes.
  */
-nativeMargins: boolean, };
+nativeMargins: boolean, 
+/**
+ * Running as a snap without its `cups` connection: the print dialog lists no printers until the CUPS snap is
+ * installed (the snap's `cups` plug connects only to that snap, never to the system's own CUPS).
+ */
+snapNeedsCups: boolean, };

@@ -2956,6 +2956,7 @@ export default {
   "export.pageNumbers": "Numere de pagină",
   "export.pageNumbers.unavailable": "Numerele de pagină nu sunt disponibile pe acest sistem.",
   "export.lightNote": "Se tipărește în culori deschise, oricare ar fi tema ta.",
+  "export.snapCups": "Pentru a tipări la imprimantele tale, instalează snap-ul CUPS:",
   "export.savePdf": "Salvează PDF…",
   "export.print": "Tipărește…",
   "export.unsaved":

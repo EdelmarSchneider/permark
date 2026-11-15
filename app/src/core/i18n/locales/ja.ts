@@ -2820,6 +2820,7 @@ export default {
   "export.pageNumbers": "ページ番号",
   "export.pageNumbers.unavailable": "このシステムではページ番号を使用できません。",
   "export.lightNote": "テーマに関係なく明るい色で印刷されます。",
+  "export.snapCups": "お使いのプリンターで印刷するには、CUPS の snap をインストールしてください：",
   "export.savePdf": "PDF を保存…",
   "export.print": "印刷…",
   "export.unsaved":

@@ -2661,6 +2661,7 @@ export default {
   "export.pageNumbers": "页码",
   "export.pageNumbers.unavailable": "此系统不支持页码。",
   "export.lightNote": "无论使用何种主题，都以浅色打印。",
+  "export.snapCups": "要使用你的打印机打印，请安装 CUPS snap：",
   "export.savePdf": "保存 PDF…",
   "export.print": "打印…",
   "export.unsaved": "请先保存更改：PDF、HTML 和打印使用已保存的文件。",

@@ -2754,6 +2754,7 @@ const en = {
   "export.pageNumbers": "Page numbers",
   "export.pageNumbers.unavailable": "Page numbers are not available on this system.",
   "export.lightNote": "Prints in light colors, whatever your theme.",
+  "export.snapCups": "To print on your printers, install the CUPS snap:",
   "export.savePdf": "Save PDF…",
   "export.print": "Print…",
   "export.unsaved": "Save your changes first: PDF, HTML and printing use the saved file.",

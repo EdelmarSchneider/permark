@@ -32,7 +32,12 @@ pub const CAPABILITIES: PrintCapabilities = PrintCapabilities {
     print: true,
     page_numbers: false,
     native_margins: true,
+    snap_needs_cups: false,
 };
+
+pub const fn capabilities() -> PrintCapabilities {
+    CAPABILITIES
+}
 
 const POINTS_PER_MM: f64 = 72.0 / 25.4;
 

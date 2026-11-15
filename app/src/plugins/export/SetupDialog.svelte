@@ -20,6 +20,9 @@
     ["tabloid", "export.size.tabloid"],
   ];
 
+  /** A snap reaches printers only through the CUPS snap (its `cups` connection never reaches the system's CUPS). */
+  const SNAP_CUPS = "sudo snap install cups";
+
   const s = $derived(exporter.state.status === "setup" ? exporter.state : null);
   const orientations = $derived<{ value: Orientation; label: string }[]>([
     { value: "portrait", label: t("export.portrait") },
@@ -125,6 +128,9 @@
       </div>
 
       <p class="note">{t("export.lightNote")}</p>
+      {#if s.entry === "print" && s.capabilities.snapNeedsCups}
+        <p class="note">{t("export.snapCups")} <code>{SNAP_CUPS}</code></p>
+      {/if}
       {#if !s.capabilities.pdf && !s.capabilities.print}
         <p class="note" role="alert">{t("export.unsupported")}</p>
       {/if}
@@ -221,6 +227,9 @@
     margin: 0;
     color: var(--muted);
     font-size: var(--fs-ui-sm);
+  }
+  .note code {
+    user-select: all;
   }
   footer {
     display: flex;

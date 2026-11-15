@@ -82,6 +82,7 @@ impl HtmlPrinter for Printer {
             print: true,
             page_numbers: true,
             native_margins: false,
+            snap_needs_cups: false,
         }
     }
 
@@ -376,7 +377,7 @@ fn html_print_open_and_reveal_go_to_the_printer_for_the_asking_window() {
     );
     assert_eq!(
         h.call("capabilities", Value::Null).unwrap(),
-        json!({ "pdf": true, "print": true, "pageNumbers": true, "nativeMargins": false })
+        json!({ "pdf": true, "print": true, "pageNumbers": true, "nativeMargins": false, "snapNeedsCups": false })
     );
 }
 

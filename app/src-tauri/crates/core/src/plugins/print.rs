@@ -142,6 +142,9 @@ pub struct PrintCapabilities {
     /// out for the paper less the page's `@page` margins): the page's CSS names the same margins and draws no margin
     /// boxes.
     pub native_margins: bool,
+    /// Running as a snap without its `cups` connection: the print dialog lists no printers until the CUPS snap is
+    /// installed (the snap's `cups` plug connects only to that snap, never to the system's own CUPS).
+    pub snap_needs_cups: bool,
 }
 
 /// What the person is writing: picks the dialog's start folder, its default name and its filter.

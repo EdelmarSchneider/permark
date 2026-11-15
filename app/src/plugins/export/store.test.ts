@@ -101,7 +101,13 @@ beforeEach(() => {
   probe.next = null;
   probe.fail = null;
   probe.saved.clear();
-  probe.capabilities = { pdf: true, print: true, pageNumbers: true, nativeMargins: false };
+  probe.capabilities = {
+    pdf: true,
+    print: true,
+    pageNumbers: true,
+    nativeMargins: false,
+    snapNeedsCups: false,
+  };
 });
 
 describe("the export flow", () => {
@@ -162,7 +168,13 @@ describe("the export flow", () => {
   });
 
   it("no page numbers where the web view cannot draw them, whatever the setup says", async () => {
-    probe.capabilities = { pdf: true, print: true, pageNumbers: false, nativeMargins: false };
+    probe.capabilities = {
+      pdf: true,
+      print: true,
+      pageNumbers: false,
+      nativeMargins: false,
+      snapNeedsCups: false,
+    };
     const { store, built } = setup();
     await store.start("print", DOC);
     await store.go("print");
@@ -326,7 +338,13 @@ describe("the export flow", () => {
   });
 
   it("the paper rule leaves the margins to a web view that sets them itself", async () => {
-    probe.capabilities = { pdf: true, print: true, pageNumbers: false, nativeMargins: true };
+    probe.capabilities = {
+      pdf: true,
+      print: true,
+      pageNumbers: false,
+      nativeMargins: true,
+      snapNeedsCups: false,
+    };
     const { store, built } = setup();
     await store.start("pdf", DOC);
     await store.go("pdf");
@@ -350,7 +368,13 @@ describe("the page setup dialog", () => {
   });
 
   it("the entry the person came from is the primary button; page numbers say when unavailable", async () => {
-    probe.capabilities = { pdf: true, print: true, pageNumbers: false, nativeMargins: false };
+    probe.capabilities = {
+      pdf: true,
+      print: true,
+      pageNumbers: false,
+      nativeMargins: false,
+      snapNeedsCups: false,
+    };
     component = mount(SetupDialog, { target: document.body });
     await exporter.start("print", DOC);
     flushSync();
@@ -364,6 +388,29 @@ describe("the page setup dialog", () => {
     expect(document.body.textContent).toContain("Prints in light colors, whatever your theme.");
     const sizes = Array.from(document.querySelectorAll(".dialog option")).map((o) => o.textContent);
     expect(sizes).toContain("US Letter (8.5 × 11 in)");
+  });
+
+  it("a snap without the CUPS snap names the command at Print only", async () => {
+    probe.capabilities = {
+      pdf: true,
+      print: true,
+      pageNumbers: false,
+      nativeMargins: true,
+      snapNeedsCups: true,
+    };
+    component = mount(SetupDialog, { target: document.body });
+    await exporter.start("print", DOC);
+    flushSync();
+    await tick();
+    expect(document.querySelector(".dialog code")?.textContent).toBe("sudo snap install cups");
+    expect(document.querySelector<HTMLButtonElement>(".dialog .btn--primary")?.disabled).toBe(
+      false,
+    );
+    exporter.close();
+    await exporter.start("pdf", DOC);
+    flushSync();
+    await tick();
+    expect(document.querySelector(".dialog code")).toBeNull();
   });
 
   it("Enter on a choice runs the primary button; Escape closes", async () => {

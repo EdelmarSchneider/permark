@@ -2847,6 +2847,7 @@ export default {
   "export.pageNumbers": "Seitenzahlen",
   "export.pageNumbers.unavailable": "Seitenzahlen sind auf diesem System nicht verfügbar.",
   "export.lightNote": "Druckt in hellen Farben, unabhängig von deinem Design.",
+  "export.snapCups": "Um auf deinen Druckern zu drucken, installiere das CUPS-Snap:",
   "export.savePdf": "PDF speichern…",
   "export.print": "Drucken…",
   "export.unsaved":

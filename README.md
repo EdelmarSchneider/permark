@@ -214,7 +214,7 @@ Installers are not code-signed, so your system shows a warning the first time yo
 |---|---|
 | Windows | The [Microsoft Store](https://apps.microsoft.com/detail/9NVV5GVZMGGX), which keeps PerMark up to date. Or the `-setup.exe` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest); the `.msi` is only for updating copies installed from a 0.5 `.msi` |
 | macOS | The universal `.dmg` (Apple silicon and Intel) from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest) |
-| Linux | The `.AppImage`, `.deb` or `.rpm` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest), or the snap (64-bit Intel and AMD): `sudo snap install permark` |
+| Linux | The `.AppImage`, `.deb` or `.rpm` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest), or the snap (64-bit Intel and AMD): `sudo snap install permark`. To print on your printers from the snap, also install the CUPS snap: `sudo snap install cups` |
 
 Copies from GitHub check for updates when they start and once a day, and offer to download and restart. The Microsoft Store and the snap update their copies themselves.
 PerMark becomes your default app for Markdown only if you choose it: it asks once, with Markdown files checked and other types

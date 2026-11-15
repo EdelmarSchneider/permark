@@ -21,7 +21,27 @@ pub const CAPABILITIES: PrintCapabilities = PrintCapabilities {
     print: true,
     page_numbers: false,
     native_margins: true,
+    snap_needs_cups: false,
 };
+
+/// Where a snap's `cups` connection puts the CUPS snap's socket (inside the snap's own view of the files).
+const SNAP_CUPS_SOCKET: &str = "/var/cups/cups.sock";
+
+/// Read at each call: the person may install the CUPS snap while the app runs.
+pub fn capabilities() -> PrintCapabilities {
+    PrintCapabilities {
+        snap_needs_cups: snap_lacks_cups(
+            std::env::var_os("SNAP").is_some(),
+            std::path::Path::new(SNAP_CUPS_SOCKET).exists(),
+        ),
+        ..CAPABILITIES
+    }
+}
+
+/// A snap reaches printers only through the CUPS snap's socket; outside a snap the system's CUPS is used directly.
+const fn snap_lacks_cups(in_snap: bool, socket_present: bool) -> bool {
+    in_snap && !socket_present
+}
 
 /// Whether `script`, run in the page, comes out true.
 fn evaluate(sheet: &Sheet, script: &'static str) -> Result<bool, PrintError> {
@@ -188,6 +208,14 @@ mod tests {
     use permark_core::plugins::Margins;
 
     use super::*;
+
+    #[test]
+    fn only_a_snap_without_the_cups_socket_needs_the_cups_snap() {
+        assert!(snap_lacks_cups(true, false));
+        assert!(!snap_lacks_cups(true, true));
+        assert!(!snap_lacks_cups(false, false));
+        assert!(!snap_lacks_cups(false, true));
+    }
 
     const SIZES: [PageSize; 6] = [
         PageSize::A3,
