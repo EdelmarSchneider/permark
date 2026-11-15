@@ -138,8 +138,9 @@ pub struct PrintCapabilities {
     pub print: bool,
     /// The page's CSS page-number boxes (`@page { @bottom-center }`) show in the output.
     pub page_numbers: bool,
-    /// The paper's size and margins are set natively (the web view ignores the page's `@page` size and margins): the
-    /// page's CSS keeps `margin: 0` so a web view that starts honoring it does not add a second margin.
+    /// The paper's size and margins are set natively (`WebKit`: it draws inside its own margins, and lays the page
+    /// out for the paper less the page's `@page` margins): the page's CSS names the same margins and draws no margin
+    /// boxes.
     pub native_margins: bool,
 }
 
@@ -280,12 +281,18 @@ pub trait HtmlPrinter: Send + Sync {
         cancel: &AtomicBool,
     ) -> Result<Saved, PrintError>;
 
-    /// Shows the system's print dialog for `html` laid out as `setup`. `cancel` set while the page loads: no dialog.
+    /// Shows the system's print dialog for `html` laid out as `setup`, on `window` (the window that asked) where the
+    /// system lets it. `cancel` set while the page loads: no dialog.
     ///
     /// # Errors
     /// Unsupported | the web view failed.
-    fn print(&self, html: String, setup: &PageSetup, cancel: &AtomicBool)
-        -> Result<(), PrintError>;
+    fn print(
+        &self,
+        html: String,
+        setup: &PageSetup,
+        window: &str,
+        cancel: &AtomicBool,
+    ) -> Result<(), PrintError>;
 
     /// `window` is gone: the file last written for it is forgotten (Open | Show in folder no longer reach it).
     fn forget(&self, window: &str);

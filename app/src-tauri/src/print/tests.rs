@@ -269,7 +269,7 @@ fn a_hidden_page_window_renders_a_paged_pdf_and_prints() {
         let closer = dialog_closer(&worker);
         let started = Instant::now();
         let printed = Sheet::open(&worker, sample(), Some(data_dir))
-            .and_then(|sheet| native::print(&sheet, setup));
+            .and_then(|sheet| native::print(&sheet, setup, None));
         let shown = closer.join().unwrap_or(false);
         let _ = tx.send((pdf, printed, shown, started.elapsed()));
         worker.exit(0);

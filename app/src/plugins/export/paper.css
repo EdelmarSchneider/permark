@@ -101,6 +101,15 @@ body {
   .katex-display {
     overflow: visible;
   }
+  /* paper cannot scroll: the reading view's sideways scroll of a table (`.md .table-wrap`, more specific than the
+     rule above) would cut it at the frame; a long token wraps in its cell instead */
+  .md .table-wrap {
+    overflow: visible;
+  }
+  .md th,
+  .md td {
+    overflow-wrap: anywhere;
+  }
   /* a picture | drawing larger than the printable area shrinks to fit it whole */
   img,
   svg,

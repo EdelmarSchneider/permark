@@ -13,7 +13,8 @@ pdf: boolean, print: boolean,
  */
 pageNumbers: boolean, 
 /**
- * The paper's size and margins are set natively (the web view ignores the page's `@page` size and margins): the
- * page's CSS keeps `margin: 0` so a web view that starts honoring it does not add a second margin.
+ * The paper's size and margins are set natively (`WebKit`: it draws inside its own margins, and lays the page
+ * out for the paper less the page's `@page` margins): the page's CSS names the same margins and draws no margin
+ * boxes.
  */
 nativeMargins: boolean, };

@@ -170,8 +170,12 @@ pub(super) fn pdf(sheet: &Sheet, setup: PageSetup) -> Result<Vec<u8>, PrintError
 }
 
 /// The print panel for the page, its paper set to `setup`; returns once the job is handed over or the panel was
-/// cancelled. The page's window is shown first: the panel is a sheet on it.
-pub(super) fn print(sheet: &Sheet, setup: PageSetup) -> Result<(), PrintError> {
+/// cancelled. The page's window is shown first: the panel is a sheet on it (not on `_asking`).
+pub(super) fn print(
+    sheet: &Sheet,
+    setup: PageSetup,
+    _asking: Option<&tauri::Window>,
+) -> Result<(), PrintError> {
     let window = sheet.window()?;
     window.center().map_err(failed)?;
     window.show().map_err(failed)?;

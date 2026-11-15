@@ -282,7 +282,7 @@ describe("export page", () => {
     expect(web).toContain('<meta name="color-scheme" content="light dark">');
   });
 
-  it("paper where the web view sets the margins itself: no page margins, same printable width", async () => {
+  it("paper where the web view sets the margins itself: same margins, no margin boxes, same printable width", async () => {
     const api = await apiWith("<p>text</p>");
     let width = "";
     const observer = new MutationObserver(() => {
@@ -296,7 +296,7 @@ describe("export page", () => {
       pageNumbers: true,
       nativeMargins: true,
     }).finally(() => observer.disconnect());
-    expect(html).toContain("@page { size: 148mm 210mm; margin: 0; }");
+    expect(html).toContain("@page { size: 148mm 210mm; margin: 12.7mm; }");
     expect(html).not.toContain("@bottom-center");
     expect(width).toBe(`${148 - 2 * 12.7}mm`);
   });

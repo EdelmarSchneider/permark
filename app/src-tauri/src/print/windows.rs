@@ -109,8 +109,12 @@ fn read_stream(stream: Option<&IStream>) -> windows::core::Result<Vec<u8>> {
 /// paper | margins of `setup` reach it through the page's `@page` rule (the system dialog takes no settings).
 ///
 /// The web view shows no print dialog while it counts as hidden: it is made visible to itself, its window stays
-/// hidden.
-pub(super) fn print(sheet: &Sheet, _setup: PageSetup) -> Result<(), PrintError> {
+/// hidden. The system dialog places itself (`_asking` unused).
+pub(super) fn print(
+    sheet: &Sheet,
+    _setup: PageSetup,
+    _asking: Option<&tauri::Window>,
+) -> Result<(), PrintError> {
     let rx = on_webview(sheet, move |webview, tx| unsafe {
         webview.controller().SetIsVisible(true)?;
         let core: ICoreWebView2_16 = core(webview)?.cast()?;

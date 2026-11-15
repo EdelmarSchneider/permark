@@ -20,6 +20,10 @@ pub(super) fn pdf(_sheet: &Sheet, _setup: PageSetup) -> Result<Vec<u8>, PrintErr
     Err(PrintError::Unsupported)
 }
 
-pub(super) fn print(_sheet: &Sheet, _setup: PageSetup) -> Result<(), PrintError> {
+pub(super) fn print(
+    _sheet: &Sheet,
+    _setup: PageSetup,
+    _asking: Option<&tauri::Window>,
+) -> Result<(), PrintError> {
     Err(PrintError::Unsupported)
 }

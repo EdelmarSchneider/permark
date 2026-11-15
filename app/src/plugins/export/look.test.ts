@@ -20,11 +20,13 @@ describe("page rule", () => {
     );
   });
 
-  it("where the web view sets the margins itself: size only, no margin boxes, same printable height", () => {
+  it("where the web view sets the margins itself: the same margins, no margin boxes, figures 1% under the printable height", () => {
+    // WebKit lays the page out for the paper less the rule's margins: a margin of 0 there shrinks the whole page
     const rule = pageRule(a4, true, true);
-    expect(rule).toContain("@page { size: 210mm 297mm; margin: 0; }");
+    expect(rule).toContain("@page { size: 210mm 297mm; margin: 19.05mm; }");
     expect(rule).not.toContain("@bottom-center");
-    expect(rule).toContain("--page-h: 258.9mm;");
+    // its pages are whole pixels: a figure exactly the printable height would end past the page and split
+    expect(rule).toContain("--page-h: 256.31mm;");
   });
 });
 

@@ -38,7 +38,7 @@ export type ExportOptions = {
   page?: PageBox;
   /** "n / total" at the bottom of each page (paper; only where the web view draws page boxes). */
   pageNumbers: boolean;
-  /** The web view puts the page box's margins itself (paper): the page rule asks for none of its own. */
+  /** The web view puts the page box's margins itself (paper): the page rule draws no margin boxes. */
   nativeMargins?: boolean;
   /** The reading view's enhance environment (where the window loads project files from). */
   env: EnhanceEnv;

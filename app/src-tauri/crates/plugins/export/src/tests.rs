@@ -59,6 +59,7 @@ enum Asked {
     Print {
         html: String,
         setup: PageSetup,
+        window: String,
     },
     Open(String),
     Reveal(String),
@@ -116,11 +117,13 @@ impl HtmlPrinter for Printer {
         &self,
         html: String,
         setup: &PageSetup,
+        window: &str,
         cancel: &AtomicBool,
     ) -> Result<(), PrintError> {
         self.asked.lock().unwrap().push(Asked::Print {
             html,
             setup: *setup,
+            window: window.to_owned(),
         });
         self.finish(cancel, PathBuf::new());
         Ok(())
@@ -361,9 +364,11 @@ fn html_print_open_and_reveal_go_to_the_printer_for_the_asking_window() {
                     source: h.source()
                 }
             },
+            // the print dialog sits on the window that asked
             Asked::Print {
                 html: "<p>p</p>".into(),
-                setup: PageSetup::default()
+                setup: PageSetup::default(),
+                window: "w-1".into()
             },
             Asked::Open("w-1".into()),
             Asked::Reveal("w-1".into()),

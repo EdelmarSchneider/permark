@@ -188,7 +188,7 @@ impl Shared {
     fn print(&self, args: PrintArgs, window: &str) -> Result<(), IpcError> {
         let printer = self.printer()?;
         let outcome = self.cancellable(window, |cancel| {
-            printer.0.print(args.html, &args.setup, cancel)
+            printer.0.print(args.html, &args.setup, window, cancel)
         });
         Ok(outcome?)
     }

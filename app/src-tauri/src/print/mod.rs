@@ -321,6 +321,11 @@ struct ShellPrinter {
 }
 
 impl ShellPrinter {
+    /// The window holding the view `label` (a dialog for that view sits on it).
+    fn window_of(&self, label: &str) -> Option<tauri::Window> {
+        self.handle.get_webview(label).map(|view| view.window())
+    }
+
     /// The Save dialog on the asking window, in the source's folder with the source's name; the chosen path checked.
     /// `None`: the person cancelled.
     fn ask(&self, origin: &Origin, kind: OutputKind) -> Result<Option<PathBuf>, PrintError> {
@@ -335,11 +340,7 @@ impl ShellPrinter {
         if let Some(folder) = origin.folder() {
             dialog = dialog.set_directory(folder);
         }
-        if let Some(window) = self
-            .handle
-            .get_webview(&origin.window)
-            .map(|view| view.window())
-        {
+        if let Some(window) = self.window_of(&origin.window) {
             dialog = dialog.set_parent(&window);
         }
         let Some(chosen) = dialog.blocking_save_file() else {
@@ -407,6 +408,7 @@ impl HtmlPrinter for ShellPrinter {
         &self,
         html: String,
         setup: &PageSetup,
+        window: &str,
         cancel: &AtomicBool,
     ) -> Result<(), PrintError> {
         if !native::CAPABILITIES.print {
@@ -417,7 +419,7 @@ impl HtmlPrinter for ShellPrinter {
         if cancel.load(Ordering::SeqCst) {
             return Ok(());
         }
-        native::print(&sheet, *setup)
+        native::print(&sheet, *setup, self.window_of(window).as_ref())
     }
 
     fn forget(&self, window: &str) {
