@@ -234,8 +234,9 @@ permark docs/plan.md     # open a single file
 permark --notes          # open the Notes
 ```
 
-On Windows and macOS, `permark` is not on your `PATH` after an install from GitHub, so use the full path of the program, or add
-it yourself. The Microsoft Store and snap versions put `permark` on your `PATH`.
+On Windows, the installer from GitHub can put `permark` on your `PATH`: tick **Add the permark command to PATH** on its
+first page. On macOS, and on Windows without that option, use the full path of the program or add it yourself. The
+Microsoft Store and snap versions put `permark` on your `PATH`.
 
 </details>
 
