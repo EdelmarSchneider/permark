@@ -41,9 +41,10 @@ async function open(root: string): Promise<Fx> {
   const shown = { value: false };
   const store = new ProjectsStore(api, {
     notice: (notice) => {
-      expect(notice.closeAfterMs).toBe(NOTICE_MS);
-      if (notice.actions.length === 0) notes.push(notice.text);
-      else actions.push({ text: notice.text, actions: notice.actions, notice });
+      if (notice.actions.length === 0) {
+        expect(notice.closeAfterMs).toBe(NOTICE_MS);
+        notes.push(notice.text);
+      } else actions.push({ text: notice.text, actions: notice.actions, notice });
     },
     fail: (text) => fails.push(text),
     openSettings: () => settings.push("open"),
@@ -96,6 +97,7 @@ describe("projects store", () => {
     expect(fx.actions[0]?.text).toBe(
       "4 projects included. Change this any time in Settings > Projects inside.",
     );
+    expect(fx.actions[0]?.notice.closeAfterMs).toBe(NOTICE_MS);
     fx.actions[0]?.actions[0]?.run();
     await vi.waitFor(() => expect(fx.store.strip.kind).toBe("first"));
     expect(fx.store.members.size).toBe(0);
@@ -192,11 +194,13 @@ describe("projects store", () => {
     fx.store.remove(gone);
     expect(fx.store.view?.rows.some((r) => r.uid === gone.uid)).toBe(false);
     expect(fx.actions.at(-1)?.text).toBe("hub-x removed from the list.");
+    // no clock: the notice and its Undo stay until dismissed, so a keyboard user can reach them
+    expect(fx.actions.at(-1)?.notice.closeAfterMs).toBeUndefined();
     expect(writes(fx)).toEqual([]);
     // twice: one notice, one removal
     fx.store.remove(gone);
     expect(fx.actions).toHaveLength(1);
-    fx.actions[0]!.notice.onGone?.("timeout");
+    fx.actions[0]!.notice.onGone?.("dismissed");
     await vi.waitFor(() =>
       expect(writes(fx)).toEqual([`projects_remove ${JSON.stringify([gone.uid])}`]),
     );
@@ -225,7 +229,7 @@ describe("projects store", () => {
     const gone = fx.store.view!.rows.find((r) => r.state === "missing")!;
     fx.store.remove(gone);
     fx.stop();
-    fx.actions[0]!.notice.onGone?.("timeout");
+    fx.actions[0]!.notice.onGone?.("dismissed");
     await new Promise((r) => setTimeout(r, 20));
     expect(writes(fx)).toEqual([]);
   });

@@ -645,6 +645,25 @@ describe("UX review round 2: focus, words, places", () => {
     expect(mock.probe.projects.calls.some((c) => c.startsWith("projects_remove"))).toBe(false);
   });
 
+  it("Remove from list: the notice stays until dismissed; dismissing it removes the entry", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    ui.openSettingsPage("projects");
+    section();
+    notices();
+    const gone = projects.view!.rows.find((r) => r.state === "missing")!;
+    button("Remove from list")!.click();
+    flushSync();
+    await until(() => noticeButton("Undo") !== undefined, "notice with Undo");
+    // no clock: a keyboard user can reach its Undo at any time
+    expect(windowStore.notices.at(-1)).toMatchObject({ kind: "action", lasting: true });
+    expect(mock.probe.projects.calls.some((c) => c.startsWith("projects_remove"))).toBe(false);
+    noticeButton("Dismiss")!.click();
+    await until(
+      () => mock.probe.projects.calls.includes(`projects_remove ${JSON.stringify([gone.uid])}`),
+      "entry removed",
+    );
+  });
+
   it("the card's Project settings… opens that project's row, focused on its first rule; no stale read (F11, F19)", async () => {
     const warn = vi.spyOn(console, "warn");
     await openFolder(MOCK_PROJECTS_LISTED);
