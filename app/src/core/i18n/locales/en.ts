@@ -2143,7 +2143,8 @@ const en = {
   "settings.openInTab": "New tab",
   "settings.openInThis": "This tab",
   "settings.openInNew": "New window",
-  "settings.openInHint": "Already open: PerMark shows it where it is.",
+  "settings.openInHint":
+    "Already open: PerMark shows it where it is. Files and folders opened from outside PerMark (a terminal, a double-click, Open with) never replace the current tab; they open in a new tab or window.",
   "switcher.close": "Close",
   "switcher.closeOne": "Close {name}",
   "switcher.label": "Tabs of this window",

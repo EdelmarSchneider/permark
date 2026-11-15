@@ -2299,7 +2299,8 @@ export default {
   "settings.openInTab": "Filă nouă",
   "settings.openInThis": "Această filă",
   "settings.openInNew": "Fereastră nouă",
-  "settings.openInHint": "Dacă este deja deschis, PerMark îl arată acolo unde este.",
+  "settings.openInHint":
+    "Dacă este deja deschis, PerMark îl arată acolo unde este. Fișierele și dosarele deschise din afara PerMark (un terminal, un dublu clic, Deschide cu) nu înlocuiesc niciodată fila curentă; se deschid într-o filă sau fereastră nouă.",
   "switcher.close": "Închide",
   "switcher.closeOne": "Închide {name}",
   "switcher.label": "Filele acestei ferestre",

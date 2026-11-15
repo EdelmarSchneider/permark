@@ -2218,7 +2218,8 @@ export default {
   "settings.openInTab": "Neuer Tab",
   "settings.openInThis": "Dieser Tab",
   "settings.openInNew": "Neues Fenster",
-  "settings.openInHint": "Bereits geöffnet: PerMark zeigt es dort, wo es ist.",
+  "settings.openInHint":
+    "Bereits geöffnet: PerMark zeigt es dort, wo es ist. Dateien und Ordner, die von außerhalb von PerMark geöffnet werden (ein Terminal, ein Doppelklick, Öffnen mit), ersetzen nie den aktuellen Tab; sie öffnen sich in einem neuen Tab oder Fenster.",
   "switcher.close": "Schließen",
   "switcher.closeOne": "{name} schließen",
   "switcher.label": "Tabs dieses Fensters",

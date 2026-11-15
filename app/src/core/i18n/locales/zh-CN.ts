@@ -2083,7 +2083,8 @@ export default {
   "settings.openInTab": "新标签页",
   "settings.openInThis": "此标签页",
   "settings.openInNew": "新窗口",
-  "settings.openInHint": "已打开：PerMark 会在它所在的位置显示。",
+  "settings.openInHint":
+    "已打开：PerMark 会在它所在的位置显示。从 PerMark 外部（终端、双击、“打开方式”）打开的文件和文件夹不会替换当前标签页，而是在新标签页或新窗口中打开。",
   "switcher.close": "关闭",
   "switcher.closeOne": "关闭 {name}",
   "switcher.label": "此窗口的标签页",

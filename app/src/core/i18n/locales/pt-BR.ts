@@ -2180,7 +2180,8 @@ export default {
   "settings.openInTab": "Nova aba",
   "settings.openInThis": "Esta aba",
   "settings.openInNew": "Nova janela",
-  "settings.openInHint": "Já aberto: o PerMark mostra onde está.",
+  "settings.openInHint":
+    "Já aberto: o PerMark mostra onde está. Arquivos e pastas abertos de fora do PerMark (um terminal, um clique duplo, Abrir com) nunca substituem a aba atual; abrem em uma nova aba ou janela.",
   "switcher.close": "Fechar",
   "switcher.closeOne": "Fechar {name}",
   "switcher.label": "Abas desta janela",

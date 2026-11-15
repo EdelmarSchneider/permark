@@ -2198,7 +2198,8 @@ export default {
   "settings.openInTab": "新しいタブ",
   "settings.openInThis": "このタブ",
   "settings.openInNew": "新しいウィンドウ",
-  "settings.openInHint": "既に開いている場合は、PerMark はその場所に表示します。",
+  "settings.openInHint":
+    "既に開いている場合は、PerMark はその場所に表示します。PerMark の外（ターミナル、ダブルクリック、「プログラムから開く」）から開いたファイルやフォルダーは、現在のタブを置き換えず、新しいタブまたはウィンドウで開きます。",
   "switcher.close": "閉じる",
   "switcher.closeOne": "{name} を閉じる",
   "switcher.label": "このウィンドウのタブ",
