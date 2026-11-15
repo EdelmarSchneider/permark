@@ -1,10 +1,12 @@
 // Spelling marks of this window's editor. The open document's words (`tokenize`) are checked by the backend in batches
 // of unique words; verdicts are cached per language set, so a pass after typing only sends the words not seen yet. A
-// pass runs a moment after the text changes; while the person types, the word at the caret is not marked. Nothing is
-// marked while text is composed (IME) or while an AI review is open in the editor (its marks and menu own the text
-// then); the marks come back after. The document's languages are asked once per open document (declared, else
-// detected from its prose, else the default). No dictionary ready for them: no marks (`needsDownload` says which; a
-// download is the person's choice, made elsewhere). The marks live on their own layer: other marks never change.
+// pass runs a moment after the text changes; while the person types, the word at the caret is not marked, until the
+// caret leaves it. Nothing is marked while text is composed (IME) or while an AI review is open in the editor (its
+// marks and menu own the text then); the marks come back after. The document's languages are asked once per open
+// document (declared, else detected from its prose, else the default). No dictionary ready for them: no marks
+// (`needsDownload` says which; a download starts only from the person's own confirm, `download`). The marks live on
+// their own layer: other marks never change. Also the state of the plugin's menus (a marked word's, the language
+// picker, the download question) and of its settings (default language, the person's own words).
 
 import { untrack } from "svelte";
 import {
@@ -12,13 +14,19 @@ import {
   type Api,
   type AppPluginEventName,
   type AppPluginEvents,
+  type SpellingDefault,
   type SpellingDocLanguage,
+  type SpellingFailure,
   type SpellingLanguage,
 } from "../../api";
+import { isTextTarget } from "../../core/commands/dispatch";
 import { editing, type EditingSession } from "../../core/editing/session.svelte";
-import { language as uiLanguage } from "../../core/i18n";
+import { t, language as uiLanguage, type MessageKey } from "../../core/i18n";
 import { pluginClient, type PluginClient } from "../../core/plugins/client";
+import { arrangement } from "../../core/shell/arrangement.svelte";
+import { windowStore, type NoticeAction } from "../../core/window.svelte";
 import { openReview } from "../local-ai/pieces/review.svelte";
+import { languageLabel } from "./names";
 import { sampleOf, tokenize, type Token, type Word } from "./tokenize";
 
 /** The editors' mark layer of this plugin. */
@@ -29,6 +37,8 @@ const MARK_CLASS = "wavy-mark";
 export const PAUSE_MS = 150;
 /** Most words the backend checks in one call. */
 export const BATCH = 5000;
+/** Wait after the caret moved before the word it left is marked (one look per burst of moves). */
+export const CARET_MS = 150;
 
 /** What the store needs of the editing session. */
 export type SpellingSession = Pick<
@@ -42,10 +52,34 @@ export type SpellingSession = Pick<
   | "markAt"
   | "composing"
   | "setNativeSpellcheck"
+  | "reveal"
+  | "scope"
+  | "focus"
 >;
 
 /** The word menu the person opened on a marked word (client point of the right-click). */
 export type MenuAt = { index: number; word: string; x: number; y: number };
+
+/** The language picker, a menu at a point: the languages, or (in place) the default for new documents. `back`: the
+ *  languages again after the default's list (the keyboard starts on the entry that opened it). */
+export type PickerAt = { x: number; y: number; level: "languages" | "default"; back: boolean };
+
+/** The download the person is asked to confirm; `declare`: once confirmed, the document is declared in it too. */
+export type DownloadAsk = { lang: string; declare: boolean };
+
+/** What the status bar says about the open document's spelling. */
+export type SpellingStatus =
+  | { kind: "none" }
+  | { kind: "unsupported" }
+  | {
+      kind: "language";
+      lang: string;
+      source: Exclude<SpellingDocLanguage["source"], "unsupported">;
+      /** A language of the document has no dictionary on this computer yet. */
+      missing: boolean;
+    };
+
+const NO_STATUS: SpellingStatus = { kind: "none" };
 
 export type SpellingDeps = {
   api: Api;
@@ -55,6 +89,10 @@ export type SpellingDeps = {
   reviewOpen: () => boolean;
   /** The window's language (the default spelling language follows it until one is picked). */
   uiLocale: () => string;
+  /** Says a line to screen readers (the window's polite status line). */
+  say: (text: string) => void;
+  /** A notice with buttons that takes the place of the one with the same key. */
+  notify: (key: string, text: string, ...actions: NoticeAction[]) => void;
 };
 
 export class SpellingStore {
@@ -66,12 +104,31 @@ export class SpellingStore {
   misspelled = $state.raw<readonly Word[]>([]);
   /** The word menu asked for (rendered by the plugin's UI); `null`: none. */
   menuAt = $state.raw<MenuAt | null>(null);
+  /** The corrections of the word the menu was opened on, once the backend answered (the menu shows then). */
+  suggested = $state.raw<{ word: string; list: readonly string[] } | null>(null);
+  /** The language picker asked for; `null`: closed. */
+  picker = $state.raw<PickerAt | null>(null);
+  /** The download question shown; `null`: none. */
+  asking = $state.raw<DownloadAsk | null>(null);
+  /** The app's default language (`null`: not asked yet). */
+  defaultLanguage = $state.raw<SpellingDefault | null>(null);
+  /** The person's own words (`null`: not asked yet). */
+  personal = $state.raw<readonly string[] | null>(null);
 
   readonly #api: Api;
   readonly #client: PluginClient;
   readonly #session: SpellingSession;
   readonly #reviewOpen: () => boolean;
   readonly #uiLocale: () => string;
+  readonly #say: (text: string) => void;
+  readonly #notify: SpellingDeps["notify"];
+  /** The downloads this window started (a failure of one of them is said here, not in every window). */
+  readonly #started = new Set<string>();
+  /** Every word the last pass found (the marks less the word being typed, while it is held back). */
+  #found: readonly Word[] = [];
+  /** The word being typed, held back from the marks until the caret leaves it. */
+  #held: Word | null = null;
+  #caretTimer: ReturnType<typeof setTimeout> | null = null;
   /** Verdicts per language set (`langs` joined): word -> known. */
   readonly #cache = new Map<string, Map<string, boolean>>();
   /** Words the person ignored, per document (this window, until it closes). */
@@ -94,6 +151,9 @@ export class SpellingStore {
     this.#session = deps.session ?? editing;
     this.#reviewOpen = deps.reviewOpen ?? (() => openReview() !== null);
     this.#uiLocale = deps.uiLocale ?? (() => uiLanguage.locale);
+    this.#say = deps.say ?? ((text) => arrangement.say(text));
+    this.#notify =
+      deps.notify ?? ((key, text, ...actions) => windowStore.notifyKeyed(key, text, ...actions));
   }
 
   /** The document's languages that have no dictionary on this computer yet. */
@@ -101,6 +161,30 @@ export class SpellingStore {
     const doc = this.document;
     if (doc === null || this.languages.length === 0) return [];
     return doc.language.langs.filter((lang) => !this.#ready(lang));
+  }
+
+  /** The open document's spelling for the status bar: nothing while no document is edited. */
+  get status(): SpellingStatus {
+    const session = this.#session;
+    const doc = this.document;
+    if (session.path === null || session.mode === "view" || doc?.path !== session.path) {
+      return NO_STATUS;
+    }
+    const { langs, source } = doc.language;
+    if (source === "unsupported") return { kind: "unsupported" };
+    const [lang] = langs;
+    if (lang === undefined) return NO_STATUS;
+    return { kind: "language", lang, source, missing: this.needsDownload.length > 0 };
+  }
+
+  /** The next misspelling can be stepped to (a document is edited and has marks). */
+  get canStep(): boolean {
+    return this.#session.mode !== "view" && this.misspelled.length > 0;
+  }
+
+  /** `lang` as the backend last told it (`undefined`: not one of its languages). */
+  languageOf(lang: string): SpellingLanguage | undefined {
+    return this.languages.find((l) => l.id === lang);
   }
 
   /** Marks the open document until the returned teardown runs (the webview's own spellcheck off meanwhile). */
@@ -123,10 +207,24 @@ export class SpellingStore {
         },
       );
     };
-    listen("spelling:personal", () => this.#forget());
+    listen("spelling:personal", (words) => {
+      this.personal = words;
+      this.#forget();
+    });
     listen("spelling:download", ({ lang, state }) => {
       this.languages = this.languages.map((l) => (l.id === lang ? { ...l, state } : l));
       if (state.kind === "ready") this.#forget();
+      if (state.kind !== "downloading" && this.#started.delete(lang) && state.kind === "failed") {
+        this.#failed(lang, state.reason);
+      }
+    });
+    const onContextMenu = (event: MouseEvent): void => this.#keyMenu(event);
+    const onSelection = (): void => this.#caretMoved();
+    window.addEventListener("contextmenu", onContextMenu);
+    document.addEventListener("selectionchange", onSelection);
+    stops.push(() => {
+      window.removeEventListener("contextmenu", onContextMenu);
+      document.removeEventListener("selectionchange", onSelection);
     });
     void this.#loadLanguages();
     const stopWatch = $effect.root(() => {
@@ -151,8 +249,13 @@ export class SpellingStore {
       this.#asking = null;
       this.#loading = null;
       this.#cache.clear();
+      this.#started.clear();
       this.document = null;
       this.languages = [];
+      this.picker = null;
+      this.asking = null;
+      this.defaultLanguage = null;
+      this.personal = null;
     };
   }
 
@@ -177,8 +280,25 @@ export class SpellingStore {
   async addToDictionary(word: string): Promise<boolean> {
     this.menuAt = null;
     const result = await this.#client.call("spelling.personal.add", { word });
-    if (result.ok) this.#forget();
-    return result.ok;
+    if (!result.ok) return false;
+    this.personal = result.value;
+    this.#forget();
+    return true;
+  }
+
+  /** Takes `word` out of the person's own words (marked again where no dictionary knows it). */
+  async removeWord(word: string): Promise<boolean> {
+    const result = await this.#client.call("spelling.personal.remove", { word });
+    if (!result.ok) return false;
+    this.personal = result.value;
+    this.#forget();
+    return true;
+  }
+
+  /** Reads the person's own words (settings). */
+  async loadPersonal(): Promise<void> {
+    const result = await this.#client.call("spelling.personal.list", {});
+    if (result.ok) this.personal = result.value;
   }
 
   /** Leaves `word` unmarked in this document while this window is open. */
@@ -224,6 +344,119 @@ export class SpellingStore {
     this.menuAt = null;
   }
 
+  /**
+   * Selects the next marked word after the caret (wraps around), gives the editor the keyboard and says the word
+   * with its first correction. A caret on no mark starts from its selection's end, else from the start of its block
+   * (the editors tell no caret offset). `false`: nothing to step to.
+   */
+  async next(): Promise<boolean> {
+    const list = this.misspelled;
+    if (!this.canStep) return false;
+    const session = this.#session;
+    const at = session.markAt(LAYER);
+    let index: number;
+    if (at !== null) index = (at + 1) % list.length;
+    else {
+      const from = session.scope("selection")?.to ?? session.scope("paragraph")?.from ?? 0;
+      index = Math.max(
+        0,
+        list.findIndex((word) => word.from >= from),
+      );
+    }
+    const word = list[index];
+    if (word === undefined) return false;
+    session.reveal({ from: word.from, to: word.to });
+    session.focus();
+    const [first] = await this.suggestions(word.word);
+    this.#say(
+      first === undefined
+        ? t("spelling.next.saidNone", { word: word.word })
+        : t("spelling.next.said", { word: word.word, suggestion: first }),
+    );
+    return true;
+  }
+
+  // ---- the language picker, downloads, the default --------------------------------------------------------------
+
+  /** Opens the language picker at a client point, on one of its lists (default: the languages). */
+  openPicker(x: number, y: number, level: PickerAt["level"] = "languages", back = false): void {
+    this.picker = { x, y, level, back };
+    // another window may have picked a new default meanwhile
+    void this.loadDefault();
+  }
+
+  closePicker(): void {
+    this.picker = null;
+  }
+
+  /** Asks the person whether to download `lang`'s dictionary (`declare`: the document takes it once confirmed). */
+  askDownload(lang: string, declare: boolean): void {
+    this.asking = { lang, declare };
+  }
+
+  closeAsk(): void {
+    this.asking = null;
+  }
+
+  /** The person confirmed the question: the download starts (and the document is declared in it, when asked). */
+  async confirmDownload(): Promise<void> {
+    const asked = this.asking;
+    this.asking = null;
+    if (asked === null) return;
+    if ((await this.download(asked.lang)) && asked.declare) await this.declare(asked.lang);
+  }
+
+  /** Starts the download of `lang`'s dictionary: called only from the person's own confirm | Try again. */
+  async download(lang: string): Promise<boolean> {
+    this.#started.add(lang);
+    const result = await this.#client.call("spelling.download", { lang });
+    if (!result.ok) {
+      this.#started.delete(lang);
+      this.#failed(lang, null);
+      return false;
+    }
+    this.languages = result.value;
+    return true;
+  }
+
+  /** Stops the download of `lang`'s dictionary (what came so far is let go). */
+  async cancelDownload(lang: string): Promise<void> {
+    this.#started.delete(lang);
+    const result = await this.#client.call("spelling.cancel", { lang });
+    if (result.ok) this.languages = result.value;
+  }
+
+  /** Reads the app's default language. */
+  async loadDefault(): Promise<void> {
+    const result = await this.#client.call("spelling.defaults.get", { uiLocale: this.#uiLocale() });
+    if (result.ok) this.defaultLanguage = result.value;
+  }
+
+  /** Picks the app's default language; a document checked in the default takes the new one. `false`: refused. */
+  async setDefault(lang: string): Promise<boolean> {
+    const result = await this.#client.call("spelling.defaults.set", { lang });
+    if (!result.ok) return false;
+    this.defaultLanguage = result.value;
+    if (this.document?.language.source === "default") {
+      this.document = null;
+      this.#asking = null;
+      this.#schedule(false, 0);
+    }
+    return true;
+  }
+
+  /** A download this window started failed: said with a way to try again. */
+  #failed(lang: string, reason: SpellingFailure | null): void {
+    this.#notify(
+      `spelling.download.${lang}`,
+      t("spelling.failed", {
+        language: languageLabel(lang),
+        reason: reason === null ? "" : failureText(reason),
+      }).trim(),
+      { label: t("spelling.retry"), run: () => void this.download(lang) },
+    );
+  }
+
   // ---- passes --------------------------------------------------------------------------------------------------
 
   #follow(path: string | null, active: boolean, text: string): void {
@@ -260,6 +493,8 @@ export class SpellingStore {
   /** No pass waits and none in flight counts. */
   #stop(): void {
     this.#cancel();
+    if (this.#caretTimer !== null) clearTimeout(this.#caretTimer);
+    this.#caretTimer = null;
     this.#seq += 1;
   }
 
@@ -354,12 +589,50 @@ export class SpellingStore {
 
   // ---- marks ---------------------------------------------------------------------------------------------------
 
-  #draw(list: readonly Word[], typing: boolean): void {
+  /** Marks `list`; `typing`: the word at the caret is held back (`only`: just when it is still that word). */
+  #draw(list: readonly Word[], typing: boolean, only: Word | null = null): void {
+    this.#found = list;
+    this.#held = null;
     this.#show(list);
     if (!typing) return;
     // the word being typed is not done yet
     const at = this.#session.markAt(LAYER);
-    if (at !== null) this.#show(list.filter((_, i) => i !== at));
+    const word = at === null ? undefined : list[at];
+    if (word === undefined || (only !== null && (word.from !== only.from || word.to !== only.to)))
+      return;
+    this.#held = word;
+    this.#show(list.filter((_, i) => i !== at));
+  }
+
+  /** The caret moved: once it rests, a word held back while typed is marked if the caret left it. */
+  #caretMoved(): void {
+    if (this.#held === null) return;
+    if (this.#caretTimer !== null) clearTimeout(this.#caretTimer);
+    this.#caretTimer = setTimeout(() => {
+      this.#caretTimer = null;
+      this.#release();
+    }, CARET_MS);
+  }
+
+  /** The held word is marked unless the caret is still in it. The text changed meanwhile: its own pass decides. */
+  #release(): void {
+    const held = this.#held;
+    const session = this.#session;
+    if (held === null || session.current() !== this.#checked || session.composing()) return;
+    if (session.mode === "view" || this.#reviewOpen()) return;
+    this.#draw(this.#found, true, held);
+  }
+
+  /** Shift+F10 | the Menu key in an editor: the browser aims its context menu at the editor that has the keyboard,
+   *  at its caret (a right-click lands on the mark itself, and the editor opens the menu). Caret on a marked word:
+   *  that word's menu, there. */
+  #keyMenu(event: MouseEvent): void {
+    if (event.defaultPrevented || event.button === 2 || !isEditorTarget(event.target)) return;
+    const list = this.misspelled;
+    const at = this.#session.markAt(LAYER);
+    if (at === null || list[at] === undefined) return;
+    event.preventDefault();
+    this.#openMenu(list, at, event.clientX, event.clientY);
   }
 
   #show(list: readonly Word[]): void {
@@ -378,13 +651,52 @@ export class SpellingStore {
     const word = list[index];
     if (list !== this.misspelled || word === undefined) return;
     this.menuAt = { index, word: word.word, x, y };
+    if (this.suggested?.word === word.word) return;
+    this.suggested = null;
+    void this.suggestions(word.word).then((found) => {
+      if (this.menuAt?.word === word.word) this.suggested = { word: word.word, list: found };
+    });
   }
 
   /** No marks on the layer, no menu. */
   #clear(): void {
     this.menuAt = null;
+    this.#found = [];
+    this.#held = null;
     this.#show([]);
   }
+}
+
+/** The keyboard is in an editor's text (not a field). */
+function isEditorTarget(target: EventTarget | null): boolean {
+  return (
+    isTextTarget(target) &&
+    !(target instanceof HTMLInputElement) &&
+    !(target instanceof HTMLTextAreaElement)
+  );
+}
+
+/** The sentence for why a dictionary did not arrive. */
+function failureKey(reason: SpellingFailure): MessageKey {
+  switch (reason.kind) {
+    case "offline":
+      return "spelling.failed.offline";
+    case "http":
+      return "spelling.failed.http";
+    case "hash":
+      return "spelling.failed.hash";
+    case "disk":
+      return "spelling.failed.disk";
+    case "unreadable":
+      return "spelling.failed.unreadable";
+    default:
+      return reason satisfies never;
+  }
+}
+
+/** Why a dictionary did not arrive, in words. */
+export function failureText(reason: SpellingFailure): string {
+  return t(failureKey(reason), { status: reason.kind === "http" ? reason.status : 0 });
 }
 
 /** The words to mark: unknown, not ignored; of a hyphenated word unknown as a whole, its unknown parts. */
