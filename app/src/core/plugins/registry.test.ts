@@ -204,6 +204,7 @@ describe("plugin host", () => {
       "comments",
       "convert",
       "correction",
+      "export",
       "fmt-dotenv",
       "fmt-ignore",
       "fmt-ini",

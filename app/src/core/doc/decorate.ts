@@ -118,13 +118,32 @@ export class Decorator {
   #linkMarks = false;
   /** Links marked missing, with the title each had before (a link may carry a title of its own). */
   #marked = new Map<HTMLAnchorElement, string | null>();
+  /** Embeds whose library is still loading (each settles once mounted, cancelled or failed). */
+  #loading = new Set<Promise<void>>();
+  /** The theme every embed draws in, whatever the page shows; undefined: embeds follow the page. */
+  readonly #theme: "light" | "dark" | undefined;
 
   /** Read when a reference is marked (its tooltip says what a click does). */
   refSetup: RefSetup = () => ({ editorSet: false, mod: "Ctrl" });
 
-  constructor(api: Api) {
+  /**
+   * `theme` fixes the theme of every embed (a copy of the page drawn off screen in a look of its own, e.g. light
+   * paper); left out, embeds follow the page's theme and tone.
+   */
+  constructor(api: Api, options: { theme?: "light" | "dark" } = {}) {
     this.#api = api;
     this.links = new LinkCache(api);
+    this.#theme = options.theme;
+  }
+
+  /**
+   * Settles once every embed started so far is loaded and mounted (a failed library counts: its block keeps the
+   * plain text). An embed may still draw after it is mounted (a diagram, a formula): that is the embed's own state,
+   * seen in its markup (a diagram's figure holds `is-pending` until drawn).
+   */
+  async idle(): Promise<void> {
+    // embeds started while waiting count too
+    while (this.#loading.size > 0) await Promise.allSettled(this.#loading);
   }
 
   setDocument(path: string | null): void {
@@ -226,18 +245,22 @@ export class Decorator {
       source,
       info: isMath ? "" : (element.getAttribute("data-info") ?? ""),
       display: element.getAttribute("data-math-style") === "display",
+      ...(this.#theme === undefined ? {} : { theme: this.#theme }),
     };
-    void loader().then(
-      (module) => {
-        if (record.cancelled) return;
-        // the original content leaves in the same turn the embed arrives: no flash
-        element.replaceChildren();
-        record.instance = mount(module.default, { target: element, props });
-      },
-      () => {
-        // the library did not load: the plain text stays
-      },
-    );
+    const loading: Promise<void> = loader()
+      .then(
+        (module) => {
+          if (record.cancelled) return;
+          // the original content leaves in the same turn the embed arrives: no flash
+          element.replaceChildren();
+          record.instance = mount(module.default, { target: element, props });
+        },
+        () => {
+          // the library did not load: the plain text stays
+        },
+      )
+      .finally(() => this.#loading.delete(loading));
+    this.#loading.add(loading);
   }
 
   #unmountOne(element: HTMLElement): void {

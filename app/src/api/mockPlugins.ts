@@ -9,6 +9,7 @@ import type { createMockNotes, NotesProbe } from "./mockNotes";
 import type { createMockDistribution } from "./mockDistribution";
 import type { createMockTokens } from "./mockTokens";
 import type { createMockConvert } from "./mockConvert";
+import type { createMockExport } from "./mockExport";
 import type { createMockCorrection } from "./mockCorrection";
 import type { createMockTranslation } from "./mockTranslation";
 import type { createMockLocalAi } from "./mockLocalAi";
@@ -138,6 +139,7 @@ export function createMockPlugins(
   distribution: ReturnType<typeof createMockDistribution>["handlers"] &
     ReturnType<typeof createMockTokens>["handlers"] &
     ReturnType<typeof createMockConvert>["handlers"] &
+    ReturnType<typeof createMockExport>["handlers"] &
     ReturnType<typeof createMockLocalAi>["handlers"] &
     ReturnType<typeof createMockCorrection>["handlers"] &
     ReturnType<typeof createMockTranslation>["handlers"],

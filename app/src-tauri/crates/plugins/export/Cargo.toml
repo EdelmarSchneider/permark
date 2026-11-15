@@ -1,0 +1,22 @@
+[package]
+name = "permark-plugin-export"
+description = "PerMark plugin export: the open Markdown document as a PDF or a standalone HTML page, or printed."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Depends on `permark-core` only: the shell renders and writes through the core's `HtmlPrinterApi`.
+[dependencies]
+permark-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

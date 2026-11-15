@@ -81,6 +81,8 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_fmt_toon::plugin());
     #[cfg(feature = "plugin-convert")]
     plugins.push(permark_plugin_convert::plugin());
+    #[cfg(feature = "plugin-export")]
+    plugins.push(permark_plugin_export::plugin());
     #[cfg(feature = "plugin-text-view")]
     plugins.push(permark_plugin_text_view::plugin());
     #[cfg(feature = "plugin-shell-integration")]
@@ -158,6 +160,7 @@ mod tests {
             "fmt-ignore",
             "fmt-toon",
             "convert",
+            "export",
             "text-view",
         ] {
             assert!(

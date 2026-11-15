@@ -126,6 +126,18 @@ describe("web pictures", () => {
     expect(f.asked).toHaveLength(1);
   });
 
+  it("tells the kept picture of an address without fetching one", async () => {
+    const f = fake();
+    await webPictures.load(f.api, true);
+    expect(webPictures.kept("https://e.example/a.png")).toBeUndefined();
+    const chip = page(["https://e.example/a.png"]).querySelector(".remote-image");
+    if (!chip) throw new Error("no chip");
+    await webPictures.show(f.api, chip, () => {});
+    expect(webPictures.kept("https://e.example/a.png")).toBe("blob:test/1");
+    expect(webPictures.kept("https://e.example/b.png")).toBeUndefined();
+    expect(f.asked).toHaveLength(1);
+  });
+
   it("with the project's choice on, https pictures load by themselves, two at a time", async () => {
     const f = fake({ hold: true, always: true });
     await webPictures.load(f.api, true);

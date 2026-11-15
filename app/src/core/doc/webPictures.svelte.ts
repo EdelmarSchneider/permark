@@ -81,6 +81,11 @@ class WebPictures {
     await this.#fetch(api, chip, url, note);
   }
 
+  /** The `blob:` URL of a picture at `url` the person already fetched in this window, if still kept (never fetches). */
+  kept(url: string): string | undefined {
+    return this.#kept.get(url);
+  }
+
   /** Lets every kept picture go (tests; a window that closes takes them anyway). */
   forget(): void {
     for (const blob of this.#kept.values()) URL.revokeObjectURL(blob);

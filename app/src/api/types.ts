@@ -37,6 +37,10 @@ import type { TargetView } from "./generated/TargetView";
 import type { Problem } from "./generated/Problem";
 import type { Table } from "./generated/Table";
 import type { TableRow } from "./generated/TableRow";
+import type { PageSetup } from "./generated/PageSetup";
+import type { PrintCapabilities } from "./generated/PrintCapabilities";
+import type { Saved } from "./generated/Saved";
+import type { SetupView } from "./generated/SetupView";
 import type { ContextChanged } from "./generated/ContextChanged";
 import type { CloseRequested } from "./generated/CloseRequested";
 import type { OpenIn } from "./generated/OpenIn";
@@ -770,6 +774,22 @@ export interface PluginMethods {
   };
   "convert.cancel": { args: { job: number }; result: null };
   "convert.close": { args: { job: number }; result: null };
+  /** The page setup to offer (the default until the person chose one: `stored` false) and its page box. */
+  "export.setup.get": { args: Record<string, never>; result: SetupView };
+  /** Remembers `setup` app-wide; answers its page box. */
+  "export.setup.set": { args: { setup: PageSetup }; result: SetupView };
+  "export.capabilities": { args: Record<string, never>; result: PrintCapabilities };
+  /** Save dialog in the folder of `source` (a workspace path), then `html` written there as it is. */
+  "export.saveHtml": { args: { html: string; source: string }; result: Saved };
+  /** Save dialog, then `html` rendered as pages of `setup` and written there as a PDF. */
+  "export.savePdf": { args: { html: string; source: string; setup: PageSetup }; result: Saved };
+  /** The system's print dialog for `html` laid out as `setup`. */
+  "export.print": { args: { html: string; setup: PageSetup }; result: null };
+  /** The PDF of this window still rendering is dropped (nothing written). */
+  "export.cancel": { args: Record<string, never>; result: null };
+  /** Opens | shows in the file manager the file last written for this window. */
+  "export.open": { args: Record<string, never>; result: null };
+  "export.reveal": { args: Record<string, never>; result: null };
 }
 
 /** What the converter reads: a file of the workspace, or a text from the page. */

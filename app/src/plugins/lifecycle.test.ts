@@ -305,6 +305,28 @@ describe("the symbols plugin", () => {
   });
 });
 
+describe("the export plugin", () => {
+  it("adds its menu entries, the print command and its key, dormant, and leaves nothing when off", async () => {
+    const registry = new ContributionRegistry();
+    const host = new PluginHost(registry, pluginLoaders());
+    await host.enable("export");
+    const found = [...new Set(registry.ownedBy("export").map((c) => c.kind))].sort();
+    expect(found).toEqual(["command", "docMenu", "shortcut", "statusItem"]);
+    expect(registry.of("docMenu").map((e) => e.id)).toEqual([
+      "export.1pdf",
+      "export.2html",
+      "export.3print",
+    ]);
+    // only the Markdown document the window shows
+    expect(registry.of("docMenu").every((e) => e.applies?.("notes.md") === false)).toBe(true);
+    expect(registry.of("shortcut")).toEqual([
+      expect.objectContaining({ keys: "Mod+Alt+p", command: "export.print" }),
+    ]);
+    expect(host.disable("export"), "contributions left after deactivate").toBe(0);
+    expect(registry.items).toHaveLength(0);
+  });
+});
+
 describe("the config format plugins", () => {
   const FORMATS: [PluginId, string, string[], string[]][] = [
     ["fmt-toml", "toml", ["Cargo.toml", "pyproject.toml"], ["a.json", "toml"]],

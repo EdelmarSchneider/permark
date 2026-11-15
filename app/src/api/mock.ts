@@ -26,6 +26,7 @@ import { createMockCorrection } from "./mockCorrection";
 import type { PieceRunProbe, PieceRunWiring } from "./mockPieceRun";
 import { createMockTranslation, type TranslationProbe } from "./mockTranslation";
 import { createMockConvert, type ConvertProbe } from "./mockConvert";
+import { createMockExport, type ExportProbe } from "./mockExport";
 import { createMockEditing, mockDecoded, mockHash, type MockEditProbe } from "./mockEdit";
 import { createMockImport, type ImportProbe } from "./mockImport";
 import { createMockNotes, MOCK_NOTES_FOLDER } from "./mockNotes";
@@ -241,6 +242,8 @@ export type MockProbe = {
   tokens: TokensProbe;
   /** The converter: the next answer, calls, saved files. */
   convert: ConvertProbe;
+  /** Export: the remembered setup, the next Save dialog answer, calls, written files. */
+  export: ExportProbe;
   /** Local AI: calls made, disk space, this computer, download + move timers. */
   localAi: LocalAiProbe;
   /** Correction: calls made, the status answer, a failure for the next run, the run timer. */
@@ -530,6 +533,7 @@ export function createMockApi(): Api & {
     rootNow,
   );
   const convert = createMockConvert((path) => editing.probe.files.get(path) ?? null);
+  const exporting = createMockExport();
   const localAi = createMockLocalAi(
     (event, payload) => {
       for (const handler of appListeners[event]) handler(payload);
@@ -567,6 +571,7 @@ export function createMockApi(): Api & {
       ...distribution.handlers,
       ...tokens.handlers,
       ...convert.handlers,
+      ...exporting.handlers,
       ...localAi.handlers,
       ...correction.handlers,
       ...translation.handlers,
@@ -601,6 +606,7 @@ export function createMockApi(): Api & {
     distribution: distribution.probe,
     tokens: tokens.probe,
     convert: convert.probe,
+    export: exporting.probe,
     localAi: localAi.probe,
     correction: correction.probe,
     translation: translation.probe,

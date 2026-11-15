@@ -1298,29 +1298,36 @@ pub fn search_recent(
 
 /// Calls a method a running plugin of the window's project serves (data in, data out). A plugin that is off, or a
 /// method nobody serves, is `Unavailable`.
-#[tauri::command(async)]
-pub fn plugin_call(
+///
+/// Runs on the blocking pool: a method may wait minutes on the person (a Save | print dialog, a long conversion)
+/// and must not hold one of the few async workers every other command shares.
+#[tauri::command]
+pub async fn plugin_call(
     handle: AppHandle,
     window: Webview,
     plugin: String,
     method: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, IpcError> {
-    let call = RpcCall {
-        window: window.label().to_owned(),
-        args,
-    };
-    // an app plugin (the notes) answers from anywhere: the welcome screen and the Notes tab have no project
-    let shell = state(&handle);
-    let app_scope = PluginId::parse(&plugin)
-        .and_then(|id| shell.env.registry.manifest(&id).map(|m| m.scope))
-        == Some(PluginScope::App);
-    if app_scope {
-        return shell.env.rpc().call(&plugin, &method, &call);
-    }
-    project_of(&handle, &window)?
-        .rpc()
-        .call(&plugin, &method, &call)
+    tauri::async_runtime::spawn_blocking(move || {
+        let call = RpcCall {
+            window: window.label().to_owned(),
+            args,
+        };
+        // an app plugin (the notes) answers from anywhere: the welcome screen and the Notes tab have no project
+        let shell = state(&handle);
+        let app_scope = PluginId::parse(&plugin)
+            .and_then(|id| shell.env.registry.manifest(&id).map(|m| m.scope))
+            == Some(PluginScope::App);
+        if app_scope {
+            return shell.env.rpc().call(&plugin, &method, &call);
+        }
+        project_of(&handle, &window)?
+            .rpc()
+            .call(&plugin, &method, &call)
+    })
+    .await
+    .map_err(|e| IpcError::new(ErrorKind::Internal).detail(e.to_string()))?
 }
 
 /// Asks this view's window to close: at once when nothing is unsaved, else one prompt (`close-requested`).
@@ -1448,10 +1455,31 @@ pub fn default_app_handoff(handle: AppHandle) -> Result<(), IpcError> {
 }
 
 /// Lists every command once: Tauri handler + names (contract test).
+/// Whether a web view may call the app's commands: never an export page window (it holds a generated page only, runs
+/// no script of its own and matches no capability; refusing here keeps it so should a script ever run in it).
+fn admits(label: &str) -> bool {
+    !crate::print::is_sheet(label)
+}
+
+/// `commands`, answered only for web views [`admits`]; any other gets `Denied`.
+fn guarded(
+    commands: impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static,
+) -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    move |invoke| {
+        if !admits(invoke.message.webview_ref().label()) {
+            invoke
+                .resolver
+                .reject(IpcError::new(ErrorKind::Denied).subject("ipc"));
+            return true;
+        }
+        commands(invoke)
+    }
+}
+
 macro_rules! commands {
     ($($name:ident),+ $(,)?) => {
         pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
-            tauri::generate_handler![$($name),+]
+            guarded(tauri::generate_handler![$($name),+])
         }
 
         #[cfg(test)]
@@ -1726,6 +1754,13 @@ mod tests {
         }
         let unique: std::collections::BTreeSet<_> = NAMES.iter().collect();
         assert_eq!(unique.len(), NAMES.len(), "duplicate command");
+    }
+
+    #[test]
+    fn export_page_windows_reach_no_app_command() {
+        assert!(admits("main"));
+        assert!(admits("view-3"));
+        assert!(!admits("export-1"));
     }
 
     #[test]

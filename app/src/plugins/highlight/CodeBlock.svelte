@@ -13,6 +13,8 @@
   let { source, info, lines = false, region }: EmbedProps = $props();
 
   let outcome = $state.raw<CodeOutcome>({ html: null, label: null });
+  /** The first answer of the highlighter came: a copy of the page taken now (export) holds the colors. */
+  let settled = $state(false);
   let copied = $state(false);
 
   function escape(text: string): string {
@@ -29,9 +31,13 @@
   // highlight.js loads on first use; a block changed meanwhile ignores the old answer
   $effect(() => {
     let stale = false;
-    void highlightFence(source, info).then((result) => {
-      if (!stale) outcome = result;
-    });
+    void highlightFence(source, info)
+      .then((result) => {
+        if (!stale) outcome = result;
+      })
+      .finally(() => {
+        if (!stale) settled = true;
+      });
     return () => {
       stale = true;
     };
@@ -58,7 +64,8 @@
 <pre
   tabindex={region === undefined ? undefined : 0}
   role={region === undefined ? undefined : "region"}
-  aria-label={region}><code
+  aria-label={region}
+  aria-busy={settled ? undefined : "true"}><code
     >{#if drawn !== null}{@html drawn}{:else}{source}{/if}</code
   ></pre>
 <div class="corner">

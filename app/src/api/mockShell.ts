@@ -69,6 +69,7 @@ export const MOCK_MANIFESTS: readonly Manifest[] = [
   manifest("fmt-ignore", "format", "app"),
   manifest("fmt-toon", "format", "app"),
   manifest("convert", "feature", "app", ["fmt-toon"]),
+  manifest("export", "feature", "app"),
   manifest("text-view", "format", "app"),
   {
     ...manifest("shell-integration", "feature", "app"),

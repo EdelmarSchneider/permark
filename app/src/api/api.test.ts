@@ -44,6 +44,18 @@ describe("call (typed invoke)", () => {
   });
 });
 
+describe("plugin calls", () => {
+  it("split the key at the first dot: the method keeps its own dots", async () => {
+    invoke.mockResolvedValue({ stored: false });
+    await tauriApi.pluginCall("export.setup.get", {});
+    await tauriApi.pluginCall("export.capabilities", {});
+    expect(invoke.mock.calls).toEqual([
+      ["plugin_call", { plugin: "export", method: "setup.get", args: {} }],
+      ["plugin_call", { plugin: "export", method: "capabilities", args: {} }],
+    ]);
+  });
+});
+
 describe("the view tells the backend (it shows | titles the window)", () => {
   it("first paint, title and theme go to the backend, never to the window itself", async () => {
     invoke.mockResolvedValue(null);

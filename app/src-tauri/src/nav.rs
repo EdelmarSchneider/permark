@@ -1,7 +1,17 @@
 //! Navigation guard: a window never leaves the app page (a stray link would replace the app and lose unsaved work).
+//! An export page window goes to its page only.
 
 use tauri::plugin::{Builder, TauriPlugin};
 use tauri::{Url, Wry};
+
+/// The dev server that serves the UI in debug builds; release builds have none.
+pub fn dev_url() -> Option<Url> {
+    if cfg!(debug_assertions) {
+        Url::parse("http://localhost:1420").ok()
+    } else {
+        None
+    }
+}
 
 /// The app's own page: bundled UI (`tauri://localhost`, `http(s)://tauri.localhost`) or the dev server (debug).
 pub fn is_app_url(url: &Url, dev_url: Option<&Url>) -> bool {
@@ -18,7 +28,13 @@ pub fn is_app_url(url: &Url, dev_url: Option<&Url>) -> bool {
 
 pub fn guard(dev_url: Option<Url>) -> TauriPlugin<Wry> {
     Builder::new("navigation-guard")
-        .on_navigation(move |_webview, url| is_app_url(url, dev_url.as_ref()))
+        .on_navigation(move |webview, url| {
+            if crate::print::is_sheet(webview.label()) {
+                crate::print::is_page_url(url)
+            } else {
+                is_app_url(url, dev_url.as_ref())
+            }
+        })
         .build()
 }
 

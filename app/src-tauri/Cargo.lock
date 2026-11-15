@@ -3309,13 +3309,21 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 name = "permark"
 version = "0.12.0"
 dependencies = [
+ "block2",
+ "gtk",
+ "javascriptcore-rs",
  "keyring",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-web-kit",
  "permark-core",
  "permark-plugin-agent",
  "permark-plugin-broken-links",
  "permark-plugin-comments",
  "permark-plugin-convert",
  "permark-plugin-correction",
+ "permark-plugin-export",
  "permark-plugin-fmt-dotenv",
  "permark-plugin-fmt-ignore",
  "permark-plugin-fmt-ini",
@@ -3360,6 +3368,9 @@ dependencies = [
  "thiserror 2.0.21",
  "ts-rs",
  "ureq",
+ "webkit2gtk",
+ "webview2-com",
+ "windows",
 ]
 
 [[package]]
@@ -3465,6 +3476,17 @@ version = "0.12.0"
 dependencies = [
  "permark-core",
  "permark-plugin-local-ai",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ts-rs",
+]
+
+[[package]]
+name = "permark-plugin-export"
+version = "0.12.0"
+dependencies = [
+ "permark-core",
  "serde",
  "serde_json",
  "tempfile",

@@ -10,7 +10,7 @@ use permark_core::events::{CoreEvent, EventSink, OpenFailed, SettingsChanged, St
 use permark_core::ipc_local::{Listening, Server};
 use permark_core::open::{OpenAck, OpenRequest};
 use permark_core::paths::Root;
-use permark_core::plugins::{PluginId, ServiceLease};
+use permark_core::plugins::{HtmlPrinterApi, PluginId, ServiceLease};
 use permark_core::session::{
     app_session_file, AppSession, Geometry, RecentStore, SavedNotes, SavedWindow,
 };
@@ -56,6 +56,8 @@ pub struct Shell {
     _files: Vec<ServiceLease>,
     /// The downloads network + credential store (`DownloadKit`), for plugins fetching pinned files.
     _downloads: ServiceLease,
+    /// PDF | HTML | print through the system web view (`HtmlPrinterApi`), for the export plugin.
+    _print: ServiceLease,
 }
 
 /// The file manager entries go with their plugin (off = leaves nothing behind); quitting the app leaves them.
@@ -167,6 +169,7 @@ impl Shell {
         let updater = None;
         let files = crate::files::provide(&env, &handle);
         let downloads = crate::downloads_http::provide(&env);
+        let print = crate::print::provide(&env, &handle);
         env.apply_app_plugins();
         let app_store = StateStore::app(dirs);
         Self {
@@ -186,6 +189,7 @@ impl Shell {
             _updater: updater,
             _files: files,
             _downloads: downloads,
+            _print: print,
         }
     }
 
@@ -251,6 +255,11 @@ impl Shell {
         let mut delivery = lock(&self.delivery);
         delivery.listening.remove(view);
         delivery.pending.remove(view);
+        drop(delivery);
+        // the file an export wrote for this view: nothing can open | show it any more, and the map must not grow
+        if let Some(printer) = self.env.services().get::<HtmlPrinterApi>() {
+            printer.0.forget(view);
+        }
     }
 
     /// Loads the saved session (corrupt -> notice).

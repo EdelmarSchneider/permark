@@ -3,7 +3,7 @@
   import type { EmbedProps } from "../../core/plugins/props";
   import { drawPlantuml } from "./engine";
 
-  let { source }: EmbedProps = $props();
+  let { source, theme }: EmbedProps = $props();
 </script>
 
-<DiagramView {source} draw={drawPlantuml} />
+<DiagramView {source} {theme} draw={drawPlantuml} />

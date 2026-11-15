@@ -29,10 +29,24 @@ pub fn handle(
         .get(header::RANGE)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
+    let origin = request
+        .headers()
+        .get(header::ORIGIN)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     tauri::async_runtime::spawn_blocking(move || {
         let answer = serve(&handle, &path, range.as_deref());
-        responder.respond(response(answer));
+        let shared = shared_with(origin.as_deref(), crate::nav::dev_url().as_ref());
+        responder.respond(response(answer, shared));
     });
+}
+
+/// The `Origin` a reading script may get the answer for: the app's own page only (on Windows the app page and this
+/// scheme are different origins, so the export builder's `fetch` of a picture needs it); any other page -> none.
+fn shared_with<'a>(origin: Option<&'a str>, dev_url: Option<&tauri::Url>) -> Option<&'a str> {
+    let text = origin?;
+    let url = tauri::Url::parse(text).ok()?;
+    (url.scheme() != "about" && crate::nav::is_app_url(&url, dev_url)).then_some(text)
 }
 
 /// Why nothing is served.
@@ -88,8 +102,12 @@ fn serve(handle: &AppHandle, uri_path: &str, range: Option<&str>) -> Result<Asse
     Ok(assets::read(&path, &abs, range)?)
 }
 
-fn response(result: Result<Asset, Refusal>) -> Response<Vec<u8>> {
-    let mut builder = Response::builder();
+fn response(result: Result<Asset, Refusal>, shared: Option<&str>) -> Response<Vec<u8>> {
+    // the answer depends on the asking page: a cache must not hand one page's answer to another
+    let mut builder = Response::builder().header(header::VARY, "Origin");
+    if let Some(origin) = shared {
+        builder = builder.header(header::ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+    }
     let (status, content_type, body) = match result {
         Ok(asset) => {
             builder = builder.header(header::ACCEPT_RANGES, "bytes");
@@ -163,12 +181,15 @@ mod tests {
 
     #[test]
     fn answers_carry_the_headers_that_make_ranges_and_safety_work() {
-        let ok = response(Ok(Asset {
-            mime: "video/mp4",
-            bytes: vec![1, 2, 3],
-            part: Part::Range { start: 0, end: 2 },
-            total: 10,
-        }));
+        let ok = response(
+            Ok(Asset {
+                mime: "video/mp4",
+                bytes: vec![1, 2, 3],
+                part: Part::Range { start: 0, end: 2 },
+                total: 10,
+            }),
+            None,
+        );
         assert_eq!(ok.status(), StatusCode::PARTIAL_CONTENT);
         assert_eq!(ok.headers()[header::CONTENT_RANGE], "bytes 0-2/10");
         assert_eq!(ok.headers()[header::ACCEPT_RANGES], "bytes");
@@ -177,12 +198,15 @@ mod tests {
             .to_str()
             .unwrap()
             .contains("sandbox"));
-        let late = response(Ok(Asset {
-            mime: "video/mp4",
-            bytes: Vec::new(),
-            part: Part::Unsatisfiable,
-            total: 10,
-        }));
+        let late = response(
+            Ok(Asset {
+                mime: "video/mp4",
+                bytes: Vec::new(),
+                part: Part::Unsatisfiable,
+                total: 10,
+            }),
+            None,
+        );
         assert_eq!(late.status(), StatusCode::RANGE_NOT_SATISFIABLE);
         assert_eq!(late.headers()[header::CONTENT_RANGE], "bytes */10");
         for (refusal, status) in [
@@ -190,9 +214,56 @@ mod tests {
             (Refusal::Forbidden, StatusCode::FORBIDDEN),
             (Refusal::Failed, StatusCode::INTERNAL_SERVER_ERROR),
         ] {
-            let answer = response(Err(refusal));
+            let answer = response(Err(refusal), None);
             assert_eq!(answer.status(), status);
             assert_eq!(answer.body().len(), 0);
         }
+    }
+
+    fn picture() -> Asset {
+        Asset {
+            mime: "image/png",
+            bytes: vec![1],
+            part: Part::Whole,
+            total: 1,
+        }
+    }
+
+    #[test]
+    fn the_app_page_may_read_answers_and_no_other_page_may() {
+        let dev = tauri::Url::parse("http://localhost:1420").ok();
+        for origin in [
+            "http://tauri.localhost",
+            "https://tauri.localhost",
+            "tauri://localhost",
+            "http://localhost:1420",
+        ] {
+            let allowed = shared_with(Some(origin), dev.as_ref());
+            assert_eq!(allowed, Some(origin), "{origin}");
+            let answer = response(Ok(picture()), allowed);
+            assert_eq!(
+                answer.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
+                origin
+            );
+            assert_eq!(answer.headers()[header::VARY], "Origin");
+            assert_eq!(answer.headers()["X-Content-Type-Options"], "nosniff");
+        }
+        for origin in [
+            "https://example.com",
+            "http://tauri.localhost.example.com",
+            "null",
+            "*",
+            "",
+            "http://localhost:1421",
+        ] {
+            assert_eq!(shared_with(Some(origin), dev.as_ref()), None, "{origin}");
+        }
+        assert_eq!(shared_with(Some("http://localhost:1420"), None), None);
+        assert_eq!(shared_with(None, dev.as_ref()), None);
+        let foreign = response(Ok(picture()), None);
+        assert!(!foreign
+            .headers()
+            .contains_key(header::ACCESS_CONTROL_ALLOW_ORIGIN));
+        assert_eq!(foreign.headers()[header::VARY], "Origin");
     }
 }
