@@ -11,6 +11,8 @@ import type { ShellState } from "./generated/ShellState";
 import type { UpdateState } from "./generated/UpdateState";
 import type { CountResult } from "./generated/CountResult";
 import type { TokenCountState } from "./generated/TokenCountState";
+import type { SpellingDefault } from "./generated/SpellingDefault";
+import type { SpellingDocLanguage } from "./generated/SpellingDocLanguage";
 import type { SpellingDownload } from "./generated/SpellingDownload";
 import type { SpellingLanguage } from "./generated/SpellingLanguage";
 import type { LocalAiCatalog } from "./generated/LocalAiCatalog";
@@ -705,6 +707,28 @@ export interface PluginMethods {
   "spelling.personal.add": { args: { word: string }; result: string[] };
   "spelling.personal.remove": { args: { word: string }; result: string[] };
   "spelling.personal.list": { args: Record<string, never>; result: string[] };
+  /**
+   * The languages a document is checked in: declared by the person, else detected from `sample` (prose of the
+   * document, code left out; the first 8192 characters are read), else the default (`uiLocale` until one is picked).
+   * Text in a script no dictionary covers: `unsupported` with its `script`.
+   */
+  "spelling.language": {
+    args: { path: string; sample: string; uiLocale: string };
+    result: SpellingDocLanguage;
+  };
+  /**
+   * Declares (`lang`) | clears (`null`) a document's language: kept in the project's `.permark/` (outside a project:
+   * the profile). Answers as `language` (`sample` + `uiLocale` serve the answer once cleared). Refused: `invalidData`
+   * / `lang`, a path outside the window's workspace, `invalidData` / `unreadable` (a project file of another version).
+   */
+  "spelling.declare": {
+    args: { path: string; lang: string | null; sample?: string; uiLocale?: string };
+    result: SpellingDocLanguage;
+  };
+  /** The app's default spelling language (follows `uiLocale` until the person picks one). */
+  "spelling.defaults.get": { args: { uiLocale: string }; result: SpellingDefault };
+  /** Refused: `invalidData` / `lang`. */
+  "spelling.defaults.set": { args: { lang: string }; result: SpellingDefault };
   "local-ai.catalog": { args: Record<string, never>; result: LocalAiCatalog };
   "local-ai.tasks": { args: Record<string, never>; result: AiTaskInfo[] };
   "local-ai.state": { args: Record<string, never>; result: LocalAiState };
@@ -875,7 +899,8 @@ export interface AppPluginEvents {
 export type AppPluginEventName = keyof AppPluginEvents;
 export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };
 export type { CountResult, TokenCountState };
-export type { SpellingDownload, SpellingLanguage };
+export type { SpellingDefault, SpellingDocLanguage, SpellingDownload, SpellingLanguage };
+export type { SpellingLanguageSource } from "./generated/SpellingLanguageSource";
 export type { SpellingFailure } from "./generated/SpellingFailure";
 export type { SpellingState } from "./generated/SpellingState";
 export type { FolderBadge, FolderBadges, FolderJob, FolderSummary };

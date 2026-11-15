@@ -10,6 +10,7 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::error::{ErrorKind, IpcError};
 use crate::paths::{canonicalize_lenient, RootKey};
+use crate::state::RawFile;
 use crate::tree::{Scan, ScanFile};
 use crate::watch::{FsBatch, Subscription};
 
@@ -79,6 +80,15 @@ pub trait WindowFiles: Send + Sync {
     /// window shows no project). The listener runs on the watch thread: keep it short.
     fn watch(&self, window: &str, listener: ChangeListener) -> Option<Subscription> {
         let _ = (window, listener);
+        None
+    }
+
+    /// The file `name` the project of `window` shares with its team (`StateStore::shared_file`: `.permark/<name>`,
+    /// the project's profile copy while it has no `.permark/`), for a plugin that keeps a choice about the project's
+    /// documents with the project. `None`: the window shows no project (a single file, the Notes) | `name` is not a
+    /// plain file name.
+    fn shared_file(&self, window: &str, name: &str) -> Option<RawFile> {
+        let _ = (window, name);
         None
     }
 }
@@ -218,6 +228,25 @@ mod tests {
             gone.overlaps(&tmp.path().join("GONE").join("m")),
             CASE_INSENSITIVE
         );
+    }
+
+    struct Bare;
+
+    impl WindowFiles for Bare {
+        fn read(&self, _: &str, _: &str, _: u64) -> Result<String, IpcError> {
+            Err(IpcError::new(ErrorKind::Unsupported))
+        }
+
+        fn write_beside(&self, _: &str, _: &str, _: &str, _: &str) -> Result<String, IpcError> {
+            Err(IpcError::new(ErrorKind::Unsupported))
+        }
+
+        fn note(&self, _: &str, _: crate::activity::Fact) {}
+    }
+
+    #[test]
+    fn a_shell_without_projects_shares_no_file() {
+        assert!(Bare.shared_file("main", "spelling.json").is_none());
     }
 
     #[test]

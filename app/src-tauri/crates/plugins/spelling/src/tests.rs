@@ -200,7 +200,7 @@ impl EventSink for Events {
 }
 
 struct Harness {
-    _tmp: tempfile::TempDir,
+    tmp: tempfile::TempDir,
     dirs: AppDirs,
     rpc: Arc<RpcTable>,
     services: Arc<Services>,
@@ -210,6 +210,8 @@ struct Harness {
     _kit: ServiceLease,
     languages: Vec<Language>,
     running: Option<Box<dyn Running>>,
+    /// The window files service, once a test offers one.
+    files: Option<ServiceLease>,
 }
 
 /// The network serves the fixture files of `en` and `ro` (`ro`'s dictionary as `ro_dic_served`).
@@ -241,7 +243,7 @@ impl Harness {
             secrets: Arc::new(MemorySecrets::default()),
         }));
         let mut h = Self {
-            _tmp: tmp,
+            tmp,
             dirs,
             rpc,
             services,
@@ -254,6 +256,7 @@ impl Harness {
                 language("ro", RO_AFF, RO_DIC),
             ],
             running: None,
+            files: None,
         };
         h.restart();
         h
@@ -280,11 +283,15 @@ impl Harness {
     }
 
     fn call(&self, method: &str, args: Value) -> Result<Value, IpcError> {
+        self.call_in("main", method, args)
+    }
+
+    fn call_in(&self, window: &str, method: &str, args: Value) -> Result<Value, IpcError> {
         self.rpc.call(
             "spelling",
             method,
             &RpcCall {
-                window: "main".into(),
+                window: window.into(),
                 args,
             },
         )
@@ -541,3 +548,6 @@ fn the_official_dictionaries_load() {
         );
     }
 }
+
+#[path = "docs_tests.rs"]
+mod docs;

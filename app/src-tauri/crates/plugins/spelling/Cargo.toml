@@ -19,6 +19,8 @@ thiserror.workspace = true
 unicode-normalization.workspace = true
 # Hunspell-compatible check + suggest, the same answers on every system (MPL-2.0)
 spellbook = "0.4.2"
+# Language of a text sample, among the languages with a dictionary (MIT)
+whatlang = "0.18.0"
 
 [dev-dependencies]
 tempfile.workspace = true

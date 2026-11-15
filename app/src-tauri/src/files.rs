@@ -3,7 +3,7 @@
 //! Also the project folders (open + recent) a plugin's own folder must stay clear of, and showing a plugin's folder in
 //! the file manager.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -12,6 +12,7 @@ use permark_core::plugins::{
     ChangeListener, FolderReveal, FolderRevealApi, FolderScan, ProjectPlaces, ProjectPlacesApi,
     ServiceLease, WindowFiles, WindowFilesApi,
 };
+use permark_core::state::RawFile;
 use permark_core::tree::ScanFile;
 use permark_core::watch::Subscription;
 use permark_core::workspace::{CoreEnv, ProjectCore, Workspace};
@@ -100,6 +101,19 @@ impl WindowFiles for ShellFiles {
     fn watch(&self, window: &str, listener: ChangeListener) -> Option<Subscription> {
         let core = self.project(window)?;
         Some(core.watcher().hub().subscribe(move |batch| listener(batch)))
+    }
+
+    fn shared_file(&self, window: &str, name: &str) -> Option<RawFile> {
+        // one name inside `.permark/`, never a path that leaves it
+        let plain = matches!(
+            Path::new(name).components().collect::<Vec<_>>().as_slice(),
+            [Component::Normal(only)] if *only == name
+        );
+        if !plain {
+            return None;
+        }
+        // asked each time: the store moves when PerMark is initialized in the folder
+        Some(self.project(window)?.store().shared_file(name))
     }
 }
 

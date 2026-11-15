@@ -5,9 +5,15 @@
 //! requested dictionaries knows it, or the person's own dictionary (profile) holds it. The windows split the text into
 //! words and send each distinct word once; the answers come back in the same order.
 //!
-//! RPC: `languages`, `download`, `cancel`, `check`, `suggest`, `personal.add`, `personal.remove`, `personal.list`.
+//! The language of a document: declared by the person (kept with the project, or in the profile outside one), else
+//! detected from a sample of its text, else the app's default language (module `docs`).
+//!
+//! RPC: `languages`, `download`, `cancel`, `check`, `suggest`, `personal.add`, `personal.remove`, `personal.list`,
+//! `language`, `declare`, `defaults.get`, `defaults.set`.
 //! Events: `download` (one dictionary's new state), `personal` (the personal words after a change).
 
+mod detect;
+mod docs;
 mod languages;
 mod store;
 mod words;
@@ -28,6 +34,7 @@ use serde::{Deserialize, Serialize};
 use spellbook::Dictionary;
 use ts_rs::TS;
 
+pub use docs::{SpellingDefault, SpellingDocLanguage, SpellingLanguageSource, SHARED_FILE};
 pub use languages::{Language, Pin, COMMIT, OFFICIAL, SOURCE};
 pub use store::{DictStore, SpellingFailure, SpellingState, Unavailable};
 pub use words::{
@@ -131,6 +138,36 @@ struct WordArgs {
     word: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct DocArgs {
+    /// The document in the window's workspace.
+    path: String,
+    /// Prose of the document (the windows leave code out); only its first `detect::MAX_SAMPLE_CHARS` are read.
+    sample: String,
+    /// The window's language (the default until the person picks one).
+    ui_locale: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct DeclareArgs {
+    path: String,
+    /// `None` clears the declared language.
+    lang: Option<String>,
+    /// For the answer once cleared (detection again).
+    #[serde(default)]
+    sample: String,
+    #[serde(default)]
+    ui_locale: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct LocaleArgs {
+    ui_locale: String,
+}
+
 /// The plugin with the official dictionaries (downloaded through the app's `DownloadKit` service).
 #[must_use]
 pub fn plugin() -> Arc<dyn Plugin> {
@@ -182,6 +219,7 @@ struct Shared {
     personal: Mutex<BTreeSet<String>>,
     personal_file: Option<StateFile<Personal>>,
     events: PluginEvents,
+    docs: docs::DocLanguages,
 }
 
 impl Shared {
@@ -356,6 +394,34 @@ fn register(cx: &PluginCx, shared: &Arc<Shared>) -> Vec<RpcRegistration> {
         "personal.list",
         typed(move |_: NoArgs, _| Ok(s.personal_list())),
     ));
+    let s = Arc::clone(shared);
+    rpc.extend(cx.rpc(
+        "language",
+        typed(move |args: DocArgs, call| {
+            Ok(s.docs
+                .language(&call.window, &args.path, &args.sample, &args.ui_locale))
+        }),
+    ));
+    let s = Arc::clone(shared);
+    rpc.extend(cx.rpc(
+        "declare",
+        typed(move |args: DeclareArgs, call| {
+            s.docs
+                .declare(&call.window, &args.path, args.lang.as_deref())?;
+            Ok(s.docs
+                .language(&call.window, &args.path, &args.sample, &args.ui_locale))
+        }),
+    ));
+    let s = Arc::clone(shared);
+    rpc.extend(cx.rpc(
+        "defaults.get",
+        typed(move |args: LocaleArgs, _| Ok(s.docs.default_lang(&args.ui_locale))),
+    ));
+    let s = Arc::clone(shared);
+    rpc.extend(cx.rpc(
+        "defaults.set",
+        typed(move |args: LangArgs, _| s.docs.set_default(&args.lang)),
+    ));
     rpc
 }
 
@@ -392,11 +458,17 @@ impl Plugin for Spelling {
         // no download service in this app: a download fails `offline`
         let kit = cx.app().and_then(|app| app.services.get::<DownloadKit>());
         let dicts = DictStore::new(dir, self.languages.clone(), kit.as_deref(), listener);
+        let docs = docs::DocLanguages::new(
+            self.languages.iter().map(|language| language.id).collect(),
+            cx.app().map(|app| Arc::clone(&app.services)),
+            cx.state_file("languages.json"),
+        );
         let shared = Arc::new(Shared {
             store: Arc::clone(&dicts),
             personal: Mutex::new(personal),
             personal_file,
             events: cx.events().clone(),
+            docs,
         });
         *lock(&cell) = Arc::downgrade(&shared);
         Ok(Box::new(Started {
