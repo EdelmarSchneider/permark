@@ -203,6 +203,30 @@ describe("the export flow", () => {
     expect(store.state.status).toBe("closed");
   });
 
+  it("the progress notice leaves once the page is built: the system Save dialog takes over", async () => {
+    let finish: (outcome: ExportOutcome) => void = () => {};
+    const atSave: string[][] = [];
+    const { store, notes: shown } = setup(
+      {
+        progressAfterMs: 0,
+        build: () =>
+          new Promise<ExportOutcome>((resolve) => {
+            finish = resolve;
+          }),
+      },
+      (method) => {
+        if (method === "export.saveHtml") atSave.push(shown.map((n) => n.text));
+      },
+    );
+    const run = store.start("html", DOC);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(last(shown)?.text).toBe("Making the HTML page…");
+    finish(done());
+    await run;
+    expect(atSave).toEqual([[]]);
+    expect(shown.map((n) => n.text)).toEqual(["Saved guide.html."]);
+  });
+
   it("Cancel of a build that never ends frees the flow: the next run works", async () => {
     let hang = true;
     const { store, notes: shown } = setup({

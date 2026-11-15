@@ -281,6 +281,8 @@ export class ExportStore {
     if (controller.signal.aborted) return done(t("export.canceled"));
 
     const { html, notes } = outcome;
+    // the system dialog (Save as | print) is the person's control from here: a Cancel beside it would not close it
+    this.#quietProgress();
     if (entry === "print") {
       if (paper === null) return done(null);
       const printed = await this.#deps.client.call("export.print", { html, setup: paper.setup });
@@ -339,8 +341,16 @@ export class ExportStore {
   }
 
   #endRun(): void {
-    if (this.#run?.timer != null) clearTimeout(this.#run.timer);
+    this.#quietProgress();
     this.#run = null;
+  }
+
+  /** No progress notice now or later for the run under way (the run itself goes on). */
+  #quietProgress(): void {
+    if (this.#run?.timer != null) {
+      clearTimeout(this.#run.timer);
+      this.#run.timer = null;
+    }
     if (this.#progress !== null) {
       const id = this.#progress;
       this.#progress = null;
