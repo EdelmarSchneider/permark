@@ -37,6 +37,7 @@ permark-plugin-tags = { path = "crates/plugins/tags" }
 permark-plugin-unread = { path = "crates/plugins/unread" }
 permark-plugin-word-count = { path = "crates/plugins/word-count" }
 permark-plugin-token-count = { path = "crates/plugins/token-count" }
+permark-plugin-spelling = { path = "crates/plugins/spelling" }
 permark-plugin-local-ai = { path = "crates/plugins/local-ai" }
 permark-plugin-correction = { path = "crates/plugins/correction" }
 permark-plugin-translation = { path = "crates/plugins/translation" }
@@ -137,7 +138,7 @@ name = "permark_lib"
 # default = the direct build; `store` = the Microsoft Store build (`--no-default-features --features store`): the
 # store updates the app and the package declares the file manager entries.
 default = ["common", "plugin-updates", "plugin-shell-integration"]
-common = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-symbols", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-token-count", "plugin-local-ai", "plugin-correction", "plugin-translation", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore", "plugin-fmt-toon", "plugin-convert", "plugin-export"]
+common = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-symbols", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-token-count", "plugin-local-ai", "plugin-correction", "plugin-translation", "plugin-spelling", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore", "plugin-fmt-toon", "plugin-convert", "plugin-export"]
 plugin-git = ["dep:permark-plugin-git"]
 plugin-live-feed = ["dep:permark-plugin-live-feed"]
 # follow needs the feed; review needs unread (a build without the dependency has no plugin that needs it)
@@ -148,6 +149,7 @@ plugin-md-family = ["dep:permark-plugin-md-family"]
 plugin-symbols = ["dep:permark-plugin-symbols"]
 plugin-word-count = ["dep:permark-plugin-word-count"]
 plugin-token-count = ["dep:permark-plugin-token-count"]
+plugin-spelling = ["dep:permark-plugin-spelling"]
 plugin-local-ai = ["dep:permark-plugin-local-ai"]
 # correction runs on the model service of local-ai
 plugin-correction = ["dep:permark-plugin-correction", "plugin-local-ai"]
@@ -198,6 +200,7 @@ permark-plugin-md-family = { workspace = true, optional = true }
 permark-plugin-symbols = { workspace = true, optional = true }
 permark-plugin-word-count = { workspace = true, optional = true }
 permark-plugin-token-count = { workspace = true, optional = true }
+permark-plugin-spelling = { workspace = true, optional = true }
 permark-plugin-local-ai = { workspace = true, optional = true }
 permark-plugin-correction = { workspace = true, optional = true }
 permark-plugin-translation = { workspace = true, optional = true }

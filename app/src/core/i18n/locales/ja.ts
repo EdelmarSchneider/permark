@@ -2723,6 +2723,9 @@ export default {
   "plugin.translation.name": "翻訳",
   "plugin.translation.about":
     "このコンピューター上の小さな AI モデルで、テキストを別の言語に翻訳します。翻訳した部分を適用前に 1 つずつ確認することも、文書全体を翻訳して元のファイルの隣に新しいファイルを作ることもできます。テキストがコンピューターの外に出ることはありません。",
+  "plugin.spelling.name": "スペルチェック",
+  "plugin.spelling.about":
+    "編集中にテキストの言語でつづりの誤りに印を付け、修正候補を示します。辞書はその言語を選んだときだけダウンロードされ、チェックはこのコンピューター上で行われます。",
   "translation.language.command": "翻訳先の言語…",
   "translation.language.title": "翻訳先の言語",
   "translation.language.to": "翻訳先：{language}",

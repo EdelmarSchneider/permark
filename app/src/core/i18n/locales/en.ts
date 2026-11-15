@@ -2655,6 +2655,9 @@ const en = {
   "plugin.translation.name": "Translation",
   "plugin.translation.about":
     "Translates text into another language with a small AI model on this computer. Every translated part is shown for review before it goes in, or a whole document is translated into a new file next to the original. The text never leaves the computer.",
+  "plugin.spelling.name": "Spelling",
+  "plugin.spelling.about":
+    "Marks misspelled words while you edit, in the language of the text, and suggests corrections. A dictionary is downloaded only when you choose its language, and the check runs on this computer.",
   "translation.language.command": "Translate to…",
   "translation.language.title": "Translate to",
   "translation.language.to": "To: {language}",

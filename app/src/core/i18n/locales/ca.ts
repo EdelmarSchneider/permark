@@ -2738,6 +2738,9 @@ export default {
   "plugin.translation.name": "Traducció",
   "plugin.translation.about":
     "Tradueix text a un altre idioma amb un model d'IA petit en aquest ordinador. Cada part traduïda es mostra per revisar-la abans d'aplicar-la, o bé un document sencer es tradueix a un fitxer nou al costat de l'original. El text no surt mai de l'ordinador.",
+  "plugin.spelling.name": "Ortografia",
+  "plugin.spelling.about":
+    "Marca les paraules mal escrites mentre edites, en la llengua del text, i suggereix correccions. Un diccionari només es baixa quan tries la seva llengua, i la revisió es fa en aquest ordinador.",
   "translation.language.command": "Tradueix a…",
   "translation.language.title": "Tradueix a",
   "translation.language.to": "A: {language}",

@@ -2655,6 +2655,9 @@ export default {
   "plugin.translation.name": "번역",
   "plugin.translation.about":
     "이 컴퓨터의 작은 AI 모델로 텍스트를 다른 언어로 번역합니다. 번역된 부분을 적용 전에 하나씩 검토하거나, 문서 전체를 번역해 원본 옆에 새 파일로 만들 수 있습니다. 텍스트는 컴퓨터 밖으로 나가지 않습니다.",
+  "plugin.spelling.name": "맞춤법 검사",
+  "plugin.spelling.about":
+    "편집하는 동안 텍스트의 언어로 철자가 틀린 단어를 표시하고 수정 제안을 보여 줍니다. 사전은 해당 언어를 선택할 때만 다운로드되며, 검사는 이 컴퓨터에서 이루어집니다.",
   "translation.language.command": "번역할 언어…",
   "translation.language.title": "번역할 언어",
   "translation.language.to": "대상 언어: {language}",

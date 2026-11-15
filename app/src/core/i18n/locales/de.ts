@@ -2746,6 +2746,9 @@ export default {
   "plugin.translation.name": "Übersetzung",
   "plugin.translation.about":
     "Übersetzt Text mit einem kleinen KI-Modell auf diesem Computer in eine andere Sprache. Jeder übersetzte Teil wird vor dem Übernehmen zur Prüfung angezeigt, oder ein ganzes Dokument wird in eine neue Datei neben dem Original übersetzt. Der Text verlässt den Computer nie.",
+  "plugin.spelling.name": "Rechtschreibung",
+  "plugin.spelling.about":
+    "Markiert falsch geschriebene Wörter beim Bearbeiten, in der Sprache des Textes, und schlägt Korrekturen vor. Ein Wörterbuch wird erst heruntergeladen, wenn Sie seine Sprache wählen, und die Prüfung läuft auf diesem Computer.",
   "translation.language.command": "Übersetzen nach …",
   "translation.language.title": "Übersetzen nach",
   "translation.language.to": "Nach: {language}",

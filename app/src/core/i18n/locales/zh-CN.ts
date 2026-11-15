@@ -2566,6 +2566,9 @@ export default {
   "plugin.translation.name": "翻译",
   "plugin.translation.about":
     "用这台电脑上的小型 AI 模型把文本翻译成另一种语言。可以在应用前逐段审阅译文，也可以把整篇文档翻译成原文件旁边的新文件。文本不会离开这台电脑。",
+  "plugin.spelling.name": "拼写检查",
+  "plugin.spelling.about":
+    "在编辑时按文本的语言标出拼写错误的单词并给出更正建议。只有在你选择某种语言时才会下载其词典，检查在这台电脑上进行。",
   "translation.language.command": "翻译为…",
   "translation.language.title": "翻译为",
   "translation.language.to": "目标语言：{language}",

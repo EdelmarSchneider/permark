@@ -2707,6 +2707,9 @@ export default {
   "plugin.translation.name": "Traducción",
   "plugin.translation.about":
     "Traduce texto a otro idioma con un pequeño modelo de IA en este equipo. Cada parte traducida se muestra para revisarla antes de aplicarla, o un documento entero se traduce a un archivo nuevo junto al original. El texto nunca sale del equipo.",
+  "plugin.spelling.name": "Ortografía",
+  "plugin.spelling.about":
+    "Marca las palabras mal escritas mientras editas, en el idioma del texto, y sugiere correcciones. Un diccionario solo se descarga cuando eliges su idioma, y la revisión se hace en este equipo.",
   "translation.language.command": "Traducir a…",
   "translation.language.title": "Traducir a",
   "translation.language.to": "A: {language}",

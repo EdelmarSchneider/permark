@@ -2849,6 +2849,9 @@ export default {
   "plugin.translation.name": "Traducere",
   "plugin.translation.about":
     "Traduce textul în altă limbă cu un model AI mic de pe acest computer. Fiecare parte tradusă e arătată pentru verificare înainte să fie aplicată sau un document întreg e tradus într-un fișier nou, lângă original. Textul nu părăsește niciodată computerul.",
+  "plugin.spelling.name": "Ortografie",
+  "plugin.spelling.about":
+    "Marchează cuvintele scrise greșit în timp ce editezi, în limba textului, și sugerează corecturi. Un dicționar se descarcă doar când îi alegi limba, iar verificarea se face pe acest computer.",
   "translation.language.command": "Tradu în…",
   "translation.language.title": "Tradu în",
   "translation.language.to": "În: {language}",
