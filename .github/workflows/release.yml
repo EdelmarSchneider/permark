@@ -134,6 +134,8 @@ jobs:
     needs: draft
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
+    # The updater signing key lives in this environment, which only release tags and main | develop may use.
+    environment: release
     permissions:
       contents: write
     env:
@@ -292,8 +294,8 @@ jobs:
     uses: ./.github/workflows/snap.yml
     with:
       ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-    secrets:
-      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+    # The Store credentials come from the `release` environment of the called job; repository secrets still pass.
+    secrets: inherit
 
   # The Microsoft Store package: the Store flavor of the program, packed as an unsigned .msix by scripts/build-msix.ps1.
   # It goes up as an artifact of this run, which is where the person who submits to the Store downloads it (the Store

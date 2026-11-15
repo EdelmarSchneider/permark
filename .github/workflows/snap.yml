@@ -17,9 +17,7 @@ on:
         description: "The tag to build from"
         type: string
         required: true
-    secrets:
-      SNAPCRAFT_STORE_CREDENTIALS:
-        required: true
+    # SNAPCRAFT_STORE_CREDENTIALS: from the `release` environment of the job below (or inherited from the caller).
   workflow_dispatch:
     inputs:
       channel:
@@ -37,6 +35,8 @@ jobs:
     name: Build and publish the snap
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    # The Snap Store credentials live in this environment, which only release tags and main | develop may use.
+    environment: release
     steps:
       # By hand: the branch or tag the run was started on (no `ref` input then).
       - name: Checkout
