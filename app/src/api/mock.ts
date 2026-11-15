@@ -737,8 +737,8 @@ export function createMockApi(): Api & {
     if (probe.opening.fails.has(path)) {
       const back = tabList.find((t) => t.tab === activeTab)?.view ?? before;
       showView(back);
+      // the asking view is still there: the error answers its call, no `open-failed` event (as the backend)
       const error = { kind: "io" as const, subject: path, detail: null };
-      emit("open-failed", { window: "main", path, error });
       return { ok: false, error: { kind: "backend", command: "open_path", error } };
     }
     return { ok: true, value: { outcome: "opened", view: show() } };

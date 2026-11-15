@@ -125,15 +125,16 @@ describe("another folder in this tab", () => {
     expect(errorNotices()).toEqual([]);
   });
 
-  it("a folder that fails to open: back on the old one, and the failure is told", async () => {
+  it("a folder that fails to open: back on the old one, and the failure is told once", async () => {
     await onDemoFolderWithDocument();
     mock.probe.opening.fails.add(OTHER);
     await store.open(OTHER, "thisTab");
     await until(() => rootShown() === MOCK_FOLDER, "back on the demo folder");
     await new Promise((r) => setTimeout(r, 50));
     expect(mock.probe.opening.refused).toEqual([]);
+    // the view that asked gets the error as the answer to its call: no event tells it a second time
     const told = errorNotices();
-    expect(told.length).toBeGreaterThan(0);
+    expect(told).toHaveLength(1);
     expect(told.every((n) => n.includes(OTHER) && n.includes('"io"'))).toBe(true);
   });
 });
