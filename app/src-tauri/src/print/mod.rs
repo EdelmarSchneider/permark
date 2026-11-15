@@ -254,8 +254,9 @@ impl Sheet {
             Some(dir) => builder.data_directory(dir),
             None => builder,
         };
+        // WKWebView takes no data folder; `let _` would not consume the value (clippy `needless_pass_by_value`)
         #[cfg(target_os = "macos")]
-        let _ = data_dir;
+        drop(data_dir);
         sheet.window = Some(builder.build().map_err(failed)?);
         rx.recv_timeout(LOAD_TIMEOUT)
             .map_err(|_| failed("the page did not load"))?;
