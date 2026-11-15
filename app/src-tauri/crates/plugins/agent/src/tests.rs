@@ -1593,7 +1593,8 @@ fn a_running_agent_pairs_again_after_the_app_restarts_without_a_call() {
             wait_on_runtime(|| paired(&fx, &agent)).await,
             "paired again after Undo"
         );
-        assert!(!agent.is_disconnected());
+        // the app lists the agent before the agent's own loop clears its mark: wait for it, as for the pairing
+        assert!(wait_on_runtime(|| !agent.is_disconnected()).await);
         drop(write);
         drop(read);
         let _ = tokio::time::timeout(Duration::from_secs(5), serving).await;
