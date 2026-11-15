@@ -3,7 +3,7 @@
   import type { EmbedProps } from "../../core/plugins/props";
   import { drawMermaid } from "./engine";
 
-  let { source }: EmbedProps = $props();
+  let { source, theme }: EmbedProps = $props();
 </script>
 
-<DiagramView {source} draw={drawMermaid} />
+<DiagramView {source} {theme} draw={drawMermaid} />

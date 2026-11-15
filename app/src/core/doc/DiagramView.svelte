@@ -7,10 +7,13 @@
 
   type Props = {
     source: string;
-    /** Draws `source` for the theme: SVG text, or null when it cannot be drawn. */
-    draw: (source: string, theme: "light" | "dark") => Promise<string | null>;
+    /** Draws `source` for the theme (`forced`: fixed by the caller, not the page's): SVG text, or null when it cannot
+     *  be drawn. */
+    draw: (source: string, theme: "light" | "dark", forced: boolean) => Promise<string | null>;
+    /** The theme to draw in, whatever the page shows; absent: the page's theme and tone. */
+    theme?: "light" | "dark" | undefined;
   };
-  let { source, draw }: Props = $props();
+  let { source, draw, theme }: Props = $props();
 
   type Drawn =
     | { status: "pending" }
@@ -28,10 +31,12 @@
 
   // draws (again) when the source, the theme or the tone changes; an older answer never overwrites a newer
   $effect(() => {
-    const theme = look.theme;
-    void look.tone;
+    const forced = theme !== undefined;
+    const drawIn = theme ?? look.theme;
+    // a forced theme does not follow the page's tone
+    if (!forced) void look.tone;
     let stale = false;
-    void draw(source, theme).then((svg) => {
+    void draw(source, drawIn, forced).then((svg) => {
       if (stale) return;
       if (svg === null) {
         drawn = { status: "failed" };
