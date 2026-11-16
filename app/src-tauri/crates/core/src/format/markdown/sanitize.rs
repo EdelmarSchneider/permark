@@ -246,6 +246,10 @@ fn builder(doc: &str) -> ammonia::Builder<'static> {
 }
 
 #[cfg(test)]
+#[path = "sanitize_props.rs"]
+mod props;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

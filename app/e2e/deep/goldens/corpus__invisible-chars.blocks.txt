@@ -1,0 +1,22 @@
+# corpus/invisible-chars.md
+format: markdown
+outline: Invisible characters (line 1)
+outline:   A heading with a zero width space​inside (line 17)
+--- h1 1-1
+<h1 id="invisible-characters">Invisible characters</h1>
+--- p 3-3
+<p>Zero width space between letters: a​b​c (three letters, two zero width spaces).</p>
+--- p 5-5
+<p>Zero width joiner emoji: 👩‍💻 👨‍👩‍👧 🏳️‍🌈 and a flag 🇧🇷.</p>
+--- p 7-7
+<p>Zero width non-joiner: می‌خواهم.</p>
+--- p 9-9
+<p>Soft hyphen: super­cali­fragilistic­expialidocious.</p>
+--- p 11-11
+<p>No-break space: 10&nbsp;km, narrow no-break: 5 %, and a word joiner: a⁠b.</p>
+--- p 13-13
+<p>Right-to-left mark inside text: abc‏def, and a left-to-right mark: abc‎def.</p>
+--- p 15-15
+<p>Byte order mark in the middle: a﻿b.</p>
+--- h2 17-17
+<h2 id="a-heading-with-a-zero-width-spaceinside">A heading with a zero width space​inside</h2>

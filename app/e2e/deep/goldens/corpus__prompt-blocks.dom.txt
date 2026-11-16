@@ -1,0 +1,61 @@
+div.reading
+  div.doc-column
+    article.md
+      section.card aria-label="Front matter"
+        dl.grid
+          div.field
+            dt
+              "title"
+            dd
+              "A prompt file"
+          div.field
+            dt
+              "tags"
+            dd.chips
+              span.chip
+                "prompt"
+      div.md-body role="document"
+        h1 id="prompt-blocks"
+          a.anchor href="#prompt-blocks" aria-label="Link to Prompt blocks"
+            "#"
+          "Prompt blocks"
+        details.prompt-block data-tag="system" open
+          summary
+            "system"
+          p
+            "You are a careful assistant writing for"
+            span.tvar
+              "{{audience}}"
+            "about week"
+            span.tvar
+              "{{week}}"
+            "."
+        details.prompt-block data-tag="context" open
+          summary
+            "context"
+          ul
+            li
+              "The data sheet: @station/readings.toon"
+            li
+              "The style guide: @style-guide.md"
+        details.prompt-block data-tag="instructions" open
+          summary
+            "instructions"
+          ol
+            li
+              "Read the context."
+            li
+              "Write no more than"
+              span.tvar
+                "{{max_words}}"
+              "words."
+        details.prompt-block data-tag="example" open
+          summary
+            "example"
+          p
+            "A short example answer."
+        p
+          "Text after the blocks, with a"
+          code
+            "{{variable}}"
+          "in code that stays as it is."

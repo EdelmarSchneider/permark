@@ -1,0 +1,44 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        p
+          a id="top" name="top"
+        p.pm-wide align="center"
+          img src="/@permark-deep/project/corpus/assets/square.svg" alt="A centered square"
+        h1 align="center"
+          "Aligned title"
+        p align="center"
+          em
+            "A centered tagline."
+        div align="right"
+          "Right-aligned text in a div."
+        p
+          "An alignment value the sanitizer drops: this paragraph reads left-aligned."
+        h2 id="named-anchors"
+          a.anchor href="#named-anchors" aria-label="Link to Named anchors"
+            "#"
+          "Named anchors"
+        p
+          a name="spot"
+        p
+          "A spot with no heading. Jump to"
+          a href="#spot"
+            "the spot"
+          ","
+          a href="#top"
+            "the top"
+          ","
+          a href="#named-anchors"
+            "a heading"
+          "and"
+          a href="#nowhere"
+            "a missing anchor"
+          "."
+        p align="center"
+          a href="gfm-blocks.md"
+            strong
+              "Blocks"
+          "·"
+          a href="gfm-tables.md"
+            "Tables"

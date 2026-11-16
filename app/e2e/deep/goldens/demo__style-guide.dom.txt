@@ -1,0 +1,419 @@
+div.reading
+  div.doc-column
+    article.md
+      section.card aria-label="Front matter"
+        dl.grid
+          div.field
+            dt
+              "title"
+            dd
+              "How we write: the Larkhaven style guide"
+          div.field
+            dt
+              "owner"
+            dd
+              "Dr. Imani Okafor"
+          div.field
+            dt
+              "status"
+            dd
+              "published"
+          div.field
+            dt
+              "updated"
+            dd
+              "November 3, 2026"
+          div.field
+            dt
+              "tags"
+            dd.chips
+              span.chip
+                "writing"
+              span.chip
+                "style"
+              span.chip
+                "markdown"
+      div.md-body role="document"
+        h1 id="how-we-write-the-larkhaven-style-guide"
+          a.anchor href="#how-we-write-the-larkhaven-style-guide" aria-label="Link to How we write: the Larkhaven style guide"
+            "#"
+          "How we write: the Larkhaven style guide"
+        p
+          "Good pages get read. This is how we keep ours short, true and kind to the reader, with a quick reference to every mark Markdown gives you."
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg mindmap sized labels: A good page | Purpose | One reader | One job | Structure | Clear headings | Short sections | Evidence | Real numbers | Voice | Plain and warm | Care | Alt text | Working links
+        h2 id="write-for-one-reader"
+          a.anchor href="#write-for-one-reader" aria-label="Link to Write for one reader"
+            "#"
+          "Write for one reader"
+        p
+          "Before you type, name one reader and the one job they came to do. A volunteer on the pier at six in the morning needs the swap checklist, not the history of LH-…"
+        p
+          "That reader is sometimes an agent. Gull reads our pages too, so the same rules apply: say what you mean, give numbers their units and dates. Its own"
+          a href="bulletin-agent.md"
+            "prompt file"
+          "shows how tags like"
+          code
+            "<context>"
+          "and placeholders like"
+          code
+            "{{week}}"
+          "read on the page."
+        p
+          "Three questions before you publish:"
+        ol
+          li
+            "Who is this page for?"
+          li
+            "What will they do after reading it?"
+          li
+            "Which number would they quote?"
+        h2 id="headings-lists-and-tasks"
+          a.anchor href="#headings-lists-and-tasks" aria-label="Link to Headings, lists and tasks"
+            "#"
+          "Headings, lists and tasks"
+        p
+          "One title, then sentence-case sections, one idea each. Use a list when the reader will scan or tick things off, and nest one level at most. You type:"
+        div.code-block
+          pre
+            code
+              tokens: hljs-bullet
+              "1. Hull⏎   - Inspect the hatch seal⏎   - Clean the solar panel⏎2. Sensors⏎   - [x] Calibrate pH⏎   - [ ] Replace the oxygen membrane⏎"
+          div.corner
+            span.lang
+              "Markdown"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        p
+          "You get:"
+        ol
+          li
+            "Hull"
+            ul
+              li
+                "Inspect the hatch seal"
+              li
+                "Clean the solar panel"
+          li
+            "Sensors"
+            ul.contains-task-list
+              li.task-list-item.is-done
+                input.task-list-item-checkbox aria-label="Calibrate pH" checked disabled
+                "Calibrate pH"
+              li.task-list-item
+                input.task-list-item-checkbox aria-label="Replace the oxygen membrane" disabled
+                "Replace the oxygen membrane"
+        h2 id="callouts-pick-the-right-voice"
+          a.anchor href="#callouts-pick-the-right-voice" aria-label="Link to Callouts: pick the right voice"
+            "#"
+          "Callouts: pick the right voice"
+        p
+          "A callout lifts one piece of advice out of the text. Choose the kind by what happens if the reader skips it: NOTE for context, TIP for a shortcut, IMPORTANT for…"
+        div.markdown-alert.markdown-alert-note
+          p.markdown-alert-title
+            svg svg sized
+            "Station ids"
+          p
+            "Write station ids as"
+            code
+              "LH-"
+            "plus two digits: LH-04, never LH4 or lh-04. Search finds them all that way."
+        div.markdown-alert.markdown-alert-tip
+          p.markdown-alert-title
+            svg svg sized
+            "Keep the units"
+          p
+            "Paste readings with their units, straight from the API. Nobody should have to guess whether 12.6 means °C."
+        div.markdown-alert.markdown-alert-important
+          p.markdown-alert-title
+            svg svg sized
+            "Every number has a date"
+          p
+            ""Mean pH 8.02" means nothing on its own. "Mean pH 8.02 at LH-04, week 46" is a fact."
+        div.markdown-alert.markdown-alert-warning
+          p.markdown-alert-title
+            svg svg sized
+            "Flagged readings"
+          p
+            "A flagged reading may be wrong. Quote it only with its flag, and say why the flag was raised."
+        div.markdown-alert.markdown-alert-caution
+          p.markdown-alert-title
+            svg svg sized
+            "Deleting history"
+          p
+            "Removing a reading from the open dataset can't be undone for people who already downloaded it. Ask Imani first."
+        h2 id="more-callout-kinds"
+          a.anchor href="#more-callout-kinds" aria-label="Link to More callout kinds"
+            "#"
+          "More callout kinds"
+        p
+          "For stories and side notes, these kinds fold away. Closed, they make a colored index; click a title to open one."
+        details.markdown-alert.markdown-alert-note.markdown-alert-kind-info
+          summary.markdown-alert-title
+            svg svg sized
+            "How a station gets its name"
+          p
+            "Named stations take the nearest charted landmark: Gannet Point, Kittiwake Shoal, Heron Flats. The rest keep their numbers until someone earns the right to name …"
+        details.markdown-alert.markdown-alert-tip.markdown-alert-kind-success
+          summary.markdown-alert-title
+            svg svg sized
+            "What "deployed" means"
+          p
+            "A buoy counts as deployed when its first reading passes quality control, not when it hits the water."
+        details.markdown-alert.markdown-alert-warning.markdown-alert-kind-question
+          summary.markdown-alert-title
+            svg svg sized
+            "Why ten minutes between readings?"
+          p
+            "Ten minutes is short enough to catch a turning tide or a passing storm, and a 40-second wake keeps the battery alive through a northern winter."
+        details.markdown-alert.markdown-alert-caution.markdown-alert-kind-failure
+          summary.markdown-alert-title
+            svg svg sized
+            "What we got wrong in Season 2"
+          p
+            "We published raw salinity before the sensors were calibrated. Two weeks of LH-09 had to be reissued, with an apology."
+        details.markdown-alert.markdown-alert-caution.markdown-alert-kind-danger
+          summary.markdown-alert-title
+            svg svg sized
+            "Never on deck alone"
+          p
+            "A buoy swap needs two people on deck and one at the wheel. No exceptions, not even in a flat calm."
+        details.markdown-alert.markdown-alert-caution.markdown-alert-kind-bug
+          summary.markdown-alert-title
+            svg svg sized
+            "Known issue: clock drift after a battery dip"
+          p
+            "A buoy whose battery dips too low can restart with its clock a few seconds off. Ingest corrects it, but mention it if timestamps look odd."
+        details.markdown-alert.markdown-alert-note.markdown-alert-kind-abstract
+          summary.markdown-alert-title
+            svg svg sized
+            "This guide in one paragraph"
+          p
+            "One reader, one job. Short sections with clear headings. Real numbers with units and dates. Plain, warm words. Alt text on every picture and links that work."
+        details.markdown-alert.markdown-alert-note.markdown-alert-kind-todo
+          summary.markdown-alert-title
+            svg svg sized
+            "Before you publish"
+          p
+            "Check the spelling and every link, read the page once aloud, and ask one person who wasn't in the room to read it too."
+        h2 id="containers"
+          a.anchor href="#containers" aria-label="Link to Containers"
+            "#"
+          "Containers"
+        p
+          "When an aside runs longer than a callout, use a container: a titled block that can hold paragraphs, lists or even a table."
+        div.markdown-alert.markdown-alert-note
+          p.markdown-alert-title
+            svg svg sized
+            "Containers hold longer asides"
+          p
+            "Open one with three colons and a kind, then close it with three colons on a line of their own. Everything in between is ordinary Markdown."
+        div.markdown-alert.markdown-alert-tip
+          p.markdown-alert-title
+            svg svg sized
+            "Which one to use"
+          p
+            "A callout for one piece of advice, a container for a sidebar, and a"
+            code
+              "<details>"
+            "block for things most readers can skip."
+        h2 id="small-marks"
+          a.anchor href="#small-marks" aria-label="Link to Small marks"
+            "#"
+          "Small marks"
+        p
+          "A handful of inline marks covers almost everything else. Use each one for its job, and sparingly."
+        div.table-wrap
+          table
+            thead
+              tr
+                th
+                  "You type"
+                th
+                  "You get"
+                th
+                  "Use it for"
+            tbody
+              tr
+                td
+                  code
+                    "==rising tide=="
+                td
+                  mark
+                    "rising tide"
+                td
+                  "The one line a skimming reader must not miss"
+              tr
+                td
+                  code
+                    "<mark>flagged</mark>"
+                td
+                  mark
+                    "flagged"
+                td
+                  "A highlight that works in any Markdown tool"
+              tr
+                td
+                  code
+                    "<kbd>Ctrl</kbd>+<kbd>F</kbd>"
+                td
+                  kbd
+                    "Ctrl"
+                  "+"
+                  kbd
+                    "F"
+                td
+                  "Keys to press"
+              tr
+                td
+                  code
+                    "<abbr title="practical salinity unit">PSU</abbr>"
+                td
+                  abbr title="practical salinity unit"
+                    "PSU"
+                td
+                  "The first use of an abbreviation"
+              tr
+                td
+                  code
+                    "CO<sub>2</sub>, 10<sup>3</sup>"
+                td
+                  "CO"
+                  sub
+                    "2"
+                  ", 10"
+                  sup
+                    "3"
+                td
+                  "Chemistry and powers"
+              tr
+                td
+                  code
+                    "<ins>v2.3</ins>"
+                td
+                  ins
+                    "v2.3"
+                td
+                  "Text added in a revision"
+              tr
+                td
+                  code
+                    "~~v2.2~~"
+                td
+                  del
+                    "v2.2"
+                td
+                  "Text removed in a revision"
+              tr
+                td
+                  code
+                    ":ocean:"
+                td
+                  span.emoji title=":ocean:"
+                    "🌊"
+                td
+                  "One emoji in a heading or a table, at most"
+        p
+          a id="glossary" name="glossary"
+        h2 id="words-we-use"
+          a.anchor href="#words-we-use" aria-label="Link to Words we use"
+            "#"
+          "Words we use"
+        p
+          "The same thing always gets the same word. These five come up on almost every page."
+        dl
+          dt
+            "Station"
+          dd
+            "A fixed point in the Sound,"
+            code
+              "LH-01"
+            "to"
+            code
+              "LH-12"
+            ". Buoys come and go; stations stay."
+          dt
+            "Reading"
+          dd
+            "One set of measurements from one station at one moment: temperature, salinity, pH, dissolved oxygen and wave height."
+          dt
+            "QC flag"
+          dd
+            "A mark our quality-control engine puts on a doubtful reading. Most flagged readings are published with their flag; the rest are removed after a person reviews t…"
+          dt
+            "Deployment"
+          dd
+            "One buoy at one station, from the day it goes in to the day it comes out."
+          dt
+            "Bulletin"
+          dd
+            "The weekly summary for the public. Gull drafts it, and a person signs it off."
+        h2 id="front-matter"
+          a.anchor href="#front-matter" aria-label="Link to Front matter"
+            "#"
+          "Front matter"
+        p
+          "Start each page with a few facts about it between two"
+          code
+            "---"
+          "lines. PerMark shows them as a properties card, with tags as chips. Five fields is plenty:"
+        div.code-block
+          pre
+            code
+              tokens: hljs-attr hljs-meta hljs-number hljs-string
+              "---⏎title: Season 3 deployment plan⏎owner: Hana Kowalski⏎status: in progress⏎updated: 2026-11-15⏎tags: [plan, season-3, operations]⏎---⏎"
+          div.corner
+            span.lang
+              "YAML"
+            button.icon-btn.icon-btn--sm.code-action title="Convert…" aria-label="Convert…"
+              icon lucide-arrow-left-right
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        p
+          "Prefer TOML? Open and close with"
+          code
+            "+++"
+          "instead, as the"
+          a href="galley-recipe.md"
+            "galley recipe"
+          "does."
+        h2 id="links-and-anchors"
+          a.anchor href="#links-and-anchors" aria-label="Link to Links and anchors"
+            "#"
+          "Links and anchors"
+        p
+          "Link to other pages by their relative path, and to a section by its heading in lowercase with dashes. For a spot that has no heading, drop in a named anchor. We…"
+        div.code-block
+          pre
+            code
+              tokens: hljs-link hljs-string
+              "[the season plan](season-plan.md)⏎[back to callouts](#callouts-pick-the-right-voice)⏎<a name="glossary"></a> … then [the glossary](#glossary)⏎https://tidewell.example⏎"
+          div.corner
+            span.lang
+              "Markdown"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        p
+          "Try them:"
+          a href="season-plan.md"
+            "the season plan"
+          ","
+          a href="#callouts-pick-the-right-voice"
+            "back to callouts"
+          ","
+          a href="#glossary"
+            "the glossary"
+          ", and"
+          a href="https://tidewell.example"
+            "https://tidewell.example"
+          "."
+        hr
+        p
+          "Next:"
+          a href="station-architecture.md"
+            "How a reading travels"
+          "·"
+          a href="README.md"
+            "Start here"

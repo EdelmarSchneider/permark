@@ -1,0 +1,99 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        p
+          "Sure! Here's a summary of the buoy data for week 46. 🌊"
+        h2 id="-key-findings"
+          a.anchor href="#-key-findings" aria-label="Link to 📊 Key findings"
+            "#"
+          "📊 Key findings"
+        ol
+          li
+            strong
+              "Temperature"
+            "dropped by 0.4 °C across all stations."
+          li
+            strong
+              "pH"
+            "at LH-07 fell faster than its neighbors"
+            a href="https://example.com/lh-07" title="LH-07 notes"
+              "1"
+            "."
+            ul
+              li
+                "This is"
+                em
+                  "within"
+                "the drift limit."
+              li
+                "A water sample will confirm it."
+          li
+            strong
+              "Waves"
+            "were calm: mean height 0.6 m."
+        h3 id="comparison-table"
+          a.anchor href="#comparison-table" aria-label="Link to Comparison table"
+            "#"
+          "Comparison table"
+        div.table-wrap
+          table
+            thead
+              tr
+                th
+                  "Station"
+                th
+                  "Temp (°C)"
+                th
+                  "pH"
+            tbody
+              tr
+                td
+                  "LH-06"
+                td
+                  "11.8"
+                td
+                  "8.00"
+              tr
+                td
+                  "LH-07"
+                td
+                  "11.7"
+                td
+                  "7.96"
+        p
+          "Here's the code I used:"
+        div.code-block
+          pre
+            code
+              tokens: hljs-built_in hljs-keyword hljs-number
+              "import statistics⏎print(statistics.mean([8.00, 7.96, 7.99]))⏎"
+          div.corner
+            span.lang
+              "Python"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        p
+          "The formula for the mean is"
+          span data-math-style="inline"
+            katex tex="\bar{x} = \frac{1}{n}\sum x_i"
+          "."
+        hr
+        p
+          strong
+            "Note:"
+          "Let me know if you'd like me to:"
+        ul
+          li
+            "expand on any point,"
+          li
+            "add a chart, or"
+          li
+            "draft the bulletin."
+        p
+          "The model's hidden reasoning that leaked into the output."
+        p
+          strong
+            "References"
+        p
+          "Trailing markup that never closes: **bold without end and `code without end"

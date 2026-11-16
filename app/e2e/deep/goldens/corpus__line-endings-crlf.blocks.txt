@@ -1,0 +1,31 @@
+# corpus/line-endings-crlf.md
+format: markdown
+outline: Saved with CR LF (line 1)
+--- h1 1-1
+<h1 id="saved-with-cr-lf">Saved with CR LF</h1>
+--- p 3-4
+<p>Every line of this file ends with CR LF.
+A second line of the same paragraph.</p>
+--- ul 6-7
+<ul>
+<li>a list item</li>
+<li>another item</li>
+</ul>
+--- pre 9-11
+<pre><code class="language-js">const crlf = true;
+</code></pre>
+--- table 13-15
+<table>
+<thead>
+<tr>
+<th>a</th>
+<th>b</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>2</td>
+</tr>
+</tbody>
+</table>

@@ -1,0 +1,177 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        h1 id="heading-one"
+          a.anchor href="#heading-one" aria-label="Link to Heading one"
+            "#"
+          "Heading one"
+        h2 id="heading-two"
+          a.anchor href="#heading-two" aria-label="Link to Heading two"
+            "#"
+          "Heading two"
+        h3 id="heading-three"
+          a.anchor href="#heading-three" aria-label="Link to Heading three"
+            "#"
+          "Heading three"
+        h4 id="heading-four"
+          a.anchor href="#heading-four" aria-label="Link to Heading four"
+            "#"
+          "Heading four"
+        h5 id="heading-five"
+          a.anchor href="#heading-five" aria-label="Link to Heading five"
+            "#"
+          "Heading five"
+        h6 id="heading-six"
+          a.anchor href="#heading-six" aria-label="Link to Heading six"
+            "#"
+          "Heading six"
+        h1 id="setext-heading"
+          a.anchor href="#setext-heading" aria-label="Link to Setext heading"
+            "#"
+          "Setext heading"
+        h2 id="setext-second-level"
+          a.anchor href="#setext-second-level" aria-label="Link to Setext second level"
+            "#"
+          "Setext second level"
+        p
+          "A paragraph with"
+          em
+            "emphasis"
+          ","
+          strong
+            "strong"
+          ","
+          em
+            strong
+              "both"
+          ","
+          del
+            "struck"
+          ","
+          code
+            "inline code"
+          ", a"
+          a href="gfm-tables.md"
+            "relative link"
+          ", a"
+          a href="https://example.com" title="Example title"
+            "link with a title"
+          ", an autolink"
+          a href="https://example.com/path?q=1&r=2"
+            "https://example.com/path?q=1&r=2"
+          "and a bare one:"
+          a href="https://example.org/docs"
+            "https://example.org/docs"
+          ". Escapes: *not emphasis*, `not code`, 5 < 6 & 7 > 3."
+        p
+          "A hard break ends this line"
+          br
+          "and a backslash break ends this one"
+          br
+          "and the paragraph goes on."
+        p.pm-wide
+          img src="/@permark-deep/project/corpus/assets/square.svg" alt="A small square picture" title="Square"
+        p
+          audio src="/@permark-deep/project/corpus/assets/tone.wav" controls
+        blockquote
+          p
+            "A quote with"
+            strong
+              "strong"
+            "text."
+          blockquote
+            p
+              "A nested quote, with a list:"
+            ul
+              li
+                "one"
+              li
+                "two"
+        ol
+          li
+            p
+              "First"
+          li
+            p
+              "Second"
+            ol
+              li
+                "Nested first"
+              li
+                "Nested second"
+                ul
+                  li
+                    "deeper bullet"
+          li
+            p
+              "Third"
+          li
+            p
+              "A list that starts at seven"
+          li
+            p
+              "and goes on"
+        ul.contains-task-list
+          li
+            p
+              "Bullet continued on a lazy line"
+          li
+            p
+              "Bullet with a paragraph"
+            p
+              "that has a second paragraph."
+          li.task-list-item
+            input.task-list-item-checkbox aria-label="An open task" disabled
+            p
+              "An open task"
+          li.task-list-item.is-done
+            input.task-list-item-checkbox aria-label="A finished task" checked disabled
+            p
+              "A finished task"
+            ul.contains-task-list
+              li.task-list-item
+                input.task-list-item-checkbox aria-label="A nested task" disabled
+                "A nested task"
+        hr
+        dl
+          dt
+            "Term"
+          dd
+            "The definition of the term."
+          dt
+            "Second term"
+          dd
+            "First definition."
+          dd
+            "Second definition.an indented code block with two lines"
+        p
+          "HTML entities: © — → 🌊 &amp;"
+        p
+          "A footnote reference"
+          sup.footnote-ref
+            a href="#fn-first" id="fnref-first"
+              "1"
+          "and another one"
+          sup.footnote-ref
+            a href="#fn-long-note" id="fnref-long-note"
+              "2"
+          "."
+        section.footnotes
+          ol
+            li id="fn-first"
+              p
+                "The first footnote."
+                a.footnote-backref href="#fnref-first" aria-label="Back to reference 1"
+                  "↩"
+            li id="fn-long-note"
+              p
+                "A footnote with"
+                code
+                  "code"
+                "and a"
+                a href="#heading-one"
+                  "link"
+                "."
+                a.footnote-backref href="#fnref-long-note" aria-label="Back to reference 2"
+                  "↩"

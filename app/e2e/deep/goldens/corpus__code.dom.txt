@@ -1,0 +1,97 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        h1 id="code-blocks"
+          a.anchor href="#code-blocks" aria-label="Link to Code blocks"
+            "#"
+          "Code blocks"
+        div.code-block
+          div.code-title
+            "src/main.rs"
+          pre.has-title
+            code
+              tokens: hljs-built_in hljs-keyword hljs-number hljs-string hljs-title hljs-variable
+              "fn main() {⏎    let tide = 1.2;⏎    println!("tide {tide}");⏎    let waves = [0.4, 0.6];⏎    println!("{waves:?}");⏎}⏎"
+          div.corner
+            span.lang
+              "Rust"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        div.code-block
+          pre.is-numbered
+            code
+              tokens: hljs-built_in hljs-keyword hljs-params hljs-string hljs-title
+              "def mean(values):⏎    """Average of a list."""⏎    return sum(values) / len(values)⏎"
+          div.corner
+            span.lang
+              "Python"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        div.code-block
+          div.code-title
+            "A title with <angle> &"
+          pre.has-title
+            code
+              tokens: hljs-attr hljs-built_in hljs-keyword hljs-string hljs-subst
+              "export const greeting: string = `hello ${"world"}`;⏎"
+          div.corner
+            span.lang
+              "TypeScript"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        div.code-block
+          pre
+            code
+              "A block without a language."
+          div.corner
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        div.code-block
+          pre
+            code
+              tokens: hljs-attr hljs-punctuation hljs-string
+              "{ "fenced": "with tildes", "nested": "```" }⏎"
+          div.corner
+            span.lang
+              "JSON"
+            button.icon-btn.icon-btn--sm.code-action title="Convert…" aria-label="Convert…"
+              icon lucide-arrow-left-right
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        div.code-block
+          pre
+            code
+              tokens: hljs-code
+              "```js⏎// a fence inside a fence⏎```⏎"
+          div.corner
+            span.lang
+              "Markdown"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        div.code-block
+          pre
+            code
+              "a very long line that does not wrap in a code block and has to scroll sideways because it goes on and on and on and on and on and on"
+          div.corner
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        div.code-block
+          pre
+            code
+              "Text in a language no highlighter knows."
+          div.corner
+            span.lang
+              "unknownlanguage"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        div.code-block
+          pre
+            code
+              tokens: hljs-addition hljs-deletion
+              "- removed line⏎+ added line⏎"
+          div.corner
+            span.lang
+              "Diff"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy

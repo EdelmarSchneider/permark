@@ -44,6 +44,7 @@ npm run fmt     # fixes formatting (rustfmt and prettier)
 ```
 
 - New behavior comes with tests, and so does a failure it must survive (bad input, mixed line endings, unusual paths).
+- A change to how documents render: also run the slower deep suite, `npm run deep` (see `app/e2e/deep/README.md`).
 - A change to what a file looks like after saving needs a test that proves every byte the person did not touch stays the
   same.
 - Types shared with the interface are generated from Rust when `cargo test` runs. Commit the result when it changes.

@@ -81,6 +81,8 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_System_Pipes",
 ] }
 tempfile = "3.27.0"
+# property tests only (no forked runs, no timeouts: plain in-process cases)
+proptest = { version = "1.12", default-features = false, features = ["std"] }
 ignore = "0.4.33"
 notify = "8.2.0"
 trash = "5.2.9"

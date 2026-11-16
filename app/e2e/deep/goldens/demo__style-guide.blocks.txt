@@ -1,0 +1,270 @@
+# demo/style-guide.md
+format: markdown
+front matter: {"syntax":"yaml","raw":"title: \"How we write: the Larkhaven style guide\"\nowner: Dr. Imani Okafor\nstatus: published\nupdated: 2026-11-03\ntags: [writing, style, markdown]\n","fields":[{"key":"title","value":{"type":"text","text":"How we write: the Larkhaven style guide"}},{"key":"owner","value":{"type":"text","text":"Dr. Imani Okafor"}},{"key":"status","value":{"type":"text","text":"published"}},{"key":"updated","value":{"type":"text","text":"2026-11-03"}},{"key":"tags","value":{"type":"list","items":["writing","style","markdown"]}}]}
+outline: How we write: the Larkhaven style guide (line 9)
+outline:   Write for one reader (line 31)
+outline:   Headings, lists and tasks (line 43)
+outline:   Callouts: pick the right voice (line 65)
+outline:   More callout kinds (line 84)
+outline:   Containers (line 112)
+outline:   Small marks (line 124)
+outline:   Words we use (line 141)
+outline:   Front matter (line 160)
+outline:   Links and anchors (line 176)
+--- h1 9-9
+<h1 id="how-we-write-the-larkhaven-style-guide">How we write: the Larkhaven style guide</h1>
+--- p 11-11
+<p>Good pages get read. This is how we keep ours short, true and kind to the reader, with a quick reference to every mark Markdown gives you.</p>
+--- pre 13-29
+<pre><code class="language-mermaid">mindmap
+  root((A good page))
+    Purpose
+      One reader
+      One job
+    Structure
+      Clear headings
+      Short sections
+    Evidence
+      Real numbers
+    Voice
+      Plain and warm
+    Care
+      Alt text
+      Working links
+</code></pre>
+--- h2 31-31
+<h2 id="write-for-one-reader">Write for one reader</h2>
+--- p 33-33
+<p>Before you type, name one reader and the one job they came to do. A volunteer on the pier at six in the morning needs the swap checklist, not the history of LH-09. Everything else moves lower, or goes.</p>
+--- p 35-35
+<p>That reader is sometimes an agent. Gull reads our pages too, so the same rules apply: say what you mean, give numbers their units and dates. Its own <a href="bulletin-agent.md">prompt file</a> shows how tags like <code>&lt;context&gt;</code> and placeholders like <code>{{week}}</code> read on the page.</p>
+--- p 37-37
+<p>Three questions before you publish:</p>
+--- ol 39-41
+<ol>
+<li>Who is this page for?</li>
+<li>What will they do after reading it?</li>
+<li>Which number would they quote?</li>
+</ol>
+--- h2 43-43
+<h2 id="headings-lists-and-tasks">Headings, lists and tasks</h2>
+--- p 45-45
+<p>One title, then sentence-case sections, one idea each. Use a list when the reader will scan or tick things off, and nest one level at most. You type:</p>
+--- pre 47-54
+<pre><code class="language-markdown">1. Hull
+   - Inspect the hatch seal
+   - Clean the solar panel
+2. Sensors
+   - [x] Calibrate pH
+   - [ ] Replace the oxygen membrane
+</code></pre>
+--- p 56-56
+<p>You get:</p>
+--- ol 58-63
+<ol>
+<li>Hull
+<ul>
+<li>Inspect the hatch seal</li>
+<li>Clean the solar panel</li>
+</ul>
+</li>
+<li>Sensors
+<ul class="contains-task-list">
+<li class="task-list-item"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Calibrate pH</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="" type="checkbox"> Replace the oxygen membrane</li>
+</ul>
+</li>
+</ol>
+--- h2 65-65
+<h2 id="callouts-pick-the-right-voice">Callouts: pick the right voice</h2>
+--- p 67-67
+<p>A callout lifts one piece of advice out of the text. Choose the kind by what happens if the reader skips it: NOTE for context, TIP for a shortcut, IMPORTANT for what they must know, WARNING for a risk, CAUTION for anything that can't be undone.</p>
+--- div 69-70
+<div class="markdown-alert markdown-alert-note">
+<p class="markdown-alert-title">Station ids</p>
+<p>Write station ids as <code>LH-</code> plus two digits: LH-04, never LH4 or lh-04. Search finds them all that way.</p>
+</div>
+--- div 72-73
+<div class="markdown-alert markdown-alert-tip">
+<p class="markdown-alert-title">Keep the units</p>
+<p>Paste readings with their units, straight from the API. Nobody should have to guess whether 12.6 means °C.</p>
+</div>
+--- div 75-76
+<div class="markdown-alert markdown-alert-important">
+<p class="markdown-alert-title">Every number has a date</p>
+<p>"Mean pH 8.02" means nothing on its own. "Mean pH 8.02 at LH-04, week 46" is a fact.</p>
+</div>
+--- div 78-79
+<div class="markdown-alert markdown-alert-warning">
+<p class="markdown-alert-title">Flagged readings</p>
+<p>A flagged reading may be wrong. Quote it only with its flag, and say why the flag was raised.</p>
+</div>
+--- div 81-82
+<div class="markdown-alert markdown-alert-caution">
+<p class="markdown-alert-title">Deleting history</p>
+<p>Removing a reading from the open dataset can't be undone for people who already downloaded it. Ask Imani first.</p>
+</div>
+--- h2 84-84
+<h2 id="more-callout-kinds">More callout kinds</h2>
+--- p 86-86
+<p>For stories and side notes, these kinds fold away. Closed, they make a colored index; click a title to open one.</p>
+--- details 88-89
+<details class="markdown-alert markdown-alert-note markdown-alert-kind-info">
+<summary class="markdown-alert-title">How a station gets its name</summary>
+<p>Named stations take the nearest charted landmark: Gannet Point, Kittiwake Shoal, Heron Flats. The rest keep their numbers until someone earns the right to name one.</p>
+</details>
+--- details 91-92
+<details class="markdown-alert markdown-alert-tip markdown-alert-kind-success">
+<summary class="markdown-alert-title">What "deployed" means</summary>
+<p>A buoy counts as deployed when its first reading passes quality control, not when it hits the water.</p>
+</details>
+--- details 94-95
+<details class="markdown-alert markdown-alert-warning markdown-alert-kind-question">
+<summary class="markdown-alert-title">Why ten minutes between readings?</summary>
+<p>Ten minutes is short enough to catch a turning tide or a passing storm, and a 40-second wake keeps the battery alive through a northern winter.</p>
+</details>
+--- details 97-98
+<details class="markdown-alert markdown-alert-caution markdown-alert-kind-failure">
+<summary class="markdown-alert-title">What we got wrong in Season 2</summary>
+<p>We published raw salinity before the sensors were calibrated. Two weeks of LH-09 had to be reissued, with an apology.</p>
+</details>
+--- details 100-101
+<details class="markdown-alert markdown-alert-caution markdown-alert-kind-danger">
+<summary class="markdown-alert-title">Never on deck alone</summary>
+<p>A buoy swap needs two people on deck and one at the wheel. No exceptions, not even in a flat calm.</p>
+</details>
+--- details 103-104
+<details class="markdown-alert markdown-alert-caution markdown-alert-kind-bug">
+<summary class="markdown-alert-title">Known issue: clock drift after a battery dip</summary>
+<p>A buoy whose battery dips too low can restart with its clock a few seconds off. Ingest corrects it, but mention it if timestamps look odd.</p>
+</details>
+--- details 106-107
+<details class="markdown-alert markdown-alert-note markdown-alert-kind-abstract">
+<summary class="markdown-alert-title">This guide in one paragraph</summary>
+<p>One reader, one job. Short sections with clear headings. Real numbers with units and dates. Plain, warm words. Alt text on every picture and links that work.</p>
+</details>
+--- details 109-110
+<details class="markdown-alert markdown-alert-note markdown-alert-kind-todo">
+<summary class="markdown-alert-title">Before you publish</summary>
+<p>Check the spelling and every link, read the page once aloud, and ask one person who wasn't in the room to read it too.</p>
+</details>
+--- h2 112-112
+<h2 id="containers">Containers</h2>
+--- p 114-114
+<p>When an aside runs longer than a callout, use a container: a titled block that can hold paragraphs, lists or even a table.</p>
+--- div 116-118
+<div class="markdown-alert markdown-alert-note">
+<p class="markdown-alert-title">Containers hold longer asides</p>
+<p>Open one with three colons and a kind, then close it with three colons on a line of their own. Everything in between is ordinary Markdown.</p>
+</div>
+--- div 120-122
+<div class="markdown-alert markdown-alert-tip">
+<p class="markdown-alert-title">Which one to use</p>
+<p>A callout for one piece of advice, a container for a sidebar, and a <code>&lt;details&gt;</code> block for things most readers can skip.</p>
+</div>
+--- h2 124-124
+<h2 id="small-marks">Small marks</h2>
+--- p 126-126
+<p>A handful of inline marks covers almost everything else. Use each one for its job, and sparingly.</p>
+--- table 128-137
+<table>
+<thead>
+<tr>
+<th>You type</th>
+<th>You get</th>
+<th>Use it for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>==rising tide==</code></td>
+<td><mark>rising tide</mark></td>
+<td>The one line a skimming reader must not miss</td>
+</tr>
+<tr>
+<td><code>&lt;mark&gt;flagged&lt;/mark&gt;</code></td>
+<td><mark>flagged</mark></td>
+<td>A highlight that works in any Markdown tool</td>
+</tr>
+<tr>
+<td><code>&lt;kbd&gt;Ctrl&lt;/kbd&gt;+&lt;kbd&gt;F&lt;/kbd&gt;</code></td>
+<td><kbd>Ctrl</kbd>+<kbd>F</kbd></td>
+<td>Keys to press</td>
+</tr>
+<tr>
+<td><code>&lt;abbr title="practical salinity unit"&gt;PSU&lt;/abbr&gt;</code></td>
+<td><abbr title="practical salinity unit">PSU</abbr></td>
+<td>The first use of an abbreviation</td>
+</tr>
+<tr>
+<td><code>CO&lt;sub&gt;2&lt;/sub&gt;, 10&lt;sup&gt;3&lt;/sup&gt;</code></td>
+<td>CO<sub>2</sub>, 10<sup>3</sup></td>
+<td>Chemistry and powers</td>
+</tr>
+<tr>
+<td><code>&lt;ins&gt;v2.3&lt;/ins&gt;</code></td>
+<td><ins>v2.3</ins></td>
+<td>Text added in a revision</td>
+</tr>
+<tr>
+<td><code>~~v2.2~~</code></td>
+<td><del>v2.2</del></td>
+<td>Text removed in a revision</td>
+</tr>
+<tr>
+<td><code>:ocean:</code></td>
+<td><span class="emoji" title=":ocean:">🌊</span></td>
+<td>One emoji in a heading or a table, at most</td>
+</tr>
+</tbody>
+</table>
+--- p 139-139
+<p><a id="glossary" name="glossary"></a></p>
+--- h2 141-141
+<h2 id="words-we-use">Words we use</h2>
+--- p 143-143
+<p>The same thing always gets the same word. These five come up on almost every page.</p>
+--- dl 145-159
+<dl>
+<dt>Station</dt>
+<dd>A fixed point in the Sound, <code>LH-01</code> to <code>LH-12</code>. Buoys come and go; stations stay.</dd>
+<dt>Reading</dt>
+<dd>One set of measurements from one station at one moment: temperature, salinity, pH, dissolved oxygen and wave height.</dd>
+<dt>QC flag</dt>
+<dd>A mark our quality-control engine puts on a doubtful reading. Most flagged readings are published with their flag; the rest are removed after a person reviews them.</dd>
+<dt>Deployment</dt>
+<dd>One buoy at one station, from the day it goes in to the day it comes out.</dd>
+<dt>Bulletin</dt>
+<dd>The weekly summary for the public. Gull drafts it, and a person signs it off.</dd>
+</dl>
+--- h2 160-160
+<h2 id="front-matter">Front matter</h2>
+--- p 162-162
+<p>Start each page with a few facts about it between two <code>---</code> lines. PerMark shows them as a properties card, with tags as chips. Five fields is plenty:</p>
+--- pre 164-172
+<pre><code class="language-yaml">---
+title: Season 3 deployment plan
+owner: Hana Kowalski
+status: in progress
+updated: 2026-11-15
+tags: [plan, season-3, operations]
+---
+</code></pre>
+--- p 174-174
+<p>Prefer TOML? Open and close with <code>+++</code> instead, as the <a href="galley-recipe.md">galley recipe</a> does.</p>
+--- h2 176-176
+<h2 id="links-and-anchors">Links and anchors</h2>
+--- p 178-178
+<p>Link to other pages by their relative path, and to a section by its heading in lowercase with dashes. For a spot that has no heading, drop in a named anchor. Web addresses become links on their own.</p>
+--- pre 180-185
+<pre><code class="language-markdown">[the season plan](season-plan.md)
+[back to callouts](#callouts-pick-the-right-voice)
+&lt;a name="glossary"&gt;&lt;/a&gt; … then [the glossary](#glossary)
+https://tidewell.example
+</code></pre>
+--- p 187-187
+<p>Try them: <a href="season-plan.md">the season plan</a>, <a href="#callouts-pick-the-right-voice">back to callouts</a>, <a href="#glossary">the glossary</a>, and <a href="https://tidewell.example">https://tidewell.example</a>.</p>
+--- hr 189-189
+<hr>
+--- p 191-191
+<p>Next: <a href="station-architecture.md">How a reading travels</a> · <a href="README.md">Start here</a></p>

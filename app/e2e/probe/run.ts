@@ -129,15 +129,17 @@ export async function launch(engine: Engine): Promise<Browser> {
   }
 }
 
-/** A page of the app at `url`, its fonts loaded and quiet; console | page errors go to `errors`. */
+/** A page of the app at `url`, its fonts loaded and quiet; console | page errors go to `errors`. `time`: the clock's
+ *  start (epoch ms; default now), for pages whose text holds dates and times. */
 export async function openApp(
   context: BrowserContext,
   url: string,
   errors: string[],
+  time?: number,
 ): Promise<Page> {
   const page = await context.newPage();
   // fake clock that flows like the real one, so pending timers can be run before an action (DRAIN_MS)
-  await page.clock.install();
+  await page.clock.install(time === undefined ? undefined : { time });
   page.on("console", (msg) => {
     if (msg.type() === "error") errors.push(`console: ${msg.text().slice(0, 300)}`);
   });

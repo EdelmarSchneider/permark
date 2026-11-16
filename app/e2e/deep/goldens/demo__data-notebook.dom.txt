@@ -1,0 +1,512 @@
+div.reading
+  div.doc-column
+    article.md
+      section.card aria-label="Front matter"
+        dl.grid
+          div.field
+            dt
+              "title"
+            dd
+              "Ninety days of Sound data"
+          div.field
+            dt
+              "owner"
+            dd
+              "Leo Park"
+          div.field
+            dt
+              "status"
+            dd
+              "published"
+          div.field
+            dt
+              "updated"
+            dd
+              "November 14, 2026"
+          div.field
+            dt
+              "tags"
+            dd.chips
+              span.chip
+                "data"
+              span.chip
+                "analysis"
+              span.chip
+                "qc"
+      div.md-body role="document"
+        h1 id="ninety-days-of-sound-data"
+          a.anchor href="#ninety-days-of-sound-data" aria-label="Link to Ninety days of Sound data"
+            "#"
+          "Ninety days of Sound data"
+        p
+          "From August 17 to November 14, our twelve buoys sent 155,520 readings. This notebook follows them through quality control and asks one question: how closely doe…"
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg xychart sized labels: Gannet Point (LH-04): oxygen rises as the water cools | W34 | W35 | W36 | W37 | W38 | W39 | W40 | W41 | W42 | W43 | W44 | W45 | W46 | 18 | 16 | 14 | 12 | 10 | 8 | 6 | 4 | 2 | 0 | °C (line) and mg/L (bars)
+        h2 id="the-short-version"
+          a.anchor href="#the-short-version" aria-label="Link to The short version"
+            "#"
+          "The short version"
+        div.markdown-alert.markdown-alert-note.markdown-alert-kind-abstract
+          p.markdown-alert-title
+            svg svg sized
+            "Three things to know"
+          ul
+            li
+              "97.2 % of readings passed quality control, and 2,980 more are published with a flag."
+            li
+              "Across all stations, daily oxygen drops by 0.21 mg/L for every degree of warming ("
+              span data-math-style="inline"
+                katex tex="r = -0.81"
+              ")."
+            li
+              "The pH sensor at Kittiwake Shoal is starting to drift, and QC warned us before any reading needed a flag."
+        h2 id="where-#-readings-went"
+          a.anchor href="#where-#-readings-went" aria-label="Link to Where 155,520 readings went"
+            "#"
+          "Where 155,520 readings went"
+        p
+          "Every reading passes through the QC engine, which applies the range, spike, flatline and drift rules in"
+          a href="station/qc-rules.yaml"
+            code
+              "station/qc-rules.yaml"
+          ". Most pass untouched. Flagged readings get a human look: if we understand the cause and the value is still useful, it stays in the open dataset with its flag."
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg sankey sized labels: Readings 155520 | Passed QC 151204 | Flagged 3412 | Rejected 904 | Open dataset 154184 | Not published 1336
+        p
+          "In numbers: 151,204 passed (97.2 %); 3,412 were flagged, of which 2,980 are published with their flag and 432 were removed after review; 904 were rejected outri…"
+        h2 id="temperature-against-oxygen"
+          a.anchor href="#temperature-against-oxygen" aria-label="Link to Temperature against oxygen"
+            "#"
+          "Temperature against oxygen"
+        p
+          "Cold water holds more dissolved oxygen (O"
+          sub
+            "2"
+          "), so we expected the two to move in opposite directions. To measure how tightly, we took daily means for each station and computed Pearson's correlation coeffi…"
+        p
+          span data-math-style="display"
+            span.katex-display
+              katex tex="r = \frac{\sum_i (x_i-\bar x)(y_i-\bar y)}{\sqrt{\sum_i (x_i-\bar x)^2}\,\sqrt{\sum_i (y_i-\bar y)^2}}"
+        p
+          "With"
+          span data-math-style="inline"
+            katex tex="x"
+          "the daily mean temperature and"
+          span data-math-style="inline"
+            katex tex="y"
+          "the daily mean oxygen over 1,074 station-days,"
+          span data-math-style="inline"
+            katex tex="r = -0.81"
+          "and R"
+          sup
+            "2"
+          "= 0.66: temperature alone explains about two thirds of the variation. The fitted slope is −0.21 mg/L per °C, a little steeper than solubility alone predicts (ab…"
+          a href="ocean-chemistry.md#oxygen-and-temperature"
+            "Oxygen and temperature"
+          "). The difference is biology: warm water also speeds up the bacteria that use oxygen."
+        h2 id="the-code"
+          a.anchor href="#the-code" aria-label="Link to The code"
+            "#"
+          "The code"
+        p
+          "The whole analysis fits in a dozen lines of pandas. Lines 6 to 9 do the work: group by station and day, keep the full days, correlate, fit a straight line."
+        div.code-block
+          div.code-title
+            "notebooks/do_vs_temp.py"
+          pre.has-title
+            code
+              tokens: hljs-built_in hljs-comment hljs-keyword hljs-number hljs-string hljs-subst
+              "import numpy as np⏎import pandas as pd⏎⏎df = pd.read_parquet("data/tidewell-90d.parquet")  # passed + flagged readings⏎df["day"] = df["time"].dt.date⏎g = df.groupby(["station", "day"])[["temp_c", "do_mgl"]]⏎daily = g.mean()[g.size() >= 120].dropna()  # 120+ of 144 readings⏎r = daily["temp_c"].corr(d…"
+          div.corner
+            span.lang
+              "Python"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        h2 id="station-by-station"
+          a.anchor href="#station-by-station" aria-label="Link to Station by station"
+            "#"
+          "Station by station"
+        p
+          "Ninety-day means for every station. The table is wider than the page, so scroll it sideways; "On time" counts readings that arrived within their ten-minute cycl…"
+        div.table-wrap
+          table
+            thead
+              tr
+                th
+                  "Station"
+                th
+                  "Name"
+                th align="right"
+                  "Passed %"
+                th align="right"
+                  "On time %"
+                th align="right"
+                  "Mean T °C"
+                th align="right"
+                  "Mean S PSU"
+                th align="right"
+                  "Mean pH"
+                th align="right"
+                  "Mean DO mg/L"
+                th align="right"
+                  "Flags"
+                th align="right"
+                  "Battery V"
+            tbody
+              tr
+                td
+                  "LH-01"
+                td
+                  "—"
+                td align="right"
+                  "97.9"
+                td align="right"
+                  "99.6"
+                td align="right"
+                  "15.4"
+                td align="right"
+                  "33.7"
+                td align="right"
+                  "8.04"
+                td align="right"
+                  "7.31"
+                td align="right"
+                  "214"
+                td align="right"
+                  "13.1"
+              tr
+                td
+                  "LH-02"
+                td
+                  "—"
+                td align="right"
+                  "98.2"
+                td align="right"
+                  "99.7"
+                td align="right"
+                  "15.2"
+                td align="right"
+                  "33.9"
+                td align="right"
+                  "8.05"
+                td align="right"
+                  "7.36"
+                td align="right"
+                  "188"
+                td align="right"
+                  "13.2"
+              tr
+                td
+                  "LH-03"
+                td
+                  "—"
+                td align="right"
+                  "97.7"
+                td align="right"
+                  "99.4"
+                td align="right"
+                  "15.6"
+                td align="right"
+                  "33.5"
+                td align="right"
+                  "8.03"
+                td align="right"
+                  "7.27"
+                td align="right"
+                  "236"
+                td align="right"
+                  "13.0"
+              tr
+                td
+                  "LH-04"
+                td
+                  "Gannet Point"
+                td align="right"
+                  "97.7"
+                td align="right"
+                  "99.5"
+                td align="right"
+                  "15.1"
+                td align="right"
+                  "33.6"
+                td align="right"
+                  "8.03"
+                td align="right"
+                  "7.38"
+                td align="right"
+                  "251"
+                td align="right"
+                  "13.1"
+              tr
+                td
+                  "LH-05"
+                td
+                  "—"
+                td align="right"
+                  "98.3"
+                td align="right"
+                  "99.8"
+                td align="right"
+                  "14.8"
+                td align="right"
+                  "34.0"
+                td align="right"
+                  "8.05"
+                td align="right"
+                  "7.44"
+                td align="right"
+                  "173"
+                td align="right"
+                  "13.2"
+              tr
+                td
+                  "LH-06"
+                td
+                  "—"
+                td align="right"
+                  "97.9"
+                td align="right"
+                  "99.3"
+                td align="right"
+                  "15.0"
+                td align="right"
+                  "33.8"
+                td align="right"
+                  "8.04"
+                td align="right"
+                  "7.40"
+                td align="right"
+                  "205"
+                td align="right"
+                  "13.0"
+              tr
+                td
+                  "LH-07"
+                td
+                  "Kittiwake Shoal"
+                td align="right"
+                  "93.3"
+                td align="right"
+                  "98.9"
+                td align="right"
+                  "14.2"
+                td align="right"
+                  "34.2"
+                td align="right"
+                  "8.08"
+                td align="right"
+                  "7.57"
+                td align="right"
+                  "742"
+                td align="right"
+                  "12.9"
+              tr
+                td
+                  "LH-08"
+                td
+                  "—"
+                td align="right"
+                  "98.1"
+                td align="right"
+                  "99.6"
+                td align="right"
+                  "14.6"
+                td align="right"
+                  "34.1"
+                td align="right"
+                  "8.05"
+                td align="right"
+                  "7.49"
+                td align="right"
+                  "196"
+                td align="right"
+                  "13.1"
+              tr
+                td
+                  "LH-09"
+                td
+                  "—"
+                td align="right"
+                  "97.1"
+                td align="right"
+                  "98.2"
+                td align="right"
+                  "15.3"
+                td align="right"
+                  "33.4"
+                td align="right"
+                  "8.02"
+                td align="right"
+                  "7.33"
+                td align="right"
+                  "287"
+                td align="right"
+                  "12.7"
+              tr
+                td
+                  "LH-10"
+                td
+                  "—"
+                td align="right"
+                  "98.2"
+                td align="right"
+                  "99.5"
+                td align="right"
+                  "14.9"
+                td align="right"
+                  "33.9"
+                td align="right"
+                  "8.04"
+                td align="right"
+                  "7.42"
+                td align="right"
+                  "182"
+                td align="right"
+                  "13.2"
+              tr
+                td
+                  "LH-11"
+                td
+                  "Heron Flats"
+                td align="right"
+                  "94.3"
+                td align="right"
+                  "96.4"
+                td align="right"
+                  "15.9"
+                td align="right"
+                  "31.8"
+                td align="right"
+                  "7.98"
+                td align="right"
+                  "7.12"
+                td align="right"
+                  "548"
+                td align="right"
+                  "12.6"
+              tr
+                td
+                  "LH-12"
+                td
+                  "—"
+                td align="right"
+                  "98.1"
+                td align="right"
+                  "99.7"
+                td align="right"
+                  "14.7"
+                td align="right"
+                  "34.0"
+                td align="right"
+                  "8.05"
+                td align="right"
+                  "7.47"
+                td align="right"
+                  "190"
+                td align="right"
+                  "13.1"
+              tr
+                td
+                  strong
+                    "All"
+                td
+                td align="right"
+                  strong
+                    "97.2"
+                td align="right"
+                  strong
+                    "99.1"
+                td align="right"
+                  strong
+                    "15.1"
+                td align="right"
+                  strong
+                    "33.7"
+                td align="right"
+                  strong
+                    "8.04"
+                td align="right"
+                  strong
+                    "7.38"
+                td align="right"
+                  strong
+                    "3,412"
+                td align="right"
+                  strong
+                    "13.0"
+        h2 id="where-the-flags-came-from"
+          a.anchor href="#where-the-flags-came-from" aria-label="Link to Where the flags came from"
+            "#"
+          "Where the flags came from"
+        p
+          "Biofouling leads, as it does every autumn: algae and barnacles on the sensor cage slowly cut the oxygen and pH sensors off from fresh water. Heron Flats, shallo…"
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg pie sized labels: 46% | 21% | 18% | 15% | Why 3,412 readings were flagged | Biofouling [1570] | Battery dips [717] | Radio gaps [614] | Calibration drift [511]
+        h2 id="drift-at-kittiwake-shoal"
+          a.anchor href="#drift-at-kittiwake-shoal" aria-label="Link to Drift at Kittiwake Shoal"
+            "#"
+          "Drift at Kittiwake Shoal"
+        div.markdown-alert.markdown-alert-caution.markdown-alert-kind-bug
+          p.markdown-alert-title
+            svg svg sized
+            "The pH at LH-07 is sliding"
+          p
+            "In early November, pH at Kittiwake Shoal began to fall faster than the water around it"
+            sup.footnote-ref
+              a href="#fn-__inline_1" id="fnref-__inline_1"
+                "1"
+            ". On November 12 the trend reached −0.008 a day against the station's own 14-day median, 80 % of the drift limit, and the QC engine logged a warning (see the"
+            a.is-missing href="station/ingest-#-11-12.log" title="Not found: demo/station/ingest-#-11-12.log"
+              "ingest log"
+            "). Nothing is flagged yet: Beatriz will check the sensor against a water sample before winter maintenance starts on December 1."
+        h2 id="what-we-build-next"
+          a.anchor href="#what-we-build-next" aria-label="Link to What we build next"
+            "#"
+          "What we build next"
+        p
+          "Readers asked for one card per station instead of a spreadsheet. This is the wireframe we are testing, drawn as plain text:"
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg svg sized labels: LH-04 Gannet Point | Share | Download data | Now | Chemistry | Waves | History | Week 46 | Last 7 days | Temperature | 12.6 °C | ▇▆▆▅▄▃▃ | Salinity | 33.8 PSU | ▅▅▆▅▅▆▅ | pH | 8.02 | ▄▄▃▄▄▃▃ | Oxygen | 7.9 mg/L | ▃▄▄▅▅▆▆ | Wave height | 1.4 m | ▂▅▇▄▃▅▄ | Show flagged readings | Last 7 days | Compare stations
+        h2 id="method-notes"
+          a.anchor href="#method-notes" aria-label="Link to Method notes"
+            "#"
+          "Method notes"
+        details.markdown-alert.markdown-alert-note.markdown-alert-kind-info
+          summary.markdown-alert-title
+            svg svg sized
+            "Method notes"
+          ul
+            li
+              "Times are UTC. A daily mean needs at least 120 of the day's 144 readings; 6 of the 1,080 station-days fell short."
+            li
+              "Oxygen is measured optically as dissolved"
+              span data-math-style="inline"
+                katex tex="\ce{O2}"
+              "and corrected for salinity before it reaches the API."
+            li
+              "Correlations use the open dataset only: readings that passed, plus flagged readings we kept."
+            li
+              "Weeks are ISO weeks. Week 46 runs November 9 to 15, so it has six days in this dataset."
+        hr
+        p
+          "Next:"
+          a href="season-plan.md"
+            "Season 3 deployment plan"
+          "·"
+          a href="README.md"
+            "Start here"
+        section.footnotes
+          ol
+            li id="fn-__inline_1"
+              p
+                "The neighbors are LH-06 and LH-08, the two stations closest to the shoal. Their week-46 means were 8.00 and 7.99, against 7.96 at LH-07."
+                a.footnote-backref href="#fnref-__inline_1" aria-label="Back to reference 1"
+                  "↩"

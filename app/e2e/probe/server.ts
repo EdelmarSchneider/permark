@@ -49,14 +49,14 @@ async function ready(url: string, child: ChildProcess, log: () => string): Promi
   throw new Error(`mock server not ready in ${READY_MS / 1000} s:\n${log()}`);
 }
 
-/** Serves `appDir` (an app folder with its own node_modules) in mock mode. */
-export async function startMock(appDir: string): Promise<MockServer> {
+/** Serves `appDir` (an app folder with its own node_modules) in mock mode (`mode`: a mode on the mock backend). */
+export async function startMock(appDir: string, mode = "mock"): Promise<MockServer> {
   const vite = path.join(appDir, "node_modules", "vite", "bin", "vite.js");
   if (!existsSync(vite)) throw new Error(`no vite in ${appDir} (npm ci there first)`);
   const port = await freePort();
   const child = spawn(
     process.execPath,
-    [vite, "--mode", "mock", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
+    [vite, "--mode", mode, "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
     { cwd: appDir, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, BROWSER: "none" } },
   );
   let output = "";

@@ -1,0 +1,64 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        h1 id="math"
+          a.anchor href="#math" aria-label="Link to Math"
+            "#"
+          "Math"
+        p
+          "Inline dollars:"
+          span data-math-style="inline"
+            katex tex="E = mc^2"
+          "and"
+          span data-math-style="inline"
+            katex tex="\sqrt{a^2 + b^2}"
+          "; inline parentheses:"
+          span data-math-style="inline"
+            katex tex="\alpha + \beta = \gamma"
+          "."
+        p
+          "A display block in dollars:"
+        p
+          span data-math-style="display"
+            span.katex-display
+              katex tex="\int_0^1 x^2 \, dx = \frac{1}{3}"
+        p
+          "A display block in brackets, each on its own line:"
+        p
+          span data-math-style="display"
+            span.katex-display
+              katex tex="\Omega = \frac{[\mathrm{Ca}^{2+}][\mathrm{CO}_3^{2-}]}{K_{sp}} \tag{1}"
+        p
+          "In the middle of a paragraph a bracketed number [1] stays literal text, and so does a price of $5 and $6."
+        p
+          "Chemistry:"
+          span data-math-style="inline"
+            katex tex="\ce{H2O}"
+          ","
+          span data-math-style="inline"
+            katex tex="\ce{CO2 + H2O <=> H2CO3}"
+          "and a block:"
+        p
+          span data-math-style="display"
+            span.katex-display
+              katex tex="\ce{6CO2 + 6H2O ->[light] C6H12O6 + 6O2}"
+        p
+          "Aligned equations:"
+        p
+          span data-math-style="display"
+            span.katex-display
+              katex tex="\begin{aligned} a &= b + c \\ d &= e - f \end{aligned}"
+        p
+          "A formula with an error:"
+          span data-math-style="inline"
+            code.pm-math-error title="\frac{1}{"
+              "\frac{1}{"
+          "and a block with an unknown command:"
+        p
+          span data-math-style="display"
+            code.pm-math-error title="\notacommand{x}"
+              "\notacommand{x}"
+        div.code-block
+          span.katex-display
+            katex tex="\sum_{i=1}^{n} i = \frac{n(n+1)}{2}"
