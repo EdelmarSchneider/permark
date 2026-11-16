@@ -96,7 +96,7 @@ fn gfm_features_render() {
     for needle in [
         "<h1",
         "<table",
-        "<th>a</th>",
+        "<th dir=\"auto\">a</th>",
         "type=\"checkbox\"",
         "checked",
         "task-list-item",
@@ -212,7 +212,7 @@ fn prompt_blocks_fold_and_keep_inner_markdown() {
     assert!(
         html.contains("<summary>context</summary>")
             && html.contains("<h1")
-            && html.contains("<li>item</li>")
+            && html.contains("<li dir=\"auto\">item</li>")
     );
     // lines: the details block covers the tags
     assert_eq!((blocks[0].line_start, blocks[0].line_end), (2, 4));

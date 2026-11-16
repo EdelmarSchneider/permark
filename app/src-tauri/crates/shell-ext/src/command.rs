@@ -54,11 +54,9 @@ impl MenuAction {
         static OPEN: OnceLock<&'static str> = OnceLock::new();
         static NEW: OnceLock<&'static str> = OnceLock::new();
         match self {
-            Self::Open => {
-                OPEN.get_or_init(|| labels::pick(&labels::OPEN, &shell::display_languages()))
-            }
+            Self::Open => OPEN.get_or_init(|| labels::pick(&shell::display_languages()).open),
             Self::NewMarkdown => {
-                NEW.get_or_init(|| labels::pick(&labels::NEW_MARKDOWN, &shell::display_languages()))
+                NEW.get_or_init(|| labels::pick(&shell::display_languages()).new_markdown)
             }
         }
     }

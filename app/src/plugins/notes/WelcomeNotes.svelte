@@ -3,7 +3,7 @@
   // brings it forward where it is) with that note shown.
   import FilePlus from "@lucide/svelte/icons/file-plus";
   import type { NotesSummary } from "../../api";
-  import { t } from "../../core/i18n";
+  import { formatLocale, t } from "../../core/i18n";
   import { pluginClient } from "../../core/plugins/client";
   import { shownName, timeLabel } from "./model";
   import { showInNotes } from "./store.svelte";
@@ -44,7 +44,7 @@
             <span class="title" class:untitled={entry.title === ""}>
               {entry.title === "" ? t("notes.untitled") : shownName(entry)}
             </span>
-            <span class="time">{timeLabel(entry.modifiedMs, now)}</span>
+            <span class="time">{timeLabel(entry.modifiedMs, now, formatLocale())}</span>
           </button>
         </li>
       {/each}

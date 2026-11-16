@@ -205,8 +205,18 @@ fn builder(doc: &str) -> ammonia::Builder<'static> {
         .set_tag_attribute_value("video", "preload", "metadata")
         .set_tag_attribute_value("audio", "preload", "metadata")
         .attribute_filter(move |element, attr, value| filter_attribute(&doc, element, attr, value));
+    // Each text block takes its direction from its own first letters: an Arabic | Hebrew paragraph reads right to left,
+    // an English one left to right, whatever the interface language. Lists and quotes hold no `dir`: an element with one
+    // hides its text from an `auto` around it, so they follow their first text block by style (`markdown.css`). Code
+    // keeps the page's direction.
+    for tag in TEXT_BLOCKS {
+        builder.set_tag_attribute_value(tag, "dir", "auto");
+    }
     builder
 }
+
+/// The blocks that get `dir="auto"` (see `builder`); a list item counts for the text it holds itself (a tight list).
+const TEXT_BLOCKS: [&str; 10] = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "td", "th"];
 
 #[cfg(test)]
 mod tests {
@@ -214,6 +224,28 @@ mod tests {
 
     fn clean(html: &str) -> String {
         sanitize(html, "docs/guide/a.md")
+    }
+
+    #[test]
+    fn every_text_block_takes_its_direction_from_its_own_text() {
+        let html = "<h2>שלום עולם</h2><p>مرحبا بالعالم</p><p>Hello world</p>            <ul><li>عنصر</li><li>item</li></ul><ol><li>פריט</li></ol>            <blockquote><p>اقتباس</p></blockquote>            <table><thead><tr><th>עמודה</th></tr></thead><tbody><tr><td>خلية</td></tr></tbody></table>            <pre><code>let x = 1;</code></pre>";
+        let out = clean(html);
+        for block in [
+            "<h2 dir=\"auto\">שלום עולם</h2>",
+            "<p dir=\"auto\">مرحبا بالعالم</p>",
+            "<p dir=\"auto\">Hello world</p>",
+            "<ul><li dir=\"auto\">عنصر</li><li dir=\"auto\">item</li></ul>",
+            "<ol><li dir=\"auto\">פריט</li></ol>",
+            "<blockquote><p dir=\"auto\">اقتباس</p></blockquote>",
+            "<th dir=\"auto\">עמודה</th>",
+            "<td dir=\"auto\">خلية</td>",
+            // code keeps the page's direction
+            "<pre><code>let x = 1;</code></pre>",
+        ] {
+            assert!(out.contains(block), "{block} in {out}");
+        }
+        // a direction written in the document is not kept: every block reads its own text
+        assert_eq!(clean("<p dir=\"rtl\">x</p>"), "<p dir=\"auto\">x</p>");
     }
 
     #[test]
@@ -259,7 +291,7 @@ mod tests {
                 assert!(!out.contains(bad), "{html} -> {out}");
             }
         }
-        assert!(clean("<script>alert(1)</script><p>ok</p>").contains("<p>ok</p>"));
+        assert!(clean("<script>alert(1)</script><p>ok</p>").contains("<p dir=\"auto\">ok</p>"));
     }
 
     #[test]

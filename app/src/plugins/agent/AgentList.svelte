@@ -3,7 +3,7 @@
   // Disconnect. One list for the status popover and the settings section. Disconnect asks nothing: the notice it
   // leaves offers Undo; focus goes to the next row's button, else the previous one, else the empty text.
   import { tick } from "svelte";
-  import { language, t } from "../../core/i18n";
+  import { formatLocale, t } from "../../core/i18n";
   import { exactTime, relativeTime } from "../../core/time";
   import { sessionRows, type SessionRow } from "./sessions";
   import { agent } from "./store.svelte";
@@ -20,7 +20,7 @@
   let said = $state("");
 
   function when(ms: number): string {
-    return relativeTime(ms, now, language.locale);
+    return relativeTime(ms, now, formatLocale());
   }
 
   function lastLine(row: SessionRow): string {
@@ -56,7 +56,7 @@
             <div class="text">
               <span class="name" title={row.label}>{row.label}</span>
               <span class="line">
-                <span class="started" title={exactTime(row.session.startedMs, language.locale)}>
+                <span class="started" title={exactTime(row.session.startedMs, formatLocale())}>
                   {t("agent.sessions.started", { when: when(row.session.startedMs) })}
                 </span>
                 <span aria-hidden="true">·</span>
@@ -64,7 +64,7 @@
               </span>
               <span
                 class="line"
-                title={row.last === null ? undefined : exactTime(row.last.atMs, language.locale)}
+                title={row.last === null ? undefined : exactTime(row.last.atMs, formatLocale())}
                 >{lastLine(row)}</span
               >
             </div>

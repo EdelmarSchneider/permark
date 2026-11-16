@@ -858,7 +858,97 @@ fn keymap_entries_of_0_6_0_read_under_the_new_ids() {
 }
 
 #[test]
-fn installer_codes_are_one_of_the_thirteen_and_nothing_else() {
+fn a_language_tag_reads_as_the_app_language_it_stands_for() {
+    let of = LanguagePref::from_tag;
+    for (tags, language) in [
+        (&["en", "en-GB", "EN_us"][..], LanguagePref::En),
+        (
+            &["pt", "pt-BR", "pt_br", "pt-Latn", "pt-Latn-BR"],
+            LanguagePref::PtBr,
+        ),
+        (
+            &["pt-PT", "PT_pt", "pt-AO", "pt-Latn-PT", "pt-150"],
+            LanguagePref::PtPt,
+        ),
+        (&["de-AT"], LanguagePref::De),
+        (&["IT_it"], LanguagePref::It),
+        (&["JA_jp"], LanguagePref::Ja),
+        (&["ca-ES-valencia"], LanguagePref::Ca),
+        (
+            &[
+                "zh",
+                "zh-CN",
+                "zh_CN",
+                "zh-SG",
+                "zh-Hans",
+                "zh-Hans-TW",
+                "zh-Hans-HK",
+            ],
+            LanguagePref::ZhCn,
+        ),
+        (
+            &[
+                "zh-TW",
+                "zh_TW",
+                "zh-HK",
+                "zh-MO",
+                "ZH-hk",
+                "zh-Hant",
+                "zh-Hant-TW",
+                "zh-Hant-CN",
+            ],
+            LanguagePref::ZhTw,
+        ),
+        (&["id", "id-ID"], LanguagePref::Id),
+        (&["vi", "vi-VN"], LanguagePref::Vi),
+        (&["ru", "ru-RU", "ru_UA"], LanguagePref::Ru),
+        (&["tr", "tr-TR", "TR_cy"], LanguagePref::Tr),
+    ] {
+        for tag in tags {
+            assert_eq!(of(tag), Some(language), "{tag}");
+        }
+    }
+    for tag in [
+        "", "-", "_x", "jpn", "kor", "rom", "ind", "vie", "rus", "tur", "zho-TW", "sv-SE",
+    ] {
+        assert_eq!(of(tag), None, "{tag:?}");
+    }
+    assert_eq!(LanguagePref::De.resolve(&["pt-BR"]), LanguagePref::De);
+    assert_eq!(
+        LanguagePref::System.resolve(&["sv-SE", "zh-HK"]),
+        LanguagePref::ZhTw
+    );
+    assert_eq!(LanguagePref::System.resolve(&["sv-SE"]), LanguagePref::En);
+    assert_eq!(LanguagePref::System.resolve::<&str>(&[]), LanguagePref::En);
+}
+
+#[test]
+fn an_os_locale_name_reads_as_a_language_tag() {
+    use super::region::region_tag;
+    for (name, tag) in [
+        ("en-IN", "en-IN"),
+        ("en_IN.UTF-8", "en-IN"),
+        ("en_AU.utf8", "en-AU"),
+        ("sr_RS@latin", "sr-RS"),
+        ("de-DE_phoneb", "de-DE"),
+        ("zh-Hant-TW", "zh-Hant-TW"),
+        ("fr", "fr"),
+    ] {
+        assert_eq!(region_tag(name).as_deref(), Some(tag), "{name}");
+    }
+    for name in [
+        "", "C", "C.UTF-8", "POSIX", "en IN", "en--IN", "-", "en_IN;rm",
+    ] {
+        assert_eq!(region_tag(name), None, "{name:?}");
+    }
+    // whatever the machine says, it is a tag or nothing
+    if let Some(tag) = super::system_region() {
+        assert!(region_tag(&tag).is_some(), "{tag}");
+    }
+}
+
+#[test]
+fn installer_codes_are_one_of_the_apps_languages_and_nothing_else() {
     use super::installer::language_from_code;
     assert_eq!(language_from_code("en"), Some(LanguagePref::En));
     assert_eq!(language_from_code(" pt-BR\r\n"), Some(LanguagePref::PtBr));
@@ -876,7 +966,9 @@ fn installer_codes_are_one_of_the_thirteen_and_nothing_else() {
         None,
         "a stray NUL is not a code"
     );
-    for other in ["", "system", "klingon", "EN", "pt", "zh-TW", "en,de"] {
+    for other in [
+        "", "system", "klingon", "EN", "pt", "zh-tw", "zh-Hant", "en,de",
+    ] {
         assert_eq!(language_from_code(other), None, "{other:?}");
     }
 }

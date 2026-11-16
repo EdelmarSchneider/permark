@@ -8,7 +8,7 @@
   import type { RecentFolder } from "../../api";
   import { keyHint } from "../commands/hint";
   import { conditions } from "../conditions/context.svelte";
-  import { language, t } from "../i18n";
+  import { formatLocale, t } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
   import { relativeTime } from "../time";
   import type { WindowStore } from "../window.svelte";
@@ -176,7 +176,7 @@
                       {t("welcome.remove")}
                     </button>
                   {:else}
-                    <span class="age">{relativeTime(recent.openedMs, now, language.locale)}</span>
+                    <span class="age">{relativeTime(recent.openedMs, now, formatLocale())}</span>
                   {/if}
                 </li>
               {/each}

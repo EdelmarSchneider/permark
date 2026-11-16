@@ -7,6 +7,8 @@ use crate::entries::{tidy_parents, Entry, Language};
 
 /// The installer writes the same entries from NSIS.
 const HOOKS: &str = include_str!("../../../../installer/hooks.nsh");
+/// The Store package's menu says the same words.
+const STORE_LABELS: &str = include_str!("../../../shell-ext/src/labels.rs");
 
 #[test]
 fn the_menu_shows_on_folders_their_background_and_every_markdown_extension() {
@@ -77,6 +79,10 @@ fn languages_resolve_from_the_setting_or_the_system() {
     );
     assert_eq!(
         Language::resolve(LanguagePref::System, &["zh-Hant-TW"]),
+        Language::ZhTw
+    );
+    assert_eq!(
+        Language::resolve(LanguagePref::System, &["zh-Hans-CN"]),
         Language::ZhCn
     );
     assert_eq!(
@@ -111,6 +117,22 @@ fn languages_resolve_from_the_setting_or_the_system() {
     }
     for tag in ["pt-PT", "PT_pt", "pt-AO", "pt-Latn-PT", "pt-150"] {
         assert_eq!(Language::from_tag(tag), Some(Language::PtPt), "{tag}");
+    }
+}
+
+#[test]
+fn every_app_language_has_its_own_words_everywhere_the_entries_show() {
+    for &language in LanguagePref::ALL {
+        for entry in Entry::ALL {
+            let label = entry.label(language);
+            if language != LanguagePref::System && language != LanguagePref::En {
+                assert_ne!(label, entry.label(Language::En), "{language:?}");
+            }
+            assert!(
+                STORE_LABELS.contains(&format!("\"{label}\"")),
+                "labels.rs lacks {label}"
+            );
+        }
     }
 }
 
@@ -162,6 +184,11 @@ fn the_installer_writes_the_same_entries_and_words() {
             (Language::Ca, 1027),
             (Language::Gl, 1110),
             (Language::Ro, 1048),
+            (Language::ZhTw, 1028),
+            (Language::Id, 1057),
+            (Language::Vi, 1066),
+            (Language::Ru, 1049),
+            (Language::Tr, 1055),
         ] {
             let line = format!(" {lcid} \"{}\"", entry.label(language));
             assert!(HOOKS.contains(&line), "hooks.nsh lacks {line}");

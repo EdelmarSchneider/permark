@@ -868,6 +868,7 @@ export function createMockApi(): Api & {
         notices: [],
         failures: [],
         platform: "windows",
+        region: null,
       }),
     openPath: (path, placement) => {
       const open = tabOf(path);

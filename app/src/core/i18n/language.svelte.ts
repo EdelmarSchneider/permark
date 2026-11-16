@@ -1,7 +1,13 @@
 // Interface language as reactive state: `t()` reads `language.locale` + loaded tables, so a change redraws text with no
 // restart. A table is loaded BEFORE its locale becomes active (no English flash).
 
-import { DEFAULT_PREFERENCE, resolveLocale, type LanguagePreference, type Locale } from "./locales";
+import {
+  DEFAULT_PREFERENCE,
+  formatTag,
+  resolveLocale,
+  type LanguagePreference,
+  type Locale,
+} from "./locales";
 import type { Messages } from "./messages";
 import { en, loadTable } from "./table";
 
@@ -19,6 +25,15 @@ class LanguageState {
   tables = $state.raw<Partial<Record<Locale, Messages>>>({ en });
   /** Active interface language. */
   locale = $derived<Locale>(resolveLocale(this.preference, this.systemTags));
+  /** The system's format region (`en-IN`) from the backend, when it names one the web view may not report. */
+  region = $state<string | null>(null);
+  /** Tag of dates and numbers: the interface language as the system's region | languages write it. */
+  formats = $derived<string>(
+    formatTag(
+      this.locale,
+      this.region === null ? this.systemTags : [this.region, ...this.systemTags],
+    ),
+  );
 
   /** Table of the active locale; English until (or unless) it loads. */
   table = $derived<Messages>(this.tables[this.locale] ?? en);

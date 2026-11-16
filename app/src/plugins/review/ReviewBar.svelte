@@ -11,7 +11,7 @@
   import ChevronUp from "@lucide/svelte/icons/chevron-up";
   import Undo2 from "@lucide/svelte/icons/undo-2";
   import type { Basis } from "../../api";
-  import { language, t, tn } from "../../core/i18n";
+  import { formatLocale, t, tn } from "../../core/i18n";
   import { dialogFocus } from "../../core/shell/dialogFocus";
   import { exactTime } from "../../core/time";
   import { review } from "./store.svelte";
@@ -24,7 +24,7 @@
   /** The earlier version the review compares with, or null. */
   const picked = $derived(review.picked);
   /** When that version was made, as readers of the language write it. */
-  const pickedWhen = $derived(picked === null ? null : exactTime(picked.atMs, language.locale));
+  const pickedWhen = $derived(picked === null ? null : exactTime(picked.atMs, formatLocale()));
   let bar: HTMLElement | undefined = $state();
   /** The document area of this bar (where the keyboard goes when the review closes). */
   let area: Element | null = null;

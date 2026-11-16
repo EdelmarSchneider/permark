@@ -38,6 +38,7 @@ import {
 import { tags } from "@lezer/highlight";
 import { clipboardPictures } from "../pictures";
 import { configLanguage } from "./configLang";
+import { lineDirection } from "./direction";
 import { fenceAround, type Fence } from "./fence";
 import { completionSources, type CompletionHost } from "./complete";
 import { toggleBold } from "./bold";
@@ -295,6 +296,7 @@ export function createSource(options: {
         drawSelection(),
         history(),
         correctionMarks(),
+        lineDirection,
         bracketMatching(),
         wrapping.of(options.wrap === false ? [] : EditorView.lineWrapping),
         language.of(loaded instanceof Promise ? [] : loaded),

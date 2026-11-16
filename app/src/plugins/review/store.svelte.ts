@@ -24,7 +24,7 @@ import { conditions } from "../../core/conditions/context.svelte";
 import { reasonKey } from "../../core/conditions/guidance";
 import { documents } from "../../core/doc/document.svelte";
 import { editing } from "../../core/editing/session.svelte";
-import { language, t, tn, type MessageKey } from "../../core/i18n";
+import { formatLocale, t, tn, type MessageKey } from "../../core/i18n";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
 import { InFront, onScreen } from "../../core/inFront.svelte";
 import { exactTime } from "../../core/time";
@@ -637,7 +637,7 @@ export class ReviewStore {
       text:
         picked === null
           ? t("review.revertedAll", { name: path.split("/").at(-1) ?? path })
-          : t("review.broughtBack", { when: exactTime(picked.atMs, language.locale) }),
+          : t("review.broughtBack", { when: exactTime(picked.atMs, formatLocale()) }),
       actions: [{ label: t("review.undo"), run: () => void this.#undoEnded(ended) }],
       onGone: (how) => {
         if (how !== "action" && this.#ended === ended) this.#ended = null;
@@ -1070,7 +1070,7 @@ export class ReviewStore {
     this.#show(result.value, 0);
     this.announce(
       tn("review.sr.basisVersion", result.value.count, {
-        when: exactTime(row.atMs, language.locale),
+        when: exactTime(row.atMs, formatLocale()),
       }),
     );
   }

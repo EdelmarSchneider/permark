@@ -8,67 +8,67 @@
       "kind": "markdown",
       "blocks": [
         {
-          "id": "6e8c49c6ca01f758",
+          "id": "d329feada66201e2",
           "kind": "h1",
           "lineStart": 9,
           "lineEnd": 9,
-          "html": "<h1 data-b=\"6e8c49c6ca01f758\" id=\"reading-showcase\">Reading showcase</h1>"
+          "html": "<h1 data-b=\"d329feada66201e2\" id=\"reading-showcase\" dir=\"auto\">Reading showcase</h1>"
         },
         {
-          "id": "5321c4139258cb20",
+          "id": "4cea63f9598a92e6",
           "kind": "p",
           "lineStart": 11,
           "lineEnd": 11,
-          "html": "<p data-b=\"5321c4139258cb20\">A page of everything the reading view draws. It links to the <a href=\"docs/guide.md\">guide</a>, to a <a href=\"docs/nope.md\">missing page</a> and to <a href=\"#diagrams\">a section</a>. Code references open in your editor: <code>src/main.rs:12</code>, and plain text like src/main.rs:3 works too.</p>"
+          "html": "<p data-b=\"4cea63f9598a92e6\" dir=\"auto\">A page of everything the reading view draws. It links to the <a href=\"docs/guide.md\">guide</a>, to a <a href=\"docs/nope.md\">missing page</a> and to <a href=\"#diagrams\">a section</a>. Code references open in your editor: <code>src/main.rs:12</code>, and plain text like src/main.rs:3 works too.</p>"
         },
         {
-          "id": "873c5f87daea9d00",
+          "id": "89c40cdf8ec5cb75",
           "kind": "h2",
           "lineStart": 13,
           "lineEnd": 13,
-          "html": "<h2 data-b=\"873c5f87daea9d00\" id=\"text-and-lists\">Text and lists</h2>"
+          "html": "<h2 data-b=\"89c40cdf8ec5cb75\" id=\"text-and-lists\" dir=\"auto\">Text and lists</h2>"
         },
         {
-          "id": "a5341c8c93a6c5b5",
+          "id": "6ee319da20ca8c00",
           "kind": "p",
           "lineStart": 15,
           "lineEnd": 15,
-          "html": "<p data-b=\"a5341c8c93a6c5b5\">Paragraphs keep a comfortable measure at <strong>any</strong> zoom: <em>emphasis</em>, <code>inline code</code>, <del>strike</del>, a footnote<sup class=\"footnote-ref\"><a href=\"#fn-1\" id=\"fnref-1\" data-footnote-ref=\"\">1</a></sup> and an autolink <a href=\"https://example.com\">https://example.com</a>. Press <kbd>Ctrl</kbd>+<kbd>F</kbd> to find in page.</p>"
+          "html": "<p data-b=\"6ee319da20ca8c00\" dir=\"auto\">Paragraphs keep a comfortable measure at <strong>any</strong> zoom: <em>emphasis</em>, <code>inline code</code>, <del>strike</del>, a footnote<sup class=\"footnote-ref\"><a href=\"#fn-1\" id=\"fnref-1\" data-footnote-ref=\"\">1</a></sup> and an autolink <a href=\"https://example.com\">https://example.com</a>. Press <kbd>Ctrl</kbd>+<kbd>F</kbd> to find in page.</p>"
         },
         {
-          "id": "e5c2585e73eec433",
+          "id": "6b900db2239fae98",
           "kind": "ul",
           "lineStart": 17,
           "lineEnd": 19,
-          "html": "<ul data-b=\"e5c2585e73eec433\" class=\"contains-task-list\">\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" checked=\"\" disabled=\"\"> Render Markdown</li>\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" checked=\"\" disabled=\"\"> Keep my place when the file changes</li>\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"\"> Review the changes</li>\n</ul>"
+          "html": "<ul data-b=\"6b900db2239fae98\" class=\"contains-task-list\">\n<li class=\"task-list-item\" dir=\"auto\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" checked=\"\" disabled=\"\"> Render Markdown</li>\n<li class=\"task-list-item\" dir=\"auto\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" checked=\"\" disabled=\"\"> Keep my place when the file changes</li>\n<li class=\"task-list-item\" dir=\"auto\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"\"> Review the changes</li>\n</ul>"
         },
         {
-          "id": "15fd71eacccb3241",
+          "id": "c38b6753edca553e",
           "kind": "ol",
           "lineStart": 21,
           "lineEnd": 24,
-          "html": "<ol data-b=\"15fd71eacccb3241\">\n<li>First</li>\n<li>Second\n<ul>\n<li>nested item</li>\n<li>another one</li>\n</ul>\n</li>\n</ol>"
+          "html": "<ol data-b=\"c38b6753edca553e\">\n<li dir=\"auto\">First</li>\n<li dir=\"auto\">Second\n<ul>\n<li dir=\"auto\">nested item</li>\n<li dir=\"auto\">another one</li>\n</ul>\n</li>\n</ol>"
         },
         {
-          "id": "4039196382a45f77",
+          "id": "b788aba547ce67b4",
           "kind": "div",
           "lineStart": 26,
           "lineEnd": 27,
-          "html": "<div data-b=\"4039196382a45f77\" class=\"markdown-alert markdown-alert-note\">\n<p class=\"markdown-alert-title\">Note</p>\n<p>Alerts come with a title and an icon.</p>\n</div>"
+          "html": "<div data-b=\"b788aba547ce67b4\" class=\"markdown-alert markdown-alert-note\">\n<p class=\"markdown-alert-title\" dir=\"auto\">Note</p>\n<p dir=\"auto\">Alerts come with a title and an icon.</p>\n</div>"
         },
         {
-          "id": "473128ef3bce20dd",
+          "id": "6a2822e71b25a2ea",
           "kind": "div",
           "lineStart": 29,
           "lineEnd": 30,
-          "html": "<div data-b=\"473128ef3bce20dd\" class=\"markdown-alert markdown-alert-warning\">\n<p class=\"markdown-alert-title\">Warning</p>\n<p>Reading is the main mode. Beautiful, clear reading is a requirement.</p>\n</div>"
+          "html": "<div data-b=\"6a2822e71b25a2ea\" class=\"markdown-alert markdown-alert-warning\">\n<p class=\"markdown-alert-title\" dir=\"auto\">Warning</p>\n<p dir=\"auto\">Reading is the main mode. Beautiful, clear reading is a requirement.</p>\n</div>"
         },
         {
-          "id": "3c47fb4f8c38266d",
+          "id": "f517cc0696d6d9f4",
           "kind": "h2",
           "lineStart": 32,
           "lineEnd": 32,
-          "html": "<h2 data-b=\"3c47fb4f8c38266d\" id=\"code\">Code</h2>"
+          "html": "<h2 data-b=\"f517cc0696d6d9f4\" id=\"code\" dir=\"auto\">Code</h2>"
         },
         {
           "id": "b04254981a03178d",
@@ -85,46 +85,46 @@
           "html": "<pre data-b=\"48208e466c8d0b0e\"><code class=\"language-json\">{ \"name\": \"permark\", \"private\": true, \"version\": \"0.6.0\" }\n</code></pre>"
         },
         {
-          "id": "f086e37712246e23",
+          "id": "05172c18e7e7b019",
           "kind": "h2",
           "lineStart": 45,
           "lineEnd": 45,
-          "html": "<h2 data-b=\"f086e37712246e23\" id=\"tables\">Tables</h2>"
+          "html": "<h2 data-b=\"05172c18e7e7b019\" id=\"tables\" dir=\"auto\">Tables</h2>"
         },
         {
-          "id": "1bef1313d773460b",
+          "id": "cd190ccb3bb1dc19",
           "kind": "table",
           "lineStart": 47,
           "lineEnd": 51,
-          "html": "<table data-b=\"1bef1313d773460b\">\n<thead>\n<tr>\n<th>Feature</th>\n<th>Status</th>\n<th>Notes</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Tables</td>\n<td>done</td>\n<td>Zebra rows, sticky header</td>\n</tr>\n<tr>\n<td>Math</td>\n<td>done</td>\n<td>KaTeX, loaded when needed</td>\n</tr>\n<tr>\n<td>Diagrams</td>\n<td>done</td>\n<td>Mermaid and PlantUML in page</td>\n</tr>\n</tbody>\n</table>"
+          "html": "<table data-b=\"cd190ccb3bb1dc19\">\n<thead>\n<tr>\n<th dir=\"auto\">Feature</th>\n<th dir=\"auto\">Status</th>\n<th dir=\"auto\">Notes</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td dir=\"auto\">Tables</td>\n<td dir=\"auto\">done</td>\n<td dir=\"auto\">Zebra rows, sticky header</td>\n</tr>\n<tr>\n<td dir=\"auto\">Math</td>\n<td dir=\"auto\">done</td>\n<td dir=\"auto\">KaTeX, loaded when needed</td>\n</tr>\n<tr>\n<td dir=\"auto\">Diagrams</td>\n<td dir=\"auto\">done</td>\n<td dir=\"auto\">Mermaid and PlantUML in page</td>\n</tr>\n</tbody>\n</table>"
         },
         {
-          "id": "9d35b0bf7336ecf1",
+          "id": "a7f9b3d695dc0ba8",
           "kind": "h2",
           "lineStart": 53,
           "lineEnd": 53,
-          "html": "<h2 data-b=\"9d35b0bf7336ecf1\" id=\"math\">Math</h2>"
+          "html": "<h2 data-b=\"a7f9b3d695dc0ba8\" id=\"math\" dir=\"auto\">Math</h2>"
         },
         {
-          "id": "8a4f9da86326315a",
+          "id": "7205fbf5558f4cb5",
           "kind": "p",
           "lineStart": 55,
           "lineEnd": 55,
-          "html": "<p data-b=\"8a4f9da86326315a\">Inline math <span data-math-style=\"inline\">E = mc^2</span> sits in the text. A display formula:</p>"
+          "html": "<p data-b=\"7205fbf5558f4cb5\" dir=\"auto\">Inline math <span data-math-style=\"inline\">E = mc^2</span> sits in the text. A display formula:</p>"
         },
         {
-          "id": "90bb95a3830c8bd8",
+          "id": "bd49a96604b7de11",
           "kind": "p",
           "lineStart": 57,
           "lineEnd": 59,
-          "html": "<p data-b=\"90bb95a3830c8bd8\"><span data-math-style=\"display\">\n\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}\n</span></p>"
+          "html": "<p data-b=\"bd49a96604b7de11\" dir=\"auto\"><span data-math-style=\"display\">\n\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}\n</span></p>"
         },
         {
-          "id": "c88ae3e0aaae1228",
+          "id": "67c416021e1a6341",
           "kind": "h2",
           "lineStart": 61,
           "lineEnd": 61,
-          "html": "<h2 data-b=\"c88ae3e0aaae1228\" id=\"diagrams\">Diagrams</h2>"
+          "html": "<h2 data-b=\"67c416021e1a6341\" id=\"diagrams\" dir=\"auto\">Diagrams</h2>"
         },
         {
           "id": "ae4de58cc43ef70f",
@@ -134,32 +134,32 @@
           "html": "<pre data-b=\"ae4de58cc43ef70f\"><code class=\"language-mermaid\">graph LR\n  A[Markdown] --&gt; B(Render)\n  B --&gt; C{Sanitize}\n  C --&gt;|safe| D[Page]\n  C --&gt;|unsafe| E[Dropped]\n</code></pre>"
         },
         {
-          "id": "810676eb3ab98479",
+          "id": "ae35c49b9c341881",
           "kind": "h2",
           "lineStart": 71,
           "lineEnd": 71,
-          "html": "<h2 data-b=\"810676eb3ab98479\" id=\"prompt-blocks\">Prompt blocks</h2>"
+          "html": "<h2 data-b=\"ae35c49b9c341881\" id=\"prompt-blocks\" dir=\"auto\">Prompt blocks</h2>"
         },
         {
-          "id": "03f8544ce18765a3",
+          "id": "e3adcb978e486f04",
           "kind": "details",
           "lineStart": 74,
           "lineEnd": 77,
-          "html": "<details data-b=\"03f8544ce18765a3\" class=\"prompt-block\" data-tag=\"context\" open=\"\"><summary>context</summary>\n<p>You are reading a prompt file. The tags below fold, and <strong>Markdown inside them</strong> still renders.</p>\n<ul>\n<li>Variables look like <span class=\"tvar\">{{customer_name}}</span> and are marked.</li>\n<li>Files are linked: see <a class=\"at-ref\" href=\"/docs/guide.md\">@docs/guide.md</a> for the guide.</li>\n</ul>\n</details>"
+          "html": "<details data-b=\"e3adcb978e486f04\" class=\"prompt-block\" data-tag=\"context\" open=\"\"><summary>context</summary>\n<p dir=\"auto\">You are reading a prompt file. The tags below fold, and <strong>Markdown inside them</strong> still renders.</p>\n<ul>\n<li dir=\"auto\">Variables look like <span class=\"tvar\">{{customer_name}}</span> and are marked.</li>\n<li dir=\"auto\">Files are linked: see <a class=\"at-ref\" href=\"/docs/guide.md\">@docs/guide.md</a> for the guide.</li>\n</ul>\n</details>"
         },
         {
-          "id": "2e3e3c7fb133d8c8",
+          "id": "489e1dad30a610a7",
           "kind": "details",
           "lineStart": 81,
           "lineEnd": 82,
-          "html": "<details data-b=\"2e3e3c7fb133d8c8\" class=\"prompt-block\" data-tag=\"instructions\" open=\"\"><summary>instructions</summary>\n<ol>\n<li>Be brief.</li>\n<li>Quote the source.</li>\n</ol>\n</details>"
+          "html": "<details data-b=\"489e1dad30a610a7\" class=\"prompt-block\" data-tag=\"instructions\" open=\"\"><summary>instructions</summary>\n<ol>\n<li dir=\"auto\">Be brief.</li>\n<li dir=\"auto\">Quote the source.</li>\n</ol>\n</details>"
         },
         {
-          "id": "72d9896ee9d78f62",
+          "id": "0341112419a97b64",
           "kind": "section",
           "lineStart": 85,
           "lineEnd": 85,
-          "html": "<section data-b=\"72d9896ee9d78f62\" class=\"footnotes\" data-footnotes=\"\">\n<ol>\n<li id=\"fn-1\">\n<p>Footnotes list at the end of the page, with a way back. <a href=\"#fnref-1\" class=\"footnote-backref\" data-footnote-backref=\"\" data-footnote-backref-idx=\"1\" aria-label=\"Back to reference 1\">↩</a></p>\n</li>\n</ol>\n</section>"
+          "html": "<section data-b=\"0341112419a97b64\" class=\"footnotes\" data-footnotes=\"\">\n<ol>\n<li id=\"fn-1\" dir=\"auto\">\n<p dir=\"auto\">Footnotes list at the end of the page, with a way back. <a href=\"#fnref-1\" class=\"footnote-backref\" data-footnote-backref=\"\" data-footnote-backref-idx=\"1\" aria-label=\"Back to reference 1\">↩</a></p>\n</li>\n</ol>\n</section>"
         }
       ],
       "outline": [
@@ -168,49 +168,49 @@
           "level": 1,
           "id": "reading-showcase",
           "line": 9,
-          "block": "6e8c49c6ca01f758"
+          "block": "d329feada66201e2"
         },
         {
           "label": "Text and lists",
           "level": 2,
           "id": "text-and-lists",
           "line": 13,
-          "block": "873c5f87daea9d00"
+          "block": "89c40cdf8ec5cb75"
         },
         {
           "label": "Code",
           "level": 2,
           "id": "code",
           "line": 32,
-          "block": "3c47fb4f8c38266d"
+          "block": "f517cc0696d6d9f4"
         },
         {
           "label": "Tables",
           "level": 2,
           "id": "tables",
           "line": 45,
-          "block": "f086e37712246e23"
+          "block": "05172c18e7e7b019"
         },
         {
           "label": "Math",
           "level": 2,
           "id": "math",
           "line": 53,
-          "block": "9d35b0bf7336ecf1"
+          "block": "a7f9b3d695dc0ba8"
         },
         {
           "label": "Diagrams",
           "level": 2,
           "id": "diagrams",
           "line": 61,
-          "block": "c88ae3e0aaae1228"
+          "block": "67c416021e1a6341"
         },
         {
           "label": "Prompt blocks",
           "level": 2,
           "id": "prompt-blocks",
           "line": 71,
-          "block": "810676eb3ab98479"
+          "block": "ae35c49b9c341881"
         }
       ],
       "frontMatter": {
@@ -276,53 +276,53 @@
       "kind": "markdown",
       "blocks": [
         {
-          "id": "65f4606ba1c95c40",
+          "id": "436770782637a494",
           "kind": "h1",
           "lineStart": 1,
           "lineEnd": 1,
-          "html": "<h1 data-b=\"65f4606ba1c95c40\" id=\"guide\">Guide</h1>"
+          "html": "<h1 data-b=\"436770782637a494\" id=\"guide\" dir=\"auto\">Guide</h1>"
         },
         {
-          "id": "58efff504d681764",
+          "id": "5ba98688ed0e215d",
           "kind": "p",
           "lineStart": 3,
           "lineEnd": 3,
-          "html": "<p data-b=\"58efff504d681764\">Back to the <a href=\"../README.md\">readme</a>. More ideas in <a href=\"../notes/ideas.md#second-idea\">ideas</a>.</p>"
+          "html": "<p data-b=\"5ba98688ed0e215d\" dir=\"auto\">Back to the <a href=\"../README.md\">readme</a>. More ideas in <a href=\"../notes/ideas.md#second-idea\">ideas</a>.</p>"
         },
         {
-          "id": "02dbe23f5510d144",
+          "id": "7ee2d0ba41b90dd4",
           "kind": "h2",
           "lineStart": 5,
           "lineEnd": 5,
-          "html": "<h2 data-b=\"02dbe23f5510d144\" id=\"getting-started\">Getting started</h2>"
+          "html": "<h2 data-b=\"7ee2d0ba41b90dd4\" id=\"getting-started\" dir=\"auto\">Getting started</h2>"
         },
         {
-          "id": "337da5e5e7be0c91",
+          "id": "f5bbb2d664ba7cd9",
           "kind": "p",
           "lineStart": 7,
           "lineEnd": 7,
-          "html": "<p data-b=\"337da5e5e7be0c91\">Open a folder, pick a document in the tree, read it. Links between documents work like a wiki: use Alt+Left to go back.</p>"
+          "html": "<p data-b=\"f5bbb2d664ba7cd9\" dir=\"auto\">Open a folder, pick a document in the tree, read it. Links between documents work like a wiki: use Alt+Left to go back.</p>"
         },
         {
-          "id": "8fdc87e29eccc892",
+          "id": "1398944921a921e1",
           "kind": "p",
           "lineStart": 9,
           "lineEnd": 9,
-          "html": "<p data-b=\"8fdc87e29eccc892\"><img src=\"pm-asset:docs/img/logo.png\" alt=\"PerMark logo\"></p>"
+          "html": "<p data-b=\"1398944921a921e1\" dir=\"auto\"><img src=\"pm-asset:docs/img/logo.png\" alt=\"PerMark logo\"></p>"
         },
         {
-          "id": "e0ebc72e9d23a1a5",
+          "id": "8fa94668d0f8318d",
           "kind": "h2",
           "lineStart": 11,
           "lineEnd": 11,
-          "html": "<h2 data-b=\"e0ebc72e9d23a1a5\" id=\"shortcuts\">Shortcuts</h2>"
+          "html": "<h2 data-b=\"8fa94668d0f8318d\" id=\"shortcuts\" dir=\"auto\">Shortcuts</h2>"
         },
         {
-          "id": "555cd2721da8a357",
+          "id": "f19edd262a56e648",
           "kind": "table",
           "lineStart": 13,
           "lineEnd": 17,
-          "html": "<table data-b=\"555cd2721da8a357\">\n<thead>\n<tr>\n<th>Keys</th>\n<th>Action</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Ctrl+F</td>\n<td>Find in page</td>\n</tr>\n<tr>\n<td>Alt+Left</td>\n<td>Back</td>\n</tr>\n<tr>\n<td>Ctrl+= / Ctrl+-</td>\n<td>Zoom</td>\n</tr>\n</tbody>\n</table>"
+          "html": "<table data-b=\"f19edd262a56e648\">\n<thead>\n<tr>\n<th dir=\"auto\">Keys</th>\n<th dir=\"auto\">Action</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td dir=\"auto\">Ctrl+F</td>\n<td dir=\"auto\">Find in page</td>\n</tr>\n<tr>\n<td dir=\"auto\">Alt+Left</td>\n<td dir=\"auto\">Back</td>\n</tr>\n<tr>\n<td dir=\"auto\">Ctrl+= / Ctrl+-</td>\n<td dir=\"auto\">Zoom</td>\n</tr>\n</tbody>\n</table>"
         }
       ],
       "outline": [
@@ -331,21 +331,21 @@
           "level": 1,
           "id": "guide",
           "line": 1,
-          "block": "65f4606ba1c95c40"
+          "block": "436770782637a494"
         },
         {
           "label": "Getting started",
           "level": 2,
           "id": "getting-started",
           "line": 5,
-          "block": "02dbe23f5510d144"
+          "block": "7ee2d0ba41b90dd4"
         },
         {
           "label": "Shortcuts",
           "level": 2,
           "id": "shortcuts",
           "line": 11,
-          "block": "e0ebc72e9d23a1a5"
+          "block": "8fa94668d0f8318d"
         }
       ],
       "frontMatter": null
@@ -367,179 +367,179 @@
       "kind": "markdown",
       "blocks": [
         {
-          "id": "3de9dfeed3398693",
+          "id": "a5af9269b407d4f8",
           "kind": "h1",
           "lineStart": 1,
           "lineEnd": 1,
-          "html": "<h1 data-b=\"3de9dfeed3398693\" id=\"handbook\">Handbook</h1>"
+          "html": "<h1 data-b=\"a5af9269b407d4f8\" id=\"handbook\" dir=\"auto\">Handbook</h1>"
         },
         {
-          "id": "d3ef1e178bb8d05e",
+          "id": "6a1cbc91f373173f",
           "kind": "p",
           "lineStart": 3,
           "lineEnd": 3,
-          "html": "<p data-b=\"d3ef1e178bb8d05e\">A long document to read: chapters, sections, lists, a table and code. Scroll it, use the outline, jump between sections.</p>"
+          "html": "<p data-b=\"6a1cbc91f373173f\" dir=\"auto\">A long document to read: chapters, sections, lists, a table and code. Scroll it, use the outline, jump between sections.</p>"
         },
         {
-          "id": "02dbe23f5510d144",
+          "id": "7ee2d0ba41b90dd4",
           "kind": "h2",
           "lineStart": 5,
           "lineEnd": 5,
-          "html": "<h2 data-b=\"02dbe23f5510d144\" id=\"getting-started\">Getting started</h2>"
+          "html": "<h2 data-b=\"7ee2d0ba41b90dd4\" id=\"getting-started\" dir=\"auto\">Getting started</h2>"
         },
         {
-          "id": "b10a50da453bc48d",
+          "id": "50c67fd556473fbf",
           "kind": "p",
           "lineStart": 7,
           "lineEnd": 7,
-          "html": "<p data-b=\"b10a50da453bc48d\">This chapter is about getting started. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
+          "html": "<p data-b=\"50c67fd556473fbf\" dir=\"auto\">This chapter is about getting started. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
         },
         {
-          "id": "5be153ea6ef451ff",
+          "id": "1b45876cfaff452b",
           "kind": "h3",
           "lineStart": 9,
           "lineEnd": 9,
-          "html": "<h3 data-b=\"5be153ea6ef451ff\" id=\"install-the-app\">Install the app</h3>"
+          "html": "<h3 data-b=\"1b45876cfaff452b\" id=\"install-the-app\" dir=\"auto\">Install the app</h3>"
         },
         {
-          "id": "0ccdce525639ff9f",
+          "id": "5b1b25d33303f562",
           "kind": "p",
           "lineStart": 11,
           "lineEnd": 11,
-          "html": "<p data-b=\"0ccdce525639ff9f\">This section explains install the app. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
+          "html": "<p data-b=\"5b1b25d33303f562\" dir=\"auto\">This section explains install the app. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
         },
         {
-          "id": "7dce59ff5cab2de4",
+          "id": "dfd8670a9275cd9d",
           "kind": "p",
           "lineStart": 13,
           "lineEnd": 13,
-          "html": "<p data-b=\"7dce59ff5cab2de4\">A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
+          "html": "<p data-b=\"dfd8670a9275cd9d\" dir=\"auto\">A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
         },
         {
-          "id": "9edff938b574431d",
+          "id": "dc3d2ae377df4ab9",
           "kind": "h3",
           "lineStart": 15,
           "lineEnd": 15,
-          "html": "<h3 data-b=\"9edff938b574431d\" id=\"open-a-folder\">Open a folder</h3>"
+          "html": "<h3 data-b=\"dc3d2ae377df4ab9\" id=\"open-a-folder\" dir=\"auto\">Open a folder</h3>"
         },
         {
-          "id": "7671dcbcefe6c23e",
+          "id": "a3ef22c527bf0c50",
           "kind": "p",
           "lineStart": 17,
           "lineEnd": 17,
-          "html": "<p data-b=\"7671dcbcefe6c23e\">This section explains open a folder. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
+          "html": "<p data-b=\"a3ef22c527bf0c50\" dir=\"auto\">This section explains open a folder. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
         },
         {
-          "id": "d22d7d2a445d809c",
+          "id": "23f7f4e45c9053b6",
           "kind": "p",
           "lineStart": 19,
           "lineEnd": 19,
-          "html": "<p data-b=\"d22d7d2a445d809c\">Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
+          "html": "<p data-b=\"23f7f4e45c9053b6\" dir=\"auto\">Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
         },
         {
-          "id": "23789e6d99b7baa6",
+          "id": "a69ae773f9c33a36",
           "kind": "h3",
           "lineStart": 21,
           "lineEnd": 21,
-          "html": "<h3 data-b=\"23789e6d99b7baa6\" id=\"open-a-single-file\">Open a single file</h3>"
+          "html": "<h3 data-b=\"a69ae773f9c33a36\" id=\"open-a-single-file\" dir=\"auto\">Open a single file</h3>"
         },
         {
-          "id": "82840cee2933dd99",
+          "id": "0df8ad77d861e002",
           "kind": "p",
           "lineStart": 23,
           "lineEnd": 23,
-          "html": "<p data-b=\"82840cee2933dd99\">This section explains open a single file. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
+          "html": "<p data-b=\"0df8ad77d861e002\" dir=\"auto\">This section explains open a single file. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
         },
         {
-          "id": "355ef907c26513a9",
+          "id": "8e2c347095bc4771",
           "kind": "p",
           "lineStart": 25,
           "lineEnd": 25,
-          "html": "<p data-b=\"355ef907c26513a9\">The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
+          "html": "<p data-b=\"8e2c347095bc4771\" dir=\"auto\">The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
         },
         {
-          "id": "e97b0edcc0d82263",
+          "id": "6487f869bf2ef600",
           "kind": "h3",
           "lineStart": 27,
           "lineEnd": 27,
-          "html": "<h3 data-b=\"e97b0edcc0d82263\" id=\"find-your-way-around\">Find your way around</h3>"
+          "html": "<h3 data-b=\"6487f869bf2ef600\" id=\"find-your-way-around\" dir=\"auto\">Find your way around</h3>"
         },
         {
-          "id": "d71774ad0c8e858c",
+          "id": "8149c9d7e3836ba4",
           "kind": "p",
           "lineStart": 29,
           "lineEnd": 29,
-          "html": "<p data-b=\"d71774ad0c8e858c\">This section explains find your way around. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
+          "html": "<p data-b=\"8149c9d7e3836ba4\" dir=\"auto\">This section explains find your way around. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
         },
         {
-          "id": "e0cbc2c06f3b489c",
+          "id": "8ff7bf3454c84b26",
           "kind": "p",
           "lineStart": 31,
           "lineEnd": 31,
-          "html": "<p data-b=\"e0cbc2c06f3b489c\">The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+          "html": "<p data-b=\"8ff7bf3454c84b26\" dir=\"auto\">The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
         },
         {
-          "id": "9a185d8c20c4aede",
+          "id": "f5a28bae37ad6b3c",
           "kind": "ul",
           "lineStart": 33,
           "lineEnd": 35,
-          "html": "<ul data-b=\"9a185d8c20c4aede\">\n<li>Links between documents work like a wiki: Alt+Left goes back.</li>\n<li>Your choice is remembered for the next time you open the folder.</li>\n<li>Every step below works with the mouse and with the keyboard.</li>\n</ul>"
+          "html": "<ul data-b=\"f5a28bae37ad6b3c\">\n<li dir=\"auto\">Links between documents work like a wiki: Alt+Left goes back.</li>\n<li dir=\"auto\">Your choice is remembered for the next time you open the folder.</li>\n<li dir=\"auto\">Every step below works with the mouse and with the keyboard.</li>\n</ul>"
         },
         {
-          "id": "3500c38a6270e6d3",
+          "id": "4531142a3725c449",
           "kind": "h2",
           "lineStart": 37,
           "lineEnd": 37,
-          "html": "<h2 data-b=\"3500c38a6270e6d3\" id=\"reading\">Reading</h2>"
+          "html": "<h2 data-b=\"4531142a3725c449\" id=\"reading\" dir=\"auto\">Reading</h2>"
         },
         {
-          "id": "e9c91658faf4655b",
+          "id": "8e58cb570e555160",
           "kind": "p",
           "lineStart": 39,
           "lineEnd": 39,
-          "html": "<p data-b=\"e9c91658faf4655b\">This chapter is about reading. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
+          "html": "<p data-b=\"8e58cb570e555160\" dir=\"auto\">This chapter is about reading. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
         },
         {
-          "id": "21d9682530ea4c4e",
+          "id": "097426a5e8f21fc2",
           "kind": "h3",
           "lineStart": 41,
           "lineEnd": 41,
-          "html": "<h3 data-b=\"21d9682530ea4c4e\" id=\"themes-and-tones\">Themes and tones</h3>"
+          "html": "<h3 data-b=\"097426a5e8f21fc2\" id=\"themes-and-tones\" dir=\"auto\">Themes and tones</h3>"
         },
         {
-          "id": "66e9ea436ae2c78c",
+          "id": "d4dc84ac70ba7bca",
           "kind": "p",
           "lineStart": 43,
           "lineEnd": 43,
-          "html": "<p data-b=\"66e9ea436ae2c78c\">This section explains themes and tones. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
+          "html": "<p data-b=\"d4dc84ac70ba7bca\" dir=\"auto\">This section explains themes and tones. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
         },
         {
-          "id": "a08f321a7a738666",
+          "id": "f2830e0654b63005",
           "kind": "p",
           "lineStart": 45,
           "lineEnd": 45,
-          "html": "<p data-b=\"a08f321a7a738666\">Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
+          "html": "<p data-b=\"f2830e0654b63005\" dir=\"auto\">Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
         },
         {
-          "id": "e485f6b8a56b5816",
+          "id": "4f218f960731ea7d",
           "kind": "h3",
           "lineStart": 47,
           "lineEnd": 47,
-          "html": "<h3 data-b=\"e485f6b8a56b5816\" id=\"reading-width\">Reading width</h3>"
+          "html": "<h3 data-b=\"4f218f960731ea7d\" id=\"reading-width\" dir=\"auto\">Reading width</h3>"
         },
         {
-          "id": "311a4719362bb263",
+          "id": "d550a3785f65a92c",
           "kind": "p",
           "lineStart": 49,
           "lineEnd": 49,
-          "html": "<p data-b=\"311a4719362bb263\">This section explains reading width. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+          "html": "<p data-b=\"d550a3785f65a92c\" dir=\"auto\">This section explains reading width. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
         },
         {
-          "id": "87cffa90ffb3d241",
+          "id": "8ebdeac8406e5ce1",
           "kind": "p",
           "lineStart": 51,
           "lineEnd": 51,
-          "html": "<p data-b=\"87cffa90ffb3d241\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
+          "html": "<p data-b=\"8ebdeac8406e5ce1\" dir=\"auto\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
         },
         {
           "id": "8ef2c78143000b25",
@@ -549,158 +549,158 @@
           "html": "<pre data-b=\"8ef2c78143000b25\"><code class=\"language-text\">open the folder\npick a document\nread it\n</code></pre>"
         },
         {
-          "id": "172de342ad69da4f",
+          "id": "1b85ec5217ea7546",
           "kind": "h3",
           "lineStart": 59,
           "lineEnd": 59,
-          "html": "<h3 data-b=\"172de342ad69da4f\" id=\"zoom\">Zoom</h3>"
+          "html": "<h3 data-b=\"1b85ec5217ea7546\" id=\"zoom\" dir=\"auto\">Zoom</h3>"
         },
         {
-          "id": "2b65a257839ff2c1",
+          "id": "01df731aca2a3a90",
           "kind": "p",
           "lineStart": 61,
           "lineEnd": 61,
-          "html": "<p data-b=\"2b65a257839ff2c1\">This section explains zoom. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
+          "html": "<p data-b=\"01df731aca2a3a90\" dir=\"auto\">This section explains zoom. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
         },
         {
-          "id": "c88c7e428702ee00",
+          "id": "f41890032daddefa",
           "kind": "p",
           "lineStart": 63,
           "lineEnd": 63,
-          "html": "<p data-b=\"c88c7e428702ee00\">You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
+          "html": "<p data-b=\"f41890032daddefa\" dir=\"auto\">You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
         },
         {
-          "id": "c09014637091bd1e",
+          "id": "7cf038837a85cad2",
           "kind": "h3",
           "lineStart": 65,
           "lineEnd": 65,
-          "html": "<h3 data-b=\"c09014637091bd1e\" id=\"focus-mode\">Focus mode</h3>"
+          "html": "<h3 data-b=\"7cf038837a85cad2\" id=\"focus-mode\" dir=\"auto\">Focus mode</h3>"
         },
         {
-          "id": "7d125de418e84c83",
+          "id": "bde2dce6a696d577",
           "kind": "p",
           "lineStart": 67,
           "lineEnd": 67,
-          "html": "<p data-b=\"7d125de418e84c83\">This section explains focus mode. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
+          "html": "<p data-b=\"bde2dce6a696d577\" dir=\"auto\">This section explains focus mode. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
         },
         {
-          "id": "387fbc63fa8ac88c",
+          "id": "44a018e6ab24cf87",
           "kind": "p",
           "lineStart": 69,
           "lineEnd": 69,
-          "html": "<p data-b=\"387fbc63fa8ac88c\">Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
+          "html": "<p data-b=\"44a018e6ab24cf87\" dir=\"auto\">Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
         },
         {
-          "id": "c2e71147b1f4d121",
+          "id": "d9f9856ac08ef187",
           "kind": "ul",
           "lineStart": 71,
           "lineEnd": 73,
-          "html": "<ul data-b=\"c2e71147b1f4d121\">\n<li>Your choice is remembered for the next time you open the folder.</li>\n<li>Every step below works with the mouse and with the keyboard.</li>\n<li>Nothing here changes your files until you ask for it.</li>\n</ul>"
+          "html": "<ul data-b=\"d9f9856ac08ef187\">\n<li dir=\"auto\">Your choice is remembered for the next time you open the folder.</li>\n<li dir=\"auto\">Every step below works with the mouse and with the keyboard.</li>\n<li dir=\"auto\">Nothing here changes your files until you ask for it.</li>\n</ul>"
         },
         {
-          "id": "a5eb37f12f1cb7c7",
+          "id": "a02d4f0d6971608e",
           "kind": "h3",
           "lineStart": 75,
           "lineEnd": 75,
-          "html": "<h3 data-b=\"a5eb37f12f1cb7c7\" id=\"the-outline\">The outline</h3>"
+          "html": "<h3 data-b=\"a02d4f0d6971608e\" id=\"the-outline\" dir=\"auto\">The outline</h3>"
         },
         {
-          "id": "b319c6b67fa73186",
+          "id": "50151ccff5c85a15",
           "kind": "p",
           "lineStart": 77,
           "lineEnd": 77,
-          "html": "<p data-b=\"b319c6b67fa73186\">This section explains the outline. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
+          "html": "<p data-b=\"50151ccff5c85a15\" dir=\"auto\">This section explains the outline. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
         },
         {
-          "id": "7dce59ff5cab2de4-1",
+          "id": "dfd8670a9275cd9d-1",
           "kind": "p",
           "lineStart": 79,
           "lineEnd": 79,
-          "html": "<p data-b=\"7dce59ff5cab2de4-1\">A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
+          "html": "<p data-b=\"dfd8670a9275cd9d-1\" dir=\"auto\">A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
         },
         {
-          "id": "2f9bf0dcc8807a6a",
+          "id": "57afd682e6601b46",
           "kind": "h2",
           "lineStart": 81,
           "lineEnd": 81,
-          "html": "<h2 data-b=\"2f9bf0dcc8807a6a\" id=\"writing\">Writing</h2>"
+          "html": "<h2 data-b=\"57afd682e6601b46\" id=\"writing\" dir=\"auto\">Writing</h2>"
         },
         {
-          "id": "7f6843a22d94abb7",
+          "id": "2f21f155155940da",
           "kind": "p",
           "lineStart": 83,
           "lineEnd": 83,
-          "html": "<p data-b=\"7f6843a22d94abb7\">This chapter is about writing. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
+          "html": "<p data-b=\"2f21f155155940da\" dir=\"auto\">This chapter is about writing. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
         },
         {
-          "id": "4fb1f28d557fb5d5",
+          "id": "931504c5ec4eb90b",
           "kind": "h3",
           "lineStart": 85,
           "lineEnd": 85,
-          "html": "<h3 data-b=\"4fb1f28d557fb5d5\" id=\"the-visual-editor\">The visual editor</h3>"
+          "html": "<h3 data-b=\"931504c5ec4eb90b\" id=\"the-visual-editor\" dir=\"auto\">The visual editor</h3>"
         },
         {
-          "id": "c494707d447589f9",
+          "id": "0f702a19221cb037",
           "kind": "p",
           "lineStart": 87,
           "lineEnd": 87,
-          "html": "<p data-b=\"c494707d447589f9\">This section explains the visual editor. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
+          "html": "<p data-b=\"0f702a19221cb037\" dir=\"auto\">This section explains the visual editor. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
         },
         {
-          "id": "0b566c71d0e2fbf7",
+          "id": "d4e16acc07121c55",
           "kind": "p",
           "lineStart": 89,
           "lineEnd": 89,
-          "html": "<p data-b=\"0b566c71d0e2fbf7\">Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
+          "html": "<p data-b=\"d4e16acc07121c55\" dir=\"auto\">Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
         },
         {
-          "id": "23bf814dd61da007",
+          "id": "8e242bf61852ed48",
           "kind": "h3",
           "lineStart": 91,
           "lineEnd": 91,
-          "html": "<h3 data-b=\"23bf814dd61da007\" id=\"the-source-editor\">The source editor</h3>"
+          "html": "<h3 data-b=\"8e242bf61852ed48\" id=\"the-source-editor\" dir=\"auto\">The source editor</h3>"
         },
         {
-          "id": "7bce54e5bcb98834",
+          "id": "cad03120362dbf21",
           "kind": "p",
           "lineStart": 93,
           "lineEnd": 93,
-          "html": "<p data-b=\"7bce54e5bcb98834\">This section explains the source editor. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
+          "html": "<p data-b=\"cad03120362dbf21\" dir=\"auto\">This section explains the source editor. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
         },
         {
-          "id": "7dce59ff5cab2de4-2",
+          "id": "dfd8670a9275cd9d-2",
           "kind": "p",
           "lineStart": 95,
           "lineEnd": 95,
-          "html": "<p data-b=\"7dce59ff5cab2de4-2\">A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
+          "html": "<p data-b=\"dfd8670a9275cd9d-2\" dir=\"auto\">A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
         },
         {
-          "id": "9d555ee39b349773",
+          "id": "f8dc45359e18cd15",
           "kind": "h3",
           "lineStart": 97,
           "lineEnd": 97,
-          "html": "<h3 data-b=\"9d555ee39b349773\" id=\"saving\">Saving</h3>"
+          "html": "<h3 data-b=\"f8dc45359e18cd15\" id=\"saving\" dir=\"auto\">Saving</h3>"
         },
         {
-          "id": "a87d6d08325ef3e5",
+          "id": "bd9a35c9cb99db4d",
           "kind": "p",
           "lineStart": 99,
           "lineEnd": 99,
-          "html": "<p data-b=\"a87d6d08325ef3e5\">This section explains saving. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
+          "html": "<p data-b=\"bd9a35c9cb99db4d\" dir=\"auto\">This section explains saving. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
         },
         {
-          "id": "d22d7d2a445d809c-1",
+          "id": "23f7f4e45c9053b6-1",
           "kind": "p",
           "lineStart": 101,
           "lineEnd": 101,
-          "html": "<p data-b=\"d22d7d2a445d809c-1\">Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
+          "html": "<p data-b=\"23f7f4e45c9053b6-1\" dir=\"auto\">Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
         },
         {
-          "id": "13e2cc5fcba09392",
+          "id": "6d306d4f9651ac0a",
           "kind": "ul",
           "lineStart": 103,
           "lineEnd": 105,
-          "html": "<ul data-b=\"13e2cc5fcba09392\">\n<li>Every step below works with the mouse and with the keyboard.</li>\n<li>Nothing here changes your files until you ask for it.</li>\n<li>The page keeps your place when you come back to it.</li>\n</ul>"
+          "html": "<ul data-b=\"6d306d4f9651ac0a\">\n<li dir=\"auto\">Every step below works with the mouse and with the keyboard.</li>\n<li dir=\"auto\">Nothing here changes your files until you ask for it.</li>\n<li dir=\"auto\">The page keeps your place when you come back to it.</li>\n</ul>"
         },
         {
           "id": "8ef2c78143000b25-1",
@@ -710,151 +710,151 @@
           "html": "<pre data-b=\"8ef2c78143000b25-1\"><code class=\"language-text\">open the folder\npick a document\nread it\n</code></pre>"
         },
         {
-          "id": "0d589218964d5b70",
+          "id": "58bb95821fb9f312",
           "kind": "h3",
           "lineStart": 113,
           "lineEnd": 113,
-          "html": "<h3 data-b=\"0d589218964d5b70\" id=\"undo-and-redo\">Undo and redo</h3>"
+          "html": "<h3 data-b=\"58bb95821fb9f312\" id=\"undo-and-redo\" dir=\"auto\">Undo and redo</h3>"
         },
         {
-          "id": "24d123d1ee51cd7d",
+          "id": "df8e9712e61f9ade",
           "kind": "p",
           "lineStart": 115,
           "lineEnd": 115,
-          "html": "<p data-b=\"24d123d1ee51cd7d\">This section explains undo and redo. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
+          "html": "<p data-b=\"df8e9712e61f9ade\" dir=\"auto\">This section explains undo and redo. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
         },
         {
-          "id": "a08f321a7a738666-1",
+          "id": "f2830e0654b63005-1",
           "kind": "p",
           "lineStart": 117,
           "lineEnd": 117,
-          "html": "<p data-b=\"a08f321a7a738666-1\">Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
+          "html": "<p data-b=\"f2830e0654b63005-1\" dir=\"auto\">Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
         },
         {
-          "id": "f504f05b6853a087",
+          "id": "e90f95afe034ceae",
           "kind": "h3",
           "lineStart": 119,
           "lineEnd": 119,
-          "html": "<h3 data-b=\"f504f05b6853a087\" id=\"pictures-in-documents\">Pictures in documents</h3>"
+          "html": "<h3 data-b=\"e90f95afe034ceae\" id=\"pictures-in-documents\" dir=\"auto\">Pictures in documents</h3>"
         },
         {
-          "id": "024c79d15ccfebf2",
+          "id": "36c7fced408663e9",
           "kind": "p",
           "lineStart": 121,
           "lineEnd": 121,
-          "html": "<p data-b=\"024c79d15ccfebf2\">This section explains pictures in documents. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+          "html": "<p data-b=\"36c7fced408663e9\" dir=\"auto\">This section explains pictures in documents. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
         },
         {
-          "id": "87cffa90ffb3d241-1",
+          "id": "8ebdeac8406e5ce1-1",
           "kind": "p",
           "lineStart": 123,
           "lineEnd": 123,
-          "html": "<p data-b=\"87cffa90ffb3d241-1\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
+          "html": "<p data-b=\"8ebdeac8406e5ce1-1\" dir=\"auto\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
         },
         {
-          "id": "7f07efc388a63e84",
+          "id": "a271d32a5780ff98",
           "kind": "h2",
           "lineStart": 125,
           "lineEnd": 125,
-          "html": "<h2 data-b=\"7f07efc388a63e84\" id=\"organizing-files\">Organizing files</h2>"
+          "html": "<h2 data-b=\"a271d32a5780ff98\" id=\"organizing-files\" dir=\"auto\">Organizing files</h2>"
         },
         {
-          "id": "21b0a9a9122815a5",
+          "id": "258425671f74a631",
           "kind": "p",
           "lineStart": 127,
           "lineEnd": 127,
-          "html": "<p data-b=\"21b0a9a9122815a5\">This chapter is about organizing files. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
+          "html": "<p data-b=\"258425671f74a631\" dir=\"auto\">This chapter is about organizing files. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
         },
         {
-          "id": "f023770d17a3e192",
+          "id": "8d1ec76dddd963d1",
           "kind": "h3",
           "lineStart": 129,
           "lineEnd": 129,
-          "html": "<h3 data-b=\"f023770d17a3e192\" id=\"new-files-and-folders\">New files and folders</h3>"
+          "html": "<h3 data-b=\"8d1ec76dddd963d1\" id=\"new-files-and-folders\" dir=\"auto\">New files and folders</h3>"
         },
         {
-          "id": "45ea077c6eb7e9c2",
+          "id": "1d4d1c85df1807bd",
           "kind": "p",
           "lineStart": 131,
           "lineEnd": 131,
-          "html": "<p data-b=\"45ea077c6eb7e9c2\">This section explains new files and folders. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
+          "html": "<p data-b=\"1d4d1c85df1807bd\" dir=\"auto\">This section explains new files and folders. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
         },
         {
-          "id": "a08f321a7a738666-2",
+          "id": "f2830e0654b63005-2",
           "kind": "p",
           "lineStart": 133,
           "lineEnd": 133,
-          "html": "<p data-b=\"a08f321a7a738666-2\">Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
+          "html": "<p data-b=\"f2830e0654b63005-2\" dir=\"auto\">Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
         },
         {
-          "id": "d3bf2f60658bf0e3",
+          "id": "64f9ec217ccfd26c",
           "kind": "h3",
           "lineStart": 135,
           "lineEnd": 135,
-          "html": "<h3 data-b=\"d3bf2f60658bf0e3\" id=\"rename-and-move\">Rename and move</h3>"
+          "html": "<h3 data-b=\"64f9ec217ccfd26c\" id=\"rename-and-move\" dir=\"auto\">Rename and move</h3>"
         },
         {
-          "id": "f4aaf2f427d104f3",
+          "id": "8ae752fc28123cd9",
           "kind": "p",
           "lineStart": 137,
           "lineEnd": 137,
-          "html": "<p data-b=\"f4aaf2f427d104f3\">This section explains rename and move. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+          "html": "<p data-b=\"8ae752fc28123cd9\" dir=\"auto\">This section explains rename and move. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
         },
         {
-          "id": "87cffa90ffb3d241-2",
+          "id": "8ebdeac8406e5ce1-2",
           "kind": "p",
           "lineStart": 139,
           "lineEnd": 139,
-          "html": "<p data-b=\"87cffa90ffb3d241-2\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
+          "html": "<p data-b=\"8ebdeac8406e5ce1-2\" dir=\"auto\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
         },
         {
-          "id": "1c9d5facb92b6dcd",
+          "id": "f378534c7325b072",
           "kind": "ul",
           "lineStart": 141,
           "lineEnd": 143,
-          "html": "<ul data-b=\"1c9d5facb92b6dcd\">\n<li>Nothing here changes your files until you ask for it.</li>\n<li>The page keeps your place when you come back to it.</li>\n<li>You can undo the last change with Ctrl+Z.</li>\n</ul>"
+          "html": "<ul data-b=\"f378534c7325b072\">\n<li dir=\"auto\">Nothing here changes your files until you ask for it.</li>\n<li dir=\"auto\">The page keeps your place when you come back to it.</li>\n<li dir=\"auto\">You can undo the last change with Ctrl+Z.</li>\n</ul>"
         },
         {
-          "id": "8b3ed034bf420fe4",
+          "id": "7b6570051693ad57",
           "kind": "h3",
           "lineStart": 145,
           "lineEnd": 145,
-          "html": "<h3 data-b=\"8b3ed034bf420fe4\" id=\"delete-and-restore\">Delete and restore</h3>"
+          "html": "<h3 data-b=\"7b6570051693ad57\" id=\"delete-and-restore\" dir=\"auto\">Delete and restore</h3>"
         },
         {
-          "id": "f1da5ebc10d2998c",
+          "id": "1c75f16d1a061c36",
           "kind": "p",
           "lineStart": 147,
           "lineEnd": 147,
-          "html": "<p data-b=\"f1da5ebc10d2998c\">This section explains delete and restore. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
+          "html": "<p data-b=\"1c75f16d1a061c36\" dir=\"auto\">This section explains delete and restore. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
         },
         {
-          "id": "111c39fdbdf2340d",
+          "id": "688027f340dda2e6",
           "kind": "p",
           "lineStart": 149,
           "lineEnd": 149,
-          "html": "<p data-b=\"111c39fdbdf2340d\">If something does not look right, close the document and open it again. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
+          "html": "<p data-b=\"688027f340dda2e6\" dir=\"auto\">If something does not look right, close the document and open it again. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
         },
         {
-          "id": "2c6d1b438b18db9b",
+          "id": "dd4d3a7b0d6cc10b",
           "kind": "h3",
           "lineStart": 151,
           "lineEnd": 151,
-          "html": "<h3 data-b=\"2c6d1b438b18db9b\" id=\"drop-files-from-outside\">Drop files from outside</h3>"
+          "html": "<h3 data-b=\"dd4d3a7b0d6cc10b\" id=\"drop-files-from-outside\" dir=\"auto\">Drop files from outside</h3>"
         },
         {
-          "id": "02ffae0462c4b4e3",
+          "id": "8873fd582fd8bff4",
           "kind": "p",
           "lineStart": 153,
           "lineEnd": 153,
-          "html": "<p data-b=\"02ffae0462c4b4e3\">This section explains drop files from outside. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
+          "html": "<p data-b=\"8873fd582fd8bff4\" dir=\"auto\">This section explains drop files from outside. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
         },
         {
-          "id": "0b566c71d0e2fbf7-1",
+          "id": "d4e16acc07121c55-1",
           "kind": "p",
           "lineStart": 155,
           "lineEnd": 155,
-          "html": "<p data-b=\"0b566c71d0e2fbf7-1\">Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
+          "html": "<p data-b=\"d4e16acc07121c55-1\" dir=\"auto\">Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
         },
         {
           "id": "8ef2c78143000b25-2",
@@ -864,172 +864,172 @@
           "html": "<pre data-b=\"8ef2c78143000b25-2\"><code class=\"language-text\">open the folder\npick a document\nread it\n</code></pre>"
         },
         {
-          "id": "1e9137e18ce4471c",
+          "id": "b3e13de4a344504b",
           "kind": "h2",
           "lineStart": 163,
           "lineEnd": 163,
-          "html": "<h2 data-b=\"1e9137e18ce4471c\" id=\"search\">Search</h2>"
+          "html": "<h2 data-b=\"b3e13de4a344504b\" id=\"search\" dir=\"auto\">Search</h2>"
         },
         {
-          "id": "b4f3672286d083de",
+          "id": "5d8927e2fb94256d",
           "kind": "p",
           "lineStart": 165,
           "lineEnd": 165,
-          "html": "<p data-b=\"b4f3672286d083de\">This chapter is about search. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
+          "html": "<p data-b=\"5d8927e2fb94256d\" dir=\"auto\">This chapter is about search. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
         },
         {
-          "id": "5200ada67db2e43f",
+          "id": "5e944651f9d489fe",
           "kind": "h3",
           "lineStart": 167,
           "lineEnd": 167,
-          "html": "<h3 data-b=\"5200ada67db2e43f\" id=\"quick-open\">Quick open</h3>"
+          "html": "<h3 data-b=\"5e944651f9d489fe\" id=\"quick-open\" dir=\"auto\">Quick open</h3>"
         },
         {
-          "id": "0324a91e85f92740",
+          "id": "d3e23e8dc75b7ad9",
           "kind": "p",
           "lineStart": 169,
           "lineEnd": 169,
-          "html": "<p data-b=\"0324a91e85f92740\">This section explains quick open. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
+          "html": "<p data-b=\"d3e23e8dc75b7ad9\" dir=\"auto\">This section explains quick open. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
         },
         {
-          "id": "111c39fdbdf2340d-1",
+          "id": "688027f340dda2e6-1",
           "kind": "p",
           "lineStart": 171,
           "lineEnd": 171,
-          "html": "<p data-b=\"111c39fdbdf2340d-1\">If something does not look right, close the document and open it again. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
+          "html": "<p data-b=\"688027f340dda2e6-1\" dir=\"auto\">If something does not look right, close the document and open it again. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
         },
         {
-          "id": "8d415b79327571fa",
+          "id": "cd015714d02ca9e4",
           "kind": "h3",
           "lineStart": 173,
           "lineEnd": 173,
-          "html": "<h3 data-b=\"8d415b79327571fa\" id=\"search-everywhere\">Search everywhere</h3>"
+          "html": "<h3 data-b=\"cd015714d02ca9e4\" id=\"search-everywhere\" dir=\"auto\">Search everywhere</h3>"
         },
         {
-          "id": "72dd64b6a074f10d",
+          "id": "d2680d83a244a820",
           "kind": "p",
           "lineStart": 175,
           "lineEnd": 175,
-          "html": "<p data-b=\"72dd64b6a074f10d\">This section explains search everywhere. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
+          "html": "<p data-b=\"d2680d83a244a820\" dir=\"auto\">This section explains search everywhere. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
         },
         {
-          "id": "0b566c71d0e2fbf7-2",
+          "id": "d4e16acc07121c55-2",
           "kind": "p",
           "lineStart": 177,
           "lineEnd": 177,
-          "html": "<p data-b=\"0b566c71d0e2fbf7-2\">Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
+          "html": "<p data-b=\"d4e16acc07121c55-2\" dir=\"auto\">Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
         },
         {
-          "id": "82945cb698a84cc7",
+          "id": "9d01d3de376d9d40",
           "kind": "ul",
           "lineStart": 179,
           "lineEnd": 181,
-          "html": "<ul data-b=\"82945cb698a84cc7\">\n<li>The page keeps your place when you come back to it.</li>\n<li>You can undo the last change with Ctrl+Z.</li>\n<li>A short note at the bottom of the window tells you when something is done.</li>\n</ul>"
+          "html": "<ul data-b=\"9d01d3de376d9d40\">\n<li dir=\"auto\">The page keeps your place when you come back to it.</li>\n<li dir=\"auto\">You can undo the last change with Ctrl+Z.</li>\n<li dir=\"auto\">A short note at the bottom of the window tells you when something is done.</li>\n</ul>"
         },
         {
-          "id": "f0868af7f8a0d2a5",
+          "id": "06c5231c01e35f0e",
           "kind": "h3",
           "lineStart": 183,
           "lineEnd": 183,
-          "html": "<h3 data-b=\"f0868af7f8a0d2a5\" id=\"find-in-the-page\">Find in the page</h3>"
+          "html": "<h3 data-b=\"06c5231c01e35f0e\" id=\"find-in-the-page\" dir=\"auto\">Find in the page</h3>"
         },
         {
-          "id": "de743cc485eba646",
+          "id": "e637cbd2e613ed8c",
           "kind": "p",
           "lineStart": 185,
           "lineEnd": 185,
-          "html": "<p data-b=\"de743cc485eba646\">This section explains find in the page. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
+          "html": "<p data-b=\"e637cbd2e613ed8c\" dir=\"auto\">This section explains find in the page. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
         },
         {
-          "id": "e0cbc2c06f3b489c-1",
+          "id": "8ff7bf3454c84b26-1",
           "kind": "p",
           "lineStart": 187,
           "lineEnd": 187,
-          "html": "<p data-b=\"e0cbc2c06f3b489c-1\">The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+          "html": "<p data-b=\"8ff7bf3454c84b26-1\" dir=\"auto\">The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
         },
         {
-          "id": "3cff7c6ccbc618db",
+          "id": "d9bb01945b6908fe",
           "kind": "h3",
           "lineStart": 189,
           "lineEnd": 189,
-          "html": "<h3 data-b=\"3cff7c6ccbc618db\" id=\"tags\">Tags</h3>"
+          "html": "<h3 data-b=\"d9bb01945b6908fe\" id=\"tags\" dir=\"auto\">Tags</h3>"
         },
         {
-          "id": "4fe533d6b9fb5d1e",
+          "id": "81a430cc5cc9eaa8",
           "kind": "p",
           "lineStart": 191,
           "lineEnd": 191,
-          "html": "<p data-b=\"4fe533d6b9fb5d1e\">This section explains tags. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
+          "html": "<p data-b=\"81a430cc5cc9eaa8\" dir=\"auto\">This section explains tags. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
         },
         {
-          "id": "ae15089248788160",
+          "id": "d23c168c48b7361d",
           "kind": "p",
           "lineStart": 193,
           "lineEnd": 193,
-          "html": "<p data-b=\"ae15089248788160\">Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
+          "html": "<p data-b=\"d23c168c48b7361d\" dir=\"auto\">Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
         },
         {
-          "id": "867b3a271e309850",
+          "id": "444758e0238fd243",
           "kind": "h2",
           "lineStart": 195,
           "lineEnd": 195,
-          "html": "<h2 data-b=\"867b3a271e309850\" id=\"following-changes\">Following changes</h2>"
+          "html": "<h2 data-b=\"444758e0238fd243\" id=\"following-changes\" dir=\"auto\">Following changes</h2>"
         },
         {
-          "id": "42a74eeb59a44e51",
+          "id": "14757fc9817a450b",
           "kind": "p",
           "lineStart": 197,
           "lineEnd": 197,
-          "html": "<p data-b=\"42a74eeb59a44e51\">This chapter is about following changes. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
+          "html": "<p data-b=\"14757fc9817a450b\" dir=\"auto\">This chapter is about following changes. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
         },
         {
-          "id": "9261fc26a61920f5",
+          "id": "1a4dd9ca5956b869",
           "kind": "h3",
           "lineStart": 199,
           "lineEnd": 199,
-          "html": "<h3 data-b=\"9261fc26a61920f5\" id=\"unread-documents\">Unread documents</h3>"
+          "html": "<h3 data-b=\"1a4dd9ca5956b869\" id=\"unread-documents\" dir=\"auto\">Unread documents</h3>"
         },
         {
-          "id": "735ca66cf8b54d35",
+          "id": "99f3cbc38fb3e588",
           "kind": "p",
           "lineStart": 201,
           "lineEnd": 201,
-          "html": "<p data-b=\"735ca66cf8b54d35\">This section explains unread documents. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
+          "html": "<p data-b=\"99f3cbc38fb3e588\" dir=\"auto\">This section explains unread documents. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
         },
         {
-          "id": "e0cbc2c06f3b489c-2",
+          "id": "8ff7bf3454c84b26-2",
           "kind": "p",
           "lineStart": 203,
           "lineEnd": 203,
-          "html": "<p data-b=\"e0cbc2c06f3b489c-2\">The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+          "html": "<p data-b=\"8ff7bf3454c84b26-2\" dir=\"auto\">The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
         },
         {
-          "id": "c6d151d6dabb36a2",
+          "id": "e3cc953f7dffb940",
           "kind": "h3",
           "lineStart": 205,
           "lineEnd": 205,
-          "html": "<h3 data-b=\"c6d151d6dabb36a2\" id=\"the-live-feed\">The live feed</h3>"
+          "html": "<h3 data-b=\"e3cc953f7dffb940\" id=\"the-live-feed\" dir=\"auto\">The live feed</h3>"
         },
         {
-          "id": "4b2dfe2593222696",
+          "id": "b1fcc37286d3b954",
           "kind": "p",
           "lineStart": 207,
           "lineEnd": 207,
-          "html": "<p data-b=\"4b2dfe2593222696\">This section explains the live feed. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
+          "html": "<p data-b=\"b1fcc37286d3b954\" dir=\"auto\">This section explains the live feed. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
         },
         {
-          "id": "ae15089248788160-1",
+          "id": "d23c168c48b7361d-1",
           "kind": "p",
           "lineStart": 209,
           "lineEnd": 209,
-          "html": "<p data-b=\"ae15089248788160-1\">Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
+          "html": "<p data-b=\"d23c168c48b7361d-1\" dir=\"auto\">Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
         },
         {
-          "id": "b23b08ae7a7cac97",
+          "id": "12d171079ce50b58",
           "kind": "ul",
           "lineStart": 211,
           "lineEnd": 213,
-          "html": "<ul data-b=\"b23b08ae7a7cac97\">\n<li>You can undo the last change with Ctrl+Z.</li>\n<li>A short note at the bottom of the window tells you when something is done.</li>\n<li>Settings for this live in the Settings page, under the section with the same name.</li>\n</ul>"
+          "html": "<ul data-b=\"12d171079ce50b58\">\n<li dir=\"auto\">You can undo the last change with Ctrl+Z.</li>\n<li dir=\"auto\">A short note at the bottom of the window tells you when something is done.</li>\n<li dir=\"auto\">Settings for this live in the Settings page, under the section with the same name.</li>\n</ul>"
         },
         {
           "id": "8ef2c78143000b25-3",
@@ -1039,165 +1039,165 @@
           "html": "<pre data-b=\"8ef2c78143000b25-3\"><code class=\"language-text\">open the folder\npick a document\nread it\n</code></pre>"
         },
         {
-          "id": "dbd437eace645e7d",
+          "id": "41f579e3c5a47265",
           "kind": "h3",
           "lineStart": 221,
           "lineEnd": 221,
-          "html": "<h3 data-b=\"dbd437eace645e7d\" id=\"review-changes\">Review changes</h3>"
+          "html": "<h3 data-b=\"41f579e3c5a47265\" id=\"review-changes\" dir=\"auto\">Review changes</h3>"
         },
         {
-          "id": "bc291f08145d8797",
+          "id": "aa8d66878f4619b8",
           "kind": "p",
           "lineStart": 223,
           "lineEnd": 223,
-          "html": "<p data-b=\"bc291f08145d8797\">This section explains review changes. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
+          "html": "<p data-b=\"aa8d66878f4619b8\" dir=\"auto\">This section explains review changes. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
         },
         {
-          "id": "387fbc63fa8ac88c-1",
+          "id": "44a018e6ab24cf87-1",
           "kind": "p",
           "lineStart": 225,
           "lineEnd": 225,
-          "html": "<p data-b=\"387fbc63fa8ac88c-1\">Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
+          "html": "<p data-b=\"44a018e6ab24cf87-1\" dir=\"auto\">Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
         },
         {
-          "id": "024d3204d08d8ee5",
+          "id": "a5092deb597a7c4f",
           "kind": "h3",
           "lineStart": 227,
           "lineEnd": 227,
-          "html": "<h3 data-b=\"024d3204d08d8ee5\" id=\"compare-with-the-last-commit\">Compare with the last commit</h3>"
+          "html": "<h3 data-b=\"a5092deb597a7c4f\" id=\"compare-with-the-last-commit\" dir=\"auto\">Compare with the last commit</h3>"
         },
         {
-          "id": "38fa711a931f6e98",
+          "id": "4148426a2e97fcf2",
           "kind": "p",
           "lineStart": 229,
           "lineEnd": 229,
-          "html": "<p data-b=\"38fa711a931f6e98\">This section explains compare with the last commit. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
+          "html": "<p data-b=\"4148426a2e97fcf2\" dir=\"auto\">This section explains compare with the last commit. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
         },
         {
-          "id": "4c3fb8f0b47baffd",
+          "id": "1546c5fecf1fd0b3",
           "kind": "p",
           "lineStart": 231,
           "lineEnd": 231,
-          "html": "<p data-b=\"4c3fb8f0b47baffd\">Nothing here changes your files until you ask for it. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
+          "html": "<p data-b=\"1546c5fecf1fd0b3\" dir=\"auto\">Nothing here changes your files until you ask for it. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
         },
         {
-          "id": "b454c74e8fbcc9f1",
+          "id": "487b2eb00eb00a66",
           "kind": "h2",
           "lineStart": 233,
           "lineEnd": 233,
-          "html": "<h2 data-b=\"b454c74e8fbcc9f1\" id=\"notes\">Notes</h2>"
+          "html": "<h2 data-b=\"487b2eb00eb00a66\" id=\"notes\" dir=\"auto\">Notes</h2>"
         },
         {
-          "id": "687a5d5a6c33e18a",
+          "id": "33de3737d1cb6d7b",
           "kind": "p",
           "lineStart": 235,
           "lineEnd": 235,
-          "html": "<p data-b=\"687a5d5a6c33e18a\">This chapter is about notes. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
+          "html": "<p data-b=\"33de3737d1cb6d7b\" dir=\"auto\">This chapter is about notes. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
         },
         {
-          "id": "2aab2e22f283fafd",
+          "id": "c9a67ea345635c6b",
           "kind": "h3",
           "lineStart": 237,
           "lineEnd": 237,
-          "html": "<h3 data-b=\"2aab2e22f283fafd\" id=\"a-new-note\">A new note</h3>"
+          "html": "<h3 data-b=\"c9a67ea345635c6b\" id=\"a-new-note\" dir=\"auto\">A new note</h3>"
         },
         {
-          "id": "206f1bedd71bdc84",
+          "id": "7bfd2e874a7ee66f",
           "kind": "p",
           "lineStart": 239,
           "lineEnd": 239,
-          "html": "<p data-b=\"206f1bedd71bdc84\">This section explains a new note. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
+          "html": "<p data-b=\"7bfd2e874a7ee66f\" dir=\"auto\">This section explains a new note. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
         },
         {
-          "id": "387fbc63fa8ac88c-2",
+          "id": "44a018e6ab24cf87-2",
           "kind": "p",
           "lineStart": 241,
           "lineEnd": 241,
-          "html": "<p data-b=\"387fbc63fa8ac88c-2\">Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
+          "html": "<p data-b=\"44a018e6ab24cf87-2\" dir=\"auto\">Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
         },
         {
-          "id": "fdc5b5a528df0cb6",
+          "id": "f53912b4234b36d5",
           "kind": "h3",
           "lineStart": 243,
           "lineEnd": 243,
-          "html": "<h3 data-b=\"fdc5b5a528df0cb6\" id=\"pinned-notes\">Pinned notes</h3>"
+          "html": "<h3 data-b=\"f53912b4234b36d5\" id=\"pinned-notes\" dir=\"auto\">Pinned notes</h3>"
         },
         {
-          "id": "9501d600293e57cd",
+          "id": "1d0e624d94681a7f",
           "kind": "p",
           "lineStart": 245,
           "lineEnd": 245,
-          "html": "<p data-b=\"9501d600293e57cd\">This section explains pinned notes. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
+          "html": "<p data-b=\"1d0e624d94681a7f\" dir=\"auto\">This section explains pinned notes. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
         },
         {
-          "id": "4c3fb8f0b47baffd-1",
+          "id": "1546c5fecf1fd0b3-1",
           "kind": "p",
           "lineStart": 247,
           "lineEnd": 247,
-          "html": "<p data-b=\"4c3fb8f0b47baffd-1\">Nothing here changes your files until you ask for it. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
+          "html": "<p data-b=\"1546c5fecf1fd0b3-1\" dir=\"auto\">Nothing here changes your files until you ask for it. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
         },
         {
-          "id": "eb7af82e33e62ff8",
+          "id": "60db5221ef3a3acb",
           "kind": "ul",
           "lineStart": 249,
           "lineEnd": 251,
-          "html": "<ul data-b=\"eb7af82e33e62ff8\">\n<li>A short note at the bottom of the window tells you when something is done.</li>\n<li>Settings for this live in the Settings page, under the section with the same name.</li>\n<li>If something does not look right, close the document and open it again.</li>\n</ul>"
+          "html": "<ul data-b=\"60db5221ef3a3acb\">\n<li dir=\"auto\">A short note at the bottom of the window tells you when something is done.</li>\n<li dir=\"auto\">Settings for this live in the Settings page, under the section with the same name.</li>\n<li dir=\"auto\">If something does not look right, close the document and open it again.</li>\n</ul>"
         },
         {
-          "id": "ac0bc3b9c38edc08",
+          "id": "7faa9959b7b85f99",
           "kind": "h3",
           "lineStart": 253,
           "lineEnd": 253,
-          "html": "<h3 data-b=\"ac0bc3b9c38edc08\" id=\"versions-of-a-note\">Versions of a note</h3>"
+          "html": "<h3 data-b=\"7faa9959b7b85f99\" id=\"versions-of-a-note\" dir=\"auto\">Versions of a note</h3>"
         },
         {
-          "id": "3fcbee5a3dafa78f",
+          "id": "a7f655a26a4e6e5e",
           "kind": "p",
           "lineStart": 255,
           "lineEnd": 255,
-          "html": "<p data-b=\"3fcbee5a3dafa78f\">This section explains versions of a note. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
+          "html": "<p data-b=\"a7f655a26a4e6e5e\" dir=\"auto\">This section explains versions of a note. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
         },
         {
-          "id": "d22d7d2a445d809c-2",
+          "id": "23f7f4e45c9053b6-2",
           "kind": "p",
           "lineStart": 257,
           "lineEnd": 257,
-          "html": "<p data-b=\"d22d7d2a445d809c-2\">Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
+          "html": "<p data-b=\"23f7f4e45c9053b6-2\" dir=\"auto\">Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
         },
         {
-          "id": "13e66aa8603e9614",
+          "id": "9c312f193dd41ee2",
           "kind": "h2",
           "lineStart": 259,
           "lineEnd": 259,
-          "html": "<h2 data-b=\"13e66aa8603e9614\" id=\"settings\">Settings</h2>"
+          "html": "<h2 data-b=\"9c312f193dd41ee2\" id=\"settings\" dir=\"auto\">Settings</h2>"
         },
         {
-          "id": "e8dfc0372bf2e87d",
+          "id": "62aeb81afb7e1e21",
           "kind": "p",
           "lineStart": 261,
           "lineEnd": 261,
-          "html": "<p data-b=\"e8dfc0372bf2e87d\">This chapter is about settings. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
+          "html": "<p data-b=\"62aeb81afb7e1e21\" dir=\"auto\">This chapter is about settings. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
         },
         {
-          "id": "8b0e173fc6385dbd",
+          "id": "c400bbbbebeb738d",
           "kind": "h3",
           "lineStart": 263,
           "lineEnd": 263,
-          "html": "<h3 data-b=\"8b0e173fc6385dbd\" id=\"language\">Language</h3>"
+          "html": "<h3 data-b=\"c400bbbbebeb738d\" id=\"language\" dir=\"auto\">Language</h3>"
         },
         {
-          "id": "ee0cc5701b722f92",
+          "id": "8f954572570796cd",
           "kind": "p",
           "lineStart": 265,
           "lineEnd": 265,
-          "html": "<p data-b=\"ee0cc5701b722f92\">This section explains language. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
+          "html": "<p data-b=\"8f954572570796cd\" dir=\"auto\">This section explains language. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
         },
         {
-          "id": "7dce59ff5cab2de4-3",
+          "id": "dfd8670a9275cd9d-3",
           "kind": "p",
           "lineStart": 267,
           "lineEnd": 267,
-          "html": "<p data-b=\"7dce59ff5cab2de4-3\">A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
+          "html": "<p data-b=\"dfd8670a9275cd9d-3\" dir=\"auto\">A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
         },
         {
           "id": "8ef2c78143000b25-4",
@@ -1207,158 +1207,158 @@
           "html": "<pre data-b=\"8ef2c78143000b25-4\"><code class=\"language-text\">open the folder\npick a document\nread it\n</code></pre>"
         },
         {
-          "id": "cfa8d70ee7a069be",
+          "id": "d92cad4b4c0975d8",
           "kind": "h3",
           "lineStart": 275,
           "lineEnd": 275,
-          "html": "<h3 data-b=\"cfa8d70ee7a069be\" id=\"keyboard-shortcuts\">Keyboard shortcuts</h3>"
+          "html": "<h3 data-b=\"d92cad4b4c0975d8\" id=\"keyboard-shortcuts\" dir=\"auto\">Keyboard shortcuts</h3>"
         },
         {
-          "id": "397e09e9ade29ea6",
+          "id": "c219e66c084db07e",
           "kind": "p",
           "lineStart": 277,
           "lineEnd": 277,
-          "html": "<p data-b=\"397e09e9ade29ea6\">This section explains keyboard shortcuts. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
+          "html": "<p data-b=\"c219e66c084db07e\" dir=\"auto\">This section explains keyboard shortcuts. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
         },
         {
-          "id": "d22d7d2a445d809c-3",
+          "id": "23f7f4e45c9053b6-3",
           "kind": "p",
           "lineStart": 279,
           "lineEnd": 279,
-          "html": "<p data-b=\"d22d7d2a445d809c-3\">Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
+          "html": "<p data-b=\"23f7f4e45c9053b6-3\" dir=\"auto\">Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
         },
         {
-          "id": "ae286ab79919d1cd",
+          "id": "45f5f77a99137d3a",
           "kind": "h3",
           "lineStart": 281,
           "lineEnd": 281,
-          "html": "<h3 data-b=\"ae286ab79919d1cd\" id=\"plugins\">Plugins</h3>"
+          "html": "<h3 data-b=\"45f5f77a99137d3a\" id=\"plugins\" dir=\"auto\">Plugins</h3>"
         },
         {
-          "id": "f34c21c3b9170a9b",
+          "id": "306f18d4ce42fed9",
           "kind": "p",
           "lineStart": 283,
           "lineEnd": 283,
-          "html": "<p data-b=\"f34c21c3b9170a9b\">This section explains plugins. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
+          "html": "<p data-b=\"306f18d4ce42fed9\" dir=\"auto\">This section explains plugins. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
         },
         {
-          "id": "355ef907c26513a9-1",
+          "id": "8e2c347095bc4771-1",
           "kind": "p",
           "lineStart": 285,
           "lineEnd": 285,
-          "html": "<p data-b=\"355ef907c26513a9-1\">The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
+          "html": "<p data-b=\"8e2c347095bc4771-1\" dir=\"auto\">The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
         },
         {
-          "id": "af01627343b863b2",
+          "id": "7d736ff099c902b3",
           "kind": "ul",
           "lineStart": 287,
           "lineEnd": 289,
-          "html": "<ul data-b=\"af01627343b863b2\">\n<li>Settings for this live in the Settings page, under the section with the same name.</li>\n<li>If something does not look right, close the document and open it again.</li>\n<li>The same works in a single file and in a project folder.</li>\n</ul>"
+          "html": "<ul data-b=\"7d736ff099c902b3\">\n<li dir=\"auto\">Settings for this live in the Settings page, under the section with the same name.</li>\n<li dir=\"auto\">If something does not look right, close the document and open it again.</li>\n<li dir=\"auto\">The same works in a single file and in a project folder.</li>\n</ul>"
         },
         {
-          "id": "b0b88cb5b579e906",
+          "id": "fb20e039b8944af5",
           "kind": "h3",
           "lineStart": 291,
           "lineEnd": 291,
-          "html": "<h3 data-b=\"b0b88cb5b579e906\" id=\"default-app\">Default app</h3>"
+          "html": "<h3 data-b=\"fb20e039b8944af5\" id=\"default-app\" dir=\"auto\">Default app</h3>"
         },
         {
-          "id": "d8bfe09f58fba0c0",
+          "id": "d30951c4ae1713c1",
           "kind": "p",
           "lineStart": 293,
           "lineEnd": 293,
-          "html": "<p data-b=\"d8bfe09f58fba0c0\">This section explains default app. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+          "html": "<p data-b=\"d30951c4ae1713c1\" dir=\"auto\">This section explains default app. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
         },
         {
-          "id": "87cffa90ffb3d241-3",
+          "id": "8ebdeac8406e5ce1-3",
           "kind": "p",
           "lineStart": 295,
           "lineEnd": 295,
-          "html": "<p data-b=\"87cffa90ffb3d241-3\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
+          "html": "<p data-b=\"8ebdeac8406e5ce1-3\" dir=\"auto\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
         },
         {
-          "id": "23bfa1f79cf8db2c",
+          "id": "9de8bbdd213cb409",
           "kind": "h2",
           "lineStart": 297,
           "lineEnd": 297,
-          "html": "<h2 data-b=\"23bfa1f79cf8db2c\" id=\"troubleshooting\">Troubleshooting</h2>"
+          "html": "<h2 data-b=\"9de8bbdd213cb409\" id=\"troubleshooting\" dir=\"auto\">Troubleshooting</h2>"
         },
         {
-          "id": "238053a64057b6ed",
+          "id": "9d45500bf204719b",
           "kind": "p",
           "lineStart": 299,
           "lineEnd": 299,
-          "html": "<p data-b=\"238053a64057b6ed\">This chapter is about troubleshooting. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
+          "html": "<p data-b=\"9d45500bf204719b\" dir=\"auto\">This chapter is about troubleshooting. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
         },
         {
-          "id": "13b5dbb15f67ca9f",
+          "id": "0b628795904a1615",
           "kind": "h3",
           "lineStart": 301,
           "lineEnd": 301,
-          "html": "<h3 data-b=\"13b5dbb15f67ca9f\" id=\"the-app-does-not-start\">The app does not start</h3>"
+          "html": "<h3 data-b=\"0b628795904a1615\" id=\"the-app-does-not-start\" dir=\"auto\">The app does not start</h3>"
         },
         {
-          "id": "88855e0bd1670046",
+          "id": "4fa5337f8ccdb660",
           "kind": "p",
           "lineStart": 303,
           "lineEnd": 303,
-          "html": "<p data-b=\"88855e0bd1670046\">This section explains the app does not start. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
+          "html": "<p data-b=\"4fa5337f8ccdb660\" dir=\"auto\">This section explains the app does not start. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
         },
         {
-          "id": "a08f321a7a738666-3",
+          "id": "f2830e0654b63005-3",
           "kind": "p",
           "lineStart": 305,
           "lineEnd": 305,
-          "html": "<p data-b=\"a08f321a7a738666-3\">Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
+          "html": "<p data-b=\"f2830e0654b63005-3\" dir=\"auto\">Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
         },
         {
-          "id": "e070f53d06f984a9",
+          "id": "474968922da8d419",
           "kind": "h3",
           "lineStart": 307,
           "lineEnd": 307,
-          "html": "<h3 data-b=\"e070f53d06f984a9\" id=\"a-file-does-not-open\">A file does not open</h3>"
+          "html": "<h3 data-b=\"474968922da8d419\" id=\"a-file-does-not-open\" dir=\"auto\">A file does not open</h3>"
         },
         {
-          "id": "bd8e208483fd2c3d",
+          "id": "4cefc8fef7aa0b1d",
           "kind": "p",
           "lineStart": 309,
           "lineEnd": 309,
-          "html": "<p data-b=\"bd8e208483fd2c3d\">This section explains a file does not open. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+          "html": "<p data-b=\"4cefc8fef7aa0b1d\" dir=\"auto\">This section explains a file does not open. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
         },
         {
-          "id": "87cffa90ffb3d241-4",
+          "id": "8ebdeac8406e5ce1-4",
           "kind": "p",
           "lineStart": 311,
           "lineEnd": 311,
-          "html": "<p data-b=\"87cffa90ffb3d241-4\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
+          "html": "<p data-b=\"8ebdeac8406e5ce1-4\" dir=\"auto\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
         },
         {
-          "id": "5c6ae611cadb8f8c",
+          "id": "5e12214a0a7b715b",
           "kind": "h3",
           "lineStart": 313,
           "lineEnd": 313,
-          "html": "<h3 data-b=\"5c6ae611cadb8f8c\" id=\"git-is-not-found\">Git is not found</h3>"
+          "html": "<h3 data-b=\"5e12214a0a7b715b\" id=\"git-is-not-found\" dir=\"auto\">Git is not found</h3>"
         },
         {
-          "id": "d33f5c0469e87f97",
+          "id": "e646a2f34ac17844",
           "kind": "p",
           "lineStart": 315,
           "lineEnd": 315,
-          "html": "<p data-b=\"d33f5c0469e87f97\">This section explains git is not found. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
+          "html": "<p data-b=\"e646a2f34ac17844\" dir=\"auto\">This section explains git is not found. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
         },
         {
-          "id": "c88c7e428702ee00-1",
+          "id": "f41890032daddefa-1",
           "kind": "p",
           "lineStart": 317,
           "lineEnd": 317,
-          "html": "<p data-b=\"c88c7e428702ee00-1\">You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
+          "html": "<p data-b=\"f41890032daddefa-1\" dir=\"auto\">You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
         },
         {
-          "id": "fd0a9586457d524f",
+          "id": "c69bbde5336675a7",
           "kind": "ul",
           "lineStart": 319,
           "lineEnd": 321,
-          "html": "<ul data-b=\"fd0a9586457d524f\">\n<li>If something does not look right, close the document and open it again.</li>\n<li>The same works in a single file and in a project folder.</li>\n<li>Agents can read the result, but they never change it through the app.</li>\n</ul>"
+          "html": "<ul data-b=\"c69bbde5336675a7\">\n<li dir=\"auto\">If something does not look right, close the document and open it again.</li>\n<li dir=\"auto\">The same works in a single file and in a project folder.</li>\n<li dir=\"auto\">Agents can read the result, but they never change it through the app.</li>\n</ul>"
         },
         {
           "id": "8ef2c78143000b25-5",
@@ -1368,25 +1368,25 @@
           "html": "<pre data-b=\"8ef2c78143000b25-5\"><code class=\"language-text\">open the folder\npick a document\nread it\n</code></pre>"
         },
         {
-          "id": "2fc67ba9a66d4983",
+          "id": "9a25486a64ba6754",
           "kind": "h2",
           "lineStart": 329,
           "lineEnd": 329,
-          "html": "<h2 data-b=\"2fc67ba9a66d4983\" id=\"reference\">Reference</h2>"
+          "html": "<h2 data-b=\"9a25486a64ba6754\" id=\"reference\" dir=\"auto\">Reference</h2>"
         },
         {
-          "id": "31ea9ebfd3c06887",
+          "id": "6721caa2c3fb795c",
           "kind": "table",
           "lineStart": 331,
           "lineEnd": 336,
-          "html": "<table data-b=\"31ea9ebfd3c06887\">\n<thead>\n<tr>\n<th>Key</th>\n<th>What it does</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Ctrl+P</td>\n<td>Quick open</td>\n</tr>\n<tr>\n<td>Ctrl+Shift+F</td>\n<td>Search everywhere</td>\n</tr>\n<tr>\n<td>Ctrl+E</td>\n<td>Edit</td>\n</tr>\n<tr>\n<td>Ctrl+Alt+E</td>\n<td>Source</td>\n</tr>\n</tbody>\n</table>"
+          "html": "<table data-b=\"6721caa2c3fb795c\">\n<thead>\n<tr>\n<th dir=\"auto\">Key</th>\n<th dir=\"auto\">What it does</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td dir=\"auto\">Ctrl+P</td>\n<td dir=\"auto\">Quick open</td>\n</tr>\n<tr>\n<td dir=\"auto\">Ctrl+Shift+F</td>\n<td dir=\"auto\">Search everywhere</td>\n</tr>\n<tr>\n<td dir=\"auto\">Ctrl+E</td>\n<td dir=\"auto\">Edit</td>\n</tr>\n<tr>\n<td dir=\"auto\">Ctrl+Alt+E</td>\n<td dir=\"auto\">Source</td>\n</tr>\n</tbody>\n</table>"
         },
         {
-          "id": "92c28b714942abc6",
+          "id": "067e3df2d32a18f6",
           "kind": "p",
           "lineStart": 338,
           "lineEnd": 338,
-          "html": "<p data-b=\"92c28b714942abc6\">The end of the handbook.</p>"
+          "html": "<p data-b=\"067e3df2d32a18f6\" dir=\"auto\">The end of the handbook.</p>"
         }
       ],
       "outline": [
@@ -1395,329 +1395,329 @@
           "level": 1,
           "id": "handbook",
           "line": 1,
-          "block": "3de9dfeed3398693"
+          "block": "a5af9269b407d4f8"
         },
         {
           "label": "Getting started",
           "level": 2,
           "id": "getting-started",
           "line": 5,
-          "block": "02dbe23f5510d144"
+          "block": "7ee2d0ba41b90dd4"
         },
         {
           "label": "Install the app",
           "level": 3,
           "id": "install-the-app",
           "line": 9,
-          "block": "5be153ea6ef451ff"
+          "block": "1b45876cfaff452b"
         },
         {
           "label": "Open a folder",
           "level": 3,
           "id": "open-a-folder",
           "line": 15,
-          "block": "9edff938b574431d"
+          "block": "dc3d2ae377df4ab9"
         },
         {
           "label": "Open a single file",
           "level": 3,
           "id": "open-a-single-file",
           "line": 21,
-          "block": "23789e6d99b7baa6"
+          "block": "a69ae773f9c33a36"
         },
         {
           "label": "Find your way around",
           "level": 3,
           "id": "find-your-way-around",
           "line": 27,
-          "block": "e97b0edcc0d82263"
+          "block": "6487f869bf2ef600"
         },
         {
           "label": "Reading",
           "level": 2,
           "id": "reading",
           "line": 37,
-          "block": "3500c38a6270e6d3"
+          "block": "4531142a3725c449"
         },
         {
           "label": "Themes and tones",
           "level": 3,
           "id": "themes-and-tones",
           "line": 41,
-          "block": "21d9682530ea4c4e"
+          "block": "097426a5e8f21fc2"
         },
         {
           "label": "Reading width",
           "level": 3,
           "id": "reading-width",
           "line": 47,
-          "block": "e485f6b8a56b5816"
+          "block": "4f218f960731ea7d"
         },
         {
           "label": "Zoom",
           "level": 3,
           "id": "zoom",
           "line": 59,
-          "block": "172de342ad69da4f"
+          "block": "1b85ec5217ea7546"
         },
         {
           "label": "Focus mode",
           "level": 3,
           "id": "focus-mode",
           "line": 65,
-          "block": "c09014637091bd1e"
+          "block": "7cf038837a85cad2"
         },
         {
           "label": "The outline",
           "level": 3,
           "id": "the-outline",
           "line": 75,
-          "block": "a5eb37f12f1cb7c7"
+          "block": "a02d4f0d6971608e"
         },
         {
           "label": "Writing",
           "level": 2,
           "id": "writing",
           "line": 81,
-          "block": "2f9bf0dcc8807a6a"
+          "block": "57afd682e6601b46"
         },
         {
           "label": "The visual editor",
           "level": 3,
           "id": "the-visual-editor",
           "line": 85,
-          "block": "4fb1f28d557fb5d5"
+          "block": "931504c5ec4eb90b"
         },
         {
           "label": "The source editor",
           "level": 3,
           "id": "the-source-editor",
           "line": 91,
-          "block": "23bf814dd61da007"
+          "block": "8e242bf61852ed48"
         },
         {
           "label": "Saving",
           "level": 3,
           "id": "saving",
           "line": 97,
-          "block": "9d555ee39b349773"
+          "block": "f8dc45359e18cd15"
         },
         {
           "label": "Undo and redo",
           "level": 3,
           "id": "undo-and-redo",
           "line": 113,
-          "block": "0d589218964d5b70"
+          "block": "58bb95821fb9f312"
         },
         {
           "label": "Pictures in documents",
           "level": 3,
           "id": "pictures-in-documents",
           "line": 119,
-          "block": "f504f05b6853a087"
+          "block": "e90f95afe034ceae"
         },
         {
           "label": "Organizing files",
           "level": 2,
           "id": "organizing-files",
           "line": 125,
-          "block": "7f07efc388a63e84"
+          "block": "a271d32a5780ff98"
         },
         {
           "label": "New files and folders",
           "level": 3,
           "id": "new-files-and-folders",
           "line": 129,
-          "block": "f023770d17a3e192"
+          "block": "8d1ec76dddd963d1"
         },
         {
           "label": "Rename and move",
           "level": 3,
           "id": "rename-and-move",
           "line": 135,
-          "block": "d3bf2f60658bf0e3"
+          "block": "64f9ec217ccfd26c"
         },
         {
           "label": "Delete and restore",
           "level": 3,
           "id": "delete-and-restore",
           "line": 145,
-          "block": "8b3ed034bf420fe4"
+          "block": "7b6570051693ad57"
         },
         {
           "label": "Drop files from outside",
           "level": 3,
           "id": "drop-files-from-outside",
           "line": 151,
-          "block": "2c6d1b438b18db9b"
+          "block": "dd4d3a7b0d6cc10b"
         },
         {
           "label": "Search",
           "level": 2,
           "id": "search",
           "line": 163,
-          "block": "1e9137e18ce4471c"
+          "block": "b3e13de4a344504b"
         },
         {
           "label": "Quick open",
           "level": 3,
           "id": "quick-open",
           "line": 167,
-          "block": "5200ada67db2e43f"
+          "block": "5e944651f9d489fe"
         },
         {
           "label": "Search everywhere",
           "level": 3,
           "id": "search-everywhere",
           "line": 173,
-          "block": "8d415b79327571fa"
+          "block": "cd015714d02ca9e4"
         },
         {
           "label": "Find in the page",
           "level": 3,
           "id": "find-in-the-page",
           "line": 183,
-          "block": "f0868af7f8a0d2a5"
+          "block": "06c5231c01e35f0e"
         },
         {
           "label": "Tags",
           "level": 3,
           "id": "tags",
           "line": 189,
-          "block": "3cff7c6ccbc618db"
+          "block": "d9bb01945b6908fe"
         },
         {
           "label": "Following changes",
           "level": 2,
           "id": "following-changes",
           "line": 195,
-          "block": "867b3a271e309850"
+          "block": "444758e0238fd243"
         },
         {
           "label": "Unread documents",
           "level": 3,
           "id": "unread-documents",
           "line": 199,
-          "block": "9261fc26a61920f5"
+          "block": "1a4dd9ca5956b869"
         },
         {
           "label": "The live feed",
           "level": 3,
           "id": "the-live-feed",
           "line": 205,
-          "block": "c6d151d6dabb36a2"
+          "block": "e3cc953f7dffb940"
         },
         {
           "label": "Review changes",
           "level": 3,
           "id": "review-changes",
           "line": 221,
-          "block": "dbd437eace645e7d"
+          "block": "41f579e3c5a47265"
         },
         {
           "label": "Compare with the last commit",
           "level": 3,
           "id": "compare-with-the-last-commit",
           "line": 227,
-          "block": "024d3204d08d8ee5"
+          "block": "a5092deb597a7c4f"
         },
         {
           "label": "Notes",
           "level": 2,
           "id": "notes",
           "line": 233,
-          "block": "b454c74e8fbcc9f1"
+          "block": "487b2eb00eb00a66"
         },
         {
           "label": "A new note",
           "level": 3,
           "id": "a-new-note",
           "line": 237,
-          "block": "2aab2e22f283fafd"
+          "block": "c9a67ea345635c6b"
         },
         {
           "label": "Pinned notes",
           "level": 3,
           "id": "pinned-notes",
           "line": 243,
-          "block": "fdc5b5a528df0cb6"
+          "block": "f53912b4234b36d5"
         },
         {
           "label": "Versions of a note",
           "level": 3,
           "id": "versions-of-a-note",
           "line": 253,
-          "block": "ac0bc3b9c38edc08"
+          "block": "7faa9959b7b85f99"
         },
         {
           "label": "Settings",
           "level": 2,
           "id": "settings",
           "line": 259,
-          "block": "13e66aa8603e9614"
+          "block": "9c312f193dd41ee2"
         },
         {
           "label": "Language",
           "level": 3,
           "id": "language",
           "line": 263,
-          "block": "8b0e173fc6385dbd"
+          "block": "c400bbbbebeb738d"
         },
         {
           "label": "Keyboard shortcuts",
           "level": 3,
           "id": "keyboard-shortcuts",
           "line": 275,
-          "block": "cfa8d70ee7a069be"
+          "block": "d92cad4b4c0975d8"
         },
         {
           "label": "Plugins",
           "level": 3,
           "id": "plugins",
           "line": 281,
-          "block": "ae286ab79919d1cd"
+          "block": "45f5f77a99137d3a"
         },
         {
           "label": "Default app",
           "level": 3,
           "id": "default-app",
           "line": 291,
-          "block": "b0b88cb5b579e906"
+          "block": "fb20e039b8944af5"
         },
         {
           "label": "Troubleshooting",
           "level": 2,
           "id": "troubleshooting",
           "line": 297,
-          "block": "23bfa1f79cf8db2c"
+          "block": "9de8bbdd213cb409"
         },
         {
           "label": "The app does not start",
           "level": 3,
           "id": "the-app-does-not-start",
           "line": 301,
-          "block": "13b5dbb15f67ca9f"
+          "block": "0b628795904a1615"
         },
         {
           "label": "A file does not open",
           "level": 3,
           "id": "a-file-does-not-open",
           "line": 307,
-          "block": "e070f53d06f984a9"
+          "block": "474968922da8d419"
         },
         {
           "label": "Git is not found",
           "level": 3,
           "id": "git-is-not-found",
           "line": 313,
-          "block": "5c6ae611cadb8f8c"
+          "block": "5e12214a0a7b715b"
         },
         {
           "label": "Reference",
           "level": 2,
           "id": "reference",
           "line": 329,
-          "block": "2fc67ba9a66d4983"
+          "block": "9a25486a64ba6754"
         }
       ],
       "frontMatter": null
@@ -1739,39 +1739,39 @@
       "kind": "markdown",
       "blocks": [
         {
-          "id": "c421d8ac2e0b71dd",
+          "id": "1ddcd7ce3de4db42",
           "kind": "h1",
           "lineStart": 1,
           "lineEnd": 1,
-          "html": "<h1 data-b=\"c421d8ac2e0b71dd\" id=\"ideas\">Ideas</h1>"
+          "html": "<h1 data-b=\"1ddcd7ce3de4db42\" id=\"ideas\" dir=\"auto\">Ideas</h1>"
         },
         {
-          "id": "519b53b4e508df3d",
+          "id": "ad320af5990423a0",
           "kind": "h2",
           "lineStart": 3,
           "lineEnd": 3,
-          "html": "<h2 data-b=\"519b53b4e508df3d\" id=\"first-idea\">First idea</h2>"
+          "html": "<h2 data-b=\"ad320af5990423a0\" id=\"first-idea\" dir=\"auto\">First idea</h2>"
         },
         {
-          "id": "adab86a67eefa364",
+          "id": "ef54f70f9bdbc4aa",
           "kind": "p",
           "lineStart": 5,
           "lineEnd": 5,
-          "html": "<p data-b=\"adab86a67eefa364\">Short and sweet.</p>"
+          "html": "<p data-b=\"ef54f70f9bdbc4aa\" dir=\"auto\">Short and sweet.</p>"
         },
         {
-          "id": "b5dbfa12b47b31dc",
+          "id": "d1bb16f919adc83f",
           "kind": "h2",
           "lineStart": 7,
           "lineEnd": 7,
-          "html": "<h2 data-b=\"b5dbfa12b47b31dc\" id=\"second-idea\">Second idea</h2>"
+          "html": "<h2 data-b=\"d1bb16f919adc83f\" id=\"second-idea\" dir=\"auto\">Second idea</h2>"
         },
         {
-          "id": "b23501e81f56172e",
+          "id": "61d6f60ba337d97b",
           "kind": "ul",
           "lineStart": 9,
           "lineEnd": 10,
-          "html": "<ul data-b=\"b23501e81f56172e\">\n<li>one</li>\n<li>two</li>\n</ul>"
+          "html": "<ul data-b=\"61d6f60ba337d97b\">\n<li dir=\"auto\">one</li>\n<li dir=\"auto\">two</li>\n</ul>"
         }
       ],
       "outline": [
@@ -1780,21 +1780,21 @@
           "level": 1,
           "id": "ideas",
           "line": 1,
-          "block": "c421d8ac2e0b71dd"
+          "block": "1ddcd7ce3de4db42"
         },
         {
           "label": "First idea",
           "level": 2,
           "id": "first-idea",
           "line": 3,
-          "block": "519b53b4e508df3d"
+          "block": "ad320af5990423a0"
         },
         {
           "label": "Second idea",
           "level": 2,
           "id": "second-idea",
           "line": 7,
-          "block": "b5dbfa12b47b31dc"
+          "block": "d1bb16f919adc83f"
         }
       ],
       "frontMatter": null
@@ -1816,25 +1816,25 @@
       "kind": "markdown",
       "blocks": [
         {
-          "id": "93113f53a7490843",
+          "id": "fc515dfb4a509854",
           "kind": "h1",
           "lineStart": 6,
           "lineEnd": 6,
-          "html": "<h1 data-b=\"93113f53a7490843\" id=\"project-rules\">Project rules</h1>"
+          "html": "<h1 data-b=\"fc515dfb4a509854\" id=\"project-rules\" dir=\"auto\">Project rules</h1>"
         },
         {
-          "id": "14edcb67d7af6899",
+          "id": "6714883515427f30",
           "kind": "details",
           "lineStart": 9,
           "lineEnd": 9,
-          "html": "<details data-b=\"14edcb67d7af6899\" class=\"prompt-block\" data-tag=\"instructions\" open=\"\"><summary>instructions</summary>\n<p>Read <a class=\"at-ref\" href=\"/docs/guide.md\">@docs/guide.md</a> first. Greet <span class=\"tvar\">{{user}}</span> by name.</p>\n</details>"
+          "html": "<details data-b=\"6714883515427f30\" class=\"prompt-block\" data-tag=\"instructions\" open=\"\"><summary>instructions</summary>\n<p dir=\"auto\">Read <a class=\"at-ref\" href=\"/docs/guide.md\">@docs/guide.md</a> first. Greet <span class=\"tvar\">{{user}}</span> by name.</p>\n</details>"
         },
         {
-          "id": "1f1a29026f2c492c",
+          "id": "5d6a636a3d6ad9fb",
           "kind": "details",
           "lineStart": 13,
           "lineEnd": 14,
-          "html": "<details data-b=\"1f1a29026f2c492c\" class=\"prompt-block\" data-tag=\"example\" open=\"\"><summary>example</summary>\n<p>Input: a question about the <strong>guide</strong>.\nOutput: a short answer with a link.</p>\n</details>"
+          "html": "<details data-b=\"5d6a636a3d6ad9fb\" class=\"prompt-block\" data-tag=\"example\" open=\"\"><summary>example</summary>\n<p dir=\"auto\">Input: a question about the <strong>guide</strong>.\nOutput: a short answer with a link.</p>\n</details>"
         }
       ],
       "outline": [
@@ -1843,7 +1843,7 @@
           "level": 1,
           "id": "project-rules",
           "line": 6,
-          "block": "93113f53a7490843"
+          "block": "fc515dfb4a509854"
         }
       ],
       "frontMatter": {

@@ -235,6 +235,7 @@ export class WindowStore {
       this.tab = info.tab;
       this.#applyContext(info.context);
       this.#applySettings(info.settings);
+      language.region = info.region;
       await language.choose(parsePreference(info.settings.language));
       for (const notice of info.notices) this.#notify({ kind: "stateRecovered", notice });
       for (const failed of info.failures) {

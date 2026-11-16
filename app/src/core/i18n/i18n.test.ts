@@ -1,8 +1,10 @@
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { fill, language, t, tn } from "./index";
+import { fill, formatLocale, language, sizeText, t, tn } from "./index";
+import type { FewForms, Messages } from "./messages";
 import {
+  formatTag,
   LOCALES,
   matchLocale,
   parsePreference,
@@ -92,6 +94,53 @@ describe("tn", () => {
     expect(tn("fileOps.files", 101)).toBe("101 fișiere");
     expect(tn("fileOps.files", 120)).toBe("120 de fișiere");
   });
+
+  // Russian counts in three forms (one: 1, 21; few: 2-4, 22-24; many: 0, 5-20, 25-30): many shares `.other`
+  it("reads Russian's one, few and many forms, many from .other", async () => {
+    const before = language.tables;
+    const ru: Messages & FewForms = {
+      ...en,
+      "fileOps.files.one": "{n} файл",
+      "fileOps.files.few": "{n} файла",
+      "fileOps.files.other": "{n} файлов",
+    };
+    language.tables = { ...before, ru };
+    try {
+      await language.choose("ru", []);
+      const said = [1, 2, 5, 11, 21, 22, 25].map((n) => tn("fileOps.files", n));
+      expect(said).toEqual([
+        "1 файл",
+        "2 файла",
+        "5 файлов",
+        "11 файлов",
+        "21 файл",
+        "22 файла",
+        "25 файлов",
+      ]);
+    } finally {
+      language.tables = before;
+    }
+  });
+});
+
+describe("formatLocale", () => {
+  it("follows the region the backend reports, ahead of the web view's languages, for the interface language only", async () => {
+    try {
+      language.region = "en-IN";
+      await language.choose("en", ["en-US"]);
+      expect(formatLocale()).toBe("en-IN");
+      expect(sizeText(310e6)).toBe(
+        new Intl.NumberFormat("en-IN", { style: "unit", unit: "megabyte" }).format(310),
+      );
+      await language.choose("de", ["en-US"]);
+      expect(formatLocale()).toBe("de");
+      language.region = null;
+      await language.choose("system", ["en-GB"]);
+      expect(formatLocale()).toBe("en-GB");
+    } finally {
+      language.region = null;
+    }
+  });
 });
 
 describe("matchLocale, systemLocale, resolveLocale", () => {
@@ -100,7 +149,6 @@ describe("matchLocale, systemLocale, resolveLocale", () => {
     expect(matchLocale("pt-PT")).toBe("pt-PT");
     expect(matchLocale("es_AR")).toBe("es");
     expect(matchLocale("DE-at")).toBe("de");
-    expect(matchLocale("zh-Hant-TW")).toBe("zh-CN");
     expect(matchLocale("it-CH")).toBe("it");
     for (const tag of ["ja", "ja-JP", "ja_JP", "JA-jp"]) expect(matchLocale(tag), tag).toBe("ja");
     for (const tag of ["ko", "ko-KR", "ko_KR", "KO-kr"]) {
@@ -112,6 +160,37 @@ describe("matchLocale, systemLocale, resolveLocale", () => {
     }
     for (const tag of ["gl", "gl-ES", "GL_es"]) expect(matchLocale(tag), tag).toBe("gl");
     for (const tag of ["ro", "ro-RO", "ro_MD", "RO-ro"]) expect(matchLocale(tag), tag).toBe("ro");
+    for (const tag of ["id", "id-ID", "ID_id"]) expect(matchLocale(tag), tag).toBe("id");
+    for (const tag of ["vi", "vi-VN", "vi_VN"]) expect(matchLocale(tag), tag).toBe("vi");
+    for (const tag of ["ru", "ru-RU", "ru_UA", "RU-kz"]) expect(matchLocale(tag), tag).toBe("ru");
+    for (const tag of ["tr", "tr-TR", "tr_CY"]) expect(matchLocale(tag), tag).toBe("tr");
+  });
+
+  it("reads Chinese by script, else by region: Traditional for Taiwan, Hong Kong and Macao", () => {
+    for (const tag of [
+      "zh-TW",
+      "zh_TW",
+      "zh-HK",
+      "zh-MO",
+      "ZH-hk",
+      "zh-Hant",
+      "zh-Hant-TW",
+      "zh-Hant-CN",
+    ]) {
+      expect(matchLocale(tag), tag).toBe("zh-TW");
+    }
+    for (const tag of [
+      "zh",
+      "zh-CN",
+      "zh_CN",
+      "zh-SG",
+      "zh-Hans",
+      "zh-Hans-CN",
+      "zh-Hans-TW",
+      "zh-Hans-HK",
+    ]) {
+      expect(matchLocale(tag), tag).toBe("zh-CN");
+    }
   });
 
   it("reads Portuguese by region: Brazil (and a bare pt) or Portugal's norm", () => {
@@ -128,6 +207,18 @@ describe("matchLocale, systemLocale, resolveLocale", () => {
     expect(systemLocale(["sv-SE", "nl"])).toBe("en");
     expect(systemLocale(["sv-SE", "ja-JP", "en"])).toBe("ja");
     expect(systemLocale([])).toBe("en");
+  });
+
+  it("writes dates and numbers as the system's region does when it speaks the interface language", () => {
+    expect(formatTag("en", ["en-IN"])).toBe("en-IN");
+    expect(formatTag("en", ["pt-BR", "en_AU", "en-GB"])).toBe("en-AU");
+    expect(formatTag("zh-TW", ["zh-HK"])).toBe("zh-HK");
+    expect(formatTag("pt-BR", ["pt-PT", "pt-BR"])).toBe("pt-BR");
+    // another interface language, or a tag Intl cannot read, never counts
+    expect(formatTag("pt-BR", ["pt-PT"])).toBe("pt-BR");
+    expect(formatTag("de", ["en-GB", "fr-CH"])).toBe("de");
+    expect(formatTag("en", ["en-IN-x-", "en-GB"])).toBe("en-GB");
+    expect(formatTag("en", [])).toBe("en");
   });
 
   it("lets a chosen language win over the system's", () => {
@@ -150,6 +241,9 @@ describe("malformed input", () => {
     for (const tag of ["fra", "frr", "cat", "glg", "gla", "ron", "rom", "rum", "por", "por-PT"]) {
       expect(matchLocale(tag), JSON.stringify(tag)).toBeNull();
     }
+    for (const tag of ["ind", "in", "vie", "rus", "tur", "tu", "zht", "zho-TW"]) {
+      expect(matchLocale(tag), JSON.stringify(tag)).toBeNull();
+    }
   });
 
   it("reads any unknown stored preference as 'system'", () => {
@@ -166,6 +260,13 @@ describe("malformed input", () => {
       "KO",
       "ko-KR",
       "RO",
+      "zh-tw",
+      "ZH-TW",
+      "zh-Hant",
+      "RU",
+      "id-ID",
+      "vi-VN",
+      "tr-TR",
       "",
       " de",
       null,
@@ -377,6 +478,16 @@ describe("the es table's words", () => {
       expect(value, `es ${key}`).not.toMatch(/\bajustes\b/iu);
       expect(value, `es ${key}`).not.toMatch(usted);
     }
+  });
+});
+
+describe("the ru table's plurals", () => {
+  it("gives every counted string its few form (2-4, 22-24)", async () => {
+    const result = await loadTable("ru");
+    if (result.status !== "loaded") throw new Error(`ru: ${result.status}`);
+    const table: Record<string, string> = result.table;
+    const missing = [...FEW.keys()].filter((key) => !(key in table));
+    expect(missing).toEqual([]);
   });
 });
 

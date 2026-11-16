@@ -4,7 +4,9 @@
 
 mod characters;
 mod installer;
+mod language;
 mod project;
+mod region;
 
 use std::collections::BTreeMap;
 use std::io;
@@ -21,6 +23,7 @@ pub use installer::installer_language;
 pub use project::{
     ProjectConfig, ProjectConfigFile, ProjectSettingChange, ProjectSettings, TreeConfig, TreeShow,
 };
+pub use region::system_region;
 
 use crate::error::IpcError;
 use crate::fileops::{check_name, NameProblem};
@@ -72,10 +75,11 @@ macro_rules! choice {
 }
 
 choice!(
-    /// Interface language: the system's, or one of the thirteen.
+    /// Interface language: the system's, or one of the app's (`LOCALES` in `app/src/core/i18n/locales.ts`).
     LanguagePref {
         System = "system", En = "en", PtBr = "pt-BR", Es = "es", De = "de", ZhCn = "zh-CN", It = "it",
-        Ja = "ja", Ko = "ko", Fr = "fr", PtPt = "pt-PT", Ca = "ca", Gl = "gl", Ro = "ro",
+        Ja = "ja", Ko = "ko", Fr = "fr", PtPt = "pt-PT", Ca = "ca", Gl = "gl", Ro = "ro", ZhTw = "zh-TW",
+        Id = "id", Vi = "vi", Ru = "ru", Tr = "tr",
     } default System
 );
 choice!(ThemePref { System = "system", Light = "light", Dark = "dark" } default System);

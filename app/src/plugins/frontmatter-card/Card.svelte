@@ -1,14 +1,14 @@
 <script lang="ts">
   // The properties card: front matter as rows of keys and values. Lists are chips, dates are written for the
   // reader. Text the plugin could not read as properties shows as it is.
-  import { language, t } from "../../core/i18n";
+  import { formatLocale, t } from "../../core/i18n";
   import { readerDate } from "../../core/time";
   import type { FrontMatterProps } from "../../core/plugins/props";
 
   let { fields, raw, syntax }: FrontMatterProps = $props();
 
   /** A plain date in the reader's language; anything else as written. */
-  const show = (text: string): string => readerDate(text, language.locale);
+  const show = (text: string): string => readerDate(text, formatLocale());
 </script>
 
 <section class="card" aria-label={t("doc.frontmatter")}>

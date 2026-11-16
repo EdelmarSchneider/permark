@@ -2,7 +2,7 @@
 // screen only (a figure made for other text is not shown).
 
 import { documents } from "../../core/doc/document.svelte";
-import { language, t } from "../../core/i18n";
+import { formatLocale, t } from "../../core/i18n";
 import type { OutlineCell } from "../../core/plugins/registry.svelte";
 import { tokens } from "./store.svelte";
 import type { TokenizerId } from "./tokenizers";
@@ -49,7 +49,7 @@ class SectionFigures {
   cell(index: number): OutlineCell | null {
     const value = this.#current()?.counts[index];
     if (value === undefined) return null;
-    return { text: new Intl.NumberFormat(language.locale).format(value) };
+    return { text: new Intl.NumberFormat(formatLocale()).format(value) };
   }
 }
 

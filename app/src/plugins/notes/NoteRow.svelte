@@ -7,7 +7,7 @@
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import Share2 from "@lucide/svelte/icons/share-2";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
-  import { t } from "../../core/i18n";
+  import { formatLocale, t } from "../../core/i18n";
   import type { NoteEntry } from "../../api";
   import { marksOf, shortFolder, shownName, timeLabel } from "./model";
   import type { NotesStore } from "./store.svelte";
@@ -165,7 +165,7 @@
         <span class="time"
           >{entry.state === "gone"
             ? t("notes.file.notFound")
-            : timeLabel(entry.modifiedMs, now)}</span
+            : timeLabel(entry.modifiedMs, now, formatLocale())}</span
         >
       </span>
       {#if entry.kind === "file"}

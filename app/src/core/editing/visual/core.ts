@@ -27,11 +27,13 @@ import {
   codeBlockKeymap,
   codeBlockSchema,
   commonmark,
+  headingAttr,
   headingKeymap,
   inlineCodeKeymap,
   linkSchema,
   listItemSchema,
   orderedListKeymap,
+  paragraphAttr,
   paragraphKeymap,
   remarkPreserveEmptyLinePlugin,
   syncHeadingIdPlugin,
@@ -337,6 +339,10 @@ export async function createCore(options: CoreOptions): Promise<Core> {
       }));
       // text typed at the edge of a link stays out of it
       ctx.update(linkSchema.key, (previous) => (c) => ({ ...previous(c), inclusive: false }));
+      // each text block reads its own direction (an Arabic | Hebrew paragraph runs right to left), as in View; a table
+      // cell holds a paragraph here. Lists and quotes follow their first block by style (`markdown.css`).
+      ctx.set(paragraphAttr.key, () => ({ dir: "auto" }));
+      ctx.set(headingAttr.key, () => ({ dir: "auto" }));
       if (options.locked) ctx.set(lockedHostCtx.key, options.locked);
       if (options.code) ctx.set(codeHostCtx.key, options.code);
       if (options.looks) ctx.set(looksHostCtx.key, options.looks);

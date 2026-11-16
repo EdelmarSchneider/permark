@@ -6,7 +6,7 @@ import type { DownloadError } from "../../api/generated/DownloadError";
 import type { EngineNeed } from "../../api/generated/EngineNeed";
 import type { ModelFit } from "../../api/generated/ModelFit";
 import { apiErrorText } from "../../core/errors";
-import { language, sizeText, t, tn, type MessageKey } from "../../core/i18n";
+import { formatLocale, language, sizeText, t, tn, type MessageKey } from "../../core/i18n";
 import type { AiTask, ModelCapability } from "./tasks";
 
 /** Languages named before "and N more". */
@@ -124,7 +124,7 @@ export function languagesText(codes: readonly string[]): string {
 /** A memory size: "6 GB", "128 MB" (binary units with the familiar names, as systems show memory: 16 GiB -> 16 GB). */
 export function memoryText(bytes: number): string {
   const giga = bytes >= 2 ** 30;
-  return new Intl.NumberFormat(language.locale, {
+  return new Intl.NumberFormat(formatLocale(), {
     style: "unit",
     unit: giga ? "gigabyte" : "megabyte",
     maximumFractionDigits: giga ? 1 : 0,
@@ -134,7 +134,7 @@ export function memoryText(bytes: number): string {
 /** A share of a download: "42%" (rounded down: 100% only when it is all there). */
 export function percentText(done: number, total: number): string {
   const share = total > 0 ? Math.floor((Math.min(done, total) / total) * 100) / 100 : 0;
-  return new Intl.NumberFormat(language.locale, { style: "percent" }).format(share);
+  return new Intl.NumberFormat(formatLocale(), { style: "percent" }).format(share);
 }
 
 /** Why a download stopped, in words. */
@@ -263,7 +263,7 @@ export function runErrorText(error: ApiError, noModel: MessageKey): string {
 
 /** A short duration: "0.6 seconds", "1.8 seconds" (one decimal, the current language's unit words). */
 export function secondsText(ms: number): string {
-  return new Intl.NumberFormat(language.locale, {
+  return new Intl.NumberFormat(formatLocale(), {
     style: "unit",
     unit: "second",
     unitDisplay: "long",
@@ -274,7 +274,7 @@ export function secondsText(ms: number): string {
 
 /** How fast a model writes: "8.6 tokens a second". */
 export function speedText(tokensPerSecond: number): string {
-  const speed = new Intl.NumberFormat(language.locale, {
+  const speed = new Intl.NumberFormat(formatLocale(), {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   }).format(tokensPerSecond);

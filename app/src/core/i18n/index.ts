@@ -48,10 +48,19 @@ export function t(key: MessageKey, params?: Params): string {
   return fill(language.table[key], params);
 }
 
+/**
+ * Tag for `Intl` date | number formats and `toLocale*String`: the interface language, written as the system's region
+ * writes it when that region speaks the same language (`en-IN` under English). Words, plurals, lists and sorting keep
+ * `language.locale`.
+ */
+export function formatLocale(): string {
+  return language.formats;
+}
+
 /** A download | disk size: "310 MB", "3.4 GB" (decimal units, as stores and disks show them). */
 export function sizeText(bytes: number): string {
   const giga = bytes >= 1e9;
-  return new Intl.NumberFormat(language.locale, {
+  return new Intl.NumberFormat(formatLocale(), {
     style: "unit",
     unit: giga ? "gigabyte" : "megabyte",
     maximumFractionDigits: giga ? 1 : 0,

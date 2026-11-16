@@ -10,7 +10,7 @@
   import { isComposition } from "../../core/commands/combo";
   import { documents } from "../../core/doc/document.svelte";
   import { editing } from "../../core/editing/session.svelte";
-  import { language, t } from "../../core/i18n";
+  import { formatLocale, language, t } from "../../core/i18n";
   import { joinNames } from "../../core/projects/model";
   import { dialogFocus } from "../../core/shell/dialogFocus";
   import { exactTime, relativeTime } from "../../core/time";
@@ -205,11 +205,11 @@
               }}
             >
               <span class="line">
-                <span class="when">{relativeTime(row.atMs, now, language.locale)}</span>
+                <span class="when">{relativeTime(row.atMs, now, formatLocale())}</span>
                 <span class="subject" dir="auto" title={row.subject}>{row.subject}</span>
               </span>
               <span class="facts">
-                <span class="exact">{exactTime(row.atMs, language.locale)}</span>
+                <span class="exact">{exactTime(row.atMs, formatLocale())}</span>
                 <span class="who">{who(row)}</span>
                 {#if row.same}<span class="same">{t("review.versions.same")}</span>{/if}
               </span>

@@ -10,7 +10,7 @@ import { documents } from "../../core/doc/document.svelte";
 import type { EnhanceEnv } from "../../core/doc/enhance";
 import { editing } from "../../core/editing/session.svelte";
 import { apiErrorText } from "../../core/errors";
-import { t, tn, type MessageKey } from "../../core/i18n";
+import { language, t, tn, type MessageKey } from "../../core/i18n";
 import { pluginClient, type PluginClient } from "../../core/plugins/client";
 import { windowStore, type NoticeAction, type NoticeGone } from "../../core/window.svelte";
 import type { ExportOptions, ExportOutcome, ExportWords } from "./builder";
@@ -366,6 +366,7 @@ export const exporter = new ExportStore({
   notices: windowStore,
   unsaved: (path) => editing.path === path && editing.unsaved,
   env: () => documents.enhanceEnv,
-  region: () => navigator.language,
+  // the system's format region names where the person is even when the display language does not (Windows)
+  region: () => language.region ?? navigator.language,
   progressAfterMs: 1000,
 });
