@@ -396,4 +396,34 @@ describe("a JSON Lines file", () => {
     expect(summary()).toBe('a\n"b');
     expect(button().getAttribute("aria-pressed")).toBe("true");
   });
+  it("opens small records fully and expands | collapses every drawn record from the bar", () => {
+    show(viewOf('{"a":{"b":[1,2]}}\n{"c":{"d":{}}}\n'));
+    const spread = (name: string): HTMLButtonElement | null =>
+      [...target.querySelectorAll<HTMLButtonElement>("button")].find(
+        (item) => item.textContent?.trim() === name,
+      ) ?? null;
+    const heads = (): string[] =>
+      [...target.querySelectorAll(".record .head[aria-expanded]")].map(
+        (el) => el.getAttribute("aria-expanded") ?? "",
+      );
+    expect(heads()).toEqual(["true", "true", "true", "true", "true"]);
+
+    spread("Collapse all")?.click();
+    flushSync();
+    expect(heads()).toEqual(["true", "false", "true", "false"]);
+
+    target.querySelectorAll<HTMLButtonElement>(".record .head[aria-expanded]")[1]?.click();
+    flushSync();
+    expect(heads()).toEqual(["true", "true", "false", "true", "false"]);
+
+    spread("Expand all")?.click();
+    flushSync();
+    expect(heads()).toEqual(["true", "true", "true", "true", "true"]);
+
+    choose("Source");
+    expect(spread("Expand all")).toBeNull();
+    expect(spread("Collapse all")).toBeNull();
+    choose("Tree");
+    expect(spread("Expand all")).not.toBeNull();
+  });
 });

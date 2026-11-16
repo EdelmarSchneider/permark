@@ -433,6 +433,8 @@ export default {
   "structured.tree": "Дерево",
   "structured.source": "Исходный текст",
   "structured.invalid": "Содержимое недопустимо, поэтому показано как текст.",
+  "structured.expandAll": "Развернуть все",
+  "structured.collapseAll": "Свернуть все",
   "jsonl.empty": "В этом файле нет записей.",
   "jsonl.invalid": "Строка {line} не является одним значением JSON (остановка на символе {at}).",
   "jsonl.jump": "Перейти к записи",
