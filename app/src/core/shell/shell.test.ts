@@ -116,6 +116,7 @@ afterEach(async () => {
     "token-count",
     "updates",
     "shell-integration",
+    "spelling",
   ]) {
     await store.changeSetting({ key: "pluginEnabled", value: { plugin: id, enabled: null } });
   }
@@ -282,7 +283,7 @@ describe("the settings page", () => {
     );
     expect(target.textContent).toContain("Opens with PerMark");
     // plugins off: their sections go, the default app stays
-    for (const id of ["git", "notes", "token-count", "updates", "shell-integration"]) {
+    for (const id of ["git", "notes", "token-count", "updates", "shell-integration", "spelling"]) {
       await store.changeSetting({ key: "pluginEnabled", value: { plugin: id, enabled: false } });
     }
     await until(
