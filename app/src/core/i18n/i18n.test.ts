@@ -446,6 +446,11 @@ describe.each(LOCALES)("the %s table's typography", (locale) => {
     expect(words["header.forwardHint"]).toContain("Alt+→");
   });
 
+  it("names the keys that move in a list with arrows", async () => {
+    const words = await table();
+    expect(words["finder.footMove"]).toMatch(/^↑\/↓ /);
+  });
+
   // `[...]` and `{...}` are code (YAML flow style), not an ellipsis
   it("writes an ellipsis as one character", async () => {
     const words = await table();

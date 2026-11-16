@@ -762,7 +762,7 @@ export default {
   "finder.group.files": "Файлы",
   "finder.group.sections": "Разделы",
   "finder.group.commands": "Команды",
-  "finder.footMove": "Up/Down — перемещение",
+  "finder.footMove": "↑/↓ — перемещение",
   "finder.footOpen": "Enter — открыть",
   "finder.footClose": "Esc — закрыть",
   "finder.footScope": "Tab — область",

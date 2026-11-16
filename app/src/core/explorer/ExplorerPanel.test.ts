@@ -84,6 +84,12 @@ function key(root: HTMLElement, name: string, init: KeyboardEventInit = {}): Key
   return event;
 }
 
+/** After the next animation frame, with what it changed drawn. */
+async function nextFrame(): Promise<void> {
+  await new Promise((done) => requestAnimationFrame(done));
+  flushSync();
+}
+
 function pointer(target: EventTarget, type: string, x: number, y: number): void {
   const init = { clientX: x, clientY: y, button: 0, bubbles: true, cancelable: true };
   target.dispatchEvent(
@@ -243,8 +249,11 @@ describe("the list", () => {
         for (const observer of observers) observer();
         flushSync();
       };
-      // 244 px for a label 81 px long: three buttons fit beside it, the filter and the menu button
+      // 244 px for a label 81 px long: three buttons fit beside it, the filter and the menu button; the header changes
+      // in the next frame, not inside the observer's call (a resize there would loop)
       size(244, 81);
+      expect(names()).toEqual(all);
+      await nextFrame();
       expect(names()).toEqual([...all.slice(0, 3), all[5], "More actions"]);
       const more = bar.querySelector<HTMLElement>('button[aria-label="More actions"]');
       expect(more?.title).toBe("More actions");
@@ -259,13 +268,23 @@ describe("the list", () => {
       expect(items()).toHaveLength(2);
       expect(items()[0]).toBe(all[3]);
       expect(items()[1]?.startsWith("Refresh")).toBe(true);
-      // an action run from the menu does what its button does
-      const asked = vi.spyOn(api, "treeRefresh");
+      // an action run from the menu does what its button does; while Refresh works from there, the menu button shows it
+      // (the real backend answers at once and tells the list after its walk)
+      const asked = vi.spyOn(api, "treeRefresh").mockResolvedValue({ ok: true, value: null });
       Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))[1]?.click();
       await vi.waitFor(() => expect(asked).toHaveBeenCalledOnce());
       expect(document.querySelector('[role="menu"]')).toBeNull();
+      await tick();
+      expect(more?.getAttribute("aria-busy")).toBe("true");
+      expect(more?.classList.contains("is-busy")).toBe(true);
+      asked.mockRestore();
+      await api.treeRefresh();
+      await tick();
+      expect(more?.getAttribute("aria-busy")).toBe("false");
+      expect(more?.classList.contains("is-busy")).toBe(false);
       // room again: every button is back and the menu button goes
       size(300, 81);
+      await nextFrame();
       expect(names()).toEqual(all);
     } finally {
       vi.unstubAllGlobals();

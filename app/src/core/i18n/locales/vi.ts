@@ -734,7 +734,7 @@ export default {
   "finder.group.files": "Tệp",
   "finder.group.sections": "Mục",
   "finder.group.commands": "Lệnh",
-  "finder.footMove": "Lên/Xuống để di chuyển",
+  "finder.footMove": "↑/↓ để di chuyển",
   "finder.footOpen": "Enter để mở",
   "finder.footClose": "Esc để đóng",
   "finder.footScope": "Tab để đổi phạm vi",

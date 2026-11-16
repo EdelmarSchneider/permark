@@ -31,6 +31,12 @@ const tabs = (root: HTMLElement): HTMLButtonElement[] => [
   ...root.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
 ];
 
+/** After the next animation frame, with what it changed drawn. */
+const nextFrame = async (): Promise<void> => {
+  await new Promise((done) => requestAnimationFrame(done));
+  flushSync();
+};
+
 const key = (root: HTMLElement, init: KeyboardEventInit): void => {
   root
     .querySelector('[role="tablist"]')
@@ -322,6 +328,9 @@ describe("a strip too narrow for its labels", () => {
         flushSync();
       };
       size(244);
+      // the strip changes in the next frame, not inside the observer's call (a resize there would loop)
+      expect(drawn()).toEqual(["v0", "v1", "v2", "v3", "v4", "v5"]);
+      await nextFrame();
       expect(drawn()).toEqual(["v0", "v2"]);
       const button = more();
       expect(button?.title).toBe("Sidebar views");
@@ -329,18 +338,27 @@ describe("a strip too narrow for its labels", () => {
       // the arrows go over the tabs drawn
       key(target, { key: "ArrowRight" });
       expect(document.activeElement).toBe(tabs(target)[0]);
-      // the menu lists every view of the strip, the one shown marked, a count beside its view
+      // the menu lists every view of the strip, the one shown checked (a state, not a word read aloud), a count beside
+      // its view
       button?.click();
       flushSync();
       expect(button?.getAttribute("aria-expanded")).toBe("true");
-      const items = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+      const items = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
       expect(items.map((item) => item.textContent?.trim())).toEqual([
         "Files",
         "Search",
-        "✓ Broken links",
+        "Broken links",
         "Comments",
         "Tags",
         "Unread (1)",
+      ]);
+      expect(items.map((item) => item.getAttribute("aria-checked"))).toEqual([
+        "false",
+        "false",
+        "true",
+        "false",
+        "false",
+        "false",
       ]);
       items[4]?.click();
       flushSync();
@@ -348,6 +366,7 @@ describe("a strip too narrow for its labels", () => {
       expect(document.querySelector('[role="menu"]')).toBeNull();
       // room again: every tab is back and the menu button goes
       size(400);
+      await nextFrame();
       expect(drawn()).toEqual(["v0", "v1", "v2", "v3", "v4", "v5"]);
       expect(more()).toBeNull();
     } finally {

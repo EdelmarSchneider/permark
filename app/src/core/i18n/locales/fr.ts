@@ -747,7 +747,7 @@ export default {
   "finder.group.files": "Fichiers",
   "finder.group.sections": "Sections",
   "finder.group.commands": "Commandes",
-  "finder.footMove": "Haut/Bas pour se déplacer",
+  "finder.footMove": "↑/↓ pour se déplacer",
   "finder.footOpen": "Entrée pour ouvrir",
   "finder.footClose": "Échap pour fermer",
   "finder.footScope": "Tab pour changer de portée",

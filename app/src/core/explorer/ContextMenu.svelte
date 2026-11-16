@@ -1,6 +1,7 @@
 <script lang="ts">
   // A small context menu at the pointer: arrows | Home | End move the focus over the items (a disabled item is reached
   // and announced, it does nothing), Enter runs, Escape | click outside closes. Entries are data.
+  import Check from "@lucide/svelte/icons/check";
   import { untrack } from "svelte";
   import { t } from "../i18n";
   import type { MenuEntry } from "./menu";
@@ -121,9 +122,10 @@
     {:else}
       <button
         type="button"
-        role="menuitem"
+        role={entry.checked === undefined ? "menuitem" : "menuitemradio"}
         data-at={at}
         tabindex={active === at ? 0 : -1}
+        aria-checked={entry.checked}
         aria-haspopup={entry.opens === true ? "menu" : undefined}
         aria-disabled={entry.disabled === true ? "true" : undefined}
         class={[
@@ -139,6 +141,13 @@
           <span class="two" title={entry.detail}>
             <span class="label">{entry.label}</span>
             <span class="detail">{entry.detail}</span>
+          </span>
+        {:else if entry.checked !== undefined}
+          <span class="choice">
+            <span class="check" aria-hidden="true"
+              >{#if entry.checked}<Check size={14} />{/if}</span
+            >
+            <span>{entry.label}</span>
           </span>
         {:else}
           <span>{entry.label}</span>
@@ -215,6 +224,19 @@
   }
   .heading {
     padding-top: var(--sp-2);
+  }
+  /* a choice: the mark's room is kept when unchecked, so the labels of the set line up */
+  .choice {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .check {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    width: 14px;
   }
   .sep {
     height: 1px;

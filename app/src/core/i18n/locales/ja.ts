@@ -736,7 +736,7 @@ export default {
   "finder.group.files": "ファイル",
   "finder.group.sections": "セクション",
   "finder.group.commands": "コマンド",
-  "finder.footMove": "Up/Down で移動",
+  "finder.footMove": "↑/↓ で移動",
   "finder.footOpen": "Enter で開く",
   "finder.footClose": "Esc で閉じる",
   "finder.footScope": "Tab で範囲を切り替え",

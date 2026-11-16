@@ -1,6 +1,6 @@
 // Türkçe. Buttons and menus as the bare imperative ("Kaydet", "Klasör aç"); messages impersonal, mostly passive
 // ("kaydedilemedi"); hints with the polite "siz" imperative ("seçin", "tıklayın"), as Windows does. Keys as printed on
-// keyboards (Ctrl, Shift, Alt, Enter, Esc, Tab; arrows "Sol Ok"/"Sağ Ok"); percent sign first ("%100").
+// keyboards (Ctrl, Shift, Alt, Enter, Esc, Tab; arrow keys as ←, →, ↑, ↓); percent sign first ("%100").
 // No suffix glued to a {placeholder}: "{name} adlı dosya", "{folder} klasörü", "Silindi: {what}"; foreign words take an
 // apostrophe ("PerMark'ı", "commit'ler"). Git terms (commit, branch, merge, rebase, worktree, HEAD) and front matter stay
 // in English. Glossary: project proje | folder klasör | file dosya | document belge | view / reading view görünüm, Okuma
@@ -737,7 +737,7 @@ export default {
   "finder.group.files": "Dosyalar",
   "finder.group.sections": "Bölümler",
   "finder.group.commands": "Komutlar",
-  "finder.footMove": "Yukarı/Aşağı gezin",
+  "finder.footMove": "↑/↓ gezin",
   "finder.footOpen": "Enter aç",
   "finder.footClose": "Esc kapat",
   "finder.footScope": "Tab kapsam",

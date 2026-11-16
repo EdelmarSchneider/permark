@@ -150,7 +150,8 @@
   );
 
   // the header's width and its label's whole width (the language changes it) decide which buttons stay in the header
-  // (observer torn down with the panel; none = every button, as in tests)
+  // (observer torn down with the panel; none = every button, as in tests). A resize is measured in the next frame:
+  // buttons drawn again inside the observer's call would resize what it watches there ("ResizeObserver loop").
   $effect(() => {
     void explorerName;
     if (!header || !heading || typeof ResizeObserver === "undefined") return;
@@ -161,10 +162,17 @@
       headingWidth = text.scrollWidth;
     };
     measure();
-    const observer = new ResizeObserver(measure);
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    });
     observer.observe(box);
     observer.observe(text);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
   });
 
   /** The header's buttons as menu entries, in their order (the "…" menu lists those that moved). */
@@ -802,16 +810,18 @@
       <ListFilter size={15} />
     </button>
     {#if toolsShown < TOOLS}
+      <!-- Refresh (the last button) is the first to move in here: while it works, this button shows it in its place -->
       <button
         type="button"
-        class={["icon", menu?.anchor !== undefined && "is-on"]}
+        class={["icon", menu?.anchor !== undefined && "is-on", refreshing && "is-busy"]}
         title={t("header.more")}
         aria-label={t("header.more")}
         aria-haspopup="menu"
         aria-expanded={menu?.anchor !== undefined}
+        aria-busy={refreshing}
         onclick={moreMenu}
       >
-        <Ellipsis size={15} />
+        {#if refreshing}<RefreshCw size={15} />{:else}<Ellipsis size={15} />{/if}
       </button>
     {/if}
   </div>

@@ -715,7 +715,7 @@ const en = {
   "finder.group.files": "Files",
   "finder.group.sections": "Sections",
   "finder.group.commands": "Commands",
-  "finder.footMove": "Up/Down move",
+  "finder.footMove": "↑/↓ move",
   "finder.footOpen": "Enter open",
   "finder.footClose": "Esc close",
   "finder.footScope": "Tab scope",

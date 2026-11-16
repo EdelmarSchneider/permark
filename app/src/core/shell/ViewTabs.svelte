@@ -91,7 +91,8 @@
   let list = $state.raw<{ x: number; y: number; anchor: HTMLElement } | null>(null);
 
   // the strip's width and the selected tab's whole width (its label, the language, a count change it) decide which
-  // tabs it draws (observer torn down with the strip; none = every tab, as in tests)
+  // tabs it draws (observer torn down with the strip; none = every tab, as in tests). A resize is measured in the next
+  // frame: tabs drawn again inside the observer's call would resize what it watches there ("ResizeObserver loop").
   $effect(() => {
     const id = selected;
     void shown?.label;
@@ -116,19 +117,27 @@
           : 0;
     };
     measure();
-    const observer = new ResizeObserver(measure);
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    });
     observer.observe(box);
     const tab = tabOf(id);
     if (tab) observer.observe(tab);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
   });
 
-  /** The views menu: every view of the strip, the one shown marked; picking one shows it and its tab takes the
+  /** The views menu: every view of the strip, the one shown checked; picking one shows it and its tab takes the
    *  keyboard. */
   function viewEntries(): MenuEntry[] {
     return views.map((view) => ({
       kind: "item",
-      label: `${view.id === selected ? "✓ " : ""}${view.label}${view.badge === null ? "" : ` (${view.badge})`}`,
+      label: `${view.label}${view.badge === null ? "" : ` (${view.badge})`}`,
+      checked: view.id === selected,
       run: () => {
         if (view.id !== selected) onselect(view.id);
         void tick().then(() => tabOf(view.id)?.focus());

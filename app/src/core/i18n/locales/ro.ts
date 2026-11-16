@@ -758,7 +758,7 @@ export default {
   "finder.group.files": "Fișiere",
   "finder.group.sections": "Secțiuni",
   "finder.group.commands": "Comenzi",
-  "finder.footMove": "Sus/Jos navighează",
+  "finder.footMove": "↑/↓ navighează",
   "finder.footOpen": "Enter deschide",
   "finder.footClose": "Esc închide",
   "finder.footScope": "Tab schimbă domeniul",
