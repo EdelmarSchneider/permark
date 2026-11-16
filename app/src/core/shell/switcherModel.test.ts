@@ -114,11 +114,23 @@ describe("a long name cut in the middle", () => {
     expect(splitName(".gitignore-of-the-project", true).tail).toBe("roject");
   });
 
+  it("never cuts next to a space: each part is laid out alone, where a space at its edge would vanish", () => {
+    expect(splitName("Tidewell Field Notes", false)).toEqual({
+      head: "Tidewell Fiel",
+      tail: "d Notes",
+    });
+    expect(splitName("field journal 2026.md", true)).toEqual({
+      head: "field journa",
+      tail: "l 2026.md",
+    });
+  });
+
   it("never splits a character: accents, CJK, emoji", () => {
     const name = "Projeto ação 日本 🙂🙂 relatório final";
     const { head, tail } = splitName(name, false);
     expect(head + tail).toBe(name);
-    expect(Array.from(tail)).toHaveLength(6);
+    // six letters, one more to keep the space off the cut
+    expect(tail).toBe("o final");
     const emoji = splitName("🙂".repeat(20) + ".md", true);
     expect(emoji.head + emoji.tail).toBe("🙂".repeat(20) + ".md");
     expect(emoji.tail).toBe("🙂".repeat(4) + ".md");

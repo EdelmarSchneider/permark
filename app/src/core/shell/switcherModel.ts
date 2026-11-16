@@ -92,14 +92,17 @@ export function hueOf(workspace: Pick<TabSummary, "kind" | "path">): Hue {
 
 /**
  * A name cut for truncation in the middle: `head` shrinks with an ellipsis, `tail` always shows. A file keeps its
- * extension and a few letters before it in the tail; anything else its last letters. Short names have no tail.
+ * extension and a few letters before it in the tail; anything else its last letters. Short names have no tail. The cut
+ * never touches white space: each part is laid out alone, and white space at its edge would collapse away.
  */
 export function splitName(name: string, isFile: boolean): { head: string; tail: string } {
   const chars = Array.from(name);
   if (chars.length <= 14) return { head: name, tail: "" };
   const dot = isFile ? name.lastIndexOf(".") : -1;
   const ext = dot > 0 && name.length - dot <= 8 ? Array.from(name.slice(dot)).length : 0;
-  const keep = ext > 0 ? Math.min(ext + 4, chars.length - 6) : 6;
+  let keep = ext > 0 ? Math.min(ext + 4, chars.length - 6) : 6;
+  const space = (at: number): boolean => /\s/u.test(chars.at(at) ?? "");
+  while (keep < chars.length - 1 && (space(-keep) || space(-keep - 1))) keep += 1;
   return { head: chars.slice(0, -keep).join(""), tail: chars.slice(-keep).join("") };
 }
 
