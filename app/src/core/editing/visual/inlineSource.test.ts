@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { undo } from "@milkdown/kit/prose/history";
 import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import type { Segment } from "../../../api/generated/Segment";
+import { enhanceBlock } from "../../doc/enhance";
 import { classify } from "./classify";
 import { buildDoc, compose, type Built } from "./compose";
 import { createCore, INLINE_SOURCE, LOCKED, relook, type Core, type LockedHost } from "./core";
@@ -16,6 +17,8 @@ const followed: string[] = [];
 /** View's elements for HTML pieces by source (what a render of the document gave) and the renders asked for. */
 const viewHtml = new Map<string, string>();
 let renders = 0;
+/** View's block hook (a test may put View's real one in). */
+let enhance = (element: HTMLElement): HTMLElement => element;
 
 const host: LockedHost = {
   render: () => null,
@@ -25,7 +28,7 @@ const host: LockedHost = {
   },
   inline: (source) => viewHtml.get(source) ?? null,
   blocks: {
-    enhance: (element) => element,
+    enhance: (element) => enhance(element),
     near: (element) => {
       neared.push(element);
       return () => void undone.push(element);
@@ -664,6 +667,30 @@ describe("HTML written in a line", () => {
     viewHtml.set("<kbd>G</kbd>", "<kbd>G</kbd>");
     relook(core.view);
     expect(atoms()[1]?.querySelector("kbd")?.textContent).toBe("G");
+  });
+
+  it("a player or picture written in a line takes View's addresses: the project file, never a web picture", async () => {
+    const player = '<audio controls src="a.wav"></audio>';
+    const picture = '<img src="https://example.com/a.png" alt="far" />';
+    viewHtml.set(
+      player,
+      '<audio controls="" src="pm-asset:docs/a.wav" preload="metadata"></audio>',
+    );
+    viewHtml.set(picture, '<img src="https://example.com/a.png" alt="far">');
+    enhance = (element) => enhanceBlock(element, { assetUrl: (path) => `asset://w/${path}` });
+    try {
+      await load(`Listen ${player} and look ${picture} now.\n`);
+      const [sound, seen] = atoms();
+      expect(sound?.querySelector("audio")?.getAttribute("src")).toBe("asset://w/docs/a.wav");
+      expect(seen?.querySelector("img")).toBeNull();
+      const chip = seen?.querySelector(".remote-image");
+      expect(chip?.textContent).toBe("far");
+      expect(chip?.hasAttribute("data-url")).toBe(false);
+      expect(core.view.dom.innerHTML).not.toContain("pm-asset:");
+      expect(core.view.dom.innerHTML).not.toContain('src="https:');
+    } finally {
+      enhance = (element) => element;
+    }
   });
 
   it("a click opens its source; what is typed goes in as written, drawn from View's look of it", async () => {

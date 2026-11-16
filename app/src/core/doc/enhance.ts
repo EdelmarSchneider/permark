@@ -85,7 +85,8 @@ const SELECTOR =
   "pre, table, h1, h2, h3, h4, h5, h6, .markdown-alert-title, a.footnote-backref, li > input[type=checkbox], img, video, audio, source";
 
 const PREFIX = "pm-asset:";
-const REMOTE = /^(?:https?:)?\/\//i;
+/** An address on the web: what View never fetches by itself. */
+export const WEB_ADDRESS = /^(?:https?:)?\/\//i;
 
 /** The path inside a `pm-asset:` URL (decoded), or null for any other URL. */
 export function assetPathOf(url: string): string | null {
@@ -131,15 +132,26 @@ function isImageOnly(paragraph: HTMLElement): boolean {
   return images > 0;
 }
 
-function remoteChip(source: Element, url: string): HTMLElement {
-  const alt = source.getAttribute("alt") ?? "";
+/**
+ * The stand-in for the web picture at `url`, its address as its tooltip. View's chips also carry `data-url` and say how
+ * to load them (a click | the project's choice fetch them and put the picture in the chip's place); Edit's go without:
+ * the editor owns their place.
+ */
+export function remoteChip(alt: string, url: string): HTMLElement {
   const chip = document.createElement("span");
   chip.className = "remote-image";
   chip.setAttribute("role", "img");
-  chip.setAttribute("data-url", url);
   chip.setAttribute("aria-label", alt);
-  chip.title = t("doc.remoteImage", { url });
+  chip.title = url;
   chip.textContent = alt === "" ? t("doc.remoteImageNoAlt") : alt;
+  return chip;
+}
+
+/** View's chip: loads on a click. */
+function loadableChip(alt: string, url: string): HTMLElement {
+  const chip = remoteChip(alt, url);
+  chip.setAttribute("data-url", url);
+  chip.title = t("doc.remoteImage", { url });
   return chip;
 }
 
@@ -205,9 +217,9 @@ function enhanceOne(element: HTMLElement, env: EnhanceEnv): HTMLElement {
         element.setAttribute("src", env.assetUrl(path));
         element.setAttribute("loading", "lazy");
         element.setAttribute("decoding", "async");
-      } else if (REMOTE.test(src)) {
+      } else if (WEB_ADDRESS.test(src)) {
         // pictures on the web are not fetched (offline by design); a chip says what was there
-        const chip = remoteChip(element, src);
+        const chip = loadableChip(element.getAttribute("alt") ?? "", src);
         element.replaceWith(chip);
         result = element === result ? chip : result;
       }
@@ -221,7 +233,7 @@ function enhanceOne(element: HTMLElement, env: EnhanceEnv): HTMLElement {
         if (value === null) continue;
         const path = assetPathOf(value);
         if (path !== null) element.setAttribute(attr, env.assetUrl(path));
-        else if (REMOTE.test(value)) element.removeAttribute(attr);
+        else if (WEB_ADDRESS.test(value)) element.removeAttribute(attr);
       }
       break;
     }
