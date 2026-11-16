@@ -310,6 +310,19 @@ describe("the settings page", () => {
     expect(target.querySelector("h3.title")?.textContent).toBe("Reading");
   });
 
+  it("the section shown is scrolled into view in the section list (a row of tabs when narrow)", async () => {
+    await open();
+    const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+    mountPage("reading");
+    ui.showSettingsSection("pluginsHere");
+    await tick();
+    const current = target.querySelector('[aria-current="page"]');
+    expect(current?.textContent?.trim()).toBe("Plugins here");
+    expect(scrolled.mock.contexts.at(-1)).toBe(current);
+    expect(scrolled.mock.calls.at(-1)?.[0]).toEqual({ block: "nearest", inline: "nearest" });
+    scrolled.mockRestore();
+  });
+
   it("the group names show only while there are two groups (no folder: no App label)", async () => {
     await open();
     mountPage("reading");
@@ -581,7 +594,7 @@ describe("plugins here", () => {
       ["Same as the app", false],
       ["On here", false],
       ["Off here (only you)", false],
-      ["Off for everyone", true],
+      ["Off for everyone (Initialize PerMark first)", true],
     ]);
     expect(target.textContent).toContain("Initialize PerMark to share this with everyone");
     expect(chipOf("comments")).toBeNull();
@@ -601,6 +614,7 @@ describe("plugins here", () => {
     await herePage();
     expect(target.textContent).not.toContain("Initialize PerMark to share this with everyone");
     expect(Array.from(select("comments")!.options).every((o) => !o.disabled)).toBe(true);
+    expect(select("comments")!.options[3]?.textContent?.trim()).toBe("Off for everyone");
     pick("comments", "offEveryone");
     await until(() => select("comments")?.value === "offEveryone", "shown as off for everyone");
     expect((await info("comments")).teamOff).toBe(true);
@@ -609,9 +623,10 @@ describe("plugins here", () => {
       "Turned off for everyone in .permark/config.toml.",
     );
     pick("comments", "app");
-    await until(() => select("comments")?.value === "app", "back to the app's");
-    expect(await info("comments")).toEqual({ choice: null, teamOff: false });
-    expect(chipOf("comments")).toBeNull();
+    await vi.waitFor(async () =>
+      expect(await info("comments")).toEqual({ choice: null, teamOff: false }),
+    );
+    await until(() => chipOf("comments") === null, "no chip: follows the app");
   });
 
   it("a refused Off for everyone says why and the box shows the choice still in force", async () => {
@@ -633,6 +648,60 @@ describe("plugins here", () => {
     expect((await info("comments")).teamOff).toBe(false);
     refuse.mockRestore();
   });
+
+  it("leaving Off for everyone keeps the person's choice first, then frees the folder's switch", async () => {
+    await open();
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    await herePage();
+    pick("comments", "offEveryone");
+    await until(() => chipOf("comments") === "everyone", "off for everyone");
+    const order: string[] = [];
+    const person = vi.spyOn(mock, "pluginSetProject");
+    const team = vi.spyOn(mock, "projectConfigSet");
+    person.mockImplementation(async (...args) => {
+      order.push("person");
+      person.mockRestore();
+      return mock.pluginSetProject(...args);
+    });
+    team.mockImplementation(async (...args) => {
+      order.push("team");
+      team.mockRestore();
+      return mock.projectConfigSet(...args);
+    });
+    pick("comments", "on");
+    await until(() => order.length === 2, "both written");
+    expect(order).toEqual(["person", "team"]);
+    await vi.waitFor(async () =>
+      expect(await info("comments")).toEqual({ choice: true, teamOff: false }),
+    );
+    await until(() => chipOf("comments") === "you", "the chip says Only you");
+  });
+
+  it("a refused choice of the person leaves the plugin off for everyone (the safer state)", async () => {
+    await open();
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    await herePage();
+    pick("comments", "offEveryone");
+    await until(() => chipOf("comments") === "everyone", "off for everyone");
+    const refuse = vi.spyOn(mock, "pluginSetProject").mockResolvedValueOnce({
+      ok: false,
+      error: {
+        kind: "backend",
+        command: "plugin_set_project",
+        error: { kind: "io", subject: null, detail: null },
+      },
+    });
+    const team = vi.spyOn(mock, "projectConfigSet");
+    pick("comments", "on");
+    await until(() => refuse.mock.calls.length === 1, "the person's choice asked");
+    await until(() => select("comments")?.value === "offEveryone", "still off for everyone");
+    expect(team).not.toHaveBeenCalled();
+    expect((await info("comments")).teamOff).toBe(true);
+    refuse.mockRestore();
+    team.mockRestore();
+  });
 });
 
 describe("the project settings and Initialize PerMark", () => {
@@ -641,11 +710,11 @@ describe("the project settings and Initialize PerMark", () => {
     mountPage("project");
     await tick();
     expect(target.querySelector("h3.title")?.textContent).toBe("Overview");
-    expect(target.textContent).toContain(
-      "Settings marked Everyone are kept in this folder's .permark/config.toml",
-    );
-    expect(target.textContent).toContain("Settings marked Only you stay on this computer.");
+    // nothing is marked Everyone before Initialize: the sentence about the marks waits
+    expect(target.textContent).not.toContain("Settings marked Everyone");
     expect(target.textContent).toContain("This folder has no PerMark settings yet");
+    // the full offer lives here only
+    expect(target.querySelector(".share-init:not(.compact)")).not.toBeNull();
     expect(target.textContent).not.toMatch(/not initialized/);
     // the folder's files live in their own section
     expect(target.querySelector(".list")).toBeNull();
@@ -660,6 +729,10 @@ describe("the project settings and Initialize PerMark", () => {
       "the offer gone",
     );
     expect(ui.initDialog.status).toBe("closed");
+    expect(target.textContent).toContain(
+      "Settings marked Everyone are kept in this folder's .permark/config.toml",
+    );
+    expect(target.textContent).toContain("Settings marked Only you stay on this computer.");
     // the button that had the keyboard is gone with the offer: the section's heading takes it, not the body
     await until(
       () => document.activeElement === target.querySelector("h3.title"),
@@ -674,6 +747,9 @@ describe("the project settings and Initialize PerMark", () => {
     await tick();
     expect(target.querySelector("h3.title")?.textContent).toBe("Files");
     expect(target.textContent).toContain("Initialize PerMark to share this with everyone");
+    // one line here, not the Overview's full offer
+    expect(target.querySelector(".share-init.compact")).not.toBeNull();
+    expect(target.textContent).not.toContain("This folder has no PerMark settings yet");
     const fields = () => Array.from(target.querySelectorAll<HTMLInputElement>(".list input"));
     expect(fields().length).toBe(3);
     expect(fields().every((f) => f.disabled)).toBe(true);

@@ -1491,9 +1491,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "Połączenie z agentem",
-  "agent.switch": "Udostępnij ten projekt agentom",
+  "agent.switch": "Udostępnij ten folder agentom",
   "agent.switchHint":
-    "Połączony agent (narzędzie AI obsługujące MCP, np. Claude Code lub Cursor) może widzieć, na co patrzysz i co się zmieniło, przeszukiwać i czytać pliki tego projektu, czytać twoje komentarze i udostępnione notatki oraz pokazać ci wybrane miejsce. Tylko na tym komputerze. Pliki wymienione w .aiignore pozostają poza ich zasięgiem, a agenci nigdy nie edytują plików przez PerMark. Dotyczy to tylko tego, co agenci otrzymują od PerMark: agent nadal może sam otwierać pliki na twoim komputerze.",
+    "Połączony agent (narzędzie AI obsługujące MCP, np. Claude Code lub Cursor) może widzieć, na co patrzysz i co się zmieniło, przeszukiwać i czytać pliki tego folderu, czytać twoje komentarze i udostępnione notatki oraz pokazać ci wybrane miejsce. Tylko na tym komputerze. Pliki wymienione w .aiignore pozostają poza ich zasięgiem, a agenci nigdy nie edytują plików przez PerMark. Dotyczy to tylko tego, co agenci otrzymują od PerMark: agent nadal może sam otwierać pliki na twoim komputerze.",
   "agent.folderReplaced":
     "Ten folder zmienił się od czasu połączenia. Włącz połączenie ponownie, aby zezwolić tu agentom.",
   "agent.groups": "Co mogą robić agenci",
@@ -1691,8 +1691,9 @@ export default {
   "note.parseError": "Pokazano jako tekst: plik jest nieprawidłowy w swoim formacie",
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "Ograniczenia agentów",
-  "agent.narrow.groups": "Grupy, których agenci nigdy tu nie dostają",
-  "agent.narrow.groupsHint": "Ten folder może tylko zawęzić to, na co zezwala każda osoba.",
+  "agent.narrow.groups": "Grupy zablokowane tu dla agentów",
+  "agent.narrow.groupsHint":
+    "Zaznacz grupę, aby zablokować ją agentom, dla wszystkich. Folder może tylko zawęzić to, na co zezwala każda osoba.",
   "agent.narrow.paths": "Ścieżki, których agenci nigdy nie dostają",
   "agent.narrow.pathsHint":
     "Pliki wymienione w .aiignore nigdy nie trafiają do agentów. Te wzorce dodają kolejne dla tego folderu (te same reguły co w .gitignore).",
@@ -1709,6 +1710,7 @@ export default {
   "plugins.choice.on": "Włączona tutaj",
   "plugins.choice.off": "Wyłączona tutaj (tylko ty)",
   "plugins.choice.offEveryone": "Wyłączona dla wszystkich",
+  "plugins.choice.offEveryoneNeedsInit": "Wyłączona dla wszystkich (najpierw zainicjuj PerMark)",
   "plugins.dataNotRemoved": "Nie udało się usunąć danych: {message}",
   "plugins.dataRemoved": "Usunięto dane: {name}.",
   "plugins.failedToStart": "Nie udało się uruchomić: {name}. {reason}",

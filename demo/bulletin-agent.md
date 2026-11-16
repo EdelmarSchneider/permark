@@ -158,7 +158,7 @@ stop
 ## Connecting Gull
 
 > [!IMPORTANT] Read-only, and only where you say so
-> PerMark's agent connection stays off in every project until you turn on **Share this project with agents** in **Settings › AI agents**. Then Gull can read the pages and your comments, and mark a comment done. It never edits a file through PerMark, and files listed in [`.aiignore`](.aiignore) stay out of its reach. More in [Let an agent read the project](permark-guide.md#let-an-agent-read-the-project).
+> PerMark's agent connection stays off in every project until you turn on **Share this folder with agents** in **Settings › AI agents**. Then Gull can read the pages and your comments, and mark a comment done. It never edits a file through PerMark, and files listed in [`.aiignore`](.aiignore) stay out of its reach. More in [Let an agent read the project](permark-guide.md#let-an-agent-read-the-project).
 
 ---
 

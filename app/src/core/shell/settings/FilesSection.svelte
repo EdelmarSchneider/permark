@@ -37,7 +37,7 @@
     {/if}
   {/snippet}
   {#if off}
-    <ShareInit />
+    <ShareInit compact />
   {/if}
   <div class="shared" class:off>
     <section class="group" aria-labelledby="proj-tree">

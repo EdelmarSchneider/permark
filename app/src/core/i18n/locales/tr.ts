@@ -1439,9 +1439,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "Ajan bağlantısı",
-  "agent.switch": "Bu projeyi ajanlarla paylaş",
+  "agent.switch": "Bu klasörü ajanlarla paylaş",
   "agent.switchHint":
-    "Bağladığınız bir ajan (Claude Code veya Cursor gibi MCP destekleyen bir yapay zeka aracı) neye baktığınızı ve neyin değiştiğini görebilir, bu projenin dosyalarında arama yapıp okuyabilir, yorumlarınızı ve paylaştığınız notları okuyabilir ve size bir yer gösterebilir. Yalnızca bu bilgisayarda. .aiignore dosyasında listelenen dosyalar ajanların erişiminin dışında kalır ve ajanlar PerMark aracılığıyla asla dosya düzenlemez. Bu yalnızca ajanların PerMark'tan aldıklarını kapsar: bir ajan, bilgisayarınızdaki dosyaları yine de kendi başına açabilir.",
+    "Bağladığınız bir ajan (Claude Code veya Cursor gibi MCP destekleyen bir yapay zeka aracı) neye baktığınızı ve neyin değiştiğini görebilir, bu klasörün dosyalarında arama yapıp okuyabilir, yorumlarınızı ve paylaştığınız notları okuyabilir ve size bir yer gösterebilir. Yalnızca bu bilgisayarda. .aiignore dosyasında listelenen dosyalar ajanların erişiminin dışında kalır ve ajanlar PerMark aracılığıyla asla dosya düzenlemez. Bu yalnızca ajanların PerMark'tan aldıklarını kapsar: bir ajan, bilgisayarınızdaki dosyaları yine de kendi başına açabilir.",
   "agent.folderReplaced":
     "Bu klasör, bağladığınızdan beri değişti. Ajanlara burada izin vermek için bağlantıyı yeniden açın.",
   "agent.groups": "Ajanların yapabilecekleri",
@@ -1633,8 +1633,9 @@ export default {
   "note.parseError": "Metin olarak gösteriliyor: dosya kendi biçiminde geçerli değil",
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "Ajan sınırları",
-  "agent.narrow.groups": "Ajanlara burada asla verilmeyen gruplar",
-  "agent.narrow.groupsHint": "Bu klasör yalnızca her kişinin izin verdiklerini daraltabilir.",
+  "agent.narrow.groups": "Burada ajanlara engellenen gruplar",
+  "agent.narrow.groupsHint":
+    "Bir grubu işaretlerseniz herkes için ajanlara kapanır. Bir klasör yalnızca her kişinin izin verdiklerini daraltabilir.",
   "agent.narrow.paths": "Ajanların asla almadığı yollar",
   "agent.narrow.pathsHint":
     ".aiignore içinde listelenen dosyalar ajanlara asla ulaşmaz. Bu klasör için bu desenler de eklenir (.gitignore ile aynı kurallar).",
@@ -1651,6 +1652,7 @@ export default {
   "plugins.choice.on": "Burada açık",
   "plugins.choice.off": "Burada kapalı (yalnızca siz)",
   "plugins.choice.offEveryone": "Herkes için kapalı",
+  "plugins.choice.offEveryoneNeedsInit": "Herkes için kapalı (önce PerMark'ı başlatın)",
   "plugins.dataNotRemoved": "Veriler kaldırılamadı: {message}",
   "plugins.dataRemoved": "{name} verileri kaldırıldı.",
   "plugins.failedToStart": "{name} başlatılamadı. {reason}",

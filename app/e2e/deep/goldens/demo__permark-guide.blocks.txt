@@ -132,7 +132,7 @@ outline:   Questions (line 144)
 --- h2 94-94
 <h2 dir="auto" id="let-an-agent-read-the-project">Let an agent read the project</h2>
 --- p 96-96
-<p dir="auto">PerMark can share a project with an AI agent you already use, any tool that speaks MCP. It's off by default and set per project: turn on <strong>Share this project with agents</strong> in Settings, under <strong>AI agents</strong>. You can always see which agents are connected.</p>
+<p dir="auto">PerMark can share a project with an AI agent you already use, any tool that speaks MCP. It's off by default and set per project: turn on <strong>Share this folder with agents</strong> in Settings, under <strong>AI agents</strong>. You can always see which agents are connected.</p>
 --- p 98-98
 <p dir="auto">While it's on, an agent can search and read this project's files, read your comments and the notes you share, and show you a place, but only on this computer, only while PerMark has the project open, and never by editing files through PerMark. Files listed in <a href=".aiignore"><code>.aiignore</code></a> stay out of its reach; this folder keeps <code>station/deploy.env</code> away that way. Our <a href="bulletin-agent.md">bulletin agent</a> works exactly like this.</p>
 --- h2 100-100

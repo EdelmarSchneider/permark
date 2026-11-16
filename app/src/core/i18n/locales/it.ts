@@ -1448,9 +1448,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "Connessione con gli agenti",
-  "agent.switch": "Condividi questo progetto con gli agenti",
+  "agent.switch": "Condividi questa cartella con gli agenti",
   "agent.switchHint":
-    "Un agente che colleghi (uno strumento di IA che supporta MCP, come Claude Code o Cursor) può vedere cosa stai guardando e cosa è cambiato, cercare e leggere i file di questo progetto, leggere i tuoi commenti e le note che condividi, e mostrarti un punto. Solo su questo computer. I file elencati in .aiignore restano fuori dalla loro portata, e gli agenti non modificano mai file tramite PerMark. Questo vale solo per ciò che gli agenti ricevono da PerMark: un agente può comunque aprire da solo i file del tuo computer.",
+    "Un agente che colleghi (uno strumento di IA che supporta MCP, come Claude Code o Cursor) può vedere cosa stai guardando e cosa è cambiato, cercare e leggere i file di questa cartella, leggere i tuoi commenti e le note che condividi, e mostrarti un punto. Solo su questo computer. I file elencati in .aiignore restano fuori dalla loro portata, e gli agenti non modificano mai file tramite PerMark. Questo vale solo per ciò che gli agenti ricevono da PerMark: un agente può comunque aprire da solo i file del tuo computer.",
   "agent.folderReplaced":
     "Questa cartella è cambiata da quando l'hai collegata. Riattiva la connessione per consentire gli agenti qui.",
   "agent.groups": "Cosa possono fare gli agenti",
@@ -1643,8 +1643,9 @@ export default {
   "note.parseError": "Mostrato come testo: il file non è valido nel suo formato",
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "Limiti per gli agenti",
-  "agent.narrow.groups": "Gruppi che gli agenti non ottengono mai qui",
-  "agent.narrow.groupsHint": "Questa cartella può solo restringere ciò che ogni persona consente.",
+  "agent.narrow.groups": "Gruppi bloccati per gli agenti qui",
+  "agent.narrow.groupsHint":
+    "Spunta un gruppo per tenerne fuori gli agenti, per tutti. Una cartella può solo restringere ciò che ogni persona consente.",
   "agent.narrow.paths": "Percorsi che gli agenti non ottengono mai",
   "agent.narrow.pathsHint":
     "I file elencati in .aiignore non arrivano mai agli agenti. Questi pattern si aggiungono per questa cartella (le stesse regole di .gitignore).",
@@ -1661,6 +1662,7 @@ export default {
   "plugins.choice.on": "Attivo qui",
   "plugins.choice.off": "Disattivato qui (solo tu)",
   "plugins.choice.offEveryone": "Disattivato per tutti",
+  "plugins.choice.offEveryoneNeedsInit": "Disattivato per tutti (prima inizializza PerMark)",
   "plugins.dataNotRemoved": "Impossibile rimuovere i dati: {message}",
   "plugins.dataRemoved": "Dati di {name} rimossi.",
   "plugins.failedToStart": "Impossibile avviare {name}. {reason}",

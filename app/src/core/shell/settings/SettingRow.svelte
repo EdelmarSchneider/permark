@@ -1,12 +1,11 @@
 <script lang="ts">
   // One row of the settings page: what it is (label + hint) at the left, the control at the right. Stacks when the settings
   // pane is narrow, the control goes under the label when both do not fit side by side, and always when `wide` (a long control: a text field, a list). Rows of one card are separated by a line. A folder
-  // setting says who it is for (`scope`) with a chip in its label. An app row a plugin key of the folder's shared file
-  // would once have set (`ignoredKey`) says, in a quiet line, that the file's value is not used.
+  // setting says who it is for (`scope`) with a chip in its label. An app row whose key the folder's shared file also
+  // sets (`ignored`, decided by the caller) says, in a quiet line, that the file's value is not used.
   import type { Snippet } from "svelte";
   import { t } from "../../i18n";
   import ScopeChip from "./ScopeChip.svelte";
-  import { projectSettings } from "./stores.svelte";
 
   type Props = {
     label: string;
@@ -21,8 +20,8 @@
     children: Snippet;
     /** A line under the control (a problem, a preview). */
     note?: Snippet;
-    /** The plugin key (`<id>.<key>`) this app row holds, which the folder's shared file may also set (not used). */
-    ignoredKey?: `${string}.${string}`;
+    /** The folder's shared file also sets this row's key, and that value is not used. */
+    ignored?: boolean;
   };
   let {
     label,
@@ -33,10 +32,8 @@
     scope,
     children,
     note,
-    ignoredKey,
+    ignored = false,
   }: Props = $props();
-
-  const ignored = $derived(ignoredKey !== undefined && projectSettings.ignores(ignoredKey));
 </script>
 
 <div class="row" class:wide>

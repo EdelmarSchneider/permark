@@ -94,9 +94,11 @@ export function domDigest(arg: { selector: string; origin: string }): string | n
       .replaceAll(arg.origin, "")
       .replace(/\d{4,}/g, "#")
       .replace(/[0-9a-f]{16,}/g, "#");
+  // states of the moment: deferred work not done yet; table widths measured from this screen's layout and fonts
+  const PASSING = new Set(["is-pending", "pm-screen-table", "pm-fit-table", "is-natural"]);
   const classesOf = (el: Element): string =>
     [...el.classList]
-      .filter((c) => !c.startsWith("svelte-") && c !== "is-pending")
+      .filter((c) => !c.startsWith("svelte-") && !PASSING.has(c))
       .map((c) => `.${c}`)
       .join("");
   const attrsOf = (el: Element): string =>
@@ -134,6 +136,8 @@ export function domDigest(arg: { selector: string; origin: string }): string | n
       return;
     }
     const tag = node.tagName.toLowerCase();
+    // measured column widths (see the classes above), not the document's
+    if (tag === "colgroup" && node.parentElement?.classList.contains("pm-screen-table")) return;
     if (node.classList.contains("katex")) {
       const tex = node.querySelector('annotation[encoding="application/x-tex"]')?.textContent ?? "";
       const error = node.querySelector(".katex-error") !== null ? " ERROR" : "";

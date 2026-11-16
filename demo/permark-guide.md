@@ -93,7 +93,7 @@ Three helpers for words, all asleep until you call them. Spelling underlines mis
 
 ## Let an agent read the project
 
-PerMark can share a project with an AI agent you already use, any tool that speaks MCP. It's off by default and set per project: turn on **Share this project with agents** in Settings, under **AI agents**. You can always see which agents are connected.
+PerMark can share a project with an AI agent you already use, any tool that speaks MCP. It's off by default and set per project: turn on **Share this folder with agents** in Settings, under **AI agents**. You can always see which agents are connected.
 
 While it's on, an agent can search and read this project's files, read your comments and the notes you share, and show you a place, but only on this computer, only while PerMark has the project open, and never by editing files through PerMark. Files listed in [`.aiignore`](.aiignore) stay out of its reach; this folder keeps `station/deploy.env` away that way. Our [bulletin agent](bulletin-agent.md) works exactly like this.
 

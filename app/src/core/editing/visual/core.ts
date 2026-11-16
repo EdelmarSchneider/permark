@@ -47,6 +47,7 @@ import { EditorState, Selection } from "@milkdown/kit/prose/state";
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $ctx, $node, $prose, $view } from "@milkdown/kit/utils";
 import { CODE_BLOCK, TABLE_WRAP, taskLabel } from "../../doc/enhance";
+import { TableFitter } from "../../doc/tableFitter";
 import type { CodeColorer } from "../../plugins/props";
 import { codeColors } from "./codeColors";
 import { inlineLooks, noLooks, type LooksHost } from "./inlineLooks";
@@ -227,15 +228,39 @@ const codeBlockView = $view(codeBlockSchema.node, (ctx): NodeViewConstructor => 
   };
 });
 
-/** A table in the reading view's `.table-wrap`, so its frame, corners and outer space come from the same rules. */
-const tableView = $view(tableSchema.node, (): NodeViewConstructor => (node) => {
+/** Column widths of the editor's tables (each table view watches its own and forgets it when it goes); set by
+ *  `createCore`, none: tables keep the browser's layout. */
+export const tablesCtx = $ctx<TableFitter | null, "pmTables">(null, "pmTables");
+
+/**
+ * A table in the reading view's `.table-wrap`, so its frame, corners and outer space come from the same rules, with
+ * the reading view's column widths. The widths (wrapper class, table class + width, `colgroup`) live outside the
+ * cells: ProseMirror is told to ignore them, or it would read them as an edit and draw the table again.
+ */
+const tableView = $view(tableSchema.node, (ctx): NodeViewConstructor => (node) => {
+  const tables = ctx.get(tablesCtx.key);
   const dom = document.createElement("div");
   dom.className = TABLE_WRAP;
   const table = document.createElement("table");
   const body = document.createElement("tbody");
   table.append(body);
   dom.append(table);
-  return { dom, contentDOM: body, update: (next) => next.type === node.type };
+  const forget = tables?.watch(table);
+  return {
+    dom,
+    contentDOM: body,
+    ignoreMutation: (mutation) =>
+      mutation.type !== "selection" && mutation.target !== body && !body.contains(mutation.target),
+    update: (next) => {
+      if (next.type !== node.type) return false;
+      // a typed letter does not move the columns: measured again once editing pauses (the first row's cells tell
+      // a column added | removed, which cannot wait: the DOM below is not updated yet at this point)
+      if (next !== node && !next.eq(node)) tables?.changed(table, next.firstChild?.childCount ?? 0);
+      node = next;
+      return true;
+    },
+    destroy: () => forget?.(),
+  };
 });
 
 /** Where the caret starts: the first text, so a leading locked block (the front matter) is not selected. */
@@ -306,6 +331,8 @@ export type CoreOptions = {
   locked?: LockedHost;
   code?: CodeHost;
   looks?: LooksHost;
+  /** The pane that scrolls the editor: its tables are measured as they come near its view. */
+  scroller?: HTMLElement;
   /** Before the stock plugins (keys and pastes seen first). */
   first?: Parameters<Editor["use"]>[0][];
   /** After the stock plugins. */
@@ -323,6 +350,7 @@ function stripPositions(node: MdastNode): MdastNode {
 /** Creates the editor in `host` with an empty document. */
 export async function createCore(options: CoreOptions): Promise<Core> {
   let spellcheck = true;
+  const tables = new TableFitter({ root: () => options.scroller ?? null });
   const editor = Editor.make()
     .config((ctx) => {
       ctx.set(rootCtx, options.host);
@@ -350,10 +378,12 @@ export async function createCore(options: CoreOptions): Promise<Core> {
       if (options.locked) ctx.set(lockedHostCtx.key, options.locked);
       if (options.code) ctx.set(codeHostCtx.key, options.code);
       if (options.looks) ctx.set(looksHostCtx.key, options.looks);
+      ctx.set(tablesCtx.key, tables);
     })
     .use(lockedHostCtx)
     .use(codeHostCtx)
     .use(looksHostCtx)
+    .use(tablesCtx)
     .use(lockedNode)
     .use(lockedView)
     .use(lockedKeys)
@@ -416,6 +446,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
         view.setProps({});
       },
       destroy: async () => {
+        tables.stop();
         await editor.destroy();
       },
     };

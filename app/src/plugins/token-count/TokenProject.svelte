@@ -13,7 +13,7 @@
 </script>
 
 {#if off}
-  <ShareInit />
+  <ShareInit compact />
 {/if}
 <div class="shared" class:off>
   <Card>

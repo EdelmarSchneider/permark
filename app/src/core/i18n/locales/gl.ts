@@ -1436,9 +1436,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "Conexión con axentes",
-  "agent.switch": "Compartir este proxecto cos axentes",
+  "agent.switch": "Compartir este cartafol cos axentes",
   "agent.switchHint":
-    "Un axente que conecte (unha ferramenta de IA compatíbel con MCP, como Claude Code ou Cursor) pode ver o que está a mirar e o que cambiou, buscar e ler os ficheiros deste proxecto, ler os seus comentarios e as notas que comparta, e mostrarlle un lugar. Só neste computador. Os ficheiros que lista .aiignore quedan fóra do seu alcance, e os axentes nunca editan ficheiros a través de PerMark. Isto só abrangue o que os axentes obteñen de PerMark: un axente aínda pode abrir ficheiros do seu computador pola súa conta.",
+    "Un axente que conecte (unha ferramenta de IA compatíbel con MCP, como Claude Code ou Cursor) pode ver o que está a mirar e o que cambiou, buscar e ler os ficheiros deste cartafol, ler os seus comentarios e as notas que comparta, e mostrarlle un lugar. Só neste computador. Os ficheiros que lista .aiignore quedan fóra do seu alcance, e os axentes nunca editan ficheiros a través de PerMark. Isto só abrangue o que os axentes obteñen de PerMark: un axente aínda pode abrir ficheiros do seu computador pola súa conta.",
   "agent.folderReplaced":
     "Este cartafol cambiou desde que o conectou. Volva activar a conexión para permitir axentes aquí.",
   "agent.groups": "O que poden facer os axentes",
@@ -1630,8 +1630,9 @@ export default {
   "note.parseError": "Móstrase como texto: o ficheiro non é válido no seu formato",
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "Límites dos axentes",
-  "agent.narrow.groups": "Grupos que os axentes nunca teñen aquí",
-  "agent.narrow.groupsHint": "Este cartafol só pode restrinxir o que permite cada persoa.",
+  "agent.narrow.groups": "Grupos bloqueados para os axentes aquí",
+  "agent.narrow.groupsHint":
+    "Marque un grupo para deixar fóra os axentes, para todos. Un cartafol só pode restrinxir o que permite cada persoa.",
   "agent.narrow.paths": "Rutas que os axentes nunca obteñen",
   "agent.narrow.pathsHint":
     "Os ficheiros listados en .aiignore nunca chegan aos axentes. Estes padróns engádense neste cartafol (as mesmas regras que .gitignore).",
@@ -1648,6 +1649,7 @@ export default {
   "plugins.choice.on": "Activado aquí",
   "plugins.choice.off": "Desactivado aquí (só vostede)",
   "plugins.choice.offEveryone": "Desactivado para todos",
+  "plugins.choice.offEveryoneNeedsInit": "Desactivado para todos (inicialice PerMark primeiro)",
   "plugins.dataNotRemoved": "Non foi posíbel quitar os datos: {message}",
   "plugins.dataRemoved": "Quitáronse os datos de {name}.",
   "plugins.failedToStart": "{name} non se puido iniciar. {reason}",
