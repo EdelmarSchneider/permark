@@ -4,4 +4,8 @@ import type { TreeConfig } from "./TreeConfig";
 /**
  * What the settings page shows of the project: whether `.permark/` exists, and the shared settings.
  */
-export type ProjectSettings = { initialized: boolean, tree: TreeConfig, ignore: Array<string>, agentDeny: Array<string>, agentDenyPaths: Array<string>, tokenizers: Array<string>, };
+export type ProjectSettings = { initialized: boolean, tree: TreeConfig, ignore: Array<string>, agentDeny: Array<string>, agentDenyPaths: Array<string>, tokenizers: Array<string>, 
+/**
+ * Plugin keys of the file no plugin reads (`<id>.<key>`, sorted).
+ */
+ignoredPluginKeys: Array<string>, };

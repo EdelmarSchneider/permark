@@ -7,7 +7,7 @@ use ts_rs::TS;
 use crate::conditions::Context;
 use crate::document::DocumentChanged;
 use crate::plugins::{PluginError, PluginId};
-use crate::settings::{AppSettings, SettingsScope};
+use crate::settings::AppSettings;
 use crate::tree::TreeChanged;
 use crate::workspace::{TabId, WindowSummary, WindowView};
 
@@ -41,7 +41,6 @@ pub struct ContextChanged {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct SettingsChanged {
-    pub scope: SettingsScope,
     pub keys: Vec<String>,
     pub settings: AppSettings,
 }
