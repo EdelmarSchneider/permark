@@ -106,7 +106,8 @@ Bia
 
 This page doubles as a practice sheet. The box below has three mistakes in it, on purpose.
 
-> [!example] Three mistakes, on purpose
+> **Three mistakes, on purpose**
+>
 > When you recieve a new buoy, check the the mooring shackle before it goes over the side. It will definately be colder on deck than you think.
 
 Press <kbd>Ctrl</kbd>+<kbd>E</kbd> to edit. With an English dictionary downloaded, two of the mistakes get underlined: right-click one for suggestions, **Add to dictionary** or **Ignore in this document**. The doubled word is a job for correction: select the box and press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>K</kbd>, and a small model on this computer suggests each fix for you to keep or discard. <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd> translates a selection the same way, and **Translate to a new file…** does the whole page. More in the [PerMark guide](permark-guide.md#spelling-correction-translation).

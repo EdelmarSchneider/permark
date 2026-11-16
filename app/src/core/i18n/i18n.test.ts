@@ -1,6 +1,6 @@
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fill, formatLocale, language, sizeText, t, tn } from "./index";
 import type { FewForms, Messages } from "./messages";
 import {
@@ -249,6 +249,34 @@ describe("matchLocale, systemLocale, resolveLocale", () => {
     expect(formatTag("de", ["en-GB", "fr-CH"])).toBe("de");
     expect(formatTag("en", ["en-IN-x-", "en-GB"])).toBe("en-GB");
     expect(formatTag("en", [])).toBe("en");
+  });
+
+  it("writes a language the runtime has no date | number data for as its stand-in, in the same region", () => {
+    // WebView2 ships no Galician data: Intl would answer in English ("13 minutes ago", "1,167")
+    const noGalician = (tag: string): boolean => matchLocale(tag) !== "gl";
+    expect(formatTag("gl", ["gl-ES"], noGalician)).toBe("es-ES");
+    expect(formatTag("gl", [], noGalician)).toBe("es");
+    expect(formatTag("gl", ["gl-ES"], () => true)).toBe("gl-ES");
+    // no stand-in, or none the runtime knows either: Intl's own default answers
+    expect(formatTag("ca", ["ca-ES"], () => false)).toBe("ca-ES");
+    expect(formatTag("gl", ["gl-ES"], () => false)).toBe("gl-ES");
+  });
+
+  it("asks the runtime itself which languages it can write dates, numbers and relative times in", async () => {
+    const lacking = (tags?: Intl.LocalesArgument): string[] =>
+      [tags ?? []]
+        .flat()
+        .map(String)
+        .filter((tag) => matchLocale(tag) !== "gl");
+    const spy = vi.spyOn(Intl.RelativeTimeFormat, "supportedLocalesOf").mockImplementation(lacking);
+    try {
+      expect(formatTag("gl", ["gl-ES"])).toBe("es-ES");
+      expect(formatTag("ca", ["ca-ES"])).toBe("ca-ES");
+      await language.choose("gl", ["gl-ES"]);
+      expect(formatLocale()).toBe("es-ES");
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("lets a chosen language win over the system's", () => {

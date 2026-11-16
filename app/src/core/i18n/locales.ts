@@ -128,17 +128,51 @@ export function systemLocale(tags: readonly string[]): Locale {
 }
 
 /**
+ * Language whose dates and numbers stand in for an interface language the runtime has no data for: one its readers
+ * also read. WebView2 ships no Galician data (Intl would answer in English); every other interface language has it.
+ */
+const FORMAT_STAND_IN: Partial<Record<Locale, Locale>> = { gl: "es" };
+
+/**
+ * Whether the runtime writes dates, numbers and relative times of `tag` (asked where the code runs: a web view ships
+ * data for fewer languages than Node's full ICU).
+ */
+function intlKnows(tag: string): boolean {
+  try {
+    return (
+      Intl.NumberFormat.supportedLocalesOf([tag]).length > 0 &&
+      Intl.DateTimeFormat.supportedLocalesOf([tag]).length > 0 &&
+      Intl.RelativeTimeFormat.supportedLocalesOf([tag]).length > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Tag dates and numbers are written in: the first of `tags` (the system's format region, then its languages) that names
  * `locale` with a region of its own (`en-IN` while the interface speaks English), else `locale`. A tag of another
- * interface language never counts (`pt-PT` under pt-BR, `en-GB` under de).
+ * interface language never counts (`pt-PT` under pt-BR, `en-GB` under de). A tag the runtime has no data for (`known`)
+ * gives way to its stand-in language in the same region (`gl-ES` -> `es-ES`) when the runtime knows that one.
  */
-export function formatTag(locale: Locale, tags: readonly string[]): string {
+export function formatTag(
+  locale: Locale,
+  tags: readonly string[],
+  known: (tag: string) => boolean = intlKnows,
+): string {
+  let found: string = locale;
   for (const tag of tags) {
     if (matchLocale(tag) !== locale) continue;
     const canonical = canonicalTag(tag);
-    if (canonical !== null) return canonical;
+    if (canonical === null) continue;
+    found = canonical;
+    break;
   }
-  return locale;
+  const standIn = FORMAT_STAND_IN[locale];
+  if (standIn === undefined || known(found)) return found;
+  const region = new Intl.Locale(found).region;
+  const others = region === undefined ? [standIn] : [`${standIn}-${region}`, standIn];
+  return others.find(known) ?? found;
 }
 
 /** `en_AU` | `en-au` -> `en-AU`; null for what Intl cannot read. */
