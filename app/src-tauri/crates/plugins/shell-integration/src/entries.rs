@@ -223,6 +223,16 @@ const WORDS: &[(Language, &str, &str)] = &[
         "PerMark ile aç",
         "PerMark ile yeni Markdown dosyası",
     ),
+    (
+        Language::Pl,
+        "Otwórz w PerMark",
+        "Nowy plik Markdown w PerMark",
+    ),
+    (
+        Language::Uk,
+        "Відкрити в PerMark",
+        "Новий файл Markdown у PerMark",
+    ),
 ];
 
 /// The keys above `key`, nearest first, that are deleted once removing an entry leaves them empty: every parent below

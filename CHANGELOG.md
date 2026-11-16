@@ -5,6 +5,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Polish and Ukrainian.** The interface, the Windows installer and the file manager entries now speak Polish and Ukrainian, 20 languages in all; native speakers are welcome to review them. <!-- f: settings -->
+
+### Changed
+- The Windows installer now offers the demo pages ticked. They are copied to Documents only on a first install, only when no "PerMark Demo" folder is there yet, and you can untick the box. <!-- f: windows-installer -->
+
 ## [0.13.0] - 2026-11-16
 
 ### Added

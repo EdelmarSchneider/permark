@@ -33,7 +33,7 @@ export type PluralKey = {
 
 /**
  * UI string for a count: the `.one` form when the language says "one" or the count is exactly 1, `.few` when it says
- * "few" and the table has one (Romanian, Russian), else `.other`; `{n}` is the count.
+ * "few" and the table has one (Romanian, Russian, Polish, Ukrainian), else `.other`; `{n}` is the count.
  */
 export function tn(base: PluralKey, count: number, params?: Params): string {
   const category = new Intl.PluralRules(language.locale).select(count);
