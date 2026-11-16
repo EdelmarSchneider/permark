@@ -44,6 +44,7 @@ import type {
   AppPluginEvents,
   AppSettings,
   CommandName,
+  DemoOffer,
   EventName,
   Events,
   JsonValue,
@@ -69,6 +70,8 @@ import type {
 export const MOCK_VERSION = "0.0.0-mock";
 export const MOCK_FOLDER = "C:/Users/demo/permark-docs";
 export const MOCK_FILE = "C:/Users/demo/Downloads/proposal.md";
+/** Where the mock's demo pages land (`Documents/PerMark Demo`). */
+export const MOCK_DEMO_FOLDER = "C:/Users/demo/Documents/PerMark Demo";
 /** A WSL folder (`watch/wsl.rs`): `\\wsl$\` | `\\wsl.localhost\`, also behind `\\?\UNC\` | `\\.\UNC\`, `/` | `\`. */
 const WSL_ROOT = /^[\\/]{2}(?:[?.][\\/]unc[\\/])?wsl(?:\$|\.localhost)(?:[\\/]|$)/i;
 
@@ -286,6 +289,8 @@ export type MockProbe = {
   /** Opens in this tab of a view that shows something: how long the backend's Opening state lasts (0: until the page
    *  reacted to it), the folders whose open fails (`io`), the project calls refused meanwhile (`project_of`). */
   opening: { ms: number; fails: Set<string>; refused: string[] };
+  /** The demo pages offer: what the backend answers, copies asked for, dismissals, a refusal for the next copy. */
+  demo: { offer: DemoOffer; installs: number; dismissed: number; fail: ErrorKind | null };
 };
 
 /** Fresh mock (tests get their own; the dev build uses `mockApi`). */
@@ -648,6 +653,8 @@ export function createMockApi(): Api & {
       },
     },
     opening: { ms: 0, fails: new Set(), refused: [] },
+    // offered in the dev build, as on a first start
+    demo: { offer: "install", installs: 0, dismissed: 0, fail: null },
   };
   let tree: TreeView | null = null;
   /** The version of the shown document last told to the window (`null`: gone), as `document/mod.rs` keeps it. */
@@ -1400,6 +1407,23 @@ export function createMockApi(): Api & {
     defaultAppSet: distribution.defaultAppSet,
     defaultAppAsked: distribution.defaultAppAsked,
     defaultAppHandoff: distribution.defaultAppHandoff,
+    demoOffer: () => ok(probe.demo.offer),
+    // as the backend: a refused copy leaves the offer; a copy | a folder found counts as used
+    demoInstall: () => {
+      probe.demo.installs += 1;
+      const failure = probe.demo.fail;
+      if (failure !== null) {
+        probe.demo.fail = null;
+        return Promise.resolve(refused<string>("demo_install", failure, MOCK_DEMO_FOLDER));
+      }
+      probe.demo.offer = "hidden";
+      return ok(MOCK_DEMO_FOLDER);
+    },
+    demoDismiss: () => {
+      probe.demo.dismissed += 1;
+      probe.demo.offer = "hidden";
+      return ok(null);
+    },
     onAppPlugin: (event, handler) => {
       appListeners[event].add(handler);
       return Promise.resolve(() => {

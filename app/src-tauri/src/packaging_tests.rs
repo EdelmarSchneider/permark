@@ -234,6 +234,36 @@ fn the_third_party_notices_ship_in_every_installer_and_in_the_store_package() {
 }
 
 #[test]
+fn the_demo_pages_ship_in_every_installer_and_in_the_store_package() {
+    use permark_core::demo::{FOLDER, RESOURCE};
+    // the repository's `demo/` lands as `<resources>/demo`, where the app looks for it
+    let config = json(CONFIG);
+    assert_eq!(config["bundle"]["resources"]["../../demo"], RESOURCE);
+    // the Store package is laid out by hand: the script copies the folder beside the program, as the installers do
+    assert!(SCRIPT.contains("$Demo = Join-Path $Root 'demo'"));
+    assert!(SCRIPT.contains("Copy-Item $Demo (Join-Path $Stage 'demo') -Recurse"));
+    // the Windows installer copies the same folder to the same place the app does
+    assert!(HOOKS.contains(&format!(r#"!define PERMARK_DEMO_FOLDER "{FOLDER}""#)));
+    assert!(HOOKS.contains(&format!(r#""$INSTDIR\{RESOURCE}""#)));
+}
+
+#[test]
+fn the_installer_copies_the_demo_pages_only_when_ticked_and_never_removes_them() {
+    // the box starts unticked whatever an earlier install chose: nothing lands in Documents unasked
+    assert!(HOOKS.contains(r#"${NSD_CreateCheckbox} 120u 181u 195u 11u "$(DemoOption)""#));
+    assert!(!HOOKS.contains("${NSD_Check} $PermarkDemoBox"));
+    assert!(!HOOKS.contains(r#"WriteRegDWORD HKCU "${PERMARK_APP_KEY}" "Demo"#));
+    // "" when the page did not show (silent, passive, update): only "1" copies
+    assert!(HOOKS.contains(r#"${If} $PermarkDemo == "1""#));
+    // the copy is the person's from then on: no uninstall step names it
+    let uninstall = HOOKS
+        .split("!macro NSIS_HOOK_POSTUNINSTALL")
+        .nth(1)
+        .expect("the uninstall hook");
+    assert!(!uninstall.contains("DEMO") && !uninstall.contains("Demo"));
+}
+
+#[test]
 fn the_custom_installer_languages_are_listed_and_carry_both_spellings_of_the_install_choice() {
     let config = json(CONFIG);
     let listed = config["bundle"]["windows"]["nsis"]["customLanguageFiles"]
@@ -385,7 +415,7 @@ fn every_text_of_the_installer_hooks_is_in_every_installer_language() {
         texts.entry(key).or_default().push(id);
     }
     // the PATH option and what it tells the person when it leaves the PATH alone
-    for key in ["PathOption", "PathNotAdded", "PathNotRemoved"] {
+    for key in ["PathOption", "PathNotAdded", "PathNotRemoved", "DemoOption"] {
         assert!(texts.contains_key(key), "hooks.nsh lacks {key}");
     }
     let mut expected = INSTALLER_LANGUAGE_IDS.to_vec();

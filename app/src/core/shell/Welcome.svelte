@@ -1,6 +1,7 @@
 <script lang="ts">
-  // Start screen: open folder | file, new project, recent folders (missing marked, removable; arrows + Enter +
-  // Delete), blocks plugins add (the Notes) beside them, and where to drop a folder or a file.
+  // Start screen: open folder | file, new project, the demo pages offer (until used or dismissed), recent folders
+  // (missing marked, removable; arrows + Enter + Delete), blocks plugins add (the Notes) beside them, and where to drop
+  // a folder or a file.
   import FolderOpen from "@lucide/svelte/icons/folder-open";
   import FileText from "@lucide/svelte/icons/file-text";
   import FolderPlus from "@lucide/svelte/icons/folder-plus";
@@ -12,6 +13,7 @@
   import { contributions } from "../plugins/instance.svelte";
   import { relativeTime } from "../time";
   import type { WindowStore } from "../window.svelte";
+  import DemoCard from "./DemoCard.svelte";
   import { dropFlow } from "./dropView.svelte";
   import { newProject } from "./initProject";
 
@@ -123,6 +125,7 @@
         {t("welcome.newProject")}
       </button>
     </div>
+    <DemoCard {store} disabled={opening} />
   </div>
 
   <div class="content" class:single={sections.length === 0}>

@@ -1732,6 +1732,11 @@ export default {
   "settings.problem.other": "Bu değer kabul edilmedi.",
   "welcome.newProject": "Yeni proje…",
   "welcome.newProjectHint": "Bir klasör seçin; PerMark onu bir proje olarak ayarlar.",
+  "welcome.demo.explore": "Tanıtım sayfalarını keşfet",
+  "welcome.demo.open": "Tanıtım sayfalarını aç",
+  "welcome.demo.hint":
+    "PerMark'ın neler yapabildiğini gösteren örnek belgeler, Belgeler klasörünüzde.",
+  "welcome.demo.failed": "Tanıtım sayfaları kopyalanamıyor: {message}",
   "plugin.git.name": "Git",
   "plugin.git.about":
     "Değişiklik harfleri, branch ve depo durumu. Salt okunur: PerMark asla commit yapmaz.",

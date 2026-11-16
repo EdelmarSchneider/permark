@@ -1729,6 +1729,11 @@ export default {
   "settings.problem.other": "Non se aceptou este valor.",
   "welcome.newProject": "Novo proxecto…",
   "welcome.newProjectHint": "Escolla un cartafol; PerMark configúrao como proxecto.",
+  "welcome.demo.explore": "Explorar as páxinas de demostración",
+  "welcome.demo.open": "Abrir as páxinas de demostración",
+  "welcome.demo.hint":
+    "Documentos de exemplo que mostran o que pode facer PerMark, no seu cartafol Documentos.",
+  "welcome.demo.failed": "Non é posíbel copiar as páxinas de demostración: {message}",
   "plugin.git.name": "Git",
   "plugin.git.about":
     "Letras de cambio, rama e estado do repositorio. Só lectura: PerMark nunca fai commits.",

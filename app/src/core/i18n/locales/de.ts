@@ -1750,6 +1750,10 @@ export default {
   "settings.problem.other": "Dieser Wert wurde nicht angenommen.",
   "welcome.newProject": "Neues Projekt …",
   "welcome.newProjectHint": "Ordner wählen; PerMark richtet ihn als Projekt ein.",
+  "welcome.demo.explore": "Demoseiten erkunden",
+  "welcome.demo.open": "Demoseiten öffnen",
+  "welcome.demo.hint": "Beispieldokumente, die zeigen, was PerMark kann – im Ordner „Dokumente“.",
+  "welcome.demo.failed": "Die Demoseiten konnten nicht kopiert werden: {message}",
   "plugin.git.name": "Git",
   "plugin.git.about":
     "Änderungsbuchstaben, Branch und Repository-Zustand. Nur lesend: PerMark committet nie.",

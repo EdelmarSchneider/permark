@@ -52,6 +52,8 @@ pub(crate) struct Run<'a> {
     /// Each copy is flushed to disk before it counts: the originals are deleted after (a move across volumes). A plain
     /// copy skips the flush, which costs milliseconds per file.
     pub durable: bool,
+    /// A link or special file inside a folder fails the copy instead of being left out.
+    pub strict: bool,
     tick: Duration,
     last: Option<Instant>,
     buf: Vec<u8>,
@@ -79,6 +81,7 @@ impl<'a> Run<'a> {
             bytes_total: 0,
             links: 0,
             durable: false,
+            strict: false,
             tick,
             last: None,
             buf: Vec::new(),
@@ -239,6 +242,12 @@ fn copy_tree(run: &mut Run<'_>, src: &Path, dst: &Path, copied: &mut Copied) -> 
             let file_type = entry.file_type().map_err(|e| Stop::failed(&path, e))?;
             let meta = entry.metadata().ok();
             if is_link(file_type, meta.as_ref()) || !(file_type.is_dir() || file_type.is_file()) {
+                if run.strict {
+                    return Err(Stop::failed(
+                        &path,
+                        io::Error::new(io::ErrorKind::InvalidInput, "a link or special file"),
+                    ));
+                }
                 run.links += 1;
                 continue;
             }
@@ -476,5 +485,40 @@ pub(crate) fn relocate(
             Ok(deleted.left == 0 && run.links == 0)
         }
         Err(error) => Err(Stop::failed(src, error)),
+    }
+}
+
+/// Copies the folder `src` to `dest`, which must not exist yet: built under a hidden temp name beside `dest` and renamed
+/// into place only when whole, so a failure leaves nothing at `dest`. Bytes are copied as they are (line ends, BOM),
+/// dot files included, each file flushed to disk before the rename. `src` itself, or anything below it, being a link or
+/// a special file fails the whole copy: nothing is followed.
+///
+/// # Errors
+/// `AlreadyExists`: something is at `dest`; `InvalidInput`: a link | special file; else the IO failure.
+pub fn copy_folder(src: &Path, dest: &Path) -> io::Result<()> {
+    let meta = fs::symlink_metadata(src)?;
+    if is_link(meta.file_type(), Some(&meta)) || !meta.is_dir() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a folder"));
+    }
+    // checked again right before the rename: something may arrive while the copy runs
+    if fs::symlink_metadata(dest).is_ok() {
+        return Err(io::Error::from(io::ErrorKind::AlreadyExists));
+    }
+    let cancel = AtomicBool::new(false);
+    let silent = |_: &ImportProgress| {};
+    let mut run = Run::new(0, 1, &cancel, &silent, TICK);
+    run.durable = true;
+    run.strict = true;
+    match place_copy(
+        &mut run,
+        src,
+        true,
+        dest,
+        &|from, to| fs::rename(from, to),
+        &mut |_| {},
+    ) {
+        Ok(_) => Ok(()),
+        Err(Stop::Failed { source, .. }) => Err(source),
+        Err(Stop::Cancelled) => Err(io::Error::from(io::ErrorKind::Interrupted)),
     }
 }

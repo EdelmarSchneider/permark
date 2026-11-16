@@ -1458,6 +1458,45 @@ pub fn default_app_handoff(handle: AppHandle) -> Result<(), IpcError> {
     crate::default_app::handoff(&handle, &shell.env.dirs, shell.env.distribution)
 }
 
+// ---- Demo pages -----------------------------------------------------------------------------------------------------
+
+/// Where the demo pages are: the folder shipped with the app, and `PerMark Demo` in the person's Documents folder (the
+/// home folder where the system names no Documents folder, as a Linux without XDG user folders).
+fn demo_places(handle: &AppHandle) -> permark_core::demo::DemoPlaces {
+    let paths = handle.path();
+    permark_core::demo::DemoPlaces {
+        bundled: paths
+            .resource_dir()
+            .ok()
+            .map(|dir| dir.join(permark_core::demo::RESOURCE)),
+        target: paths
+            .document_dir()
+            .or_else(|_| paths.home_dir())
+            .ok()
+            .map(|dir| dir.join(permark_core::demo::FOLDER)),
+    }
+}
+
+/// What the Welcome screen offers: copy the demo pages into Documents, open the folder there, or nothing.
+#[tauri::command(async)]
+pub fn demo_offer(handle: AppHandle) -> permark_core::demo::DemoOffer {
+    permark_core::demo::offer(&state(&handle).app_store, &demo_places(&handle))
+}
+
+/// The demo pages' folder in Documents, copied there first when nothing is at its place (never written into); the
+/// window opens it next.
+#[tauri::command(async)]
+pub fn demo_install(handle: AppHandle) -> Result<String, IpcError> {
+    permark_core::demo::install(&state(&handle).app_store, &demo_places(&handle))
+        .map(|path| path.display().to_string())
+}
+
+/// The person dismissed the demo pages offer: not shown again.
+#[tauri::command(async)]
+pub fn demo_dismiss(handle: AppHandle) -> Result<(), IpcError> {
+    permark_core::demo::dismiss(&state(&handle).app_store)
+}
+
 /// Lists every command once: Tauri handler + names (contract test).
 /// Whether a web view may call the app's commands: never an export page window (it holds a generated page only, runs
 /// no script of its own and matches no capability; refusing here keeps it so should a script ever run in it).
@@ -1728,6 +1767,9 @@ commands![
     default_app_set,
     default_app_asked,
     default_app_handoff,
+    demo_offer,
+    demo_install,
+    demo_dismiss,
 ];
 
 #[cfg(test)]

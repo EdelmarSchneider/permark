@@ -1745,6 +1745,11 @@ export default {
   "settings.problem.other": "No s'ha acceptat aquest valor.",
   "welcome.newProject": "Projecte nou…",
   "welcome.newProjectHint": "Trieu una carpeta; el PerMark la configura com a projecte.",
+  "welcome.demo.explore": "Explora les pàgines de demostració",
+  "welcome.demo.open": "Obre les pàgines de demostració",
+  "welcome.demo.hint":
+    "Documents d'exemple que mostren què pot fer el PerMark, a la vostra carpeta Documents.",
+  "welcome.demo.failed": "No s'han pogut copiar les pàgines de demostració: {message}",
   "plugin.git.name": "Git",
   "plugin.git.about":
     "Lletres de canvis, branch i estat del repositori. Només lectura: el PerMark mai no fa commits.",

@@ -1726,6 +1726,11 @@ export default {
   "settings.problem.other": "Giá trị này không được chấp nhận.",
   "welcome.newProject": "Dự án mới…",
   "welcome.newProjectHint": "Chọn một thư mục; PerMark sẽ thiết lập thư mục đó thành dự án.",
+  "welcome.demo.explore": "Khám phá các trang mẫu",
+  "welcome.demo.open": "Mở các trang mẫu",
+  "welcome.demo.hint":
+    "Tài liệu mẫu cho thấy những gì PerMark làm được, nằm trong thư mục Tài liệu.",
+  "welcome.demo.failed": "Không thể sao chép các trang mẫu: {message}",
   "plugin.git.name": "Git",
   "plugin.git.about":
     "Chữ cái đánh dấu thay đổi, nhánh và trạng thái kho lưu trữ. Chỉ đọc: PerMark không bao giờ commit.",

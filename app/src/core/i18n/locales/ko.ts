@@ -1694,6 +1694,10 @@ export default {
   "settings.problem.other": "이 값은 허용되지 않습니다.",
   "welcome.newProject": "새 프로젝트…",
   "welcome.newProjectHint": "폴더를 선택하면 PerMark가 프로젝트로 설정합니다.",
+  "welcome.demo.explore": "데모 페이지 둘러보기",
+  "welcome.demo.open": "데모 페이지 열기",
+  "welcome.demo.hint": "PerMark로 할 수 있는 일을 보여 주는 예제 문서로, 문서 폴더에 있습니다.",
+  "welcome.demo.failed": "데모 페이지를 복사할 수 없습니다: {message}",
   "plugin.git.name": "Git",
   "plugin.git.about":
     "변경 문자, 브랜치, 저장소 상태를 표시합니다. 읽기 전용: PerMark는 커밋하지 않습니다.",

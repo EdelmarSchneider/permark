@@ -1741,6 +1741,11 @@ export default {
   "settings.problem.other": "この値は受け付けられませんでした。",
   "welcome.newProject": "新しいプロジェクト…",
   "welcome.newProjectHint": "フォルダーを選ぶと、PerMark がプロジェクトとして設定します。",
+  "welcome.demo.explore": "デモページを見てみる",
+  "welcome.demo.open": "デモページを開く",
+  "welcome.demo.hint":
+    "「ドキュメント」フォルダーにある、PerMark でできることを紹介するサンプル文書です。",
+  "welcome.demo.failed": "デモページをコピーできません：{message}",
   "plugin.git.name": "Git",
   "plugin.git.about":
     "変更を示す文字、ブランチ、リポジトリの状態。読み取り専用です。PerMark がコミットすることはありません。",

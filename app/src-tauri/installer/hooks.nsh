@@ -24,11 +24,17 @@
 ;    (box unticked, uninstall), never one the person wrote. An update leaves PATH as it is. A PATH this installer cannot
 ;    rewrite whole (see "Command line" below) is never changed: the installer says so and names the folder to add.
 ;
-; 5. THE TEMPLATE'S PAGES. Taller boxes on the reinstall page, short words for the uninstall page's folder label, and
+; 5. DEMO PAGES. "Install the demo pages in Documents", a check box on the welcome page, always unticked at first: the
+;    installed copy of the sample documents ($INSTDIR\demo) goes to Documents\PerMark Demo, the folder the app's Welcome
+;    screen offers too, only when nothing is there yet. A silent | passive install and an update never copy. The folder is
+;    the person's from then on: no uninstall removes it (see "Demo pages").
+;
+; 6. THE TEMPLATE'S PAGES. Taller boxes on the reinstall page, short words for the uninstall page's folder label, and
 ;    Windows' own UI fonts for Chinese and Korean, so that no translation is cut off (see "The template's other pages").
 ;
-; Uninstalling removes everything above (and the keys it leaves empty); with "Delete the application data" it also removes
-; HKCU\Software\PerMark and PerMark's folders in the profile. An update's uninstall step removes nothing.
+; Uninstalling removes everything above but the demo pages' folder (and the keys it leaves empty); with "Delete the
+; application data" it also removes HKCU\Software\PerMark and PerMark's folders in the profile. An update's uninstall step
+; removes nothing.
 ; The layout is the one the app writes (crates/plugins/shell-integration, crates/core/src/desktop); a Rust test keeps them
 ; equal. A test installer may define the four roots below before including this file (path-check.nsi does).
 
@@ -56,24 +62,24 @@
 ; Windows language ids: 1033 en, 1046 pt-BR, 3082 es, 1031 de, 2052 zh-CN, 1040 it, 1041 ja, 1042 ko, 1036 fr,
 ; 2070 pt-PT, 1027 ca, 1110 gl, 1048 ro, 1028 zh-TW, 1057 id, 1066 vi, 1049 ru, 1055 tr.
 
-LangString PermarkWelcome 1033 "PerMark is a unified document workspace: one place to read, write and organize Markdown and the files around it.$\r$\n$\r$\nSetup will install PerMark for you. No administrator rights are needed."
-LangString PermarkWelcome 1046 "O PerMark é um espaço de trabalho unificado para documentos: um só lugar para ler, escrever e organizar Markdown e os arquivos ao redor.$\r$\n$\r$\nO instalador vai instalar o PerMark para você. Não é preciso ser administrador."
-LangString PermarkWelcome 3082 "PerMark es un espacio de trabajo unificado para documentos: un solo lugar para leer, escribir y organizar Markdown y los archivos que lo rodean.$\r$\n$\r$\nEl instalador instalará PerMark para usted. No se necesitan permisos de administrador."
-LangString PermarkWelcome 1031 "PerMark ist ein einheitlicher Arbeitsplatz für Dokumente: ein Ort zum Lesen, Schreiben und Ordnen von Markdown und den Dateien drumherum.$\r$\n$\r$\nDas Setup installiert PerMark für Sie. Administratorrechte sind nicht nötig."
-LangString PermarkWelcome 2052 "PerMark 是统一文档工作区：在一个地方阅读、编写和整理 Markdown 及其周边文件。$\r$\n$\r$\n安装程序将为您安装 PerMark，无需管理员权限。"
-LangString PermarkWelcome 1040 "PerMark è uno spazio di lavoro unificato per i documenti: un unico posto per leggere, scrivere e organizzare Markdown e i file che lo circondano.$\r$\n$\r$\nIl programma di installazione installerà PerMark per te. Non servono i permessi di amministratore."
-LangString PermarkWelcome 1041 "PerMark は統合ドキュメントワークスペースです。Markdown とその周辺のファイルを、ひとつの場所で読み、書き、整理できます。$\r$\n$\r$\nこのセットアップで PerMark をインストールします。管理者権限は必要ありません。"
-LangString PermarkWelcome 1042 "PerMark는 통합 문서 작업 공간입니다. Markdown과 그 주변 파일을 한곳에서 읽고, 쓰고, 정리할 수 있습니다.$\r$\n$\r$\n설치 프로그램이 PerMark를 설치합니다. 관리자 권한은 필요하지 않습니다."
-LangString PermarkWelcome 1036 "PerMark est un espace de travail unifié pour vos documents : un seul endroit pour lire, écrire et organiser le Markdown et les fichiers qui l'entourent.$\r$\n$\r$\nLe programme d'installation va installer PerMark pour vous. Aucun droit d'administrateur n'est nécessaire."
-LangString PermarkWelcome 2070 "O PerMark é um espaço de trabalho unificado para documentos: um só local para ler, escrever e organizar Markdown e os ficheiros à sua volta.$\r$\n$\r$\nO programa de configuração vai instalar o PerMark para si. Não são necessários direitos de administrador."
-LangString PermarkWelcome 1027 "El PerMark és un espai de treball unificat per a documents: un sol lloc per a llegir, escriure i organitzar el Markdown i els fitxers que l'acompanyen.$\r$\n$\r$\nAquest assistent instal·larà el PerMark al vostre compte. No calen permisos d'administrador."
-LangString PermarkWelcome 1110 "PerMark é un espazo de traballo unificado para documentos: un único lugar para ler, escribir e organizar Markdown e os ficheiros que o acompañan.$\r$\n$\r$\nO asistente instalará PerMark para vostede. Non se necesitan permisos de administrador."
-LangString PermarkWelcome 1048 "PerMark este un spațiu de lucru unificat pentru documente: un singur loc în care să citești, să scrii și să organizezi Markdown și fișierele din jurul lui.$\r$\n$\r$\nProgramul de instalare va instala PerMark pentru tine. Nu sunt necesare drepturi de administrator."
-LangString PermarkWelcome 1028 "PerMark 是整合式文件工作區：在同一個地方閱讀、撰寫及整理 Markdown 與其周邊檔案。$\r$\n$\r$\n安裝程式將為您安裝 PerMark，不需要系統管理員權限。"
-LangString PermarkWelcome 1057 "PerMark adalah ruang kerja dokumen terpadu: satu tempat untuk membaca, menulis, dan mengatur Markdown serta file di sekitarnya.$\r$\n$\r$\nPenginstal akan menginstal PerMark untuk Anda. Tidak perlu hak administrator."
-LangString PermarkWelcome 1066 "PerMark là không gian làm việc tài liệu hợp nhất: một nơi để đọc, viết và sắp xếp Markdown cùng các tệp xung quanh.$\r$\n$\r$\nTrình cài đặt sẽ cài PerMark cho bạn. Không cần quyền quản trị viên."
-LangString PermarkWelcome 1049 "PerMark — единое рабочее пространство для документов: одно место, чтобы читать, писать и упорядочивать Markdown и файлы вокруг него.$\r$\n$\r$\nПрограмма установит PerMark для вас. Права администратора не нужны."
-LangString PermarkWelcome 1055 "PerMark birleşik bir belge çalışma alanıdır: Markdown'ı ve çevresindeki dosyaları okumak, yazmak ve düzenlemek için tek bir yer.$\r$\n$\r$\nKurulum PerMark'ı sizin için yükleyecek. Yönetici hakları gerekmez."
+LangString PermarkWelcome 1033 "PerMark is a unified document workspace: one place to read, write and organize Markdown and the files around it.$\r$\nSetup will install PerMark for you. No administrator rights are needed."
+LangString PermarkWelcome 1046 "O PerMark é um espaço de trabalho unificado para documentos: um só lugar para ler, escrever e organizar Markdown e os arquivos ao redor.$\r$\nO instalador vai instalar o PerMark para você. Não é preciso ser administrador."
+LangString PermarkWelcome 3082 "PerMark es un espacio de trabajo unificado para documentos: un solo lugar para leer, escribir y organizar Markdown y los archivos que lo rodean.$\r$\nEl instalador instalará PerMark para usted. No se necesitan permisos de administrador."
+LangString PermarkWelcome 1031 "PerMark ist ein einheitlicher Arbeitsplatz für Dokumente: ein Ort zum Lesen, Schreiben und Ordnen von Markdown und den Dateien drumherum.$\r$\nDas Setup installiert PerMark für Sie. Administratorrechte sind nicht nötig."
+LangString PermarkWelcome 2052 "PerMark 是统一文档工作区：在一个地方阅读、编写和整理 Markdown 及其周边文件。$\r$\n安装程序将为您安装 PerMark，无需管理员权限。"
+LangString PermarkWelcome 1040 "PerMark è uno spazio di lavoro unificato per i documenti: un unico posto per leggere, scrivere e organizzare Markdown e i file che lo circondano.$\r$\nIl programma di installazione installerà PerMark per te. Non servono i permessi di amministratore."
+LangString PermarkWelcome 1041 "PerMark は統合ドキュメントワークスペースです。Markdown とその周辺のファイルを、ひとつの場所で読み、書き、整理できます。$\r$\nこのセットアップで PerMark をインストールします。管理者権限は必要ありません。"
+LangString PermarkWelcome 1042 "PerMark는 통합 문서 작업 공간입니다. Markdown과 그 주변 파일을 한곳에서 읽고, 쓰고, 정리할 수 있습니다.$\r$\n설치 프로그램이 PerMark를 설치합니다. 관리자 권한은 필요하지 않습니다."
+LangString PermarkWelcome 1036 "PerMark est un espace de travail unifié pour vos documents : un seul endroit pour lire, écrire et organiser le Markdown et les fichiers qui l'entourent.$\r$\nLe programme d'installation va installer PerMark pour vous. Aucun droit d'administrateur n'est nécessaire."
+LangString PermarkWelcome 2070 "O PerMark é um espaço de trabalho unificado para documentos: um só local para ler, escrever e organizar Markdown e os ficheiros à sua volta.$\r$\nO programa de configuração vai instalar o PerMark para si. Não são necessários direitos de administrador."
+LangString PermarkWelcome 1027 "El PerMark és un espai de treball unificat per a documents: un sol lloc per a llegir, escriure i organitzar el Markdown i els fitxers que l'acompanyen.$\r$\nAquest assistent instal·larà el PerMark al vostre compte. No calen permisos d'administrador."
+LangString PermarkWelcome 1110 "PerMark é un espazo de traballo unificado para documentos: un único lugar para ler, escribir e organizar Markdown e os ficheiros que o acompañan.$\r$\nO asistente instalará PerMark para vostede. Non se necesitan permisos de administrador."
+LangString PermarkWelcome 1048 "PerMark este un spațiu de lucru unificat pentru documente: un singur loc în care să citești, să scrii și să organizezi Markdown și fișierele din jurul lui.$\r$\nProgramul de instalare va instala PerMark pentru tine. Nu sunt necesare drepturi de administrator."
+LangString PermarkWelcome 1028 "PerMark 是整合式文件工作區：在同一個地方閱讀、撰寫及整理 Markdown 與其周邊檔案。$\r$\n安裝程式將為您安裝 PerMark，不需要系統管理員權限。"
+LangString PermarkWelcome 1057 "PerMark adalah ruang kerja dokumen terpadu: satu tempat untuk membaca, menulis, dan mengatur Markdown serta file di sekitarnya.$\r$\nPenginstal akan menginstal PerMark untuk Anda. Tidak perlu hak administrator."
+LangString PermarkWelcome 1066 "PerMark là không gian làm việc tài liệu hợp nhất: một nơi để đọc, viết và sắp xếp Markdown cùng các tệp xung quanh.$\r$\nTrình cài đặt sẽ cài PerMark cho bạn. Không cần quyền quản trị viên."
+LangString PermarkWelcome 1049 "PerMark — единое рабочее пространство для документов: одно место, чтобы читать, писать и упорядочивать Markdown и файлы вокруг него.$\r$\nПрограмма установит PerMark для вас. Права администратора не нужны."
+LangString PermarkWelcome 1055 "PerMark birleşik bir belge çalışma alanıdır: Markdown'ı ve çevresindeki dosyaları okumak, yazmak ve düzenlemek için tek bir yer.$\r$\nKurulum PerMark'ı sizin için yükleyecek. Yönetici hakları gerekmez."
 
 LangString PermarkTypesTitle 1033 "Open these files with PerMark (Windows asks you to confirm in its Settings after the installation):"
 LangString PermarkTypesTitle 1046 "Abrir estes arquivos com o PerMark (o Windows pede sua confirmação nas Configurações depois da instalação):"
@@ -226,6 +232,25 @@ LangString PathOption 1057 "Tambahkan perintah permark ke PATH"
 LangString PathOption 1066 "Thêm lệnh permark vào PATH"
 LangString PathOption 1049 "Добавить команду permark в PATH"
 LangString PathOption 1055 "permark komutunu PATH'e ekle"
+
+LangString DemoOption 1033 "Install the demo pages in Documents"
+LangString DemoOption 1046 "Instalar as páginas de demonstração em Documentos"
+LangString DemoOption 3082 "Instalar las páginas de demostración en Documentos"
+LangString DemoOption 1031 "Die Demoseiten im Ordner „Dokumente“ installieren"
+LangString DemoOption 2052 "将演示页面安装到“文档”文件夹"
+LangString DemoOption 1040 "Installa le pagine dimostrative in Documenti"
+LangString DemoOption 1041 "デモページを「ドキュメント」にインストール"
+LangString DemoOption 1042 "데모 페이지를 문서 폴더에 설치"
+LangString DemoOption 1036 "Installer les pages de démonstration dans Documents"
+LangString DemoOption 2070 "Instalar as páginas de demonstração em Documentos"
+LangString DemoOption 1027 "Instal·la les pàgines de demostració a Documents"
+LangString DemoOption 1110 "Instalar as páxinas de demostración en Documentos"
+LangString DemoOption 1048 "Instalează paginile demonstrative în Documente"
+LangString DemoOption 1028 "將示範頁面安裝到「文件」資料夾"
+LangString DemoOption 1057 "Instal halaman demo di folder Dokumen"
+LangString DemoOption 1066 "Cài đặt các trang mẫu vào thư mục Tài liệu"
+LangString DemoOption 1049 "Установить демо-страницы в «Документы»"
+LangString DemoOption 1055 "Tanıtım sayfalarını Belgeler klasörüne yükle"
 
 LangString PathNotAdded 1033 "The permark command was not added to PATH: the installer cannot change your PATH safely (it is probably too long). To use the command, add this folder to PATH yourself:$\r$\n$\r$\n$PermarkPathDir"
 LangString PathNotAdded 1046 "O comando permark não foi adicionado ao PATH: o instalador não consegue alterar seu PATH com segurança (provavelmente ele é longo demais). Para usar o comando, adicione você mesmo esta pasta ao PATH:$\r$\n$\r$\n$PermarkPathDir"
@@ -435,6 +460,7 @@ LangString TypeProperties 1055 "Properties dosyası"
 Var PermarkMenu
 Var PermarkNew
 Var PermarkPath
+Var PermarkDemo
 ; "markdown;json;" ticked on the welcome page; "" when the page did not show.
 Var PermarkTypes
 Var PermarkExe
@@ -443,6 +469,7 @@ Var PermarkNewLabel
 Var PermarkMenuBox
 Var PermarkNewBox
 Var PermarkPathBox
+Var PermarkDemoBox
 Var PermarkBoxMarkdown
 Var PermarkBoxText
 Var PermarkBoxJson
@@ -862,14 +889,49 @@ Var PermarkPathDir
   ${EndIf}
 !macroend
 
-; ---- The welcome page: short text, the types, the three entries -----------------------------------------------------
+; ---- Demo pages: the sample documents in Documents ------------------------------------------------------------------
+; The installed copy ($INSTDIR\demo, bundle.resources in tauri.conf.json) goes to Documents\PerMark Demo, the same place
+; the app's Welcome screen copies it to (crates/core/src/demo). Only into a free place: a file or folder already there is
+; left as it is. The copy is built under a fresh temp name beside it and renamed into place only when whole (a rename
+; never replaces a folder), so a failed copy leaves no half folder. A test installer may define the parent folder.
+
+!define PERMARK_DEMO_FOLDER "PerMark Demo"
+!define PERMARK_DEMO_SOURCE "$INSTDIR\demo"
+!ifndef PERMARK_DEMO_PARENT
+  !define PERMARK_DEMO_PARENT "$DOCUMENTS"
+!endif
+
+!macro PERMARK_DEMO_COPY
+  Push $0
+  ${IfNot} ${FileExists} "${PERMARK_DEMO_PARENT}\${PERMARK_DEMO_FOLDER}"
+  ${AndIf} ${FileExists} "${PERMARK_DEMO_SOURCE}\README.md"
+    ; an empty file with a name no one else has, which becomes the temp folder
+    GetTempFileName $0 "${PERMARK_DEMO_PARENT}"
+    ${If} $0 != ""
+      Delete $0
+      ClearErrors
+      CreateDirectory $0
+      CopyFiles /SILENT "${PERMARK_DEMO_SOURCE}\*.*" $0
+      ${IfNot} ${Errors}
+        Rename $0 "${PERMARK_DEMO_PARENT}\${PERMARK_DEMO_FOLDER}"
+      ${EndIf}
+      ${If} ${Errors}
+        RMDir /r $0
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
+  Pop $0
+!macroend
+
+; ---- The welcome page: short text, the types, the three entries, the demo pages -------------------------------------
 ; Everything under the page's title sits in fixed boxes (dialog units, x 120..315, y 42..192 of 193), each as tall as the
 ; longest language needs, so no text can run into the next control:
-;   42  the welcome text: two paragraphs, <= 6 lines
-;   96  the title of the check grid, <= 3 lines (it carries the sentence "Windows asks you to confirm")
-;  123  the grid: 2 rows of 4 boxes, widths 52 + 44 + 42 + 57 (the last holds "Properties", the widest label)
-;  147  the two file manager entries, 2 lines each
-;  181  the PATH option, 1 line (the shortest words on the page: no language wraps them)
+;   42  the welcome text: two paragraphs on consecutive lines, <= 5 lines
+;   86  the title of the check grid, <= 3 lines (it carries the sentence "Windows asks you to confirm")
+;  112  the grid: 2 rows of 4 boxes, widths 52 + 44 + 42 + 57 (the last holds "Properties", the widest label)
+;  136  the two file manager entries, 2 lines each
+;  170  the PATH option and the demo pages, 1 line each (short words: no language wraps them)
 ; A line of text in the dialog font is 8u; CJK glyphs drawn from a fallback font make it ~8.5u.
 ; The template's own text label (one white 130u box from 45u down) is hidden before ours are made. Left visible, it
 ; repaints over every static control it overlaps on a real screen, whatever the z-order: only the top 3u of the welcome
@@ -940,27 +1002,31 @@ Function PermarkWelcomeShow
   StrCpy $R9 ";$R9"
   ClearErrors
 
-  !insertmacro PERMARK_LABEL 42u 52u "$(PermarkWelcome)"
+  !insertmacro PERMARK_LABEL 42u 43u "$(PermarkWelcome)"
   ; the template's text label: in the same page as ours, the static control whose text is " " (see above)
   System::Call 'user32::GetParent(p r0) p .r0'
   FindWindow $0 "Static" " " $0
   ${If} $0 <> 0
     ShowWindow $0 ${SW_HIDE}
   ${EndIf}
-  !insertmacro PERMARK_LABEL 96u 25u "$(PermarkTypesTitle)"
+  !insertmacro PERMARK_LABEL 86u 25u "$(PermarkTypesTitle)"
 
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxMarkdown 120u 123u 52u "Markdown" ";markdown"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxText 172u 123u 44u "$(PermarkText)" ";text"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxJson 216u 123u 42u "JSON" ";json"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxXml 258u 123u 57u "XML" ";xml"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxYaml 120u 134u 52u "YAML" ";yaml"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxToml 172u 134u 44u "TOML" ";toml"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxIni 216u 134u 42u "INI" ";ini"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxProperties 258u 134u 57u "$(PermarkProperties)" ";properties"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxMarkdown 120u 112u 52u "Markdown" ";markdown"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxText 172u 112u 44u "$(PermarkText)" ";text"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxJson 216u 112u 42u "JSON" ";json"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxXml 258u 112u 57u "XML" ";xml"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxYaml 120u 123u 52u "YAML" ";yaml"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxToml 172u 123u 44u "TOML" ";toml"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxIni 216u 123u 42u "INI" ";ini"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxProperties 258u 123u 57u "$(PermarkProperties)" ";properties"
 
-  !insertmacro PERMARK_ENTRY_BOX $PermarkMenuBox 147u 16u "$(OpenWithMenuOption)" "${PERMARK_MENU_CHOICE}" 1
-  !insertmacro PERMARK_ENTRY_BOX $PermarkNewBox 164u 17u "$(NewMarkdownOption)" "${PERMARK_NEW_CHOICE}" 1
-  !insertmacro PERMARK_ENTRY_BOX $PermarkPathBox 181u 11u "$(PathOption)" "${PERMARK_PATH_CHOICE}" 0
+  !insertmacro PERMARK_ENTRY_BOX $PermarkMenuBox 136u 16u "$(OpenWithMenuOption)" "${PERMARK_MENU_CHOICE}" 1
+  !insertmacro PERMARK_ENTRY_BOX $PermarkNewBox 153u 17u "$(NewMarkdownOption)" "${PERMARK_NEW_CHOICE}" 1
+  !insertmacro PERMARK_ENTRY_BOX $PermarkPathBox 170u 11u "$(PathOption)" "${PERMARK_PATH_CHOICE}" 0
+  ; unticked whatever an earlier install chose: nothing lands in Documents unasked
+  ${NSD_CreateCheckbox} 120u 181u 195u 11u "$(DemoOption)"
+  Pop $PermarkDemoBox
+  SetCtlColors $PermarkDemoBox "000000" "FFFFFF"
   Pop $R9
   Pop $R8
   Pop $0
@@ -971,6 +1037,7 @@ Function PermarkWelcomeLeave
   !insertmacro PERMARK_ENTRY_READ $PermarkMenuBox $PermarkMenu
   !insertmacro PERMARK_ENTRY_READ $PermarkNewBox $PermarkNew
   !insertmacro PERMARK_ENTRY_READ $PermarkPathBox $PermarkPath
+  !insertmacro PERMARK_ENTRY_READ $PermarkDemoBox $PermarkDemo
   ; "none;" marks "the page asked and nothing was ticked" (not the same as "not asked")
   StrCpy $PermarkTypes ""
   !insertmacro PERMARK_TYPE_READ $PermarkBoxMarkdown "markdown"
@@ -1109,6 +1176,12 @@ SetFont /LANG=1042 "Malgun Gothic" 9
   !insertmacro PERMARK_ENTRY_APPLY $PermarkMenu "${PERMARK_MENU_CHOICE}" PERMARK_MENU "Directory\shell\PerMark" "$(OpenWithMenuLabel)" $PermarkLabel
   !insertmacro PERMARK_ENTRY_APPLY $PermarkNew "${PERMARK_NEW_CHOICE}" PERMARK_NEW "Directory\shell\PerMarkNew" "$(NewMarkdownLabel)" $PermarkNewLabel
   !insertmacro PERMARK_PATH_APPLY
+
+  ; the demo pages: only when ticked on the welcome page ("" when it did not show: silent, passive, update)
+  ${If} $PermarkDemo == "1"
+  ${AndIf} $UpdateMode <> 1
+    !insertmacro PERMARK_DEMO_COPY
+  ${EndIf}
 
   !insertmacro UPDATEFILEASSOC
 

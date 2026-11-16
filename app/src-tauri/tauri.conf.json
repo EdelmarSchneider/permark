@@ -26,7 +26,8 @@
     "license": "MIT OR Apache-2.0",
     "licenseFile": "../../LICENSE-MIT",
     "resources": {
-      "resources/THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md"
+      "resources/THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md",
+      "../../demo": "demo"
     },
     "icon": [
       "icons/32x32.png",

@@ -1723,6 +1723,11 @@ export default {
   "settings.problem.other": "Este valor não foi aceito.",
   "welcome.newProject": "Novo projeto…",
   "welcome.newProjectHint": "Escolha uma pasta; o PerMark a prepara como projeto.",
+  "welcome.demo.explore": "Explorar as páginas de demonstração",
+  "welcome.demo.open": "Abrir as páginas de demonstração",
+  "welcome.demo.hint":
+    "Documentos de exemplo que mostram o que o PerMark faz, na sua pasta Documentos.",
+  "welcome.demo.failed": "Não foi possível copiar as páginas de demonstração: {message}",
   "plugin.git.name": "Git",
   "plugin.git.about":
     "Letras de mudança, branch e estado do repositório. Somente leitura: o PerMark nunca faz commit.",

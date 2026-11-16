@@ -1734,6 +1734,10 @@ export default {
   "settings.problem.other": "Nilai ini tidak diterima.",
   "welcome.newProject": "Proyek baru…",
   "welcome.newProjectHint": "Pilih folder; PerMark akan menyiapkannya sebagai proyek.",
+  "welcome.demo.explore": "Jelajahi halaman demo",
+  "welcome.demo.open": "Buka halaman demo",
+  "welcome.demo.hint": "Dokumen contoh yang menunjukkan kemampuan PerMark, di folder Dokumen Anda.",
+  "welcome.demo.failed": "Tidak dapat menyalin halaman demo: {message}",
   "plugin.git.name": "Git",
   "plugin.git.about":
     "Huruf perubahan, branch, dan status repositori. Hanya baca: PerMark tidak pernah membuat commit.",
