@@ -249,9 +249,9 @@ fn the_demo_pages_ship_in_every_installer_and_in_the_store_package() {
 
 #[test]
 fn the_installer_copies_the_demo_pages_only_when_ticked_and_never_removes_them() {
-    // the box starts unticked whatever an earlier install chose: nothing lands in Documents unasked
+    // the box starts ticked; the person can untick it on the welcome page
     assert!(HOOKS.contains(r#"${NSD_CreateCheckbox} 120u 181u 195u 11u "$(DemoOption)""#));
-    assert!(!HOOKS.contains("${NSD_Check} $PermarkDemoBox"));
+    assert!(HOOKS.contains("${NSD_Check} $PermarkDemoBox"));
     assert!(!HOOKS.contains(r#"WriteRegDWORD HKCU "${PERMARK_APP_KEY}" "Demo"#));
     // "" when the page did not show (silent, passive, update): only "1" copies
     assert!(HOOKS.contains(r#"${If} $PermarkDemo == "1""#));

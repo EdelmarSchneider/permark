@@ -24,7 +24,7 @@
 ;    (box unticked, uninstall), never one the person wrote. An update leaves PATH as it is. A PATH this installer cannot
 ;    rewrite whole (see "Command line" below) is never changed: the installer says so and names the folder to add.
 ;
-; 5. DEMO PAGES. "Install the demo pages in Documents", a check box on the welcome page, always unticked at first: the
+; 5. DEMO PAGES. "Install the demo pages in Documents", a check box on the welcome page, always ticked at first: the
 ;    installed copy of the sample documents ($INSTDIR\demo) goes to Documents\PerMark Demo, the folder the app's Welcome
 ;    screen offers too, only when nothing is there yet. A silent | passive install and an update never copy. The folder is
 ;    the person's from then on: no uninstall removes it (see "Demo pages").
@@ -1023,10 +1023,12 @@ Function PermarkWelcomeShow
   !insertmacro PERMARK_ENTRY_BOX $PermarkMenuBox 136u 16u "$(OpenWithMenuOption)" "${PERMARK_MENU_CHOICE}" 1
   !insertmacro PERMARK_ENTRY_BOX $PermarkNewBox 153u 17u "$(NewMarkdownOption)" "${PERMARK_NEW_CHOICE}" 1
   !insertmacro PERMARK_ENTRY_BOX $PermarkPathBox 170u 11u "$(PathOption)" "${PERMARK_PATH_CHOICE}" 0
-  ; unticked whatever an earlier install chose: nothing lands in Documents unasked
+  ; ticked on every first install: the person sees the offer and may untick it; an update never shows the page, and
+  ; the copy only goes into a free place, so nothing the person has is replaced
   ${NSD_CreateCheckbox} 120u 181u 195u 11u "$(DemoOption)"
   Pop $PermarkDemoBox
   SetCtlColors $PermarkDemoBox "000000" "FFFFFF"
+  ${NSD_Check} $PermarkDemoBox
   Pop $R9
   Pop $R8
   Pop $0
