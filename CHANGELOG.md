@@ -5,6 +5,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Expand all and Collapse all.** JSON, XML and JSONL trees, and YAML, TOML, INI and properties sheets, have **Expand all** and **Collapse all** beside the view options. A document now opens expanded when it is small enough; a very large one opens its first levels so it stays fast. <!-- f: view-mode -->
+
 ## [0.13.0] - 2026-11-16
 
 ### Added
