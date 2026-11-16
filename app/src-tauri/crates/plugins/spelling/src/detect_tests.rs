@@ -6,7 +6,7 @@ fn ids() -> Vec<&'static str> {
 }
 
 /// Everyday sentences per language (the tag the detector should answer, Galician has no detector model).
-const CORPUS: [(&str, [&str; 10]); 9] = [
+const CORPUS: [(&str, [&str; 10]); 13] = [
     (
         "en",
         [
@@ -142,6 +142,66 @@ const CORPUS: [(&str, [&str; 10]); 9] = [
             "De obicei citesc câteva pagini dintr-o carte înainte să adorm.",
         ],
     ),
+    (
+        "pl",
+        [
+            "Znowu zapomniałem parasola z domu i dotarłem do pracy całkiem przemoczony.",
+            "Piekarnia na rogu sprzedaje najlepszy chleb w okolicy, ale wcześnie zamyka.",
+            "Możesz do mnie oddzwonić, kiedy będziesz miał chwilę? Chodzi o jutrzejsze spotkanie.",
+            "Spędziliśmy cały weekend na malowaniu kuchni i nadal wygląda na niedokończoną.",
+            "Mój brat przeprowadził się w zeszłym roku do małej wsi i mówi, że nigdy nie wróci do miasta.",
+            "Pamiętaj, żeby podlewać rośliny, kiedy będę na urlopie.",
+            "Pociąg spóźnił się dziś rano z powodu awarii sygnalizacji.",
+            "Ona uczy się grać na pianinie, odkąd skończyła siedem lat.",
+            "Jeśli w sobotę nie będzie padać, moglibyśmy zrobić piknik nad rzeką.",
+            "Zwykle czytam kilka stron książki, zanim zasnę.",
+        ],
+    ),
+    (
+        "vi",
+        [
+            "Tôi lại quên ô ở nhà nên đến chỗ làm thì ướt sũng.",
+            "Tiệm bánh ở góc phố bán bánh mì ngon nhất khu này, nhưng đóng cửa sớm.",
+            "Khi nào rảnh bạn gọi lại cho tôi được không? Chuyện cuộc họp ngày mai.",
+            "Chúng tôi dành cả cuối tuần để sơn nhà bếp mà trông vẫn chưa xong.",
+            "Anh trai tôi chuyển về một ngôi làng nhỏ năm ngoái và nói rằng sẽ không bao giờ quay lại thành phố.",
+            "Nhớ tưới cây giúp tôi trong lúc tôi đi nghỉ nhé.",
+            "Sáng nay tàu đến muộn vì có sự cố với hệ thống tín hiệu.",
+            "Cô ấy học chơi đàn piano từ khi lên bảy tuổi.",
+            "Nếu thứ bảy trời không mưa, chúng ta có thể đi dã ngoại bên bờ sông.",
+            "Tôi thường đọc vài trang sách trước khi đi ngủ.",
+        ],
+    ),
+    (
+        "ru",
+        [
+            "Я опять забыл зонтик дома и пришёл на работу совсем мокрым.",
+            "Пекарня на углу продаёт лучший хлеб в районе, но рано закрывается.",
+            "Можешь перезвонить мне, когда будет минутка? Это насчёт завтрашней встречи.",
+            "Мы потратили все выходные на покраску кухни, а она до сих пор выглядит незаконченной.",
+            "Мой брат в прошлом году переехал в маленькую деревню и говорит, что никогда не вернётся в город.",
+            "Не забудь поливать цветы, пока я буду в отпуске.",
+            "Сегодня утром поезд опоздал из-за неполадки с сигналами.",
+            "Она учится играть на пианино с семи лет.",
+            "Если в субботу не будет дождя, мы могли бы устроить пикник у реки.",
+            "Перед сном я обычно читаю несколько страниц книги.",
+        ],
+    ),
+    (
+        "uk",
+        [
+            "Я знову забув парасольку вдома і прийшов на роботу зовсім мокрим.",
+            "Пекарня на розі продає найкращий хліб у районі, але рано зачиняється.",
+            "Можеш передзвонити мені, коли матимеш хвилинку? Це щодо завтрашньої зустрічі.",
+            "Ми витратили всі вихідні на фарбування кухні, а вона досі виглядає незавершеною.",
+            "Мій брат торік переїхав до маленького села і каже, що ніколи не повернеться до міста.",
+            "Не забудь поливати квіти, поки я буду у відпустці.",
+            "Сьогодні вранці потяг запізнився через несправність сигналів.",
+            "Вона вчиться грати на піаніно з семи років.",
+            "Якщо в суботу не буде дощу, ми могли б влаштувати пікнік біля річки.",
+            "Перед сном я зазвичай читаю кілька сторінок книжки.",
+        ],
+    ),
 ];
 
 /// Samples of 1, 2 and 5 consecutive sentences (wrapping), 10 of each length per language.
@@ -233,6 +293,10 @@ fn two_region_languages_follow_the_default_region() {
         (Lang::Ita, "it"),
         (Lang::Cat, "ca"),
         (Lang::Ron, "ro"),
+        (Lang::Pol, "pl"),
+        (Lang::Vie, "vi"),
+        (Lang::Rus, "ru"),
+        (Lang::Ukr, "uk"),
     ] {
         assert_eq!(id_of(lang, &ids, "en"), Some(id));
     }
@@ -241,7 +305,8 @@ fn two_region_languages_follow_the_default_region() {
     assert_eq!(id_of(Lang::Spa, &ids, "gl"), Some("gl"));
     assert_eq!(id_of(Lang::Spa, &ids, "en"), Some("es"));
     // no dictionary, no answer
-    assert_eq!(id_of(Lang::Rus, &ids, "en"), None);
+    assert_eq!(id_of(Lang::Tur, &ids, "en"), None);
+    assert_eq!(id_of(Lang::Rus, &["en"], "en"), None);
     assert_eq!(id_of(Lang::Ron, &["en"], "en"), None);
     assert_eq!(id_of(Lang::Eng, &["en-GB"], "en"), Some("en-GB"));
 }
@@ -291,8 +356,35 @@ fn scripts_without_a_dictionary_are_unsupported() {
         Detection::Unsupported("han")
     );
     assert_eq!(
-        detect("Сегодня очень хорошая погода, пойдём гулять.", &ids, "en"),
+        detect(
+            "Σήμερα ο καιρός είναι πολύ ωραίος, πάμε μια βόλτα.",
+            &ids,
+            "en"
+        ),
+        Detection::Unsupported("greek")
+    );
+    // a script is covered only while one of its dictionaries is in the table
+    assert_eq!(
+        detect(
+            "Сегодня очень хорошая погода, пойдём гулять.",
+            &["en"],
+            "en"
+        ),
         Detection::Unsupported("cyrillic")
+    );
+}
+
+#[test]
+fn russian_and_ukrainian_are_told_apart() {
+    let ids = ids();
+    let russian = "Сегодня очень хорошая погода, поэтому мы пойдём гулять в парк.";
+    let ukrainian = "Сьогодні дуже гарна погода, тому ми підемо гуляти в парк.";
+    assert_eq!(detect(russian, &ids, "en"), Detection::Found("ru"));
+    assert_eq!(detect(ukrainian, &ids, "en"), Detection::Found("uk"));
+    // with only one of the two, the other reads as it: the default never decides between scripts
+    assert_eq!(
+        detect(ukrainian, &["en", "ru"], "en"),
+        Detection::Found("ru")
     );
 }
 
@@ -306,10 +398,12 @@ fn the_ui_locale_gives_the_first_default() {
     assert_eq!(locale_default("en-US", &ids), "en");
     assert_eq!(locale_default("pt", &ids), "pt-BR");
     assert_eq!(locale_default("fr-CA", &ids), "fr");
-    for same in ["es", "fr", "de", "it", "ca", "gl", "ro"] {
+    for same in [
+        "es", "fr", "de", "it", "ca", "gl", "ro", "pl", "ru", "uk", "vi",
+    ] {
         assert_eq!(locale_default(same, &ids), same);
     }
-    for other in ["ja", "ko", "zh-CN", "", "x"] {
+    for other in ["ja", "ko", "zh-CN", "tr", "", "x"] {
         assert_eq!(locale_default(other, &ids), "en");
     }
     // a table without English still answers one of its own

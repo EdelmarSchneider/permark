@@ -196,7 +196,10 @@ fn the_official_table_builds_a_unit_per_language() {
     }
     assert_eq!(
         OFFICIAL.iter().map(|l| l.id).collect::<Vec<_>>(),
-        ["en", "en-GB", "pt-BR", "pt-PT", "es", "fr", "de", "it", "ca", "gl", "ro"]
+        [
+            "en", "en-GB", "pt-BR", "pt-PT", "es", "fr", "de", "it", "ca", "gl", "ro", "pl", "ru",
+            "uk", "vi"
+        ]
     );
 }
 
@@ -733,6 +736,10 @@ fn the_official_dictionaries_load() {
         ("ca", "casa"),
         ("gl", "casa"),
         ("ro", "știință"),
+        ("pl", "książka"),
+        ("ru", "молоко"),
+        ("uk", "будинок"),
+        ("vi", "người"),
     ];
     for language in OFFICIAL {
         let (_, _, dictionary) = official(Path::new(&root), language);
@@ -742,6 +749,58 @@ fn the_official_dictionaries_load() {
             "{}",
             language.id
         );
+    }
+}
+
+/// The real dictionaries with complex affix rules or other scripts: each loads in a few seconds at most, knows the
+/// words of its script (Ukrainian with every apostrophe form, Vietnamese in decomposed form too), flags a typo and
+/// corrects it. Needs the files like [`the_official_dictionaries_load`]; prints the load time of each.
+#[test]
+#[ignore = "needs the downloaded dictionaries"]
+fn the_other_script_dictionaries_check_and_correct() {
+    let Ok(root) = std::env::var("SPELLING_DICTS") else {
+        return;
+    };
+    let cases: [(&str, &[&str], &str, &str); 4] = [
+        (
+            "pl",
+            &["dom", "książka", "źródło", "Łódź", "żółć"],
+            "dzien",
+            "dzień",
+        ),
+        (
+            "ru",
+            &["дом", "книга", "ещё", "съезд", "Москва"],
+            "малоко",
+            "молоко",
+        ),
+        (
+            "uk",
+            &["будинок", "їжак", "ґанок", "м'ясо", "мʼясо", "м’ясо"],
+            "будинак",
+            "будинок",
+        ),
+        (
+            "vi",
+            &["nhà", "người", "Việt", "nha\u{300}", "đường"],
+            "ngừoi",
+            "người",
+        ),
+    ];
+    for (id, known, typo, fix) in cases {
+        let language = OFFICIAL.into_iter().find(|l| l.id == id).unwrap();
+        let started = Instant::now();
+        let (_, _, dictionary) = official(Path::new(&root), language);
+        let took = started.elapsed();
+        println!("{id}: loaded in {took:?}, {} bytes", language.bytes());
+        assert!(took < Duration::from_secs(3), "{id} loads in {took:?}");
+        for word in known {
+            assert!(dictionary.check(&normalize(word, id)), "{id}: {word}");
+        }
+        assert!(!dictionary.check(&normalize(typo, id)), "{id}: {typo}");
+        let mut found = Vec::new();
+        dictionary.suggest(&normalize(typo, id), &mut found);
+        assert!(found.iter().any(|s| s == fix), "{id}: {typo} -> {found:?}");
     }
 }
 
