@@ -1387,9 +1387,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "代理程式連線",
-  "agent.switch": "與代理程式共用此專案",
+  "agent.switch": "與代理程式共用此資料夾",
   "agent.switchHint":
-    "您連線的代理程式（支援 MCP 的 AI 工具，例如 Claude Code 或 Cursor）可以看到您正在檢視的內容和變更、搜尋並讀取此專案的檔案、讀取您的註解和您共用的筆記，並為您顯示某個位置。僅限於這部電腦。代理程式無法存取列在 .aiignore 中的檔案，也絕不會透過 PerMark 編輯檔案。這只涵蓋代理程式從 PerMark 取得的內容：代理程式仍可自行開啟您電腦上的檔案。",
+    "您連線的代理程式（支援 MCP 的 AI 工具，例如 Claude Code 或 Cursor）可以看到您正在檢視的內容和變更、搜尋並讀取此資料夾的檔案、讀取您的註解和您共用的筆記，並為您顯示某個位置。僅限於這部電腦。代理程式無法存取列在 .aiignore 中的檔案，也絕不會透過 PerMark 編輯檔案。這只涵蓋代理程式從 PerMark 取得的內容：代理程式仍可自行開啟您電腦上的檔案。",
   "agent.folderReplaced": "此資料夾在您連線後已變更。請再次開啟連線，以允許代理程式在此存取。",
   "agent.groups": "代理程式可以執行的動作",
   "agent.group.context": "查看您正在檢視的內容",
@@ -1570,8 +1570,9 @@ export default {
   "note.parseError": "以文字顯示：檔案不符合其格式",
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "代理程式限制",
-  "agent.narrow.groups": "代理程式在此永遠無法取得的群組",
-  "agent.narrow.groupsHint": "此資料夾只能縮小每個人所允許的範圍。",
+  "agent.narrow.groups": "在此對代理程式封鎖的群組",
+  "agent.narrow.groupsHint":
+    "勾選群組，即可為所有人封鎖代理程式使用該群組。資料夾只能縮小每個人所允許的範圍。",
   "agent.narrow.paths": "代理程式永遠拿不到的路徑",
   "agent.narrow.pathsHint":
     "列在 .aiignore 中的檔案永遠不會交給代理程式。在此資料夾中，這些模式會一併加入（規則與 .gitignore 相同）。",
@@ -1588,6 +1589,7 @@ export default {
   "plugins.choice.on": "在此開啟",
   "plugins.choice.off": "在此關閉（僅自己）",
   "plugins.choice.offEveryone": "為所有人關閉",
+  "plugins.choice.offEveryoneNeedsInit": "為所有人關閉（請先初始化 PerMark）",
   "plugins.dataNotRemoved": "無法移除資料：{message}",
   "plugins.dataRemoved": "已移除 {name} 的資料。",
   "plugins.failedToStart": "{name} 無法啟動。{reason}",

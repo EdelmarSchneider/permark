@@ -16,10 +16,10 @@ afterEach(() => {
 
 const control = createRawSnippet(() => ({ render: () => '<input id="row-control" />' }));
 
-function show(scope?: "everyone" | "you"): void {
+function show(scope?: "everyone" | "you", ignored?: boolean): void {
   component = mount(SettingRow, {
     target,
-    props: { label: "Files to hide", labelFor: "row-control", scope, children: control },
+    props: { label: "Files to hide", labelFor: "row-control", scope, ignored, children: control },
   });
   flushSync();
 }
@@ -57,6 +57,16 @@ describe("the scope chip of a setting row", () => {
   it("no scope: no chip (app rows)", () => {
     show();
     expect(target.querySelector(".scope-chip")).toBeNull();
+    expect(seen()).toBe("Files to hide");
+  });
+
+  it("ignored: a quiet line says the folder's file value is not used (the caller decides)", () => {
+    show(undefined, true);
+    expect(seen()).toContain("Set in .permark/config.toml; not used here");
+  });
+
+  it("not ignored: no line", () => {
+    show(undefined, false);
     expect(seen()).toBe("Files to hide");
   });
 });

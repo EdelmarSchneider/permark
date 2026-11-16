@@ -2,7 +2,8 @@
   // This folder > Plugins here: the plugins that work per folder, each with its choice for this folder - the app's
   // switch, on or off for this person only (kept on this computer), or off for everyone (kept in the folder's
   // `.permark/config.toml`, which wins over each person's choice). Off for everyone waits for Initialize while
-  // `.permark/` is missing. The row's chip says who the choice in force is for.
+  // `.permark/` is missing (its option says so). The row's chip says who the choice in force is for: none while it
+  // follows the app.
   import type { PluginInfo } from "../../../api";
   import { api } from "../../../api";
   import { conditions } from "../../conditions/context.svelte";
@@ -56,8 +57,10 @@
     return key === null ? "" : t(key);
   }
 
-  /** Writes what the new choice changes: the folder's switch first (it wins), then the person's own. `box` shows the
-   *  choice in force afterwards: a refused pick leaves the list's value unchanged, so the box would keep showing it. */
+  /** Writes what the new choice changes, the safer half first, so a failure halfway leaves the plugin off rather than
+   *  on: going Off for everyone writes the folder's switch (it wins); leaving it writes the person's own choice first
+   *  and frees the folder's switch only once that is kept. `box` shows the choice in force afterwards: a refused pick
+   *  leaves the list's value unchanged, so the box would keep showing it. */
   async function choose(
     info: PluginInfo,
     next: ProjectChoice,
@@ -65,13 +68,26 @@
   ): Promise<void> {
     const write = choiceWrite(info, next);
     const plugin = info.manifest.id;
-    const kept =
-      write.teamOff === null ||
-      (await projectSettings.set({ key: "pluginOff", value: { plugin, off: write.teamOff } }));
-    refused = kept ? null : plugin;
-    if (kept && write.person !== undefined) {
+    refused = null;
+    const person = async (): Promise<boolean> => {
+      if (write.person === undefined) return true;
       const result = await api.pluginSetProject(plugin, write.person);
       if (!result.ok) store.notifyFileOpFailed(result.error);
+      return result.ok;
+    };
+    const team = async (): Promise<boolean> => {
+      if (write.teamOff === null) return true;
+      const kept = await projectSettings.set({
+        key: "pluginOff",
+        value: { plugin, off: write.teamOff },
+      });
+      refused = kept ? null : plugin;
+      return kept;
+    };
+    if (write.teamOff === false) {
+      if (await person()) await team();
+    } else if (await team()) {
+      await person();
     }
     await pluginsStore.load();
     box.value = choiceOf(infos.find((i) => i.manifest.id === plugin) ?? info);
@@ -85,7 +101,7 @@
 {:else}
   <p class="intro">{t("plugins.hereIntro")}</p>
   {#if !initialized}
-    <ShareInit />
+    <ShareInit compact />
   {/if}
   <Card>
     {#each infos as info (info.manifest.id)}
@@ -118,8 +134,9 @@
           }}
         >
           {#each CHOICES as choice (choice.value)}
-            <option value={choice.value} disabled={choice.value === "offEveryone" && !initialized}
-              >{t(choice.label)}</option
+            {@const waits = choice.value === "offEveryone" && !initialized}
+            <option value={choice.value} disabled={waits}
+              >{t(waits ? "plugins.choice.offEveryoneNeedsInit" : choice.label)}</option
             >
           {/each}
         </select>

@@ -1446,9 +1446,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "Connexió amb agents",
-  "agent.switch": "Comparteix aquest projecte amb agents",
+  "agent.switch": "Comparteix aquesta carpeta amb agents",
   "agent.switchHint":
-    "Un agent que connecteu (una eina d'IA compatible amb MCP, com ara Claude Code o Cursor) pot veure el que esteu mirant i què ha canviat, cercar i llegir els fitxers d'aquest projecte, llegir els vostres comentaris i les notes que compartiu, i mostrar-vos un lloc. Només en aquest ordinador. Els fitxers que llista .aiignore queden fora del seu abast, i els agents mai no editen fitxers a través del PerMark. Això només cobreix el que els agents obtenen del PerMark: un agent encara pot obrir fitxers del vostre ordinador pel seu compte.",
+    "Un agent que connecteu (una eina d'IA compatible amb MCP, com ara Claude Code o Cursor) pot veure el que esteu mirant i què ha canviat, cercar i llegir els fitxers d'aquesta carpeta, llegir els vostres comentaris i les notes que compartiu, i mostrar-vos un lloc. Només en aquest ordinador. Els fitxers que llista .aiignore queden fora del seu abast, i els agents mai no editen fitxers a través del PerMark. Això només cobreix el que els agents obtenen del PerMark: un agent encara pot obrir fitxers del vostre ordinador pel seu compte.",
   "agent.folderReplaced":
     "Aquesta carpeta ha canviat des que la vau connectar. Torneu a activar la connexió per permetre-hi agents.",
   "agent.groups": "Què poden fer els agents",
@@ -1645,8 +1645,9 @@ export default {
   "note.parseError": "Es mostra com a text: el fitxer no és vàlid en el seu format",
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "Límits dels agents",
-  "agent.narrow.groups": "Permisos que els agents no tenen mai aquí",
-  "agent.narrow.groupsHint": "Aquesta carpeta només pot restringir el que permet cada persona.",
+  "agent.narrow.groups": "Grups bloquejats per als agents aquí",
+  "agent.narrow.groupsHint":
+    "Marqueu un grup per deixar-ne fora els agents, per a tothom. Una carpeta només pot restringir el que permet cada persona.",
   "agent.narrow.paths": "Camins que els agents no obtenen mai",
   "agent.narrow.pathsHint":
     "Els fitxers llistats a .aiignore no arriben mai als agents. Aquests patrons s'hi afegeixen per a aquesta carpeta (les mateixes regles que .gitignore).",
@@ -1663,6 +1664,7 @@ export default {
   "plugins.choice.on": "Activat aquí",
   "plugins.choice.off": "Desactivat aquí (només vós)",
   "plugins.choice.offEveryone": "Desactivat per a tothom",
+  "plugins.choice.offEveryoneNeedsInit": "Desactivat per a tothom (inicialitzeu el PerMark primer)",
   "plugins.dataNotRemoved": "No s'han pogut eliminar les dades: {message}",
   "plugins.dataRemoved": "S'han eliminat les dades de {name}.",
   "plugins.failedToStart": "{name} no s'ha pogut iniciar. {reason}",

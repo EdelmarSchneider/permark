@@ -129,9 +129,15 @@ impl ProjectConfig {
                 table
                     .0
                     .iter()
-                    .map(|(key, _)| key)
-                    .filter(|key| *key != "enabled" && (id.as_str(), *key) != TOKENIZERS)
-                    .map(move |key| format!("{id}.{key}"))
+                    // `enabled` is read only as true | false: any other value turns nothing off
+                    .filter(|(key, value)| {
+                        if *key == "enabled" {
+                            value.as_bool().is_none()
+                        } else {
+                            (id.as_str(), *key) != TOKENIZERS
+                        }
+                    })
+                    .map(move |(key, _)| format!("{id}.{key}"))
             })
             .collect();
         ignored_plugin_keys.sort();

@@ -1374,9 +1374,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "智能体连接",
-  "agent.switch": "与智能体共享此项目",
+  "agent.switch": "与智能体共享此文件夹",
   "agent.switchHint":
-    "你连接的智能体（支持 MCP 的 AI 工具，例如 Claude Code 或 Cursor）可以看到你正在查看的内容和变更，搜索和阅读本项目的文件，阅读你的批注和你共享的笔记，并向你展示某个位置。仅限本机。列在 .aiignore 中的文件不会交给智能体，智能体从不通过 PerMark 编辑文件。这只涉及智能体从 PerMark 获得的内容：智能体仍可自行打开你电脑上的文件。",
+    "你连接的智能体（支持 MCP 的 AI 工具，例如 Claude Code 或 Cursor）可以看到你正在查看的内容和变更，搜索和阅读此文件夹的文件，阅读你的批注和你共享的笔记，并向你展示某个位置。仅限本机。列在 .aiignore 中的文件不会交给智能体，智能体从不通过 PerMark 编辑文件。这只涉及智能体从 PerMark 获得的内容：智能体仍可自行打开你电脑上的文件。",
   "agent.folderReplaced": "自你连接以来，此文件夹已发生变化。要在此允许智能体，请重新开启连接。",
   "agent.groups": "智能体可以做什么",
   "agent.group.context": "查看你正在看的内容",
@@ -1556,8 +1556,9 @@ export default {
   "note.parseError": "以文本显示：文件在其格式中无效",
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "智能体限制",
-  "agent.narrow.groups": "智能体在此项目中永远不能使用的功能组",
-  "agent.narrow.groupsHint": "此文件夹只能收紧每个人已允许的范围。",
+  "agent.narrow.groups": "在此对智能体屏蔽的功能组",
+  "agent.narrow.groupsHint":
+    "勾选一个功能组，即对所有人屏蔽智能体使用它。文件夹只能收紧每个人已允许的范围。",
   "agent.narrow.paths": "智能体永远拿不到的路径",
   "agent.narrow.pathsHint":
     ".aiignore 中列出的文件永远不会交给智能体。在此文件夹中，这些模式会追加到其中（规则与 .gitignore 相同）。",
@@ -1574,6 +1575,7 @@ export default {
   "plugins.choice.on": "在此开启",
   "plugins.choice.off": "在此关闭（仅自己）",
   "plugins.choice.offEveryone": "为所有人关闭",
+  "plugins.choice.offEveryoneNeedsInit": "为所有人关闭（请先初始化 PerMark）",
   "plugins.dataNotRemoved": "无法移除数据：{message}",
   "plugins.dataRemoved": "已移除 {name} 的数据。",
   "plugins.failedToStart": "{name} 无法启动。{reason}",

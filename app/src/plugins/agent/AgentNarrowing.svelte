@@ -33,7 +33,7 @@
 
 {#if settings !== null}
   {#if off}
-    <ShareInit />
+    <ShareInit compact />
   {/if}
   <div class="limits-rows" class:off>
     <Card>

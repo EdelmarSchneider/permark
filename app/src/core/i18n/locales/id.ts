@@ -1442,9 +1442,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "Koneksi agen",
-  "agent.switch": "Bagikan proyek ini dengan agen",
+  "agent.switch": "Bagikan folder ini dengan agen",
   "agent.switchHint":
-    "Agen yang Anda hubungkan (alat AI yang mendukung MCP, seperti Claude Code atau Cursor) dapat melihat apa yang sedang Anda lihat dan apa yang berubah, mencari dan membaca file proyek ini, membaca komentar Anda dan catatan yang Anda bagikan, serta menunjukkan suatu tempat kepada Anda. Hanya di komputer ini. File yang tercantum di .aiignore tetap di luar jangkauan agen, dan agen tidak pernah mengedit file melalui PerMark. Ini hanya mencakup apa yang didapat agen dari PerMark: agen tetap dapat membuka file di komputer Anda secara langsung.",
+    "Agen yang Anda hubungkan (alat AI yang mendukung MCP, seperti Claude Code atau Cursor) dapat melihat apa yang sedang Anda lihat dan apa yang berubah, mencari dan membaca file folder ini, membaca komentar Anda dan catatan yang Anda bagikan, serta menunjukkan suatu tempat kepada Anda. Hanya di komputer ini. File yang tercantum di .aiignore tetap di luar jangkauan agen, dan agen tidak pernah mengedit file melalui PerMark. Ini hanya mencakup apa yang didapat agen dari PerMark: agen tetap dapat membuka file di komputer Anda secara langsung.",
   "agent.folderReplaced":
     "Folder ini berubah sejak Anda menghubungkannya. Aktifkan koneksi lagi untuk mengizinkan agen di sini.",
   "agent.groups": "Yang boleh dilakukan agen",
@@ -1635,8 +1635,9 @@ export default {
   "note.parseError": "Ditampilkan sebagai teks: file tidak valid dalam formatnya",
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "Batasan agen",
-  "agent.narrow.groups": "Grup yang tidak pernah didapat agen di sini",
-  "agent.narrow.groupsHint": "Folder ini hanya dapat mempersempit apa yang diizinkan setiap orang.",
+  "agent.narrow.groups": "Grup yang diblokir untuk agen di sini",
+  "agent.narrow.groupsHint":
+    "Centang grup untuk menjauhkan agen darinya, bagi semua orang. Folder hanya dapat mempersempit apa yang diizinkan setiap orang.",
   "agent.narrow.paths": "Jalur yang tidak pernah didapat agen",
   "agent.narrow.pathsHint":
     "File yang tercantum di .aiignore tidak pernah sampai ke agen. Pola ini ditambahkan untuk folder ini (aturan yang sama dengan .gitignore).",
@@ -1653,6 +1654,7 @@ export default {
   "plugins.choice.on": "Aktif di sini",
   "plugins.choice.off": "Nonaktif di sini (hanya Anda)",
   "plugins.choice.offEveryone": "Nonaktif untuk semua orang",
+  "plugins.choice.offEveryoneNeedsInit": "Nonaktif untuk semua orang (inisialisasi PerMark dulu)",
   "plugins.dataNotRemoved": "Tidak dapat menghapus data: {message}",
   "plugins.dataRemoved": "Data {name} telah dihapus.",
   "plugins.failedToStart": "{name} tidak dapat dimulai. {reason}",
