@@ -110,12 +110,23 @@ export function languageName(code: string, names: Intl.DisplayNames): string {
   }
 }
 
+/**
+ * A language name as one item of a sentence's list: a qualifier after a comma goes in parentheses (Russian
+ * "китайский, упрощенное письмо" would read as two items), and Vietnamese "Tiếng" (capitalized for menus) is lowercase.
+ */
+function inSentence(name: string, locale: string): string {
+  const parted = name.replace(/^([^,]+), (.+)$/u, "$1 ($2)");
+  return locale === "vi" ? parted.replace(/^Tiếng /u, "tiếng ") : parted;
+}
+
 /** "German, Japanese and Korean"; past four: "English, Arabic, Chinese, French, and 9 more" (list style of the
  *  current language). */
 export function languagesText(codes: readonly string[]): string {
   const locale = language.locale;
   const names = new Intl.DisplayNames(locale, { type: "language" });
-  const shown = codes.slice(0, SHOWN_LANGUAGES).map((code) => languageName(code, names));
+  const shown = codes
+    .slice(0, SHOWN_LANGUAGES)
+    .map((code) => inSentence(languageName(code, names), locale));
   const rest = codes.length - shown.length;
   const parts = rest > 0 ? [...shown, tn("localAi.languages.more", rest)] : shown;
   return new Intl.ListFormat(locale, { type: "conjunction" }).format(parts);

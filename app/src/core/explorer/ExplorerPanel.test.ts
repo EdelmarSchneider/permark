@@ -214,6 +214,64 @@ describe("the list", () => {
     }
   });
 
+  it("the header keeps its label whole: the buttons that do not fit move into a More actions menu, in their order", async () => {
+    const observers: (() => void)[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          observers.push(callback);
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    );
+    try {
+      const { api, root } = await render();
+      const bar = root.querySelector<HTMLElement>(".bar");
+      const label = bar?.querySelector<HTMLElement>(".menu-label");
+      if (!bar || !label) throw new Error("no header");
+      const names = (): (string | null)[] =>
+        Array.from(bar.querySelectorAll("button")).map((b) => b.getAttribute("aria-label"));
+      // new file, new folder, reveal, collapse all, refresh, filter
+      const all = names();
+      expect(all).toHaveLength(6);
+      expect(all[4]).toBe("Refresh");
+      const size = (width: number, text: number): void => {
+        Object.defineProperty(bar, "clientWidth", { configurable: true, get: () => width });
+        Object.defineProperty(label, "scrollWidth", { configurable: true, get: () => text });
+        for (const observer of observers) observer();
+        flushSync();
+      };
+      // 244 px for a label 81 px long: three buttons fit beside it, the filter and the menu button
+      size(244, 81);
+      expect(names()).toEqual([...all.slice(0, 3), all[5], "More actions"]);
+      const more = bar.querySelector<HTMLElement>('button[aria-label="More actions"]');
+      expect(more?.title).toBe("More actions");
+      expect(more?.getAttribute("aria-haspopup")).toBe("menu");
+      more?.click();
+      await tick();
+      expect(more?.getAttribute("aria-expanded")).toBe("true");
+      const items = (): string[] =>
+        Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).map(
+          (item) => item.textContent?.trim() ?? "",
+        );
+      expect(items()).toHaveLength(2);
+      expect(items()[0]).toBe(all[3]);
+      expect(items()[1]?.startsWith("Refresh")).toBe(true);
+      // an action run from the menu does what its button does
+      const asked = vi.spyOn(api, "treeRefresh");
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))[1]?.click();
+      await vi.waitFor(() => expect(asked).toHaveBeenCalledOnce());
+      expect(document.querySelector('[role="menu"]')).toBeNull();
+      // room again: every button is back and the menu button goes
+      size(300, 81);
+      expect(names()).toEqual(all);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("plugins add badges to rows through the registry, honoring their requirements", async () => {
     const { root, registry } = await render();
     registry.register({
@@ -540,8 +598,8 @@ describe("context menu", () => {
     conditions.set({ ...neutralContext(), workspace: "project", permark: "notInitialized" });
     await rightClick();
     expect(labels().map((l) => l.trim())).toEqual([
-      "New Markdown file...",
-      "New folder...",
+      "New Markdown file…",
+      "New folder…",
       "Refresh",
       "Initialize PerMark…",
     ]);
@@ -551,11 +609,7 @@ describe("context menu", () => {
     // initialized: no such entry
     conditions.set({ ...neutralContext(), workspace: "project", permark: "initialized" });
     await rightClick();
-    expect(labels().map((l) => l.trim())).toEqual([
-      "New Markdown file...",
-      "New folder...",
-      "Refresh",
-    ]);
+    expect(labels().map((l) => l.trim())).toEqual(["New Markdown file…", "New folder…", "Refresh"]);
     document
       .querySelector('[role="menu"]')
       ?.dispatchEvent(
@@ -641,21 +695,27 @@ describe("move dialog", () => {
     expect(root).toBeTruthy();
   });
 
-  it("says in one quiet line which ignored folders it did not read", async () => {
-    const { store, api } = await render("ask");
-    const planned = api.planMove.bind(api);
-    api.planMove = async (moves, updateLinks) => {
-      const result = await planned(moves, updateLinks);
-      return result.ok
-        ? { ok: true, value: { ...result.value, unchecked: ["build", "dist", "out", "tmp"] } }
-        : result;
-    };
-    await store.requestMove([{ from: "notes/ideas.md", to: "notes/thoughts.md" }]);
-    await tick();
-    const note = document.querySelector("[data-unchecked]")?.textContent ?? "";
-    expect(note).toContain("4 ignored folders were not checked");
-    expect(note).toContain("build, dist, out, …");
-  });
+  it.each([
+    [
+      ["build", "dist", "out", "tmp"],
+      ["4 ignored folders were not checked", "build, dist, out, …"],
+    ],
+    [["build"], ["Documents in the ignored folder build were not checked."]],
+  ])(
+    "says in one quiet line which ignored folders it did not read (%j)",
+    async (unchecked, said) => {
+      const { store, api } = await render("ask");
+      const planned = api.planMove.bind(api);
+      api.planMove = async (moves, updateLinks) => {
+        const result = await planned(moves, updateLinks);
+        return result.ok ? { ok: true, value: { ...result.value, unchecked } } : result;
+      };
+      await store.requestMove([{ from: "notes/ideas.md", to: "notes/thoughts.md" }]);
+      await tick();
+      const note = document.querySelector("[data-unchecked]")?.textContent ?? "";
+      for (const words of said) expect(note).toContain(words);
+    },
+  );
 
   it("Escape and the backdrop cancel; focus stays inside", async () => {
     const { store, api } = await render("ask");

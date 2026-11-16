@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { language } from "../../core/i18n";
 import { effective, infoOf, MAX_TOKENIZERS, TOKENIZERS } from "./tokenizers";
 
 const ids = (list: readonly { id: string }[]): string[] => list.map((info) => info.id);
@@ -14,6 +15,17 @@ describe("the tokenizers", () => {
     ]);
     expect(infoOf("claude")?.short).toBe("Claude");
     expect(infoOf("nope")).toBeNull();
+  });
+
+  it("names the rule of thumb in the interface language (product names stay)", async () => {
+    try {
+      expect(infoOf("chars4")?.short).toBe("chars ÷ 4");
+      await language.choose("pt-BR", []);
+      expect(infoOf("chars4")?.short).toBe("caracteres ÷ 4");
+      expect(infoOf("gemini")?.short).toBe("Gemini");
+    } finally {
+      await language.choose("en", []);
+    }
   });
 
   it("the project's choice wins when it names a known tokenizer", () => {

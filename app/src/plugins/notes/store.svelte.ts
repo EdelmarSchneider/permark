@@ -502,7 +502,7 @@ export class NotesStore {
     if (names.length === 0) return;
     const text =
       key === "notes.deleted" && names.length === 1
-        ? t("notes.deleted.one", { name: label })
+        ? t("notes.deletedOne", { name: label })
         : tn(key, names.length);
     if (undoId === null) this.#window.notifyNote(text);
     else {

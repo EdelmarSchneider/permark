@@ -121,6 +121,36 @@ describe("tn", () => {
       language.tables = before;
     }
   });
+
+  // Indonesian, Japanese, Korean, Chinese and Vietnamese count with one form only ("other"): their `.one` text still
+  // says exactly one (a name, "this file"), so a count of 1 reads it
+  it.each([
+    ["en", ["other 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+    ["fr", ["one 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+    ["ru", ["other 0", "one 1", "few 2", "other 5", "one 21", "one 101"]],
+    ["ro", ["few 0", "one 1", "few 2", "few 5", "other 21", "few 101"]],
+    ["id", ["other 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+    ["ja", ["other 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+    ["ko", ["other 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+    ["zh-CN", ["other 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+    ["zh-TW", ["other 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+    ["vi", ["other 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+  ] as const)("picks the %s form for 0, 1, 2, 5, 21 and 101", async (locale, expected) => {
+    const before = language.tables;
+    const table: Messages & FewForms = {
+      ...en,
+      "fileOps.files.one": "one {n}",
+      "fileOps.files.few": "few {n}",
+      "fileOps.files.other": "other {n}",
+    };
+    language.tables = { ...before, [locale]: table };
+    try {
+      await language.choose(locale, []);
+      expect([0, 1, 2, 5, 21, 101].map((n) => tn("fileOps.files", n))).toEqual(expected);
+    } finally {
+      language.tables = before;
+    }
+  });
 });
 
 describe("formatLocale", () => {
@@ -322,6 +352,20 @@ function placeholders(text: string): string[] {
   return [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1] ?? "").sort();
 }
 
+/**
+ * `<base>.one` -> the placeholder(s) of the count that English writes out there ("1 file" beside "{n} files"): a table
+ * may still write them in its `.one` form, which some languages also read for other counts.
+ */
+const COUNT = new Map(
+  KEYS.filter((key) => key.endsWith(".one"))
+    .map((key): [string, string[]] => {
+      const own = placeholders(english[key] ?? "");
+      const other = placeholders(english[`${key.slice(0, -".one".length)}.other`] ?? "");
+      return [key, other.filter((p) => !own.includes(p))];
+    })
+    .filter(([, count]) => count.length > 0),
+);
+
 describe("locale directory", () => {
   const dir = fileURLToPath(new URL("./locales/", import.meta.url));
   const files = readdirSync(dir)
@@ -352,7 +396,10 @@ describe.each(LOCALES.filter((locale) => locale !== "en"))("the %s table", (loca
     const table: Record<string, string> = result.table;
     for (const key of KEYS) {
       const value = table[key] ?? "";
-      expect(placeholders(value), `${locale} ${key}`).toEqual(placeholders(english[key] ?? ""));
+      const own = placeholders(english[key] ?? "");
+      const count = COUNT.get(key) ?? [];
+      const said = placeholders(value).filter((p) => own.includes(p) || !count.includes(p));
+      expect(said, `${locale} ${key}`).toEqual(own);
       expect(value.trim(), `${locale} ${key}`).not.toBe("");
     }
     for (const [key, other] of FEW) {
@@ -367,6 +414,45 @@ describe.each(LOCALES.filter((locale) => locale !== "en"))("the %s table", (loca
     const result = await loadTable(locale);
     if (result.status !== "loaded") throw new Error(`${locale}: ${result.status}`);
     expect(result.table["app.name"]).toBe("PerMark");
+  });
+
+  // Russian reads `.one` for 21 and 101, French and Brazilian Portuguese for 0: a literal "1" there says a wrong count
+  it("says the count in a .one form the language also reads for other counts", async () => {
+    const result = await loadTable(locale);
+    if (result.status !== "loaded") throw new Error(`${locale}: ${result.status}`);
+    const table: Record<string, string> = result.table;
+    const rules = new Intl.PluralRules(locale);
+    if (![0, 2, 5, 21, 101].some((n) => rules.select(n) === "one")) return;
+    const wordless = [...COUNT].filter(
+      ([key, count]) => !placeholders(table[key] ?? "").some((p) => count.includes(p)),
+    );
+    expect(wordless.map(([key]) => key)).toEqual([]);
+  });
+});
+
+describe.each(LOCALES)("the %s table's typography", (locale) => {
+  const table = async (): Promise<Record<string, string>> => {
+    const result = await loadTable(locale);
+    if (result.status !== "loaded") throw new Error(`${locale}: ${result.status}`);
+    return result.table;
+  };
+
+  // shortcuts name the arrow keys with arrows in every language (`comboLabel`)
+  it("names the back and forward keys with arrows", async () => {
+    const words = await table();
+    expect(
+      [words["header.backHint"], words["follow.back"]].map((w) => w?.includes("Alt+←")),
+    ).toEqual([true, true]);
+    expect(words["header.forwardHint"]).toContain("Alt+→");
+  });
+
+  // `[...]` and `{...}` are code (YAML flow style), not an ellipsis
+  it("writes an ellipsis as one character", async () => {
+    const words = await table();
+    const dotted = Object.keys(words).filter((key) =>
+      (words[key] ?? "").replace(/[[{]\.\.\.[\]}]/g, "").includes("..."),
+    );
+    expect(dotted).toEqual([]);
   });
 });
 

@@ -221,6 +221,21 @@ describe("plain words", () => {
     );
   });
 
+  // a name with its own comma (Russian "китайский, упрощенное письмо") reads as two list items; Vietnamese names
+  // come capitalized for menus ("Tiếng Anh"), lowercase inside a sentence
+  it("keeps each language name one list item, worded as inside a sentence", async () => {
+    try {
+      await language.choose("ru", []);
+      expect(languagesText(["de", "zh-Hans", "zh-Hant"])).toBe(
+        "немецкий, китайский (упрощенное письмо) и китайский (традиционное письмо)",
+      );
+      await language.choose("vi", []);
+      expect(languagesText(["en", "ar"])).toBe("tiếng Anh và tiếng Ả Rập");
+    } finally {
+      await language.choose("en", []);
+    }
+  });
+
   it("sizes in megabytes or gigabytes, refusals in words", () => {
     expect(sizeText(309_855_456)).toBe("310 MB");
     expect(sizeText(3_398_849_248)).toBe("3.4 GB");

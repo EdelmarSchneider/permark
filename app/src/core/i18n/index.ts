@@ -32,14 +32,15 @@ export type PluralKey = {
 }[MessageKey];
 
 /**
- * UI string for a count: the `.one` form when the language says "one", `.few` when it says "few" and the table has
- * one (Romanian), else `.other`; `{n}` is the count.
+ * UI string for a count: the `.one` form when the language says "one" or the count is exactly 1, `.few` when it says
+ * "few" and the table has one (Romanian, Russian), else `.other`; `{n}` is the count.
  */
 export function tn(base: PluralKey, count: number, params?: Params): string {
   const category = new Intl.PluralRules(language.locale).select(count);
   const few =
     category === "few" ? (language.table as Messages & FewForms)[`${base}.few`] : undefined;
-  const form = category === "one" ? "one" : "other";
+  // languages that count with "other" alone (ja, ko, zh, id, vi) still word exactly one apart: "this file", a name
+  const form = category === "one" || count === 1 ? "one" : "other";
   return fill(few ?? language.table[`${base}.${form}`], { n: count, ...params });
 }
 

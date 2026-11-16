@@ -226,6 +226,7 @@ describe("delete and undo", () => {
     expect(store.current).not.toBe(FIRST);
     const toast = window.notices.at(-1);
     if (toast?.kind !== "action") throw new Error("no toast");
+    expect(toast.text).toMatch(/^Deleted “[^{}]+”$/);
     expect(toast.actions.map((a) => a.label)).toEqual(["Undo"]);
     toast.actions[0]?.run();
     await settle();

@@ -100,7 +100,9 @@
     {/if}
     {#if plan.unchecked.length > 0}
       <p class="faint" data-unchecked>
-        {tn("fileOps.unchecked", plan.unchecked.length, { folders: uncheckedText })}
+        {plan.unchecked.length === 1
+          ? t("fileOps.uncheckedOne", { folders: uncheckedText })
+          : tn("fileOps.unchecked", plan.unchecked.length, { folders: uncheckedText })}
       </p>
     {/if}
     <footer>
