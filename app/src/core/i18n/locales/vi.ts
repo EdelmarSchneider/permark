@@ -1431,9 +1431,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "Kết nối agent",
-  "agent.switch": "Chia sẻ dự án này với agent",
+  "agent.switch": "Chia sẻ thư mục này với agent",
   "agent.switchHint":
-    "Agent mà bạn kết nối (một công cụ AI hỗ trợ MCP, như Claude Code hoặc Cursor) có thể thấy những gì bạn đang xem và những gì đã thay đổi, tìm kiếm và đọc các tệp của dự án này, đọc nhận xét của bạn và các ghi chú bạn chia sẻ, và chỉ cho bạn một vị trí. Chỉ trên máy tính này. Các tệp liệt kê trong .aiignore nằm ngoài tầm với của agent, và agent không bao giờ sửa tệp thông qua PerMark. Điều này chỉ áp dụng cho những gì agent nhận được từ PerMark: agent vẫn có thể tự mở các tệp trên máy tính của bạn.",
+    "Agent mà bạn kết nối (một công cụ AI hỗ trợ MCP, như Claude Code hoặc Cursor) có thể thấy những gì bạn đang xem và những gì đã thay đổi, tìm kiếm và đọc các tệp của thư mục này, đọc nhận xét của bạn và các ghi chú bạn chia sẻ, và chỉ cho bạn một vị trí. Chỉ trên máy tính này. Các tệp liệt kê trong .aiignore nằm ngoài tầm với của agent, và agent không bao giờ sửa tệp thông qua PerMark. Điều này chỉ áp dụng cho những gì agent nhận được từ PerMark: agent vẫn có thể tự mở các tệp trên máy tính của bạn.",
   "agent.folderReplaced":
     "Thư mục này đã thay đổi kể từ khi bạn kết nối. Hãy bật lại kết nối để cho phép agent ở đây.",
   "agent.groups": "Những gì agent được phép làm",
@@ -1629,8 +1629,9 @@ export default {
   "note.parseError": "Hiển thị dạng văn bản: tệp không hợp lệ theo định dạng của nó",
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "Giới hạn cho agent",
-  "agent.narrow.groups": "Các nhóm agent không bao giờ được cấp ở đây",
-  "agent.narrow.groupsHint": "Thư mục này chỉ có thể thu hẹp những gì mỗi người cho phép.",
+  "agent.narrow.groups": "Các nhóm bị chặn với agent ở đây",
+  "agent.narrow.groupsHint":
+    "Đánh dấu một nhóm để chặn agent khỏi nhóm đó, cho mọi người. Một thư mục chỉ có thể thu hẹp những gì mỗi người cho phép.",
   "agent.narrow.paths": "Các đường dẫn agent không bao giờ nhận được",
   "agent.narrow.pathsHint":
     "Các tệp liệt kê trong .aiignore không bao giờ đến được agent. Với thư mục này, các mẫu sau được thêm vào (cùng quy tắc với .gitignore).",
@@ -1647,6 +1648,7 @@ export default {
   "plugins.choice.on": "Bật ở đây",
   "plugins.choice.off": "Tắt ở đây (chỉ bạn)",
   "plugins.choice.offEveryone": "Tắt cho mọi người",
+  "plugins.choice.offEveryoneNeedsInit": "Tắt cho mọi người (hãy khởi tạo PerMark trước)",
   "plugins.dataNotRemoved": "Không thể xóa dữ liệu: {message}",
   "plugins.dataRemoved": "Đã xóa dữ liệu của {name}.",
   "plugins.failedToStart": "Không thể khởi động {name}. {reason}",

@@ -1445,9 +1445,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "Ligação a agentes",
-  "agent.switch": "Partilhar este projeto com agentes",
+  "agent.switch": "Partilhar esta pasta com agentes",
   "agent.switchHint":
-    "Um agente que ligar (uma ferramenta de IA compatível com MCP, como o Claude Code ou o Cursor) pode ver o que está a ver e o que mudou, pesquisar e ler os ficheiros deste projeto, ler os seus comentários e as notas que partilhar, e mostrar-lhe um local. Só neste computador. Os ficheiros listados no .aiignore ficam fora do seu alcance, e os agentes nunca editam ficheiros através do PerMark. Isto abrange apenas o que os agentes obtêm do PerMark: um agente pode continuar a abrir ficheiros no seu computador por si próprio.",
+    "Um agente que ligar (uma ferramenta de IA compatível com MCP, como o Claude Code ou o Cursor) pode ver o que está a ver e o que mudou, pesquisar e ler os ficheiros desta pasta, ler os seus comentários e as notas que partilhar, e mostrar-lhe um local. Só neste computador. Os ficheiros listados no .aiignore ficam fora do seu alcance, e os agentes nunca editam ficheiros através do PerMark. Isto abrange apenas o que os agentes obtêm do PerMark: um agente pode continuar a abrir ficheiros no seu computador por si próprio.",
   "agent.folderReplaced":
     "Esta pasta mudou desde que a ligou. Volte a ativar a ligação para permitir agentes aqui.",
   "agent.groups": "O que os agentes podem fazer",
@@ -1641,8 +1641,9 @@ export default {
 
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "Limites para agentes",
-  "agent.narrow.groups": "Grupos que os agentes nunca recebem aqui",
-  "agent.narrow.groupsHint": "Esta pasta só pode restringir o que cada pessoa permite.",
+  "agent.narrow.groups": "Grupos bloqueados para agentes aqui",
+  "agent.narrow.groupsHint":
+    "Assinale um grupo para deixar os agentes fora dele, para todos. Uma pasta só pode restringir o que cada pessoa permite.",
   "agent.narrow.paths": "Caminhos que os agentes nunca recebem",
   "agent.narrow.pathsHint":
     "Os ficheiros listados em .aiignore nunca chegam aos agentes. Estes padrões juntam-se a eles nesta pasta (as mesmas regras do .gitignore).",
@@ -1659,6 +1660,7 @@ export default {
   "plugins.choice.on": "Ativado aqui",
   "plugins.choice.off": "Desativado aqui (só para si)",
   "plugins.choice.offEveryone": "Desativado para todos",
+  "plugins.choice.offEveryoneNeedsInit": "Desativado para todos (inicialize primeiro o PerMark)",
   "plugins.dataNotRemoved": "Não foi possível remover os dados: {message}",
   "plugins.dataRemoved": "Os dados de {name} foram removidos.",
   "plugins.failedToStart": "Não foi possível iniciar {name}. {reason}",

@@ -147,6 +147,16 @@
 
   let page: HTMLElement | undefined = $state();
   let heading: HTMLElement | undefined = $state();
+  let navList: HTMLElement | undefined = $state();
+
+  // the section shown stays in sight in the section list: narrow, the list is one row of tabs that scrolls sideways
+  // and the current one may sit past its edge (external DOM scroll, so an effect)
+  $effect(() => {
+    void section;
+    navList
+      ?.querySelector<HTMLElement>('[aria-current="page"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
 
   // a control that held the keyboard can go with the rows around it (Initialize swaps the waiting rows for the
   // working ones, its button among them): the keyboard goes to the section's heading, never to the body behind this
@@ -224,7 +234,7 @@
       </button>
     </header>
     <div class="layout">
-      <nav class="nav" aria-label={t("settings.sections")}>
+      <nav class="nav" aria-label={t("settings.sections")} bind:this={navList}>
         {#each navGroups as g (g.group)}
           <!-- the group's name is said once, from the group (the label on screen repeats it) -->
           <div class="nav-group" role="group" aria-label={t(GROUP_LABELS[g.group])}>

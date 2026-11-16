@@ -1433,9 +1433,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "Conexão com agentes",
-  "agent.switch": "Compartilhar este projeto com agentes",
+  "agent.switch": "Compartilhar esta pasta com agentes",
   "agent.switchHint":
-    "Um agente que você conectar (uma ferramenta de IA compatível com MCP, como Claude Code ou Cursor) pode ver o que você está olhando e o que mudou, pesquisar e ler os arquivos deste projeto, ler seus comentários e as notas que você compartilhar, e mostrar um lugar para você. Só neste computador. Arquivos listados no .aiignore ficam fora do alcance deles, e agentes nunca editam arquivos pelo PerMark. Isso vale só para o que os agentes recebem do PerMark: um agente ainda pode abrir arquivos do seu computador por conta própria.",
+    "Um agente que você conectar (uma ferramenta de IA compatível com MCP, como Claude Code ou Cursor) pode ver o que você está olhando e o que mudou, pesquisar e ler os arquivos desta pasta, ler seus comentários e as notas que você compartilhar, e mostrar um lugar para você. Só neste computador. Arquivos listados no .aiignore ficam fora do alcance deles, e agentes nunca editam arquivos pelo PerMark. Isso vale só para o que os agentes recebem do PerMark: um agente ainda pode abrir arquivos do seu computador por conta própria.",
   "agent.folderReplaced":
     "Esta pasta mudou desde que você a conectou. Ative a conexão de novo para permitir agentes aqui.",
   "agent.groups": "O que os agentes podem fazer",
@@ -1626,8 +1626,9 @@ export default {
   "note.parseError": "Mostrado como texto: o arquivo não é válido no seu formato",
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "Limites para agentes",
-  "agent.narrow.groups": "Grupos que os agentes nunca recebem aqui",
-  "agent.narrow.groupsHint": "Esta pasta só pode restringir o que cada pessoa permite.",
+  "agent.narrow.groups": "Grupos bloqueados para agentes aqui",
+  "agent.narrow.groupsHint":
+    "Marque um grupo para deixar os agentes fora dele, para todos. Uma pasta só pode restringir o que cada pessoa permite.",
   "agent.narrow.paths": "Caminhos que os agentes nunca recebem",
   "agent.narrow.pathsHint":
     "Arquivos listados no .aiignore nunca chegam aos agentes. Estes padrões se somam a eles nesta pasta (as mesmas regras do .gitignore).",
@@ -1644,6 +1645,7 @@ export default {
   "plugins.choice.on": "Ligado aqui",
   "plugins.choice.off": "Desligado aqui (só você)",
   "plugins.choice.offEveryone": "Desligado para todos",
+  "plugins.choice.offEveryoneNeedsInit": "Desligado para todos (inicialize o PerMark primeiro)",
   "plugins.dataNotRemoved": "Não foi possível remover os dados: {message}",
   "plugins.dataRemoved": "Dados de {name} removidos.",
   "plugins.failedToStart": "Não foi possível iniciar {name}. {reason}",

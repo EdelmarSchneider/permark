@@ -1,9 +1,15 @@
+<script lang="ts" module>
+  // The limits fold stays as the person left it while the window lives: Initialize (asked from inside the fold)
+  // starts the plugins again, which draws this section anew.
+  let limitsOpen = $state(false);
+</script>
+
 <script lang="ts">
-  // Settings > AI agents (project windows): the state of this project's sharing and one button to turn it on (the
-  // person's own); while on, the connected agents (each with Disconnect), the notes shared with this project (while the
-  // notes plugin is on) and the steps that connect one right below (Claude Code first); what agents may do, folded;
-  // then the limits the folder sets for everyone. Nothing turns on by itself: the person sees what is shared, then
-  // decides.
+  // Settings > AI agents (project windows): the state of this folder's sharing and one switch for it (the person's
+  // own; the keyboard stays on it as it turns); while on, the connected agents (each with Disconnect), the notes shared
+  // with this project (while the notes plugin is on) and the steps that connect one right below (Claude Code first);
+  // what agents may do, folded; then the limits the folder sets for everyone (folded to one line while sharing is off
+  // here, still editable for the others). Nothing turns on by itself: the person sees what is shared, then decides.
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
@@ -59,7 +65,7 @@
     { id: "hook", label: "agent.setup.hook", text: hookJson },
   ];
 
-  let primary: HTMLButtonElement | undefined = $state();
+  let toggle: HTMLInputElement | undefined = $state();
   let firstCopy: HTMLButtonElement | undefined = $state();
   let copied = $state<string | null>(null);
   let failed = $state(false);
@@ -69,6 +75,7 @@
   let groupsOpen = $state(false);
   const moreId = $props.id();
   const groupsId = `${moreId}-groups`;
+  const limitsId = `${moreId}-limits`;
 
   // the setup lines name the program by its path: asked once, when they show
   $effect(() => {
@@ -83,24 +90,30 @@
   // opened from "Set up…" (offer, gear row, palette): focus on the first control, once
   $effect(() => {
     // the control exists once its element is bound (reads it: runs again then)
-    const first = status === null ? undefined : status.enabled ? firstCopy : primary;
+    const first = status === null ? undefined : status.enabled ? firstCopy : toggle;
     if (first === undefined) return;
     untrack(() => {
       if (ui.takeContentFocus(AGENT_PAGE)) first.focus();
     });
   });
 
-  async function turn(on: boolean): Promise<void> {
-    if (busy) return;
+  /** The switch turned by the person; `box` shows the state in force afterwards (a refused change leaves it as it
+   *  was). The keyboard stays on the switch: the steps that show below are announced, not jumped to. */
+  async function turn(on: boolean, box: HTMLInputElement): Promise<void> {
+    if (busy) {
+      box.checked = !on;
+      return;
+    }
     busy = true;
     const ok = await agent.setEnabled(on, true);
     busy = false;
     failed = !ok;
+    box.checked = agent.enabled;
     if (!ok) return;
     copied = null;
     announcement = on ? t("agent.turnedOn") : t("agent.state.off");
     await tick();
-    (on ? firstCopy : primary)?.focus();
+    box.focus();
   }
 
   async function copy(id: string, text: string): Promise<void> {
@@ -133,27 +146,24 @@
           <p class="about">{t("agent.folderReplaced")}</p>
         {/if}
         <p class="about">{t("agent.switchHint")}</p>
-        <div class="actions">
-          <button
-            type="button"
-            class="btn btn--primary wrap"
-            bind:this={primary}
-            disabled={busy}
-            onclick={() => void turn(true)}
-          >
-            {t("agent.switch")}
-          </button>
-        </div>
+      {:else if problem !== null}
+        <p class="about">{problem}</p>
+      {/if}
+      <!-- one switch in both states, so the keyboard stays on it as it turns (busy: guarded in `turn`, never
+           disabled, which would drop the focus) -->
+      <label class="switch-line">
+        <input
+          type="checkbox"
+          role="switch"
+          bind:this={toggle}
+          checked={status.enabled}
+          aria-busy={busy}
+          onchange={(e) => void turn(e.currentTarget.checked, e.currentTarget)}
+        />
+        <span>{t("agent.switch")}</span>
+      </label>
+      {#if phase === "off"}
         <p class="muted">{t("agent.offAnyTime")}</p>
-      {:else}
-        {#if problem !== null}
-          <p class="about">{problem}</p>
-        {/if}
-        <div class="actions">
-          <button type="button" class="btn" disabled={busy} onclick={() => void turn(false)}>
-            {t("agent.popover.turnOff")}
-          </button>
-        </div>
       {/if}
       {#if failed}
         <p class="failed" role="alert">{t("agent.notSaved")}</p>
@@ -266,8 +276,30 @@
       </Card>
     </div>
   {/if}
-  <h4 class="group-title">{t("agent.narrow.title")}</h4>
-  <AgentNarrowing />
+  {#if phase === "off"}
+    <!-- sharing off here: the folder's limits (for everyone else) fold to one line, still there to edit -->
+    <button
+      type="button"
+      class="disclosure outer"
+      aria-expanded={limitsOpen}
+      aria-controls={limitsId}
+      onclick={() => (limitsOpen = !limitsOpen)}
+    >
+      {#if limitsOpen}<ChevronDown size={14} aria-hidden="true" />{:else}<ChevronRight
+          size={14}
+          aria-hidden="true"
+        />{/if}
+      {t("agent.narrow.title")}
+    </button>
+    {#if limitsOpen}
+      <div id={limitsId} role="region" aria-label={t("agent.narrow.title")}>
+        <AgentNarrowing />
+      </div>
+    {/if}
+  {:else}
+    <h4 class="group-title limits-title">{t("agent.narrow.title")}</h4>
+    <AgentNarrowing />
+  {/if}
   <p class="sr-only" role="status">{announcement}</p>
 {/if}
 
@@ -314,19 +346,16 @@
     color: var(--git-deleted-text);
     font-size: var(--fs-ui-sm);
   }
-  .actions {
+  .switch-line {
     display: flex;
-    flex-wrap: wrap;
+    align-items: center;
     gap: var(--sp-2);
     margin-top: var(--sp-1);
+    font-weight: 500;
+    cursor: pointer;
   }
-  /* long labels (German) wrap instead of being cut */
-  .btn.wrap {
-    height: auto;
-    min-height: 28px;
-    padding-block: 4px;
-    white-space: normal;
-    text-align: left;
+  .switch-line input {
+    flex: none;
   }
   .group-title {
     margin: var(--sp-5) 0 var(--sp-2);
@@ -380,7 +409,11 @@
     font-size: var(--fs-ui-sm);
     cursor: pointer;
   }
+  /* the folds between the cards each take a line of their own */
   .disclosure.outer {
+    display: flex;
+    width: max-content;
+    max-width: 100%;
     margin: var(--sp-5) 0 var(--sp-2);
     color: var(--muted);
     font-weight: 600;

@@ -64,6 +64,15 @@ function button(label: string): HTMLButtonElement {
   return found;
 }
 
+/** The person's switch for this folder (named by its label). */
+function shareSwitch(): HTMLInputElement {
+  const found = Array.from(target.querySelectorAll<HTMLInputElement>('input[role="switch"]')).find(
+    (box) => text(box.closest("label")) === "Share this folder with agents",
+  );
+  if (!found) throw new Error("no switch");
+  return found;
+}
+
 function navLabels(): string[] {
   return Array.from(target.querySelectorAll(".nav-item")).map(text);
 }
@@ -117,31 +126,36 @@ describe("Settings > AI agents", () => {
     await until(() => target.querySelectorAll("section.group").length >= 2, "integration cards");
     const headings = Array.from(target.querySelectorAll("section.group h4")).map(text);
     expect(headings).not.toContain("Agent connection");
-    expect(text(target)).not.toContain("Share this project with agents");
+    expect(text(target)).not.toContain("Share this folder with agents");
   });
 
-  it("off: says what is shared and offers one button; turning on shows the steps and moves focus to Copy", async () => {
+  it("off: says what is shared and offers one switch; turning it on shows the steps, the focus stays on it", async () => {
     await open();
     mountPage(AGENT_PAGE, true);
     await until(() => text(target).includes("Off for this folder"), "state card");
     expect(text(target.querySelector(".title"))).toBe("AI agents");
     expect(text(target)).toContain("agents never edit files through PerMark.");
     expect(text(target)).toContain("an agent can still open files on your computer by itself.");
+    expect(text(target)).toContain("search and read this folder's files");
     expect(text(target)).toContain("You can turn it off at any time.");
-    const primary = button("Share this project with agents");
-    expect(primary.classList.contains("btn--primary")).toBe(true);
-    // opened from "Set up…": focus on the button; nothing is on yet
-    await until(() => document.activeElement === primary, "focus on the primary button");
+    const toggle = shareSwitch();
+    expect(toggle.getAttribute("role")).toBe("switch");
+    expect(toggle.checked).toBe(false);
+    // opened from "Set up…": focus on the switch; nothing is on yet
+    await until(() => document.activeElement === toggle, "focus on the switch");
     expect(agent.enabled).toBe(false);
     // no setup lines while off
     expect(text(target)).not.toContain("claude mcp add");
-    primary.click();
+    toggle.click();
     await until(() => text(target).includes("On · waiting for an agent"), "on");
     expect(text(target)).toContain("Connect your agent");
     expect(text(target)).toContain("Claude Code: run this once in the project folder");
     await until(() => text(target).includes("claude mcp add permark --"), "the command");
-    const copy = button("Copy");
-    await until(() => document.activeElement === copy, "focus on the first Copy");
+    // the same switch, now on, keeps the keyboard (the steps below are announced, not jumped to)
+    expect(shareSwitch()).toBe(toggle);
+    expect(toggle.checked).toBe(true);
+    await tick();
+    expect(document.activeElement).toBe(toggle);
     expect(Array.from(target.querySelectorAll('[role="status"]')).map(text)).toContain(
       "Sharing is on. Connect your agent with the steps below.",
     );
@@ -154,14 +168,13 @@ describe("Settings > AI agents", () => {
     expect(more.getAttribute("aria-expanded")).toBe("true");
     expect(text(target)).toContain("mcpServers");
     expect(text(target)).toContain("UserPromptSubmit");
-    // turn off: focus back on the primary button
-    button("Turn off").click();
+    // turn off with the same switch: the focus stays on it
+    toggle.click();
     await until(() => text(target).includes("Off for this folder"), "off again");
     expect(text(target)).not.toContain("Connect your agent");
-    await until(
-      () => document.activeElement === button("Share this project with agents"),
-      "focus back on the primary button",
-    );
+    expect(toggle.checked).toBe(false);
+    await tick();
+    expect(document.activeElement).toBe(toggle);
   });
 
   it("a folder created again at its path shows off, says why, and goes back on with the one button", async () => {
@@ -178,7 +191,7 @@ describe("Settings > AI agents", () => {
       "the note",
     );
     expect(text(target)).toContain("Off for this folder");
-    button("Share this project with agents").click();
+    shareSwitch().click();
     await until(() => text(target).includes("On · waiting for an agent"), "on");
     expect(text(target)).not.toContain("This folder changed since you connected it.");
   });
@@ -211,12 +224,13 @@ describe("Settings > AI agents", () => {
         error: { kind: "io", subject: null, detail: null },
       },
     });
-    button("Share this project with agents").click();
+    shareSwitch().click();
     await until(() => target.querySelector('[role="alert"]') !== null, "the inline refusal");
     expect(text(target.querySelector('[role="alert"]'))).toBe(
       "The change wasn't saved. Try again.",
     );
     expect(text(target)).toContain("Off for this folder");
+    expect(shareSwitch().checked).toBe(false);
     expect(windowStore.notices.length).toBe(notices);
     call.mockRestore();
   });
@@ -229,7 +243,7 @@ describe("Settings > AI agents", () => {
     expect(fold.getAttribute("aria-expanded")).toBe("false");
     // the person's own groups (the folder's limits below have boxes of their own)
     const own = (): number =>
-      Array.from(target.querySelectorAll("input[type=checkbox]")).filter(
+      Array.from(target.querySelectorAll("input[type=checkbox]:not([role=switch])")).filter(
         (box) => box.closest(".limits-rows") === null,
       ).length;
     expect(own()).toBe(0);
@@ -246,6 +260,16 @@ describe("Settings > AI agents", () => {
     await until(() => text(target).includes("Agent limits"), "the limits");
     // the switch is the person's own; the limits are the folder's, for everyone
     expect(target.querySelector(".state-card .scope-chip")?.getAttribute("data-scope")).toBe("you");
+    // sharing off here: the limits fold into one line, still there to edit for everyone
+    const fold = button("Agent limits");
+    expect(fold.getAttribute("aria-expanded")).toBe("false");
+    expect(target.querySelector(".limits-rows")).toBeNull();
+    fold.click();
+    flushSync();
+    expect(fold.getAttribute("aria-expanded")).toBe("true");
+    // ticked = blocked, said in the row itself
+    expect(text(target)).toContain("Groups blocked for agents here");
+    expect(text(target)).toContain("Tick a group to keep agents out of it, for everyone.");
     const limits = Array.from(target.querySelectorAll<HTMLElement>(".limits-rows .row"));
     expect(limits.map((r) => r.querySelector(".scope-chip")?.getAttribute("data-scope"))).toEqual([
       "everyone",
@@ -271,6 +295,14 @@ describe("Settings > AI agents", () => {
     expect(text(target)).not.toContain("Initialize PerMark to share this with everyone");
     box().click();
     await until(() => mock.probe.shell.project().agentDeny.includes("notes"), "narrowed");
+    // sharing on: the limits show open, under their heading (no fold)
+    await agent.setEnabled(true);
+    await until(() => !text(target).includes("Off for this folder"), "on");
+    expect(target.querySelector("h4.limits-title")).not.toBeNull();
+    expect(target.querySelector(".limits-rows")).not.toBeNull();
+    expect(
+      Array.from(target.querySelectorAll("button")).some((b) => text(b) === "Agent limits"),
+    ).toBe(false);
     mock.probe.shell.forgetInit();
   });
 

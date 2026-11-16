@@ -1447,9 +1447,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "エージェント接続",
-  "agent.switch": "このプロジェクトをエージェントと共有",
+  "agent.switch": "このフォルダーをエージェントと共有",
   "agent.switchHint":
-    "接続したエージェント（Claude Code や Cursor など、MCP に対応した AI ツール）は、表示中の内容や変更点の確認、このプロジェクトのファイルの検索と読み取り、コメントと共有したメモの読み取り、特定の場所の表示ができます。このコンピューター上でのみ動作します。.aiignore に記載したファイルはエージェントから見えず、エージェントが PerMark を通じてファイルを編集することはありません。これは PerMark からエージェントに渡る情報だけが対象です。エージェントは、コンピューター上のファイルを独自に開くこともできます。",
+    "接続したエージェント（Claude Code や Cursor など、MCP に対応した AI ツール）は、表示中の内容や変更点の確認、このフォルダーのファイルの検索と読み取り、コメントと共有したメモの読み取り、特定の場所の表示ができます。このコンピューター上でのみ動作します。.aiignore に記載したファイルはエージェントから見えず、エージェントが PerMark を通じてファイルを編集することはありません。これは PerMark からエージェントに渡る情報だけが対象です。エージェントは、コンピューター上のファイルを独自に開くこともできます。",
   "agent.folderReplaced":
     "接続した後にこのフォルダーが変わりました。ここでエージェントを許可するには、接続をもう一度オンにしてください。",
   "agent.groups": "エージェントに許可すること",
@@ -1644,9 +1644,9 @@ export default {
   "note.parseError": "ファイルがその形式として有効ではないため、テキストで表示しています",
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "エージェントの制限",
-  "agent.narrow.groups": "このプロジェクトでエージェントに許可しないこと",
+  "agent.narrow.groups": "このフォルダーでエージェントをブロックするグループ",
   "agent.narrow.groupsHint":
-    "このフォルダーでは、各ユーザーが許可した範囲を狭めることだけができます。",
+    "チェックしたグループは、全員に対してエージェントから使えなくなります。フォルダーでは、各ユーザーが許可した範囲を狭めることだけができます。",
   "agent.narrow.paths": "エージェントに渡さないパス",
   "agent.narrow.pathsHint":
     ".aiignore に記載されたファイルはエージェントに渡りません。このフォルダーではこれらのパターンも加わります（.gitignore と同じルール）。",
@@ -1663,6 +1663,7 @@ export default {
   "plugins.choice.on": "ここでオン",
   "plugins.choice.off": "ここでオフ（自分のみ）",
   "plugins.choice.offEveryone": "全員に対してオフ",
+  "plugins.choice.offEveryoneNeedsInit": "全員に対してオフ（先に PerMark を初期化）",
   "plugins.dataNotRemoved": "データを削除できませんでした：{message}",
   "plugins.dataRemoved": "{name} のデータを削除しました。",
   "plugins.failedToStart": "{name} を開始できませんでした。{reason}",

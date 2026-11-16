@@ -1193,6 +1193,14 @@ fn a_team_file_lists_the_plugin_keys_it_holds_that_are_not_read() {
         ProjectConfig::from_doc(&doc(read)).ignored_plugin_keys,
         Vec::<String>::new()
     );
+    // an `enabled` that is no true | false turns nothing off: listed, so the page says it is not used
+    let odd = "[plugins.git]\nenabled = \"no\"\n[plugins.comments]\nenabled = 0\n";
+    let config = ProjectConfig::from_doc(&doc(odd));
+    assert_eq!(
+        config.ignored_plugin_keys,
+        list(&["comments.enabled", "git.enabled"])
+    );
+    assert!(config.plugins_off.is_empty());
 }
 
 #[test]

@@ -1410,9 +1410,9 @@ const en = {
 
   // ---- agent connection
   "agent.title": "Agent connection",
-  "agent.switch": "Share this project with agents",
+  "agent.switch": "Share this folder with agents",
   "agent.switchHint":
-    "An agent you connect (an AI tool that supports MCP, such as Claude Code or Cursor) can see what you're looking at and what changed, search and read this project's files, read your comments and the notes you share, and show you a place. Only on this computer. Files listed in .aiignore stay out of their reach, and agents never edit files through PerMark. This covers only what agents get from PerMark: an agent can still open files on your computer by itself.",
+    "An agent you connect (an AI tool that supports MCP, such as Claude Code or Cursor) can see what you're looking at and what changed, search and read this folder's files, read your comments and the notes you share, and show you a place. Only on this computer. Files listed in .aiignore stay out of their reach, and agents never edit files through PerMark. This covers only what agents get from PerMark: an agent can still open files on your computer by itself.",
   "agent.folderReplaced":
     "This folder changed since you connected it. Turn the connection on again to allow agents here.",
   "agent.groups": "What agents may do",
@@ -1599,8 +1599,9 @@ const en = {
   "note.parseError": "Shown as text: the file isn't valid in its format",
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "Agent limits",
-  "agent.narrow.groups": "Groups agents never get here",
-  "agent.narrow.groupsHint": "This folder can only narrow what each person allows.",
+  "agent.narrow.groups": "Groups blocked for agents here",
+  "agent.narrow.groupsHint":
+    "Tick a group to keep agents out of it, for everyone. A folder can only narrow what each person allows.",
   "agent.narrow.paths": "Paths agents never get",
   "agent.narrow.pathsHint":
     "Files listed in .aiignore never reach agents. These patterns add to them, for this folder (the same rules as .gitignore).",
@@ -1617,6 +1618,7 @@ const en = {
   "plugins.choice.on": "On here",
   "plugins.choice.off": "Off here (only you)",
   "plugins.choice.offEveryone": "Off for everyone",
+  "plugins.choice.offEveryoneNeedsInit": "Off for everyone (Initialize PerMark first)",
   "plugins.dataNotRemoved": "Couldn't remove the data: {message}",
   "plugins.dataRemoved": "Removed the data of {name}.",
   "plugins.failedToStart": "{name} couldn't start. {reason}",
