@@ -488,11 +488,11 @@ export default {
   "edit.visualForMarkdown":
     "Der Bearbeitungsmodus ist für Markdown- und Einstellungsdateien; nutze Quelltext.",
   "edit.diagramNoPlugin":
-    "Schalte das Mermaid- oder PlantUML-Plugin ein, um die Zeichnung zu sehen.",
+    "Schalte das Mermaid-, PlantUML- oder Graphviz-Plugin ein, um die Zeichnung zu sehen.",
   "edit.diagramPanel": "Diagrammvorschau",
   "edit.diagramPanelHint": "Das Diagramm an der Einfügemarke neben dem Text zeigen",
   "edit.diagramPanelEmpty":
-    "Setze die Einfügemarke in einen mermaid- oder plantuml-Block, um hier seine Zeichnung zu sehen.",
+    "Setze die Einfügemarke in einen mermaid-, plantuml- oder dot-Block, um hier seine Zeichnung zu sehen.",
   "edit.diagramFailed": "Die Zeichnung konnte nicht erstellt werden.",
   "cmd.diagramPanel": "Diagrammvorschau neben dem Quelltext (an | aus)",
   "edit.disabled.binary": "Binärdateien können nicht bearbeitet werden.",
@@ -1784,6 +1784,9 @@ export default {
   "plugin.mermaid.about": "Zeichnet Mermaid-Diagramme aus Codeblöcken.",
   "plugin.plantuml.name": "PlantUML-Diagramme",
   "plugin.plantuml.about": "Zeichnet PlantUML-Diagramme aus Codeblöcken.",
+  "plugin.graphviz.name": "Graphviz-Diagramme",
+  "plugin.graphviz.about": "Zeichnet Graphviz-Graphen (DOT) aus Codeblöcken.",
+  "graphviz.tooLarge": "Dieser Graph ist zu groß, um ihn hier zu zeichnen.",
   "plugin.media.name": "Bilder, Audio und Video",
   "plugin.media.about": "Öffnet Bilder, Ton und Video direkt an Ort und Stelle.",
   "plugin.json-view.name": "JSON",

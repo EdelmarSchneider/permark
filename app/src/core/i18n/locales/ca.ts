@@ -487,11 +487,12 @@ export default {
   "edit.codeRefTitleMany": "Coincideixen {count} fitxers. {mod}+clic per a triar-ne un.",
   "edit.visualForMarkdown":
     "El mode Edició és per a fitxers Markdown i fitxers de configuració; feu servir Codi font.",
-  "edit.diagramNoPlugin": "Activeu el connector Mermaid o PlantUML per a veure el dibuix.",
+  "edit.diagramNoPlugin":
+    "Activeu el connector Mermaid, PlantUML o Graphviz per a veure el dibuix.",
   "edit.diagramPanel": "Previsualització del diagrama",
   "edit.diagramPanelHint": "Mostra el diagrama on és el cursor, al costat del text",
   "edit.diagramPanelEmpty":
-    "Poseu el cursor en un bloc mermaid o plantuml per a veure'n el dibuix aquí.",
+    "Poseu el cursor en un bloc mermaid, plantuml o dot per a veure'n el dibuix aquí.",
   "edit.diagramFailed": "No s'ha pogut fer el dibuix.",
   "cmd.diagramPanel": "Previsualització del diagrama al costat del codi font (sí | no)",
   "edit.disabled.binary": "Els fitxers binaris no es poden editar.",
@@ -1779,6 +1780,9 @@ export default {
   "plugin.mermaid.about": "Dibuixa diagrames Mermaid a partir de blocs de codi.",
   "plugin.plantuml.name": "Diagrames PlantUML",
   "plugin.plantuml.about": "Dibuixa diagrames PlantUML a partir de blocs de codi.",
+  "plugin.graphviz.name": "Diagrames Graphviz",
+  "plugin.graphviz.about": "Dibuixa gràfics Graphviz (DOT) a partir de blocs de codi.",
+  "graphviz.tooLarge": "Aquest gràfic és massa gran per a dibuixar-lo aquí.",
   "plugin.media.name": "Imatges, àudio i vídeo",
   "plugin.media.about": "Obre imatges, so i vídeo dins de l'aplicació.",
   "plugin.json-view.name": "JSON",

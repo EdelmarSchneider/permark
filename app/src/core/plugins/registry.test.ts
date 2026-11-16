@@ -215,6 +215,7 @@ describe("plugin host", () => {
       "follow",
       "frontmatter-card",
       "git",
+      "graphviz",
       "highlight",
       "json-view",
       "live-feed",

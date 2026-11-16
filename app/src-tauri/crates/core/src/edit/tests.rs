@@ -520,6 +520,18 @@ fn a_toon_block_is_kept_as_written_data() {
 }
 
 #[test]
+fn a_graphviz_block_is_kept_as_a_diagram_by_either_name() {
+    let got = kinds("```dot\ndigraph { a -> b }\n```\n\n```Graphviz\ngraph { a -- b }\n```\n");
+    assert_eq!(
+        got,
+        [
+            (1, 3, SegmentKind::Code, Some(LockReason::Diagram)),
+            (5, 7, SegmentKind::Code, Some(LockReason::Diagram)),
+        ]
+    );
+}
+
+#[test]
 fn a_new_file_goes_next_to_another_and_never_over_one() {
     let fx = Fx::new();
     fx.write("data/users.json", b"[1]");

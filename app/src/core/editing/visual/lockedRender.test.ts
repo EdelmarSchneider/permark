@@ -104,11 +104,11 @@ describe("locked blocks look like View", () => {
     const at = byLine(blocks, renders);
 
     expect(at.get(1)).toEqual({ kind: "frontMatter", frontMatter: body.frontMatter });
-    expect(at.get(73)).toEqual({ kind: "promptTag", tag: "context", edge: "open" });
-    expect(at.get(78)).toEqual({ kind: "promptTag", tag: "context", edge: "close" });
-    expect(at.get(80)).toEqual({ kind: "promptTag", tag: "instructions", edge: "open" });
-    expect(at.get(83)).toEqual({ kind: "promptTag", tag: "instructions", edge: "close" });
-    const note = at.get(85);
+    expect(at.get(81)).toEqual({ kind: "promptTag", tag: "context", edge: "open" });
+    expect(at.get(86)).toEqual({ kind: "promptTag", tag: "context", edge: "close" });
+    expect(at.get(88)).toEqual({ kind: "promptTag", tag: "instructions", edge: "open" });
+    expect(at.get(91)).toEqual({ kind: "promptTag", tag: "instructions", edge: "close" });
+    const note = at.get(93);
     expect(note?.kind).toBe("footnote");
     if (note?.kind !== "footnote") return;
     expect(note.first).toBe(true);
@@ -120,8 +120,8 @@ describe("locked blocks look like View", () => {
     // the paragraphs with inline math and with a footnote reference are editable text
     expect(blocks.find((b) => b.lineStart === 55)?.reason).toBeNull();
     expect(blocks.find((b) => b.lineStart === 15)?.reason).toBeNull();
-    // alerts, display math and the diagram: View's own blocks, verbatim
-    for (const first of [26, 29, 57, 63]) {
+    // alerts, display math and the diagrams: View's own blocks, verbatim
+    for (const first of [26, 29, 57, 63, 71]) {
       const render = at.get(first);
       const own = blocks.find((b) => b.lineStart === first);
       expect(render?.kind, `line ${first}`).toBe("html");
