@@ -7,8 +7,11 @@
 /** A column's narrowest width without breaking a word, and its width on one line (border box, pixels). */
 export type ColumnSpan = { min: number; max: number };
 
-/** The class of a table laid out from the widths set here (fixed layout). */
+/** The class of a table laid out for paper from the widths set here (fixed layout in print only: an exported page
+ *  keeps it, and on a narrow screen it must wrap as any other table). */
 export const FIT_TABLE = "pm-fit-table";
+/** The class of a table laid out for the screen from the widths set here (fixed layout; set by the live app only). */
+export const SCREEN_TABLE = "pm-screen-table";
 /** The class of a table's wrapper when the table keeps its own width (well short of the column). */
 export const NATURAL_TABLE = "is-natural";
 
@@ -119,15 +122,17 @@ export function screenLayout(
 
 /**
  * The column spans of `table` as the page lays it out now (it must be in the document), or null when a cell spans
- * columns | rows (the widths of its own columns cannot be told apart).
+ * columns | rows or a row has more | fewer cells than the first (the widths of its own columns cannot be told apart).
  */
 export function measureColumns(table: HTMLTableElement): ColumnSpan[] | null {
   const rows = Array.from(table.rows);
   const first = Array.from(rows[0]?.cells ?? []);
-  const spans = rows.some((row) =>
-    Array.from(row.cells).some((cell) => cell.colSpan > 1 || cell.rowSpan > 1),
+  const uneven = rows.some(
+    (row) =>
+      row.cells.length !== first.length ||
+      Array.from(row.cells).some((cell) => cell.colSpan > 1 || cell.rowSpan > 1),
   );
-  if (first.length === 0 || spans) return null;
+  if (first.length === 0 || uneven) return null;
   // a whole pixel more: the fixed layout rounds the shares to its own sub-pixel units, and a column a fraction short
   // of its longest word breaks that word (the paper's cells may break anywhere)
   const widthsAt = (width: string): number[] => {
@@ -140,8 +145,13 @@ export function measureColumns(table: HTMLTableElement): ColumnSpan[] | null {
   return first.map((_, at) => ({ min: min[at] ?? 0, max: max[at] ?? 0 }));
 }
 
-/** Gives `table` the widths as shares of its own width (so it fills its room whatever its scale). */
-export function fitColumns(table: HTMLTableElement, widths: readonly number[]): void {
+/** Gives `table` the widths as shares of its own width (so it fills its room whatever its scale), marked with
+ *  `kind` (`FIT_TABLE` for paper, `SCREEN_TABLE` for the screen). */
+export function fitColumns(
+  table: HTMLTableElement,
+  widths: readonly number[],
+  kind: typeof FIT_TABLE | typeof SCREEN_TABLE,
+): void {
   const sum = total(widths);
   if (sum <= 0) return;
   for (const old of table.querySelectorAll(":scope > colgroup")) old.remove();
@@ -152,5 +162,5 @@ export function fitColumns(table: HTMLTableElement, widths: readonly number[]): 
     group.append(col);
   }
   table.prepend(group);
-  table.classList.add(FIT_TABLE);
+  table.classList.add(kind);
 }

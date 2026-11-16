@@ -228,8 +228,9 @@ const codeBlockView = $view(codeBlockSchema.node, (ctx): NodeViewConstructor => 
   };
 });
 
-/** Column widths of the editor's tables (each table view watches its own and forgets it when it goes). */
-export const tablesCtx = $ctx<TableFitter, "pmTables">(new TableFitter(), "pmTables");
+/** Column widths of the editor's tables (each table view watches its own and forgets it when it goes); set by
+ *  `createCore`, none: tables keep the browser's layout. */
+export const tablesCtx = $ctx<TableFitter | null, "pmTables">(null, "pmTables");
 
 /**
  * A table in the reading view's `.table-wrap`, so its frame, corners and outer space come from the same rules, with
@@ -244,7 +245,7 @@ const tableView = $view(tableSchema.node, (ctx): NodeViewConstructor => (node) =
   const body = document.createElement("tbody");
   table.append(body);
   dom.append(table);
-  const forget = tables.watch(table);
+  const forget = tables?.watch(table);
   return {
     dom,
     contentDOM: body,
@@ -252,12 +253,13 @@ const tableView = $view(tableSchema.node, (ctx): NodeViewConstructor => (node) =
       mutation.type !== "selection" && mutation.target !== body && !body.contains(mutation.target),
     update: (next) => {
       if (next.type !== node.type) return false;
-      // a typed letter does not move the columns: measured again once editing pauses
-      if (next !== node && !next.eq(node)) tables.changed(table);
+      // a typed letter does not move the columns: measured again once editing pauses (the first row's cells tell
+      // a column added | removed, which cannot wait: the DOM below is not updated yet at this point)
+      if (next !== node && !next.eq(node)) tables?.changed(table, next.firstChild?.childCount ?? 0);
       node = next;
       return true;
     },
-    destroy: forget,
+    destroy: () => forget?.(),
   };
 });
 

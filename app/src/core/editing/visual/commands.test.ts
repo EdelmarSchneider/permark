@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import { formatOf, run } from "./commands";
 import { LOCKED, createCore, type Core } from "./core";
-import { fitColumns, NATURAL_TABLE } from "../../doc/tableColumns";
+import { fitColumns, NATURAL_TABLE, SCREEN_TABLE } from "../../doc/tableColumns";
 
 let core: Core;
 
@@ -169,7 +169,7 @@ describe("Edit-mode commands", () => {
     if (!wrap || !table) throw new Error("no table");
     const before = core.view.state.doc;
     // what the column fitter writes: outside the cells, never part of the text
-    fitColumns(table, [40, 60]);
+    fitColumns(table, [40, 60], SCREEN_TABLE);
     table.style.width = "300px";
     wrap.classList.add(NATURAL_TABLE);
     // the editor reads DOM changes when its mutation observer reports them
@@ -181,6 +181,35 @@ describe("Edit-mode commands", () => {
     core.view.dispatch(core.view.state.tr.insertText("0"));
     expect(markdown()).toMatch(/\| 10 +\| 2 +\|/);
     expect(table.querySelector(":scope > colgroup")).not.toBeNull();
+  });
+
+  it("drops the measured column widths at once when a column is added, not when a letter is typed", () => {
+    // observers that never report: the table is watched, nothing is measured (jsdom has no layout)
+    class Quiet {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    vi.stubGlobal("IntersectionObserver", Quiet);
+    vi.stubGlobal("ResizeObserver", Quiet);
+    try {
+      // no table first: the editor would give the table before's view (made while nothing could watch) the new one
+      load("x\n");
+      load("| a | b |\n| - | - |\n| 1 | 2 |\n");
+      const table = core.view.dom.querySelector<HTMLTableElement>(":scope > .table-wrap > table");
+      if (!table) throw new Error("no table");
+      fitColumns(table, [40, 60], SCREEN_TABLE);
+      caretAfter("1");
+      core.view.dispatch(core.view.state.tr.insertText("0"));
+      expect(table.querySelector(":scope > colgroup")).not.toBeNull();
+      expect(run(core, { kind: "addColumn" })).toBe(true);
+      expect(table.querySelector(":scope > colgroup")).toBeNull();
+      expect(table.classList.contains(SCREEN_TABLE)).toBe(false);
+    } finally {
+      // the table view forgets its table while the stubs still answer
+      load("x\n");
+      vi.unstubAllGlobals();
+    }
   });
 
   it("inserts a picked character at the caret, and refuses on a locked block", () => {

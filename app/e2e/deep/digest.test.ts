@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { blockGolden, slugOf, sortedAttributes } from "./digest.ts";
+import { blockGolden, domDigest, slugOf, sortedAttributes } from "./digest.ts";
 
 describe("blockGolden", () => {
   it("lists front matter, outline and blocks without their ids", () => {
@@ -65,5 +66,34 @@ describe("slugOf", () => {
     expect(slugOf("demo/README.md")).toBe("demo__README");
     expect(slugOf("corpus/security/xss-attacks.md")).toBe("corpus__security__xss-attacks");
     expect(slugOf("demo/a b#c.markdown")).toBe("demo__a-b-c");
+  });
+});
+
+describe("domDigest", () => {
+  it("leaves out the table widths measured from the screen, keeps the document's own columns", () => {
+    document.body.innerHTML =
+      '<div class="reading"><div class="table-wrap is-natural">' +
+      '<table class="pm-screen-table" style="width: 300px"><colgroup><col style="width: 40%"></colgroup>' +
+      "<tbody><tr><td>a</td></tr></tbody></table></div>" +
+      '<table><colgroup><col span="2"></colgroup><tbody><tr><td>b</td></tr></tbody></table></div>';
+    expect(domDigest({ selector: ".reading", origin: "http://x" })).toBe(
+      [
+        "div.reading",
+        "  div.table-wrap",
+        "    table",
+        "      tbody",
+        "        tr",
+        "          td",
+        '            "a"',
+        "  table",
+        "    colgroup",
+        "      col",
+        "    tbody",
+        "      tr",
+        "        td",
+        '          "b"',
+        "",
+      ].join("\n"),
+    );
   });
 });

@@ -2,12 +2,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { declarations, ruleBody } from "../testing/cssRules";
+import { codeOnly, declarations, ruleBody } from "../testing/cssRules";
 import {
   columnWidths,
   fitColumns,
   FIT_TABLE,
+  measureColumns,
   NATURAL_TABLE,
+  SCREEN_TABLE,
   screenLayout,
   type ColumnSpan,
   type TableLayout,
@@ -103,7 +105,7 @@ describe("fitColumns", () => {
   it("sets the widths as shares of the table and marks the table for the fixed layout", () => {
     const table = document.createElement("table");
     table.innerHTML = "<colgroup><col></colgroup><thead><tr><th>a</th><th>b</th></tr></thead>";
-    fitColumns(table, [100, 300]);
+    fitColumns(table, [100, 300], FIT_TABLE);
     const groups = table.querySelectorAll("colgroup");
     expect(groups).toHaveLength(1);
     expect(
@@ -233,7 +235,7 @@ describe("screenLayout", () => {
 
 describe("screen rules of a measured table", () => {
   it("lays out a fitted table from its widths and lets a natural one keep its own width", () => {
-    expect(declarations(ruleBody(screen, `.md table.${FIT_TABLE}`))).toContain(
+    expect(declarations(ruleBody(screen, `.md table.${SCREEN_TABLE}`))).toContain(
       "table-layout: fixed",
     );
     expect(declarations(ruleBody(screen, `.md .table-wrap.${NATURAL_TABLE}`))).toEqual([
@@ -243,5 +245,58 @@ describe("screen rules of a measured table", () => {
     expect(declarations(ruleBody(screen, `.md .table-wrap.${NATURAL_TABLE} > table`))).toContain(
       "width: auto",
     );
+  });
+});
+
+describe("rules of a table fitted for paper", () => {
+  it("are paper's alone: an exported page read on a narrow screen wraps its tables as the browser does", () => {
+    // the export keeps the paper class in its page and inlines the reading styles: they must not fix its layout
+    expect(codeOnly(screen)).not.toContain(FIT_TABLE);
+    expect(codeOnly(paper)).not.toContain(SCREEN_TABLE);
+    const print = codeOnly(paper).indexOf("@media print");
+    expect(print).toBeGreaterThanOrEqual(0);
+    expect(codeOnly(paper).indexOf(FIT_TABLE)).toBeGreaterThan(print);
+  });
+});
+
+/** A table of `html` whose cells are `width(cell)` wide at max-content, half that at min-content (jsdom has no layout). */
+function laidOut(html: string, width: (cell: HTMLTableCellElement) => number): HTMLTableElement {
+  const table = document.createElement("table");
+  table.innerHTML = html;
+  document.body.append(table);
+  for (const cell of table.querySelectorAll<HTMLTableCellElement>("td, th")) {
+    cell.getBoundingClientRect = () => {
+      const full = width(cell);
+      return new DOMRect(0, 0, table.style.width === "min-content" ? full / 2 : full, 20);
+    };
+  }
+  return table;
+}
+
+describe("measureColumns", () => {
+  const byText = (cell: HTMLTableCellElement): number => (cell.textContent ?? "").length * 10;
+
+  it("measures each column at max-content and min-content width, a pixel more", () => {
+    const table = laidOut("<tr><td>abcd</td><td>ab</td></tr><tr><td>a</td><td>b</td></tr>", byText);
+    expect(measureColumns(table)).toEqual([
+      { min: 21, max: 41 },
+      { min: 11, max: 21 },
+    ]);
+    expect(table.style.width).toBe("");
+  });
+
+  it("leaves a table with a cell spanning columns | rows, or an uneven row, to the browser", () => {
+    const colspan = laidOut(
+      '<tr><td colspan="2">ab</td></tr><tr><td>a</td><td>b</td></tr>',
+      byText,
+    );
+    const rowspan = laidOut(
+      '<tr><td rowspan="2">ab</td><td>c</td></tr><tr><td>d</td></tr>',
+      byText,
+    );
+    const ragged = laidOut("<tr><td>a</td><td>b</td></tr><tr><td>c</td></tr>", byText);
+    expect(measureColumns(colspan)).toBeNull();
+    expect(measureColumns(rowspan)).toBeNull();
+    expect(measureColumns(ragged)).toBeNull();
   });
 });

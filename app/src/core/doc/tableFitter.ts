@@ -1,13 +1,16 @@
 // Column widths of the tables on screen (reading view and Edit), from their measured content (`tableColumns.ts`).
 // A table is measured once it comes near the screen (two layouts: at max-content and at min-content width). A resize
 // shares the measured columns again without measuring, once the size settles; a font change (zoom, look, a font that
-// finished loading) measures again. An edited table is measured again once editing pauses and the caret is out of it,
-// so widths never jump while typing. Without the observers (no layout to watch) tables keep the browser's layout.
+// finished loading) measures again. An edited table is measured again once editing pauses (measuring leaves the caret
+// where it is), so widths never jump while typing; a column added | removed drops the widths at once (the fixed layout
+// would squeeze a new column to nothing). Every pass reads all its measurements before it writes any width, so the
+// page is laid out once per table and not again for each write. Without the observers (no layout to watch) tables
+// keep the browser's layout.
 
 import { TABLE_WRAP } from "./enhance";
 import {
-  FIT_TABLE,
   NATURAL_TABLE,
+  SCREEN_TABLE,
   fitColumns,
   measureColumns,
   screenLayout,
@@ -18,7 +21,7 @@ import {
 
 /** Quiet time after the last resize before the columns are shared again. */
 export const SETTLE_MS = 100;
-/** Quiet time after the last edit of a table before it is measured again (checked again while the caret is in it). */
+/** Quiet time after the last edit of a table before it is measured again. */
 export const IDLE_MS = 1000;
 /** A column whose longest line is at most this wide never wraps: about 12 digits (numbers, dates, ids). */
 const SHORT_EM = 7;
@@ -83,14 +86,20 @@ type Entry = {
   measured: Measured | null;
   /** The layout shown now, as a key (no DOM write when it would not change). */
   shown: string;
+  /** Came near the screen: measured (again) when needed; before that it is left alone. */
+  near: boolean;
   /** Measured again once editing pauses. */
   dirty: boolean;
-  /** Came near the screen while hidden (no room): measured once it is shown. */
+  /** Came near the screen while hidden (no room), or its columns changed: measured once it can be. */
   stale: boolean;
-  /** Watched for size: the wrapper and the element that holds it. */
-  wrap: Element | null;
+  /** The element that holds the wrapper, watched for size: its width is the room, its height follows the font. The
+   *  wrapper itself is not watched: its scroll bar comes and goes with the widths set here, a loop. */
   holder: Element | null;
 };
+
+/** A table to measure in a pass, with its room. */
+type Job = { table: HTMLTableElement; entry: Entry; room: number };
+type Plan = [HTMLTableElement, Entry, TableLayout];
 
 const AUTO = "auto";
 
@@ -102,9 +111,9 @@ function keyOf(layout: TableLayout): string {
 /** The table back to the browser's layout (only what the fitter set). */
 function unfit(table: HTMLTableElement): void {
   table.parentElement?.classList.remove(NATURAL_TABLE);
-  if (!table.classList.contains(FIT_TABLE)) return;
+  if (!table.classList.contains(SCREEN_TABLE)) return;
   table.querySelector(":scope > colgroup")?.remove();
-  table.classList.remove(FIT_TABLE);
+  table.classList.remove(SCREEN_TABLE);
   table.style.removeProperty("width");
 }
 
@@ -117,10 +126,10 @@ function show(table: HTMLTableElement, layout: TableLayout): void {
       table.parentElement?.classList.add(NATURAL_TABLE);
       break;
     case "fill":
-      fitColumns(table, layout.widths);
+      fitColumns(table, layout.widths, SCREEN_TABLE);
       break;
     case "scroll": {
-      fitColumns(table, layout.widths);
+      fitColumns(table, layout.widths, SCREEN_TABLE);
       const width = layout.widths.reduce((sum, value) => sum + value, 0);
       table.style.width = `${Math.ceil(width)}px`;
       break;
@@ -128,13 +137,6 @@ function show(table: HTMLTableElement, layout: TableLayout): void {
     default:
       layout satisfies never;
   }
-}
-
-/** True while the caret is in `table` and its editor has the focus. */
-function busy(table: HTMLTableElement): boolean {
-  const owner = table.ownerDocument;
-  const anchor = owner.getSelection()?.anchorNode ?? null;
-  return anchor !== null && table.contains(anchor) && owner.activeElement?.contains(table) === true;
 }
 
 export type FitterOptions = {
@@ -153,7 +155,13 @@ export class TableFitter {
   #size: ResizeObserver | null = null;
   #settle: ReturnType<typeof setTimeout> | null = null;
   #idle: ReturnType<typeof setTimeout> | null = null;
-  readonly #fontsLoaded = (): void => this.#measure([...this.#entries.keys()]);
+  /** A font finished loading since the last pass: every measured table is measured again (its font string is the
+   *  same, its glyphs are not). One event comes per font face: they share the next pass. */
+  #fonts = false;
+  readonly #fontsLoaded = (): void => {
+    this.#fonts = true;
+    this.#soon();
+  };
 
   constructor(options: FitterOptions = {}) {
     this.#probe = options.probe ?? screenProbe;
@@ -165,15 +173,15 @@ export class TableFitter {
     const forget = (): void => this.#forget(table);
     // the document's own column widths (an HTML table) stay as written
     const own =
-      !table.classList.contains(FIT_TABLE) &&
+      !table.classList.contains(SCREEN_TABLE) &&
       (table.querySelector(":scope > colgroup") !== null || table.style.width !== "");
     if (own || this.#entries.has(table) || !this.#start() || !this.#view) return forget;
     this.#entries.set(table, {
       measured: null,
       shown: AUTO,
+      near: false,
       dirty: false,
       stale: false,
-      wrap: null,
       holder: null,
     });
     this.#view.observe(table);
@@ -195,10 +203,20 @@ export class TableFitter {
     };
   }
 
-  /** The content of `table` changed (an edit): measured again once editing pauses and the caret left it. */
-  changed(table: HTMLTableElement): void {
+  /**
+   * The content of `table` changed (an edit; `columns` = the cells of its first row now): measured again once editing
+   * pauses. A changed number of columns drops the widths at once: the browser lays the table out until then.
+   */
+  changed(table: HTMLTableElement, columns: number): void {
     const entry = this.#entries.get(table);
     if (!entry) return;
+    const cols = table.querySelector(":scope > colgroup")?.children.length;
+    if (cols !== undefined && cols !== columns) {
+      unfit(table);
+      entry.shown = AUTO;
+      entry.measured = null;
+      entry.stale = entry.near;
+    }
     entry.dirty = true;
     this.#armIdle();
   }
@@ -252,7 +270,6 @@ export class TableFitter {
     if (!entry) return;
     this.#entries.delete(table);
     this.#view?.unobserve(table);
-    if (entry.wrap) this.#size?.unobserve(entry.wrap);
     if (entry.holder) {
       const left = (this.#holders.get(entry.holder) ?? 1) - 1;
       if (left > 0) this.#holders.set(entry.holder, left);
@@ -264,30 +281,40 @@ export class TableFitter {
     if (this.#entries.size === 0) this.#halt();
   }
 
-  /** Measures `tables` from the browser's layout and shows their columns. */
+  /** Measures `tables` (they came near the screen | were edited) and shows their columns. */
   #measure(tables: readonly HTMLTableElement[]): void {
+    const jobs: Job[] = [];
     for (const table of tables) {
       const entry = this.#entries.get(table);
       if (!entry) continue;
+      entry.near = true;
       this.#watchSize(table, entry);
       // a hidden page (the other mode's) has no layout to measure: it is measured once its holder has a size
       const room = this.#probe.room(table);
       entry.stale = room <= 0;
-      if (entry.stale) continue;
+      if (!entry.stale) jobs.push({ table, entry, room });
+    }
+    this.#pass(jobs, []);
+  }
+
+  /** One pass: the tables to measure back to the browser's layout, then every measurement, then every width. */
+  #pass(jobs: readonly Job[], plans: Plan[]): void {
+    for (const { table, entry } of jobs) {
       unfit(table);
       entry.shown = AUTO;
-      entry.measured = this.#probe.measure(table);
-      if (!entry.measured) continue;
-      this.#show(table, entry, screenLayout(entry.measured.columns, room, entry.measured.limits));
     }
+    for (const { table, entry, room } of jobs) {
+      entry.measured = this.#probe.measure(table);
+      const measured = entry.measured;
+      if (measured)
+        plans.push([table, entry, screenLayout(measured.columns, room, measured.limits)]);
+    }
+    for (const [table, entry, layout] of plans) this.#show(table, entry, layout);
   }
 
   #watchSize(table: HTMLTableElement, entry: Entry): void {
-    if (entry.wrap || !this.#size) return;
-    entry.wrap = table.parentElement;
-    entry.holder = entry.wrap?.parentElement ?? null;
-    // the wrapper's height follows the font (zoom); the holder's width is the room
-    if (entry.wrap) this.#size.observe(entry.wrap);
+    if (entry.holder || !this.#size) return;
+    entry.holder = table.parentElement?.parentElement ?? null;
     if (entry.holder) {
       const count = this.#holders.get(entry.holder) ?? 0;
       if (count === 0) this.#size.observe(entry.holder);
@@ -310,20 +337,26 @@ export class TableFitter {
     }, SETTLE_MS);
   }
 
-  /** Shares the measured columns again in today's room (all reads first, then the writes); a new font measures. */
+  /**
+   * Shares the measured columns again in today's room; a new font (or one that finished loading) measures again.
+   * Only tables that came near the screen take part: the others are measured when they do.
+   */
   #refit(): void {
-    const again: HTMLTableElement[] = [];
-    const plans: [HTMLTableElement, Entry, TableLayout][] = [];
+    const fonts = this.#fonts;
+    this.#fonts = false;
+    const again: Job[] = [];
+    const plans: Plan[] = [];
     for (const [table, entry] of this.#entries) {
       const measured = entry.measured;
       if (!measured && !entry.stale) continue;
       const room = this.#probe.room(table);
       if (room <= 0) continue;
-      if (!measured || entry.stale || this.#probe.font(table) !== measured.font) again.push(table);
-      else plans.push([table, entry, screenLayout(measured.columns, room, measured.limits)]);
+      if (!measured || entry.stale || fonts || this.#probe.font(table) !== measured.font) {
+        entry.stale = false;
+        again.push({ table, entry, room });
+      } else plans.push([table, entry, screenLayout(measured.columns, room, measured.limits)]);
     }
-    for (const [table, entry, layout] of plans) this.#show(table, entry, layout);
-    this.#measure(again);
+    this.#pass(again, plans);
   }
 
   #armIdle(): void {
@@ -334,21 +367,14 @@ export class TableFitter {
     }, IDLE_MS);
   }
 
-  /** Measures the edited tables the caret has left; the others wait for the next quiet moment. */
+  /** Measures the edited tables that came near the screen (the others are measured when they do). */
   #settleEdits(): void {
     const ready: HTMLTableElement[] = [];
-    let waiting = false;
     for (const [table, entry] of this.#entries) {
       if (!entry.dirty) continue;
-      if (busy(table)) {
-        waiting = true;
-        continue;
-      }
       entry.dirty = false;
-      // not measured yet: it is measured when it comes near the screen
-      if (entry.measured) ready.push(table);
+      if (entry.near) ready.push(table);
     }
     this.#measure(ready);
-    if (waiting) this.#armIdle();
   }
 }

@@ -516,8 +516,9 @@
   line-height: 1.5;
 }
 /* column widths measured from the content (`tableFitter.ts`): short columns whole, long text sharing the rest. Every
-   width is at least the column's longest word, so no word breaks; floors wider than the column scroll. */
-.md table.pm-fit-table {
+   width is at least the column's longest word, so no word breaks; floors wider than the column scroll. Paper's own
+   class (`pm-fit-table`, kept in an exported page) is fixed in print only (`paper.css`). */
+.md table.pm-screen-table {
   table-layout: fixed;
 }
 /* a table whose lines all fit well short of the column keeps its own width (its frame ends with it) */
