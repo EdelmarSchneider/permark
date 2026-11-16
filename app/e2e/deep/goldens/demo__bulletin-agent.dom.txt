@@ -259,7 +259,7 @@ div.reading
           p dir="auto"
             "PerMark's agent connection stays off in every project until you turn on"
             strong
-              "Share this project with agents"
+              "Share this folder with agents"
             "in"
             strong
               "Settings › AI agents"

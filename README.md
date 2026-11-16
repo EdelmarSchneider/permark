@@ -221,7 +221,7 @@ PerMark becomes your default app for Markdown only if you choose it: it asks onc
 unchecked. On Windows, you confirm the choice in Windows Settings.
 
 **Coming from TrailMark?** The command is now `permark`. If an agent is set up with the old `trailmark` command, run the setup
-lines from **Settings → Integration → Agent connection** again. PerMark 0.6 no longer renames old `.trailmark/` folders: update
+lines from **Settings → AI agents** again. PerMark 0.6 no longer renames old `.trailmark/` folders: update
 to 0.5.8 before you update to 0.6.
 
 <details>
@@ -264,7 +264,7 @@ that speaks the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
 
 **What it shares, and how it stays in your hands:**
 
-- **Off until you turn it on, per project.** Choose **Share this project with agents** in **Settings → Integration → Agent connection**,
+- **Off until you turn it on, per project.** Choose **Share this folder with agents** in **Settings → AI agents**,
   or run **Agent connection: turn on** from the command palette. Nothing inside a project can turn it on.
 - **Local.** It talks only to programs on your computer and opens no network port.
 - **Read, never edit.** The agent sees where you are, what you selected, what changed, your comments and the notes you shared one

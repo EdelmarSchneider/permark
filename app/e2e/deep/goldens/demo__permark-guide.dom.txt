@@ -356,7 +356,7 @@ div.reading
         p dir="auto"
           "PerMark can share a project with an AI agent you already use, any tool that speaks MCP. It's off by default and set per project: turn on"
           strong
-            "Share this project with agents"
+            "Share this folder with agents"
           "in Settings, under"
           strong
             "AI agents"
