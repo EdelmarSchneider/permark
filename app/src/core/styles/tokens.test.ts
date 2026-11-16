@@ -62,6 +62,27 @@ describe("text contrast of every theme and light tone", () => {
         "--accent-fg on --accent",
       ).toBeGreaterThanOrEqual(4.5);
     });
+
+    // diagrams draw chart marks (slices, bars) in the tag colors and write on them in the page color; a gantt task is
+    // a 35 % tint of its tag color over the page, with the page's text on it
+    it(`${name}: a chart mark shows on the page (3:1) and the page color reads on it (4.5:1)`, () => {
+      for (const tag of ["gray", "red", "orange", "yellow", "green", "teal", "blue", "purple"]) {
+        const mark = rgb(theme, `tag-${tag}`);
+        const page = rgb(theme, "bg");
+        const bar = mark.map((c, i) => Math.round(c * 0.35 + (page[i] ?? 0) * 0.65));
+        expect(
+          contrast(rgb(theme, "text"), bar),
+          `--text on a --tag-${tag} bar`,
+        ).toBeGreaterThanOrEqual(4.5);
+        for (const bg of ["bg", "surface"])
+          expect(contrast(mark, rgb(theme, bg)), `--tag-${tag} on --${bg}`).toBeGreaterThanOrEqual(
+            3,
+          );
+        expect(contrast(rgb(theme, "bg"), mark), `--bg on --tag-${tag}`).toBeGreaterThanOrEqual(
+          4.5,
+        );
+      }
+    });
   }
 });
 

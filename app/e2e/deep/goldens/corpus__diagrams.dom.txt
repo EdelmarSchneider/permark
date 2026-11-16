@@ -32,7 +32,7 @@ div.reading
         div.code-block.diagram
           figure.figure
             div.drawing
-              svg svg sized labels: PlantUML version $version$ / $git.commit.id$ [Unknown compil… | [From textarea (line 2) ] | @startuml | this is -> -> not valid ::: plantuml | Syntax Error? (Assumed diagram type: sequence)
+              svg svg sized labels: [From textarea (line 2) ] | @startuml | this is -> -> not valid ::: plantuml | Syntax Error? (Assumed diagram type: sequence)
         div.code-block.diagram
           figure.figure
             div.drawing
