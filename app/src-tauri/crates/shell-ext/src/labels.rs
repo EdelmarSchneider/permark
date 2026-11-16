@@ -104,6 +104,16 @@ pub const WORDS: &[Words] = &[
         open: "PerMark ile aç",
         new_markdown: "PerMark ile yeni Markdown dosyası",
     },
+    Words {
+        code: "pl",
+        open: "Otwórz w PerMark",
+        new_markdown: "Nowy plik Markdown w PerMark",
+    },
+    Words {
+        code: "uk",
+        open: "Відкрити в PerMark",
+        new_markdown: "Новий файл Markdown у PerMark",
+    },
 ];
 
 /// The code of a tag's language in the table: only the language counts, but Portuguese reads the region (Brazil and a

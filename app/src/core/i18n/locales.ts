@@ -20,6 +20,8 @@ export const LOCALES = [
   "vi",
   "ru",
   "tr",
+  "pl",
+  "uk",
 ] as const;
 export type Locale = (typeof LOCALES)[number];
 
@@ -43,6 +45,8 @@ export const LOCALE_NAMES: Record<Locale, string> = {
   vi: "Tiếng Việt",
   ru: "Русский",
   tr: "Türkçe",
+  pl: "Polski",
+  uk: "Українська",
 };
 
 /** Source language: complete table; answers whenever another table lacks a string. */
@@ -100,6 +104,10 @@ export function matchLocale(tag: string): Locale | null {
       return "ru";
     case "tr":
       return "tr";
+    case "pl":
+      return "pl";
+    case "uk":
+      return "uk";
     default:
       return null;
   }

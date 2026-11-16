@@ -2,8 +2,8 @@
 ; Everything here writes under HKEY_CURRENT_USER: no administrator rights.
 ;
 ; 1. LANGUAGE. The installer's language is recorded as the app's language code (en, pt-BR, es, de, zh-CN, it, ja,
-;    ko, fr, pt-PT, ca, gl, ro, zh-TW, id, vi, ru, tr) in HKCU\Software\PerMark\Language. The app reads it once, at its
-;    first start, when no language was picked in it.
+;    ko, fr, pt-PT, ca, gl, ro, zh-TW, id, vi, ru, tr, pl, uk) in HKCU\Software\PerMark\Language. The app reads it
+;    once, at its first start, when no language was picked in it.
 ;
 ; 2. "OPEN WITH". Every file type PerMark reads is registered so it is offered under "Open with" (a ProgID per group of
 ;    types, the extension's OpenWithProgids list, and the app's capabilities for the Default Apps page). The default app
@@ -24,7 +24,7 @@
 ;    (box unticked, uninstall), never one the person wrote. An update leaves PATH as it is. A PATH this installer cannot
 ;    rewrite whole (see "Command line" below) is never changed: the installer says so and names the folder to add.
 ;
-; 5. DEMO PAGES. "Install the demo pages in Documents", a check box on the welcome page, always unticked at first: the
+; 5. DEMO PAGES. "Install the demo pages in Documents", a check box on the welcome page, always ticked at first: the
 ;    installed copy of the sample documents ($INSTDIR\demo) goes to Documents\PerMark Demo, the folder the app's Welcome
 ;    screen offers too, only when nothing is there yet. A silent | passive install and an update never copy. The folder is
 ;    the person's from then on: no uninstall removes it (see "Demo pages").
@@ -60,7 +60,7 @@
 
 ; ---- Words ----------------------------------------------------------------------------------------------------------
 ; Windows language ids: 1033 en, 1046 pt-BR, 3082 es, 1031 de, 2052 zh-CN, 1040 it, 1041 ja, 1042 ko, 1036 fr,
-; 2070 pt-PT, 1027 ca, 1110 gl, 1048 ro, 1028 zh-TW, 1057 id, 1066 vi, 1049 ru, 1055 tr.
+; 2070 pt-PT, 1027 ca, 1110 gl, 1048 ro, 1028 zh-TW, 1057 id, 1066 vi, 1049 ru, 1055 tr, 1045 pl, 1058 uk.
 
 LangString PermarkWelcome 1033 "PerMark is a unified document workspace: one place to read, write and organize Markdown and the files around it.$\r$\nSetup will install PerMark for you. No administrator rights are needed."
 LangString PermarkWelcome 1046 "O PerMark é um espaço de trabalho unificado para documentos: um só lugar para ler, escrever e organizar Markdown e os arquivos ao redor.$\r$\nO instalador vai instalar o PerMark para você. Não é preciso ser administrador."
@@ -80,6 +80,8 @@ LangString PermarkWelcome 1057 "PerMark adalah ruang kerja dokumen terpadu: satu
 LangString PermarkWelcome 1066 "PerMark là không gian làm việc tài liệu hợp nhất: một nơi để đọc, viết và sắp xếp Markdown cùng các tệp xung quanh.$\r$\nTrình cài đặt sẽ cài PerMark cho bạn. Không cần quyền quản trị viên."
 LangString PermarkWelcome 1049 "PerMark — единое рабочее пространство для документов: одно место, чтобы читать, писать и упорядочивать Markdown и файлы вокруг него.$\r$\nПрограмма установит PerMark для вас. Права администратора не нужны."
 LangString PermarkWelcome 1055 "PerMark birleşik bir belge çalışma alanıdır: Markdown'ı ve çevresindeki dosyaları okumak, yazmak ve düzenlemek için tek bir yer.$\r$\nKurulum PerMark'ı sizin için yükleyecek. Yönetici hakları gerekmez."
+LangString PermarkWelcome 1045 "PerMark to ujednolicona przestrzeń robocza dla dokumentów: jedno miejsce do czytania, pisania i porządkowania dokumentów Markdown i plików wokół nich.$\r$\nInstalator zainstaluje PerMark na Twoim koncie. Uprawnienia administratora nie są potrzebne."
+LangString PermarkWelcome 1058 "PerMark — єдиний робочий простір для документів: одне місце, щоб читати, писати й упорядковувати Markdown і файли навколо нього.$\r$\nПрограма встановить PerMark для вас. Права адміністратора не потрібні."
 
 LangString PermarkTypesTitle 1033 "Open these files with PerMark (Windows asks you to confirm in its Settings after the installation):"
 LangString PermarkTypesTitle 1046 "Abrir estes arquivos com o PerMark (o Windows pede sua confirmação nas Configurações depois da instalação):"
@@ -99,6 +101,8 @@ LangString PermarkTypesTitle 1057 "Buka file ini dengan PerMark (Windows meminta
 LangString PermarkTypesTitle 1066 "Mở các tệp này bằng PerMark (Windows sẽ yêu cầu bạn xác nhận trong Cài đặt sau khi cài đặt):"
 LangString PermarkTypesTitle 1049 "Открывать эти файлы в PerMark (после установки Windows попросит подтвердить это в Параметрах):"
 LangString PermarkTypesTitle 1055 "Bu dosyaları PerMark ile aç (Windows, kurulumdan sonra Ayarlar'da onaylamanızı ister):"
+LangString PermarkTypesTitle 1045 "Otwieraj te pliki w PerMark (po instalacji Windows poprosi o potwierdzenie w Ustawieniach):"
+LangString PermarkTypesTitle 1058 "Відкривати ці файли в PerMark (після встановлення Windows попросить підтвердити це в Параметрах):"
 
 LangString PermarkText 1033 "Text"
 LangString PermarkText 1046 "Texto"
@@ -118,6 +122,8 @@ LangString PermarkText 1057 "Teks"
 LangString PermarkText 1066 "Văn bản"
 LangString PermarkText 1049 "Текст"
 LangString PermarkText 1055 "Metin"
+LangString PermarkText 1045 "Tekst"
+LangString PermarkText 1058 "Текст"
 
 LangString PermarkProperties 1033 "Properties"
 LangString PermarkProperties 1046 "Properties"
@@ -137,6 +143,8 @@ LangString PermarkProperties 1057 "Properties"
 LangString PermarkProperties 1066 "Properties"
 LangString PermarkProperties 1049 "Properties"
 LangString PermarkProperties 1055 "Properties"
+LangString PermarkProperties 1045 "Properties"
+LangString PermarkProperties 1058 "Properties"
 
 LangString OpenWithMenuLabel 1033 "Open with PerMark"
 LangString OpenWithMenuLabel 1046 "Abrir com o PerMark"
@@ -156,6 +164,8 @@ LangString OpenWithMenuLabel 1057 "Buka dengan PerMark"
 LangString OpenWithMenuLabel 1066 "Mở bằng PerMark"
 LangString OpenWithMenuLabel 1049 "Открыть с помощью PerMark"
 LangString OpenWithMenuLabel 1055 "PerMark ile aç"
+LangString OpenWithMenuLabel 1045 "Otwórz w PerMark"
+LangString OpenWithMenuLabel 1058 "Відкрити в PerMark"
 
 LangString NewMarkdownLabel 1033 "New Markdown file with PerMark"
 LangString NewMarkdownLabel 1046 "Novo arquivo Markdown com o PerMark"
@@ -175,6 +185,8 @@ LangString NewMarkdownLabel 1057 "File Markdown baru dengan PerMark"
 LangString NewMarkdownLabel 1066 "Tệp Markdown mới bằng PerMark"
 LangString NewMarkdownLabel 1049 "Новый файл Markdown в PerMark"
 LangString NewMarkdownLabel 1055 "PerMark ile yeni Markdown dosyası"
+LangString NewMarkdownLabel 1045 "Nowy plik Markdown w PerMark"
+LangString NewMarkdownLabel 1058 "Новий файл Markdown у PerMark"
 
 LangString OpenWithMenuOption 1033 "Add “Open with PerMark” to the right-click menu"
 LangString OpenWithMenuOption 1046 "Adicionar “Abrir com o PerMark” ao menu de clique direito"
@@ -194,6 +206,8 @@ LangString OpenWithMenuOption 1057 "Tambahkan “Buka dengan PerMark” ke menu 
 LangString OpenWithMenuOption 1066 "Thêm “Mở bằng PerMark” vào menu chuột phải"
 LangString OpenWithMenuOption 1049 "Добавить «Открыть с помощью PerMark» в контекстное меню"
 LangString OpenWithMenuOption 1055 "Sağ tık menüsüne “PerMark ile aç” ekle"
+LangString OpenWithMenuOption 1045 "Dodaj „Otwórz w PerMark” do menu kontekstowego"
+LangString OpenWithMenuOption 1058 "Додати «Відкрити в PerMark» до контекстного меню"
 
 LangString NewMarkdownOption 1033 "Add “New Markdown file” to the right-click menu of folders"
 LangString NewMarkdownOption 1046 "Adicionar “Novo arquivo Markdown” ao menu de clique direito das pastas"
@@ -213,6 +227,8 @@ LangString NewMarkdownOption 1057 "Tambahkan “File Markdown baru” ke menu kl
 LangString NewMarkdownOption 1066 "Thêm “Tệp Markdown mới” vào menu chuột phải của thư mục"
 LangString NewMarkdownOption 1049 "Добавить «Новый файл Markdown» в контекстное меню папок"
 LangString NewMarkdownOption 1055 "Klasörlerin sağ tık menüsüne “Yeni Markdown dosyası” ekle"
+LangString NewMarkdownOption 1045 "Dodaj „Nowy plik Markdown” do menu kontekstowego folderów"
+LangString NewMarkdownOption 1058 "Додати «Новий файл Markdown» до контекстного меню папок"
 
 LangString PathOption 1033 "Add the permark command to PATH"
 LangString PathOption 1046 "Adicionar o comando permark ao PATH"
@@ -232,6 +248,8 @@ LangString PathOption 1057 "Tambahkan perintah permark ke PATH"
 LangString PathOption 1066 "Thêm lệnh permark vào PATH"
 LangString PathOption 1049 "Добавить команду permark в PATH"
 LangString PathOption 1055 "permark komutunu PATH'e ekle"
+LangString PathOption 1045 "Dodaj polecenie permark do PATH"
+LangString PathOption 1058 "Додати команду permark до PATH"
 
 LangString DemoOption 1033 "Install the demo pages in Documents"
 LangString DemoOption 1046 "Instalar as páginas de demonstração em Documentos"
@@ -251,6 +269,8 @@ LangString DemoOption 1057 "Instal halaman demo di folder Dokumen"
 LangString DemoOption 1066 "Cài đặt các trang mẫu vào thư mục Tài liệu"
 LangString DemoOption 1049 "Установить демо-страницы в «Документы»"
 LangString DemoOption 1055 "Tanıtım sayfalarını Belgeler klasörüne yükle"
+LangString DemoOption 1045 "Zainstaluj strony demonstracyjne w Dokumentach"
+LangString DemoOption 1058 "Встановити демосторінки в «Документи»"
 
 LangString PathNotAdded 1033 "The permark command was not added to PATH: the installer cannot change your PATH safely (it is probably too long). To use the command, add this folder to PATH yourself:$\r$\n$\r$\n$PermarkPathDir"
 LangString PathNotAdded 1046 "O comando permark não foi adicionado ao PATH: o instalador não consegue alterar seu PATH com segurança (provavelmente ele é longo demais). Para usar o comando, adicione você mesmo esta pasta ao PATH:$\r$\n$\r$\n$PermarkPathDir"
@@ -270,6 +290,8 @@ LangString PathNotAdded 1057 "Perintah permark tidak ditambahkan ke PATH: pengin
 LangString PathNotAdded 1066 "Lệnh permark chưa được thêm vào PATH: trình cài đặt không thể thay đổi PATH của bạn một cách an toàn (có lẽ vì quá dài). Để dùng lệnh này, hãy tự thêm thư mục này vào PATH:$\r$\n$\r$\n$PermarkPathDir"
 LangString PathNotAdded 1049 "Команда permark не добавлена в PATH: программа установки не может безопасно изменить ваш PATH (вероятно, он слишком длинный). Чтобы пользоваться командой, добавьте эту папку в PATH самостоятельно:$\r$\n$\r$\n$PermarkPathDir"
 LangString PathNotAdded 1055 "permark komutu PATH'e eklenmedi: kurulum programı PATH değişkeninizi güvenli şekilde değiştiremiyor (muhtemelen çok uzun). Komutu kullanmak için bu klasörü PATH'e kendiniz ekleyin:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1045 "Polecenie permark nie zostało dodane do PATH: instalator nie może bezpiecznie zmienić Twojej zmiennej PATH (prawdopodobnie jest zbyt długa). Aby używać polecenia, dodaj ten folder do PATH samodzielnie:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1058 "Команду permark не додано до PATH: програма встановлення не може безпечно змінити ваш PATH (імовірно, він задовгий). Щоб користуватися командою, додайте цю папку до PATH самостійно:$\r$\n$\r$\n$PermarkPathDir"
 
 LangString PathNotRemoved 1033 "The permark command was not removed from PATH: the uninstaller cannot change your PATH safely (it is probably too long). You can remove this folder from PATH yourself:$\r$\n$\r$\n$PermarkPathDir"
 LangString PathNotRemoved 1046 "O comando permark não foi removido do PATH: o desinstalador não consegue alterar seu PATH com segurança (provavelmente ele é longo demais). Você pode remover esta pasta do PATH manualmente:$\r$\n$\r$\n$PermarkPathDir"
@@ -289,6 +311,8 @@ LangString PathNotRemoved 1057 "Perintah permark tidak dihapus dari PATH: pengha
 LangString PathNotRemoved 1066 "Lệnh permark chưa được gỡ khỏi PATH: trình gỡ cài đặt không thể thay đổi PATH của bạn một cách an toàn (có lẽ vì quá dài). Bạn có thể tự gỡ thư mục này khỏi PATH:$\r$\n$\r$\n$PermarkPathDir"
 LangString PathNotRemoved 1049 "Команда permark не удалена из PATH: программа удаления не может безопасно изменить ваш PATH (вероятно, он слишком длинный). Вы можете удалить эту папку из PATH самостоятельно:$\r$\n$\r$\n$PermarkPathDir"
 LangString PathNotRemoved 1055 "permark komutu PATH'ten kaldırılmadı: kaldırma programı PATH değişkeninizi güvenli şekilde değiştiremiyor (muhtemelen çok uzun). Bu klasörü PATH'ten kendiniz kaldırabilirsiniz:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1045 "Polecenie permark nie zostało usunięte z PATH: deinstalator nie może bezpiecznie zmienić Twojej zmiennej PATH (prawdopodobnie jest zbyt długa). Możesz samodzielnie usunąć ten folder z PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1058 "Команду permark не видалено з PATH: програма видалення не може безпечно змінити ваш PATH (імовірно, він задовгий). Ви можете самостійно видалити цю папку з PATH:$\r$\n$\r$\n$PermarkPathDir"
 
 LangString PermarkAbout 1033 "Read, write and organize Markdown and the files around it."
 LangString PermarkAbout 1046 "Leia, escreva e organize Markdown e os arquivos ao redor dele."
@@ -308,6 +332,8 @@ LangString PermarkAbout 1057 "Baca, tulis, dan atur Markdown serta file di sekit
 LangString PermarkAbout 1066 "Đọc, viết và sắp xếp Markdown cùng các tệp xung quanh."
 LangString PermarkAbout 1049 "Читайте, пишите и упорядочивайте Markdown и файлы вокруг него."
 LangString PermarkAbout 1055 "Markdown'ı ve çevresindeki dosyaları okuyun, yazın ve düzenleyin."
+LangString PermarkAbout 1045 "Czytaj, pisz i porządkuj dokumenty Markdown oraz pliki wokół nich."
+LangString PermarkAbout 1058 "Читайте, пишіть і впорядковуйте Markdown і файли навколо нього."
 
 LangString TypeMarkdown 1033 "Markdown document"
 LangString TypeMarkdown 1046 "Documento Markdown"
@@ -327,6 +353,8 @@ LangString TypeMarkdown 1057 "Dokumen Markdown"
 LangString TypeMarkdown 1066 "Tài liệu Markdown"
 LangString TypeMarkdown 1049 "Документ Markdown"
 LangString TypeMarkdown 1055 "Markdown belgesi"
+LangString TypeMarkdown 1045 "Dokument Markdown"
+LangString TypeMarkdown 1058 "Документ Markdown"
 LangString TypeText 1033 "Text document"
 LangString TypeText 1046 "Documento de texto"
 LangString TypeText 3082 "Documento de texto"
@@ -345,6 +373,8 @@ LangString TypeText 1057 "Dokumen teks"
 LangString TypeText 1066 "Tài liệu văn bản"
 LangString TypeText 1049 "Текстовый документ"
 LangString TypeText 1055 "Metin belgesi"
+LangString TypeText 1045 "Dokument tekstowy"
+LangString TypeText 1058 "Текстовий документ"
 LangString TypeJson 1033 "JSON file"
 LangString TypeJson 1046 "Arquivo JSON"
 LangString TypeJson 3082 "Archivo JSON"
@@ -363,6 +393,8 @@ LangString TypeJson 1057 "File JSON"
 LangString TypeJson 1066 "Tệp JSON"
 LangString TypeJson 1049 "Файл JSON"
 LangString TypeJson 1055 "JSON dosyası"
+LangString TypeJson 1045 "Plik JSON"
+LangString TypeJson 1058 "Файл JSON"
 LangString TypeXml 1033 "XML file"
 LangString TypeXml 1046 "Arquivo XML"
 LangString TypeXml 3082 "Archivo XML"
@@ -381,6 +413,8 @@ LangString TypeXml 1057 "File XML"
 LangString TypeXml 1066 "Tệp XML"
 LangString TypeXml 1049 "Файл XML"
 LangString TypeXml 1055 "XML dosyası"
+LangString TypeXml 1045 "Plik XML"
+LangString TypeXml 1058 "Файл XML"
 LangString TypeYaml 1033 "YAML file"
 LangString TypeYaml 1046 "Arquivo YAML"
 LangString TypeYaml 3082 "Archivo YAML"
@@ -399,6 +433,8 @@ LangString TypeYaml 1057 "File YAML"
 LangString TypeYaml 1066 "Tệp YAML"
 LangString TypeYaml 1049 "Файл YAML"
 LangString TypeYaml 1055 "YAML dosyası"
+LangString TypeYaml 1045 "Plik YAML"
+LangString TypeYaml 1058 "Файл YAML"
 LangString TypeToml 1033 "TOML file"
 LangString TypeToml 1046 "Arquivo TOML"
 LangString TypeToml 3082 "Archivo TOML"
@@ -417,6 +453,8 @@ LangString TypeToml 1057 "File TOML"
 LangString TypeToml 1066 "Tệp TOML"
 LangString TypeToml 1049 "Файл TOML"
 LangString TypeToml 1055 "TOML dosyası"
+LangString TypeToml 1045 "Plik TOML"
+LangString TypeToml 1058 "Файл TOML"
 LangString TypeIni 1033 "Settings file"
 LangString TypeIni 1046 "Arquivo de configuração"
 LangString TypeIni 3082 "Archivo de configuración"
@@ -435,6 +473,8 @@ LangString TypeIni 1057 "File pengaturan"
 LangString TypeIni 1066 "Tệp cài đặt"
 LangString TypeIni 1049 "Файл настроек"
 LangString TypeIni 1055 "Ayar dosyası"
+LangString TypeIni 1045 "Plik ustawień"
+LangString TypeIni 1058 "Файл налаштувань"
 LangString TypeProperties 1033 "Properties file"
 LangString TypeProperties 1046 "Arquivo de propriedades"
 LangString TypeProperties 3082 "Archivo de propiedades"
@@ -453,6 +493,8 @@ LangString TypeProperties 1057 "File properties"
 LangString TypeProperties 1066 "Tệp properties"
 LangString TypeProperties 1049 "Файл свойств"
 LangString TypeProperties 1055 "Properties dosyası"
+LangString TypeProperties 1045 "Plik właściwości"
+LangString TypeProperties 1058 "Файл властивостей"
 
 ; ---- State ----------------------------------------------------------------------------------------------------------
 
@@ -1023,10 +1065,12 @@ Function PermarkWelcomeShow
   !insertmacro PERMARK_ENTRY_BOX $PermarkMenuBox 136u 16u "$(OpenWithMenuOption)" "${PERMARK_MENU_CHOICE}" 1
   !insertmacro PERMARK_ENTRY_BOX $PermarkNewBox 153u 17u "$(NewMarkdownOption)" "${PERMARK_NEW_CHOICE}" 1
   !insertmacro PERMARK_ENTRY_BOX $PermarkPathBox 170u 11u "$(PathOption)" "${PERMARK_PATH_CHOICE}" 0
-  ; unticked whatever an earlier install chose: nothing lands in Documents unasked
+  ; ticked on every first install: the person sees the offer and may untick it; an update never shows the page, and
+  ; the copy only goes into a free place, so nothing the person has is replaced
   ${NSD_CreateCheckbox} 120u 181u 195u 11u "$(DemoOption)"
   Pop $PermarkDemoBox
   SetCtlColors $PermarkDemoBox "000000" "FFFFFF"
+  ${NSD_Check} $PermarkDemoBox
   Pop $R9
   Pop $R8
   Pop $0
@@ -1105,6 +1149,8 @@ LangString PermarkUninstallFrom 1057 "Hapus dari:"
 LangString PermarkUninstallFrom 1066 "Đang gỡ bỏ khỏi:"
 LangString PermarkUninstallFrom 1049 "Удаление из:"
 LangString PermarkUninstallFrom 1055 "Kaldırılan yer:"
+LangString PermarkUninstallFrom 1045 "Usuwanie z:"
+LangString PermarkUninstallFrom 1058 "Видалення з:"
 
 ; Chinese and Korean: NSIS' language files name fonts that draw poorly or may be missing (SimSun's synthesized bold
 ; blots "M" in the titles; PMingLiU and Gulim are optional Windows fonts, and their stand-ins lack glyphs such as “ ”).
@@ -1155,6 +1201,10 @@ SetFont /LANG=1042 "Malgun Gothic" 9
     StrCpy $R8 "ru"
   ${ElseIf} $LANGUAGE = 1055
     StrCpy $R8 "tr"
+  ${ElseIf} $LANGUAGE = 1045
+    StrCpy $R8 "pl"
+  ${ElseIf} $LANGUAGE = 1058
+    StrCpy $R8 "uk"
   ${ElseIf} $LANGUAGE = 1033
     StrCpy $R8 "en"
   ${EndIf}

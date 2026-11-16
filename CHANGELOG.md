@@ -7,6 +7,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 - **Expand all and Collapse all.** JSON, XML and JSONL trees, and YAML, TOML, INI and properties sheets, have **Expand all** and **Collapse all** beside the view options. A document now opens expanded when it is small enough; a very large one opens its first levels so it stays fast. <!-- f: view-mode -->
+- **Polish and Ukrainian.** The interface, the Windows installer and the file manager entries now speak Polish and Ukrainian, 20 languages in all; native speakers are welcome to review them. <!-- f: settings -->
+
+### Changed
+- The Windows installer now offers the demo pages ticked. They are copied to Documents only on a first install, only when no "PerMark Demo" folder is there yet, and you can untick the box. <!-- f: windows-installer -->
 
 ## [0.13.0] - 2026-11-16
 
