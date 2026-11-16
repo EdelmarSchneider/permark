@@ -33,7 +33,7 @@
   import EditingSection from "./EditingSection.svelte";
   import IntegrationSection from "./IntegrationSection.svelte";
   import PluginsSection from "./PluginsSection.svelte";
-  import ProjectSection from "./ProjectSection.svelte";
+  import FilesSection from "./FilesSection.svelte";
   import ReadingSection from "./ReadingSection.svelte";
 
   type Props = { store: WindowStore };
@@ -228,7 +228,7 @@
               <loaded.default />
             {/await}
           {:else}
-            <ProjectSection />
+            <FilesSection />
           {/if}
         </div>
       </div>
