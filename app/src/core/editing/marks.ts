@@ -1,6 +1,6 @@
 // Marks in the editors, the part both share (session `marks`; Source: `source/marks.ts`, Edit: `visual/marks.ts`):
-// the classes and attributes a mark wears (look: `marks.css`), the layer + index a click landed on, and the click |
-// context menu routing to the layer that owns the mark. Layers are opaque ids; each one's marks never touch another's.
+// the classes and attributes a mark wears (look: `marks.css`) and the click | context menu routing to the layer that
+// owns the mark under the pointer. Layers are opaque ids; each one's marks never touch another's.
 
 import "./marks.css";
 
@@ -22,7 +22,7 @@ export type MarkHandlers = {
 };
 
 /** A mark found under an element: its layer and its index in that layer's last `marks`. */
-export type MarkHit = { layer: string; index: number };
+type MarkHit = { layer: string; index: number };
 
 /** The classes of a mark: all of them, the current one, an insertion (caret-width). */
 export function markClass(current: boolean, insert = false, base = "correction-mark"): string {
@@ -51,11 +51,6 @@ function marksUnder(target: EventTarget | null): MarkHit[] {
     el = el.parentElement?.closest("[data-mark-layer]") ?? null;
   }
   return hits;
-}
-
-/** The mark under the element clicked (`layer`: the nearest of that layer); `null`: none. */
-export function clickedMark(target: EventTarget | null, layer?: string): MarkHit | null {
-  return marksUnder(target).find((hit) => layer === undefined || hit.layer === layer) ?? null;
 }
 
 /** A click picks the clicked mark in every layer holding one there; the caret goes where the person clicked. */

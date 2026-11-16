@@ -15,7 +15,7 @@ const { ContributionRegistry, PluginHost, pluginLoaders } =
 const { editing } = await import("../../core/editing/session.svelte");
 
 describe("the spelling plugin", () => {
-  it("adds its status item, settings and command; off, nothing is left and the webview checks again", async () => {
+  it("adds its status item, settings and command; off, nothing is left and the webview checks as before", async () => {
     const registry = new ContributionRegistry();
     const host = new PluginHost(registry, pluginLoaders());
     await host.enable("spelling");
@@ -29,9 +29,9 @@ describe("the spelling plugin", () => {
     expect(registry.of("shortcut")).toEqual([]);
     const next = registry.of("command").find((c) => c.id === "spelling.next");
     expect(next?.label).toBe("spelling.next.command");
-    // nothing edited: nothing to step to
+    // nothing edited: nothing to step to, and the webview keeps its own check (no dictionary is ready for it)
     expect(next?.when?.()).toBe(false);
-    expect(editing.nativeSpellcheck).toBe(false);
+    expect(editing.nativeSpellcheck).toBe(true);
     expect(host.disable("spelling"), "contributions left after deactivate").toBe(0);
     expect(registry.items).toHaveLength(0);
     expect(editing.nativeSpellcheck).toBe(true);

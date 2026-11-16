@@ -5,8 +5,10 @@
 // marks and menu own the text then); the marks come back after. The document's languages are asked once per open
 // document (declared, else detected from its prose, else the default). No dictionary ready for them: no marks
 // (`needsDownload` says which; a download starts only from the person's own confirm, `download`). The marks live on
-// their own layer: other marks never change. Also the state of the plugin's menus (a marked word's, the language
-// picker, the download question) and of its settings (default language, the person's own words).
+// their own layer: other marks never change. The webview's own spellcheck is off only while a dictionary of the
+// document's languages is ready (these marks can show); without one the person keeps it. A large text is read in
+// short runs between which the page stays responsive (`tokenizeInSteps`). Also the state of the plugin's menus (a
+// marked word's, the language picker, the download question) and of its settings (default language, own words).
 
 import { untrack } from "svelte";
 import {
@@ -27,7 +29,7 @@ import { arrangement } from "../../core/shell/arrangement.svelte";
 import { windowStore, type NoticeAction } from "../../core/window.svelte";
 import { openReview } from "../local-ai/pieces/review.svelte";
 import { languageLabel } from "./names";
-import { sampleOf, tokenize, type Token, type Word } from "./tokenize";
+import { sampleOf, tokenizeInSteps, type Token, type Word } from "./tokenize";
 
 /** The editors' mark layer of this plugin. */
 export const LAYER = "spelling";
@@ -93,6 +95,8 @@ export type SpellingDeps = {
   say: (text: string) => void;
   /** A notice with buttons that takes the place of the one with the same key. */
   notify: (key: string, text: string, ...actions: NoticeAction[]) => void;
+  /** Waits between two runs of reading a large text (default: until the page is idle). */
+  pause: () => Promise<void>;
 };
 
 export class SpellingStore {
@@ -122,6 +126,11 @@ export class SpellingStore {
   readonly #uiLocale: () => string;
   readonly #say: (text: string) => void;
   readonly #notify: SpellingDeps["notify"];
+  readonly #pause: SpellingDeps["pause"] | undefined;
+  /** The webview's own spellcheck is off (set by this store: only while a dictionary of the document is ready). */
+  #nativeOff = false;
+  /** The language sample of the text the last pass read (a declare of that same text reuses it). */
+  #sample: { text: string; sample: string } | null = null;
   /** The downloads this window started (a failure of one of them is said here, not in every window). */
   readonly #started = new Set<string>();
   /** Every word the last pass found (the marks less the word being typed, while it is held back). */
@@ -154,6 +163,7 @@ export class SpellingStore {
     this.#say = deps.say ?? ((text) => arrangement.say(text));
     this.#notify =
       deps.notify ?? ((key, text, ...actions) => windowStore.notifyKeyed(key, text, ...actions));
+    this.#pause = deps.pause;
   }
 
   /** The document's languages that have no dictionary on this computer yet. */
@@ -187,10 +197,9 @@ export class SpellingStore {
     return this.languages.find((l) => l.id === lang);
   }
 
-  /** Marks the open document until the returned teardown runs (the webview's own spellcheck off meanwhile). */
+  /** Marks the open document until the returned teardown runs (the webview's own spellcheck back on then). */
   start(): () => void {
     const session = this.#session;
-    session.setNativeSpellcheck(false);
     let gone = false;
     const stops: (() => void)[] = [];
     const listen = <E extends AppPluginEventName>(
@@ -227,8 +236,10 @@ export class SpellingStore {
       document.removeEventListener("selectionchange", onSelection);
     });
     void this.#loadLanguages();
+    // bridge from outside stores: the session and the AI review offer no change subscription, so an effect hears
+    // their state and hands it to `#follow`; the root is torn down with the plugin (`stopWatch` below)
     const stopWatch = $effect.root(() => {
-      // the editor's document, mode and text (after the session's change check) and an AI review: outside sources
+      // the editor's document, mode and text (after the session's change check) and an AI review
       $effect(() => {
         const path = session.path;
         const mode = session.mode;
@@ -243,9 +254,10 @@ export class SpellingStore {
       for (const stop of stops) stop();
       this.#stop();
       this.#clear();
-      session.setNativeSpellcheck(true);
+      this.#native(true);
       this.#path = null;
       this.#checked = null;
+      this.#sample = null;
       this.#asking = null;
       this.#loading = null;
       this.#cache.clear();
@@ -325,7 +337,11 @@ export class SpellingStore {
   async declare(lang: string | null): Promise<boolean> {
     const path = this.#session.path;
     if (path === null) return false;
-    const sample = sampleOf(tokenize(this.#session.current()));
+    const text = this.#session.current();
+    const sample =
+      this.#sample?.text === text
+        ? this.#sample.sample
+        : sampleOf((await tokenizeInSteps(text, () => false, this.#pause)) ?? []);
     const result = await this.#client.call("spelling.declare", {
       path,
       lang,
@@ -511,17 +527,25 @@ export class SpellingStore {
       return;
     }
     const text = session.current();
-    const tokens = tokenize(text);
-    const [language] = await Promise.all([this.#languageOf(path, tokens), this.#loadLanguages()]);
+    // a pass waiting to start (the text changed again) makes this one moot
+    const stale = (): boolean => seq !== this.#seq || this.#timer !== null;
+    const tokens = await tokenizeInSteps(text, stale, this.#pause);
+    if (tokens === null || seq !== this.#seq) return;
+    const sample = sampleOf(tokens);
+    this.#sample = { text, sample };
+    const [language] = await Promise.all([this.#languageOf(path, sample), this.#loadLanguages()]);
     if (seq !== this.#seq) return;
     const langs = language?.langs ?? [];
     if (langs.length === 0 || !langs.some((lang) => this.#ready(lang))) {
+      this.#native(true);
       this.#clear();
       return;
     }
+    this.#native(false);
     const verdicts = await this.#verdicts(langs, tokens);
     if (seq !== this.#seq) return;
     if (verdicts === null) {
+      this.#native(true);
       this.#clear();
       return;
     }
@@ -533,12 +557,12 @@ export class SpellingStore {
   }
 
   /** The document's languages: asked once per open document. */
-  async #languageOf(path: string, tokens: readonly Token[]): Promise<SpellingDocLanguage | null> {
+  async #languageOf(path: string, sample: string): Promise<SpellingDocLanguage | null> {
     const doc = this.document;
     if (doc?.path === path) return doc.language;
     if (this.#asking?.path !== path) {
       const answer = this.#client
-        .call("spelling.language", { path, sample: sampleOf(tokens), uiLocale: this.#uiLocale() })
+        .call("spelling.language", { path, sample, uiLocale: this.#uiLocale() })
         .then((result) => (result.ok ? result.value : null));
       this.#asking = { path, answer };
     }
@@ -570,8 +594,13 @@ export class SpellingStore {
     const key = langs.join("\n");
     const cache = this.#cache.get(key) ?? new Map<string, boolean>();
     this.#cache.set(key, cache);
-    const all = new Set(tokens.flatMap((t) => [t.word, ...t.parts.map((p) => p.word)]));
-    const unknown = [...all].filter((word) => !cache.has(word));
+    // plain loops: a large document has hundreds of thousands of words
+    const missing = new Set<string>();
+    for (const token of tokens) {
+      if (!cache.has(token.word)) missing.add(token.word);
+      for (const part of token.parts) if (!cache.has(part.word)) missing.add(part.word);
+    }
+    const unknown = [...missing];
     for (let at = 0; at < unknown.length; at += BATCH) {
       const words = unknown.slice(at, at + BATCH);
       const result = await this.#client.call("spelling.check", { langs: [...langs], words });
@@ -579,6 +608,18 @@ export class SpellingStore {
       words.forEach((word, i) => cache.set(word, result.value[i] ?? true));
     }
     return cache;
+  }
+
+  /**
+   * The webview's own spellcheck on | off. Off only once a dictionary of the open document's languages is ready, so
+   * a person with none (or a writing system none covers) keeps today's check. A pass that cannot tell (another
+   * document opening, View, an AI review pausing the marks) leaves it as it is: a review over a document with a ready
+   * dictionary keeps it off, so the webview's marks do not flash in and out around the review.
+   */
+  #native(on: boolean): void {
+    if (this.#nativeOff === !on) return;
+    this.#nativeOff = !on;
+    this.#session.setNativeSpellcheck(on);
   }
 
   /** Verdicts may have changed (personal words, a dictionary ready): all asked again. */

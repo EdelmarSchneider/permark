@@ -14,7 +14,14 @@ import type { NoticeAction } from "../../core/window.svelte";
 import { defaultEntries, languageEntries, wordEntries } from "./menus";
 import SpellingSettings from "./SpellingSettings.svelte";
 import SpellingStatus from "./SpellingStatus.svelte";
-import { BATCH, CARET_MS, LAYER, SpellingStore, type SpellingSession } from "./store.svelte";
+import {
+  BATCH,
+  CARET_MS,
+  LAYER,
+  SpellingStore,
+  type SpellingDeps,
+  type SpellingSession,
+} from "./store.svelte";
 
 type Drawn = { ranges: TextRange[]; layer: string; options: MarkOptions };
 
@@ -96,14 +103,9 @@ let stop: () => void;
 let said: string[];
 let notices: { key: string; text: string; actions: NoticeAction[] }[];
 
-beforeEach(() => {
-  vi.useFakeTimers();
-  mock = createMockApi();
-  session = new FakeSession();
-  review = new Review();
-  said = [];
-  notices = [];
-  store = new SpellingStore({
+/** A store over the fake session and the mock backend (`deps`: others in their place). */
+function newStore(deps: Partial<SpellingDeps> = {}): SpellingStore {
+  return new SpellingStore({
     api: mock,
     client: new PluginClient(mock),
     session,
@@ -111,7 +113,18 @@ beforeEach(() => {
     uiLocale: () => "en",
     say: (text) => said.push(text),
     notify: (key, text, ...actions) => notices.push({ key, text, actions }),
+    ...deps,
   });
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  mock = createMockApi();
+  session = new FakeSession();
+  review = new Review();
+  said = [];
+  notices = [];
+  store = newStore();
 });
 
 afterEach(() => {
@@ -253,6 +266,35 @@ describe("marks", () => {
     session.mode = "view";
     await settle();
     expect(session.marked()).toEqual([]);
+  });
+
+  it("Windows line breaks: the offsets of that text; replace puts the word in there", async () => {
+    await startWith("Hello\r\nwrold\r\n\r\nthe documnet\r\n");
+    expect(session.marked()).toEqual(["wrold", "documnet"]);
+    expect(store.replace(1, "document")).toBe(true);
+    expect(session.applied).toEqual([
+      [{ from: 20, to: 28, insert: "document", expect: "documnet" }],
+    ]);
+  });
+
+  it("a large document is read in runs with pauses between them; the marks are the same", async () => {
+    // the runs are measured on the real clock
+    vi.useRealTimers();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    let pauses = 0;
+    store = newStore({
+      pause: () => {
+        pauses += 1;
+        return Promise.resolve();
+      },
+    });
+    const block = "Hello wrold, this is the text of the document.\n\n";
+    const count = Math.ceil(1_000_000 / block.length);
+    await startWith(block.repeat(count));
+    expect(pauses).toBeGreaterThan(1);
+    const marked = session.marked();
+    expect(marked).toHaveLength(count);
+    expect(new Set(marked)).toEqual(new Set(["wrold"]));
   });
 });
 
@@ -515,6 +557,36 @@ describe("on and off", () => {
     mock.probe.spelling.setState("de", { kind: "ready" });
     await settle();
     expect(session.drawn.length).toBe(drawn);
+  });
+
+  it("the webview's spellcheck is off only while a dictionary of the document's language is ready", async () => {
+    mock.probe.spelling.declared.set("docs/a.md", "de");
+    stop = store.start();
+    // nothing checked yet: the webview's own check stays
+    expect(session.native).toBe(true);
+    session.text = "Hallo Welt";
+    await settle();
+    // no dictionary for the document's language: still the webview's
+    expect(session.native).toBe(true);
+    mock.probe.spelling.setState("de", { kind: "ready" });
+    await settle();
+    expect(session.native).toBe(false);
+    // an AI review pauses the marks; the webview's check stays off meanwhile (no flicker)
+    review.open = true;
+    await settle();
+    expect(session.native).toBe(false);
+    review.open = false;
+    // a document in a script no dictionary covers: the webview's again
+    session.text = "Привет мир это текст на русском языке для проверки";
+    session.path = "docs/b.md";
+    await settle();
+    expect(session.native).toBe(true);
+    session.text = "Hello wrold";
+    session.path = "docs/c.md";
+    await settle();
+    expect(session.native).toBe(false);
+    stop();
+    expect(session.native).toBe(true);
   });
 
   it("off: the keyboard's menu and the caret are the webview's again; no picker, no question", async () => {

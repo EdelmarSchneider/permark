@@ -7,6 +7,9 @@
 // `l·l`). A hyphenated word comes whole with its parts: the whole is accepted when known, else each unknown part is
 // marked. Words no dictionary can judge are left out: with digits, in capitals, camelCase, single letters, scripts
 // with no Hunspell dictionary (Han, kana, Hangul).
+// A large document is read in bounded steps (`tokenSteps`): the grammar parses one block per step, then the words
+// come slice by slice. `tokenizeInSteps` runs those steps a few milliseconds at a time and lets the page breathe in
+// between, so typing stays smooth while a long text is read.
 
 import { markdownLanguage } from "@codemirror/lang-markdown";
 
@@ -17,9 +20,14 @@ export type Word = { from: number; to: number; word: string };
 export type Token = Word & { parts: readonly Word[] };
 
 type Range = { from: number; to: number };
+type Tree = ReturnType<typeof markdownLanguage.parser.parse>;
 
 /** Most characters of prose sent to guess a document's language (what the backend reads of a sample). */
 export const SAMPLE_CHARS = 8192;
+/** About how many characters one step of the word phase reads (it ends at the next line break | space). */
+export const SLICE_CHARS = 16_384;
+/** Longest run of steps before `tokenizeInSteps` pauses (ms): well under a frame, so keys are never held up. */
+export const RUN_MS = 8;
 
 // grammar nodes that are no prose at all
 const MASKED_NODES = new Set([
@@ -53,6 +61,9 @@ const MASKED_TEXT = [
 const WIKILINK = /\[\[([^\]|\n]+)(\|[^\]\n]*)?\]\]/g;
 // a closed `---` | `+++` block at the very top (`...` also closes YAML)
 const FRONT_MATTER = /^(---|\+\+\+)[ \t]*\r?\n(?:[^\n]*\n)*?(?:\1|\.\.\.)[ \t]*(?:\r?\n|$)/;
+// its first line reads as a key (`key:` YAML, `key =` TOML), a TOML table or a comment: a document may also open
+// with a thematic break `---`, whose prose up to the next one is no front matter
+const KEY_LINE = /^[^\n]*\n[ \t]*(?:#|\[|[^\s:=#][^\n:=]*(?::(?=\s|$)|[ \t]*=))/;
 // a chunk (whitespace-separated, outer punctuation off) that reads as a path, an address or an identifier
 const CODE_LIKE = /[/\\@_]|[\p{L}\p{N}]\.[\p{L}\p{N}]/u;
 const OUTER_PUNCTUATION = /^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu;
@@ -67,17 +78,92 @@ const UNSUPPORTED_SCRIPT =
 /** Built on the first use (the plugin loads nothing before a document is edited). */
 let segmenter: Intl.Segmenter | null = null;
 
-/** The words of `text` to check, in document order. */
-export function tokenize(text: string): Token[] {
-  const masked = maskChunks(mask(text, syntaxRanges(text)));
+/** The words of `text` to check, in document order, read in one go (`slice`: characters per word step). */
+export function tokenize(text: string, slice = SLICE_CHARS): Token[] {
+  const steps = tokenSteps(text, slice);
+  for (;;) {
+    const step = steps.next();
+    if (step.done === true) return step.value;
+  }
+}
+
+/**
+ * `tokenize` in runs of at most `RUN_MS`, waiting for `pause()` between two runs; `null`: `stale()` said, after a
+ * pause, that the words are no longer wanted. A small text is read in one run (no pause).
+ */
+export async function tokenizeInSteps(
+  text: string,
+  stale: () => boolean,
+  pause: () => Promise<void> = nextIdle,
+): Promise<Token[] | null> {
+  const steps = tokenSteps(text);
+  let start = performance.now();
+  for (;;) {
+    const step = steps.next();
+    if (step.done === true) return step.value;
+    if (performance.now() - start < RUN_MS) continue;
+    await pause();
+    if (stale()) return null;
+    start = performance.now();
+  }
+}
+
+/**
+ * The reading of `text` one bounded step at a time; each step yields the offset it reached (from 0 again when the
+ * word phase begins). The grammar parses one block per step. The extra rules then scan the whole text natively
+ * (about a millisecond per megabyte). Last, the words come slice by slice of about `slice` characters; a slice ends
+ * after a line break (else a space), where no word, joiner or whitespace chunk spans the cut, and the masked ranges
+ * come from the whole text: the words are the same as read in one slice.
+ */
+export function* tokenSteps(text: string, slice = SLICE_CHARS): Generator<number, Token[]> {
+  const parse = markdownLanguage.parser.startParse(text);
+  let tree = parse.advance();
+  while (tree === null) {
+    yield parse.parsedPos;
+    tree = parse.advance();
+  }
+  const extra = textRanges(text);
+  const out: Token[] = [];
+  for (let from = 0; from < text.length;) {
+    const to = sliceEnd(text, from, slice);
+    const ranges = treeRanges(text, tree, from, to);
+    for (const range of extra) if (range.from < to && range.to > from) ranges.push(range);
+    wordsOf(text, from, maskChunks(mask(text, from, to, ranges)), out);
+    yield to;
+    from = to;
+  }
+  return out;
+}
+
+/** The end of the slice that starts at `from`: after the first line break past `size` characters (a space when no
+ *  line break is near), or the end of the text. */
+function sliceEnd(text: string, from: number, size: number): number {
+  const at = from + size;
+  if (at >= text.length) return text.length;
+  const line = text.indexOf("\n", at);
+  if (line !== -1 && line - at < size) return line + 1;
+  const space = text.indexOf(" ", at);
+  return space === -1 ? text.length : space + 1;
+}
+
+/** Resolves once the page is idle (no `requestIdleCallback`, as in some webviews: on the next task). */
+function nextIdle(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(() => resolve(), { timeout: 100 });
+    } else setTimeout(resolve, 0);
+  });
+}
+
+/** Adds the tokens of `masked` (the slice of `text` at `offset`, no prose masked) to `out`. */
+function wordsOf(text: string, offset: number, masked: string, out: Token[]): void {
   segmenter ??= new Intl.Segmenter(undefined, { granularity: "word" });
   const segments = [...segmenter.segment(masked)];
-  const out: Token[] = [];
   for (let i = 0; i < segments.length; i += 1) {
     const first = segments[i];
     if (first?.isWordLike !== true) continue;
     // a run of word segments joined by apostrophes (inside a part) | hyphens (between parts)
-    const parts: Word[] = [wordAt(text, first.index, first.segment.length)];
+    const parts: Word[] = [wordAt(text, offset + first.index, first.segment.length)];
     while (true) {
       const joiner = segments[i + 1];
       const next = segments[i + 2];
@@ -88,10 +174,10 @@ export function tokenize(text: string): Token[] {
         parts[parts.length - 1] = wordAt(
           text,
           last.from,
-          next.index + next.segment.length - last.from,
+          offset + next.index + next.segment.length - last.from,
         );
       } else if (HYPHENS.has(joiner.segment)) {
-        parts.push(wordAt(text, next.index, next.segment.length));
+        parts.push(wordAt(text, offset + next.index, next.segment.length));
       } else break;
       i += 2;
     }
@@ -107,7 +193,6 @@ export function tokenize(text: string): Token[] {
     const own = parts.filter((p) => checkable(p.word));
     if (own.length > 0 && checkable(whole.word, true)) out.push({ ...whole, parts: own });
   }
-  return out;
 }
 
 /** The prose of the tokens as one sample for the language guess (capped). */
@@ -132,12 +217,12 @@ function checkable(word: string, joined = false): boolean {
   return !(letters >= 2 && word === word.toUpperCase() && word !== word.toLowerCase());
 }
 
-/** The ranges of `text` that are no prose, as the grammar and the extra rules read them. */
-function syntaxRanges(text: string): Range[] {
+/** The ranges of `text` between `from` and `to` that are no prose, as the grammar reads them (`tree`). */
+function treeRanges(text: string, tree: Tree, from: number, to: number): Range[] {
   const found: Range[] = [];
-  const front = FRONT_MATTER.exec(text);
-  if (front !== null) found.push({ from: 0, to: front[0].length });
-  markdownLanguage.parser.parse(text).iterate({
+  tree.iterate({
+    from,
+    to,
     enter(node) {
       if (MASKED_NODES.has(node.name)) {
         found.push({ from: node.from, to: node.to });
@@ -159,6 +244,14 @@ function syntaxRanges(text: string): Range[] {
       return undefined;
     },
   });
+  return found;
+}
+
+/** The ranges of `text` that are no prose by the rules the grammar does not know (front matter, math, …). */
+function textRanges(text: string): Range[] {
+  const found: Range[] = [];
+  const front = KEY_LINE.test(text) ? FRONT_MATTER.exec(text) : null;
+  if (front !== null) found.push({ from: 0, to: front[0].length });
   for (const pattern of MASKED_TEXT) {
     for (const match of text.matchAll(pattern)) {
       found.push({ from: match.index, to: match.index + match[0].length });
@@ -175,19 +268,20 @@ function syntaxRanges(text: string): Range[] {
   return found;
 }
 
-/** `text` with `ranges` replaced by spaces (same length: offsets stay). */
-function mask(text: string, ranges: readonly Range[]): string {
-  if (ranges.length === 0) return text;
+/** `text` from `start` to `end` with `ranges` (offsets of `text`) replaced by spaces (same length: offsets stay). */
+function mask(text: string, start: number, end: number, ranges: readonly Range[]): string {
+  if (ranges.length === 0) return text.slice(start, end);
   const sorted = [...ranges].sort((a, b) => a.from - b.from);
   let out = "";
-  let at = 0;
-  for (const { from, to } of sorted) {
-    const start = Math.max(from, at);
-    if (to <= start) continue;
-    out += text.slice(at, start) + " ".repeat(to - start);
+  let at = start;
+  for (const range of sorted) {
+    const from = Math.max(range.from, at);
+    const to = Math.min(range.to, end);
+    if (to <= from) continue;
+    out += text.slice(at, from) + " ".repeat(to - from);
     at = to;
   }
-  return out + text.slice(at);
+  return out + text.slice(at, end);
 }
 
 /** `masked` with every chunk that reads as a path | address | identifier masked too. */
@@ -198,5 +292,5 @@ function maskChunks(masked: string): string {
       ranges.push({ from: match.index, to: match.index + match[0].length });
     }
   }
-  return mask(masked, ranges);
+  return mask(masked, 0, masked.length, ranges);
 }

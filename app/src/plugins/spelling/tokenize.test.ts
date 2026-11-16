@@ -1,6 +1,13 @@
 // The words a spelling check looks at: prose only, with the editors' UTF-16 offsets.
 import { describe, expect, it } from "vitest";
-import { sampleOf, SAMPLE_CHARS, tokenize } from "./tokenize";
+import {
+  sampleOf,
+  SAMPLE_CHARS,
+  SLICE_CHARS,
+  tokenize,
+  tokenizeInSteps,
+  tokenSteps,
+} from "./tokenize";
 
 const words = (text: string): string[] => tokenize(text).map((t) => t.word);
 
@@ -81,6 +88,131 @@ describe("what is no prose", () => {
 
   it("a heading's words are prose, its marks are not", () => {
     expect(words("# Titel here\n\nBody")).toEqual(["Titel", "here", "Body"]);
+  });
+
+  it("a document that opens with a thematic break: no front matter, its prose is read", () => {
+    expect(words("---\n\nSome prose wrods\n\n---\nMore txt\n")).toEqual([
+      "Some",
+      "prose",
+      "wrods",
+      "More",
+      "txt",
+    ]);
+    expect(words("---\nJust one line of prose\n---\nAftr\n")).toEqual([
+      "Just",
+      "one",
+      "line",
+      "of",
+      "prose",
+      "Aftr",
+    ]);
+    // a comment line or a TOML table opens real front matter too
+    expect(words("---\n# a commnt\ntitel: x\n---\nBody\n")).toEqual(["Body"]);
+    expect(words("+++\n[tabel]\nkey = 1\n+++\nBody\n")).toEqual(["Body"]);
+  });
+});
+
+describe("Windows line breaks (CRLF)", () => {
+  it("words keep the offsets of the text", () => {
+    const text = "Helo\r\nwrld here\r\n\r\nend";
+    const tokens = tokenize(text);
+    expect(tokens.map((t) => [t.word, t.from, t.to])).toEqual([
+      ["Helo", 0, 4],
+      ["wrld", 6, 10],
+      ["here", 11, 15],
+      ["end", 19, 22],
+    ]);
+    for (const t of tokens) expect(text.slice(t.from, t.to)).toBe(t.word);
+  });
+
+  it("code, math and front matter stay masked", () => {
+    expect(words("---\r\ntitel: Somthing\r\n---\r\nBody txt\r\n")).toEqual(["Body", "txt"]);
+    expect(words("Befor\r\n\r\n```\r\nfenced cdoe\r\n```\r\n\r\nAftr\r\n")).toEqual([
+      "Befor",
+      "Aftr",
+    ]);
+    expect(words("Befor\r\n\r\n$$\r\nx + somthing\r\n$$\r\n\r\nAftr")).toEqual(["Befor", "Aftr"]);
+    expect(tokenize("a well-known\r\nfact")[0]?.parts.map((p) => p.word)).toEqual([
+      "well",
+      "known",
+    ]);
+  });
+});
+
+/** About `size` characters of Markdown: prose with links, code, math, wikilinks, tags and lists (CRLF every 3rd). */
+function largeDocument(size: number): string {
+  const block = (i: number): string =>
+    [
+      `## Section ${toWord(i)} heading`,
+      "",
+      `The quick brown fox jumps over the lazy dog, with a [link text](https://example.org/p${i} "Title") and`,
+      "`inline code` plus *emphasis* and a #tag and [[Wiki Page|an alias]] and $x + y$ and a mispeled word here.",
+      "",
+      "- a list item with words",
+      `- another item, the ${toWord(i)} one`,
+      "",
+      "```js",
+      'const code = "not prose";',
+      "```",
+      "",
+      "",
+    ].join(i % 3 === 0 ? "\r\n" : "\n");
+  let out = "";
+  for (let i = 0; out.length < size; i += 1) out += block(i);
+  return out;
+}
+
+/** `n` as letters only (digits leave a word out). */
+function toWord(n: number): string {
+  let out = "";
+  let rest = n;
+  do {
+    out += "abcdefghijklmnopqrstuvwxyz"[rest % 26] ?? "";
+    rest = Math.floor(rest / 26);
+  } while (rest > 0);
+  return out;
+}
+
+describe("a large document", () => {
+  const text = largeDocument(2_000_000);
+
+  it("is read in bounded steps, with the same words as in one go", () => {
+    const steps = tokenSteps(text);
+    let last = 0;
+    let longest = 0;
+    let count = 0;
+    let step = steps.next();
+    while (step.done !== true) {
+      // the parse phase, then the word phase: each counts the offset it reached from 0
+      if (step.value > last) longest = Math.max(longest, step.value - last);
+      last = step.value;
+      count += 1;
+      step = steps.next();
+    }
+    expect(count).toBeGreaterThan(text.length / SLICE_CHARS);
+    expect(longest).toBeLessThanOrEqual(2 * SLICE_CHARS);
+    const sliced = step.value;
+    expect(sliced.length).toBeGreaterThan(100_000);
+    expect(sliced).toEqual(tokenize(text, Number.POSITIVE_INFINITY));
+    // a cut that lands inside a wikilink or inline math (a slice ends at a space when no line break is near)
+    const oneLine = "See [[Targt Page]] and $a b$ hello ".repeat(2000);
+    expect(tokenize(oneLine, 64)).toEqual(tokenize(oneLine, Number.POSITIVE_INFINITY));
+  });
+
+  it("in runs that pause between them; dropped once no longer wanted", async () => {
+    let pauses = 0;
+    const pause = (): Promise<void> => {
+      pauses += 1;
+      return Promise.resolve();
+    };
+    const found = await tokenizeInSteps(text, () => false, pause);
+    expect(pauses).toBeGreaterThan(1);
+    expect(found?.length).toBe(tokenize(text).length);
+    expect(await tokenizeInSteps(text, () => true, pause)).toBeNull();
+    // a small text: read in one run
+    pauses = 0;
+    expect(await tokenizeInSteps("Hello wrold", () => true, pause)).toHaveLength(2);
+    expect(pauses).toBe(0);
   });
 });
 
