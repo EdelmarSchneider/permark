@@ -79,7 +79,7 @@ choice!(
     LanguagePref {
         System = "system", En = "en", PtBr = "pt-BR", Es = "es", De = "de", ZhCn = "zh-CN", It = "it",
         Ja = "ja", Ko = "ko", Fr = "fr", PtPt = "pt-PT", Ca = "ca", Gl = "gl", Ro = "ro", ZhTw = "zh-TW",
-        Id = "id", Vi = "vi", Ru = "ru", Tr = "tr",
+        Id = "id", Vi = "vi", Ru = "ru", Tr = "tr", Pl = "pl", Uk = "uk",
     } default System
 );
 choice!(ThemePref { System = "system", Light = "light", Dark = "dark" } default System);

@@ -404,6 +404,8 @@ export default {
   "structured.tree": "樹狀",
   "structured.source": "原始碼",
   "structured.invalid": "內容無效，因此以文字顯示。",
+  "structured.expandAll": "全部展開",
+  "structured.collapseAll": "全部摺疊",
   "jsonl.empty": "此檔案中沒有記錄。",
   "jsonl.invalid": "第 {line} 行不是單一 JSON 值（停在第 {at} 個字元）。",
   "jsonl.jump": "前往記錄",

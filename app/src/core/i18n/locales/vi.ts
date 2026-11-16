@@ -416,6 +416,8 @@ export default {
   "structured.tree": "Cây",
   "structured.source": "Nguồn",
   "structured.invalid": "Nội dung không hợp lệ nên được hiển thị dạng văn bản.",
+  "structured.expandAll": "Mở rộng tất cả",
+  "structured.collapseAll": "Thu gọn tất cả",
   "jsonl.empty": "Tệp này không có bản ghi nào.",
   "jsonl.invalid": "Dòng {line} không phải là một giá trị JSON duy nhất (dừng ở ký tự {at}).",
   "jsonl.jump": "Đi đến bản ghi",

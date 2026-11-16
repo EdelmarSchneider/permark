@@ -412,6 +412,8 @@ export default {
   "structured.tree": "Albero",
   "structured.source": "Sorgente",
   "structured.invalid": "Non è valido, quindi è mostrato come testo.",
+  "structured.expandAll": "Espandi tutto",
+  "structured.collapseAll": "Comprimi tutto",
   "jsonl.empty": "Nessun record in questo file.",
   "jsonl.invalid": "La riga {line} non è un solo valore JSON (interrotta al carattere {at}).",
   "jsonl.jump": "Vai al record",

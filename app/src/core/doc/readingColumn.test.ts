@@ -1,43 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { codeOnly, declarations, ruleBody, rulesOf } from "../testing/cssRules";
 
 const css = readFileSync(new URL("./markdown.css", import.meta.url), "utf8");
 const math = readFileSync(new URL("../../plugins/math/Math.svelte", import.meta.url), "utf8");
 const paper = readFileSync(new URL("../../plugins/export/paper.css", import.meta.url), "utf8");
-
-/** CSS with comments removed, so a note cannot hide or satisfy a declaration. */
-function codeOnly(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, "");
-}
-
-type Rule = { selectors: string[]; body: string };
-
-function rulesOf(source: string): Rule[] {
-  const found: Rule[] = [];
-  for (const match of codeOnly(source).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    const selectors = (match[1] ?? "")
-      .split(",")
-      .map((selector) => selector.trim().replace(/\s+/g, " "))
-      .filter((selector) => selector.length > 0);
-    if (selectors.length === 0 || selectors.every((selector) => selector.startsWith("@"))) continue;
-    found.push({ selectors, body: match[2] ?? "" });
-  }
-  return found;
-}
-
-function ruleBody(source: string, selector: string): string {
-  return rulesOf(source)
-    .filter((rule) => rule.selectors.includes(selector))
-    .map((rule) => rule.body)
-    .join("\n");
-}
-
-function declarations(body: string): string[] {
-  return body
-    .split(";")
-    .map((part) => part.trim().replace(/\s+/g, " "))
-    .filter((part) => part.length > 0);
-}
 
 const sheet = rulesOf(css);
 

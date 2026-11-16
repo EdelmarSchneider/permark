@@ -151,6 +151,27 @@ describe("tn", () => {
       language.tables = before;
     }
   });
+
+  // Polish and Ukrainian: CLDR "many" (5-21, 11-14, 0) reads `.other`; Polish counts 21 like 5, Ukrainian like 1
+  it.each([
+    ["pl", ["other 0", "one 1", "few 2", "other 5", "other 11", "other 12", "other 21", "few 22"]],
+    ["uk", ["other 0", "one 1", "few 2", "other 5", "other 11", "other 12", "one 21", "few 22"]],
+  ] as const)("picks the %s form for 0, 1, 2, 5, 11, 12, 21 and 22", async (locale, expected) => {
+    const before = language.tables;
+    const table: Messages & FewForms = {
+      ...en,
+      "fileOps.files.one": "one {n}",
+      "fileOps.files.few": "few {n}",
+      "fileOps.files.other": "other {n}",
+    };
+    language.tables = { ...before, [locale]: table };
+    try {
+      await language.choose(locale, []);
+      expect([0, 1, 2, 5, 11, 12, 21, 22].map((n) => tn("fileOps.files", n))).toEqual(expected);
+    } finally {
+      language.tables = before;
+    }
+  });
 });
 
 describe("formatLocale", () => {
@@ -194,6 +215,9 @@ describe("matchLocale, systemLocale, resolveLocale", () => {
     for (const tag of ["vi", "vi-VN", "vi_VN"]) expect(matchLocale(tag), tag).toBe("vi");
     for (const tag of ["ru", "ru-RU", "ru_UA", "RU-kz"]) expect(matchLocale(tag), tag).toBe("ru");
     for (const tag of ["tr", "tr-TR", "tr_CY"]) expect(matchLocale(tag), tag).toBe("tr");
+    for (const tag of ["pl", "pl-PL", "PL_pl"]) expect(matchLocale(tag), tag).toBe("pl");
+    // Ukrainian never falls to Russian, wherever the region
+    for (const tag of ["uk", "uk-UA", "uk_RU", "UK-ua"]) expect(matchLocale(tag), tag).toBe("uk");
   });
 
   it("reads Chinese by script, else by region: Traditional for Taiwan, Hong Kong and Macao", () => {
@@ -236,6 +260,7 @@ describe("matchLocale, systemLocale, resolveLocale", () => {
     expect(systemLocale(["sv-SE", "es-419", "en"])).toBe("es");
     expect(systemLocale(["sv-SE", "nl"])).toBe("en");
     expect(systemLocale(["sv-SE", "ja-JP", "en"])).toBe("ja");
+    expect(systemLocale(["uk-UA", "ru-RU"])).toBe("uk");
     expect(systemLocale([])).toBe("en");
   });
 
@@ -600,14 +625,17 @@ describe("the es table's words", () => {
   });
 });
 
-describe("the ru table's plurals", () => {
-  it("gives every counted string its few form (2-4, 22-24)", async () => {
-    const result = await loadTable("ru");
-    if (result.status !== "loaded") throw new Error(`ru: ${result.status}`);
-    const table: Record<string, string> = result.table;
-    const missing = [...FEW.keys()].filter((key) => !(key in table));
-    expect(missing).toEqual([]);
-  });
+describe("the plurals of the ru, pl and uk tables", () => {
+  it.each(["ru", "pl", "uk"] as const)(
+    "gives every counted %s string its few form (2-4, 22-24)",
+    async (locale) => {
+      const result = await loadTable(locale);
+      if (result.status !== "loaded") throw new Error(`${locale}: ${result.status}`);
+      const table: Record<string, string> = result.table;
+      const missing = [...FEW.keys()].filter((key) => !(key in table));
+      expect(missing).toEqual([]);
+    },
+  );
 });
 
 describe("the zh-CN table's words", () => {

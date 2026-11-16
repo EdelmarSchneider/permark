@@ -1477,10 +1477,11 @@ fn demo_places(handle: &AppHandle) -> permark_core::demo::DemoPlaces {
     }
 }
 
-/// What the Welcome screen offers: copy the demo pages into Documents, open the folder there, or nothing.
+/// What the Welcome screen offers (copy the demo pages into Documents, open the folder there, or nothing) and whether the
+/// pages can be opened at all.
 #[tauri::command(async)]
-pub fn demo_offer(handle: AppHandle) -> permark_core::demo::DemoOffer {
-    permark_core::demo::offer(&state(&handle).app_store, &demo_places(&handle))
+pub fn demo_offer(handle: AppHandle) -> permark_core::demo::DemoStatus {
+    permark_core::demo::status(&state(&handle).app_store, &demo_places(&handle))
 }
 
 /// The demo pages' folder in Documents, copied there first when nothing is at its place (never written into); the

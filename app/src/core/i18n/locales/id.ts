@@ -416,6 +416,8 @@ export default {
   "structured.tree": "Pohon",
   "structured.source": "Sumber",
   "structured.invalid": "Ini tidak valid, jadi ditampilkan sebagai teks.",
+  "structured.expandAll": "Bentangkan semua",
+  "structured.collapseAll": "Ciutkan semua",
   "jsonl.empty": "Tidak ada rekaman di file ini.",
   "jsonl.invalid": "Baris {line} bukan satu nilai JSON (berhenti di karakter {at}).",
   "jsonl.jump": "Lompat ke rekaman",

@@ -189,6 +189,8 @@ fn the_installer_writes_the_same_entries_and_words() {
             (Language::Vi, 1066),
             (Language::Ru, 1049),
             (Language::Tr, 1055),
+            (Language::Pl, 1045),
+            (Language::Uk, 1058),
         ] {
             let line = format!(" {lcid} \"{}\"", entry.label(language));
             assert!(HOOKS.contains(&line), "hooks.nsh lacks {line}");

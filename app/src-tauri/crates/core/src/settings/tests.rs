@@ -903,13 +903,17 @@ fn a_language_tag_reads_as_the_app_language_it_stands_for() {
         (&["vi", "vi-VN"], LanguagePref::Vi),
         (&["ru", "ru-RU", "ru_UA"], LanguagePref::Ru),
         (&["tr", "tr-TR", "TR_cy"], LanguagePref::Tr),
+        (&["pl", "pl-PL", "PL_pl"], LanguagePref::Pl),
+        // Ukrainian never falls to Russian, wherever the region
+        (&["uk", "uk-UA", "uk_RU", "UK-ua"], LanguagePref::Uk),
     ] {
         for tag in tags {
             assert_eq!(of(tag), Some(language), "{tag}");
         }
     }
     for tag in [
-        "", "-", "_x", "jpn", "kor", "rom", "ind", "vie", "rus", "tur", "zho-TW", "sv-SE",
+        "", "-", "_x", "jpn", "kor", "rom", "ind", "vie", "rus", "tur", "pol", "ukr", "zho-TW",
+        "sv-SE",
     ] {
         assert_eq!(of(tag), None, "{tag:?}");
     }
@@ -917,6 +921,10 @@ fn a_language_tag_reads_as_the_app_language_it_stands_for() {
     assert_eq!(
         LanguagePref::System.resolve(&["sv-SE", "zh-HK"]),
         LanguagePref::ZhTw
+    );
+    assert_eq!(
+        LanguagePref::System.resolve(&["uk-UA", "ru-RU"]),
+        LanguagePref::Uk
     );
     assert_eq!(LanguagePref::System.resolve(&["sv-SE"]), LanguagePref::En);
     assert_eq!(LanguagePref::System.resolve::<&str>(&[]), LanguagePref::En);
@@ -961,6 +969,8 @@ fn installer_codes_are_one_of_the_apps_languages_and_nothing_else() {
     assert_eq!(language_from_code("ca"), Some(LanguagePref::Ca));
     assert_eq!(language_from_code("gl"), Some(LanguagePref::Gl));
     assert_eq!(language_from_code("ro"), Some(LanguagePref::Ro));
+    assert_eq!(language_from_code("pl"), Some(LanguagePref::Pl));
+    assert_eq!(language_from_code("uk"), Some(LanguagePref::Uk));
     assert_eq!(
         language_from_code("de\0"),
         None,
