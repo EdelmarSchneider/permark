@@ -32,6 +32,8 @@ impl LanguagePref {
             "vi" => Some(Self::Vi),
             "ru" => Some(Self::Ru),
             "tr" => Some(Self::Tr),
+            "pl" => Some(Self::Pl),
+            "uk" => Some(Self::Uk),
             _ => None,
         }
     }

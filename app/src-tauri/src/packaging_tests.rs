@@ -17,13 +17,13 @@ const DESKTOP: &str = include_str!("../linux/permark.desktop");
 const WORKSPACE: &str = include_str!("../Cargo.toml");
 const HOOKS: &str = include_str!("../installer/hooks.nsh");
 /// Windows language ids of `bundle.windows.nsis.languages`, in the same order.
-const INSTALLER_LANGUAGE_IDS: [u32; 18] = [
+const INSTALLER_LANGUAGE_IDS: [u32; 20] = [
     1033, 1046, 3082, 1031, 2052, 1040, 1041, 1042, 1036, 2070, 1027, 1110, 1048, 1028, 1057, 1066,
-    1049, 1055,
+    1049, 1055, 1045, 1058,
 ];
 /// Installer languages Tauri does not translate, or translates with errors, and languages whose stock NSIS page texts
 /// need other words (`bundle.windows.nsis.customLanguageFiles`).
-const CUSTOM_LANGUAGES: [(&str, &str); 15] = [
+const CUSTOM_LANGUAGES: [(&str, &str); 17] = [
     ("German", include_str!("../installer/languages/German.nsh")),
     (
         "PortugueseBR",
@@ -74,6 +74,11 @@ const CUSTOM_LANGUAGES: [(&str, &str); 15] = [
     (
         "Turkish",
         include_str!("../installer/languages/Turkish.nsh"),
+    ),
+    ("Polish", include_str!("../installer/languages/Polish.nsh")),
+    (
+        "Ukrainian",
+        include_str!("../installer/languages/Ukrainian.nsh"),
     ),
 ];
 

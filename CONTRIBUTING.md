@@ -56,12 +56,12 @@ npm run fmt     # fixes formatting (rustfmt and prettier)
 
 ## Translations
 PerMark speaks English, Português (Brasil), Español, Deutsch, 简体中文, Italiano, 日本語, 한국어, Français, Português
-(Portugal), Català, Galego, Română, 繁體中文, Bahasa Indonesia, Tiếng Việt, Русский and Türkçe. English is the source
-language and the fallback.
+(Portugal), Català, Galego, Română, 繁體中文, Bahasa Indonesia, Tiếng Việt, Русский, Türkçe, Polski and Українська.
+English is the source language and the fallback.
 
 - **Where.** One file per language in `app/src/core/i18n/locales/`: `en.ts`, `pt-BR.ts`, `es.ts`, `de.ts`, `zh-CN.ts`,
   `it.ts`, `ja.ts`, `ko.ts`, `fr.ts`, `pt-PT.ts`, `ca.ts`, `gl.ts`, `ro.ts`, `zh-TW.ts`, `id.ts`, `vi.ts`, `ru.ts`,
-  `tr.ts`. Each is a flat list of `"area.key": "text"` pairs. The comment at the top of a file states the tone of that language (for example how buttons and hints address
+  `tr.ts`, `pl.ts`, `uk.ts`. Each is a flat list of `"area.key": "text"` pairs. The comment at the top of a file states the tone of that language (for example how buttons and hints address
   the reader); please follow it.
 - **Fixing a translation.** Edit the text in the language's file and run `npm run check`. Nothing else changes.
 - **Adding or renaming a string.** Add the key to `en.ts` and to all the other files in the same pull request, with a
@@ -77,10 +77,12 @@ language and the fallback.
   must exist and make sense). Romanian also has a third form, `area.key.few`, for 0 and 2 to 19 ("2 fișiere"), where
   `.other` is for 20 and more ("20 de fișiere"); `tn` reads `.few` when the language says "few" and the file has it.
   Write the number as `{n}`.
-- **Russian plurals.** Russian has three forms for whole numbers, and the file gives each counted text all three keys:
-  `.one` for 1, 21, 31, 101 ("21 файл"), `.few` for 2 to 4, 22 to 24 and so on ("22 файла"), and `.other` for 0, 5 to
-  20, 25 to 30 and so on ("25 файлов"). The rules call that last group "many"; `tn` reads `.other` for it, so Russian
-  needs no fourth key.
+- **Russian, Ukrainian and Polish plurals.** These languages have three forms for whole numbers, and their files give
+  each counted text all three keys. Russian and Ukrainian: `.one` for 1, 21, 31, 101 ("21 файл"), `.few` for 2 to 4,
+  22 to 24 and so on ("22 файла", "22 файли"), and `.other` for 0, 5 to 20, 25 to 30 and so on ("25 файлов", "25
+  файлів"). Polish: `.one` for 1 only ("1 plik"), `.few` for 2 to 4, 22 to 24, 32 to 34 and so on, but not 12 to 14
+  ("22 pliki"), and `.other` for 0, 5 to 21, 25 to 31 and so on ("21 plików", "12 plików"). The rules call that last
+  group "many"; `tn` reads `.other` for it, so no fourth key is needed.
 - **Wording.** Keep product names and technical terms as they are (PerMark, Markdown, Git, MCP). Keep a text short enough
   for a button or a status bar, and say what happens in plain words.
 - **A new language** touches more than the table: the language list in `locales.ts`, the Rust language setting
