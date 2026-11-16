@@ -113,11 +113,15 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-1);
-    width: 260px;
+    /* as wide as its longest words (some languages need more than 260 px for Reset zoom or the width names), kept
+       inside the window */
+    width: max-content;
+    min-width: 260px;
+    max-width: min(420px, calc(100vw - 2 * var(--sp-3)));
     padding: var(--sp-2) var(--sp-3) var(--sp-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--surface);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
     animation: pm-fade var(--dur) var(--ease);
   }

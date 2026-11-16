@@ -13,6 +13,7 @@ vi.mock("../../api", async () => {
 });
 const { default: TextView } = await import("./TextView.svelte");
 const { documents } = await import("../../core/doc/document.svelte");
+const { reading } = await import("../../core/doc/reading.svelte");
 const { contributions } = await import("../../core/plugins/instance.svelte");
 const { NO_REQUIREMENT } = await import("../../core/conditions/available");
 const { look } = await import("../../core/look.svelte");
@@ -193,6 +194,27 @@ it("a line right after a very long one, the last line, a line past the end", asy
   flushSync();
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(parseFloat(band()?.style.top ?? "")).toBeCloseTo(topOf(177), 0);
+  expect(notify).not.toHaveBeenCalled();
+});
+
+it("keeps the line at the top as the reader scrolls, and opens again with that line at the top, untinted", async () => {
+  show(viewOf("kept.log"));
+  pane.scrollTop = topOf(87) + 5;
+  pane.dispatchEvent(new Event("scroll"));
+  expect(reading.scrollOf("kept.log")).toBe(87);
+  // back at the top: nothing to keep
+  pane.scrollTop = 0;
+  pane.dispatchEvent(new Event("scroll"));
+  expect(reading.scrollOf("kept.log")).toBeNull();
+  if (component) await unmount(component);
+  component = null;
+
+  const notify = vi.spyOn(documents, "notify");
+  documents.lineRequest = { path: "kept.log", line: 87, seq: 1006, restore: true };
+  show(viewOf("kept.log"));
+  await until(() => Math.abs(pane.scrollTop - topOf(87)) < 1, "line 87 at the top");
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(band()).toBeNull();
   expect(notify).not.toHaveBeenCalled();
 });
 

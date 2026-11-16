@@ -123,8 +123,6 @@ impl Plugin for TagsPlugin {
         let early = !project.owners_known();
         let service = Arc::new(TagsService::start(ServiceArgs {
             owners: started.clone(),
-            // a reader with no window does not carry the profile copy over (the app does, on its next open)
-            legacy: !cx.files_only(),
             own: Arc::clone(&project.own),
             scope: project.documents.scope().clone(),
             harvest: Arc::clone(project.search.harvest()),

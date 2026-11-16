@@ -65,7 +65,7 @@
   title={blocked ?? (hint === null ? action : `${action} (${hint})`)}
   onclick={() => toggleRegion(of.region)}
 >
-  <Icon size={14} strokeWidth={1.9} aria-hidden="true" />
+  <Icon size={14} strokeWidth={1.8} aria-hidden="true" />
 </button>
 {#if blocked !== null}
   <span class="sr-only" id={whyId}>{blocked}</span>

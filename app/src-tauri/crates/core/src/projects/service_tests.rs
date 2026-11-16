@@ -775,7 +775,6 @@ fn a_plain_folder_costs_no_disk_touch_after_open() {
         Arc::new(OwnWrites::new()),
         WatchHub::new(),
         sink,
-        false,
         &config.ignore,
     );
     assert_eq!(probe::count() - before, 0, "nothing read at open");
@@ -1049,7 +1048,6 @@ fn bare(root: &Root, base: &Path) -> (Arc<Explorer>, Arc<Projects>) {
         Arc::new(OwnWrites::new()),
         WatchHub::new(),
         sink,
-        false,
         &config.ignore,
     );
     (explorer, projects)

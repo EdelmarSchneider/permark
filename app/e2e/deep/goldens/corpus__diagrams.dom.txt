@@ -1,0 +1,50 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        h1 id="diagrams" dir="auto"
+          a.anchor href="#diagrams" aria-label="Link to Diagrams"
+            "#"
+          "Diagrams"
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg flowchart-v2 sized labels: yes | no | Sensor | Valid? | Store | Flag
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg sequence sized labels: Gateway | Buoy | Gateway | Buoy | reading | ack
+        p dir="auto"
+          "A Mermaid diagram with a syntax error:"
+        div.code-block.diagram
+          figure.figure.is-failed
+            pre.source
+              code
+                "flowchart LR A[Open bracket --> B this is not mermaid (("
+            figcaption.message
+              "Diagram could not be rendered"
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg svg sized labels: Person | App | Person | App | opens a file | shows it
+        p dir="auto"
+          "A PlantUML diagram with a syntax error:"
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg svg sized labels: [From textarea (line 2) ] | @startuml | this is -> -> not valid ::: plantuml | Syntax Error? (Assumed diagram type: sequence)
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg svg sized labels: read | check | publish | flag | doubtful
+        p dir="auto"
+          "A Graphviz diagram with a syntax error:"
+        div.code-block.diagram
+          figure.figure.is-failed
+            pre.source
+              code
+                "digraph G { a -> ; }}}"
+            figcaption.message
+              "Diagram could not be rendered"
+              span.problem
+                "syntax error in line 2 near ';'"

@@ -1,7 +1,7 @@
 // The tokenizers the person can choose: ids (as the settings and `.permark/config.toml` keep them), how they are told
 // apart on screen (exact or approximate), and the effective choice of a project. Mirror of the Rust crate's table.
 
-import type { MessageKey } from "../../core/i18n";
+import { t, type MessageKey } from "../../core/i18n";
 
 export type TokenizerId = "o200k" | "cl100k" | "claude" | "gemini" | "chars4";
 
@@ -10,7 +10,7 @@ export const MAX_TOKENIZERS = 3;
 
 export type TokenizerInfo = {
   id: TokenizerId;
-  /** What the status bar and the popover call it (product names, not translated). */
+  /** What the status bar and the popover call it (product names stay; the rule of thumb is translated). */
   short: string;
   /** Counted by the model's own tokenizer, or estimated. */
   exact: boolean;
@@ -51,7 +51,10 @@ export const TOKENIZERS: readonly TokenizerInfo[] = [
   },
   {
     id: "chars4",
-    short: "chars ÷ 4",
+    // read at draw time: follows the interface language
+    get short() {
+      return t("tokens.short.chars4");
+    },
     exact: false,
     label: "tokens.label.chars4",
     why: "tokens.why.chars4",

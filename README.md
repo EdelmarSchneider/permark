@@ -82,11 +82,14 @@ that save themselves.
   of the file stays as it is.
 - **Made for long reading.** A light, dark or system theme, with softer light tones (Paper, Sage, Gray). Three reading widths, an
   outline to jump between sections, and Focus mode (`Ctrl+Alt+F`), which leaves only the page.
+- **Panels where you want them.** Files, Search, the Outline and the other panels can sit in the sidebar, in the right panel or in
+  a bottom panel under the document. Drag a panel by its tab, or use its "…" menu. **Layouts…** saves an arrangement under a name,
+  and **Reset layout** brings back the default.
 - **View, Edit, Source.** One switch in the header. **View** is for reading. **Edit** changes the page as it looks, with a toolbar
   and a `/` block menu. **Source** shows the raw file, every byte, with find and replace and go to line. A switch beside the modes
   draws a Mermaid or PlantUML diagram next to its text while you type (off until you turn it on).
-- **Honest about Edit.** Edit keeps math, diagrams, HTML and footnotes as written: **Edit in Source** opens them. Edit does not draw
-  pictures that are files next to the document; View and Source do.
+- **Special blocks, drawn in Edit too.** Formulas, diagrams, alerts, footnotes and HTML look in Edit exactly as they do in View.
+  Click one to edit its text right there, with a live preview. A picture you paste is saved next to the document, and Edit draws it.
 - **Notes that save themselves.** Click **Notes**, next to Settings, or press `Ctrl+Shift+N` for a new note from anywhere in PerMark, and type. No name to choose, no folder to pick, no save prompt.
   Notes are plain Markdown files you own, and **Copy** puts a drafted prompt on the clipboard as exact Markdown.
 
@@ -118,6 +121,9 @@ You decide what stays: keep or revert each change, comment on any passage, and s
 - **Review, change by change.** When a document changed since you last read it, a quiet bar says how many changes there are.
   **Review** shows each one in place: block by block in Markdown, line by line in code, logs, data and config files. Choose
   **Keep** or **Revert** for each (`K`, `R`), or for all at once. Compare with what you last read, or with the last commit.
+- **Earlier versions.** In a folder that is a git repository, **Earlier versions…** lists every commit that changed a document.
+  Pick one and the review shows what differs from the document now: **Revert** brings back one change, **Bring back this version**
+  the whole text. Only the file changes, and you can undo it.
 - **Comments an agent can mark done.** Select a passage and press `C`. With the agent connection on, your agent reads your open
   comments and marks them done with a reply. **Send to agent** copies them as a prompt for any agent chat. Comments are yours alone.
 - **Only what you changed is saved.** Edit and Source rewrite only the blocks you changed. Every other byte stays as its author,
@@ -189,7 +195,7 @@ The Windows installers may also download Microsoft's WebView2 component while th
 - **Not a code editor.** No completion, refactoring, build, run or debug. Real code work opens in your own editor.
 - **Not an agent.** It does not run, host or replace your AI agents. It shows what your AI writes, and you decide what stays. The small
   local models it can use work only for PerMark's own features, such as correcting your text.
-- **Not tested by hand on macOS or Linux.** PerMark 0.6 was tested by hand on Windows; the macOS and Linux builds are checked automatically.
+- **Not tested by hand on macOS or Linux.** PerMark is tested by hand on Windows; the macOS and Linux builds are checked automatically.
 
 ## Why Markdown
 
@@ -201,14 +207,14 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 
 ## Install
 
-Windows, macOS and Linux. PerMark 0.6 was tested by hand on Windows; the macOS and Linux builds are checked automatically.
+Windows, macOS and Linux. PerMark is tested by hand on Windows; the macOS and Linux builds are checked automatically.
 Installers are not code-signed, so your system shows a warning the first time you install or open it.
 
 | System | Get it |
 |---|---|
-| Windows | The [Microsoft Store](https://apps.microsoft.com/detail/9NVV5GVZMGGX), which keeps PerMark up to date. Or the `-setup.exe` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest); the `.msi` is only for updating copies installed from a 0.5 `.msi` |
+| Windows | The [Microsoft Store](https://apps.microsoft.com/detail/9NVV5GVZMGGX), which keeps PerMark up to date. Or the `-setup.exe` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest). Version 0.13 is the last one with an `.msi`: if you installed PerMark from an `.msi`, uninstall it and install the `-setup.exe`; your settings and notes stay |
 | macOS | The universal `.dmg` (Apple silicon and Intel) from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest) |
-| Linux | The `.AppImage`, `.deb` or `.rpm` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest), or the snap (64-bit Intel and AMD): `sudo snap install permark` |
+| Linux | The `.AppImage`, `.deb` or `.rpm` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest), or the snap (64-bit Intel and AMD): `sudo snap install permark`. To print on your printers from the snap, also install the CUPS snap: `sudo snap install cups` |
 
 Copies from GitHub check for updates when they start and once a day, and offer to download and restart. The Microsoft Store and the snap update their copies themselves.
 PerMark becomes your default app for Markdown only if you choose it: it asks once, with Markdown files checked and other types
@@ -228,8 +234,9 @@ permark docs/plan.md     # open a single file
 permark --notes          # open the Notes
 ```
 
-On Windows and macOS, `permark` is not on your `PATH` after an install from GitHub, so use the full path of the program, or add
-it yourself. The Microsoft Store and snap versions put `permark` on your `PATH`.
+On Windows, the installer from GitHub can put `permark` on your `PATH`: tick **Add the permark command to PATH** on its
+first page. On macOS, and on Windows without that option, use the full path of the program or add it yourself. The
+Microsoft Store and snap versions put `permark` on your `PATH`.
 
 </details>
 
@@ -306,8 +313,9 @@ agent asks PerMark what you did instead of rereading the project.
 | `open` | Shows you a place (a document, a line or a heading) without taking the focus from the agent's terminal, and offers a way back |
 
 Answers are short on purpose: a header line, then tab-separated rows, so an agent spends few tokens. A project's `.permark/` folder
-can narrow what an agent may do, never widen it. When PerMark is closed, the other tools still work from the files, and `open`
-starts it. With the connection off, every tool says so and explains how to turn it on.
+can narrow what an agent may do, never widen it. An agent reads a project only while PerMark has it open: with PerMark closed,
+every tool says so, and `open` starts PerMark so you see the agent connect. With the connection off, every tool says so and
+explains how to turn it on.
 
 </details>
 
@@ -430,6 +438,15 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 
 **PerMark 0.6** rebuilt the whole program. Every release is in the [CHANGELOG](CHANGELOG.md).
 
+- **0.13.0:** spelling while you edit, with 11 dictionaries that download only when you choose a language; **Save as PDF**,
+  **Save as HTML** and **Print**; a refreshed look with a clearer Notes button; more Markdown on the page: Obsidian-style callouts
+  that fold, `:::` containers, highlights, emoji shortcodes, inline footnotes, code block titles and line numbers, Graphviz
+  diagrams, chemistry formulas and `\( \)` / `\[ \]` math; five more interface languages (18 in all) with dates and numbers in
+  your region's format; right-to-left paragraphs; an installer option that puts `permark` on your Windows `PATH`; and demo
+  pages that show what PerMark can draw.
+- **0.12.0:** panels you arrange yourself, in the sidebar, the right panel or a new bottom panel, with layouts you save by name; and the earlier versions of a document, from git.
+- **0.11.0:** translation with a local AI model, in the editor or into a new file; correction inside tables; and Refresh (`F5`) in the Explorer.
+- **0.10.0:** Edit shows formulas, diagrams, alerts and other special blocks the way View does.
 - **0.9.0:** small AI models that run on your computer, offline, and spelling and grammar correction with them.
 - **0.8.0:** pictures you paste are saved next to the document, emoji and symbols in the editor, and View, Edit or Source stays as you left it.
 - **0.7.1:** seven more interface languages (Japanese, Korean, French, European Portuguese, Catalan, Galician and Romanian).
@@ -464,6 +481,7 @@ npm run check   # version, rustfmt, prettier, build, clippy -D warnings, svelte-
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. It also explains how to fix or add a translation.
+Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

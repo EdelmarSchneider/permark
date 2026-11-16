@@ -1,0 +1,116 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        h1 id="inline-marks" dir="auto"
+          a.anchor href="#inline-marks" aria-label="Link to Inline marks"
+            "#"
+          "Inline marks"
+        p dir="auto"
+          "A"
+          mark
+            "highlighted phrase"
+          "in a sentence, and"
+          mark
+            "two"
+          mark
+            "highlights"
+          "side by side."
+        p dir="auto"
+          "Emoji shortcodes:"
+          span.emoji title=":ocean:"
+            "🌊"
+          span.emoji title=":sailboat:"
+            "⛵"
+          span.emoji title=":+1:"
+            "👍"
+          span.emoji title=":heart:"
+            "❤️"
+          "and an unknown one :not_an_emoji_code: that stays text."
+        p dir="auto"
+          "An inline footnote"
+          sup.footnote-ref
+            a href="#fn-__inline_1" id="fnref-__inline_1"
+              "1"
+          "and a second one"
+          sup.footnote-ref
+            a href="#fn-__inline_2" id="fnref-__inline_2"
+              "2"
+          "."
+        p dir="auto"
+          kbd
+            "Ctrl"
+          "+"
+          kbd
+            "Shift"
+          "+"
+          kbd
+            "P"
+          ","
+          abbr title="practical salinity unit"
+            "PSU"
+          ", CO"
+          sub
+            "2"
+          ", 10"
+          sup
+            "3"
+          ","
+          ins
+            "inserted"
+          ","
+          del
+            "deleted"
+          ","
+          mark
+            "marked"
+          ","
+          small
+            "small"
+          ","
+          q
+            "quoted"
+          ","
+          cite
+            "a cite"
+          ","
+          dfn
+            "a definition"
+          ","
+          var
+            "x"
+          ","
+          samp
+            "output"
+          ","
+          s
+            "struck"
+          ","
+          u
+            "underlined"
+          "."
+        p dir="auto"
+          "Mentions and variables outside a prompt file: @someone,"
+          span.tvar
+            "{{not_a_variable}}"
+          ","
+          code
+            "{{in_code}}"
+          "."
+        p dir="auto"
+          "Typography: "straight quotes", 'single', -- dashes --- and ... dots, (c) (tm), 1/2, 30°C, x² ≠ y³."
+        section.footnotes
+          ol
+            li id="fn-__inline_1" dir="auto"
+              p dir="auto"
+                "Written right where it is used, with"
+                em
+                  "emphasis"
+                "."
+                a.footnote-backref href="#fnref-__inline_1" aria-label="Back to reference 1"
+                  "↩"
+            li id="fn-__inline_2" dir="auto"
+              p dir="auto"
+                "Short."
+                a.footnote-backref href="#fnref-__inline_2" aria-label="Back to reference 2"
+                  "↩"

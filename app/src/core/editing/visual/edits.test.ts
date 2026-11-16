@@ -401,6 +401,82 @@ describe("correction marks in the Edit-mode editor", () => {
     select((plain?.from ?? 0) + 1);
     expect(markAt(view.state)).toBe(1);
   });
+
+  const others = (): string[] =>
+    Array.from(core.view.dom.querySelectorAll(".wavy-mark")).map(
+      (el) => `${el.textContent}@${el.getAttribute("data-mark-layer")}`,
+    );
+
+  it("layers are independent; words inside bold and link text get marked", async () => {
+    await load(MIXED);
+    const view = core.view;
+    setMarks(view, now(), [wordAt(MIXED, "teh", 4)], 0, () => {});
+    // inside **bold**, inside link text, plain prose
+    const words = [0, 1, 4].map((n) => wordAt(MIXED, "teh", n));
+    setMarks(view, now(), words, null, () => {}, "other", { className: "wavy-mark" });
+    expect(marks()).toEqual(["teh*"]);
+    expect(others()).toEqual(["teh@other", "teh@other", "teh@other"]);
+    expect(view.dom.querySelector("strong .wavy-mark")?.textContent).toBe("teh");
+    expect(view.dom.querySelector("a .wavy-mark")?.textContent).toBe("teh");
+    const plain = docRange(view.state.doc, now(), wordAt(MIXED, "teh", 4));
+    select((plain?.from ?? 0) + 1);
+    expect(markAt(view.state)).toBe(0);
+    expect(markAt(view.state, "other")).toBe(2);
+    // typing maps both; clearing one leaves the other
+    view.dispatch(view.state.tr.insertText("Very ", posOf("Some")));
+    expect(marks()).toEqual(["teh*"]);
+    expect(others()).toHaveLength(3);
+    setMarks(view, now(), [], null, () => {});
+    expect(marks()).toEqual([]);
+    expect(others()).toHaveLength(3);
+    setMarks(view, now(), [], null, () => {}, "other");
+    expect(others()).toEqual([]);
+  });
+
+  it("a right-click on a layer's mark opens its menu; a click picks in that layer only", async () => {
+    await load(MIXED);
+    const view = core.view;
+    const picked: string[] = [];
+    const menus: unknown[] = [];
+    setMarks(view, now(), [wordAt(MIXED, "teh", 4)], 0, (i) => picked.push(`correction ${i}`));
+    setMarks(
+      view,
+      now(),
+      [wordAt(MIXED, "teh", 3)],
+      null,
+      (i) => picked.push(`other ${i}`),
+      "other",
+      {
+        className: "wavy-mark",
+        menu: (index, x, y) => menus.push([index, x, y]),
+      },
+    );
+    const other = view.dom.querySelector(".wavy-mark");
+    other?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(picked).toEqual(["other 0"]);
+    const right = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 5,
+      clientY: 6,
+    });
+    other?.dispatchEvent(right);
+    expect(menus).toEqual([[0, 5, 6]]);
+    expect(right.defaultPrevented).toBe(true);
+    const own = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    view.dom.querySelector(".correction-mark")?.dispatchEvent(own);
+    expect(own.defaultPrevented).toBe(false);
+  });
+});
+
+describe("native spellcheck of the Edit-mode editor", () => {
+  it("is on by default and follows the flag", () => {
+    expect(core.view.dom.getAttribute("spellcheck")).toBe("true");
+    core.setSpellcheck(false);
+    expect(core.view.dom.getAttribute("spellcheck")).toBe("false");
+    core.setSpellcheck(true);
+    expect(core.view.dom.getAttribute("spellcheck")).toBe("true");
+  });
 });
 
 describe("inline formulas in correction", () => {

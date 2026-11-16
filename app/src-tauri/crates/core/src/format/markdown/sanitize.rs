@@ -38,6 +38,13 @@ fn is_url_attribute(attr: &str) -> bool {
     )
 }
 
+/// Elements whose `align` the sanitizer keeps for the text inside them.
+const BLOCK_ALIGNED: [&str; 8] = ["p", "div", "h1", "h2", "h3", "h4", "h5", "h6"];
+
+fn is_block_aligned(element: &str) -> bool {
+    BLOCK_ALIGNED.contains(&element)
+}
+
 fn class_token_allowed(token: &str) -> bool {
     if let Some(lang) = token.strip_prefix("language-") {
         return !lang.is_empty()
@@ -58,8 +65,12 @@ fn class_token_allowed(token: &str) -> bool {
                 | "prompt-block"
                 | "tvar"
                 | "at-ref"
+                | "emoji"
         )
 }
+
+/// Longest `data-title` | `data-lines` value a code block keeps (bytes).
+const MAX_CODE_DATA: usize = 1024;
 
 /// Percent-encodes a project path for `pm-asset:` (keeps `/`).
 fn encode_path(path: &str) -> String {
@@ -109,8 +120,29 @@ fn filter_attribute<'v>(
                 .collect();
             (!kept.is_empty()).then(|| Cow::Owned(kept.join(" ")))
         }
-        (_, "id") => (!value.is_empty() && !value.contains(char::is_whitespace))
+        // an old-style anchor (`<a name>`) is a link target like an id; it names no property of the page's
+        // `window` | `document` (ids do, and the `name` of forms, pictures, embeds and objects)
+        (_, "id") | ("a", "name") => (!value.is_empty() && !value.contains(char::is_whitespace))
             .then_some(Cow::Borrowed(value)),
+        // block alignment (READMEs center their heading this way): the three HTML values only
+        (_, "align") if is_block_aligned(element) => ["left", "center", "right"]
+            .into_iter()
+            .find(|known| value.eq_ignore_ascii_case(known))
+            .map(Cow::Borrowed),
+        // a code block's extras (the renderer checked them; raw HTML may write anything)
+        ("code", "data-lines") => (!value.is_empty()
+            && value.len() <= MAX_CODE_DATA
+            && value
+                .bytes()
+                .all(|b| b.is_ascii_digit() || b == b',' || b == b'-'))
+        .then_some(Cow::Borrowed(value)),
+        ("code", "data-numbers") => {
+            (!value.is_empty() && value.len() <= 7 && value.bytes().all(|b| b.is_ascii_digit()))
+                .then_some(Cow::Borrowed(value))
+        }
+        ("code", "data-title") => {
+            (!value.is_empty() && value.len() <= MAX_CODE_DATA).then_some(Cow::Borrowed(value))
+        }
         ("details", "data-tag") => value
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
@@ -150,7 +182,22 @@ impl Cleaner {
     }
 
     pub(super) fn clean(&self, html: &str) -> String {
-        self.0.clean(html).to_string()
+        players_in_order(self.0.clean(html).to_string())
+    }
+}
+
+/// The forced player attributes as ammonia appends them in the other order.
+const PLAYER_SWAPPED: &str = " preload=\"metadata\" controls=\"\">";
+const PLAYER_ORDERED: &str = " controls=\"\" preload=\"metadata\">";
+
+/// ammonia appends the forced attributes of a player from a hash map, in an order that changes from run to run: put in
+/// one order, so a document always renders to the same bytes. Only an open tag can hold the pattern: the serializer
+/// writes `>` in text as `&gt;` and `"` in an attribute value as `&quot;`.
+fn players_in_order(html: String) -> String {
+    if html.contains(PLAYER_SWAPPED) {
+        html.replace(PLAYER_SWAPPED, PLAYER_ORDERED)
+    } else {
+        html
     }
 }
 
@@ -180,9 +227,11 @@ fn builder(doc: &str) -> ammonia::Builder<'static> {
                 "data-footnote-ref",
                 "data-footnote-backref",
                 "data-footnote-backref-idx",
+                "name",
             ],
         )
         .add_tag_attributes("details", ["open", "data-tag"])
+        .add_tag_attributes("code", ["data-title", "data-lines", "data-numbers"])
         .add_tag_attributes("img", ["width", "height", "alt", "title", "src"])
         // Players: where the file is and how it looks. Never `autoplay` (nothing starts by itself, least of all with
         // sound) and no event handlers or styles; the file comes through the asset protocol.
@@ -205,8 +254,25 @@ fn builder(doc: &str) -> ammonia::Builder<'static> {
         .set_tag_attribute_value("video", "preload", "metadata")
         .set_tag_attribute_value("audio", "preload", "metadata")
         .attribute_filter(move |element, attr, value| filter_attribute(&doc, element, attr, value));
+    // Each text block takes its direction from its own first letters: an Arabic | Hebrew paragraph reads right to left,
+    // an English one left to right, whatever the interface language. Lists and quotes hold no `dir`: an element with one
+    // hides its text from an `auto` around it, so they follow their first text block by style (`markdown.css`). Code
+    // keeps the page's direction.
+    for tag in TEXT_BLOCKS {
+        builder.set_tag_attribute_value(tag, "dir", "auto");
+    }
+    for element in BLOCK_ALIGNED {
+        builder.add_tag_attributes(element, ["align"]);
+    }
     builder
 }
+
+/// The blocks that get `dir="auto"` (see `builder`); a list item counts for the text it holds itself (a tight list).
+const TEXT_BLOCKS: [&str; 10] = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "td", "th"];
+
+#[cfg(test)]
+#[path = "sanitize_props.rs"]
+mod props;
 
 #[cfg(test)]
 mod tests {
@@ -214,6 +280,28 @@ mod tests {
 
     fn clean(html: &str) -> String {
         sanitize(html, "docs/guide/a.md")
+    }
+
+    #[test]
+    fn every_text_block_takes_its_direction_from_its_own_text() {
+        let html = "<h2>שלום עולם</h2><p>مرحبا بالعالم</p><p>Hello world</p>            <ul><li>عنصر</li><li>item</li></ul><ol><li>פריט</li></ol>            <blockquote><p>اقتباس</p></blockquote>            <table><thead><tr><th>עמודה</th></tr></thead><tbody><tr><td>خلية</td></tr></tbody></table>            <pre><code>let x = 1;</code></pre>";
+        let out = clean(html);
+        for block in [
+            "<h2 dir=\"auto\">שלום עולם</h2>",
+            "<p dir=\"auto\">مرحبا بالعالم</p>",
+            "<p dir=\"auto\">Hello world</p>",
+            "<ul><li dir=\"auto\">عنصر</li><li dir=\"auto\">item</li></ul>",
+            "<ol><li dir=\"auto\">פריט</li></ol>",
+            "<blockquote><p dir=\"auto\">اقتباس</p></blockquote>",
+            "<th dir=\"auto\">עמודה</th>",
+            "<td dir=\"auto\">خلية</td>",
+            // code keeps the page's direction
+            "<pre><code>let x = 1;</code></pre>",
+        ] {
+            assert!(out.contains(block), "{block} in {out}");
+        }
+        // a direction written in the document is not kept: every block reads its own text
+        assert_eq!(clean("<p dir=\"rtl\">x</p>"), "<p dir=\"auto\">x</p>");
     }
 
     #[test]
@@ -259,7 +347,7 @@ mod tests {
                 assert!(!out.contains(bad), "{html} -> {out}");
             }
         }
-        assert!(clean("<script>alert(1)</script><p>ok</p>").contains("<p>ok</p>"));
+        assert!(clean("<script>alert(1)</script><p>ok</p>").contains("<p dir=\"auto\">ok</p>"));
     }
 
     #[test]
@@ -323,6 +411,35 @@ mod tests {
     }
 
     #[test]
+    fn players_get_their_attributes_in_one_order() {
+        // each cleaner holds its own hash maps (a new seed each): the order must not depend on them
+        for (html, want) in [
+            (
+                "<audio src=\"a.wav\"></audio>",
+                "<audio src=\"pm-asset:docs/guide/a.wav\" controls=\"\" preload=\"metadata\"></audio>",
+            ),
+            (
+                "<video src=\"a.mp4\" muted></video>",
+                "<video src=\"pm-asset:docs/guide/a.mp4\" muted=\"\" controls=\"\" preload=\"metadata\"></video>",
+            ),
+            (
+                "<audio preload=\"auto\" src=\"a.wav\"></audio>",
+                "<audio preload=\"metadata\" src=\"pm-asset:docs/guide/a.wav\" controls=\"\"></audio>",
+            ),
+        ] {
+            for _ in 0..32 {
+                assert_eq!(clean(html), want, "{html}");
+            }
+        }
+        // the same words in text stay as written
+        let text = "<p>preload=\"metadata\" controls=\"\"&gt;</p>";
+        assert_eq!(
+            clean(text),
+            "<p dir=\"auto\">preload=\"metadata\" controls=\"\"&gt;</p>"
+        );
+    }
+
+    #[test]
     fn classes_ids_and_inputs_are_filtered() {
         let out = clean("<p class=\"evil markdown-alert-note language-rs\" id=\"x y\">t</p>");
         assert!(
@@ -341,6 +458,76 @@ mod tests {
         );
         assert!(!clean("<details data-tag=\"a b\">x</details>").contains("data-tag"));
         assert!(!clean("<p data-tag=\"x\">x</p>").contains("data-tag"));
+    }
+
+    #[test]
+    fn callout_emoji_and_code_extras_survive_checked() {
+        let callout = clean("<details class=\"markdown-alert markdown-alert-caution markdown-alert-kind-bug evil\" open><summary class=\"markdown-alert-title\">T</summary><p>x</p></details>");
+        assert_eq!(
+            callout,
+            "<details class=\"markdown-alert markdown-alert-caution markdown-alert-kind-bug\" open=\"\"><summary class=\"markdown-alert-title\">T</summary><p dir=\"auto\">x</p></details>"
+        );
+        assert_eq!(
+            clean("<mark>m</mark><span class=\"emoji x\" title=\":smile:\">s</span>"),
+            "<mark>m</mark><span class=\"emoji\" title=\":smile:\">s</span>"
+        );
+        assert_eq!(
+            clean("<pre><code class=\"language-rs\" data-title=\"a &lt;b&gt;\" data-lines=\"1,3-5\" data-numbers=\"10\">x</code></pre>"),
+            "<pre><code class=\"language-rs\" data-title=\"a &lt;b&gt;\" data-lines=\"1,3-5\" data-numbers=\"10\">x</code></pre>"
+        );
+        for bad in [
+            "<code data-lines=\"1;x\">x</code>",
+            "<code data-lines=\"\">x</code>",
+            "<code data-numbers=\"-1\">x</code>",
+            "<code data-numbers=\"12345678\">x</code>",
+            "<p data-title=\"x\" data-lines=\"1\">x</p>",
+        ] {
+            assert!(!clean(bad).contains("data-"), "{bad} -> {}", clean(bad));
+        }
+    }
+
+    #[test]
+    fn block_alignment_keeps_only_left_center_right() {
+        for (html, kept) in [
+            (
+                "<p align=\"center\">x</p>",
+                "<p align=\"center\" dir=\"auto\">x</p>",
+            ),
+            (
+                "<div align=\"RIGHT\">x</div>",
+                "<div align=\"right\">x</div>",
+            ),
+            (
+                "<h1 align=\"Left\">x</h1>",
+                "<h1 align=\"left\" dir=\"auto\">x</h1>",
+            ),
+            (
+                "<h6 align=\"center\">x</h6>",
+                "<h6 align=\"center\" dir=\"auto\">x</h6>",
+            ),
+            ("<p align=\"justify\">x</p>", "<p dir=\"auto\">x</p>"),
+            (
+                "<p align=\"center;color:red\">x</p>",
+                "<p dir=\"auto\">x</p>",
+            ),
+            ("<div align=\"\">x</div>", "<div>x</div>"),
+            ("<span align=\"center\">x</span>", "<span>x</span>"),
+        ] {
+            assert_eq!(clean(html), kept, "{html}");
+        }
+    }
+
+    #[test]
+    fn anchor_names_follow_the_id_rule() {
+        assert_eq!(clean("<a name=\"setup\"></a>"), "<a name=\"setup\"></a>");
+        for html in [
+            "<a name=\"a b\"></a>",
+            "<a name=\"\"></a>",
+            "<p name=\"x\">t</p>",
+            "<img name=\"x\" src=\"a.png\">",
+        ] {
+            assert!(!clean(html).contains("name="), "{html}");
+        }
     }
 
     #[test]

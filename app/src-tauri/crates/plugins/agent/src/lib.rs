@@ -6,7 +6,7 @@
 //! ```text
 //!  agent --stdio--> permark mcp --local socket--> app (server of this project) --> Tools over ProjectServices
 //!                        |
-//!                        +-- app closed: Tools over ProjectCore::from_files (same composition)
+//!                        +-- app closed: every tool refused (AppClosed) but `open`, which starts the app
 //! ```
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
@@ -23,6 +23,7 @@ pub mod handoff;
 pub mod live;
 pub mod map;
 pub mod mcp;
+pub mod notes;
 pub mod perms;
 #[cfg(test)]
 mod projects_edge_tests;
@@ -30,15 +31,18 @@ mod projects_edge_tests;
 mod projects_tests;
 pub mod render;
 pub mod server;
+pub mod session;
 pub mod structure;
 #[cfg(test)]
 mod tests;
 pub mod tools;
 
 use std::borrow::Cow;
+use std::fmt::Write as _;
 use std::sync::Arc;
 
 use permark_core::conditions::Requirement;
+use permark_core::fsx::FolderIdentity;
 use permark_core::ipc_local::Endpoint;
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
@@ -76,14 +80,47 @@ pub enum ToolError {
     NotFound(String),
     #[error("invalid: {0}")]
     Invalid(String),
-    #[error("PerMark is not open on this project")]
-    NotOpen,
+    /// The app does not serve the project: no tool answers from the files behind the person's back; `open` starts it.
+    #[error("PerMark is not open on this project. Ask the person to open it in PerMark, or call `open` to start PerMark on it.")]
+    AppClosed,
     /// The projects inside the folder are not known yet (the first walk runs): nothing is answered until they are
     /// (fail closed, `projects.md` §5.2).
     #[error("PerMark is still reading this folder")]
     Busy,
+    /// The person ended this session in the app: its id is refused until the agent process restarts (a new id).
+    #[error(
+        "the person disconnected this agent from this project; restarting the agent connects again"
+    )]
+    Disconnected,
+    /// The agent's working folder is in no connected project: only the agent's side says this (never sent by the
+    /// app). `below` = connected projects under the working folder, relative to it, newest first: a hint, it grants
+    /// nothing.
+    #[error("no connected PerMark project here: {}", not_connected_remedy(below))]
+    NotConnected { below: Vec<String> },
     #[error("{0}")]
     Failed(String),
+}
+
+/// Most folders a [`ToolError::NotConnected`] names; the rest are counted.
+const BELOW_SHOWN: usize = 5;
+
+/// What to do when no connected project holds the working folder (one line: a folder name with whitespace or a
+/// line break is quoted like any header value).
+pub(crate) fn not_connected_remedy(below: &[String]) -> String {
+    if below.is_empty() {
+        return "ask the person to turn on the agent connection for a project, then start the agent in that folder"
+            .to_owned();
+    }
+    let shown: Vec<_> = below
+        .iter()
+        .take(BELOW_SHOWN)
+        .map(|folder| format::value(folder))
+        .collect();
+    let mut text = format!("start the agent in one of: {}", shown.join(", "));
+    if below.len() > BELOW_SHOWN {
+        let _ = write!(text, " and {} more", below.len() - BELOW_SHOWN);
+    }
+    text
 }
 
 impl ToolError {
@@ -94,8 +131,10 @@ impl ToolError {
             Self::Denied { .. } | Self::DeniedBelow { .. } => "denied",
             Self::NotFound(_) => "notFound",
             Self::Invalid(_) => "invalid",
-            Self::NotOpen => "notOpen",
+            Self::AppClosed => "appClosed",
             Self::Busy => "busy",
+            Self::Disconnected => "disconnected",
+            Self::NotConnected { .. } => "notConnected",
             Self::Failed(_) => "error",
         }
     }
@@ -115,8 +154,8 @@ impl ToolError {
             ),
             "notFound" => Self::NotFound(after("not found: ")),
             "invalid" => Self::Invalid(after("invalid: ")),
-            "notOpen" => Self::NotOpen,
             "busy" => Self::Busy,
+            "disconnected" => Self::Disconnected,
             _ => Self::Failed(message.to_owned()),
         }
     }
@@ -152,6 +191,17 @@ struct GroupArgs {
 }
 
 #[derive(Deserialize)]
+struct SessionArgs {
+    id: String,
+}
+
+impl SessionArgs {
+    fn id(&self) -> Result<session::SessionId, IpcError> {
+        session::SessionId::parse(&self.id).ok_or_else(|| invalid("id"))
+    }
+}
+
+#[derive(Deserialize)]
 struct PublishArgs {
     context: WindowContext,
 }
@@ -183,7 +233,7 @@ fn sync_context_file(hub: &Hub, write: bool) {
     let Ok((shared, open)) = hub
         .tools
         .guard_now(std::time::Duration::ZERO)
-        .and_then(|guard| hub.tools.context(&guard))
+        .map(|guard| hub.tools.context(&guard))
     else {
         return;
     };
@@ -200,7 +250,8 @@ fn sync_context_file(hub: &Hub, write: bool) {
     }
 }
 
-/// Turns the switch: the first time on, the project starts from the app's defaults.
+/// Turns the switch: the first time on, the project starts from the app's defaults. On binds it to this folder (a
+/// folder created again at the path later is not connected); off forgets the folder.
 fn set_enabled(hub: &Hub, enabled: bool) -> Result<(), IpcError> {
     let store = hub.tools.store();
     let mut choice = perms::load(store);
@@ -208,6 +259,11 @@ fn set_enabled(hub: &Hub, enabled: bool) -> Result<(), IpcError> {
         choice.groups = perms::clean(&perms::defaults(store));
     }
     choice.enabled = enabled;
+    choice.folder = if enabled {
+        FolderIdentity::of(hub.tools.vault_root().path())
+    } else {
+        None
+    };
     saved(
         store
             .profile_file::<ProjectChoice>(perms::PROJECT_FILE)
@@ -230,12 +286,14 @@ impl Plugin for AgentPlugin {
                 reason: "needs a project".to_owned(),
             });
         };
+        // before the switch is read: a choice saved before folders were recorded binds to the folder the app opened
+        perms::adopt_folder(store, vault.main().path());
         let live = Arc::new(Live::new(cx.events().clone()));
         let tools = Tools::new(
             vault.clone(),
             store.clone(),
             project.clone(),
-            Some(Arc::clone(&live)),
+            Arc::clone(&live),
         );
         let hub = Hub::new(tools, Arc::clone(&project.facts), cx.events().clone());
         let endpoint = Endpoint::project(store.app_dir(), vault.main());
@@ -276,6 +334,22 @@ impl Plugin for AgentPlugin {
         ));
         let h = Arc::clone(&hub);
         registrations.extend(cx.rpc(
+            "disconnect",
+            typed(move |args: SessionArgs, _| {
+                h.disconnect(&args.id()?);
+                Ok(h.status())
+            }),
+        ));
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "undoDisconnect",
+            typed(move |args: SessionArgs, _| {
+                h.undo_disconnect(&args.id()?);
+                Ok(h.status())
+            }),
+        ));
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
             "setDefaults",
             typed(move |_: NoArgs, _| {
                 // the groups of this project become the defaults of new projects
@@ -292,11 +366,45 @@ impl Plugin for AgentPlugin {
         let l = Arc::clone(&live);
         registrations.extend(cx.rpc(
             "publish",
-            typed(move |args: PublishArgs, _| {
-                l.publish(args.context);
+            typed(move |args: PublishArgs, call| {
+                l.publish(&call.window, args.context);
                 sync_context_file(&h, true);
                 Ok(())
             }),
+        ));
+        // several windows of one project: the one the person turned to last speaks for them
+        let h = Arc::clone(&hub);
+        let l = Arc::clone(&live);
+        registrations.extend(cx.rpc(
+            "focused",
+            typed(move |_: NoArgs, call| {
+                l.focused(&call.window);
+                sync_context_file(&h, true);
+                Ok(())
+            }),
+        ));
+        // a window that lets go of the project takes its word with it (quick: called under the registry's lock)
+        let gone = Arc::downgrade(&live);
+        registrations.extend(cx.on_caller_gone(Arc::new(move |caller: &str| {
+            if let Some(live) = gone.upgrade() {
+                live.forget(caller);
+            }
+        })));
+        // notes shared with this project: the key is this plugin's own folder, whatever window asks
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "sharedNotes",
+            typed(move |_: NoArgs, _| notes::project_notes(&h.tools)),
+        ));
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "shareNote",
+            typed(move |args: notes::NoteArgs, _| notes::share(&h.tools, &args)),
+        ));
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "unshareNote",
+            typed(move |args: notes::NoteArgs, _| notes::unshare(&h.tools, &args)),
         ));
         // the hand-off: the dialog's content, then the confirm that freezes the package and sets the checkpoint
         let h = Arc::clone(&hub);

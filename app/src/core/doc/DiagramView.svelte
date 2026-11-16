@@ -1,21 +1,28 @@
 <script lang="ts">
   // A diagram: "drawing", then the drawing, or the source with a note when it cannot be drawn. Redrawn when the theme
-  // or the light tone changes. The engines (Mermaid, PlantUML) are plugins; this is the shape they share.
+  // or the light tone changes. The engines (Mermaid, PlantUML, Graphviz) are plugins; this is the shape they share.
   import { t } from "../i18n";
   import { look } from "../look.svelte";
-  import { viewBoxWidth } from "./diagram";
+  import { viewBoxWidth, type DrawFailure } from "./diagram";
 
   type Props = {
     source: string;
-    /** Draws `source` for the theme: SVG text, or null when it cannot be drawn. */
-    draw: (source: string, theme: "light" | "dark") => Promise<string | null>;
+    /** Draws `source` for the theme (`forced`: fixed by the caller, not the page's): SVG text, or null | a failure
+     *  with its words when it cannot be drawn. */
+    draw: (
+      source: string,
+      theme: "light" | "dark",
+      forced: boolean,
+    ) => Promise<string | DrawFailure | null>;
+    /** The theme to draw in, whatever the page shows; absent: the page's theme and tone. */
+    theme?: "light" | "dark" | undefined;
   };
-  let { source, draw }: Props = $props();
+  let { source, draw, theme }: Props = $props();
 
   type Drawn =
     | { status: "pending" }
     | { status: "drawn"; svg: string; width: number | null }
-    | { status: "failed" };
+    | { status: "failed"; problem: string | null };
   let drawn = $state.raw<Drawn>({ status: "pending" });
   let host: HTMLElement | undefined = $state();
 
@@ -28,13 +35,15 @@
 
   // draws (again) when the source, the theme or the tone changes; an older answer never overwrites a newer
   $effect(() => {
-    const theme = look.theme;
-    void look.tone;
+    const forced = theme !== undefined;
+    const drawIn = theme ?? look.theme;
+    // a forced theme does not follow the page's tone
+    if (!forced) void look.tone;
     let stale = false;
-    void draw(source, theme).then((svg) => {
+    void draw(source, drawIn, forced).then((svg) => {
       if (stale) return;
-      if (svg === null) {
-        drawn = { status: "failed" };
+      if (typeof svg !== "string") {
+        drawn = { status: "failed", problem: svg?.problem ?? null };
         return;
       }
       const box = /viewBox="([^"]*)"/.exec(svg);
@@ -59,7 +68,11 @@
     </div>
   {:else if drawn.status === "failed"}
     <pre class="source"><code>{source}</code></pre>
-    <figcaption class="message">{t("doc.diagramFailed")}</figcaption>
+    <!-- the engine's words go inside the note: an export keeps the note and drops the source -->
+    <figcaption class="message">
+      {t("doc.diagramFailed")}
+      {#if drawn.problem}<span class="problem">{drawn.problem}</span>{/if}
+    </figcaption>
   {:else}
     <span class="pending">{t("doc.diagramRendering")}</span>
   {/if}
@@ -100,5 +113,9 @@
     margin: 6px 0 0;
     font-size: 12px;
     color: var(--muted);
+  }
+  .problem {
+    display: block;
+    font-family: var(--font-code);
   }
 </style>

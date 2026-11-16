@@ -163,7 +163,7 @@ export function documentPane(): HTMLElement | null {
 
 /** The keyboard goes to the page: the editor when one is open, else the document scroller, else the page region
  *  (no page: what holds it lets go). */
-function focusPage(): void {
+export function focusPage(): void {
   const page = pageRegion();
   const target =
     page?.querySelector<HTMLElement>("[contenteditable='true'], .cm-content") ??
@@ -174,7 +174,7 @@ function focusPage(): void {
 }
 
 /** Nothing holds the keyboard: it is on the page body, or what had it left the page. */
-function adrift(): boolean {
+export function adrift(): boolean {
   const now = document.activeElement;
   return !(now instanceof HTMLElement) || now === document.body || !now.isConnected;
 }

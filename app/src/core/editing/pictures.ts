@@ -1,7 +1,7 @@
 // Pictures pasted | dropped into an editor: which files count, the clipboard read, their type, the size rules,
 // the link written, the address Edit paints (the markdown path stays relative).
 
-import { assetPathOf } from "../doc/enhance";
+import { assetPathOf, WEB_ADDRESS } from "../doc/enhance";
 import { resolveLink } from "./source/complete";
 
 /** Asks first above this size. */
@@ -83,18 +83,22 @@ const REMOTE = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
 
 /**
  * Address for an `<img>` in Edit. `src` stays the markdown path on the node.
- * A local path (and `pm-asset:`) becomes `asset(vaultPath)`. `http`, `data:`, `blob:` stay.
+ * A local path (and `pm-asset:`) becomes `asset(vaultPath)`. `data:`, `blob:` stay.
+ * A web address is never fetched from here (as in View): the picture the person fetched in this window (`kept`), else
+ * null (Edit shows View's chip).
  * A path that climbs out of the project stays as written.
  */
 export function pictureDisplayUrl(
   doc: string,
   src: string,
   asset: (vaultPath: string) => string,
-): string {
+  kept: (url: string) => string | undefined,
+): string | null {
   const trimmed = src.trim();
   if (trimmed === "") return "";
   const fromAsset = assetPathOf(trimmed);
   if (fromAsset !== null) return fromAsset === "" ? trimmed : asset(fromAsset);
+  if (WEB_ADDRESS.test(trimmed)) return kept(trimmed) ?? null;
   if (REMOTE.test(trimmed)) return trimmed;
   // a leading `/` is the project root, the same rule as the reading view
   const vault = resolveLink(trimmed.startsWith("/") ? "_.md" : doc, trimmed);

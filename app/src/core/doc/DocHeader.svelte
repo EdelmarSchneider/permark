@@ -14,7 +14,7 @@
   import { revealInTree } from "../explorer/current";
   import ContextMenu from "../explorer/ContextMenu.svelte";
   import type { MenuEntry } from "../explorer/menu";
-  import { language, t, type MessageKey } from "../i18n";
+  import { formatLocale, t, type MessageKey } from "../i18n";
   import { conditions } from "../conditions/context.svelte";
   import { contributions } from "../plugins/instance.svelte";
   import Badge from "../shell/Badge.svelte";
@@ -120,7 +120,7 @@
     if (savedMs === null) return null;
     const seconds = Math.max(0, Math.round((now - savedMs) / 1000));
     if (seconds < 20) return t("doc.savedNow");
-    const rtf = compactRelativeFormat(language.locale);
+    const rtf = compactRelativeFormat(formatLocale());
     const [value, unit]: [number, Intl.RelativeTimeFormatUnit] =
       seconds < 3600
         ? [Math.round(seconds / 60), "minute"]

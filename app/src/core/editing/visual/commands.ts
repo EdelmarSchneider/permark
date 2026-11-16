@@ -18,14 +18,22 @@ import {
   wrapInOrderedListCommand,
 } from "@milkdown/kit/preset/commonmark";
 import {
-  addColAfterCommand,
   addRowAfterCommand,
+  addRowBeforeCommand,
   insertTableCommand,
   toggleStrikethroughCommand,
 } from "@milkdown/kit/preset/gfm";
 import type { MarkType, Node as PMNode, ResolvedPos } from "@milkdown/kit/prose/model";
 import { NodeSelection, type EditorState, type Transaction } from "@milkdown/kit/prose/state";
-import { deleteColumn, deleteRow, deleteTable } from "@milkdown/kit/prose/tables";
+import {
+  addColumnAfter,
+  addColumnBefore,
+  deleteColumn,
+  deleteRow,
+  deleteTable,
+  isInTable,
+  selectedRect,
+} from "@milkdown/kit/prose/tables";
 import type { CmdKey } from "@milkdown/kit/core";
 import { callCommand } from "@milkdown/kit/utils";
 import { LOCKED, type Core } from "./core";
@@ -41,6 +49,8 @@ export type Format = {
   link: string | null;
   list: "bullet" | "ordered" | "task" | null;
   table: boolean;
+  /** The caret is in the header row of a table (no row can go above it). */
+  tableHeader: boolean;
   /** The selection is on a locked block: nothing to do there. */
   locked: boolean;
   /** Language of the code block the caret is in. */
@@ -96,6 +106,7 @@ export function formatOf(state: EditorState): Format {
     link: link ?? null,
     list,
     table: ancestor($from, "table") !== null,
+    tableHeader: ancestor($from, "table_header_row") !== null,
     locked: selected?.type.name === LOCKED,
     language: block === "code" ? String(parent.attrs.language ?? "") : null,
   };
@@ -109,7 +120,8 @@ export type Command =
   | { kind: "indent" | "outdent" }
   | { kind: "quote" | "rule" | "codeBlock" }
   | { kind: "language"; language: string }
-  | { kind: "table" | "addRow" | "addColumn" | "deleteRow" | "deleteColumn" | "deleteTable" }
+  | { kind: "table" | "addRow" | "addRowAbove" | "addColumn" | "addColumnLeft" }
+  | { kind: "deleteRow" | "deleteColumn" | "deleteTable" }
   | { kind: "image"; src: string; alt: string }
   /** Plain text to insert at the caret (a picker's character). */
   | { kind: "text"; text: string };
@@ -172,8 +184,14 @@ export function run(core: Core, command: Command): boolean {
       return act(core, insertTableCommand.key, { row: 3, col: 3 });
     case "addRow":
       return act(core, addRowAfterCommand.key);
+    case "addRowAbove":
+      // a GFM table's header is always its first row: nothing goes above it
+      if (formatOf(view.state).tableHeader) return false;
+      return act(core, addRowBeforeCommand.key);
     case "addColumn":
-      return act(core, addColAfterCommand.key);
+      return addColumn(core, "right");
+    case "addColumnLeft":
+      return addColumn(core, "left");
     case "deleteRow":
       return deleteRow(view.state, view.dispatch);
     case "deleteColumn":
@@ -192,6 +210,34 @@ export function run(core: Core, command: Command): boolean {
     default:
       return command satisfies never;
   }
+}
+
+/**
+ * A column beside the caret's. Its cells would take the schema's default alignment (left, written `:-`): it gets none
+ * (`---`), as a column is mostly written, unless every other column has one. The header cell is enough: the table
+ * plugin gives each body cell its header's alignment.
+ */
+function addColumn(core: Core, side: "left" | "right"): boolean {
+  const view = core.view;
+  if (!isInTable(view.state)) return false;
+  const rect = selectedRect(view.state);
+  const at = side === "left" ? rect.left : rect.right;
+  const add = side === "left" ? addColumnBefore : addColumnAfter;
+  return add(view.state, (tr) => {
+    // the table's first row (the insert happens inside the table: its start stays)
+    const header = tr.doc.nodeAt(rect.tableStart);
+    const cell = header?.maybeChild(at);
+    let explicit = true;
+    header?.forEach((other, _offset, index) => {
+      if (index !== at && other.attrs.alignment === null) explicit = false;
+    });
+    if (header && cell && !explicit) {
+      let pos = rect.tableStart + 1;
+      for (let i = 0; i < at; i++) pos += header.child(i).nodeSize;
+      tr.setNodeMarkup(pos, undefined, { ...cell.attrs, alignment: null });
+    }
+    view.dispatch(tr);
+  });
 }
 
 /** A list of the other kind around the caret becomes this kind (bullet <-> ordered). */

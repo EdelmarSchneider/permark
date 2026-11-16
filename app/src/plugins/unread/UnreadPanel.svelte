@@ -4,7 +4,7 @@
   import CheckCheck from "@lucide/svelte/icons/check-check";
   import ChevronsDown from "@lucide/svelte/icons/chevrons-down";
   import { documents } from "../../core/doc/document.svelte";
-  import { language, t, tn } from "../../core/i18n";
+  import { formatLocale, t, tn } from "../../core/i18n";
   import OnlyProject from "../../core/projects/OnlyProject.svelte";
   import { nextUnread, unread } from "./store.svelte";
 
@@ -22,7 +22,7 @@
   $effect(() => () => unread.showOnly(null));
   const when = $derived(
     since && since.atMs > 0
-      ? new Date(since.atMs).toLocaleString(language.locale, {
+      ? new Date(since.atMs).toLocaleString(formatLocale(), {
           dateStyle: "medium",
           timeStyle: "short",
         })

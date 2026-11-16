@@ -1,6 +1,6 @@
 {
   "name": "permark",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "description": "A unified document workspace: read, write and organize Markdown and the files around it. Free and open source.",
   "license": "MIT OR Apache-2.0",
   "author": "Edelmar Schneider",
@@ -28,6 +28,7 @@
     "ux:probe": "node e2e/probe/cli.ts",
     "ux:parity": "node e2e/parity/cli.ts",
     "ux:calibrate": "node e2e/calibration/calibrate.ts",
+    "deep": "node e2e/deep/cli.ts",
     "notices": "node scripts/third-party-notices.mjs",
     "gen:languages": "node scripts/gen-code-languages.mjs && prettier --write src/plugins/highlight/languageData.ts"
   },

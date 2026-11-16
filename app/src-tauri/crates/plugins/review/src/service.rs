@@ -679,9 +679,6 @@ impl Shared {
     }
 
     fn save_seen(&self) {
-        if !self.store.writes() {
-            return;
-        }
         let Some(file) = &self.files.seen else { return };
         let docs = lock(&self.seen)
             .iter()
@@ -953,9 +950,6 @@ impl Shared {
     }
 
     fn save_held(&self) {
-        if !self.store.writes() {
-            return;
-        }
         let Some(file) = &self.files.held else { return };
         let docs = lock(&self.held)
             .values()
@@ -1168,8 +1162,6 @@ impl std::fmt::Debug for ReviewService {
 }
 
 impl ReviewService {
-    /// `persist`: `false` for a reader with no window (`files_only`): copies, `held` and `seen` are read, never
-    /// written of the service's own accord.
     #[must_use]
     pub fn start(
         project: ProjectServices,
@@ -1177,10 +1169,8 @@ impl ReviewService {
         store: StateStore,
         id: PluginId,
         files: Files,
-        persist: bool,
     ) -> Self {
         let copies = CopyStore::new(store, id);
-        let copies = if persist { copies } else { copies.read_only() };
         let held = load_held(&files);
         let seen = load_seen(&files);
         let prefs = files

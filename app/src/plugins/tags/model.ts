@@ -24,10 +24,12 @@ export {
 
 /** The canonical form of a tag: trimmed, lowercased, whitespace runs turned into one `-`, cut to 40 characters. */
 export function normalizeTag(raw: string): string | null {
+  // "İ" lowercases to "i" + a combining dot that no typed "i" equals; a plain "I" -> "i" whatever the language
   const joined = raw
     .split(/\s+/)
     .filter((w) => w !== "")
     .join("-")
+    .replaceAll("İ", "i")
     .toLowerCase();
   const tag = [...joined].slice(0, MAX_TAG_CHARS).join("");
   return tag === "" ? null : tag;

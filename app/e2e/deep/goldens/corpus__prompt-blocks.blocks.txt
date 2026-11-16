@@ -1,0 +1,30 @@
+# corpus/prompt-blocks.md
+format: markdown
+front matter: {"syntax":"yaml","raw":"title: A prompt file\ntags: [prompt]\n","fields":[{"key":"title","value":{"type":"text","text":"A prompt file"}},{"key":"tags","value":{"type":"list","items":["prompt"]}}]}
+outline: Prompt blocks (line 6)
+--- h1 6-6
+<h1 dir="auto" id="prompt-blocks">Prompt blocks</h1>
+--- details 10-10
+<details class="prompt-block" data-tag="system" open=""><summary>system</summary>
+<p dir="auto">You are a careful assistant writing for <span class="tvar">{{audience}}</span> about week <span class="tvar">{{week}}</span>.</p>
+</details>
+--- details 16-18
+<details class="prompt-block" data-tag="context" open=""><summary>context</summary>
+<ul>
+<li dir="auto">The data sheet: @station/readings.toon</li>
+<li dir="auto">The style guide: @style-guide.md</li>
+</ul>
+</details>
+--- details 23-25
+<details class="prompt-block" data-tag="instructions" open=""><summary>instructions</summary>
+<ol>
+<li dir="auto">Read the context.</li>
+<li dir="auto">Write no more than <span class="tvar">{{max_words}}</span> words.</li>
+</ol>
+</details>
+--- details 29-29
+<details class="prompt-block" data-tag="example" open=""><summary>example</summary>
+<p dir="auto">A short example answer.</p>
+</details>
+--- p 32-32
+<p dir="auto">Text after the blocks, with a <code>{{variable}}</code> in code that stays as it is.</p>

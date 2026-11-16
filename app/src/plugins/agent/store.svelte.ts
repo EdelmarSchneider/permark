@@ -2,7 +2,14 @@
 // context it publishes while the switch is on (debounced), and the places an agent asks to show. Dormant while off:
 // nothing is published and nothing is shown but the settings section, its gear row and the once-only offer.
 
-import type { AgentStatus, AgentWindowContext, PluginEvents, Result } from "../../api";
+import type {
+  AgentSession,
+  AgentStatus,
+  AgentWindowContext,
+  PluginEvents,
+  ProjectNotes,
+  Result,
+} from "../../api";
 import { documents } from "../../core/doc/document.svelte";
 import { editing } from "../../core/editing/session.svelte";
 import { t } from "../../core/i18n";
@@ -29,6 +36,9 @@ export class AgentStore {
   program = $state<string | null>(null);
   /** The popover of the status item is open. */
   popover = $state(false);
+  /** The notes shared with this project and the ones that can be added; `null`: not read yet | the notes plugin is
+   *  off (then nothing about notes is drawn). */
+  sharedNotes = $state.raw<ProjectNotes | null>(null);
   #page = $state.raw<PageSelection>(null);
   #sent: AgentWindowContext | null = null;
   readonly #client: PluginClient;
@@ -48,20 +58,29 @@ export class AgentStore {
     this.#show = show ?? showPlace;
   }
 
+  // derived: effects that follow the switch run again only when it turns, not on every status the backend sends
+  readonly #enabled = $derived(this.status?.enabled === true);
+
   get enabled(): boolean {
-    return this.status?.enabled === true;
+    return this.#enabled;
+  }
+
+  /** Connected agents, the earliest first (none unless the server listens). */
+  get sessions(): AgentSession[] {
+    return this.status?.server.state === "listening" ? this.status.sessions : [];
   }
 
   get connected(): string[] {
-    return this.status?.server.state === "listening" ? this.status.clients : [];
+    return this.sessions.map((s) => s.name);
   }
 
   /** Follows the project of the window until the returned teardown runs. */
   start(): () => void {
     return $effect.root(() => {
       $effect(() => {
-        // a new project starts unknown: the last project's switch never stands for this one
+        // a new project starts unknown: the last project's switch and shares never stand for this one
         this.status = null;
+        this.sharedNotes = null;
         if (this.#root() === null) return;
         let gone = false;
         const offs: (() => void)[] = [];
@@ -70,7 +89,12 @@ export class AgentStore {
           else offs.push(stop);
         };
         void this.#client.on("agent:status", (status) => (this.status = status)).then(keep);
-        void this.#client.on("agent:open", (place) => this.#show(place)).then(keep);
+        // with the project in several windows, only the one the person used last shows the place
+        void this.#client
+          .on("agent:open", (place) => {
+            if (place.window === null || place.window === windowStore.label) this.#show(place);
+          })
+          .then(keep);
         void this.#client.on("agent:ask", (ask) => this.#offer(ask.group)).then(keep);
         void this.#client.call("agent.status", {}).then((result) => {
           if (!gone && result.ok) this.status = result.value;
@@ -92,6 +116,14 @@ export class AgentStore {
           document.removeEventListener("selectionchange", read);
           this.#page = null;
         };
+      });
+      // the person turning to this window makes it the one the agent hears about, only while the switch is on
+      $effect(() => {
+        if (!this.enabled) return;
+        const focused = (): void => void this.#client.call("agent.focused", {});
+        if (document.hasFocus()) focused();
+        window.addEventListener("focus", focused);
+        return () => window.removeEventListener("focus", focused);
       });
       // publishing what the person looks at, a moment after it changes, only while the switch is on
       $effect(() => {
@@ -140,6 +172,60 @@ export class AgentStore {
 
   async setGroup(group: string, on: boolean): Promise<void> {
     this.#apply(await this.#client.call("agent.setGroup", { group, on }));
+  }
+
+  /** Ends one agent's access (its id is refused until it restarts); a notice offers Undo. `name` = as listed. */
+  async disconnect(id: string, name: string): Promise<boolean> {
+    const ok = this.#apply(await this.#client.call("agent.disconnect", { id }));
+    if (ok) {
+      windowStore.notifyKeyed(
+        `agent.disconnect.${id}`,
+        t("agent.sessions.disconnected", { name }),
+        {
+          label: t("fileOps.undo"),
+          run: () => this.undoDisconnect(id),
+        },
+      );
+    }
+    return ok;
+  }
+
+  /** Lifts the refusal: that agent pairs again on its next request. */
+  async undoDisconnect(id: string): Promise<void> {
+    this.#apply(await this.#client.call("agent.undoDisconnect", { id }));
+  }
+
+  /** Reads the notes shared with this project again (the popover opens, the settings section shows, a change). An
+   *  answer that comes after the window turned to another project is dropped (it was that project's list). */
+  async refreshNotes(): Promise<void> {
+    const root = this.#root();
+    const result = await this.#client.call("agent.sharedNotes", {});
+    if (this.#root() !== root) return;
+    this.sharedNotes = result.ok ? result.value : null;
+  }
+
+  /** Shares a note with this project's agents; false = refused (said in a notice, the list read again). */
+  async shareNote(name: string): Promise<boolean> {
+    return this.#notesChange(() => this.#client.call("agent.shareNote", { name }));
+  }
+
+  /** Stops sharing a note with this project's agents; false = refused (said in a notice, the list read again). */
+  async unshareNote(name: string): Promise<boolean> {
+    return this.#notesChange(() => this.#client.call("agent.unshareNote", { name }));
+  }
+
+  async #notesChange(change: () => Promise<Result<ProjectNotes>>): Promise<boolean> {
+    const root = this.#root();
+    const result = await change();
+    // the window turned to another project meanwhile: the answer is the earlier project's list
+    if (this.#root() !== root) return result.ok;
+    if (result.ok) {
+      this.sharedNotes = result.value;
+      return true;
+    }
+    windowStore.notifyNote(t("agent.notSaved"));
+    await this.refreshNotes();
+    return false;
   }
 
   async setDefaults(): Promise<void> {

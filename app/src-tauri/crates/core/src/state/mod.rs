@@ -22,12 +22,17 @@ use crate::fsx::write_atomic;
 use crate::paths::Root;
 use crate::plugins::PluginId;
 
-pub use raw::RawFile;
+pub use raw::{RawFile, SHARED_MAX_BYTES};
 pub use shared_write::{merge3, FileLock};
 
 pub const PERMARK_DIR: &str = ".permark";
 /// Per-project files that ALWAYS stay in the profile (a project's files must never switch them).
-pub const PROFILE_ONLY: [&str; 3] = ["agent.json", "plugins.json", "pictures.json"];
+pub const PROFILE_ONLY: [&str; 4] = [
+    "agent.json",
+    "agent-refused.json",
+    "plugins.json",
+    "pictures.json",
+];
 /// Per-project files that live in the shared `.permark/` itself (never in `local/`).
 pub const SHARED_FILES: [&str; 1] = ["meta.toml"];
 

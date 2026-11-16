@@ -16,6 +16,7 @@ import {
   placeOf,
   shortFolder,
   shownName,
+  stopSharingItems,
 } from "./model";
 
 const NOW = new Date(2026, 9, 19, 15, 0).getTime();
@@ -30,7 +31,7 @@ function entry(over: Partial<NoteEntry> & { path: string }): NoteEntry {
     modifiedMs: NOW,
     size: 1,
     pinned: false,
-    shared: false,
+    sharedWith: [],
     copied: false,
     recovered: false,
     folder: null,
@@ -201,18 +202,43 @@ describe("names and places", () => {
 describe("marks", () => {
   it("reads the row's state", () => {
     const marks = marksOf(
-      entry({ path: "a.md", recovered: true, shared: true, copied: true, state: "unsaved" }),
+      entry({
+        path: "a.md",
+        recovered: true,
+        sharedWith: [{ project: "p1", label: "Alpha" }],
+        copied: true,
+        state: "unsaved",
+      }),
     );
     expect(marks).toEqual({
       recovered: true,
       unsaved: true,
       changed: false,
       gone: false,
-      shared: true,
+      shared: ["Alpha"],
       copied: true,
     });
     expect(marksOf(entry({ path: "b.md", state: "gone" })).gone).toBe(true);
     expect(marksOf(entry({ path: "b.md", state: "changedOnDisk" })).changed).toBe(true);
+    expect(marksOf(entry({ path: "b.md" })).shared).toEqual([]);
+  });
+});
+
+describe("stop sharing items", () => {
+  it("offers nothing for a note shared with no project, one plain item for one, one per project for several", () => {
+    expect(stopSharingItems([])).toEqual([]);
+    expect(stopSharingItems([{ project: "p1", label: "Alpha" }])).toEqual([
+      { project: "p1", label: null },
+    ]);
+    expect(
+      stopSharingItems([
+        { project: "p1", label: "Alpha" },
+        { project: "p2", label: "Beta" },
+      ]),
+    ).toEqual([
+      { project: "p1", label: "Alpha" },
+      { project: "p2", label: "Beta" },
+    ]);
   });
 });
 

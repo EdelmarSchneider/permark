@@ -1,6 +1,6 @@
 // Plugin `broken-links`: the Markdown links of the project whose target file is missing, by document and line. Click
 // opens the document at the line. Mod+Shift+b opens this panel. The list is kept true by the backend as the project
-// changes.
+// changes. While on, View and Edit mark the links whose target is missing.
 
 import Unlink from "@lucide/svelte/icons/unlink";
 import { NO_REQUIREMENT } from "../../core/conditions/available";
@@ -36,6 +36,7 @@ export default definePlugin({
         command: "brokenLinks.show",
         requires: NO_REQUIREMENT,
       }),
+      cx.contribute({ kind: "linkMarks", id: "brokenLinks.marks", requires: NO_REQUIREMENT }),
     ];
     return () => {
       for (const remove of removals) remove();

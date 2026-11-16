@@ -158,10 +158,11 @@ fn create(handle: &AppHandle, window: &str, view: &str) {
         // a middle | Shift click on a link, or `window.open`, never opens a web view window the app does not manage:
         // the app follows links itself; refused here, not left to the web view library's default
         .on_new_window(|_url, _features| NewWindowResponse::Deny);
-    // the web view keeps its data in PerMark's own cache folder (Windows, Linux; debug builds in the `PerMark-dev`
-    // one), never in a folder named after the app identifier: a development build and an installed one never share it
     #[cfg(not(target_os = "macos"))]
-    let builder = builder.data_directory(state(handle).env.dirs.cache.join("webview"));
+    let builder = match data_directory(&state(handle).env) {
+        Some(dir) => builder.data_directory(dir),
+        None => builder,
+    };
     match native.add_child(builder, PhysicalPosition::new(0, 0), size) {
         Ok(_) => {
             let (handle, view) = (handle.clone(), view.to_owned());
@@ -174,6 +175,13 @@ fn create(handle: &AppHandle, window: &str, view: &str) {
     }
 }
 
+/// The web view data folder of every webview the app makes: PerMark's own cache folder (Windows, Linux; debug builds
+/// in the `PerMark-dev` one), never a folder named after the app identifier, so a development build and an installed
+/// one never share it. `None` on macOS (the system keeps it).
+pub fn data_directory(env: &permark_core::workspace::CoreEnv) -> Option<std::path::PathBuf> {
+    cfg!(not(target_os = "macos")).then(|| env.dirs.cache.join("webview"))
+}
+
 /// The page background of the theme (tokens `--bg`), so a view loading shows the app's color, not white.
 fn page_color(handle: &AppHandle, native: &tauri::Window) -> tauri::window::Color {
     use permark_core::settings::{ThemePref, Tone};
@@ -184,7 +192,7 @@ fn page_color(handle: &AppHandle, native: &tauri::Window) -> tauri::window::Colo
         ThemePref::System => native.theme().is_ok_and(|t| t == tauri::Theme::Dark),
     };
     let (r, g, b) = match (dark, settings.tone) {
-        (true, _) => (0x16, 0x17, 0x1a),
+        (true, _) => (0x14, 0x15, 0x19),
         (false, Tone::White) => (0xff, 0xff, 0xff),
         (false, Tone::Paper) => (0xf6, 0xf0, 0xe1),
         (false, Tone::Sage) => (0xea, 0xf1, 0xe3),

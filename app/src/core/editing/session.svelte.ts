@@ -25,6 +25,7 @@ import {
 } from "./docMachine";
 import { setLeaveGuard } from "./guard";
 import { lineEdits } from "./lines";
+import { DEFAULT_LAYER, type MarkOptions } from "./marks";
 
 export type EditMode = "view" | "edit" | "source";
 
@@ -61,16 +62,29 @@ export type ActiveEditor = {
   /** All `edits` (ranges of the text now, not overlapping) in one undo step; `false` and no change when any range no
    *  longer reads its `expect`. Only `insert` goes in: nothing else of the text changes. */
   apply?(edits: readonly TextEdit[]): boolean;
+  /** Puts `text` in as if typed: over the selection (every range in Source), caret after it scrolled into view. The
+   *  keyboard stays where it is (the caller, a panel, keeps it). `false` and no change when the text cannot go there
+   *  (a block kept as written in Edit, composing, read-only). The code points go in as given (no normalization). */
+  insert?(text: string): boolean;
   /** Whether `apply` would take an edit of `range` as the text stands (Edit: not in a block kept as written); with
    *  `insert`: that very edit. Nothing changes. Absent: any range can change (Source). */
   changeable?(range: TextRange, insert?: string): boolean;
   /** Selects `range` and scrolls it into view (Edit: the block scrolled into view when the range is not found in it). */
   reveal?(range: TextRange): void;
-  /** Marks `ranges` in the text (decoration only), `current` distinct; a click on one -> `pick(its index)`. Marks follow
-   *  edits until the next call; an empty list clears them. */
-  marks?(ranges: readonly TextRange[], current: number | null, pick: (index: number) => void): void;
-  /** Index (in the last `marks`) of the mark holding the caret; `null`: none. */
-  markAt?(): number | null;
+  /** Marks `ranges` in the text on `layer` (decoration only), `current` distinct; a click on one -> `pick(its index)`,
+   *  a right-click -> `options.menu`. Marks follow edits until the next call for that layer; an empty list clears the
+   *  layer. Other layers stay as they are. */
+  marks?(
+    ranges: readonly TextRange[],
+    current: number | null,
+    pick: (index: number) => void,
+    layer: string,
+    options: MarkOptions,
+  ): void;
+  /** Index (in the last `marks` of `layer`) of the mark holding the caret; `null`: none. */
+  markAt?(layer: string): number | null;
+  /** The webview's own spellcheck over the text on | off. */
+  spellcheck?(on: boolean): void;
   /** Text is being composed (IME): edits wait. */
   composing?(): boolean;
   /** Some block of the text would read back otherwise than shown (a formula | link as text): a save says so. */
@@ -85,11 +99,12 @@ export type ActiveEditor = {
   showHeading?(index: number): void;
 };
 
-/** The last `marks` handed to the editors. */
+/** The last `marks` of a layer handed to the editors. */
 type Marks = {
   ranges: readonly TextRange[];
   current: number | null;
   pick: (index: number) => void;
+  options: MarkOptions;
 };
 
 /** What an editor mounts with. `line`: put this line at the top. */
@@ -171,8 +186,9 @@ export class EditingSession {
   #unguard: (() => void) | null = null;
   /** The block map the backend gave with the text it was made from: only that exact text may reuse it. */
   #loadedSegments: { text: string; segments: Segment[] } | null = null;
-  /** Marks shown now: the editor made next (Edit <-> Source) shows them too. */
-  #marks: Marks | null = null;
+  /** Marks shown now, per layer: the editor made next (Edit <-> Source) shows them too. */
+  #marks = new Map<string, Marks>();
+  #nativeSpellcheck = $state(true);
   /** The last save wrote a text that reads back otherwise (`ActiveEditor.lost`). */
   #lostSaved = false;
 
@@ -374,7 +390,7 @@ export class EditingSession {
     this.text = "";
     this.selection = "";
     this.#loadedSegments = null;
-    this.#marks = null;
+    this.#marks.clear();
     this.#lostSaved = false;
     this.#clearTimers();
   }
@@ -410,8 +426,10 @@ export class EditingSession {
     this.#editor = editor;
     this.finder = editor.find ?? null;
     this.text = editor.text();
-    const marks = this.#marks;
-    if (marks !== null) editor.marks?.(marks.ranges, marks.current, marks.pick);
+    for (const [layer, m] of this.#marks) {
+      editor.marks?.(m.ranges, m.current, m.pick, layer, m.options);
+    }
+    editor.spellcheck?.(this.#nativeSpellcheck);
     return () => {
       if (this.#editor === editor) this.#editor = null;
       if (editor.find !== undefined && this.finder === editor.find) this.finder = null;
@@ -449,6 +467,14 @@ export class EditingSession {
     return editor.apply(edits);
   }
 
+  /** Puts `text` into the editor on screen as if typed, without moving the keyboard there. `false` (nothing changed):
+   *  no editor takes text, it is composing, `text` is empty, or the editor refused it where the caret is. */
+  insert(text: string): boolean {
+    const editor = this.#editor;
+    if (!editor?.insert || text === "" || editor.composing?.() === true) return false;
+    return editor.insert(text);
+  }
+
   /** Whether the editor on screen would take an edit of `range` (with `insert`: that very edit); one that does not
    *  say (or none on screen) takes any: `apply` still checks each edit. */
   changeable(range: TextRange, insert?: string): boolean {
@@ -460,15 +486,34 @@ export class EditingSession {
     this.#editor?.reveal?.(range);
   }
 
-  /** Marks `ranges` in the editor on screen and in the next one made for this document (an empty list clears them). */
-  marks(ranges: readonly TextRange[], current: number | null, pick: (index: number) => void): void {
-    this.#marks = ranges.length === 0 ? null : { ranges, current, pick };
-    this.#editor?.marks?.(ranges, current, pick);
+  /** Marks `ranges` on `layer` in the editor on screen and in the next one made for this document (an empty list
+   *  clears that layer). Each layer is its own: setting one never changes another. */
+  marks(
+    ranges: readonly TextRange[],
+    current: number | null,
+    pick: (index: number) => void,
+    layer: string = DEFAULT_LAYER,
+    options: MarkOptions = {},
+  ): void {
+    if (ranges.length === 0) this.#marks.delete(layer);
+    else this.#marks.set(layer, { ranges, current, pick, options });
+    this.#editor?.marks?.(ranges, current, pick, layer, options);
   }
 
-  /** Index of the mark holding the caret in the editor on screen (`null`: none, or no editor offers it). */
-  markAt(): number | null {
-    return this.#editor?.markAt?.() ?? null;
+  /** Index of the mark of `layer` holding the caret in the editor on screen (`null`: none, or no editor offers it). */
+  markAt(layer: string = DEFAULT_LAYER): number | null {
+    return this.#editor?.markAt?.(layer) ?? null;
+  }
+
+  /** The webview's own spellcheck over the editors' text (on unless a feature checks the words itself). */
+  get nativeSpellcheck(): boolean {
+    return this.#nativeSpellcheck;
+  }
+
+  /** Turns the webview's own spellcheck on | off in the editor on screen and in every one made next. */
+  setNativeSpellcheck(on: boolean): void {
+    this.#nativeSpellcheck = on;
+    this.#editor?.spellcheck?.(on);
   }
 
   /** The editor on screen is composing text (IME). */

@@ -5,6 +5,8 @@
 use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::UnicodeNormalization;
 
+use super::fold::base_letter;
+
 /// One matched path: higher score is better; `positions` are indices (characters) of the matched characters.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Match {
@@ -12,14 +14,14 @@ pub struct Match {
     pub positions: Vec<u32>,
 }
 
-/// One character folded to one character: lowercase, accent gone (`É` -> `e`).
+/// One character folded to one character: lowercase, accent gone (`É` -> `e`, `Đ` -> `d`).
 #[must_use]
 pub fn fold_char(c: char) -> char {
     if c.is_ascii() {
         return c.to_ascii_lowercase();
     }
     let base = c.nfkd().next().unwrap_or(c);
-    base.to_lowercase().next().unwrap_or(base)
+    base_letter(base.to_lowercase().next().unwrap_or(base))
 }
 
 /// The text with every character folded; same character count as the original.

@@ -65,6 +65,9 @@ pub struct BootInfo {
     /// Opens from outside that failed before this window could listen.
     pub failures: Vec<OpenFailed>,
     pub platform: Platform,
+    /// The system's format region (`en-IN`): Windows' regional format, Linux's locale of dates; `None` when the system
+    /// names none.
+    pub region: Option<String>,
 }
 
 /// One plugin as the Plugins page shows it, for the invoking window.
@@ -113,6 +116,7 @@ pub fn window_boot(handle: AppHandle, window: Webview) -> BootInfo {
         notices: shell.take_notices(),
         failures: shell.window_booted(&label),
         platform: Platform::current(),
+        region: permark_core::settings::system_region(),
         label,
     }
 }
@@ -311,6 +315,31 @@ pub fn settings_get(handle: AppHandle) -> AppSettings {
 #[tauri::command(async)]
 pub fn settings_set(handle: AppHandle, change: SettingChange) -> Result<AppSettings, IpcError> {
     Ok(state(&handle).change_setting(&change)?)
+}
+
+/// Reads the symbol groups file again (a picker | the panel | the settings opened); a change arrives as
+/// `settings-changed`.
+#[tauri::command(async)]
+pub fn characters_refresh(handle: AppHandle) {
+    state(&handle).refresh_characters();
+}
+
+/// Writes the built-in groups file when none is there; `false`: a file is there (never written over) | no name set.
+#[tauri::command(async)]
+pub fn characters_create(handle: AppHandle) -> Result<bool, IpcError> {
+    state(&handle).create_characters()
+}
+
+/// Shows the groups file (else the profile folder) in the file manager. The path comes from the settings, never from
+/// the window.
+#[tauri::command(async)]
+pub fn characters_reveal(handle: AppHandle) -> Result<(), IpcError> {
+    let target = state(&handle).characters_target();
+    handle.opener().reveal_item_in_dir(&target).map_err(|e| {
+        IpcError::new(ErrorKind::Io)
+            .subject(target.display().to_string())
+            .detail(e.to_string())
+    })
 }
 
 fn project_session(handle: &AppHandle, label: &str) -> Result<ProjectSession, IpcError> {
@@ -1273,29 +1302,36 @@ pub fn search_recent(
 
 /// Calls a method a running plugin of the window's project serves (data in, data out). A plugin that is off, or a
 /// method nobody serves, is `Unavailable`.
-#[tauri::command(async)]
-pub fn plugin_call(
+///
+/// Runs on the blocking pool: a method may wait minutes on the person (a Save | print dialog, a long conversion)
+/// and must not hold one of the few async workers every other command shares.
+#[tauri::command]
+pub async fn plugin_call(
     handle: AppHandle,
     window: Webview,
     plugin: String,
     method: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, IpcError> {
-    let call = RpcCall {
-        window: window.label().to_owned(),
-        args,
-    };
-    // an app plugin (the notes) answers from anywhere: the welcome screen and the Notes tab have no project
-    let shell = state(&handle);
-    let app_scope = PluginId::parse(&plugin)
-        .and_then(|id| shell.env.registry.manifest(&id).map(|m| m.scope))
-        == Some(PluginScope::App);
-    if app_scope {
-        return shell.env.rpc().call(&plugin, &method, &call);
-    }
-    project_of(&handle, &window)?
-        .rpc()
-        .call(&plugin, &method, &call)
+    tauri::async_runtime::spawn_blocking(move || {
+        let call = RpcCall {
+            window: window.label().to_owned(),
+            args,
+        };
+        // an app plugin (the notes) answers from anywhere: the welcome screen and the Notes tab have no project
+        let shell = state(&handle);
+        let app_scope = PluginId::parse(&plugin)
+            .and_then(|id| shell.env.registry.manifest(&id).map(|m| m.scope))
+            == Some(PluginScope::App);
+        if app_scope {
+            return shell.env.rpc().call(&plugin, &method, &call);
+        }
+        project_of(&handle, &window)?
+            .rpc()
+            .call(&plugin, &method, &call)
+    })
+    .await
+    .map_err(|e| IpcError::new(ErrorKind::Internal).detail(e.to_string()))?
 }
 
 /// Asks this view's window to close: at once when nothing is unsaved, else one prompt (`close-requested`).
@@ -1422,11 +1458,71 @@ pub fn default_app_handoff(handle: AppHandle) -> Result<(), IpcError> {
     crate::default_app::handoff(&handle, &shell.env.dirs, shell.env.distribution)
 }
 
+// ---- Demo pages -----------------------------------------------------------------------------------------------------
+
+/// Where the demo pages are: the folder shipped with the app, and `PerMark Demo` in the person's Documents folder (the
+/// home folder where the system names no Documents folder, as a Linux without XDG user folders).
+fn demo_places(handle: &AppHandle) -> permark_core::demo::DemoPlaces {
+    let paths = handle.path();
+    permark_core::demo::DemoPlaces {
+        bundled: paths
+            .resource_dir()
+            .ok()
+            .map(|dir| dir.join(permark_core::demo::RESOURCE)),
+        target: paths
+            .document_dir()
+            .or_else(|_| paths.home_dir())
+            .ok()
+            .map(|dir| dir.join(permark_core::demo::FOLDER)),
+    }
+}
+
+/// What the Welcome screen offers: copy the demo pages into Documents, open the folder there, or nothing.
+#[tauri::command(async)]
+pub fn demo_offer(handle: AppHandle) -> permark_core::demo::DemoOffer {
+    permark_core::demo::offer(&state(&handle).app_store, &demo_places(&handle))
+}
+
+/// The demo pages' folder in Documents, copied there first when nothing is at its place (never written into); the
+/// window opens it next.
+#[tauri::command(async)]
+pub fn demo_install(handle: AppHandle) -> Result<String, IpcError> {
+    permark_core::demo::install(&state(&handle).app_store, &demo_places(&handle))
+        .map(|path| path.display().to_string())
+}
+
+/// The person dismissed the demo pages offer: not shown again.
+#[tauri::command(async)]
+pub fn demo_dismiss(handle: AppHandle) -> Result<(), IpcError> {
+    permark_core::demo::dismiss(&state(&handle).app_store)
+}
+
 /// Lists every command once: Tauri handler + names (contract test).
+/// Whether a web view may call the app's commands: never an export page window (it holds a generated page only, runs
+/// no script of its own and matches no capability; refusing here keeps it so should a script ever run in it).
+fn admits(label: &str) -> bool {
+    !crate::print::is_sheet(label)
+}
+
+/// `commands`, answered only for web views [`admits`]; any other gets `Denied`.
+fn guarded(
+    commands: impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static,
+) -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    move |invoke| {
+        if !admits(invoke.message.webview_ref().label()) {
+            invoke
+                .resolver
+                .reject(IpcError::new(ErrorKind::Denied).subject("ipc"));
+            return true;
+        }
+        commands(invoke)
+    }
+}
+
 macro_rules! commands {
     ($($name:ident),+ $(,)?) => {
         pub fn handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
-            tauri::generate_handler![$($name),+]
+            guarded(tauri::generate_handler![$($name),+])
         }
 
         #[cfg(test)]
@@ -1584,6 +1680,9 @@ commands![
     recent_remove,
     settings_get,
     settings_set,
+    characters_refresh,
+    characters_create,
+    characters_reveal,
     project_session_get,
     project_session_set,
     tree_open,
@@ -1668,6 +1767,9 @@ commands![
     default_app_set,
     default_app_asked,
     default_app_handoff,
+    demo_offer,
+    demo_install,
+    demo_dismiss,
 ];
 
 #[cfg(test)]
@@ -1698,6 +1800,13 @@ mod tests {
         }
         let unique: std::collections::BTreeSet<_> = NAMES.iter().collect();
         assert_eq!(unique.len(), NAMES.len(), "duplicate command");
+    }
+
+    #[test]
+    fn export_page_windows_reach_no_app_command() {
+        assert!(admits("main"));
+        assert!(admits("view-3"));
+        assert!(!admits("export-1"));
     }
 
     #[test]

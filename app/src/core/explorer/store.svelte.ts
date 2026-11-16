@@ -21,7 +21,7 @@ import {
   type Unlisten,
 } from "../../api";
 import { IDENTITY_UNKNOWN } from "../../api/error";
-import { t, tn } from "../i18n";
+import { language, t, tn } from "../i18n";
 import type { NoticeAction } from "../window.svelte";
 import { CODE_OFFER_KEY, isAnswer, shouldOfferCode, withCode, type Answer } from "./codeOffer";
 import { DEFAULT_FILTER, filterToJson, normalizeFilter } from "./filter";
@@ -30,6 +30,7 @@ import {
   applyDelta,
   canDrop,
   depthOf,
+  inNameOrder,
   movesInto,
   nameOf,
   parentOf,
@@ -160,7 +161,9 @@ export class ExplorerStore {
   /** Whether a Refresh is under way (its button shows it; asking again meanwhile does nothing). */
   refreshing = $state.raw<Refreshing>({ status: "idle" });
 
-  rows = $derived<Row[]>(rowsOf(this.roots, this.nodes, this.expanded, this.collapsedRoots));
+  /** The list in the order of the interface language (sorted again only when the list or the language changes). */
+  #ordered = $derived<readonly TreeNode[]>(inNameOrder(this.nodes, language.locale));
+  rows = $derived<Row[]>(rowsOf(this.roots, this.#ordered, this.expanded, this.collapsedRoots));
 
   #seq = 0;
   /** Whole lists asked for (the latest answer wins: an older one landing after it would bring back a stale list). */

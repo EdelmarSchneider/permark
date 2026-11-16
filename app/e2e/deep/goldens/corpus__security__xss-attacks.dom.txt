@@ -1,0 +1,120 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        h1 id="attack-corpus" dir="auto"
+          a.anchor href="#attack-corpus" aria-label="Link to Attack corpus"
+            "#"
+          "Attack corpus"
+        p dir="auto"
+          "Every payload below tries to run script, load a page or send a request. Rendered, none may: a run that sees a dialog, the canary"
+          code
+            "window.__pmCanary"
+          ", a Content Security Policy violation or a request off this machine fails."
+        h2 id="raw-html" dir="auto"
+          a.anchor href="#raw-html" aria-label="Link to Raw HTML"
+            "#"
+          "Raw HTML"
+        img src="/@permark-deep/project/corpus/security/x"
+        img src="/@permark-deep/project/corpus/security/x"
+        input disabled
+        p dir="auto"
+          "go"
+        details open
+          summary
+            "toggle"
+          "x"
+        video src="/@permark-deep/project/corpus/security/x" controls
+        audio src="/@permark-deep/project/corpus/security/x" controls
+        p dir="auto"
+          "<p title=""
+        img src="/@permark-deep/project/corpus/security/x"
+        p dir="auto"
+          "">"
+        p dir="auto"
+        img src="/@permark-deep/project/corpus/security/x"
+        a
+          "javascript link"
+        a
+          "mixed case link"
+        a
+          "entity tab link"
+        a
+          "data link"
+        a
+          "vbscript link"
+        span.remote-image title="Picture on the web, not loaded: https://attacker.example/beacon.png. Click to lo…" role="img" aria-label="remote picture"
+          "remote picture"
+        img
+        div
+          "styled div"
+        p dir="auto"
+          "hover me"
+        p dir="auto"
+          "marquee <script>window.__pmCanary='textarea'</script>"
+        h2 id="markdown" dir="auto"
+          a.anchor href="#markdown" aria-label="Link to Markdown"
+            "#"
+          "Markdown"
+        p dir="auto"
+          a
+            "markdown javascript link"
+          a
+            "markdown data link"
+          span.remote-image title="Picture on the web, not loaded: https://attacker.example/md.png. Click to load i…" role="img" aria-label="markdown remote picture"
+            "markdown remote picture"
+          a href="https://attacker.example/autolink"
+            "https://attacker.example/autolink"
+          a
+            "reference link"
+        h2 id="diagrams" dir="auto"
+          a.anchor href="#diagrams" aria-label="Link to Diagrams"
+            "#"
+          "Diagrams"
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg flowchart-v2 sized labels: <img src="x"> | B
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg flowchart-v2 sized labels: D
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg svg sized labels: Alice | Bob | Alice | Bob | link
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg svg sized labels: dot link | html label
+        h2 id="math" dir="auto"
+          a.anchor href="#math" aria-label="Link to Math"
+            "#"
+          "Math"
+        p dir="auto"
+          span data-math-style="inline"
+            katex tex="\href{javascript:alert(1)}{\text{katex href}}"
+          "and"
+          span data-math-style="inline"
+            katex tex="\url{javascript:alert(1)}"
+          "and"
+          span data-math-style="inline"
+            katex tex="\htmlData{foo=bar}{x}"
+          "and"
+          span data-math-style="inline"
+            katex tex="\includegraphics{https://attacker.example/k.png}"
+          "."
+        h2 id="code" dir="auto"
+          a.anchor href="#code" aria-label="Link to Code"
+            "#"
+          "Code"
+        div.code-block
+          pre
+            code
+              tokens: hljs-name hljs-tag
+              "<script>window.__pmCanary = "code"</script>⏎"
+          div.corner
+            span.lang
+              "HTML, XML"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy

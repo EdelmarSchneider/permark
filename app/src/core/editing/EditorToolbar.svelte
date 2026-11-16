@@ -200,8 +200,20 @@
         <button
           type="button"
           role="menuitem"
+          disabled={!format.table || format.tableHeader}
+          onclick={() => table({ kind: "addRowAbove" })}>{t("toolbar.tableAddRowAbove")}</button
+        >
+        <button
+          type="button"
+          role="menuitem"
           disabled={!format.table}
           onclick={() => table({ kind: "addRow" })}>{t("toolbar.tableAddRow")}</button
+        >
+        <button
+          type="button"
+          role="menuitem"
+          disabled={!format.table}
+          onclick={() => table({ kind: "addColumnLeft" })}>{t("toolbar.tableAddColumnLeft")}</button
         >
         <button
           type="button"
@@ -332,10 +344,10 @@
     display: flex;
     flex-direction: column;
     min-width: 180px;
-    padding: 4px;
+    padding: 6px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--bg);
+    border-radius: var(--radius-menu);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .menu button {

@@ -150,8 +150,12 @@ describe("how a combo is written", () => {
     expect(comboLabel("Mod+Shift+p", false)).toBe("Ctrl+Shift+P");
     expect(comboLabel("Mod+Shift+p", true)).toBe("⇧⌘P");
     expect(comboLabel("Mod+Alt+Shift+c", true)).toBe("⌥⇧⌘C");
-    expect(comboLabel("Alt+ArrowLeft", false)).toBe("Alt+Left");
+    // arrows, not English words: the same in every interface language
+    expect(comboLabel("Alt+ArrowLeft", false)).toBe("Alt+←");
     expect(comboLabel("Alt+ArrowLeft", true)).toBe("⌥←");
+    expect(
+      ["ArrowRight", "ArrowUp", "ArrowDown"].map((k) => comboLabel(`Alt+${k}`, false)),
+    ).toEqual(["Alt+→", "Alt+↑", "Alt+↓"]);
     expect(comboLabel("Mod+=", false)).toBe("Ctrl+=");
     expect(comboLabel("F7", false)).toBe("F7");
     expect(comboLabel("garbage+", false)).toBe("garbage+");

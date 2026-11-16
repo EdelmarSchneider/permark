@@ -2,7 +2,7 @@
 // (invisible characters made visible). Markdown (fenced code highlighted by language, loaded on demand; YAML front
 // matter) or any text by file name. Completions without AI (complete.ts), a small find, keys that never misfire under
 // IME, picture paste | drop. Find + replace (case, regexp, whole word) and go to line: `@codemirror/search`, its
-// panel in the theme's colors and the app's language.
+// panel in the theme's colors and the app's language; ignoring case folds as find in page does (foldedFind.ts).
 
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -36,13 +36,17 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
+import type { MarkOptions } from "../marks";
 import { clipboardPictures } from "../pictures";
 import { configLanguage } from "./configLang";
+import { lineDirection } from "./direction";
 import { fenceAround, type Fence } from "./fence";
+import { foldedFind } from "./foldedFind";
+import { highlightTag, viewInlineSyntax } from "./inlineSyntax";
 import { completionSources, type CompletionHost } from "./complete";
 import { toggleBold } from "./bold";
 import { editsSpec, scopeIn } from "./edits";
-import { correctionMarks, markAt, marksEffect } from "./marks";
+import { markAt, markLayers, marksEffect } from "./marks";
 import type { EditScope, TextEdit, TextRange } from "../session.svelte";
 
 export type SourceHost = CompletionHost & {
@@ -60,6 +64,7 @@ const style = HighlightStyle.define([
   { tag: [tags.emphasis], fontStyle: "italic" },
   { tag: [tags.strong], fontWeight: "700" },
   { tag: [tags.strikethrough], textDecoration: "line-through" },
+  { tag: highlightTag, backgroundColor: "var(--mark)" },
   { tag: [tags.link, tags.url], color: "var(--accent-text)" },
   { tag: [tags.monospace], color: "var(--syn-string)" },
   { tag: [tags.comment, tags.meta, tags.processingInstruction], color: "var(--syn-comment)" },
@@ -150,7 +155,11 @@ export const codeLook: Extension = [syntaxHighlighting(style), theme];
 export function languageFor(path: string, markdownText: boolean): Extension | Promise<Extension> {
   if (markdownText) {
     return yamlFrontmatter({
-      content: markdown({ base: markdownLanguage, codeLanguages: languages }),
+      content: markdown({
+        base: markdownLanguage,
+        codeLanguages: languages,
+        extensions: viewInlineSyntax,
+      }),
     });
   }
   const name = path.split("/").at(-1) ?? path;
@@ -199,6 +208,9 @@ export type SourceView = {
   showHeading(index: number, page?: HTMLElement): void;
   selection(): string;
   insert(text: string, at?: number): void;
+  /** `text` over every selection range as typing would put it (one history step with typing), scrolled into view; the
+   *  keyboard stays where it is. `false` (no change) while composing or read-only. */
+  replaceSelection(text: string): boolean;
   /** Long lines wrap (the setting) or scroll sideways. */
   setWrap(on: boolean): void;
   /** The range `kind` covers now (`ActiveEditor.scope`). */
@@ -207,10 +219,16 @@ export type SourceView = {
   apply(edits: readonly TextEdit[]): boolean;
   /** Selects `range` and scrolls it into view. */
   reveal(range: TextRange): void;
-  /** Correction marks (`ActiveEditor.marks`); an empty list clears them. */
-  marks(ranges: readonly TextRange[], current: number | null, pick: (index: number) => void): void;
-  /** Index of the mark holding the caret (`ActiveEditor.markAt`). */
-  markAt(): number | null;
+  /** Marks of `layer` (`ActiveEditor.marks`); an empty list clears that layer. */
+  marks(
+    ranges: readonly TextRange[],
+    current: number | null,
+    pick: (index: number) => void,
+    layer?: string,
+    options?: MarkOptions,
+  ): void;
+  /** Index of the mark of `layer` holding the caret (`ActiveEditor.markAt`). */
+  markAt(layer?: string): number | null;
   /** Text is being composed (IME). */
   composing(): boolean;
   /** Opens the find + replace panel (as Ctrl+F in the editor does). */
@@ -285,13 +303,15 @@ export function createSource(options: {
         keys,
         EditorState.phrases.of(options.phrases ?? {}),
         search({ top: true }),
+        foldedFind,
         lineNumbers(),
         highlightSpecialChars(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
         drawSelection(),
         history(),
-        correctionMarks(),
+        markLayers(),
+        lineDirection,
         bracketMatching(),
         wrapping.of(options.wrap === false ? [] : EditorView.lineWrapping),
         language.of(loaded instanceof Promise ? [] : loaded),
@@ -399,6 +419,14 @@ export function createSource(options: {
       });
       view.focus();
     },
+    replaceSelection: (text) => {
+      if (view.composing || view.state.readOnly) return false;
+      view.dispatch(view.state.replaceSelection(text), {
+        scrollIntoView: true,
+        userEvent: "input.type",
+      });
+      return true;
+    },
     setWrap: (on) =>
       view.dispatch({ effects: wrapping.reconfigure(on ? EditorView.lineWrapping : []) }),
     scope: (kind) => scopeIn(view.state, kind),
@@ -418,9 +446,9 @@ export function createSource(options: {
         effects: EditorView.scrollIntoView(EditorSelection.range(from, to), { y: "center" }),
       });
     },
-    marks: (ranges, current, pick) =>
-      view.dispatch({ effects: marksEffect(view.state, ranges, current, pick) }),
-    markAt: () => markAt(view.state),
+    marks: (ranges, current, pick, layer, options) =>
+      view.dispatch({ effects: marksEffect(view.state, ranges, current, pick, layer, options) }),
+    markAt: (layer) => markAt(view.state, layer),
     composing: () => view.composing,
     search: () => void openSearchPanel(view),
     destroy: () => view.destroy(),

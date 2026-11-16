@@ -6,7 +6,7 @@
   // keeping the active chip in view.
   import FileText from "@lucide/svelte/icons/file-text";
   import Folder from "@lucide/svelte/icons/folder";
-  import StickyNote from "@lucide/svelte/icons/sticky-note";
+  import NotebookPen from "@lucide/svelte/icons/notebook-pen";
   import X from "@lucide/svelte/icons/x";
   import type { TabSummary } from "../../api";
   import { keyHint } from "../commands/hint";
@@ -226,6 +226,7 @@
     {#each tabs.list as tab (tab.tab)}
       {@const name = nameOf(tab)}
       {@const cut = splitName(name, tab.kind === "singleFile")}
+      {@const stroke = tab.tab === current ? 2 : 1.8}
       <li
         class="chip"
         class:is-current={tab.tab === current}
@@ -251,11 +252,11 @@
         >
           <span class="badge" aria-hidden="true">
             {#if tab.kind === "project"}
-              <Folder size={13} strokeWidth={2.2} />
+              <Folder size={13} strokeWidth={stroke} />
             {:else if tab.kind === "notes"}
-              <StickyNote size={13} strokeWidth={2.2} />
+              <NotebookPen size={13} strokeWidth={stroke} />
             {:else}
-              <FileText size={13} strokeWidth={2.2} />
+              <FileText size={13} strokeWidth={stroke} />
             {/if}
           </span>
           <span class="name" aria-hidden="true"
@@ -275,7 +276,7 @@
           title={closeLabel(tab)}
           onclick={() => tabs.close(tab.tab)}
         >
-          <X size={13} strokeWidth={2.2} aria-hidden="true" />
+          <X size={13} strokeWidth={1.8} aria-hidden="true" />
         </button>
       </li>
     {/each}
@@ -357,7 +358,7 @@
     inset: 0 0 4px;
     z-index: -1;
     border: 1px solid transparent;
-    border-radius: 9px;
+    border-radius: var(--radius-surface);
     content: "";
     transition:
       background-color var(--dur-fast) var(--ease),
@@ -377,7 +378,7 @@
     bottom: 0;
     border-color: var(--border);
     border-bottom-width: 0;
-    border-radius: 9px 9px 0 0;
+    border-radius: var(--radius-surface) var(--radius-surface) 0 0;
     background: var(--bg);
   }
   .pick {
@@ -389,7 +390,7 @@
     height: 100%;
     padding: 0 2px 0 5px;
     border: 0;
-    border-radius: 8px;
+    border-radius: var(--radius-surface);
     background: transparent;
     color: inherit;
     font-size: var(--fs-ui);

@@ -1,6 +1,7 @@
 // Documents for the mock backend (dev:mock, UI tests). Markdown views come from the REAL renderer: `cargo test` renders
 // the fixture documents (`fixtures/*.md`) with every plugin on and writes `generated/mock-documents.json`; this file
 // only serves them (blocks the caller already holds leave out their HTML) and makes up the simple ones (text, picture).
+// The deep suite's server (`--mode deep`) resolves the generated JSON imports to its own rendered corpus instead.
 
 import editSources from "./generated/mock-edit-sources.json";
 import mockDocuments from "./generated/mock-documents.json";
@@ -117,10 +118,17 @@ export function mockView(
   };
 }
 
-/** A picture the browser can show with no server: a labelled placeholder. */
+/** Where the deep suite's server (`e2e/deep/vite.ts`) serves the files of its rendered corpus. */
+const DEEP_FILES = "/@permark-deep/project/";
+
+/** A picture the browser can show with no server: a labelled placeholder. The deep suite serves the corpus's own
+ *  files (its pictures and sound are part of what it checks). */
 export function mockAssetUrl(path: string): string {
+  if (import.meta.env.MODE === "deep") {
+    return DEEP_FILES + path.split("/").map(encodeURIComponent).join("/");
+  }
   const label = nameOf(path).replace(/[<>&"]/g, "");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="120" viewBox="0 0 320 120"><rect width="320" height="120" rx="10" fill="#7b93ff" opacity="0.25"/><text x="160" y="66" font-family="sans-serif" font-size="16" text-anchor="middle" fill="#4f6bed">${label}</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="120" viewBox="0 0 320 120"><rect width="320" height="120" rx="10" fill="#8c8fff" opacity="0.25"/><text x="160" y="66" font-family="sans-serif" font-size="16" text-anchor="middle" fill="#4f46e5">${label}</text></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 

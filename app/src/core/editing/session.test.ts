@@ -6,10 +6,13 @@ import { confirmLeave } from "./guard";
 import { EditingSession, type ActiveEditor, type Hooks } from "./session.svelte";
 
 /** An editor on screen whose text the test types. */
-function fakeEditor(initial: string): ActiveEditor & { set(text: string): void } {
+function fakeEditor(
+  initial: string,
+  kind: ActiveEditor["kind"] = "source",
+): ActiveEditor & { set(text: string): void } {
   let text = initial;
   return {
-    kind: "source",
+    kind,
     text: () => text,
     changes: () => 1,
     topLine: () => 1,
@@ -307,6 +310,124 @@ describe("editing session", () => {
   });
 });
 
+describe("going to View asks only when the text differs from the saved text", () => {
+  /** Opens the document in `mode` with an editor of that kind on screen. */
+  async function editing(session: EditingSession, mode: "edit" | "source") {
+    const { editor: source, content } = await open(session);
+    if (mode === "source") return { editor: source, base: content.text };
+    await session.switchTo("edit");
+    const next = session.content;
+    if (!next) throw new Error("no content");
+    const editor = fakeEditor(next.text, "edit");
+    session.attach(next.seq, editor);
+    return { editor, base: content.text };
+  }
+
+  /** Switches to View; `true` once the editor let go without a prompt. */
+  async function toView(session: EditingSession): Promise<boolean> {
+    const going = session.switchTo("view");
+    const prompted = session.state.s === "unsavedPrompt";
+    if (prompted) session.answer("keepEditing");
+    await going;
+    await settle();
+    return !prompted && session.state.s === "closed" && session.mode === "view";
+  }
+
+  it.each(["source", "edit"] as const)(
+    "%s: a character typed then deleted is no change, View opens without asking",
+    async (mode) => {
+      const { api, session } = setup();
+      const { editor, base } = await editing(session, mode);
+      editor.set(base + "x");
+      session.changed();
+      await settle();
+      expect(api.probe.edit.unsaved).toBe("docs/guide.md");
+      editor.set(base);
+      session.changed();
+      await settle();
+      expect(api.probe.edit.unsaved).toBeNull();
+      expect(await toView(session)).toBe(true);
+    },
+  );
+
+  it.each(["source", "edit"] as const)(
+    "%s: several edits undone back to the saved text leave without asking",
+    async (mode) => {
+      const { api, session } = setup();
+      const { editor, base } = await editing(session, mode);
+      const unsaved = vi.spyOn(api, "editSetUnsaved");
+      for (const step of [`# New\n${base}`, `# New\n${base}more\n`, `# New\n${base}`, base]) {
+        editor.set(step);
+        session.changed();
+        await settle();
+      }
+      expect(unsaved.mock.calls.at(-1)).toEqual([null]);
+      expect(await toView(session)).toBe(true);
+    },
+  );
+
+  it("a whitespace-only change is a change: View asks", async () => {
+    const { session } = setup();
+    const { editor, base } = await editing(session, "source");
+    editor.set(base.replace("\n", " \n"));
+    session.changed();
+    await settle();
+    expect(await toView(session)).toBe(false);
+    expect(session.state.s).toBe("dirty");
+  });
+
+  it("Edit text that reads back as the saved bytes is no change", async () => {
+    const { session } = setup();
+    const { editor, base } = await editing(session, "edit");
+    // the visual editor reports changes of its document (a block remade, a mark toggled and back) while the text it
+    // composes from the blocks still reads as the saved bytes
+    editor.set(base);
+    session.changed();
+    await settle();
+    editor.set(`**${base}`);
+    session.changed();
+    editor.set(base);
+    session.changed();
+    await settle();
+    expect(session.state.s).toBe("clean");
+    expect(await toView(session)).toBe(true);
+  });
+
+  it.each(["source", "edit"] as const)(
+    "%s: View right after typing back to the saved text, before the change check ran, does not ask",
+    async (mode) => {
+      const { api, session } = setup();
+      const { editor, base } = await editing(session, mode);
+      editor.set(base + "x");
+      session.changed();
+      await settle();
+      expect(session.state.s).toBe("dirty");
+      editor.set(base);
+      session.changed();
+      expect(await toView(session)).toBe(true);
+      expect(api.probe.edit.unsaved).toBeNull();
+    },
+  );
+
+  it("text back to the saved text takes the journal entry back", async () => {
+    const { session } = setup();
+    const calls: (string | null)[] = [];
+    session.bindJournal((_path, _hash, text) => calls.push(text));
+    const { editor, base } = await editing(session, "source");
+    editor.set(base + "x");
+    session.changed();
+    await settle();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls).toEqual([base + "x"]);
+    editor.set(base);
+    session.changed();
+    await settle();
+    expect(calls).toEqual([base + "x", null]);
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(calls).toHaveLength(2);
+  });
+});
+
 describe("Edit <-> Source while the document moves", () => {
   it("waits while the document reloads: the new text lands, nothing from before it is mounted", async () => {
     const { api, session } = setup();
@@ -588,6 +709,75 @@ describe("edits handed to the editor on screen (correction)", () => {
     expect(none).toEqual([]);
   });
 
+  it("mark layers are independent; the default layer keeps the plain call", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    const seen: unknown[] = [];
+    editor.marks = (ranges, current, _pick, layer, options) =>
+      seen.push([layer, ranges, current, options]);
+    const asked: unknown[] = [];
+    editor.markAt = (layer) => {
+      asked.push(layer);
+      return layer === "other" ? 5 : 1;
+    };
+    const menu = (): void => {};
+    session.marks([{ from: 0, to: 1 }], 0, () => {});
+    session.marks([{ from: 2, to: 3 }], null, () => {}, "other", { className: "x", menu });
+    expect(seen).toEqual([
+      ["correction", [{ from: 0, to: 1 }], 0, {}],
+      ["other", [{ from: 2, to: 3 }], null, { className: "x", menu }],
+    ]);
+    expect(session.markAt()).toBe(1);
+    expect(session.markAt("other")).toBe(5);
+    expect(asked).toEqual(["correction", "other"]);
+    // clearing one layer leaves the other for the next editor
+    session.marks([], null, () => {});
+    await session.switchTo("edit");
+    const next = fakeEditor(session.content?.text ?? "");
+    const again: unknown[] = [];
+    next.marks = (ranges, _current, _pick, layer) => again.push([layer, ranges]);
+    session.attach(session.content?.seq ?? -1, next);
+    expect(again).toEqual([["other", [{ from: 2, to: 3 }]]]);
+  });
+
+  it("the next editor gets every layer; another document starts with none", async () => {
+    const { session } = setup();
+    await open(session);
+    session.marks([{ from: 0, to: 1 }], 0, () => {});
+    session.marks([{ from: 2, to: 3 }], null, () => {}, "other");
+    await session.switchTo("edit");
+    const next = fakeEditor(session.content?.text ?? "");
+    const layers: unknown[] = [];
+    next.marks = (_ranges, _current, _pick, layer) => layers.push(layer);
+    session.attach(session.content?.seq ?? -1, next);
+    expect(layers).toEqual(["correction", "other"]);
+    await session.enter("source", "notes/other.md", "markdown", { kind: "explicit" });
+    const fresh = fakeEditor(session.content?.text ?? "");
+    const none: unknown[] = [];
+    fresh.marks = (_ranges, _current, _pick, layer) => none.push(layer);
+    session.attach(session.content?.seq ?? -1, fresh);
+    expect(none).toEqual([]);
+  });
+
+  it("native spellcheck: on by default, the editor on screen and the next one follow the flag", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    expect(session.nativeSpellcheck).toBe(true);
+    const told: boolean[] = [];
+    editor.spellcheck = (on) => told.push(on);
+    session.setNativeSpellcheck(false);
+    expect(session.nativeSpellcheck).toBe(false);
+    expect(told).toEqual([false]);
+    await session.switchTo("edit");
+    const next = fakeEditor(session.content?.text ?? "");
+    const nextTold: boolean[] = [];
+    next.spellcheck = (on) => nextTold.push(on);
+    session.attach(session.content?.seq ?? -1, next);
+    expect(nextTold).toEqual([false]);
+    session.setNativeSpellcheck(true);
+    expect(nextTold).toEqual([false, true]);
+  });
+
   it("what an edit could change is the editor's to say; one that does not say takes any", async () => {
     const { session } = setup();
     const { editor } = await open(session);
@@ -602,6 +792,37 @@ describe("edits handed to the editor on screen (correction)", () => {
       [{ from: 0, to: 1 }, undefined],
       [{ from: 2, to: 4 }, "X"],
     ]);
+  });
+
+  it("insert goes to the editor on screen as typed text, the code points as given", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    const inserted: string[] = [];
+    editor.insert = (text) => inserted.push(text) > 0;
+    editor.composing = () => false;
+    let focused = 0;
+    editor.focus = () => (focused += 1);
+    expect(session.insert("Ω")).toBe(true);
+    expect(session.insert("❤️")).toBe(true);
+    expect(inserted).toEqual(["Ω", "❤️"]);
+    // the panel that asks keeps the keyboard
+    expect(focused).toBe(0);
+    // the editor's own refusal comes back as is
+    editor.insert = () => false;
+    expect(session.insert("x")).toBe(false);
+  });
+
+  it("insert is refused with no editor, an editor without it, while composing, or for empty text", async () => {
+    const { session } = setup();
+    expect(session.insert("x")).toBe(false);
+    const { editor } = await open(session);
+    expect(session.insert("x")).toBe(false);
+    const inserted: string[] = [];
+    editor.insert = (text) => inserted.push(text) > 0;
+    expect(session.insert("")).toBe(false);
+    editor.composing = () => true;
+    expect(session.insert("x")).toBe(false);
+    expect(inserted).toEqual([]);
   });
 
   it("an editor without them (or none on screen) gives safe answers", async () => {

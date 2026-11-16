@@ -18,7 +18,7 @@ use super::fsm::{
     self, AgentChoice, Candidate, Event, Found, Inputs, Membership, MissingReason, NotMoved,
     Presence, ProjectMarker, RecEntry, RootAnswer, MAX_ANSWERS, MEMBERSHIP_FILE,
 };
-use super::grace::{self, Came, FolderId, Left, Vanished};
+use super::grace::{self, Came, Left, Vanished};
 use super::map::{within, AgentRules, AncestorRules, MemberInfo, ProjectMap};
 use super::owners::{OwnerSlot, Owners, OwnersChange};
 use super::record::{self, HiddenRule, RecordOp, RecordRead, RecordSkip, SkippedEntry};
@@ -30,6 +30,7 @@ use super::view::{
 };
 use super::vocabulary::{self, TagStatus, VocabKind, VocabRead, Vocabularies};
 use crate::events::{CoreEvent, EventSink};
+use crate::fsx::FolderIdentity;
 use crate::paths::{Root, VaultPath, CASE_INSENSITIVE};
 use crate::settings::ProjectConfig;
 use crate::state::{AppDirs, StateFile, StateStore, PERMARK_DIR};
@@ -190,7 +191,7 @@ struct MemberRes {
     inner: Vec<(VaultPath, ProjectUid)>,
     has_record: bool,
     /// Its folder on disk (a move split across watch batches pairs by it; `grace.rs`).
-    id: Option<FolderId>,
+    id: Option<FolderIdentity>,
     /// Its own tag | category lists (local to it; `projects.md` §7.1).
     vocab: vocabulary::Vocab,
 }
@@ -233,7 +234,7 @@ fn load_member(dirs: &AppDirs, abs: &Path) -> MemberRes {
         },
         inner,
         has_record: !matches!(read, RecordRead::Absent),
-        id: FolderId::of(abs),
+        id: FolderIdentity::of(abs),
         vocab: vocabulary::read(abs).vocab().cloned().unwrap_or_default(),
     }
 }
@@ -439,7 +440,6 @@ pub struct Projects {
     own: Arc<OwnWrites>,
     hub: Arc<WatchHub>,
     sink: Arc<dyn EventSink>,
-    files_only: bool,
     /// The record + the included members were read ([`Projects::load`]: once, off the open call).
     loaded: OnceLock<()>,
     inner: Mutex<Inner>,
@@ -510,7 +510,6 @@ impl Projects {
     /// The record + the included members are read once, before the Explorer's first walk ([`Projects::load`]: the
     /// walk passes through it, the worker starts with it). Discovery starts with [`Projects::start`].
     #[must_use]
-    #[allow(clippy::too_many_arguments)] // the core hands its services over once
     pub fn open(
         root: &Root,
         dirs: &AppDirs,
@@ -518,7 +517,6 @@ impl Projects {
         own: Arc<OwnWrites>,
         hub: Arc<WatchHub>,
         sink: Arc<dyn EventSink>,
-        files_only: bool,
         root_ignore: &[String],
     ) -> Arc<Self> {
         let store = StateStore::for_project(dirs, root);
@@ -542,7 +540,6 @@ impl Projects {
             own,
             hub,
             sink,
-            files_only,
             loaded: OnceLock::new(),
             inner: Mutex::new(Inner {
                 inputs,
@@ -974,7 +971,7 @@ impl Projects {
     /// # Errors
     /// `Conflict`, IO.
     pub fn set_first_commits(&self, learned: &[(ProjectUid, String)]) -> Result<(), IpcError> {
-        if self.files_only || self.stopped.load(Ordering::Relaxed) {
+        if self.stopped.load(Ordering::Relaxed) {
             return Ok(());
         }
         let mut inner = self.state();
@@ -1107,8 +1104,8 @@ impl Projects {
         let mut seen = HashMap::new();
         let all_out = inner.inputs.answer == RootAnswer::DeclinedAll;
         let declined: HashSet<String> = inner.inputs.declined.iter().cloned().collect();
-        // live only (never at open, never files-only): a folder gone while open is held as here for a moment
-        let live = inner.ready && !self.files_only;
+        // live only (never at open): a folder gone while open is held as here for a moment
+        let live = inner.ready;
         let now = self.now();
         let mut vanished = BTreeMap::new();
         for entry in &entries {
@@ -1526,9 +1523,9 @@ impl Projects {
         if waiting.is_empty() {
             return (Vec::new(), Vec::new());
         }
-        let ids: Vec<Option<FolderId>> = waiting
+        let ids: Vec<Option<FolderIdentity>> = waiting
             .iter()
-            .map(|f| FolderId::of(&abs_of(self.root.path(), &f.path)))
+            .map(|f| FolderIdentity::of(&abs_of(self.root.path(), &f.path)))
             .collect();
         let firsts: Vec<Option<String>> = inner
             .vanished
@@ -1582,9 +1579,6 @@ impl Projects {
         after: &mut After,
     ) {
         for (uid, path) in moves {
-            if self.files_only {
-                break;
-            }
             let from = inner.inputs.entry(&uid).map(|e| e.path.clone());
             let (next, effects) =
                 fsm::step(&inner.inputs, &Event::SetPath(uid.clone(), path.clone()));
@@ -1601,7 +1595,7 @@ impl Projects {
             if self.write_record(&ops, false).is_ok() {
                 inner.inputs = next;
                 if let Some(from) = &from {
-                    self.follow_state(inner, from, &path);
+                    Self::follow_state(inner, from, &path);
                 }
                 after.news.push(ProjectEvent::Moved {
                     name: Self::name_of(inner, &uid, path.as_str()),
@@ -1789,12 +1783,8 @@ impl Projects {
         let _turn = lock(&self.owners_turn);
         let map = self.snapshot();
         let moves = std::mem::take(&mut lock(&self.inner).pending_moves);
-        if !self.files_only {
-            self.forget_left(&map);
-        }
-        let to_copy: Vec<MemberInfo> = if self.files_only {
-            Vec::new()
-        } else {
+        self.forget_left(&map);
+        let to_copy: Vec<MemberInfo> = {
             let inner = lock(&self.inner);
             map.members()
                 .iter()
@@ -1993,9 +1983,6 @@ impl Projects {
     }
 
     fn save_membership(&self, inner: &Inner) -> Result<(), IpcError> {
-        if self.files_only {
-            return Ok(());
-        }
         let data = Membership {
             answer: inner.inputs.answer,
             declined: inner.inputs.declined.clone(),
@@ -2059,7 +2046,7 @@ impl Projects {
         }
         if let Event::SetPath(uid, to) = event {
             if let Some(from) = inner.inputs.entry(uid).map(|e| e.path.clone()) {
-                self.follow_state(inner, &from, to);
+                Self::follow_state(inner, &from, to);
             }
         }
         for op in &ops {
@@ -2089,8 +2076,8 @@ impl Projects {
     /// failure leaves the state under the old id, as before round 3).
     /// Done when the owners are told next (`update_owners`): the plugins write what they hold first, so nothing lands
     /// in the old folder after it moved.
-    fn follow_state(&self, inner: &mut Inner, from: &VaultPath, to: &VaultPath) {
-        if self.files_only || from.key() == to.key() {
+    fn follow_state(inner: &mut Inner, from: &VaultPath, to: &VaultPath) {
+        if from.key() == to.key() {
             return;
         }
         inner.pending_moves.push((from.clone(), to.clone()));
@@ -2755,8 +2742,8 @@ impl Projects {
     /// file changes. Already official: nothing to do.
     ///
     /// # Errors
-    /// `InvalidData` (empty name); `Unavailable` (no `.permark/` here, list unreadable | newer, a link in the way,
-    /// a reader with no window); `Conflict` (kept changing while saving); IO.
+    /// `InvalidData` (empty name); `Unavailable` (no `.permark/` here, list unreadable | newer, a link in the way);
+    /// `Conflict` (kept changing while saving); IO.
     pub fn promote(&self, kind: VocabKind, name: &str) -> Result<(), IpcError> {
         let name = vocab_name(name, "name")?;
         let style = self
@@ -2833,7 +2820,7 @@ impl Projects {
         &self,
         edit: impl FnMut(&str) -> Result<Option<String>, IpcError>,
     ) -> Result<(), IpcError> {
-        if self.files_only || !real_dir(&self.root.path().join(PERMARK_DIR)) {
+        if !real_dir(&self.root.path().join(PERMARK_DIR)) {
             return Err(vocab_unavailable());
         }
         let path = self

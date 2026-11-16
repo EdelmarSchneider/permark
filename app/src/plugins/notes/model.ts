@@ -1,7 +1,7 @@
 // The list of the Notes window as pure functions: which notes are pinned, how the rest are grouped by when they were last
 // edited, which ones a filter keeps, and how the pinned ones are reordered. The window draws what these return.
 
-import type { NoteEntry } from "../../api";
+import type { NoteEntry, ProjectId, SharedWith } from "../../api";
 import { opensAsText } from "../../core/explorer/importModel";
 
 /** The groups the notes that are not pinned fall into, in the order the list shows them. */
@@ -171,7 +171,8 @@ export type RowMarks = {
   unsaved: boolean;
   changed: boolean;
   gone: boolean;
-  shared: boolean;
+  /** The projects the note is shared with, by name (none: no mark). */
+  shared: string[];
   copied: boolean;
 };
 
@@ -181,26 +182,35 @@ export function marksOf(note: NoteEntry): RowMarks {
     unsaved: note.state === "unsaved",
     changed: note.state === "changedOnDisk",
     gone: note.state === "gone",
-    shared: note.shared,
+    shared: note.sharedWith.map((s) => s.label),
     copied: note.copied,
   };
 }
 
-/** When a note was edited as a row says it: the time today, the weekday this week, the date otherwise. */
-export function timeLabel(modifiedMs: number, now: number): string {
+/** The row menu's "Stop sharing" items: one for a note shared with one project (`label` null: no name needed), else
+ *  one per project, named. Sharing itself is asked from a project's agent panel, never here. */
+export function stopSharingItems(
+  shared: readonly SharedWith[],
+): { project: ProjectId; label: string | null }[] {
+  return shared.map((s) => ({ project: s.project, label: shared.length > 1 ? s.label : null }));
+}
+
+/** When a note was edited as a row says it: the time today, the weekday this week, the date otherwise (as
+ *  readers of `locale` write them). */
+export function timeLabel(modifiedMs: number, now: number, locale: string): string {
   const d = new Date(modifiedMs);
   switch (groupOf(modifiedMs, now)) {
     case "today":
-      return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      return d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
     case "yesterday":
     case "week":
-      return d.toLocaleDateString(undefined, { weekday: "short" });
+      return d.toLocaleDateString(locale, { weekday: "short" });
     case "month":
-      return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+      return d.toLocaleDateString(locale, { day: "numeric", month: "short" });
     case "older": {
       const sameYear = d.getFullYear() === new Date(now).getFullYear();
       return d.toLocaleDateString(
-        undefined,
+        locale,
         sameYear
           ? { day: "numeric", month: "short" }
           : { day: "numeric", month: "short", year: "numeric" },

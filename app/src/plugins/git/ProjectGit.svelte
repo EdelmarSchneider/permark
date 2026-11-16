@@ -3,7 +3,7 @@
   // changed files, last commit; "Checking git…" while the first look runs; git missing | can't read: one sentence.
   // Three lines are kept for it from the start, so the card grows at most once.
   import type { ProjectCardProps } from "../../core/plugins/registry.svelte";
-  import { language, t } from "../../core/i18n";
+  import { formatLocale, t } from "../../core/i18n";
   import { relativeTime } from "../../core/time";
   import {
     STATE_KEYS,
@@ -28,7 +28,7 @@
   const commit = $derived(repo?.lastCommit ?? null);
   // the age is read when the card shows (a card stays open briefly)
   const age = $derived(
-    commit === null ? "" : relativeTime(commit.atMs, Date.now(), language.locale),
+    commit === null ? "" : relativeTime(commit.atMs, Date.now(), formatLocale()),
   );
 </script>
 

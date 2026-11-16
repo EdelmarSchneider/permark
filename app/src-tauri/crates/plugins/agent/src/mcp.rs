@@ -14,13 +14,13 @@ use rmcp::transport::IntoTransport;
 use rmcp::{ErrorData, RoleServer, ServerHandler, ServiceExt};
 use serde_json::{json, Value};
 
-use crate::cli::Agent;
+use crate::cli::{Agent, ASK_AGAIN_EVERY};
 use crate::render;
 
 /// What the agent reads before any tool: when to use them, how to read the answers, who decides. Static: nothing of a
 /// project ever goes in here.
 pub const INSTRUCTIONS: &str = "\
-PerMark v=1: use these tools when the task involves the document the person has open in PerMark, their selection, comments, unread changes, what they did since the last hand-off (activity), or finding something in this project.
+PerMark v=1: use these tools when the task involves the document the person has open in PerMark, their selection, comments, unread changes, what they did since the last hand-off (activity), or finding something in this project (`project=` of get_context | map names it).
 Structure before content: map -> outline (size_tok per part) -> read at=<part>; search with budget= caps tokens.
 Answers: line 1 `<tool> k=v`; `#cols` then tab-separated rows (full paths); `--` starts a sub-table; `~` = approximate; last line `…cut next=` | `…trimmed` when shortened.
 Bare word in line 1 = flag set (`unsaved` = has unsaved edits). Continue a cut answer: pass the `next` value as is (`read at=<next>`, `activity since=<next>`).
@@ -145,7 +145,7 @@ pub fn tool_list() -> Vec<Tool> {
         .annotate(reading.clone()),
         Tool::new(
             "open",
-            "Show the person a document in PerMark (line or heading) without taking focus; starts PerMark if closed.",
+            "Show the person a document in PerMark (line or heading) without taking focus; starts PerMark if closed (only tool that works then).",
             schema(json!({ "type": "object", "properties": {
                 "path": path(),
                 "line": int("Line from 1."),
@@ -339,15 +339,40 @@ where
     T: IntoTransport<RoleServer, E, A>,
     E: std::error::Error + Send + Sync + 'static,
 {
-    let running = McpServer::new(agent, structured)
+    let running = McpServer::new(Arc::clone(&agent), structured)
         .serve(transport)
         .await
         .map_err(|e| McpError::Handshake(e.to_string()))?;
-    running
-        .waiting()
-        .await
-        .map_err(|e| McpError::Stopped(e.to_string()))?;
+    let pairing = tokio::spawn(keep_paired(agent));
+    let stopped = running.waiting().await;
+    pairing.abort();
+    stopped.map_err(|e| McpError::Stopped(e.to_string()))?;
     Ok(())
+}
+
+/// Keeps the app session while the agent runs: every [`Agent::repair_every`] the session is looked at and opened
+/// again when lost (the app restarted), so the person sees the agent without waiting for its next call. While the
+/// person keeps it disconnected, every [`ASK_AGAIN_EVERY`]th look still asks the app once (an Undo there pairs it).
+/// Never touches standard input or output; runs until dropped | aborted.
+pub async fn keep_paired(agent: Arc<Agent>) {
+    let mut every = tokio::time::interval(agent.repair_every());
+    // a check that took long (the app slow to answer) is not made up for with a burst
+    every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut looks: u32 = 0;
+    loop {
+        every.tick().await;
+        looks = looks.wrapping_add(1);
+        let ask_again = looks.is_multiple_of(ASK_AGAIN_EVERY);
+        let agent = Arc::clone(&agent);
+        let _ = tokio::task::spawn_blocking(move || {
+            if ask_again {
+                agent.ask_again();
+            } else {
+                agent.ensure_session();
+            }
+        })
+        .await;
+    }
 }
 
 /// Serves MCP over standard input and output until the input closes.

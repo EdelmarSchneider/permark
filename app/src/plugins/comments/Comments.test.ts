@@ -3,6 +3,7 @@
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MOCK_FOLDER } from "../../api/mock";
+import type { CommentView } from "../../api";
 
 vi.mock("../../api", async () => {
   const { createMockApi } = await import("../../api/mock");
@@ -17,6 +18,9 @@ const { api } = await import("../../api");
 const { default: CommentsPanel } = await import("./CommentsPanel.svelte");
 const { default: CommentField } = await import("./CommentField.svelte");
 const { default: CommentHost } = await import("./CommentHost.svelte");
+const { default: CommentRow } = await import("./CommentRow.svelte");
+const { exactTime } = await import("../../core/time");
+const { language } = await import("../../core/i18n");
 const { comments } = await import("./store.svelte");
 const { windowStore } = await import("../../core/window.svelte");
 const { documents } = await import("../../core/doc/document.svelte");
@@ -161,6 +165,7 @@ describe("the Comments tab", () => {
 describe("writing a comment", () => {
   function draft(): void {
     comments.draft = {
+      kind: "new",
       path: "docs/guide.md",
       quote: "Back to the readme",
       headingPath: ["Guide"],
@@ -210,6 +215,192 @@ describe("writing a comment", () => {
     flushSync();
     document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
     expect(comments.draft).toBeNull();
+  });
+});
+
+describe("editing a comment", () => {
+  /** The tab and the host of the field, as the window has them. */
+  async function mounted(): Promise<{ edit: () => HTMLButtonElement }> {
+    await open();
+    await addComment("docs/guide.md", "Back to the readme", "Say it beter");
+    component = mount(CommentsPanel, { target });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const field = mount(CommentHost, { target: host });
+    afterUnmount.push(() => unmount(field));
+    flushSync();
+    return {
+      edit: () => {
+        const button = target.querySelector<HTMLButtonElement>('.actions [aria-label="Edit"]');
+        if (!button) throw new Error("no Edit");
+        return button;
+      },
+    };
+  }
+  const afterUnmount: (() => unknown)[] = [];
+  afterEach(async () => {
+    for (const run of afterUnmount.splice(0)) await run();
+  });
+
+  function box(): HTMLTextAreaElement {
+    const found = document.querySelector<HTMLTextAreaElement>('[role="dialog"] textarea');
+    if (!found) throw new Error("no field");
+    return found;
+  }
+
+  /** As a pointer or a key does: the button has the focus when it runs. */
+  function activate(button: HTMLButtonElement): void {
+    button.focus();
+    button.click();
+    flushSync();
+  }
+
+  it("opens the field prefilled with the caret at the end, saves with Ctrl+Enter, focus back on Edit", async () => {
+    const { edit } = await mounted();
+    activate(edit());
+    const field = box();
+    expect(field.value).toBe("Say it beter");
+    expect(document.activeElement).toBe(field);
+    expect([field.selectionStart, field.selectionEnd]).toEqual([12, 12]);
+    field.value = "Say it better";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    flushSync();
+    press(field, "Enter", { ctrlKey: true });
+    await until(() => comments.all[0]?.text === "Say it better", "saved");
+    flushSync();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(edit());
+    expect(target.querySelector(".edited")?.textContent).toBe("edited");
+  });
+
+  it("leaves the text as it was on Escape or Cancel, focus back on Edit", async () => {
+    const { edit } = await mounted();
+    activate(edit());
+    box().value = "something else";
+    box().dispatchEvent(new Event("input", { bubbles: true }));
+    press(box(), "Escape");
+    flushSync();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(edit());
+    activate(edit());
+    const cancel = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+    ).find((b) => b.textContent?.trim() === "Cancel");
+    cancel?.click();
+    flushSync();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(edit());
+    expect(comments.all[0]?.text).toBe("Say it beter");
+    expect(comments.all[0]?.editedMs).toBeNull();
+    expect(target.querySelector(".edited")).toBeNull();
+  });
+
+  it("starting another edit while one is open shows the other comment's text, never the first one's", async () => {
+    const { edit } = await mounted();
+    activate(edit());
+    box().value = "typed for the first comment";
+    box().dispatchEvent(new Event("input", { bubbles: true }));
+    flushSync();
+    const first = comments.all[0];
+    if (!first) throw new Error("no comment");
+    comments.beginEdit(
+      { ...first, id: "another", text: "The other comment" },
+      { kind: "comment" },
+      null,
+    );
+    flushSync();
+    expect(box().value).toBe("The other comment");
+    press(box(), "Escape");
+    flushSync();
+    expect(comments.all[0]?.text).toBe("Say it beter");
+  });
+
+  it("edits the person's reply, never the agent's", async () => {
+    const { edit } = await mounted();
+    void edit;
+    const id = comments.all[0]?.id ?? "";
+    await comments.reply(id, "my reply");
+    flushSync();
+    const replyEdit = target.querySelector<HTMLButtonElement>('.reply [aria-label="Edit"]');
+    if (!replyEdit) throw new Error("no Edit on the reply");
+    activate(replyEdit);
+    expect(box().value).toBe("my reply");
+    box().value = "my better reply";
+    box().dispatchEvent(new Event("input", { bubbles: true }));
+    flushSync();
+    document.querySelector<HTMLButtonElement>('[role="dialog"] .btn--primary')?.click();
+    await until(() => comments.all[0]?.replies[0]?.text === "my better reply", "saved");
+    flushSync();
+    expect(document.activeElement).toBe(
+      target.querySelector<HTMLButtonElement>('.reply [aria-label="Edit"]'),
+    );
+  });
+});
+
+describe("one comment row", () => {
+  const view = (over: Partial<CommentView> = {}): CommentView => ({
+    id: "c1",
+    path: "docs/guide.md",
+    text: "words",
+    quote: "Back to the readme",
+    headingPath: [],
+    line: 3,
+    endLine: 3,
+    createdMs: 1_700_000_000_000,
+    editedMs: null,
+    state: "anchored",
+    done: false,
+    doneMs: null,
+    doneBy: null,
+    reply: null,
+    replies: [],
+    ...over,
+  });
+
+  it("offers Edit on the comment and the person's replies only", () => {
+    component = mount(CommentRow, {
+      target,
+      props: {
+        comment: view({
+          done: true,
+          doneMs: 1_700_000_100_000,
+          doneBy: "agent",
+          reply: "fixed it",
+          replies: [
+            { atMs: 1, by: "user", text: "mine", editedMs: null },
+            { atMs: 2, by: "agent", text: "theirs", editedMs: null },
+          ],
+        }),
+      },
+    });
+    flushSync();
+    expect(target.querySelectorAll('[aria-label="Edit"]')).toHaveLength(2);
+    const replies = Array.from(target.querySelectorAll(".reply"));
+    expect(replies.map((r) => r.querySelector('[aria-label="Edit"]') !== null)).toEqual([
+      false,
+      true,
+      false,
+    ]);
+  });
+
+  it("shows edited after the time, the exact time as its tooltip", () => {
+    const at = 1_700_000_500_000;
+    component = mount(CommentRow, {
+      target,
+      props: {
+        comment: view({
+          editedMs: at,
+          replies: [{ atMs: 1, by: "user", text: "mine", editedMs: at + 1 }],
+        }),
+      },
+    });
+    flushSync();
+    const marks = target.querySelectorAll<HTMLElement>(".edited");
+    expect(marks).toHaveLength(2);
+    expect(marks[0]?.closest(".when")).not.toBeNull();
+    expect(marks[0]?.textContent).toBe("edited");
+    expect(marks[0]?.title).toBe(exactTime(at, language.locale));
+    expect(marks[1]?.title).toBe(exactTime(at + 1, language.locale));
   });
 });
 

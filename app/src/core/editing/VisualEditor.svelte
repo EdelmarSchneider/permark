@@ -25,6 +25,7 @@
   import { frontMatterSyntax } from "../config/frontMatter";
   import { documents } from "../doc/document.svelte";
   import { reading } from "../doc/reading.svelte";
+  import { webPictures } from "../doc/webPictures.svelte";
   import { pictureDisplayUrl, pictureFiles, pictureLink } from "./pictures";
   import { baseName, pictureType } from "../explorer/importModel";
   import { relativeLink } from "./source/complete";
@@ -108,6 +109,8 @@
     link: "link.label",
     diagram: "edit.block.diagram",
     alert: "edit.block.alert",
+    highlight: "edit.block.highlight",
+    emoji: "edit.block.emoji",
     other: "edit.block.other",
   };
 
@@ -338,6 +341,7 @@
         return result.ok ? result.value : null;
       },
       promptText: () => promptText,
+      linkMarks: () => linkMarks,
       refTitle: (paths, line) => {
         const { editorSet, mod } = documents.decorator.refSetup();
         const [first] = paths;
@@ -456,8 +460,11 @@
           pictures: (files, at) => void insertPictures(files, at),
           followLink: (href) => void followLink(href),
           displaySrc: (src) =>
-            pictureDisplayUrl(content.path, src, (path) =>
-              api.assetUrl(documents.workspaceId ?? 0, path, null),
+            pictureDisplayUrl(
+              content.path,
+              src,
+              (path) => api.assetUrl(documents.workspaceId ?? 0, path, null),
+              (url) => webPictures.kept(url),
             ),
         }),
         plugins: [loaded.emptyHint(t("edit.emptyHint"))],
@@ -468,12 +475,11 @@
       }
       const editor = made;
       const doc = await loaded.buildDoc(editor, current.text, current.segments ?? []);
-      // locked blocks and HTML written in a line draw View's look from their first paint when the render and the card
-      // come in time; a render that comes later (a large document, a busy backend) brings it then, the blocks show
-      // their source until it does
+      // locked blocks and the pieces drawn from View's render (HTML written in a line, marked text, emoji, inline
+      // notes) draw View's look from their first paint when the render and the card come in time; a render that comes
+      // later (a large document, a busy backend) brings it then, the blocks show their source until it does
       const asked =
-        doc.sources.some((s) => s.locked !== null) ||
-        loaded.pieceSources(doc.doc, "html").length > 0
+        doc.sources.some((s) => s.locked !== null) || loaded.pieceSources(doc.doc, true).length > 0
           ? (early ?? viewOf(current.path, current.text))
           : null;
       const ticket = book.ask();
@@ -550,17 +556,28 @@
           if (!core || !mod || !now || core.view.composing) return false;
           return mod.applyEdits(core, now, edits);
         },
+        // not `runCommand`: that gives the editor the keyboard, and the caller (a panel) keeps it. `run` refuses a
+        // selected block kept as written; the doc compare catches any other refusal on the way to the view
+        insert: (text) => {
+          if (!core || !mod || core.view.composing) return false;
+          const before = core.view.state.doc;
+          mod.run(core, { kind: "text", text });
+          refresh();
+          return core.view.state.doc !== before;
+        },
         changeable: (range, insert) => {
           const now = composed();
           // not ready: nothing to tell by, as with no editor on screen (`apply` still checks each edit)
           return core && mod && now ? mod.changeable(core, now, range, insert) : true;
         },
         reveal: (range) => reveal(range),
-        marks: (ranges, current, pick) => {
+        marks: (ranges, current, pick, layer, options) => {
           const now = composed();
-          if (core && mod && now) mod.setMarks(core.view, now, ranges, current, pick);
+          if (core && mod && now)
+            mod.setMarks(core.view, now, ranges, current, pick, layer, options);
         },
-        markAt: () => (core && mod ? mod.markAt(core.view.state) : null),
+        markAt: (layer) => (core && mod ? mod.markAt(core.view.state, layer) : null),
+        spellcheck: (on) => core?.setSpellcheck(on),
         composing: () => core?.view.composing ?? false,
         lost: () => (composed()?.lost.length ?? 0) > 0,
         find: loaded.editFinder(() => core?.view ?? null, scroller),
@@ -589,6 +606,8 @@
 
   /** View marks `{{variables}}` and `@file` references while the prompt-blocks plugin is on. */
   const promptText = $derived(conditions.current.plugins.includes("prompt-blocks"));
+  /** View marks links whose target is missing while a plugin that checks links offers it. */
+  const linkMarks = $derived(contributions.visible("linkMarks", conditions.current).length > 0);
   /** The plugins on, and the card one of them offers (it comes once its plugin's module is loaded). */
   const pluginsOn = $derived(conditions.current.plugins.join(" "));
   const cardOn = $derived(contributions.visible("frontMatterCard", conditions.current)[0]);
@@ -603,9 +622,11 @@
   /** What a code reference's tooltip offers depends on whether an editor is chosen. */
   const editorSet = $derived(documents.decorator.refSetup().editorSet);
 
-  // prompt text switched or the editor setting changed while editing: the inline looks are drawn again
+  // prompt text | missing-link marks switched or the editor setting changed while editing: the inline looks are
+  // drawn again
   $effect(() => {
     void promptText;
+    void linkMarks;
     void editorSet;
     untrack(() => {
       if (core && mod) mod.repaintLooks(core.view);
@@ -685,6 +706,17 @@
   function applyImage(src: string, alt: string): void {
     popover = { kind: "none" };
     if (src.trim() !== "") runCommand({ kind: "image", src: src.trim(), alt });
+  }
+
+  /** The plugins' buttons in the picker's footer (none while their plugin is off). */
+  const pickerActions = $derived(contributions.visible("pickerAction", conditions.current));
+
+  /** A footer button of the picker: the popup closes and the editor takes the keyboard back before the plugin
+   *  acts, so what it opens (a panel) leaves the caret where it was. */
+  function runPickerAction(action: ContributionOf<"pickerAction">, picker: PickerKind): void {
+    popover = { kind: "none" };
+    core?.view.focus();
+    action.run(picker);
   }
 
   /** A character picked: insert at the caret and hand the keyboard back to the editor. */
@@ -838,6 +870,11 @@
         apply={applyCharacter}
         close={() => (popover = { kind: "none" })}
         popoverKey={onPopoverKey}
+        actions={pickerActions.map((action) => ({
+          id: action.id,
+          label: t(action.label),
+          run: () => runPickerAction(action, current.picker),
+        }))}
       />
     </div>
   {/if}
@@ -969,7 +1006,7 @@
     padding: var(--sp-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--surface);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .host :global(.pm-inline__field) {
@@ -1076,7 +1113,7 @@
     width: calc(100% - 2 * var(--sp-4));
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--surface);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .popover--picker {
@@ -1106,10 +1143,10 @@
     min-width: 200px;
     max-height: 280px;
     overflow-y: auto;
-    padding: 4px;
+    padding: 6px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--bg);
+    border-radius: var(--radius-menu);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .slash button {

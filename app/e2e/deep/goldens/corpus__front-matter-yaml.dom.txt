@@ -1,0 +1,70 @@
+div.reading
+  div.doc-column
+    article.md
+      section.card aria-label="Front matter"
+        dl.grid
+          div.field
+            dt
+              "title"
+            dd
+              "A page with YAML front matter"
+          div.field
+            dt
+              "owner"
+            dd
+              "Ada Example"
+          div.field
+            dt
+              "status"
+            dd
+              "draft"
+          div.field
+            dt
+              "updated"
+            dd
+              "November 15, 2026"
+          div.field
+            dt
+              "draft"
+            dd
+              "true"
+          div.field
+            dt
+              "rating"
+            dd
+              "4.5"
+          div.field
+            dt
+              "tags"
+            dd.chips
+              span.chip
+                "deep"
+              span.chip
+                "fixture"
+              span.chip
+                "yaml"
+          div.field
+            dt
+              "links"
+            dd.chips
+              span.chip
+                "https://example.com"
+              span.chip
+                "./gfm-blocks.md"
+          div.field
+            dt
+              "nested.key"
+            dd
+              "value"
+          div.field
+            dt
+              "nested.count"
+            dd
+              "3"
+      div.md-body role="document"
+        h1 id="yaml-front-matter" dir="auto"
+          a.anchor href="#yaml-front-matter" aria-label="Link to YAML front matter"
+            "#"
+          "YAML front matter"
+        p dir="auto"
+          "The card above shows the properties, with the tags as chips."

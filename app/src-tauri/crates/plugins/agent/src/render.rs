@@ -234,12 +234,19 @@ pub fn error(tool: &str, error: &ToolError) -> String {
             }
         ),
         ToolError::Invalid(why) => format!("ERR invalid: {} -> fix the arguments", one(why)),
-        ToolError::NotOpen => {
-            "ERR notOpen: PerMark not open on this project -> ask person to open it".to_owned()
+        ToolError::AppClosed => {
+            "ERR appClosed: PerMark not open on this project -> ask person to open it in PerMark, or call open to start it".to_owned()
         }
         ToolError::Busy => {
             "ERR busy: PerMark still reading this folder -> retry in a few seconds".to_owned()
         }
+        ToolError::Disconnected => {
+            "ERR disconnected: the person disconnected this agent from this project -> do not retry; tell the person; restarting the agent connects again".to_owned()
+        }
+        ToolError::NotConnected { below } => format!(
+            "ERR notConnected: no connected PerMark project here -> {}",
+            crate::not_connected_remedy(below)
+        ),
         ToolError::Failed(why) => format!("ERR error: {} -> retry later", one(why)),
     }
 }
@@ -250,6 +257,7 @@ fn get_context(data: &Value) -> String {
     let heading = section.map(|x| strings(x, "headingPath").join(" > "));
     let selection = data.get("selection").filter(|v| v.is_object());
     let mut out = Header::new("get_context")
+        .opt("project", data.get("project").and_then(Value::as_str))
         .flag("nodoc", doc.is_empty())
         .opt("doc", (!doc.is_empty()).then_some(doc))
         .opt("mode", (!doc.is_empty()).then(|| s(data, "mode")))
@@ -544,11 +552,10 @@ fn list_comments(data: &Value) -> String {
                     s(c, "path"),
                     u(c, "line").map(|l| l.to_string()).unwrap_or_default()
                 ),
-                if b(c, "done") {
-                    format!("{state}+done")
-                } else {
-                    state.to_owned()
-                },
+                [("done", "+done"), ("edited", "+edited")]
+                    .iter()
+                    .filter(|(key, _)| b(c, key))
+                    .fold(state.to_owned(), |flags, (_, flag)| flags + flag),
                 s(c, "quote").to_owned(),
                 s(c, "text").to_owned(),
                 strings(c, "headingPath").join(" > "),
@@ -614,6 +621,7 @@ fn map(data: &Value) -> String {
     let files = list(data, "files");
     let cut = list(data, "dirs_cut");
     let mut out = Header::new("map")
+        .opt("project", data.get("project").and_then(Value::as_str))
         .kv("path", s(data, "path"))
         .opt("depth", u(data, "depth"))
         .kv("n", n_of(files))
@@ -797,10 +805,18 @@ mod tests {
                 &ToolError::NotFound("docs/my plan.md".to_owned()),
             ),
             error("search", &ToolError::Invalid("limit\nis bad".to_owned())),
-            error("get_context", &ToolError::NotOpen),
             error("map", &ToolError::Failed("x".to_owned())),
             error("resolve_comment", &ToolError::NotFound("c9".to_owned())),
             error("read", &ToolError::Busy),
+            error("search", &ToolError::AppClosed),
+            error("map", &ToolError::Disconnected),
+            error("map", &ToolError::NotConnected { below: vec![] }),
+            error(
+                "map",
+                &ToolError::NotConnected {
+                    below: vec!["two\nlines/".to_owned()],
+                },
+            ),
         ];
         for line in &lines {
             assert!(line.starts_with("ERR "), "{line}");
@@ -812,15 +828,34 @@ mod tests {
             "ERR denied: group comments.resolve off in this project -> ask person; NEVER retry around it"
         );
         assert!(lines[2].contains("\"docs/my plan.md\""));
-        assert_eq!(lines[6], "ERR notFound: c9 -> check ids with list_comments");
+        assert_eq!(lines[5], "ERR notFound: c9 -> check ids with list_comments");
+        assert_eq!(
+            lines[6],
+            "ERR busy: PerMark still reading this folder -> retry in a few seconds"
+        );
         assert_eq!(
             lines[7],
-            "ERR busy: PerMark still reading this folder -> retry in a few seconds"
+            "ERR appClosed: PerMark not open on this project -> ask person to open it in PerMark, or call open to start it"
+        );
+        assert_eq!(
+            lines[8],
+            "ERR disconnected: the person disconnected this agent from this project -> do not retry; tell the person; restarting the agent connects again"
         );
         assert!(matches!(
             ToolError::from_wire("busy", &ToolError::Busy.to_string()),
             ToolError::Busy
         ));
+    }
+
+    #[test]
+    fn a_long_list_of_projects_below_is_cut() {
+        let below = ["a", "b", "c", "d", "e", "f", "g"]
+            .map(|n| format!("{n}/"))
+            .to_vec();
+        assert_eq!(
+            error("read", &ToolError::NotConnected { below }),
+            "ERR notConnected: no connected PerMark project here -> start the agent in one of: a/, b/, c/, d/, e/ and 2 more"
+        );
     }
 
     #[test]

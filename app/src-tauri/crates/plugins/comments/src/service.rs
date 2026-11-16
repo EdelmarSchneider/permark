@@ -51,6 +51,13 @@ pub struct NewComment {
     pub end_line: u32,
 }
 
+/// What an edit changes: the comment's own text, or the text of its reply at this index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditTarget {
+    Comment,
+    Reply(usize),
+}
+
 /// One owner's `comments.json` (the opened folder's, or an included project's: `projects.md` §9.2), paths relative
 /// to that owner.
 struct Slot {
@@ -536,6 +543,7 @@ fn view_of(comment: &Comment, doc: &Doc) -> (CommentView, Option<Placement>) {
         line,
         end_line,
         created_ms: comment.created_ms,
+        edited_ms: comment.edited_ms,
         state,
         done: comment.done.is_some(),
         done_ms: comment.done.as_ref().map(|d| d.at_ms),
@@ -548,6 +556,7 @@ fn view_of(comment: &Comment, doc: &Doc) -> (CommentView, Option<Placement>) {
                 at_ms: r.at_ms,
                 by: r.by,
                 text: r.text.clone(),
+                edited_ms: r.edited_ms,
             })
             .collect(),
     };
@@ -765,6 +774,7 @@ impl CommentsService {
             id: Self::new_id(),
             path,
             text,
+            edited_ms: None,
             anchor,
             created_ms: now_ms(),
             done: None,
@@ -880,8 +890,56 @@ impl CommentsService {
                 at_ms: now_ms(),
                 by: By::User,
                 text,
+                edited_ms: None,
                 extra: BTreeMap::default(),
             });
+            Ok(((), true))
+        })
+    }
+
+    /// Changes the text of the person's comment, or of one of the person's replies under it. Only that text and its
+    /// edit time change; the same text again writes nothing.
+    ///
+    /// # Errors
+    /// No such comment | reply (a stale window), a reply the agent wrote, an empty text, a text over the limit, or the
+    /// file cannot be used.
+    pub fn edit(&self, id: &str, target: EditTarget, text: &str) -> Result<(), IpcError> {
+        let limit = match target {
+            EditTarget::Comment => MAX_COMMENT_CHARS,
+            EditTarget::Reply(_) => MAX_REPLY_CHARS,
+        };
+        let text = text.trim();
+        if text.is_empty() {
+            return Err(IpcError::new(ErrorKind::InvalidData).subject("text"));
+        }
+        // refused rather than cut (as adding does): cutting text the person already wrote would lose some silently
+        if text.chars().count() > limit {
+            return Err(IpcError::new(ErrorKind::TooLarge).subject("text"));
+        }
+        self.shared.change(|book| {
+            let comment = book
+                .comments
+                .iter_mut()
+                .find(|c| c.id == id)
+                .ok_or_else(|| not_found(id))?;
+            let (kept, edited) = match target {
+                EditTarget::Comment => (&mut comment.text, &mut comment.edited_ms),
+                EditTarget::Reply(n) => {
+                    let reply = comment
+                        .replies
+                        .get_mut(n)
+                        .ok_or_else(|| not_found(&format!("{id}/{n}")))?;
+                    if reply.by != By::User {
+                        return Err(IpcError::new(ErrorKind::Denied).subject("reply"));
+                    }
+                    (&mut reply.text, &mut reply.edited_ms)
+                }
+            };
+            if kept.as_str() == text {
+                return Ok(((), false));
+            }
+            text.clone_into(kept);
+            *edited = Some(now_ms());
             Ok(((), true))
         })
     }

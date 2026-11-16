@@ -1,0 +1,124 @@
+/* An export page around the reading view's own styles (tokens, Markdown, code, formulas): the page itself, what the
+   export puts in place of things a static page cannot hold, and the rules of printed pages. The paper look (PDF,
+   print) carries `pm-paper` on <html>; an HTML page follows the reader's light | dark preference. */
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+body {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.md {
+  padding: var(--sp-6) var(--sp-5) var(--sp-8);
+}
+/* the page margins come from the page rule: a body background would not reach them, so paper keeps the light
+   look's white page (the light tones are not taken along) */
+.pm-paper .md {
+  max-width: none;
+  padding: 0;
+}
+
+/* a diagram drawn for each theme: the reader's preference shows one */
+.pm-only-dark {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  .pm-only-light {
+    display: none;
+  }
+  .pm-only-dark {
+    display: block;
+  }
+}
+
+/* a file the page could not take in (a video too large, a sound on paper) */
+.md .pm-left-out {
+  display: block;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+  color: var(--muted);
+  font-size: 0.9em;
+}
+.md .pm-left-out img {
+  display: block;
+  margin-bottom: var(--sp-2);
+}
+/* a diagram that could not be drawn says so in a box of its own */
+.md .figure.is-failed {
+  padding: var(--sp-3);
+  border: 1px solid var(--border-strong);
+}
+.md .katex-display {
+  margin: 0.8em 0;
+}
+
+@media print {
+  /* nothing a page holds is cut in two when it fits on a page */
+  tr,
+  pre,
+  li,
+  figure,
+  img,
+  .markdown-alert {
+    break-inside: avoid;
+  }
+  /* a heading takes the start of what follows with it: the reserved space below it must fit on the same page */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    break-after: avoid;
+    break-inside: avoid;
+  }
+  h1::after,
+  h2::after,
+  h3::after,
+  h4::after,
+  h5::after,
+  h6::after {
+    content: "";
+    display: block;
+    height: 4em;
+    margin-bottom: -4em;
+  }
+  thead {
+    display: table-header-group;
+  }
+  pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .table-wrap,
+  .figure,
+  .code-block pre,
+  .katex-display {
+    overflow: visible;
+  }
+  /* paper cannot scroll: the reading view's sideways scroll of a table (`.md .table-wrap`, more specific than the
+     rule above) would cut it at the frame; a long token wraps in its cell instead */
+  .md .table-wrap {
+    overflow: visible;
+  }
+  .md th,
+  .md td {
+    overflow-wrap: anywhere;
+  }
+  /* a picture | drawing larger than the printable area shrinks to fit it whole */
+  img,
+  svg,
+  video {
+    max-width: 100%;
+    max-height: var(--page-h, none);
+    object-fit: contain;
+  }
+  .pm-wide-table table {
+    font-size: 0.85em;
+  }
+}

@@ -1,6 +1,7 @@
 // Work a block does when it comes near the screen: embeds (code highlighting, formulas, diagrams) are mounted,
-// links are looked up (a missing target is marked), code references become links (to the file, here or in the editor).
-// Nothing here runs for blocks far from the screen, so a long document opens at once.
+// links are looked up while a plugin that checks links is on (a missing target is marked), code references become
+// links (to the file, here or in the editor). Nothing here runs for blocks far from the screen, so a long document
+// opens at once.
 
 import { mount, unmount, type Component } from "svelte";
 import type { Api, LinkTarget } from "../../api";
@@ -22,6 +23,14 @@ export function codeEmbed<T>(
 ): T | undefined {
   const language = info.toLowerCase();
   return (language === "" ? undefined : find(language)) ?? find("@code");
+}
+
+/**
+ * A ```math block (the renderer's word, exact case) is one display formula. Read from the block's own attribute: its
+ * code leaves the block while an embed draws it.
+ */
+function isMathBlock(element: Element): boolean {
+  return element.getAttribute("data-info") === "math";
 }
 
 /** The mark on an element that holds a code reference. */
@@ -105,6 +114,19 @@ export function isLocalHref(href: string | null): href is string {
   return href !== null && href !== "" && !href.startsWith("#") && !SCHEME.test(href);
 }
 
+/** A code block's title, first line number and marked lines (the renderer checked them; `enhance` put them here). */
+function codeExtras(element: HTMLElement): Pick<EmbedProps, "title" | "start" | "marked"> {
+  const title = element.getAttribute("data-title");
+  const numbers = element.getAttribute("data-numbers");
+  const marked = element.getAttribute("data-lines");
+  const start = numbers ? Number(numbers) : NaN;
+  return {
+    ...(title ? { title } : {}),
+    ...(Number.isInteger(start) ? { start } : {}),
+    ...(marked ? { marked } : {}),
+  };
+}
+
 export class Decorator {
   readonly #api: Api;
   readonly links: LinkCache;
@@ -113,18 +135,61 @@ export class Decorator {
   #mounted = new Map<HTMLElement, Mounted>();
   /** Blocks that are near the screen (and so have their embeds). */
   #near = new Set<HTMLElement>();
+  /** Missing links are marked (a plugin that checks links is on). */
+  #linkMarks = false;
+  /** Links marked missing, with the title each had before (a link may carry a title of its own). */
+  #marked = new Map<HTMLAnchorElement, string | null>();
+  /** Embeds whose library is still loading (each settles once mounted, cancelled or failed). */
+  #loading = new Set<Promise<void>>();
+  /** The theme every embed draws in, whatever the page shows; undefined: embeds follow the page. */
+  readonly #theme: "light" | "dark" | undefined;
 
   /** Read when a reference is marked (its tooltip says what a click does). */
   refSetup: RefSetup = () => ({ editorSet: false, mod: "Ctrl" });
 
-  constructor(api: Api) {
+  /**
+   * `theme` fixes the theme of every embed (a copy of the page drawn off screen in a look of its own, e.g. light
+   * paper); left out, embeds follow the page's theme and tone.
+   */
+  constructor(api: Api, options: { theme?: "light" | "dark" } = {}) {
     this.#api = api;
     this.links = new LinkCache(api);
+    this.#theme = options.theme;
+  }
+
+  /**
+   * Settles once every embed started so far is loaded and mounted (a failed library counts: its block keeps the
+   * plain text). An embed may still draw after it is mounted (a diagram, a formula): that is the embed's own state,
+   * seen in its markup (a diagram's figure holds `is-pending` until drawn).
+   */
+  async idle(): Promise<void> {
+    // embeds started while waiting count too
+    while (this.#loading.size > 0) await Promise.allSettled(this.#loading);
   }
 
   setDocument(path: string | null): void {
     this.#doc = path;
     this.links.forDocument(path);
+    for (const a of this.#marked.keys()) if (!a.isConnected) this.#marked.delete(a);
+  }
+
+  /**
+   * Missing links are marked or not (a plugin that checks links came or went): the blocks near the screen are marked
+   * at once, the others when they come near; switched off, every mark and its tooltip go.
+   */
+  setLinkMarks(on: boolean): void {
+    if (on === this.#linkMarks) return;
+    this.#linkMarks = on;
+    if (on) {
+      for (const block of this.#near) this.#decorateLinks(block);
+      return;
+    }
+    for (const [a, title] of this.#marked) {
+      a.classList.remove("is-missing");
+      if (title === null) a.removeAttribute("title");
+      else a.title = title;
+    }
+    this.#marked.clear();
   }
 
   /** The embeds on offer changed (a plugin came or went): mount the new ones, take down the ones that left. */
@@ -158,6 +223,7 @@ export class Decorator {
   dispose(): void {
     for (const element of [...this.#mounted.keys()]) this.#unmountOne(element);
     this.#near.clear();
+    this.#marked.clear();
   }
 
   // ---- embeds ------------------------------------------------------------------------------------------------
@@ -165,12 +231,16 @@ export class Decorator {
   #placeholders(block: HTMLElement): HTMLElement[] {
     const found = Array.from(block.querySelectorAll<HTMLElement>(".code-block, [data-math-style]"));
     if (block.matches(".code-block, [data-math-style]")) found.unshift(block);
-    return found;
+    // the code of a ```math block is the block's formula: the block draws it (two embeds would race for it)
+    return found.filter(
+      (element) => !(element.hasAttribute("data-math-style") && element.closest(".code-block")),
+    );
   }
 
   #lookup(element: HTMLElement): LazyEmbed | undefined {
     if (element.hasAttribute("data-math-style")) return this.#embeds("@math");
-    return codeEmbed(element.getAttribute("data-info") ?? "", this.#embeds);
+    const formula = isMathBlock(element) ? this.#embeds("@math") : undefined;
+    return formula ?? codeEmbed(element.getAttribute("data-info") ?? "", this.#embeds);
   }
 
   #syncEmbeds(block: HTMLElement): void {
@@ -199,19 +269,26 @@ export class Decorator {
     const props: EmbedProps = {
       source,
       info: isMath ? "" : (element.getAttribute("data-info") ?? ""),
-      display: element.getAttribute("data-math-style") === "display",
+      display: isMath
+        ? element.getAttribute("data-math-style") === "display"
+        : isMathBlock(element),
+      ...(this.#theme === undefined ? {} : { theme: this.#theme }),
+      ...(isMath ? {} : codeExtras(element)),
     };
-    void loader().then(
-      (module) => {
-        if (record.cancelled) return;
-        // the original content leaves in the same turn the embed arrives: no flash
-        element.replaceChildren();
-        record.instance = mount(module.default, { target: element, props });
-      },
-      () => {
-        // the library did not load: the plain text stays
-      },
-    );
+    const loading: Promise<void> = loader()
+      .then(
+        (module) => {
+          if (record.cancelled) return;
+          // the original content leaves in the same turn the embed arrives: no flash
+          element.replaceChildren();
+          record.instance = mount(module.default, { target: element, props });
+        },
+        () => {
+          // the library did not load: the plain text stays
+        },
+      )
+      .finally(() => this.#loading.delete(loading));
+    this.#loading.add(loading);
   }
 
   #unmountOne(element: HTMLElement): void {
@@ -229,15 +306,20 @@ export class Decorator {
   // ---- links -------------------------------------------------------------------------------------------------
 
   #decorateLinks(block: HTMLElement): void {
+    // nothing to mark: no lookup either (a click asks for its own link)
+    if (!this.#linkMarks) return;
     const anchors = Array.from(block.querySelectorAll<HTMLAnchorElement>("a[href]")).filter(
       (a) => isLocalHref(a.getAttribute("href")) && !a.classList.contains("anchor"),
     );
     if (anchors.length === 0) return;
     const hrefs = anchors.map((a) => a.getAttribute("href") ?? "");
     void this.links.resolve(hrefs).then((targets) => {
+      // switched off while the answer was on its way
+      if (!this.#linkMarks) return;
       anchors.forEach((a, at) => {
         const target = targets[at];
         if (target?.type !== "missing") return;
+        if (!this.#marked.has(a)) this.#marked.set(a, a.getAttribute("title"));
         a.classList.add("is-missing");
         a.title = t("link.missing", { path: target.path });
       });

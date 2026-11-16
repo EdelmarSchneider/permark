@@ -32,13 +32,13 @@
    * A notice's button was pressed: the notice goes, its action runs. The button that had the keyboard is gone with
    * the notice: once the action is done (its own work too, when it says so) and what it changed is drawn, the
    * keyboard is where the action put it, else back on what had it before the notices, else (that is gone too) on
-   * the page.
+   * the page. Dismiss | Esc (`action` null) take the notice away the same way, with no action to run.
    */
-  async function act(id: number, action: NoticeAction): Promise<void> {
+  async function act(id: number, action: NoticeAction | null): Promise<void> {
     const before = cameFrom;
-    store.dismiss(id, "action");
+    store.dismiss(id, action === null ? "dismissed" : "action");
     try {
-      await action.run();
+      await action?.run();
     } finally {
       await tick();
       returnFocus(before);
@@ -120,7 +120,7 @@
           // this notice, nothing behind it (a review, the page)
           e.preventDefault();
           e.stopPropagation();
-          store.dismiss(notice.id);
+          void act(notice.id, null);
         }}
         onfocusout={(e) => {
           const into = e.relatedTarget;
@@ -140,7 +140,7 @@
         <button
           type="button"
           class="btn btn--ghost btn--sm"
-          onclick={() => store.dismiss(notice.id)}
+          onclick={() => void act(notice.id, null)}
         >
           {t("common.dismiss")}
         </button>
@@ -160,19 +160,22 @@
     gap: var(--sp-2);
     width: min(420px, calc(100vw - var(--notices-right, 0px) - 2 * var(--sp-4)));
   }
+  /* the buttons wrap under the text, right-aligned, once they would squeeze it into a narrow column */
   .notice {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--sp-3);
+    justify-content: flex-end;
+    gap: var(--sp-2) var(--sp-3);
     padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--bg);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
     animation: pm-fade var(--dur) var(--ease);
   }
   .text {
-    flex: 1;
+    flex: 1 1 14rem;
     min-width: 0;
     overflow-wrap: anywhere;
   }

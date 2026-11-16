@@ -28,7 +28,7 @@ comrak.workspace = true
 ammonia.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys.workspace = true
+windows-sys = { workspace = true, features = ["Win32_Globalization"] }
 widestring.workspace = true
 winreg.workspace = true
 
@@ -37,6 +37,7 @@ rustix.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+proptest.workspace = true
 
 [lints]
 workspace = true

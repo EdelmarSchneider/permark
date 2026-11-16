@@ -18,7 +18,7 @@ PerMark = app where the person reads, reviews, steers what you write. Agent conn
 | `list_tags` | Tags with counts; with `tag`: its documents. |
 | `outline` | Parts of one file (headings, JSON keys, config parts) with lines and `size_tok`. `links: true` adds links in and out. |
 | `read` | Text of one part: `at` = heading path `A > B`, `#anchor`, key path, `L10-L40`, `L10` (from line 10 on). |
-| `list_comments` | The person's comments on passages (`which`: open, done, all). |
+| `list_comments` | The person's comments on passages (`which`: open, done, all); `edited` = the person changed the text since writing it. |
 | `resolve_comment` | Mark one comment done with a short `reply`. |
 | `list_notes` | Notes the person shared with agents. |
 | `read_note` | Text of one shared note. |

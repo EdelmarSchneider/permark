@@ -226,6 +226,7 @@ describe("delete and undo", () => {
     expect(store.current).not.toBe(FIRST);
     const toast = window.notices.at(-1);
     if (toast?.kind !== "action") throw new Error("no toast");
+    expect(toast.text).toMatch(/^Deleted “[^{}]+”$/);
     expect(toast.actions.map((a) => a.label)).toEqual(["Undo"]);
     toast.actions[0]?.run();
     await settle();
@@ -311,13 +312,36 @@ describe("rename, pin, share, copy", () => {
     expect(store.entries.find((e) => e.path === FIRST)?.pinned).toBe(false);
   });
 
-  it("shares a note with agents and says so", async () => {
+  it("stops sharing a note with every project and says so", async () => {
     const { store, window } = await setup();
-    await store.toggleShare(FIRST);
-    expect(store.entries.find((e) => e.path === FIRST)?.shared).toBe(true);
+    const shared = "2026-10-16 1031.md";
+    expect(store.entries.find((e) => e.path === shared)?.sharedWith).toHaveLength(1);
+    await store.stopSharing(shared);
+    expect(store.entries.find((e) => e.path === shared)?.sharedWith).toEqual([]);
     expect(window.notices.at(-1)).toMatchObject({ kind: "note" });
-    await store.toggleShare(FIRST);
-    expect(store.entries.find((e) => e.path === FIRST)?.shared).toBe(false);
+    // a note shared with nobody: nothing to stop, nothing said
+    const said = window.notices.length;
+    await store.stopSharing(FIRST);
+    expect(window.notices.length).toBe(said);
+  });
+
+  it("stops sharing with one project only, and names it", async () => {
+    const { api, store, window } = await setup();
+    const shared = "2026-10-16 1031.md";
+    api.probe.plugins.notes.share(shared, { project: "other", label: "Other project" });
+    await store.refresh();
+    expect(store.entries.find((e) => e.path === shared)?.sharedWith.map((s) => s.label)).toEqual([
+      "permark-docs",
+      "Other project",
+    ]);
+    await store.stopSharing(shared, "other");
+    expect(store.entries.find((e) => e.path === shared)?.sharedWith.map((s) => s.label)).toEqual([
+      "permark-docs",
+    ]);
+    expect(window.notices.at(-1)).toMatchObject({
+      kind: "note",
+      text: "“Reading list” is no longer shared with Other project.",
+    });
   });
 
   it("copies the text exactly and marks the note until it is edited", async () => {

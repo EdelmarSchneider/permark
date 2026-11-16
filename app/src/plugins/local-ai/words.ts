@@ -6,7 +6,7 @@ import type { DownloadError } from "../../api/generated/DownloadError";
 import type { EngineNeed } from "../../api/generated/EngineNeed";
 import type { ModelFit } from "../../api/generated/ModelFit";
 import { apiErrorText } from "../../core/errors";
-import { language, sizeText, t, tn, type MessageKey } from "../../core/i18n";
+import { formatLocale, language, sizeText, t, tn, type MessageKey } from "../../core/i18n";
 import type { AiTask, ModelCapability } from "./tasks";
 
 /** Languages named before "and N more". */
@@ -110,12 +110,23 @@ export function languageName(code: string, names: Intl.DisplayNames): string {
   }
 }
 
+/**
+ * A language name as one item of a sentence's list: a qualifier after a comma goes in parentheses (Russian
+ * "китайский, упрощенное письмо" would read as two items), and Vietnamese "Tiếng" (capitalized for menus) is lowercase.
+ */
+function inSentence(name: string, locale: string): string {
+  const parted = name.replace(/^([^,]+), (.+)$/u, "$1 ($2)");
+  return locale === "vi" ? parted.replace(/^Tiếng /u, "tiếng ") : parted;
+}
+
 /** "German, Japanese and Korean"; past four: "English, Arabic, Chinese, French, and 9 more" (list style of the
  *  current language). */
 export function languagesText(codes: readonly string[]): string {
   const locale = language.locale;
   const names = new Intl.DisplayNames(locale, { type: "language" });
-  const shown = codes.slice(0, SHOWN_LANGUAGES).map((code) => languageName(code, names));
+  const shown = codes
+    .slice(0, SHOWN_LANGUAGES)
+    .map((code) => inSentence(languageName(code, names), locale));
   const rest = codes.length - shown.length;
   const parts = rest > 0 ? [...shown, tn("localAi.languages.more", rest)] : shown;
   return new Intl.ListFormat(locale, { type: "conjunction" }).format(parts);
@@ -124,7 +135,7 @@ export function languagesText(codes: readonly string[]): string {
 /** A memory size: "6 GB", "128 MB" (binary units with the familiar names, as systems show memory: 16 GiB -> 16 GB). */
 export function memoryText(bytes: number): string {
   const giga = bytes >= 2 ** 30;
-  return new Intl.NumberFormat(language.locale, {
+  return new Intl.NumberFormat(formatLocale(), {
     style: "unit",
     unit: giga ? "gigabyte" : "megabyte",
     maximumFractionDigits: giga ? 1 : 0,
@@ -134,7 +145,7 @@ export function memoryText(bytes: number): string {
 /** A share of a download: "42%" (rounded down: 100% only when it is all there). */
 export function percentText(done: number, total: number): string {
   const share = total > 0 ? Math.floor((Math.min(done, total) / total) * 100) / 100 : 0;
-  return new Intl.NumberFormat(language.locale, { style: "percent" }).format(share);
+  return new Intl.NumberFormat(formatLocale(), { style: "percent" }).format(share);
 }
 
 /** Why a download stopped, in words. */
@@ -263,7 +274,7 @@ export function runErrorText(error: ApiError, noModel: MessageKey): string {
 
 /** A short duration: "0.6 seconds", "1.8 seconds" (one decimal, the current language's unit words). */
 export function secondsText(ms: number): string {
-  return new Intl.NumberFormat(language.locale, {
+  return new Intl.NumberFormat(formatLocale(), {
     style: "unit",
     unit: "second",
     unitDisplay: "long",
@@ -274,7 +285,7 @@ export function secondsText(ms: number): string {
 
 /** How fast a model writes: "8.6 tokens a second". */
 export function speedText(tokensPerSecond: number): string {
-  const speed = new Intl.NumberFormat(language.locale, {
+  const speed = new Intl.NumberFormat(formatLocale(), {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   }).format(tokensPerSecond);

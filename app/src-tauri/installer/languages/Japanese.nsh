@@ -1,0 +1,33 @@
+; Tauri's own installer strings (the pages and messages of its NSIS template) in Japanese, in place of Tauri's file:
+; `bundle.windows.nsis.customLanguageFiles` in tauri.conf.json points here. Tauri's file (CLI 2.12.3) puts "older" where
+; a version number goes ("のバージョン 旧 が") and has literal {{product_name}} placeholders. Same names as Tauri's
+; English.nsh (2.12.4 renamed choowHowToInstall to chooseHowToInstall: both are here, same words). Tauri copies the file
+; as it is and adds the byte order mark itself, so the file has none; the product name is ${PRODUCTNAME}.
+LangString addOrReinstall ${LANG_JAPANESE} "コンポーネントの追加・再インストール"
+LangString alreadyInstalled ${LANG_JAPANESE} "既にインストールされています"
+LangString alreadyInstalledLong ${LANG_JAPANESE} "${PRODUCTNAME} ${VERSION} は既にインストールされています。実行する操作を選択し、「次へ」をクリックして続行してください。"
+LangString appRunning ${LANG_JAPANESE} "${PRODUCTNAME} は実行中です。終了してから、もう一度やり直してください。"
+LangString appRunningOkKill ${LANG_JAPANESE} "${PRODUCTNAME} は実行中です。$\n「OK」をクリックすると終了します。"
+LangString chooseMaintenanceOption ${LANG_JAPANESE} "実行するメンテナンス操作を選択してください。"
+LangString chooseHowToInstall ${LANG_JAPANESE} "${PRODUCTNAME} のインストール方法を選択してください。"
+LangString choowHowToInstall ${LANG_JAPANESE} "${PRODUCTNAME} のインストール方法を選択してください。"
+LangString createDesktop ${LANG_JAPANESE} "デスクトップにショートカットを作成する"
+LangString dontUninstall ${LANG_JAPANESE} "アンインストールしない"
+LangString dontUninstallDowngrade ${LANG_JAPANESE} "アンインストールしない (このインストーラーでは、アンインストールせずにダウングレードすることはできません)"
+LangString failedToKillApp ${LANG_JAPANESE} "${PRODUCTNAME} を終了できませんでした。終了してから、もう一度やり直してください。"
+LangString installingWebview2 ${LANG_JAPANESE} "WebView2 をインストールしています..."
+LangString newerVersionInstalled ${LANG_JAPANESE} "より新しいバージョンの ${PRODUCTNAME} が既にインストールされています。古いバージョンのインストールはお勧めしません。どうしてもこのバージョンをインストールする場合は、先に現在のバージョンをアンインストールしてください。実行する操作を選択し、「次へ」をクリックして続行してください。"
+LangString older ${LANG_JAPANESE} "旧"
+LangString olderOrUnknownVersionInstalled ${LANG_JAPANESE} "お使いのシステムには ${PRODUCTNAME} の$R4バージョンがインストールされています。インストールする前に、現在のバージョンをアンインストールすることをお勧めします。実行する操作を選択し、「次へ」をクリックして続行してください。"
+LangString silentDowngrades ${LANG_JAPANESE} "このインストーラーではダウングレードできないため、サイレント インストールを続行できません。グラフィカル インターフェイスのインストーラーを使用してください。$\n"
+LangString unableToUninstall ${LANG_JAPANESE} "アンインストールできませんでした。"
+LangString uninstallApp ${LANG_JAPANESE} "${PRODUCTNAME} をアンインストールする"
+LangString uninstallBeforeInstalling ${LANG_JAPANESE} "インストールする前にアンインストールする"
+LangString unknown ${LANG_JAPANESE} "不明な"
+LangString webview2AbortError ${LANG_JAPANESE} "WebView2 をインストールできませんでした。WebView2 がないとアプリは実行できません。インストーラーを再起動してください。"
+LangString webview2DownloadError ${LANG_JAPANESE} "エラー: WebView2 のダウンロードに失敗しました - $0"
+LangString webview2DownloadSuccess ${LANG_JAPANESE} "WebView2 ブートストラップをダウンロードしました"
+LangString webview2Downloading ${LANG_JAPANESE} "WebView2 ブートストラップをダウンロードしています..."
+LangString webview2InstallError ${LANG_JAPANESE} "エラー: WebView2 のインストールが終了コード $1 で失敗しました。"
+LangString webview2InstallSuccess ${LANG_JAPANESE} "WebView2 をインストールしました"
+LangString deleteAppData ${LANG_JAPANESE} "アプリケーションデータを削除する"

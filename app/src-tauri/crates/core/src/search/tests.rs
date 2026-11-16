@@ -101,6 +101,37 @@ fn token_ranges_point_into_the_original_text() {
     }
 }
 
+#[test]
+fn letters_without_a_decomposition_fold_to_their_base_letter() {
+    // Vietnamese đ and Turkish dotless ı have no accent to strip; dotted İ decomposes to I + a dot
+    assert_eq!(fold("Mở cài đặt"), "mo cai dat");
+    assert_eq!(fold("Đà Nẵng"), "da nang");
+    assert_eq!(fold("ılık"), fold("ILIK"));
+    assert_eq!(fold("ışık"), "isik");
+    assert_eq!(fold("İstanbul"), "istanbul");
+    let mut index = Bm25::new();
+    doc(&mut index, "vi.md", "# Mở cài đặt\n\nĐà Nẵng\n");
+    doc(&mut index, "tr.md", "# ILIK\n\nışık İstanbul\n");
+    for (query, path) in [
+        ("dat", "vi.md"),
+        ("da nang", "vi.md"),
+        ("ılık", "tr.md"),
+        ("isik", "tr.md"),
+        ("istanbul", "tr.md"),
+    ] {
+        assert_eq!(paths_of(&index.search(query, 5, None)), [path], "{query}");
+    }
+    for (query, path) in [
+        ("cai dat", "Mở cài đặt.md"),
+        ("da nang", "Đà Nẵng.md"),
+        ("ılık", "ILIK.md"),
+        ("isik", "ışık.md"),
+        ("istanbul", "İstanbul.md"),
+    ] {
+        assert!(fuzzy(query, path).is_some(), "{query} ~ {path}");
+    }
+}
+
 // ---- fuzzy ---------------------------------------------------------------------------------------------------------
 
 fn fuzzy(query: &str, path: &str) -> Option<fuzzy::Match> {

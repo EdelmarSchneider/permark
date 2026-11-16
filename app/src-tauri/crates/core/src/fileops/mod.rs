@@ -32,8 +32,8 @@ use ts_rs::TS;
 
 pub use external::{external_target, OpenMode};
 pub use import::{
-    ConflictChoice, ImportFailure, ImportItem, ImportKind, ImportMode, ImportOutcome, ImportPhase,
-    ImportPlan, ImportProgress, ImportRefusal, ImportRefused,
+    copy_folder, ConflictChoice, ImportFailure, ImportItem, ImportKind, ImportMode, ImportOutcome,
+    ImportPhase, ImportPlan, ImportProgress, ImportRefusal, ImportRefused,
 };
 pub use names::{check_name, new_file_name, NameProblem};
 pub use plan::replacement_href;

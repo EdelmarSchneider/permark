@@ -207,6 +207,7 @@ describe("the page", () => {
   });
 
   it("marks links to missing documents and follows the ones that exist", async () => {
+    // the link checker is on by default: the backend's plugins come on with the shown document
     await show("README.md");
     await until(() => target.querySelector("a.is-missing") !== null, "missing link marked");
     const missing = target.querySelector<HTMLAnchorElement>("a.is-missing");
@@ -222,6 +223,39 @@ describe("the page", () => {
     expect(documents.trail.canBack).toBe(true);
     // the keyboard is on the new page, not lost with the link
     expect(document.activeElement?.hasAttribute("data-scroller")).toBe(true);
+  });
+
+  it("marks missing links only while the link checker is on, following it without a reopen", async () => {
+    const checker = (on: boolean): Promise<unknown> => mock.pluginSetProject("broken-links", on);
+    const nope = (): HTMLAnchorElement | null =>
+      target.querySelector<HTMLAnchorElement>('a[href="docs/nope.md"]');
+    try {
+      await checker(false);
+      await show("README.md");
+      await until(() => nope() !== null, "the link");
+      await until(() => target.querySelector(".katex") !== null, "page decorated");
+      expect(nope()?.classList.contains("is-missing")).toBe(false);
+      expect(nope()?.title).toBe("");
+      // switched on: the page shown is marked
+      await checker(true);
+      await until(() => nope()?.classList.contains("is-missing") === true, "marked when on");
+      expect(nope()?.title).toContain("docs/nope.md");
+      // switched off: the mark and its tooltip go
+      await checker(false);
+      await until(() => nope()?.classList.contains("is-missing") === false, "unmarked when off");
+      expect(nope()?.title).toBe("");
+      // a click on it still says the file is missing
+      nope()?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }),
+      );
+      await until(
+        () => store.notices.some((n) => n.kind === "note" && n.text.includes("docs/nope.md")),
+        "missing noted",
+      );
+      expect(documents.path).toBe("README.md");
+    } finally {
+      await mock.pluginSetProject("broken-links", null);
+    }
   });
 
   it("a middle | Shift | Ctrl + Shift click on a link follows it here and never asks for a new window", async () => {
@@ -668,7 +702,7 @@ describe("editing", () => {
     const panel = target.querySelector(".source .preview");
     expect(panel?.closest(".cm-editor")).toBeNull();
     expect(panel?.previousElementSibling?.classList.contains("cm")).toBe(true);
-    expect(panel?.textContent).toContain("mermaid or plantuml");
+    expect(panel?.textContent).toContain("mermaid, plantuml or dot");
     toggle?.click();
     await until(() => target.querySelector(".source .preview") === null, "panel off");
   });

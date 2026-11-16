@@ -21,11 +21,13 @@ import {
 import { createMockConfig } from "./mockConfig";
 import { createMockDistribution, type DistributionProbe } from "./mockDistribution";
 import { createMockTokens, type TokensProbe } from "./mockTokens";
+import { createMockSpelling, type SpellingProbe } from "./mockSpelling";
 import { createMockLocalAi, type LocalAiProbe } from "./mockLocalAi";
 import { createMockCorrection } from "./mockCorrection";
 import type { PieceRunProbe, PieceRunWiring } from "./mockPieceRun";
 import { createMockTranslation, type TranslationProbe } from "./mockTranslation";
 import { createMockConvert, type ConvertProbe } from "./mockConvert";
+import { createMockExport, type ExportProbe } from "./mockExport";
 import { createMockEditing, mockDecoded, mockHash, type MockEditProbe } from "./mockEdit";
 import { createMockImport, type ImportProbe } from "./mockImport";
 import { createMockNotes, MOCK_NOTES_FOLDER } from "./mockNotes";
@@ -42,6 +44,7 @@ import type {
   AppPluginEvents,
   AppSettings,
   CommandName,
+  DemoOffer,
   EventName,
   Events,
   JsonValue,
@@ -67,6 +70,8 @@ import type {
 export const MOCK_VERSION = "0.0.0-mock";
 export const MOCK_FOLDER = "C:/Users/demo/permark-docs";
 export const MOCK_FILE = "C:/Users/demo/Downloads/proposal.md";
+/** Where the mock's demo pages land (`Documents/PerMark Demo`). */
+export const MOCK_DEMO_FOLDER = "C:/Users/demo/Documents/PerMark Demo";
 /** A WSL folder (`watch/wsl.rs`): `\\wsl$\` | `\\wsl.localhost\`, also behind `\\?\UNC\` | `\\.\UNC\`, `/` | `\`. */
 const WSL_ROOT = /^[\\/]{2}(?:[?.][\\/]unc[\\/])?wsl(?:\$|\.localhost)(?:[\\/]|$)/i;
 
@@ -92,10 +97,16 @@ function mockCharacters(): CharacterGroup[] {
     { char: "←", names: ["left arrow", "leftwards arrow"] },
     { char: "⇔", names: ["left right double arrow", "if and only if", "iff"] },
   ];
+  const spaces: CharacterEntry[] = [
+    { char: "\u00A0", names: ["no-break space", "nbsp", "non-breaking space"] },
+    { char: "\u2009", names: ["thin space"] },
+    { char: "\u2060", names: ["word joiner", "wj"] },
+  ];
   return [
     { name: "emoji", entries: emoji },
     { name: "greek", entries: greek },
     { name: "arrows", entries: arrows },
+    { name: "spaces", entries: spaces },
   ];
 }
 
@@ -118,11 +129,13 @@ function defaultSettings(): AppSettings {
     rightViews: null,
     panels: null,
     layouts: null,
+    symbolFavorites: null,
     wrapLines: true,
     imageFolder: "img",
     charactersFile: "characters.toml",
     characters: mockCharacters(),
     charactersPath: MOCK_CHARACTERS_PATH,
+    charactersStatus: "builtin",
   };
 }
 
@@ -190,6 +203,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       return { ...settings, panels: change.value };
     case "layouts":
       return { ...settings, layouts: change.value };
+    case "symbolFavorites":
+      return { ...settings, symbolFavorites: change.value };
     case "wrapLines":
       return { ...settings, wrapLines: change.value };
     case "imageFolder":
@@ -229,8 +244,12 @@ export type MockProbe = {
   distribution: DistributionProbe;
   /** The token count plugin: vocabularies, what it was asked to count. */
   tokens: TokensProbe;
+  /** The spelling plugin: dictionaries (English ready), downloads, calls. */
+  spelling: SpellingProbe;
   /** The converter: the next answer, calls, saved files. */
   convert: ConvertProbe;
+  /** Export: the remembered setup, the next Save dialog answer, calls, written files. */
+  export: ExportProbe;
   /** Local AI: calls made, disk space, this computer, download + move timers. */
   localAi: LocalAiProbe;
   /** Correction: calls made, the status answer, a failure for the next run, the run timer. */
@@ -270,6 +289,8 @@ export type MockProbe = {
   /** Opens in this tab of a view that shows something: how long the backend's Opening state lasts (0: until the page
    *  reacted to it), the folders whose open fails (`io`), the project calls refused meanwhile (`project_of`). */
   opening: { ms: number; fails: Set<string>; refused: string[] };
+  /** The demo pages offer: what the backend answers, copies asked for, dismissals, a refusal for the next copy. */
+  demo: { offer: DemoOffer; installs: number; dismissed: number; fail: ErrorKind | null };
 };
 
 /** Fresh mock (tests get their own; the dev build uses `mockApi`). */
@@ -311,6 +332,7 @@ export function createMockApi(): Api & {
     "view-moved": new Set(),
     "import-progress": new Set(),
     "plugins-changed": new Set(),
+    "plugin-failed": new Set(),
     "index-progress": new Set(),
     "projects-changed": new Set(),
   };
@@ -489,14 +511,20 @@ export function createMockApi(): Api & {
       if (view.state === "showing") announceTabs();
     },
   });
-  const notes = createMockNotes(noteFiles, () => {
-    for (const handler of appListeners["notes:intent"]) handler(null);
-  });
+  const notes = createMockNotes(
+    noteFiles,
+    () => {
+      for (const handler of appListeners["notes:intent"]) handler(null);
+    },
+    () => settings.plugins["notes"] !== false,
+  );
   const appListeners: { [E in AppPluginEventName]: Set<(payload: AppPluginEvents[E]) => void> } = {
     "updates:state": new Set(),
     "token-count:state": new Set(),
     "token-count:folder": new Set(),
     "token-count:folders": new Set(),
+    "spelling:download": new Set(),
+    "spelling:personal": new Set(),
     "notes:intent": new Set(),
     "local-ai:state": new Set(),
     "local-ai:progress": new Set(),
@@ -515,7 +543,11 @@ export function createMockApi(): Api & {
     () => project.files,
     rootNow,
   );
+  const spelling = createMockSpelling((event, payload) => {
+    for (const handler of appListeners[event]) handler(payload);
+  });
   const convert = createMockConvert((path) => editing.probe.files.get(path) ?? null);
+  const exporting = createMockExport();
   const localAi = createMockLocalAi(
     (event, payload) => {
       for (const handler of appListeners[event]) handler(payload);
@@ -552,7 +584,9 @@ export function createMockApi(): Api & {
     {
       ...distribution.handlers,
       ...tokens.handlers,
+      ...spelling.handlers,
       ...convert.handlers,
+      ...exporting.handlers,
       ...localAi.handlers,
       ...correction.handlers,
       ...translation.handlers,
@@ -586,7 +620,9 @@ export function createMockApi(): Api & {
     pickedFrom,
     distribution: distribution.probe,
     tokens: tokens.probe,
+    spelling: spelling.probe,
     convert: convert.probe,
+    export: exporting.probe,
     localAi: localAi.probe,
     correction: correction.probe,
     translation: translation.probe,
@@ -617,6 +653,8 @@ export function createMockApi(): Api & {
       },
     },
     opening: { ms: 0, fails: new Set(), refused: [] },
+    // offered in the dev build, as on a first start
+    demo: { offer: "install", installs: 0, dismissed: 0, fail: null },
   };
   let tree: TreeView | null = null;
   /** The version of the shown document last told to the window (`null`: gone), as `document/mod.rs` keeps it. */
@@ -717,8 +755,8 @@ export function createMockApi(): Api & {
     if (probe.opening.fails.has(path)) {
       const back = tabList.find((t) => t.tab === activeTab)?.view ?? before;
       showView(back);
+      // the asking view is still there: the error answers its call, no `open-failed` event (as the backend)
       const error = { kind: "io" as const, subject: path, detail: null };
-      emit("open-failed", { window: "main", path, error });
       return { ok: false, error: { kind: "backend", command: "open_path", error } };
     }
     return { ok: true, value: { outcome: "opened", view: show() } };
@@ -783,8 +821,8 @@ export function createMockApi(): Api & {
     const condition: Context["agent"] =
       view.workspace.kind !== "project" || !agent.enabled
         ? { status: "off" }
-        : agent.clients[0] !== undefined
-          ? { status: "connected", client: agent.clients[0] }
+        : agent.sessions[0] !== undefined
+          ? { status: "connected", client: agent.sessions[0].name }
           : { status: "on" };
     const over = view.workspace.kind === "project" ? contextOver : {};
     return { ...base, workspace: kinds[view.workspace.kind], agent: condition, ...over } as Context;
@@ -847,6 +885,7 @@ export function createMockApi(): Api & {
         notices: [],
         failures: [],
         platform: "windows",
+        region: null,
       }),
     openPath: (path, placement) => {
       const open = tabOf(path);
@@ -1017,6 +1056,17 @@ export function createMockApi(): Api & {
       if (change.key === "pluginEnabled") announceShell();
       return ok(settings);
     },
+    // the demo has no groups file on disk: nothing changes on a read again
+    charactersRefresh: () => ok(null),
+    // stands in for the written file: the built-ins it holds are now read from it
+    charactersCreate: () => {
+      if (settings.charactersStatus !== "builtin" || settings.charactersFile === "")
+        return ok(false);
+      settings = { ...settings, charactersStatus: "read" };
+      emit("settings-changed", { scope: { scope: "app" }, keys: ["charactersFile"], settings });
+      return ok(true);
+    },
+    charactersReveal: () => ok(null),
     projectSessionGet: (key) =>
       Promise.resolve(
         whileOpening("project_session_get") ?? { ok: true, value: session.get(key) ?? null },
@@ -1357,6 +1407,23 @@ export function createMockApi(): Api & {
     defaultAppSet: distribution.defaultAppSet,
     defaultAppAsked: distribution.defaultAppAsked,
     defaultAppHandoff: distribution.defaultAppHandoff,
+    demoOffer: () => ok(probe.demo.offer),
+    // as the backend: a refused copy leaves the offer; a copy | a folder found counts as used
+    demoInstall: () => {
+      probe.demo.installs += 1;
+      const failure = probe.demo.fail;
+      if (failure !== null) {
+        probe.demo.fail = null;
+        return Promise.resolve(refused<string>("demo_install", failure, MOCK_DEMO_FOLDER));
+      }
+      probe.demo.offer = "hidden";
+      return ok(MOCK_DEMO_FOLDER);
+    },
+    demoDismiss: () => {
+      probe.demo.dismissed += 1;
+      probe.demo.offer = "hidden";
+      return ok(null);
+    },
     onAppPlugin: (event, handler) => {
       appListeners[event].add(handler);
       return Promise.resolve(() => {
@@ -1373,3 +1440,13 @@ export function createMockApi(): Api & {
 }
 
 export const mockApi = createMockApi();
+
+// `dev:mock` opened with `?unshared` shows the notice about sharing an update turned off (once, like the app)
+if (typeof location !== "undefined" && new URLSearchParams(location.search).has("unshared")) {
+  mockApi.probe.plugins.notes.unshared([
+    "2026-10-19 0907.md",
+    "2026-10-18 1855.md",
+    "2026-10-19 0815.md",
+    "2026-09-02 1700.md",
+  ]);
+}

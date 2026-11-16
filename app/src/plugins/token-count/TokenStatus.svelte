@@ -6,7 +6,7 @@
   // shows the progress instead, with a way to stop it.
   import Hash from "@lucide/svelte/icons/hash";
   import { createAnalysisText } from "../../core/doc/analysisText.svelte";
-  import { language, t, tn } from "../../core/i18n";
+  import { formatLocale, t, tn } from "../../core/i18n";
   import { createFigures } from "./figures.svelte";
   import { isWorking } from "./folders";
   import { folders } from "./folders.svelte";
@@ -19,7 +19,7 @@
   const figures = createFigures(source);
   let box: HTMLElement | undefined = $state();
 
-  const number = (n: number): string => new Intl.NumberFormat(language.locale).format(n);
+  const number = (n: number): string => new Intl.NumberFormat(formatLocale()).format(n);
   const mark = (figure: Figure): string => (figure.approx ? "≈ " : "");
 
   const primary = $derived(tokens.primary);
@@ -215,7 +215,7 @@
                 {#if state === "download" && vocab !== null}
                   {t("tokens.download", { tokenizer: info.short })} ({formatMegabytes(
                     vocab.bytes,
-                    language.locale,
+                    formatLocale(),
                   )})
                 {:else if state === "downloading"}
                   {t("tokens.downloading", {
@@ -331,7 +331,7 @@
     overflow-y: auto;
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--bg);
+    background: var(--pop);
     color: var(--text);
     box-shadow: var(--shadow-pop);
     font-size: var(--fs-ui-sm);

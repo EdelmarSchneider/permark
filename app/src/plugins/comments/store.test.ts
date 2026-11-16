@@ -80,6 +80,7 @@ describe("starting a comment", () => {
       true,
     );
     expect(store.draft).toEqual({
+      kind: "new",
       path: GUIDE,
       quote: "Back to the readme.",
       headingPath: ["Guide"],
@@ -169,6 +170,71 @@ describe("the comments", () => {
     stop();
   });
 
+  it("edits the comment's text and the person's reply, marking them edited", async () => {
+    const { store, stop } = await withOne();
+    const id = store.all[0]?.id ?? "";
+    expect(store.all[0]?.editedMs).toBeNull();
+    expect(await store.edit(id, { kind: "comment" }, "  Say it much better ")).toBe(true);
+    expect(store.all[0]).toMatchObject({ text: "Say it much better", quote: "Back to the readme" });
+    expect(store.all[0]?.editedMs).toEqual(expect.any(Number));
+    await store.reply(id, "first thought");
+    expect(await store.edit(id, { kind: "reply", index: 0 }, "second thought")).toBe(true);
+    expect(store.all[0]?.replies[0]).toMatchObject({ text: "second thought", by: "user" });
+    expect(store.all[0]?.replies[0]?.editedMs).toEqual(expect.any(Number));
+    expect(await store.edit(id, { kind: "comment" }, "   ")).toBe(false);
+    expect(store.all[0]?.text).toBe("Say it much better");
+    stop();
+  });
+
+  it("tells when an edit is refused (the comment went away meanwhile)", async () => {
+    const { api, store, stop, notes } = await withOne();
+    const id = store.all[0]?.id ?? "";
+    await api.pluginCall("comments.remove", { id });
+    expect(await store.edit(id, { kind: "comment" }, "too late")).toBe(false);
+    expect(notes.at(-1)).toContain("Couldn't save the comment");
+    expect(await store.edit("gone", { kind: "reply", index: 3 }, "x")).toBe(false);
+    stop();
+  });
+
+  it("opens the field on the text being edited and saves it there", async () => {
+    const { store, stop } = await withOne();
+    const comment = store.all[0];
+    if (!comment) throw new Error("no comment");
+    const rect = new DOMRect(1, 2, 3, 4);
+    store.beginEdit(comment, { kind: "comment" }, rect);
+    expect(store.draft).toEqual({
+      kind: "edit",
+      id: comment.id,
+      target: { kind: "comment" },
+      quote: comment.quote,
+      text: "Say it better",
+      rect,
+    });
+    expect(await store.save("Better")).toBe(true);
+    expect(store.draft).toBeNull();
+    expect(store.all[0]?.text).toBe("Better");
+    // a reply that is not there: nothing to edit
+    store.beginEdit(comment, { kind: "reply", index: 5 }, null);
+    expect(store.draft).toBeNull();
+    stop();
+  });
+
+  it("the mock refuses what the backend refuses", async () => {
+    const { api, store, stop } = await withOne();
+    const id = store.all[0]?.id ?? "";
+    const kind = async (args: { id: string; reply?: number; text: string }) => {
+      const result = await api.pluginCall("comments.edit", args);
+      if (result.ok) return "ok";
+      return result.error.kind === "backend" ? result.error.error.kind : result.error.kind;
+    };
+    expect(await kind({ id, text: "  " })).toBe("invalidData");
+    expect(await kind({ id, text: "é".repeat(2001) })).toBe("tooLarge");
+    expect(await kind({ id, reply: 0, text: "x" })).toBe("notFound");
+    expect(await kind({ id: "nope", text: "x" })).toBe("notFound");
+    expect(await kind({ id, text: "é".repeat(2000) })).toBe("ok");
+    stop();
+  });
+
   it("refuses an empty comment and keeps the draft", async () => {
     const { view, text } = page();
     const { store, stop } = await setup({ path: GUIDE, view });
@@ -183,7 +249,9 @@ describe("the comments", () => {
     const { store, stop, notes } = await setup({ path: GUIDE, view });
     store.begin({ text: "Back to the readme", node: text, endNode: text, rect: null });
     // the document went away meanwhile
-    store.draft = { ...(store.draft as NonNullable<typeof store.draft>), path: "gone.md" };
+    const draft = store.draft;
+    if (draft?.kind !== "new") throw new Error("no draft");
+    store.draft = { ...draft, path: "gone.md" };
     expect(await store.save("text")).toBe(false);
     expect(notes[0]).toContain("Couldn't save the comment");
     expect(store.draft).not.toBeNull();

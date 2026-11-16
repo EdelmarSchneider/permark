@@ -34,6 +34,8 @@ export function problemKey(code: string): MessageKey {
       return "settings.problem.noPath";
     case "notInitialized":
       return "settings.problem.notInitialized";
+    case "tomlOnly":
+      return "settings.problem.tomlOnly";
     default:
       return "settings.problem.other";
   }

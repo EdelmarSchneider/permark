@@ -116,6 +116,7 @@ afterEach(async () => {
     "token-count",
     "updates",
     "shell-integration",
+    "spelling",
   ]) {
     await store.changeSetting({ key: "pluginEnabled", value: { plugin: id, enabled: null } });
   }
@@ -146,6 +147,20 @@ describe("the settings page", () => {
     mountPage("reading");
     await tick();
     expect(names()).toEqual(["Reading", "Editing", "Integration", "Plugins", "This folder"]);
+    // each section wears its icon, decoration only (the name is the words)
+    const icons = Array.from(target.querySelectorAll(".nav-item")).map((b) =>
+      Array.from(b.querySelector("svg")?.classList ?? []).find(
+        (c) => c.startsWith("lucide-") && c !== "lucide-icon",
+      ),
+    );
+    expect(icons).toEqual([
+      "lucide-book-open",
+      "lucide-pen-line",
+      "lucide-plug",
+      "lucide-puzzle",
+      "lucide-folder-cog",
+    ]);
+    expect(target.querySelector(".nav-item svg")?.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("Escape closes it and a section the person cannot reach falls back to Reading", async () => {
@@ -157,6 +172,22 @@ describe("the settings page", () => {
     const page = target.querySelector<HTMLElement>(".page");
     press(page!, "Escape");
     expect(ui.settingsPage.status).toBe("closed");
+  });
+
+  it("opened from the quick settings (gone by then): closing it puts the keyboard on the gear", async () => {
+    await open();
+    const gear = document.createElement("button");
+    gear.setAttribute("data-settings-trigger", "");
+    const allSettings = document.createElement("button");
+    document.body.append(gear, allSettings);
+    allSettings.focus();
+    mountPage("reading");
+    // the popover holding "All settings" closes as the page opens
+    allSettings.remove();
+    press(target.querySelector<HTMLElement>(".page")!, "Escape");
+    await unmount(component!);
+    component = null;
+    expect(document.activeElement).toBe(gear);
   });
 
   it("the section list is a keyboard list: arrows move the section and the focus", async () => {
@@ -232,12 +263,17 @@ describe("the settings page", () => {
         .join(",")} / ${conditions.current.plugins.join(",")}`,
     );
     mountPage("integration");
-    await until(() => target.querySelectorAll("section.group").length >= 5, "groups");
-    const headings = Array.from(target.querySelectorAll("section.group h3")).map((h) =>
-      h.textContent?.trim(),
+    const shown = () =>
+      Array.from(target.querySelectorAll("section.group h3")).map((h) => h.textContent?.trim());
+    // plugin sections arrive as their plugins activate, in no fixed order: wait for the ones checked below
+    const expected = ["File manager", "Updates", "Git", "Notes"];
+    await until(
+      () => expected.every((name) => shown().includes(name)),
+      `groups ${shown().join(",")}`,
     );
+    const headings = shown();
     expect(headings[0]).toBe("Default app");
-    expect(headings).toEqual(expect.arrayContaining(["File manager", "Updates", "Git", "Notes"]));
+    expect(headings).toEqual(expect.arrayContaining(expected));
     // the agent connection has its own section (Settings > AI agents)
     expect(headings).not.toContain("Agent connection");
     // Windows: who opens the files now, and the way to Windows' own page
@@ -247,7 +283,7 @@ describe("the settings page", () => {
     );
     expect(target.textContent).toContain("Opens with PerMark");
     // plugins off: their sections go, the default app stays
-    for (const id of ["git", "notes", "token-count", "updates", "shell-integration"]) {
+    for (const id of ["git", "notes", "token-count", "updates", "shell-integration", "spelling"]) {
       await store.changeSetting({ key: "pluginEnabled", value: { plugin: id, enabled: false } });
     }
     await until(
@@ -274,7 +310,7 @@ describe("the plugins page", () => {
 
   it("every plugin is listed once, grouped by kind, with its switch on", async () => {
     await pluginsPage();
-    expect(target.querySelectorAll(".plugin")).toHaveLength(37);
+    expect(target.querySelectorAll(".plugin")).toHaveLength(41);
     const groups = Array.from(target.querySelectorAll("section.group h3")).map(
       (h) => h.textContent,
     );
@@ -949,14 +985,28 @@ describe("the top bar", () => {
     );
     // the missing recent folder is left out (the Welcome lists it with its Remove)
     expect(items).toEqual([
-      "Open folder... Ctrl+O",
-      "Open file... Ctrl+Shift+O",
+      "Open folder… Ctrl+O",
+      "Open file… Ctrl+Shift+O",
       "New project…",
       "Notes",
       "api-specs C:/work/api-specs",
       `permark-docs ${MOCK_FOLDER}`,
     ]);
     expect(menu.querySelector(".heading")?.textContent).toBe("Recent folders");
+    // the same icons as the Welcome's buttons; Notes as their button; a folder per recent one
+    const icons = Array.from(menu.querySelectorAll('[role="menuitem"]')).map((i) =>
+      Array.from(i.querySelector("svg")?.classList ?? []).find(
+        (c) => c.startsWith("lucide-") && c !== "lucide-icon",
+      ),
+    );
+    expect(icons).toEqual([
+      "lucide-folder-open",
+      "lucide-file-text",
+      "lucide-folder-plus",
+      "lucide-notebook-pen",
+      "lucide-folder",
+      "lucide-folder",
+    ]);
     // a recent folder that is open already: its tab comes forward, nothing opens again
     (menu.querySelectorAll('[role="menuitem"]')[5] as HTMLElement).click();
     await until(() => shownName() === "permark-docs", "its tab");
@@ -992,6 +1042,9 @@ describe("the top bar", () => {
     expect(notesButton.getAttribute("title")).toBe("Notes (Ctrl+Shift+D)");
     expect(notesButton.hasAttribute("aria-current")).toBe(false);
     expect(notesButton.hasAttribute("aria-pressed")).toBe(false);
+    // a notebook and, where the bar has room (CSS), the word: the way to the Notes reads from the screen
+    expect(notesButton.querySelector("svg.lucide-notebook-pen")).not.toBeNull();
+    expect(notesButton.querySelector(".word")?.textContent).toBe("Notes");
     const openNotes = vi.spyOn(store, "openNotes");
     notesButton.click();
     expect(openNotes).toHaveBeenCalledWith("tab");

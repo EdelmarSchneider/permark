@@ -3,9 +3,16 @@
   // and the plugins' own, such as AI agents, by order) and the shown one at the right, each a card of rows; Projects
   // inside only where the folder holds projects (`projects.md` §12.2; loaded when shown). Covers the window below the
   // top bar; Escape or Close goes back to where the person was.
+  import BookOpen from "@lucide/svelte/icons/book-open";
+  import FolderCog from "@lucide/svelte/icons/folder-cog";
+  import PenLine from "@lucide/svelte/icons/pen-line";
+  import Plug from "@lucide/svelte/icons/plug";
+  import Puzzle from "@lucide/svelte/icons/puzzle";
   import X from "@lucide/svelte/icons/x";
   import { conditions } from "../../conditions/context.svelte";
   import { t, type MessageKey } from "../../i18n";
+  import { projectIcon } from "../../explorer/icons";
+  import type { MenuIcon } from "../../explorer/menu";
   import { contributions } from "../../plugins/instance.svelte";
   import { projects } from "../../projects/instance.svelte";
   import type { WindowStore } from "../../window.svelte";
@@ -35,11 +42,20 @@
     projects: "settings.section.projects",
     project: "settings.section.project",
   };
+  /** A small icon per section (decoration: the words name it); Projects inside wears the included project's. */
+  const ICONS: Record<CoreSettingsSection, MenuIcon> = {
+    reading: BookOpen,
+    editing: PenLine,
+    integration: Plug,
+    plugins: Puzzle,
+    projects: projectIcon("permark"),
+    project: FolderCog,
+  };
 
   const inProject = $derived(conditions.current.workspace === "project");
   /** The plugins' own sections that may show here (plugin on, requirement met). */
   const pluginPages = $derived(contributions.visible("settingsPage", conditions.current));
-  type NavItem = { id: SettingsSection; label: MessageKey; order: number };
+  type NavItem = { id: SettingsSection; label: MessageKey; order: number; icon?: MenuIcon };
   /** Sections the person can reach here: Project only while a project is shown, Projects only where it holds some;
    *  the plugins' sections among them by order. */
   const nav = $derived(
@@ -47,8 +63,18 @@
       ...SETTINGS_SECTIONS.filter(
         (s) =>
           (s !== "project" || inProject) && (s !== "projects" || (inProject && projects.present)),
-      ).map((s): NavItem => ({ id: s, label: LABELS[s], order: CORE_SECTION_ORDER[s] })),
-      ...pluginPages.map((p): NavItem => ({ id: p.id, label: p.label, order: p.order })),
+      ).map((s): NavItem => ({
+        id: s,
+        label: LABELS[s],
+        order: CORE_SECTION_ORDER[s],
+        icon: ICONS[s],
+      })),
+      ...pluginPages.map((p): NavItem => ({
+        id: p.id,
+        label: p.label,
+        order: p.order,
+        icon: p.icon,
+      })),
     ].sort((a, b) => a.order - b.order),
   );
   const sections = $derived(nav.map((item) => item.id));
@@ -78,6 +104,11 @@
     );
   }
 
+  /** "All settings" sits in the quick settings, which close as the page opens: the gear is the way back. */
+  function gear(): HTMLElement | null {
+    return document.querySelector<HTMLElement>("[data-settings-trigger]");
+  }
+
   function onnavkey(e: KeyboardEvent): void {
     const step =
       e.key === "ArrowDown" || e.key === "ArrowRight"
@@ -105,7 +136,7 @@
     aria-label={t("settings.title")}
     tabindex="-1"
     bind:this={page}
-    use:dialogFocus={{ initial: entry, onEscape }}
+    use:dialogFocus={{ initial: entry, onEscape, fallback: gear }}
   >
     <header class="bar">
       <h2>{t("settings.title")}</h2>
@@ -126,6 +157,10 @@
             onclick={() => ui.showSettingsSection(item.id)}
             onkeydown={onnavkey}
           >
+            {#if item.icon}
+              {@const Icon = item.icon}
+              <Icon size={15} strokeWidth={item.id === section ? 2 : 1.8} />
+            {/if}
             {t(item.label)}
           </button>
         {/each}
@@ -209,6 +244,9 @@
     overflow-y: auto;
   }
   .nav-item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
     padding: 6px var(--sp-3);
     border: 0;
     border-radius: var(--radius-control);

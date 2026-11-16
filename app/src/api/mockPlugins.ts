@@ -8,7 +8,9 @@ import type { createMockOrganizing } from "./mockOrganizing";
 import type { createMockNotes, NotesProbe } from "./mockNotes";
 import type { createMockDistribution } from "./mockDistribution";
 import type { createMockTokens } from "./mockTokens";
+import type { createMockSpelling } from "./mockSpelling";
 import type { createMockConvert } from "./mockConvert";
+import type { createMockExport } from "./mockExport";
 import type { createMockCorrection } from "./mockCorrection";
 import type { createMockTranslation } from "./mockTranslation";
 import type { createMockLocalAi } from "./mockLocalAi";
@@ -137,7 +139,9 @@ export function createMockPlugins(
   notes: ReturnType<typeof createMockNotes>,
   distribution: ReturnType<typeof createMockDistribution>["handlers"] &
     ReturnType<typeof createMockTokens>["handlers"] &
+    ReturnType<typeof createMockSpelling>["handlers"] &
     ReturnType<typeof createMockConvert>["handlers"] &
+    ReturnType<typeof createMockExport>["handlers"] &
     ReturnType<typeof createMockLocalAi>["handlers"] &
     ReturnType<typeof createMockCorrection>["handlers"] &
     ReturnType<typeof createMockTranslation>["handlers"],
@@ -322,6 +326,7 @@ export function createMockPlugins(
     ...organizing.handlers,
     ...agent.handlers,
     ...notes.handlers,
+    ...notes.agentHandlers,
     ...distribution,
     "git.snapshot": ({ project }) => (project ? members.snapshot(project) : snapshot()),
     "git.refresh": ({ project }) => {

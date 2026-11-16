@@ -3,19 +3,21 @@
 //! `Connected`.
 
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use permark_core::conditions::AgentCondition;
 use permark_core::ipc_local::{Endpoint, IpcLocalError, Reply, Server};
 use permark_core::plugins::{PluginEvents, ProjectFacts};
-use permark_core::settings::ProjectConfig;
+use permark_core::settings::{is_unsafe_char, ProjectConfig};
+use permark_core::state::{StateData, StateFile};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 
 use crate::perms::{self, Access, Group};
+use crate::session::{self, SessionId};
 use crate::tools::Tools;
 use crate::ToolError;
 
@@ -23,20 +25,35 @@ use crate::ToolError;
 pub const RECENT: usize = 8;
 /// Longest client name kept.
 const MAX_CLIENT_CHARS: usize = 64;
+/// Longest working folder kept (display only).
+const MAX_FOLDER_CHARS: usize = 260;
+/// Sessions the person disconnected, per project, in the profile only: an app restart must not let a disconnected
+/// agent pair again by itself, and a project's files must never lift a refusal.
+pub const REFUSED_FILE: &str = "agent-refused.json";
+/// Refusals kept; the oldest goes first (an id lives only as long as one agent process).
+const MAX_REFUSED: usize = 32;
 
 /// One line from `permark mcp`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Request {
     /// Opens a session: the connection is held while the client runs.
-    Hello { client: String },
+    Hello {
+        /// `None` = missing | malformed on the wire: refused.
+        #[serde(default, deserialize_with = "session::lenient")]
+        session: Option<SessionId>,
+        client: String,
+        /// The client's working folder relative to the project root, `/`-separated (`""` = the root).
+        #[serde(default)]
+        folder: String,
+    },
     /// One tool call.
     Call {
         tool: String,
         #[serde(default)]
         args: Value,
-        #[serde(default)]
-        client: String,
+        #[serde(default, deserialize_with = "session::lenient")]
+        session: Option<SessionId>,
     },
 }
 
@@ -76,6 +93,9 @@ pub enum ServerState {
 #[serde(rename_all = "camelCase")]
 #[ts(export, rename = "AgentRequest")]
 pub struct RequestRecord {
+    /// The session that asked.
+    #[ts(type = "string")]
+    pub session: SessionId,
     pub tool: String,
     pub subject: Option<String>,
     #[ts(type = "number")]
@@ -84,14 +104,35 @@ pub struct RequestRecord {
     pub outcome: String,
 }
 
+/// One connected agent (a `permark mcp` process that said hello and is still running).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AgentSession {
+    #[ts(type = "string")]
+    pub id: SessionId,
+    /// The name the client gave itself (not verified).
+    pub name: String,
+    #[ts(type = "number")]
+    pub started_ms: u64,
+    /// Working folder relative to the project root, `/`-separated; empty = the root.
+    pub folder: String,
+    #[ts(type = "number | null")]
+    pub last_call_ms: Option<u64>,
+}
+
 /// What the status item, its popover and the settings show.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct AgentStatus {
+    /// The switch is on for this folder.
     pub enabled: bool,
+    /// The switch was turned on for another folder that stood at this path (shown off, with why).
+    pub replaced: bool,
     pub server: ServerState,
-    pub clients: Vec<String>,
+    /// Connected agents, the earliest first.
+    pub sessions: Vec<AgentSession>,
     /// Group id -> on (the person's choice, default when not chosen).
     pub groups: BTreeMap<String, bool>,
     /// Groups the project's `.permark/config.toml` denies.
@@ -105,12 +146,104 @@ fn now_ms() -> u64 {
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
+/// Printable text of at most `max` chars (a client's self-declared words, shown in the app): no control characters,
+/// no bidi controls (they would reorder what the app shows around them).
+fn clean(text: &str, max: usize) -> String {
+    let text: String = text
+        .chars()
+        .filter(|c| !c.is_control() && !is_unsafe_char(*c))
+        .take(max)
+        .collect();
+    text.trim().to_owned()
+}
+
+/// What the hub knows of one session.
+struct SessionInfo {
+    name: String,
+    started_ms: u64,
+    folder_rel: String,
+    last_call_ms: Option<u64>,
+    /// Which held connection keeps the session (a hello again replaces it; only that one's end removes it).
+    holder: u64,
+    /// Order of the first hello (milliseconds tie).
+    order: u64,
+    /// Set = the server lets the held connection go (the person disconnected the session).
+    end: Arc<AtomicBool>,
+}
+
+/// `agent-refused.json`: disconnected session ids, the oldest first.
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct RefusedIds {
+    #[serde(default)]
+    ids: Vec<String>,
+}
+
+impl StateData for RefusedIds {
+    const VERSION: u32 = 1;
+}
+
+/// The refused sessions and the file that keeps them.
+struct Refusals {
+    /// The oldest first, at most [`MAX_REFUSED`].
+    ids: Vec<SessionId>,
+    file: StateFile<RefusedIds>,
+}
+
+impl Refusals {
+    fn load(file: StateFile<RefusedIds>) -> Self {
+        // an id that does not parse is dropped alone (one bad entry never loses the others)
+        let ids = file
+            .load()
+            .into_value()
+            .ids
+            .iter()
+            .filter_map(|text| SessionId::parse(text))
+            .collect();
+        let mut refusals = Self { ids, file };
+        refusals.trim();
+        refusals
+    }
+
+    fn contains(&self, id: &SessionId) -> bool {
+        self.ids.contains(id)
+    }
+
+    fn insert(&mut self, id: SessionId) {
+        self.ids.retain(|kept| *kept != id);
+        self.ids.push(id);
+        self.trim();
+        self.save();
+    }
+
+    fn remove(&mut self, id: &SessionId) {
+        let before = self.ids.len();
+        self.ids.retain(|kept| kept != id);
+        if self.ids.len() != before {
+            self.save();
+        }
+    }
+
+    fn trim(&mut self) {
+        let over = self.ids.len().saturating_sub(MAX_REFUSED);
+        self.ids.drain(..over);
+    }
+
+    /// A failed write leaves the refusal in memory: it holds until the app restarts.
+    fn save(&self) {
+        let ids = self.ids.iter().map(|id| id.as_str().to_owned()).collect();
+        let _ = self.file.save(&RefusedIds { ids });
+    }
+}
+
 /// What the server threads and the window's calls share.
 pub struct Hub {
     pub tools: Tools,
     facts: Arc<ProjectFacts>,
     events: PluginEvents,
-    sessions: Mutex<BTreeMap<u64, String>>,
+    sessions: Mutex<BTreeMap<SessionId, SessionInfo>>,
+    /// Sessions the person disconnected: refused until the agent process restarts (a new id) or the person undoes
+    /// it. Kept while the switch is off and on again and across app restarts, so neither lets them in silently.
+    refused: Mutex<Refusals>,
     next: AtomicU64,
     recent: Mutex<VecDeque<RequestRecord>>,
     server: Mutex<ServerState>,
@@ -123,26 +256,44 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// Ends a session when dropped (peer gone or server stopped).
 struct Session {
     hub: Weak<Hub>,
-    id: u64,
+    id: SessionId,
+    holder: u64,
 }
 
 impl Drop for Session {
     fn drop(&mut self) {
         if let Some(hub) = self.hub.upgrade() {
-            lock(&hub.sessions).remove(&self.id);
+            {
+                let mut sessions = lock(&hub.sessions);
+                if sessions
+                    .get(&self.id)
+                    .is_some_and(|s| s.holder == self.holder)
+                {
+                    sessions.remove(&self.id);
+                }
+            }
             hub.changed();
         }
     }
 }
 
+/// The refusal of a request that names no valid session.
+fn no_session() -> Reply<Response> {
+    Reply::Answer(Response::of(Err(ToolError::Invalid(
+        "no valid session id; restart the agent with this version of PerMark".to_owned(),
+    ))))
+}
+
 impl Hub {
     #[must_use]
     pub fn new(tools: Tools, facts: Arc<ProjectFacts>, events: PluginEvents) -> Arc<Self> {
+        let refused = Refusals::load(tools.store().profile_file(REFUSED_FILE));
         Arc::new(Self {
             tools,
             facts,
             events,
             sessions: Mutex::new(BTreeMap::new()),
+            refused: Mutex::new(refused),
             next: AtomicU64::new(1),
             recent: Mutex::new(VecDeque::new()),
             server: Mutex::new(ServerState::Off),
@@ -152,37 +303,104 @@ impl Hub {
     /// One request line.
     fn handle(self: &Arc<Self>, request: Request) -> Reply<Response> {
         match request {
-            Request::Hello { client } => {
-                let client: String = client
-                    .chars()
-                    .filter(|c| !c.is_control())
-                    .take(MAX_CLIENT_CHARS)
-                    .collect();
-                let client = if client.trim().is_empty() {
-                    "agent".to_owned()
-                } else {
-                    client.trim().to_owned()
-                };
-                let id = self.next.fetch_add(1, Ordering::Relaxed);
-                lock(&self.sessions).insert(id, client);
-                self.changed();
-                Reply::Hold(
-                    Response::Ok { value: Value::Null },
-                    Box::new(Session {
-                        hub: Arc::downgrade(self),
-                        id,
-                    }),
-                )
+            Request::Hello {
+                session: Some(id),
+                client,
+                folder,
+            } => {
+                if lock(&self.refused).contains(&id) {
+                    return Reply::Answer(Response::of(Err(ToolError::Disconnected)));
+                }
+                let hub = Arc::clone(self);
+                let end = Arc::new(AtomicBool::new(false));
+                let flag = Arc::clone(&end);
+                Reply::Hold {
+                    answer: Response::Ok { value: Value::Null },
+                    full: Response::of(Err(ToolError::Failed(
+                        "too many agents are connected to this project; this one connects when another ends"
+                            .to_owned(),
+                    ))),
+                    // listed only once the connection is held: a hello over the cap shows | tells nothing
+                    held: Box::new(move || hub.hold(id, &client, &folder, flag)),
+                    end,
+                }
             }
-            Request::Call { tool, args, .. } => Reply::Answer(Response::of(self.call(&tool, args))),
+            Request::Call {
+                tool,
+                args,
+                session: Some(id),
+            } => Reply::Answer(Response::of(self.call(&id, &tool, args))),
+            Request::Hello { session: None, .. } | Request::Call { session: None, .. } => {
+                no_session()
+            }
         }
     }
 
-    /// Runs a tool and notes it for the popover.
+    /// Lists the session whose connection is now held; the guard it returns ends the session when dropped.
+    fn hold(
+        self: &Arc<Self>,
+        id: SessionId,
+        client: &str,
+        folder: &str,
+        end: Arc<AtomicBool>,
+    ) -> Box<dyn Send> {
+        let name = Some(clean(client, MAX_CLIENT_CHARS))
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| "agent".to_owned());
+        let holder = self.next.fetch_add(1, Ordering::Relaxed);
+        {
+            // a call made before the hello still counts as the session's last call
+            let last_call = lock(&self.recent)
+                .iter()
+                .find(|r| r.session == id)
+                .map(|r| r.at_ms);
+            // looked at under the sessions lock: a disconnect since the hello was read lets the connection go at
+            // once and never leaves a refused id listed
+            let mut sessions = lock(&self.sessions);
+            if lock(&self.refused).contains(&id) {
+                end.store(true, Ordering::Release);
+                return Box::new(());
+            }
+            // the same process again (its held connection was lost): it keeps its start and last call
+            let (started_ms, last_call_ms, order) = sessions
+                .get(&id)
+                .map_or((now_ms(), last_call, holder), |s| {
+                    (s.started_ms, s.last_call_ms, s.order)
+                });
+            let earlier = sessions.insert(
+                id.clone(),
+                SessionInfo {
+                    name,
+                    started_ms,
+                    folder_rel: clean(folder, MAX_FOLDER_CHARS),
+                    last_call_ms,
+                    holder,
+                    order,
+                    end,
+                },
+            );
+            // its earlier connection, if still held here, is let go: a disconnect then ends every connection of the id
+            if let Some(earlier) = earlier {
+                earlier.end.store(true, Ordering::Release);
+            }
+        }
+        self.changed();
+        Box::new(Session {
+            hub: Arc::downgrade(self),
+            id,
+            holder,
+        })
+    }
+
+    /// Runs a tool for `session` and notes it for the popover.
     ///
     /// # Errors
     /// What the tool answers.
-    pub fn call(&self, tool: &str, args: Value) -> Result<Value, ToolError> {
+    pub fn call(&self, session: &SessionId, tool: &str, args: Value) -> Result<Value, ToolError> {
+        // refused before anything runs or is recorded
+        if lock(&self.refused).contains(session) {
+            return Err(ToolError::Disconnected);
+        }
         let subject = ["path", "query", "id", "note", "tag"]
             .iter()
             .find_map(|key| args.get(*key).and_then(Value::as_str))
@@ -199,18 +417,42 @@ impl Hub {
             Ok(_) => "ok",
             Err(error) => error.code(),
         };
+        let at_ms = now_ms();
+        if let Some(info) = lock(&self.sessions).get_mut(session) {
+            info.last_call_ms = Some(at_ms);
+        }
         {
             let mut recent = lock(&self.recent);
             recent.push_front(RequestRecord {
+                session: session.clone(),
                 tool: tool.chars().take(40).collect(),
                 subject,
-                at_ms: now_ms(),
+                at_ms,
                 outcome: outcome.to_owned(),
             });
             recent.truncate(RECENT);
         }
         self.changed();
         result
+    }
+
+    /// The person ends one session: its held connection closes and its id is refused from now on.
+    pub fn disconnect(&self, id: &SessionId) {
+        {
+            let mut sessions = lock(&self.sessions);
+            // written under its own lock: two changes reach the file in the order they were made
+            lock(&self.refused).insert(id.clone());
+            if let Some(info) = sessions.remove(id) {
+                info.end.store(true, Ordering::Release);
+            }
+        }
+        self.changed();
+    }
+
+    /// Lifts a refusal (Undo): that agent's next hello pairs again.
+    pub fn undo_disconnect(&self, id: &SessionId) {
+        lock(&self.refused).remove(id);
+        self.changed();
     }
 
     /// The first time resolving is asked for and is off: the person is offered it once.
@@ -229,12 +471,14 @@ impl Hub {
     #[must_use]
     pub fn status(&self) -> AgentStatus {
         let choice = perms::load(self.tools.store());
+        let root = self.tools.vault_root().path();
         let config = ProjectConfig::load(self.tools.vault_root());
         let effective = perms::effective(&choice.groups, &config.agent_deny);
         AgentStatus {
-            enabled: choice.enabled,
+            enabled: choice.is_on(root),
+            replaced: choice.replaced(root),
             server: lock(&self.server).clone(),
-            clients: lock(&self.sessions).values().cloned().collect(),
+            sessions: self.sessions(),
             groups: Group::ALL
                 .into_iter()
                 .map(|g| {
@@ -255,12 +499,29 @@ impl Hub {
         }
     }
 
+    /// Connected agents, the earliest first.
+    fn sessions(&self) -> Vec<AgentSession> {
+        let sessions = lock(&self.sessions);
+        let mut list: Vec<(&SessionId, &SessionInfo)> = sessions.iter().collect();
+        list.sort_by_key(|(_, s)| s.order);
+        list.into_iter()
+            .map(|(id, s)| AgentSession {
+                id: id.clone(),
+                name: s.name.clone(),
+                started_ms: s.started_ms,
+                folder: s.folder_rel.clone(),
+                last_call_ms: s.last_call_ms,
+            })
+            .collect()
+    }
+
     /// Recomputes the project's agent condition and tells the windows.
     pub fn changed(&self) {
-        let condition = match (&*lock(&self.server), lock(&self.sessions).values().next()) {
-            (ServerState::Listening, Some(client)) => AgentCondition::Connected {
-                client: client.clone(),
-            },
+        let first = self.sessions().into_iter().next();
+        let condition = match (&*lock(&self.server), first) {
+            (ServerState::Listening, Some(first)) => {
+                AgentCondition::Connected { client: first.name }
+            }
             (ServerState::Listening, None) => AgentCondition::On,
             (ServerState::Off | ServerState::Error { .. }, _) => AgentCondition::Off,
         };
@@ -297,7 +558,7 @@ impl Switch {
 
     /// Makes the listener match the switch in the profile.
     pub fn apply(&self) {
-        let on = perms::load(self.hub.tools.store()).enabled;
+        let on = perms::load(self.hub.tools.store()).is_on(self.hub.tools.vault_root().path());
         let mut server = lock(&self.server);
         match (on, server.is_some()) {
             (true, true) | (false, false) => {

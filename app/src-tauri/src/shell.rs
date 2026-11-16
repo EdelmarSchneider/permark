@@ -10,7 +10,7 @@ use permark_core::events::{CoreEvent, EventSink, OpenFailed, SettingsChanged, St
 use permark_core::ipc_local::{Listening, Server};
 use permark_core::open::{OpenAck, OpenRequest};
 use permark_core::paths::Root;
-use permark_core::plugins::{PluginId, ServiceLease};
+use permark_core::plugins::{HtmlPrinterApi, PluginId, ServiceLease};
 use permark_core::session::{
     app_session_file, AppSession, Geometry, RecentStore, SavedNotes, SavedWindow,
 };
@@ -56,6 +56,8 @@ pub struct Shell {
     _files: Vec<ServiceLease>,
     /// The downloads network + credential store (`DownloadKit`), for plugins fetching pinned files.
     _downloads: ServiceLease,
+    /// PDF | HTML | print through the system web view (`HtmlPrinterApi`), for the export plugin.
+    _print: ServiceLease,
 }
 
 /// The file manager entries go with their plugin (off = leaves nothing behind); quitting the app leaves them.
@@ -87,6 +89,46 @@ fn unreadable_settings(file: &SettingsFile) -> Option<StateRecovered> {
         file: file.path().display().to_string(),
         backup: None,
     })
+}
+
+/// The groups file read again (nothing watches it): changed -> the cached settings take it, app plugins and every
+/// window are told (`true`); unchanged -> nothing. `writes` keeps a settings write from landing between the read of the
+/// cached settings and their replacement.
+fn refresh_characters(env: &CoreEnv, file: &SettingsFile, writes: &Mutex<()>) -> bool {
+    let settings = {
+        let _guard = lock(writes);
+        let fresh = file.refresh_characters(&env.settings());
+        if let Some(settings) = &fresh {
+            env.set_settings(settings.clone());
+        }
+        fresh
+    };
+    let Some(settings) = settings else {
+        return false;
+    };
+    env.settings_changed();
+    env.sink
+        .emit(CoreEvent::SettingsChanged(Box::new(SettingsChanged {
+            scope: SettingsScope::App,
+            // the groups come from the file this key names
+            keys: vec!["characters_file".to_owned()],
+            settings,
+        })));
+    true
+}
+
+/// Writes the built-in groups to the groups file only while none is there; a new file is read at once so the windows
+/// see it as theirs.
+fn create_characters(
+    env: &CoreEnv,
+    file: &SettingsFile,
+    writes: &Mutex<()>,
+) -> Result<bool, IpcError> {
+    let created = file.create_characters(&env.settings())?;
+    if created {
+        refresh_characters(env, file, writes);
+    }
+    Ok(created)
 }
 
 /// `Store` = a store updates this copy: the Microsoft Store build (feature `store`), or the .deb inside a snap.
@@ -127,6 +169,7 @@ impl Shell {
         let updater = None;
         let files = crate::files::provide(&env, &handle);
         let downloads = crate::downloads_http::provide(&env);
+        let print = crate::print::provide(&env, &handle);
         env.apply_app_plugins();
         let app_store = StateStore::app(dirs);
         Self {
@@ -146,6 +189,7 @@ impl Shell {
             _updater: updater,
             _files: files,
             _downloads: downloads,
+            _print: print,
         }
     }
 
@@ -211,6 +255,11 @@ impl Shell {
         let mut delivery = lock(&self.delivery);
         delivery.listening.remove(view);
         delivery.pending.remove(view);
+        drop(delivery);
+        // the file an export wrote for this view: nothing can open | show it any more, and the map must not grow
+        if let Some(printer) = self.env.services().get::<HtmlPrinterApi>() {
+            printer.0.forget(view);
+        }
     }
 
     /// Loads the saved session (corrupt -> notice).
@@ -296,6 +345,25 @@ impl Shell {
         Ok(settings)
     }
 
+    /// Reads the groups file again; a change reaches every window as `SettingsChanged`.
+    pub fn refresh_characters(&self) {
+        refresh_characters(&self.env, &self.settings_file, &self.settings_lock);
+    }
+
+    /// Writes the built-in groups file when none is there (`false`: one is there, or no name is set).
+    ///
+    /// # Errors
+    /// The write failed.
+    pub fn create_characters(&self) -> Result<bool, IpcError> {
+        create_characters(&self.env, &self.settings_file, &self.settings_lock)
+    }
+
+    /// What "show in folder" reveals for the groups file (the file, else the profile folder).
+    #[must_use]
+    pub fn characters_target(&self) -> std::path::PathBuf {
+        self.settings_file.characters_target(&self.env.settings())
+    }
+
     /// Creates `.permark/` in `path`; a project open on that folder reloads its state and its windows are told.
     ///
     /// # Errors
@@ -323,6 +391,7 @@ impl Shell {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use permark_core::settings::CharactersStatus;
 
     #[test]
     fn a_settings_file_that_cannot_be_read_is_told_at_start_a_missing_one_is_not() {
@@ -339,5 +408,81 @@ mod tests {
                 backup: None,
             })
         );
+    }
+
+    #[derive(Default)]
+    struct Told(Mutex<Vec<CoreEvent>>);
+
+    impl EventSink for Told {
+        fn emit(&self, event: CoreEvent) {
+            lock(&self.0).push(event);
+        }
+    }
+
+    impl Told {
+        /// The groups status each `SettingsChanged` carried, in order.
+        fn statuses(&self) -> Vec<CharactersStatus> {
+            std::mem::take(&mut *lock(&self.0))
+                .into_iter()
+                .filter_map(|event| match event {
+                    CoreEvent::SettingsChanged(changed) => Some(changed.settings.characters_status),
+                    _ => None,
+                })
+                .collect()
+        }
+    }
+
+    fn env_with(base: &std::path::Path, told: &Arc<Told>) -> (CoreEnv, SettingsFile) {
+        let dirs = AppDirs::under(base);
+        let file = SettingsFile::app(&dirs);
+        let env = CoreEnv::new(
+            dirs,
+            Arc::new(crate::plugins::registry()),
+            Arc::clone(told) as Arc<dyn EventSink>,
+            Distribution::Direct,
+            file.load(),
+        );
+        (env, file)
+    }
+
+    #[test]
+    fn a_groups_file_read_again_tells_the_windows_only_when_it_changed() {
+        let base = tempfile::tempdir().unwrap();
+        let told = Arc::new(Told::default());
+        let (env, file) = env_with(base.path(), &told);
+        let writes = Mutex::new(());
+        assert!(!refresh_characters(&env, &file, &writes));
+        assert_eq!(told.statuses(), vec![]);
+        std::fs::create_dir_all(&env.dirs.profile).unwrap();
+        std::fs::write(
+            env.dirs.profile.join("characters.toml"),
+            "[[groups]]\nname = \"mine\"\nentries = [{ char = \"→\", names = [\"right arrow\"] }]\n",
+        )
+        .unwrap();
+        assert!(refresh_characters(&env, &file, &writes));
+        assert_eq!(told.statuses(), vec![CharactersStatus::Read]);
+        assert_eq!(env.settings().characters_status, CharactersStatus::Read);
+        assert_eq!(env.settings().characters[0].name, "mine");
+        // read again with nothing new: no second notice
+        assert!(!refresh_characters(&env, &file, &writes));
+        assert_eq!(told.statuses(), vec![]);
+    }
+
+    #[test]
+    fn creating_the_groups_file_writes_once_and_never_over_a_file() {
+        let base = tempfile::tempdir().unwrap();
+        let told = Arc::new(Told::default());
+        let (env, file) = env_with(base.path(), &told);
+        let writes = Mutex::new(());
+        assert_eq!(env.settings().characters_status, CharactersStatus::Builtin);
+        assert!(create_characters(&env, &file, &writes).unwrap());
+        assert_eq!(told.statuses(), vec![CharactersStatus::Read]);
+        assert_eq!(env.settings().characters_status, CharactersStatus::Read);
+        let path = env.dirs.profile.join("characters.toml");
+        assert_eq!(file.characters_target(&env.settings()), path);
+        let written = std::fs::read(&path).unwrap();
+        assert!(!create_characters(&env, &file, &writes).unwrap());
+        assert_eq!(std::fs::read(&path).unwrap(), written);
+        assert_eq!(told.statuses(), vec![]);
     }
 }

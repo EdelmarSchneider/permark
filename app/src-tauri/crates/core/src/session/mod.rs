@@ -242,8 +242,13 @@ pub struct RecentFolder {
     pub missing: bool,
 }
 
-/// [`RecentStore::list`] of a loaded list, `is_dir` = the disk. Pure given `is_dir`.
-fn listed(list: RecentList, is_dir: impl Fn(&Path) -> bool) -> Vec<RecentFolder> {
+/// [`RecentStore::list`] of a loaded list, `is_dir` = the disk, asked only for the entries `wanted` keeps. Pure given
+/// `is_dir`.
+fn listed(
+    list: RecentList,
+    wanted: impl Fn(&Path) -> bool,
+    is_dir: impl Fn(&Path) -> bool,
+) -> Vec<RecentFolder> {
     let mut seen = std::collections::HashSet::new();
     list.entries
         .into_iter()
@@ -252,6 +257,9 @@ fn listed(list: RecentList, is_dir: impl Fn(&Path) -> bool) -> Vec<RecentFolder>
                 return None;
             }
             let path = plain_text(&e.path);
+            if !wanted(Path::new(&path)) {
+                return None;
+            }
             // a share's own name was its whole path
             let name = if e.name == e.path {
                 path.clone()
@@ -296,7 +304,14 @@ impl RecentStore {
     /// one for the same folder -> the newer only). Corrupt file -> empty (backup kept).
     #[must_use]
     pub fn list(&self) -> Vec<RecentFolder> {
-        listed(self.load(), Path::is_dir)
+        listed(self.load(), |_| true, Path::is_dir)
+    }
+
+    /// Like [`RecentStore::list`], with only the folders `wanted` keeps (asked of the plain path before the disk:
+    /// a folder left out is never looked at, so an offline network drive cannot stall the caller).
+    #[must_use]
+    pub fn list_where(&self, wanted: impl Fn(&Path) -> bool) -> Vec<RecentFolder> {
+        listed(self.load(), wanted, Path::is_dir)
     }
 
     fn load(&self) -> RecentList {

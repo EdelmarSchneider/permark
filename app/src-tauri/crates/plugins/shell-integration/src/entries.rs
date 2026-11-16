@@ -5,7 +5,9 @@
 use std::path::Path;
 
 use permark_core::desktop::FileGroup;
-use permark_core::settings::LanguagePref;
+/// The languages of the entries: the app's (a tag reads as one through `Language::from_tag`, the setting and the
+/// system's languages as one through `Language::resolve`).
+pub use permark_core::settings::LanguagePref as Language;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -78,35 +80,17 @@ impl Entry {
         }
     }
 
-    /// The words of the entry.
+    /// The words of the entry (English for `System`: resolve the language first).
     #[must_use]
-    pub const fn label(self, language: Language) -> &'static str {
-        match (self, language) {
-            (Self::Menu, Language::En) => "Open with PerMark",
-            // pt-BR and pt-PT, es and gl say it the same way
-            (Self::Menu, Language::PtBr | Language::PtPt) => "Abrir com o PerMark",
-            (Self::Menu, Language::Es | Language::Gl) => "Abrir con PerMark",
-            (Self::Menu, Language::De) => "Mit PerMark öffnen",
-            (Self::Menu, Language::ZhCn) => "用 PerMark 打开",
-            (Self::Menu, Language::It) => "Apri con PerMark",
-            (Self::Menu, Language::Ja) => "PerMark で開く",
-            (Self::Menu, Language::Ko) => "PerMark로 열기",
-            (Self::Menu, Language::Fr) => "Ouvrir avec PerMark",
-            (Self::Menu, Language::Ca) => "Obre amb PerMark",
-            (Self::Menu, Language::Ro) => "Deschide cu PerMark",
-            (Self::NewFile, Language::En) => "New Markdown file with PerMark",
-            (Self::NewFile, Language::PtBr) => "Novo arquivo Markdown com o PerMark",
-            (Self::NewFile, Language::Es) => "Nuevo archivo Markdown con PerMark",
-            (Self::NewFile, Language::De) => "Neue Markdown-Datei mit PerMark",
-            (Self::NewFile, Language::ZhCn) => "用 PerMark 新建 Markdown 文件",
-            (Self::NewFile, Language::It) => "Nuovo file Markdown con PerMark",
-            (Self::NewFile, Language::Ja) => "PerMark で新しい Markdown ファイルを作成",
-            (Self::NewFile, Language::Ko) => "PerMark로 새 Markdown 파일 만들기",
-            (Self::NewFile, Language::Fr) => "Nouveau fichier Markdown avec PerMark",
-            (Self::NewFile, Language::PtPt) => "Novo ficheiro Markdown com o PerMark",
-            (Self::NewFile, Language::Ca) => "Fitxer Markdown nou amb PerMark",
-            (Self::NewFile, Language::Gl) => "Novo ficheiro Markdown con PerMark",
-            (Self::NewFile, Language::Ro) => "Fișier Markdown nou cu PerMark",
+    pub fn label(self, language: Language) -> &'static str {
+        let (_, open, new_file) = WORDS
+            .iter()
+            .copied()
+            .find(|(of, _, _)| *of == language)
+            .unwrap_or(ENGLISH);
+        match self {
+            Self::Menu => open,
+            Self::NewFile => new_file,
         }
     }
 
@@ -143,84 +127,103 @@ pub struct Key {
     pub values: Vec<(String, String)>,
 }
 
-/// The languages of the entries (the app's thirteen).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Language {
-    En,
-    PtBr,
-    Es,
-    De,
-    ZhCn,
-    It,
-    Ja,
-    Ko,
-    Fr,
-    PtPt,
-    Ca,
-    Gl,
-    Ro,
-}
+/// The words of the entries in English: "Open with PerMark", "New Markdown file with PerMark".
+const ENGLISH: (Language, &str, &str) = (
+    Language::En,
+    "Open with PerMark",
+    "New Markdown file with PerMark",
+);
 
-impl Language {
-    /// From a language tag (`pt-BR`, `de-DE`, `zh-Hans-CN`): only the language counts, but for Portuguese, where Brazil
-    /// and a bare `pt` read Brazilian and any other region (`pt-PT`, `pt-AO`) European; `None` for one PerMark lacks.
-    #[must_use]
-    pub fn from_tag(tag: &str) -> Option<Self> {
-        let language = tag.split(['-', '_']).next()?.to_ascii_lowercase();
-        match language.as_str() {
-            "en" => Some(Self::En),
-            "pt" if region(tag).is_some_and(|code| code != "br") => Some(Self::PtPt),
-            "pt" => Some(Self::PtBr),
-            "es" => Some(Self::Es),
-            "de" => Some(Self::De),
-            "zh" => Some(Self::ZhCn),
-            "it" => Some(Self::It),
-            "ja" => Some(Self::Ja),
-            "ko" => Some(Self::Ko),
-            "fr" => Some(Self::Fr),
-            "ca" => Some(Self::Ca),
-            "gl" => Some(Self::Gl),
-            "ro" => Some(Self::Ro),
-            _ => None,
-        }
-    }
-
-    /// The app's language; "System" = the first of the system's display languages PerMark has, else English.
-    #[must_use]
-    pub fn resolve<S: AsRef<str>>(pref: LanguagePref, system: &[S]) -> Self {
-        match pref {
-            LanguagePref::En => Self::En,
-            LanguagePref::PtBr => Self::PtBr,
-            LanguagePref::Es => Self::Es,
-            LanguagePref::De => Self::De,
-            LanguagePref::ZhCn => Self::ZhCn,
-            LanguagePref::It => Self::It,
-            LanguagePref::Ja => Self::Ja,
-            LanguagePref::Ko => Self::Ko,
-            LanguagePref::Fr => Self::Fr,
-            LanguagePref::PtPt => Self::PtPt,
-            LanguagePref::Ca => Self::Ca,
-            LanguagePref::Gl => Self::Gl,
-            LanguagePref::Ro => Self::Ro,
-            LanguagePref::System => system
-                .iter()
-                .find_map(|tag| Self::from_tag(tag.as_ref()))
-                .unwrap_or(Self::En),
-        }
-    }
-}
-
-/// The region of a tag, after the language and a script if any (`pt-Latn-PT` -> `pt`), lowercase; `None` without one.
-fn region(tag: &str) -> Option<String> {
-    let mut subtags = tag.split(['-', '_']).skip(1);
-    let mut subtag = subtags.next()?;
-    if subtag.len() == 4 && subtag.bytes().all(|b| b.is_ascii_alphabetic()) {
-        subtag = subtags.next()?;
-    }
-    let letters = subtag.len() == 2 && subtag.bytes().all(|b| b.is_ascii_alphabetic());
-    let digits = subtag.len() == 3 && subtag.bytes().all(|b| b.is_ascii_digit());
-    (letters || digits).then(|| subtag.to_ascii_lowercase())
-}
+/// The words of the entries in each of the app's languages (the installer writes the same, `installer/hooks.nsh`; the
+/// Store package's menu too, `crates/shell-ext/src/labels.rs`).
+const WORDS: &[(Language, &str, &str)] = &[
+    ENGLISH,
+    (
+        Language::PtBr,
+        "Abrir com o PerMark",
+        "Novo arquivo Markdown com o PerMark",
+    ),
+    (
+        Language::Es,
+        "Abrir con PerMark",
+        "Nuevo archivo Markdown con PerMark",
+    ),
+    (
+        Language::De,
+        "Mit PerMark öffnen",
+        "Neue Markdown-Datei mit PerMark",
+    ),
+    (
+        Language::ZhCn,
+        "用 PerMark 打开",
+        "用 PerMark 新建 Markdown 文件",
+    ),
+    (
+        Language::It,
+        "Apri con PerMark",
+        "Nuovo file Markdown con PerMark",
+    ),
+    (
+        Language::Ja,
+        "PerMark で開く",
+        "PerMark で新しい Markdown ファイルを作成",
+    ),
+    (
+        Language::Ko,
+        "PerMark로 열기",
+        "PerMark로 새 Markdown 파일 만들기",
+    ),
+    (
+        Language::Fr,
+        "Ouvrir avec PerMark",
+        "Nouveau fichier Markdown avec PerMark",
+    ),
+    (
+        Language::PtPt,
+        "Abrir com o PerMark",
+        "Novo ficheiro Markdown com o PerMark",
+    ),
+    (
+        Language::Ca,
+        "Obre amb PerMark",
+        "Fitxer Markdown nou amb PerMark",
+    ),
+    (
+        Language::Gl,
+        "Abrir con PerMark",
+        "Novo ficheiro Markdown con PerMark",
+    ),
+    (
+        Language::Ro,
+        "Deschide cu PerMark",
+        "Fișier Markdown nou cu PerMark",
+    ),
+    (
+        Language::ZhTw,
+        "以 PerMark 開啟",
+        "以 PerMark 新增 Markdown 檔案",
+    ),
+    (
+        Language::Id,
+        "Buka dengan PerMark",
+        "File Markdown baru dengan PerMark",
+    ),
+    (
+        Language::Vi,
+        "Mở bằng PerMark",
+        "Tệp Markdown mới bằng PerMark",
+    ),
+    (
+        Language::Ru,
+        "Открыть с помощью PerMark",
+        "Новый файл Markdown в PerMark",
+    ),
+    (
+        Language::Tr,
+        "PerMark ile aç",
+        "PerMark ile yeni Markdown dosyası",
+    ),
+];
 
 /// The keys above `key`, nearest first, that are deleted once removing an entry leaves them empty: every parent below
 /// the first level of `Software\Classes` (Windows' own `Directory` and `SystemFileAssociations` are never in the list).

@@ -3,7 +3,7 @@
 /** A fenced diagram block: its language and its code. `from`: first line of the code (0-based in `lines`). */
 export type Fence = { language: string; code: string; from: number };
 
-const DIAGRAMS = new Set(["mermaid", "plantuml", "puml"]);
+const DIAGRAMS = new Set(["mermaid", "plantuml", "puml", "dot", "graphviz"]);
 const FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*([^\s`]*)/;
 
 /** The fenced block around line `at` (1-based, strictly inside the fences), when its language is a diagram. */

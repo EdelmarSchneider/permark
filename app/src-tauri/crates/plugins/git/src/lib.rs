@@ -368,12 +368,7 @@ impl Plugin for GitPlugin {
             facts: Arc::clone(&project.facts),
             announce,
             prefs: cx.state_file("prefs.json"),
-            // a reader with no window leaves where HEAD was at the last visit alone (it would write it at close)
-            visit: if cx.files_only() {
-                None
-            } else {
-                cx.state_file("visit.json")
-            },
+            visit: cx.state_file("visit.json"),
             excluded,
         }));
         let weak_projects = projects.as_ref().map(Arc::downgrade);
@@ -527,7 +522,6 @@ fn members_env(cx: &PluginCx, service: &Arc<GitService>, projects: Option<Weak<P
     let excluding = Arc::downgrade(service);
     let visit_projects = projects.clone();
     let root_projects = projects.clone();
-    let files_only = cx.files_only();
     Env {
         backends: service.backends(),
         timings: Timings::default(),
@@ -555,9 +549,6 @@ fn members_env(cx: &PluginCx, service: &Arc<GitService>, projects: Option<Weak<P
         }),
         // the file the project uses when opened alone (`projects.md` §8: per-repo `visit.json`)
         visit_file: Arc::new(move |path: &str| {
-            if files_only {
-                return None;
-            }
             let projects = visit_projects.as_ref()?.upgrade()?;
             let store = projects.store_of(&VaultPath::parse(path).ok()?)?;
             Some(store.plugin_file(&ID, "visit.json"))

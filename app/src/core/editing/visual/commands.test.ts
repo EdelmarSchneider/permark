@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "./jsdomShims";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import { formatOf, run } from "./commands";
 import { LOCKED, createCore, type Core } from "./core";
@@ -181,5 +181,25 @@ describe("Edit-mode commands", () => {
     expect(formatOf(view.state).locked).toBe(true);
     expect(run(core, { kind: "text", text: "→" })).toBe(false);
     expect(markdown()).toBe("<b>x</b>");
+  });
+
+  it("inserts text verbatim at the caret and over a selection, without taking the keyboard", () => {
+    load("one two\n");
+    const view = core.view;
+    const focus = vi.spyOn(view, "focus");
+    const shown = (): string => view.state.doc.textContent;
+    caretAfter("one ");
+    // no normalization: Ohm stays U+2126, the emoji keeps its variation selector, a no-break space stays one
+    expect(run(core, { kind: "text", text: "Ω" })).toBe(true);
+    expect(shown()).toBe("one Ωtwo");
+    const start = view.state.selection.from;
+    view.dispatch(
+      view.state.tr.setSelection(TextSelection.create(view.state.doc, start, start + 3)),
+    );
+    expect(run(core, { kind: "text", text: "❤️ " })).toBe(true);
+    expect(shown()).toBe("one Ω❤️ ");
+    expect(view.state.selection.empty).toBe(true);
+    expect(focus).not.toHaveBeenCalled();
+    focus.mockRestore();
   });
 });

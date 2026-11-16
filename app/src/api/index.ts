@@ -16,6 +16,11 @@ export type { ThemePref } from "./generated/ThemePref";
 export type { Tone } from "./generated/Tone";
 export type { CharacterEntry } from "./generated/CharacterEntry";
 export type { CharacterGroup } from "./generated/CharacterGroup";
+export type { CharactersStatus } from "./generated/CharactersStatus";
+export type { SymbolFavorites } from "./generated/SymbolFavorites";
 
+// the deep suite (`--mode deep`) runs on the mock backend too, with its corpus in place of the mock documents
 export const api: Api =
-  import.meta.env.MODE === "mock" ? (await import("./mock")).mockApi : tauriApi;
+  import.meta.env.MODE === "mock" || import.meta.env.MODE === "deep"
+    ? (await import("./mock")).mockApi
+    : tauriApi;

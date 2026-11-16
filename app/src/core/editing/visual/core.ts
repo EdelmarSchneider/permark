@@ -27,11 +27,13 @@ import {
   codeBlockKeymap,
   codeBlockSchema,
   commonmark,
+  headingAttr,
   headingKeymap,
   inlineCodeKeymap,
   linkSchema,
   listItemSchema,
   orderedListKeymap,
+  paragraphAttr,
   paragraphKeymap,
   remarkPreserveEmptyLinePlugin,
   syncHeadingIdPlugin,
@@ -292,6 +294,8 @@ export type Core = {
   parseRaw(text: string): MdastNode;
   /** Replaces the whole document (history starts over). */
   setDoc(doc: PMNode): void;
+  /** The webview's own spellcheck over the text on | off (on when made). */
+  setSpellcheck(on: boolean): void;
   destroy(): Promise<void>;
 };
 
@@ -318,17 +322,19 @@ function stripPositions(node: MdastNode): MdastNode {
 
 /** Creates the editor in `host` with an empty document. */
 export async function createCore(options: CoreOptions): Promise<Core> {
+  let spellcheck = true;
   const editor = Editor.make()
     .config((ctx) => {
       ctx.set(rootCtx, options.host);
-      // the blocks are the children of `.md-body`: the reading styles apply as they are
+      // the blocks are the children of `.md-body`: the reading styles apply as they are; a function, so a view update
+      // brings a changed spellcheck flag (a set attribute would be written over by the next update)
       ctx.update(editorViewOptionsCtx, (previous) => ({
         ...previous,
-        attributes: {
+        attributes: () => ({
           class: "md-body pm-editor",
-          spellcheck: "true",
+          spellcheck: spellcheck ? "true" : "false",
           ...(options.label === undefined ? {} : { "aria-label": options.label }),
-        },
+        }),
       }));
       ctx.update(remarkStringifyOptionsCtx, (previous) => ({
         ...previous,
@@ -337,6 +343,10 @@ export async function createCore(options: CoreOptions): Promise<Core> {
       }));
       // text typed at the edge of a link stays out of it
       ctx.update(linkSchema.key, (previous) => (c) => ({ ...previous(c), inclusive: false }));
+      // each text block reads its own direction (an Arabic | Hebrew paragraph runs right to left), as in View; a table
+      // cell holds a paragraph here. Lists and quotes follow their first block by style (`markdown.css`).
+      ctx.set(paragraphAttr.key, () => ({ dir: "auto" }));
+      ctx.set(headingAttr.key, () => ({ dir: "auto" }));
       if (options.locked) ctx.set(lockedHostCtx.key, options.locked);
       if (options.code) ctx.set(codeHostCtx.key, options.code);
       if (options.looks) ctx.set(looksHostCtx.key, options.looks);
@@ -398,6 +408,12 @@ export async function createCore(options: CoreOptions): Promise<Core> {
           plugins: view.state.plugins,
         });
         view.updateState(state);
+      },
+      setSpellcheck: (on) => {
+        if (on === spellcheck) return;
+        spellcheck = on;
+        // same props, attributes read again
+        view.setProps({});
       },
       destroy: async () => {
         await editor.destroy();

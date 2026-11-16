@@ -4,6 +4,7 @@
 mod enable;
 mod facts;
 mod files;
+mod print;
 mod registry;
 mod rpc;
 mod services;
@@ -22,8 +23,12 @@ pub use facts::{
     CommitId, FileVersion, FileVersions, NoBlob, NoVersions, ProjectFacts, RepoHandle, RepoReader,
 };
 pub use files::{
-    nesting, ChangeListener, FolderReveal, FolderRevealApi, FolderScan, Nesting, ProjectPlaces,
-    ProjectPlacesApi, WindowFiles, WindowFilesApi,
+    is_shared_name, nesting, ChangeListener, FolderReveal, FolderRevealApi, FolderScan, Nesting,
+    ProjectPlaces, ProjectPlacesApi, WindowFiles, WindowFilesApi,
+};
+pub use print::{
+    output_path, write_output, HtmlPrinter, HtmlPrinterApi, Margins, Orientation, Origin,
+    OutputKind, PageBox, PageSetup, PageSize, PrintCapabilities, PrintError, Saved,
 };
 pub use registry::{PluginRegistry, RegistryError};
 pub use rpc::{typed, GoneHandler, NoArgs, RpcCall, RpcHandler, RpcRegistration, RpcTable};
@@ -134,6 +139,27 @@ pub struct Manifest {
 pub enum PluginError {
     #[error("plugin {id} failed to start: {reason}")]
     Start { id: PluginId, reason: String },
+}
+
+impl PluginError {
+    #[must_use]
+    pub fn plugin(&self) -> &PluginId {
+        match self {
+            Self::Start { id, .. } => id,
+        }
+    }
+}
+
+/// A start failure is the plugin's own wiring | state, not the person's input: `Internal`, the plugin's reason as
+/// detail (not translated: it comes from the plugin).
+impl From<PluginError> for crate::error::IpcError {
+    fn from(error: PluginError) -> Self {
+        match error {
+            PluginError::Start { id, reason } => Self::new(crate::error::ErrorKind::Internal)
+                .subject(id.to_string())
+                .detail(reason),
+        }
+    }
 }
 
 /// A started plugin. `Drop` = teardown: threads joined, watchers removed, sockets closed (RAII).
@@ -408,7 +434,6 @@ pub struct PluginCx {
     project: Option<ProjectServices>,
     app: Option<AppServices>,
     store: Option<StateStore>,
-    files_only: bool,
 }
 
 impl PluginCx {
@@ -437,7 +462,6 @@ impl PluginCx {
             project: None,
             app: None,
             store: None,
-            files_only: false,
         }
     }
 
@@ -459,19 +483,6 @@ impl PluginCx {
     pub fn with_store(mut self, store: StateStore) -> Self {
         self.store = Some(store);
         self
-    }
-
-    /// Started for a reader with no window (`permark mcp` with the app closed): the plugin answers from the files and
-    /// writes no state of its own accord (only what a caller explicitly asks, such as resolving a comment).
-    #[must_use]
-    pub fn with_files_only(mut self) -> Self {
-        self.files_only = true;
-        self
-    }
-
-    #[must_use]
-    pub fn files_only(&self) -> bool {
-        self.files_only
     }
 
     /// The state store (a plugin keeps its files under its own id: `StateStore::plugin_file` | `plugin_dir`).

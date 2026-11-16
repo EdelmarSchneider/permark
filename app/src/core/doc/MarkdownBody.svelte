@@ -43,6 +43,15 @@
     return () => documents.detachBody();
   });
 
+  /** A plugin that checks links is on: missing links are marked (on the page and in Edit's locked blocks). */
+  const linkMarks = $derived(contributions.visible("linkMarks", conditions.current).length > 0);
+
+  // the marks on the page follow the plugin at once, without drawing the blocks again
+  $effect(() => {
+    documents.decorator.setLinkMarks(linkMarks);
+    return () => documents.decorator.setLinkMarks(false);
+  });
+
   const blockTransforms = $derived(contributions.visible("docBlocks", conditions.current));
   const decorations = $derived(contributions.visible("docDecoration", conditions.current));
 

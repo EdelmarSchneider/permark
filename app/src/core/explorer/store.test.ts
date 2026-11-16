@@ -17,6 +17,7 @@ import type {
 import { ImportFlow } from "./importFlow.svelte";
 import { ancestorsOf, applyDelta } from "./list";
 import { setLeaveGuard } from "../editing/guard";
+import { language } from "../i18n";
 import { editing } from "../editing/session.svelte";
 import { problemText } from "./names";
 import { ExplorerStore, REFRESH_WAIT_MS, type ExplorerHost } from "./store.svelte";
@@ -493,6 +494,27 @@ describe("rows and selection", () => {
     expect(store.rows.some((r) => r.type === "node" && r.node.path === "docs/guide.md")).toBe(
       false,
     );
+  });
+
+  it("rows come in the interface language's order, numbers by their value, and follow a language change", async () => {
+    const { api, store } = await setup();
+    for (const name of ["file 10.md", "file 2.md", "Ёж.md", "Ель.md", "Яблоко.md"]) {
+      api.probe.project.add(`sorted/${name}`, "x");
+    }
+    await store.refresh();
+    await store.toggle("sorted");
+    const shown = (): string[] =>
+      store.rows.flatMap((r) =>
+        r.type === "node" && r.node.path.startsWith("sorted/") ? [r.node.name] : [],
+      );
+    try {
+      await language.choose("en");
+      expect(shown()).toEqual(["file 2.md", "file 10.md", "Ёж.md", "Ель.md", "Яблоко.md"]);
+      await language.choose("ru");
+      expect(shown()).toEqual(["Ёж.md", "Ель.md", "Яблоко.md", "file 2.md", "file 10.md"]);
+    } finally {
+      await language.choose("en");
+    }
   });
 
   it("click, Ctrl and Shift select the usual way", async () => {

@@ -15,6 +15,15 @@ export type EmbedProps = {
   lines?: boolean;
   /** Code: the text scrolls sideways in a box the keyboard reaches (a viewer of a whole file), named this. */
   region?: string;
+  /** Code: the title the fence's info string gives the block (a file name, mostly). */
+  title?: string;
+  /** Code: lines are numbered, the first one so. */
+  start?: number;
+  /** Code: the lines the info string marks, as the renderer writes them (`1,3-5`). */
+  marked?: string;
+  /** The theme to draw in, whatever the page shows (a copy of the page drawn in a look of its own); absent: the
+   *  embed follows the page's theme and tone. */
+  theme?: "light" | "dark";
 };
 
 /**

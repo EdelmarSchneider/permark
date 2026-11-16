@@ -100,7 +100,9 @@
     {/if}
     {#if plan.unchecked.length > 0}
       <p class="faint" data-unchecked>
-        {tn("fileOps.unchecked", plan.unchecked.length, { folders: uncheckedText })}
+        {plan.unchecked.length === 1
+          ? t("fileOps.uncheckedOne", { folders: uncheckedText })
+          : tn("fileOps.unchecked", plan.unchecked.length, { folders: uncheckedText })}
       </p>
     {/if}
     <footer>
@@ -148,7 +150,7 @@
     padding: var(--sp-5);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--bg);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
     outline: none;
   }

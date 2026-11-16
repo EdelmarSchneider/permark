@@ -7,7 +7,7 @@
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import Share2 from "@lucide/svelte/icons/share-2";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
-  import { t } from "../../core/i18n";
+  import { formatLocale, t } from "../../core/i18n";
   import type { NoteEntry } from "../../api";
   import { marksOf, shortFolder, shownName, timeLabel } from "./model";
   import type { NotesStore } from "./store.svelte";
@@ -142,9 +142,10 @@
           {#if entry.pinned}<span title={t("notes.pinnedMark")}
               ><Pin size={11} aria-label={t("notes.pinnedMark")} /></span
             >{/if}
-          {#if marks.shared}<span title={t("notes.sharedMark")}
-              ><Share2 size={11} aria-label={t("notes.sharedMark")} /></span
-            >{/if}
+          {#if marks.shared.length > 0}
+            {@const sharedWith = t("notes.sharedWith", { projects: marks.shared.join(", ") })}
+            <span title={sharedWith}><Share2 size={11} aria-label={sharedWith} /></span>
+          {/if}
           {#if marks.copied}<span title={t("notes.copiedMark")}
               ><Copy size={11} aria-label={t("notes.copiedMark")} /></span
             >{/if}
@@ -164,7 +165,7 @@
         <span class="time"
           >{entry.state === "gone"
             ? t("notes.file.notFound")
-            : timeLabel(entry.modifiedMs, now)}</span
+            : timeLabel(entry.modifiedMs, now, formatLocale())}</span
         >
       </span>
       {#if entry.kind === "file"}

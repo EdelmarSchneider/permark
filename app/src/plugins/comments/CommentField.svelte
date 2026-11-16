@@ -1,14 +1,17 @@
 <script lang="ts">
-  // The field a comment is written in: a small box under the selected passage. Enter saves, Shift+Enter starts a new
-  // line, Esc cancels. Clicking elsewhere closes it only while it is empty, so a comment being written is not lost.
+  // The field a comment is written | edited in: a small box under the selected passage (or the comment being edited).
+  // Enter | Ctrl+Enter saves, Shift+Enter starts a new line, Esc cancels. Clicking elsewhere closes it only while
+  // nothing would be lost (empty, or an edit left as it was). Closing gives the focus back to what opened it.
   import { onMount } from "svelte";
   import { t } from "../../core/i18n";
   import { excerpt } from "./model";
-  import { comments, MAX_CHARS } from "./store.svelte";
+  import { comments, MAX_CHARS, MAX_REPLY_CHARS } from "./store.svelte";
 
   let el: HTMLElement | undefined = $state();
   let input: HTMLTextAreaElement | undefined = $state();
-  let text = $state("");
+  /** The text the field started with (an edit: the text as it is now). */
+  const initial = comments.draft?.kind === "edit" ? comments.draft.text : "";
+  let text = $state(initial);
   let pos = $state({ left: 0, top: 0 });
   let saving = $state(false);
 
@@ -18,6 +21,11 @@
   const TOP_EDGE = 52;
 
   const draft = $derived(comments.draft);
+  const editing = $derived(draft?.kind === "edit");
+  const label = $derived(editing ? t("comments.edit") : t("comments.field.label"));
+  const limit = $derived(
+    draft?.kind === "edit" && draft.target.kind === "reply" ? MAX_REPLY_CHARS : MAX_CHARS,
+  );
 
   /** Under the passage, above it when there is no room, and always inside the window. */
   function place(): void {
@@ -57,8 +65,7 @@
       comments.cancel();
       return;
     }
-    if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey)
-      return;
+    if (event.key !== "Enter" || event.shiftKey || event.altKey) return;
     event.preventDefault();
     void save();
   }
@@ -66,9 +73,12 @@
   onMount(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     input?.focus();
-    place();
+    // an edit goes on from the end of the text
+    input?.setSelectionRange(initial.length, initial.length);
+    grow();
     const outside = (event: PointerEvent): void => {
-      if (el && event.target instanceof Node && !el.contains(event.target) && text.trim() === "")
+      const unchanged = text.trim() === "" || text === initial;
+      if (el && event.target instanceof Node && !el.contains(event.target) && unchanged)
         comments.cancel();
     };
     window.addEventListener("pointerdown", outside, true);
@@ -89,7 +99,7 @@
     bind:this={el}
     role="dialog"
     aria-modal="false"
-    aria-label={t("comments.field.label")}
+    aria-label={label}
     tabindex="-1"
     style:left="{pos.left}px"
     style:top="{pos.top}px"
@@ -101,12 +111,17 @@
       bind:this={input}
       bind:value={text}
       rows="2"
-      maxlength={MAX_CHARS}
+      maxlength={limit}
       placeholder={t("comments.field.placeholder")}
-      aria-label={t("comments.field.label")}
+      aria-label={label}
       oninput={grow}></textarea>
     <div class="foot">
       <span class="hint">{t("comments.field.hint")}</span>
+      {#if editing}
+        <button type="button" class="btn btn--sm cancel" onclick={() => comments.cancel()}>
+          {t("common.cancel")}
+        </button>
+      {/if}
       <button
         type="button"
         class="btn btn--sm btn--primary"
@@ -129,7 +144,7 @@
     padding: var(--sp-2);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-card);
-    background: var(--surface);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
     font-size: var(--fs-ui);
   }
@@ -165,5 +180,8 @@
   .hint {
     color: var(--faint);
     font-size: var(--fs-ui-xs);
+  }
+  .cancel {
+    margin-left: auto;
   }
 </style>

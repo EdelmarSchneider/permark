@@ -1,0 +1,43 @@
+# corpus/math.md
+format: markdown
+outline: Math (line 1)
+--- h1 1-1
+<h1 dir="auto" id="math">Math</h1>
+--- p 3-3
+<p dir="auto">Inline dollars: <span data-math-style="inline">E = mc^2</span> and <span data-math-style="inline">\sqrt{a^2 + b^2}</span>; inline parentheses: <span data-math-style="inline">\alpha + \beta = \gamma</span>.</p>
+--- p 5-5
+<p dir="auto">A display block in dollars:</p>
+--- p 7-9
+<p dir="auto"><span data-math-style="display">
+\int_0^1 x^2 \, dx = \frac{1}{3}
+</span></p>
+--- p 11-11
+<p dir="auto">A display block in brackets, each on its own line:</p>
+--- p 13-15
+<p dir="auto"><span data-math-style="display">
+\Omega = \frac{[\mathrm{Ca}^{2+}][\mathrm{CO}_3^{2-}]}{K_{sp}} \tag{1}
+</span></p>
+--- p 17-17
+<p dir="auto">In the middle of a paragraph a bracketed number [1] stays literal text, and so does a price of $5 and $6.</p>
+--- p 19-19
+<p dir="auto">Chemistry: <span data-math-style="inline">\ce{H2O}</span>, <span data-math-style="inline">\ce{CO2 + H2O &lt;=&gt; H2CO3}</span> and a block:</p>
+--- p 21-21
+<p dir="auto"><span data-math-style="display">\ce{6CO2 + 6H2O -&gt;[light] C6H12O6 + 6O2}</span></p>
+--- p 23-23
+<p dir="auto">Aligned equations:</p>
+--- p 25-30
+<p dir="auto"><span data-math-style="display">
+\begin{aligned}
+a &amp;= b + c \\
+d &amp;= e - f
+\end{aligned}
+</span></p>
+--- p 32-32
+<p dir="auto">A formula with an error: <span data-math-style="inline">\frac{1}{</span> and a block with an unknown command:</p>
+--- p 34-36
+<p dir="auto"><span data-math-style="display">
+\notacommand{x}
+</span></p>
+--- pre 38-40
+<pre><code class="language-math" data-math-style="display">\sum_{i=1}^{n} i = \frac{n(n+1)}{2}
+</code></pre>

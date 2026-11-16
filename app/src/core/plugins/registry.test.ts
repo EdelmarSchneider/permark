@@ -154,6 +154,49 @@ describe("plugin host", () => {
     expect(h.registry.of("editAction")).toHaveLength(0);
   });
 
+  it("a picker action (button in the emoji | symbols popup) goes with its plugin", async () => {
+    const ran: string[] = [];
+    const module = definePlugin({
+      manifest: { id: "keeper", kind: "feature", dependsOn: [] },
+      activate(cx) {
+        return cx.contribute({
+          kind: "pickerAction",
+          id: "keeper.keepOpen",
+          label: "app.name",
+          run: (picker) => ran.push(picker),
+          requires: { needs: [], prefers: [] },
+        });
+      },
+    });
+    const h = host({ keeper: module });
+    await h.enable("keeper");
+    const [action] = h.registry.visible("pickerAction", neutralContext());
+    action?.run("symbols");
+    expect(ran).toEqual(["symbols"]);
+    expect(h.disable("keeper")).toBe(0);
+    expect(h.registry.of("pickerAction")).toHaveLength(0);
+  });
+
+  it("a missing-link marker goes with its plugin", async () => {
+    const module = definePlugin({
+      manifest: { id: "checker", kind: "checker", dependsOn: [] },
+      activate(cx) {
+        return cx.contribute({
+          kind: "linkMarks",
+          id: "checker.marks",
+          requires: { needs: [], prefers: [] },
+        });
+      },
+    });
+    const h = host({ checker: module });
+    await h.enable("checker");
+    expect(h.registry.visible("linkMarks", neutralContext()).map((m) => m.id)).toEqual([
+      "checker.marks",
+    ]);
+    expect(h.disable("checker")).toBe(0);
+    expect(h.registry.of("linkMarks")).toHaveLength(0);
+  });
+
   it("the lazy module map is keyed by folder name: the plugins that have a UI", () => {
     expect(Object.keys(pluginLoaders()).sort()).toEqual([
       "agent",
@@ -161,6 +204,7 @@ describe("plugin host", () => {
       "comments",
       "convert",
       "correction",
+      "export",
       "fmt-dotenv",
       "fmt-ignore",
       "fmt-ini",
@@ -171,6 +215,7 @@ describe("plugin host", () => {
       "follow",
       "frontmatter-card",
       "git",
+      "graphviz",
       "highlight",
       "json-view",
       "live-feed",
@@ -183,6 +228,8 @@ describe("plugin host", () => {
       "quiet",
       "review",
       "shell-integration",
+      "spelling",
+      "symbols",
       "tags",
       "text-view",
       "token-count",

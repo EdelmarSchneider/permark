@@ -4,6 +4,7 @@
 import type { HandOffSessionView } from "./generated/HandOffSessionView";
 import type {
   AgentRequest,
+  AgentSession,
   AgentStatus,
   HandOffPreview,
   AgentWindowContext,
@@ -18,8 +19,11 @@ type Handlers = Pick<
   | "agent.status"
   | "agent.setEnabled"
   | "agent.setGroup"
+  | "agent.disconnect"
+  | "agent.undoDisconnect"
   | "agent.setDefaults"
   | "agent.publish"
+  | "agent.focused"
   | "agent.setup"
   | "agent.handOffPreview"
   | "agent.handOffConfirm"
@@ -28,12 +32,18 @@ type Handlers = Pick<
 export type AgentProbe = {
   /** What the window published, oldest first. */
   published: AgentWindowContext[];
-  /** A client connects (or `null`: it leaves). */
-  connect(client: string | null): void;
+  /** How often the window said the person turned to it. */
+  readonly focused: number;
+  /** A client connects (or `null`: every one leaves); `id` names another session (more than one agent). */
+  connect(client: string | null, id?: string): void;
+  /** Sessions the person disconnected (refused until undone). */
+  refused: Set<string>;
   /** An agent asked something. */
   request(record: AgentRequest): void;
   /** The switch turned from outside the window (another window, the palette of another view). */
   setEnabled(on: boolean): void;
+  /** The folder was deleted and created again at its path since the switch went on: shown off, with why. */
+  replaceFolder(): void;
   /** The server fails to start (`inUse`: another PerMark serves the project; any other text: the reason) | runs. */
   fail(reason: string | null): void;
   status(): AgentStatus;
@@ -92,22 +102,26 @@ export function createMockAgent(
   emit: <E extends PluginEventName>(event: E, data: PluginEvents[E]) => void,
 ): { handlers: Handlers; probe: AgentProbe } {
   let enabled = false;
+  let replaced = false;
   const groups: Record<string, boolean> = Object.fromEntries(
     GROUPS.map((g) => [g, !DEFAULT_OFF.has(g)]),
   );
-  let clients: string[] = [];
+  let sessions: AgentSession[] = [];
+  const refused = new Set<string>();
   let failure: string | null = null;
   let recent: AgentRequest[] = [];
   const published: AgentWindowContext[] = [];
+  let focused = 0;
   const handedOff: { upto: number; checked: number[] }[] = [];
   const status = (): AgentStatus => ({
     enabled,
+    replaced,
     server: !enabled
       ? { state: "off" }
       : failure !== null
         ? { state: "error", reason: failure }
         : { state: "listening" },
-    clients: enabled ? clients : [],
+    sessions: enabled ? sessions : [],
     groups: { ...groups },
     denied: [],
     recent,
@@ -117,7 +131,8 @@ export function createMockAgent(
     "agent.status": () => status(),
     "agent.setEnabled": ({ enabled: on }) => {
       enabled = on;
-      if (!on) clients = [];
+      replaced = false;
+      if (!on) sessions = [];
       announce();
       return status();
     },
@@ -126,9 +141,24 @@ export function createMockAgent(
       announce();
       return status();
     },
+    "agent.disconnect": ({ id }) => {
+      refused.add(id);
+      sessions = sessions.filter((s) => s.id !== id);
+      announce();
+      return status();
+    },
+    "agent.undoDisconnect": ({ id }) => {
+      refused.delete(id);
+      announce();
+      return status();
+    },
     "agent.setDefaults": () => null,
     "agent.publish": ({ context }) => {
       published.push(context);
+      return null;
+    },
+    "agent.focused": () => {
+      focused += 1;
       return null;
     },
     "agent.setup": () => "C:\\Program Files\\PerMark\\PerMark.exe",
@@ -166,19 +196,40 @@ export function createMockAgent(
     handlers,
     probe: {
       published,
+      get focused() {
+        return focused;
+      },
       setEnabled: (on) => {
         enabled = on;
-        if (!on) clients = [];
+        replaced = false;
+        if (!on) sessions = [];
+        announce();
+      },
+      replaceFolder: () => {
+        enabled = false;
+        replaced = true;
+        sessions = [];
         announce();
       },
       fail: (reason) => {
         failure = reason;
         announce();
       },
-      connect: (client) => {
-        clients = client === null ? [] : [client];
+      connect: (client, id = "mocksession01") => {
+        if (client === null) sessions = [];
+        else if (!refused.has(id)) {
+          const session = {
+            id,
+            name: client,
+            startedMs: Date.now(),
+            folder: "",
+            lastCallMs: null,
+          };
+          sessions = [...sessions.filter((s) => s.id !== id), session];
+        }
         announce();
       },
+      refused,
       request: (record) => {
         recent = [record, ...recent].slice(0, 8);
         announce();

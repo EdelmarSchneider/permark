@@ -9,6 +9,7 @@ import {
   type NoteEntry,
   type NoteList,
   type NotesIntent,
+  type ProjectId,
   type RecentFolder,
   type Version,
   type WorkspaceView,
@@ -380,16 +381,23 @@ export class NotesStore {
     await this.refresh();
   }
 
-  async toggleShare(path: string): Promise<void> {
+  /** Stops sharing a note with one project, or with every project when none is named (sharing itself is asked from a
+   *  project's agent panel). */
+  async stopSharing(path: string, project?: ProjectId): Promise<void> {
     const entry = this.entries.find((e) => e.path === path);
-    if (!entry || entry.kind !== "note") return;
-    const result = await this.#client.call("notes.setShared", { path, shared: !entry.shared });
+    if (!entry || entry.kind !== "note" || entry.sharedWith.length === 0) return;
+    const result = await this.#client.call("notes.unshare", { path, project });
     if (!result.ok) {
       this.#fail(result.error);
       return;
     }
+    const name = shownName(entry);
+    const one = entry.sharedWith.find((s) => s.project === project);
+    // a note still shared with other projects is named with the one it left
     this.#window.notifyNote(
-      t(entry.shared ? "notes.sharedOff" : "notes.sharedOn", { name: shownName(entry) }),
+      one !== undefined && entry.sharedWith.length > 1
+        ? t("notes.sharedOffWith", { name, project: one.label })
+        : t("notes.sharedOff", { name }),
     );
     await this.refresh();
   }
@@ -494,7 +502,7 @@ export class NotesStore {
     if (names.length === 0) return;
     const text =
       key === "notes.deleted" && names.length === 1
-        ? t("notes.deleted.one", { name: label })
+        ? t("notes.deletedOne", { name: label })
         : tn(key, names.length);
     if (undoId === null) this.#window.notifyNote(text);
     else {

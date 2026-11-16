@@ -1,0 +1,42 @@
+# corpus/code.md
+format: markdown
+outline: Code blocks (line 1)
+--- h1 1-1
+<h1 dir="auto" id="code-blocks">Code blocks</h1>
+--- pre 3-10
+<pre><code class="language-rust" data-lines="2,4-5" data-title="src/main.rs">fn main() {
+    let tide = 1.2;
+    println!("tide {tide}");
+    let waves = [0.4, 0.6];
+    println!("{waves:?}");
+}
+</code></pre>
+--- pre 12-16
+<pre><code class="language-python" data-lines="3" data-numbers="1">def mean(values):
+    """Average of a list."""
+    return sum(values) / len(values)
+</code></pre>
+--- pre 18-20
+<pre><code class="language-ts" data-title="A title with &lt;angle&gt; &amp;">export const greeting: string = `hello ${"world"}`;
+</code></pre>
+--- pre 22-24
+<pre><code>A block without a language.
+</code></pre>
+--- pre 26-28
+<pre><code class="language-json">{ "fenced": "with tildes", "nested": "```" }
+</code></pre>
+--- pre 30-34
+<pre><code class="language-markdown">```js
+// a fence inside a fence
+```
+</code></pre>
+--- pre 36-38
+<pre><code class="language-text">a very long line that does not wrap in a code block and has to scroll sideways because it goes on and on and on and on and on and on
+</code></pre>
+--- pre 40-42
+<pre><code class="language-unknownlanguage">Text in a language no highlighter knows.
+</code></pre>
+--- pre 44-47
+<pre><code class="language-diff">- removed line
++ added line
+</code></pre>

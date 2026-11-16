@@ -15,6 +15,11 @@ export const LOCALES = [
   "ca",
   "gl",
   "ro",
+  "zh-TW",
+  "id",
+  "vi",
+  "ru",
+  "tr",
 ] as const;
 export type Locale = (typeof LOCALES)[number];
 
@@ -33,6 +38,11 @@ export const LOCALE_NAMES: Record<Locale, string> = {
   ca: "Català",
   gl: "Galego",
   ro: "Română",
+  "zh-TW": "繁體中文",
+  id: "Bahasa Indonesia",
+  vi: "Tiếng Việt",
+  ru: "Русский",
+  tr: "Türkçe",
 };
 
 /** Source language: complete table; answers whenever another table lacks a string. */
@@ -42,9 +52,13 @@ export const DEFAULT_LOCALE: Locale = "en";
 export type LanguagePreference = "system" | Locale;
 export const DEFAULT_PREFERENCE: LanguagePreference = "system";
 
+/** Chinese regions that write Traditional characters. */
+const TRADITIONAL_REGIONS = new Set(["tw", "hk", "mo"]);
+
 /**
- * BCP 47 | OS tag -> locale by primary subtag (any Chinese -> zh-CN, `ja_JP` -> ja); else null. Portuguese also reads
- * the region: `pt-BR` | bare `pt` -> pt-BR, any other region (`pt-PT`, `pt-AO`, `pt-MZ`) -> pt-PT.
+ * BCP 47 | OS tag -> locale by primary subtag (`ja_JP` -> ja); else null. Portuguese also reads the region: `pt-BR` |
+ * bare `pt` -> pt-BR, any other region (`pt-PT`, `pt-AO`, `pt-MZ`) -> pt-PT. Chinese reads the script, else the region:
+ * `zh-Hant` | Taiwan, Hong Kong, Macao -> zh-TW; `zh-Hans` and any other Chinese -> zh-CN.
  */
 export function matchLocale(tag: string): Locale | null {
   const [primary, ...subtags] = tag.trim().toLowerCase().split(/[-_]/);
@@ -59,8 +73,11 @@ export function matchLocale(tag: string): Locale | null {
       return "es";
     case "de":
       return "de";
-    case "zh":
-      return "zh-CN";
+    case "zh": {
+      const script = scriptOf(subtags);
+      if (script !== "") return script === "hant" ? "zh-TW" : "zh-CN";
+      return TRADITIONAL_REGIONS.has(regionOf(subtags)) ? "zh-TW" : "zh-CN";
+    }
     case "it":
       return "it";
     case "ja":
@@ -75,15 +92,29 @@ export function matchLocale(tag: string): Locale | null {
       return "gl";
     case "ro":
       return "ro";
+    case "id":
+      return "id";
+    case "vi":
+      return "vi";
+    case "ru":
+      return "ru";
+    case "tr":
+      return "tr";
     default:
       return null;
   }
 }
 
+/** Script subtag right after the language (`hant-tw` -> "hant"); "" when none. */
+function scriptOf(subtags: readonly string[]): string {
+  const [first = ""] = subtags;
+  return /^[a-z]{4}$/.test(first) ? first : "";
+}
+
 /** Region subtag after the language, skipping a script (`latn-pt` -> "pt"); "" when none. */
 function regionOf(subtags: readonly string[]): string {
   const [first = "", second = ""] = subtags;
-  const region = /^[a-z]{4}$/.test(first) ? second : first;
+  const region = scriptOf(subtags) === "" ? first : second;
   return /^(?:[a-z]{2}|\d{3})$/.test(region) ? region : "";
 }
 
@@ -94,6 +125,63 @@ export function systemLocale(tags: readonly string[]): Locale {
     if (locale) return locale;
   }
   return DEFAULT_LOCALE;
+}
+
+/**
+ * Language whose dates and numbers stand in for an interface language the runtime has no data for: one its readers
+ * also read. WebView2 ships no Galician data (Intl would answer in English); every other interface language has it.
+ */
+const FORMAT_STAND_IN: Partial<Record<Locale, Locale>> = { gl: "es" };
+
+/**
+ * Whether the runtime writes dates, numbers and relative times of `tag` (asked where the code runs: a web view ships
+ * data for fewer languages than Node's full ICU).
+ */
+function intlKnows(tag: string): boolean {
+  try {
+    return (
+      Intl.NumberFormat.supportedLocalesOf([tag]).length > 0 &&
+      Intl.DateTimeFormat.supportedLocalesOf([tag]).length > 0 &&
+      Intl.RelativeTimeFormat.supportedLocalesOf([tag]).length > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Tag dates and numbers are written in: the first of `tags` (the system's format region, then its languages) that names
+ * `locale` with a region of its own (`en-IN` while the interface speaks English), else `locale`. A tag of another
+ * interface language never counts (`pt-PT` under pt-BR, `en-GB` under de). A tag the runtime has no data for (`known`)
+ * gives way to its stand-in language in the same region (`gl-ES` -> `es-ES`) when the runtime knows that one.
+ */
+export function formatTag(
+  locale: Locale,
+  tags: readonly string[],
+  known: (tag: string) => boolean = intlKnows,
+): string {
+  let found: string = locale;
+  for (const tag of tags) {
+    if (matchLocale(tag) !== locale) continue;
+    const canonical = canonicalTag(tag);
+    if (canonical === null) continue;
+    found = canonical;
+    break;
+  }
+  const standIn = FORMAT_STAND_IN[locale];
+  if (standIn === undefined || known(found)) return found;
+  const region = new Intl.Locale(found).region;
+  const others = region === undefined ? [standIn] : [`${standIn}-${region}`, standIn];
+  return others.find(known) ?? found;
+}
+
+/** `en_AU` | `en-au` -> `en-AU`; null for what Intl cannot read. */
+function canonicalTag(tag: string): string | null {
+  try {
+    return Intl.getCanonicalLocales(tag.trim().replace(/_/g, "-"))[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function resolveLocale(preference: LanguagePreference, tags: readonly string[]): Locale {

@@ -1,6 +1,7 @@
 <script lang="ts">
-  // A formula drawn by KaTeX (loaded when the first formula comes near the screen). One that KaTeX cannot read shows
-  // as its source with an error mark; nothing in it can run or load anything (`trust` stays off).
+  // A formula drawn by KaTeX (loaded when the first formula comes near the screen), with chemistry (`\ce`, `\pu`:
+  // mhchem, loaded with it). One that KaTeX cannot read shows as its source with an error mark; nothing in it can run
+  // or load anything (`trust` stays off).
   import type { EmbedProps } from "../../core/plugins/props";
   import "katex/dist/katex.min.css";
 
@@ -11,7 +12,8 @@
 
   $effect(() => {
     let stale = false;
-    void import("katex").then((module) => {
+    // mhchem adds its commands to the KaTeX it imports, the same module as this one
+    void Promise.all([import("katex"), import("katex/contrib/mhchem")]).then(([module]) => {
       if (stale) return;
       try {
         html = module.default.renderToString(source, {

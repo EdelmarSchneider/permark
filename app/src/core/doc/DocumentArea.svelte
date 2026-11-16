@@ -6,7 +6,7 @@
   import { apiErrorText } from "../errors";
   import { conditions } from "../conditions/context.svelte";
   import { revealInTree } from "../explorer/current";
-  import { t, tn, type MessageKey } from "../i18n";
+  import { formatLocale, t, tn, type MessageKey } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
   import type { WindowStore } from "../window.svelte";
   import BodyNotice from "./BodyNotice.svelte";
@@ -289,7 +289,7 @@
   const deletedAt = $derived(
     deleted === null
       ? ""
-      : new Date(deleted.at).toLocaleTimeString(undefined, { timeStyle: "short" }),
+      : new Date(deleted.at).toLocaleTimeString(formatLocale(), { timeStyle: "short" }),
   );
 </script>
 

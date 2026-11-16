@@ -10,7 +10,7 @@
   import { isComposition } from "../../core/commands/combo";
   import { documents } from "../../core/doc/document.svelte";
   import { editing } from "../../core/editing/session.svelte";
-  import { language, t } from "../../core/i18n";
+  import { formatLocale, language, t } from "../../core/i18n";
   import { joinNames } from "../../core/projects/model";
   import { dialogFocus } from "../../core/shell/dialogFocus";
   import { exactTime, relativeTime } from "../../core/time";
@@ -205,11 +205,11 @@
               }}
             >
               <span class="line">
-                <span class="when">{relativeTime(row.atMs, now, language.locale)}</span>
+                <span class="when">{relativeTime(row.atMs, now, formatLocale())}</span>
                 <span class="subject" dir="auto" title={row.subject}>{row.subject}</span>
               </span>
               <span class="facts">
-                <span class="exact">{exactTime(row.atMs, language.locale)}</span>
+                <span class="exact">{exactTime(row.atMs, formatLocale())}</span>
                 <span class="who">{who(row)}</span>
                 {#if row.same}<span class="same">{t("review.versions.same")}</span>{/if}
               </span>
@@ -290,7 +290,7 @@
     padding: var(--sp-4);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--bg);
+    background: var(--pop);
     color: var(--text);
     box-shadow: var(--shadow-pop);
     outline: none;
@@ -394,7 +394,7 @@
   }
   .same {
     padding: 0 6px;
-    border-radius: 8px;
+    border-radius: var(--radius-surface);
     background: var(--surface-2);
   }
   /* what a pick does, on the row the keyboard | the pointer is on (kept in the layout: the text never jumps) */

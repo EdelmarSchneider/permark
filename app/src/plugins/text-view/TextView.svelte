@@ -10,6 +10,7 @@
   import { api } from "../../api";
   import { conditions } from "../../core/conditions/context.svelte";
   import { documents } from "../../core/doc/document.svelte";
+  import { reading } from "../../core/doc/reading.svelte";
   import {
     append,
     loading,
@@ -329,6 +330,17 @@
     });
   });
 
+  // the reader's place is the line at the top (pixels change with wrapping and with the rows of a long file); the
+  // document opens there again (`documents` asks for it as a restoring line request)
+  $effect(() => {
+    const pane = host?.closest<HTMLElement>("[data-scroller]");
+    if (!pane) return;
+    const path = view.path;
+    const keep = (): void => reading.remember(path, anchorNow()?.line ?? 0);
+    pane.addEventListener("scroll", keep, { passive: true });
+    return () => pane.removeEventListener("scroll", keep);
+  });
+
   /** The request for a chunk on its way (one at a time). */
   let pending: Promise<void> | null = null;
 
@@ -402,10 +414,11 @@
     const request = documents.lineRequest;
     if (!request || !host || request.path !== view.path || request.seq === handled) return;
     handled = request.seq;
-    untrack(() => void bring(request.line, request.seq));
+    untrack(() => void bring(request.line, request.seq, request.restore === true));
   });
 
-  async function bring(line: number, seq: number): Promise<void> {
+  /** `restore`: the line the reader left goes back to the top of the pane, untinted, without a note. */
+  async function bring(line: number, seq: number, restore = false): Promise<void> {
     const owner = view;
     for (let parts = 0; parts < MAX_PARTS; parts++) {
       while (pending !== null) await pending;
@@ -418,15 +431,18 @@
     if (view !== owner || handled !== seq) return;
     const at = Math.min(line, Math.max(held.lines.length, 1));
     // a line past the end of a whole file is its last line, no note; a part not loaded yet is said
-    if (at < line && held.next !== null) documents.notify(t("codeRef.lineFar", { line }));
+    if (!restore && at < line && held.next !== null) {
+      documents.notify(t("codeRef.lineFar", { line }));
+    }
     await tick();
     const pane = host?.closest<HTMLElement>("[data-scroller]");
     const drawnBox = linesBox();
     if (host && pane) {
       const origin = (drawnBox ?? host).getBoundingClientRect().top;
       const y = origin - pane.getBoundingClientRect().top + pane.scrollTop + place(at, at).top;
-      pane.scrollTop = Math.max(0, y - pane.clientHeight / 3);
+      pane.scrollTop = Math.max(0, restore ? y : y - pane.clientHeight / 3);
     }
+    if (restore) return;
     located = { line: at, seq };
     clearTimeout(locateTimer);
     locateTimer = setTimeout(() => {

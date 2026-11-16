@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 400" width="680" height="400" role="img" aria-labelledby="buoy-title buoy-desc">
+  <title id="buoy-title">Inside a Tidewell buoy</title>
+  <desc id="buoy-desc">Cutaway of a solar buoy floating at the waterline: a LoRa antenna and a marker light on top, two solar panels on the tower, the microcontroller and battery inside the float, a sensor cage one meter down holding temperature, salinity, pH and oxygen sensors, and a mooring chain to a seabed weight.</desc>
+  <defs>
+    <linearGradient id="buoy-water" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d9488" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#0d9488" stop-opacity="0.03"/>
+    </linearGradient>
+  </defs>
+
+  <!-- water and waterline (behind the float) -->
+  <path d="M24 236 Q63.25 226 102.5 236 T181 236 T259.5 236 T338 236 T416.5 236 T495 236 T573.5 236 T652 236 V392 H24 Z" fill="url(#buoy-water)"/>
+  <path d="M24 236 Q63.25 226 102.5 236 T181 236 T259.5 236 T338 236 T416.5 236 T495 236 T573.5 236 T652 236" fill="none" stroke="#0d9488" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M248 388 H432" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-dasharray="2 7"/>
+
+  <!-- mooring chain and weight -->
+  <path d="M340 340 V372" stroke="#64748b" stroke-width="3" stroke-linecap="round" stroke-dasharray="5 5"/>
+  <rect x="318" y="372" width="44" height="14" rx="5" fill="#64748b"/>
+
+  <!-- sensor cage -->
+  <path d="M340 264 V286" stroke="#64748b" stroke-width="3" stroke-linecap="round"/>
+  <rect x="266" y="286" width="148" height="54" rx="12" fill="#0d9488" fill-opacity="0.14" stroke="#64748b" stroke-width="2.5"/>
+  <g font-family="sans-serif" font-size="14" font-weight="700" fill="#eef2ff" text-anchor="middle">
+    <circle cx="291" cy="313" r="15" fill="#e11d48"/>
+    <text x="291" y="318">T</text>
+    <circle cx="324" cy="313" r="15" fill="#0d9488"/>
+    <text x="324" y="318">S</text>
+    <circle cx="357" cy="313" r="15" fill="#d97706"/>
+    <text x="357" y="318">pH</text>
+    <circle cx="390" cy="313" r="15" fill="#4f46e5"/>
+    <text x="390" y="318">DO</text>
+  </g>
+
+  <!-- tower, panels, light, antenna -->
+  <path d="M322 198 L334 112 M358 198 L346 112 M329 150 H351" stroke="#64748b" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <g transform="rotate(-20 302 168)">
+    <rect x="276" y="152" width="44" height="30" rx="3" fill="#4f46e5"/>
+    <path d="M290.7 152 V182 M305.3 152 V182 M276 167 H320" stroke="#eef2ff" stroke-opacity="0.45" stroke-width="1.5"/>
+  </g>
+  <g transform="rotate(20 378 168)">
+    <rect x="360" y="152" width="44" height="30" rx="3" fill="#4f46e5"/>
+    <path d="M374.7 152 V182 M389.3 152 V182 M360 167 H404" stroke="#eef2ff" stroke-opacity="0.45" stroke-width="1.5"/>
+  </g>
+  <rect x="326" y="106" width="28" height="7" rx="3.5" fill="#64748b"/>
+  <circle cx="340" cy="94" r="17" fill="#0d9488" fill-opacity="0.22"/>
+  <circle cx="340" cy="94" r="9" fill="#0d9488"/>
+  <path d="M328 106 V38" stroke="#64748b" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="328" cy="35" r="4" fill="#64748b"/>
+  <g fill="none" stroke="#4f46e5" stroke-width="2.5" stroke-linecap="round">
+    <path d="M319.5 26.5 A12 12 0 0 0 319.5 43.5"/>
+    <path d="M336.5 26.5 A12 12 0 0 1 336.5 43.5"/>
+    <path d="M313.9 20.9 A20 20 0 0 0 313.9 49.1" stroke-opacity="0.55"/>
+    <path d="M342.1 20.9 A20 20 0 0 1 342.1 49.1" stroke-opacity="0.55"/>
+  </g>
+
+  <!-- float with a cutaway of the electronics bay -->
+  <path d="M256 204 H424 Q436 204 432 216 L412 252 Q406 264 390 264 H290 Q274 264 268 252 L248 216 Q244 204 256 204 Z" fill="#d97706"/>
+  <rect x="262" y="198" width="156" height="9" rx="4.5" fill="#64748b"/>
+  <rect x="292" y="212" width="96" height="40" rx="7" fill="#64748b"/>
+  <rect x="300" y="219" width="42" height="26" rx="4" fill="#4f46e5"/>
+  <text x="321" y="237" font-family="sans-serif" font-size="14" font-weight="700" fill="#eef2ff" text-anchor="middle">MCU</text>
+  <rect x="349" y="221" width="30" height="22" rx="3" fill="#0d9488"/>
+  <rect x="379" y="227" width="4" height="10" rx="1" fill="#0d9488"/>
+  <path d="M366 225 L360 233 H367 L361 240" fill="none" stroke="#eef2ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- leader lines -->
+  <g fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="216,36 288,36 326,48"/>
+    <polyline points="216,136 250,136 284,164"/>
+    <polyline points="216,192 262,192 304,228"/>
+    <polyline points="464,86 400,86 350,94"/>
+    <polyline points="464,296 432,296 414,306"/>
+    <polyline points="464,352 400,352 342,360"/>
+  </g>
+  <g fill="#64748b">
+    <circle cx="326" cy="48" r="3.5"/>
+    <circle cx="284" cy="164" r="3.5"/>
+    <circle cx="304" cy="228" r="3.5"/>
+    <circle cx="350" cy="94" r="3.5"/>
+    <circle cx="414" cy="306" r="3.5"/>
+    <circle cx="342" cy="360" r="3.5"/>
+  </g>
+
+  <!-- labels -->
+  <g font-family="sans-serif" font-weight="600" fill="#64748b">
+    <g text-anchor="end">
+      <text x="210" y="40" font-size="16">LoRa antenna</text>
+      <text x="210" y="60" font-size="14">one frame per wake</text>
+      <text x="210" y="140" font-size="16">Solar panels</text>
+      <text x="210" y="160" font-size="14">10 W, charging by day</text>
+      <text x="210" y="196" font-size="16">MCU + battery</text>
+      <text x="210" y="216" font-size="14">awake 40 s in every 10 min</text>
+    </g>
+    <g text-anchor="start">
+      <text x="470" y="90" font-size="16">Marker light</text>
+      <text x="470" y="110" font-size="14">flashes at night</text>
+      <text x="470" y="300" font-size="16">Sensor cage</text>
+      <text x="470" y="320" font-size="14">T · S · pH · DO, 1 m down</text>
+      <text x="470" y="356" font-size="16">Mooring</text>
+      <text x="470" y="376" font-size="14">chain to a seabed weight</text>
+    </g>
+  </g>
+</svg>

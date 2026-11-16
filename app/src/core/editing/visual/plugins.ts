@@ -7,6 +7,7 @@ import { liftListItem } from "@milkdown/kit/prose/schema-list";
 import { Plugin, PluginKey, type EditorState } from "@milkdown/kit/prose/state";
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $prose } from "@milkdown/kit/utils";
+import { remoteChip } from "../../doc/enhance";
 import { clipboardPictures } from "../pictures";
 import { run, type Command } from "./commands";
 import type { Core } from "./core";
@@ -28,8 +29,8 @@ export type PluginHost = {
   slashKey(key: "up" | "down" | "enter" | "escape"): boolean;
   pictures(files: File[], at: number): void;
   followLink(href: string): void;
-  /** `<img src>` for a markdown picture path. The node keeps the markdown path. */
-  displaySrc(src: string): string;
+  /** `<img src>` for a markdown picture path; null: a web picture not fetched (its chip). The node keeps the path. */
+  displaySrc(src: string): string | null;
 };
 
 /** `/` typed alone at the start of an empty paragraph: what follows it filters the menu. */
@@ -141,26 +142,42 @@ function imagesOf(data: DataTransfer | null): File[] {
   return Array.from(data?.files ?? []).filter((file) => file.type.startsWith("image/"));
 }
 
-/** Paints a picture from `displaySrc`. The markdown `src` is not the DOM address, and the DOM must not write it back. */
-function imageView(displaySrc: (src: string) => string): NodeViewConstructor {
+const srcOf = (node: PMNode): string => String(node.attrs.src ?? "");
+
+/**
+ * Paints a picture from `displaySrc`. The markdown `src` is not the DOM address, and the DOM must not write it back.
+ * A web picture not fetched in this window is View's chip: nothing is fetched while editing either. A change between
+ * the two makes the view anew.
+ */
+function imageView(displaySrc: (src: string) => string | null): NodeViewConstructor {
   return (node) => {
-    const img = document.createElement("img");
     let current = node;
-    const paint = (next: PMNode): void => {
+    if (displaySrc(srcOf(node)) === null) {
+      const chip = remoteChip(String(node.attrs.alt ?? ""), srcOf(node));
+      return {
+        dom: chip,
+        update: (next) => next.sameMarkup(current),
+        ignoreMutation: () => true,
+        selectNode: () => chip.classList.add("ProseMirror-selectednode"),
+        deselectNode: () => chip.classList.remove("ProseMirror-selectednode"),
+      };
+    }
+    const img = document.createElement("img");
+    const paint = (next: PMNode, shown: string): void => {
       img.alt = String(next.attrs.alt ?? "");
       const title = String(next.attrs.title ?? "");
       if (title === "") img.removeAttribute("title");
       else img.title = title;
-      const shown = displaySrc(String(next.attrs.src ?? ""));
       if (img.getAttribute("src") !== shown) img.setAttribute("src", shown);
     };
-    paint(node);
+    paint(node, displaySrc(srcOf(node)) ?? "");
     return {
       dom: img,
       update: (next) => {
-        if (next.type !== current.type) return false;
+        const shown = next.type === current.type ? displaySrc(srcOf(next)) : null;
+        if (shown === null) return false;
         current = next;
-        paint(next);
+        paint(next, shown);
         return true;
       },
       ignoreMutation: () => true,

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::activity::{system_clock, ActivityLog};
 use crate::conditions::{Context, Distribution};
 use crate::document::{DocScope, Documents};
-use crate::events::{CoreEvent, EventSink};
+use crate::events::{CoreEvent, EventSink, PluginFailed};
 use crate::fileops::FileOps;
 use crate::format::FormatRegistry;
 use crate::notes::{NotesCore, NotesScope};
@@ -219,9 +219,8 @@ impl CoreEnv {
                 ))
             });
         for failure in failures {
-            self.sink.emit(CoreEvent::PluginFailed {
-                message: failure.to_string(),
-            });
+            self.sink
+                .emit(CoreEvent::PluginFailed(PluginFailed::new(failure, None)));
         }
     }
 
@@ -253,7 +252,7 @@ pub struct ProjectCore {
     _projects_sub: Subscription,
     _documents_sub: Subscription,
     _search_sub: Subscription,
-    _activity_sub: Option<Subscription>,
+    _activity_sub: Subscription,
     /// The journal follows where each included project keeps its state (`projects.md` §9.2).
     _activity_owners: ProjectsSubscription,
     search: Arc<SearchIndex>,
@@ -282,8 +281,6 @@ pub struct ProjectCore {
     rpc: Arc<RpcTable>,
     services: Arc<Services>,
     app_services: Arc<Services>,
-    /// Opened for a reader with no window: only these plugins run, each told `files_only`.
-    files_only: Option<BTreeSet<PluginId>>,
     /// Agent files at the root, read once at load (`Context.agent_files`).
     agent_files: Vec<String>,
 }
@@ -340,29 +337,15 @@ fn start_watcher(
 impl ProjectCore {
     /// Opens a project: state store, config, plugins started. Single step (no `activate`).
     #[must_use]
-    pub fn open(root: Root, env: &CoreEnv) -> Arc<Self> {
-        Self::build(root, env, None)
-    }
-
-    /// The same project for a reader with no window (`permark mcp` while the app is closed): the same services, built
-    /// from the files; only the plugins in `only` that are on run, each started `files_only` (no state written of
-    /// their own accord).
-    #[must_use]
-    pub fn from_files(root: Root, env: &CoreEnv, only: &[PluginId]) -> Arc<Self> {
-        Self::build(root, env, Some(only.iter().cloned().collect()))
-    }
-
     #[allow(clippy::too_many_lines)] // the composition root: every service built and wired in one place
-    fn build(root: Root, env: &CoreEnv, files_only: Option<BTreeSet<PluginId>>) -> Arc<Self> {
+    pub fn open(root: Root, env: &CoreEnv) -> Arc<Self> {
         let id = ProjectId::of(&root);
         let store = StateStore::for_project(&env.dirs, &root);
-        if files_only.is_none() {
-            // the person's data 0.5 kept in its own profile folder, taken over once (a reader writes nothing)
-            crate::state::older::take_over_project(&env.dirs, &root, &store);
-        }
+        // the person's data 0.5 kept in its own profile folder, taken over once
+        crate::state::older::take_over_project(&env.dirs, &root, &store);
         let config = ProjectConfig::load(&root);
         // plugins that are on may offer extra roots (linked worktrees) before the project is built
-        let (enablement, on) = project_enablement(env, &config, &store, files_only.as_ref());
+        let (enablement, on) = project_enablement(env, &config, &store);
         let extra_roots = env.registry.roots(&on, &root);
         let vault = Vault::new(root).with_worktrees(extra_roots);
         // a few name checks at the root, no walk (Live's default + the agent offer read them)
@@ -388,7 +371,6 @@ impl ProjectCore {
             Arc::clone(&own),
             Arc::clone(&hub),
             Arc::clone(&env.sink),
-            files_only.is_some(),
             &config.ignore,
         );
         let projects_sub = hub.subscribe({
@@ -414,9 +396,8 @@ impl ProjectCore {
             vault.main().path().display().to_string(),
             Arc::clone(&formats),
         ));
-        // front matter tags from the index pass: cached per owning project, shown at once next open (a reader with no
-        // window writes no cache)
-        if files_only.is_none() {
+        // front matter tags from the index pass: cached per owning project, shown at once next open
+        {
             let weak = Arc::downgrade(&projects);
             let fallback = store.clone();
             search.harvest().use_cache(Some(Arc::new(move || {
@@ -429,17 +410,10 @@ impl ProjectCore {
         let search_sub = hub.subscribe(search.feeder());
         let watcher = start_watcher(&vault, &explorer, &hub, &own, env);
         projects.start();
-        // a reader with no window reads the journal, never writes it
-        let activity = Arc::new(if files_only.is_some() {
-            ActivityLog::read_only(&store, system_clock())
-        } else {
-            ActivityLog::open(&store, system_clock())
-        });
-        let activity_sub = files_only.is_none().then(|| {
-            hub.subscribe({
-                let activity = Arc::clone(&activity);
-                move |batch| activity.outside(batch)
-            })
+        let activity = Arc::new(ActivityLog::open(&store, system_clock()));
+        let activity_sub = hub.subscribe({
+            let activity = Arc::clone(&activity);
+            move |batch| activity.outside(batch)
         });
         // the journal waits (facts kept) until the worker tells the owners; told already -> now (subscribed first:
         // a `Resume` between the check and the subscription is never missed; a second one changes nothing)
@@ -490,7 +464,6 @@ impl ProjectCore {
             rpc: RpcTable::new(),
             services: Services::new(),
             app_services: Arc::clone(env.services()),
-            files_only,
             agent_files,
         });
         core.start_plugins(env, enablement, &on);
@@ -882,8 +855,7 @@ impl ProjectCore {
 
     /// Re-resolves enablement (settings | choices changed) and starts | stops project plugins to match.
     pub fn apply_plugins(&self, env: &CoreEnv) {
-        let (enablement, on) =
-            project_enablement(env, &self.config(), &self.store(), self.files_only.as_ref());
+        let (enablement, on) = project_enablement(env, &self.config(), &self.store());
         self.start_plugins(env, enablement, &on);
     }
 
@@ -934,7 +906,7 @@ impl ProjectCore {
             .apply(&env.registry, on, |id| {
                 let table =
                     merged_table(settings.plugin_tables.get(id), config.plugin_tables.get(id));
-                let cx = PluginCx::new(
+                PluginCx::new(
                     id.clone(),
                     CxWorkspace::Project(self.vault.clone()),
                     store.plugin_dir(id),
@@ -944,12 +916,7 @@ impl ProjectCore {
                 )
                 .with_watch(Arc::clone(&self.hub))
                 .with_project(self.project_services())
-                .with_store(store.clone());
-                if self.files_only.is_some() {
-                    cx.with_files_only()
-                } else {
-                    cx
-                }
+                .with_store(store.clone())
             });
         // plugins that kept running are told, so what they read with the old formats (links of documents) is read again
         if formats_changed {
@@ -958,10 +925,13 @@ impl ProjectCore {
                 .unwrap_or_else(PoisonError::into_inner)
                 .formats_changed();
         }
+        // named as the project's views name it (`WorkspaceView::Project.root`)
+        let root = self.root().path().display().to_string();
         for failure in failures {
-            env.sink.emit(CoreEvent::PluginFailed {
-                message: failure.to_string(),
-            });
+            env.sink.emit(CoreEvent::PluginFailed(PluginFailed::new(
+                failure,
+                Some(root.clone()),
+            )));
         }
     }
 }
@@ -990,7 +960,6 @@ fn project_enablement(
     env: &CoreEnv,
     config: &ProjectConfig,
     store: &StateStore,
-    only: Option<&BTreeSet<PluginId>>,
 ) -> (BTreeMap<PluginId, Enablement>, BTreeSet<PluginId>) {
     let choices = store
         .profile_file::<ProjectPluginChoices>(PLUGIN_CHOICES_FILE)
@@ -1002,10 +971,7 @@ fn project_enablement(
         project_choice: choices.choices,
     };
     let enablement = resolve_enabled(&env.registry, &inputs);
-    let mut on = crate::plugins::on_ids(&enablement);
-    if let Some(only) = only {
-        on.retain(|id| only.contains(id));
-    }
+    let on = crate::plugins::on_ids(&enablement);
     (enablement, on)
 }
 

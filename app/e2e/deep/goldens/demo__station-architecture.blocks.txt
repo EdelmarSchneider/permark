@@ -1,0 +1,292 @@
+# demo/station-architecture.md
+format: markdown
+front matter: {"syntax":"yaml","raw":"title: How a reading travels\nowner: Tomás Varela\nstatus: stable\nupdated: 2026-11-12\ntags: [architecture, platform, diagrams]\n","fields":[{"key":"title","value":{"type":"text","text":"How a reading travels"}},{"key":"owner","value":{"type":"text","text":"Tomás Varela"}},{"key":"status","value":{"type":"text","text":"stable"}},{"key":"updated","value":{"type":"text","text":"2026-11-12"}},{"key":"tags","value":{"type":"list","items":["architecture","platform","diagrams"]}}]}
+outline: How a reading travels (line 9)
+outline:   The 40-second wake cycle (line 30)
+outline:   Power during a wake (line 63)
+outline:   Inside a buoy (line 114)
+outline:   Twelve buoys, three gateways (line 120)
+outline:   A buoy's life (line 162)
+outline:   The data model (line 182)
+outline:   Configuration (line 224)
+outline:   Decision: LoRa, not cellular (line 247)
+--- h1 9-9
+<h1 dir="auto" id="how-a-reading-travels">How a reading travels</h1>
+--- p 11-11
+<p dir="auto">Every ten minutes, twelve buoys on Larkhaven Sound wake up, measure the water and go back to sleep. This page follows one reading from a sensor one meter down to your screen, a trip of less than a minute.</p>
+--- pre 13-26
+<pre><code class="language-mermaid">flowchart TB
+  subgraph sea [Sea to shore]
+    direction LR
+    S[Sensors] --&gt; M[Buoy MCU] --&gt; R[LoRa radio] --&gt; G[3 gateways]
+  end
+  subgraph shore [Ashore]
+    direction LR
+    I[Ingest] --&gt; Q[QC engine] --&gt; T[Time-series store] --&gt; A[Open API]
+  end
+  sea --&gt; shore
+  classDef accent fill:#4f46e5,stroke:#4f46e5,color:#eef2ff
+  class Q accent
+</code></pre>
+--- p 28-28
+<p dir="auto">From the API, the same numbers reach the harbor dashboard, Gull's weekly bulletin and any researcher who asks. Nothing on this path is exotic: each part is small, boring and replaceable, which is exactly what you want from equipment that spends the winter in salt water.</p>
+--- h2 30-30
+<h2 dir="auto" id="the-40-second-wake-cycle">The 40-second wake cycle</h2>
+--- p 32-32
+<p dir="auto">A buoy spends most of its life asleep. Its <abbr title="microcontroller unit">MCU</abbr> wakes on a timer, powers the sensors, takes a reading, sends it and goes back to sleep. One wake lasts 40 seconds; the other 9 minutes and 20 seconds are quiet.</p>
+--- pre 34-59
+<pre><code class="language-plantuml">@startuml
+skinparam shadowing false
+skinparam roundCorner 10
+skinparam ArrowColor #64748b
+participant "Buoy MCU" as MCU
+participant "Sensors" as SEN
+participant "LoRa radio" as RAD
+participant "Gateway" as GW
+participant "Ingest" as ING
+
+== Wake, t = 0 s ==
+MCU -&gt; SEN : power on
+SEN --&gt; MCU : ready after 20 s warm-up
+MCU -&gt; SEN : sample for 8 s
+SEN --&gt; MCU : T, S, pH, DO + wave summary
+== Send, t = 28 s ==
+MCU -&gt; RAD : 24-byte frame
+RAD -&gt; GW : uplink
+GW --&gt; RAD : ack
+GW -&gt; ING : forward frame
+== Sleep, t = 40 s ==
+MCU -&gt; SEN : power off
+MCU -&gt; MCU : sleep 9 min 20 s
+@enduml
+</code></pre>
+--- p 61-61
+<p dir="auto">The gateway answers the radio at once and forwards the frame on its own time, so the radio never waits for the shore. Its listening window stays at three seconds.</p>
+--- h2 63-63
+<h2 dir="auto" id="power-during-a-wake">Power during a wake</h2>
+--- p 65-65
+<p dir="auto">Where does the energy go? Mostly into warming up the sensors. The radio, despite its reputation, is on for barely four seconds.</p>
+--- pre 67-110
+<pre><code class="language-plantuml">@startuml
+skinparam shadowing false
+skinparam roundCorner 10
+scale 1 as 13 pixels
+robust "Buoy MCU" as MCU
+robust "Sensors" as SEN
+robust "LoRa radio" as RAD
+concise "Battery draw" as BAT
+
+@-4
+MCU is Asleep
+SEN is Off
+RAD is Off
+BAT is "0.5 mW"
+
+@0
+MCU is Awake
+SEN is Warming
+BAT is "0.65 W"
+
+@20
+SEN is Sampling
+
+@28
+SEN is Off
+RAD is Sending
+BAT is "0.2 W"
+
+@29
+RAD is Listening
+
+@32
+RAD is Off
+BAT is "0.05 W"
+
+@40
+MCU is Asleep
+BAT is "0.5 mW"
+
+@46
+MCU is Asleep
+@enduml
+</code></pre>
+--- p 112-112
+<p dir="auto">Add it up and one wake costs about 19 joules. With the wave sensor ticking along between wakes, a buoy uses under 1 Wh a day: the 10 W panels earn that back in a few minutes of full sun, and the 154 Wh battery could carry a buoy through five months of gray skies.</p>
+--- h2 114-114
+<h2 dir="auto" id="inside-a-buoy">Inside a buoy</h2>
+--- p 116-116
+<p dir="auto">Each buoy is a float, a short tower and a sensor cage, held in place by a chain. The electronics bay sits inside the float, just above the waterline.</p>
+--- p 118-118
+<p dir="auto"><img alt="Cutaway of a Tidewell buoy: LoRa antenna and marker light on top, solar panels on the tower, MCU and battery in the float, sensor cage one meter down, mooring chain to a seabed weight" src="pm-asset:demo/assets/buoy-anatomy.svg"></p>
+--- h2 120-120
+<h2 dir="auto" id="twelve-buoys-three-gateways">Twelve buoys, three gateways</h2>
+--- p 122-122
+<p dir="auto">The buoys talk to three gateways on shore, four buoys each. Every buoy also knows a fallback gateway; the dashed line shows Gannet Point's.</p>
+--- pre 124-158
+<pre><code class="language-dot">digraph network {
+  rankdir=TB;
+  nodesep=0.15;
+  ranksep=0.5;
+  node [shape=box, style="rounded,filled", fontsize=12, width=0.6, height=0.34];
+  edge [arrowsize=0.6];
+
+  subgraph cluster_north {
+    label="North Light"; style="rounded,dashed";
+    "LH-01"; "LH-02"; "LH-03"; "LH-04";
+    north [label="gateway"];
+  }
+  subgraph cluster_avery {
+    label="Avery Pier"; style="rounded,dashed";
+    "LH-05"; "LH-06"; "LH-07"; "LH-08";
+    avery [label="gateway"];
+  }
+  subgraph cluster_saddle {
+    label="Saddle Hill"; style="rounded,dashed";
+    "LH-09"; "LH-10"; "LH-11"; "LH-12";
+    saddle [label="gateway"];
+  }
+
+  ingest [label="Ingest, Port Avery"];
+
+  {"LH-01" "LH-02" "LH-03" "LH-04"} -&gt; north;
+  {"LH-05" "LH-06" "LH-07" "LH-08"} -&gt; avery;
+  {"LH-09" "LH-10" "LH-11" "LH-12"} -&gt; saddle;
+  "LH-04" -&gt; avery [style=dashed];
+  north -&gt; ingest;
+  avery -&gt; ingest;
+  saddle -&gt; ingest;
+}
+</code></pre>
+--- p 160-160
+<p dir="auto">When a gateway loses its link to shore, it buffers frames and replays them later. The <a href="station/ingest-2026-11-12.log">ingest log for November 12</a> shows Saddle Hill doing exactly that, with no reading lost.</p>
+--- h2 162-162
+<h2 dir="auto" id="a-buoys-life">A buoy's life</h2>
+--- p 164-164
+<p dir="auto">A buoy is always in one of a few states. Most of the season it simply alternates between sampling and sleeping.</p>
+--- pre 166-180
+<pre><code class="language-mermaid">stateDiagram-v2
+  [*] --&gt; Docked
+  Docked --&gt; Calibrating : season prep
+  Calibrating --&gt; Deployed : bath test passed
+  state Deployed {
+    direction LR
+    Sleeping --&gt; Sampling : every 10 min
+    Sampling --&gt; Sleeping : frame sent
+    Sampling --&gt; Fault : sensor error
+    Fault --&gt; Sampling : self-test passed
+  }
+  Deployed --&gt; Recovered : end of season
+  Recovered --&gt; Docked : cleaned and logged
+</code></pre>
+--- h2 182-182
+<h2 dir="auto" id="the-data-model">The data model</h2>
+--- p 184-184
+<p dir="auto">Behind the API sit five tables. A station hosts one deployment for every buoy moored there; each deployment carries its sensors and records its readings; a reading may collect QC flags.</p>
+--- pre 186-220
+<pre><code class="language-mermaid">erDiagram
+  direction LR
+  STATION ||--o{ DEPLOYMENT : ""
+  DEPLOYMENT ||--|{ SENSOR : ""
+  DEPLOYMENT ||--o{ READING : ""
+  READING ||--o{ QC_FLAG : ""
+  STATION {
+    text id PK
+    text name
+    text gateway
+  }
+  DEPLOYMENT {
+    int id PK
+    text station FK
+    date deployed
+    text firmware
+  }
+  SENSOR {
+    text serial PK
+    text kind
+    date calibrated
+  }
+  READING {
+    int id PK
+    time taken_at
+    float temp_c
+    float ph
+  }
+  QC_FLAG {
+    int reading FK
+    text rule
+    text decision
+  }
+</code></pre>
+--- p 222-222
+<p dir="auto">Readings belong to a deployment, not to a station. A buoy swapped mid-season never mixes its numbers with its replacement's.</p>
+--- h2 224-224
+<h2 dir="auto" id="configuration">Configuration</h2>
+--- p 226-226
+<p dir="auto">Two plain files steer the whole pipeline. The buoy reads <a href="station/buoy.toml">its settings</a> at every boot, and the ingest service checks each reading against <a href="station/qc-rules.yaml">the QC rules</a>. Here are the first lines of the rules:</p>
+--- pre 228-243
+<pre><code class="language-yaml" data-lines="4-6" data-title="station/qc-rules.yaml"># Tidewell QC rules, applied by the ingest service to every reading.
+# Units follow each sensor: °C, PSU, pH units, mg/L and meters.
+version: 3
+order: [range, spike, flatline, drift]
+reject_on: [range]
+publish_flagged: true
+
+# Physical limits as [min, max]. Outside them, a reading is rejected.
+range:
+  temp_c: [-2.0, 35.0]
+  sal_psu: [0.0, 42.0]
+  ph: [7.2, 8.6]
+  do_mgl: [0.0, 15.0]
+  hs_m: [0.0, 12.0]
+</code></pre>
+--- p 245-245
+<p dir="auto">Lines 4 to 6 are the whole policy: the order of the checks, the one failure that rejects a reading outright, and the promise that flagged readings are still published, flag attached. When you want to point a colleague at a rule, a reference like <code>station/qc-rules.yaml:5</code> opens the file at that line. The early warning about Kittiwake Shoal's pH sensor is at <code>station/ingest-2026-11-12.log:22</code>.</p>
+--- h2 247-247
+<h2 dir="auto" id="decision-lora-not-cellular">Decision: LoRa, not cellular</h2>
+--- p 249-249
+<p dir="auto">We chose the radio before we chose anything else, because it decides the battery, the budget and where buoys can go.</p>
+--- details 254-264
+<details>
+<summary>ADR-007 · Use LoRa with our own gateways (accepted, June 2025)</summary>
+<p dir="auto"><strong>Context.</strong> Buoys send 24 bytes every 10 minutes from up to 14 km offshore. The inner Sound, around Heron Flats, has patchy cell coverage.</p>
+<table>
+<thead>
+<tr>
+<th dir="auto">Option</th>
+<th dir="auto">Range over water</th>
+<th align="right" dir="auto">Energy per send</th>
+<th align="right" dir="auto">Cost per buoy, 5 years</th>
+<th dir="auto">Verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td dir="auto"><abbr title="Long Range, a low-power radio protocol">LoRa</abbr>, 3 own gateways</td>
+<td dir="auto">10–15 km</td>
+<td align="right" dir="auto">0.4 J</td>
+<td align="right" dir="auto">$263</td>
+<td dir="auto">Chosen</td>
+</tr>
+<tr>
+<td dir="auto">LTE-M cellular</td>
+<td dir="auto">patchy past Saddle Hill</td>
+<td align="right" dir="auto">4 J</td>
+<td align="right" dir="auto">$345</td>
+<td dir="auto">Fallback study</td>
+</tr>
+<tr>
+<td dir="auto">Satellite short-burst</td>
+<td dir="auto">anywhere</td>
+<td align="right" dir="auto">20 J</td>
+<td align="right" dir="auto">$10,760</td>
+<td dir="auto">Too costly</td>
+</tr>
+</tbody>
+</table>
+<p dir="auto"><strong>Decision.</strong> LoRa in the US915 band, spreading factor 9, three gateways on land we can reach by car.</p>
+<p dir="auto"><strong>Consequences.</strong> No monthly fees and no gaps, but we maintain three gateways ourselves. Frames must stay small: at spreading factor 9, a frame has to fit in the band's 400 ms limit on air.</p>
+</details>
+--- hr 268-268
+<hr>
+--- p 270-270
+<p dir="auto">Next: <a href="tidewell-api.md">Tidewell Open Data API</a> · <a href="README.md">Start here</a></p>

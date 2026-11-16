@@ -6,7 +6,8 @@ import type { Manifest } from "../../api/generated/Manifest";
 import type { PluginId } from "../../api/generated/PluginId";
 import type { Block, Context, DocumentView, ProjectRow } from "../../api";
 import { available, type Requirement } from "../conditions/available";
-import type { MenuEntry } from "../explorer/menu";
+import type { PickerKind } from "../editing/visual/characters";
+import type { MenuEntry, MenuIcon } from "../explorer/menu";
 import type { MessageKey } from "../i18n";
 import type { PluginPageId } from "../shell/ui.svelte";
 import type {
@@ -233,6 +234,8 @@ export type Contribution = Owned &
         kind: "settingsPage";
         id: PluginPageId;
         label: MessageKey;
+        /** A small icon before the label in the nav, as the core sections wear. */
+        icon?: MenuIcon;
         order: number;
         view: LazyComponent;
         quick?: LazyComponent;
@@ -308,6 +311,16 @@ export type Contribution = Owned &
         order?: number;
         entries: () => MenuEntry[];
       }
+    /**
+     * A button in the footer of the Edit toolbar's emoji | symbols popup, before Cancel. The popup closes and the
+     * editor keeps the keyboard, then `run` gets which popup it was.
+     */
+    | { kind: "pickerAction"; id: string; label: MessageKey; run: (picker: PickerKind) => void }
+    /**
+     * While one is present, View and Edit mark the links whose target is missing (underline + tooltip). No lookup
+     * while none is present; a click on a link still checks its own target. The plugin that checks links offers it.
+     */
+    | { kind: "linkMarks"; id: string }
   );
 
 export type ContributionKind = Contribution["kind"];

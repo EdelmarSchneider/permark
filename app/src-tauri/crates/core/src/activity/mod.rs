@@ -588,18 +588,11 @@ fn load(file: &StateFile<Journal>) -> Journal {
     }
 }
 
-/// How the journal of a project is kept.
-enum Mode {
-    /// The app: appends, writes (a thread writes shortly after the last change; Drop writes what is left).
-    Writing { flusher: Option<JoinHandle<()>> },
-    /// `permark mcp` with the app closed: read fresh from the file at every look, never written.
-    Reading,
-}
-
 /// The activity journal of one project.
 pub struct ActivityLog {
     inner: Arc<Inner>,
-    mode: Mode,
+    /// Writes shortly after the last change; Drop writes what is left.
+    flusher: Option<JoinHandle<()>>,
 }
 
 impl std::fmt::Debug for ActivityLog {
@@ -633,38 +626,7 @@ impl ActivityLog {
             .name("activity-journal".to_owned())
             .spawn(move || flush_loop(&weak))
             .ok();
-        Self {
-            inner,
-            mode: Mode::Writing { flusher },
-        }
-    }
-
-    /// The journal for a reader with no window: never written.
-    #[must_use]
-    pub fn read_only(store: &StateStore, clock: Clock) -> Self {
-        let file = store.file::<Journal>(JOURNAL_FILE);
-        Self {
-            inner: Arc::new(Inner {
-                state: Mutex::new(State {
-                    journal: Journal::default(),
-                    dirty: false,
-                    file,
-                    owners: None,
-                    waiting: None,
-                    mirror: Vec::new(),
-                }),
-                wake: Condvar::new(),
-                stop: AtomicBool::new(true),
-                clock,
-                listeners: Mutex::new(Vec::new()),
-                next_listener: AtomicU64::new(1),
-            }),
-            mode: Mode::Reading,
-        }
-    }
-
-    fn writing(&self) -> bool {
-        matches!(self.mode, Mode::Writing { .. })
+        Self { inner, flusher }
     }
 
     /// Now, by the journal's clock.
@@ -677,7 +639,7 @@ impl ActivityLog {
     pub fn use_store(&self, store: &StateStore) {
         let mut state = lock(&self.inner.state);
         state.file = store.file::<Journal>(JOURNAL_FILE);
-        state.dirty = self.writing();
+        state.dirty = true;
         self.inner.wake.notify_all();
     }
 
@@ -685,9 +647,6 @@ impl ActivityLog {
     /// included project's files also go to that project's own journal (the one it uses opened alone). This journal
     /// keeps every fact too: the hand-off and the agent's `activity` read it as before (merging = round 5).
     pub fn follow_owners(&self, change: &crate::projects::OwnersChange<'_>) {
-        if !self.writing() {
-            return;
-        }
         match change {
             crate::projects::OwnersChange::Pause => {
                 {
@@ -707,9 +666,6 @@ impl ActivityLog {
     }
 
     fn append(&self, by: By, fact: Fact) -> Option<u64> {
-        if !self.writing() {
-            return None;
-        }
         let now = self.now();
         let entry = {
             let mut state = lock(&self.inner.state);
@@ -749,7 +705,7 @@ impl ActivityLog {
         }
     }
 
-    /// Something the person did in PerMark (a reader that never writes ignores it).
+    /// Something the person did in PerMark.
     pub fn person(&self, fact: Fact) {
         if fact.is_marker() || matches!(fact, Fact::Outside { .. }) {
             return;
@@ -771,9 +727,6 @@ impl ActivityLog {
 
     /// Changes the watch verified: the ones made outside PerMark (not the app's own writes) are noted, files only.
     pub fn outside(&self, batch: &FsBatch) {
-        if !self.writing() {
-            return;
-        }
         let now = self.now();
         let mut noted = false;
         {
@@ -815,31 +768,18 @@ impl ActivityLog {
         }
     }
 
-    /// The journal as it is now (a reader with no window reads the file again).
+    /// The journal as it is now.
     #[must_use]
     pub fn snapshot(&self) -> Journal {
-        let state = lock(&self.inner.state);
-        match self.mode {
-            Mode::Writing { .. } => state.journal.clone(),
-            Mode::Reading => load(&state.file),
-        }
+        lock(&self.inner.state).journal.clone()
     }
 
     /// The person confirmed a hand-off of everything up to `upto` (the seq the preview was built from): the checkpoint
     /// and the frozen package. Entries that came after the preview stay for the next hand-off.
     ///
-    /// Returns the seq of the hand-off marker (`None`: a reader that never writes).
+    /// Returns the seq of the hand-off marker.
     #[must_use]
-    pub fn hand_off(
-        &self,
-        upto: u64,
-        head: Option<String>,
-        text: String,
-        rows: u32,
-    ) -> Option<u64> {
-        if !self.writing() {
-            return None;
-        }
+    pub fn hand_off(&self, upto: u64, head: Option<String>, text: String, rows: u32) -> u64 {
         let now = self.now();
         let entry = {
             let mut state = lock(&self.inner.state);
@@ -871,7 +811,7 @@ impl ActivityLog {
             entry
         };
         self.announce(&entry);
-        Some(entry.seq)
+        entry.seq
     }
 
     /// Hears every new entry until the returned value is dropped.
@@ -1047,13 +987,11 @@ fn flush_loop(inner: &Weak<Inner>) {
 
 impl Drop for ActivityLog {
     fn drop(&mut self) {
-        if let Mode::Writing { flusher } = &mut self.mode {
-            self.inner.stop.store(true, Ordering::SeqCst);
-            self.inner.wake.notify_all();
-            if let Some(thread) = flusher.take() {
-                let _ = thread.join();
-            }
-            flush(&self.inner);
+        self.inner.stop.store(true, Ordering::SeqCst);
+        self.inner.wake.notify_all();
+        if let Some(thread) = self.flusher.take() {
+            let _ = thread.join();
         }
+        flush(&self.inner);
     }
 }

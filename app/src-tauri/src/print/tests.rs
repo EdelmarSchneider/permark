@@ -1,0 +1,311 @@
+use super::*;
+
+#[test]
+fn page_windows_are_told_apart_from_the_persons_windows() {
+    assert!(is_sheet("export-1"));
+    assert!(!is_sheet("main"));
+    assert!(!is_sheet("w-2"));
+}
+
+#[test]
+fn a_page_window_goes_to_its_page_only() {
+    let page = page_url().unwrap();
+    assert!(is_page_url(&page));
+    let other = |text: &str| !is_page_url(&Url::parse(text).unwrap());
+    assert!(other("https://example.com/"));
+    assert!(other(&format!("{page}other")));
+    assert!(other("http://tauri.localhost/"));
+    assert!(other("data:text/html,<p>x</p>"));
+    // both spellings of the scheme (web views differ): only the one this system uses is the page
+    let custom = format!("{SCHEME}://localhost/");
+    let http = format!("http://{SCHEME}.localhost/");
+    assert_ne!(
+        is_page_url(&Url::parse(&custom).unwrap()),
+        is_page_url(&Url::parse(&http).unwrap())
+    );
+    assert!(other(&format!("{SCHEME}://elsewhere/")));
+    // the page with a query is another resource; the secure form of the scheme is no page either
+    assert!(other(&format!("{page}?x=1")));
+    assert!(other(&format!("https://{SCHEME}.localhost/")));
+    // a jump to an anchor of the page stays on it
+    assert!(is_page_url(&Url::parse(&format!("{page}#part")).unwrap()));
+}
+
+#[test]
+fn the_scheme_answers_a_page_window_at_its_root_only() {
+    let pages = Pages::default();
+    let label = pages.add("<p>a</p>".to_owned());
+    // a page stored under a work window's label still never reaches it
+    pages
+        .lock()
+        .insert("main".to_owned(), Arc::new("<p>m</p>".to_owned()));
+    let status = |pages: Option<&Pages>, label: &str, path: &str| {
+        respond(pages, label, path).unwrap().status()
+    };
+    let served = respond(Some(&pages), &label, "/").unwrap();
+    assert_eq!(served.status(), StatusCode::OK);
+    assert_eq!(served.body(), b"<p>a</p>");
+    assert_eq!(
+        served.headers()[header::CONTENT_SECURITY_POLICY],
+        PAGE_POLICY
+    );
+    assert!(PAGE_POLICY.contains("base-uri 'none'") && PAGE_POLICY.contains("form-action 'none'"));
+    assert_eq!(status(Some(&pages), &label, "/x"), StatusCode::NOT_FOUND);
+    assert_eq!(status(Some(&pages), "main", "/"), StatusCode::NOT_FOUND);
+    assert_eq!(status(Some(&pages), "w-1", "/"), StatusCode::NOT_FOUND);
+    assert_eq!(
+        status(Some(&pages), "export-99", "/"),
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(status(None, &label, "/"), StatusCode::NOT_FOUND);
+}
+
+#[test]
+fn a_written_file_is_reachable_until_its_view_is_forgotten() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("a.pdf");
+    std::fs::write(&file, b"%PDF").unwrap();
+    let written = Written::default();
+    assert!(matches!(
+        written.last("view-1"),
+        Err(PrintError::NothingWritten)
+    ));
+    written.keep("view-1", file.clone());
+    written.keep("view-2", file.clone());
+    assert_eq!(written.last("view-1").unwrap(), file);
+    written.forget("view-1");
+    assert!(matches!(
+        written.last("view-1"),
+        Err(PrintError::NothingWritten)
+    ));
+    assert_eq!(written.last("view-2").unwrap(), file);
+    std::fs::remove_file(&file).unwrap();
+    assert!(matches!(written.last("view-2"), Err(PrintError::Gone(_))));
+}
+
+#[test]
+fn each_page_is_served_to_its_own_window_until_forgotten() {
+    let pages = Pages::default();
+    let a = pages.add("<p>a</p>".to_owned());
+    let b = pages.add("<p>b</p>".to_owned());
+    assert_ne!(a, b);
+    assert!(is_sheet(&a) && is_sheet(&b));
+    assert_eq!(
+        pages.page(&a).as_deref().map(String::as_str),
+        Some("<p>a</p>")
+    );
+    pages.remove(&a);
+    assert!(pages.page(&a).is_none());
+    assert!(pages.page("main").is_none());
+    assert!(pages.page(&b).is_some());
+}
+
+/// A 1 x 1 PNG, drawn large.
+#[cfg(all(any(windows, target_os = "linux"), feature = "webview-tests"))]
+const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
+
+/// Three A5 landscape pages: a picture, an inline SVG, a page counter in the bottom margin.
+#[cfg(all(any(windows, target_os = "linux"), feature = "webview-tests"))]
+fn sample() -> String {
+    let filler = "<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore \
+                  et dolore magna aliqua.</p>"
+        .repeat(4);
+    format!(
+        "<!doctype html><html><head><meta charset=utf-8><meta name=color-scheme content=light><style>\
+         @page {{ size: A5 landscape; margin: 15mm; \
+         @bottom-center {{ content: counter(page) \" / \" counter(pages); font: 9pt sans-serif; }} }}\
+         body {{ font: 11pt Georgia, serif; background: #fffdf5; }} h1 {{ break-before: page; }} \
+         h1:first-of-type {{ break-before: auto; }} img {{ width: 30mm; image-rendering: pixelated; }}\
+         </style></head><body>\
+         <h1>One</h1><img alt=dot src=\"data:image/png;base64,{PNG}\">{filler}\
+         <h1>Two</h1><svg width=200 height=80 viewBox=\"0 0 200 80\"><rect width=200 height=80 rx=12 fill=#2b6cb0 />\
+         <text x=20 y=50 fill=white font-size=28>inline SVG</text></svg>{filler}\
+         <h1>Three</h1>{filler}</body></html>"
+    )
+}
+
+/// Visible top-level windows on the desktop now: handle, class.
+#[cfg(all(windows, feature = "webview-tests"))]
+#[allow(unsafe_code)] // Win32 window enumeration (test only)
+fn top_windows() -> Vec<(isize, String)> {
+    use ::windows::core::BOOL;
+    use ::windows::Win32::Foundation::{HWND, LPARAM};
+    use ::windows::Win32::UI::WindowsAndMessaging::{EnumWindows, GetClassNameW, IsWindowVisible};
+
+    unsafe extern "system" fn each(hwnd: HWND, found: LPARAM) -> BOOL {
+        if unsafe { IsWindowVisible(hwnd) }.as_bool() {
+            let mut class = [0_u16; 64];
+            let len = usize::try_from(unsafe { GetClassNameW(hwnd, &mut class) }).unwrap_or(0);
+            let found = unsafe { &mut *(found.0 as *mut Vec<(isize, String)>) };
+            found.push((hwnd.0 as isize, String::from_utf16_lossy(&class[..len])));
+        }
+        BOOL(1)
+    }
+    let mut found: Vec<(isize, String)> = Vec::new();
+    let _ = unsafe { EnumWindows(Some(each), LPARAM(&raw mut found as isize)) };
+    found
+}
+
+/// Waits for a print dialog that was not there `before` and closes it with its Cancel button: the Windows 11 dialog
+/// (`ApplicationFrameWindow`, shown by the shell) only through UI Automation, the classic one (`#32770`) by
+/// `WM_CLOSE`. Whether one showed.
+#[cfg(all(windows, feature = "webview-tests"))]
+#[allow(unsafe_code)] // Win32 message to a window (test only)
+fn cancel_print_dialog(before: &[(isize, String)]) -> bool {
+    use ::windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+    use ::windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while std::time::Instant::now() < deadline {
+        let dialog = top_windows().into_iter().find(|(hwnd, class)| {
+            !before.iter().any(|b| b.0 == *hwnd)
+                && (class == "ApplicationFrameWindow" || class == "#32770")
+        });
+        if let Some((hwnd, class)) = dialog {
+            std::thread::sleep(Duration::from_millis(1500));
+            if class == "#32770" {
+                let _ = unsafe {
+                    PostMessageW(Some(HWND(hwnd as *mut _)), WM_CLOSE, WPARAM(0), LPARAM(0))
+                };
+            } else {
+                let script = format!(
+                    "Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes;                      $w = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]{hwnd});                      $c = New-Object System.Windows.Automation.PropertyCondition(                     [System.Windows.Automation.AutomationElement]::AutomationIdProperty, 'CloseButton');                      $w.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $c).GetCurrentPattern(                     [System.Windows.Automation.InvokePattern]::Pattern).Invoke()"
+                );
+                let _ = std::process::Command::new("powershell")
+                    .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+                    .status();
+            }
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    false
+}
+
+/// Closes the print dialog the next print call shows; whether one showed.
+#[cfg(all(windows, feature = "webview-tests"))]
+fn dialog_closer(_handle: &AppHandle) -> std::thread::JoinHandle<bool> {
+    let before = top_windows();
+    std::thread::spawn(move || cancel_print_dialog(&before))
+}
+
+/// Closes the print dialog the next print call shows; whether one showed. The dialog runs its own loop on the UI
+/// thread, which serves `GLib` timers but no app task: a timer is set before the dialog opens and answers Cancel.
+#[cfg(all(target_os = "linux", feature = "webview-tests"))]
+fn dialog_closer(handle: &AppHandle) -> std::thread::JoinHandle<bool> {
+    use gtk::glib::ControlFlow;
+    use gtk::prelude::{Cast, DialogExt, ObjectExt, WidgetExt};
+
+    let (tx, rx) = mpsc::channel();
+    let _ = handle.run_on_main_thread(move || {
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        gtk::glib::timeout_add_local(Duration::from_millis(500), move || {
+            let dialog = gtk::Window::list_toplevels()
+                .into_iter()
+                .filter(|w| w.is_visible() && w.type_().name() == "GtkPrintUnixDialog")
+                .find_map(|w| w.downcast::<gtk::Dialog>().ok());
+            if let Some(dialog) = dialog {
+                dialog.response(gtk::ResponseType::Cancel);
+                let _ = tx.send(true);
+                return ControlFlow::Break;
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = tx.send(false);
+                return ControlFlow::Break;
+            }
+            ControlFlow::Continue
+        });
+    });
+    std::thread::spawn(move || rx.recv_timeout(Duration::from_secs(30)).unwrap_or(false))
+}
+
+/// The real web view (one app per process: both steps in one test).
+/// - PDF: a hidden page window renders three A5 landscape pages with a picture, an SVG and (where the web view draws
+///   them) page numbers.
+/// - Print: the system print dialog shows for a hidden page window; closing it ends the print call.
+///
+/// Run (from `app/src-tauri`): `cargo test --lib --features webview-tests print::tests -- --ignored --nocapture`;
+/// `PERMARK_PRINT_OUT=<file.pdf>` keeps the PDF to look at. Puts a print dialog on screen for a moment.
+#[cfg(all(any(windows, target_os = "linux"), feature = "webview-tests"))]
+#[test]
+#[ignore = "opens a real system web view and the print dialog"]
+fn a_hidden_page_window_renders_a_paged_pdf_and_prints() {
+    use std::time::Instant;
+
+    use permark_core::plugins::{Margins, Orientation, PageSize};
+    use tauri::RunEvent;
+
+    let data = tempfile::tempdir().unwrap();
+    let data_dir = data.path().join("webview");
+    let app = tauri::Builder::default()
+        .any_thread()
+        .manage(Pages::default())
+        .register_asynchronous_uri_scheme_protocol(SCHEME, handle)
+        .build(tauri::generate_context!())
+        .unwrap();
+    let (tx, rx) = mpsc::channel();
+    let worker = app.handle().clone();
+    std::thread::spawn(move || {
+        let setup = PageSetup {
+            size: PageSize::A5,
+            orientation: Orientation::Landscape,
+            margins: Margins::Narrow,
+            page_numbers: true,
+        };
+        let started = Instant::now();
+        let sheet = Sheet::open(&worker, sample(), Some(data_dir.clone()));
+        let loaded = started.elapsed();
+        let bytes = sheet.and_then(|sheet| native::pdf(&sheet, setup));
+        let pdf = (bytes, loaded, started.elapsed());
+        println!(
+            "PDF step: {:?} in {:?}",
+            pdf.0.as_ref().map(Vec::len),
+            pdf.2
+        );
+        if let (Ok(bytes), Some(out)) = (&pdf.0, std::env::var_os("PERMARK_PRINT_OUT")) {
+            let _ = std::fs::write(out, bytes);
+        }
+        // print: the dialog the page window opens is closed again from here
+        let closer = dialog_closer(&worker);
+        let started = Instant::now();
+        let printed = Sheet::open(&worker, sample(), Some(data_dir))
+            .and_then(|sheet| native::print(&sheet, setup, None));
+        let shown = closer.join().unwrap_or(false);
+        let _ = tx.send((pdf, printed, shown, started.elapsed()));
+        worker.exit(0);
+    });
+    app.run_return(|_, event| {
+        // a page window closing is not the end of the run: the worker ends it
+        if let RunEvent::ExitRequested {
+            api, code: None, ..
+        } = event
+        {
+            api.prevent_exit();
+        }
+    });
+    let ((bytes, loaded, total), printed, shown, print_time) = rx.recv().unwrap();
+    // the web view's browser process lets go of its data folder a moment after the app ends
+    for _ in 0..50 {
+        if std::fs::remove_dir_all(data.path()).is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let bytes = bytes.unwrap();
+    println!(
+        "loaded in {loaded:?}, PDF of {} bytes in {total:?}; print dialog shown: {shown}, print call {print_time:?}",
+        bytes.len()
+    );
+    assert!(bytes.starts_with(b"%PDF-"));
+    let text = String::from_utf8_lossy(&bytes);
+    let pages = text.matches("/Type /Page").count() - text.matches("/Type /Pages").count();
+    assert_eq!(pages, 3, "three pages");
+    // A5 landscape: 595 x 420 points, as each web view writes it
+    #[cfg(windows)]
+    let a5_landscape = "/MediaBox [0 0 594.95996 420]";
+    #[cfg(target_os = "linux")]
+    let a5_landscape = "/MediaBox [0 0 595 420]";
+    assert_eq!(text.matches(a5_landscape).count(), 3, "A5 landscape pages");
+    assert!(shown, "the print dialog showed");
+    printed.unwrap();
+}

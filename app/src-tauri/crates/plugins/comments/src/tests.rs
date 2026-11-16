@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 
 use super::*;
 use crate::anchor::{fold, Analysis, Probe, Resolution};
-use crate::model::{Anchor, Book, MAX_COMMENTS};
+use crate::model::{Anchor, Book, MAX_COMMENTS, MAX_COMMENT_CHARS, MAX_REPLY_CHARS};
 
 /// A byte copy of a real `.permark/local/comments.json` written by version 0.5.
 const REAL: &str = include_str!("fixtures/real-comments-0.5.json");
@@ -585,6 +585,200 @@ fn done_reopen_reply_and_delete() {
             .unwrap_err()
             .kind,
         ErrorKind::InvalidData
+    );
+}
+
+/// A file in the service's own layout: comment `one` with the person's reply `got it` and an agent's reply, keys of
+/// other versions on the comment and on the reply, and comment `two` beside it. Returns the ids.
+fn edit_fixture(h: &Harness) -> (String, String) {
+    let id = h.add("a.md", "The first paragraph", "one")["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let other = h.add("a.md", "Last words", "two")["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    h.call("reply", json!({ "id": id, "text": "got it" }))
+        .unwrap();
+    let mut book: Value = serde_json::from_slice(&std::fs::read(h.file()).unwrap()).unwrap();
+    book["comments"][0]["pin"] = json!(true);
+    book["comments"][0]["replies"][0]["mood"] = json!(1);
+    book["comments"][0]["replies"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({ "atMs": 5, "by": "agent", "text": "agent says" }));
+    std::fs::write(h.file(), serde_json::to_vec_pretty(&book).unwrap()).unwrap();
+    // two writes of the service: the file is in its own layout afterwards
+    h.call("setDone", json!({ "id": other, "done": true }))
+        .unwrap();
+    h.call("setDone", json!({ "id": other, "done": false }))
+        .unwrap();
+    (id, other)
+}
+
+fn read_file(h: &Harness) -> String {
+    std::fs::read_to_string(h.file()).unwrap()
+}
+
+#[test]
+fn editing_changes_only_that_text_and_its_time() {
+    let mut h = Harness::new();
+    h.write("a.md", DOC);
+    h.open();
+    let (id, other) = edit_fixture(&h);
+    let events = || h.sink.0.lock().unwrap().len();
+
+    // the comment's own text
+    let before = read_file(&h);
+    let heard = events();
+    h.call("edit", json!({ "id": id, "text": "  fixed  " }))
+        .unwrap();
+    let after = read_file(&h);
+    let listed = h.list("all");
+    let edited = listed.iter().find(|c| c["id"] == id.as_str()).unwrap();
+    let at = edited["editedMs"].as_u64().unwrap();
+    assert_eq!(edited["text"], "fixed");
+    assert_eq!(
+        after,
+        before.replace(
+            "      \"text\": \"one\",\n",
+            &format!("      \"text\": \"fixed\",\n      \"editedMs\": {at},\n")
+        ),
+        "every other byte stays"
+    );
+    assert!(events() > heard, "other windows hear about it");
+    let untouched = listed.iter().find(|c| c["id"] == other.as_str()).unwrap();
+    assert!(untouched["editedMs"].is_null());
+    assert!(edited["replies"][0]["editedMs"].is_null());
+
+    // the person's reply
+    let before = after;
+    h.call(
+        "edit",
+        json!({ "id": id, "reply": 0, "text": "got it, thanks" }),
+    )
+    .unwrap();
+    let after = read_file(&h);
+    let reply = &h.list("all")[0]["replies"][0];
+    let at = reply["editedMs"].as_u64().unwrap();
+    assert_eq!(reply["text"], "got it, thanks");
+    assert_eq!(
+        after,
+        before.replace(
+            "          \"text\": \"got it\",\n",
+            &format!("          \"text\": \"got it, thanks\",\n          \"editedMs\": {at},\n")
+        )
+    );
+
+    // the same text again writes nothing
+    h.call("edit", json!({ "id": id, "text": "fixed" }))
+        .unwrap();
+    assert_eq!(read_file(&h), after);
+}
+
+#[test]
+fn refused_edits_write_nothing() {
+    let mut h = Harness::new();
+    h.write("a.md", DOC);
+    h.open();
+    let (id, _) = edit_fixture(&h);
+    let before = read_file(&h);
+    for (args, kind) in [
+        (json!({ "id": id, "text": "" }), ErrorKind::InvalidData),
+        (
+            json!({ "id": id, "text": " \n\t " }),
+            ErrorKind::InvalidData,
+        ),
+        (
+            json!({ "id": id, "reply": 0, "text": "  " }),
+            ErrorKind::InvalidData,
+        ),
+        (
+            json!({ "id": id, "text": "é".repeat(MAX_COMMENT_CHARS + 1) }),
+            ErrorKind::TooLarge,
+        ),
+        (
+            json!({ "id": id, "reply": 0, "text": "é".repeat(MAX_REPLY_CHARS + 1) }),
+            ErrorKind::TooLarge,
+        ),
+        (
+            json!({ "id": id, "reply": 1, "text": "not mine" }),
+            ErrorKind::Denied,
+        ),
+        (
+            json!({ "id": id, "reply": 2, "text": "x" }),
+            ErrorKind::NotFound,
+        ),
+        (json!({ "id": "gone", "text": "x" }), ErrorKind::NotFound),
+    ] {
+        let error = h.call("edit", args.clone()).unwrap_err();
+        assert_eq!(error.kind, kind, "{args}");
+        assert_eq!(read_file(&h), before, "{args}");
+    }
+    // exactly at the limits: kept
+    h.call(
+        "edit",
+        json!({ "id": id, "text": "é".repeat(MAX_COMMENT_CHARS) }),
+    )
+    .unwrap();
+    h.call(
+        "edit",
+        json!({ "id": id, "reply": 0, "text": "é".repeat(MAX_REPLY_CHARS) }),
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_done_comment_can_be_edited_and_stays_done() {
+    let mut h = Harness::new();
+    h.write("a.md", DOC);
+    h.open();
+    let id = h.add("a.md", "Last words", "typo")["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    h.call("setDone", json!({ "id": id, "done": true }))
+        .unwrap();
+    h.call("edit", json!({ "id": id, "text": "no typo" }))
+        .unwrap();
+    let done = &h.list("done")[0];
+    assert_eq!(done["text"], "no typo");
+    assert_eq!(done["doneBy"], "user");
+}
+
+#[test]
+fn an_old_file_without_edit_times_reads_as_not_edited() {
+    let mut h = Harness::new();
+    h.write("a.md", DOC);
+    let old = r#"{
+  "version": 1,
+  "comments": [
+    {
+      "id": "c1",
+      "path": "a.md",
+      "text": "written by an older version",
+      "anchor": { "quote": "Last words", "line": 9, "endLine": 9 },
+      "createdMs": 1,
+      "replies": [{ "atMs": 2, "by": "user", "text": "a reply" }]
+    }
+  ]
+}"#;
+    let store = permark_core::state::StateStore::for_project(
+        &AppDirs::under(h.base.path()),
+        &Root::open(&h.root()).unwrap(),
+    );
+    store.raw_file(FILE).write(old.as_bytes()).unwrap();
+    h.open();
+    let listed = h.list("all");
+    assert!(listed[0]["editedMs"].is_null());
+    assert!(listed[0]["replies"][0]["editedMs"].is_null());
+    let book: Book = serde_json::from_str(old).unwrap();
+    assert!(book.comments[0].edited_ms.is_none());
+    let written: Value = serde_json::to_value(&book).unwrap();
+    assert!(
+        written["comments"][0].get("editedMs").is_none(),
+        "never edited: no key written"
     );
 }
 

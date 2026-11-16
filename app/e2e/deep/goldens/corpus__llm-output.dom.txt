@@ -1,0 +1,99 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        p dir="auto"
+          "Sure! Here's a summary of the buoy data for week 46. 🌊"
+        h2 id="-key-findings" dir="auto"
+          a.anchor href="#-key-findings" aria-label="Link to 📊 Key findings"
+            "#"
+          "📊 Key findings"
+        ol
+          li dir="auto"
+            strong
+              "Temperature"
+            "dropped by 0.4 °C across all stations."
+          li dir="auto"
+            strong
+              "pH"
+            "at LH-07 fell faster than its neighbors"
+            a href="https://example.com/lh-07" title="LH-07 notes"
+              "1"
+            "."
+            ul
+              li dir="auto"
+                "This is"
+                em
+                  "within"
+                "the drift limit."
+              li dir="auto"
+                "A water sample will confirm it."
+          li dir="auto"
+            strong
+              "Waves"
+            "were calm: mean height 0.6 m."
+        h3 id="comparison-table" dir="auto"
+          a.anchor href="#comparison-table" aria-label="Link to Comparison table"
+            "#"
+          "Comparison table"
+        div.table-wrap
+          table
+            thead
+              tr
+                th dir="auto"
+                  "Station"
+                th dir="auto"
+                  "Temp (°C)"
+                th dir="auto"
+                  "pH"
+            tbody
+              tr
+                td dir="auto"
+                  "LH-06"
+                td dir="auto"
+                  "11.8"
+                td dir="auto"
+                  "8.00"
+              tr
+                td dir="auto"
+                  "LH-07"
+                td dir="auto"
+                  "11.7"
+                td dir="auto"
+                  "7.96"
+        p dir="auto"
+          "Here's the code I used:"
+        div.code-block
+          pre
+            code
+              tokens: hljs-built_in hljs-keyword hljs-number
+              "import statistics⏎print(statistics.mean([8.00, 7.96, 7.99]))⏎"
+          div.corner
+            span.lang
+              "Python"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        p dir="auto"
+          "The formula for the mean is"
+          span data-math-style="inline"
+            katex tex="\bar{x} = \frac{1}{n}\sum x_i"
+          "."
+        hr
+        p dir="auto"
+          strong
+            "Note:"
+          "Let me know if you'd like me to:"
+        ul
+          li dir="auto"
+            "expand on any point,"
+          li dir="auto"
+            "add a chart, or"
+          li dir="auto"
+            "draft the bulletin."
+        p dir="auto"
+          "The model's hidden reasoning that leaked into the output."
+        p dir="auto"
+          strong
+            "References"
+        p dir="auto"
+          "Trailing markup that never closes: **bold without end and `code without end"

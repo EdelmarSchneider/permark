@@ -5,10 +5,11 @@
 use std::collections::HashMap;
 
 use comrak::nodes::{AstNode, NodeValue};
-use comrak::{parse_document, Arena};
+use comrak::Arena;
 
 use super::{
-    frontmatter, headings_of, is_deeper_than, options, too_many_container_markers, MAX_TREE_DEPTH,
+    frontmatter, headings_of, is_deeper_than, options, parse_document, too_many_container_markers,
+    MAX_TREE_DEPTH,
 };
 
 /// One section of a document.
@@ -60,6 +61,8 @@ fn append_plain<'a>(node: &'a AstNode<'a>, out: &mut String) {
                 out.push_str(&b.literal);
             }
             NodeValue::Math(m) => out.push_str(&m.literal),
+            // an emoji written as its shortcode is found by that name
+            NodeValue::ShortCode(code) => out.push_str(&code.code),
             NodeValue::HtmlBlock(h) => strip_tags(&h.literal, out),
             NodeValue::SoftBreak
             | NodeValue::LineBreak

@@ -134,5 +134,6 @@ describe("words for what went wrong", () => {
   it("writes a download size in megabytes", () => {
     expect(formatMegabytes(3_613_922, "en")).toBe("3.6 MB");
     expect(formatMegabytes(1_681_126, "de")).toBe("1,7 MB");
+    expect(formatMegabytes(3_613_922, "ru")).toBe("3,6 МБ");
   });
 });

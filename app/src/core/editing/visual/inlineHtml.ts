@@ -5,6 +5,7 @@
 
 import type { Ctx } from "@milkdown/kit/ctx";
 import type { Html, Nodes, PhrasingContent, Root } from "mdast";
+import { remoteChip } from "../../doc/enhance";
 import { lockedHostCtx } from "./lockedView";
 
 /** An opening tag alone: its element's name. */
@@ -82,9 +83,13 @@ export function htmlPieces(tree: Root, text: string): void {
   visit(tree);
 }
 
-/** View's element for the piece `source` (backend HTML, its block markers gone); null: none known. */
+/**
+ * View's element for the piece `source` (backend HTML, its block markers gone), made by View's block hook as View makes
+ * it: a project file's address the webview loads, a web picture's chip; null: none known.
+ */
 export function htmlLook(ctx: Ctx, source: string): HTMLElement | null {
-  const html = ctx.get(lockedHostCtx.key).inline?.(source) ?? null;
+  const host = ctx.get(lockedHostCtx.key);
+  const html = host.inline?.(source) ?? null;
   if (html === null) return null;
   const template = document.createElement("template");
   template.innerHTML = html;
@@ -93,5 +98,15 @@ export function htmlLook(ctx: Ctx, source: string): HTMLElement | null {
   for (const marked of [element, ...element.querySelectorAll("[data-b]")]) {
     marked.removeAttribute("data-b");
   }
-  return element;
+  const look = host.blocks.enhance(element);
+  // the piece's view owns this DOM: a web picture is Edit's chip, which no fetch swaps for the picture
+  for (const chip of look.querySelectorAll(LOADABLE)) chip.replaceWith(editChip(chip));
+  return look.matches(LOADABLE) ? editChip(look) : look;
+}
+
+/** View's chip of a web picture (it loads on a click). */
+const LOADABLE = ".remote-image[data-url]";
+
+function editChip(chip: Element): HTMLElement {
+  return remoteChip(chip.getAttribute("aria-label") ?? "", chip.getAttribute("data-url") ?? "");
 }

@@ -116,7 +116,12 @@
     aria-modal="true"
     aria-labelledby="keymap-title"
     tabindex="-1"
-    use:dialogFocus={{ initial: "[data-initial]", onEscape }}
+    use:dialogFocus={{
+      initial: "[data-initial]",
+      onEscape,
+      // Opened from the quick settings, which close as it opens: the gear is the way back.
+      fallback: () => document.querySelector<HTMLElement>("[data-settings-trigger]"),
+    }}
   >
     <header>
       <h2 id="keymap-title">{t("keymap.title")}</h2>
@@ -227,7 +232,7 @@
     max-height: min(640px, 90vh);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--bg);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
     outline: none;
   }

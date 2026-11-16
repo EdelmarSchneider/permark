@@ -953,6 +953,39 @@ describe("where the reader is", () => {
     expect(reading.scrollOf("c.md")).toBeNull();
   });
 
+  it("a text document opened again asks its viewer for the line it was left at; a line asked for wins", async () => {
+    const fx = await setup();
+    await tick();
+    // the text viewer keeps its place as a line
+    reading.remember("notes/todo.txt", 3);
+    await open(fx, "notes/todo.txt");
+    expect(fx.doc.lineRequest).toMatchObject({ path: "notes/todo.txt", line: 3, restore: true });
+    await open(fx, "README.md");
+    fx.doc.navigate("notes/todo.txt", null, 2);
+    await vi.waitFor(() => expect(fx.doc.view?.path).toBe("notes/todo.txt"));
+    expect(fx.doc.lineRequest).toMatchObject({ path: "notes/todo.txt", line: 2 });
+    expect(fx.doc.lineRequest?.restore).toBeFalsy();
+  });
+
+  it("the page of blocks going away never writes its scroll over a text document's line", async () => {
+    const fx = await setup();
+    await tick();
+    await open(fx, "README.md");
+    const { container, scroller } = page();
+    fx.doc.attachBody(container, scroller);
+    try {
+      reading.remember("notes/todo.txt", 3);
+      scroller.scrollTop = 900;
+      await open(fx, "notes/todo.txt");
+      // the Markdown body leaves once the text document is on screen
+      fx.doc.detachBody();
+      expect(reading.scrollOf("notes/todo.txt")).toBe(3);
+      expect(reading.scrollOf("README.md")).toBe(900);
+    } finally {
+      scroller.remove();
+    }
+  });
+
   it("keeps the places of the last 50 documents", () => {
     for (let i = 0; i < 60; i++) reading.remember(`d${i}.md`, 10 + i);
     expect(reading.scrollOf("d0.md")).toBeNull();

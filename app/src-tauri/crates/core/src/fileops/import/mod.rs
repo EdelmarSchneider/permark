@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use unicode_normalization::UnicodeNormalization;
 
+pub use self::copy::copy_folder;
 use self::copy::{
     count_tree, crosses_volumes, delete_originals, is_link, place_copy, Run, Stop, TICK,
 };

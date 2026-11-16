@@ -1,13 +1,12 @@
 //! What each agent tool does, with no MCP and no socket in it: [`Tools::call`] checks the switch, the group and the
-//! paths, then answers from the project's services. The app's server and `permark mcp` with the app closed run this
-//! same code over the same composition (`ProjectServices`).
+//! paths, then answers from the project's services. Only the app's server runs it: `permark mcp` proxies to the app.
 
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
 use permark_core::fsx;
-use permark_core::notes::SharedNotesApi;
+use permark_core::notes::{ProjectKey, SharedNotesApi};
 use permark_core::organizing::{CommentFilter, CommentsApi, TagsApi, UnreadApi};
 use permark_core::paths::Vault;
 use permark_core::plugins::ProjectServices;
@@ -71,8 +70,8 @@ pub struct Tools {
     vault: Vault,
     store: StateStore,
     services: ProjectServices,
-    /// The window's half (`get_context`, `open`): only inside the app.
-    live: Option<Arc<Live>>,
+    /// The window's half (`get_context`, `open`).
+    live: Arc<Live>,
     /// Sizes of files `map` measured: path -> (bytes, modified, size).
     sizes: crate::map::SizeCache,
 }
@@ -187,6 +186,19 @@ struct OpenArgs {
 #[serde(deny_unknown_fields)]
 struct NoArgs {}
 
+/// `open`'s arguments read as the tool reads them, checked before PerMark is started for them (the app checks the
+/// place itself).
+///
+/// # Errors
+/// `Invalid`: not `open`'s arguments, or an empty `path`.
+pub(crate) fn check_open_args(raw: &Value) -> Result<(), ToolError> {
+    let OpenArgs { path, .. } = args(raw.clone())?;
+    if path.trim().is_empty() {
+        return Err(ToolError::Invalid("path is empty".to_owned()));
+    }
+    Ok(())
+}
+
 /// Where an agent asked to show the person something (checked: a shared file of the project).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Place {
@@ -201,7 +213,7 @@ impl Tools {
         vault: Vault,
         store: StateStore,
         services: ProjectServices,
-        live: Option<Arc<Live>>,
+        live: Arc<Live>,
     ) -> Self {
         Self {
             vault,
@@ -260,12 +272,12 @@ impl Tools {
         }))
     }
 
-    /// Whether `group` is open now: the switch on and the group on for this project (read fresh, the project's
-    /// denial counted).
+    /// Whether `group` is open now: the switch on for this folder and the group on for this project (read fresh, the
+    /// project's denial counted).
     #[must_use]
     pub fn allows(&self, group: Group) -> bool {
         let choice = perms::load(&self.store);
-        choice.enabled
+        choice.is_on(self.vault.main().path())
             && perms::effective(
                 &choice.groups,
                 &ProjectConfig::load(self.vault.main()).agent_deny,
@@ -277,12 +289,12 @@ impl Tools {
     /// Checks the switch and the group, then runs the tool.
     ///
     /// # Errors
-    /// `Off`, `Denied`, `Invalid`, `NotFound`, `NotOpen`, `Failed`.
+    /// `Off`, `Denied`, `Invalid`, `NotFound`, `Failed`.
     pub fn call(&self, tool: &str, args: Value) -> Result<Value, ToolError> {
         let group =
             group_of(tool).ok_or_else(|| ToolError::Invalid(format!("unknown tool {tool}")))?;
         let choice = perms::load(&self.store);
-        if !choice.enabled {
+        if !choice.is_on(self.vault.main().path()) {
             return Err(ToolError::Off);
         }
         let config = ProjectConfig::load(self.vault.main());
@@ -352,21 +364,23 @@ impl Tools {
     }
 
     /// What the person is looking at (sanitized again: the rules may have changed since it was published).
-    ///
-    /// # Errors
-    /// `NotOpen` without the app.
-    pub fn context(&self, guard: &Guard) -> Result<(WindowContext, usize), ToolError> {
-        let live = self.live.as_ref().ok_or(ToolError::NotOpen)?;
-        Ok((live.context().sanitize(guard), self.open_comments(guard)))
+    #[must_use]
+    pub fn context(&self, guard: &Guard) -> (WindowContext, usize) {
+        (
+            self.live.context().sanitize(guard),
+            self.open_comments(guard),
+        )
     }
 
     fn get_context(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
         let NoArgs {} = args(raw)?;
-        let (context, open) = self.context(guard)?;
+        let (context, open) = self.context(guard);
         let mut value =
             serde_json::to_value(&context).map_err(|e| ToolError::Failed(e.to_string()))?;
         if let Some(map) = value.as_object_mut() {
             map.retain(|_, v| !v.is_null());
+            // the project is the app's own fact, not the window's: a window never names it
+            map.insert("project".to_owned(), json!(self.vault_root().name()));
             map.insert("openComments".to_owned(), json!(open));
         }
         Ok(value)
@@ -613,6 +627,9 @@ impl Tools {
                 if let (Some(reply), Some(map)) = (c.reply, item.as_object_mut()) {
                     map.insert("reply".to_owned(), json!(reply));
                 }
+                if let (true, Some(map)) = (c.edited, item.as_object_mut()) {
+                    map.insert("edited".to_owned(), json!(true));
+                }
                 item
             })
             .collect();
@@ -643,10 +660,20 @@ impl Tools {
         Ok(json!({ "resolved": id }))
     }
 
+    /// The notes service while the `notes` plugin runs.
+    #[must_use]
+    pub fn shared_notes(&self) -> Option<Arc<SharedNotesApi>> {
+        self.services.app_services.get::<SharedNotesApi>()
+    }
+
+    /// The project notes are shared with: always this server's own folder, never one a window or an agent names.
+    #[must_use]
+    pub fn notes_key(&self) -> ProjectKey {
+        ProjectKey::of(self.vault_root())
+    }
+
     fn notes(&self) -> Result<Arc<SharedNotesApi>, ToolError> {
-        self.services
-            .app_services
-            .get::<SharedNotesApi>()
+        self.shared_notes()
             .ok_or_else(|| ToolError::Invalid("notes are off".to_owned()))
     }
 
@@ -655,7 +682,7 @@ impl Tools {
         let notes: Vec<Value> = self
             .notes()?
             .0
-            .list()
+            .list(&self.notes_key())
             .into_iter()
             .map(|n| json!({ "note": n.id, "title": n.title, "updated": iso(n.updated_ms) }))
             .collect();
@@ -665,13 +692,14 @@ impl Tools {
     fn read_note(&self, raw: Value) -> Result<Value, ToolError> {
         let NoteArgs { note } = args(raw)?;
         let api = self.notes()?;
-        let shared = api.0.list();
+        let key = self.notes_key();
+        let shared = api.0.list(&key);
         let Some(found) = shared.iter().find(|n| n.id == note) else {
             return Err(ToolError::NotFound(note));
         };
         let text = api
             .0
-            .read(&note)
+            .read(&key, &note)
             .map_err(|_| ToolError::NotFound(note.clone()))?;
         // a note longer than one read: its start, and how many characters are left
         let (shown, cut) = crate::context::cut_chars(&text, MAX_READ_CHARS);
@@ -783,13 +811,12 @@ impl Tools {
                 .ok()
                 .and_then(|(_, text)| structure::heading_line(&path, &text, h))
         });
-        let live = self.live.as_ref().ok_or(ToolError::NotOpen)?;
         let place = Place {
             path,
             line: found.or(line.filter(|l| *l >= 1)),
             heading: heading.clone(),
         };
-        let shown = live.show(&place);
+        let shown = self.live.show(&place);
         let mut answer = json!({ "path": place.path, "status": shown });
         if let (Some(map), Some(_), None) = (answer.as_object_mut(), &heading, found) {
             map.insert("headingNotFound".to_owned(), json!(true));

@@ -1,0 +1,39 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        h1 id="saved-with-cr-lf" dir="auto"
+          a.anchor href="#saved-with-cr-lf" aria-label="Link to Saved with CR LF"
+            "#"
+          "Saved with CR LF"
+        p dir="auto"
+          "Every line of this file ends with CR LF. A second line of the same paragraph."
+        ul
+          li dir="auto"
+            "a list item"
+          li dir="auto"
+            "another item"
+        div.code-block
+          pre
+            code
+              tokens: hljs-keyword hljs-literal
+              "const crlf = true;⏎"
+          div.corner
+            span.lang
+              "JavaScript"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        div.table-wrap
+          table
+            thead
+              tr
+                th dir="auto"
+                  "a"
+                th dir="auto"
+                  "b"
+            tbody
+              tr
+                td dir="auto"
+                  "1"
+                td dir="auto"
+                  "2"

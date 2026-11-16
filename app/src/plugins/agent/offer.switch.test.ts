@@ -25,8 +25,9 @@ const settle = async (): Promise<void> => {
 
 const statusOf = (enabled: boolean): AgentStatus => ({
   enabled,
+  replaced: false,
   server: enabled ? { state: "listening" } : { state: "off" },
-  clients: [],
+  sessions: [],
   groups: {},
   denied: [],
   recent: [],

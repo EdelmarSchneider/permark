@@ -3,7 +3,7 @@
   // would take and the change from the source, the best one marked, an honest word on each, a preview, what is lost.
   // Copy | Save as a new file next to the source | Open the result. The source is never written.
   import X from "@lucide/svelte/icons/x";
-  import { language, t, tn } from "../../core/i18n";
+  import { formatLocale, t, tn } from "../../core/i18n";
   import { dialogFocus } from "../../core/shell/dialogFocus";
   import {
     change,
@@ -30,7 +30,7 @@
   const tokenizer = $derived(tokenizerName(ready?.analysis.tokenizer ?? null));
 
   function size(bytes: number): string {
-    const format = new Intl.NumberFormat(language.locale, { maximumFractionDigits: 1 });
+    const format = new Intl.NumberFormat(formatLocale(), { maximumFractionDigits: 1 });
     if (bytes < 1024) return t("convert.bytes", { n: format.format(bytes) });
     if (bytes < 1024 * 1024) return t("convert.kb", { n: format.format(bytes / 1024) });
     return t("convert.mb", { n: format.format(bytes / 1024 / 1024) });
@@ -85,7 +85,7 @@
           <span class="facts">
             {size(ready.analysis.bytes)} ·
             {tn("convert.tokens", ready.analysis.sourceTokens, {
-              count: count(ready.analysis.sourceTokens, ready.analysis.approx, language.locale),
+              count: count(ready.analysis.sourceTokens, ready.analysis.approx, formatLocale()),
             })}
             {#if tokenizer}<span class="tokenizer">{tokenizer}</span>{/if}
           </span>
@@ -131,7 +131,7 @@
                   {#if target.best}<span class="best">{t("convert.best")}</span>{/if}
                   {#if target.tokens !== null}
                     <span class="num">
-                      {count(target.tokens, ready.analysis.approx, language.locale)}
+                      {count(target.tokens, ready.analysis.approx, formatLocale())}
                     </span>
                     <span
                       class="change"
@@ -234,7 +234,7 @@
     padding: var(--sp-4) var(--sp-5);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--bg);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
     outline: none;
     font-size: var(--fs-ui);
@@ -269,7 +269,7 @@
   .tokenizer {
     margin-left: var(--sp-1);
     padding: 0 6px;
-    border-radius: 8px;
+    border-radius: var(--radius-surface);
     background: var(--surface-2);
     font-size: var(--fs-ui-xs);
   }
@@ -339,7 +339,7 @@
   }
   .best {
     padding: 0 6px;
-    border-radius: 8px;
+    border-radius: var(--radius-surface);
     background: var(--accent);
     color: var(--accent-fg);
     font-size: var(--fs-ui-xs);

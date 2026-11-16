@@ -213,6 +213,23 @@ describe("BlockHost", () => {
     expect(r.host.byAnchor("")).toBeNull();
     expect(r.host.byAnchor('x"] , [id="intro')).toBeNull();
   });
+
+  it("finds an old-style named anchor when no element has the id, as a browser does", () => {
+    const r = rig({ first: 100, next: 100 });
+    r.host.apply(
+      [
+        block("a", '<p><a name="setup"></a>Setup</p>'),
+        block("b", '<p><a name="both"></a>named</p>'),
+        block("c", '<h2 id="both">id</h2>'),
+        block("d", '<p name="para">not a link target</p>'),
+      ],
+      true,
+    );
+    expect(r.host.byAnchor("setup")?.localName).toBe("a");
+    expect(r.host.byAnchor("both")?.textContent).toBe("id");
+    expect(r.host.byAnchor("para")).toBeNull();
+    expect(r.host.byAnchor('x"] , a[name="setup')).toBeNull();
+  });
 });
 
 describe("NearScreen", () => {

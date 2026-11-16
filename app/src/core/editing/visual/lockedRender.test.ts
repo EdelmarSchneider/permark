@@ -104,11 +104,11 @@ describe("locked blocks look like View", () => {
     const at = byLine(blocks, renders);
 
     expect(at.get(1)).toEqual({ kind: "frontMatter", frontMatter: body.frontMatter });
-    expect(at.get(73)).toEqual({ kind: "promptTag", tag: "context", edge: "open" });
-    expect(at.get(78)).toEqual({ kind: "promptTag", tag: "context", edge: "close" });
-    expect(at.get(80)).toEqual({ kind: "promptTag", tag: "instructions", edge: "open" });
-    expect(at.get(83)).toEqual({ kind: "promptTag", tag: "instructions", edge: "close" });
-    const note = at.get(85);
+    expect(at.get(81)).toEqual({ kind: "promptTag", tag: "context", edge: "open" });
+    expect(at.get(86)).toEqual({ kind: "promptTag", tag: "context", edge: "close" });
+    expect(at.get(88)).toEqual({ kind: "promptTag", tag: "instructions", edge: "open" });
+    expect(at.get(91)).toEqual({ kind: "promptTag", tag: "instructions", edge: "close" });
+    const note = at.get(93);
     expect(note?.kind).toBe("footnote");
     if (note?.kind !== "footnote") return;
     expect(note.first).toBe(true);
@@ -120,8 +120,8 @@ describe("locked blocks look like View", () => {
     // the paragraphs with inline math and with a footnote reference are editable text
     expect(blocks.find((b) => b.lineStart === 55)?.reason).toBeNull();
     expect(blocks.find((b) => b.lineStart === 15)?.reason).toBeNull();
-    // alerts, display math and the diagram: View's own blocks, verbatim
-    for (const first of [26, 29, 57, 63]) {
+    // alerts, display math and the diagrams: View's own blocks, verbatim
+    for (const first of [26, 29, 57, 63, 71]) {
       const render = at.get(first);
       const own = blocks.find((b) => b.lineStart === first);
       expect(render?.kind, `line ${first}`).toBe("html");
@@ -283,6 +283,35 @@ describe("locked blocks look like View", () => {
     // no list item for the label: the source look stays
     expect(renders[4]).toEqual({ kind: "source" });
     expect(renders[0]).toEqual({ kind: "html", html: "<p>Text</p>" });
+  });
+
+  it("footnotes: an inline note's item (no definition block of its own) is listed with a written one, no number skipped", () => {
+    const item = (id: string): string => `<li id="fn-${id}">\n<p>Note ${id}</p>\n</li>`;
+    // View numbers by first reference: `^[lead]`, [^a], `^[mid]`, [^b], `^[tail]`
+    const section =
+      '<section class="footnotes" data-footnotes="">\n<ol>\n' +
+      ["__inline_1", "a", "__inline_2", "b", "__inline_3"].map(item).join("\n") +
+      "\n</ol>\n</section>";
+    const blocks = [
+      line(1, "Text^[lead] and[^a] then^[mid] and[^b] last^[tail]"),
+      line(3, "[^a]: Note a", "footnote"),
+      line(5, "[^b]: Note b", "footnote"),
+    ];
+    const renders = lockedRenders(
+      markdown([block(1, 1, "p", "<p>Text</p>"), block(3, 5, "section", section)]),
+      blocks,
+    );
+    const open = '<section class="footnotes" data-footnotes="">';
+    expect(renders[1]).toEqual({
+      kind: "footnote",
+      html: `${open}\n<ol>\n${item("__inline_1")}\n${item("a")}\n${item("__inline_2")}\n</ol>\n</section>`,
+      first: true,
+    });
+    expect(renders[2]).toEqual({
+      kind: "footnote",
+      html: `${open}\n<ol start="4">\n${item("b")}\n${item("__inline_3")}\n</ol>\n</section>`,
+      first: false,
+    });
   });
 
   it("slices footnote HTML only at element boundaries (markup inside an attribute stays text)", () => {
@@ -548,6 +577,23 @@ describe("HTML written in a line looks like View", () => {
       "<br>": "<br>",
       "<kbd>Y</kbd>": "<kbd>Y</kbd>",
       "<mark>m</mark>": "<mark>m</mark>",
+    });
+  });
+
+  it("marked text, an emoji shortcode and an inline note get View's mark, emoji and note number", () => {
+    const pieces = ["==m==", ":smile:", "^[note]", "==gone=="];
+    const blocks = [line(1, "A[^1] ==m== :smile: x^[note] ==gone==", null, pieces)];
+    const html =
+      '<p>A<sup class="footnote-ref"><a href="#fn-1" data-footnote-ref="">1</a></sup> <mark>m</mark> ' +
+      '<span class="emoji" title=":smile:">😄</span> x<sup class="footnote-ref">' +
+      '<a href="#fn-__inline_1" id="fnref-__inline_1" data-footnote-ref="">2</a></sup> ==gone==</p>';
+    const looks = inlineHtmlLooks(markdown([block(1, 1, "p", html)]), blocks);
+    expect(Object.fromEntries(looks)).toEqual({
+      "==m==": "<mark>m</mark>",
+      ":smile:": '<span class="emoji" title=":smile:">😄</span>',
+      "^[note]":
+        '<sup class="footnote-ref"><a href="#fn-__inline_1" id="fnref-__inline_1" data-footnote-ref="">2</a></sup>',
+      "==gone==": null,
     });
   });
 

@@ -131,6 +131,40 @@ export function remapSet(
   return new Set(Array.from(paths, (p) => renamedPath(p, renames)));
 }
 
+// ---- order -----------------------------------------------------------------------------------------------------------
+
+/**
+ * The list as the person reads it: in each folder, folders first, then names as `locale` sorts them, numbers by their
+ * value ("file 2" before "file 10"), as the system's file manager does. Names that language sees as equal ("a", "A")
+ * keep one fixed order (code points). The backend's order (code points) stays what deltas are placed by; roots keep
+ * theirs.
+ */
+export function inNameOrder(nodes: readonly TreeNode[], locale: string): TreeNode[] {
+  const collator = new Intl.Collator(locale, { numeric: true, sensitivity: "base" });
+  const compare = (a: TreeNode, b: TreeNode): number =>
+    Number(a.kind.type !== "dir") - Number(b.kind.type !== "dir") ||
+    collator.compare(a.name, b.name) ||
+    (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  const inFolder = new Map<string, TreeNode[]>();
+  for (const node of nodes) {
+    const folder = parentOf(node.path);
+    const list = inFolder.get(folder);
+    if (list) list.push(node);
+    else inFolder.set(folder, [node]);
+  }
+  const listed = new Set(nodes.map((n) => n.path));
+  const out: TreeNode[] = [];
+  const visit = (folder: string): void => {
+    for (const node of (inFolder.get(folder) ?? []).sort(compare)) {
+      out.push(node);
+      if (node.kind.type === "dir") visit(node.path);
+    }
+  };
+  // the roots (`""`, `@wt/<name>`): folders no node stands for, in the order they come
+  for (const folder of inFolder.keys()) if (!listed.has(folder)) visit(folder);
+  return out;
+}
+
 // ---- rows ------------------------------------------------------------------------------------------------------------
 
 export type Row =

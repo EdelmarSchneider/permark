@@ -1,0 +1,121 @@
+# corpus/gfm-blocks.md
+format: markdown
+outline: Heading one (line 1)
+outline:   Heading two (line 3)
+outline:     Heading three (line 5)
+outline:       Heading four (line 7)
+outline:         Heading five (line 9)
+outline:           Heading six (line 11)
+outline: Setext heading (line 13)
+outline:   Setext second level (line 16)
+--- h1 1-1
+<h1 dir="auto" id="heading-one">Heading one</h1>
+--- h2 3-3
+<h2 dir="auto" id="heading-two">Heading two</h2>
+--- h3 5-5
+<h3 dir="auto" id="heading-three">Heading three</h3>
+--- h4 7-7
+<h4 dir="auto" id="heading-four">Heading four</h4>
+--- h5 9-9
+<h5 dir="auto" id="heading-five">Heading five</h5>
+--- h6 11-11
+<h6 dir="auto" id="heading-six">Heading six</h6>
+--- h1 13-14
+<h1 dir="auto" id="setext-heading">Setext heading</h1>
+--- h2 16-17
+<h2 dir="auto" id="setext-second-level">Setext second level</h2>
+--- p 19-21
+<p dir="auto">A paragraph with <em>emphasis</em>, <strong>strong</strong>, <em><strong>both</strong></em>, <del>struck</del>, <code>inline code</code>, a <a href="gfm-tables.md">relative link</a>, a
+<a href="https://example.com" title="Example title">link with a title</a>, an autolink <a href="https://example.com/path?q=1&amp;r=2">https://example.com/path?q=1&amp;r=2</a> and a bare
+one: <a href="https://example.org/docs">https://example.org/docs</a>. Escapes: *not emphasis*, `not code`, 5 &lt; 6 &amp; 7 &gt; 3.</p>
+--- p 23-25
+<p dir="auto">A hard break ends this line<br>
+and a backslash break ends this one<br>
+and the paragraph goes on.</p>
+--- p 27-27
+<p dir="auto"><img alt="A small square picture" src="pm-asset:corpus/assets/square.svg" title="Square"></p>
+--- p 29-29
+<p dir="auto"><audio controls="" preload="metadata" src="pm-asset:corpus/assets/tone.wav"></audio></p>
+--- blockquote 31-36
+<blockquote>
+<p dir="auto">A quote with <strong>strong</strong> text.</p>
+<blockquote>
+<p dir="auto">A nested quote, with a list:</p>
+<ul>
+<li dir="auto">one</li>
+<li dir="auto">two</li>
+</ul>
+</blockquote>
+</blockquote>
+--- ol 38-46
+<ol>
+<li dir="auto">
+<p dir="auto">First</p>
+</li>
+<li dir="auto">
+<p dir="auto">Second</p>
+<ol>
+<li dir="auto">Nested first</li>
+<li dir="auto">Nested second
+<ul>
+<li dir="auto">deeper bullet</li>
+</ul>
+</li>
+</ol>
+</li>
+<li dir="auto">
+<p dir="auto">Third</p>
+</li>
+<li dir="auto">
+<p dir="auto">A list that starts at seven</p>
+</li>
+<li dir="auto">
+<p dir="auto">and goes on</p>
+</li>
+</ol>
+--- ul 48-56
+<ul class="contains-task-list">
+<li dir="auto">
+<p dir="auto">Bullet
+continued on a lazy line</p>
+</li>
+<li dir="auto">
+<p dir="auto">Bullet with a paragraph</p>
+<p dir="auto">that has a second paragraph.</p>
+</li>
+<li class="task-list-item" dir="auto"><input class="task-list-item-checkbox" disabled="" type="checkbox"> 
+<p dir="auto">An open task</p>
+</li>
+<li class="task-list-item" dir="auto"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> 
+<p dir="auto">A finished task</p>
+<ul class="contains-task-list">
+<li class="task-list-item" dir="auto"><input class="task-list-item-checkbox" disabled="" type="checkbox"> A nested task</li>
+</ul>
+</li>
+</ul>
+--- hr 58-58
+<hr>
+--- dl 60-69
+<dl>
+<dt>Term</dt>
+<dd>The definition of the term.</dd>
+<dt>Second term</dt>
+<dd>First definition.</dd>
+<dd>Second definition.an indented code block
+with two lines</dd>
+</dl>
+--- p 70-70
+<p dir="auto">HTML entities: © — &nbsp;→ 🌊 &amp;amp;</p>
+--- p 72-72
+<p dir="auto">A footnote reference<sup class="footnote-ref"><a data-footnote-ref="" href="#fn-first" id="fnref-first">1</a></sup> and another one<sup class="footnote-ref"><a data-footnote-ref="" href="#fn-long-note" id="fnref-long-note">2</a></sup>.</p>
+--- section 74-74
+<section class="footnotes" data-footnotes="">
+<ol>
+<li dir="auto" id="fn-first">
+<p dir="auto">The first footnote. <a aria-label="Back to reference 1" class="footnote-backref" data-footnote-backref-idx="1" data-footnote-backref="" href="#fnref-first">↩</a></p>
+</li>
+<li dir="auto" id="fn-long-note">
+<p dir="auto">A footnote with <code>code</code> and a <a href="#heading-one">link</a>. <a aria-label="Back to reference 2" class="footnote-backref" data-footnote-backref-idx="2" data-footnote-backref="" href="#fnref-long-note">↩</a></p>
+</li>
+</ol>
+</section>

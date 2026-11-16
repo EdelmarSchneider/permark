@@ -1,0 +1,235 @@
+# demo/permark-guide.md
+format: markdown
+front matter: {"syntax":"yaml","raw":"title: \"Working in PerMark: a ten-minute tour\"\nowner: Hana Kowalski\nstatus: published\nupdated: 2026-11-12\ntags: [guide, permark, onboarding]\n","fields":[{"key":"title","value":{"type":"text","text":"Working in PerMark: a ten-minute tour"}},{"key":"owner","value":{"type":"text","text":"Hana Kowalski"}},{"key":"status","value":{"type":"text","text":"published"}},{"key":"updated","value":{"type":"text","text":"2026-11-12"}},{"key":"tags","value":{"type":"list","items":["guide","permark","onboarding"]}}]}
+outline: Working in PerMark: a ten-minute tour (line 9)
+outline:   Your first five minutes (line 17)
+outline:   Read first (line 27)
+outline:   Edit or Source (line 33)
+outline:   Notes and tags (line 49)
+outline:   Comments on a passage (line 55)
+outline:   Review what changed (line 61)
+outline:   Share: PDF, HTML, print (line 81)
+outline:   Spelling, correction, translation (line 85)
+outline:   Let an agent read the project (line 94)
+outline:   Config and data files (line 100)
+outline:   A morning in PerMark (line 110)
+outline:   Shortcuts (line 129)
+outline:   Questions (line 144)
+--- h1 9-9
+<h1 dir="auto" id="working-in-permark-a-ten-minute-tour">Working in PerMark: a ten-minute tour</h1>
+--- p 11-11
+<p dir="auto">Every Larkhaven volunteer starts here. In ten minutes you'll know how to read, edit, review and share the lab's pages, and which helpers stay asleep until you call them.</p>
+--- p 11-11
+<p align="center" dir="auto">
+  <img alt="The same page in three modes: View shows the finished page, Edit adds a caret and a toolbar, Source shows the Markdown text" src="pm-asset:demo/assets/three-modes.svg" width="720">
+</p>
+--- h2 17-17
+<h2 dir="auto" id="your-first-five-minutes">Your first five minutes</h2>
+--- p 19-19
+<p dir="auto">Tick these off on your first morning. The boxes are just Markdown, so you can copy the list into a note of your own.</p>
+--- ul 21-25
+<ul class="contains-task-list">
+<li class="task-list-item" dir="auto"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Open this folder with <strong>Open folder</strong> (<kbd>Ctrl</kbd>+<kbd>O</kbd>)</li>
+<li class="task-list-item" dir="auto"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Read the <a href="README.md">start page</a></li>
+<li class="task-list-item" dir="auto"><input class="task-list-item-checkbox" disabled="" type="checkbox"> Switch one page to Edit and fix a word</li>
+<li class="task-list-item" dir="auto"><input class="task-list-item-checkbox" disabled="" type="checkbox"> Leave Hana a comment on a passage</li>
+<li class="task-list-item" dir="auto"><input class="task-list-item-checkbox" disabled="" type="checkbox"> Search all pages for "Kittiwake"</li>
+</ul>
+--- h2 27-27
+<h2 dir="auto" id="read-first">Read first</h2>
+--- p 29-29
+<p dir="auto">PerMark opens every page in View. <mark>Reading is the main mode</mark>: nothing on the page turns into a tool until you ask for one.</p>
+--- p 31-31
+<p dir="auto">Press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>O</kbd> to show the outline, <kbd>Ctrl</kbd>+<kbd>F</kbd> to find a word on the page, and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> to search every page in the project. Links between pages work like a website: open the <a href="tidewell-api.md">API reference</a>, then <kbd>Alt</kbd>+<kbd>←</kbd> brings you back. On macOS, press <kbd>Cmd</kbd> where this guide says Ctrl, and <kbd>Option</kbd> for Alt.</p>
+--- h2 33-33
+<h2 dir="auto" id="edit-or-source">Edit or Source</h2>
+--- p 35-35
+<p dir="auto">When a page needs changing, you have two editors. Pick the one that fits the job, and save with <kbd>Ctrl</kbd>+<kbd>S</kbd>.</p>
+--- table 37-41
+<table>
+<thead>
+<tr>
+<th dir="auto">Mode</th>
+<th dir="auto">Keys</th>
+<th dir="auto">Best for</th>
+<th dir="auto">What you see</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td dir="auto">View</td>
+<td dir="auto"><kbd>Esc</kbd></td>
+<td dir="auto">Reading and presenting</td>
+<td dir="auto">The finished page</td>
+</tr>
+<tr>
+<td dir="auto">Edit</td>
+<td dir="auto"><kbd>Ctrl</kbd>+<kbd>E</kbd></td>
+<td dir="auto">Writing and quick fixes</td>
+<td dir="auto">The same page, with a caret and a toolbar</td>
+</tr>
+<tr>
+<td dir="auto">Source</td>
+<td dir="auto"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>E</kbd></td>
+<td dir="auto">Tables, front matter, exact control</td>
+<td dir="auto">The Markdown text itself</td>
+</tr>
+</tbody>
+</table>
+--- p 43-43
+<p dir="auto">Whichever you use, saving is careful.</p>
+--- div 45-47
+<div class="markdown-alert markdown-alert-note">
+<p class="markdown-alert-title" dir="auto">Only your changes are saved</p>
+<p dir="auto">PerMark writes back only the characters you changed. Line endings, the order of the front matter and every comment in the file stay exactly as they were, so a one-word fix shows up as a one-word difference.</p>
+</div>
+--- h2 49-49
+<h2 dir="auto" id="notes-and-tags">Notes and tags</h2>
+--- p 51-51
+<p dir="auto">Notes are for everything that isn't a page yet. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> opens the Notes tab and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> starts a new note: plain Markdown in a folder you choose, saved as you type, with earlier versions kept. Pin the ones you open every day.</p>
+--- p 53-53
+<p dir="auto">Tags belong to pages. A <code>tags:</code> list in the front matter shows up as chips on the properties card at the top, like the three on this page. Press <kbd>T</kbd> to add tags and a one-line description without touching the file, and open the Tags panel to see every file that shares a tag.</p>
+--- h2 55-55
+<h2 dir="auto" id="comments-on-a-passage">Comments on a passage</h2>
+--- p 57-57
+<p dir="auto">Select a passage and press <kbd>C</kbd> to leave a comment on it. Comments follow their words when the text around them changes, and the Comments list lets you reply, mark one done or jump back to the passage.</p>
+--- p 59-59
+<p dir="auto">They live in the project's local state, never inside the file, so the page stays clean for everyone else. An agent you connect can read them and mark them done, and <strong>Send to agent</strong> copies them for its chat.</p>
+--- h2 61-61
+<h2 dir="auto" id="review-what-changed">Review what changed</h2>
+--- p 63-63
+<p dir="auto">When a page changed since you last read it, a bar offers to show you how: <em>Changed since you last read · 3 changes</em>. Step with <kbd>N</kbd> and <kbd>P</kbd>, keep a change with <kbd>K</kbd>, revert it with <kbd>R</kbd>.</p>
+--- p 65-65
+<p dir="auto">In a git project, <strong>Compare with</strong> can also be <em>the last commit</em> or <em>an earlier version…</em>. Every commit that touched the page is there to compare with, and <strong>Bring back this version</strong> restores one, with Undo right afterwards.</p>
+--- pre 67-79
+<pre><code class="language-mermaid">gitGraph
+  commit id: "First draft"
+  commit id: "Add Day 3"
+  branch review
+  checkout review
+  commit id: "Fix units"
+  commit id: "Shorter lede"
+  checkout main
+  commit id: "Add the map"
+  merge review
+  commit id: "Published" tag: "Oct 24"
+</code></pre>
+--- h2 81-81
+<h2 dir="auto" id="share-pdf-html-print">Share: PDF, HTML, print</h2>
+--- p 83-83
+<p dir="auto">Open the document's <strong>…</strong> menu and choose <strong>Save as PDF…</strong>, <strong>Save as HTML…</strong> or <strong>Print…</strong> (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd>). All three are built from the saved file with the reading view's look, diagrams and formulas included, and always in light colors, whatever your theme. Pick the paper size, margins and page numbers in the page setup. The HTML is a single self-contained file you can email to anyone.</p>
+--- h2 85-85
+<h2 dir="auto" id="spelling-correction-translation">Spelling, correction, translation</h2>
+--- p 87-87
+<p dir="auto">Three helpers for words, all asleep until you call them. Spelling underlines misspelled words while you edit, in the page's own language; a dictionary is downloaded only when you say yes, and a right-click on a word offers suggestions.</p>
+--- p 89-89
+<p dir="auto"><strong>Correct spelling and grammar</strong> (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>K</kbd>) and <strong>Translate</strong> (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd>) run a small AI model on this computer. It is downloaded the first time you ask, and your text never leaves the machine. Practice on the box in the <a href="field-journal.md#try-it-spelling-and-correction">field journal</a>.</p>
+--- div 91-92
+<div class="markdown-alert markdown-alert-important">
+<p class="markdown-alert-title" dir="auto">Nothing changes until you accept</p>
+<p dir="auto">Every suggestion and every translated part waits in a review bar. Keep it or discard it: the file changes only when you say so.</p>
+</div>
+--- h2 94-94
+<h2 dir="auto" id="let-an-agent-read-the-project">Let an agent read the project</h2>
+--- p 96-96
+<p dir="auto">PerMark can share a project with an AI agent you already use, any tool that speaks MCP. It's off by default and set per project: turn on <strong>Share this project with agents</strong> in Settings, under <strong>AI agents</strong>. You can always see which agents are connected.</p>
+--- p 98-98
+<p dir="auto">While it's on, an agent can search and read this project's files, read your comments and the notes you share, and show you a place, but only on this computer, only while PerMark has the project open, and never by editing files through PerMark. Files listed in <a href=".aiignore"><code>.aiignore</code></a> stay out of its reach; this folder keeps <code>station/deploy.env</code> away that way. Our <a href="bulletin-agent.md">bulletin agent</a> works exactly like this.</p>
+--- h2 100-100
+<h2 dir="auto" id="config-and-data-files">Config and data files</h2>
+--- p 102-102
+<p dir="auto">Not everything in a project is Markdown. PerMark shows settings files (TOML, YAML, INI, <code>.env</code>) as clean sheets, and TOON data as a table. Open these from the <code>station/</code> folder:</p>
+--- ul 104-108
+<ul>
+<li dir="auto"><a href="station/buoy.toml"><code>buoy.toml</code></a>: one buoy's settings, sensor by sensor</li>
+<li dir="auto"><a href="station/qc-rules.yaml"><code>qc-rules.yaml</code></a>: the quality-control rules every reading passes through</li>
+<li dir="auto"><a href="station/deploy.env"><code>deploy.env</code></a>: environment values, with a placeholder key</li>
+<li dir="auto"><a href="station/readings-week-46.toon"><code>readings-week-46.toon</code></a>: a week of readings from all twelve stations</li>
+<li dir="auto"><a href="station/ingest-2026-11-12.log"><code>ingest-2026-11-12.log</code></a>: a day of server log; <kbd>Alt</kbd>+<kbd>Z</kbd> wraps the long lines</li>
+</ul>
+--- h2 110-110
+<h2 dir="auto" id="a-morning-in-permark">A morning in PerMark</h2>
+--- p 112-112
+<p dir="auto">Here's how Hana's Monday usually goes, scored by how much she enjoys each step.</p>
+--- pre 114-127
+<pre><code class="language-mermaid">journey
+  title A morning in PerMark
+  section Read
+    Open the project: 5: Hana
+    Skim the outline: 4: Hana
+    Search all pages: 4: Hana
+  section Write
+    Update the plan: 4: Hana
+    Fix a typo in Edit: 3: Hana
+  section Share
+    Review the changes: 5: Hana, Leo
+    Save the plan as PDF: 5: Hana
+</code></pre>
+--- h2 129-129
+<h2 dir="auto" id="shortcuts">Shortcuts</h2>
+--- p 131-131
+<p dir="auto">The eight you'll use most. The command palette (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>) lists every command with its keys, and <strong>Keyboard shortcuts…</strong> lets you change them.</p>
+--- table 133-142
+<table>
+<thead>
+<tr>
+<th dir="auto">Action</th>
+<th dir="auto">Keys</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td dir="auto">Go to file</td>
+<td dir="auto"><kbd>Ctrl</kbd>+<kbd>P</kbd></td>
+</tr>
+<tr>
+<td dir="auto">Search all pages</td>
+<td dir="auto"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></td>
+</tr>
+<tr>
+<td dir="auto">Find in page</td>
+<td dir="auto"><kbd>Ctrl</kbd>+<kbd>F</kbd></td>
+</tr>
+<tr>
+<td dir="auto">Show or hide the outline</td>
+<td dir="auto"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>O</kbd></td>
+</tr>
+<tr>
+<td dir="auto">Edit, then back to View</td>
+<td dir="auto"><kbd>Ctrl</kbd>+<kbd>E</kbd></td>
+</tr>
+<tr>
+<td dir="auto">Source mode</td>
+<td dir="auto"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>E</kbd></td>
+</tr>
+<tr>
+<td dir="auto">Comment on the selection</td>
+<td dir="auto"><kbd>C</kbd></td>
+</tr>
+<tr>
+<td dir="auto">Print</td>
+<td dir="auto"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd></td>
+</tr>
+</tbody>
+</table>
+--- h2 144-144
+<h2 dir="auto" id="questions">Questions</h2>
+--- details 146-147
+<details class="markdown-alert markdown-alert-warning markdown-alert-kind-question">
+<summary class="markdown-alert-title">Does reading a page ever change the file?</summary>
+<p dir="auto">No. Reading never writes. Comments live in the project's local state, and tags you add with <kbd>T</kbd> are kept beside your pages, not inside them.</p>
+</details>
+--- details 149-150
+<details class="markdown-alert markdown-alert-warning markdown-alert-kind-question">
+<summary class="markdown-alert-title">Do I need git?</summary>
+<p dir="auto">No. PerMark works with any folder. In a git project, Review can also compare with the last commit and with earlier versions, and PerMark never fetches or pushes for you.</p>
+</details>
+--- details 152-153
+<details class="markdown-alert markdown-alert-warning markdown-alert-kind-question">
+<summary class="markdown-alert-title">Can I switch features off?</summary>
+<p dir="auto">Yes. Each feature is a plugin you can turn off in Settings, under <strong>Plugins</strong>. Turned off, it leaves nothing behind on screen.</p>
+</details>
+--- hr 155-155
+<hr>
+--- p 157-157
+<p dir="auto">Next: <a href="style-guide.md">How we write</a> · <a href="README.md">Start here</a></p>

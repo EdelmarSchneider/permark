@@ -11,7 +11,7 @@ Choose the command for the operating system in use:
 scoop bucket add permark https://github.com/EdelmarSchneider/scoop-permark
 scoop install permark
 ```
-Scoop puts `permark` on `PATH`. Without Scoop: download `PerMark_<version>_x64-setup.exe` from the [latest release](https://github.com/EdelmarSchneider/permark/releases/latest) and run it (current user, no administrator rights). A `winget` package is not available yet.
+Scoop puts `permark` on `PATH`. Without Scoop: download `PerMark_<version>_x64-setup.exe` from the [latest release](https://github.com/EdelmarSchneider/permark/releases/latest) and run it (current user, no administrator rights); tick **Add the permark command to PATH** on its first page to put `permark` on `PATH`. A `winget` package is not available yet.
 
 ### macOS
 ```bash
@@ -21,13 +21,13 @@ brew install --cask permark
 
 ### Linux (Debian / Ubuntu / Mint / Pop!_OS — `x86_64`)
 ```bash
-curl -fsSL https://github.com/EdelmarSchneider/permark/releases/latest/download/PerMark_0.12.0_amd64.deb -o /tmp/permark.deb
+curl -fsSL https://github.com/EdelmarSchneider/permark/releases/latest/download/PerMark_0.13.0_amd64.deb -o /tmp/permark.deb
 sudo apt-get update && sudo apt-get install -y /tmp/permark.deb
 rm -f /tmp/permark.deb
 ```
 
 ## Step 2: Verify the Binary
-Verify that `permark` is on `PATH` (or at its standard install path). A direct install on Windows or macOS does not put `permark` on `PATH`: then use the full path in the `command` of Step 3.
+Verify that `permark` is on `PATH` (or at its standard install path). A direct install on macOS, or on Windows without the installer's PATH option, does not put `permark` on `PATH`: then use the full path in the `command` of Step 3.
 - **Windows:** `permark` (or `%LOCALAPPDATA%\PerMark\permark.exe`)
 - **macOS:** `permark` (or `/Applications/PerMark.app/Contents/MacOS/permark`)
 - **Linux:** `/usr/bin/permark`
@@ -48,4 +48,4 @@ Add the `permark` server entry using `stdio` transport:
 ```
 
 ## Step 4: Enable Agent Connection for the Project Folder
-The connection is off until the person turns it on, per project. In the PerMark desktop app, open the project folder and switch on **Share this project with agents** in the Settings (the choice is kept in the person's own PerMark data, never in the project, so nothing inside a project can turn it on). `permark mcp` then serves 13 tools for that folder: `get_context`, `list_unread`, `map`, `search`, `list_tags`, `outline`, `read`, `list_comments`, `resolve_comment`, `list_notes`, `read_note`, `activity` and `open`. An agent reads, shows a place and marks comments done; it never edits files through PerMark. With PerMark closed, the tools read from the project's files (`get_context` says PerMark is not open; `open` starts it).
+The connection is off until the person turns it on, per project. In the PerMark desktop app, open the project folder and switch on **Share this project with agents** in the Settings (the choice is kept in the person's own PerMark data, never in the project, so nothing inside a project can turn it on). `permark mcp` then serves 13 tools for that folder: `get_context`, `list_unread`, `map`, `search`, `list_tags`, `outline`, `read`, `list_comments`, `resolve_comment`, `list_notes`, `read_note`, `activity` and `open`. An agent reads, shows a place and marks comments done; it never edits files through PerMark. The tools answer only while PerMark has the project open: with PerMark closed, each tool says so, and `open` starts PerMark on the project.

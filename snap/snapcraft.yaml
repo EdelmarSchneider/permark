@@ -16,6 +16,8 @@ description: |
   - Comment on passages, tag files, search down to the section; config files (TOML, YAML, INI, .env) read as clean sheets.
   - Optional agent connection (MCP), off by default and per project: your agent sees where you are, your comments and the notes you share; it never edits files through PerMark.
   - Works with any AI tool, or with none. No account, nothing collected.
+
+  To print on your printers, also install the CUPS snap: sudo snap install cups
 license: MIT OR Apache-2.0
 icon: app/src-tauri/icons/128x128@2x.png
 website: https://edelmarschneider.github.io/permark/
@@ -40,10 +42,14 @@ apps:
     #   first; web pictures a document names, per click | per project). The update check is off inside a snap (the
     #   Store updates it). No `network-bind`: the app listens on no TCP | UDP port (agent connection = stdio + a local
     #   Unix socket in the snap's runtime folder). Checked 2026-10-22 against the code + Cargo.lock (no server crate).
+    # - cups: Print… reaches the person's printers through the CUPS snap (print only, no printer administration,
+    #   unlike `cups-control`). It connects only to that snap, never to the system's own CUPS, so without it the print
+    #   dialog lists no printers: the page setup dialog then names the install command. Save as PDF needs no plug.
     plugs:
       - home
       - removable-media
       - network
+      - cups
     environment:
       WEBKIT_DISABLE_COMPOSITING_MODE: "1"
 

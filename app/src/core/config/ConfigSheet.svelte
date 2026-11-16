@@ -594,7 +594,7 @@
   .chip {
     display: inline-flex;
     padding: 0 8px;
-    border-radius: 10px;
+    border-radius: 999px;
     background: var(--surface-2);
     font-size: var(--fs-ui-sm);
   }

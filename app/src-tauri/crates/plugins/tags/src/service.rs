@@ -74,8 +74,6 @@ impl Default for Timing {
 pub struct ServiceArgs {
     /// Where the entries are kept: the opened folder + each included project (`projects.md` §9.2).
     pub owners: Owners,
-    /// Merge (then delete) the profile copies from before a folder had `.permark/` (not for a reader with no window).
-    pub legacy: bool,
     pub own: Arc<OwnWrites>,
     pub scope: DocScope,
     /// Front matter tags from the index pass.
@@ -120,7 +118,7 @@ struct Unit {
 }
 
 impl Unit {
-    fn new(slot: &OwnerSlot, legacy: bool) -> Self {
+    fn new(slot: &OwnerSlot) -> Self {
         let in_project = slot.store.location() == StateLocation::Project;
         let watched = in_project.then(|| {
             if slot.path.is_empty() {
@@ -132,11 +130,8 @@ impl Unit {
         Self {
             uid: slot.uid.clone(),
             file: slot.store.shared_file(META_FILE),
-            legacy: if legacy {
-                slot.store.legacy_shared_file(META_FILE)
-            } else {
-                None
-            },
+            // merged (then deleted): the profile copy from before the folder had `.permark/`
+            legacy: slot.store.legacy_shared_file(META_FILE),
             watched,
             inner: Mutex::new(Inner {
                 entries: Entries::default(),
@@ -173,7 +168,6 @@ struct Shared {
     /// Closed while the plugin started before the owners were known: the person's edits wait for them.
     gate: OwnersGate,
     location: TagsLocation,
-    legacy: bool,
     own: Arc<OwnWrites>,
     scope: DocScope,
     harvest: Arc<Harvest>,
@@ -860,7 +854,7 @@ impl TagsService {
             .owners
             .slots()
             .iter()
-            .map(|s| Arc::new(Unit::new(s, args.legacy)))
+            .map(|s| Arc::new(Unit::new(s)))
             .collect();
         let shared = Arc::new(Shared {
             gate: OwnersGate::default(),
@@ -871,7 +865,6 @@ impl TagsService {
                 held: Vec::new(),
             }),
             location,
-            legacy: args.legacy,
             own: args.own,
             scope: args.scope,
             harvest: args.harvest,
@@ -948,7 +941,7 @@ impl TagsService {
                 let list: Vec<Arc<Unit>> = owners
                     .slots()
                     .iter()
-                    .map(|s| Arc::new(Unit::new(s, self.shared.legacy)))
+                    .map(|s| Arc::new(Unit::new(s)))
                     .collect();
                 for unit in &list {
                     // changes that could not be written before stay with their owner

@@ -5,12 +5,17 @@ import type { AppSettings } from "./generated/AppSettings";
 import type { BootInfo } from "./generated/BootInfo";
 import type { CommandName } from "./generated/CommandName";
 import type { DefaultAppView } from "./generated/DefaultAppView";
+import type { DemoOffer } from "./generated/DemoOffer";
 import type { FileGroup } from "./generated/FileGroup";
 import type { ShellEntry } from "./generated/ShellEntry";
 import type { ShellState } from "./generated/ShellState";
 import type { UpdateState } from "./generated/UpdateState";
 import type { CountResult } from "./generated/CountResult";
 import type { TokenCountState } from "./generated/TokenCountState";
+import type { SpellingDefault } from "./generated/SpellingDefault";
+import type { SpellingDocLanguage } from "./generated/SpellingDocLanguage";
+import type { SpellingDownload } from "./generated/SpellingDownload";
+import type { SpellingLanguage } from "./generated/SpellingLanguage";
 import type { LocalAiCatalog } from "./generated/LocalAiCatalog";
 import type { AiTaskInfo } from "./generated/AiTaskInfo";
 import type { AiTask } from "./generated/AiTask";
@@ -37,6 +42,10 @@ import type { TargetView } from "./generated/TargetView";
 import type { Problem } from "./generated/Problem";
 import type { Table } from "./generated/Table";
 import type { TableRow } from "./generated/TableRow";
+import type { PageSetup } from "./generated/PageSetup";
+import type { PrintCapabilities } from "./generated/PrintCapabilities";
+import type { Saved } from "./generated/Saved";
+import type { SetupView } from "./generated/SetupView";
 import type { ContextChanged } from "./generated/ContextChanged";
 import type { CloseRequested } from "./generated/CloseRequested";
 import type { OpenIn } from "./generated/OpenIn";
@@ -122,6 +131,7 @@ import type { MoveSpec } from "./generated/MoveSpec";
 import type { NewKind } from "./generated/NewKind";
 import type { OpenFailed } from "./generated/OpenFailed";
 import type { OutlineItem } from "./generated/OutlineItem";
+import type { PluginFailed } from "./generated/PluginFailed";
 import type { PathResults } from "./generated/PathResults";
 import type { Recent } from "./generated/Recent";
 import type { SearchOptions } from "./generated/SearchOptions";
@@ -175,6 +185,7 @@ import type { AgentRequest } from "./generated/AgentRequest";
 import type { AgentSection } from "./generated/AgentSection";
 import type { AgentSelection } from "./generated/AgentSelection";
 import type { AgentServerState } from "./generated/AgentServerState";
+import type { AgentSession } from "./generated/AgentSession";
 import type { AgentStatus } from "./generated/AgentStatus";
 import type { AgentWindowContext } from "./generated/AgentWindowContext";
 import type { ActivityEntry } from "./generated/ActivityEntry";
@@ -215,6 +226,10 @@ import type { LooseState } from "./generated/LooseState";
 import type { MoveUndone } from "./generated/MoveUndone";
 import type { Moved } from "./generated/Moved";
 import type { NoteEntry } from "./generated/NoteEntry";
+import type { ProjectId } from "./generated/ProjectId";
+import type { ProjectNotes } from "./generated/ProjectNotes";
+import type { SharedNote } from "./generated/SharedNote";
+import type { SharedWith } from "./generated/SharedWith";
 import type { NoteList } from "./generated/NoteList";
 import type { NotesIntent } from "./generated/NotesIntent";
 import type { NotesSummary } from "./generated/NotesSummary";
@@ -385,6 +400,9 @@ export interface Commands {
   recent_remove: { args: { path: string }; result: null };
   settings_get: { args: Record<string, never>; result: AppSettings };
   settings_set: { args: { change: SettingChange }; result: AppSettings };
+  characters_refresh: { args: Record<string, never>; result: null };
+  characters_create: { args: Record<string, never>; result: boolean };
+  characters_reveal: { args: Record<string, never>; result: null };
   project_session_get: { args: { key: string }; result: JsonValue | null };
   project_session_set: { args: { key: string; value: JsonValue | null }; result: null };
   tree_open: { args: { filter: TreeFilter | null }; result: TreeSnapshot };
@@ -502,6 +520,9 @@ export interface Commands {
   default_app_set: { args: { group: FileGroup; on: boolean }; result: DefaultAppView };
   default_app_asked: { args: Record<string, never>; result: null };
   default_app_handoff: { args: Record<string, never>; result: null };
+  demo_offer: { args: Record<string, never>; result: DemoOffer };
+  demo_install: { args: Record<string, never>; result: string };
+  demo_dismiss: { args: Record<string, never>; result: null };
 }
 
 /**
@@ -580,6 +601,8 @@ export interface PluginMethods {
   "comments.setDone": { args: { id: string; done: boolean }; result: null };
   "comments.remove": { args: { id: string }; result: null };
   "comments.reply": { args: { id: string; text: string }; result: null };
+  /** `reply`: the index of the person's reply to change; absent: the comment's own text. */
+  "comments.edit": { args: { id: string; reply?: number | null; text: string }; result: null };
   "quiet.rules": { args: Record<string, never>; result: QuietMarks };
   "quiet.set": { args: { paths: string[]; interest: Interest }; result: QuietMarks };
   "broken-links.list": { args: Record<string, never>; result: BrokenReport };
@@ -594,7 +617,10 @@ export interface PluginMethods {
   "notes.rename": { args: { path: string; name: string }; result: string };
   "notes.setPinned": { args: { path: string; pinned: boolean }; result: null };
   "notes.setPinOrder": { args: { order: string[] }; result: null };
-  "notes.setShared": { args: { path: string; shared: boolean }; result: null };
+  /** Stops sharing a note with one project (`project`: its id from `NoteEntry.sharedWith`) or with all. */
+  "notes.unshare": { args: { path: string; project?: ProjectId }; result: null };
+  /** Notes whose app-wide sharing (earlier versions) was turned off, told once: taking them clears them. */
+  "notes.takeUnshared": { args: Record<string, never>; result: string[] };
   "notes.markCopied": { args: { path: string }; result: null };
   "notes.deleteCopied": { args: Record<string, never>; result: Deleted };
   "notes.opened": { args: { path: string | null }; result: null };
@@ -626,9 +652,17 @@ export interface PluginMethods {
   "agent.status": { args: Record<string, never>; result: AgentStatus };
   "agent.setEnabled": { args: { enabled: boolean }; result: AgentStatus };
   "agent.setGroup": { args: { group: string; on: boolean }; result: AgentStatus };
+  "agent.disconnect": { args: { id: string }; result: AgentStatus };
+  "agent.undoDisconnect": { args: { id: string }; result: AgentStatus };
   "agent.setDefaults": { args: Record<string, never>; result: null };
   "agent.publish": { args: { context: AgentWindowContext }; result: null };
+  /** This window is the one the person turned to: its context is answered, only it shows a place. */
+  "agent.focused": { args: Record<string, never>; result: null };
   "agent.setup": { args: Record<string, never>; result: string | null };
+  /** Notes shared with this window's project + the person's other notes (newest first); the project is the app's. */
+  "agent.sharedNotes": { args: Record<string, never>; result: ProjectNotes };
+  "agent.shareNote": { args: { name: string }; result: ProjectNotes };
+  "agent.unshareNote": { args: { name: string }; result: ProjectNotes };
   "agent.handOffPreview": { args: { checked?: number[] }; result: HandOffPreview };
   "agent.handOffConfirm": { args: { upto: number; checked: number[] }; result: HandOffDone };
   "shell-integration.state": { args: Record<string, never>; result: ShellState };
@@ -661,6 +695,45 @@ export interface PluginMethods {
     args: { tokenizers: string[]; text: string; parts?: [number, number][] };
     result: CountResult[];
   };
+  /** The languages with a dictionary and where each stands (nothing is downloaded or loaded by asking). */
+  "spelling.languages": { args: Record<string, never>; result: SpellingLanguage[] };
+  /** Starts the download the person confirmed (news come as `spelling:download`). Refused: `invalidData` / `lang`. */
+  "spelling.download": { args: { lang: string }; result: SpellingLanguage[] };
+  "spelling.cancel": { args: { lang: string }; result: SpellingLanguage[] };
+  /**
+   * One verdict per word, in order: known to any ready dictionary of `langs` or to the personal words. Languages not
+   * ready are left out (never fetched). Refused: `unavailable` / `notReady` (none ready), `tooLarge` / `words` (more
+   * than 5000), `invalidData` / `lang` (no such dictionary).
+   */
+  "spelling.check": { args: { langs: string[]; words: string[] }; result: boolean[] };
+  /** Up to five suggestions from each ready dictionary of `langs`, in order, each once (refusals as `check`). */
+  "spelling.suggest": { args: { langs: string[]; word: string }; result: string[] };
+  /** The personal words afterwards (also told as `spelling:personal`). Refused: `invalidData` / `word`. */
+  "spelling.personal.add": { args: { word: string }; result: string[] };
+  "spelling.personal.remove": { args: { word: string }; result: string[] };
+  "spelling.personal.list": { args: Record<string, never>; result: string[] };
+  /**
+   * The languages a document is checked in: declared by the person, else detected from `sample` (prose of the
+   * document, code left out; the first 8192 characters are read), else the default (`uiLocale` until one is picked).
+   * Text in a script no dictionary covers: `unsupported` with its `script`.
+   */
+  "spelling.language": {
+    args: { path: string; sample: string; uiLocale: string };
+    result: SpellingDocLanguage;
+  };
+  /**
+   * Declares (`lang`) | clears (`null`) a document's language: kept in the project's `.permark/` (outside a project:
+   * the profile). Answers as `language` (`sample` + `uiLocale` serve the answer once cleared). Refused: `invalidData`
+   * / `lang`, a path outside the window's workspace, `invalidData` / `unreadable` (a project file of another version).
+   */
+  "spelling.declare": {
+    args: { path: string; lang: string | null; sample?: string; uiLocale?: string };
+    result: SpellingDocLanguage;
+  };
+  /** The app's default spelling language (follows `uiLocale` until the person picks one). */
+  "spelling.defaults.get": { args: { uiLocale: string }; result: SpellingDefault };
+  /** Refused: `invalidData` / `lang`. */
+  "spelling.defaults.set": { args: { lang: string }; result: SpellingDefault };
   "local-ai.catalog": { args: Record<string, never>; result: LocalAiCatalog };
   "local-ai.tasks": { args: Record<string, never>; result: AiTaskInfo[] };
   "local-ai.state": { args: Record<string, never>; result: LocalAiState };
@@ -749,6 +822,22 @@ export interface PluginMethods {
   };
   "convert.cancel": { args: { job: number }; result: null };
   "convert.close": { args: { job: number }; result: null };
+  /** The page setup to offer (the default until the person chose one: `stored` false) and its page box. */
+  "export.setup.get": { args: Record<string, never>; result: SetupView };
+  /** Remembers `setup` app-wide; answers its page box. */
+  "export.setup.set": { args: { setup: PageSetup }; result: SetupView };
+  "export.capabilities": { args: Record<string, never>; result: PrintCapabilities };
+  /** Save dialog in the folder of `source` (a workspace path), then `html` written there as it is. */
+  "export.saveHtml": { args: { html: string; source: string }; result: Saved };
+  /** Save dialog, then `html` rendered as pages of `setup` and written there as a PDF. */
+  "export.savePdf": { args: { html: string; source: string; setup: PageSetup }; result: Saved };
+  /** The system's print dialog for `html` laid out as `setup`. */
+  "export.print": { args: { html: string; setup: PageSetup }; result: null };
+  /** The PDF of this window still rendering is dropped (nothing written). */
+  "export.cancel": { args: Record<string, never>; result: null };
+  /** Opens | shows in the file manager the file last written for this window. */
+  "export.open": { args: Record<string, never>; result: null };
+  "export.reveal": { args: Record<string, never>; result: null };
 }
 
 /** What the converter reads: a file of the workspace, or a text from the page. */
@@ -768,7 +857,13 @@ export interface PluginEvents {
   "quiet:changed": QuietMarks;
   "broken-links:changed": BrokenSummary;
   "agent:status": AgentStatus;
-  "agent:open": { path: string; line: number | null; heading: string | null };
+  /** `window`: the label of the window that shows it; `null` = every window of the project (none known yet). */
+  "agent:open": {
+    path: string;
+    line: number | null;
+    heading: string | null;
+    window: string | null;
+  };
   "agent:ask": { group: string };
 }
 export type PluginEventName = keyof PluginEvents;
@@ -782,6 +877,10 @@ export interface AppPluginEvents {
   "token-count:folder": { window: string; job: FolderJob };
   /** The counted folders of a project changed (a result, a stale mark). */
   "token-count:folders": FolderBadges;
+  /** One dictionary's new state (download progress, ready, failed, cancelled). */
+  "spelling:download": SpellingDownload;
+  /** The personal words after a change. */
+  "spelling:personal": string[];
   /** Something asked the Notes tab to show a note | a new note: the Notes tab takes it (`notes.takeIntent`). */
   "notes:intent": null;
   /** Local AI installs changed (a download finished | failed, terms accepted, assignment, token). */
@@ -803,8 +902,12 @@ export interface AppPluginEvents {
   "translation:run": PieceRun;
 }
 export type AppPluginEventName = keyof AppPluginEvents;
-export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };
+export type { DefaultAppView, DemoOffer, FileGroup, ShellEntry, ShellState, UpdateState };
 export type { CountResult, TokenCountState };
+export type { SpellingDefault, SpellingDocLanguage, SpellingDownload, SpellingLanguage };
+export type { SpellingLanguageSource } from "./generated/SpellingLanguageSource";
+export type { SpellingFailure } from "./generated/SpellingFailure";
+export type { SpellingState } from "./generated/SpellingState";
 export type { FolderBadge, FolderBadges, FolderJob, FolderSummary };
 export type { FolderSkipped } from "./generated/FolderSkipped";
 export type { FolderTopFile } from "./generated/FolderTopFile";
@@ -848,6 +951,7 @@ export type {
   AgentSection,
   AgentSelection,
   AgentServerState,
+  AgentSession,
   AgentStatus,
   AgentWindowContext,
 };
@@ -864,6 +968,10 @@ export type {
   NoteList,
   NotesIntent,
   NotesSummary,
+  ProjectId,
+  ProjectNotes,
+  SharedNote,
+  SharedWith,
   Version,
 };
 export type {
@@ -912,6 +1020,8 @@ export interface Events {
   "save-requested": ViewRequest;
   "view-moved": ViewMoved;
   "plugins-changed": null;
+  /** A plugin that is on could not start: the window of `root` tells it (`root` null: an App-scope one, every window). */
+  "plugin-failed": PluginFailed;
   "index-progress": IndexProgress;
   /** The projects of a folder changed: the window showing `root` reads `projectsView` again. */
   "projects-changed": ProjectsChanged;
@@ -961,6 +1071,12 @@ export interface Api {
   recentRemove(path: string): Promise<Result<null>>;
   settingsGet(): Promise<Result<AppSettings>>;
   settingsSet(change: SettingChange): Promise<Result<AppSettings>>;
+  /** Reads the symbol groups file again; a change arrives as `settings-changed`, none = nothing. */
+  charactersRefresh(): Promise<Result<null>>;
+  /** Writes the built-in groups file when none is there; `false`: a file is there (never written over) | no name set. */
+  charactersCreate(): Promise<Result<boolean>>;
+  /** Shows the groups file (else the profile folder) in the file manager; the backend picks the path. */
+  charactersReveal(): Promise<Result<null>>;
   projectSessionGet(key: string): Promise<Result<JsonValue | null>>;
   projectSessionSet(key: string, value: JsonValue | null): Promise<Result<null>>;
   /** This window's Explorer list: `null` filter = the project's default. Changes arrive as `tree-changed`. */
@@ -1136,6 +1252,12 @@ export interface Api {
   defaultAppAsked(): Promise<Result<null>>;
   /** Opens Windows' Default Apps page. */
   defaultAppHandoff(): Promise<Result<null>>;
+  /** What the Welcome screen offers about the demo pages: copy them into Documents, open them there, or nothing. */
+  demoOffer(): Promise<Result<DemoOffer>>;
+  /** The demo pages' folder in Documents (copied there first when nothing is at its place): the path to open. */
+  demoInstall(): Promise<Result<string>>;
+  /** The demo pages offer was dismissed: not shown again. */
+  demoDismiss(): Promise<Result<null>>;
   /** Creates `.permark/` in a folder; a project open on it reloads its state at once. */
   projectInit(path: string): Promise<Result<null>>;
   /** Whether a folder has nothing in it yet (one that cannot be read counts as not empty). */

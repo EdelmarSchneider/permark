@@ -1,0 +1,550 @@
+div.reading
+  div.doc-column
+    article.md
+      section.card aria-label="Front matter"
+        dl.grid
+          div.field
+            dt
+              "title"
+            dd
+              "Tidewell Open Data API"
+          div.field
+            dt
+              "owner"
+            dd
+              "Tomás Varela"
+          div.field
+            dt
+              "status"
+            dd
+              "stable"
+          div.field
+            dt
+              "updated"
+            dd
+              "November 13, 2026"
+          div.field
+            dt
+              "tags"
+            dd.chips
+              span.chip
+                "api"
+              span.chip
+                "reference"
+              span.chip
+                "v2"
+      div.md-body role="document"
+        h1 id="tidewell-open-data-api" dir="auto"
+          a.anchor href="#tidewell-open-data-api" aria-label="Link to Tidewell Open Data API"
+            "#"
+          "Tidewell Open Data API"
+        p dir="auto"
+          "Every reading from every Tidewell buoy, free to use, in plain JSON. You don't need to sign up: a key only raises your rate limit."
+        div.markdown-alert.markdown-alert-note
+          p.markdown-alert-title dir="auto"
+            svg svg sized
+            "Base URL"
+          p dir="auto"
+            "Every endpoint lives under"
+            a href="https://api.tidewell.example/v2"
+              "https://api.tidewell.example/v2"
+            ". Times are ISO 8601 in"
+            abbr title="Coordinated Universal Time"
+              "UTC"
+            ", and values use the units of the"
+            a href="station/buoy.toml"
+              "buoy settings"
+            "."
+        div.code-block
+          div.code-title
+            "Quickstart"
+          pre.has-title
+            code
+              tokens: hljs-comment hljs-string
+              "# The newest reading from Gannet Point. No key needed.⏎curl -s https://api.tidewell.example/v2/stations/LH-04/latest \⏎  -H "X-Tidewell-Client: my-first-script/1.0"⏎"
+          div.corner
+            span.lang
+              "Bash"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        h2 id="authentication" dir="auto"
+          a.anchor href="#authentication" aria-label="Link to Authentication"
+            "#"
+          "Authentication"
+        p dir="auto"
+          "Two headers matter. Both are plain text, and neither is required for your first request."
+        dl
+          dt
+            code
+              "Authorization"
+          dd
+            "Optional."
+            code
+              "Bearer <your key>"
+            ". A free key raises your limit from 60 to 600 requests a minute."
+          dt
+            code
+              "X-Tidewell-Client"
+          dd
+            "Recommended. Your app's name and version, such as"
+            code
+              "harbor-dashboard/4.1"
+            ", so we can reach you before we have to slow down a runaway script."
+        div.markdown-alert.markdown-alert-warning
+          p.markdown-alert-title dir="auto"
+            svg svg sized
+            "Keep keys out of your pages"
+          p dir="auto"
+            "Never paste a key into a document, a notebook or a chat. Keep it in an environment file like"
+            a href="station/deploy.env"
+              code
+                "station/deploy.env"
+            ", and list that file in"
+            a href=".aiignore"
+              code
+                ".aiignore"
+            "so agents connected through PerMark never see it. Our own services read the base URL from"
+            code
+              "station/deploy.env:4"
+            "."
+        h2 id="endpoints" dir="auto"
+          a.anchor href="#endpoints" aria-label="Link to Endpoints"
+            "#"
+          "Endpoints"
+        p dir="auto"
+          "All endpoints answer"
+          code
+            "GET"
+          "and return JSON, except bulletins, which come back as Markdown. Limits are per minute with a free key."
+        div.table-wrap
+          table
+            thead
+              tr
+                th dir="auto"
+                  "Method"
+                th dir="auto"
+                  "Path"
+                th dir="auto"
+                  "Returns"
+                th align="right" dir="auto"
+                  "Limit/min"
+            tbody
+              tr
+                td dir="auto"
+                  code
+                    "GET"
+                td dir="auto"
+                  code
+                    "/v2/stations"
+                td dir="auto"
+                  "All twelve stations"
+                td align="right" dir="auto"
+                  "600"
+              tr
+                td dir="auto"
+                  code
+                    "GET"
+                td dir="auto"
+                  code
+                    "/v2/stations/{id}"
+                td dir="auto"
+                  "One station and its current deployment"
+                td align="right" dir="auto"
+                  "600"
+              tr
+                td dir="auto"
+                  code
+                    "GET"
+                td dir="auto"
+                  code
+                    "/v2/stations/{id}/latest"
+                td dir="auto"
+                  "The newest reading"
+                td align="right" dir="auto"
+                  "600"
+              tr
+                td dir="auto"
+                  code
+                    "GET"
+                td dir="auto"
+                  code
+                    "/v2/stations/{id}/readings"
+                td dir="auto"
+                  "Readings in a time range, paged"
+                td align="right" dir="auto"
+                  "120"
+              tr
+                td dir="auto"
+                  code
+                    "GET"
+                td dir="auto"
+                  code
+                    "/v2/flags"
+                td dir="auto"
+                  abbr title="quality control"
+                    "QC"
+                  "flags and review decisions"
+                td align="right" dir="auto"
+                  "120"
+              tr
+                td dir="auto"
+                  code
+                    "GET"
+                td dir="auto"
+                  code
+                    "/v2/bulletins/{week}"
+                td dir="auto"
+                  "The weekly bulletin"
+                td align="right" dir="auto"
+                  "60"
+        h2 id="readings" dir="auto"
+          a.anchor href="#readings" aria-label="Link to Readings"
+            "#"
+          "Readings"
+        p dir="auto"
+          code
+            "/v2/stations/{id}/readings"
+          "is the workhorse. It takes five query parameters:"
+        dl
+          dt
+            code
+              "from"
+            ","
+            code
+              "to"
+          dd
+            "Start and end of the range. At most 31 days apart;"
+            code
+              "to"
+            "defaults to now."
+          dt
+            code
+              "fields"
+          dd
+            "Comma-separated values to return, such as"
+            code
+              "temp_c,do_mgl"
+            ". Default: all five."
+          dt
+            code
+              "qc"
+          dd
+            code
+              "published"
+            "(the default: passed and flagged readings) or"
+            code
+              "passed"
+            "(clean readings only)."
+          dt
+            code
+              "limit"
+            "and"
+            code
+              "cursor"
+          dd
+            "Up to 1,000 readings per page, 500 by default. For the next page, pass back the"
+            code
+              "next_cursor"
+            "you received."
+        p dir="auto"
+          "Here is one reading from Gannet Point, asked for with"
+          code
+            "?from=2026-11-14T09:40:00Z&limit=1"
+          ":"
+        div.code-block
+          div.code-title
+            "200 OK"
+          pre.has-title
+            code
+              tokens: hljs-attr hljs-number hljs-punctuation hljs-string
+              "{⏎  "station": "LH-04",⏎  "next_cursor": "MjAyNi0xMS0xNFQwOTo1MDowMFo",⏎  "readings": [⏎    {⏎      "time": "2026-11-14T09:40:00Z",⏎      "qc": "flagged",⏎      "flags": ["spike:do_mgl"],⏎      "do_mgl": 9.4,⏎      "temp_c": 12.6,⏎      "sal_psu": 33.8,⏎      "ph": 8.02,⏎      "hs_m": 1.4⏎    }⏎  ]⏎…"
+          div.corner
+            span.lang
+              "JSON"
+            button.icon-btn.icon-btn--sm.code-action title="Convert…" aria-label="Convert…"
+              icon lucide-arrow-left-right
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        p dir="auto"
+          "Line 3 is your bookmark for the next page. Lines 7 to 9 show a flagged reading: oxygen jumped 1.5 mg/L in ten minutes, more than the spike rule allows, so the v…"
+        h2 id="client-examples" dir="auto"
+          a.anchor href="#client-examples" aria-label="Link to Client examples"
+            "#"
+          "Client examples"
+        p dir="auto"
+          "Any HTTP client works. These three print the newest reading from Gannet Point."
+        h3 id="rust" dir="auto"
+          a.anchor href="#rust" aria-label="Link to Rust"
+            "#"
+          "Rust"
+        p dir="auto"
+          "Add"
+          code
+            "reqwest"
+          "with the"
+          code
+            "blocking"
+          "and"
+          code
+            "json"
+          "features, and"
+          code
+            "serde"
+          "with"
+          code
+            "derive"
+          "."
+        div.code-block
+          div.code-title
+            "examples/latest.rs"
+          pre.is-numbered.has-title
+            code
+              tokens: hljs-built_in hljs-keyword hljs-meta hljs-punctuation hljs-string hljs-title hljs-type hljs-variable
+              "use serde::Deserialize;⏎⏎#[derive(Deserialize)]⏎struct Reading { time: String, temp_c: f64, do_mgl: f64, qc: String }⏎#[derive(Deserialize)]⏎struct Latest { station: String, reading: Reading }⏎⏎fn main() -> Result<(), Box<dyn std::error::Error>> {⏎    let latest: Latest = reqwest::blocking::Client::…"
+          div.corner
+            span.lang
+              "Rust"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        p dir="auto"
+          code
+            "error_for_status"
+          "turns a 4xx or 5xx answer into an error, so a typo in the station id fails loudly instead of printing nonsense."
+        h3 id="python" dir="auto"
+          a.anchor href="#python" aria-label="Link to Python"
+            "#"
+          "Python"
+        div.code-block
+          div.code-title
+            "latest.py"
+          pre.has-title
+            code
+              tokens: hljs-built_in hljs-keyword hljs-number hljs-string hljs-subst
+              "import os⏎import requests⏎⏎headers = {"X-Tidewell-Client": "latest-py/1.0"}⏎if key := os.environ.get("TIDEWELL_KEY"):⏎    headers["Authorization"] = f"Bearer {key}"⏎⏎url = "https://api.tidewell.example/v2/stations/LH-04/latest"⏎resp = requests.get(url, headers=headers, timeout=10)⏎resp.raise_for_sta…"
+          div.corner
+            span.lang
+              "Python"
+            button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+              icon lucide-copy
+        details
+          summary
+            "TypeScript, with fetch"
+          div.code-block
+            div.code-title
+              "latest.ts"
+            pre.has-title
+              code
+                tokens: hljs-attr hljs-built_in hljs-keyword hljs-property hljs-string hljs-subst hljs-title hljs-variable
+                "type Reading = { time: string; temp_c: number; do_mgl: number; qc: "passed" | "flagged" };⏎⏎const res = await fetch("https://api.tidewell.example/v2/stations/LH-04/latest", {⏎  headers: { "X-Tidewell-Client": "latest-ts/1.0" },⏎});⏎if (!res.ok) throw new Error(`Tidewell answered ${res.status}`);⏎⏎co…"
+            div.corner
+              span.lang
+                "TypeScript"
+              button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+                icon lucide-copy
+        h2 id="data-model" dir="auto"
+          a.anchor href="#data-model" aria-label="Link to Data model"
+            "#"
+          "Data model"
+        p dir="auto"
+          "The API speaks in three objects and one short list of flags. A flag never replaces a value; it travels with it."
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg classDiagram sized labels: carries | 1 | 5 | records | 1 | * | flagged by | 1 | 0..* | Station | +String id | +String name | +String gateway | +latest() : Reading | Sensor | +String serial | +String kind | +Date calibrated | Reading | +DateTime time | +float temp_c | +float sal_psu | +float ph | +float do_mgl | +float hs_m | +String qc | «enumeration» | QcFlag | spike | flatline | drift
+        h2 id="paging-through-history" dir="auto"
+          a.anchor href="#paging-through-history" aria-label="Link to Paging through history"
+            "#"
+          "Paging through history"
+        p dir="auto"
+          "Ninety days of one station is 12,960 readings, so history comes in pages. Keep asking until"
+          code
+            "next_cursor"
+          "comes back empty."
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg sequence sized labels: Store | Tidewell API | Your client | Store | Tidewell API | Your client | loop | [until next_cursor is null] | GET readings, from Aug 17, limit 1000 | first 1000 rows | rows | 200, readings + next_cursor | GET readings, cursor | next 1000 rows | rows | 200, readings + next_cursor
+        h2 id="errors" dir="auto"
+          a.anchor href="#errors" aria-label="Link to Errors"
+            "#"
+          "Errors"
+        p dir="auto"
+          "Errors come back as JSON with a stable"
+          code
+            "code"
+          "you can match on, and a human-readable"
+          code
+            "message"
+          "you shouldn't."
+        div.table-wrap
+          table
+            thead
+              tr
+                th align="right" dir="auto"
+                  "Status"
+                th dir="auto"
+                  "Code"
+                th dir="auto"
+                  "Meaning"
+                th dir="auto"
+                  "Retry?"
+            tbody
+              tr
+                td align="right" dir="auto"
+                  "400"
+                td dir="auto"
+                  code
+                    "bad_range"
+                td dir="auto"
+                  code
+                    "from"
+                  "is after"
+                  code
+                    "to"
+                  ", or the range is over 31 days"
+                td dir="auto"
+                  "No, fix the query"
+              tr
+                td align="right" dir="auto"
+                  "401"
+                td dir="auto"
+                  code
+                    "bad_key"
+                td dir="auto"
+                  "The key is unknown or was revoked"
+                td dir="auto"
+                  "No"
+              tr
+                td align="right" dir="auto"
+                  "404"
+                td dir="auto"
+                  code
+                    "no_station"
+                td dir="auto"
+                  "No station has that id"
+                td dir="auto"
+                  "No"
+              tr
+                td align="right" dir="auto"
+                  "429"
+                td dir="auto"
+                  code
+                    "rate_limited"
+                td dir="auto"
+                  "Too many requests this minute"
+                td dir="auto"
+                  "Yes, after"
+                  code
+                    "Retry-After"
+              tr
+                td align="right" dir="auto"
+                  "503"
+                td dir="auto"
+                  code
+                    "catching_up"
+                td dir="auto"
+                  "A gateway is replaying buffered frames"
+                td dir="auto"
+                  "Yes, with backoff"
+        h2 id="rate-limits" dir="auto"
+          a.anchor href="#rate-limits" aria-label="Link to Rate limits"
+            "#"
+          "Rate limits"
+        p dir="auto"
+          "Limits are counted per key, or per address without one. Every answer carries"
+          code
+            "X-RateLimit-Remaining"
+          "."
+        div.table-wrap
+          table
+            thead
+              tr
+                th dir="auto"
+                  "Client"
+                th align="right" dir="auto"
+                  "Requests/min"
+                th align="right" dir="auto"
+                  "Burst"
+                th align="right" dir="auto"
+                  "Requests/day"
+            tbody
+              tr
+                td dir="auto"
+                  "No key"
+                td align="right" dir="auto"
+                  "60"
+                td align="right" dir="auto"
+                  "10"
+                td align="right" dir="auto"
+                  "5,000"
+              tr
+                td dir="auto"
+                  "Free key"
+                td align="right" dir="auto"
+                  "600"
+                td align="right" dir="auto"
+                  "50"
+                td align="right" dir="auto"
+                  "100,000"
+              tr
+                td dir="auto"
+                  "Partner key"
+                td align="right" dir="auto"
+                  "3,000"
+                td align="right" dir="auto"
+                  "200"
+                td align="right" dir="auto"
+                  "1,000,000"
+        h2 id="versions" dir="auto"
+          a.anchor href="#versions" aria-label="Link to Versions"
+            "#"
+          "Versions"
+        p dir="auto"
+          "Version 2.3 ships with the open data launch on Tuesday, November 17, 2026."
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg timeline sized labels: 2024 | v1.0 CSVdownloads | v1.1 JSON readings | 2025 | v2.0 Cursor paging | v2.1 QC flags | 2026 | v2.2 Bulletins | v2.3 Open data | Tidewell API
+        details
+          summary
+            "What changed in v2.3"
+          ul
+            li dir="auto"
+              strong
+                "New:"
+              "requests without a key, up to 60 a minute."
+            li dir="auto"
+              strong
+                "New:"
+              code
+                "qc=passed"
+              "returns clean readings only."
+            li dir="auto"
+              strong
+                "Changed:"
+              del
+                code
+                  "/v1/latest?station=LH-04"
+              "is now"
+              ins
+                code
+                  "/v2/stations/{id}/latest"
+              ". The old path answers"
+              code
+                "410 Gone"
+              "."
+            li dir="auto"
+              strong
+                "Changed:"
+              "flags name the value they apply to, as in"
+              code
+                "spike:do_mgl"
+              "."
+        hr
+        p dir="auto"
+          "Next:"
+          a href="bulletin-agent.md"
+            "Gull, the weekly bulletin agent"
+          "·"
+          a href="README.md"
+            "Start here"

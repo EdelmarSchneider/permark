@@ -4,11 +4,15 @@
 
 export type Match = { score: number; positions: number[] };
 
+/** Lowercase letters with no decomposition to strip -> their base letter (same as the backend's `base_letter`). */
+const BASE_LETTER: Record<string, string> = { đ: "d", ı: "i" };
+
 /** One character folded to one character: lowercase, accent gone. */
 function foldChar(c: string): string {
   if (c.charCodeAt(0) < 128) return c.toLowerCase();
   const base = c.normalize("NFKD")[0] ?? c;
-  return base.toLowerCase()[0] ?? base;
+  const lower = base.toLowerCase()[0] ?? base;
+  return BASE_LETTER[lower] ?? lower;
 }
 
 function foldAligned(s: string): string[] {

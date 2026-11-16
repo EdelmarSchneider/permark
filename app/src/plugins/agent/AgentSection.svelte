@@ -1,7 +1,7 @@
 <script lang="ts">
   // Settings > AI agents (project windows): the state of this project's sharing and one button to turn it on; while on,
-  // the steps that connect an agent right below (Claude Code first); what agents may do, folded. Nothing turns on by
-  // itself: the person sees what is shared, then decides.
+  // the connected agents (each with Disconnect), the notes shared with this project (while the notes plugin is on) and
+  // the steps that connect one right below (Claude Code first); what agents may do, folded. Nothing turns on by itself: the person sees what is shared, then decides.
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
@@ -10,6 +10,8 @@
   import { t, type MessageKey } from "../../core/i18n";
   import Card from "../../core/shell/settings/Card.svelte";
   import { ui } from "../../core/shell/ui.svelte";
+  import AgentList from "./AgentList.svelte";
+  import SharedNotes from "./SharedNotes.svelte";
   import { GROUPS } from "./groups";
   import { AGENT_PAGE } from "./offer.svelte";
   import { claudeCodeCommand, hookJson, mcpJson } from "./setup";
@@ -71,6 +73,11 @@
     if (agent.enabled && agent.program === null) void agent.loadProgram();
   });
 
+  // the notes shared with this project are read when the section shows while on (and when the switch goes on)
+  $effect(() => {
+    if (agent.enabled) untrack(() => void agent.refreshNotes());
+  });
+
   // opened from "Set up…" (offer, gear row, palette): focus on the first control, once
   $effect(() => {
     // the control exists once its element is bound (reads it: runs again then)
@@ -119,6 +126,9 @@
         <span>{stateText}</span>
       </p>
       {#if phase === "off"}
+        {#if status.replaced}
+          <p class="about">{t("agent.folderReplaced")}</p>
+        {/if}
         <p class="about">{t("agent.switchHint")}</p>
         <div class="actions">
           <button
@@ -147,6 +157,24 @@
       {/if}
     </div>
   </Card>
+
+  {#if phase === "listening" || phase === "connected"}
+    <h4 class="group-title">{t("agent.sessions.title")}</h4>
+    <Card>
+      <div class="agents">
+        <AgentList />
+      </div>
+    </Card>
+  {/if}
+
+  {#if phase !== "off" && agent.sharedNotes !== null}
+    <h4 class="group-title">{t("agent.notes.title")}</h4>
+    <Card>
+      <div class="agents">
+        <SharedNotes />
+      </div>
+    </Card>
+  {/if}
 
   {#if phase !== "off"}
     <h4 class="group-title">{t("agent.connect")}</h4>
@@ -306,6 +334,9 @@
     color: var(--muted);
     font-size: var(--fs-ui-sm);
     font-weight: 600;
+  }
+  .agents {
+    padding: var(--sp-3) var(--sp-4);
   }
   .setup {
     display: grid;

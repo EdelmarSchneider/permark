@@ -6,7 +6,8 @@
 //  - a View block carries the lines of its Markdown node; a raw HTML block has none and takes the last line of the block
 //    before it ("floating"): it belongs to the only HTML block between its anchored neighbours;
 //  - the front matter is the card's data (`Body.frontMatter`), or a code block when the card is off;
-//  - footnote definitions are one block each where written; View lists the referenced ones at the end: by label;
+//  - footnote definitions are one block each where written; View lists the referenced ones at the end: by label (an
+//    inline note's item, which has no block, with the definition before it);
 //  - prompt tag lines are markers in View (the `<details>` box around the blocks between them); the box is one View
 //    block without lines of its children: a kept block inside gets its own element of the box, matched by order;
 //  - link definitions, comments and HTML the sanitizer drops have no View block: nothing to show.
@@ -14,7 +15,8 @@
 // floating blocks with several possible owners, a block in a prompt box whose elements cannot be told apart, a
 // footnote without its list item, a body that is not Markdown.
 // HTML written in a line of an editable block (`<kbd>`, `<sub>`, `<br>`, ...) is a piece the editor keeps as written: it
-// looks like View's element for it, found in View's block for that line by element name and text, in order.
+// looks like View's element for it, found in View's block for that line by element name and text, in order. Marked
+// text, shortcode emoji and inline notes likewise (View's `mark`, emoji `span` and note number `sup`).
 
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import type { Block } from "../../../api/generated/Block";
@@ -127,9 +129,10 @@ export function lockedRenders(body: Body, blocks: readonly LineBlock[]): (Locked
 }
 
 /**
- * View's look of each HTML piece of the editable blocks, by the piece's source: View's element for it (backend HTML,
- * cut at element boundaries), found in the View block of its lines by element name and text, in order. Null: View has
- * no such element there (the sanitizer dropped it), the block shares its View block, or the source shows two ways.
+ * View's look of each piece of the editable blocks drawn from View's render, by the piece's source: View's element for
+ * it (backend HTML, cut at element boundaries), found in the View block of its lines by element name and content
+ * (`viewElement`), in order. Null: View has no such element there (the sanitizer dropped it, the renderer read the
+ * source as text), the block shares its View block, or the source shows two ways.
  */
 export function inlineHtmlLooks(
   body: Body,
@@ -144,12 +147,12 @@ export function inlineHtmlLooks(
     const html = unsure.has(i) ? [] : (mine.get(i) ?? []);
     const used = new Set<number>();
     for (const piece of pieces) {
-      const name = /^<([a-zA-Z][a-zA-Z0-9-]*)/.exec(piece)?.[1]?.toLowerCase();
+      const wanted = viewElement(piece);
       const found =
-        name === undefined || html.length !== 1
+        wanted === null || html.length !== 1
           ? undefined
-          : elementsNamed(html[0] ?? "", name).find(
-              (e) => !used.has(e.start) && !isNoteNumber(e.html) && sameText(e.html, piece),
+          : elementsNamed(html[0] ?? "", wanted.name).find(
+              (e) => !used.has(e.start) && wanted.matches(e.html),
             );
       if (found !== undefined) used.add(found.start);
       const look = found?.html ?? null;
@@ -158,6 +161,24 @@ export function inlineHtmlLooks(
     }
   });
   return looks;
+}
+
+/**
+ * How View draws a piece, told by how its source starts: the element's name and a test of the element. HTML: that
+ * element with the same text (a footnote's number, the parser's own, never); `==x==`: a `mark` with its text;
+ * `:name:`: the emoji `span` titled so; `^[...]`: an inline note's number.
+ */
+function viewElement(piece: string): { name: string; matches(html: string): boolean } | null {
+  if (piece.startsWith("==")) return { name: "mark", matches: (html) => sameText(html, piece) };
+  if (piece.startsWith("^[")) {
+    return { name: "sup", matches: (html) => html.includes('href="#fn-__inline_') };
+  }
+  if (piece.startsWith(":")) {
+    return { name: "span", matches: (html) => html.includes(` title="${piece}"`) };
+  }
+  const name = /^<([a-zA-Z][a-zA-Z0-9-]*)/.exec(piece)?.[1]?.toLowerCase();
+  if (name === undefined) return null;
+  return { name, matches: (html) => !isNoteNumber(html) && sameText(html, piece) };
 }
 
 /** The text a piece of HTML shows, as letters and digits only (tags, entities and punctuation aside). */
@@ -213,7 +234,7 @@ function lineBlocksOf(doc: PMNode, composed: Composed): { nodes: PMNode[]; block
       lineEnd: lineStart + (text.match(/\n/g)?.length ?? 0),
       reason: locked ? reasonOf(node) : null,
       text,
-      ...(locked ? {} : { pieces: pieceSources(node, "html") }),
+      ...(locked ? {} : { pieces: pieceSources(node, true) }),
     });
   });
   return { nodes, blocks };
@@ -505,18 +526,29 @@ function footnoteLabel(text: string): string | null {
   return label === undefined ? null : label.trim().replace(/\s+/g, " ");
 }
 
+/** Id prefix of the list item the renderer makes of an inline note (`^[...]`, footnote `__inline_<n>`). */
+const INLINE_NOTE_ITEM = "fn-__inline_";
+
 /**
- * View's list item for the definition `text`, alone in a copy of View's section and list (numbered as in View). The
- * wrapper is fixed markup around backend HTML; nothing of it comes from the source.
+ * View's list item for the definition `text`, in a copy of View's section and list (numbered as in View). An inline
+ * note has no definition block in the editor (its text is a piece of its line), so its item goes with the definition
+ * listed right before it (those before the first definition: with that one): the list skips no number. The wrapper is
+ * fixed markup around backend HTML; nothing of it comes from the source.
  */
 function footnoteOf(notes: FootnoteItems, text: string): string | null {
   const label = footnoteLabel(text);
   if (label === null) return null;
   const at = notes.items.findIndex((item) => item.id === `fn-${label}`);
-  const item = notes.items[at];
-  if (item === undefined) return null;
-  const list = at === 0 ? "<ol>" : `<ol start="${at + 1}">`;
-  return `${notes.open}\n${list}\n${item.html}\n</ol>\n</section>`;
+  if (at < 0) return null;
+  const inline = (i: number): boolean => notes.items[i]?.id.startsWith(INLINE_NOTE_ITEM) === true;
+  let from = at;
+  while (from > 0 && inline(from - 1)) from -= 1;
+  if (from > 0) from = at;
+  let to = at + 1;
+  while (inline(to)) to += 1;
+  const items = notes.items.slice(from, to).map((item) => item.html);
+  const list = from === 0 ? "<ol>" : `<ol start="${from + 1}">`;
+  return `${notes.open}\n${list}\n${items.join("\n")}\n</ol>\n</section>`;
 }
 
 // ---- prompt tags ---------------------------------------------------------------------------------------------------

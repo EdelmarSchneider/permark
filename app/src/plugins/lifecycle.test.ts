@@ -6,10 +6,10 @@ import { conditions, neutralContext } from "../core/conditions/context.svelte";
 import { contributions } from "../core/plugins/instance.svelte";
 import { ContributionRegistry, PluginHost, pluginLoaders } from "../core/plugins/registry.svelte";
 import { searchTags } from "../core/search/tags.svelte";
-import { FILES } from "../core/shell/arrangement";
+import { defaultArrangement, FILES } from "../core/shell/arrangement";
 import { arrangement } from "../core/shell/arrangement.svelte";
 import { layout } from "../core/shell/layout.svelte";
-import { showView } from "../core/shell/sides";
+import { closeView, showView } from "../core/shell/sides";
 import { silence } from "../core/silence/silence.svelte";
 
 const FOLLOWING: PluginId[] = ["git", "live-feed", "follow", "unread", "review"];
@@ -161,7 +161,7 @@ describe("the organizing plugins", () => {
       "treeBadge",
     ]);
     expect(await kinds("quiet")).toEqual(["command", "treeBadge", "treeMenu"]);
-    expect(await kinds("broken-links")).toEqual(["command", "panel", "shortcut"]);
+    expect(await kinds("broken-links")).toEqual(["command", "linkMarks", "panel", "shortcut"]);
   });
 
   it("switching off puts back the tab that was open and the search the tags narrowed", async () => {
@@ -234,6 +234,96 @@ describe("the notes plugin", () => {
     // Mod+1..9 open the pinned notes
     expect(keys.filter((k) => /^Mod\+[1-9]$/.test(k.keys))).toHaveLength(9);
     host.disable("notes");
+  });
+});
+
+describe("the symbols plugin", () => {
+  // the panel's open | closed choice is the project's: no test leaves its choice to the next
+  afterEach(() => layout.setOpen("symbols.panel", false));
+
+  it("adds its panel, its command and the popup's button, dormant, and leaves nothing when off", async () => {
+    const registry = new ContributionRegistry();
+    const host = new PluginHost(registry, pluginLoaders());
+    await host.enable("symbols");
+    const found = [...new Set(registry.ownedBy("symbols").map((c) => c.kind))].sort();
+    expect(found).toEqual(["command", "panel", "pickerAction"]);
+    // a fresh profile shows no panel: it opens only when the person asks
+    const panel = registry.of("panel").find((p) => p.id === "symbols.panel");
+    expect(panel?.side).toBe("right");
+    expect(panel?.defaultOpen).toBeUndefined();
+    expect(registry.of("shortcut")).toEqual([]);
+    expect(host.disable("symbols"), "contributions left after deactivate").toBe(0);
+    expect(registry.items).toHaveLength(0);
+  });
+
+  it("the popup's button shows the panel; switching off takes it away", async () => {
+    const window = new PluginHost(contributions, pluginLoaders());
+    await window.enable("symbols");
+    // not a view of the window until the person asks for it
+    expect(arrangement.viewOf("symbols.panel")).toBeUndefined();
+    const [keepOpen] = contributions.of("pickerAction");
+    keepOpen?.run("symbols");
+    expect(arrangement.isSelected("symbols.panel")).toBe(true);
+    expect(window.disable("symbols")).toBe(0);
+    expect(arrangement.viewOf("symbols.panel")).toBeUndefined();
+  });
+
+  it("the palette command shows the panel, then hides it", async () => {
+    const window = new PluginHost(contributions, pluginLoaders());
+    await window.enable("symbols");
+    const toggle = contributions.of("command").find((c) => c.id === "symbols.toggle");
+    toggle?.run();
+    expect(arrangement.isSelected("symbols.panel")).toBe(true);
+    toggle?.run();
+    expect(arrangement.isPresent("symbols.panel")).toBe(false);
+    expect(window.disable("symbols")).toBe(0);
+  });
+
+  it("a saved arrangement that lists the panel shows nothing until the person asks, then it opens there", async () => {
+    arrangement.saved = {
+      ...defaultArrangement(),
+      bottom: [{ views: ["symbols.panel"], share: 1 }],
+    };
+    try {
+      const window = new PluginHost(contributions, pluginLoaders());
+      await window.enable("symbols");
+      // the layout names it, yet a window where nobody asked for it shows no trace of it
+      expect(arrangement.viewOf("symbols.panel")).toBeUndefined();
+      expect(arrangement.isPresent("symbols.panel")).toBe(false);
+      expect(arrangement.drawn("bottom")).toEqual([]);
+      contributions
+        .of("command")
+        .find((c) => c.id === "symbols.toggle")
+        ?.run();
+      expect(arrangement.regionOf("symbols.panel")).toBe("bottom");
+      expect(arrangement.isSelected("symbols.panel")).toBe(true);
+      closeView("symbols.panel");
+      expect(window.disable("symbols")).toBe(0);
+    } finally {
+      arrangement.saved = defaultArrangement();
+    }
+  });
+});
+
+describe("the export plugin", () => {
+  it("adds its menu entries, the print command and its key, dormant, and leaves nothing when off", async () => {
+    const registry = new ContributionRegistry();
+    const host = new PluginHost(registry, pluginLoaders());
+    await host.enable("export");
+    const found = [...new Set(registry.ownedBy("export").map((c) => c.kind))].sort();
+    expect(found).toEqual(["command", "docMenu", "shortcut", "statusItem"]);
+    expect(registry.of("docMenu").map((e) => e.id)).toEqual([
+      "export.1pdf",
+      "export.2html",
+      "export.3print",
+    ]);
+    // only the Markdown document the window shows
+    expect(registry.of("docMenu").every((e) => e.applies?.("notes.md") === false)).toBe(true);
+    expect(registry.of("shortcut")).toEqual([
+      expect.objectContaining({ keys: "Mod+Alt+p", command: "export.print" }),
+    ]);
+    expect(host.disable("export"), "contributions left after deactivate").toBe(0);
+    expect(registry.items).toHaveLength(0);
   });
 });
 

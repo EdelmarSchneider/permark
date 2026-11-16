@@ -263,19 +263,50 @@ difference in `src` and `src-tauri/src` when the flavor was added) plus the flav
 
 ## How a release reaches the Store
 
-Today the last step is manual:
-
 1. Release as usual (`git flow release finish`, push `main`, `develop` and the tag). The `Release` workflow builds the installers
    and, in the `Microsoft Store package` job, `PerMark-msix-<version>`.
-2. Download that artifact from the workflow run (it is a zip with the `.msix` inside).
-3. In Partner Center, open the app, start a new submission, upload the `.msix` under Packages, put the release notes (the version's
-   section of `CHANGELOG.md`) in the listing, and submit. The Store signs the package and runs its own checks.
+2. With [automatic submission](#automatic-submission) set up, the same job uploads the package to a new draft submission in
+   Partner Center. Without it, download the artifact from the workflow run (it is a zip with the `.msix` inside), start a new
+   submission in Partner Center and upload the `.msix` under Packages.
+3. In Partner Center, open the submission, put the release notes (the version's section of `CHANGELOG.md`) in the listing, and
+   submit. The Store signs the package and runs its own checks.
 
 The first submission also needs the listing itself: the description, screenshots (`docs/assets` has some), the age rating, the
 privacy policy URL, https://edelmarschneider.github.io/permark/privacy.html (the page is `site/privacy.html`), and the reason for
 the one restricted capability the package declares, `runFullTrust`: PerMark is a desktop program that reads and writes the folders the
 person opens, with the person's own rights.
 
-Submitting from the workflow is possible later with the [Microsoft Store Developer CLI](https://learn.microsoft.com/windows/apps/publish/msstore-dev-cli/overview)
-(`msstore publish`). It needs credentials of an Azure AD application that is linked to the Partner Center account (a tenant id, a
-client id and a client secret, kept as repository secrets), and those do not exist yet. Until then the upload stays manual.
+### Automatic submission
+
+The `Microsoft Store package` job can upload the package itself, with the
+[Microsoft Store Developer CLI](https://learn.microsoft.com/windows/apps/publish/msstore-dev-cli/overview) (`msstore`, version
+0.4.4, installed by Microsoft's `microsoft-store-apppublisher` action). On a tag push, after the package is built and kept as an
+artifact, the job signs in to Partner Center as a Microsoft Entra application, turns the CLI's telemetry off and runs
+`msstore publish <package> --appId 9NVV5GVZMGGX --noCommit`. That creates a new submission from the last published one, with the
+new package in it, and leaves it as a draft. It does not submit it: the listing is still the previous version's, so the release
+notes have to be written first. The job summary says whether the package went up.
+
+What stays manual, in Partner Center: the release notes and any other listing text, the screenshots, and pressing **Submit**,
+which starts the Store's certification.
+
+The job needs four secrets in the repository's `release` environment (**Settings**, **Environments**, `release`):
+
+| Secret | Where it comes from |
+| --- | --- |
+| `MSSTORE_TENANT_ID` | The Directory (tenant) ID of the Microsoft Entra tenant linked to the Partner Center account. |
+| `MSSTORE_SELLER_ID` | The Seller ID of the Partner Center account (in **Account settings**, shown with the Publisher ID). |
+| `MSSTORE_CLIENT_ID` | The Application (client) ID of the Entra app registration that uploads. |
+| `MSSTORE_CLIENT_SECRET` | A client secret of that app registration. |
+
+The app registration must be added in Partner Center (**Account settings**, **User management**, **Microsoft Entra applications**)
+with the **Manager** role. A client secret expires (Entra allows at most two years): create a new one and replace the GitHub secret
+before that date.
+
+Good to know:
+
+* When any of the four secrets is missing, the upload is skipped and the job ends as it did before. A run started by hand never
+  uploads, so a test package of a branch cannot replace the release's.
+* If the upload fails (an expired secret, a submission still in certification), only this job fails; the GitHub release is not
+  affected, and the artifact is there to upload by hand.
+* `msstore publish` replaces a draft that is already pending in Partner Center. Edit the listing after the job has finished.
+* Microsoft supports this way of updating for free apps only, which PerMark is.

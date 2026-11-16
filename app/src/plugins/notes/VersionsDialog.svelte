@@ -1,7 +1,7 @@
 <script lang="ts">
   // Earlier versions of a note: the list (newest first), the text of the one picked, Restore. The text the note has
   // now is kept as a version first, so a restore can be taken back.
-  import { t, tn } from "../../core/i18n";
+  import { formatLocale, t, tn } from "../../core/i18n";
   import { shownName } from "./model";
   import NoteDialog from "./NoteDialog.svelte";
   import type { NotesStore } from "./store.svelte";
@@ -15,7 +15,7 @@
   );
 
   function when(ms: number): string {
-    return new Date(ms).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    return new Date(ms).toLocaleString(formatLocale(), { dateStyle: "medium", timeStyle: "short" });
   }
 
   function size(bytes: number): string {

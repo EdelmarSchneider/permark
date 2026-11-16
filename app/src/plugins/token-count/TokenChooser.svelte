@@ -2,7 +2,7 @@
   // The list of tokenizers to choose from: each with a badge that says whether its number is exact or only an estimate,
   // one line on why, and, for an exact one, the download of its vocabulary (never started by choosing it: the person
   // presses Download). Up to three can be chosen; the first is the one in the status bar.
-  import { language, t } from "../../core/i18n";
+  import { formatLocale, t } from "../../core/i18n";
   import { failureKey, formatMegabytes, percentOf } from "./model";
   import { tokens } from "./store.svelte";
   import { MAX_TOKENIZERS, TOKENIZERS, type TokenizerInfo } from "./tokenizers";
@@ -27,7 +27,7 @@
     onchange([info.id, ...ids.filter((id) => id !== info.id)]);
   }
 
-  const size = (bytes: number): string => formatMegabytes(bytes, language.locale);
+  const size = (bytes: number): string => formatMegabytes(bytes, formatLocale());
 </script>
 
 <ul class="chooser" aria-label={t("tokens.change")}>

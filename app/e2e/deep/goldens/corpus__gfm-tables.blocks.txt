@@ -1,0 +1,155 @@
+# corpus/gfm-tables.md
+format: markdown
+outline: Tables (line 1)
+--- h1 1-1
+<h1 dir="auto" id="tables">Tables</h1>
+--- table 3-8
+<table>
+<thead>
+<tr>
+<th align="left" dir="auto">Left</th>
+<th align="center" dir="auto">Center</th>
+<th align="right" dir="auto">Right</th>
+<th dir="auto">Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left" dir="auto">a</td>
+<td align="center" dir="auto">b</td>
+<td align="right" dir="auto">c</td>
+<td dir="auto">d</td>
+</tr>
+<tr>
+<td align="left" dir="auto"><strong>bold</strong></td>
+<td align="center" dir="auto"><code>code</code></td>
+<td align="right" dir="auto">1,234.50</td>
+<td dir="auto"><a href="gfm-blocks.md">link</a></td>
+</tr>
+<tr>
+<td align="left" dir="auto">escaped | pipe</td>
+<td align="center" dir="auto"><mark>mark</mark></td>
+<td align="right" dir="auto"><span class="emoji" title=":ocean:">🌊</span></td>
+<td dir="auto"></td>
+</tr>
+<tr>
+<td align="left" dir="auto">long text that wraps inside a narrow column of the table</td>
+<td align="center" dir="auto">x</td>
+<td align="right" dir="auto">0.1</td>
+<td dir="auto"><del>old</del></td>
+</tr>
+</tbody>
+</table>
+--- p 10-10
+<p dir="auto">A table with one column:</p>
+--- table 12-14
+<table>
+<thead>
+<tr>
+<th dir="auto">Only</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td dir="auto">one</td>
+</tr>
+</tbody>
+</table>
+--- p 16-16
+<p dir="auto">A wide table that scrolls sideways:</p>
+--- table 18-22
+<table>
+<thead>
+<tr>
+<th dir="auto">Station</th>
+<th align="right" dir="auto">Lat</th>
+<th align="right" dir="auto">Lon</th>
+<th align="right" dir="auto">Depth (m)</th>
+<th align="right" dir="auto">Temp (°C)</th>
+<th align="right" dir="auto">Salinity (PSU)</th>
+<th align="right" dir="auto">pH</th>
+<th align="right" dir="auto">O₂ (mg/L)</th>
+<th align="right" dir="auto">Wave (m)</th>
+<th align="right" dir="auto">Period (s)</th>
+<th align="right" dir="auto">Wind (kn)</th>
+<th align="right" dir="auto">Battery (V)</th>
+<th dir="auto">Firmware</th>
+<th dir="auto">Last seen</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td dir="auto">LH-01</td>
+<td align="right" dir="auto">41.512</td>
+<td align="right" dir="auto">-70.671</td>
+<td align="right" dir="auto">12.4</td>
+<td align="right" dir="auto">11.82</td>
+<td align="right" dir="auto">31.40</td>
+<td align="right" dir="auto">8.02</td>
+<td align="right" dir="auto">8.91</td>
+<td align="right" dir="auto">0.62</td>
+<td align="right" dir="auto">5.1</td>
+<td align="right" dir="auto">11</td>
+<td align="right" dir="auto">12.71</td>
+<td dir="auto">2.3.1</td>
+<td dir="auto">2026-11-15 09:40 UTC</td>
+</tr>
+<tr>
+<td dir="auto">LH-02</td>
+<td align="right" dir="auto">41.498</td>
+<td align="right" dir="auto">-70.702</td>
+<td align="right" dir="auto">18.9</td>
+<td align="right" dir="auto">11.64</td>
+<td align="right" dir="auto">31.52</td>
+<td align="right" dir="auto">8.01</td>
+<td align="right" dir="auto">8.87</td>
+<td align="right" dir="auto">0.71</td>
+<td align="right" dir="auto">5.4</td>
+<td align="right" dir="auto">12</td>
+<td align="right" dir="auto">12.69</td>
+<td dir="auto">2.3.1</td>
+<td dir="auto">2026-11-15 09:40 UTC</td>
+</tr>
+<tr>
+<td dir="auto">LH-03</td>
+<td align="right" dir="auto">41.476</td>
+<td align="right" dir="auto">-70.735</td>
+<td align="right" dir="auto">22.1</td>
+<td align="right" dir="auto">11.51</td>
+<td align="right" dir="auto">31.61</td>
+<td align="right" dir="auto">7.99</td>
+<td align="right" dir="auto">8.80</td>
+<td align="right" dir="auto">0.84</td>
+<td align="right" dir="auto">5.9</td>
+<td align="right" dir="auto">14</td>
+<td align="right" dir="auto">12.55</td>
+<td dir="auto">2.3.0</td>
+<td dir="auto">2026-11-15 09:30 UTC</td>
+</tr>
+</tbody>
+</table>
+--- p 24-24
+<p dir="auto">A table with inline HTML and a picture:</p>
+--- table 26-30
+<table>
+<thead>
+<tr>
+<th dir="auto">Mark</th>
+<th dir="auto">Sample</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td dir="auto">keys</td>
+<td dir="auto"><kbd>Ctrl</kbd>+<kbd>K</kbd></td>
+</tr>
+<tr>
+<td dir="auto">sub/sup</td>
+<td dir="auto">H<sub>2</sub>O, 10<sup>3</sup></td>
+</tr>
+<tr>
+<td dir="auto">picture</td>
+<td dir="auto"><img alt="square" src="pm-asset:corpus/assets/square.svg"></td>
+</tr>
+</tbody>
+</table>

@@ -3,7 +3,7 @@
   // one. Live while editing (counted here); in View, the file's text is counted once per version. Click: next measure.
   import { api } from "../../api";
   import { createAnalysisText } from "../../core/doc/analysisText.svelte";
-  import { language, t, tn } from "../../core/i18n";
+  import { formatLocale, t, tn } from "../../core/i18n";
   import { measure, minutes, type Counts } from "./count";
 
   type Unit = "words" | "characters" | "minutes";
@@ -43,7 +43,7 @@
   });
   const part = $derived(selection === "" ? null : measure(selection, selectionKind));
 
-  const number = (n: number): string => new Intl.NumberFormat(language.locale).format(n);
+  const number = (n: number): string => new Intl.NumberFormat(formatLocale()).format(n);
 
   function valueOf(counts: Counts, of: Unit): number {
     switch (of) {

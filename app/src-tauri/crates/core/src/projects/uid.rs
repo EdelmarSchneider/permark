@@ -49,6 +49,26 @@ fn encode(bits: u64, chars: usize) -> String {
         .collect()
 }
 
+/// Longest token one draw yields (5 bits per character of a 64-bit hash).
+pub const MAX_TOKEN_CHARS: usize = 12;
+
+/// A fresh token of `chars` (capped at [`MAX_TOKEN_CHARS`]) characters of `[a-z2-7]`: xxh3 of the clock, the process
+/// id, a process-wide counter and `salt`. Distinct across calls + processes without a random-number dependency; NOT
+/// a secret (another process of the same user could guess it).
+#[must_use]
+pub fn draw_token(salt: &[u8], chars: usize) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mut seed = Vec::with_capacity(32 + salt.len());
+    seed.extend_from_slice(&nanos.to_le_bytes());
+    seed.extend_from_slice(&std::process::id().to_le_bytes());
+    seed.extend_from_slice(&n.to_le_bytes());
+    seed.extend_from_slice(salt);
+    encode(crate::fsx::hash(&seed).0, chars.min(MAX_TOKEN_CHARS))
+}
+
 impl ProjectUid {
     /// An id as written in a file: `None` when it is not 8..16 chars of the alphabet.
     #[must_use]
@@ -68,16 +88,7 @@ impl ProjectUid {
     #[must_use]
     pub fn draw(path_key: &str, taken: &dyn Fn(&Self) -> bool) -> Self {
         loop {
-            let nanos = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_nanos());
-            let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-            let mut seed = Vec::with_capacity(32 + path_key.len());
-            seed.extend_from_slice(&nanos.to_le_bytes());
-            seed.extend_from_slice(&std::process::id().to_le_bytes());
-            seed.extend_from_slice(&n.to_le_bytes());
-            seed.extend_from_slice(path_key.as_bytes());
-            let uid = Self(encode(xxhash_rust::xxh3::xxh3_64(&seed), DRAWN));
+            let uid = Self(draw_token(path_key.as_bytes(), DRAWN));
             if !taken(&uid) {
                 return uid;
             }
@@ -137,6 +148,16 @@ mod tests {
         });
         assert!(calls.get() >= 2, "a taken id is drawn again");
         assert_ne!(again, first);
+    }
+
+    #[test]
+    fn drawn_tokens_have_the_asked_length_and_differ() {
+        let a = draw_token(b"s", 12);
+        let b = draw_token(b"s", 12);
+        assert_eq!(a.len(), 12);
+        assert_ne!(a, b, "the counter separates draws of one instant");
+        assert!(a.bytes().all(|c| ALPHABET.contains(&c)));
+        assert_eq!(draw_token(b"", 40).len(), MAX_TOKEN_CHARS);
     }
 
     #[test]

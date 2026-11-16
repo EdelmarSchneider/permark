@@ -1,9 +1,16 @@
 // Entries of a context menu: data the component draws.
 
+import type { Component } from "svelte";
+
+/** A small icon before an entry's label (a `@lucide/svelte` icon). */
+export type MenuIcon = Component<{ size?: number; strokeWidth?: number }>;
+
 export type MenuEntry =
   | {
       kind: "item";
       label: string;
+      /** Drawn in a leading column; the menu's other items keep that column (empty) so the labels line up. */
+      icon?: MenuIcon;
       hint?: string;
       /** A second, quieter line (a path). */
       detail?: string;
@@ -12,6 +19,9 @@ export type MenuEntry =
       opens?: boolean;
       /** Can't act now: still reached by the arrows and announced (`aria-disabled`), does nothing. */
       disabled?: boolean;
+      /** One of a set where one is chosen (`menuitemradio`): its state, announced as such and drawn as a check mark
+       *  before the label (never a mark in the label, read aloud as a word); the labels of the set stay aligned. */
+      checked?: boolean;
       /** `shift`: picked with Shift held (Shift+click | Shift+Enter). */
       run: (shift: boolean) => void;
     }

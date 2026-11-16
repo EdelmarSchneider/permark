@@ -134,8 +134,11 @@ describe("typed names", () => {
       "",
       "   ",
       "a\tb",
+      "İzmir",
+      "Işık",
     ]) {
       expect(vocabularyName(raw)).toBe(normalizeTag(raw));
     }
+    expect(vocabularyName("İzmir Gezisi")).toBe("izmir-gezisi");
   });
 });

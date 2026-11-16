@@ -96,12 +96,15 @@ export function assetUrl(
   return version === null ? base : `${base}?v=${encodeURIComponent(version)}`;
 }
 
-/** A plugin method: the key is `<plugin>.<method>`; the backend takes the two parts. */
+/** A plugin method: the key is `<plugin>.<method>`; the backend takes the two parts. Plugin ids hold no dot, method
+ *  names may (`setup.get`): split at the first dot only. */
 async function pluginCall<M extends PluginMethod>(
   method: M,
   args: PluginMethods[M]["args"],
 ): Promise<Result<PluginMethods[M]["result"]>> {
-  const [plugin = "", name = ""] = method.split(".", 2);
+  const dot = method.indexOf(".");
+  const plugin = dot < 0 ? method : method.slice(0, dot);
+  const name = dot < 0 ? "" : method.slice(dot + 1);
   try {
     const value = await invoke<PluginMethods[M]["result"]>("plugin_call", {
       plugin,
@@ -135,6 +138,9 @@ export const tauriApi: Api = {
   recentRemove: (path) => call("recent_remove", { path }),
   settingsGet: () => call("settings_get", {}),
   settingsSet: (change) => call("settings_set", { change }),
+  charactersRefresh: () => call("characters_refresh", {}),
+  charactersCreate: () => call("characters_create", {}),
+  charactersReveal: () => call("characters_reveal", {}),
   projectSessionGet: (key) => call("project_session_get", { key }),
   projectSessionSet: (key, value) => call("project_session_set", { key, value }),
   treeOpen: (filter) => call("tree_open", { filter }),
@@ -256,6 +262,9 @@ export const tauriApi: Api = {
   defaultAppSet: (group, on) => call("default_app_set", { group, on }),
   defaultAppAsked: () => call("default_app_asked", {}),
   defaultAppHandoff: () => call("default_app_handoff", {}),
+  demoOffer: () => call("demo_offer", {}),
+  demoInstall: () => call("demo_install", {}),
+  demoDismiss: () => call("demo_dismiss", {}),
   onAppPlugin: (event, handler) => listenHere<Parameters<typeof handler>[0]>(event, handler),
   assetUrl: (workspace, path, version) => assetUrl(convertFileSrc, workspace, path, version),
   on: (event, handler) => listenHere<Parameters<typeof handler>[0]>(event, handler),

@@ -2,8 +2,8 @@
 ; Everything here writes under HKEY_CURRENT_USER: no administrator rights.
 ;
 ; 1. LANGUAGE. The installer's language is recorded as the app's language code (en, pt-BR, es, de, zh-CN, it, ja,
-;    ko, fr, pt-PT, ca, gl, ro) in HKCU\Software\PerMark\Language. The app reads it once, at its first start, when no
-;    language was picked in it.
+;    ko, fr, pt-PT, ca, gl, ro, zh-TW, id, vi, ru, tr) in HKCU\Software\PerMark\Language. The app reads it once, at its
+;    first start, when no language was picked in it.
 ;
 ; 2. "OPEN WITH". Every file type PerMark reads is registered so it is offered under "Open with" (a ProgID per group of
 ;    types, the extension's OpenWithProgids list, and the app's capabilities for the Default Apps page). The default app
@@ -17,10 +17,26 @@
 ;    settings. The choice is remembered as HKCU\Software\PerMark\OpenWithMenu and \NewMarkdownMenu (1 on, 0 off): an
 ;    update keeps it (rewrites what is on so it points at the new files, never adds what is off).
 ;
-; Uninstalling removes everything above (and the keys it leaves empty); with "Delete the application data" it also removes
-; HKCU\Software\PerMark and PerMark's folders in the profile. An update's uninstall step removes nothing.
+; 4. COMMAND LINE. "Add the permark command to PATH", a check box on the welcome page, off unless an earlier install
+;    recorded it on: the install folder goes once at the end of the user's PATH (HKCU\Environment\Path), so `permark mcp`
+;    and `permark context` run from any terminal started afterwards. The choice is remembered as
+;    HKCU\Software\PerMark\AddToPath (1 on, 0 off) and the entry written as \PathEntry: only that entry is ever removed
+;    (box unticked, uninstall), never one the person wrote. An update leaves PATH as it is. A PATH this installer cannot
+;    rewrite whole (see "Command line" below) is never changed: the installer says so and names the folder to add.
+;
+; 5. DEMO PAGES. "Install the demo pages in Documents", a check box on the welcome page, always unticked at first: the
+;    installed copy of the sample documents ($INSTDIR\demo) goes to Documents\PerMark Demo, the folder the app's Welcome
+;    screen offers too, only when nothing is there yet. A silent | passive install and an update never copy. The folder is
+;    the person's from then on: no uninstall removes it (see "Demo pages").
+;
+; 6. THE TEMPLATE'S PAGES. Taller boxes on the reinstall page, short words for the uninstall page's folder label, and
+;    Windows' own UI fonts for Chinese and Korean, so that no translation is cut off (see "The template's other pages").
+;
+; Uninstalling removes everything above but the demo pages' folder (and the keys it leaves empty); with "Delete the
+; application data" it also removes HKCU\Software\PerMark and PerMark's folders in the profile. An update's uninstall step
+; removes nothing.
 ; The layout is the one the app writes (crates/plugins/shell-integration, crates/core/src/desktop); a Rust test keeps them
-; equal. A test installer may define the three roots below before including this file.
+; equal. A test installer may define the four roots below before including this file (path-check.nsi does).
 
 !ifndef PERMARK_APP_KEY
   !define PERMARK_APP_KEY "Software\PerMark"
@@ -31,29 +47,39 @@
 !ifndef PERMARK_REGAPPS_KEY
   !define PERMARK_REGAPPS_KEY "Software\RegisteredApplications"
 !endif
+!ifndef PERMARK_ENV_KEY
+  !define PERMARK_ENV_KEY "Environment"
+!endif
 
 !define PERMARK_MENU_CHOICE "OpenWithMenu"
 !define PERMARK_NEW_CHOICE "NewMarkdownMenu"
 !define PERMARK_TYPES_CHOICE "DefaultTypes"
+!define PERMARK_PATH_CHOICE "AddToPath"
+!define PERMARK_PATH_ENTRY "PathEntry"
 !define PERMARK_DEFAULT_APPS "ms-settings:defaultapps?registeredAppUser=PerMark"
 
 ; ---- Words ----------------------------------------------------------------------------------------------------------
 ; Windows language ids: 1033 en, 1046 pt-BR, 3082 es, 1031 de, 2052 zh-CN, 1040 it, 1041 ja, 1042 ko, 1036 fr,
-; 2070 pt-PT, 1027 ca, 1110 gl, 1048 ro.
+; 2070 pt-PT, 1027 ca, 1110 gl, 1048 ro, 1028 zh-TW, 1057 id, 1066 vi, 1049 ru, 1055 tr.
 
-LangString PermarkWelcome 1033 "PerMark is a unified document workspace: one place to read, write and organize Markdown and the files around it.$\r$\n$\r$\nSetup will install PerMark for you. No administrator rights are needed."
-LangString PermarkWelcome 1046 "O PerMark é um espaço de trabalho unificado para documentos: um só lugar para ler, escrever e organizar Markdown e os arquivos ao redor.$\r$\n$\r$\nO instalador vai instalar o PerMark para você. Não é preciso ser administrador."
-LangString PermarkWelcome 3082 "PerMark es un espacio de trabajo unificado para documentos: un solo lugar para leer, escribir y organizar Markdown y los archivos que lo rodean.$\r$\n$\r$\nEl instalador instalará PerMark para usted. No se necesitan permisos de administrador."
-LangString PermarkWelcome 1031 "PerMark ist ein einheitlicher Arbeitsplatz für Dokumente: ein Ort zum Lesen, Schreiben und Ordnen von Markdown und den Dateien drumherum.$\r$\n$\r$\nDas Setup installiert PerMark für Sie. Administratorrechte sind nicht nötig."
-LangString PermarkWelcome 2052 "PerMark 是统一文档工作区：在一个地方阅读、编写和整理 Markdown 及其周边文件。$\r$\n$\r$\n安装程序将为您安装 PerMark，无需管理员权限。"
-LangString PermarkWelcome 1040 "PerMark è uno spazio di lavoro unificato per i documenti: un unico posto per leggere, scrivere e organizzare Markdown e i file che lo circondano.$\r$\n$\r$\nIl programma di installazione installerà PerMark per te. Non servono i permessi di amministratore."
-LangString PermarkWelcome 1041 "PerMark は統合ドキュメントワークスペースです。Markdown とその周辺のファイルを、ひとつの場所で読み、書き、整理できます。$\r$\n$\r$\nこのセットアップで PerMark をインストールします。管理者権限は必要ありません。"
-LangString PermarkWelcome 1042 "PerMark는 통합 문서 작업 공간입니다. Markdown과 그 주변 파일을 한곳에서 읽고, 쓰고, 정리할 수 있습니다.$\r$\n$\r$\n설치 프로그램이 PerMark를 설치합니다. 관리자 권한은 필요하지 않습니다."
-LangString PermarkWelcome 1036 "PerMark est un espace de travail unifié pour vos documents : un seul endroit pour lire, écrire et organiser le Markdown et les fichiers qui l'entourent.$\r$\n$\r$\nLe programme d'installation va installer PerMark pour vous. Aucun droit d'administrateur n'est nécessaire."
-LangString PermarkWelcome 2070 "O PerMark é um espaço de trabalho unificado para documentos: um só local para ler, escrever e organizar Markdown e os ficheiros à sua volta.$\r$\n$\r$\nO programa de configuração vai instalar o PerMark para si. Não são necessários direitos de administrador."
-LangString PermarkWelcome 1027 "El PerMark és un espai de treball unificat per a documents: un sol lloc per a llegir, escriure i organitzar el Markdown i els fitxers que l'acompanyen.$\r$\n$\r$\nAquest assistent instal·larà el PerMark al vostre compte. No calen permisos d'administrador."
-LangString PermarkWelcome 1110 "PerMark é un espazo de traballo unificado para documentos: un único lugar para ler, escribir e organizar Markdown e os ficheiros que o acompañan.$\r$\n$\r$\nO asistente instalará PerMark para vostede. Non se necesitan permisos de administrador."
-LangString PermarkWelcome 1048 "PerMark este un spațiu de lucru unificat pentru documente: un singur loc în care să citești, să scrii și să organizezi Markdown și fișierele din jurul lui.$\r$\n$\r$\nProgramul de instalare va instala PerMark pentru tine. Nu sunt necesare drepturi de administrator."
+LangString PermarkWelcome 1033 "PerMark is a unified document workspace: one place to read, write and organize Markdown and the files around it.$\r$\nSetup will install PerMark for you. No administrator rights are needed."
+LangString PermarkWelcome 1046 "O PerMark é um espaço de trabalho unificado para documentos: um só lugar para ler, escrever e organizar Markdown e os arquivos ao redor.$\r$\nO instalador vai instalar o PerMark para você. Não é preciso ser administrador."
+LangString PermarkWelcome 3082 "PerMark es un espacio de trabajo unificado para documentos: un solo lugar para leer, escribir y organizar Markdown y los archivos que lo rodean.$\r$\nEl instalador instalará PerMark para usted. No se necesitan permisos de administrador."
+LangString PermarkWelcome 1031 "PerMark ist ein einheitlicher Arbeitsplatz für Dokumente: ein Ort zum Lesen, Schreiben und Ordnen von Markdown und den Dateien drumherum.$\r$\nDas Setup installiert PerMark für Sie. Administratorrechte sind nicht nötig."
+LangString PermarkWelcome 2052 "PerMark 是统一文档工作区：在一个地方阅读、编写和整理 Markdown 及其周边文件。$\r$\n安装程序将为您安装 PerMark，无需管理员权限。"
+LangString PermarkWelcome 1040 "PerMark è uno spazio di lavoro unificato per i documenti: un unico posto per leggere, scrivere e organizzare Markdown e i file che lo circondano.$\r$\nIl programma di installazione installerà PerMark per te. Non servono i permessi di amministratore."
+LangString PermarkWelcome 1041 "PerMark は統合ドキュメントワークスペースです。Markdown とその周辺のファイルを、ひとつの場所で読み、書き、整理できます。$\r$\nこのセットアップで PerMark をインストールします。管理者権限は必要ありません。"
+LangString PermarkWelcome 1042 "PerMark는 통합 문서 작업 공간입니다. Markdown과 그 주변 파일을 한곳에서 읽고, 쓰고, 정리할 수 있습니다.$\r$\n설치 프로그램이 PerMark를 설치합니다. 관리자 권한은 필요하지 않습니다."
+LangString PermarkWelcome 1036 "PerMark est un espace de travail unifié pour vos documents : un seul endroit pour lire, écrire et organiser le Markdown et les fichiers qui l'entourent.$\r$\nLe programme d'installation va installer PerMark pour vous. Aucun droit d'administrateur n'est nécessaire."
+LangString PermarkWelcome 2070 "O PerMark é um espaço de trabalho unificado para documentos: um só local para ler, escrever e organizar Markdown e os ficheiros à sua volta.$\r$\nO programa de configuração vai instalar o PerMark para si. Não são necessários direitos de administrador."
+LangString PermarkWelcome 1027 "El PerMark és un espai de treball unificat per a documents: un sol lloc per a llegir, escriure i organitzar el Markdown i els fitxers que l'acompanyen.$\r$\nAquest assistent instal·larà el PerMark al vostre compte. No calen permisos d'administrador."
+LangString PermarkWelcome 1110 "PerMark é un espazo de traballo unificado para documentos: un único lugar para ler, escribir e organizar Markdown e os ficheiros que o acompañan.$\r$\nO asistente instalará PerMark para vostede. Non se necesitan permisos de administrador."
+LangString PermarkWelcome 1048 "PerMark este un spațiu de lucru unificat pentru documente: un singur loc în care să citești, să scrii și să organizezi Markdown și fișierele din jurul lui.$\r$\nProgramul de instalare va instala PerMark pentru tine. Nu sunt necesare drepturi de administrator."
+LangString PermarkWelcome 1028 "PerMark 是整合式文件工作區：在同一個地方閱讀、撰寫及整理 Markdown 與其周邊檔案。$\r$\n安裝程式將為您安裝 PerMark，不需要系統管理員權限。"
+LangString PermarkWelcome 1057 "PerMark adalah ruang kerja dokumen terpadu: satu tempat untuk membaca, menulis, dan mengatur Markdown serta file di sekitarnya.$\r$\nPenginstal akan menginstal PerMark untuk Anda. Tidak perlu hak administrator."
+LangString PermarkWelcome 1066 "PerMark là không gian làm việc tài liệu hợp nhất: một nơi để đọc, viết và sắp xếp Markdown cùng các tệp xung quanh.$\r$\nTrình cài đặt sẽ cài PerMark cho bạn. Không cần quyền quản trị viên."
+LangString PermarkWelcome 1049 "PerMark — единое рабочее пространство для документов: одно место, чтобы читать, писать и упорядочивать Markdown и файлы вокруг него.$\r$\nПрограмма установит PerMark для вас. Права администратора не нужны."
+LangString PermarkWelcome 1055 "PerMark birleşik bir belge çalışma alanıdır: Markdown'ı ve çevresindeki dosyaları okumak, yazmak ve düzenlemek için tek bir yer.$\r$\nKurulum PerMark'ı sizin için yükleyecek. Yönetici hakları gerekmez."
 
 LangString PermarkTypesTitle 1033 "Open these files with PerMark (Windows asks you to confirm in its Settings after the installation):"
 LangString PermarkTypesTitle 1046 "Abrir estes arquivos com o PerMark (o Windows pede sua confirmação nas Configurações depois da instalação):"
@@ -68,6 +94,11 @@ LangString PermarkTypesTitle 2070 "Abrir estes ficheiros com o PerMark (o Window
 LangString PermarkTypesTitle 1027 "Obre aquests fitxers amb el PerMark (el Windows us demanarà que ho confirmeu a la Configuració després de la instal·lació):"
 LangString PermarkTypesTitle 1110 "Abrir estes ficheiros con PerMark (Windows pediralle que o confirme na Configuración despois da instalación):"
 LangString PermarkTypesTitle 1048 "Deschide aceste fișiere cu PerMark (Windows îți va cere să confirmi în Setări după instalare):"
+LangString PermarkTypesTitle 1028 "以 PerMark 開啟這些檔案（安裝後 Windows 會請您在「設定」中確認）："
+LangString PermarkTypesTitle 1057 "Buka file ini dengan PerMark (Windows meminta Anda mengonfirmasi di Pengaturan setelah instalasi):"
+LangString PermarkTypesTitle 1066 "Mở các tệp này bằng PerMark (Windows sẽ yêu cầu bạn xác nhận trong Cài đặt sau khi cài đặt):"
+LangString PermarkTypesTitle 1049 "Открывать эти файлы в PerMark (после установки Windows попросит подтвердить это в Параметрах):"
+LangString PermarkTypesTitle 1055 "Bu dosyaları PerMark ile aç (Windows, kurulumdan sonra Ayarlar'da onaylamanızı ister):"
 
 LangString PermarkText 1033 "Text"
 LangString PermarkText 1046 "Texto"
@@ -82,6 +113,11 @@ LangString PermarkText 2070 "Texto"
 LangString PermarkText 1027 "Text"
 LangString PermarkText 1110 "Texto"
 LangString PermarkText 1048 "Text"
+LangString PermarkText 1028 "文字"
+LangString PermarkText 1057 "Teks"
+LangString PermarkText 1066 "Văn bản"
+LangString PermarkText 1049 "Текст"
+LangString PermarkText 1055 "Metin"
 
 LangString PermarkProperties 1033 "Properties"
 LangString PermarkProperties 1046 "Properties"
@@ -96,6 +132,11 @@ LangString PermarkProperties 2070 "Properties"
 LangString PermarkProperties 1027 "Properties"
 LangString PermarkProperties 1110 "Properties"
 LangString PermarkProperties 1048 "Properties"
+LangString PermarkProperties 1028 "Properties"
+LangString PermarkProperties 1057 "Properties"
+LangString PermarkProperties 1066 "Properties"
+LangString PermarkProperties 1049 "Properties"
+LangString PermarkProperties 1055 "Properties"
 
 LangString OpenWithMenuLabel 1033 "Open with PerMark"
 LangString OpenWithMenuLabel 1046 "Abrir com o PerMark"
@@ -110,6 +151,11 @@ LangString OpenWithMenuLabel 2070 "Abrir com o PerMark"
 LangString OpenWithMenuLabel 1027 "Obre amb PerMark"
 LangString OpenWithMenuLabel 1110 "Abrir con PerMark"
 LangString OpenWithMenuLabel 1048 "Deschide cu PerMark"
+LangString OpenWithMenuLabel 1028 "以 PerMark 開啟"
+LangString OpenWithMenuLabel 1057 "Buka dengan PerMark"
+LangString OpenWithMenuLabel 1066 "Mở bằng PerMark"
+LangString OpenWithMenuLabel 1049 "Открыть с помощью PerMark"
+LangString OpenWithMenuLabel 1055 "PerMark ile aç"
 
 LangString NewMarkdownLabel 1033 "New Markdown file with PerMark"
 LangString NewMarkdownLabel 1046 "Novo arquivo Markdown com o PerMark"
@@ -124,6 +170,11 @@ LangString NewMarkdownLabel 2070 "Novo ficheiro Markdown com o PerMark"
 LangString NewMarkdownLabel 1027 "Fitxer Markdown nou amb PerMark"
 LangString NewMarkdownLabel 1110 "Novo ficheiro Markdown con PerMark"
 LangString NewMarkdownLabel 1048 "Fișier Markdown nou cu PerMark"
+LangString NewMarkdownLabel 1028 "以 PerMark 新增 Markdown 檔案"
+LangString NewMarkdownLabel 1057 "File Markdown baru dengan PerMark"
+LangString NewMarkdownLabel 1066 "Tệp Markdown mới bằng PerMark"
+LangString NewMarkdownLabel 1049 "Новый файл Markdown в PerMark"
+LangString NewMarkdownLabel 1055 "PerMark ile yeni Markdown dosyası"
 
 LangString OpenWithMenuOption 1033 "Add “Open with PerMark” to the right-click menu"
 LangString OpenWithMenuOption 1046 "Adicionar “Abrir com o PerMark” ao menu de clique direito"
@@ -138,6 +189,11 @@ LangString OpenWithMenuOption 2070 "Adicionar “Abrir com o PerMark” ao menu 
 LangString OpenWithMenuOption 1027 "Afegeix «Obre amb PerMark» al menú contextual"
 LangString OpenWithMenuOption 1110 "Engadir «Abrir con PerMark» ao menú contextual"
 LangString OpenWithMenuOption 1048 "Adaugă „Deschide cu PerMark” în meniul de clic dreapta"
+LangString OpenWithMenuOption 1028 "在右鍵選單中新增「以 PerMark 開啟」"
+LangString OpenWithMenuOption 1057 "Tambahkan “Buka dengan PerMark” ke menu klik kanan"
+LangString OpenWithMenuOption 1066 "Thêm “Mở bằng PerMark” vào menu chuột phải"
+LangString OpenWithMenuOption 1049 "Добавить «Открыть с помощью PerMark» в контекстное меню"
+LangString OpenWithMenuOption 1055 "Sağ tık menüsüne “PerMark ile aç” ekle"
 
 LangString NewMarkdownOption 1033 "Add “New Markdown file” to the right-click menu of folders"
 LangString NewMarkdownOption 1046 "Adicionar “Novo arquivo Markdown” ao menu de clique direito das pastas"
@@ -152,6 +208,87 @@ LangString NewMarkdownOption 2070 "Adicionar “Novo ficheiro Markdown” ao men
 LangString NewMarkdownOption 1027 "Afegeix «Fitxer Markdown nou» al menú contextual de les carpetes"
 LangString NewMarkdownOption 1110 "Engadir «Novo ficheiro Markdown» ao menú contextual dos cartafoles"
 LangString NewMarkdownOption 1048 "Adaugă „Fișier Markdown nou” în meniul de clic dreapta al dosarelor"
+LangString NewMarkdownOption 1028 "在資料夾的右鍵選單中新增「新增 Markdown 檔案」"
+LangString NewMarkdownOption 1057 "Tambahkan “File Markdown baru” ke menu klik kanan folder"
+LangString NewMarkdownOption 1066 "Thêm “Tệp Markdown mới” vào menu chuột phải của thư mục"
+LangString NewMarkdownOption 1049 "Добавить «Новый файл Markdown» в контекстное меню папок"
+LangString NewMarkdownOption 1055 "Klasörlerin sağ tık menüsüne “Yeni Markdown dosyası” ekle"
+
+LangString PathOption 1033 "Add the permark command to PATH"
+LangString PathOption 1046 "Adicionar o comando permark ao PATH"
+LangString PathOption 3082 "Agregar el comando permark al PATH"
+LangString PathOption 1031 "Den Befehl permark zum PATH hinzufügen"
+LangString PathOption 2052 "将 permark 命令添加到 PATH"
+LangString PathOption 1040 "Aggiungi il comando permark al PATH"
+LangString PathOption 1041 "permark コマンドを PATH に追加"
+LangString PathOption 1042 "permark 명령을 PATH에 추가"
+LangString PathOption 1036 "Ajouter la commande permark au PATH"
+LangString PathOption 2070 "Adicionar o comando permark ao PATH"
+LangString PathOption 1027 "Afegeix l'ordre permark al PATH"
+LangString PathOption 1110 "Engadir a orde permark ao PATH"
+LangString PathOption 1048 "Adaugă comanda permark în PATH"
+LangString PathOption 1028 "將 permark 命令新增至 PATH"
+LangString PathOption 1057 "Tambahkan perintah permark ke PATH"
+LangString PathOption 1066 "Thêm lệnh permark vào PATH"
+LangString PathOption 1049 "Добавить команду permark в PATH"
+LangString PathOption 1055 "permark komutunu PATH'e ekle"
+
+LangString DemoOption 1033 "Install the demo pages in Documents"
+LangString DemoOption 1046 "Instalar as páginas de demonstração em Documentos"
+LangString DemoOption 3082 "Instalar las páginas de demostración en Documentos"
+LangString DemoOption 1031 "Die Demoseiten im Ordner „Dokumente“ installieren"
+LangString DemoOption 2052 "将演示页面安装到“文档”文件夹"
+LangString DemoOption 1040 "Installa le pagine dimostrative in Documenti"
+LangString DemoOption 1041 "デモページを「ドキュメント」にインストール"
+LangString DemoOption 1042 "데모 페이지를 문서 폴더에 설치"
+LangString DemoOption 1036 "Installer les pages de démonstration dans Documents"
+LangString DemoOption 2070 "Instalar as páginas de demonstração em Documentos"
+LangString DemoOption 1027 "Instal·la les pàgines de demostració a Documents"
+LangString DemoOption 1110 "Instalar as páxinas de demostración en Documentos"
+LangString DemoOption 1048 "Instalează paginile demonstrative în Documente"
+LangString DemoOption 1028 "將示範頁面安裝到「文件」資料夾"
+LangString DemoOption 1057 "Instal halaman demo di folder Dokumen"
+LangString DemoOption 1066 "Cài đặt các trang mẫu vào thư mục Tài liệu"
+LangString DemoOption 1049 "Установить демо-страницы в «Документы»"
+LangString DemoOption 1055 "Tanıtım sayfalarını Belgeler klasörüne yükle"
+
+LangString PathNotAdded 1033 "The permark command was not added to PATH: the installer cannot change your PATH safely (it is probably too long). To use the command, add this folder to PATH yourself:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1046 "O comando permark não foi adicionado ao PATH: o instalador não consegue alterar seu PATH com segurança (provavelmente ele é longo demais). Para usar o comando, adicione você mesmo esta pasta ao PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 3082 "El comando permark no se agregó al PATH: el instalador no puede modificar su PATH de forma segura (probablemente es demasiado largo). Para usar el comando, agregue usted mismo esta carpeta al PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1031 "Der Befehl permark wurde nicht zum PATH hinzugefügt: Das Setup kann Ihren PATH nicht sicher ändern (er ist wahrscheinlich zu lang). Um den Befehl zu verwenden, fügen Sie diesen Ordner selbst zum PATH hinzu:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 2052 "permark 命令未添加到 PATH：安装程序无法安全地修改您的 PATH（可能太长）。如需使用该命令，请自行将此文件夹添加到 PATH：$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1040 "Il comando permark non è stato aggiunto al PATH: il programma di installazione non può modificare il PATH in modo sicuro (probabilmente è troppo lungo). Per usare il comando, aggiungi tu stesso questa cartella al PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1041 "permark コマンドは PATH に追加されませんでした。セットアップは PATH を安全に変更できません (長すぎる可能性があります)。コマンドを使うには、このフォルダーを自分で PATH に追加してください:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1042 "permark 명령이 PATH에 추가되지 않았습니다. 설치 프로그램이 PATH를 안전하게 변경할 수 없습니다 (너무 길 수 있습니다). 명령을 사용하려면 이 폴더를 직접 PATH에 추가하세요:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1036 "La commande permark n'a pas été ajoutée au PATH : le programme d'installation ne peut pas modifier votre PATH sans risque (il est probablement trop long). Pour utiliser la commande, ajoutez vous-même ce dossier au PATH :$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 2070 "O comando permark não foi adicionado ao PATH: o programa de configuração não consegue alterar o seu PATH em segurança (provavelmente é demasiado longo). Para usar o comando, adicione esta pasta ao PATH manualmente:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1027 "L'ordre permark no s'ha afegit al PATH: l'instal·lador no pot modificar el PATH de manera segura (probablement és massa llarg). Per a fer servir l'ordre, afegiu vós mateix aquesta carpeta al PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1110 "A orde permark non se engadiu ao PATH: o instalador non pode modificar o seu PATH de forma segura (probablemente é demasiado longo). Para usar a orde, engada vostede mesmo este cartafol ao PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1048 "Comanda permark nu a fost adăugată în PATH: programul de instalare nu poate modifica PATH-ul în siguranță (probabil este prea lung). Pentru a folosi comanda, adaugă singur acest dosar în PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1028 "permark 命令未新增至 PATH：安裝程式無法安全地修改您的 PATH（可能太長）。如需使用此命令，請自行將此資料夾新增至 PATH：$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1057 "Perintah permark tidak ditambahkan ke PATH: penginstal tidak dapat mengubah PATH Anda dengan aman (kemungkinan terlalu panjang). Untuk memakai perintah ini, tambahkan sendiri folder ini ke PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1066 "Lệnh permark chưa được thêm vào PATH: trình cài đặt không thể thay đổi PATH của bạn một cách an toàn (có lẽ vì quá dài). Để dùng lệnh này, hãy tự thêm thư mục này vào PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1049 "Команда permark не добавлена в PATH: программа установки не может безопасно изменить ваш PATH (вероятно, он слишком длинный). Чтобы пользоваться командой, добавьте эту папку в PATH самостоятельно:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotAdded 1055 "permark komutu PATH'e eklenmedi: kurulum programı PATH değişkeninizi güvenli şekilde değiştiremiyor (muhtemelen çok uzun). Komutu kullanmak için bu klasörü PATH'e kendiniz ekleyin:$\r$\n$\r$\n$PermarkPathDir"
+
+LangString PathNotRemoved 1033 "The permark command was not removed from PATH: the uninstaller cannot change your PATH safely (it is probably too long). You can remove this folder from PATH yourself:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1046 "O comando permark não foi removido do PATH: o desinstalador não consegue alterar seu PATH com segurança (provavelmente ele é longo demais). Você pode remover esta pasta do PATH manualmente:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 3082 "El comando permark no se quitó del PATH: el desinstalador no puede modificar su PATH de forma segura (probablemente es demasiado largo). Puede quitar usted mismo esta carpeta del PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1031 "Der Befehl permark wurde nicht aus dem PATH entfernt: Die Deinstallation kann Ihren PATH nicht sicher ändern (er ist wahrscheinlich zu lang). Sie können diesen Ordner selbst aus dem PATH entfernen:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 2052 "permark 命令未从 PATH 中移除：卸载程序无法安全地修改您的 PATH（可能太长）。您可以自行从 PATH 中移除此文件夹：$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1040 "Il comando permark non è stato rimosso dal PATH: il programma di disinstallazione non può modificare il PATH in modo sicuro (probabilmente è troppo lungo). Puoi rimuovere tu stesso questa cartella dal PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1041 "permark コマンドは PATH から削除されませんでした。アンインストーラーは PATH を安全に変更できません (長すぎる可能性があります)。このフォルダーは自分で PATH から削除できます:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1042 "permark 명령이 PATH에서 제거되지 않았습니다. 제거 프로그램이 PATH를 안전하게 변경할 수 없습니다 (너무 길 수 있습니다). 이 폴더는 직접 PATH에서 제거할 수 있습니다:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1036 "La commande permark n'a pas été retirée du PATH : le programme de désinstallation ne peut pas modifier votre PATH sans risque (il est probablement trop long). Vous pouvez retirer vous-même ce dossier du PATH :$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 2070 "O comando permark não foi removido do PATH: o programa de desinstalação não consegue alterar o seu PATH em segurança (provavelmente é demasiado longo). Pode remover esta pasta do PATH manualmente:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1027 "L'ordre permark no s'ha tret del PATH: el desinstal·lador no pot modificar el PATH de manera segura (probablement és massa llarg). Podeu treure vós mateix aquesta carpeta del PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1110 "A orde permark non se quitou do PATH: o desinstalador non pode modificar o seu PATH de forma segura (probablemente é demasiado longo). Pode quitar vostede mesmo este cartafol do PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1048 "Comanda permark nu a fost eliminată din PATH: programul de dezinstalare nu poate modifica PATH-ul în siguranță (probabil este prea lung). Poți elimina singur acest dosar din PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1028 "permark 命令未從 PATH 移除：解除安裝程式無法安全地修改您的 PATH（可能太長）。您可以自行從 PATH 移除此資料夾：$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1057 "Perintah permark tidak dihapus dari PATH: penghapus instalasi tidak dapat mengubah PATH Anda dengan aman (kemungkinan terlalu panjang). Anda dapat menghapus sendiri folder ini dari PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1066 "Lệnh permark chưa được gỡ khỏi PATH: trình gỡ cài đặt không thể thay đổi PATH của bạn một cách an toàn (có lẽ vì quá dài). Bạn có thể tự gỡ thư mục này khỏi PATH:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1049 "Команда permark не удалена из PATH: программа удаления не может безопасно изменить ваш PATH (вероятно, он слишком длинный). Вы можете удалить эту папку из PATH самостоятельно:$\r$\n$\r$\n$PermarkPathDir"
+LangString PathNotRemoved 1055 "permark komutu PATH'ten kaldırılmadı: kaldırma programı PATH değişkeninizi güvenli şekilde değiştiremiyor (muhtemelen çok uzun). Bu klasörü PATH'ten kendiniz kaldırabilirsiniz:$\r$\n$\r$\n$PermarkPathDir"
 
 LangString PermarkAbout 1033 "Read, write and organize Markdown and the files around it."
 LangString PermarkAbout 1046 "Leia, escreva e organize Markdown e os arquivos ao redor dele."
@@ -166,6 +303,11 @@ LangString PermarkAbout 2070 "Ler, escrever e organizar Markdown e os ficheiros 
 LangString PermarkAbout 1027 "Llegiu, escriviu i organitzeu el Markdown i els fitxers que l'acompanyen."
 LangString PermarkAbout 1110 "Lea, escriba e organice Markdown e os ficheiros que o acompañan."
 LangString PermarkAbout 1048 "Citește, scrie și organizează Markdown și fișierele din jurul lui."
+LangString PermarkAbout 1028 "閱讀、撰寫及整理 Markdown 與其周邊檔案。"
+LangString PermarkAbout 1057 "Baca, tulis, dan atur Markdown serta file di sekitarnya."
+LangString PermarkAbout 1066 "Đọc, viết và sắp xếp Markdown cùng các tệp xung quanh."
+LangString PermarkAbout 1049 "Читайте, пишите и упорядочивайте Markdown и файлы вокруг него."
+LangString PermarkAbout 1055 "Markdown'ı ve çevresindeki dosyaları okuyun, yazın ve düzenleyin."
 
 LangString TypeMarkdown 1033 "Markdown document"
 LangString TypeMarkdown 1046 "Documento Markdown"
@@ -180,6 +322,11 @@ LangString TypeMarkdown 2070 "Documento Markdown"
 LangString TypeMarkdown 1027 "Document Markdown"
 LangString TypeMarkdown 1110 "Documento Markdown"
 LangString TypeMarkdown 1048 "Document Markdown"
+LangString TypeMarkdown 1028 "Markdown 文件"
+LangString TypeMarkdown 1057 "Dokumen Markdown"
+LangString TypeMarkdown 1066 "Tài liệu Markdown"
+LangString TypeMarkdown 1049 "Документ Markdown"
+LangString TypeMarkdown 1055 "Markdown belgesi"
 LangString TypeText 1033 "Text document"
 LangString TypeText 1046 "Documento de texto"
 LangString TypeText 3082 "Documento de texto"
@@ -193,6 +340,11 @@ LangString TypeText 2070 "Documento de texto"
 LangString TypeText 1027 "Document de text"
 LangString TypeText 1110 "Documento de texto"
 LangString TypeText 1048 "Document text"
+LangString TypeText 1028 "文字文件"
+LangString TypeText 1057 "Dokumen teks"
+LangString TypeText 1066 "Tài liệu văn bản"
+LangString TypeText 1049 "Текстовый документ"
+LangString TypeText 1055 "Metin belgesi"
 LangString TypeJson 1033 "JSON file"
 LangString TypeJson 1046 "Arquivo JSON"
 LangString TypeJson 3082 "Archivo JSON"
@@ -206,6 +358,11 @@ LangString TypeJson 2070 "Ficheiro JSON"
 LangString TypeJson 1027 "Fitxer JSON"
 LangString TypeJson 1110 "Ficheiro JSON"
 LangString TypeJson 1048 "Fișier JSON"
+LangString TypeJson 1028 "JSON 檔案"
+LangString TypeJson 1057 "File JSON"
+LangString TypeJson 1066 "Tệp JSON"
+LangString TypeJson 1049 "Файл JSON"
+LangString TypeJson 1055 "JSON dosyası"
 LangString TypeXml 1033 "XML file"
 LangString TypeXml 1046 "Arquivo XML"
 LangString TypeXml 3082 "Archivo XML"
@@ -219,6 +376,11 @@ LangString TypeXml 2070 "Ficheiro XML"
 LangString TypeXml 1027 "Fitxer XML"
 LangString TypeXml 1110 "Ficheiro XML"
 LangString TypeXml 1048 "Fișier XML"
+LangString TypeXml 1028 "XML 檔案"
+LangString TypeXml 1057 "File XML"
+LangString TypeXml 1066 "Tệp XML"
+LangString TypeXml 1049 "Файл XML"
+LangString TypeXml 1055 "XML dosyası"
 LangString TypeYaml 1033 "YAML file"
 LangString TypeYaml 1046 "Arquivo YAML"
 LangString TypeYaml 3082 "Archivo YAML"
@@ -232,6 +394,11 @@ LangString TypeYaml 2070 "Ficheiro YAML"
 LangString TypeYaml 1027 "Fitxer YAML"
 LangString TypeYaml 1110 "Ficheiro YAML"
 LangString TypeYaml 1048 "Fișier YAML"
+LangString TypeYaml 1028 "YAML 檔案"
+LangString TypeYaml 1057 "File YAML"
+LangString TypeYaml 1066 "Tệp YAML"
+LangString TypeYaml 1049 "Файл YAML"
+LangString TypeYaml 1055 "YAML dosyası"
 LangString TypeToml 1033 "TOML file"
 LangString TypeToml 1046 "Arquivo TOML"
 LangString TypeToml 3082 "Archivo TOML"
@@ -245,6 +412,11 @@ LangString TypeToml 2070 "Ficheiro TOML"
 LangString TypeToml 1027 "Fitxer TOML"
 LangString TypeToml 1110 "Ficheiro TOML"
 LangString TypeToml 1048 "Fișier TOML"
+LangString TypeToml 1028 "TOML 檔案"
+LangString TypeToml 1057 "File TOML"
+LangString TypeToml 1066 "Tệp TOML"
+LangString TypeToml 1049 "Файл TOML"
+LangString TypeToml 1055 "TOML dosyası"
 LangString TypeIni 1033 "Settings file"
 LangString TypeIni 1046 "Arquivo de configuração"
 LangString TypeIni 3082 "Archivo de configuración"
@@ -258,6 +430,11 @@ LangString TypeIni 2070 "Ficheiro de definições"
 LangString TypeIni 1027 "Fitxer de configuració"
 LangString TypeIni 1110 "Ficheiro de configuración"
 LangString TypeIni 1048 "Fișier de setări"
+LangString TypeIni 1028 "設定檔"
+LangString TypeIni 1057 "File pengaturan"
+LangString TypeIni 1066 "Tệp cài đặt"
+LangString TypeIni 1049 "Файл настроек"
+LangString TypeIni 1055 "Ayar dosyası"
 LangString TypeProperties 1033 "Properties file"
 LangString TypeProperties 1046 "Arquivo de propriedades"
 LangString TypeProperties 3082 "Archivo de propiedades"
@@ -271,12 +448,19 @@ LangString TypeProperties 2070 "Ficheiro de propriedades"
 LangString TypeProperties 1027 "Fitxer de propietats"
 LangString TypeProperties 1110 "Ficheiro de propiedades"
 LangString TypeProperties 1048 "Fișier de proprietăți"
+LangString TypeProperties 1028 "Properties 檔案"
+LangString TypeProperties 1057 "File properties"
+LangString TypeProperties 1066 "Tệp properties"
+LangString TypeProperties 1049 "Файл свойств"
+LangString TypeProperties 1055 "Properties dosyası"
 
 ; ---- State ----------------------------------------------------------------------------------------------------------
 
 ; "1" | "0" ticked on the welcome page; "" when the page did not show (silent, passive, update).
 Var PermarkMenu
 Var PermarkNew
+Var PermarkPath
+Var PermarkDemo
 ; "markdown;json;" ticked on the welcome page; "" when the page did not show.
 Var PermarkTypes
 Var PermarkExe
@@ -284,6 +468,8 @@ Var PermarkLabel
 Var PermarkNewLabel
 Var PermarkMenuBox
 Var PermarkNewBox
+Var PermarkPathBox
+Var PermarkDemoBox
 Var PermarkBoxMarkdown
 Var PermarkBoxText
 Var PermarkBoxJson
@@ -292,6 +478,12 @@ Var PermarkBoxYaml
 Var PermarkBoxToml
 Var PermarkBoxIni
 Var PermarkBoxProperties
+; the PATH steps (see "Command line")
+Var PermarkPathType
+Var PermarkPathValue
+Var PermarkPathKept
+Var PermarkPathFound
+Var PermarkPathDir
 
 ; ---- Open with: ProgIDs, the extensions' lists, the app's capabilities ----------------------------------------------
 
@@ -428,8 +620,8 @@ Var PermarkBoxProperties
 ; ---- Choices --------------------------------------------------------------------------------------------------------
 
 ; VAR ("1" on, "0" off, "" leave alone) when the page did not ask: the recorded choice; a fresh install that cannot ask
-; (silent, passive) takes the default (on); an update with nothing recorded changes nothing.
-!macro PERMARK_RESOLVE VAR CHOICE
+; (silent, passive) takes DEFAULT; an update with nothing recorded changes nothing.
+!macro PERMARK_RESOLVE VAR CHOICE DEFAULT
   ${If} ${VAR} == ""
     ClearErrors
     ReadRegDWORD $R0 HKCU "${PERMARK_APP_KEY}" "${CHOICE}"
@@ -437,7 +629,7 @@ Var PermarkBoxProperties
       ${If} $UpdateMode = 1
         StrCpy ${VAR} ""
       ${Else}
-        StrCpy ${VAR} "1"
+        StrCpy ${VAR} "${DEFAULT}"
       ${EndIf}
     ${Else}
       StrCpy ${VAR} "$R0"
@@ -458,7 +650,7 @@ Var PermarkBoxProperties
 !macroend
 
 !macro PERMARK_ENTRY_APPLY VAR CHOICE OP KEY INSTALLER_TEXT LABELVAR
-  !insertmacro PERMARK_RESOLVE ${VAR} "${CHOICE}"
+  !insertmacro PERMARK_RESOLVE ${VAR} "${CHOICE}" "1"
   ${If} ${VAR} == "1"
     !insertmacro PERMARK_TEXT ${LABELVAR} "${KEY}" "${INSTALLER_TEXT}"
     !insertmacro ${OP} WRITE
@@ -470,35 +662,294 @@ Var PermarkBoxProperties
   ${EndIf}
 !macroend
 
-; ---- The welcome page: short text, the types, the two entries -------------------------------------------------------
-; Everything under the page's title sits in fixed boxes (dialog units, x 120..315, y 42..185 of 193), each as tall as the
-; longest of the six languages needs, so no text can run into the next control (the template's own text label is one 130u
-; box, tall enough to cover the grid below it; ours stays empty and our boxes replace it):
-;   42  the welcome text: two paragraphs, <= 6 lines
-;   96  the title of the check grid, <= 3 lines (it carries the sentence "Windows asks you to confirm")
-;  123  the grid: 2 rows of 4 boxes, widths 52 + 44 + 42 + 57 (the last holds "Properties", the widest label)
-;  150  the two entries, 2 lines each
-; Windows CJK fonts make a line ~8.5u, Latin ~8u; the lines above are measured in all six languages with the dialog font.
+; ---- Command line: the install folder on the user's PATH ------------------------------------------------------------
+; Per user (the install is): HKCU\Environment\Path only, never the machine's PATH. NSIS strings hold NSIS_MAX_STRLEN - 1
+; characters (1023 in the NSIS Tauri uses). ReadRegStr gives "" for a longer value, and a string built past the limit is
+; cut short: writing either back would wipe the person's other entries, the classic installer PATH damage. So the value's
+; type and size are read first, a PATH that could not be rewritten whole is never written, and every write keeps the type
+; the value had (REG_EXPAND_SZ keeps entries such as %USERPROFILE%\bin unexpanded).
 
-!define MUI_WELCOMEPAGE_TEXT " "
-
-; raise a control above the template's tall (empty) text label
-!macro PERMARK_RAISE VAR
-  System::Call 'user32::SetWindowPos(p ${VAR}, p 0, i 0, i 0, i 0, i 0, i 3)'
+; PermarkPathType = "2" REG_EXPAND_SZ | "1" REG_SZ, with PermarkPathValue = the PATH as stored; "0" = no PATH value yet;
+; "" = it cannot be changed safely (too long for an NSIS string, or not text).
+!macro PERMARK_PATH_READ
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  StrCpy $PermarkPathType ""
+  StrCpy $PermarkPathValue ""
+  ; 0x80000001 = HKEY_CURRENT_USER, 0x1 = KEY_QUERY_VALUE; result 2 = ERROR_FILE_NOT_FOUND
+  System::Call 'advapi32::RegOpenKeyExW(p 0x80000001, w "${PERMARK_ENV_KEY}", i 0, i 0x1, *p .r1) i .r0'
+  ${If} $0 = 2
+    StrCpy $PermarkPathType "0"
+  ${ElseIf} $0 = 0
+    ; no buffer: only the type ($2) and the size in bytes with the closing NUL ($3), whatever the length
+    System::Call 'advapi32::RegQueryValueExW(p r1, w "Path", p 0, *i .r2, p 0, *i .r3) i .r0'
+    System::Call 'advapi32::RegCloseKey(p r1)'
+    ${If} $0 = 2
+      StrCpy $PermarkPathType "0"
+    ${ElseIf} $0 = 0
+      IntOp $3 $3 / 2
+      ${If} $3 < ${NSIS_MAX_STRLEN}
+        ${If} $2 = 1
+        ${OrIf} $2 = 2
+          ClearErrors
+          ReadRegStr $PermarkPathValue HKCU "${PERMARK_ENV_KEY}" "Path"
+          ${IfNot} ${Errors}
+            StrCpy $PermarkPathType $2
+          ${EndIf}
+        ${EndIf}
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
 !macroend
+
+; VAR as entries are compared: outer quotes off, variables expanded, closing backslashes off (NSIS compares strings
+; without case, as Windows compares paths). VAR != $R0.
+!macro PERMARK_PATH_NORMAL VAR
+  Push $R0
+  StrCpy $R0 ${VAR} 1
+  ${If} $R0 == '"'
+    StrCpy ${VAR} ${VAR} "" 1
+    StrCpy $R0 ${VAR} "" -1
+    ${If} $R0 == '"'
+      StrCpy ${VAR} ${VAR} -1
+    ${EndIf}
+  ${EndIf}
+  ExpandEnvStrings ${VAR} ${VAR}
+  ${Do}
+    StrCpy $R0 ${VAR} "" -1
+    ${If} $R0 != "\"
+      ${ExitDo}
+    ${EndIf}
+    StrCpy ${VAR} ${VAR} -1
+  ${Loop}
+  Pop $R0
+!macroend
+
+; Walks PermarkPathValue entry by entry. PermarkPathFound = "1" when an entry is the folder PermarkPathDir (normalized);
+; PermarkPathKept = the value without those entries, every other entry and separator as it was (empty ones too).
+!macro PERMARK_PATH_SCAN
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  StrCpy $PermarkPathKept ""
+  StrCpy $PermarkPathFound "0"
+  ; $0 = position, $1 = the character there, $2 = the entry so far, $3 = entries kept
+  StrCpy $0 0
+  StrCpy $2 ""
+  StrCpy $3 0
+  ${Do}
+    StrCpy $1 $PermarkPathValue 1 $0
+    ${If} $1 == ";"
+    ${OrIf} $1 == ""
+      StrCpy $4 $2
+      !insertmacro PERMARK_PATH_NORMAL $4
+      ${If} $4 == $PermarkPathDir
+        StrCpy $PermarkPathFound "1"
+      ${Else}
+        ${If} $3 > 0
+          StrCpy $PermarkPathKept "$PermarkPathKept;"
+        ${EndIf}
+        StrCpy $PermarkPathKept "$PermarkPathKept$2"
+        IntOp $3 $3 + 1
+      ${EndIf}
+      ${If} $1 == ""
+        ${ExitDo}
+      ${EndIf}
+      StrCpy $2 ""
+    ${Else}
+      StrCpy $2 "$2$1"
+    ${EndIf}
+    IntOp $0 $0 + 1
+  ${Loop}
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+!macroend
+
+; Writes PermarkPathValue with the type the PATH had; a new PATH gets REG_EXPAND_SZ, Windows' own type for it.
+!macro PERMARK_PATH_WRITE
+  ClearErrors
+  ${If} $PermarkPathType == "1"
+    WriteRegStr HKCU "${PERMARK_ENV_KEY}" "Path" "$PermarkPathValue"
+  ${Else}
+    WriteRegExpandStr HKCU "${PERMARK_ENV_KEY}" "Path" "$PermarkPathValue"
+  ${EndIf}
+!macroend
+
+; Explorer reloads the environment on this message, so terminals started afterwards see the new PATH (open ones keep
+; theirs). SMTO_ABORTIFHUNG (0x2): a hung window is skipped instead of holding the installer up.
+!macro PERMARK_PATH_ANNOUNCE
+  System::Call 'user32::SendMessageTimeoutW(p ${HWND_BROADCAST}, i ${WM_SETTINGCHANGE}, p 0, w "Environment", i 0x2, i 5000, p 0)'
+!macroend
+
+; Adds $INSTDIR at the end of the PATH unless an entry already is that folder (then nothing is recorded: the entry is not
+; the installer's to remove). The folder written is recorded as \PathEntry.
+!macro PERMARK_PATH_ADD
+  Push $0
+  Push $1
+  StrCpy $PermarkPathDir "$INSTDIR"
+  !insertmacro PERMARK_PATH_NORMAL $PermarkPathDir
+  !insertmacro PERMARK_PATH_READ
+  StrCpy $PermarkPathFound "0"
+  ${If} $PermarkPathType != ""
+    !insertmacro PERMARK_PATH_SCAN
+  ${EndIf}
+  ${If} $PermarkPathFound != "1"
+    ; the new value (old value, ";", folder) must stay readable by ReadRegStr, which holds NSIS_MAX_STRLEN - 2
+    ; characters (it keeps one for the closing NUL): else no later uninstall could remove the entry
+    StrLen $0 $PermarkPathValue
+    StrLen $1 $PermarkPathDir
+    IntOp $0 $0 + $1
+    IntOp $0 $0 + 2
+    ; a ";" in the folder's name would split it into two entries
+    ${StrLoc} $1 "$PermarkPathDir" ";" ">"
+    ${If} $PermarkPathType == ""
+    ${OrIf} $0 >= ${NSIS_MAX_STRLEN}
+    ${OrIf} $1 != ""
+      DetailPrint "$(PathNotAdded)"
+      ${If} $PassiveMode <> 1
+        MessageBox MB_ICONINFORMATION|MB_OK "$(PathNotAdded)" /SD IDOK
+      ${EndIf}
+    ${Else}
+      ${If} $PermarkPathValue != ""
+        StrCpy $1 $PermarkPathValue "" -1
+        ${If} $1 != ";"
+          StrCpy $PermarkPathValue "$PermarkPathValue;"
+        ${EndIf}
+      ${EndIf}
+      StrCpy $PermarkPathValue "$PermarkPathValue$PermarkPathDir"
+      !insertmacro PERMARK_PATH_WRITE
+      ${IfNot} ${Errors}
+        WriteRegStr HKCU "${PERMARK_APP_KEY}" "${PERMARK_PATH_ENTRY}" "$PermarkPathDir"
+        !insertmacro PERMARK_PATH_ANNOUNCE
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
+  Pop $1
+  Pop $0
+!macroend
+
+; Removes the recorded entry (every entry that is that folder) and the record. A PATH that cannot be rewritten whole is
+; left as it is and the record kept, so a later uninstall can still remove the entry. A PATH left empty is deleted: only
+; the installer's entry was in it.
+!macro PERMARK_PATH_REMOVE
+  ReadRegStr $PermarkPathDir HKCU "${PERMARK_APP_KEY}" "${PERMARK_PATH_ENTRY}"
+  ${If} $PermarkPathDir != ""
+    !insertmacro PERMARK_PATH_NORMAL $PermarkPathDir
+    !insertmacro PERMARK_PATH_READ
+    ${If} $PermarkPathType == ""
+      DetailPrint "$(PathNotRemoved)"
+      ${If} $PassiveMode <> 1
+        MessageBox MB_ICONINFORMATION|MB_OK "$(PathNotRemoved)" /SD IDOK
+      ${EndIf}
+    ${Else}
+      ${If} $PermarkPathType != "0"
+        !insertmacro PERMARK_PATH_SCAN
+        ${If} $PermarkPathFound == "1"
+          ${If} $PermarkPathKept == ""
+            DeleteRegValue HKCU "${PERMARK_ENV_KEY}" "Path"
+          ${Else}
+            StrCpy $PermarkPathValue $PermarkPathKept
+            !insertmacro PERMARK_PATH_WRITE
+          ${EndIf}
+          !insertmacro PERMARK_PATH_ANNOUNCE
+        ${EndIf}
+      ${EndIf}
+      DeleteRegValue HKCU "${PERMARK_APP_KEY}" "${PERMARK_PATH_ENTRY}"
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
+!macroend
+
+; Asked on the welcome page: done as ticked. Not asked: an update leaves PATH as it is (same folder; an entry the person
+; removed by hand stays removed); a silent | passive install adds the entry only when an earlier install recorded it on.
+!macro PERMARK_PATH_APPLY
+  ${If} $PermarkPath != ""
+  ${OrIf} $UpdateMode <> 1
+    !insertmacro PERMARK_RESOLVE $PermarkPath "${PERMARK_PATH_CHOICE}" "0"
+    ${If} $PermarkPath == "1"
+      !insertmacro PERMARK_PATH_ADD
+      WriteRegDWORD HKCU "${PERMARK_APP_KEY}" "${PERMARK_PATH_CHOICE}" 1
+    ${Else}
+      !insertmacro PERMARK_PATH_REMOVE
+      WriteRegDWORD HKCU "${PERMARK_APP_KEY}" "${PERMARK_PATH_CHOICE}" 0
+    ${EndIf}
+  ${EndIf}
+!macroend
+
+; ---- Demo pages: the sample documents in Documents ------------------------------------------------------------------
+; The installed copy ($INSTDIR\demo, bundle.resources in tauri.conf.json) goes to Documents\PerMark Demo, the same place
+; the app's Welcome screen copies it to (crates/core/src/demo). Only into a free place: a file or folder already there is
+; left as it is. The copy is built under a fresh temp name beside it and renamed into place only when whole (a rename
+; never replaces a folder), so a failed copy leaves no half folder. A test installer may define the parent folder.
+
+!define PERMARK_DEMO_FOLDER "PerMark Demo"
+!define PERMARK_DEMO_SOURCE "$INSTDIR\demo"
+!ifndef PERMARK_DEMO_PARENT
+  !define PERMARK_DEMO_PARENT "$DOCUMENTS"
+!endif
+
+!macro PERMARK_DEMO_COPY
+  Push $0
+  ${IfNot} ${FileExists} "${PERMARK_DEMO_PARENT}\${PERMARK_DEMO_FOLDER}"
+  ${AndIf} ${FileExists} "${PERMARK_DEMO_SOURCE}\README.md"
+    ; an empty file with a name no one else has, which becomes the temp folder
+    GetTempFileName $0 "${PERMARK_DEMO_PARENT}"
+    ${If} $0 != ""
+      Delete $0
+      ClearErrors
+      CreateDirectory $0
+      CopyFiles /SILENT "${PERMARK_DEMO_SOURCE}\*.*" $0
+      ${IfNot} ${Errors}
+        Rename $0 "${PERMARK_DEMO_PARENT}\${PERMARK_DEMO_FOLDER}"
+      ${EndIf}
+      ${If} ${Errors}
+        RMDir /r $0
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
+  Pop $0
+!macroend
+
+; ---- The welcome page: short text, the types, the three entries, the demo pages -------------------------------------
+; Everything under the page's title sits in fixed boxes (dialog units, x 120..315, y 42..192 of 193), each as tall as the
+; longest language needs, so no text can run into the next control:
+;   42  the welcome text: two paragraphs on consecutive lines, <= 5 lines
+;   86  the title of the check grid, <= 3 lines (it carries the sentence "Windows asks you to confirm")
+;  112  the grid: 2 rows of 4 boxes, widths 52 + 44 + 42 + 57 (the last holds "Properties", the widest label)
+;  136  the two file manager entries, 2 lines each
+;  170  the PATH option and the demo pages, 1 line each (short words: no language wraps them)
+; A line of text in the dialog font is 8u; CJK glyphs drawn from a fallback font make it ~8.5u.
+; The template's own text label (one white 130u box from 45u down) is hidden before ours are made. Left visible, it
+; repaints over every static control it overlaps on a real screen, whatever the z-order: only the top 3u of the welcome
+; text and none of the grid title showed (an off-screen PrintWindow capture draws in z-order and hides the fault).
+
+; the template's label gets this text, so that PermarkWelcomeShow can find it by its text
+!define MUI_WELCOMEPAGE_TEXT " "
 
 !macro PERMARK_LABEL Y H TEXT
   ${NSD_CreateLabel} 120u ${Y} 195u ${H} "${TEXT}"
   Pop $0
   SetCtlColors $0 "000000" "FFFFFF"
-  !insertmacro PERMARK_RAISE $0
 !macroend
 
 !macro PERMARK_TYPE_BOX VAR X Y W LABEL NAME
   ${NSD_CreateCheckbox} ${X} ${Y} ${W} 11u "${LABEL}"
   Pop ${VAR}
   SetCtlColors ${VAR} "000000" "FFFFFF"
-  !insertmacro PERMARK_RAISE ${VAR}
   ; $R9 = ";markdown;json;" (recorded | default); StrLoc is declared by the template
   ${StrLoc} $R8 "$R9" "${NAME};" ">"
   ${If} $R8 != ""
@@ -513,18 +964,28 @@ Var PermarkBoxProperties
   ${EndIf}
 !macroend
 
-!macro PERMARK_ENTRY_BOX VAR Y H LABEL CHOICE
+; ticked as recorded by an earlier install, else as DEFAULT (1 | 0)
+!macro PERMARK_ENTRY_BOX VAR Y H LABEL CHOICE DEFAULT
   ClearErrors
   ReadRegDWORD $0 HKCU "${PERMARK_APP_KEY}" "${CHOICE}"
   ${If} ${Errors}
-    StrCpy $0 1
+    StrCpy $0 ${DEFAULT}
   ${EndIf}
   ${NSD_CreateCheckbox} 120u ${Y} 195u ${H} "${LABEL}"
   Pop ${VAR}
   SetCtlColors ${VAR} "000000" "FFFFFF"
-  !insertmacro PERMARK_RAISE ${VAR}
   ${If} $0 <> 0
     ${NSD_Check} ${VAR}
+  ${EndIf}
+!macroend
+
+; VAR = "1" | "0" as BOX was left
+!macro PERMARK_ENTRY_READ BOX VAR
+  ${NSD_GetState} ${BOX} $0
+  ${If} $0 = ${BST_CHECKED}
+    StrCpy ${VAR} "1"
+  ${Else}
+    StrCpy ${VAR} "0"
   ${EndIf}
 !macroend
 
@@ -541,20 +1002,31 @@ Function PermarkWelcomeShow
   StrCpy $R9 ";$R9"
   ClearErrors
 
-  !insertmacro PERMARK_LABEL 42u 52u "$(PermarkWelcome)"
-  !insertmacro PERMARK_LABEL 96u 25u "$(PermarkTypesTitle)"
+  !insertmacro PERMARK_LABEL 42u 43u "$(PermarkWelcome)"
+  ; the template's text label: in the same page as ours, the static control whose text is " " (see above)
+  System::Call 'user32::GetParent(p r0) p .r0'
+  FindWindow $0 "Static" " " $0
+  ${If} $0 <> 0
+    ShowWindow $0 ${SW_HIDE}
+  ${EndIf}
+  !insertmacro PERMARK_LABEL 86u 25u "$(PermarkTypesTitle)"
 
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxMarkdown 120u 123u 52u "Markdown" ";markdown"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxText 172u 123u 44u "$(PermarkText)" ";text"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxJson 216u 123u 42u "JSON" ";json"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxXml 258u 123u 57u "XML" ";xml"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxYaml 120u 134u 52u "YAML" ";yaml"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxToml 172u 134u 44u "TOML" ";toml"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxIni 216u 134u 42u "INI" ";ini"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxProperties 258u 134u 57u "$(PermarkProperties)" ";properties"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxMarkdown 120u 112u 52u "Markdown" ";markdown"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxText 172u 112u 44u "$(PermarkText)" ";text"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxJson 216u 112u 42u "JSON" ";json"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxXml 258u 112u 57u "XML" ";xml"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxYaml 120u 123u 52u "YAML" ";yaml"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxToml 172u 123u 44u "TOML" ";toml"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxIni 216u 123u 42u "INI" ";ini"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxProperties 258u 123u 57u "$(PermarkProperties)" ";properties"
 
-  !insertmacro PERMARK_ENTRY_BOX $PermarkMenuBox 150u 16u "$(OpenWithMenuOption)" "${PERMARK_MENU_CHOICE}"
-  !insertmacro PERMARK_ENTRY_BOX $PermarkNewBox 168u 17u "$(NewMarkdownOption)" "${PERMARK_NEW_CHOICE}"
+  !insertmacro PERMARK_ENTRY_BOX $PermarkMenuBox 136u 16u "$(OpenWithMenuOption)" "${PERMARK_MENU_CHOICE}" 1
+  !insertmacro PERMARK_ENTRY_BOX $PermarkNewBox 153u 17u "$(NewMarkdownOption)" "${PERMARK_NEW_CHOICE}" 1
+  !insertmacro PERMARK_ENTRY_BOX $PermarkPathBox 170u 11u "$(PathOption)" "${PERMARK_PATH_CHOICE}" 0
+  ; unticked whatever an earlier install chose: nothing lands in Documents unasked
+  ${NSD_CreateCheckbox} 120u 181u 195u 11u "$(DemoOption)"
+  Pop $PermarkDemoBox
+  SetCtlColors $PermarkDemoBox "000000" "FFFFFF"
   Pop $R9
   Pop $R8
   Pop $0
@@ -562,18 +1034,10 @@ FunctionEnd
 
 Function PermarkWelcomeLeave
   Push $0
-  ${NSD_GetState} $PermarkMenuBox $0
-  ${If} $0 = ${BST_CHECKED}
-    StrCpy $PermarkMenu "1"
-  ${Else}
-    StrCpy $PermarkMenu "0"
-  ${EndIf}
-  ${NSD_GetState} $PermarkNewBox $0
-  ${If} $0 = ${BST_CHECKED}
-    StrCpy $PermarkNew "1"
-  ${Else}
-    StrCpy $PermarkNew "0"
-  ${EndIf}
+  !insertmacro PERMARK_ENTRY_READ $PermarkMenuBox $PermarkMenu
+  !insertmacro PERMARK_ENTRY_READ $PermarkNewBox $PermarkNew
+  !insertmacro PERMARK_ENTRY_READ $PermarkPathBox $PermarkPath
+  !insertmacro PERMARK_ENTRY_READ $PermarkDemoBox $PermarkDemo
   ; "none;" marks "the page asked and nothing was ticked" (not the same as "not asked")
   StrCpy $PermarkTypes ""
   !insertmacro PERMARK_TYPE_READ $PermarkBoxMarkdown "markdown"
@@ -593,6 +1057,63 @@ FunctionEnd
 ; The welcome page is the first page the template inserts after this file: these apply to it.
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW PermarkWelcomeShow
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE PermarkWelcomeLeave
+
+; ---- The template's other pages -------------------------------------------------------------------------------------
+; Everything below changes only how the template's pages are laid out or worded; it must stay after every control this
+; file creates itself.
+
+; The reinstall page (an earlier install found) gives its text a 3-line label (0 0 100% 24u) and each option a one-line
+; radio button (30u 50u|70u -30u 8u). Most translations need 4 lines for the downgrade text and 2 for "Do not uninstall
+; (...)", so their ends were cut off. The page has no show callback, so the two control makers are redefined for the rest
+; of the template: exactly those boxes are made taller (text up to 5 lines, buttons up to 2 lines: BS_MULTILINE is in
+; nsDialogs' radio style, and 18u stays above the next button at +20u); every other control passes through unchanged.
+!macro PERMARK_TEMPLATE_LABEL X Y W H TEXT
+  !if "${X} ${Y} ${W} ${H}" == "0 0 100% 24u"
+    nsDialogs::CreateControl ${__NSD_Label_CLASS} ${__NSD_Label_STYLE} ${__NSD_Label_EXSTYLE} 0 0 100% 40u "${TEXT}"
+  !else
+    nsDialogs::CreateControl ${__NSD_Label_CLASS} ${__NSD_Label_STYLE} ${__NSD_Label_EXSTYLE} ${X} ${Y} ${W} ${H} "${TEXT}"
+  !endif
+!macroend
+!macro PERMARK_TEMPLATE_RADIO X Y W H TEXT
+  !if "${X} ${W} ${H}" == "30u -30u 8u"
+    nsDialogs::CreateControl ${__NSD_RadioButton_CLASS} ${__NSD_RadioButton_STYLE} ${__NSD_RadioButton_EXSTYLE} ${X} ${Y} ${W} 18u "${TEXT}"
+  !else
+    nsDialogs::CreateControl ${__NSD_RadioButton_CLASS} ${__NSD_RadioButton_STYLE} ${__NSD_RadioButton_EXSTYLE} ${X} ${Y} ${W} ${H} "${TEXT}"
+  !endif
+!macroend
+!define /redef NSD_CreateLabel "!insertmacro PERMARK_TEMPLATE_LABEL"
+!define /redef NSD_CreateRadioButton "!insertmacro PERMARK_TEMPLATE_RADIO"
+
+; The uninstall confirm page labels the folder field with a one-line box about 55u wide: NSIS' own words for
+; "Uninstalling from:" are cut to their first word in Spanish, French, Catalan and Indonesian. Words that fit, per language.
+!define MUI_UNCONFIRMPAGE_TEXT_LOCATION "$(PermarkUninstallFrom)"
+LangString PermarkUninstallFrom 1033 "Uninstalling from:"
+LangString PermarkUninstallFrom 1046 "Desinstalando de:"
+LangString PermarkUninstallFrom 3082 "Desinstalando de:"
+LangString PermarkUninstallFrom 1031 "Wird entfernt aus:"
+LangString PermarkUninstallFrom 2052 "卸载目录:"
+LangString PermarkUninstallFrom 1040 "Rimozione da:"
+LangString PermarkUninstallFrom 1041 "アンインストール元:"
+LangString PermarkUninstallFrom 1042 "제거 대상:"
+LangString PermarkUninstallFrom 1036 "Dossier :"
+LangString PermarkUninstallFrom 2070 "A desinstalar de:"
+LangString PermarkUninstallFrom 1027 "Carpeta:"
+LangString PermarkUninstallFrom 1110 "Desinstalando de:"
+LangString PermarkUninstallFrom 1048 "Dezinstalare din:"
+LangString PermarkUninstallFrom 1028 "解除安裝目錄:"
+LangString PermarkUninstallFrom 1057 "Hapus dari:"
+LangString PermarkUninstallFrom 1066 "Đang gỡ bỏ khỏi:"
+LangString PermarkUninstallFrom 1049 "Удаление из:"
+LangString PermarkUninstallFrom 1055 "Kaldırılan yer:"
+
+; Chinese and Korean: NSIS' language files name fonts that draw poorly or may be missing (SimSun's synthesized bold
+; blots "M" in the titles; PMingLiU and Gulim are optional Windows fonts, and their stand-ins lack glyphs such as “ ”).
+; The UI fonts every Windows 10 and 11 installs instead. A bigger font makes every dialog unit bigger, but the template
+; places the uninstall page's "Delete the application data" box in pixels (100 px down): YaHei's tall lines at 9 pt
+; pushed the folder field onto it, so YaHei is 8 pt.
+SetFont /LANG=2052 "Microsoft YaHei UI" 8
+SetFont /LANG=1028 "Microsoft JhengHei UI" 9
+SetFont /LANG=1042 "Malgun Gothic" 9
 
 ; ---- Hooks ----------------------------------------------------------------------------------------------------------
 
@@ -624,6 +1145,16 @@ FunctionEnd
     StrCpy $R8 "gl"
   ${ElseIf} $LANGUAGE = 1048
     StrCpy $R8 "ro"
+  ${ElseIf} $LANGUAGE = 1028
+    StrCpy $R8 "zh-TW"
+  ${ElseIf} $LANGUAGE = 1057
+    StrCpy $R8 "id"
+  ${ElseIf} $LANGUAGE = 1066
+    StrCpy $R8 "vi"
+  ${ElseIf} $LANGUAGE = 1049
+    StrCpy $R8 "ru"
+  ${ElseIf} $LANGUAGE = 1055
+    StrCpy $R8 "tr"
   ${ElseIf} $LANGUAGE = 1033
     StrCpy $R8 "en"
   ${EndIf}
@@ -644,6 +1175,13 @@ FunctionEnd
 
   !insertmacro PERMARK_ENTRY_APPLY $PermarkMenu "${PERMARK_MENU_CHOICE}" PERMARK_MENU "Directory\shell\PerMark" "$(OpenWithMenuLabel)" $PermarkLabel
   !insertmacro PERMARK_ENTRY_APPLY $PermarkNew "${PERMARK_NEW_CHOICE}" PERMARK_NEW "Directory\shell\PerMarkNew" "$(NewMarkdownLabel)" $PermarkNewLabel
+  !insertmacro PERMARK_PATH_APPLY
+
+  ; the demo pages: only when ticked on the welcome page ("" when it did not show: silent, passive, update)
+  ${If} $PermarkDemo == "1"
+  ${AndIf} $UpdateMode <> 1
+    !insertmacro PERMARK_DEMO_COPY
+  ${EndIf}
 
   !insertmacro UPDATEFILEASSOC
 
@@ -673,6 +1211,8 @@ FunctionEnd
     !insertmacro PERMARK_TYPES DELETE
     !insertmacro PERMARK_CAPABILITIES_DELETE
     !insertmacro UPDATEFILEASSOC
+    ; before the application data goes: the record names the PATH entry to remove (the choice itself stays recorded)
+    !insertmacro PERMARK_PATH_REMOVE
   ${EndIf}
 
   ; "Delete the application data": the recorded language and choices, and PerMark's folders in the profile

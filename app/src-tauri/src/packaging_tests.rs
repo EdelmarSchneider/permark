@@ -1,6 +1,8 @@
 //! The packaging files name each other: the Store manifest, the shell extension, the packaging script, the Store overlay,
 //! the platform overlays and the installer. Nothing here installs anything; these tests keep them from drifting apart.
 
+use std::collections::BTreeMap;
+
 use permark_core::desktop::FileGroup;
 
 const MANIFEST: &str = include_str!("../msstore/AppxManifest.xml");
@@ -13,8 +15,38 @@ const MACOS: &str = include_str!("../tauri.macos.conf.json");
 const LINUX: &str = include_str!("../tauri.linux.conf.json");
 const DESKTOP: &str = include_str!("../linux/permark.desktop");
 const WORKSPACE: &str = include_str!("../Cargo.toml");
-/// Installer languages Tauri does not translate (`bundle.windows.nsis.customLanguageFiles`).
-const CUSTOM_LANGUAGES: [(&str, &str); 3] = [
+const HOOKS: &str = include_str!("../installer/hooks.nsh");
+/// Windows language ids of `bundle.windows.nsis.languages`, in the same order.
+const INSTALLER_LANGUAGE_IDS: [u32; 18] = [
+    1033, 1046, 3082, 1031, 2052, 1040, 1041, 1042, 1036, 2070, 1027, 1110, 1048, 1028, 1057, 1066,
+    1049, 1055,
+];
+/// Installer languages Tauri does not translate, or translates with errors, and languages whose stock NSIS page texts
+/// need other words (`bundle.windows.nsis.customLanguageFiles`).
+const CUSTOM_LANGUAGES: [(&str, &str); 15] = [
+    ("German", include_str!("../installer/languages/German.nsh")),
+    (
+        "PortugueseBR",
+        include_str!("../installer/languages/PortugueseBR.nsh"),
+    ),
+    (
+        "SpanishInternational",
+        include_str!("../installer/languages/SpanishInternational.nsh"),
+    ),
+    (
+        "SimpChinese",
+        include_str!("../installer/languages/SimpChinese.nsh"),
+    ),
+    (
+        "Japanese",
+        include_str!("../installer/languages/Japanese.nsh"),
+    ),
+    ("Korean", include_str!("../installer/languages/Korean.nsh")),
+    ("French", include_str!("../installer/languages/French.nsh")),
+    (
+        "Portuguese",
+        include_str!("../installer/languages/Portuguese.nsh"),
+    ),
     (
         "Catalan",
         include_str!("../installer/languages/Catalan.nsh"),
@@ -26,6 +58,22 @@ const CUSTOM_LANGUAGES: [(&str, &str); 3] = [
     (
         "Romanian",
         include_str!("../installer/languages/Romanian.nsh"),
+    ),
+    (
+        "TradChinese",
+        include_str!("../installer/languages/TradChinese.nsh"),
+    ),
+    (
+        "Indonesian",
+        include_str!("../installer/languages/Indonesian.nsh"),
+    ),
+    (
+        "Vietnamese",
+        include_str!("../installer/languages/Vietnamese.nsh"),
+    ),
+    (
+        "Turkish",
+        include_str!("../installer/languages/Turkish.nsh"),
     ),
 ];
 
@@ -186,6 +234,36 @@ fn the_third_party_notices_ship_in_every_installer_and_in_the_store_package() {
 }
 
 #[test]
+fn the_demo_pages_ship_in_every_installer_and_in_the_store_package() {
+    use permark_core::demo::{FOLDER, RESOURCE};
+    // the repository's `demo/` lands as `<resources>/demo`, where the app looks for it
+    let config = json(CONFIG);
+    assert_eq!(config["bundle"]["resources"]["../../demo"], RESOURCE);
+    // the Store package is laid out by hand: the script copies the folder beside the program, as the installers do
+    assert!(SCRIPT.contains("$Demo = Join-Path $Root 'demo'"));
+    assert!(SCRIPT.contains("Copy-Item $Demo (Join-Path $Stage 'demo') -Recurse"));
+    // the Windows installer copies the same folder to the same place the app does
+    assert!(HOOKS.contains(&format!(r#"!define PERMARK_DEMO_FOLDER "{FOLDER}""#)));
+    assert!(HOOKS.contains(&format!(r#""$INSTDIR\{RESOURCE}""#)));
+}
+
+#[test]
+fn the_installer_copies_the_demo_pages_only_when_ticked_and_never_removes_them() {
+    // the box starts unticked whatever an earlier install chose: nothing lands in Documents unasked
+    assert!(HOOKS.contains(r#"${NSD_CreateCheckbox} 120u 181u 195u 11u "$(DemoOption)""#));
+    assert!(!HOOKS.contains("${NSD_Check} $PermarkDemoBox"));
+    assert!(!HOOKS.contains(r#"WriteRegDWORD HKCU "${PERMARK_APP_KEY}" "Demo"#));
+    // "" when the page did not show (silent, passive, update): only "1" copies
+    assert!(HOOKS.contains(r#"${If} $PermarkDemo == "1""#));
+    // the copy is the person's from then on: no uninstall step names it
+    let uninstall = HOOKS
+        .split("!macro NSIS_HOOK_POSTUNINSTALL")
+        .nth(1)
+        .expect("the uninstall hook");
+    assert!(!uninstall.contains("DEMO") && !uninstall.contains("Demo"));
+}
+
+#[test]
 fn the_custom_installer_languages_are_listed_and_carry_both_spellings_of_the_install_choice() {
     let config = json(CONFIG);
     let listed = config["bundle"]["windows"]["nsis"]["customLanguageFiles"]
@@ -206,4 +284,172 @@ fn the_custom_installer_languages_are_listed_and_carry_both_spellings_of_the_ins
         assert!(new.is_some(), "{name}.nsh lacks chooseHowToInstall");
         assert_eq!(new, value("choowHowToInstall"), "{name}.nsh");
     }
+}
+
+/// The texts of Tauri's NSIS template (Tauri CLI 2.12.3 English.nsh, plus the 2.12.4 spelling `chooseHowToInstall`).
+const TEMPLATE_TEXTS: [&str; 28] = [
+    "addOrReinstall",
+    "alreadyInstalled",
+    "alreadyInstalledLong",
+    "appRunning",
+    "appRunningOkKill",
+    "chooseMaintenanceOption",
+    "chooseHowToInstall",
+    "choowHowToInstall",
+    "createDesktop",
+    "dontUninstall",
+    "dontUninstallDowngrade",
+    "failedToKillApp",
+    "installingWebview2",
+    "newerVersionInstalled",
+    "older",
+    "olderOrUnknownVersionInstalled",
+    "silentDowngrades",
+    "unableToUninstall",
+    "uninstallApp",
+    "uninstallBeforeInstalling",
+    "unknown",
+    "webview2AbortError",
+    "webview2DownloadError",
+    "webview2DownloadSuccess",
+    "webview2Downloading",
+    "webview2InstallError",
+    "webview2InstallSuccess",
+    "deleteAppData",
+];
+
+#[test]
+fn every_custom_installer_language_has_every_text_of_the_template() {
+    // a missing one falls back to English, or to nothing inside a sentence ("Eine -Version von ...")
+    for (name, text) in CUSTOM_LANGUAGES {
+        let keys: std::collections::BTreeSet<&str> = text
+            .lines()
+            .filter_map(|line| line.strip_prefix("LangString "))
+            .filter_map(|rest| rest.split(' ').next())
+            .collect();
+        let expected: std::collections::BTreeSet<&str> = TEMPLATE_TEXTS.into_iter().collect();
+        let missing: Vec<&&str> = expected.difference(&keys).collect();
+        assert!(missing.is_empty(), "{name}.nsh lacks {missing:?}");
+        // anything else replaces a stock NSIS text of that language: a Modern UI page text (`MUI_...`) or one of
+        // NSIS' own (`^...`); the file is included after the language is inserted, so the later text wins
+        for key in keys.difference(&expected) {
+            assert!(
+                key.starts_with("MUI_") || key.starts_with('^'),
+                "{name}.nsh: {key} is neither a template text nor a stock NSIS text"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_text_of_a_custom_installer_language_is_set_for_that_language_with_the_product_name() {
+    for (name, text) in CUSTOM_LANGUAGES {
+        let id = format!("${{LANG_{}}}", name.to_uppercase());
+        for line in text.lines().filter(|line| line.starts_with("LangString ")) {
+            // `LangString <key> ${LANG_<NAME>} "<text>"`
+            assert_eq!(
+                line.split(' ').nth(2),
+                Some(id.as_str()),
+                "{name}.nsh: {line}"
+            );
+            // Tauri fills no placeholder in a language file: `{{product_name}}` would show as typed
+            assert!(!line.contains("{{"), "{name}.nsh: {line}");
+        }
+    }
+}
+
+#[test]
+fn every_installer_text_is_whole_on_its_line() {
+    // `LangString <key> <language> "<text>"`: closed at the end of its line, a quote inside written `$\"`, a line break
+    // `$\r$\n` | `$\n`. A raw line break inside a text (a `$\n` typed as `$` and Enter) fails the whole makensis run.
+    let files = std::iter::once(("hooks", HOOKS)).chain(CUSTOM_LANGUAGES);
+    for (name, text) in files {
+        for (index, line) in text.lines().enumerate() {
+            // a Windows checkout may end lines with CRLF
+            let line = line.trim_end_matches('\r');
+            let at = format!("{name}.nsh:{}", index + 1);
+            let Some(rest) = line.strip_prefix("LangString ") else {
+                // a language file holds only comments and texts
+                if name != "hooks" {
+                    assert!(line.is_empty() || line.starts_with(';'), "{at}: {line}");
+                }
+                continue;
+            };
+            let quoted = rest.splitn(3, ' ').nth(2).unwrap_or_default();
+            let inner = quoted
+                .strip_prefix('"')
+                .and_then(|text| text.strip_suffix('"'));
+            let Some(inner) = inner else {
+                panic!("{at}: the text is not closed on its line");
+            };
+            assert!(
+                !inner.replace("$\\\"", "").contains('"'),
+                "{at}: a quote inside the text is not written $\\\""
+            );
+            assert!(
+                !inner.trim_end_matches("$$").ends_with('$'),
+                "{at}: the text ends with a bare $"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_text_of_the_installer_hooks_is_in_every_installer_language() {
+    let config = json(CONFIG);
+    let languages = config["bundle"]["windows"]["nsis"]["languages"]
+        .as_array()
+        .map_or(0, Vec::len);
+    assert_eq!(languages, INSTALLER_LANGUAGE_IDS.len());
+    // `LangString <key> <language id> "<text>"`
+    let mut texts: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
+    for line in HOOKS.lines() {
+        let Some(rest) = line.strip_prefix("LangString ") else {
+            continue;
+        };
+        let mut parts = rest.splitn(3, ' ');
+        let (Some(key), Some(id)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        let id = id.parse().unwrap_or(0);
+        texts.entry(key).or_default().push(id);
+    }
+    // the PATH option and what it tells the person when it leaves the PATH alone
+    for key in ["PathOption", "PathNotAdded", "PathNotRemoved", "DemoOption"] {
+        assert!(texts.contains_key(key), "hooks.nsh lacks {key}");
+    }
+    let mut expected = INSTALLER_LANGUAGE_IDS.to_vec();
+    expected.sort_unstable();
+    for (key, mut ids) in texts {
+        ids.sort_unstable();
+        assert_eq!(ids, expected, "{key}");
+    }
+}
+
+#[test]
+fn the_path_option_is_off_by_default_per_user_and_never_cuts_a_long_path() {
+    // the user's PATH only: nothing machine-wide, no administrator rights
+    assert!(HOOKS.contains(r#"!define PERMARK_ENV_KEY "Environment""#));
+    assert!(!HOOKS.contains("HKLM"));
+    // off unless an earlier install recorded it on: on the welcome page and in a silent install
+    assert!(HOOKS.contains(r#""${PERMARK_PATH_CHOICE}" 0"#));
+    assert!(HOOKS.contains(r#"PERMARK_RESOLVE $PermarkPath "${PERMARK_PATH_CHOICE}" "0""#));
+    // the size is read before the text, and the new value has to fit an NSIS string
+    assert!(HOOKS.contains("RegQueryValueExW"));
+    assert!(HOOKS.contains("${NSIS_MAX_STRLEN}"));
+    // the PATH is written in one place only, with the type it had
+    let writes: Vec<&str> = HOOKS
+        .lines()
+        .map(str::trim_start)
+        .filter(|line| line.contains(r#""${PERMARK_ENV_KEY}" "Path""#) && line.starts_with("Write"))
+        .collect();
+    assert_eq!(writes.len(), 2, "{writes:?}");
+    assert!(writes.iter().any(|line| line.starts_with("WriteRegStr ")));
+    assert!(writes
+        .iter()
+        .any(|line| line.starts_with("WriteRegExpandStr ")));
+    // terminals started afterwards see the change
+    assert!(HOOKS.contains(
+        r#"SendMessageTimeoutW(p ${HWND_BROADCAST}, i ${WM_SETTINGCHANGE}, p 0, w "Environment""#
+    ));
 }

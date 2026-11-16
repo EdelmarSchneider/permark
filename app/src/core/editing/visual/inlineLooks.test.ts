@@ -21,6 +21,7 @@ vi.mock("../../doc/codeRefs", async (load) => {
 let core: Core;
 const files = new Set<string>();
 let prompt = false;
+let marks = true;
 let askedLinks: string[] = [];
 let askedRefs: string[] = [];
 let forgets = 0;
@@ -42,6 +43,7 @@ const host: LooksHost = {
     return Promise.resolve(written.map((w) => (files.has(w) ? [w] : [])));
   },
   promptText: () => prompt,
+  linkMarks: () => marks,
   refTitle: (paths, line) => `open ${paths.join(",")}:${line ?? ""}`,
   missingTitle: (path) => `not found ${path}`,
   openRef: (target) => opened.push(target),
@@ -71,6 +73,7 @@ beforeEach(() => {
   files.clear();
   for (const f of ["there.md", "src/main.rs", "src/lib.rs", "docs/guide.md"]) files.add(f);
   prompt = false;
+  marks = true;
   askedLinks = [];
   askedRefs = [];
   forgets = 0;
@@ -129,6 +132,27 @@ describe("links to missing files", () => {
     expect(dom().querySelectorAll(".is-missing")).toHaveLength(1);
     // only links to files are asked
     expect(askedLinks.sort()).toEqual(["gone.md", "there.md"]);
+  });
+
+  it("are drawn only while the host marks missing links, and follow a switch without a reload", async () => {
+    marks = false;
+    await load("[a](lost.md) and [b](there.md)");
+    expect(dom().querySelector(".is-missing")).toBeNull();
+    expect(dom().querySelector('a[href="lost.md"] [title]')).toBeNull();
+    // nothing marked, nothing asked
+    expect(askedLinks).toEqual([]);
+    marks = true;
+    repaintLooks(core.view);
+    await settle();
+    expect(dom().querySelector('a[href="lost.md"]')?.classList.contains("is-missing")).toBe(true);
+    expect(dom().querySelector('a[href="lost.md"] [title]')?.getAttribute("title")).toBe(
+      "not found lost.md",
+    );
+    marks = false;
+    repaintLooks(core.view);
+    await settle();
+    expect(dom().querySelector(".is-missing")).toBeNull();
+    expect(dom().querySelector('a[href="lost.md"] [title]')).toBeNull();
   });
 
   it("follow an edited href and files that appear", async () => {

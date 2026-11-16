@@ -117,8 +117,12 @@ export function failureKey(reason: VocabFailure): MessageKey {
   }
 }
 
-/** `3.6 MB` for a download size (decimal units, one decimal). */
+/** `3.6 MB` for a download size (decimal units, one decimal; the unit as the language writes it: `3,6 МБ`). */
 export function formatMegabytes(bytes: number, locale: string): string {
-  const mb = new Intl.NumberFormat(locale, { maximumFractionDigits: 1, minimumFractionDigits: 1 });
-  return `${mb.format(bytes / 1_000_000)} MB`;
+  return new Intl.NumberFormat(locale, {
+    style: "unit",
+    unit: "megabyte",
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 1,
+  }).format(bytes / 1_000_000);
 }

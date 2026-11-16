@@ -30,3 +30,23 @@ LangString webview2Downloading ${LANG_GALICIAN} "Descargando o instalador de arr
 LangString webview2InstallError ${LANG_GALICIAN} "Erro: a instalación de WebView2 fallou co código de saída $1"
 LangString webview2InstallSuccess ${LANG_GALICIAN} "WebView2 instalouse correctamente"
 LangString deleteAppData ${LANG_GALICIAN} "Eliminar os datos da aplicación"
+
+; Stock NSIS texts of this language's pages, in other words: NSIS' Galician file uses Portuguese forms ("Benvindo",
+; "directória", "Instalou-se", "fechar", "está sendo") and "clique" where these texts say "prema". Tauri includes this
+; file after the language is inserted, so these later texts win (makensis warns 6030 for each Modern UI one).
+LangString MUI_TEXT_WELCOME_INFO_TITLE ${LANG_GALICIAN} "Benvido ao asistente de instalación do $(^NameDA)"
+LangString MUI_TEXT_DIRECTORY_SUBTITLE ${LANG_GALICIAN} "Escolla o cartafol no que desexa instalar o $(^NameDA)."
+LangString ^DirText ${LANG_GALICIAN} "O $(^NameDA) instalarase no seguinte cartafol. Para instalalo noutro cartafol, prema Procurar e escolla outro cartafol. $_CLICK"
+LangString ^DirSubText ${LANG_GALICIAN} "Cartafol de destino"
+LangString ^SpaceRequired ${LANG_GALICIAN} "Espazo necesario: "
+LangString ^ClickInstall ${LANG_GALICIAN} "Prema Instalar para iniciar a instalación."
+LangString MUI_TEXT_INSTALLING_SUBTITLE ${LANG_GALICIAN} "Agarde mentres se instala o $(^NameDA)."
+LangString MUI_TEXT_FINISH_SUBTITLE ${LANG_GALICIAN} "A instalación rematou correctamente."
+LangString ^ShowDetailsBtn ${LANG_GALICIAN} "Ver &detalles"
+LangString MUI_TEXT_FINISH_INFO_TITLE ${LANG_GALICIAN} "Concluíndo o asistente de instalación do $(^NameDA)"
+LangString MUI_TEXT_FINISH_INFO_TEXT ${LANG_GALICIAN} "Instalouse o $(^NameDA) no seu computador.$\r$\n$\r$\nPrema Rematar para pechar este asistente."
+LangString ^UninstallingText ${LANG_GALICIAN} "O $(^NameDA) desinstalarase do seguinte cartafol. $_CLICK"
+LangString ^ClickUninstall ${LANG_GALICIAN} "Prema Desinstalar para iniciar a desinstalación."
+LangString MUI_UNTEXT_UNINSTALLING_SUBTITLE ${LANG_GALICIAN} "Agarde mentres se desinstala o $(^NameDA)."
+LangString MUI_UNTEXT_FINISH_SUBTITLE ${LANG_GALICIAN} "A desinstalación rematou correctamente."
+LangString ^CloseBtn ${LANG_GALICIAN} "&Pechar"
