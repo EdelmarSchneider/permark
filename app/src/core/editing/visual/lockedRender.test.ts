@@ -285,6 +285,35 @@ describe("locked blocks look like View", () => {
     expect(renders[0]).toEqual({ kind: "html", html: "<p>Text</p>" });
   });
 
+  it("footnotes: an inline note's item (no definition block of its own) is listed with a written one, no number skipped", () => {
+    const item = (id: string): string => `<li id="fn-${id}">\n<p>Note ${id}</p>\n</li>`;
+    // View numbers by first reference: `^[lead]`, [^a], `^[mid]`, [^b], `^[tail]`
+    const section =
+      '<section class="footnotes" data-footnotes="">\n<ol>\n' +
+      ["__inline_1", "a", "__inline_2", "b", "__inline_3"].map(item).join("\n") +
+      "\n</ol>\n</section>";
+    const blocks = [
+      line(1, "Text^[lead] and[^a] then^[mid] and[^b] last^[tail]"),
+      line(3, "[^a]: Note a", "footnote"),
+      line(5, "[^b]: Note b", "footnote"),
+    ];
+    const renders = lockedRenders(
+      markdown([block(1, 1, "p", "<p>Text</p>"), block(3, 5, "section", section)]),
+      blocks,
+    );
+    const open = '<section class="footnotes" data-footnotes="">';
+    expect(renders[1]).toEqual({
+      kind: "footnote",
+      html: `${open}\n<ol>\n${item("__inline_1")}\n${item("a")}\n${item("__inline_2")}\n</ol>\n</section>`,
+      first: true,
+    });
+    expect(renders[2]).toEqual({
+      kind: "footnote",
+      html: `${open}\n<ol start="4">\n${item("b")}\n${item("__inline_3")}\n</ol>\n</section>`,
+      first: false,
+    });
+  });
+
   it("slices footnote HTML only at element boundaries (markup inside an attribute stays text)", () => {
     const hostile =
       '<section class="footnotes" data-footnotes="">\n<ol>\n' +
