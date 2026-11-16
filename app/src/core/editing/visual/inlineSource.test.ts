@@ -186,7 +186,20 @@ describe("inline math, read as View reads it", () => {
     ['Html <span title="$x$">t</span> $y$', ['<span title="$x$">t</span>', "$y$"]],
     // LaTeX delimiters: closed by the first backslash before the matching bracket, never empty
     ["Latex \\(a_b_c\\) here", ["\\(a_b_c\\)"]],
-    ["Shown \\[x^2\\] inline", ["\\[x^2\\]"]],
+    // `\[..\]` only on lines of its own (or as the whole paragraph): escaped brackets in prose stay text
+    ["Shown \\[x^2\\] inline", []],
+    ["see \\[1\\] and \\[2\\]", []],
+    ["\\[ whole \\]", ["\\[ whole \\]"]],
+    ["\\[ a \\] trailing", []],
+    ["Text\n\\[\nown\n\\]\nmore", ["\\[\nown\n\\]"]],
+    ["Text\n  \\[  \nown\n\\]  \nmore", ["\\[  \nown\n\\]"]],
+    ["Lead \\[\nb\n\\]", []],
+    ["Text\n\\[\nb\n\\] tail", []],
+    ["Inner \\[1 \\[2\\]", []],
+    ["Link [\\[1\\]](u.md) text", []],
+    ["*a\n\\[\nb\n\\]\nc*", []],
+    ["# \\[1\\]", []],
+    ["| \\[1\\] | x |\n|---|---|", []],
     ["Empty \\(\\) x\\) y", []],
     ["Mixed \\(x\\] y", []],
     ["Escaped \\\\(x\\) b", []],
@@ -200,9 +213,18 @@ describe("inline math, read as View reads it", () => {
 
   it("each atom is written back as its own source", () => {
     const text =
-      "A $a_b_c$ and $$x$$, $`y`$ and \\$5 $q\\$r$ [l $x$](u.md) *e $z$* \\(a_b\\) \\[c\\](d) end.";
+      "A $a_b_c$ and $$x$$, $`y`$ and \\$5 $q\\$r$ [l $x$](u.md) *e $z$* \\(a_b\\) end\n\\[\nc\n\\]\n(d).";
     const doc = core.parse(text);
     expect(core.write(doc.child(0))).toBe(text);
+  });
+
+  it("escaped brackets in prose, a heading or a table cell read as View reads them: text with its brackets", () => {
+    const doc = core.parse(
+      "See \\[1\\] and *\\[a\\_b\\]*\n\n# \\[2\\]\n\n| \\[3\\] | x |\n|---|---|\n",
+    );
+    expect(doc.child(0).textContent).toBe("See [1] and [a_b]");
+    expect(doc.child(1).textContent).toBe("[2]");
+    expect(doc.child(2).textContent).toContain("[3]");
   });
 
   it("a backslash typed before a parenthesis stays text: it never starts a formula on the next read", () => {
@@ -408,7 +430,8 @@ describe("an inline formula opened", () => {
   });
 
   it("LaTeX-delimited math is View's formula and keeps its delimiters", async () => {
-    const text = "A \\(x^2\\) and \\[y\\] b.\n";
+    // a list item's whole paragraph: display math that stays a piece of its line
+    const text = "A \\(x^2\\) and b.\n\n- \\[y\\]\n";
     const built = await load(text);
     const looks = atoms().map((atom) => atom.querySelector("[data-math-style]"));
     expect(looks.map((look) => look?.getAttribute("data-math-style"))).toEqual([
@@ -425,7 +448,9 @@ describe("an inline formula opened", () => {
     // a closing delimiter typed into the TeX would end the formula early: refused
     type(second, "a\\]b");
     expect(second.getAttribute("aria-invalid")).toBe("true");
-    expect(compose(core, built, core.view.state.doc).text).toBe("A \\(x^3\\) and \\[z\\] b.\n");
+    expect(compose(core, built, core.view.state.doc).text).toBe(
+      "A \\(x^3\\) and b.\n\n- \\[z\\]\n",
+    );
   });
 });
 
@@ -433,6 +458,14 @@ describe("a block that keeps its math as written", () => {
   it("multi-line inline math stays a locked block", async () => {
     await load("Energy $E=\nmc^2$ here.\n");
     expect(core.view.state.doc.child(0).type.name).toBe(LOCKED);
+  });
+
+  it("display math on lines of its own inside a paragraph keeps the paragraph as written", async () => {
+    const text = "Text\n\\[\nE = mc^2\n\\]\nmore.\n\nSee \\[1\\] here.\n";
+    const built = await load(text);
+    expect(core.view.state.doc.child(0).type.name).toBe(LOCKED);
+    expect(core.view.state.doc.child(1).type.name).toBe("paragraph");
+    expect(compose(core, built, core.view.state.doc).text).toBe(text);
   });
 });
 

@@ -7,6 +7,7 @@
 mod blocks;
 mod frontmatter;
 mod inline;
+mod latex;
 mod prompt;
 mod refs;
 mod sanitize;
@@ -19,8 +20,9 @@ use std::borrow::Cow;
 use std::collections::HashSet;
 
 use comrak::nodes::{AstNode, NodeValue};
-use comrak::{format_html, parse_document, Anchorizer, Arena, Options};
+use comrak::{format_html, Anchorizer, Arena, Options};
 
+pub(crate) use latex::parse_document;
 pub use refs::{at_refs, AtRef};
 pub use sections::{sections, units, Section, TextUnit};
 pub use segments::{segments, LockReason, Segment, SegmentKind};

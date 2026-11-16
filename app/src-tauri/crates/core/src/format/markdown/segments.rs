@@ -4,11 +4,13 @@
 //! no other line break).
 
 use comrak::nodes::{AstNode, NodeValue};
-use comrak::{parse_document, Arena};
+use comrak::Arena;
 use serde::Serialize;
 use ts_rs::TS;
 
-use super::{frontmatter, is_deeper_than, options, prompt, too_many_container_markers};
+use super::{
+    frontmatter, is_deeper_than, options, parse_document, prompt, too_many_container_markers,
+};
 use crate::format::MarkdownFeatures;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]

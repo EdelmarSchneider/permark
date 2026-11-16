@@ -16,9 +16,9 @@ use std::borrow::Cow;
 use std::ops::Range;
 
 use comrak::nodes::{AstNode, LineColumn, NodeHeading, NodeValue, Sourcepos};
-use comrak::{parse_document, Arena, Options};
+use comrak::{Arena, Options};
 
-use crate::format::{reading_text, MarkdownFeatures};
+use crate::format::{parse_document, reading_text, MarkdownFeatures};
 
 const BOM: &str = "\u{feff}";
 /// Most escaped pipes of one table row the column shift is searched for.

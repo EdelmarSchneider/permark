@@ -75,6 +75,13 @@ fn text_that_is_not_a_link_is_left_alone() {
 }
 
 #[test]
+fn links_in_escaped_brackets_are_scanned_and_display_math_is_not() {
+    let text =
+        "see \\[[a](a.md)\\] and é \\[x\\] [c](c.md)\n\n\\[\n[b](math.md)\n\\]\n\n\\[ [d](whole.md) \\]\n";
+    assert_eq!(raws(text), ["a.md", "c.md"]);
+}
+
+#[test]
 fn code_math_and_front_matter_are_never_scanned() {
     let text = "---\nsource: [x](front.md)\n---\n\n`[a](code.md)` and\n\n```\n[b](block.md)\n```\n\n    [c](indented.md)\n\n$[d](math.md)$ \\([f](latex.md)\\) real [e](real.md)\n";
     assert_eq!(raws(text), ["real.md"]);
