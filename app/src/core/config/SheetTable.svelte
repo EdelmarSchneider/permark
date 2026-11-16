@@ -325,7 +325,7 @@
               </td>
             {/if}
             {#each row.cells as cell, c (cell.path)}
-              <td>
+              <td class="cell">
                 <SheetValue
                   scalar={cell}
                   label={`${table.fields[c] ?? ""} ${index + 1}`}
@@ -413,6 +413,11 @@
     font: 600 var(--fs-ui-sm) / 1.4 var(--font-code);
     white-space: nowrap;
     border-bottom-color: var(--border-strong);
+  }
+  /* a value column keeps room for a short value on one line (a date as written, `2026-11-16`, is 10 characters),
+     even when its words are shorter and the headers take the width; a table that needs more scrolls in `.scroll-x` */
+  .cell {
+    min-width: 10ch;
   }
   tbody tr:hover {
     background: var(--hover);
