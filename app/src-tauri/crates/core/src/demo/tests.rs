@@ -160,3 +160,40 @@ fn the_offer_serializes_as_the_frontend_reads_it() {
         "\"hidden\""
     );
 }
+
+#[test]
+fn the_pages_stay_available_after_the_offer_was_used_or_dismissed() {
+    let f = fx();
+    let fresh = status(&f.store, &f.places());
+    assert_eq!(fresh.offer, DemoOffer::Install);
+    assert!(fresh.available);
+    dismiss(&f.store).unwrap();
+    let dismissed = status(&f.store, &f.places());
+    assert_eq!(dismissed.offer, DemoOffer::Hidden);
+    assert!(dismissed.available);
+    // used: the folder is in Documents now and opens as it is
+    install(&f.store, &f.places()).unwrap();
+    assert!(status(&f.store, &f.places()).available);
+    assert_eq!(
+        serde_json::to_string(&status(&f.store, &f.places())).unwrap(),
+        r#"{"offer":"hidden","available":true}"#
+    );
+}
+
+#[test]
+fn the_pages_are_unavailable_without_a_place_or_anything_to_open() {
+    let f = fx();
+    let nowhere = DemoPlaces {
+        bundled: Some(f.bundled.clone()),
+        target: None,
+    };
+    assert!(!status(&f.store, &nowhere).available);
+    let nothing_shipped = DemoPlaces {
+        bundled: Some(f.base.path().join("missing")),
+        target: Some(f.target()),
+    };
+    assert!(!status(&f.store, &nothing_shipped).available);
+    // something other than a folder at the place: install refuses it, so nothing is offered
+    fs::write(f.target(), "x").unwrap();
+    assert!(!status(&f.store, &f.places()).available);
+}

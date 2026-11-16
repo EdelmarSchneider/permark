@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // The demo pages offer on the Welcome screen against the mock backend: shown until used or dismissed, "Explore" copies
-// and opens the folder, "Open" when the folder is in Documents already, a refused copy says why.
+// and opens the folder, "Open" when the folder is in Documents already, a refused copy says why. Past the offer, the
+// palette command and the quick settings entry open the pages whenever this copy ships them.
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MOCK_DEMO_FOLDER } from "../../api/mock";
@@ -16,6 +17,10 @@ Object.defineProperty(window, "matchMedia", {
 const { api } = await import("../../api");
 const { default: Welcome } = await import("./Welcome.svelte");
 const { windowStore } = await import("../window.svelte");
+const { default: SettingsPopover } = await import("./SettingsPopover.svelte");
+const { demoOffer } = await import("./demoOffer.svelte");
+const { ContributionRegistry } = await import("../plugins/registry.svelte");
+const { registerCoreCommands } = await import("../commands/core");
 
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
 const store = windowStore;
@@ -54,6 +59,7 @@ beforeEach(() => {
   mock.probe.demo.installs = 0;
   mock.probe.demo.dismissed = 0;
   mock.probe.demo.fail = null;
+  mock.probe.demo.available = true;
 });
 
 afterEach(async () => {
@@ -140,5 +146,117 @@ describe("the demo pages offer", () => {
     await new Promise((r) => setTimeout(r, 20));
     flushSync();
     expect(card()).toBeNull();
+  });
+});
+
+describe("the lasting way to the demo pages", () => {
+  async function started(): Promise<void> {
+    if (!started_) {
+      await store.start();
+      started_ = true;
+    }
+  }
+  let started_ = false;
+
+  function demoCommand() {
+    const registry = new ContributionRegistry();
+    const off = registerCoreCommands(registry);
+    const command = registry.of("command").find((c) => c.id === "app.openDemo");
+    return { command, off };
+  }
+
+  function popoverEntry(): HTMLButtonElement | null {
+    return (
+      Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find(
+        (b) => b.textContent?.trim() === "Open the demo pages",
+      ) ?? null
+    );
+  }
+
+  it("the palette command is offered while the pages ship, also after the offer was dismissed", async () => {
+    const { command, off } = demoCommand();
+    expect(command?.label).toBe("welcome.demo.open");
+    mock.probe.demo.offer = "install";
+    await demoOffer.load();
+    expect(command?.when?.()).toBe(true);
+    await demoOffer.dismiss();
+    await demoOffer.load();
+    expect(demoOffer.card.status).toBe("hidden");
+    expect(command?.when?.()).toBe(true);
+    mock.probe.demo.available = false;
+    await demoOffer.load();
+    expect(command?.when?.()).toBe(false);
+    off();
+  });
+
+  it("the command copies the pages first, then opens their folder as a project", async () => {
+    await started();
+    await toWelcome();
+    mock.probe.demo.offer = "hidden";
+    await demoOffer.load();
+    const order: string[] = [];
+    const install = vi.spyOn(mock, "demoInstall");
+    install.mockImplementation(async () => {
+      order.push("install");
+      install.mockRestore();
+      return mock.demoInstall();
+    });
+    const opened = vi.spyOn(store, "open");
+    opened.mockImplementation(async (path, placement) => {
+      order.push(`open ${path}`);
+      opened.mockRestore();
+      return store.open(path, placement);
+    });
+    const { command, off } = demoCommand();
+    await command?.run();
+    expect(order).toEqual(["install", `open ${MOCK_DEMO_FOLDER}`]);
+    await until(
+      () =>
+        store.view.state === "showing" &&
+        store.view.workspace.kind === "project" &&
+        store.view.workspace.root === MOCK_DEMO_FOLDER,
+      "the folder opens as a project",
+    );
+    off();
+  });
+
+  it("the quick settings entry runs the same action and closes the popover", async () => {
+    await started();
+    await toWelcome();
+    await demoOffer.load();
+    const close = vi.fn();
+    component = mount(SettingsPopover, { target, props: { store, close } });
+    flushSync();
+    const entry = popoverEntry();
+    expect(entry).not.toBeNull();
+    entry?.click();
+    expect(close).toHaveBeenCalled();
+    await until(() => mock.probe.demo.installs === 1, "copied");
+    await until(
+      () => store.view.state === "showing" && store.view.workspace.kind === "project",
+      "opened",
+    );
+  });
+
+  it("the quick settings show no entry when this copy has no pages", async () => {
+    await started();
+    mock.probe.demo.available = false;
+    await demoOffer.load();
+    component = mount(SettingsPopover, { target, props: { store, close: () => {} } });
+    flushSync();
+    expect(popoverEntry()).toBeNull();
+  });
+
+  it("a refused copy is told by a notice, in the card's words", async () => {
+    await started();
+    await demoOffer.load();
+    mock.probe.demo.fail = "denied";
+    const { command, off } = demoCommand();
+    await command?.run();
+    const said = store.notices.some(
+      (n) => n.kind === "action" && n.text.includes("Can't copy the demo pages"),
+    );
+    expect(said).toBe(true);
+    off();
   });
 });

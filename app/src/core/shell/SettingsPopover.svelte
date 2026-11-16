@@ -1,6 +1,7 @@
 <script lang="ts">
   // Quick settings under the header button: language, theme, light tone, the rows plugins put here (the agent
-  // connection's state + its way in), and the way to the keyboard map and to all the settings. Focus moves in on open
+  // connection's state + its way in), the demo pages (while this copy ships them), and the way to the keyboard map and
+  // to all the settings. Focus moves in on open
   // (first control) and Tab stays inside; Escape closes and puts focus back on the gear; a click outside closes.
   import Settings from "@lucide/svelte/icons/settings";
   import type { LanguagePref, ThemePref, Tone } from "../../api";
@@ -9,6 +10,7 @@
   import { look } from "../look.svelte";
   import { contributions } from "../plugins/instance.svelte";
   import type { WindowStore } from "../window.svelte";
+  import { demoOffer } from "./demoOffer.svelte";
   import Segments from "./settings/Segments.svelte";
   import { ui } from "./ui.svelte";
 
@@ -153,6 +155,21 @@
   {/each}
 
   <div class="foot">
+    {#if demoOffer.available}
+      <!-- a line of its own: "All settings" stays at the end of the last line in every language -->
+      <div class="foot-line">
+        <button
+          type="button"
+          class="btn btn--sm"
+          onclick={() => {
+            close();
+            void demoOffer.open(store);
+          }}
+        >
+          {t("welcome.demo.open")}
+        </button>
+      </div>
+    {/if}
     <button type="button" class="btn btn--sm" onclick={() => ui.openKeyboard()}>
       {t("settings.keyboard")}
     </button>
@@ -198,5 +215,8 @@
     margin-top: var(--sp-2);
     padding: var(--sp-3) 10px 0;
     border-top: 1px solid var(--border);
+  }
+  .foot-line {
+    flex-basis: 100%;
   }
 </style>
