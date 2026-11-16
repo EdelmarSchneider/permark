@@ -94,7 +94,9 @@ function groups(): [string, string[]][] {
   ]);
 }
 
-function mountPage(section: "reading" | "editing" | "integration" | "plugins" | "project"): void {
+function mountPage(
+  section: "reading" | "editing" | "integration" | "plugins" | "project" | "files",
+): void {
   ui.openSettingsPage(section);
   component = mount(SettingsPage, { target, props: { store } });
   flushSync();
@@ -158,10 +160,10 @@ describe("the settings page", () => {
     await open();
     mountPage("reading");
     await tick();
-    expect(names()).toEqual(["Reading", "Editing", "Integration", "Plugins", "This folder"]);
+    expect(names()).toEqual(["Reading", "Editing", "Integration", "Plugins", "Overview", "Files"]);
     expect(groups()).toEqual([
       ["App", ["Reading", "Editing", "Integration", "Plugins"]],
-      ["This folder", ["This folder"]],
+      ["This folder", ["Overview", "Files"]],
     ]);
     // each section wears its icon, decoration only (the name is the words)
     const icons = Array.from(target.querySelectorAll(".nav-item")).map((b) =>
@@ -175,6 +177,7 @@ describe("the settings page", () => {
       "lucide-plug",
       "lucide-puzzle",
       "lucide-folder-cog",
+      "lucide-files",
     ]);
     expect(target.querySelector(".nav-item svg")?.getAttribute("aria-hidden")).toBe("true");
   });
@@ -215,7 +218,7 @@ describe("the settings page", () => {
       await tick();
       expect(groups()).toEqual([
         ["App", ["Reading", "Editing", "Keyboard shortcuts…", "Integration", "Plugins"]],
-        ["This folder", ["This folder", "AI agents"]],
+        ["This folder", ["Overview", "Files", "AI agents"]],
       ]);
     } finally {
       for (const remove of removals) remove();
@@ -279,14 +282,15 @@ describe("the settings page", () => {
     press(document.activeElement!, "ArrowUp");
     press(document.activeElement!, "ArrowUp");
     await tick();
-    expect(target.querySelector("h3.title")?.textContent).toBe("This folder");
+    expect(target.querySelector("h3.title")?.textContent).toBe("Files");
     // the arrows cross from one group into the other
+    press(document.activeElement!, "ArrowUp");
     press(document.activeElement!, "ArrowUp");
     await tick();
     expect(document.activeElement?.textContent?.trim()).toBe("Plugins");
     press(document.activeElement!, "ArrowDown");
     await tick();
-    expect(document.activeElement?.textContent?.trim()).toBe("This folder");
+    expect(document.activeElement?.textContent?.trim()).toBe("Overview");
   });
 
   it("Editing: a refused editor command is said in words, a good one is kept with its preview", async () => {
@@ -511,33 +515,79 @@ describe("the plugins page", () => {
 });
 
 describe("the project settings and Initialize PerMark", () => {
-  it("not initialized: the section only offers to create .permark, in plain words; yes creates it and the controls appear", async () => {
+  it("Overview: says who each kind of setting is for; not initialized, it offers to set PerMark up, in plain words", async () => {
     await open();
     mountPage("project");
     await tick();
+    expect(target.querySelector("h3.title")?.textContent).toBe("Overview");
+    expect(target.textContent).toContain(
+      "Settings marked Everyone are kept in this folder's .permark/config.toml",
+    );
+    expect(target.textContent).toContain("Settings marked Only you stay on this computer.");
     expect(target.textContent).toContain("This folder has no PerMark settings yet");
-    expect(target.textContent).not.toMatch(/not initialized|\.permark/);
+    expect(target.textContent).not.toMatch(/not initialized/);
+    // the folder's files live in their own section
     expect(target.querySelector(".list")).toBeNull();
     byText("button", "Initialize PerMark").click();
     expect(ui.initDialog.status).toBe("asking");
     await confirmInit(MOCK_FOLDER);
     await until(() => conditions.current.permark === "initialized", "initialized");
-    await until(() => target.querySelector(".list") !== null, "the controls");
+    await until(
+      () => !target.textContent?.includes("This folder has no PerMark settings yet"),
+      "the offer gone",
+    );
     expect(ui.initDialog.status).toBe("closed");
+  });
+
+  it("Files, not initialized: the shared rows show greyed and do nothing until the person sets PerMark up", async () => {
+    await open();
+    mountPage("files");
+    await until(() => projectSettings.state.status === "ready", "loaded");
+    await tick();
+    expect(target.querySelector("h3.title")?.textContent).toBe("Files");
+    expect(target.textContent).toContain("Initialize PerMark to share this with everyone");
+    const fields = () => Array.from(target.querySelectorAll<HTMLInputElement>(".list input"));
+    expect(fields().length).toBe(3);
+    expect(fields().every((f) => f.disabled)).toBe(true);
+    expect(
+      Array.from(target.querySelectorAll<HTMLButtonElement>("button[role=radio]")).every(
+        (b) => b.disabled,
+      ),
+    ).toBe(true);
+    expect(target.querySelector(".shared.off")).not.toBeNull();
+    // nothing is written until the person answers the question
+    byText("button", "Initialize PerMark").click();
+    expect(ui.initDialog.status).toBe("asking");
+    expect(mock.probe.shell.project().initialized).toBe(false);
+    await confirmInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    await until(() => fields().every((f) => !f.disabled), "the rows work");
+    expect(target.textContent).not.toContain("Initialize PerMark to share this with everyone");
+    expect(target.querySelector(".shared.off")).toBeNull();
   });
 
   it("patterns are added and removed one by one, kept at once; a refused value says why", async () => {
     await open();
     await mock.projectInit(MOCK_FOLDER);
     await until(() => conditions.current.permark === "initialized", "initialized");
-    mountPage("project");
+    mountPage("files");
     await until(() => projectSettings.state.status === "ready", "loaded");
     await tick();
-    // a value shared through the folder's config file says so, in the name its control gets
-    expect(target.querySelector("#proj-show")?.textContent).toContain(
-      "Everyone, kept in .permark/config.toml",
+    // every value here is shared through the folder's config file and says so, in the row's name
+    const names = Array.from(target.querySelectorAll(".shared .row .name")).map(
+      (n) => n.textContent ?? "",
     );
-    const input = target.querySelector<HTMLInputElement>('input[aria-label="Ignore patterns"]')!;
+    expect(names.length).toBe(4);
+    expect(names.every((n) => n.includes("Everyone, kept in .permark/config.toml"))).toBe(true);
+    expect(names.map((n) => n.split("Everyone")[0]?.trim())).toEqual([
+      "Files shown by default",
+      "Extra files to show",
+      "Files to hide",
+      "Left out of search and live feed",
+    ]);
+    const input = target.querySelector<HTMLInputElement>(
+      'input[aria-label="Left out of search and live feed"]',
+    )!;
     input.value = "drafts/";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     press(input, "Enter");
@@ -569,7 +619,7 @@ describe("the project settings and Initialize PerMark", () => {
       contributions.visible("projectSection", conditions.current).filter((c) => c.owner === "agent")
         .length;
     await until(() => agentParts() === 1, "the agent part");
-    mountPage("project");
+    mountPage("files");
     await until(() => projectSettings.state.status === "ready", "loaded");
     await until(
       () => target.textContent?.includes("Groups agents never get here") === true,

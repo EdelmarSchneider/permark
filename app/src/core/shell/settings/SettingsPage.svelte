@@ -1,11 +1,12 @@
 <script lang="ts">
   // The full settings: a left list of sections in two groups - the app's (Reading, Editing, Integration, Plugins and
-  // the app plugins' own, such as Local AI) and, only while a folder is shown, the folder's (This folder, Projects
+  // the app plugins' own, such as Local AI) and, only while a folder is shown, the folder's (Overview, Files, Projects
   // inside, and its plugins' own, such as AI agents), each by order - and the shown one at the right, each a card of
   // rows; Projects inside only where the folder holds projects (`projects.md` §12.2; loaded when shown). One list for
   // the keyboard across both groups. Covers the window below the top bar; Escape or Close goes back to where the
   // person was.
   import BookOpen from "@lucide/svelte/icons/book-open";
+  import Files from "@lucide/svelte/icons/files";
   import FolderCog from "@lucide/svelte/icons/folder-cog";
   import PenLine from "@lucide/svelte/icons/pen-line";
   import Plug from "@lucide/svelte/icons/plug";
@@ -34,6 +35,7 @@
   import IntegrationSection from "./IntegrationSection.svelte";
   import PluginsSection from "./PluginsSection.svelte";
   import FilesSection from "./FilesSection.svelte";
+  import FolderSection from "./FolderSection.svelte";
   import ReadingSection from "./ReadingSection.svelte";
 
   type Props = { store: WindowStore };
@@ -46,6 +48,7 @@
     plugins: "settings.section.plugins",
     projects: "settings.section.projects",
     project: "settings.section.project",
+    files: "settings.section.files",
   };
   /** A small icon per section (decoration: the words name it); Projects inside wears the included project's. */
   const ICONS: Record<CoreSettingsSection, MenuIcon> = {
@@ -55,6 +58,7 @@
     plugins: Puzzle,
     projects: projectIcon("permark"),
     project: FolderCog,
+    files: Files,
   };
 
   const GROUP_LABELS: Record<SettingsGroup, MessageKey> = {
@@ -227,8 +231,10 @@
             {#await projectsSection() then loaded}
               <loaded.default />
             {/await}
-          {:else}
+          {:else if section === "files"}
             <FilesSection />
+          {:else}
+            <FolderSection />
           {/if}
         </div>
       </div>

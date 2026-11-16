@@ -104,9 +104,9 @@ describe("Settings > AI agents", () => {
       Array.from(
         target.querySelectorAll(`.nav [role="group"][aria-label="${name}"] .nav-item`),
       ).map(text);
-    // the agents are a matter of this folder, after its own section
+    // the agents are a matter of this folder, after its overview and files
     const folder = group("This folder");
-    expect(folder.indexOf("AI agents")).toBe(folder.indexOf("This folder") + 1);
+    expect(folder.indexOf("AI agents")).toBe(folder.indexOf("Files") + 1);
     // Local AI (order 35) is the app's: between Editing and Integration
     const app = group("App");
     expect(app).not.toContain("AI agents");
