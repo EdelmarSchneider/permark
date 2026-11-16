@@ -53,6 +53,7 @@ export default definePlugin({
         id: AGENT_PAGE,
         label: "agent.section",
         icon: Bot,
+        group: "folder",
         order: 30,
         requires: PROJECT,
         view: () => import("./AgentSection.svelte"),

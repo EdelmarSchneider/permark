@@ -92,7 +92,7 @@ afterEach(async () => {
 });
 
 describe("Settings > AI agents", () => {
-  it("has its own place in the nav, after Editing; Integration has no agent card", async () => {
+  it("has its own place in the This folder group of the nav; Integration has no agent card", async () => {
     await open();
     mountPage("reading");
     // plugins come on one by one, each when its module is loaded: wait for every page whose place is checked
@@ -100,11 +100,18 @@ describe("Settings > AI agents", () => {
       () => ["AI agents", "Local AI"].every((label) => navLabels().includes(label)),
       "nav items",
     );
-    const labels = navLabels();
-    expect(labels.indexOf("AI agents")).toBe(labels.indexOf("Editing") + 1);
-    // Local AI (order 35) sits between the agents and Integration
-    expect(labels.indexOf("Local AI")).toBe(labels.indexOf("AI agents") + 1);
-    expect(labels.indexOf("Integration")).toBe(labels.indexOf("Local AI") + 1);
+    const group = (name: string): string[] =>
+      Array.from(
+        target.querySelectorAll(`.nav [role="group"][aria-label="${name}"] .nav-item`),
+      ).map(text);
+    // the agents are a matter of this folder, after its own section
+    const folder = group("This folder");
+    expect(folder.indexOf("AI agents")).toBe(folder.indexOf("This folder") + 1);
+    // Local AI (order 35) is the app's: between Editing and Integration
+    const app = group("App");
+    expect(app).not.toContain("AI agents");
+    expect(app.indexOf("Local AI")).toBe(app.indexOf("Editing") + 1);
+    expect(app.indexOf("Integration")).toBe(app.indexOf("Local AI") + 1);
     ui.showSettingsSection("integration");
     flushSync();
     await until(() => target.querySelectorAll("section.group").length >= 2, "integration cards");

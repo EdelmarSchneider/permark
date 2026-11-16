@@ -91,6 +91,7 @@
         label={t("project.treeShow")}
         labelId="proj-show"
         hint={t("project.treeShowHint")}
+        scope="everyone"
       >
         <Segments
           labelledby="proj-show"

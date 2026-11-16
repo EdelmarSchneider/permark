@@ -9,7 +9,7 @@ import { available, type Requirement } from "../conditions/available";
 import type { PickerKind } from "../editing/visual/characters";
 import type { MenuEntry, MenuIcon } from "../explorer/menu";
 import type { MessageKey } from "../i18n";
-import type { PluginPageId } from "../shell/ui.svelte";
+import type { PluginPageId, SettingsGroup } from "../shell/ui.svelte";
 import type {
   CodeColorer,
   EmbedProps,
@@ -236,6 +236,8 @@ export type Contribution = Owned &
         label: MessageKey;
         /** A small icon before the label in the nav, as the core sections wear. */
         icon?: MenuIcon;
+        /** The nav group it sits in: the app's settings (default) or the folder shown's (only while one is). */
+        group?: SettingsGroup;
         order: number;
         view: LazyComponent;
         quick?: LazyComponent;

@@ -24,14 +24,27 @@ export const SETTINGS_SECTIONS: readonly CoreSettingsSection[] = [
   "projects",
   "project",
 ];
-/** Where each core section sits among the plugins' own (`settingsPage { order }`). */
+/** The two groups of the settings nav: the app's own settings, and those of the folder shown (only while one is). */
+export type SettingsGroup = "app" | "folder";
+export const SETTINGS_GROUPS: readonly SettingsGroup[] = ["app", "folder"];
+/** The group each core section sits in (a plugin's page says its own: `settingsPage { group }`, default `app`). */
+export const CORE_SECTION_GROUP: Readonly<Record<CoreSettingsSection, SettingsGroup>> = {
+  reading: "app",
+  editing: "app",
+  integration: "app",
+  plugins: "app",
+  projects: "folder",
+  project: "folder",
+};
+/** Where each core section sits among the plugins' own (`settingsPage { order }`), within its group: the folder's own
+ *  section leads its group. */
 export const CORE_SECTION_ORDER: Readonly<Record<CoreSettingsSection, number>> = {
   reading: 10,
   editing: 20,
   integration: 40,
   plugins: 50,
+  project: 10,
   projects: 60,
-  project: 70,
 };
 /** A plugin's own section (`<plugin>.<name>`: the dot keeps it apart from every core section name). */
 export type PluginPageId = `${string}.${string}`;

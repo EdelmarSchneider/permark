@@ -86,6 +86,14 @@ function byText<T extends HTMLElement = HTMLElement>(selector: string, text: str
   return found;
 }
 
+/** The nav's groups: each label with the names of its sections, in order. */
+function groups(): [string, string[]][] {
+  return Array.from(target.querySelectorAll<HTMLElement>('.nav [role="group"]')).map((g) => [
+    g.getAttribute("aria-label") ?? "",
+    Array.from(g.querySelectorAll(".nav-item")).map((b) => b.textContent?.trim() ?? ""),
+  ]);
+}
+
 function mountPage(section: "reading" | "editing" | "integration" | "plugins" | "project"): void {
   ui.openSettingsPage(section);
   component = mount(SettingsPage, { target, props: { store } });
@@ -130,7 +138,7 @@ afterEach(async () => {
 });
 
 describe("the settings page", () => {
-  it("lists Reading, Editing, Integration, Plugins - This folder only while a project is shown", async () => {
+  it("groups the nav: App (Reading, Editing, Integration, Plugins), This folder only while a project is shown", async () => {
     await store.start().catch(() => {});
     started = true;
     await toWelcome();
@@ -139,6 +147,9 @@ describe("the settings page", () => {
     const names = () =>
       Array.from(target.querySelectorAll(".nav-item")).map((b) => b.textContent?.trim());
     expect(names()).toEqual(["Reading", "Editing", "Integration", "Plugins"]);
+    expect(groups()).toEqual([["App", ["Reading", "Editing", "Integration", "Plugins"]]]);
+    // a window with no folder: the page is the app's settings, plainly named
+    expect(target.querySelector(".bar h2")?.textContent).toBe("Settings");
     // width and zoom live in the document header's reading menu, not here
     expect(target.querySelector("#set-width")).toBeNull();
     expect(target.querySelector("#set-zoom")).toBeNull();
@@ -148,6 +159,10 @@ describe("the settings page", () => {
     mountPage("reading");
     await tick();
     expect(names()).toEqual(["Reading", "Editing", "Integration", "Plugins", "This folder"]);
+    expect(groups()).toEqual([
+      ["App", ["Reading", "Editing", "Integration", "Plugins"]],
+      ["This folder", ["This folder"]],
+    ]);
     // each section wears its icon, decoration only (the name is the words)
     const icons = Array.from(target.querySelectorAll(".nav-item")).map((b) =>
       Array.from(b.querySelector("svg")?.classList ?? []).find(
@@ -162,6 +177,67 @@ describe("the settings page", () => {
       "lucide-folder-cog",
     ]);
     expect(target.querySelector(".nav-item svg")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("the title names the folder shown; the dialog is named the same", async () => {
+    await open();
+    const name = store.view.state === "showing" ? store.view.workspace.name : "";
+    mountPage("reading");
+    const title = `Settings — ${name}`;
+    expect(target.querySelector(".bar h2")?.textContent).toBe(title);
+    expect(target.querySelector(".page")?.getAttribute("aria-label")).toBe(title);
+  });
+
+  it("a plugin's page sits in the group it asks for (App unless it says This folder)", async () => {
+    await open();
+    const page = (
+      id: `${string}.${string}`,
+      label: "agent.section" | "cmd.keyboard",
+      order: number,
+      group?: "app" | "folder",
+    ) =>
+      contributions.register({
+        kind: "settingsPage",
+        id,
+        owner: "test",
+        requires: NO_REQUIREMENT,
+        label,
+        order,
+        ...(group ? { group } : {}),
+        view: () => import("./settings/IntegrationSection.svelte"),
+      });
+    const removals = [
+      page("test.app", "cmd.keyboard", 30),
+      page("test.folder", "agent.section", 30, "folder"),
+    ];
+    try {
+      mountPage("reading");
+      await tick();
+      expect(groups()).toEqual([
+        ["App", ["Reading", "Editing", "Keyboard shortcuts…", "Integration", "Plugins"]],
+        ["This folder", ["This folder", "AI agents"]],
+      ]);
+    } finally {
+      for (const remove of removals) remove();
+    }
+  });
+
+  it("Open this folder's settings: only with a project; opens the page on the folder's first section", async () => {
+    await store.start().catch(() => {});
+    started = true;
+    await toWelcome();
+    await until(() => store.view.state === "welcome", "welcome");
+    const listed = () =>
+      contributions
+        .visible("command", conditions.current)
+        .some((c) => c.id === "app.folderSettings");
+    expect(listed()).toBe(false);
+    await open();
+    expect(listed()).toBe(true);
+    const command = contributions.of("command").find((c) => c.id === "app.folderSettings")!;
+    expect(command.label).toBe("cmd.folderSettings");
+    command.run();
+    expect(ui.settingsPage).toEqual({ status: "open", section: "project" });
   });
 
   it("Escape closes it and a section the person cannot reach falls back to Reading", async () => {
@@ -204,6 +280,13 @@ describe("the settings page", () => {
     press(document.activeElement!, "ArrowUp");
     await tick();
     expect(target.querySelector("h3.title")?.textContent).toBe("This folder");
+    // the arrows cross from one group into the other
+    press(document.activeElement!, "ArrowUp");
+    await tick();
+    expect(document.activeElement?.textContent?.trim()).toBe("Plugins");
+    press(document.activeElement!, "ArrowDown");
+    await tick();
+    expect(document.activeElement?.textContent?.trim()).toBe("This folder");
   });
 
   it("Editing: a refused editor command is said in words, a good one is kept with its preview", async () => {
@@ -450,6 +533,10 @@ describe("the project settings and Initialize PerMark", () => {
     mountPage("project");
     await until(() => projectSettings.state.status === "ready", "loaded");
     await tick();
+    // a value shared through the folder's config file says so, in the name its control gets
+    expect(target.querySelector("#proj-show")?.textContent).toContain(
+      "Everyone, kept in .permark/config.toml",
+    );
     const input = target.querySelector<HTMLInputElement>('input[aria-label="Ignore patterns"]')!;
     input.value = "drafts/";
     input.dispatchEvent(new Event("input", { bubbles: true }));

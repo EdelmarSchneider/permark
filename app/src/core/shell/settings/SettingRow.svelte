@@ -1,7 +1,9 @@
 <script lang="ts">
   // One row of the settings page: what it is (label + hint) at the left, the control at the right. Stacks when the page
-  // is narrow, or when `wide` (a long control: a text field, a list). Rows of one card are separated by a line.
+  // is narrow, or when `wide` (a long control: a text field, a list). Rows of one card are separated by a line. A folder
+  // setting says who it is for (`scope`) with a chip in its label.
   import type { Snippet } from "svelte";
+  import ScopeChip from "./ScopeChip.svelte";
 
   type Props = {
     label: string;
@@ -11,19 +13,25 @@
     labelId?: string;
     /** The control takes the row's full width under the label. */
     wide?: boolean;
+    /** Who the value is for: everyone sharing the folder (its config file) or only this person. App rows: none. */
+    scope?: "everyone" | "you";
     children: Snippet;
     /** A line under the control (a problem, a preview). */
     note?: Snippet;
   };
-  let { label, hint, labelFor, labelId, wide = false, children, note }: Props = $props();
+  let { label, hint, labelFor, labelId, wide = false, scope, children, note }: Props = $props();
 </script>
 
 <div class="row" class:wide>
   <div class="text">
     {#if labelFor}
-      <label class="name" for={labelFor}>{label}</label>
+      <label class="name" for={labelFor}
+        >{label}{#if scope}{" "}<ScopeChip {scope} />{/if}</label
+      >
     {:else}
-      <span class="name" id={labelId}>{label}</span>
+      <span class="name" id={labelId}
+        >{label}{#if scope}{" "}<ScopeChip {scope} />{/if}</span
+      >
     {/if}
     {#if hint}<span class="hint">{hint}</span>{/if}
   </div>

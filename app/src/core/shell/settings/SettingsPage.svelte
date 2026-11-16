@@ -1,8 +1,10 @@
 <script lang="ts">
-  // The full settings: a left list of sections (Reading, Editing, Integration, Plugins, Projects inside, This folder,
-  // and the plugins' own, such as AI agents, by order) and the shown one at the right, each a card of rows; Projects
-  // inside only where the folder holds projects (`projects.md` §12.2; loaded when shown). Covers the window below the
-  // top bar; Escape or Close goes back to where the person was.
+  // The full settings: a left list of sections in two groups - the app's (Reading, Editing, Integration, Plugins and
+  // the app plugins' own, such as Local AI) and, only while a folder is shown, the folder's (This folder, Projects
+  // inside, and its plugins' own, such as AI agents), each by order - and the shown one at the right, each a card of
+  // rows; Projects inside only where the folder holds projects (`projects.md` §12.2; loaded when shown). One list for
+  // the keyboard across both groups. Covers the window below the top bar; Escape or Close goes back to where the
+  // person was.
   import BookOpen from "@lucide/svelte/icons/book-open";
   import FolderCog from "@lucide/svelte/icons/folder-cog";
   import PenLine from "@lucide/svelte/icons/pen-line";
@@ -17,10 +19,13 @@
   import { projects } from "../../projects/instance.svelte";
   import type { WindowStore } from "../../window.svelte";
   import {
+    CORE_SECTION_GROUP,
     CORE_SECTION_ORDER,
+    SETTINGS_GROUPS,
     SETTINGS_SECTIONS,
     ui,
     type CoreSettingsSection,
+    type SettingsGroup,
     type SettingsSection,
   } from "../ui.svelte";
   import { dialogFocus } from "../dialogFocus";
@@ -52,30 +57,62 @@
     project: FolderCog,
   };
 
+  const GROUP_LABELS: Record<SettingsGroup, MessageKey> = {
+    app: "settings.group.app",
+    folder: "settings.group.folder",
+  };
+
   const inProject = $derived(conditions.current.workspace === "project");
+  /** The folder shown (its name in the title), `null` in a window with none (a single file, the Notes, the Welcome). */
+  const folder = $derived(
+    store.view.state === "showing" && store.view.workspace.kind === "project"
+      ? store.view.workspace.name
+      : null,
+  );
+  const title = $derived(
+    folder === null ? t("settings.title") : t("settings.titleFolder", { name: folder }),
+  );
   /** The plugins' own sections that may show here (plugin on, requirement met). */
   const pluginPages = $derived(contributions.visible("settingsPage", conditions.current));
-  type NavItem = { id: SettingsSection; label: MessageKey; order: number; icon?: MenuIcon };
-  /** Sections the person can reach here: Project only while a project is shown, Projects only where it holds some;
-   *  the plugins' sections among them by order. */
+  type NavItem = {
+    id: SettingsSection;
+    label: MessageKey;
+    group: SettingsGroup;
+    order: number;
+    icon?: MenuIcon;
+  };
+  /** Sections the person can reach here, group by group: the folder's only while a project is shown, Projects only
+   *  where it holds some; the plugins' sections among the core ones by order. */
   const nav = $derived(
     [
-      ...SETTINGS_SECTIONS.filter(
-        (s) =>
-          (s !== "project" || inProject) && (s !== "projects" || (inProject && projects.present)),
-      ).map((s): NavItem => ({
-        id: s,
-        label: LABELS[s],
-        order: CORE_SECTION_ORDER[s],
-        icon: ICONS[s],
-      })),
+      ...SETTINGS_SECTIONS.filter((s) => s !== "projects" || projects.present).map(
+        (s): NavItem => ({
+          id: s,
+          label: LABELS[s],
+          group: CORE_SECTION_GROUP[s],
+          order: CORE_SECTION_ORDER[s],
+          icon: ICONS[s],
+        }),
+      ),
       ...pluginPages.map((p): NavItem => ({
         id: p.id,
         label: p.label,
+        group: p.group ?? "app",
         order: p.order,
         icon: p.icon,
       })),
-    ].sort((a, b) => a.order - b.order),
+    ]
+      .filter((item) => item.group === "app" || inProject)
+      .sort(
+        (a, b) =>
+          SETTINGS_GROUPS.indexOf(a.group) - SETTINGS_GROUPS.indexOf(b.group) || a.order - b.order,
+      ),
+  );
+  const navGroups = $derived(
+    SETTINGS_GROUPS.map((group) => ({
+      group,
+      items: nav.filter((item) => item.group === group),
+    })).filter((g) => g.items.length > 0),
   );
   const sections = $derived(nav.map((item) => item.id));
   const wanted = $derived(ui.settingsPage.status === "open" ? ui.settingsPage.section : "reading");
@@ -133,13 +170,13 @@
     class="page"
     role="dialog"
     aria-modal="true"
-    aria-label={t("settings.title")}
+    aria-label={title}
     tabindex="-1"
     bind:this={page}
     use:dialogFocus={{ initial: entry, onEscape, fallback: gear }}
   >
     <header class="bar">
-      <h2>{t("settings.title")}</h2>
+      <h2>{title}</h2>
       <span class="spacer"></span>
       <button type="button" class="btn btn--sm" onclick={() => ui.closeSettingsPage()}>
         <X size={13} aria-hidden="true" />
@@ -148,21 +185,27 @@
     </header>
     <div class="layout">
       <nav class="nav" aria-label={t("settings.sections")}>
-        {#each nav as item (item.id)}
-          <button
-            type="button"
-            class="nav-item"
-            aria-current={item.id === section ? "page" : undefined}
-            tabindex={item.id === section ? 0 : -1}
-            onclick={() => ui.showSettingsSection(item.id)}
-            onkeydown={onnavkey}
-          >
-            {#if item.icon}
-              {@const Icon = item.icon}
-              <Icon size={15} strokeWidth={item.id === section ? 2 : 1.8} />
-            {/if}
-            {t(item.label)}
-          </button>
+        {#each navGroups as g (g.group)}
+          <!-- the group's name is said once, from the group (the label on screen repeats it) -->
+          <div class="nav-group" role="group" aria-label={t(GROUP_LABELS[g.group])}>
+            <span class="menu-label nav-label" aria-hidden="true">{t(GROUP_LABELS[g.group])}</span>
+            {#each g.items as item (item.id)}
+              <button
+                type="button"
+                class="nav-item"
+                aria-current={item.id === section ? "page" : undefined}
+                tabindex={item.id === section ? 0 : -1}
+                onclick={() => ui.showSettingsSection(item.id)}
+                onkeydown={onnavkey}
+              >
+                {#if item.icon}
+                  {@const Icon = item.icon}
+                  <Icon size={15} strokeWidth={item.id === section ? 2 : 1.8} />
+                {/if}
+                {t(item.label)}
+              </button>
+            {/each}
+          </div>
         {/each}
       </nav>
       <div class="content">
@@ -243,6 +286,17 @@
     border-right: 1px solid var(--border);
     overflow-y: auto;
   }
+  .nav-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .nav-group + .nav-group {
+    margin-top: var(--sp-3);
+  }
+  .nav-label {
+    padding-left: var(--sp-3);
+  }
   .nav-item {
     display: flex;
     align-items: center;
@@ -298,6 +352,15 @@
       border-bottom: 1px solid var(--border);
       overflow-x: auto;
     }
+    .nav-group {
+      flex-direction: row;
+      align-items: center;
+    }
+    .nav-group + .nav-group {
+      margin-top: 0;
+      margin-left: var(--sp-3);
+    }
+    .nav-label,
     .nav-item {
       white-space: nowrap;
     }
