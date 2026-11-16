@@ -21,6 +21,7 @@ import {
 import { createMockConfig } from "./mockConfig";
 import { createMockDistribution, type DistributionProbe } from "./mockDistribution";
 import { createMockTokens, type TokensProbe } from "./mockTokens";
+import { createMockSpelling, type SpellingProbe } from "./mockSpelling";
 import { createMockLocalAi, type LocalAiProbe } from "./mockLocalAi";
 import { createMockCorrection } from "./mockCorrection";
 import type { PieceRunProbe, PieceRunWiring } from "./mockPieceRun";
@@ -240,6 +241,8 @@ export type MockProbe = {
   distribution: DistributionProbe;
   /** The token count plugin: vocabularies, what it was asked to count. */
   tokens: TokensProbe;
+  /** The spelling plugin: dictionaries (English ready), downloads, calls. */
+  spelling: SpellingProbe;
   /** The converter: the next answer, calls, saved files. */
   convert: ConvertProbe;
   /** Export: the remembered setup, the next Save dialog answer, calls, written files. */
@@ -515,6 +518,8 @@ export function createMockApi(): Api & {
     "token-count:state": new Set(),
     "token-count:folder": new Set(),
     "token-count:folders": new Set(),
+    "spelling:download": new Set(),
+    "spelling:personal": new Set(),
     "notes:intent": new Set(),
     "local-ai:state": new Set(),
     "local-ai:progress": new Set(),
@@ -533,6 +538,9 @@ export function createMockApi(): Api & {
     () => project.files,
     rootNow,
   );
+  const spelling = createMockSpelling((event, payload) => {
+    for (const handler of appListeners[event]) handler(payload);
+  });
   const convert = createMockConvert((path) => editing.probe.files.get(path) ?? null);
   const exporting = createMockExport();
   const localAi = createMockLocalAi(
@@ -571,6 +579,7 @@ export function createMockApi(): Api & {
     {
       ...distribution.handlers,
       ...tokens.handlers,
+      ...spelling.handlers,
       ...convert.handlers,
       ...exporting.handlers,
       ...localAi.handlers,
@@ -606,6 +615,7 @@ export function createMockApi(): Api & {
     pickedFrom,
     distribution: distribution.probe,
     tokens: tokens.probe,
+    spelling: spelling.probe,
     convert: convert.probe,
     export: exporting.probe,
     localAi: localAi.probe,

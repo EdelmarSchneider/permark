@@ -571,11 +571,13 @@
           return core && mod && now ? mod.changeable(core, now, range, insert) : true;
         },
         reveal: (range) => reveal(range),
-        marks: (ranges, current, pick) => {
+        marks: (ranges, current, pick, layer, options) => {
           const now = composed();
-          if (core && mod && now) mod.setMarks(core.view, now, ranges, current, pick);
+          if (core && mod && now)
+            mod.setMarks(core.view, now, ranges, current, pick, layer, options);
         },
-        markAt: () => (core && mod ? mod.markAt(core.view.state) : null),
+        markAt: (layer) => (core && mod ? mod.markAt(core.view.state, layer) : null),
+        spellcheck: (on) => core?.setSpellcheck(on),
         composing: () => core?.view.composing ?? false,
         lost: () => (composed()?.lost.length ?? 0) > 0,
         find: loaded.editFinder(() => core?.view ?? null, scroller),

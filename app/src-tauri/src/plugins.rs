@@ -47,6 +47,8 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_correction::plugin());
     #[cfg(feature = "plugin-translation")]
     plugins.push(permark_plugin_translation::plugin());
+    #[cfg(feature = "plugin-spelling")]
+    plugins.push(permark_plugin_spelling::plugin());
     #[cfg(feature = "plugin-prompt-blocks")]
     plugins.push(permark_plugin_prompt_blocks::plugin());
     #[cfg(feature = "plugin-frontmatter-card")]
@@ -143,6 +145,7 @@ mod tests {
             "local-ai",
             "correction",
             "translation",
+            "spelling",
             "md-family",
             "symbols",
             "prompt-blocks",

@@ -22,7 +22,7 @@ use crate::fsx::write_atomic;
 use crate::paths::Root;
 use crate::plugins::PluginId;
 
-pub use raw::RawFile;
+pub use raw::{RawFile, SHARED_MAX_BYTES};
 pub use shared_write::{merge3, FileLock};
 
 pub const PERMARK_DIR: &str = ".permark";

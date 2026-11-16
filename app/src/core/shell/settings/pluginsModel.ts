@@ -24,6 +24,7 @@ export const KNOWN_PLUGINS = [
   "local-ai",
   "correction",
   "translation",
+  "spelling",
   "prompt-blocks",
   "frontmatter-card",
   "highlight",

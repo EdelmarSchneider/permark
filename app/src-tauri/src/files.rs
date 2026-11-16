@@ -9,9 +9,10 @@ use std::sync::Arc;
 
 use permark_core::paths::VaultPath;
 use permark_core::plugins::{
-    ChangeListener, FolderReveal, FolderRevealApi, FolderScan, ProjectPlaces, ProjectPlacesApi,
-    ServiceLease, WindowFiles, WindowFilesApi,
+    is_shared_name, ChangeListener, FolderReveal, FolderRevealApi, FolderScan, ProjectPlaces,
+    ProjectPlacesApi, ServiceLease, WindowFiles, WindowFilesApi,
 };
+use permark_core::state::RawFile;
 use permark_core::tree::ScanFile;
 use permark_core::watch::Subscription;
 use permark_core::workspace::{CoreEnv, ProjectCore, Workspace};
@@ -100,6 +101,15 @@ impl WindowFiles for ShellFiles {
     fn watch(&self, window: &str, listener: ChangeListener) -> Option<Subscription> {
         let core = self.project(window)?;
         Some(core.watcher().hub().subscribe(move |batch| listener(batch)))
+    }
+
+    fn shared_file(&self, window: &str, name: &str) -> Option<RawFile> {
+        // one name inside `.permark/`, never a path that leaves it
+        if !is_shared_name(name) {
+            return None;
+        }
+        // asked each time: the store moves when PerMark is initialized in the folder
+        Some(self.project(window)?.store().shared_file(name))
     }
 }
 

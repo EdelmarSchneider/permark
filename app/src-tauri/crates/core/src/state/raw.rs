@@ -7,12 +7,21 @@ use std::time::Duration;
 
 use super::shared_write::{lock_within, FileLock, BRIEF_WAIT, WAIT};
 use super::{private, Guard, StateError};
-use crate::fsx::{retry, write_atomic, write_atomic_checked};
+use crate::fsx::{read_bytes, write_atomic, write_atomic_checked, FsxError};
 
-/// Pauses before a transient read error (an antivirus scan, a sync client) is believed.
-const READ_RETRY: [Duration; 2] = [Duration::from_millis(50), Duration::from_millis(150)];
 /// Reads + writes an update tries before it gives up (only a writer without the lock can make it try again).
 pub(super) const UPDATE_ATTEMPTS: usize = 8;
+/// Most bytes a file shared with the team (`.permark/<name>`) may hold: it arrives with the repository, so a larger
+/// one is unreadable rather than taken into memory.
+pub const SHARED_MAX_BYTES: u64 = 1024 * 1024;
+
+/// A file in `.permark/` left unread (`InvalidData`: not transient, never retried).
+fn refused(path: &Path, why: &str) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!("{} {why}", path.display()),
+    )
+}
 
 pub(super) fn kept_changing() -> io::Error {
     io::Error::new(
@@ -70,15 +79,40 @@ impl RawFile {
         &self.path
     }
 
-    /// The bytes, `None` when there is no file.
+    /// The bytes, `None` when there is no file. In a project's `.permark/` (whose content a repository decides) only a
+    /// plain file is read: a link | folder in its place is unreadable, never followed; a file shared with the team is
+    /// unreadable beyond [`SHARED_MAX_BYTES`].
     ///
     /// # Errors
-    /// Any other IO failure (the file may be fine a moment later).
+    /// `InvalidData` for those refusals (same as a file that cannot be parsed: never written over by an update); any
+    /// other IO failure (the file may be fine a moment later).
     pub fn read(&self) -> io::Result<Option<Vec<u8>>> {
-        match retry(&READ_RETRY, || std::fs::read(&self.path)) {
+        let limit = match self.guard {
+            Guarded::No | Guarded::State(_) => u64::MAX,
+            Guarded::Shared { .. } => SHARED_MAX_BYTES,
+        };
+        if !matches!(self.guard, Guarded::No) {
+            match std::fs::symlink_metadata(&self.path) {
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+                // a link (Windows: a symbolic link | junction, not a cloud file) | folder in place of the file
+                Ok(meta) if !meta.file_type().is_file() => {
+                    return Err(refused(&self.path, "is a link or not a file"))
+                }
+                // anything else: the read says
+                Ok(_) | Err(_) => {}
+            }
+        }
+        match read_bytes(&self.path, limit) {
             Ok(bytes) => Ok(Some(bytes)),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error),
+            Err(FsxError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => {
+                Ok(None)
+            }
+            Err(FsxError::Io { source, .. }) => Err(source),
+            // too large (no text check is made here)
+            Err(other) => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                other.to_string(),
+            )),
         }
     }
 
