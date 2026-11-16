@@ -16,8 +16,14 @@
   // Selecting shows a view, never hides it. One Tab stop: arrows move between the tabs, Enter | Space select; right
   // click | Shift+F10 | the Menu key open the view's options. After the tabs, where the window has views to arrange,
   // one options button for the tab shown: a Tab stop of its own, seen while the strip is pointed at | has the focus.
+  // A crowded strip too narrow for the whole label of the tab shown moves its last other tabs into a menu of its views.
+  import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
+  import { tick } from "svelte";
+  import ContextMenu from "../explorer/ContextMenu.svelte";
+  import type { MenuEntry } from "../explorer/menu";
   import { t } from "../i18n";
+  import { rowFit } from "./rowFit";
 
   type Props = {
     views: readonly TabView[];
@@ -55,12 +61,96 @@
   const crowded = $derived(views.length > roomy);
   /** The tab the options button acts on: the one shown (nothing selected: the first). */
   const shown = $derived(views.find((v) => v.id === selected) ?? views[0] ?? null);
+
+  /** The strip's own sizes (CSS below): its side padding, the gap between tabs, a tab drawn as its icon alone, the
+   *  views button, the options button with its margin. */
+  const STRIP_PAD = 16;
+  const TAB_GAP = 2;
+  const ICON_TAB = 24;
+  const VIEWS_PX = 24;
+  const OPTIONS_PX = 32;
+  let bar: HTMLElement | undefined = $state();
+  /** Px the tabs have, and the width of the selected tab with its whole label (0: not measured: every tab drawn). */
+  let room = $state(0);
+  let whole = $state(0);
+  /** Crowded: the other tabs that stay beside the selected one's whole label; the last ones go into the views menu. */
+  const others = $derived(views.filter((v) => v.id !== selected));
+  const kept = $derived(
+    crowded && selected !== null
+      ? rowFit({
+          room,
+          fixed: whole,
+          count: others.length,
+          step: ICON_TAB + TAB_GAP,
+          more: VIEWS_PX,
+        })
+      : others.length,
+  );
+  const folded = $derived(new Set(others.slice(kept).map((v) => v.id)));
+  const drawn = $derived(views.filter((v) => !folded.has(v.id)));
+  let list = $state.raw<{ x: number; y: number; anchor: HTMLElement } | null>(null);
+
+  // the strip's width and the selected tab's whole width (its label, the language, a count change it) decide which
+  // tabs it draws (observer torn down with the strip; none = every tab, as in tests)
+  $effect(() => {
+    const id = selected;
+    void shown?.label;
+    void shown?.badge;
+    if (!bar || typeof ResizeObserver === "undefined") return;
+    const box = bar;
+    const options = onoptions === undefined ? 0 : OPTIONS_PX;
+    const measure = (): void => {
+      room = box.clientWidth - STRIP_PAD - options;
+      const tab = tabOf(id);
+      const label = tab?.querySelector<HTMLElement>(".label");
+      // the label is the only part of a tab that shortens: the rest of the tab plus the label's whole text (+1: the
+      // measured text width is rounded, the drawn one is not)
+      whole =
+        tab && label
+          ? Math.ceil(
+              tab.getBoundingClientRect().width -
+                label.getBoundingClientRect().width +
+                label.scrollWidth +
+                1,
+            )
+          : 0;
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    const tab = tabOf(id);
+    if (tab) observer.observe(tab);
+    return () => observer.disconnect();
+  });
+
+  /** The views menu: every view of the strip, the one shown marked; picking one shows it and its tab takes the
+   *  keyboard. */
+  function viewEntries(): MenuEntry[] {
+    return views.map((view) => ({
+      kind: "item",
+      label: `${view.id === selected ? "✓ " : ""}${view.label}${view.badge === null ? "" : ` (${view.badge})`}`,
+      run: () => {
+        if (view.id !== selected) onselect(view.id);
+        void tick().then(() => tabOf(view.id)?.focus());
+      },
+    }));
+  }
+
+  function viewsMenu(button: HTMLElement): void {
+    if (list !== null) {
+      list = null;
+      return;
+    }
+    const box = button.getBoundingClientRect();
+    list = { x: box.left, y: box.bottom + 2, anchor: button };
+  }
+
   /** The tab that takes the Tab stop (the selected one until the focus goes to another: arrows, a click, a script). */
   let focused = $state<string | null>(null);
   const stop = $derived(
-    views.find((v) => v.id === focused)?.id ??
-      views.find((v) => v.id === selected)?.id ??
-      views[0]?.id ??
+    drawn.find((v) => v.id === focused)?.id ??
+      drawn.find((v) => v.id === selected)?.id ??
+      drawn[0]?.id ??
       null,
   );
   let strip: HTMLElement | undefined = $state();
@@ -83,8 +173,8 @@
       }
       return;
     }
-    const at = views.findIndex((v) => v.id === stop);
-    const last = views.length - 1;
+    const at = drawn.findIndex((v) => v.id === stop);
+    const last = drawn.length - 1;
     let to: number;
     switch (event.key) {
       case "ArrowRight":
@@ -103,13 +193,13 @@
         return;
     }
     event.preventDefault();
-    const id = views[to]?.id ?? null;
+    const id = drawn[to]?.id ?? null;
     focused = id;
     tabOf(id)?.focus();
   }
 </script>
 
-<div class="bar">
+<div class="bar" bind:this={bar}>
   <!-- svelte-ignore a11y_interactive_supports_focus -->
   <div
     class="tabs"
@@ -128,7 +218,7 @@
       }
     }}
   >
-    {#each views as view (view.id)}
+    {#each drawn as view (view.id)}
       {@const iconOnly = view.icon !== undefined && crowded && selected !== view.id}
       <button
         type="button"
@@ -166,6 +256,20 @@
       </button>
     {/each}
   </div>
+  {#if folded.size > 0}
+    {@const name = label ?? t("panel.tabs")}
+    <button
+      type="button"
+      class="icon-btn views"
+      aria-label={name}
+      title={name}
+      aria-haspopup="menu"
+      aria-expanded={list !== null}
+      onclick={(event) => viewsMenu(event.currentTarget)}
+    >
+      <ChevronDown size={14} aria-hidden="true" />
+    </button>
+  {/if}
   {#if onoptions && shown}
     {@const name = t("panel.viewMenu", { name: shown.label })}
     <button
@@ -182,6 +286,16 @@
     </button>
   {/if}
 </div>
+{#if list !== null}
+  <ContextMenu
+    x={list.x}
+    y={list.y}
+    entries={viewEntries()}
+    label={label ?? t("panel.tabs")}
+    anchor={list.anchor}
+    close={() => (list = null)}
+  />
+{/if}
 
 <style>
   /* the tabs, then the options button: one line over the views of the group */
@@ -198,6 +312,17 @@
     gap: 2px;
     padding: var(--sp-2) var(--sp-2) 0;
     overflow: hidden;
+  }
+  /* the views menu of a crowded strip, right after its tabs: always seen (it stands for the tabs it holds) */
+  .views {
+    flex: none;
+    align-self: center;
+    width: 24px;
+    height: 24px;
+  }
+  .views[aria-expanded="true"] {
+    background: var(--hover);
+    color: var(--text);
   }
   /* a 24 px target at the end of the strip. Not seen until the strip is pointed at or holds the focus: by opacity
      alone, so it keeps its room and its Tab stop */
@@ -226,8 +351,9 @@
   }
   /* A strip too narrow for its labels takes the room from the tabs by their weights: the tab shown loses nothing
      while another can still give way (its weight is nothing beside theirs), so its label stays whole; with every
-     other tab at its smallest, it shortens too and every tab stays reachable. A tab is also the handle its view is
-     dragged by: a pen | a finger on it never scrolls the page away from under a drag. */
+     other tab at its smallest (a crowded strip first moves its last other tabs into its views menu), it shortens
+     too and every tab stays reachable. A tab is also the handle its view is dragged by: a pen | a finger on it never
+     scrolls the page away from under a drag. */
   .tab {
     --tab-pad: var(--sp-3);
     flex: 0 100000 auto;

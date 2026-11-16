@@ -271,6 +271,90 @@ describe("a strip too narrow for its labels", () => {
     );
   });
 
+  it("a crowded strip keeps the label of the tab shown whole: the last other tabs move into a menu of its views", async () => {
+    const observers: (() => void)[] = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          observers.push(callback);
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    );
+    try {
+      const target = document.createElement("div");
+      document.body.append(target);
+      const onselect = vi.fn();
+      const views = ["Files", "Search", "Broken links", "Comments", "Tags", "Unread"].map(
+        (label, at) => ({ id: `v${at}`, label, icon: Icon, badge: at === 5 ? "1" : null }),
+      );
+      component = mount(ViewTabs, {
+        target,
+        props: {
+          views,
+          selected: "v2",
+          onselect,
+          onoptions: vi.fn(),
+          label: "Sidebar views",
+          roomy: 3,
+        },
+      });
+      flushSync();
+      const drawn = (): (string | null)[] => tabs(target).map((tab) => tab.dataset["view"] ?? null);
+      const more = (): HTMLButtonElement | null =>
+        target.querySelector<HTMLButtonElement>('button[aria-label="Sidebar views"]');
+      // not measured yet: every tab, no menu button
+      expect(drawn()).toEqual(["v0", "v1", "v2", "v3", "v4", "v5"]);
+      expect(more()).toBeNull();
+      // a 244 px strip; the tab shown is 82 px wide with its label cut to 46 of its 101 px
+      const size = (width: number): void => {
+        const bar = target.querySelector<HTMLElement>(".bar");
+        const tab = target.querySelector<HTMLElement>('[aria-selected="true"]');
+        const label = tab?.querySelector<HTMLElement>(".label");
+        if (!bar || !tab || !label) throw new Error("no strip");
+        Object.defineProperty(bar, "clientWidth", { configurable: true, get: () => width });
+        tab.getBoundingClientRect = () => DOMRect.fromRect({ width: 82, height: 28 });
+        label.getBoundingClientRect = () => DOMRect.fromRect({ width: 46, height: 16 });
+        Object.defineProperty(label, "scrollWidth", { configurable: true, get: () => 101 });
+        for (const observer of observers) observer();
+        flushSync();
+      };
+      size(244);
+      expect(drawn()).toEqual(["v0", "v2"]);
+      const button = more();
+      expect(button?.title).toBe("Sidebar views");
+      expect(button?.getAttribute("aria-haspopup")).toBe("menu");
+      // the arrows go over the tabs drawn
+      key(target, { key: "ArrowRight" });
+      expect(document.activeElement).toBe(tabs(target)[0]);
+      // the menu lists every view of the strip, the one shown marked, a count beside its view
+      button?.click();
+      flushSync();
+      expect(button?.getAttribute("aria-expanded")).toBe("true");
+      const items = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'));
+      expect(items.map((item) => item.textContent?.trim())).toEqual([
+        "Files",
+        "Search",
+        "✓ Broken links",
+        "Comments",
+        "Tags",
+        "Unread (1)",
+      ]);
+      items[4]?.click();
+      flushSync();
+      expect(onselect).toHaveBeenCalledWith("v4");
+      expect(document.querySelector('[role="menu"]')).toBeNull();
+      // room again: every tab is back and the menu button goes
+      size(400);
+      expect(drawn()).toEqual(["v0", "v1", "v2", "v3", "v4", "v5"]);
+      expect(more()).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("past its roomy count the strip still shows the icons alone of the tabs that are not shown", () => {
     const target = document.createElement("div");
     document.body.append(target);
