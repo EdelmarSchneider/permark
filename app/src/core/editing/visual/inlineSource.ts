@@ -1,6 +1,7 @@
 // `inline_source`: a piece of a line the editor keeps as written (its exact source is the node's `source`), drawn as
 // View draws it, so the text around it stays editable. Kinds: inline math (`inlineMath.ts`), footnote references and
-// reference-style links (`references.ts`), HTML elements written in a line (`inlineHtml.ts`). Read from the editor's mdast node `inlineSource` and written back as the
+// reference-style links (`references.ts`), HTML elements written in a line (`inlineHtml.ts`), marked text, shortcode
+// emoji and inline notes (`syntaxPieces.ts`). Read from the editor's mdast node `inlineSource` and written back as the
 // same bytes. At rest it is one thing to select (an arrow key selects it, the next moves past it); a click | Enter
 // opens a small field under it with the editable part of its source (a formula's TeX, a reference's whole source).
 // What is typed goes into the document at once (the editor's undo, dirty state and autosave see it) when it still
@@ -20,6 +21,7 @@ import type { RemarkPluginRaw } from "@milkdown/kit/transformer";
 import { $node, $prose, $remark, $view } from "@milkdown/kit/utils";
 import { htmlLook, htmlPieces } from "./inlineHtml";
 import { mathElement, mathFromMarkdown, mathParts, mathSyntax } from "./inlineMath";
+import { syntaxPieces } from "./syntaxPieces";
 import {
   LOCKED,
   lockedHostCtx,
@@ -55,7 +57,7 @@ declare module "mdast" {
 
 export const INLINE_SOURCE = "inline_source";
 
-export const INLINE_KINDS = ["math", "footnote", "link", "html"] as const;
+export const INLINE_KINDS = ["math", "footnote", "link", "html", "mark", "emoji", "note"] as const;
 export type InlineKind = (typeof INLINE_KINDS)[number];
 
 /** The source split into the part the person edits and what stays around it. */
@@ -106,6 +108,25 @@ const KINDS: Record<InlineKind, Kind> = {
     parts: wholeSource,
     rendered: true,
   },
+  mark: {
+    name: "highlight",
+    look: (source, ctx) => htmlLook(ctx, source),
+    parts: wholeSource,
+    rendered: true,
+  },
+  emoji: {
+    name: "emoji",
+    look: (source, ctx) => htmlLook(ctx, source),
+    parts: wholeSource,
+    rendered: true,
+  },
+  // its number is View's (the renderer counts inline notes with the footnotes)
+  note: {
+    name: "footnote",
+    look: (source, ctx) => htmlLook(ctx, source),
+    parts: wholeSource,
+    rendered: true,
+  },
 };
 
 function kindOf(value: unknown): InlineKind | null {
@@ -128,6 +149,11 @@ const AFTER_LABEL = /^[[(:]/;
  * and is no digit to the math rule. Prose elsewhere is written as typed (a `]:` inside it defines nothing).
  */
 function afterPiece(piece: string, written: string): string {
+  if (mathParts(piece)?.close === "\\]") {
+    // a formula's `\]` closes no label: the escape the writer puts on a `(` after any `]` is dropped (a `\(` there
+    // could open a formula on the next read)
+    return written.startsWith("\\(") ? written.slice(1) : written;
+  }
   if (piece.endsWith("]") && AFTER_LABEL.test(written)) return `\\${written}`;
   const digit = /^[0-9]/.exec(written)?.[0];
   if (digit !== undefined && mathParts(piece)?.open === "$") {
@@ -177,17 +203,23 @@ function remarkInlineSource(ctx: Ctx): RemarkPluginRaw<undefined> {
       if (typeof file.value !== "string") return;
       referencePieces(tree, file.value);
       htmlPieces(tree, file.value);
+      syntaxPieces(tree, file.value);
     };
   };
 }
 
 const inlineSourceRemark = $remark("pmInlineSource", remarkInlineSource);
 
-/** The sources of the inline pieces in `node` (of `kind` only, when given), in order. */
-export function pieceSources(node: PMNode, kind?: InlineKind): string[] {
+/** The sources of the inline pieces in `node` (only those drawn from View's render, `Kind.rendered`, when `rendered`),
+ *  in order. */
+export function pieceSources(node: PMNode, rendered = false): string[] {
   const found: string[] = [];
   node.descendants((child) => {
-    if (child.type.name === INLINE_SOURCE && (kind === undefined || child.attrs.kind === kind)) {
+    const kind = kindOf(child.attrs.kind);
+    if (
+      child.type.name === INLINE_SOURCE &&
+      (!rendered || (kind !== null && KINDS[kind].rendered))
+    ) {
       found.push(String(child.attrs.source));
     }
     return true;
@@ -214,6 +246,7 @@ export function piecesIn(ctx: Ctx, text: string): FoundPiece[] {
     const tree = ctx.get(remarkCtx).parse(text);
     referencePieces(tree, text);
     htmlPieces(tree, text);
+    syntaxPieces(tree, text);
     visit(tree);
   } catch {
     // unreadable: no piece
@@ -289,7 +322,13 @@ export const inlineSourceNode = $node(INLINE_SOURCE, (ctx) => {
 const numbering = new WeakMap<PMNode, ReadonlyMap<string, number>>();
 const referredBy = new WeakMap<PMNode, readonly string[]>();
 
-/** The number of each footnote `doc` refers to: in the order of first reference, blocks kept as written included. */
+/** Stands for an inline note among a block's references: each one is a footnote of its own (no label is NUL). */
+const INLINE_NOTE = "\u0000";
+
+/**
+ * The number of each footnote `doc` refers to: in the order of first reference, blocks kept as written included. An
+ * inline note (its piece in an editable block) takes the next number, as the renderer counts it.
+ */
 function numbersOf(ctx: Ctx, doc: PMNode): ReadonlyMap<string, number> {
   const known = numbering.get(doc);
   if (known !== undefined) return known;
@@ -304,14 +343,17 @@ function numbersOf(ctx: Ctx, doc: PMNode): ReadonlyMap<string, number> {
           const kind = kindOf(node.attrs.kind);
           if (node.type.name === INLINE_SOURCE && kind !== null && KINDS[kind].numbered) {
             found.push(...footnoteIds(ctx, String(node.attrs.source)));
-          }
+          } else if (node.type.name === INLINE_SOURCE && kind === "note") found.push(INLINE_NOTE);
           return true;
         });
       }
       ids = found;
       referredBy.set(block, ids);
     }
-    for (const id of ids) if (!numbers.has(id)) numbers.set(id, numbers.size + 1);
+    for (const id of ids) {
+      if (id === INLINE_NOTE) numbers.set(`${INLINE_NOTE}${numbers.size}`, numbers.size + 1);
+      else if (!numbers.has(id)) numbers.set(id, numbers.size + 1);
+    }
   });
   numbering.set(doc, numbers);
   return numbers;

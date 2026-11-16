@@ -38,6 +38,13 @@ fn is_url_attribute(attr: &str) -> bool {
     )
 }
 
+/// Elements whose `align` the sanitizer keeps for the text inside them.
+const BLOCK_ALIGNED: [&str; 8] = ["p", "div", "h1", "h2", "h3", "h4", "h5", "h6"];
+
+fn is_block_aligned(element: &str) -> bool {
+    BLOCK_ALIGNED.contains(&element)
+}
+
 fn class_token_allowed(token: &str) -> bool {
     if let Some(lang) = token.strip_prefix("language-") {
         return !lang.is_empty()
@@ -58,8 +65,12 @@ fn class_token_allowed(token: &str) -> bool {
                 | "prompt-block"
                 | "tvar"
                 | "at-ref"
+                | "emoji"
         )
 }
+
+/// Longest `data-title` | `data-lines` value a code block keeps (bytes).
+const MAX_CODE_DATA: usize = 1024;
 
 /// Percent-encodes a project path for `pm-asset:` (keeps `/`).
 fn encode_path(path: &str) -> String {
@@ -109,8 +120,29 @@ fn filter_attribute<'v>(
                 .collect();
             (!kept.is_empty()).then(|| Cow::Owned(kept.join(" ")))
         }
-        (_, "id") => (!value.is_empty() && !value.contains(char::is_whitespace))
+        // an old-style anchor (`<a name>`) is a link target like an id; it names no property of the page's
+        // `window` | `document` (ids do, and the `name` of forms, pictures, embeds and objects)
+        (_, "id") | ("a", "name") => (!value.is_empty() && !value.contains(char::is_whitespace))
             .then_some(Cow::Borrowed(value)),
+        // block alignment (READMEs center their heading this way): the three HTML values only
+        (_, "align") if is_block_aligned(element) => ["left", "center", "right"]
+            .into_iter()
+            .find(|known| value.eq_ignore_ascii_case(known))
+            .map(Cow::Borrowed),
+        // a code block's extras (the renderer checked them; raw HTML may write anything)
+        ("code", "data-lines") => (!value.is_empty()
+            && value.len() <= MAX_CODE_DATA
+            && value
+                .bytes()
+                .all(|b| b.is_ascii_digit() || b == b',' || b == b'-'))
+        .then_some(Cow::Borrowed(value)),
+        ("code", "data-numbers") => {
+            (!value.is_empty() && value.len() <= 7 && value.bytes().all(|b| b.is_ascii_digit()))
+                .then_some(Cow::Borrowed(value))
+        }
+        ("code", "data-title") => {
+            (!value.is_empty() && value.len() <= MAX_CODE_DATA).then_some(Cow::Borrowed(value))
+        }
         ("details", "data-tag") => value
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
@@ -180,9 +212,11 @@ fn builder(doc: &str) -> ammonia::Builder<'static> {
                 "data-footnote-ref",
                 "data-footnote-backref",
                 "data-footnote-backref-idx",
+                "name",
             ],
         )
         .add_tag_attributes("details", ["open", "data-tag"])
+        .add_tag_attributes("code", ["data-title", "data-lines", "data-numbers"])
         .add_tag_attributes("img", ["width", "height", "alt", "title", "src"])
         // Players: where the file is and how it looks. Never `autoplay` (nothing starts by itself, least of all with
         // sound) and no event handlers or styles; the file comes through the asset protocol.
@@ -205,6 +239,9 @@ fn builder(doc: &str) -> ammonia::Builder<'static> {
         .set_tag_attribute_value("video", "preload", "metadata")
         .set_tag_attribute_value("audio", "preload", "metadata")
         .attribute_filter(move |element, attr, value| filter_attribute(&doc, element, attr, value));
+    for element in BLOCK_ALIGNED {
+        builder.add_tag_attributes(element, ["align"]);
+    }
     builder
 }
 
@@ -341,6 +378,64 @@ mod tests {
         );
         assert!(!clean("<details data-tag=\"a b\">x</details>").contains("data-tag"));
         assert!(!clean("<p data-tag=\"x\">x</p>").contains("data-tag"));
+    }
+
+    #[test]
+    fn callout_emoji_and_code_extras_survive_checked() {
+        let callout = clean("<details class=\"markdown-alert markdown-alert-caution markdown-alert-kind-bug evil\" open><summary class=\"markdown-alert-title\">T</summary><p>x</p></details>");
+        assert_eq!(
+            callout,
+            "<details class=\"markdown-alert markdown-alert-caution markdown-alert-kind-bug\" open=\"\"><summary class=\"markdown-alert-title\">T</summary><p>x</p></details>"
+        );
+        assert_eq!(
+            clean("<mark>m</mark><span class=\"emoji x\" title=\":smile:\">s</span>"),
+            "<mark>m</mark><span class=\"emoji\" title=\":smile:\">s</span>"
+        );
+        assert_eq!(
+            clean("<pre><code class=\"language-rs\" data-title=\"a &lt;b&gt;\" data-lines=\"1,3-5\" data-numbers=\"10\">x</code></pre>"),
+            "<pre><code class=\"language-rs\" data-title=\"a &lt;b&gt;\" data-lines=\"1,3-5\" data-numbers=\"10\">x</code></pre>"
+        );
+        for bad in [
+            "<code data-lines=\"1;x\">x</code>",
+            "<code data-lines=\"\">x</code>",
+            "<code data-numbers=\"-1\">x</code>",
+            "<code data-numbers=\"12345678\">x</code>",
+            "<p data-title=\"x\" data-lines=\"1\">x</p>",
+        ] {
+            assert!(!clean(bad).contains("data-"), "{bad} -> {}", clean(bad));
+        }
+    }
+
+    #[test]
+    fn block_alignment_keeps_only_left_center_right() {
+        for (html, kept) in [
+            ("<p align=\"center\">x</p>", "<p align=\"center\">x</p>"),
+            (
+                "<div align=\"RIGHT\">x</div>",
+                "<div align=\"right\">x</div>",
+            ),
+            ("<h1 align=\"Left\">x</h1>", "<h1 align=\"left\">x</h1>"),
+            ("<h6 align=\"center\">x</h6>", "<h6 align=\"center\">x</h6>"),
+            ("<p align=\"justify\">x</p>", "<p>x</p>"),
+            ("<p align=\"center;color:red\">x</p>", "<p>x</p>"),
+            ("<div align=\"\">x</div>", "<div>x</div>"),
+            ("<span align=\"center\">x</span>", "<span>x</span>"),
+        ] {
+            assert_eq!(clean(html), kept, "{html}");
+        }
+    }
+
+    #[test]
+    fn anchor_names_follow_the_id_rule() {
+        assert_eq!(clean("<a name=\"setup\"></a>"), "<a name=\"setup\"></a>");
+        for html in [
+            "<a name=\"a b\"></a>",
+            "<a name=\"\"></a>",
+            "<p name=\"x\">t</p>",
+            "<img name=\"x\" src=\"a.png\">",
+        ] {
+            assert!(!clean(html).contains("name="), "{html}");
+        }
     }
 
     #[test]

@@ -64,7 +64,16 @@ export function reasonOf(node: PMNode): LockReason {
 
 /** What a locked block is, by the name assistive technology gives it. */
 export type BlockName =
-  "properties" | "html" | "formula" | "footnote" | "link" | "diagram" | "alert" | "other";
+  | "properties"
+  | "html"
+  | "formula"
+  | "footnote"
+  | "link"
+  | "diagram"
+  | "alert"
+  | "highlight"
+  | "emoji"
+  | "other";
 
 function nameOf(node: PMNode): BlockName {
   const reason = reasonOf(node);

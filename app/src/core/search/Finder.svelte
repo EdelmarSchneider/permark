@@ -430,7 +430,7 @@
     max-height: min(560px, 78vh);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--bg);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
     overflow: hidden;
     outline: none;

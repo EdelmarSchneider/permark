@@ -61,6 +61,8 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_mermaid::plugin());
     #[cfg(feature = "plugin-plantuml")]
     plugins.push(permark_plugin_plantuml::plugin());
+    #[cfg(feature = "plugin-graphviz")]
+    plugins.push(permark_plugin_graphviz::plugin());
     #[cfg(feature = "plugin-media")]
     plugins.push(permark_plugin_media::plugin());
     #[cfg(feature = "plugin-json-view")]
@@ -152,6 +154,7 @@ mod tests {
             "math",
             "mermaid",
             "plantuml",
+            "graphviz",
             "media",
             "json-view",
             "xml-view",

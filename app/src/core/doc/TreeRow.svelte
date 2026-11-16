@@ -127,7 +127,7 @@
     margin: 2px 0 2px calc((var(--depth, 0) + 1) * 16px + 19px);
     padding: 0 8px;
     border: 1px dashed var(--border-strong);
-    border-radius: 10px;
+    border-radius: 999px;
     background: transparent;
     color: var(--muted);
     font: 12px var(--font-ui);

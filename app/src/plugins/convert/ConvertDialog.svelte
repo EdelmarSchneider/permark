@@ -234,7 +234,7 @@
     padding: var(--sp-4) var(--sp-5);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--bg);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
     outline: none;
     font-size: var(--fs-ui);
@@ -269,7 +269,7 @@
   .tokenizer {
     margin-left: var(--sp-1);
     padding: 0 6px;
-    border-radius: 8px;
+    border-radius: var(--radius-surface);
     background: var(--surface-2);
     font-size: var(--fs-ui-xs);
   }
@@ -339,7 +339,7 @@
   }
   .best {
     padding: 0 6px;
-    border-radius: 8px;
+    border-radius: var(--radius-surface);
     background: var(--accent);
     color: var(--accent-fg);
     font-size: var(--fs-ui-xs);

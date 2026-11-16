@@ -40,6 +40,7 @@ import type { MarkOptions } from "../marks";
 import { clipboardPictures } from "../pictures";
 import { configLanguage } from "./configLang";
 import { fenceAround, type Fence } from "./fence";
+import { highlightTag, viewInlineSyntax } from "./inlineSyntax";
 import { completionSources, type CompletionHost } from "./complete";
 import { toggleBold } from "./bold";
 import { editsSpec, scopeIn } from "./edits";
@@ -61,6 +62,7 @@ const style = HighlightStyle.define([
   { tag: [tags.emphasis], fontStyle: "italic" },
   { tag: [tags.strong], fontWeight: "700" },
   { tag: [tags.strikethrough], textDecoration: "line-through" },
+  { tag: highlightTag, backgroundColor: "var(--mark)" },
   { tag: [tags.link, tags.url], color: "var(--accent-text)" },
   { tag: [tags.monospace], color: "var(--syn-string)" },
   { tag: [tags.comment, tags.meta, tags.processingInstruction], color: "var(--syn-comment)" },
@@ -151,7 +153,11 @@ export const codeLook: Extension = [syntaxHighlighting(style), theme];
 export function languageFor(path: string, markdownText: boolean): Extension | Promise<Extension> {
   if (markdownText) {
     return yamlFrontmatter({
-      content: markdown({ base: markdownLanguage, codeLanguages: languages }),
+      content: markdown({
+        base: markdownLanguage,
+        codeLanguages: languages,
+        extensions: viewInlineSyntax,
+      }),
     });
   }
   const name = path.split("/").at(-1) ?? path;

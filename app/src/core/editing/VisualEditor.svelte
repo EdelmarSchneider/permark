@@ -108,6 +108,8 @@
     link: "link.label",
     diagram: "edit.block.diagram",
     alert: "edit.block.alert",
+    highlight: "edit.block.highlight",
+    emoji: "edit.block.emoji",
     other: "edit.block.other",
   };
 
@@ -469,12 +471,11 @@
       }
       const editor = made;
       const doc = await loaded.buildDoc(editor, current.text, current.segments ?? []);
-      // locked blocks and HTML written in a line draw View's look from their first paint when the render and the card
-      // come in time; a render that comes later (a large document, a busy backend) brings it then, the blocks show
-      // their source until it does
+      // locked blocks and the pieces drawn from View's render (HTML written in a line, marked text, emoji, inline
+      // notes) draw View's look from their first paint when the render and the card come in time; a render that comes
+      // later (a large document, a busy backend) brings it then, the blocks show their source until it does
       const asked =
-        doc.sources.some((s) => s.locked !== null) ||
-        loaded.pieceSources(doc.doc, "html").length > 0
+        doc.sources.some((s) => s.locked !== null) || loaded.pieceSources(doc.doc, true).length > 0
           ? (early ?? viewOf(current.path, current.text))
           : null;
       const ticket = book.ask();
@@ -1001,7 +1002,7 @@
     padding: var(--sp-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--surface);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .host :global(.pm-inline__field) {
@@ -1108,7 +1109,7 @@
     width: calc(100% - 2 * var(--sp-4));
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--surface);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .popover--picker {
@@ -1138,10 +1139,10 @@
     min-width: 200px;
     max-height: 280px;
     overflow-y: auto;
-    padding: 4px;
+    padding: 6px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--bg);
+    border-radius: var(--radius-menu);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .slash button {

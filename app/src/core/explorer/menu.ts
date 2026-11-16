@@ -1,9 +1,16 @@
 // Entries of a context menu: data the component draws.
 
+import type { Component } from "svelte";
+
+/** A small icon before an entry's label (a `@lucide/svelte` icon). */
+export type MenuIcon = Component<{ size?: number; strokeWidth?: number }>;
+
 export type MenuEntry =
   | {
       kind: "item";
       label: string;
+      /** Drawn in a leading column; the menu's other items keep that column (empty) so the labels line up. */
+      icon?: MenuIcon;
       hint?: string;
       /** A second, quieter line (a path). */
       detail?: string;

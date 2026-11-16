@@ -66,13 +66,30 @@ export function leadCols(line: string): number {
 
 /**
  * Each line in a `span.ln` (its line break inside it, so a copy keeps one per line and an empty line its height);
- * `leads[i]` = the indentation line i's further rows keep (`--lead`).
+ * `leads[i]` = the indentation line i's further rows keep (`--lead`); the lines in `marked` (1-based) are
+ * `span.ln.is-marked`.
  */
-export function lineSpans(html: string, leads: readonly number[] = []): string {
+export function lineSpans(
+  html: string,
+  leads: readonly number[] = [],
+  marked: ReadonlySet<number> = new Set(),
+): string {
   return htmlLines(html)
     .map((line, i) => {
       const lead = leads[i] ?? 0;
-      return `<span class="ln"${lead > 0 ? ` style="--lead:${lead}"` : ""}>${line}\n</span>`;
+      const kind = marked.has(i + 1) ? "ln is-marked" : "ln";
+      return `<span class="${kind}"${lead > 0 ? ` style="--lead:${lead}"` : ""}>${line}\n</span>`;
     })
     .join("");
+}
+
+/** The lines (1-based) of a code block of `count` lines that `spec` marks (`1,3-5`, as the renderer writes it). */
+export function markedLines(spec: string, count: number): Set<number> {
+  const lines = new Set<number>();
+  for (const part of spec.split(",")) {
+    const [from = NaN, to = from] = part.split("-").map(Number);
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1) continue;
+    for (let line = from; line <= Math.min(to, count); line++) lines.add(line);
+  }
+  return lines;
 }

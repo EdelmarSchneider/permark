@@ -1,5 +1,9 @@
-// What diagram embeds (Mermaid, PlantUML) share: one render queue (a preview and a document never draw at the same
-// time), a small result cache, and the cleaning every drawing gets before it enters the page.
+// What diagram embeds (Mermaid, PlantUML, Graphviz) share: one render queue (a preview and a document never draw at
+// the same time), a small result cache, the page's palette, and the cleaning every drawing gets before it enters the
+// page.
+
+/** A drawing that could not be made, with the words that say why (the engine's, or why it was not tried). */
+export type DrawFailure = { problem: string };
 
 const REMOTE_LINK = /^(?:javascript:|data:|vbscript:)/i;
 const REMOTE_ASSET = /^(?:javascript:|data:|vbscript:|https?:|\/\/)/i;
@@ -58,18 +62,55 @@ export function viewBoxWidth(viewBox: string | null | undefined): number | null 
     : null;
 }
 
+/** A forced theme ignores the page's light tone: its drawings never share a cache entry with the page's. */
+export function paletteKey(theme: "light" | "dark", forced: boolean): string {
+  return forced ? `${theme}:forced` : `${theme}:${document.documentElement.dataset["tone"] ?? ""}`;
+}
+
+/**
+ * `read` gets the design tokens: the page's (theme + tone), or for a forced theme those of a probe element scoped to
+ * that theme alone (the tokens scope each theme by `data-theme`; the tones apply to the root only).
+ */
+export function withTokens<T>(
+  theme: "light" | "dark",
+  forced: boolean,
+  read: (token: (name: string) => string) => T,
+): T {
+  const reader = (element: Element) => {
+    const css = getComputedStyle(element);
+    return (name: string): string => css.getPropertyValue(name).trim();
+  };
+  if (!forced) return read(reader(document.documentElement));
+  const probe = document.createElement("div");
+  probe.hidden = true;
+  probe.dataset["theme"] = theme;
+  document.body.append(probe);
+  try {
+    // read before the probe leaves: a detached element has no computed tokens
+    return read(reader(probe));
+  } finally {
+    probe.remove();
+  }
+}
+
 class DiagramQueue {
   #tail: Promise<unknown> = Promise.resolve();
   #cache = new Map<string, string>();
 
-  /** The drawing for `key`: cached, else made by `job` after the ones queued before it. `null`: it cannot be drawn. */
-  draw(key: string, job: () => Promise<string | null>): Promise<string | null> {
+  /**
+   * The drawing for `key`: cached, else made by `job` after the ones queued before it. `null` | a failure: it cannot
+   * be drawn (never cached: the next ask tries again).
+   */
+  draw<R extends string | DrawFailure | null>(
+    key: string,
+    job: () => Promise<R>,
+  ): Promise<R | string | null> {
     const cached = this.#cache.get(key);
     if (cached !== undefined) return Promise.resolve(cached);
     const run = this.#tail.then(async () => {
       try {
         const svg = await job();
-        if (svg === null) return null;
+        if (typeof svg !== "string") return svg;
         if (this.#cache.size >= CACHE_KEPT) this.#cache.clear();
         this.#cache.set(key, svg);
         return svg;

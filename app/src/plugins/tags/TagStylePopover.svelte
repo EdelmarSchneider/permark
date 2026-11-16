@@ -132,7 +132,7 @@
     padding: var(--sp-2);
     border: 1px solid var(--border-strong);
     border-radius: var(--radius-card);
-    background: var(--surface);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .status {

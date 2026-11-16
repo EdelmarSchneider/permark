@@ -332,6 +332,25 @@ describe("export page", () => {
     expect(html).not.toMatch(/>fail</);
   });
 
+  it("a Graphviz graph comes in drawn, light and dark; a wrong one keeps the engine's words, not its source", async () => {
+    const lookup: EmbedLookup = (language) =>
+      language === "dot" ? () => import("../graphviz/Diagram.svelte") : undefined;
+    const html = await build(
+      await apiWith('<pre><code class="language-dot">digraph { Alpha -&gt; Beta }</code></pre>'),
+      { embeds: lookup },
+    );
+    expect(html).toMatch(/<figure[^>]+pm-only-light[\s\S]*<svg[\s\S]*>Alpha<\/text>/);
+    expect(html).toMatch(/<figure[^>]+pm-only-dark[\s\S]*<svg[\s\S]*>Alpha<\/text>/);
+    expect(html).not.toContain("digraph");
+    const wrong = await build(
+      await apiWith('<pre><code class="language-dot">digraph { Alpha -&gt; </code></pre>'),
+      { embeds: lookup, target: "paper", page: A5 },
+    );
+    expect(wrong).toContain("is-failed");
+    expect(wrong).toMatch(/syntax error in line 1/);
+    expect(wrong).not.toContain("digraph");
+  });
+
   it("code is copied once highlighted, without its buttons", async () => {
     const lookup: EmbedLookup = (language) =>
       language === "@code" ? () => import("../highlight/CodeBlock.svelte") : undefined;

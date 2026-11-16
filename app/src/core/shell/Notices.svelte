@@ -170,7 +170,7 @@
     padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--bg);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
     animation: pm-fade var(--dur) var(--ease);
   }

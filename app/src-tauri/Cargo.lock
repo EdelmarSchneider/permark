@@ -654,6 +654,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2544c4d6b6da7d54e95ac2833b464bf3dffa0666237868f2bf4ec5e11c9ba8cc"
 dependencies = [
  "caseless",
+ "emojis",
  "entities",
  "finl_unicode",
  "memchr-n",
@@ -1172,6 +1173,15 @@ name = "embed_plist"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ef6b89e5b37196644d8796de5268852ff179b44e96276cf4290264843743bb7"
+
+[[package]]
+name = "emojis"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b1514ced566c94991ed9563258ecf61e311fd773bf0a3f20606830386bf66e3"
+dependencies = [
+ "phf 0.13.1",
+]
 
 [[package]]
 name = "endi"
@@ -3357,6 +3367,7 @@ dependencies = [
  "permark-plugin-follow",
  "permark-plugin-frontmatter-card",
  "permark-plugin-git",
+ "permark-plugin-graphviz",
  "permark-plugin-highlight",
  "permark-plugin-json-view",
  "permark-plugin-live-feed",
@@ -3600,6 +3611,13 @@ dependencies = [
  "toml_edit 0.25.17+spec-1.1.0",
  "ts-rs",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "permark-plugin-graphviz"
+version = "0.12.0"
+dependencies = [
+ "permark-core",
 ]
 
 [[package]]

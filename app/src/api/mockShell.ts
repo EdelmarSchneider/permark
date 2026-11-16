@@ -59,6 +59,7 @@ export const MOCK_MANIFESTS: readonly Manifest[] = [
   manifest("math", "embed", "app"),
   manifest("mermaid", "embed", "app"),
   manifest("plantuml", "embed", "app"),
+  manifest("graphviz", "embed", "app"),
   manifest("media", "format", "app"),
   manifest("json-view", "format", "app"),
   manifest("xml-view", "format", "app"),

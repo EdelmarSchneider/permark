@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // The shared context menu (Explorer, right column views): the keyboard focus itself moves over the items (assistive
 // tech follows it), a disabled item is reached and announced but does nothing, focus returns to the opener.
+import FolderOpen from "@lucide/svelte/icons/folder-open";
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ContextMenu from "./ContextMenu.svelte";
@@ -111,5 +112,29 @@ describe("the context menu by keyboard", () => {
     expect(document.activeElement).toBe(root.querySelector('[role="menu"]'));
     key("ArrowDown");
     expect(document.activeElement).toBe(root.querySelector('[role="menu"]'));
+  });
+});
+
+describe("icons of the context menu", () => {
+  it("draws an item's icon in a leading column, hidden from assistive tech; an item without one keeps the column", () => {
+    const root = show([
+      { kind: "item", label: "Open folder", icon: FolderOpen, run: vi.fn() },
+      { kind: "item", label: "Plain", run: vi.fn() },
+    ]);
+    const items = [...root.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+    const cells = items.map((item) => item.querySelector<HTMLElement>(".icon"));
+    expect(cells[0]?.querySelector("svg.lucide-folder-open") ?? null).not.toBeNull();
+    expect(cells[0]?.getAttribute("aria-hidden")).toBe("true");
+    expect(cells[0]?.querySelector("svg")?.getAttribute("width")).toBe("15");
+    // the same column, empty: the labels line up
+    expect(cells[1] ?? null).not.toBeNull();
+    expect(cells[1]?.querySelector("svg") ?? null).toBeNull();
+    // the name stays the label alone
+    expect(items.map((item) => item.textContent.trim())).toEqual(["Open folder", "Plain"]);
+  });
+
+  it("a menu without icons draws no icon column", () => {
+    const root = show([{ kind: "item", label: "Plain", run: vi.fn() }]);
+    expect(root.querySelector(".icon")).toBeNull();
   });
 });

@@ -31,6 +31,7 @@ export const KNOWN_PLUGINS = [
   "math",
   "mermaid",
   "plantuml",
+  "graphviz",
   "media",
   "json-view",
   "xml-view",
