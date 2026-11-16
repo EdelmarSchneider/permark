@@ -126,6 +126,20 @@ fn personal_words_accept_their_capitalized_and_upper_forms() {
     assert_eq!(personal_form("two words"), None);
     assert_eq!(personal_form(""), None);
     assert_eq!(personal_form(&"a".repeat(MAX_WORD_CHARS + 1)), None);
+    // invisible characters (bidi controls, zero-width, format) would hide what the word really is
+    for hidden in [
+        "ab\u{202E}cd",
+        "ab\u{2066}cd",
+        "ab\u{200B}cd",
+        "ab\u{200F}cd",
+        "ab\u{2060}cd",
+        "ab\u{FEFF}cd",
+        "ab\u{AD}cd",
+        "ab\u{7F}cd",
+        "ab\u{E0041}cd",
+    ] {
+        assert_eq!(personal_form(hidden), None, "{hidden:?}");
+    }
 }
 
 #[test]
@@ -472,6 +486,23 @@ fn calls_are_refused_over_the_word_cap_and_for_unknown_languages() {
 }
 
 #[test]
+fn a_word_longer_than_any_dictionary_word_is_never_judged_by_the_engine() {
+    let h = Harness::start();
+    h.ready("en");
+    let long = "x".repeat(MAX_WORD_CHARS + 1);
+    let edge = "x".repeat(MAX_WORD_CHARS);
+    // not judged: left unmarked, no corrections
+    assert_eq!(
+        h.check(&["en"], &[long.as_str(), edge.as_str()]).unwrap(),
+        [true, false]
+    );
+    let out = h
+        .call("suggest", json!({ "langs": ["en"], "word": long }))
+        .unwrap();
+    assert_eq!(out, json!([]));
+}
+
+#[test]
 fn personal_words_are_accepted_everywhere_and_kept_in_the_profile() {
     let mut h = Harness::start();
     h.ready("en");
@@ -503,6 +534,10 @@ fn personal_words_are_accepted_everywhere_and_kept_in_the_profile() {
         .call("personal.add", json!({ "word": "two words" }))
         .unwrap_err();
     assert_eq!(refused.kind, ErrorKind::InvalidData);
+    let refused = h
+        .call("personal.add", json!({ "word": "ab\u{202E}cd" }))
+        .unwrap_err();
+    assert_eq!(refused.kind, ErrorKind::InvalidData);
     let list = h
         .call("personal.remove", json!({ "word": "permark" }))
         .unwrap();
@@ -532,14 +567,7 @@ fn the_official_dictionaries_load() {
         ("ro", "știință"),
     ];
     for language in OFFICIAL {
-        let dir = Path::new(&root).join(language.folder);
-        let aff = std::fs::read_to_string(dir.join("index.aff")).unwrap();
-        let dic = std::fs::read_to_string(dir.join("index.dic")).unwrap();
-        assert_eq!(pin_of(&aff), language.aff, "{}", language.id);
-        assert_eq!(pin_of(&dic), language.dic, "{}", language.id);
-        let fixed = sanitize_dic(&dic, FlagKind::of(&aff));
-        let dictionary =
-            Dictionary::new(&aff, &fixed).unwrap_or_else(|e| panic!("{}: {e}", language.id));
+        let (_, _, dictionary) = official(Path::new(&root), language);
         let word = words.iter().find(|(id, _)| *id == language.id).unwrap().1;
         assert!(
             dictionary.check(&normalize(word, language.id)),
@@ -549,5 +577,22 @@ fn the_official_dictionaries_load() {
     }
 }
 
+/// The pinned files of `language` under `root` (checked against the pins) and its dictionary, loaded as the plugin
+/// loads it: `(aff, dic, dictionary)`.
+fn official(root: &Path, language: Language) -> (String, String, Dictionary) {
+    let dir = root.join(language.folder);
+    let aff = std::fs::read_to_string(dir.join("index.aff")).unwrap();
+    let dic = std::fs::read_to_string(dir.join("index.dic")).unwrap();
+    assert_eq!(pin_of(&aff), language.aff, "{}", language.id);
+    assert_eq!(pin_of(&dic), language.dic, "{}", language.id);
+    let fixed = sanitize_dic(&dic, FlagKind::of(&aff));
+    let dictionary =
+        Dictionary::new(&aff, &fixed).unwrap_or_else(|e| panic!("{}: {e}", language.id));
+    (aff, dic, dictionary)
+}
+
 #[path = "docs_tests.rs"]
 mod docs;
+
+#[path = "fuzz_tests.rs"]
+mod fuzz;

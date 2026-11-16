@@ -4,6 +4,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 
+use permark_core::settings::is_unsafe_char;
 use unicode_normalization::{is_nfc_quick, IsNormalized, UnicodeNormalization};
 
 /// Longest word (chars) taken into the personal dictionary or asked for suggestions.
@@ -158,14 +159,53 @@ pub fn keep_suggestion(suggestion: &str, accepts: impl Fn(&str) -> bool) -> bool
             .all(accepts)
 }
 
-/// A word as the personal dictionary keeps it (`None`: not a single word).
+/// Whether `word` is longer than [`MAX_WORD_CHARS`]: no dictionary holds such a word, so the engine is never asked
+/// about it (it stays unmarked, with no corrections).
+#[must_use]
+pub fn over_cap(word: &str) -> bool {
+    word.chars().nth(MAX_WORD_CHARS).is_some()
+}
+
+/// A word as the personal dictionary keeps it (`None`: not a single word, or one with an invisible character that
+/// would hide what it really is).
 #[must_use]
 pub fn personal_form(word: &str) -> Option<String> {
     let word = normalize(word.trim(), "");
     let fits = !word.is_empty()
-        && word.chars().count() <= MAX_WORD_CHARS
-        && !word.chars().any(|c| c.is_whitespace() || c.is_control());
+        && !over_cap(&word)
+        && !word
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || is_unsafe_char(c) || is_format(c));
     fits.then(|| word.into_owned())
+}
+
+/// A Unicode format character (category Cf: soft hyphen, zero-width and joiners, bidi marks | embeddings |
+/// isolates, word joiner, byte order mark, tags, ...): invisible in a word.
+fn is_format(c: char) -> bool {
+    matches!(
+        c,
+        '\u{AD}'
+            | '\u{600}'..='\u{605}'
+            | '\u{61C}'
+            | '\u{6DD}'
+            | '\u{70F}'
+            | '\u{890}'..='\u{891}'
+            | '\u{8E2}'
+            | '\u{180E}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{206F}'
+            | '\u{FEFF}'
+            | '\u{FFF9}'..='\u{FFFB}'
+            | '\u{110BD}'
+            | '\u{110CD}'
+            | '\u{13430}'..='\u{1343F}'
+            | '\u{1BCA0}'..='\u{1BCA3}'
+            | '\u{1D173}'..='\u{1D17A}'
+            | '\u{E0001}'
+            | '\u{E0020}'..='\u{E007F}'
+    )
 }
 
 /// Whether the personal `words` accept `word`: as kept, or a lowercase entry in its Capitalized | UPPER form.

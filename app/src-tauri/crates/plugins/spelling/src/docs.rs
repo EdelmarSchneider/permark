@@ -8,9 +8,10 @@
 //! language.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use permark_core::paths::VaultPath;
+use permark_core::paths::{key_of, VaultPath};
 use permark_core::plugins::{Services, WindowFiles, WindowFilesApi};
 use permark_core::state::{RawFile, StateData, StateFile};
 use permark_core::{ErrorKind, IpcError};
@@ -106,6 +107,12 @@ fn read_shared(bytes: Option<&[u8]>) -> Result<SharedDocs, ()> {
     }
 }
 
+/// The profile key of a document outside a project: its identity (case folded where the system ignores case), so
+/// another spelling of the same file finds its declared language.
+fn profile_key(abs: &Path) -> String {
+    key_of(&abs.display().to_string())
+}
+
 /// Pretty and sorted: the file is read in reviews and merged by git.
 fn write_shared(docs: SharedDocs) -> Option<Vec<u8>> {
     let mut bytes = serde_json::to_vec_pretty(&SharedEnvelope {
@@ -189,11 +196,7 @@ impl DocLanguages {
     /// The language the person declared for `path`, when it still has a dictionary.
     fn declared(&self, window: &str, path: &str) -> Option<&'static str> {
         let files = self.files()?;
-        let located = || {
-            files
-                .locate(window, path)
-                .map(|abs| abs.display().to_string())
-        };
+        let located = || files.locate(window, path).map(|abs| profile_key(&abs));
         let lang = match Self::place(files.as_ref(), window, path, located).ok()? {
             Place::Project { file, key } => {
                 let bytes = file.read().ok()?;
@@ -304,7 +307,7 @@ impl DocLanguages {
             .ok_or_else(|| IpcError::new(ErrorKind::Unavailable).subject("files"))?;
         // the window's boundary: only an existing document of its workspace gets a language
         let abs = files.locate(window, path)?;
-        let located = || Ok(abs.display().to_string());
+        let located = || Ok(profile_key(&abs));
         match Self::place(files.as_ref(), window, path, located)? {
             Place::Project { file, key } => {
                 let mut unreadable = false;

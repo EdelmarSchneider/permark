@@ -38,7 +38,7 @@ pub use docs::{SpellingDefault, SpellingDocLanguage, SpellingLanguageSource, SHA
 pub use languages::{Language, Pin, COMMIT, OFFICIAL, SOURCE};
 pub use store::{DictStore, SpellingFailure, SpellingState, Unavailable};
 pub use words::{
-    keep_suggestion, normalize, personal_accepts, personal_form, sanitize_dic, FlagKind,
+    keep_suggestion, normalize, over_cap, personal_accepts, personal_form, sanitize_dic, FlagKind,
     MAX_WORD_CHARS,
 };
 
@@ -213,6 +213,34 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// Whether `word` is spelled right: the person's own words | any of `dictionaries` know it. A word over the cap is
+/// accepted unjudged (an engine panic would end the app: `panic = "abort"`; no dictionary holds such a word anyway).
+fn accepted(
+    dictionaries: &[(&str, Arc<Dictionary>)],
+    personal: &BTreeSet<String>,
+    word: &str,
+) -> bool {
+    over_cap(word)
+        || personal_accepts(personal, word)
+        || dictionaries
+            .iter()
+            .any(|(lang, d)| d.check(&normalize(word, lang)))
+}
+
+/// Up to [`SUGGESTIONS_PER_LANGUAGE`] corrections of `word` from `dictionary` (none for a word over the cap).
+fn suggestions_in(dictionary: &Dictionary, lang: &str, word: &str) -> Vec<String> {
+    if over_cap(word) {
+        return Vec::new();
+    }
+    let mut found = Vec::new();
+    dictionary.suggest(&normalize(word, lang), &mut found);
+    found
+        .into_iter()
+        .filter(|s| keep_suggestion(s, |part| dictionary.check(part)))
+        .take(SUGGESTIONS_PER_LANGUAGE)
+        .collect()
+}
+
 /// Everything the handlers share.
 struct Shared {
     store: Arc<DictStore>,
@@ -276,12 +304,7 @@ impl Shared {
         Ok(args
             .words
             .iter()
-            .map(|word| {
-                personal_accepts(&personal, word)
-                    || dictionaries
-                        .iter()
-                        .any(|(lang, d)| d.check(&normalize(word, lang)))
-            })
+            .map(|word| accepted(&dictionaries, &personal, word))
             .collect())
     }
 
@@ -289,17 +312,8 @@ impl Shared {
     fn suggest(&self, args: &SuggestArgs) -> Result<Vec<String>, SpellError> {
         let dictionaries = self.dictionaries(&args.langs)?;
         let mut merged: Vec<String> = Vec::new();
-        if args.word.chars().count() > MAX_WORD_CHARS {
-            return Ok(merged);
-        }
         for (lang, dictionary) in &dictionaries {
-            let mut found = Vec::new();
-            dictionary.suggest(&normalize(&args.word, lang), &mut found);
-            let kept = found
-                .into_iter()
-                .filter(|s| keep_suggestion(s, |part| dictionary.check(part)))
-                .take(SUGGESTIONS_PER_LANGUAGE);
-            for suggestion in kept {
+            for suggestion in suggestions_in(dictionary, lang, &args.word) {
                 if !merged.contains(&suggestion) {
                     merged.push(suggestion);
                 }

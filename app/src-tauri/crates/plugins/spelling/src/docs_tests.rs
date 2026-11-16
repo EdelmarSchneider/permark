@@ -1,6 +1,6 @@
 //! The language a document is checked in: declared (project `.permark/` | profile), detected, default.
 
-use permark_core::paths::{Root, VaultPath};
+use permark_core::paths::{key_of, Root, VaultPath, CASE_INSENSITIVE};
 use permark_core::plugins::{WindowFiles, WindowFilesApi};
 use permark_core::state::{init_project, RawFile};
 
@@ -202,8 +202,15 @@ fn a_declared_language_outside_a_project_is_kept_in_the_profile() {
         "declared"
     );
     let kept: Value = serde_json::from_slice(&std::fs::read(profile_file(&h)).unwrap()).unwrap();
-    let key = places.notes.join("n.md").display().to_string();
+    // keyed by the file's identity: another spelling of the same name finds it
+    let key = key_of(&places.notes.join("n.md").display().to_string());
     assert_eq!(kept["data"]["docs"][&key], "ro");
+    if CASE_INSENSITIVE {
+        assert_eq!(
+            h.language("notes", "N.md", ENGLISH, "en")["source"],
+            "declared"
+        );
+    }
     assert!(!places.shared().exists());
     h.restart();
     assert_eq!(
