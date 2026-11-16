@@ -209,7 +209,7 @@
     padding: var(--sp-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--surface);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
     color: var(--text);
     font-size: var(--fs-ui-sm);

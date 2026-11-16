@@ -7,7 +7,7 @@ import type { PluginId } from "../../api/generated/PluginId";
 import type { Block, Context, DocumentView, ProjectRow } from "../../api";
 import { available, type Requirement } from "../conditions/available";
 import type { PickerKind } from "../editing/visual/characters";
-import type { MenuEntry } from "../explorer/menu";
+import type { MenuEntry, MenuIcon } from "../explorer/menu";
 import type { MessageKey } from "../i18n";
 import type { PluginPageId } from "../shell/ui.svelte";
 import type {
@@ -234,6 +234,8 @@ export type Contribution = Owned &
         kind: "settingsPage";
         id: PluginPageId;
         label: MessageKey;
+        /** A small icon before the label in the nav, as the core sections wear. */
+        icon?: MenuIcon;
         order: number;
         view: LazyComponent;
         quick?: LazyComponent;

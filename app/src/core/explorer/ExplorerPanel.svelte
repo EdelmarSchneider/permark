@@ -352,13 +352,25 @@
   function onbackground(e: MouseEvent): void {
     if (!(e.target instanceof Element) || e.target.closest(".row")) return;
     e.preventDefault();
+    // the toolbar's icons for the same actions
     const entries: MenuEntry[] = [
-      { kind: "item", label: t("newFile.newFile"), run: () => store.beginNew("file") },
-      { kind: "item", label: t("fileOps.newFolder"), run: () => store.beginNew("folder") },
+      {
+        kind: "item",
+        label: t("newFile.newFile"),
+        icon: FilePlus,
+        run: () => store.beginNew("file"),
+      },
+      {
+        kind: "item",
+        label: t("fileOps.newFolder"),
+        icon: FolderPlus,
+        run: () => store.beginNew("folder"),
+      },
       { kind: "separator" },
       {
         kind: "item",
         label: t("explorer.refresh"),
+        icon: RefreshCw,
         ...(refreshKeys === null ? {} : { hint: refreshKeys }),
         run: () => void store.refresh(),
       },
@@ -1058,20 +1070,23 @@
   .space {
     position: relative;
   }
+  /* rows sit inset from the panel's edges with rounded corners */
   .row {
     position: absolute;
-    left: 0;
-    right: 0;
+    left: 6px;
+    right: 6px;
     display: flex;
     align-items: center;
     gap: 4px;
     padding-right: var(--sp-2);
+    border-radius: var(--radius-control);
     color: var(--text);
     font-size: var(--fs-ui);
     cursor: default;
   }
   button.row {
-    width: 100%;
+    /* a button does not stretch between left and right by itself */
+    width: calc(100% - 12px);
     border: 0;
     background: transparent;
     font: inherit;
@@ -1087,7 +1102,11 @@
   .row.is-selected {
     background: var(--accent-soft);
   }
-  .row.is-focused {
+  .row.is-selected .name {
+    font-weight: 560;
+  }
+  /* the row the keyboard is on: ringed only while the list has the keyboard's focus (not after a click) */
+  .list:focus-visible .row.is-focused {
     box-shadow: inset 0 0 0 1px var(--accent-muted);
   }
   .row.is-dim {
@@ -1266,7 +1285,7 @@
     padding: 3px 10px;
     border: 1px solid var(--border);
     border-radius: 999px;
-    background: var(--bg);
+    background: var(--pop);
     color: var(--muted);
     font-size: var(--fs-ui-sm);
     pointer-events: none;

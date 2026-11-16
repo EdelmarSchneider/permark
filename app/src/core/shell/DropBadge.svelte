@@ -3,8 +3,8 @@
   // only (the system's drag): hidden from screen readers; the result is told by the question, a notice or a new tab.
   import FolderInput from "@lucide/svelte/icons/folder-input";
   import ImageIcon from "@lucide/svelte/icons/image";
+  import NotebookPen from "@lucide/svelte/icons/notebook-pen";
   import SquarePlus from "@lucide/svelte/icons/square-plus";
-  import StickyNote from "@lucide/svelte/icons/sticky-note";
   import type { Badge } from "../explorer/importModel";
   import { badgePlace } from "./dropPlace";
 
@@ -20,7 +20,7 @@
     badgePlace(at, { width, height }, { width: viewWidth, height: viewHeight }),
   );
   const Icon = $derived(
-    { import: FolderInput, open: SquarePlus, pictures: ImageIcon, notes: StickyNote }[badge.icon],
+    { import: FolderInput, open: SquarePlus, pictures: ImageIcon, notes: NotebookPen }[badge.icon],
   );
 </script>
 
@@ -34,7 +34,7 @@
   bind:clientHeight={height}
   style:transform="translate({place.x}px, {place.y}px)"
 >
-  <Icon size={14} aria-hidden="true" />
+  <Icon size={13} strokeWidth={1.8} aria-hidden="true" />
   <span class="text">{badge.text}</span>
 </div>
 

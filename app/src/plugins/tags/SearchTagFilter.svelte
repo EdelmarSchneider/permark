@@ -124,12 +124,12 @@
     min-width: 180px;
     max-height: 240px;
     margin: 2px 0 0;
-    padding: var(--sp-1);
+    padding: 6px;
     overflow-y: auto;
     list-style: none;
     border: 1px solid var(--border-strong);
-    border-radius: var(--radius-card);
-    background: var(--surface);
+    border-radius: var(--radius-menu);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .menu button {

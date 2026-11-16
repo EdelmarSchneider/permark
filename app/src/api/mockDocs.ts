@@ -120,7 +120,7 @@ export function mockView(
 /** A picture the browser can show with no server: a labelled placeholder. */
 export function mockAssetUrl(path: string): string {
   const label = nameOf(path).replace(/[<>&"]/g, "");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="120" viewBox="0 0 320 120"><rect width="320" height="120" rx="10" fill="#7b93ff" opacity="0.25"/><text x="160" y="66" font-family="sans-serif" font-size="16" text-anchor="middle" fill="#4f6bed">${label}</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="120" viewBox="0 0 320 120"><rect width="320" height="120" rx="10" fill="#8c8fff" opacity="0.25"/><text x="160" y="66" font-family="sans-serif" font-size="16" text-anchor="middle" fill="#4f46e5">${label}</text></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
