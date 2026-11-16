@@ -36,8 +36,17 @@ const OPEN_RETRY: [Duration; 3] = [
 /// process's turn).
 #[derive(Debug)]
 pub struct FileLock {
-    _file: File,
+    file: File,
     _turn: Turn,
+}
+
+impl Drop for FileLock {
+    fn drop(&mut self) {
+        // unlocked here, not left to the close: a copy of the handle (a child forked meanwhile, until it runs its
+        // program) | Windows freeing a closed handle's locks late keeps the lock held, and this process's next taker
+        // without a wait (download cleanup beside the worker) is refused
+        let _ = self.file.unlock();
+    }
 }
 
 /// Inside this process the writers of one file take turns in arrival order. The OS lock alone is polled: a writer
@@ -157,12 +166,7 @@ pub fn lock_within(path: &Path, wait: Duration) -> std::io::Result<Option<FileLo
     let turn = Turns::of(&name).take(until).ok_or_else(held_too_long)?;
     loop {
         match file.try_lock() {
-            Ok(()) => {
-                return Ok(Some(FileLock {
-                    _file: file,
-                    _turn: turn,
-                }))
-            }
+            Ok(()) => return Ok(Some(FileLock { file, _turn: turn })),
             Err(TryLockError::WouldBlock) if until.is_none_or(|u| Instant::now() < u) => {
                 std::thread::sleep(POLL);
             }
@@ -367,6 +371,19 @@ mod tests {
         // another file: its own lock, no wait
         let _a = lock_for(&path).unwrap().unwrap();
         let _b = lock_for(&dir.path().join("y.json")).unwrap().unwrap();
+    }
+
+    /// A copy of the lock handle that outlives the holder (a child forked meanwhile holds one until it runs its
+    /// program) never keeps the lock: the next writer of this process takes it at once, also without any wait.
+    #[test]
+    fn a_released_lock_is_free_at_once_while_a_copy_of_its_handle_lives() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("x.json");
+        let held = lock_within(&path, Duration::ZERO).unwrap().expect("lock");
+        let copy = held.file.try_clone().unwrap();
+        drop(held);
+        assert!(lock_within(&path, Duration::ZERO).unwrap().is_some());
+        drop(copy);
     }
 }
 
