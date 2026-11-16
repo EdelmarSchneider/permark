@@ -1,0 +1,231 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        h1 id="tables"
+          a.anchor href="#tables" aria-label="Link to Tables"
+            "#"
+          "Tables"
+        div.table-wrap
+          table
+            thead
+              tr
+                th align="left"
+                  "Left"
+                th align="center"
+                  "Center"
+                th align="right"
+                  "Right"
+                th
+                  "Default"
+            tbody
+              tr
+                td align="left"
+                  "a"
+                td align="center"
+                  "b"
+                td align="right"
+                  "c"
+                td
+                  "d"
+              tr
+                td align="left"
+                  strong
+                    "bold"
+                td align="center"
+                  code
+                    "code"
+                td align="right"
+                  "1,234.50"
+                td
+                  a href="gfm-blocks.md"
+                    "link"
+              tr
+                td align="left"
+                  "escaped | pipe"
+                td align="center"
+                  mark
+                    "mark"
+                td align="right"
+                  span.emoji title=":ocean:"
+                    "🌊"
+                td
+              tr
+                td align="left"
+                  "long text that wraps inside a narrow column of the table"
+                td align="center"
+                  "x"
+                td align="right"
+                  "0.1"
+                td
+                  del
+                    "old"
+        p
+          "A table with one column:"
+        div.table-wrap
+          table
+            thead
+              tr
+                th
+                  "Only"
+            tbody
+              tr
+                td
+                  "one"
+        p
+          "A wide table that scrolls sideways:"
+        div.table-wrap
+          table
+            thead
+              tr
+                th
+                  "Station"
+                th align="right"
+                  "Lat"
+                th align="right"
+                  "Lon"
+                th align="right"
+                  "Depth (m)"
+                th align="right"
+                  "Temp (°C)"
+                th align="right"
+                  "Salinity (PSU)"
+                th align="right"
+                  "pH"
+                th align="right"
+                  "O₂ (mg/L)"
+                th align="right"
+                  "Wave (m)"
+                th align="right"
+                  "Period (s)"
+                th align="right"
+                  "Wind (kn)"
+                th align="right"
+                  "Battery (V)"
+                th
+                  "Firmware"
+                th
+                  "Last seen"
+            tbody
+              tr
+                td
+                  "LH-01"
+                td align="right"
+                  "41.512"
+                td align="right"
+                  "-70.671"
+                td align="right"
+                  "12.4"
+                td align="right"
+                  "11.82"
+                td align="right"
+                  "31.40"
+                td align="right"
+                  "8.02"
+                td align="right"
+                  "8.91"
+                td align="right"
+                  "0.62"
+                td align="right"
+                  "5.1"
+                td align="right"
+                  "11"
+                td align="right"
+                  "12.71"
+                td
+                  "2.3.1"
+                td
+                  "2026-11-15 09:40 UTC"
+              tr
+                td
+                  "LH-02"
+                td align="right"
+                  "41.498"
+                td align="right"
+                  "-70.702"
+                td align="right"
+                  "18.9"
+                td align="right"
+                  "11.64"
+                td align="right"
+                  "31.52"
+                td align="right"
+                  "8.01"
+                td align="right"
+                  "8.87"
+                td align="right"
+                  "0.71"
+                td align="right"
+                  "5.4"
+                td align="right"
+                  "12"
+                td align="right"
+                  "12.69"
+                td
+                  "2.3.1"
+                td
+                  "2026-11-15 09:40 UTC"
+              tr
+                td
+                  "LH-03"
+                td align="right"
+                  "41.476"
+                td align="right"
+                  "-70.735"
+                td align="right"
+                  "22.1"
+                td align="right"
+                  "11.51"
+                td align="right"
+                  "31.61"
+                td align="right"
+                  "7.99"
+                td align="right"
+                  "8.80"
+                td align="right"
+                  "0.84"
+                td align="right"
+                  "5.9"
+                td align="right"
+                  "14"
+                td align="right"
+                  "12.55"
+                td
+                  "2.3.0"
+                td
+                  "2026-11-15 09:30 UTC"
+        p
+          "A table with inline HTML and a picture:"
+        div.table-wrap
+          table
+            thead
+              tr
+                th
+                  "Mark"
+                th
+                  "Sample"
+            tbody
+              tr
+                td
+                  "keys"
+                td
+                  kbd
+                    "Ctrl"
+                  "+"
+                  kbd
+                    "K"
+              tr
+                td
+                  "sub/sup"
+                td
+                  "H"
+                  sub
+                    "2"
+                  "O, 10"
+                  sup
+                    "3"
+              tr
+                td
+                  "picture"
+                td
+                  img src="/@permark-deep/project/corpus/assets/square.svg" alt="square"

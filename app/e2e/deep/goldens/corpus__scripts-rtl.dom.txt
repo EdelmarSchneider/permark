@@ -1,0 +1,43 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        h1 id="right-to-left"
+          a.anchor href="#right-to-left" aria-label="Link to Right to left"
+            "#"
+          "Right to left"
+        p
+          "مرحبا بالعالم. هذه فقرة باللغة العربية تحتوي على رقم 2026 وكلمة English في وسطها."
+        p
+          "שלום עולם. זוהי פסקה בעברית עם"
+          code
+            "code"
+          "ו-"
+          strong
+            "הדגשה"
+          "."
+        p
+          "A paragraph that asks for right to left with dir="rtl"."
+        div.table-wrap
+          table
+            thead
+              tr
+                th
+                  "عمود"
+                th
+                  "Column"
+                th
+                  "עמודה"
+            tbody
+              tr
+                td
+                  "واحد"
+                td
+                  "one"
+                td
+                  "אחת"
+        ul
+          li
+            "عنصر أول"
+          li
+            "عنصر ثان"

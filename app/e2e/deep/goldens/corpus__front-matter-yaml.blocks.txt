@@ -1,0 +1,8 @@
+# corpus/front-matter-yaml.md
+format: markdown
+front matter: {"syntax":"yaml","raw":"title: A page with YAML front matter\nowner: Ada Example\nstatus: draft\nupdated: 2026-11-15\ndraft: true\nrating: 4.5\ntags: [deep, fixture, yaml]\nlinks:\n  - https://example.com\n  - ./gfm-blocks.md\nnested:\n  key: value\n  count: 3\n","fields":[{"key":"title","value":{"type":"text","text":"A page with YAML front matter"}},{"key":"owner","value":{"type":"text","text":"Ada Example"}},{"key":"status","value":{"type":"text","text":"draft"}},{"key":"updated","value":{"type":"text","text":"2026-11-15"}},{"key":"draft","value":{"type":"text","text":"true"}},{"key":"rating","value":{"type":"text","text":"4.5"}},{"key":"tags","value":{"type":"list","items":["deep","fixture","yaml"]}},{"key":"links","value":{"type":"list","items":["https://example.com","./gfm-blocks.md"]}},{"key":"nested.key","value":{"type":"text","text":"value"}},{"key":"nested.count","value":{"type":"text","text":"3"}}]}
+outline: YAML front matter (line 17)
+--- h1 17-17
+<h1 id="yaml-front-matter">YAML front matter</h1>
+--- p 19-19
+<p>The card above shows the properties, with the tags as chips.</p>

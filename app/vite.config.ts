@@ -3,6 +3,7 @@ import path from "node:path";
 import process from "node:process";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
+import { deepCorpus } from "./e2e/deep/vite.ts";
 import { noMockInProduction } from "./scripts/no-mock-in-production.ts";
 
 // KaTeX lists woff2, woff and ttf for every font; the webviews PerMark runs on all read woff2, so only that ships.
@@ -26,8 +27,9 @@ const host = process.env["TAURI_DEV_HOST"];
 const toolFolder = `${process.cwd().split(path.sep).join("/")}/.claude/**`;
 
 // `vite --mode mock` (`npm run dev:mock`): browser UI against the mock backend (src/api/mock.ts).
+// `vite --mode deep` (started by `npm run deep`): the same with the deep suite's rendered corpus (e2e/deep/vite.ts).
 export default defineConfig({
-  plugins: [svelte(), katexWoff2Only(), noMockInProduction()],
+  plugins: [svelte(), katexWoff2Only(), noMockInProduction(), deepCorpus()],
 
   // component tests mount the browser build of Svelte (jsdom), not the server one
   resolve: process.env["VITEST"] ? { conditions: ["browser"] } : undefined,

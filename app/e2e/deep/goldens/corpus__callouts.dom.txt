@@ -1,0 +1,114 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        h1 id="callouts-and-containers"
+          a.anchor href="#callouts-and-containers" aria-label="Link to Callouts and containers"
+            "#"
+          "Callouts and containers"
+        div.markdown-alert.markdown-alert-note
+          p.markdown-alert-title
+            svg svg sized
+            "Note"
+          p
+            "A note with the default title."
+        div.markdown-alert.markdown-alert-tip
+          p.markdown-alert-title
+            svg svg sized
+            "A tip with its own title"
+          p
+            "Text of the tip, with"
+            code
+              "code"
+            "and a"
+            a href="gfm-blocks.md"
+              "link"
+            "."
+        div.markdown-alert.markdown-alert-important
+          p.markdown-alert-title
+            svg svg sized
+            "Important"
+          p
+            "Important text."
+        div.markdown-alert.markdown-alert-warning
+          p.markdown-alert-title
+            svg svg sized
+            "Warning"
+          p
+            "A warning with a list:"
+          ul
+            li
+              "first"
+            li
+              "second"
+        div.markdown-alert.markdown-alert-caution
+          p.markdown-alert-title
+            svg svg sized
+            "Caution"
+          p
+            "Caution text."
+        details.markdown-alert.markdown-alert-note.markdown-alert-kind-info
+          summary.markdown-alert-title
+            svg svg sized
+            "Folded by default"
+          p
+            "Hidden until opened."
+        details.markdown-alert.markdown-alert-tip.markdown-alert-kind-success open
+          summary.markdown-alert-title
+            svg svg sized
+            "Open and foldable"
+          p
+            "Shown, can be folded."
+        div.markdown-alert.markdown-alert-caution.markdown-alert-kind-bug
+          p.markdown-alert-title
+            svg svg sized
+            "A bug callout"
+          div.markdown-alert.markdown-alert-warning.markdown-alert-kind-question
+            p.markdown-alert-title
+              svg svg sized
+              "Nested question"
+            p
+              "A callout inside a callout."
+        div.markdown-alert.markdown-alert-note
+          p.markdown-alert-title
+            svg svg sized
+            "An unknown kind"
+          p
+            "Falls back to a note."
+        div.markdown-alert.markdown-alert-note
+          p.markdown-alert-title
+            svg svg sized
+            "A container with a title"
+          p
+            "A container holds a longer aside, with"
+            strong
+              "strong"
+            "text."
+          ul
+            li
+              "and a list"
+        div.markdown-alert.markdown-alert-tip
+          p.markdown-alert-title
+            svg svg sized
+            "Tip"
+          p
+            "A tip container without a title."
+        div.markdown-alert.markdown-alert-warning
+          p.markdown-alert-title
+            svg svg sized
+            "Nested content"
+          div.code-block
+            pre
+              code
+                tokens: hljs-keyword hljs-string
+                "const inside = "a code block in a container";⏎"
+            div.corner
+              span.lang
+                "JavaScript"
+              button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
+                icon lucide-copy
+        details
+          summary
+            "A plain details block"
+          p
+            "Text that most readers can skip."

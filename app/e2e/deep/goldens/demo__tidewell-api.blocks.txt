@@ -1,0 +1,359 @@
+# demo/tidewell-api.md
+format: markdown
+front matter: {"syntax":"yaml","raw":"title: Tidewell Open Data API\nowner: Tomás Varela\nstatus: stable\nupdated: 2026-11-13\ntags: [api, reference, v2]\n","fields":[{"key":"title","value":{"type":"text","text":"Tidewell Open Data API"}},{"key":"owner","value":{"type":"text","text":"Tomás Varela"}},{"key":"status","value":{"type":"text","text":"stable"}},{"key":"updated","value":{"type":"text","text":"2026-11-13"}},{"key":"tags","value":{"type":"list","items":["api","reference","v2"]}}]}
+outline: Tidewell Open Data API (line 9)
+outline:   Authentication (line 22)
+outline:   Endpoints (line 35)
+outline:   Readings (line 48)
+outline:   Client examples (line 87)
+outline:     Rust (line 91)
+outline:     Python (line 118)
+outline:   Data model (line 152)
+outline:   Paging through history (line 190)
+outline:   Errors (line 211)
+outline:   Rate limits (line 223)
+outline:   Versions (line 233)
+--- h1 9-9
+<h1 id="tidewell-open-data-api">Tidewell Open Data API</h1>
+--- p 11-11
+<p>Every reading from every Tidewell buoy, free to use, in plain JSON. You don't need to sign up: a key only raises your rate limit.</p>
+--- div 13-14
+<div class="markdown-alert markdown-alert-note">
+<p class="markdown-alert-title">Base URL</p>
+<p>Every endpoint lives under <a href="https://api.tidewell.example/v2">https://api.tidewell.example/v2</a>. Times are ISO 8601 in <abbr title="Coordinated Universal Time">UTC</abbr>, and values use the units of the <a href="station/buoy.toml">buoy settings</a>.</p>
+</div>
+--- pre 16-20
+<pre><code class="language-bash" data-title="Quickstart"># The newest reading from Gannet Point. No key needed.
+curl -s https://api.tidewell.example/v2/stations/LH-04/latest \
+  -H "X-Tidewell-Client: my-first-script/1.0"
+</code></pre>
+--- h2 22-22
+<h2 id="authentication">Authentication</h2>
+--- p 24-24
+<p>Two headers matter. Both are plain text, and neither is required for your first request.</p>
+--- dl 26-31
+<dl>
+<dt><code>Authorization</code></dt>
+<dd>Optional. <code>Bearer &lt;your key&gt;</code>. A free key raises your limit from 60 to 600 requests a minute.</dd>
+<dt><code>X-Tidewell-Client</code></dt>
+<dd>Recommended. Your app's name and version, such as <code>harbor-dashboard/4.1</code>, so we can reach you before we have to slow down a runaway script.</dd>
+</dl>
+--- div 32-33
+<div class="markdown-alert markdown-alert-warning">
+<p class="markdown-alert-title">Keep keys out of your pages</p>
+<p>Never paste a key into a document, a notebook or a chat. Keep it in an environment file like <a href="station/deploy.env"><code>station/deploy.env</code></a>, and list that file in <a href=".aiignore"><code>.aiignore</code></a> so agents connected through PerMark never see it. Our own services read the base URL from <code>station/deploy.env:4</code>.</p>
+</div>
+--- h2 35-35
+<h2 id="endpoints">Endpoints</h2>
+--- p 37-37
+<p>All endpoints answer <code>GET</code> and return JSON, except bulletins, which come back as Markdown. Limits are per minute with a free key.</p>
+--- table 39-46
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Returns</th>
+<th align="right">Limit/min</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v2/stations</code></td>
+<td>All twelve stations</td>
+<td align="right">600</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v2/stations/{id}</code></td>
+<td>One station and its current deployment</td>
+<td align="right">600</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v2/stations/{id}/latest</code></td>
+<td>The newest reading</td>
+<td align="right">600</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v2/stations/{id}/readings</code></td>
+<td>Readings in a time range, paged</td>
+<td align="right">120</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v2/flags</code></td>
+<td><abbr title="quality control">QC</abbr> flags and review decisions</td>
+<td align="right">120</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v2/bulletins/{week}</code></td>
+<td>The weekly bulletin</td>
+<td align="right">60</td>
+</tr>
+</tbody>
+</table>
+--- h2 48-48
+<h2 id="readings">Readings</h2>
+--- p 50-50
+<p><code>/v2/stations/{id}/readings</code> is the workhorse. It takes five query parameters:</p>
+--- dl 52-63
+<dl>
+<dt><code>from</code>, <code>to</code></dt>
+<dd>Start and end of the range. At most 31 days apart; <code>to</code> defaults to now.</dd>
+<dt><code>fields</code></dt>
+<dd>Comma-separated values to return, such as <code>temp_c,do_mgl</code>. Default: all five.</dd>
+<dt><code>qc</code></dt>
+<dd><code>published</code> (the default: passed and flagged readings) or <code>passed</code> (clean readings only).</dd>
+<dt><code>limit</code> and <code>cursor</code></dt>
+<dd>Up to 1,000 readings per page, 500 by default. For the next page, pass back the <code>next_cursor</code> you received.</dd>
+</dl>
+--- p 64-64
+<p>Here is one reading from Gannet Point, asked for with <code>?from=2026-11-14T09:40:00Z&amp;limit=1</code>:</p>
+--- pre 66-83
+<pre><code class="language-json" data-lines="3,7-9" data-title="200 OK">{
+  "station": "LH-04",
+  "next_cursor": "MjAyNi0xMS0xNFQwOTo1MDowMFo",
+  "readings": [
+    {
+      "time": "2026-11-14T09:40:00Z",
+      "qc": "flagged",
+      "flags": ["spike:do_mgl"],
+      "do_mgl": 9.4,
+      "temp_c": 12.6,
+      "sal_psu": 33.8,
+      "ph": 8.02,
+      "hs_m": 1.4
+    }
+  ]
+}
+</code></pre>
+--- p 85-85
+<p>Line 3 is your bookmark for the next page. Lines 7 to 9 show a flagged reading: oxygen jumped 1.5 mg/L in ten minutes, more than the spike rule allows, so the value is published with a flag instead of quietly dropped. Whether to trust it is your call.</p>
+--- h2 87-87
+<h2 id="client-examples">Client examples</h2>
+--- p 89-89
+<p>Any HTTP client works. These three print the newest reading from Gannet Point.</p>
+--- h3 91-91
+<h3 id="rust">Rust</h3>
+--- p 93-93
+<p>Add <code>reqwest</code> with the <code>blocking</code> and <code>json</code> features, and <code>serde</code> with <code>derive</code>.</p>
+--- pre 95-114
+<pre><code class="language-rust" data-lines="9-14" data-numbers="1" data-title="examples/latest.rs">use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct Reading { time: String, temp_c: f64, do_mgl: f64, qc: String }
+#[derive(Deserialize)]
+struct Latest { station: String, reading: Reading }
+
+fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
+    let latest: Latest = reqwest::blocking::Client::new()
+        .get("https://api.tidewell.example/v2/stations/LH-04/latest")
+        .header("X-Tidewell-Client", "latest-example/1.0")
+        .send()?
+        .error_for_status()?
+        .json()?;
+    let r = latest.reading;
+    println!("{} {}: {} °C, {} mg/L ({})", latest.station, r.time, r.temp_c, r.do_mgl, r.qc);
+    Ok(())
+}
+</code></pre>
+--- p 116-116
+<p><code>error_for_status</code> turns a 4xx or 5xx answer into an error, so a typo in the station id fails loudly instead of printing nonsense.</p>
+--- h3 118-118
+<h3 id="python">Python</h3>
+--- pre 120-133
+<pre><code class="language-python" data-title="latest.py">import os
+import requests
+
+headers = {"X-Tidewell-Client": "latest-py/1.0"}
+if key := os.environ.get("TIDEWELL_KEY"):
+    headers["Authorization"] = f"Bearer {key}"
+
+url = "https://api.tidewell.example/v2/stations/LH-04/latest"
+resp = requests.get(url, headers=headers, timeout=10)
+resp.raise_for_status()
+r = resp.json()["reading"]
+print(f"{r['time']}: {r['temp_c']} °C, {r['do_mgl']} mg/L ({r['qc']})")
+</code></pre>
+--- details 138-148
+<details>
+<summary>TypeScript, with fetch</summary>
+<pre><code class="language-ts" data-title="latest.ts">type Reading = { time: string; temp_c: number; do_mgl: number; qc: "passed" | "flagged" };
+
+const res = await fetch("https://api.tidewell.example/v2/stations/LH-04/latest", {
+  headers: { "X-Tidewell-Client": "latest-ts/1.0" },
+});
+if (!res.ok) throw new Error(`Tidewell answered ${res.status}`);
+
+const { reading } = (await res.json()) as { reading: Reading };
+console.log(`${reading.time}: ${reading.temp_c} °C, ${reading.do_mgl} mg/L (${reading.qc})`);
+</code></pre>
+</details>
+--- h2 152-152
+<h2 id="data-model">Data model</h2>
+--- p 154-154
+<p>The API speaks in three objects and one short list of flags. A flag never replaces a value; it travels with it.</p>
+--- pre 156-188
+<pre><code class="language-mermaid">classDiagram
+  direction LR
+  class Station {
+    +String id
+    +String name
+    +String gateway
+    +latest() Reading
+  }
+  class Sensor {
+    +String serial
+    +String kind
+    +Date calibrated
+  }
+  class Reading {
+    +DateTime time
+    +float temp_c
+    +float sal_psu
+    +float ph
+    +float do_mgl
+    +float hs_m
+    +String qc
+  }
+  class QcFlag {
+    &lt;&lt;enumeration&gt;&gt;
+    spike
+    flatline
+    drift
+  }
+  Station "1" --&gt; "5" Sensor : carries
+  Station "1" --&gt; "*" Reading : records
+  Reading "1" --&gt; "0..*" QcFlag : flagged by
+</code></pre>
+--- h2 190-190
+<h2 id="paging-through-history">Paging through history</h2>
+--- p 192-192
+<p>Ninety days of one station is 12,960 readings, so history comes in pages. Keep asking until <code>next_cursor</code> comes back empty.</p>
+--- pre 194-209
+<pre><code class="language-mermaid">sequenceDiagram
+  participant C as Your client
+  participant A as Tidewell API
+  participant S as Store
+  C-&gt;&gt;A: GET readings, from Aug 17, limit 1000
+  A-&gt;&gt;S: first 1000 rows
+  S--&gt;&gt;A: rows
+  A--&gt;&gt;C: 200, readings + next_cursor
+  loop until next_cursor is null
+    C-&gt;&gt;A: GET readings, cursor
+    A-&gt;&gt;S: next 1000 rows
+    S--&gt;&gt;A: rows
+    A--&gt;&gt;C: 200, readings + next_cursor
+  end
+</code></pre>
+--- h2 211-211
+<h2 id="errors">Errors</h2>
+--- p 213-213
+<p>Errors come back as JSON with a stable <code>code</code> you can match on, and a human-readable <code>message</code> you shouldn't.</p>
+--- table 215-221
+<table>
+<thead>
+<tr>
+<th align="right">Status</th>
+<th>Code</th>
+<th>Meaning</th>
+<th>Retry?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="right">400</td>
+<td><code>bad_range</code></td>
+<td><code>from</code> is after <code>to</code>, or the range is over 31 days</td>
+<td>No, fix the query</td>
+</tr>
+<tr>
+<td align="right">401</td>
+<td><code>bad_key</code></td>
+<td>The key is unknown or was revoked</td>
+<td>No</td>
+</tr>
+<tr>
+<td align="right">404</td>
+<td><code>no_station</code></td>
+<td>No station has that id</td>
+<td>No</td>
+</tr>
+<tr>
+<td align="right">429</td>
+<td><code>rate_limited</code></td>
+<td>Too many requests this minute</td>
+<td>Yes, after <code>Retry-After</code></td>
+</tr>
+<tr>
+<td align="right">503</td>
+<td><code>catching_up</code></td>
+<td>A gateway is replaying buffered frames</td>
+<td>Yes, with backoff</td>
+</tr>
+</tbody>
+</table>
+--- h2 223-223
+<h2 id="rate-limits">Rate limits</h2>
+--- p 225-225
+<p>Limits are counted per key, or per address without one. Every answer carries <code>X-RateLimit-Remaining</code>.</p>
+--- table 227-231
+<table>
+<thead>
+<tr>
+<th>Client</th>
+<th align="right">Requests/min</th>
+<th align="right">Burst</th>
+<th align="right">Requests/day</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>No key</td>
+<td align="right">60</td>
+<td align="right">10</td>
+<td align="right">5,000</td>
+</tr>
+<tr>
+<td>Free key</td>
+<td align="right">600</td>
+<td align="right">50</td>
+<td align="right">100,000</td>
+</tr>
+<tr>
+<td>Partner key</td>
+<td align="right">3,000</td>
+<td align="right">200</td>
+<td align="right">1,000,000</td>
+</tr>
+</tbody>
+</table>
+--- h2 233-233
+<h2 id="versions">Versions</h2>
+--- p 235-235
+<p>Version 2.3 ships with the open data launch on Tuesday, November 17, 2026.</p>
+--- pre 237-243
+<pre><code class="language-mermaid">timeline
+  title Tidewell API
+  2024 : v1.0 CSV downloads : v1.1 JSON readings
+  2025 : v2.0 Cursor paging : v2.1 QC flags
+  2026 : v2.2 Bulletins : v2.3 Open data
+</code></pre>
+--- details 248-252
+<details>
+<summary>What changed in v2.3</summary>
+<ul>
+<li><strong>New:</strong> requests without a key, up to 60 a minute.</li>
+<li><strong>New:</strong> <code>qc=passed</code> returns clean readings only.</li>
+<li><strong>Changed:</strong> <del><code>/v1/latest?station=LH-04</code></del> is now <ins><code>/v2/stations/{id}/latest</code></ins>. The old path answers <code>410 Gone</code>.</li>
+<li><strong>Changed:</strong> flags name the value they apply to, as in <code>spike:do_mgl</code>.</li>
+</ul>
+</details>
+--- hr 255-255
+<hr>
+--- p 257-257
+<p>Next: <a href="bulletin-agent.md">Gull, the weekly bulletin agent</a> · <a href="README.md">Start here</a></p>

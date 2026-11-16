@@ -1,0 +1,105 @@
+# corpus/security/xss-attacks.md
+format: markdown
+outline: Attack corpus (line 1)
+outline:   Raw HTML (line 6)
+outline:   Markdown (line 43)
+outline:   Diagrams (line 53)
+outline:   Math (line 83)
+outline:   Code (line 88)
+--- h1 1-1
+<h1 id="attack-corpus">Attack corpus</h1>
+--- p 3-4
+<p>Every payload below tries to run script, load a page or send a request. Rendered, none may: a run that sees a dialog,
+the canary <code>window.__pmCanary</code>, a Content Security Policy violation or a request off this machine fails.</p>
+--- h2 6-6
+<h2 id="raw-html">Raw HTML</h2>
+--- img 6-6
+<img src="pm-asset:corpus/security/x">
+--- img 6-6
+<img src="pm-asset:corpus/security/x">
+--- input 6-6
+<input disabled="">
+--- p 6-6
+<p>go</p>
+--- details 6-6
+<details open=""><summary>toggle</summary>x</details>
+--- video 6-6
+<video controls="" preload="metadata" src="pm-asset:corpus/security/x"></video>
+--- audio 6-6
+<audio controls="" preload="metadata" src="pm-asset:corpus/security/x"></audio>
+--- p 6-6
+<p>&lt;p title="</p>
+--- img 6-6
+<img src="pm-asset:corpus/security/x">
+--- p 6-6
+<p>"&gt;</p>
+--- p 6-6
+<p></p>
+--- img 6-6
+<img src="pm-asset:corpus/security/x">
+--- a 6-6
+<a>javascript link</a>
+--- a 6-6
+<a>mixed case link</a>
+--- a 6-6
+<a>entity tab link</a>
+--- a 6-6
+<a>data link</a>
+--- a 6-6
+<a>vbscript link</a>
+--- img 6-6
+<img alt="remote picture" src="https://attacker.example/beacon.png">
+--- img 6-6
+<img>
+--- div 6-6
+<div>styled div</div>
+--- p 6-6
+<p>hover me</p>
+--- p 6-6
+<p>marquee
+
+&lt;script&gt;window.__pmCanary='textarea'&lt;/script&gt;</p>
+--- h2 43-43
+<h2 id="markdown">Markdown</h2>
+--- p 45-49
+<p><a>markdown javascript link</a>
+<a>markdown data link</a>
+<img alt="markdown remote picture" src="https://attacker.example/md.png">
+<a href="https://attacker.example/autolink">https://attacker.example/autolink</a>
+<a>reference link</a></p>
+--- h2 53-53
+<h2 id="diagrams">Diagrams</h2>
+--- pre 55-60
+<pre><code class="language-mermaid">flowchart LR
+  A["&lt;img src=x onerror=window.__pmCanary='mermaid'&gt;"] --&gt; B
+  click A "javascript:window.__pmCanary='mermaid-click'" "tooltip"
+  click B callback
+</code></pre>
+--- pre 62-66
+<pre><code class="language-mermaid">%%{init: {"securityLevel": "loose"}}%%
+flowchart LR
+  C["&lt;script&gt;window.__pmCanary='mermaid-init'&lt;/script&gt;"] --&gt; D
+</code></pre>
+--- pre 68-73
+<pre><code class="language-plantuml">@startuml
+Alice -&gt; Bob : [[javascript:alert(1) link]]
+url of Alice is [[https://attacker.example/plantuml]]
+@enduml
+</code></pre>
+--- pre 75-81
+<pre><code class="language-dot">digraph G {
+  a [URL="javascript:alert(1)", label="dot link"];
+  b [href="https://attacker.example/dot", label=&lt;&lt;b&gt;html label&lt;/b&gt;&gt;];
+  a -&gt; b;
+}
+</code></pre>
+--- h2 83-83
+<h2 id="math">Math</h2>
+--- p 85-86
+<p><span data-math-style="inline">\href{javascript:alert(1)}{\text{katex href}}</span> and <span data-math-style="inline">\url{javascript:alert(1)}</span> and
+<span data-math-style="inline">\htmlData{foo=bar}{x}</span> and <span data-math-style="inline">\includegraphics{https://attacker.example/k.png}</span>.</p>
+--- h2 88-88
+<h2 id="code">Code</h2>
+--- pre 90-92
+<pre><code class="language-html">&lt;script&gt;window.__pmCanary = "code"&lt;/script&gt;
+</code></pre>
