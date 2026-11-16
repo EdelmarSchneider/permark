@@ -16,9 +16,9 @@ use std::borrow::Cow;
 use std::ops::Range;
 
 use comrak::nodes::{AstNode, LineColumn, NodeHeading, NodeValue, Sourcepos};
-use comrak::{parse_document, Arena, Options};
+use comrak::{Arena, Options};
 
-use crate::format::{reading_text, MarkdownFeatures};
+use crate::format::{parse_document, reading_text, MarkdownFeatures};
 
 const BOM: &str = "\u{feff}";
 /// Most escaped pipes of one table row the column shift is searched for.
@@ -157,6 +157,12 @@ fn options() -> Options<'static> {
     options.extension.description_lists = true;
     options.extension.math_dollars = true;
     options.extension.math_latex = true;
+    // as reading parses: a `:::` container is a block (a definition may open it). Inline notes (`^[..]`) stay off:
+    // comrak places what a note holds relative to the note, not the text, so its links could not be located; read as
+    // plain text, a note's links are found where they stand.
+    options.extension.highlight = true;
+    options.extension.shortcodes = true;
+    options.extension.block_directive = true;
     options.extension.front_matter_delimiter = Some("---".to_owned());
     options
 }

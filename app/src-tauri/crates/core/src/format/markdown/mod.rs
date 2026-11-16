@@ -9,6 +9,7 @@ mod callouts;
 mod fences;
 mod frontmatter;
 mod inline;
+mod latex;
 mod prompt;
 mod refs;
 mod sanitize;
@@ -25,8 +26,9 @@ use std::fmt::Write as _;
 use comrak::html::format_node_default;
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::options::Plugins;
-use comrak::{create_formatter, parse_document, Anchorizer, Arena, Options};
+use comrak::{create_formatter, Anchorizer, Arena, Options};
 
+pub(crate) use latex::parse_document;
 pub use refs::{at_refs, AtRef};
 pub use sections::{sections, units, Section, TextUnit};
 pub use segments::{segments, LockReason, Segment, SegmentKind};

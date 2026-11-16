@@ -520,6 +520,19 @@ fn bracket_display_math_is_kept_like_dollar_math() {
 }
 
 #[test]
+fn bracket_math_is_a_block_to_keep_only_on_lines_of_its_own() {
+    let got = kinds("see \\[1\\]\n\n\\[ x \\]\n\n\\[1\\]\n\\[2\\]\n");
+    assert_eq!(
+        got,
+        [
+            (1, 1, SegmentKind::Paragraph, None),
+            (3, 3, SegmentKind::Math, Some(LockReason::Math)),
+            (5, 6, SegmentKind::Paragraph, None),
+        ]
+    );
+}
+
+#[test]
 fn a_toon_block_is_kept_as_written_data() {
     let got = kinds("```toon\nusers[1]{id}:\n  1\n```\n\n```json\n{}\n```\n");
     assert_eq!(

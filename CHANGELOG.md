@@ -42,7 +42,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Table columns aligned with `:-:` or `--:` are now centered or right-aligned in View too, as they already were in Edit. <!-- f: view-mode -->
 - A ```` ```math ```` block now shows as a formula instead of as code. <!-- f: view-mode -->
 - An alert keeps the title you write after its kind, such as `> [!NOTE] Before you start`. Only an alert without a title gets the default one in your language. <!-- f: view-mode -->
-- Formulas written as `\(…\)` and `\[…\]`, the way many AI assistants write them, are now drawn like `$…$` and `$$…$$`, in View and in Edit. <!-- f: view-mode, edit-mode -->
+- Formulas written as `\(…\)` and `\[…\]`, the way many AI assistants write them, are now drawn like `$…$` and `$$…$$`, in View and in Edit. A `\[…\]` formula must stand on lines of its own (or be a paragraph by itself), so escaped brackets in a sentence, such as `see \[1\]`, still show as `[1]`. <!-- f: view-mode, edit-mode -->
 - Text centered with HTML, such as `<p align="center">` or `<h1 align="center">` at the top of many README files, is now centered. <!-- f: view-mode -->
 - A link to an old-style anchor such as `<a name="setup"></a>` now goes to it. <!-- f: view-mode, links -->
 
