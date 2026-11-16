@@ -424,6 +424,8 @@ export default {
   "structured.tree": "Arbore",
   "structured.source": "Sursă",
   "structured.invalid": "Conținutul nu este valid, așa că este afișat ca text.",
+  "structured.expandAll": "Extinde tot",
+  "structured.collapseAll": "Restrânge tot",
   "jsonl.empty": "Nicio înregistrare în acest fișier.",
   "jsonl.invalid": "Linia {line} nu este o singură valoare JSON (oprire la caracterul {at}).",
   "jsonl.jump": "Mergi la înregistrare",

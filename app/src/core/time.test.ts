@@ -29,7 +29,7 @@ describe("relativeTime", () => {
     expect(compactRelativeFormat("ro").format(-4, "day")).toMatch(/^acum\s4\szile$/);
     expect(compactRelativeFormat("ru").format(-3, "minute")).toMatch(/^3\sмин\.\sназад$/);
     const locales = ["en", "pt-BR", "es", "de", "zh-CN", "it", "ja", "ko", "ca", "gl"];
-    for (const locale of [...locales, "zh-TW", "id", "vi", "ru", "tr"]) {
+    for (const locale of [...locales, "zh-TW", "id", "vi", "ru", "tr", "pl", "uk"]) {
       expect(compactRelativeFormat(locale).format(-3, "minute"), locale).not.toMatch(/^[-\u2212]/);
     }
   });

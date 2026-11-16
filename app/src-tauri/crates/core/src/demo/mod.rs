@@ -35,6 +35,17 @@ pub enum DemoOffer {
     Open,
 }
 
+/// The Welcome screen's offer and whether the pages can be opened at all (the lasting way in: the command palette and
+/// the quick settings, whatever became of the offer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct DemoStatus {
+    pub offer: DemoOffer,
+    /// The folder is in Documents, or this copy ships the pages and nothing else is at their place.
+    pub available: bool,
+}
+
 /// Where the pages are: the folder shipped with the app and their place in Documents (`None`: unknown here).
 #[derive(Debug, Clone)]
 pub struct DemoPlaces {
@@ -72,12 +83,8 @@ fn is_folder(path: &Path) -> bool {
     fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir())
 }
 
-/// What the Welcome screen offers now.
-#[must_use]
-pub fn offer(store: &StateStore, places: &DemoPlaces) -> DemoOffer {
-    if state_file(store).load().into_value().done {
-        return DemoOffer::Hidden;
-    }
+/// What the pages' place allows, whatever became of the offer: open the folder, copy it there first, or nothing.
+fn place_offer(places: &DemoPlaces) -> DemoOffer {
     let Some(target) = &places.target else {
         return DemoOffer::Hidden;
     };
@@ -90,6 +97,23 @@ pub fn offer(store: &StateStore, places: &DemoPlaces) -> DemoOffer {
     } else {
         DemoOffer::Hidden
     }
+}
+
+/// What the Welcome screen offers now, and whether the pages can be opened.
+#[must_use]
+pub fn status(store: &StateStore, places: &DemoPlaces) -> DemoStatus {
+    let here = place_offer(places);
+    let done = state_file(store).load().into_value().done;
+    DemoStatus {
+        offer: if done { DemoOffer::Hidden } else { here },
+        available: here != DemoOffer::Hidden,
+    }
+}
+
+/// What the Welcome screen offers now.
+#[must_use]
+pub fn offer(store: &StateStore, places: &DemoPlaces) -> DemoOffer {
+    status(store, places).offer
 }
 
 /// The folder to open: the one in Documents, copied there from the shipped pages first when nothing is at its place

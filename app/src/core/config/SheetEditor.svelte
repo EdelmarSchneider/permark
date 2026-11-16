@@ -105,6 +105,7 @@
     source={(line) => void session.switchTo("source", line)}
     matches={sheet.kind === "ignore" ? matches.counts : null}
     capped={matches.capped}
+    spread
   />
 {:else if failed}
   <p class="failed" role="alert">{t("config.noSheet")}</p>

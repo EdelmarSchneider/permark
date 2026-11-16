@@ -2,8 +2,9 @@
   // Structured text (JSON, XML) as a read-only tree, with the text itself one click away. A text that does not parse
   // is shown as text with a note. Editing comes with the editing area (Source).
   import { t } from "../i18n";
+  import SpreadButtons from "./SpreadButtons.svelte";
   import TreeRow from "./TreeRow.svelte";
-  import type { TreeNode } from "./tree";
+  import { nextAsk, spreadOf, type Ask, type TreeNode } from "./tree";
 
   type Props = {
     text: string;
@@ -16,6 +17,8 @@
   let chosen = $state<Mode>("tree");
   /** String values as interpreted text. Starts off; not kept across a remount. */
   let plain = $state(false);
+  /** The last "Expand all" | "Collapse all"; before one, a small document opens fully. */
+  let ask = $state<Ask | null>(null);
 
   const parsed = $derived(parse(text));
   const mode = $derived<Mode>(parsed.ok ? chosen : "source");
@@ -47,13 +50,16 @@
           {t("json.interpret")}
         </button>
       {/if}
+      {#if mode === "tree"}
+        <SpreadButtons onask={(open) => (ask = nextAsk(ask, open))} />
+      {/if}
     {:else}
       <span class="note">{t("structured.invalid")}</span>
     {/if}
   </div>
   {#if mode === "tree" && parsed.ok}
     <div class="tree" role="tree" aria-label={t("structured.tree")}>
-      <TreeRow node={parsed.root} depth={0} open {plain} />
+      <TreeRow node={parsed.root} depth={0} spread={spreadOf(parsed.root, ask)} {plain} />
     </div>
   {:else}
     <pre class="source"><code>{text}</code></pre>
@@ -66,7 +72,9 @@
   }
   .bar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    gap: 12px;
     min-height: 28px;
     margin-bottom: var(--sp-2);
   }
@@ -97,7 +105,6 @@
   }
   .interpret {
     height: 24px;
-    margin-left: 12px;
     padding: 0 10px;
     border: 1px solid var(--border);
     border-radius: var(--radius-control);
