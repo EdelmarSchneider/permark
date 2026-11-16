@@ -12,6 +12,7 @@
 //! `language`, `declare`, `defaults.get`, `defaults.set`.
 //! Events: `download` (one dictionary's new state), `personal` (the personal words after a change).
 
+mod budget;
 mod detect;
 mod docs;
 mod languages;
@@ -21,6 +22,7 @@ mod words;
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
+use std::time::Duration;
 
 use permark_core::conditions::Requirement;
 use permark_core::downloads::DownloadKit;
@@ -34,12 +36,14 @@ use serde::{Deserialize, Serialize};
 use spellbook::Dictionary;
 use ts_rs::TS;
 
+use crate::budget::Budget;
+
 pub use docs::{SpellingDefault, SpellingDocLanguage, SpellingLanguageSource, SHARED_FILE};
 pub use languages::{Language, Pin, COMMIT, OFFICIAL, SOURCE};
 pub use store::{DictStore, SpellingFailure, SpellingState, Unavailable};
 pub use words::{
-    keep_suggestion, normalize, over_cap, personal_accepts, personal_form, sanitize_dic, FlagKind,
-    MAX_WORD_CHARS,
+    keep_suggestion, normalize, over_cap, personal_accepts, personal_form, sanitize_dic,
+    suggestible, FlagKind, MAX_SUGGEST_CHARS, MAX_WORD_CHARS,
 };
 
 const ID: PluginId = PluginId::of("spelling");
@@ -48,6 +52,14 @@ const ID: PluginId = PluginId::of("spelling");
 pub const MAX_WORDS: usize = 5000;
 /// Most suggestions taken from each dictionary.
 pub const SUGGESTIONS_PER_LANGUAGE: usize = 5;
+/// Longest wait for the corrections of a word; longer -> none. The word menu waits for them: a typo of a common word
+/// takes a fraction of a second, one of a long rare word may take longer.
+const SUGGEST_WAIT: Duration = Duration::from_millis(1500);
+/// Most corrections running at once, those past their wait included; more asks get none.
+const MAX_SUGGESTING: usize = 2;
+
+/// How the corrections of a word are found in one dictionary: `(dictionary, lang, word)`.
+type Suggester = Arc<dyn Fn(&Dictionary, &str, &str) -> Vec<String> + Send + Sync>;
 
 /// Why a call is refused.
 #[derive(Debug, thiserror::Error)]
@@ -177,22 +189,37 @@ pub fn plugin() -> Arc<dyn Plugin> {
 /// The plugin with other languages | pins (tests).
 #[must_use]
 pub fn plugin_with(languages: Vec<Language>) -> Arc<dyn Plugin> {
-    Arc::new(Spelling {
-        manifest: Manifest {
-            id: ID,
-            kind: PluginKind::Feature,
-            scope: PluginScope::App,
-            requires: Requirement::NONE,
-            depends_on: Cow::Borrowed(&[]),
-            default_enabled: true,
-        },
+    Arc::new(Spelling::new(
         languages,
-    })
+        Arc::new(suggestions_in),
+        SUGGEST_WAIT,
+    ))
 }
 
 struct Spelling {
     manifest: Manifest,
     languages: Vec<Language>,
+    suggester: Suggester,
+    /// Longest wait for corrections.
+    wait: Duration,
+}
+
+impl Spelling {
+    fn new(languages: Vec<Language>, suggester: Suggester, wait: Duration) -> Self {
+        Self {
+            manifest: Manifest {
+                id: ID,
+                kind: PluginKind::Feature,
+                scope: PluginScope::App,
+                requires: Requirement::NONE,
+                depends_on: Cow::Borrowed(&[]),
+                default_enabled: true,
+            },
+            languages,
+            suggester,
+            wait,
+        }
+    }
 }
 
 struct Started {
@@ -227,9 +254,10 @@ fn accepted(
             .any(|(lang, d)| d.check(&normalize(word, lang)))
 }
 
-/// Up to [`SUGGESTIONS_PER_LANGUAGE`] corrections of `word` from `dictionary` (none for a word over the cap).
+/// Up to [`SUGGESTIONS_PER_LANGUAGE`] corrections of `word` from `dictionary` (none for a word that is no typo:
+/// [`suggestible`]).
 fn suggestions_in(dictionary: &Dictionary, lang: &str, word: &str) -> Vec<String> {
-    if over_cap(word) {
+    if !suggestible(word) {
         return Vec::new();
     }
     let mut found = Vec::new();
@@ -248,6 +276,8 @@ struct Shared {
     personal_file: Option<StateFile<Personal>>,
     events: PluginEvents,
     docs: docs::DocLanguages,
+    suggester: Suggester,
+    budget: Budget,
 }
 
 impl Shared {
@@ -308,18 +338,29 @@ impl Shared {
             .collect())
     }
 
-    /// Up to [`SUGGESTIONS_PER_LANGUAGE`] from each dictionary of `langs`, in order, each once.
-    fn suggest(&self, args: &SuggestArgs) -> Result<Vec<String>, SpellError> {
-        let dictionaries = self.dictionaries(&args.langs)?;
-        let mut merged: Vec<String> = Vec::new();
-        for (lang, dictionary) in &dictionaries {
-            for suggestion in suggestions_in(dictionary, lang, &args.word) {
-                if !merged.contains(&suggestion) {
-                    merged.push(suggestion);
+    /// Up to [`SUGGESTIONS_PER_LANGUAGE`] from each dictionary of `langs`, in order, each once; none when they take
+    /// longer than the wait or [`MAX_SUGGESTING`] still run.
+    fn suggest(&self, args: SuggestArgs) -> Result<Vec<String>, SpellError> {
+        // the loaded dictionaries are shared, not locked: checks go on while this runs
+        let dictionaries: Vec<(String, Arc<Dictionary>)> = self
+            .dictionaries(&args.langs)?
+            .into_iter()
+            .map(|(lang, dictionary)| (lang.to_owned(), dictionary))
+            .collect();
+        let suggester = Arc::clone(&self.suggester);
+        let word = args.word;
+        let merged = self.budget.run(move || {
+            let mut merged: Vec<String> = Vec::new();
+            for (lang, dictionary) in &dictionaries {
+                for suggestion in suggester(dictionary, lang, &word) {
+                    if !merged.contains(&suggestion) {
+                        merged.push(suggestion);
+                    }
                 }
             }
-        }
-        Ok(merged)
+            merged
+        });
+        Ok(merged.unwrap_or_default())
     }
 
     fn personal_list(&self) -> Vec<String> {
@@ -373,8 +414,8 @@ fn register(cx: &PluginCx, shared: &Arc<Shared>) -> Vec<RpcRegistration> {
             Ok(s.languages())
         }),
     ));
-    // the app runs plugin calls on its blocking pool: a first check loads a dictionary, a suggestion may take most of
-    // a second, neither holds a window
+    // the app runs plugin calls on its blocking pool: a first check loads a dictionary, a suggestion waits at most
+    // `SUGGEST_WAIT`, neither holds a window
     let s = Arc::clone(shared);
     rpc.extend(cx.rpc(
         "check",
@@ -383,7 +424,7 @@ fn register(cx: &PluginCx, shared: &Arc<Shared>) -> Vec<RpcRegistration> {
     let s = Arc::clone(shared);
     rpc.extend(cx.rpc(
         "suggest",
-        typed(move |args: SuggestArgs, _| Ok(s.suggest(&args)?)),
+        typed(move |args: SuggestArgs, _| Ok(s.suggest(args)?)),
     ));
     let s = Arc::clone(shared);
     rpc.extend(cx.rpc(
@@ -483,6 +524,8 @@ impl Plugin for Spelling {
             personal_file,
             events: cx.events().clone(),
             docs,
+            suggester: Arc::clone(&self.suggester),
+            budget: Budget::new(self.wait, MAX_SUGGESTING),
         });
         *lock(&cell) = Arc::downgrade(&shared);
         Ok(Box::new(Started {

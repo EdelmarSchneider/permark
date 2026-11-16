@@ -3,7 +3,8 @@
 //! generator: misspelled and recased dictionary words (case mappings that change a character's byte length: `ß`,
 //! `ﬁ`, `ŉ`, `ȿ`, `Ⱥ`), compounds, the `.aff`'s own `REP` patterns at word edges next to multibyte letters, tripled
 //! letters, camel | Pascal case, combining marks, right-to-left letters, apostrophes | hyphens | middle dots, random
-//! Unicode, and runs up to and past the word cap.
+//! Unicode, and runs up to and past the word cap. The slowest corrections are listed with their lengths. Real typos
+//! (one edit of a dictionary word) must still get corrections.
 //!
 //! Needs the files: `SPELLING_DICTS=<folder with one subfolder per source folder> cargo test -- --ignored`;
 //! `SPELLING_FUZZ_WORDS` (default 20 000) words per language, every `SPELLING_FUZZ_SUGGEST`-th (default 10) also asked
@@ -144,6 +145,7 @@ fn fuzz(
 ) -> Vec<String> {
     let (aff, dic, dictionary) = official(root, language);
     let dictionary = Arc::new(dictionary);
+    let mut failures = typos_still_suggested(language.id, &dic, &dictionary);
     let words = Arc::new(crafted(&aff, &dic, count, &mut Rng::of(language.id)));
     let start = Instant::now();
     let chunk = words.len().div_ceil(threads).max(1);
@@ -170,11 +172,12 @@ fn fuzz(
     let slowest: Vec<String> = tally
         .slow
         .iter()
-        .take(3)
-        .map(|(time, word)| format!("{time:.1?} {word:?}"))
+        .take(20)
+        .map(|(time, word)| format!("{time:.1?} {} chars {word:?}", word.chars().count()))
         .collect();
+    let slowest = slowest.join("\n  ");
     eprintln!(
-        "{}: {} words checked ({} unknown, {} over the cap), {} asked for corrections ({} over 1 s, slowest {slowest:?}), {} panics, {:.1?}",
+        "{}: {} words checked ({} unknown, {} over the cap), {} asked for corrections ({} over 1 s), {} panics, {:.1?}; slowest:\n  {slowest}",
         language.id,
         words.len(),
         tally.unknown,
@@ -184,7 +187,88 @@ fn fuzz(
         tally.failures.len(),
         start.elapsed()
     );
-    tally.failures
+    failures.extend(tally.failures);
+    failures
+}
+
+/// Words that are no realistic typo may be refused corrections; real typos never: one edit (delete, swap, replace,
+/// insert; the first letter kept) of 200 dictionary words of 5-15 letters, each lowercase and Capitalized, must reach
+/// the engine and get corrections (how often the word meant is among them is printed). Returns the typos that got
+/// none.
+fn typos_still_suggested(lang: &'static str, dic: &str, dictionary: &Dictionary) -> Vec<String> {
+    let stems: Vec<&str> = dic
+        .lines()
+        .skip(1)
+        .filter_map(stem_of)
+        .filter(|w| {
+            (5..=15).contains(&w.chars().count())
+                && w.chars().all(char::is_lowercase)
+                && dictionary.check(w)
+        })
+        .collect();
+    let mut letters: Vec<char> = stems.iter().flat_map(|w| w.chars()).collect();
+    letters.sort_unstable();
+    letters.dedup();
+    let mut rng = Rng::of(lang);
+    let (mut asked, mut meant, mut slowest) = (0, 0, Duration::ZERO);
+    let mut failures = Vec::new();
+    for _ in 0..200 {
+        let Some(meant_word) = (!stems.is_empty()).then(|| rng.pick(&stems)) else {
+            break;
+        };
+        let typo = one_edit(&mut rng, meant_word, &letters);
+        if dictionary.check(&typo) {
+            continue;
+        }
+        for (word, want) in [
+            (typo.clone(), meant_word.to_owned()),
+            (capitalized(&typo), capitalized(meant_word)),
+        ] {
+            asked += 1;
+            let start = Instant::now();
+            let found = suggestions_in(dictionary, lang, &word);
+            slowest = slowest.max(start.elapsed());
+            meant += usize::from(found.contains(&want));
+            if found.is_empty() {
+                failures.push(format!("{lang} no corrections for the typo {word:?}"));
+            }
+        }
+    }
+    eprintln!("{lang}: {asked} typos, the word meant among the corrections of {meant}, slowest {slowest:.1?}");
+    failures
+}
+
+/// `base` with one edit after its first letter: delete, swap, replace or insert.
+fn one_edit(rng: &mut Rng, base: &str, letters: &[char]) -> String {
+    let mut chars: Vec<char> = base.chars().collect();
+    let n = chars.len();
+    match rng.below(4) {
+        0 => {
+            chars.remove(1 + rng.below(n - 1));
+        }
+        1 => {
+            let at = 1 + rng.below(n - 2);
+            chars.swap(at, at + 1);
+        }
+        2 => {
+            let at = 1 + rng.below(n - 1);
+            let mut c = rng.pick(letters);
+            while c == chars[at] {
+                c = rng.pick(letters);
+            }
+            chars[at] = c;
+        }
+        _ => chars.insert(1 + rng.below(n), rng.pick(letters)),
+    }
+    chars.into_iter().collect()
+}
+
+fn capitalized(word: &str) -> String {
+    let mut chars = word.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
 }
 
 /// Checks `words[range]` through the plugin's path; every `every`-th word (by index) is asked for corrections too.
@@ -421,13 +505,7 @@ fn recase(rng: &mut Rng, base: &str) -> String {
     match rng.below(4) {
         0 => base.to_uppercase(),
         1 => base.to_lowercase(),
-        2 => {
-            let mut chars = base.chars();
-            chars
-                .next()
-                .map(|first| first.to_uppercase().chain(chars).collect())
-                .unwrap_or_default()
-        }
+        2 => capitalized(base),
         _ => {
             let last = base.chars().count().saturating_sub(1);
             base.chars()

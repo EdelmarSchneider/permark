@@ -5,10 +5,14 @@ use std::borrow::Cow;
 use std::collections::BTreeSet;
 
 use permark_core::settings::is_unsafe_char;
+use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::{is_nfc_quick, IsNormalized, UnicodeNormalization};
 
-/// Longest word (chars) taken into the personal dictionary or asked for suggestions.
+/// Longest word (chars) judged by the engine or taken into the personal dictionary.
 pub const MAX_WORD_CHARS: usize = 100;
+/// Longest word (chars) the engine is asked to correct: its time grows with the length, to many seconds past this,
+/// while typos of real words stay well below it.
+pub const MAX_SUGGEST_CHARS: usize = 32;
 
 /// `word` in the form the dictionaries spell: NFC; typographic apostrophe `’` -> `'` (not every `.aff` maps it); for
 /// Romanian (`ro`, `ro-*`) the cedilla letters `ş ţ Ş Ţ` -> the comma letters `ș ț Ș Ț` its dictionary uses. Borrowed
@@ -164,6 +168,20 @@ pub fn keep_suggestion(suggestion: &str, accepts: impl Fn(&str) -> bool) -> bool
 #[must_use]
 pub fn over_cap(word: &str) -> bool {
     word.chars().nth(MAX_WORD_CHARS).is_some()
+}
+
+/// Whether the engine is asked to correct `word`: at most [`MAX_SUGGEST_CHARS`] long and made only of what the words
+/// of a text hold (letters, combining marks, apostrophes, middle dot, hyphens). Anything else is no typo of a
+/// dictionary word, and correcting it can take the engine many seconds.
+#[must_use]
+pub fn suggestible(word: &str) -> bool {
+    !word.is_empty()
+        && word.chars().nth(MAX_SUGGEST_CHARS).is_none()
+        && word.chars().all(|c| {
+            c.is_alphabetic()
+                || is_combining_mark(c)
+                || matches!(c, '\'' | '\u{2019}' | '\u{B7}' | '-' | '\u{2010}')
+        })
 }
 
 /// A word as the personal dictionary keeps it (`None`: not a single word, or one with an invisible character that

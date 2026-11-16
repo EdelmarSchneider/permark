@@ -2,7 +2,8 @@
 #![allow(clippy::assert_is_empty, clippy::items_after_statements)]
 
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, RwLock};
 use std::time::{Duration, Instant};
 
 use permark_core::conditions::{Context, Distribution};
@@ -143,6 +144,42 @@ fn personal_words_accept_their_capitalized_and_upper_forms() {
 }
 
 #[test]
+fn only_what_can_be_a_typo_is_corrected() {
+    let longest = "a".repeat(MAX_SUGGEST_CHARS);
+    for typo in [
+        "helo",
+        "Desenvolupaemnt",
+        "neurloeptoanestèsic",
+        "l'acqua",
+        "it\u{2019}s",
+        "col·legi",
+        "cafe\u{301}",
+        "ştiinţă",
+        "Straße",
+        "e-mial",
+        longest.as_str(),
+    ] {
+        assert!(suggestible(typo), "{typo:?}");
+    }
+    let long = "a".repeat(MAX_SUGGEST_CHARS + 1);
+    for other in [
+        "",
+        long.as_str(),
+        "hel1o",
+        "snake_case",
+        "a$b",
+        "path/to",
+        "smile\u{1F600}",
+        "ab\u{200D}cd",
+        "ab\u{AD}cd",
+        "two words",
+        "ab\u{A0}cd",
+    ] {
+        assert!(!suggestible(other), "{other:?}");
+    }
+}
+
+#[test]
 fn the_official_table_builds_a_unit_per_language() {
     for language in OFFICIAL {
         let unit = language.unit().unwrap();
@@ -226,6 +263,8 @@ struct Harness {
     running: Option<Box<dyn Running>>,
     /// The window files service, once a test offers one.
     files: Option<ServiceLease>,
+    /// Corrections in place of the engine's, and the longest wait for them.
+    suggesting: Option<(Suggester, Duration)>,
 }
 
 /// The network serves the fixture files of `en` and `ro` (`ro`'s dictionary as `ro_dic_served`).
@@ -271,6 +310,7 @@ impl Harness {
             ],
             running: None,
             files: None,
+            suggesting: None,
         };
         h.restart();
         h
@@ -293,7 +333,15 @@ impl Harness {
             Arc::clone(&self.services),
             Arc::clone(&self.settings),
         ));
-        self.running = Some(plugin_with(self.languages.clone()).start(&cx).unwrap());
+        let plugin = match &self.suggesting {
+            Some((suggester, wait)) => Arc::new(Spelling::new(
+                self.languages.clone(),
+                Arc::clone(suggester),
+                *wait,
+            )) as Arc<dyn Plugin>,
+            None => plugin_with(self.languages.clone()),
+        };
+        self.running = Some(plugin.start(&cx).unwrap());
     }
 
     fn call(&self, method: &str, args: Value) -> Result<Value, IpcError> {
@@ -543,6 +591,126 @@ fn personal_words_are_accepted_everywhere_and_kept_in_the_profile() {
         .unwrap();
     assert_eq!(list, json!([]));
     assert_eq!(h.check(&["en"], &["permark"]).unwrap(), [false]);
+}
+
+// ---- corrections within a time budget ----
+
+/// A shut gate: `pass` waits until the test drops the sender (or the test ends).
+fn gate() -> (mpsc::Sender<()>, Arc<Mutex<mpsc::Receiver<()>>>) {
+    let (open, wait) = mpsc::channel();
+    (open, Arc::new(Mutex::new(wait)))
+}
+
+fn pass(gate: &Mutex<mpsc::Receiver<()>>) {
+    let _ = gate.lock().unwrap_or_else(PoisonError::into_inner).recv();
+}
+
+/// Polls `done` until it holds (at most 10 s).
+fn eventually(mut done: impl FnMut() -> bool) {
+    let start = Instant::now();
+    while !done() {
+        assert!(start.elapsed() < Duration::from_secs(10), "never happened");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn work_slower_than_the_wait_gives_nothing_and_ends_in_the_background() {
+    let budget = Budget::new(Duration::from_millis(50), 2);
+    let (open, shut) = gate();
+    let ended = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&ended);
+    let start = Instant::now();
+    let answer = budget.run(move || {
+        pass(&shut);
+        flag.store(true, Ordering::SeqCst);
+        1
+    });
+    assert_eq!(answer, None);
+    assert!(start.elapsed() >= Duration::from_millis(50));
+    drop(open);
+    eventually(|| ended.load(Ordering::SeqCst));
+    assert_eq!(budget.run(|| 2), Some(2));
+}
+
+#[test]
+fn at_most_two_runs_go_on_at_a_time() {
+    let budget = Budget::new(Duration::from_millis(20), 2);
+    let (open, shut) = gate();
+    for _ in 0..2 {
+        let shut = Arc::clone(&shut);
+        assert_eq!(budget.run(move || pass(&shut)), None);
+    }
+    // both still run: a third is not even started
+    let started = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&started);
+    assert_eq!(budget.run(move || flag.store(true, Ordering::SeqCst)), None);
+    assert!(!started.load(Ordering::SeqCst));
+    // once they end, their places are free again
+    drop(open);
+    eventually(|| budget.run(|| 3) == Some(3));
+}
+
+/// The plugin with `suggester` in place of the engine's corrections, waiting at most `wait` for them.
+fn harness_suggesting(suggester: Suggester, wait: Duration) -> Harness {
+    let mut h = Harness::start();
+    h.suggesting = Some((suggester, wait));
+    h.restart();
+    h
+}
+
+fn suggest(h: &Harness, word: &str) -> Vec<String> {
+    let out = h
+        .call("suggest", json!({ "langs": ["en"], "word": word }))
+        .unwrap();
+    serde_json::from_value(out).unwrap()
+}
+
+#[test]
+fn a_suggestion_past_the_wait_answers_none() {
+    let (open, shut) = gate();
+    let fake: Suggester = Arc::new(move |_: &Dictionary, _: &str, word: &str| {
+        if word == "slow" {
+            pass(&shut);
+        }
+        vec![format!("{word}!")]
+    });
+    let h = harness_suggesting(fake, Duration::from_millis(100));
+    h.ready("en");
+    assert_eq!(suggest(&h, "helo"), ["helo!"]);
+    // the menu shows "no suggestions" instead of waiting for the engine
+    assert_eq!(suggest(&h, "slow"), Vec::<String>::new());
+    drop(open);
+}
+
+#[test]
+fn checks_go_on_while_a_suggestion_runs() {
+    let (open, shut) = gate();
+    let entered = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&entered);
+    let fake: Suggester = Arc::new(move |_: &Dictionary, _: &str, word: &str| {
+        flag.store(true, Ordering::SeqCst);
+        pass(&shut);
+        vec![format!("{word}!")]
+    });
+    let h = harness_suggesting(fake, Duration::from_secs(30));
+    h.ready("en");
+    let rpc = Arc::clone(&h.rpc);
+    let asking = std::thread::spawn(move || {
+        rpc.call(
+            "spelling",
+            "suggest",
+            &RpcCall {
+                window: "main".into(),
+                args: json!({ "langs": ["en"], "word": "helo" }),
+            },
+        )
+    });
+    eventually(|| entered.load(Ordering::SeqCst));
+    assert_eq!(h.check(&["en"], &["hello", "helo"]).unwrap(), [true, false]);
+    assert!(!asking.is_finished());
+    drop(open);
+    assert_eq!(asking.join().unwrap().unwrap(), json!(["helo!"]));
 }
 
 /// The real dictionaries: every language loads (Galician only after its `.dic` is sanitized) and knows a common word.
