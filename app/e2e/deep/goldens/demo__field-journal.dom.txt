@@ -214,10 +214,10 @@ div.reading
           "Try it: spelling and correction"
         p dir="auto"
           "This page doubles as a practice sheet. The box below has three mistakes in it, on purpose."
-        div.markdown-alert.markdown-alert-important.markdown-alert-kind-example
-          p.markdown-alert-title dir="auto"
-            svg svg sized
-            "Three mistakes, on purpose"
+        blockquote
+          p dir="auto"
+            strong
+              "Three mistakes, on purpose"
           p dir="auto"
             "When you recieve a new buoy, check the the mooring shackle before it goes over the side. It will definately be colder on deck than you think."
         p dir="auto"

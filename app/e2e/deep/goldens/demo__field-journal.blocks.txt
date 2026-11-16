@@ -115,18 +115,18 @@ Bia</p>
 <h2 dir="auto" id="try-it-spelling-and-correction">Try it: spelling and correction</h2>
 --- p 107-107
 <p dir="auto">This page doubles as a practice sheet. The box below has three mistakes in it, on purpose.</p>
---- div 109-110
-<div class="markdown-alert markdown-alert-important markdown-alert-kind-example">
-<p class="markdown-alert-title" dir="auto">Three mistakes, on purpose</p>
+--- blockquote 109-111
+<blockquote>
+<p dir="auto"><strong>Three mistakes, on purpose</strong></p>
 <p dir="auto">When you recieve a new buoy, check the the mooring shackle before it goes over the side. It will definately be colder on deck than you think.</p>
-</div>
---- p 112-112
+</blockquote>
+--- p 113-113
 <p dir="auto">Press <kbd>Ctrl</kbd>+<kbd>E</kbd> to edit. With an English dictionary downloaded, two of the mistakes get underlined: right-click one for suggestions, <strong>Add to dictionary</strong> or <strong>Ignore in this document</strong>. The doubled word is a job for correction: select the box and press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>K</kbd>, and a small model on this computer suggests each fix for you to keep or discard. <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd> translates a selection the same way, and <strong>Translate to a new file…</strong> does the whole page. More in the <a href="permark-guide.md#spelling-correction-translation">PerMark guide</a>.</p>
---- hr 120-120
+--- hr 121-121
 <hr>
---- p 122-122
+--- p 123-123
 <p dir="auto">Next: <a href="galley-recipe.md">Moqueca for twelve</a> · <a href="README.md">Start here</a></p>
---- section 114-114
+--- section 115-115
 <section class="footnotes" data-footnotes="">
 <ol>
 <li dir="auto" id="fn-cast">

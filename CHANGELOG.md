@@ -60,6 +60,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - In a code block with line numbers, a long line that wraps now continues in the code column, under its own indentation, instead of under the numbers. <!-- f: code-blocks, view-mode -->
 - Mermaid charts are easier to read in both themes: pie slices, bar charts and Gantt tasks use clear, distinct colors with readable text on them, Gantt text is larger, and Sankey flows show in the dark theme. <!-- f: view-mode -->
 - A PlantUML diagram with an error shows the error without a line about the PlantUML version. <!-- f: view-mode -->
+- In Edit, the footnotes at the end of a document now list the notes written in a line, such as `^[a short note]`, so no number is skipped, as in View. <!-- f: edit-mode -->
+- A long tab name that is shortened in the middle no longer loses the space where it is cut, so "Tidewell Field Notes" no longer reads "Tidewell FieldNotes". <!-- f: tabs -->
+- In Galician, dates, numbers and times such as "13 minutes ago" no longer show in English. The app window has no Galician formats, so they follow Spanish conventions instead. <!-- f: i18n -->
 
 ## [0.12.0] - 2026-11-14
 
