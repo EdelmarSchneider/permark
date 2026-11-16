@@ -1,0 +1,39 @@
+2026-11-12T00:00:00.004Z INFO  [log] new day file=station/ingest-2026-11-12.log previous=station/ingest-2026-11-11.log
+2026-11-12T00:00:00.006Z INFO  [ingest] running host=ingest.larkhaven.example listen=0.0.0.0:8080 env=demo api=v2.3 uptime=6d02h11m
+2026-11-12T00:00:00.009Z INFO  [qc] rules active file=station/qc-rules.yaml version=3 order=range,spike,flatline,drift reject_on=range publish_flagged=true
+2026-11-12T00:00:00.011Z INFO  [gateway] north-light online stations=LH-01,LH-02,LH-03,LH-04 rssi_avg=-97dBm
+2026-11-12T00:00:00.011Z INFO  [gateway] avery-pier online stations=LH-05,LH-06,LH-07,LH-08 fallback_for=LH-04 rssi_avg=-92dBm
+2026-11-12T00:00:00.012Z INFO  [gateway] saddle-hill online stations=LH-09,LH-10,LH-11,LH-12 rssi_avg=-101dBm
+2026-11-12T00:00:39.870Z INFO  [ingest] first readings of the day received=12 stations=12/12 firmware=3.2.0
+2026-11-12T02:10:40.215Z INFO  [qc] flagged station=LH-11 sensor=do_mgl rule=spike step=1.34 limit=1.2 published=true
+2026-11-12T03:14:05.502Z WARN  [gateway] saddle-hill link to shore lost no_heartbeat_since=03:11:05Z timeout=180s last_frame=03:10:39Z gateway_buffer=on
+2026-11-12T03:30:06.001Z WARN  [gateway] saddle-hill still silent down=16m01s expected_frames_missing=4 note="the gateway keeps them until the link returns"
+2026-11-12T03:58:52.330Z INFO  [gateway] saddle-hill back online down=44m47s
+2026-11-12T03:58:52.914Z INFO  [gateway] saddle-hill replay started buffered_frames=16 oldest=03:20:38Z newest=03:50:41Z
+2026-11-12T03:58:54.106Z INFO  [gateway] saddle-hill replay done frames=16 accepted=16 duplicates=0 lost=0 max_delay=38m15s stations=LH-09:4,LH-10:4,LH-11:4,LH-12:4 time_source=frame_timestamp
+2026-11-12T04:30:39.448Z INFO  [qc] rejected station=LH-03 sensor=sal_psu value=47.91 rule=range limits=0.0..42.0
+2026-11-12T06:00:00.031Z INFO  [summary] window=00:00-06:00 received=432 passed=421 flagged=9 (spike=6 flatline=3 drift=0) rejected=2 (range=2) late=16 lost=0
+2026-11-12T06:40:51.072Z WARN  [station] LH-11 restarted cause=brownout battery_v=12.21 firmware=3.2.0 boot_ms=1840
+2026-11-12T06:40:51.075Z INFO  [ingest] LH-11 clock corrected skew=+3.8s reference=saddle-hill
+2026-11-12T09:12:44.630Z INFO  [review] decisions applied reviewer=leo kept=6 removed=1 pending=11
+2026-11-12T10:30:40.118Z INFO  [qc] flagged station=LH-09 sensor=temp_c rule=flatline repeats=6 value=13.40 published=true
+2026-11-12T11:30:41.904Z INFO  [gateway] LH-04 frame via fallback avery-pier (north-light missed the uplink) duplicates=0
+2026-11-12T12:00:00.031Z INFO  [summary] window=06:00-12:00 received=432 passed=420 flagged=10 (spike=7 flatline=3 drift=0) rejected=2 (range=2) late=0 lost=0
+2026-11-12T12:00:00.412Z WARN  [qc] drift warning station=LH-07 name="Kittiwake Shoal" sensor=ph trend=-0.008/day baseline="14-day median" limit=0.01/day share=0.80 warn_share=0.8 flagged=false neighbors=LH-06:-0.001/day,LH-08:-0.001/day
+2026-11-12T12:00:00.415Z INFO  [qc] drift check done stations=12 sensors=ph,do_mgl warnings=1 flagged=0 next_check=2026-11-13T12:00:00Z
+2026-11-12T12:00:00.416Z INFO  [qc] drift watch station=LH-07 sensor=ph flag_when=share>=1.00 recheck=daily
+2026-11-12T13:05:12.287Z INFO  [review] decisions applied reviewer=tomas kept=4 removed=0 pending=9
+2026-11-12T14:20:40.733Z INFO  [qc] rejected station=LH-09 sensor=ph value=6.84 rule=range limits=7.2..8.6
+2026-11-12T15:41:18.006Z WARN  [gateway] north-light forward lag=41s threshold=30s queued_frames=4
+2026-11-12T15:43:02.551Z INFO  [gateway] north-light forward lag back to normal lag=2s
+2026-11-12T16:50:40.390Z INFO  [qc] flagged station=LH-11 sensor=ph rule=spike step=0.17 limit=0.15 published=true
+2026-11-12T18:00:00.029Z INFO  [summary] window=12:00-18:00 received=432 passed=422 flagged=7 (spike=5 flatline=2 drift=0) rejected=3 (range=3) late=0 lost=0
+2026-11-12T18:20:39.902Z INFO  [qc] flagged station=LH-02 sensor=temp_c rule=spike step=1.62 limit=1.5 published=true
+2026-11-12T20:15:33.481Z INFO  [review] decisions applied reviewer=leo kept=5 removed=1 pending=6
+2026-11-12T21:30:40.517Z INFO  [qc] flagged station=LH-11 sensor=do_mgl rule=flatline repeats=6 value=7.02 published=true
+2026-11-12T22:40:39.264Z INFO  [qc] rejected station=LH-10 sensor=hs_m value=13.8 rule=range limits=0.0..12.0
+2026-11-12T23:50:41.006Z INFO  [ingest] last readings of the day received=12 stations=12/12
+2026-11-13T00:00:00.027Z INFO  [summary] window=18:00-24:00 received=432 passed=419 flagged=11 (spike=8 flatline=3 drift=0) rejected=2 (range=2) late=0 lost=0
+2026-11-13T00:00:00.031Z INFO  [summary] day=2026-11-12 expected=1728 received=1728 passed=1682 (97.3%) flagged=37 (spike=26 flatline=11 drift=0) rejected=9 (range=9) late=16 lost=0 drift_warnings=1 (LH-07 ph)
+2026-11-13T00:00:00.033Z INFO  [summary] per_station received LH-01=144 LH-02=144 LH-03=144 LH-04=144 LH-05=144 LH-06=144 LH-07=144 LH-08=144 LH-09=144 LH-10=144 LH-11=144 LH-12=144
+2026-11-13T00:00:00.040Z INFO  [log] day closed next=station/ingest-2026-11-13.log
