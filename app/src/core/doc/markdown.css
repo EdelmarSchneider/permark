@@ -243,6 +243,10 @@
   color: var(--text);
   border-color: var(--muted);
 }
+/* Edit's chip (no address to load): a click there selects it, nothing loads */
+.md .remote-image:not([data-url]) {
+  cursor: inherit;
+}
 .md .remote-image.is-loading {
   opacity: 0.6;
   cursor: progress;
@@ -522,12 +526,8 @@
   font-weight: 600;
   font-size: 0.92em;
 }
-/* Reading view only: the visual editor matches `.md th` / `.md td` and has no `.doc-column`. A long token wraps
-   in the cell. The 5em floor stays on the shared rule, so a table that still cannot fit scrolls in `.table-wrap`. */
-.doc-column .md th,
-.doc-column .md td {
-  overflow-wrap: anywhere;
-}
+/* Words stay whole in a cell (no `overflow-wrap: anywhere` on screen: it lets the table squeeze a column below its
+   longest word); a table wider than the column scrolls in `.table-wrap`. Paper cannot scroll: `paper.css` wraps. */
 .md tbody tr:nth-child(even) {
   background: var(--zebra);
 }

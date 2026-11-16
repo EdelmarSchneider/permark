@@ -31,11 +31,7 @@
    *  highlighting). The numbers are drawn by the style: never text to select or copy. */
   const drawn = $derived(
     lines || start !== undefined || marks.size > 0
-      ? lineSpans(
-          outcome.html ?? escape(source),
-          lines ? source.split("\n").map(leadCols) : [],
-          marks,
-        )
+      ? lineSpans(outcome.html ?? escape(source), source.split("\n").map(leadCols), marks)
       : outcome.html,
   );
 
@@ -124,11 +120,14 @@
     border-top-right-radius: 0;
     border-top-style: dashed;
   }
-  /* numbered | marked lines: one block per line; a number sits in the line's own room at the left (`--ln-pad`) */
+  /* numbered | marked lines: one block per line; a number sits in the line's own room at the left (`--ln-pad`). A
+     wrapped line's further rows stay in the code column, 2 columns right of the line's own indentation (`--lead`). */
   pre :global(.ln) {
     display: block;
     position: relative;
-    padding-left: var(--ln-pad, 0px);
+    --hang: calc((2 + var(--lead, 0)) * 1ch);
+    padding-left: calc(var(--ln-pad, 0px) + var(--hang));
+    text-indent: calc(-1 * var(--hang));
   }
   pre.is-numbered {
     counter-reset: ln var(--ln-start);
@@ -143,6 +142,7 @@
     left: var(--ln-edge, 0px);
     width: calc(var(--ln-digits) * 1ch);
     text-align: right;
+    text-indent: 0;
     color: var(--faint);
     user-select: none;
   }
@@ -150,7 +150,7 @@
   pre :global(.ln.is-marked) {
     --ln-edge: 16px;
     margin-inline: -16px;
-    padding-inline: calc(16px + var(--ln-pad, 0px)) 16px;
+    padding-inline: calc(16px + var(--ln-pad, 0px) + var(--hang)) 16px;
     background: color-mix(in srgb, var(--accent) 12%, transparent);
     box-shadow: inset 3px 0 0 var(--accent);
   }
