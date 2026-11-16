@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { htmlLines, lineSpans } from "./htmlLines";
+import { htmlLines, lineSpans, markedLines } from "./htmlLines";
 
 describe("highlighted code cut into lines", () => {
   it("gives one piece per line, none after a final line break", () => {
@@ -49,6 +49,19 @@ describe("highlighted code cut into lines", () => {
       '<span class="ln">a\n</span><span class="ln">\n</span><span class="ln">b\n</span>',
     );
     expect(lineSpans("")).toBe('<span class="ln">\n</span>');
+  });
+
+  it("marks the lines asked for", () => {
+    expect(lineSpans("a\nb\nc", [], new Set([2]))).toBe(
+      '<span class="ln">a\n</span><span class="ln is-marked">b\n</span><span class="ln">c\n</span>',
+    );
+  });
+
+  it("reads marked lines as the renderer writes them, only lines the code has", () => {
+    expect([...markedLines("1,3-5,9", 6)]).toEqual([1, 3, 4, 5]);
+    expect([...markedLines("2-1000000", 4)]).toEqual([2, 3, 4]);
+    expect([...markedLines("", 4)]).toEqual([]);
+    expect([...markedLines("x,4-2,0", 4)]).toEqual([]);
   });
 
   it("cuts 20 000 highlighted lines quickly", () => {

@@ -83,7 +83,7 @@ tempfile = "3.27.0"
 ignore = "0.4.33"
 notify = "8.2.0"
 trash = "5.2.9"
-comrak = { version = "0.56", default-features = false }
+comrak = { version = "0.56", default-features = false, features = ["shortcodes"] }
 ammonia = "4.2"
 git2 = { version = "0.21.0", default-features = false }
 rmcp = { version = "3.5.0", default-features = false, features = ["server", "transport-io"] }

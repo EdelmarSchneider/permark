@@ -684,6 +684,67 @@ describe("HTML written in a line", () => {
   });
 });
 
+describe("marked text, emoji shortcodes and inline notes", () => {
+  beforeEach(() => {
+    viewHtml.clear();
+    renders = 0;
+  });
+
+  it.each([
+    ["A ==bright== word", ["==bright=="]],
+    ["Mixed ==a *b* `c`== here", ["==a *b* `c`=="]],
+    ["Smile :smile: and :+1: now", [":smile:", ":+1:"]],
+    ["A note^[An *inline* note.] here", ["^[An *inline* note.]"]],
+    ["Nested ^[see [x] and `]`] end", ["^[see [x] and `]`]"]],
+    ["In ==a :smile: b== one piece", ["==a :smile: b=="]],
+    // kept as text, as View keeps them
+    ["Code `a==b==c` and $a==b$ stay", ["$a==b$"]],
+    ["C++ and C++ stay", []],
+    ["At 12:30:45 sharp", []],
+    ["If a == b and c == d", []],
+    ["Three ===x=== stay", []],
+    ["Escaped \\==x== and \\:smile: stay", []],
+    ["Empty ^[] and open ^[note", []],
+  ])("%s", (text, expected) => {
+    expect(atomsIn(`${text}\n`)).toEqual(expected);
+  });
+
+  it("a paragraph using them is editable text, each piece kept as written", async () => {
+    const LINE = "A ==bright== word :smile: and a note^[Inline.] here.\n";
+    const built = await load(LINE);
+    expect(built.sources.map((s) => s.locked)).toEqual([null]);
+    expect(atoms().map((atom) => atom.dataset.kind)).toEqual(["mark", "emoji", "note"]);
+    expect(atoms().map((atom) => atom.getAttribute("aria-label"))).toEqual([
+      "block: highlight",
+      "block: emoji",
+      "block: footnote",
+    ]);
+    const composed = compose(core, built, core.view.state.doc);
+    expect(composed.text).toBe(LINE);
+    expect(composed.changed).toBe(0);
+  });
+
+  it("is drawn as View's element for it; with none known, its source shows as text", async () => {
+    viewHtml.set("==bright==", "<mark>bright</mark>");
+    viewHtml.set(":smile:", '<span class="emoji" title=":smile:">😄</span>');
+    await load("A ==bright== word :smile: and ==dim== too.\n");
+    const [bright, smile, dim] = atoms();
+    expect(bright?.querySelector("mark")?.textContent).toBe("bright");
+    expect(smile?.querySelector("span.emoji")?.textContent).toBe("😄");
+    expect(dim?.querySelector("mark")).toBeNull();
+    expect(dim?.textContent).toBe("==dim==");
+  });
+
+  it("an inline note takes its number among the footnotes, as View counts them", async () => {
+    await load("First^[inline] then [^a] and [^a].\n\n[^a]: Note.\n");
+    const numbers = atoms().map(
+      (atom) => atom.querySelector("sup.footnote-ref > a[data-footnote-ref]")?.textContent,
+    );
+    // the inline note's own number is View's (none rendered here); the reference after it is the second footnote
+    expect(numbers).toEqual([undefined, "2", "2"]);
+  });
+});
+
 describe("saving around reference pieces", () => {
   const TEXT =
     "[^n] lead [the site][s] mid [s] tail.\n\nNext words.\n\n[^n]: Note.\n\n[s]: https://example.com\n";

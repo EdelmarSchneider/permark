@@ -551,6 +551,23 @@ describe("HTML written in a line looks like View", () => {
     });
   });
 
+  it("marked text, an emoji shortcode and an inline note get View's mark, emoji and note number", () => {
+    const pieces = ["==m==", ":smile:", "^[note]", "==gone=="];
+    const blocks = [line(1, "A[^1] ==m== :smile: x^[note] ==gone==", null, pieces)];
+    const html =
+      '<p>A<sup class="footnote-ref"><a href="#fn-1" data-footnote-ref="">1</a></sup> <mark>m</mark> ' +
+      '<span class="emoji" title=":smile:">😄</span> x<sup class="footnote-ref">' +
+      '<a href="#fn-__inline_1" id="fnref-__inline_1" data-footnote-ref="">2</a></sup> ==gone==</p>';
+    const looks = inlineHtmlLooks(markdown([block(1, 1, "p", html)]), blocks);
+    expect(Object.fromEntries(looks)).toEqual({
+      "==m==": "<mark>m</mark>",
+      ":smile:": '<span class="emoji" title=":smile:">😄</span>',
+      "^[note]":
+        '<sup class="footnote-ref"><a href="#fn-__inline_1" id="fnref-__inline_1" data-footnote-ref="">2</a></sup>',
+      "==gone==": null,
+    });
+  });
+
   it("a piece View drops, or shows two ways, or in a View block shared with another block, lends no look", () => {
     const blocks = [
       line(1, "<kbd>A</kbd> <span onclick=x>s</span>", null, [

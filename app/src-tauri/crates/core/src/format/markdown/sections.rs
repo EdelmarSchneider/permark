@@ -61,6 +61,8 @@ fn append_plain<'a>(node: &'a AstNode<'a>, out: &mut String) {
                 out.push_str(&b.literal);
             }
             NodeValue::Math(m) => out.push_str(&m.literal),
+            // an emoji written as its shortcode is found by that name
+            NodeValue::ShortCode(code) => out.push_str(&code.code),
             NodeValue::HtmlBlock(h) => strip_tags(&h.literal, out),
             NodeValue::SoftBreak
             | NodeValue::LineBreak

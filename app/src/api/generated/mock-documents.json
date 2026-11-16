@@ -155,11 +155,39 @@
           "html": "<details data-b=\"2e3e3c7fb133d8c8\" class=\"prompt-block\" data-tag=\"instructions\" open=\"\"><summary>instructions</summary>\n<ol>\n<li>Be brief.</li>\n<li>Quote the source.</li>\n</ol>\n</details>"
         },
         {
-          "id": "72d9896ee9d78f62",
+          "id": "6b8a8d806a11847c",
+          "kind": "p",
+          "lineStart": 87,
+          "lineEnd": 87,
+          "html": "<p data-b=\"6b8a8d806a11847c\">Mark <mark>what matters</mark>, add an emoji <span class=\"emoji\" title=\":sparkles:\">✨</span> or a note right where it belongs<sup class=\"footnote-ref\"><a href=\"#fn-__inline_1\" id=\"fnref-__inline_1\" data-footnote-ref=\"\">2</a></sup>.</p>"
+        },
+        {
+          "id": "612acceb8b86c261",
+          "kind": "details",
+          "lineStart": 89,
+          "lineEnd": 90,
+          "html": "<details data-b=\"612acceb8b86c261\" class=\"markdown-alert markdown-alert-tip\">\n<summary class=\"markdown-alert-title\">A folded callout</summary>\n<p>Obsidian callouts fold: this text shows when you open the box.</p>\n</details>"
+        },
+        {
+          "id": "6068c29ea64ffa5a",
+          "kind": "div",
+          "lineStart": 92,
+          "lineEnd": 94,
+          "html": "<div data-b=\"6068c29ea64ffa5a\" class=\"markdown-alert markdown-alert-note markdown-alert-kind-info\">\n<p class=\"markdown-alert-title\">Containers</p>\n<p><code>:::</code> containers draw the same boxes.</p>\n</div>"
+        },
+        {
+          "id": "94fe018ebadf9b96",
+          "kind": "pre",
+          "lineStart": 96,
+          "lineEnd": 99,
+          "html": "<pre data-b=\"94fe018ebadf9b96\"><code class=\"language-js\" data-title=\"greet.js\" data-lines=\"2\" data-numbers=\"1\">const name = \"PerMark\";\nconsole.log(`Hello, ${name}!`);\n</code></pre>"
+        },
+        {
+          "id": "87b048cd97106028",
           "kind": "section",
           "lineStart": 85,
           "lineEnd": 85,
-          "html": "<section data-b=\"72d9896ee9d78f62\" class=\"footnotes\" data-footnotes=\"\">\n<ol>\n<li id=\"fn-1\">\n<p>Footnotes list at the end of the page, with a way back. <a href=\"#fnref-1\" class=\"footnote-backref\" data-footnote-backref=\"\" data-footnote-backref-idx=\"1\" aria-label=\"Back to reference 1\">↩</a></p>\n</li>\n</ol>\n</section>"
+          "html": "<section data-b=\"87b048cd97106028\" class=\"footnotes\" data-footnotes=\"\">\n<ol>\n<li id=\"fn-1\">\n<p>Footnotes list at the end of the page, with a way back. <a href=\"#fnref-1\" class=\"footnote-backref\" data-footnote-backref=\"\" data-footnote-backref-idx=\"1\" aria-label=\"Back to reference 1\">↩</a></p>\n</li>\n<li id=\"fn-__inline_1\">\n<p>Inline notes are numbered with the others. <a href=\"#fnref-__inline_1\" class=\"footnote-backref\" data-footnote-backref=\"\" data-footnote-backref-idx=\"2\" aria-label=\"Back to reference 2\">↩</a></p>\n</li>\n</ol>\n</section>"
         }
       ],
       "outline": [
@@ -259,8 +287,8 @@
         ]
       }
     },
-    "hash": "e873f21c2d5f5e0b",
-    "size": 1975,
+    "hash": "09dacb869d019c10",
+    "size": 2361,
     "mtimeMs": 0,
     "editable": {
       "editable": "surgical"

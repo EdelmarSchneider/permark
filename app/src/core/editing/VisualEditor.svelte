@@ -108,6 +108,8 @@
     link: "link.label",
     diagram: "edit.block.diagram",
     alert: "edit.block.alert",
+    highlight: "edit.block.highlight",
+    emoji: "edit.block.emoji",
     other: "edit.block.other",
   };
 
@@ -469,12 +471,11 @@
       }
       const editor = made;
       const doc = await loaded.buildDoc(editor, current.text, current.segments ?? []);
-      // locked blocks and HTML written in a line draw View's look from their first paint when the render and the card
-      // come in time; a render that comes later (a large document, a busy backend) brings it then, the blocks show
-      // their source until it does
+      // locked blocks and the pieces drawn from View's render (HTML written in a line, marked text, emoji, inline
+      // notes) draw View's look from their first paint when the render and the card come in time; a render that comes
+      // later (a large document, a busy backend) brings it then, the blocks show their source until it does
       const asked =
-        doc.sources.some((s) => s.locked !== null) ||
-        loaded.pieceSources(doc.doc, "html").length > 0
+        doc.sources.some((s) => s.locked !== null) || loaded.pieceSources(doc.doc, true).length > 0
           ? (early ?? viewOf(current.path, current.text))
           : null;
       const ticket = book.ask();

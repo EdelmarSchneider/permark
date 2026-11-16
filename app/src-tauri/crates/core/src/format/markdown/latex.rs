@@ -7,6 +7,8 @@
 //! Markdown, so its brackets and inner Markdown read as with escaped brackets, and every position stays in place
 //! (links are located by them). The stand-in becomes `[` again in the tree.
 
+use std::collections::HashMap;
+
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{parse_document as comrak_parse, Arena, Options};
 
@@ -20,6 +22,10 @@ const STAND_INS: [char; 6] = [
 ];
 /// Reads of a text at most: a formula read again can uncover another one inside it.
 const MAX_READS: usize = 4;
+/// Name prefix of the footnote comrak makes of an inline note (`^[..]`).
+const NOTE: &str = "__inline_";
+/// Inline notes inside notes followed at most to place a formula.
+const MAX_NOTE_DEPTH: usize = 8;
 
 /// [`comrak::parse_document`] with `\[..\]` a formula only on lines of its own (see the module).
 pub(crate) fn parse_document<'a>(
@@ -58,6 +64,15 @@ pub(crate) fn parse_document<'a>(
 
 /// Byte offsets of the openings of `\[..\]` formulas that do not stand on lines of their own.
 fn openers_in_text<'a>(root: &'a AstNode<'a>, text: &str, lines: &Lines) -> Vec<usize> {
+    let notes: HashMap<String, &'a AstNode<'a>> = root
+        .descendants()
+        .filter_map(|node| match &node.data().value {
+            NodeValue::FootnoteReference(r) if r.name.starts_with(NOTE) => {
+                Some((r.name.clone(), node))
+            }
+            _ => None,
+        })
+        .collect();
     root.descendants()
         .filter_map(|node| {
             let data = node.data();
@@ -68,11 +83,43 @@ fn openers_in_text<'a>(root: &'a AstNode<'a>, text: &str, lines: &Lines) -> Vec<
                 return None;
             }
             // `$$..$$` is display math as well: only an opening written `\[` is one of these
-            let at = lines.range_of(data.sourcepos, text)?.start;
+            let at = start_in_text(node, &notes, text, lines, 0)?;
             let bracket = text.get(at..)?.starts_with(OPEN);
             (bracket && !stands_alone(node, &math.literal)).then_some(at)
         })
         .collect()
+}
+
+/// The inline note (`^[..]`) `node` sits in: comrak names the footnote it makes of one `__inline_<n>`.
+fn note_of<'a>(node: &'a AstNode<'a>) -> Option<String> {
+    node.ancestors()
+        .skip(1)
+        .find_map(|a| match &a.data().value {
+            NodeValue::FootnoteDefinition(d) if d.name.starts_with(NOTE) => Some(d.name.clone()),
+            _ => None,
+        })
+}
+
+/// Byte offset in `text` where `node` starts. comrak counts what an inline note holds from the note's text (its first
+/// line as line 1, column 1 right after `^[`), so such a node is placed from the note's reference; `None` past the
+/// note's first line, whose columns need not be the text's.
+fn start_in_text<'a>(
+    node: &'a AstNode<'a>,
+    notes: &HashMap<String, &'a AstNode<'a>>,
+    text: &str,
+    lines: &Lines,
+    depth: usize,
+) -> Option<usize> {
+    let pos = node.data().sourcepos;
+    let Some(name) = note_of(node) else {
+        return Some(lines.range_of(pos, text)?.start);
+    };
+    if pos.start.line != 1 || depth >= MAX_NOTE_DEPTH {
+        return None;
+    }
+    let reference = notes.get(&name)?;
+    let opened = start_in_text(reference, notes, text, lines, depth + 1)? + "^[".len();
+    Some(opened + pos.start.column.checked_sub(1)?)
 }
 
 /// What sits next to a formula on its side within the paragraph (white space skipped).
@@ -95,12 +142,13 @@ fn side<'a>(siblings: impl Iterator<Item = &'a AstNode<'a>>) -> Side {
     Side::Edge
 }
 
-/// Whether the formula `node` (TeX `literal`) stands on lines of its own in a paragraph.
+/// Whether the formula `node` (TeX `literal`) stands on lines of its own in a paragraph. One in an inline note never
+/// does: the note sits inside a line of its paragraph.
 fn stands_alone<'a>(node: &'a AstNode<'a>, literal: &str) -> bool {
     let in_paragraph = node
         .parent()
         .is_some_and(|p| matches!(p.data().value, NodeValue::Paragraph));
-    if !in_paragraph {
+    if !in_paragraph || note_of(node).is_some() {
         return false;
     }
     let before = side(node.preceding_siblings().skip(1));
