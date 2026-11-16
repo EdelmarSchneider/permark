@@ -438,6 +438,12 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 
 **PerMark 0.6** rebuilt the whole program. Every release is in the [CHANGELOG](CHANGELOG.md).
 
+- **0.13.0:** spelling while you edit, with 11 dictionaries that download only when you choose a language; **Save as PDF**,
+  **Save as HTML** and **Print**; a refreshed look with a clearer Notes button; more Markdown on the page: Obsidian-style callouts
+  that fold, `:::` containers, highlights, emoji shortcodes, inline footnotes, code block titles and line numbers, Graphviz
+  diagrams, chemistry formulas and `\( \)` / `\[ \]` math; five more interface languages (18 in all) with dates and numbers in
+  your region's format; right-to-left paragraphs; an installer option that puts `permark` on your Windows `PATH`; and demo
+  pages that show what PerMark can draw.
 - **0.12.0:** panels you arrange yourself, in the sidebar, the right panel or a new bottom panel, with layouts you save by name; and the earlier versions of a document, from git.
 - **0.11.0:** translation with a local AI model, in the editor or into a new file; correction inside tables; and Refresh (`F5`) in the Explorer.
 - **0.10.0:** Edit shows formulas, diagrams, alerts and other special blocks the way View does.

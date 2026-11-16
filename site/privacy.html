@@ -33,10 +33,10 @@
       <div class="container">
         <div class="legal__body">
           <h1>Privacy policy</h1>
-          <p class="legal__updated">Last updated November 14, 2026. This page covers PerMark, the desktop app, in every build: the versions from GitHub, the Microsoft Store and the snap. It also covers this website.</p>
+          <p class="legal__updated">Last updated November 16, 2026. This page covers PerMark, the desktop app, in every build: the versions from GitHub, the Microsoft Store and the snap. It also covers this website.</p>
 
           <h2>In short</h2>
-          <p>PerMark has no account, no telemetry and no tracking. It goes online only to check for its own updates (in the versions you download from GitHub; the Microsoft Store and the snap update PerMark for it), and when you ask: a picture from the web, the optional vocabulary of the Token count plugin, or a local AI model and the engine that runs it. Your documents do not leave your computer through PerMark. An AI agent you connect is a separate program: what it sends online is up to that agent.</p>
+          <p>PerMark has no account, no telemetry and no tracking. It goes online only to check for its own updates (in the versions you download from GitHub; the Microsoft Store and the snap update PerMark for it), and when you ask: a picture from the web, a spelling dictionary, the optional vocabulary of the Token count plugin, or a local AI model and the engine that runs it. Your documents do not leave your computer through PerMark. An AI agent you connect is a separate program: what it sends online is up to that agent.</p>
 
           <h2>What PerMark does not do</h2>
           <ul>
@@ -54,7 +54,7 @@
           <p>PerMark sends none of this over the internet.</p>
 
           <h2>Every time PerMark goes online</h2>
-          <p>This is the full list for PerMark 0.12.0 and its Windows installers.</p>
+          <p>This is the full list for PerMark 0.13.0 and its Windows installers.</p>
           <div class="table-wrap">
             <table class="data-table" role="table">
               <caption class="sr-only">Every time PerMark goes online</caption>
@@ -88,6 +88,13 @@
                   <td role="cell" data-label="Where it goes"><code>openaipublic.<wbr>blob.<wbr>core.<wbr>windows.<wbr>net</code> (3.6 MB or 1.7 MB, depending on the tokenizer)</td>
                   <td role="cell" data-label="Which builds">All builds</td>
                   <td role="cell" data-label="Does it ask you?">Yes. Nothing downloads until you click. Each vocabulary downloads once and is kept</td>
+                </tr>
+                <tr role="row">
+                  <td role="cell" data-label="What">A spelling dictionary (Spelling plugin)</td>
+                  <td role="cell" data-label="When">Only when you ask for it: you choose a language in the spelling language list of the status bar, and then click <strong>Download</strong> in the question that follows (it shows the size and the license). The plugin is on from the start, and nothing downloads when PerMark starts</td>
+                  <td role="cell" data-label="Where it goes"><code>raw.<wbr>githubusercontent.<wbr>com</code>, GitHub's file server (the dictionaries of the open source <code>wooorm/dictionaries</code> project, from about 0.5 MB to 10 MB depending on the language). A redirect to any other address is refused</td>
+                  <td role="cell" data-label="Which builds">All builds</td>
+                  <td role="cell" data-label="Does it ask you?">Yes. Nothing downloads until you click. Each dictionary downloads once and is kept. Your text is checked on your computer and is never sent</td>
                 </tr>
                 <tr role="row">
                   <td role="cell" data-label="What">A local AI model (Local AI plugin)</td>
@@ -125,14 +132,17 @@
           <ul>
             <li>The update check and the update download name only the update library and its version. They do not carry your PerMark version.</li>
             <li>Like any web request, each one shows your IP address to the server it reaches.</li>
-            <li>The vocabulary and picture requests send no cookies.</li>
+            <li>The vocabulary, dictionary and picture requests send no cookies.</li>
+            <li>A dictionary request asks only for the files of that dictionary, so GitHub can tell which language you chose. It carries nothing from your documents.</li>
             <li>A web picture tells its web server your IP address and that the picture was viewed.</li>
-            <li>PerMark checks each update against its signature before it installs it, and checks each vocabulary file against a fixed fingerprint (SHA-256).</li>
+            <li>PerMark checks each update against its signature before it installs it, and checks each vocabulary and dictionary file against a fixed fingerprint (SHA-256).</li>
           </ul>
 
           <h2>What is not a network call</h2>
           <ul>
-            <li><strong>Diagrams and math.</strong> Mermaid, PlantUML and KaTeX run inside PerMark. PerMark uses no PlantUML server, and it refuses PlantUML lines that would fetch files.</li>
+            <li><strong>Diagrams and math.</strong> Mermaid, PlantUML, Graphviz and KaTeX (chemistry formulas included) run inside PerMark. PerMark uses no PlantUML server, and it refuses PlantUML lines that would fetch files.</li>
+            <li><strong>Spelling.</strong> Words are checked on your computer, against the dictionary you downloaded. Your text is never sent anywhere.</li>
+            <li><strong>PDF, HTML and print.</strong> PerMark builds the page on your computer and fetches nothing from the web for it: a web picture comes in only if you already loaded it. A saved HTML file loads nothing from the web when it is opened.</li>
             <li><strong>Fonts and styles.</strong> They come with PerMark. It loads nothing from the web for its own look.</li>
             <li><strong>Links.</strong> A web or email link opens in your browser or mail app. That program goes online, not PerMark.</li>
             <li><strong>Git.</strong> PerMark never runs <code>fetch</code>, <code>pull</code>, <code>push</code> or <code>clone</code>. Its built-in git cannot go online.</li>
