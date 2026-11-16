@@ -5,6 +5,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Open the demo pages at any time.** The quick settings menu and the command palette have **Open the demo pages**, also after you used or closed the offer on the start screen. If the folder is gone from Documents, PerMark copies the pages there again first. <!-- f: start-screen -->
+
 ## [0.13.0] - 2026-11-16
 
 ### Added
