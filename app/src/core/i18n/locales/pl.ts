@@ -433,6 +433,8 @@ export default {
   "structured.tree": "Drzewo",
   "structured.source": "Źródło",
   "structured.invalid": "To nie jest prawidłowe, więc pokazano jako tekst.",
+  "structured.expandAll": "Rozwiń wszystko",
+  "structured.collapseAll": "Zwiń wszystko",
   "jsonl.empty": "Brak rekordów w tym pliku.",
   "jsonl.invalid": "Wiersz {line} nie jest pojedynczą wartością JSON (zatrzymano na znaku {at}).",
   "jsonl.jump": "Przejdź do rekordu",

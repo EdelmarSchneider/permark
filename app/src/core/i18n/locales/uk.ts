@@ -434,6 +434,8 @@ export default {
   "structured.tree": "Дерево",
   "structured.source": "Вихідний текст",
   "structured.invalid": "Вміст недійсний, тому його показано як текст.",
+  "structured.expandAll": "Розгорнути все",
+  "structured.collapseAll": "Згорнути все",
   "jsonl.empty": "У цьому файлі немає записів.",
   "jsonl.invalid": "Рядок {line} не є одним значенням JSON (зупинено на символі {at}).",
   "jsonl.jump": "Перейти до запису",

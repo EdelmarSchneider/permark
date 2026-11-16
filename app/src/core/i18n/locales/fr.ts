@@ -419,6 +419,8 @@ export default {
   "structured.tree": "Arborescence",
   "structured.source": "Source",
   "structured.invalid": "Ce contenu n'est pas valide, il est donc affiché comme du texte.",
+  "structured.expandAll": "Tout développer",
+  "structured.collapseAll": "Tout réduire",
   "jsonl.empty": "Aucun enregistrement dans ce fichier.",
   "jsonl.invalid": "La ligne {line} n'est pas une seule valeur JSON (arrêt au caractère {at}).",
   "jsonl.jump": "Aller à l'enregistrement",

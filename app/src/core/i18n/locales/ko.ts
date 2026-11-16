@@ -402,6 +402,8 @@ export default {
   "structured.tree": "트리",
   "structured.source": "소스",
   "structured.invalid": "올바르지 않은 내용이라 텍스트로 표시합니다.",
+  "structured.expandAll": "모두 펼치기",
+  "structured.collapseAll": "모두 접기",
   "jsonl.empty": "이 파일에는 레코드가 없습니다.",
   "jsonl.invalid": "{line}행은 JSON 값 하나가 아닙니다({at}번째 문자에서 멈춤).",
   "jsonl.jump": "레코드로 이동",

@@ -412,6 +412,8 @@ export default {
   "structured.tree": "Arbre",
   "structured.source": "Codi font",
   "structured.invalid": "No és vàlid, així que es mostra com a text.",
+  "structured.expandAll": "Desplega-ho tot",
+  "structured.collapseAll": "Plega-ho tot",
   "jsonl.empty": "Aquest fitxer no té registres.",
   "jsonl.invalid": "La línia {line} no és un valor JSON (s'ha aturat al caràcter {at}).",
   "jsonl.jump": "Ves al registre",

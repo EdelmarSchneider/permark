@@ -394,6 +394,8 @@ export default {
   "structured.tree": "树",
   "structured.source": "源码",
   "structured.invalid": "内容无效，因此按文本显示。",
+  "structured.expandAll": "全部展开",
+  "structured.collapseAll": "全部折叠",
   "jsonl.empty": "此文件没有记录。",
   "jsonl.invalid": "第 {line} 行不是一个 JSON 值（停在第 {at} 个字符）。",
   "jsonl.jump": "跳转到记录",

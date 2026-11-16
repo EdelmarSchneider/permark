@@ -417,6 +417,8 @@ export default {
   "structured.tree": "Ağaç",
   "structured.source": "Kaynak",
   "structured.invalid": "Bu geçerli değil, bu yüzden metin olarak gösteriliyor.",
+  "structured.expandAll": "Tümünü genişlet",
+  "structured.collapseAll": "Tümünü daralt",
   "jsonl.empty": "Bu dosyada kayıt yok.",
   "jsonl.invalid": "Satır {line} tek bir JSON değeri değil (karakter {at} konumunda durdu).",
   "jsonl.jump": "Kayda git",

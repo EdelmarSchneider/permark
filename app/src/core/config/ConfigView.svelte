@@ -65,6 +65,7 @@
       source={editable ? (line) => chooseMode("source", line) : null}
       matches={sheet.kind === "ignore" ? matches.counts : null}
       capped={matches.capped}
+      spread
     />
   </div>
 {/if}
