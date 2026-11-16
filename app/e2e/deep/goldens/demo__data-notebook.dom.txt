@@ -462,7 +462,7 @@ div.reading
               a href="#fn-__inline_1" id="fnref-__inline_1"
                 "1"
             ". On November 12 the trend reached −0.008 a day against the station's own 14-day median, 80 % of the drift limit, and the QC engine logged a warning (see the"
-            a.is-missing href="station/ingest-#-11-12.log" title="Not found: demo/station/ingest-#-11-12.log"
+            a href="station/ingest-#-11-12.log"
               "ingest log"
             "). Nothing is flagged yet: Beatriz will check the sensor against a water sample before winter maintenance starts on December 1."
         h2 id="what-we-build-next" dir="auto"

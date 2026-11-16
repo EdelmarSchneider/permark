@@ -407,7 +407,7 @@ div.reading
                 "readings-week-46.toon"
             ": a week of readings from all twelve stations"
           li dir="auto"
-            a.is-missing href="station/ingest-#-11-12.log" title="Not found: demo/station/ingest-#-11-12.log"
+            a href="station/ingest-#-11-12.log"
               code
                 "ingest-2026-11-12.log"
             ": a day of server log;"

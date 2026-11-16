@@ -93,7 +93,7 @@ div.reading
               svg svg sized labels: North Light | Avery Pier | Saddle Hill | LH-01 | gateway | LH-02 | LH-03 | LH-04 | gateway | Ingest, Port Avery | LH-05 | LH-06 | LH-07 | LH-08 | LH-09 | gateway | LH-10 | LH-11 | LH-12
         p dir="auto"
           "When a gateway loses its link to shore, it buffers frames and replays them later. The"
-          a.is-missing href="station/ingest-#-11-12.log" title="Not found: demo/station/ingest-#-11-12.log"
+          a href="station/ingest-#-11-12.log"
             "ingest log for November 12"
           "shows Saddle Hill doing exactly that, with no reading lost."
         h2 id="a-buoys-life" dir="auto"
