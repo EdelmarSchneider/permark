@@ -42,7 +42,7 @@ pub use docs::{SpellingDefault, SpellingDocLanguage, SpellingLanguageSource, SHA
 pub use languages::{Language, Pin, COMMIT, OFFICIAL, SOURCE};
 pub use store::{DictStore, SpellingFailure, SpellingState, Unavailable};
 pub use words::{
-    keep_suggestion, normalize, over_cap, personal_accepts, personal_form, sanitize_dic,
+    keep_suggestion, normalize, over_cap, personal_accepts, personal_form, readable, sanitize_dic,
     suggestible, FlagKind, MAX_SUGGEST_CHARS, MAX_WORD_CHARS,
 };
 

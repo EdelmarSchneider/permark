@@ -9,6 +9,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **Open the demo pages at any time.** The quick settings menu and the command palette have **Open the demo pages**, also after you used or closed the offer on the start screen. If the folder is gone from Documents, PerMark copies the pages there again first. <!-- f: start-screen -->
 - **Expand all and Collapse all.** JSON, XML and JSONL trees, and YAML, TOML, INI and properties sheets, have **Expand all** and **Collapse all** beside the view options. A document now opens expanded when it is small enough; a very large one opens its first levels so it stays fast. <!-- f: view-mode -->
 - **Polish and Ukrainian.** The interface, the Windows installer and the file manager entries now speak Polish and Ukrainian, 20 languages in all; native speakers are welcome to review them. <!-- f: settings -->
+- **Spelling in Polish, Russian, Turkish, Ukrainian and Vietnamese.** Five more dictionaries, 16 in all. Like the others, each downloads only when you choose its language, and PerMark tells these languages apart in your documents. Ukrainian words can be written with any apostrophe. <!-- f: spelling -->
 
 ### Changed
 - **Table columns sized by what they hold.** In View and Edit, a narrow table keeps its natural width, short columns such as numbers, dates and ids stay on one line, and long text columns share the rest without breaking words. A table scrolls sideways only when even that does not fit. <!-- f: view-mode, edit-mode -->

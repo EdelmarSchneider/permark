@@ -46,6 +46,54 @@ describe("words of the prose", () => {
     ).toEqual(["kept"]);
   });
 
+  it("read Cyrillic words, with the Ukrainian apostrophe in every form inside the word", () => {
+    expect(words("Пекарня на углу продаёт хлеб, ёлка и съезд.")).toEqual([
+      "Пекарня",
+      "на",
+      "углу",
+      "продаёт",
+      "хлеб",
+      "ёлка",
+      "съезд",
+    ]);
+    // U+02BC (the standard one), the typewriter and the typographic apostrophe
+    expect(words("мʼясо м'ясо м’ясо ґанок їжак Європа")).toEqual([
+      "мʼясо",
+      "м'ясо",
+      "м’ясо",
+      "ґанок",
+      "їжак",
+      "Європа",
+    ]);
+    // all capitals and single letters stay out, as in Latin script
+    expect(words("СССР я і книга")).toEqual(["книга"]);
+  });
+
+  it("read Polish and Turkish letters, dotted and dotless i included", () => {
+    expect(words("Źródło żółć Łódź książka")).toEqual(["Źródło", "żółć", "Łódź", "książka"]);
+    expect(words("İstanbul ılık ışık Iğdır")).toEqual(["İstanbul", "ılık", "ışık", "Iğdır"]);
+  });
+
+  it("read Vietnamese syllables, composed or with combining marks, at their own offsets", () => {
+    expect(words("Tiệm bánh ở góc phố bán bánh mì ngon nhất")).toEqual([
+      "Tiệm",
+      "bánh",
+      "góc",
+      "phố",
+      "bán",
+      "bánh",
+      "mì",
+      "ngon",
+      "nhất",
+    ]);
+    const text = "nha\u0300 ngu\u031Bo\u031B\u0300i";
+    const tokens = tokenize(text);
+    expect(tokens.map((t) => [t.word, t.from, t.to])).toEqual([
+      ["nha\u0300", 0, 4],
+      ["ngu\u031Bo\u031B\u0300i", 5, 13],
+    ]);
+  });
+
   it("leave out paths, addresses and dotted names", () => {
     expect(words("see src/main.rs or C:\\dir\\file and main.rs, end.")).toEqual([
       "see",

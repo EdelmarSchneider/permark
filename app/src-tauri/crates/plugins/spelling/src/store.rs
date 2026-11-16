@@ -16,7 +16,7 @@ use spellbook::Dictionary;
 use ts_rs::TS;
 
 use crate::languages::{Language, Pin, AFF, DIC};
-use crate::words::{sanitize_dic, FlagKind};
+use crate::words::readable;
 
 /// Why a dictionary is not there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
@@ -362,7 +362,7 @@ impl DictStore {
             self.apply(at, Event::Failed(SpellingFailure::Hash));
             return Err(Unavailable::NotReady);
         };
-        let dic = sanitize_dic(&dic, FlagKind::of(&aff));
+        let (aff, dic) = readable(&aff, &dic);
         let Ok(dictionary) = Dictionary::new(&aff, &dic) else {
             self.apply(at, Event::Failed(SpellingFailure::Unreadable));
             return Err(Unavailable::NotReady);

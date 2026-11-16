@@ -39,6 +39,11 @@ const LANGUAGES: readonly { id: string; license: string; bytes: number }[] = [
   { id: "ca", license: "(GPL-2.0 OR LGPL-2.1)", bytes: 2_926_530 },
   { id: "gl", license: "GPL-3.0", bytes: 9_796_316 },
   { id: "ro", license: "(GPL-2.0 OR LGPL-2.1 OR MPL-1.1)", bytes: 2_257_434 },
+  { id: "pl", license: "(GPL-3.0 OR LGPL-3.0 OR MPL-2.0)", bytes: 4_952_403 },
+  { id: "ru", license: "BSD-3-Clause", bytes: 3_544_427 },
+  { id: "tr", license: "MIT", bytes: 9_358_006 },
+  { id: "uk", license: "GPL-3.0", bytes: 8_696_386 },
+  { id: "vi", license: "GPL-2.0", bytes: 40_939 },
 ];
 
 /** The stand-in dictionaries (lowercase; a word is also known Capitalized | in capitals). */

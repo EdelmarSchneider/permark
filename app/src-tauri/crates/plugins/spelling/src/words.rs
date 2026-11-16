@@ -3,6 +3,7 @@
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
+use std::ops::Range;
 
 use permark_core::settings::is_unsafe_char;
 use unicode_normalization::char::is_combining_mark;
@@ -151,6 +152,143 @@ pub fn sanitize_dic(dic: &str, kind: FlagKind) -> Cow<'_, str> {
         }
         None => Cow::Borrowed(dic),
     }
+}
+
+/// `aff` + `dic` in a form the engine reads: a numeric flag `0` renumbered (see [`renumber_zero_flag`]), then the
+/// unreadable flags of `dic` dropped ([`sanitize_dic`]). Borrowed when nothing needs a change.
+#[must_use]
+pub fn readable<'a>(aff: &'a str, dic: &'a str) -> (Cow<'a, str>, Cow<'a, str>) {
+    let kind = FlagKind::of(aff);
+    match renumber_zero_flag(aff, dic, kind) {
+        Some((aff, dic)) => {
+            let dic = sanitize_dic(&dic, kind).into_owned();
+            (Cow::Owned(aff), Cow::Owned(dic))
+        }
+        None => (Cow::Borrowed(aff), sanitize_dic(dic, kind)),
+    }
+}
+
+/// Directives of an `.aff` whose one argument is a flag.
+const FLAG_DIRECTIVES: [&str; 17] = [
+    "NEEDAFFIX",
+    "FORBIDDENWORD",
+    "KEEPCASE",
+    "NOSUGGEST",
+    "ONLYINCOMPOUND",
+    "CIRCUMFIX",
+    "SUBSTANDARD",
+    "WARN",
+    "LEMMA_PRESENT",
+    "COMPOUNDFLAG",
+    "COMPOUNDBEGIN",
+    "COMPOUNDMIDDLE",
+    "COMPOUNDLAST",
+    "COMPOUNDEND",
+    "COMPOUNDPERMITFLAG",
+    "COMPOUNDFORBIDFLAG",
+    "COMPOUNDROOT",
+];
+
+/// For `FLAG num`, the flag `0` renumbered to one past the highest flag in both files: the engine refuses `0` (flags
+/// are 1-65535), yet the Turkish dictionary names an affix class with it. Only the flag fields change. `None`: no
+/// flag `0`, another flag kind, or flags the rewrite cannot place safely (aliases `AF`, `COMPOUNDRULE` patterns, no
+/// free number).
+fn renumber_zero_flag(aff: &str, dic: &str, kind: FlagKind) -> Option<(String, String)> {
+    if kind != FlagKind::Numeric {
+        return None;
+    }
+    let aff_lists = aff_flag_lists(aff)?;
+    let dic_lists = dic_flag_lists(dic);
+    let lists = || {
+        aff_lists
+            .iter()
+            .map(|r| &aff[r.clone()])
+            .chain(dic_lists.iter().map(|r| &dic[r.clone()]))
+    };
+    if !lists().any(|list| list.split(',').any(|flag| flag == "0")) {
+        return None;
+    }
+    let highest = lists()
+        .flat_map(|list| list.split(','))
+        .filter_map(|flag| flag.parse::<u16>().ok())
+        .max()
+        .unwrap_or(0);
+    let free = highest.checked_add(1)?.to_string();
+    Some((
+        renumber(aff, &aff_lists, &free),
+        renumber(dic, &dic_lists, &free),
+    ))
+}
+
+/// `text` with every flag `0` of the comma lists at `lists` (ascending byte ranges) written as `free`.
+fn renumber(text: &str, lists: &[Range<usize>], free: &str) -> String {
+    let mut out = String::with_capacity(text.len() + lists.len());
+    let mut done = 0;
+    for range in lists {
+        let list = &text[range.clone()];
+        if !list.split(',').any(|flag| flag == "0") {
+            continue;
+        }
+        out.push_str(&text[done..range.start]);
+        let mapped: Vec<&str> = list
+            .split(',')
+            .map(|flag| if flag == "0" { free } else { flag })
+            .collect();
+        out.push_str(&mapped.join(","));
+        done = range.end;
+    }
+    out.push_str(&text[done..]);
+    out
+}
+
+/// Byte ranges of the flag fields of `aff`: affix class flags, the continuation flags of an affix, the argument of a
+/// flag directive. `None`: the file has aliases | compound rules, whose numbers are no plain flag fields.
+fn aff_flag_lists(aff: &str) -> Option<Vec<Range<usize>>> {
+    let mut found = Vec::new();
+    let mut at = 0;
+    for line in aff.split_inclusive('\n') {
+        let fields: Vec<(usize, &str)> = line
+            .split_whitespace()
+            .map(|field| {
+                (
+                    at + (field.as_ptr() as usize - line.as_ptr() as usize),
+                    field,
+                )
+            })
+            .collect();
+        at += line.len();
+        let span = |(start, field): (usize, &str)| start..start + field.len();
+        match fields.as_slice() {
+            [(_, "AF" | "COMPOUNDRULE"), ..] => return None,
+            [(_, "SFX" | "PFX"), flag, rest @ ..] => {
+                found.push(span(*flag));
+                // a rule line: type, flag, strip, affix[/flags], condition
+                if let [_, (start, affix), _, ..] = rest {
+                    if let Some(slash) = affix.find('/') {
+                        found.push(span((start + slash + 1, &affix[slash + 1..])));
+                    }
+                }
+            }
+            [(_, name), flag, ..] if FLAG_DIRECTIVES.contains(name) => found.push(span(*flag)),
+            _ => {}
+        }
+    }
+    Some(found)
+}
+
+/// Byte ranges of the flags of every word line of `dic` (the first line is the word count).
+fn dic_flag_lists(dic: &str) -> Vec<Range<usize>> {
+    let mut found = Vec::new();
+    let mut at = dic.find('\n').map_or(dic.len(), |n| n + 1);
+    for line in dic[at..].split_inclusive('\n') {
+        let trimmed = line.trim();
+        let lead = line.len() - line.trim_start().len();
+        if let Some((start, stop)) = flags_of(trimmed).filter(|_| !trimmed.starts_with('/')) {
+            found.push(at + lead + start..at + lead + stop);
+        }
+        at += line.len();
+    }
+    found
 }
 
 /// Whether a suggestion is offered: one holding a space only when every part is a word `accepts` knows (the engine
