@@ -2,80 +2,80 @@
 format: markdown
 outline: Callouts and containers (line 1)
 --- h1 1-1
-<h1 id="callouts-and-containers">Callouts and containers</h1>
+<h1 dir="auto" id="callouts-and-containers">Callouts and containers</h1>
 --- div 3-4
 <div class="markdown-alert markdown-alert-note">
-<p class="markdown-alert-title">Note</p>
-<p>A note with the default title.</p>
+<p class="markdown-alert-title" dir="auto">Note</p>
+<p dir="auto">A note with the default title.</p>
 </div>
 --- div 6-7
 <div class="markdown-alert markdown-alert-tip">
-<p class="markdown-alert-title">A tip with its own title</p>
-<p>Text of the tip, with <code>code</code> and a <a href="gfm-blocks.md">link</a>.</p>
+<p class="markdown-alert-title" dir="auto">A tip with its own title</p>
+<p dir="auto">Text of the tip, with <code>code</code> and a <a href="gfm-blocks.md">link</a>.</p>
 </div>
 --- div 9-10
 <div class="markdown-alert markdown-alert-important">
-<p class="markdown-alert-title">Important</p>
-<p>Important text.</p>
+<p class="markdown-alert-title" dir="auto">Important</p>
+<p dir="auto">Important text.</p>
 </div>
 --- div 12-16
 <div class="markdown-alert markdown-alert-warning">
-<p class="markdown-alert-title">Warning</p>
-<p>A warning with a list:</p>
+<p class="markdown-alert-title" dir="auto">Warning</p>
+<p dir="auto">A warning with a list:</p>
 <ul>
-<li>first</li>
-<li>second</li>
+<li dir="auto">first</li>
+<li dir="auto">second</li>
 </ul>
 </div>
 --- div 18-19
 <div class="markdown-alert markdown-alert-caution">
-<p class="markdown-alert-title">Caution</p>
-<p>Caution text.</p>
+<p class="markdown-alert-title" dir="auto">Caution</p>
+<p dir="auto">Caution text.</p>
 </div>
 --- details 21-22
 <details class="markdown-alert markdown-alert-note markdown-alert-kind-info">
 <summary class="markdown-alert-title">Folded by default</summary>
-<p>Hidden until opened.</p>
+<p dir="auto">Hidden until opened.</p>
 </details>
 --- details 24-25
 <details class="markdown-alert markdown-alert-tip markdown-alert-kind-success" open="">
 <summary class="markdown-alert-title">Open and foldable</summary>
-<p>Shown, can be folded.</p>
+<p dir="auto">Shown, can be folded.</p>
 </details>
 --- div 27-29
 <div class="markdown-alert markdown-alert-caution markdown-alert-kind-bug">
-<p class="markdown-alert-title">A bug callout</p>
+<p class="markdown-alert-title" dir="auto">A bug callout</p>
 <div class="markdown-alert markdown-alert-warning markdown-alert-kind-question">
-<p class="markdown-alert-title">Nested question</p>
-<p>A callout inside a callout.</p>
+<p class="markdown-alert-title" dir="auto">Nested question</p>
+<p dir="auto">A callout inside a callout.</p>
 </div>
 </div>
 --- div 31-32
 <div class="markdown-alert markdown-alert-note">
-<p class="markdown-alert-title">An unknown kind</p>
-<p>Falls back to a note.</p>
+<p class="markdown-alert-title" dir="auto">An unknown kind</p>
+<p dir="auto">Falls back to a note.</p>
 </div>
 --- div 34-38
 <div class="markdown-alert markdown-alert-note">
-<p class="markdown-alert-title">A container with a title</p>
-<p>A container holds a longer aside, with <strong>strong</strong> text.</p>
+<p class="markdown-alert-title" dir="auto">A container with a title</p>
+<p dir="auto">A container holds a longer aside, with <strong>strong</strong> text.</p>
 <ul>
-<li>and a list</li>
+<li dir="auto">and a list</li>
 </ul>
 </div>
 --- div 40-42
 <div class="markdown-alert markdown-alert-tip">
-<p class="markdown-alert-title">Tip</p>
-<p>A tip container without a title.</p>
+<p class="markdown-alert-title" dir="auto">Tip</p>
+<p dir="auto">A tip container without a title.</p>
 </div>
 --- div 44-48
 <div class="markdown-alert markdown-alert-warning">
-<p class="markdown-alert-title">Nested content</p>
+<p class="markdown-alert-title" dir="auto">Nested content</p>
 <pre><code class="language-js">const inside = "a code block in a container";
 </code></pre>
 </div>
 --- details 53-53
 <details>
 <summary>A plain details block</summary>
-<p>Text that most readers can skip.</p>
+<p dir="auto">Text that most readers can skip.</p>
 </details>

@@ -2,18 +2,18 @@ div.reading
   div.doc-column
     article.md
       div.md-body role="document"
-        p
+        p dir="auto"
           "Sure! Here's a summary of the buoy data for week 46. 🌊"
-        h2 id="-key-findings"
+        h2 id="-key-findings" dir="auto"
           a.anchor href="#-key-findings" aria-label="Link to 📊 Key findings"
             "#"
           "📊 Key findings"
         ol
-          li
+          li dir="auto"
             strong
               "Temperature"
             "dropped by 0.4 °C across all stations."
-          li
+          li dir="auto"
             strong
               "pH"
             "at LH-07 fell faster than its neighbors"
@@ -21,18 +21,18 @@ div.reading
               "1"
             "."
             ul
-              li
+              li dir="auto"
                 "This is"
                 em
                   "within"
                 "the drift limit."
-              li
+              li dir="auto"
                 "A water sample will confirm it."
-          li
+          li dir="auto"
             strong
               "Waves"
             "were calm: mean height 0.6 m."
-        h3 id="comparison-table"
+        h3 id="comparison-table" dir="auto"
           a.anchor href="#comparison-table" aria-label="Link to Comparison table"
             "#"
           "Comparison table"
@@ -40,28 +40,28 @@ div.reading
           table
             thead
               tr
-                th
+                th dir="auto"
                   "Station"
-                th
+                th dir="auto"
                   "Temp (°C)"
-                th
+                th dir="auto"
                   "pH"
             tbody
               tr
-                td
+                td dir="auto"
                   "LH-06"
-                td
+                td dir="auto"
                   "11.8"
-                td
+                td dir="auto"
                   "8.00"
               tr
-                td
+                td dir="auto"
                   "LH-07"
-                td
+                td dir="auto"
                   "11.7"
-                td
+                td dir="auto"
                   "7.96"
-        p
+        p dir="auto"
           "Here's the code I used:"
         div.code-block
           pre
@@ -73,27 +73,27 @@ div.reading
               "Python"
             button.icon-btn.icon-btn--sm.copy title="Copy code" aria-label="Copy code"
               icon lucide-copy
-        p
+        p dir="auto"
           "The formula for the mean is"
           span data-math-style="inline"
             katex tex="\bar{x} = \frac{1}{n}\sum x_i"
           "."
         hr
-        p
+        p dir="auto"
           strong
             "Note:"
           "Let me know if you'd like me to:"
         ul
-          li
+          li dir="auto"
             "expand on any point,"
-          li
+          li dir="auto"
             "add a chart, or"
-          li
+          li dir="auto"
             "draft the bulletin."
-        p
+        p dir="auto"
           "The model's hidden reasoning that leaked into the output."
-        p
+        p dir="auto"
           strong
             "References"
-        p
+        p dir="auto"
           "Trailing markup that never closes: **bold without end and `code without end"

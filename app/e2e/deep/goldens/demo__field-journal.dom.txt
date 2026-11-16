@@ -34,47 +34,47 @@ div.reading
               span.chip
                 "petrel"
       div.md-body role="document"
-        h1 id="nine-days-on-the-petrel"
+        h1 id="nine-days-on-the-petrel" dir="auto"
           a.anchor href="#nine-days-on-the-petrel" aria-label="Link to Nine Days on the Petrel"
             "#"
           "Nine Days on the Petrel"
-        p
+        p dir="auto"
           em
             "Twelve new buoys, one small boat, nine days on Larkhaven Sound: the voyage that started Season 3, October 12 to 20."
-        p.pm-wide align="center"
+        p.pm-wide align="center" dir="auto"
           img src="/@permark-deep/project/demo/assets/larkhaven-sound-map.svg" alt="Map of Larkhaven Sound with twelve stations, three gateways and the Petrel's das…"
-        p align="center"
+        p align="center" dir="auto"
           em
             "The Petrel's track: out from Port Avery along the north shore, around the outer stations, home by Heron Flats."
-        h2 id="day-1--port-avery-before-dawn"
+        h2 id="day-1--port-avery-before-dawn" dir="auto"
           a.anchor href="#day-1--port-avery-before-dawn" aria-label="Link to Day 1 — Port Avery, before dawn"
             "#"
           "Day 1 — Port Avery, before dawn"
         blockquote
-          p
+          p dir="auto"
             em
               ""Mar en calma nunca hizo buen marinero.""
             br
             "A calm sea never made a good sailor."
             br
             "— Joaquín, skipper of our partner boat, on the dock at five in the morning"
-        p
+        p dir="auto"
           "We cast off at 05:40 with twelve new buoys lashed along the deck in two rows of six. Aboard: Imani, Tomás, two volunteers from Port Avery, and me at the wheel. …"
           a href="season-plan.md"
             "season plan"
           "folded in her pocket."
-        p
+        p dir="auto"
           "This season we're not adding stations, we're replacing them. Each new buoy goes in beside the old one, both report side by side for an hour, and only then does …"
-        h2 id="day-3--the-first-buoy-goes-in"
+        h2 id="day-3--the-first-buoy-goes-in" dir="auto"
           a.anchor href="#day-3--the-first-buoy-goes-in" aria-label="Link to Day 3 — The first buoy goes in"
             "#"
           "Day 3 — The first buoy goes in"
-        p
+        p dir="auto"
           "The new LH-01 went over the side at 09:30, eleven minutes after we reached its mark. Tomás counted down the release, the mooring line paid out, and for a moment…"
-        p
+        p dir="auto"
           mark
             "At 09:42 its first reading reached the Avery Pier gateway: 13.9 °C, 33.1 PSU."
-        p
+        p dir="auto"
           "Imani lowered the"
           abbr title="conductivity, temperature, depth"
             "CTD"
@@ -83,18 +83,18 @@ div.reading
             a href="#fn-cast" id="fnref-cast"
               "1"
           "and the two agreed to the second decimal. The old LH-01 came aboard at 10:45, furred with weed. By sunset LH-02 and LH-05 were swapped too."
-        h2 id="day-5--weather"
+        h2 id="day-5--weather" dir="auto"
           a.anchor href="#day-5--weather" aria-label="Link to Day 5 — Weather"
             "#"
           "Day 5 — Weather"
-        p
+        p dir="auto"
           "The forecast promised a fresh breeze. By noon it was a strong one, Beaufort 6,"
           sup.footnote-ref
             a href="#fn-__inline_1" id="fnref-__inline_1"
               "2"
           "and we ran back to the lee of Gannet Point, where we'd swapped LH-04 the day before, to wait it out. The swell found us anyway."
         hr
-        p
+        p dir="auto"
           "Nobody slept much. The old buoys in the hold knocked against their straps all night, and the"
           em
             "Petrel"
@@ -104,18 +104,18 @@ div.reading
               "3"
           "Around two in the morning the wind dropped as fast as it had come, and by breakfast we were laughing about it."
         div.markdown-alert.markdown-alert-quote
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "Overheard in the galley"
-          p
+          p dir="auto"
             ""The buoys don't mind the weather. They were built for it. We're the ones who need soup.""
             br
             "— Tomás"
-        h2 id="day-7--kittiwake-shoal"
+        h2 id="day-7--kittiwake-shoal" dir="auto"
           a.anchor href="#day-7--kittiwake-shoal" aria-label="Link to Day 7 — Kittiwake Shoal"
             "#"
           "Day 7 — Kittiwake Shoal"
-        p
+        p dir="auto"
           "Kittiwake Shoal"
           sup.footnote-ref
             a href="#fn-kittiwake" id="fnref-kittiwake"
@@ -127,44 +127,44 @@ div.reading
           a href="ocean-chemistry.md"
             "carbon in the Sound"
           "explains why that matters for every shell in the bay."
-        p
+        p dir="auto"
           "We swapped LH-07 at slack water. Then we dropped the hydrophone over the side to listen to the new mooring settle, and caught something else: the bell on the sh…"
-        p
+        p dir="auto"
           audio src="/@permark-deep/project/demo/assets/hydrophone-bell.wav" controls
-        p
+        p dir="auto"
           em
             "Two seconds from the hydrophone, three meters down: the shoal's channel bell."
-        h2 id="day-9--home"
+        h2 id="day-9--home" dir="auto"
           a.anchor href="#day-9--home" aria-label="Link to Day 9 — Home"
             "#"
           "Day 9 — Home"
-        p
+        p dir="auto"
           "We saved the inner stations for last, so the old buoys would ride home the shortest way. LH-03 went in late on Day 8, and on Day 9 we tied up at Avery Pier at 1…"
-        p
+        p dir="auto"
           "Hana was on the pier again. Leo had the dashboard open on his phone and turned it around so we could see: twelve stations, twelve green dots, every one reportin…"
           a href="galley-recipe.md"
             "the galley"
           "."
-        h2 id="a-letter-home"
+        h2 id="a-letter-home" dir="auto"
           a.anchor href="#a-letter-home" aria-label="Link to A letter home"
             "#"
           "A letter home"
-        p
+        p dir="auto"
           "I wrote to my grandmother on the last night out. She doesn't read English, so this part is in Portuguese; the translation is folded below."
-        p
+        p dir="auto"
           "Querida vó Lurdes,"
-        p
+        p dir="auto"
           "Escrevo do convés do"
           em
             "Petrel"
           ", com a caneca de café equilibrada no joelho. As doze boias novas já estão no mar, uma para cada mês do ano, como a senhora disse quando contei o plano."
-        p
+        p dir="auto"
           "Na sexta o vento virou e passamos a noite inteira subindo e descendo ondas, mas ninguém enjoou, nem o Tomás, que jurava que ia enjoar. Hoje o mar amanheceu liso…"
-        p
+        p dir="auto"
           "Toda vez que uma boia acende a luz no mastro, eu lembro da lamparina na sua cozinha em Ilhéus. Fiz a sua moqueca para a tripulação e não sobrou nem o arroz."
-        p
+        p dir="auto"
           "Volto para casa na terça, com sal no cabelo e muita história para contar. Guarde um pedaço de bolo de fubá para mim."
-        p
+        p dir="auto"
           "Um beijo grande da sua neta,"
           br
           "Bia"
@@ -172,55 +172,55 @@ div.reading
           summary.markdown-alert-title
             svg svg sized
             "In English"
-          p
+          p dir="auto"
             "Dear Grandma Lurdes,"
-          p
+          p dir="auto"
             "I'm writing from the deck of the"
             em
               "Petrel"
             ", my coffee mug balanced on my knee. All twelve new buoys are in the sea now, one for each month of the year, just as you said when I told you the plan."
-          p
+          p dir="auto"
             "On Friday the wind turned and we spent the whole night climbing up and down waves, but nobody got seasick, not even Tomás, who swore he would. This morning the …"
-          p
+          p dir="auto"
             "Every time a buoy switches on the light on its mast, I think of the oil lamp in your kitchen in Ilhéus. I made your moqueca for the crew, and not even the rice …"
-          p
+          p dir="auto"
             "I'll be home on Tuesday, with salt in my hair and plenty of stories to tell. Save me a slice of cornmeal cake."
-          p
+          p dir="auto"
             "A big kiss from your granddaughter,"
             br
             "Bia"
-        h2 id="notes-for-the-next-crew"
+        h2 id="notes-for-the-next-crew" dir="auto"
           a.anchor href="#notes-for-the-next-crew" aria-label="Link to Notes for the next crew"
             "#"
           "Notes for the next crew"
         div.markdown-alert.markdown-alert-tip
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "Before you cast off"
           ul
-            li
+            li dir="auto"
               "Charge the hydrophone the night before. It dies at 4 % without any warning."
-            li
+            li dir="auto"
               "Tag every shackle with its station id. LH-06 and LH-08 look identical at dawn."
-            li
+            li dir="auto"
               "Run the reference cast before the swap, not after: the old buoy is your control."
-            li
+            li dir="auto"
               "Write down each swap time to the minute. Leo uses it to stitch old and new readings together."
-            li
+            li dir="auto"
               "Pack two thermoses. Hana brings one, and it's never enough."
-        h2 id="try-it-spelling-and-correction"
+        h2 id="try-it-spelling-and-correction" dir="auto"
           a.anchor href="#try-it-spelling-and-correction" aria-label="Link to Try it: spelling and correction"
             "#"
           "Try it: spelling and correction"
-        p
+        p dir="auto"
           "This page doubles as a practice sheet. The box below has three mistakes in it, on purpose."
         div.markdown-alert.markdown-alert-important.markdown-alert-kind-example
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "Three mistakes, on purpose"
-          p
+          p dir="auto"
             "When you recieve a new buoy, check the the mooring shackle before it goes over the side. It will definately be colder on deck than you think."
-        p
+        p dir="auto"
           "Press"
           kbd
             "Ctrl"
@@ -259,7 +259,7 @@ div.reading
             "PerMark guide"
           "."
         hr
-        p
+        p dir="auto"
           "Next:"
           a href="galley-recipe.md"
             "Moqueca for twelve"
@@ -268,23 +268,23 @@ div.reading
             "Start here"
         section.footnotes
           ol
-            li id="fn-cast"
-              p
+            li id="fn-cast" dir="auto"
+              p dir="auto"
                 "A CTD cast lowers a calibrated instrument through the water right beside the buoy. A new buoy passes when its first readings agree with the cast to within 0.02 …"
                 a.footnote-backref href="#fnref-cast" aria-label="Back to reference 1"
                   "↩"
-            li id="fn-__inline_1"
-              p
+            li id="fn-__inline_1" dir="auto"
+              p dir="auto"
                 "Beaufort 6 is a strong breeze: 22 to 27 knots, large waves forming, white foam crests almost everywhere."
                 a.footnote-backref href="#fnref-__inline_1" aria-label="Back to reference 2"
                   "↩"
-            li id="fn-petrel"
-              p
+            li id="fn-petrel" dir="auto"
+              p dir="auto"
                 "Sailors long took storm petrels, the small seabirds that seem to walk on the waves, as a sign of bad weather coming. We chose the name anyway."
                 a.footnote-backref href="#fnref-petrel" aria-label="Back to reference 3"
                   "↩"
-            li id="fn-kittiwake"
-              p
+            li id="fn-kittiwake" dir="auto"
+              p dir="auto"
                 "Kittiwakes are small gulls that nest on sea cliffs. They gave the shoal its name long before anyone moored a buoy there."
                 a.footnote-backref href="#fnref-kittiwake" aria-label="Back to reference 4"
                   "↩"

@@ -2,26 +2,26 @@ div.reading
   div.doc-column
     article.md
       div.md-body role="document"
-        p
+        p dir="auto"
           a id="top" name="top"
-        p.pm-wide align="center"
+        p.pm-wide align="center" dir="auto"
           img src="/@permark-deep/project/corpus/assets/square.svg" alt="A centered square"
-        h1 align="center"
+        h1 align="center" dir="auto"
           "Aligned title"
-        p align="center"
+        p align="center" dir="auto"
           em
             "A centered tagline."
         div align="right"
           "Right-aligned text in a div."
-        p
+        p dir="auto"
           "An alignment value the sanitizer drops: this paragraph reads left-aligned."
-        h2 id="named-anchors"
+        h2 id="named-anchors" dir="auto"
           a.anchor href="#named-anchors" aria-label="Link to Named anchors"
             "#"
           "Named anchors"
-        p
+        p dir="auto"
           a name="spot"
-        p
+        p dir="auto"
           "A spot with no heading. Jump to"
           a href="#spot"
             "the spot"
@@ -35,7 +35,7 @@ div.reading
           a href="#nowhere"
             "a missing anchor"
           "."
-        p align="center"
+        p align="center" dir="auto"
           a href="gfm-blocks.md"
             strong
               "Blocks"

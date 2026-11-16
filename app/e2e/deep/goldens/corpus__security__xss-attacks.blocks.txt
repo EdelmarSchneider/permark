@@ -7,12 +7,12 @@ outline:   Diagrams (line 53)
 outline:   Math (line 83)
 outline:   Code (line 88)
 --- h1 1-1
-<h1 id="attack-corpus">Attack corpus</h1>
+<h1 dir="auto" id="attack-corpus">Attack corpus</h1>
 --- p 3-4
-<p>Every payload below tries to run script, load a page or send a request. Rendered, none may: a run that sees a dialog,
+<p dir="auto">Every payload below tries to run script, load a page or send a request. Rendered, none may: a run that sees a dialog,
 the canary <code>window.__pmCanary</code>, a Content Security Policy violation or a request off this machine fails.</p>
 --- h2 6-6
-<h2 id="raw-html">Raw HTML</h2>
+<h2 dir="auto" id="raw-html">Raw HTML</h2>
 --- img 6-6
 <img src="pm-asset:corpus/security/x">
 --- img 6-6
@@ -20,7 +20,7 @@ the canary <code>window.__pmCanary</code>, a Content Security Policy violation o
 --- input 6-6
 <input disabled="">
 --- p 6-6
-<p>go</p>
+<p dir="auto">go</p>
 --- details 6-6
 <details open=""><summary>toggle</summary>x</details>
 --- video 6-6
@@ -28,13 +28,13 @@ the canary <code>window.__pmCanary</code>, a Content Security Policy violation o
 --- audio 6-6
 <audio controls="" preload="metadata" src="pm-asset:corpus/security/x"></audio>
 --- p 6-6
-<p>&lt;p title="</p>
+<p dir="auto">&lt;p title="</p>
 --- img 6-6
 <img src="pm-asset:corpus/security/x">
 --- p 6-6
-<p>"&gt;</p>
+<p dir="auto">"&gt;</p>
 --- p 6-6
-<p></p>
+<p dir="auto"></p>
 --- img 6-6
 <img src="pm-asset:corpus/security/x">
 --- a 6-6
@@ -54,21 +54,21 @@ the canary <code>window.__pmCanary</code>, a Content Security Policy violation o
 --- div 6-6
 <div>styled div</div>
 --- p 6-6
-<p>hover me</p>
+<p dir="auto">hover me</p>
 --- p 6-6
-<p>marquee
+<p dir="auto">marquee
 
 &lt;script&gt;window.__pmCanary='textarea'&lt;/script&gt;</p>
 --- h2 43-43
-<h2 id="markdown">Markdown</h2>
+<h2 dir="auto" id="markdown">Markdown</h2>
 --- p 45-49
-<p><a>markdown javascript link</a>
+<p dir="auto"><a>markdown javascript link</a>
 <a>markdown data link</a>
 <img alt="markdown remote picture" src="https://attacker.example/md.png">
 <a href="https://attacker.example/autolink">https://attacker.example/autolink</a>
 <a>reference link</a></p>
 --- h2 53-53
-<h2 id="diagrams">Diagrams</h2>
+<h2 dir="auto" id="diagrams">Diagrams</h2>
 --- pre 55-60
 <pre><code class="language-mermaid">flowchart LR
   A["&lt;img src=x onerror=window.__pmCanary='mermaid'&gt;"] --&gt; B
@@ -94,12 +94,12 @@ url of Alice is [[https://attacker.example/plantuml]]
 }
 </code></pre>
 --- h2 83-83
-<h2 id="math">Math</h2>
+<h2 dir="auto" id="math">Math</h2>
 --- p 85-86
-<p><span data-math-style="inline">\href{javascript:alert(1)}{\text{katex href}}</span> and <span data-math-style="inline">\url{javascript:alert(1)}</span> and
+<p dir="auto"><span data-math-style="inline">\href{javascript:alert(1)}{\text{katex href}}</span> and <span data-math-style="inline">\url{javascript:alert(1)}</span> and
 <span data-math-style="inline">\htmlData{foo=bar}{x}</span> and <span data-math-style="inline">\includegraphics{https://attacker.example/k.png}</span>.</p>
 --- h2 88-88
-<h2 id="code">Code</h2>
+<h2 dir="auto" id="code">Code</h2>
 --- pre 90-92
 <pre><code class="language-html">&lt;script&gt;window.__pmCanary = "code"&lt;/script&gt;
 </code></pre>

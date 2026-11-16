@@ -2,7 +2,7 @@
 format: markdown
 outline: Code blocks (line 1)
 --- h1 1-1
-<h1 id="code-blocks">Code blocks</h1>
+<h1 dir="auto" id="code-blocks">Code blocks</h1>
 --- pre 3-10
 <pre><code class="language-rust" data-lines="2,4-5" data-title="src/main.rs">fn main() {
     let tide = 1.2;

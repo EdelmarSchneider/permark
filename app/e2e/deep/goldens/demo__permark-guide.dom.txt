@@ -34,22 +34,22 @@ div.reading
               span.chip
                 "onboarding"
       div.md-body role="document"
-        h1 id="working-in-permark-a-ten-minute-tour"
+        h1 id="working-in-permark-a-ten-minute-tour" dir="auto"
           a.anchor href="#working-in-permark-a-ten-minute-tour" aria-label="Link to Working in PerMark: a ten-minute tour"
             "#"
           "Working in PerMark: a ten-minute tour"
-        p
+        p dir="auto"
           "Every Larkhaven volunteer starts here. In ten minutes you'll know how to read, edit, review and share the lab's pages, and which helpers stay asleep until you c…"
-        p.pm-wide align="center"
+        p.pm-wide align="center" dir="auto"
           img src="/@permark-deep/project/demo/assets/three-modes.svg" alt="The same page in three modes: View shows the finished page, Edit adds a caret an…"
-        h2 id="your-first-five-minutes"
+        h2 id="your-first-five-minutes" dir="auto"
           a.anchor href="#your-first-five-minutes" aria-label="Link to Your first five minutes"
             "#"
           "Your first five minutes"
-        p
+        p dir="auto"
           "Tick these off on your first morning. The boxes are just Markdown, so you can copy the list into a note of your own."
         ul.contains-task-list
-          li.task-list-item.is-done
+          li.task-list-item.is-done dir="auto"
             input.task-list-item-checkbox aria-label="Open this folder with Open folder ( Ctrl + O )" checked disabled
             "Open this folder with"
             strong
@@ -61,30 +61,30 @@ div.reading
             kbd
               "O"
             ")"
-          li.task-list-item.is-done
+          li.task-list-item.is-done dir="auto"
             input.task-list-item-checkbox aria-label="Read the start page" checked disabled
             "Read the"
             a href="README.md"
               "start page"
-          li.task-list-item
+          li.task-list-item dir="auto"
             input.task-list-item-checkbox aria-label="Switch one page to Edit and fix a word" disabled
             "Switch one page to Edit and fix a word"
-          li.task-list-item
+          li.task-list-item dir="auto"
             input.task-list-item-checkbox aria-label="Leave Hana a comment on a passage" disabled
             "Leave Hana a comment on a passage"
-          li.task-list-item
+          li.task-list-item dir="auto"
             input.task-list-item-checkbox aria-label="Search all pages for "Kittiwake"" disabled
             "Search all pages for "Kittiwake""
-        h2 id="read-first"
+        h2 id="read-first" dir="auto"
           a.anchor href="#read-first" aria-label="Link to Read first"
             "#"
           "Read first"
-        p
+        p dir="auto"
           "PerMark opens every page in View."
           mark
             "Reading is the main mode"
           ": nothing on the page turns into a tool until you ask for one."
-        p
+        p dir="auto"
           "Press"
           kbd
             "Ctrl"
@@ -125,11 +125,11 @@ div.reading
           kbd
             "Option"
           "for Alt."
-        h2 id="edit-or-source"
+        h2 id="edit-or-source" dir="auto"
           a.anchor href="#edit-or-source" aria-label="Link to Edit or Source"
             "#"
           "Edit or Source"
-        p
+        p dir="auto"
           "When a page needs changing, you have two editors. Pick the one that fits the job, and save with"
           kbd
             "Ctrl"
@@ -141,42 +141,42 @@ div.reading
           table
             thead
               tr
-                th
+                th dir="auto"
                   "Mode"
-                th
+                th dir="auto"
                   "Keys"
-                th
+                th dir="auto"
                   "Best for"
-                th
+                th dir="auto"
                   "What you see"
             tbody
               tr
-                td
+                td dir="auto"
                   "View"
-                td
+                td dir="auto"
                   kbd
                     "Esc"
-                td
+                td dir="auto"
                   "Reading and presenting"
-                td
+                td dir="auto"
                   "The finished page"
               tr
-                td
+                td dir="auto"
                   "Edit"
-                td
+                td dir="auto"
                   kbd
                     "Ctrl"
                   "+"
                   kbd
                     "E"
-                td
+                td dir="auto"
                   "Writing and quick fixes"
-                td
+                td dir="auto"
                   "The same page, with a caret and a toolbar"
               tr
-                td
+                td dir="auto"
                   "Source"
-                td
+                td dir="auto"
                   kbd
                     "Ctrl"
                   "+"
@@ -185,23 +185,23 @@ div.reading
                   "+"
                   kbd
                     "E"
-                td
+                td dir="auto"
                   "Tables, front matter, exact control"
-                td
+                td dir="auto"
                   "The Markdown text itself"
-        p
+        p dir="auto"
           "Whichever you use, saving is careful."
         div.markdown-alert.markdown-alert-note
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "Only your changes are saved"
-          p
+          p dir="auto"
             "PerMark writes back only the characters you changed. Line endings, the order of the front matter and every comment in the file stay exactly as they were, so a o…"
-        h2 id="notes-and-tags"
+        h2 id="notes-and-tags" dir="auto"
           a.anchor href="#notes-and-tags" aria-label="Link to Notes and tags"
             "#"
           "Notes and tags"
-        p
+        p dir="auto"
           "Notes are for everything that isn't a page yet."
           kbd
             "Ctrl"
@@ -221,7 +221,7 @@ div.reading
           kbd
             "N"
           "starts a new note: plain Markdown in a folder you choose, saved as you type, with earlier versions kept. Pin the ones you open every day."
-        p
+        p dir="auto"
           "Tags belong to pages. A"
           code
             "tags:"
@@ -229,25 +229,25 @@ div.reading
           kbd
             "T"
           "to add tags and a one-line description without touching the file, and open the Tags panel to see every file that shares a tag."
-        h2 id="comments-on-a-passage"
+        h2 id="comments-on-a-passage" dir="auto"
           a.anchor href="#comments-on-a-passage" aria-label="Link to Comments on a passage"
             "#"
           "Comments on a passage"
-        p
+        p dir="auto"
           "Select a passage and press"
           kbd
             "C"
           "to leave a comment on it. Comments follow their words when the text around them changes, and the Comments list lets you reply, mark one done or jump back to the…"
-        p
+        p dir="auto"
           "They live in the project's local state, never inside the file, so the page stays clean for everyone else. An agent you connect can read them and mark them done,…"
           strong
             "Send to agent"
           "copies them for its chat."
-        h2 id="review-what-changed"
+        h2 id="review-what-changed" dir="auto"
           a.anchor href="#review-what-changed" aria-label="Link to Review what changed"
             "#"
           "Review what changed"
-        p
+        p dir="auto"
           "When a page changed since you last read it, a bar offers to show you how:"
           em
             "Changed since you last read · 3 changes"
@@ -264,7 +264,7 @@ div.reading
           kbd
             "R"
           "."
-        p
+        p dir="auto"
           "In a git project,"
           strong
             "Compare with"
@@ -282,11 +282,11 @@ div.reading
           figure.figure
             div.drawing
               svg gitGraph sized labels: main | review | First draft | Add Day 3 | Fix units | Shorter lede | Add the map | Published | Oct 24
-        h2 id="share-pdf-html-print"
+        h2 id="share-pdf-html-print" dir="auto"
           a.anchor href="#share-pdf-html-print" aria-label="Link to Share: PDF, HTML, print"
             "#"
           "Share: PDF, HTML, print"
-        p
+        p dir="auto"
           "Open the document's"
           strong
             "…"
@@ -309,13 +309,13 @@ div.reading
           kbd
             "P"
           "). All three are built from the saved file with the reading view's look, diagrams and formulas included, and always in light colors, whatever your theme. Pick t…"
-        h2 id="spelling-correction-translation"
+        h2 id="spelling-correction-translation" dir="auto"
           a.anchor href="#spelling-correction-translation" aria-label="Link to Spelling, correction, translation"
             "#"
           "Spelling, correction, translation"
-        p
+        p dir="auto"
           "Three helpers for words, all asleep until you call them. Spelling underlines misspelled words while you edit, in the page's own language; a dictionary is downlo…"
-        p
+        p dir="auto"
           strong
             "Correct spelling and grammar"
           "("
@@ -344,16 +344,16 @@ div.reading
             "field journal"
           "."
         div.markdown-alert.markdown-alert-important
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "Nothing changes until you accept"
-          p
+          p dir="auto"
             "Every suggestion and every translated part waits in a review bar. Keep it or discard it: the file changes only when you say so."
-        h2 id="let-an-agent-read-the-project"
+        h2 id="let-an-agent-read-the-project" dir="auto"
           a.anchor href="#let-an-agent-read-the-project" aria-label="Link to Let an agent read the project"
             "#"
           "Let an agent read the project"
-        p
+        p dir="auto"
           "PerMark can share a project with an AI agent you already use, any tool that speaks MCP. It's off by default and set per project: turn on"
           strong
             "Share this project with agents"
@@ -361,7 +361,7 @@ div.reading
           strong
             "AI agents"
           ". You can always see which agents are connected."
-        p
+        p dir="auto"
           "While it's on, an agent can search and read this project's files, read your comments and the notes you share, and show you a place, but only on this computer, o…"
           a href=".aiignore"
             code
@@ -373,11 +373,11 @@ div.reading
           a href="bulletin-agent.md"
             "bulletin agent"
           "works exactly like this."
-        h2 id="config-and-data-files"
+        h2 id="config-and-data-files" dir="auto"
           a.anchor href="#config-and-data-files" aria-label="Link to Config and data files"
             "#"
           "Config and data files"
-        p
+        p dir="auto"
           "Not everything in a project is Markdown. PerMark shows settings files (TOML, YAML, INI,"
           code
             ".env"
@@ -386,27 +386,27 @@ div.reading
             "station/"
           "folder:"
         ul
-          li
+          li dir="auto"
             a href="station/buoy.toml"
               code
                 "buoy.toml"
             ": one buoy's settings, sensor by sensor"
-          li
+          li dir="auto"
             a href="station/qc-rules.yaml"
               code
                 "qc-rules.yaml"
             ": the quality-control rules every reading passes through"
-          li
+          li dir="auto"
             a href="station/deploy.env"
               code
                 "deploy.env"
             ": environment values, with a placeholder key"
-          li
+          li dir="auto"
             a href="station/readings-week-46.toon"
               code
                 "readings-week-46.toon"
             ": a week of readings from all twelve stations"
-          li
+          li dir="auto"
             a.is-missing href="station/ingest-#-11-12.log" title="Not found: demo/station/ingest-#-11-12.log"
               code
                 "ingest-2026-11-12.log"
@@ -417,21 +417,21 @@ div.reading
             kbd
               "Z"
             "wraps the long lines"
-        h2 id="a-morning-in-permark"
+        h2 id="a-morning-in-permark" dir="auto"
           a.anchor href="#a-morning-in-permark" aria-label="Link to A morning in PerMark"
             "#"
           "A morning in PerMark"
-        p
+        p dir="auto"
           "Here's how Hana's Monday usually goes, scored by how much she enjoys each step."
         div.code-block.diagram
           figure.figure
             div.drawing
               svg journey sized labels: Hana | Leo | Read | Open the project | Skim the outline | Search all pages | Write | Update the plan | Fix a typo in Edit | Share | Review the changes | Save the plan as PDF | A morning in PerMark
-        h2 id="shortcuts"
+        h2 id="shortcuts" dir="auto"
           a.anchor href="#shortcuts" aria-label="Link to Shortcuts"
             "#"
           "Shortcuts"
-        p
+        p dir="auto"
           "The eight you'll use most. The command palette ("
           kbd
             "Ctrl"
@@ -449,24 +449,24 @@ div.reading
           table
             thead
               tr
-                th
+                th dir="auto"
                   "Action"
-                th
+                th dir="auto"
                   "Keys"
             tbody
               tr
-                td
+                td dir="auto"
                   "Go to file"
-                td
+                td dir="auto"
                   kbd
                     "Ctrl"
                   "+"
                   kbd
                     "P"
               tr
-                td
+                td dir="auto"
                   "Search all pages"
-                td
+                td dir="auto"
                   kbd
                     "Ctrl"
                   "+"
@@ -476,18 +476,18 @@ div.reading
                   kbd
                     "F"
               tr
-                td
+                td dir="auto"
                   "Find in page"
-                td
+                td dir="auto"
                   kbd
                     "Ctrl"
                   "+"
                   kbd
                     "F"
               tr
-                td
+                td dir="auto"
                   "Show or hide the outline"
-                td
+                td dir="auto"
                   kbd
                     "Ctrl"
                   "+"
@@ -497,18 +497,18 @@ div.reading
                   kbd
                     "O"
               tr
-                td
+                td dir="auto"
                   "Edit, then back to View"
-                td
+                td dir="auto"
                   kbd
                     "Ctrl"
                   "+"
                   kbd
                     "E"
               tr
-                td
+                td dir="auto"
                   "Source mode"
-                td
+                td dir="auto"
                   kbd
                     "Ctrl"
                   "+"
@@ -518,15 +518,15 @@ div.reading
                   kbd
                     "E"
               tr
-                td
+                td dir="auto"
                   "Comment on the selection"
-                td
+                td dir="auto"
                   kbd
                     "C"
               tr
-                td
+                td dir="auto"
                   "Print"
-                td
+                td dir="auto"
                   kbd
                     "Ctrl"
                   "+"
@@ -535,7 +535,7 @@ div.reading
                   "+"
                   kbd
                     "P"
-        h2 id="questions"
+        h2 id="questions" dir="auto"
           a.anchor href="#questions" aria-label="Link to Questions"
             "#"
           "Questions"
@@ -543,7 +543,7 @@ div.reading
           summary.markdown-alert-title
             svg svg sized
             "Does reading a page ever change the file?"
-          p
+          p dir="auto"
             "No. Reading never writes. Comments live in the project's local state, and tags you add with"
             kbd
               "T"
@@ -552,19 +552,19 @@ div.reading
           summary.markdown-alert-title
             svg svg sized
             "Do I need git?"
-          p
+          p dir="auto"
             "No. PerMark works with any folder. In a git project, Review can also compare with the last commit and with earlier versions, and PerMark never fetches or pushes…"
         details.markdown-alert.markdown-alert-warning.markdown-alert-kind-question
           summary.markdown-alert-title
             svg svg sized
             "Can I switch features off?"
-          p
+          p dir="auto"
             "Yes. Each feature is a plugin you can turn off in Settings, under"
             strong
               "Plugins"
             ". Turned off, it leaves nothing behind on screen."
         hr
-        p
+        p dir="auto"
           "Next:"
           a href="style-guide.md"
             "How we write"

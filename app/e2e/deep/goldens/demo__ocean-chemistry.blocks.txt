@@ -11,161 +11,161 @@ outline:     Energy in a wave (line 80)
 outline:   What our buoys measure (line 88)
 outline:   Glossary (line 101)
 --- h1 9-9
-<h1 id="carbon-in-the-sound">Carbon in the Sound</h1>
+<h1 dir="auto" id="carbon-in-the-sound">Carbon in the Sound</h1>
 --- p 11-11
-<p>Every Tidewell buoy carries a pH sensor, because the sea is slowly changing its chemistry. This page explains what our sensors see, from carbonic acid to the energy in a wave, using the numbers we actually work with.</p>
+<p dir="auto">Every Tidewell buoy carries a pH sensor, because the sea is slowly changing its chemistry. This page explains what our sensors see, from carbonic acid to the energy in a wave, using the numbers we actually work with.</p>
 --- p 13-15
-<p><span data-math-style="display">
+<p dir="auto"><span data-math-style="display">
 \ce{CO2(aq) + H2O &lt;=&gt; H2CO3 &lt;=&gt; H+ + HCO3- &lt;=&gt; 2H+ + CO3^2-}
 </span></p>
 --- p 15-15
-<p align="center"><img alt="A seesaw carrying carbon dioxide, bicarbonate and carbonate, tipped toward carbon dioxide, above a pH scale where today's 8.1 sits just below the 8.2 of 1850" src="pm-asset:demo/assets/carbonate-seesaw.svg" width="600"></p>
+<p align="center" dir="auto"><img alt="A seesaw carrying carbon dioxide, bicarbonate and carbonate, tipped toward carbon dioxide, above a pH scale where today's 8.1 sits just below the 8.2 of 1850" src="pm-asset:demo/assets/carbonate-seesaw.svg" width="600"></p>
 --- h2 19-19
-<h2 id="the-carbonate-system">The carbonate system</h2>
+<h2 dir="auto" id="the-carbonate-system">The carbonate system</h2>
 --- p 21-21
-<p>When carbon dioxide from the air dissolves in seawater, very little of it stays as CO₂. It reacts with water to form carbonic acid, which quickly gives up hydrogen ions. In the Sound this autumn, about 93 % of the dissolved inorganic carbon is bicarbonate <span data-math-style="inline">\ce{HCO3-}</span>, about 6 % is carbonate <span data-math-style="inline">\ce{CO3^2-}</span>, and under 1 % is dissolved CO₂.</p>
+<p dir="auto">When carbon dioxide from the air dissolves in seawater, very little of it stays as CO₂. It reacts with water to form carbonic acid, which quickly gives up hydrogen ions. In the Sound this autumn, about 93 % of the dissolved inorganic carbon is bicarbonate <span data-math-style="inline">\ce{HCO3-}</span>, about 6 % is carbonate <span data-math-style="inline">\ce{CO3^2-}</span>, and under 1 % is dissolved CO₂.</p>
 --- p 23-23
-<p>The sea resists the change because carbonate soaks up most of the new hydrogen ions:</p>
+<p dir="auto">The sea resists the change because carbonate soaks up most of the new hydrogen ions:</p>
 --- p 25-25
-<p><span data-math-style="display">\ce{CO2 + CO3^2- + H2O -&gt; 2HCO3-}</span></p>
+<p dir="auto"><span data-math-style="display">\ce{CO2 + CO3^2- + H2O -&gt; 2HCO3-}</span></p>
 --- p 27-27
-<p>That buffer has a price. Each extra CO₂ molecule uses up a carbonate ion, and carbonate is what oysters, pteropods and corals build their shells from. Shells stay in balance with the water around them through <span data-math-style="inline">\ce{CaCO3 &lt;=&gt; Ca^2+ + CO3^2-}</span>: take carbonate away and the balance leans toward dissolving.</p>
+<p dir="auto">That buffer has a price. Each extra CO₂ molecule uses up a carbonate ion, and carbonate is what oysters, pteropods and corals build their shells from. Shells stay in balance with the water around them through <span data-math-style="inline">\ce{CaCO3 &lt;=&gt; Ca^2+ + CO3^2-}</span>: take carbonate away and the balance leans toward dissolving.</p>
 --- h2 29-29
-<h2 id="ph-is-a-logarithm">pH is a logarithm</h2>
+<h2 dir="auto" id="ph-is-a-logarithm">pH is a logarithm</h2>
 --- p 31-31
-<p>pH counts hydrogen ions on a logarithmic scale<sup class="footnote-ref"><a data-footnote-ref="" href="#fn-scale" id="fnref-scale">1</a></sup>:</p>
+<p dir="auto">pH counts hydrogen ions on a logarithmic scale<sup class="footnote-ref"><a data-footnote-ref="" href="#fn-scale" id="fnref-scale">1</a></sup>:</p>
 --- p 33-33
-<p><span data-math-style="display">\mathrm{pH} = -\log_{10} a_{\mathrm{H^+}}</span></p>
+<p dir="auto"><span data-math-style="display">\mathrm{pH} = -\log_{10} a_{\mathrm{H^+}}</span></p>
 --- p 35-35
-<p>Here <span data-math-style="inline">a_{\mathrm{H^+}}</span> is the activity of hydrogen ions, which in seawater closely tracks their concentration. Because of the logarithm, one pH unit is a factor of ten. Since about 1850 the surface ocean has gone from roughly 8.2 to 8.1, and Gannet Point averaged 8.02 in week 46.</p>
+<p dir="auto">Here <span data-math-style="inline">a_{\mathrm{H^+}}</span> is the activity of hydrogen ions, which in seawater closely tracks their concentration. Because of the logarithm, one pH unit is a factor of ten. Since about 1850 the surface ocean has gone from roughly 8.2 to 8.1, and Gannet Point averaged 8.02 in week 46.</p>
 --- div 37-38
 <div class="markdown-alert markdown-alert-warning">
-<p class="markdown-alert-title">A small number is a big change</p>
-<p>A drop of 0.1 in pH means <span data-math-style="inline">10^{0.1} \approx 1.26</span> times as many hydrogen ions: 26 % more. When you write about two pH values, turn the difference into a ratio before you call it small.</p>
+<p class="markdown-alert-title" dir="auto">A small number is a big change</p>
+<p dir="auto">A drop of 0.1 in pH means <span data-math-style="inline">10^{0.1} \approx 1.26</span> times as many hydrogen ions: 26 % more. When you write about two pH values, turn the difference into a ratio before you call it small.</p>
 </div>
 --- h2 40-40
-<h2 id="will-shells-dissolve">Will shells dissolve?</h2>
+<h2 dir="auto" id="will-shells-dissolve">Will shells dissolve?</h2>
 --- p 42-42
-<p>Whether calcium carbonate forms or dissolves depends on its saturation state, Ω (omega). It compares the ions actually in the water with what the water holds at equilibrium:</p>
+<p dir="auto">Whether calcium carbonate forms or dissolves depends on its saturation state, Ω (omega). It compares the ions actually in the water with what the water holds at equilibrium:</p>
 --- pre 44-46
 <pre><code class="language-math" data-math-style="display">\Omega_{\mathrm{arag}} = \frac{[\ce{Ca^2+}][\ce{CO3^2-}]}{K^{*}_{\mathrm{sp,arag}}} \tag{1}
 </code></pre>
 --- p 48-48
-<p><span data-math-style="inline">K^{*}_{\mathrm{sp,arag}}</span> is the solubility product of aragonite, the form of calcium carbonate that corals and many young shellfish build. It depends on temperature, salinity and pressure.</p>
+<p dir="auto"><span data-math-style="inline">K^{*}_{\mathrm{sp,arag}}</span> is the solubility product of aragonite, the form of calcium carbonate that corals and many young shellfish build. It depends on temperature, salinity and pressure.</p>
 --- table 50-54
 <table>
 <thead>
 <tr>
-<th align="center">Ω</th>
-<th>Seawater is</th>
-<th>What it means for shells</th>
+<th align="center" dir="auto">Ω</th>
+<th dir="auto">Seawater is</th>
+<th dir="auto">What it means for shells</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td align="center">&gt; 1</td>
-<td>supersaturated</td>
-<td>Shells and skeletons can form; the higher Ω, the less energy they cost</td>
+<td align="center" dir="auto">&gt; 1</td>
+<td dir="auto">supersaturated</td>
+<td dir="auto">Shells and skeletons can form; the higher Ω, the less energy they cost</td>
 </tr>
 <tr>
-<td align="center">= 1</td>
-<td>in balance</td>
-<td>Calcium carbonate neither forms nor dissolves</td>
+<td align="center" dir="auto">= 1</td>
+<td dir="auto">in balance</td>
+<td dir="auto">Calcium carbonate neither forms nor dissolves</td>
 </tr>
 <tr>
-<td align="center">&lt; 1</td>
-<td>corrosive</td>
-<td>Unprotected aragonite starts to dissolve</td>
+<td align="center" dir="auto">&lt; 1</td>
+<td dir="auto">corrosive</td>
+<td dir="auto">Unprotected aragonite starts to dissolve</td>
 </tr>
 </tbody>
 </table>
 --- p 56-56
-<p>Gannet Point sat at Ω ≈ 2.0 in week 46<sup class="footnote-ref"><a data-footnote-ref="" href="#fn-omega" id="fnref-omega">2</a></sup>. That is comfortably above 1, but at the same alkalinity a drop of 0.1 in pH would take nearly a fifth off it.</p>
+<p dir="auto">Gannet Point sat at Ω ≈ 2.0 in week 46<sup class="footnote-ref"><a data-footnote-ref="" href="#fn-omega" id="fnref-omega">2</a></sup>. That is comfortably above 1, but at the same alkalinity a drop of 0.1 in pH would take nearly a fifth off it.</p>
 --- h2 58-58
-<h2 id="oxygen-and-temperature">Oxygen and temperature</h2>
+<h2 dir="auto" id="oxygen-and-temperature">Oxygen and temperature</h2>
 --- p 60-60
-<p>Oxygen reaches the Sound from the air and from everything green in it. At the surface the gas dissolves in proportion to its partial pressure, as Henry's law says: <span data-math-style="inline">c = k_H\,p</span>, where the constant <span data-math-style="inline">k_H</span> falls as the water warms. In daylight, phytoplankton add their own:</p>
+<p dir="auto">Oxygen reaches the Sound from the air and from everything green in it. At the surface the gas dissolves in proportion to its partial pressure, as Henry's law says: <span data-math-style="inline">c = k_H\,p</span>, where the constant <span data-math-style="inline">k_H</span> falls as the water warms. In daylight, phytoplankton add their own:</p>
 --- p 62-62
-<p><span data-math-style="display">\ce{6CO2 + 6H2O -&gt;[light] C6H12O6 + 6O2}</span></p>
+<p dir="auto"><span data-math-style="display">\ce{6CO2 + 6H2O -&gt;[light] C6H12O6 + 6O2}</span></p>
 --- p 64-64
-<p><mark>Warmer water holds less oxygen.</mark> At Gannet Point's 12.6 °C and 33.8 PSU, fully saturated seawater holds about 8.6 mg/L. In week 46 the buoy read 7.9 mg/L, about 92 % of saturation. Back in August, at 17.4 °C, saturation was only 7.8 mg/L. <a href="data-notebook.md#temperature-against-oxygen">Leo's notebook</a> measures the link across all twelve stations.</p>
+<p dir="auto"><mark>Warmer water holds less oxygen.</mark> At Gannet Point's 12.6 °C and 33.8 PSU, fully saturated seawater holds about 8.6 mg/L. In week 46 the buoy read 7.9 mg/L, about 92 % of saturation. Back in August, at 17.4 °C, saturation was only 7.8 mg/L. <a href="data-notebook.md#temperature-against-oxygen">Leo's notebook</a> measures the link across all twelve stations.</p>
 --- h2 66-66
-<h2 id="waves-briefly">Waves, briefly</h2>
+<h2 dir="auto" id="waves-briefly">Waves, briefly</h2>
 --- p 68-68
-<p>Our buoys also log the sea state, because waves mix the water column and stir up the bottom.</p>
+<p dir="auto">Our buoys also log the sea state, because waves mix the water column and stir up the bottom.</p>
 --- p 70-70
-<p><img alt="Diagram of a wave over the still-water level: crest, trough, wavelength L from crest to crest, height H from trough to crest, and the wave speed c" src="pm-asset:demo/assets/wave-anatomy.svg"></p>
+<p dir="auto"><img alt="Diagram of a wave over the still-water level: crest, trough, wavelength L from crest to crest, height H from trough to crest, and the wave speed c" src="pm-asset:demo/assets/wave-anatomy.svg"></p>
 --- p 72-72
-<p>For small waves, linear wave theory ties the angular frequency <span data-math-style="inline">\omega = 2\pi/T</span> to the wavenumber <span data-math-style="inline">k = 2\pi/L</span> and the water depth <span data-math-style="inline">h</span>:</p>
+<p dir="auto">For small waves, linear wave theory ties the angular frequency <span data-math-style="inline">\omega = 2\pi/T</span> to the wavenumber <span data-math-style="inline">k = 2\pi/L</span> and the water depth <span data-math-style="inline">h</span>:</p>
 --- p 74-76
-<p><span data-math-style="display">
+<p dir="auto"><span data-math-style="display">
 \omega^2 = g k \tanh(kh) \tag{2}
 </span></p>
 --- p 78-78
-<p>In deep water (<span data-math-style="inline">kh \gg 1</span>, in practice deeper than half a wavelength), <span data-math-style="inline">\tanh(kh) \to 1</span> and the period alone sets speed and length: <span data-math-style="inline">c = gT/2\pi</span> and <span data-math-style="inline">L = gT^2/2\pi</span>. An 8-second swell travels at <span data-math-style="inline">c \approx \pu{12.5 m/s}</span> and measures <span data-math-style="inline">L \approx \pu{99.9 m}</span> from crest to crest. Over 20 m of water the same swell already feels the bottom: equation (2) gives about 89 m and 11.1 m/s.</p>
+<p dir="auto">In deep water (<span data-math-style="inline">kh \gg 1</span>, in practice deeper than half a wavelength), <span data-math-style="inline">\tanh(kh) \to 1</span> and the period alone sets speed and length: <span data-math-style="inline">c = gT/2\pi</span> and <span data-math-style="inline">L = gT^2/2\pi</span>. An 8-second swell travels at <span data-math-style="inline">c \approx \pu{12.5 m/s}</span> and measures <span data-math-style="inline">L \approx \pu{99.9 m}</span> from crest to crest. Over 20 m of water the same swell already feels the bottom: equation (2) gives about 89 m and 11.1 m/s.</p>
 --- h3 80-80
-<h3 id="energy-in-a-wave">Energy in a wave</h3>
+<h3 dir="auto" id="energy-in-a-wave">Energy in a wave</h3>
 --- p 82-82
-<p>The energy a wave carries per square meter of sea surface grows with the square of its height:</p>
+<p dir="auto">The energy a wave carries per square meter of sea surface grows with the square of its height:</p>
 --- p 84-84
-<p><span data-math-style="display">E = \tfrac{1}{8}\rho g H^2</span></p>
+<p dir="auto"><span data-math-style="display">E = \tfrac{1}{8}\rho g H^2</span></p>
 --- p 86-86
-<p>With <span data-math-style="inline">\rho = \pu{1025 kg/m^3}</span>, <span data-math-style="inline">g = \pu{9.81 m/s^2}</span> and <span data-math-style="inline">H = \pu{1.5 m}</span>, that comes to about <span data-math-style="inline">\pu{2.83 kJ/m^2}</span>. Double the height and the energy grows fourfold<sup class="footnote-ref"><a data-footnote-ref="" href="#fn-hs" id="fnref-hs">3</a></sup>.</p>
+<p dir="auto">With <span data-math-style="inline">\rho = \pu{1025 kg/m^3}</span>, <span data-math-style="inline">g = \pu{9.81 m/s^2}</span> and <span data-math-style="inline">H = \pu{1.5 m}</span>, that comes to about <span data-math-style="inline">\pu{2.83 kJ/m^2}</span>. Double the height and the energy grows fourfold<sup class="footnote-ref"><a data-footnote-ref="" href="#fn-hs" id="fnref-hs">3</a></sup>.</p>
 --- h2 88-88
-<h2 id="what-our-buoys-measure">What our buoys measure</h2>
+<h2 dir="auto" id="what-our-buoys-measure">What our buoys measure</h2>
 --- table 90-97
 <table>
 <thead>
 <tr>
-<th>Quantity</th>
-<th align="center">Symbol</th>
-<th align="center">Unit</th>
-<th align="right">Accuracy</th>
+<th dir="auto">Quantity</th>
+<th align="center" dir="auto">Symbol</th>
+<th align="center" dir="auto">Unit</th>
+<th align="right" dir="auto">Accuracy</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Temperature</td>
-<td align="center"><span data-math-style="inline">T</span></td>
-<td align="center">°C</td>
-<td align="right">±0.10</td>
+<td dir="auto">Temperature</td>
+<td align="center" dir="auto"><span data-math-style="inline">T</span></td>
+<td align="center" dir="auto">°C</td>
+<td align="right" dir="auto">±0.10</td>
 </tr>
 <tr>
-<td>Salinity</td>
-<td align="center"><span data-math-style="inline">S</span></td>
-<td align="center">PSU</td>
-<td align="right">±0.10</td>
+<td dir="auto">Salinity</td>
+<td align="center" dir="auto"><span data-math-style="inline">S</span></td>
+<td align="center" dir="auto">PSU</td>
+<td align="right" dir="auto">±0.10</td>
 </tr>
 <tr>
-<td>pH, total scale</td>
-<td align="center"><span data-math-style="inline">\mathrm{pH_T}</span></td>
-<td align="center">—</td>
-<td align="right">±0.05</td>
+<td dir="auto">pH, total scale</td>
+<td align="center" dir="auto"><span data-math-style="inline">\mathrm{pH_T}</span></td>
+<td align="center" dir="auto">—</td>
+<td align="right" dir="auto">±0.05</td>
 </tr>
 <tr>
-<td>Dissolved oxygen</td>
-<td align="center"><span data-math-style="inline">\ce{O2}</span></td>
-<td align="center">mg/L</td>
-<td align="right">±0.20</td>
+<td dir="auto">Dissolved oxygen</td>
+<td align="center" dir="auto"><span data-math-style="inline">\ce{O2}</span></td>
+<td align="center" dir="auto">mg/L</td>
+<td align="right" dir="auto">±0.20</td>
 </tr>
 <tr>
-<td>Significant wave height</td>
-<td align="center"><span data-math-style="inline">H_s</span></td>
-<td align="center">m</td>
-<td align="right">±0.10</td>
+<td dir="auto">Significant wave height</td>
+<td align="center" dir="auto"><span data-math-style="inline">H_s</span></td>
+<td align="center" dir="auto">m</td>
+<td align="right" dir="auto">±0.10</td>
 </tr>
 <tr>
-<td>Peak wave period</td>
-<td align="center"><span data-math-style="inline">T_p</span></td>
-<td align="center">s</td>
-<td align="right">±0.50</td>
+<td dir="auto">Peak wave period</td>
+<td align="center" dir="auto"><span data-math-style="inline">T_p</span></td>
+<td align="center" dir="auto">s</td>
+<td align="right" dir="auto">±0.50</td>
 </tr>
 </tbody>
 </table>
 --- p 99-99
-<p>These are the accuracies after calibration. Between visits, sensors drift, which is why we check them against water samples taken by hand, like the ones from the <em>Petrel</em> in October (<a href="field-journal.md">Nine Days on the Petrel</a>).</p>
+<p dir="auto">These are the accuracies after calibration. Between visits, sensors drift, which is why we check them against water samples taken by hand, like the ones from the <em>Petrel</em> in October (<a href="field-journal.md">Nine Days on the Petrel</a>).</p>
 --- h2 101-101
-<h2 id="glossary">Glossary</h2>
+<h2 dir="auto" id="glossary">Glossary</h2>
 --- dl 103-114
 <dl>
 <dt><abbr title="dissolved inorganic carbon">DIC</abbr></dt>
@@ -180,18 +180,18 @@ outline:   Glossary (line 101)
 --- hr 121-121
 <hr>
 --- p 123-123
-<p>Next: <a href="data-notebook.md">Ninety days of Sound data</a> · <a href="README.md">Start here</a></p>
+<p dir="auto">Next: <a href="data-notebook.md">Ninety days of Sound data</a> · <a href="README.md">Start here</a></p>
 --- section 115-115
 <section class="footnotes" data-footnotes="">
 <ol>
-<li id="fn-scale">
-<p>Seawater pH is reported on the total scale, which counts free hydrogen ions plus those paired with sulfate. Our sensors report total-scale pH, so every pH on this page and in the <a href="tidewell-api.md">open data API</a> is on the same scale. <a aria-label="Back to reference 1" class="footnote-backref" data-footnote-backref-idx="1" data-footnote-backref="" href="#fnref-scale">↩</a></p>
+<li dir="auto" id="fn-scale">
+<p dir="auto">Seawater pH is reported on the total scale, which counts free hydrogen ions plus those paired with sulfate. Our sensors report total-scale pH, so every pH on this page and in the <a href="tidewell-api.md">open data API</a> is on the same scale. <a aria-label="Back to reference 1" class="footnote-backref" data-footnote-backref-idx="1" data-footnote-backref="" href="#fnref-scale">↩</a></p>
 </li>
-<li id="fn-omega">
-<p>Ω needs two measured parts of the carbonate system. We measure pH, estimate total alkalinity from salinity, and compute Ω with the standard equilibrium constants for seawater. Read the result as good to about ±0.2. <a aria-label="Back to reference 2" class="footnote-backref" data-footnote-backref-idx="2" data-footnote-backref="" href="#fnref-omega">↩</a></p>
+<li dir="auto" id="fn-omega">
+<p dir="auto">Ω needs two measured parts of the carbonate system. We measure pH, estimate total alkalinity from salinity, and compute Ω with the standard equilibrium constants for seawater. Read the result as good to about ±0.2. <a aria-label="Back to reference 2" class="footnote-backref" data-footnote-backref-idx="2" data-footnote-backref="" href="#fnref-omega">↩</a></p>
 </li>
-<li id="fn-hs">
-<p>Real seas mix many waves of different heights. Our buoys report the significant wave height <span data-math-style="inline">H_s</span>, and the mean energy of such a sea is <span data-math-style="inline">E = \rho g H_s^2/16</span>. Gannet Point's week-46 <span data-math-style="inline">H_s</span> of 1.4 m works out to about 1.2 kJ/m². <a aria-label="Back to reference 3" class="footnote-backref" data-footnote-backref-idx="3" data-footnote-backref="" href="#fnref-hs">↩</a></p>
+<li dir="auto" id="fn-hs">
+<p dir="auto">Real seas mix many waves of different heights. Our buoys report the significant wave height <span data-math-style="inline">H_s</span>, and the mean energy of such a sea is <span data-math-style="inline">E = \rho g H_s^2/16</span>. Gannet Point's week-46 <span data-math-style="inline">H_s</span> of 1.4 m works out to about 1.2 kJ/m². <a aria-label="Back to reference 3" class="footnote-backref" data-footnote-backref-idx="3" data-footnote-backref="" href="#fnref-hs">↩</a></p>
 </li>
 </ol>
 </section>

@@ -2,39 +2,39 @@ div.reading
   div.doc-column
     article.md
       div.md-body role="document"
-        h1 id="heading-one"
+        h1 id="heading-one" dir="auto"
           a.anchor href="#heading-one" aria-label="Link to Heading one"
             "#"
           "Heading one"
-        h2 id="heading-two"
+        h2 id="heading-two" dir="auto"
           a.anchor href="#heading-two" aria-label="Link to Heading two"
             "#"
           "Heading two"
-        h3 id="heading-three"
+        h3 id="heading-three" dir="auto"
           a.anchor href="#heading-three" aria-label="Link to Heading three"
             "#"
           "Heading three"
-        h4 id="heading-four"
+        h4 id="heading-four" dir="auto"
           a.anchor href="#heading-four" aria-label="Link to Heading four"
             "#"
           "Heading four"
-        h5 id="heading-five"
+        h5 id="heading-five" dir="auto"
           a.anchor href="#heading-five" aria-label="Link to Heading five"
             "#"
           "Heading five"
-        h6 id="heading-six"
+        h6 id="heading-six" dir="auto"
           a.anchor href="#heading-six" aria-label="Link to Heading six"
             "#"
           "Heading six"
-        h1 id="setext-heading"
+        h1 id="setext-heading" dir="auto"
           a.anchor href="#setext-heading" aria-label="Link to Setext heading"
             "#"
           "Setext heading"
-        h2 id="setext-second-level"
+        h2 id="setext-second-level" dir="auto"
           a.anchor href="#setext-second-level" aria-label="Link to Setext second level"
             "#"
           "Setext second level"
-        p
+        p dir="auto"
           "A paragraph with"
           em
             "emphasis"
@@ -64,73 +64,73 @@ div.reading
           a href="https://example.org/docs"
             "https://example.org/docs"
           ". Escapes: *not emphasis*, `not code`, 5 < 6 & 7 > 3."
-        p
+        p dir="auto"
           "A hard break ends this line"
           br
           "and a backslash break ends this one"
           br
           "and the paragraph goes on."
-        p.pm-wide
+        p.pm-wide dir="auto"
           img src="/@permark-deep/project/corpus/assets/square.svg" alt="A small square picture" title="Square"
-        p
+        p dir="auto"
           audio src="/@permark-deep/project/corpus/assets/tone.wav" controls
         blockquote
-          p
+          p dir="auto"
             "A quote with"
             strong
               "strong"
             "text."
           blockquote
-            p
+            p dir="auto"
               "A nested quote, with a list:"
             ul
-              li
+              li dir="auto"
                 "one"
-              li
+              li dir="auto"
                 "two"
         ol
-          li
-            p
+          li dir="auto"
+            p dir="auto"
               "First"
-          li
-            p
+          li dir="auto"
+            p dir="auto"
               "Second"
             ol
-              li
+              li dir="auto"
                 "Nested first"
-              li
+              li dir="auto"
                 "Nested second"
                 ul
-                  li
+                  li dir="auto"
                     "deeper bullet"
-          li
-            p
+          li dir="auto"
+            p dir="auto"
               "Third"
-          li
-            p
+          li dir="auto"
+            p dir="auto"
               "A list that starts at seven"
-          li
-            p
+          li dir="auto"
+            p dir="auto"
               "and goes on"
         ul.contains-task-list
-          li
-            p
+          li dir="auto"
+            p dir="auto"
               "Bullet continued on a lazy line"
-          li
-            p
+          li dir="auto"
+            p dir="auto"
               "Bullet with a paragraph"
-            p
+            p dir="auto"
               "that has a second paragraph."
-          li.task-list-item
+          li.task-list-item dir="auto"
             input.task-list-item-checkbox aria-label="An open task" disabled
-            p
+            p dir="auto"
               "An open task"
-          li.task-list-item.is-done
+          li.task-list-item.is-done dir="auto"
             input.task-list-item-checkbox aria-label="A finished task" checked disabled
-            p
+            p dir="auto"
               "A finished task"
             ul.contains-task-list
-              li.task-list-item
+              li.task-list-item dir="auto"
                 input.task-list-item-checkbox aria-label="A nested task" disabled
                 "A nested task"
         hr
@@ -145,9 +145,9 @@ div.reading
             "First definition."
           dd
             "Second definition.an indented code block with two lines"
-        p
+        p dir="auto"
           "HTML entities: © — → 🌊 &amp;"
-        p
+        p dir="auto"
           "A footnote reference"
           sup.footnote-ref
             a href="#fn-first" id="fnref-first"
@@ -159,13 +159,13 @@ div.reading
           "."
         section.footnotes
           ol
-            li id="fn-first"
-              p
+            li id="fn-first" dir="auto"
+              p dir="auto"
                 "The first footnote."
                 a.footnote-backref href="#fnref-first" aria-label="Back to reference 1"
                   "↩"
-            li id="fn-long-note"
-              p
+            li id="fn-long-note" dir="auto"
+              p dir="auto"
                 "A footnote with"
                 code
                   "code"

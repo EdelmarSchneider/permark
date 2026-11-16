@@ -2,16 +2,16 @@ div.reading
   div.doc-column
     article.md
       div.md-body role="document"
-        h1 id="saved-with-cr-lf"
+        h1 id="saved-with-cr-lf" dir="auto"
           a.anchor href="#saved-with-cr-lf" aria-label="Link to Saved with CR LF"
             "#"
           "Saved with CR LF"
-        p
+        p dir="auto"
           "Every line of this file ends with CR LF. A second line of the same paragraph."
         ul
-          li
+          li dir="auto"
             "a list item"
-          li
+          li dir="auto"
             "another item"
         div.code-block
           pre
@@ -27,13 +27,13 @@ div.reading
           table
             thead
               tr
-                th
+                th dir="auto"
                   "a"
-                th
+                th dir="auto"
                   "b"
             tbody
               tr
-                td
+                td dir="auto"
                   "1"
-                td
+                td dir="auto"
                   "2"

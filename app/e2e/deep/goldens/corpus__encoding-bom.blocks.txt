@@ -2,6 +2,6 @@
 format: markdown
 outline: Starts with a BOM (line 1)
 --- h1 1-1
-<h1 id="starts-with-a-bom">Starts with a BOM</h1>
+<h1 dir="auto" id="starts-with-a-bom">Starts with a BOM</h1>
 --- p 3-3
-<p>The file begins with the UTF-8 byte order mark; the heading above must not show it.</p>
+<p dir="auto">The file begins with the UTF-8 byte order mark; the heading above must not show it.</p>

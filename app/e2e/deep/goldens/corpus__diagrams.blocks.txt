@@ -2,7 +2,7 @@
 format: markdown
 outline: Diagrams (line 1)
 --- h1 1-1
-<h1 id="diagrams">Diagrams</h1>
+<h1 dir="auto" id="diagrams">Diagrams</h1>
 --- pre 3-8
 <pre><code class="language-mermaid">flowchart LR
   A[Sensor] --&gt; B{Valid?}
@@ -17,7 +17,7 @@ outline: Diagrams (line 1)
   G--&gt;&gt;B: ack
 </code></pre>
 --- p 18-18
-<p>A Mermaid diagram with a syntax error:</p>
+<p dir="auto">A Mermaid diagram with a syntax error:</p>
 --- pre 20-24
 <pre><code class="language-mermaid">flowchart LR
   A[Open bracket --&gt; B
@@ -31,7 +31,7 @@ App --&gt; Person : shows it
 @enduml
 </code></pre>
 --- p 34-34
-<p>A PlantUML diagram with a syntax error:</p>
+<p dir="auto">A PlantUML diagram with a syntax error:</p>
 --- pre 36-40
 <pre><code class="language-plantuml">@startuml
 this is -&gt; -&gt; not valid ::: plantuml
@@ -45,7 +45,7 @@ this is -&gt; -&gt; not valid ::: plantuml
 }
 </code></pre>
 --- p 50-50
-<p>A Graphviz diagram with a syntax error:</p>
+<p dir="auto">A Graphviz diagram with a syntax error:</p>
 --- pre 52-56
 <pre><code class="language-dot">digraph G {
   a -&gt; ;

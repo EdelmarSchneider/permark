@@ -34,18 +34,18 @@ div.reading
               span.chip
                 "petrel"
       div.md-body role="document"
-        h1 id="moqueca-for-twelve"
+        h1 id="moqueca-for-twelve" dir="auto"
           a.anchor href="#moqueca-for-twelve" aria-label="Link to Moqueca for twelve"
             "#"
           "Moqueca for twelve"
-        p
+        p dir="auto"
           "A Bahian fish stew of coconut milk, tomatoes and red palm oil, cooked in one big pot on the"
           em
             "Petrel"
           "'s two-burner stove. It feeds the whole crew, forgives a rolling sea, and tastes like home."
-        p.pm-wide align="center"
+        p.pm-wide align="center" dir="auto"
           img src="/@permark-deep/project/demo/assets/moqueca-pot.svg" alt="A wide clay pot of moqueca with tomato slices and cilantro, steam rising, a whol…"
-        p
+        p dir="auto"
           span.emoji title=":fish:"
             "🐟"
           span.emoji title=":tomato:"
@@ -60,21 +60,21 @@ div.reading
           em
             "Petrel"
           "never sails without."
-        h2 id="why-this-at-sea"
+        h2 id="why-this-at-sea" dir="auto"
           a.anchor href="#why-this-at-sea" aria-label="Link to Why this, at sea"
             "#"
           "Why this, at sea"
-        p
+        p dir="auto"
           "On the"
           em
             "Petrel"
           ", dinner is the one hour when nobody watches a sensor. A moqueca suits a small galley: one pot, no oven, nothing to fry, and nobody minds if it waits half an ho…"
-        p
+        p dir="auto"
           "I learned it from my grandmother, who never measured anything. These amounts are my best guess at her handfuls, tested on twelve hungry people during the Octobe…"
           a href="field-journal.md"
             "Nine Days on the Petrel"
           ")."
-        h2 id="ingredients"
+        h2 id="ingredients" dir="auto"
           a.anchor href="#ingredients" aria-label="Link to Ingredients"
             "#"
           "Ingredients"
@@ -82,97 +82,97 @@ div.reading
           table
             thead
               tr
-                th
+                th dir="auto"
                   "Ingredient"
-                th align="right"
+                th align="right" dir="auto"
                   "For 4"
-                th align="right"
+                th align="right" dir="auto"
                   "For 12"
-                th
+                th dir="auto"
                   "Note"
             tbody
               tr
-                td
+                td dir="auto"
                   "Firm white fish"
-                td align="right"
+                td align="right" dir="auto"
                   "800 g"
-                td align="right"
+                td align="right" dir="auto"
                   "2.4 kg"
-                td
+                td dir="auto"
                   "Thick steaks hold together best"
               tr
-                td
+                td dir="auto"
                   "Limes"
-                td align="right"
+                td align="right" dir="auto"
                   "2"
-                td align="right"
+                td align="right" dir="auto"
                   "6"
-                td
+                td dir="auto"
                   "Juice, for the marinade"
               tr
-                td
+                td dir="auto"
                   "Garlic"
-                td align="right"
+                td align="right" dir="auto"
                   "3 cloves"
-                td align="right"
+                td align="right" dir="auto"
                   "9 cloves"
-                td
+                td dir="auto"
                   "Crushed with the salt"
               tr
-                td
+                td dir="auto"
                   "Onions"
-                td align="right"
+                td align="right" dir="auto"
                   "1"
-                td align="right"
+                td align="right" dir="auto"
                   "3"
-                td
+                td dir="auto"
                   "Thin rings"
               tr
-                td
+                td dir="auto"
                   "Tomatoes"
-                td align="right"
+                td align="right" dir="auto"
                   "3"
-                td align="right"
+                td align="right" dir="auto"
                   "9"
-                td
+                td dir="auto"
                   "Ripe, sliced in rounds"
               tr
-                td
+                td dir="auto"
                   "Bell peppers"
-                td align="right"
+                td align="right" dir="auto"
                   "2"
-                td align="right"
+                td align="right" dir="auto"
                   "6"
-                td
+                td dir="auto"
                   "Red and yellow, in rings"
               tr
-                td
+                td dir="auto"
                   "Coconut milk"
-                td align="right"
+                td align="right" dir="auto"
                   "400 mL"
-                td align="right"
+                td align="right" dir="auto"
                   "1.2 L"
-                td
+                td dir="auto"
                   "Full fat"
               tr
-                td
+                td dir="auto"
                   "Dendê oil"
-                td align="right"
+                td align="right" dir="auto"
                   "2 tbsp"
-                td align="right"
+                td align="right" dir="auto"
                   "6 tbsp"
-                td
+                td dir="auto"
                   "Red palm oil"
                   sup.footnote-ref
                     a href="#fn-dende" id="fnref-dende"
                       "1"
-        p
+        p dir="auto"
           "You also need a big bunch of cilantro for every four people, one fresh malagueta or other hot chili, a splash of olive oil, and salt."
-        h2 id="scaling"
+        h2 id="scaling" dir="auto"
           a.anchor href="#scaling" aria-label="Link to Scaling"
             "#"
           "Scaling"
-        p
+        p dir="auto"
           "Every amount in the table follows one rule,"
           span data-math-style="inline"
             katex tex="q_{12} = 3\,q_4"
@@ -181,69 +181,69 @@ div.reading
             a href="#fn-salt" id="fnref-salt"
               "2"
           "."
-        h2 id="method"
+        h2 id="method" dir="auto"
           a.anchor href="#method" aria-label="Link to Method"
             "#"
           "Method"
         ol
-          li
+          li dir="auto"
             strong
               "Marinate the fish."
             ol
-              li
+              li dir="auto"
                 "Cut it into thick steaks or chunks about 5 cm across."
-              li
+              li dir="auto"
                 "Rub with the lime juice, crushed garlic and a little salt."
-              li
+              li dir="auto"
                 "Leave it in the cool box for 20 to 30 minutes while you slice everything else."
-          li
+          li dir="auto"
             strong
               "Slice the vegetables."
             ol
-              li
+              li dir="auto"
                 "Onions and peppers in thin rings, tomatoes in rounds."
-              li
+              li dir="auto"
                 "Chop the cilantro, stems and all, and keep a handful of leaves for the end."
-          li
+          li dir="auto"
             strong
               "Build the layers"
             "in a wide, heavy pot, off the heat."
             ol
-              li
+              li dir="auto"
                 "A splash of olive oil, then half the onions, tomatoes and peppers."
-              li
+              li dir="auto"
                 "The fish in a single layer, with its marinade."
-              li
+              li dir="auto"
                 "The rest of the vegetables, half the cilantro and the chili."
-          li
+          li dir="auto"
             strong
               "Pour in the coconut milk"
             "and drizzle the dendê over the top."
-          li
+          li dir="auto"
             strong
               "Cook covered"
             "over medium heat for 20 to 25 minutes, until the fish flakes."
             ol
-              li
+              li dir="auto"
                 "Do not stir. Shake the pot gently now and then so nothing sticks."
-              li
+              li dir="auto"
                 "At sea, clamp the pot in the stove's fiddle rails before you light the burner."
-          li
+          li dir="auto"
             strong
               "Finish."
             "Taste the broth, adjust the salt and lime, scatter the last of the cilantro, and let it rest off the heat for 5 minutes."
-        p
+        p dir="auto"
           "Serve with white rice and farofa, cassava flour toasted in butter."
         div.markdown-alert.markdown-alert-note
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "Chef's note"
-          p
+          p dir="auto"
             "A moqueca is never stirred. The layers cook in their own steam, so the fish stays in whole pieces. If the"
             em
               "Petrel"
             "rolls hard, take the pot off the heat and wait it out: a moqueca that rests is a better moqueca."
-        h2 id="swaps"
+        h2 id="swaps" dir="auto"
           a.anchor href="#swaps" aria-label="Link to Swaps"
             "#"
           "Swaps"
@@ -251,36 +251,36 @@ div.reading
           summary
             "Swaps for a short-stocked galley"
           ul
-            li
+            li dir="auto"
               strong
                 "No dendê:"
               "olive oil with a teaspoon of sweet paprika gives the color, though not the flavor."
-            li
+            li dir="auto"
               strong
                 "Shrimp instead of fish:"
               "add peeled shrimp for the last 5 minutes only, or they turn rubbery."
-            li
+            li dir="auto"
               strong
                 "No fish at all:"
               "ripe plantain and hearts of palm make a lovely"
               em
                 "moqueca de banana-da-terra"
               "."
-            li
+            li dir="auto"
               strong
                 "No cilantro:"
               "parsley and scallions, the"
               em
                 "cheiro-verde"
               "of much of Brazil."
-            li
+            li dir="auto"
               del
                 "Coconut cream"
               strong
                 "Coconut milk:"
               "our first version used cream, and on a warm day at sea it was far too heavy."
         hr
-        p
+        p dir="auto"
           "Next:"
           a href="field-journal.md"
             "Nine Days on the Petrel"
@@ -289,13 +289,13 @@ div.reading
             "Start here"
         section.footnotes
           ol
-            li id="fn-dende"
-              p
+            li id="fn-dende" dir="auto"
+              p dir="auto"
                 "Dendê is unrefined oil from the fruit of the African oil palm. It came to Brazil with enslaved West Africans and is at the heart of Afro-Bahian cooking. It give…"
                 a.footnote-backref href="#fnref-dende" aria-label="Back to reference 1"
                   "↩"
-            li id="fn-salt"
-              p
+            li id="fn-salt" dir="auto"
+              p dir="auto"
                 "Salt is seasoned to taste, not by arithmetic. A pot of the same shape with three times the volume has only about twice the surface ("
                 span data-math-style="inline"
                   katex tex="3^{2/3} \approx 2.08"
