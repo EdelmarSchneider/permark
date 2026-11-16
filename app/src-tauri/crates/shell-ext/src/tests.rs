@@ -37,6 +37,9 @@ fn labels_follow_the_language_not_the_region() {
     assert_eq!(open(&["vi-VN"]), "Mở bằng PerMark");
     assert_eq!(open(&["ru-RU"]), "Открыть с помощью PerMark");
     assert_eq!(open(&["tr-TR"]), "PerMark ile aç");
+    assert_eq!(open(&["pl-PL"]), "Otwórz w PerMark");
+    assert_eq!(open(&["uk-UA", "ru-RU"]), "Відкрити в PerMark");
+    assert_eq!(new(&["uk_RU"]), "Новий файл Markdown у PerMark");
     assert_eq!(open(&["sv-SE"]), "Open with PerMark");
     assert_eq!(open(&[]), "Open with PerMark");
     assert_eq!(open(&["", "-", "_x"]), "Open with PerMark");

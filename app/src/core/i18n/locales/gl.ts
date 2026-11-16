@@ -411,6 +411,8 @@ export default {
   "structured.tree": "Árbore",
   "structured.source": "Fonte",
   "structured.invalid": "Isto non é válido, así que se mostra como texto.",
+  "structured.expandAll": "Expandir todo",
+  "structured.collapseAll": "Contraer todo",
   "jsonl.empty": "Este ficheiro non ten rexistros.",
   "jsonl.invalid": "A liña {line} non é un valor JSON (detívose no carácter {at}).",
   "jsonl.jump": "Ir ao rexistro",

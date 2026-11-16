@@ -402,6 +402,8 @@ const en = {
   "structured.tree": "Tree",
   "structured.source": "Source",
   "structured.invalid": "This isn't valid, so it is shown as text.",
+  "structured.expandAll": "Expand all",
+  "structured.collapseAll": "Collapse all",
   "jsonl.empty": "No records in this file.",
   "jsonl.invalid": "Line {line} is not one JSON value (stopped at character {at}).",
   "jsonl.jump": "Go to record",

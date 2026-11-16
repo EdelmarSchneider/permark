@@ -20,7 +20,7 @@ describe("bundled Inter subsets", () => {
     expect(interFiles).toEqual(["cyrillic-ext", "cyrillic", "vietnamese", "latin-ext", "latin"]);
   });
 
-  it("draw Cyrillic and Vietnamese letters with Inter", () => {
+  it("draw Cyrillic, Vietnamese, Polish and Ukrainian letters with Inter", () => {
     const ranges = fonts.split("@font-face").filter((face) => face.includes('"Inter Variable"'));
     const covers = (code: number): boolean =>
       ranges.some((face) =>
@@ -32,7 +32,10 @@ describe("bundled Inter subsets", () => {
           ([, from = "", to]) => code >= parseInt(from, 16) && code <= parseInt(to ?? from, 16),
         ),
       );
-    for (const letter of ["Ж", "я", "Ґ", "ư", "ộ", "đ", "₫"]) {
+    const polish = ["ą", "ć", "ę", "ł", "Ł", "ń", "ó", "ś", "ź", "ż", "Ż"];
+    // Ukrainian letters Russian lacks, the apostrophe-like modifier letter and the hryvnia sign
+    const ukrainian = ["ґ", "Ґ", "є", "Є", "і", "І", "ї", "Ї", "ʼ", "₴"];
+    for (const letter of ["Ж", "я", "ư", "ộ", "đ", "₫", ...polish, ...ukrainian]) {
       expect(covers(letter.codePointAt(0) ?? 0), letter).toBe(true);
     }
   });

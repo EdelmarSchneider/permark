@@ -13,7 +13,9 @@
     MAX_HELD_CHARS,
     type Held,
   } from "../../core/doc/largeText";
+  import SpreadButtons from "../../core/doc/SpreadButtons.svelte";
   import TreeRow from "../../core/doc/TreeRow.svelte";
+  import { nextAsk, spreadOf, type Ask } from "../../core/doc/tree";
   import { t } from "../../core/i18n";
   import type { ViewerProps } from "../../core/plugins/props";
   import { untrack } from "svelte";
@@ -42,6 +44,8 @@
   let chosen = $state<Mode>("tree");
   /** String values as interpreted text. Starts off; not kept across a remount. */
   let plain = $state(false);
+  /** The last "Expand all" | "Collapse all", for every record; before one, each small record opens fully. */
+  let ask = $state<Ask | null>(null);
   let query = $state("");
   let top = $state(0);
   let visible = $state(BUFFER * 2);
@@ -272,6 +276,9 @@
     <button type="button" class="interpret" aria-pressed={plain} onclick={() => (plain = !plain)}>
       {t("json.interpret")}
     </button>
+    {#if chosen === "tree"}
+      <SpreadButtons onask={(open) => (ask = nextAsk(ask, open))} />
+    {/if}
     <form
       class="jump"
       onsubmit={(event) => {
@@ -311,7 +318,12 @@
             <span class="index">{item.index}</span>
             {#if item.parsed.ok}
               <div class="tree" role="tree">
-                <TreeRow node={item.parsed.root} depth={0} open {plain} />
+                <TreeRow
+                  node={item.parsed.root}
+                  depth={0}
+                  spread={spreadOf(item.parsed.root, ask)}
+                  {plain}
+                />
               </div>
             {:else}
               <p class="fail">{t("jsonl.invalid", { line: item.line, at: item.parsed.at + 1 })}</p>

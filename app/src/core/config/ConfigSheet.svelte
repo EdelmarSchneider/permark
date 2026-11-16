@@ -9,8 +9,11 @@
   import Lock from "@lucide/svelte/icons/lock";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash from "@lucide/svelte/icons/trash";
+  import { untrack } from "svelte";
   import type { ConfigEdit, Group, NewValue, Row, Scalar, Sheet, Table } from "../../api";
+  import SpreadButtons from "../doc/SpreadButtons.svelte";
   import { t, tn } from "../i18n";
+  import { cardKey, foldsOf, isHeaded } from "./folds";
   import { reasonKey, refusalKey } from "./reasons";
   import SheetTable from "./SheetTable.svelte";
   import SheetValue from "./SheetValue.svelte";
@@ -33,6 +36,9 @@
     capped?: boolean;
     /** A card for readers (a document's front matter): values shown as View's card shows them. */
     card?: boolean;
+    /** A whole document: "Expand all" | "Collapse all" above the cards, and a big sheet opens with only the leading
+     * cards that fit (else every card opens). */
+    spread?: boolean;
   };
   let {
     sheet,
@@ -45,9 +51,13 @@
     matches = null,
     capped = false,
     card = false,
+    spread = false,
   }: Props = $props();
 
-  let folded = $state.raw<ReadonlySet<string>>(new Set());
+  // How the sheet first opens; later sheets of the same document (an edit's answer) keep the person's folds.
+  let folded = $state.raw<ReadonlySet<string>>(
+    untrack(() => (spread ? foldsOf(sheet, null) : new Set())),
+  );
   /** The row an "add below" field is open under (`""`: the end of the list), and its text. */
   let adding = $state<string | null>(null);
   let addText = $state("");
@@ -62,7 +72,7 @@
   let newKey = $state("");
   let newValue = $state("");
   let dataRefusal = $state<{ at: string; word: string } | null>(null);
-  const headed = $derived(sheet.groups.length > 1 || sheet.groups.some((g) => g.title !== ""));
+  const headed = $derived(isHeaded(sheet));
 
   function toggle(set: ReadonlySet<string>, key: string): ReadonlySet<string> {
     const next = new Set(set);
@@ -70,8 +80,6 @@
     else next.add(key);
     return next;
   }
-
-  const groupKey = (group: Group): string => `${group.path}@${group.line}`;
 
   /** `services.web` -> the part before the last dot, and the last part. */
   function split(title: string): [string, string] {
@@ -253,8 +261,13 @@
 {/snippet}
 
 <div class="sheet" data-kind={sheet.kind} aria-label={t("config.sheet")} role="group">
-  {#each sheet.groups as group (groupKey(group))}
-    {@const open = !folded.has(groupKey(group))}
+  {#if spread && headed}
+    <div class="bar">
+      <SpreadButtons onask={(open) => (folded = foldsOf(sheet, open))} />
+    </div>
+  {/if}
+  {#each sheet.groups as group (cardKey(group))}
+    {@const open = !folded.has(cardKey(group))}
     {@const [parent, last] = split(group.title)}
     {@const table = tableOf(group)}
     <section class="card">
@@ -267,7 +280,7 @@
             aria-label={t("config.fold", {
               name: group.title === "" ? t("config.root") : group.title,
             })}
-            onclick={() => (folded = toggle(folded, groupKey(group)))}
+            onclick={() => (folded = toggle(folded, cardKey(group)))}
           >
             {#if open}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}
           </button>
@@ -501,6 +514,11 @@
     margin: 0 auto;
     padding: var(--sp-4) var(--sp-5) var(--sp-7);
     font: var(--fs-ui) / 1.5 var(--font-ui);
+  }
+  .bar {
+    display: flex;
+    align-items: center;
+    min-height: 28px;
   }
   .card {
     border: 1px solid var(--border);

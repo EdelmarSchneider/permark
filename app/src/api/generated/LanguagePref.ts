@@ -3,4 +3,4 @@
 /**
  * Interface language: the system's, or one of the app's (`LOCALES` in `app/src/core/i18n/locales.ts`).
  */
-export type LanguagePref = "system" | "en" | "pt-BR" | "es" | "de" | "zh-CN" | "it" | "ja" | "ko" | "fr" | "pt-PT" | "ca" | "gl" | "ro" | "zh-TW" | "id" | "vi" | "ru" | "tr";
+export type LanguagePref = "system" | "en" | "pt-BR" | "es" | "de" | "zh-CN" | "it" | "ja" | "ko" | "fr" | "pt-PT" | "ca" | "gl" | "ro" | "zh-TW" | "id" | "vi" | "ru" | "tr" | "pl" | "uk";

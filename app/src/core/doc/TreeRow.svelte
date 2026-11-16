@@ -3,22 +3,25 @@
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import { t } from "../i18n";
   import TreeRow from "./TreeRow.svelte";
-  import { CHUNK, shownSummary, type TreeNode } from "./tree";
+  import { CHUNK, shownSummary, type Spread, type TreeNode } from "./tree";
 
-  type Props = { node: TreeNode; depth: number; open?: boolean; plain?: boolean };
-  let { node, depth, open = false, plain = false }: Props = $props();
+  type Props = { node: TreeNode; depth: number; spread: Spread; plain?: boolean };
+  let { node, depth, spread, plain = false }: Props = $props();
 
-  /** The person's choice; until then the row follows `open`. */
-  let choice = $state<boolean | null>(null);
+  /** The person's toggle, for the ask it was made under; a later ask wins over it. */
+  let choice = $state<{ open: boolean; at: number } | null>(null);
   let shown = $state(CHUNK);
 
-  const isOpen = $derived(node.children !== null && (choice ?? open));
+  const asked = $derived(
+    choice !== null && choice.at === spread.at ? choice.open : depth < spread.depth,
+  );
+  const isOpen = $derived(node.children !== null && asked);
   const summary = $derived(shownSummary(node, plain));
   // made when the row is open (the first time, and again after a close: cheap, and a big file keeps no copy)
   const children = $derived(isOpen && node.children !== null ? node.children() : []);
 
   function toggle(): void {
-    if (node.children !== null) choice = !isOpen;
+    if (node.children !== null) choice = { open: !isOpen, at: spread.at };
   }
 </script>
 
@@ -39,7 +42,7 @@
   {#if isOpen}
     <div class="children">
       {#each children.slice(0, shown) as child, at (at)}
-        <TreeRow node={child} depth={depth + 1} {plain} />
+        <TreeRow node={child} depth={depth + 1} {spread} {plain} />
       {/each}
       {#if children.length > shown}
         <button type="button" class="more" onclick={() => (shown += CHUNK)}>
