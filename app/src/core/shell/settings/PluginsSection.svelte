@@ -79,7 +79,7 @@
   <p class="intro">{t("plugins.intro")}</p>
   {#each groups as group (group.kind)}
     <section class="group" aria-labelledby={`plugins-${group.kind}`}>
-      <h3 id={`plugins-${group.kind}`}>{t(kindKey(group.kind))}</h3>
+      <h4 id={`plugins-${group.kind}`}>{t(kindKey(group.kind))}</h4>
       <Card>
         {#each group.plugins as info (info.manifest.id)}
           {@const id = info.manifest.id}
@@ -159,7 +159,7 @@
   .group + .group {
     margin-top: var(--sp-5);
   }
-  h3 {
+  h4 {
     margin: 0 0 var(--sp-2);
     padding-left: var(--sp-1);
     color: var(--muted);

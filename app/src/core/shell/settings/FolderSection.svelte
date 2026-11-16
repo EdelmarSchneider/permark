@@ -47,7 +47,7 @@
     {@const card = projects.view.rootCard}
     <!-- the opened folder's own card (it holds projects: its name shows where they are listed) -->
     <section class="root-card" aria-labelledby="proj-card">
-      <h3 id="proj-card">{t("projects.card.title")}</h3>
+      <h4 id="proj-card">{t("projects.card.title")}</h4>
       <Card>
         <div class="card-body">
           {#await cardFields() then fields}
@@ -85,7 +85,7 @@
   .card-body {
     padding: var(--sp-3) var(--sp-4);
   }
-  h3 {
+  h4 {
     margin: 0 0 var(--sp-2);
     padding-left: var(--sp-1);
     color: var(--muted);

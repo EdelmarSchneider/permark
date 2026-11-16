@@ -300,6 +300,27 @@ describe("the settings page", () => {
     press(document.activeElement!, "ArrowDown");
     await tick();
     expect(document.activeElement?.textContent?.trim()).toBe("Overview");
+    // Home | End: the first | last section of the list
+    press(document.activeElement!, "End");
+    await tick();
+    expect(document.activeElement?.textContent?.trim()).toBe("Plugins here");
+    press(document.activeElement!, "Home");
+    await tick();
+    expect(document.activeElement?.textContent?.trim()).toBe("Reading");
+    expect(target.querySelector("h3.title")?.textContent).toBe("Reading");
+  });
+
+  it("the group names show only while there are two groups (no folder: no App label)", async () => {
+    await open();
+    mountPage("reading");
+    expect(target.querySelectorAll(".nav-label")).toHaveLength(2);
+    await unmount(component!);
+    component = null;
+    await toWelcome();
+    await until(() => store.view.state === "welcome", "welcome");
+    mountPage("reading");
+    expect(groups().map(([name]) => name)).toEqual(["App"]);
+    expect(target.querySelectorAll(".nav-label")).toHaveLength(0);
   });
 
   it("Editing: a refused editor command is said in words, a good one is kept with its preview", async () => {
@@ -361,7 +382,7 @@ describe("the settings page", () => {
     );
     mountPage("integration");
     const shown = () =>
-      Array.from(target.querySelectorAll("section.group h3")).map((h) => h.textContent?.trim());
+      Array.from(target.querySelectorAll("section.group h4")).map((h) => h.textContent?.trim());
     // plugin sections arrive as their plugins activate, in no fixed order: wait for the ones checked below
     const expected = ["File manager", "Updates", "Git", "Notes"];
     await until(
@@ -408,7 +429,7 @@ describe("the plugins page", () => {
   it("every plugin is listed once, grouped by kind, with its switch on", async () => {
     await pluginsPage();
     expect(target.querySelectorAll(".plugin")).toHaveLength(41);
-    const groups = Array.from(target.querySelectorAll("section.group h3")).map(
+    const groups = Array.from(target.querySelectorAll("section.group h4")).map(
       (h) => h.textContent,
     );
     expect(groups).toEqual([
@@ -501,7 +522,7 @@ describe("the plugins page", () => {
     await pluginsPage();
     expect(row("Comments").querySelector("select")).toBeNull();
     await mock.pluginSetProject("comments", false);
-    await until(() => /Off in this project/.test(statusOf("Comments")), "off here");
+    await until(() => /Off in this folder/.test(statusOf("Comments")), "off here");
     // the app's switch is untouched; the plugin is not offered for data removal
     expect(switchOf("Comments").checked).toBe(true);
     expect(row("Comments").textContent).not.toContain("Remove data");
@@ -567,7 +588,7 @@ describe("plugins here", () => {
     pick("comments", "off");
     await vi.waitFor(async () => expect((await info("comments")).choice).toBe(false));
     await until(() => chipOf("comments") === "you", "the chip says Only you");
-    expect(rowOf("comments").textContent).toContain("Off in this project.");
+    expect(rowOf("comments").textContent).toContain("Off in this folder.");
     pick("comments", "app");
     await until(() => chipOf("comments") === null, "follows the app again");
     expect((await info("comments")).choice).toBeNull();
@@ -592,6 +613,26 @@ describe("plugins here", () => {
     expect(await info("comments")).toEqual({ choice: null, teamOff: false });
     expect(chipOf("comments")).toBeNull();
   });
+
+  it("a refused Off for everyone says why and the box shows the choice still in force", async () => {
+    await open();
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    await herePage();
+    const refuse = vi.spyOn(mock, "projectConfigSet").mockResolvedValueOnce({
+      ok: false,
+      error: {
+        kind: "backend",
+        command: "project_config_set",
+        error: { kind: "invalidData", subject: "pluginOff", detail: "denied" },
+      },
+    });
+    pick("comments", "offEveryone");
+    await until(() => rowOf("comments").querySelector(".problem") !== null, "says why");
+    await until(() => select("comments")?.value === "app", "back on the choice in force");
+    expect((await info("comments")).teamOff).toBe(false);
+    refuse.mockRestore();
+  });
 });
 
 describe("the project settings and Initialize PerMark", () => {
@@ -608,7 +649,9 @@ describe("the project settings and Initialize PerMark", () => {
     expect(target.textContent).not.toMatch(/not initialized/);
     // the folder's files live in their own section
     expect(target.querySelector(".list")).toBeNull();
-    byText("button", "Initialize PerMark").click();
+    const init = byText("button", "Initialize PerMark");
+    init.focus();
+    init.click();
     expect(ui.initDialog.status).toBe("asking");
     await confirmInit(MOCK_FOLDER);
     await until(() => conditions.current.permark === "initialized", "initialized");
@@ -617,6 +660,11 @@ describe("the project settings and Initialize PerMark", () => {
       "the offer gone",
     );
     expect(ui.initDialog.status).toBe("closed");
+    // the button that had the keyboard is gone with the offer: the section's heading takes it, not the body
+    await until(
+      () => document.activeElement === target.querySelector("h3.title"),
+      "on the heading",
+    );
   });
 
   it("Files, not initialized: the shared rows show greyed and do nothing until the person sets PerMark up", async () => {
@@ -716,7 +764,7 @@ describe("the project settings and Initialize PerMark", () => {
     expect(target.querySelector("h3.title")?.textContent).toBe("Files");
     const content = target.querySelector(".content")?.textContent ?? "";
     expect(content).not.toContain("Groups agents never get here");
-    expect(content).not.toContain("Tokenizers for this project");
+    expect(content).not.toContain("Tokenizers for this folder");
   });
 
   it("a plugin key the folder's file sets is said on the app row it does not change, in a quiet line", async () => {

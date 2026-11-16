@@ -1458,7 +1458,7 @@ export default {
   "agent.group.notes": "Llegir les notes que compartiu",
   "agent.group.show": "Mostrar-vos un lloc",
   "agent.group.activity": "Veure què heu fet des de l'últim traspàs",
-  "agent.denied": "Desactivat per la configuració d'aquest projecte",
+  "agent.denied": "Desactivat per la configuració d'aquesta carpeta",
   "agent.defaults": "Utilitza aquestes opcions per als projectes nous",
   "agent.defaultsSaved": "Els projectes nous començaran amb aquestes opcions.",
   "agent.notSaved": "No s'ha desat el canvi. Torneu-ho a provar.",
@@ -1469,7 +1469,7 @@ export default {
   "agent.copy": "Copia",
   "agent.copied": "Copiat",
   "agent.section": "Agents d'IA",
-  "agent.state.off": "Desactivada per a aquest projecte",
+  "agent.state.off": "Desactivada per a aquesta carpeta",
   "agent.state.listening": "Activada · a l'espera d'un agent",
   "agent.state.connected": "Activada · connectat: {clients}",
   "agent.state.error": "Activada · no s'ha pogut iniciar la connexió",
@@ -1644,7 +1644,7 @@ export default {
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "Límits dels agents",
   "agent.narrow.groups": "Permisos que els agents no tenen mai aquí",
-  "agent.narrow.groupsHint": "Un projecte només pot restringir el que permet cada persona.",
+  "agent.narrow.groupsHint": "Aquesta carpeta només pot restringir el que permet cada persona.",
   "agent.narrow.paths": "Camins que els agents no obtenen mai",
   "agent.narrow.pathsHint":
     "Els fitxers llistats a .aiignore no arriben mai als agents. Aquests patrons s'hi afegeixen per a aquesta carpeta (les mateixes regles que .gitignore).",
@@ -1672,7 +1672,7 @@ export default {
   "plugins.kind.checker": "Verificadors",
   "plugins.kind.embed": "Blocs dins del Markdown",
   "plugins.needs": "Necessita {name}.",
-  "plugins.offHere": "Desactivat en aquest projecte.",
+  "plugins.offHere": "Desactivat en aquesta carpeta.",
   "plugins.offEveryone": "Desactivat per a tothom a .permark/config.toml.",
   "plugins.hereIntro":
     "La vostra elecció per a cada connector en aquesta carpeta. «Desactivat per a tothom» es desa a .permark/config.toml i s'aplica a qui obri la carpeta.",
@@ -2021,10 +2021,10 @@ export default {
   "tokens.vocab.failed.disk": "No s'ha pogut desar el fitxer en aquest ordinador.",
   "tokens.change": "Canvia els tokenitzadors",
   "tokens.limit": "Fins a {max} alhora. El primer es mostra a la barra d'estat.",
-  "tokens.own": "Una elecció només per a aquest projecte",
+  "tokens.own": "Una elecció només per a aquesta carpeta",
   "tokens.ownHint":
     "Es desa a .permark/config.toml, perquè tothom que treballi en el projecte compti de la mateixa manera.",
-  "tokens.projectUsesApp": "Aquest projecte fa servir l'elecció feta per a tots els projectes.",
+  "tokens.projectUsesApp": "Aquesta carpeta fa servir l'elecció feta per a totes les carpetes.",
   "tokens.choose": "Tria un tokenitzador",
   "tokens.download": "Baixa el vocabulari de {tokenizer}",
   "tokens.downloading": "Vocabulari de {tokenizer}: {percent}\u00a0%",
@@ -2046,8 +2046,9 @@ export default {
   "tokens.row": "Tokenitzadors",
   "tokens.rowHint":
     "Quins tokenitzadors compten els tokens. El primer es mostra a la barra d'estat.",
-  "tokens.projectRow": "Tokenitzadors d'aquest projecte",
-  "tokens.projectHint": "Feu servir el model per al qual s'escriu aquest projecte.",
+  "tokens.projectRow": "Tokenitzadors d'aquesta carpeta",
+  "tokens.projectHint":
+    "Feu servir el model per al qual s'escriuen els documents d'aquesta carpeta.",
   "tokens.command": "Tria els tokenitzadors",
   "tokens.folder.menu": "Compta els tokens",
   "tokens.folder.menuSummary": "Resum de tokens",

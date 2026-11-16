@@ -50,7 +50,7 @@
 </script>
 
 <section class="jobs" aria-labelledby={`${id}-title`}>
-  <h3 id={`${id}-title`}>{t("localAi.tasks.title")}</h3>
+  <h4 id={`${id}-title`}>{t("localAi.tasks.title")}</h4>
   <Card>
     {#each rows as row (row.task)}
       {@const none = row.choices.length === 0 && row.unusable === null}
@@ -100,7 +100,7 @@
     flex-direction: column;
     gap: var(--sp-2);
   }
-  h3 {
+  h4 {
     margin: 0;
     padding-left: var(--sp-1);
     color: var(--muted);

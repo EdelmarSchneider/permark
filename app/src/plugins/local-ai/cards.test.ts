@@ -32,7 +32,7 @@ async function until(check: () => boolean, what: string): Promise<void> {
 function card(title: string): HTMLElement | null {
   return (
     Array.from(target.querySelectorAll<HTMLElement>("section")).find(
-      (s) => s.querySelector("h3")?.textContent === title,
+      (s) => s.querySelector("h4")?.textContent === title,
     ) ?? null
   );
 }
@@ -75,7 +75,7 @@ afterEach(async () => {
 describe("the page", () => {
   it("shows the cards in order: jobs, models, this computer, storage, token", async () => {
     await openPage();
-    const titles = Array.from(target.querySelectorAll("section > h3")).map((h) => h.textContent);
+    const titles = Array.from(target.querySelectorAll("section > h4")).map((h) => h.textContent);
     expect(titles).toEqual([
       "What each job uses",
       "Models",

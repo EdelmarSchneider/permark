@@ -63,6 +63,7 @@ export class TokenStore {
       off?.();
       this.popover = false;
       this.choosing = false;
+      this.ownWanted = false;
       this.state = null;
       this.#loaded = null;
     };
@@ -84,8 +85,19 @@ export class TokenStore {
     return this.#project?.tokenizers ?? [];
   }
 
+  /** The person ticked "a choice for this folder only": the chooser edits the folder's list even while it is empty
+   *  (with nothing chosen yet, nothing is written until the first pick). */
+  ownWanted = $state(false);
+
+  /** The chooser edits the folder's own list: it has one, or the person asked for one. */
+  get ownChoice(): boolean {
+    return this.projectCanChoose && (this.projectList.length > 0 || this.ownWanted);
+  }
+
   /** Whose choice counts now: the project's own (kept for everyone in `.permark/config.toml`) or the app's. */
   get source(): Scope {
+    // the folder's choice being made counts as the folder's, even before its first pick
+    if (this.projectCanChoose && this.ownWanted) return "project";
     // the same rule as `effective`: a project list of no known tokenizer leaves the app's in use
     return this.projectList.some((id) => infoOf(id) !== null) ? "project" : "app";
   }

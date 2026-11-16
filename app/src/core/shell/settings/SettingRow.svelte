@@ -1,6 +1,6 @@
 <script lang="ts">
-  // One row of the settings page: what it is (label + hint) at the left, the control at the right. Stacks when the page
-  // is narrow, or when `wide` (a long control: a text field, a list). Rows of one card are separated by a line. A folder
+  // One row of the settings page: what it is (label + hint) at the left, the control at the right. Stacks when the settings
+  // pane is narrow, the control goes under the label when both do not fit side by side, and always when `wide` (a long control: a text field, a list). Rows of one card are separated by a line. A folder
   // setting says who it is for (`scope`) with a chip in its label. An app row a plugin key of the folder's shared file
   // would once have set (`ignoredKey`) says, in a quiet line, that the file's value is not used.
   import type { Snippet } from "svelte";
@@ -62,19 +62,19 @@
 </div>
 
 <style>
+  /* a wrapping line, not two fixed columns: a control too wide to sit beside a readable label (a long segmented
+     choice, a long translation) goes under it instead of squeezing the label into a narrow column */
   .row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
     column-gap: var(--sp-5);
     row-gap: var(--sp-2);
     padding: var(--sp-3) var(--sp-4);
   }
-  .row.wide {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .text {
     display: flex;
+    flex: 1 1 16rem;
     flex-direction: column;
     gap: 2px;
     min-width: 0;
@@ -90,11 +90,18 @@
   }
   .control {
     display: flex;
+    flex: 0 1 auto;
     align-items: center;
     justify-content: flex-end;
     flex-wrap: wrap;
     gap: var(--sp-2);
     min-width: 0;
+    max-width: 100%;
+  }
+  .wide .text,
+  .wide .control,
+  .note {
+    flex-basis: 100%;
   }
   .wide .control {
     justify-content: stretch;
@@ -105,14 +112,25 @@
     min-width: 0;
   }
   .note {
-    grid-column: 1 / -1;
     color: var(--muted);
     font-size: var(--fs-ui-sm);
     overflow-wrap: anywhere;
   }
+  /* stacks by the width of the settings pane (beside its section list), not of the window */
+  @container settings (max-width: 600px) {
+    .text,
+    .control {
+      flex-basis: 100%;
+    }
+    .control {
+      justify-content: flex-start;
+    }
+  }
+  /* web views without container queries (WebKitGTK before 2.40): the window's width */
   @media (max-width: 640px) {
-    .row {
-      grid-template-columns: minmax(0, 1fr);
+    .text,
+    .control {
+      flex-basis: 100%;
     }
     .control {
       justify-content: flex-start;

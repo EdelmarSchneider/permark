@@ -31,6 +31,7 @@
     type SettingsSection,
   } from "../ui.svelte";
   import { dialogFocus } from "../dialogFocus";
+  import { adrift } from "../sides";
   import Card from "./Card.svelte";
   import EditingSection from "./EditingSection.svelte";
   import IntegrationSection from "./IntegrationSection.svelte";
@@ -145,6 +146,19 @@
   const pluginView = $derived(pluginPage?.view() ?? null);
 
   let page: HTMLElement | undefined = $state();
+  let heading: HTMLElement | undefined = $state();
+
+  // a control that held the keyboard can go with the rows around it (Initialize swaps the waiting rows for the
+  // working ones, its button among them): the keyboard goes to the section's heading, never to the body behind this
+  // modal page (external DOM focus, so an effect)
+  $effect(() => {
+    if (!page) return;
+    const watch = new MutationObserver(() => {
+      if (adrift()) heading?.focus({ preventScroll: true });
+    });
+    watch.observe(page, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  });
 
   function onEscape(): void {
     // consent mode: Esc = Cancel (back to the Explorer, the strip still asks)
@@ -165,17 +179,24 @@
     return document.querySelector<HTMLElement>("[data-settings-trigger]");
   }
 
-  function onnavkey(e: KeyboardEvent): void {
+  /** The section a key moves to from `at`: arrows step (wrapping), Home | End go to the first | last. */
+  function target(key: string, at: number): number | null {
+    if (key === "Home") return 0;
+    if (key === "End") return sections.length - 1;
     const step =
-      e.key === "ArrowDown" || e.key === "ArrowRight"
+      key === "ArrowDown" || key === "ArrowRight"
         ? 1
-        : e.key === "ArrowUp" || e.key === "ArrowLeft"
+        : key === "ArrowUp" || key === "ArrowLeft"
           ? -1
           : 0;
-    if (step === 0) return;
+    return step === 0 ? null : (at + step + sections.length) % sections.length;
+  }
+
+  function onnavkey(e: KeyboardEvent): void {
+    const to = target(e.key, sections.indexOf(section));
+    if (to === null) return;
     e.preventDefault();
-    const at = sections.indexOf(section);
-    const next = sections[(at + step + sections.length) % sections.length];
+    const next = sections[to];
     if (next) {
       ui.showSettingsSection(next);
       queueMicrotask(() => page?.querySelector<HTMLElement>('[aria-current="page"]')?.focus());
@@ -207,7 +228,11 @@
         {#each navGroups as g (g.group)}
           <!-- the group's name is said once, from the group (the label on screen repeats it) -->
           <div class="nav-group" role="group" aria-label={t(GROUP_LABELS[g.group])}>
-            <span class="menu-label nav-label" aria-hidden="true">{t(GROUP_LABELS[g.group])}</span>
+            <!-- one group alone (no folder shown) needs no name on screen -->
+            {#if navGroups.length > 1}
+              <span class="menu-label nav-label" aria-hidden="true">{t(GROUP_LABELS[g.group])}</span
+              >
+            {/if}
             {#each g.items as item (item.id)}
               <button
                 type="button"
@@ -229,7 +254,9 @@
       </nav>
       <div class="content">
         <div class="inner">
-          <h3 class="title">{t(shown?.label ?? LABELS.reading)}</h3>
+          <h3 class="title" tabindex="-1" bind:this={heading}>
+            {t(shown?.label ?? LABELS.reading)}
+          </h3>
           {#if pluginView !== null}
             {#await pluginView then loaded}
               <loaded.default />
@@ -349,6 +376,8 @@
     flex: 1;
     min-width: 0;
     overflow-y: auto;
+    /* the rows lay out by this pane's width (it shrinks beside the section list), not the window's */
+    container: settings / inline-size;
     /* room under the last control for the notices at the bottom (they never sit on a control for good) */
     padding: var(--sp-5) var(--sp-5) max(var(--sp-7), var(--notices-h, 0px));
     scroll-padding-bottom: var(--notices-h, 0px);
@@ -359,6 +388,7 @@
   }
   .title {
     margin: 0 0 var(--sp-4);
+    outline: none;
     font-size: 18px;
     font-weight: 600;
     letter-spacing: -0.01em;

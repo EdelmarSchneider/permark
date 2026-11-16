@@ -115,7 +115,7 @@ describe("Settings > AI agents", () => {
     ui.showSettingsSection("integration");
     flushSync();
     await until(() => target.querySelectorAll("section.group").length >= 2, "integration cards");
-    const headings = Array.from(target.querySelectorAll("section.group h3")).map(text);
+    const headings = Array.from(target.querySelectorAll("section.group h4")).map(text);
     expect(headings).not.toContain("Agent connection");
     expect(text(target)).not.toContain("Share this project with agents");
   });
@@ -123,7 +123,7 @@ describe("Settings > AI agents", () => {
   it("off: says what is shared and offers one button; turning on shows the steps and moves focus to Copy", async () => {
     await open();
     mountPage(AGENT_PAGE, true);
-    await until(() => text(target).includes("Off for this project"), "state card");
+    await until(() => text(target).includes("Off for this folder"), "state card");
     expect(text(target.querySelector(".title"))).toBe("AI agents");
     expect(text(target)).toContain("agents never edit files through PerMark.");
     expect(text(target)).toContain("an agent can still open files on your computer by itself.");
@@ -156,7 +156,7 @@ describe("Settings > AI agents", () => {
     expect(text(target)).toContain("UserPromptSubmit");
     // turn off: focus back on the primary button
     button("Turn off").click();
-    await until(() => text(target).includes("Off for this project"), "off again");
+    await until(() => text(target).includes("Off for this folder"), "off again");
     expect(text(target)).not.toContain("Connect your agent");
     await until(
       () => document.activeElement === button("Share this project with agents"),
@@ -167,7 +167,7 @@ describe("Settings > AI agents", () => {
   it("a folder created again at its path shows off, says why, and goes back on with the one button", async () => {
     await open();
     mountPage(AGENT_PAGE);
-    await until(() => text(target).includes("Off for this project"), "state card");
+    await until(() => text(target).includes("Off for this folder"), "state card");
     expect(text(target)).not.toContain("This folder changed since you connected it.");
     mock.probe.plugins.agent.replaceFolder();
     await until(
@@ -177,7 +177,7 @@ describe("Settings > AI agents", () => {
         ),
       "the note",
     );
-    expect(text(target)).toContain("Off for this project");
+    expect(text(target)).toContain("Off for this folder");
     button("Share this project with agents").click();
     await until(() => text(target).includes("On · waiting for an agent"), "on");
     expect(text(target)).not.toContain("This folder changed since you connected it.");
@@ -201,7 +201,7 @@ describe("Settings > AI agents", () => {
   it("a refused switch keeps the state and says so in place", async () => {
     await open();
     mountPage(AGENT_PAGE);
-    await until(() => text(target).includes("Off for this project"), "off");
+    await until(() => text(target).includes("Off for this folder"), "off");
     const notices = windowStore.notices.length;
     const call = vi.spyOn(mock, "pluginCall").mockResolvedValueOnce({
       ok: false,
@@ -216,7 +216,7 @@ describe("Settings > AI agents", () => {
     expect(text(target.querySelector('[role="alert"]'))).toBe(
       "The change wasn't saved. Try again.",
     );
-    expect(text(target)).toContain("Off for this project");
+    expect(text(target)).toContain("Off for this folder");
     expect(windowStore.notices.length).toBe(notices);
     call.mockRestore();
   });

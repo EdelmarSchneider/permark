@@ -41,7 +41,7 @@
   {/if}
   <div class="shared" class:off>
     <section class="group" aria-labelledby="proj-tree">
-      <h3 id="proj-tree">{t("project.tree")}</h3>
+      <h4 id="proj-tree">{t("project.tree")}</h4>
       <Card>
         <SettingRow
           label={t("project.treeShow")}
@@ -95,7 +95,7 @@
       </Card>
     </section>
     <section class="group" aria-labelledby="proj-ignore">
-      <h3 id="proj-ignore">{t("project.ignore")}</h3>
+      <h4 id="proj-ignore">{t("project.ignore")}</h4>
       <Card>
         <SettingRow
           label={t("project.ignoreLabel")}
@@ -134,7 +134,7 @@
   .group + .group {
     margin-top: var(--sp-5);
   }
-  h3 {
+  h4 {
     margin: 0 0 var(--sp-2);
     padding-left: var(--sp-1);
     color: var(--muted);

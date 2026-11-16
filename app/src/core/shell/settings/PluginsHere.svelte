@@ -56,8 +56,13 @@
     return key === null ? "" : t(key);
   }
 
-  /** Writes what the new choice changes: the folder's switch first (it wins), then the person's own. */
-  async function choose(info: PluginInfo, next: ProjectChoice): Promise<void> {
+  /** Writes what the new choice changes: the folder's switch first (it wins), then the person's own. `box` shows the
+   *  choice in force afterwards: a refused pick leaves the list's value unchanged, so the box would keep showing it. */
+  async function choose(
+    info: PluginInfo,
+    next: ProjectChoice,
+    box: HTMLSelectElement,
+  ): Promise<void> {
     const write = choiceWrite(info, next);
     const plugin = info.manifest.id;
     const kept =
@@ -69,6 +74,7 @@
       if (!result.ok) store.notifyFileOpFailed(result.error);
     }
     await pluginsStore.load();
+    box.value = choiceOf(infos.find((i) => i.manifest.id === plugin) ?? info);
   }
 </script>
 
@@ -108,7 +114,7 @@
           value={choiceOf(info)}
           onchange={(e) => {
             const found = CHOICES.find((c) => c.value === e.currentTarget.value);
-            if (found) void choose(info, found.value);
+            if (found) void choose(info, found.value, e.currentTarget);
           }}
         >
           {#each CHOICES as choice (choice.value)}

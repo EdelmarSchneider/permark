@@ -14,7 +14,7 @@
   let { mode, removable = false }: Props = $props();
 
   const canOwn = $derived(mode !== "app" && tokens.projectCanChoose);
-  const own = $derived(tokens.projectList.length > 0);
+  const own = $derived(tokens.ownChoice);
   /** The list the chooser edits. */
   const scope = $derived(mode === "project" || (canOwn && own) ? "project" : "app");
   const ids = $derived(
@@ -22,7 +22,11 @@
   );
 
   function ownChanged(on: boolean): void {
-    void tokens.choose("project", on ? tokens.chosen.map((info) => info.id) : []);
+    tokens.ownWanted = on;
+    const ids = on ? tokens.chosen.map((info) => info.id) : [];
+    // nothing chosen yet: the folder's list starts with the first pick (an empty list is no choice of its own)
+    if (on && ids.length === 0) return;
+    void tokens.choose("project", ids);
   }
 </script>
 

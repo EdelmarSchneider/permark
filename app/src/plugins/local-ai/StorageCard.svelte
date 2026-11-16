@@ -139,7 +139,7 @@
 </script>
 
 <section class="storage" aria-labelledby={`${id}-title`} bind:this={card}>
-  <h3 id={`${id}-title`}>{t("localAi.store.title")}</h3>
+  <h4 id={`${id}-title`}>{t("localAi.store.title")}</h4>
   {#if store !== null}
     <Card>
       <SettingRow
@@ -283,7 +283,7 @@
     flex-direction: column;
     gap: var(--sp-2);
   }
-  h3 {
+  h4 {
     margin: 0;
     padding-left: var(--sp-1);
     color: var(--muted);

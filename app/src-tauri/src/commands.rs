@@ -1562,16 +1562,13 @@ pub fn project_config_set(
     change: ProjectSettingChange,
 ) -> Result<ProjectSettings, IpcError> {
     let shell = state(&handle);
-    let plugin = match &change {
-        ProjectSettingChange::PluginOff { plugin, .. } => {
-            project_plugin(&shell.env.registry, plugin)?;
-            true
-        }
-        _ => false,
-    };
+    let touches_plugins = matches!(change, ProjectSettingChange::PluginOff { .. });
+    if let ProjectSettingChange::PluginOff { plugin, .. } = &change {
+        project_plugin(&shell.env.registry, plugin)?;
+    }
     let core = project_of(&handle, &window)?;
     let config = core.change_config(&shell.env, &change)?;
-    if plugin {
+    if touches_plugins {
         plugins_changed(&shell);
     }
     Ok(ProjectSettings::of(true, &config))
