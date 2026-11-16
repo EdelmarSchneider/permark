@@ -18,7 +18,7 @@ pub const LONG_LETTERS: usize = 150;
 pub const LONG_CONFIDENCE: f64 = 0.3;
 
 /// Languages the detector tells apart, each mapped onto a dictionary by [`id_of`].
-const CANDIDATES: [Lang; 12] = [
+const CANDIDATES: [Lang; 13] = [
     Lang::Eng,
     Lang::Por,
     Lang::Spa,
@@ -28,6 +28,7 @@ const CANDIDATES: [Lang; 12] = [
     Lang::Cat,
     Lang::Ron,
     Lang::Pol,
+    Lang::Tur,
     Lang::Vie,
     Lang::Rus,
     Lang::Ukr,
@@ -104,6 +105,7 @@ pub fn id_of(lang: Lang, ids: &[&'static str], default: &str) -> Option<&'static
         Lang::Cat => ("ca", "ca"),
         Lang::Ron => ("ro", "ro"),
         Lang::Pol => ("pl", "pl"),
+        Lang::Tur => ("tr", "tr"),
         Lang::Vie => ("vi", "vi"),
         Lang::Rus => ("ru", "ru"),
         Lang::Ukr => ("uk", "uk"),

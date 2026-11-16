@@ -6,7 +6,7 @@ fn ids() -> Vec<&'static str> {
 }
 
 /// Everyday sentences per language (the tag the detector should answer, Galician has no detector model).
-const CORPUS: [(&str, [&str; 10]); 13] = [
+const CORPUS: [(&str, [&str; 10]); 14] = [
     (
         "en",
         [
@@ -158,6 +158,21 @@ const CORPUS: [(&str, [&str; 10]); 13] = [
         ],
     ),
     (
+        "tr",
+        [
+            "Şemsiyemi yine evde unuttum ve işe sırılsıklam vardım.",
+            "Köşedeki fırın mahallenin en iyi ekmeğini satıyor ama erken kapanıyor.",
+            "Bir dakikan olduğunda beni geri arayabilir misin? Yarınki toplantıyla ilgili.",
+            "Bütün hafta sonunu mutfağı boyayarak geçirdik ve hâlâ bitmemiş gibi görünüyor.",
+            "Kardeşim geçen yıl küçük bir köye taşındı ve şehre asla geri dönmeyeceğini söylüyor.",
+            "Ben tatildeyken bitkileri sulamayı unutma lütfen.",
+            "Bu sabah sinyallerdeki bir arıza yüzünden tren geç kaldı.",
+            "Yedi yaşından beri piyano çalmayı öğreniyor.",
+            "Cumartesi yağmur yağmazsa nehir kenarında piknik yapabiliriz.",
+            "Uyumadan önce genellikle bir kitabın birkaç sayfasını okurum.",
+        ],
+    ),
+    (
         "vi",
         [
             "Tôi lại quên ô ở nhà nên đến chỗ làm thì ướt sũng.",
@@ -294,6 +309,7 @@ fn two_region_languages_follow_the_default_region() {
         (Lang::Cat, "ca"),
         (Lang::Ron, "ro"),
         (Lang::Pol, "pl"),
+        (Lang::Tur, "tr"),
         (Lang::Vie, "vi"),
         (Lang::Rus, "ru"),
         (Lang::Ukr, "uk"),
@@ -305,7 +321,7 @@ fn two_region_languages_follow_the_default_region() {
     assert_eq!(id_of(Lang::Spa, &ids, "gl"), Some("gl"));
     assert_eq!(id_of(Lang::Spa, &ids, "en"), Some("es"));
     // no dictionary, no answer
-    assert_eq!(id_of(Lang::Tur, &ids, "en"), None);
+    assert_eq!(id_of(Lang::Nld, &ids, "en"), None);
     assert_eq!(id_of(Lang::Rus, &["en"], "en"), None);
     assert_eq!(id_of(Lang::Ron, &["en"], "en"), None);
     assert_eq!(id_of(Lang::Eng, &["en-GB"], "en"), Some("en-GB"));
@@ -399,11 +415,11 @@ fn the_ui_locale_gives_the_first_default() {
     assert_eq!(locale_default("pt", &ids), "pt-BR");
     assert_eq!(locale_default("fr-CA", &ids), "fr");
     for same in [
-        "es", "fr", "de", "it", "ca", "gl", "ro", "pl", "ru", "uk", "vi",
+        "es", "fr", "de", "it", "ca", "gl", "ro", "pl", "ru", "tr", "uk", "vi",
     ] {
         assert_eq!(locale_default(same, &ids), same);
     }
-    for other in ["ja", "ko", "zh-CN", "tr", "", "x"] {
+    for other in ["ja", "ko", "zh-CN", "nl", "", "x"] {
         assert_eq!(locale_default(other, &ids), "en");
     }
     // a table without English still answers one of its own
