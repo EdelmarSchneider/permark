@@ -416,6 +416,7 @@
       const book = new loaded.LookBook();
       made = await loaded.createCore({
         host: target,
+        scroller,
         label: t("edit.documentText"),
         locked: {
           render: (node) => book.get(node),

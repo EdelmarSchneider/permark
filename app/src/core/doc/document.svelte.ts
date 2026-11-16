@@ -26,6 +26,7 @@ import { webPictures } from "./webPictures.svelte";
 import { layout } from "../shell/layout.svelte";
 import { recentFiles } from "../search/recent.svelte";
 import { formatQuote, formatReference, type Reference } from "./reference";
+import { TableFitter } from "./tableFitter";
 import { Trail, type Place } from "./trail";
 import type { SavePolicy } from "../editing/docMachine";
 import { confirmLeave } from "../editing/guard";
@@ -128,6 +129,8 @@ export class DocumentController {
   readonly host = new BlockHost();
   readonly trail = new Trail();
   readonly decorator: Decorator;
+  /** Column widths of the page's tables, from their content. */
+  readonly tables = new TableFitter({ root: () => this.host.scroller });
 
   #api: Api;
   #hooks: Hooks = NO_HOOKS;
@@ -422,7 +425,14 @@ export class DocumentController {
   attachBody(container: HTMLElement, scroller: HTMLElement): void {
     this.host.attach(container, scroller, {
       enhance: this.enhance,
-      near: (element) => this.decorator.near(element),
+      near: (element) => {
+        const embeds = this.decorator.near(element);
+        const tables = this.tables.watchIn(element);
+        return () => {
+          embeds();
+          tables();
+        };
+      },
     });
     // a new page is empty: whatever was painted before has to be painted again
     this.#painted = null;
@@ -433,6 +443,7 @@ export class DocumentController {
   detachBody(): void {
     this.#leave();
     this.host.detach();
+    this.tables.stop();
     this.decorator.dispose();
     this.#painted = null;
     this.#blocksOf = null;

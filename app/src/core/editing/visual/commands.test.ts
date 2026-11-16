@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import { formatOf, run } from "./commands";
 import { LOCKED, createCore, type Core } from "./core";
+import { fitColumns, NATURAL_TABLE } from "../../doc/tableColumns";
 
 let core: Core;
 
@@ -159,6 +160,27 @@ describe("Edit-mode commands", () => {
     caretAfter("1");
     core.view.dispatch(core.view.state.tr.insertText("0"));
     expect(markdown()).toMatch(/\| 10 +\| 2 +\|/);
+  });
+
+  it("keeps the measured column widths of a table out of the document", async () => {
+    load("| a | b |\n| - | - |\n| 1 | 2 |\n");
+    const wrap = core.view.dom.querySelector<HTMLElement>(":scope > .table-wrap");
+    const table = wrap?.querySelector("table");
+    if (!wrap || !table) throw new Error("no table");
+    const before = core.view.state.doc;
+    // what the column fitter writes: outside the cells, never part of the text
+    fitColumns(table, [40, 60]);
+    table.style.width = "300px";
+    wrap.classList.add(NATURAL_TABLE);
+    // the editor reads DOM changes when its mutation observer reports them
+    await new Promise((settled) => setTimeout(settled, 0));
+    expect(core.view.state.doc.eq(before)).toBe(true);
+    expect(table.querySelectorAll(":scope > colgroup > col")).toHaveLength(2);
+    expect(core.view.dom.querySelector(":scope > .table-wrap > table")).toBe(table);
+    caretAfter("1");
+    core.view.dispatch(core.view.state.tr.insertText("0"));
+    expect(markdown()).toMatch(/\| 10 +\| 2 +\|/);
+    expect(table.querySelector(":scope > colgroup")).not.toBeNull();
   });
 
   it("inserts a picked character at the caret, and refuses on a locked block", () => {

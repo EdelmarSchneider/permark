@@ -12,7 +12,7 @@ import { webPictures } from "../../core/doc/webPictures.svelte";
 import { contributions } from "../../core/plugins/instance.svelte";
 import { fetchDataUri } from "./assets";
 import { exportCss } from "./look";
-import { columnWidths, fitColumns, measureColumns } from "./tableFit";
+import { columnWidths, fitColumns, measureColumns } from "../../core/doc/tableColumns";
 
 export type ExportTarget = "paper" | "html";
 
@@ -278,7 +278,7 @@ export async function buildExport(
 
 /**
  * A table wider than the printable width gets a smaller font. Any table whose lines do not all fit the page then gets
- * column widths from its measured content (`tableFit`): paper's cells may break inside a word, which would let the
+ * column widths from its measured content (`core/doc/tableColumns.ts`): paper's cells may break inside a word, which would let the
  * browser squeeze a column of short words to a letter or two. Measured here, where the page lays out at paper width.
  */
 function fitTables(root: HTMLElement): void {
