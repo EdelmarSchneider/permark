@@ -1802,7 +1802,7 @@ export default {
     "Kanał każdego utworzonego, zmienionego, usuniętego lub przemianowanego pliku, na bieżąco.",
   "plugin.follow.name": "Tryb śledzenia",
   "plugin.follow.about": "Otwiera zapisywany dokument i zachowuje twoje miejsce.",
-    "plugin.unread.name": "Znaczniki nieprzeczytanych",
+  "plugin.unread.name": "Znaczniki nieprzeczytanych",
   "plugin.unread.about": "Oznacza dokumenty zmienione od ostatniego czytania, jak nową pocztę.",
   "plugin.review.name": "Przegląd",
   "plugin.review.about":
@@ -1812,7 +1812,8 @@ export default {
   "plugin.quiet.name": "Wyciszone foldery",
   "plugin.quiet.about": "Wycisz foldery lub pliki, aby ich zmiany przestały zwracać uwagę.",
   "plugin.comments.name": "Komentarze",
-  "plugin.comments.about": "Komentarze do fragmentów, które podążają za tekstem, gotowe do wysłania agentowi.",
+  "plugin.comments.about":
+    "Komentarze do fragmentów, które podążają za tekstem, gotowe do wysłania agentowi.",
   "plugin.broken-links.name": "Uszkodzone linki",
   "plugin.broken-links.about": "Znajduje linki i obrazy, które prowadzą donikąd.",
   "plugin.notes.name": "Notatki",
@@ -1852,7 +1853,8 @@ export default {
   "plugin.fmt-yaml.name": "Pliki YAML",
   "plugin.fmt-yaml.about": "Wyświetla YAML jako przejrzysty arkusz i edytuje po jednej wartości.",
   "plugin.fmt-ini.name": "Pliki INI i cfg",
-  "plugin.fmt-ini.about": "Wyświetla pliki INI jako przejrzysty arkusz i edytuje po jednej wartości.",
+  "plugin.fmt-ini.about":
+    "Wyświetla pliki INI jako przejrzysty arkusz i edytuje po jednej wartości.",
   "plugin.fmt-dotenv.name": "Pliki dotenv",
   "plugin.fmt-dotenv.about": "Wyświetla pliki .env jako przejrzysty arkusz.",
   "plugin.fmt-properties.name": "Pliki properties",
@@ -1921,7 +1923,8 @@ export default {
   "updates.status.downloading": "Pobieranie wersji {version}…",
   "updates.status.downloadingPercent": "Pobieranie wersji {version}: {percent}%",
   "updates.status.ready": "Wersja {version} jest gotowa. Uruchom ponownie PerMark, aby zakończyć.",
-  "updates.status.checkFailed": "Nie udało się sprawdzić nowej wersji. PerMark spróbuje ponownie później.",
+  "updates.status.checkFailed":
+    "Nie udało się sprawdzić nowej wersji. PerMark spróbuje ponownie później.",
   "updates.status.downloadFailed": "Pobieranie nie powiodło się: {message}",
   "updates.status.installFailed": "Nie udało się zainstalować aktualizacji: {message}",
   "plugin.shell-integration.name": "Wpisy menedżera plików",
@@ -1993,7 +1996,8 @@ export default {
   "cmd.focus": "Tryb skupienia",
   "focus.leave": "Opuść tryb skupienia",
   "import.cancelledNone": "Zatrzymano. Niczego nie dodano.",
-  "import.undoGone": "Tego importu nie można już cofnąć: jego pliki zostały od tego czasu zmienione.",
+  "import.undoGone":
+    "Tego importu nie można już cofnąć: jego pliki zostały od tego czasu zmienione.",
   "drop.badge.add.one": "Dodaj {n} element do „{folder}”",
   "drop.badge.add.few": "Dodaj {n} elementy do „{folder}”",
   "drop.badge.add.other": "Dodaj {n} elementów do „{folder}”",
@@ -2037,7 +2041,8 @@ export default {
   "tokens.short.chars4": "znaki ÷ 4",
   "tokens.why.exact": "Ta sama liczba co we własnym tokenizerze modelu.",
   "tokens.why.claude": "Tokenizer Claude nie jest publiczny, więc to szacunek.",
-  "tokens.why.gemini": "Szacunek na podstawie opublikowanego tokenizera Google; nowsze modele mogą się różnić.",
+  "tokens.why.gemini":
+    "Szacunek na podstawie opublikowanego tokenizera Google; nowsze modele mogą się różnić.",
   "tokens.why.chars4": "Liczba znaków podzielona przez cztery, dla dowolnego modelu.",
   "tokens.badge.exact": "Dokładnie",
   "tokens.badge.approx": "W przybliżeniu",
@@ -2107,7 +2112,8 @@ export default {
   "tokens.folder.guard.title": "Policzyć tokeny w {folder}?",
   "tokens.folder.guard.body":
     "Ten folder zawiera: {files} ({size} tekstu do przeczytania). Liczenie może potrwać około {time}.",
-  "tokens.folder.guard.safe": "Nic w folderze nie zostanie zmienione i możesz przerwać w dowolnym momencie.",
+  "tokens.folder.guard.safe":
+    "Nic w folderze nie zostanie zmienione i możesz przerwać w dowolnym momencie.",
   "tokens.folder.guard.go": "Policz",
   "tokens.folder.refused.title": "Ten folder jest za duży, aby go policzyć",
   "tokens.folder.refused.files": "Zawiera więcej niż {limit} plików.",
@@ -2366,7 +2372,8 @@ export default {
   "projects.rules.hidden": "Ukryte pliki",
   "projects.rules.hiddenOwn": "Własne reguły",
   "projects.rules.hiddenOwnRoot": "Własne reguły + reguły {root}",
-  "projects.rules.hiddenHint": "Pliki, które „{root}” utrzymuje jako prywatne, pozostają ukryte w każdym przypadku.",
+  "projects.rules.hiddenHint":
+    "Pliki, które „{root}” utrzymuje jako prywatne, pozostają ukryte w każdym przypadku.",
   "projects.rules.agent": "Agent",
   "projects.rules.agentSame": "Tak jak {root}",
   "projects.rules.agentOff": "Wyłączony dla tego projektu",
@@ -2404,7 +2411,8 @@ export default {
     "Nie można użyć {n} wpisów na liście projektów. Pierwszy jest w wierszu {line}: {reason}.",
   "projects.record.skipped.other":
     "Nie można użyć {n} wpisów na liście projektów. Pierwszy jest w wierszu {line}: {reason}.",
-  "projects.record.conflict": "Lista projektów zmieniła się podczas zapisywania przez PerMark. Spróbuj ponownie.",
+  "projects.record.conflict":
+    "Lista projektów zmieniła się podczas zapisywania przez PerMark. Spróbuj ponownie.",
   "projects.record.show": "Pokaż plik",
   "projects.record.locked": "Listy projektów nie można zmienić, dopóki nie da się jej odczytać.",
   "projects.record.hiddenUnknown":
@@ -2577,7 +2585,8 @@ export default {
     "„{name}” nie jest już oficjalną kategorią. Projekty zachowają ją bez zmian.",
   "projects.vocabulary.added": "Dodano „{name}”.",
   "projects.vocabulary.undone": "Cofnięto: „{name}” nie jest już oficjalny.",
-  "projects.vocabulary.addAs": "Zostanie dodany jako „{name}” (małe litery, myślniki zamiast spacji).",
+  "projects.vocabulary.addAs":
+    "Zostanie dodany jako „{name}” (małe litery, myślniki zamiast spacji).",
   // ---- Local AI settings page
   "localAi.section": "Lokalna AI",
   "localAi.intro":
@@ -2634,7 +2643,8 @@ export default {
   "localAi.models.licenseLabel": "Warunki {name}: {license}, otwiera się w przeglądarce",
   "localAi.models.languages": "Języki: {list}",
   "localAi.models.storeUnavailable": "Miejsce przechowywania niedostępne",
-  "localAi.models.blocked.token": "Wymaga tokenu Hugging Face. Dodaj go w sekcji Token Hugging Face.",
+  "localAi.models.blocked.token":
+    "Wymaga tokenu Hugging Face. Dodaj go w sekcji Token Hugging Face.",
   "localAi.models.blocked.noSpace": "Za mało miejsca: potrzeba {needed}, wolne: {free}.",
   "localAi.models.reviewTerms": "Przejrzyj warunki i pobierz",
   "localAi.models.reviewTermsLabel": "Przejrzyj warunki {name} i pobierz model",
@@ -2706,7 +2716,8 @@ export default {
   "localAi.machine.runOn": "Uruchamiaj modele na",
   "localAi.machine.runOn.auto": "Karcie graficznej, jeśli jest",
   "localAi.machine.runOn.cpu": "Tylko procesorze",
-  "localAi.machine.runOn.cpuHint": "Wolniej, ale karta graficzna pozostaje wolna dla innych programów.",
+  "localAi.machine.runOn.cpuHint":
+    "Wolniej, ale karta graficzna pozostaje wolna dla innych programów.",
   "localAi.store.title": "Miejsce przechowywania",
   "localAi.store.folder": "Folder modeli",
   "localAi.store.default": "Folder domyślny",
@@ -2776,10 +2787,10 @@ export default {
     "Za mało wolnej pamięci. Zamknij inne aplikacje i spróbuj ponownie albo wybierz mniejszy model.",
   "localAi.test.failed.notAvailable": "Silnik AI nie jest jeszcze dostępny dla tego komputera.",
   "localAi.test.failed.crashed": "Silnik AI nieoczekiwanie się zatrzymał.",
-  "localAi.test.failed.blocked": "Oprogramowanie zabezpieczające na tym komputerze zablokowało silnik AI.",
+  "localAi.test.failed.blocked":
+    "Oprogramowanie zabezpieczające na tym komputerze zablokowało silnik AI.",
   "localAi.test.failed.needsNewer": "Ten model wymaga nowszej wersji silnika AI.",
-  "localAi.test.failed.corrupt":
-    "Pliki modelu są uszkodzone. Usuń model i pobierz go ponownie.",
+  "localAi.test.failed.corrupt": "Pliki modelu są uszkodzone. Usuń model i pobierz go ponownie.",
   "localAi.test.retryLabel": "Przetestuj ponownie {name}",
   "localAi.test.cancelled": "Zatrzymano test.",
   "localAi.test.closeLabel": "Zamknij test {name}",
@@ -2818,10 +2829,8 @@ export default {
   "correction.failed.noModel":
     "Model wybrany do korekty jest niedostępny. Wybierz model na stronie Lokalna AI.",
   "correction.discarded.one": "{n} fragment pozostawiono bez zmian, bo model zmienił za dużo.",
-  "correction.discarded.few":
-    "{n} fragmenty pozostawiono bez zmian, bo model zmienił za dużo.",
-  "correction.discarded.other":
-    "{n} fragmentów pozostawiono bez zmian, bo model zmienił za dużo.",
+  "correction.discarded.few": "{n} fragmenty pozostawiono bez zmian, bo model zmienił za dużo.",
+  "correction.discarded.other": "{n} fragmentów pozostawiono bez zmian, bo model zmienił za dużo.",
   "correction.outdated.one": "{n} propozycja już nie obowiązuje, bo tekst się zmienił.",
   "correction.outdated.few": "{n} propozycje już nie obowiązują, bo tekst się zmienił.",
   "correction.outdated.other": "{n} propozycji już nie obowiązuje, bo tekst się zmienił.",
@@ -2849,7 +2858,8 @@ export default {
   "spelling.status.declared": "Pisownia: {language}, wybrany dla tego dokumentu",
   "spelling.status.missing": "Jego słownik nie jest jeszcze pobrany.",
   "spelling.status.unavailable": "Niedostępne",
-  "spelling.status.unavailableHint": "Sprawdzanie pisowni nie jest dostępne dla tego systemu pisma.",
+  "spelling.status.unavailableHint":
+    "Sprawdzanie pisowni nie jest dostępne dla tego systemu pisma.",
   "spelling.menu.label": "Pisownia słowa „{word}”",
   "spelling.menu.none": "Brak propozycji",
   "spelling.menu.add": "Dodaj do słownika",
@@ -2933,7 +2943,8 @@ export default {
     "Model wybrany do tłumaczenia jest niedostępny. Wybierz model na stronie Lokalna AI.",
   "translation.discarded.one": "{n} fragmentu nie udało się przetłumaczyć i pozostał bez zmian.",
   "translation.discarded.few": "{n} fragmentów nie udało się przetłumaczyć i pozostały bez zmian.",
-  "translation.discarded.other": "{n} fragmentów nie udało się przetłumaczyć i pozostały bez zmian.",
+  "translation.discarded.other":
+    "{n} fragmentów nie udało się przetłumaczyć i pozostały bez zmian.",
   "translation.same.one": "{n} fragment już był w języku: {language}.",
   "translation.same.few": "{n} fragmenty już były w języku: {language}.",
   "translation.same.other": "{n} fragmentów już było w języku: {language}.",
@@ -3011,7 +3022,8 @@ export default {
   "export.leftOut.other": "Nie udało się uwzględnić {n} elementów.",
   "export.canceled": "Anulowano.",
   "export.saveFailed": "Nie udało się zapisać {name}. Folder może być tylko do odczytu lub pełny.",
-  "export.pdfFailed": "Nie udało się utworzyć pliku PDF. Użyj opcji Drukuj i wybierz Zapisz jako PDF.",
+  "export.pdfFailed":
+    "Nie udało się utworzyć pliku PDF. Użyj opcji Drukuj i wybierz Zapisz jako PDF.",
   "export.printFailed": "Nie udało się otworzyć okna drukowania.",
   "export.isSource": "Nie można zastąpić samego dokumentu. Wybierz inną nazwę.",
   "export.exists": "Plik o nazwie {name} już istnieje. Wybierz inną nazwę.",

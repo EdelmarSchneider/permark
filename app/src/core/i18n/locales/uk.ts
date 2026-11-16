@@ -130,8 +130,7 @@ export default {
   "explorer.collapseAll": "Згорнути все",
   "explorer.refresh": "Оновити",
   "explorer.revealOpen": "Показати відкритий документ",
-  "explorer.empty":
-    "Тут поки немає файлів Markdown. Нові файли зʼявляються, щойно їх записано.",
+  "explorer.empty": "Тут поки немає файлів Markdown. Нові файли зʼявляються, щойно їх записано.",
   "tree.largeFolder": "велика папка",
   "tree.largeFolderTitle": "Не відкрито: містить понад {n} елементів.",
   "menu.fileActions": "Дії з файлом",
@@ -157,7 +156,7 @@ export default {
   "fileOps.newFolderHint": "Enter створює папку, Esc скасовує",
   "fileOps.defaultFolderName": "Нова папка",
   "fileOps.nameEmpty": "Введіть імʼя",
-  "fileOps.nameInvalidChars": "Імена не можуть містити \\ / : * ? \" < > |",
+  "fileOps.nameInvalidChars": 'Імена не можуть містити \\ / : * ? " < > |',
   "fileOps.nameInvalidEnd":
     "Імена не можуть починатися з пробілу або закінчуватися пробілом чи крапкою",
   "fileOps.nameReserved": "Це імʼя зарезервоване системою",
@@ -213,15 +212,15 @@ export default {
   "filter.documents": "Документи",
   "filter.documentsHint": ".md .markdown .mdx .txt",
   "filter.docsAndAssets": "Документи й ресурси",
-  "filter.docsAndAssetsHint": "Документи, а також зображення, аудіо, відео, JSON, YAML, TOML, XML і CSV",
+  "filter.docsAndAssetsHint":
+    "Документи, а також зображення, аудіо, відео, JSON, YAML, TOML, XML і CSV",
   "filter.everything": "Усе",
   "filter.everythingHint":
     "Усі типи файлів. «Усе» охоплює файли, ігноровані git, і приховані файли. Перемикачі нижче можуть вимкнути будь-що з цього.",
   "filter.custom": "Власний",
   "filter.categories": "Типи файлів",
   "filter.advanced": "Шаблони",
-  "filter.advancedHint":
-    "+шаблон показує файли, -шаблон приховує їх. Приклад: +*.sql -archive/**",
+  "filter.advancedHint": "+шаблон показує файли, -шаблон приховує їх. Приклад: +*.sql -archive/**",
   "filter.invalidGlob": "Недійсний шаблон: {pattern}",
   "filter.assetsNearDocs": "Лише ресурси поруч із документами",
   "filter.assetsNearDocsHint":
@@ -230,7 +229,8 @@ export default {
   "filter.showHidden": "Показувати приховані файли й папки",
   "filter.showHiddenHint": "Імена, що починаються з крапки, як-от .github.",
   "filter.showIgnored": "Показувати файли, ігноровані git",
-  "filter.showIgnoredHint": "Результати збирання й локальні файли. Дуже великі папки не відкриваються.",
+  "filter.showIgnoredHint":
+    "Результати збирання й локальні файли. Дуже великі папки не відкриваються.",
   "filter.showingOf.one": "Показано {shown} з {n} файлу",
   "filter.showingOf.few": "Показано {shown} з {n} файлів",
   "filter.showingOf.other": "Показано {shown} з {n} файлів",
@@ -307,7 +307,8 @@ export default {
   "codeRef.hintEditor": "Щоб відкривати код у своєму редакторі, виберіть його в налаштуваннях.",
   "codeRef.titleEditorAt": "{path}\nВідкрити у своєму редакторі на рядку {line}",
   "codeRef.titleEditor": "{path}\nВідкрити у своєму редакторі",
-  "codeRef.titleOpenAtEditor": "{path}\nВідкрити на рядку {line} · {mod}+клацання: у своєму редакторі",
+  "codeRef.titleOpenAtEditor":
+    "{path}\nВідкрити на рядку {line} · {mod}+клацання: у своєму редакторі",
   "codeRef.titleOpenEditor": "{path}\nВідкрити · {mod}+клацання: у своєму редакторі",
   "codeRef.titleOpenAt": "{path}\nВідкрити на рядку {line}",
   "codeRef.titleOpen": "{path}\nВідкрити",
@@ -440,7 +441,8 @@ export default {
   "json.interpret": "Інтерпретувати екранування",
   "text.plainBecauseLong":
     "Довгий файл: показано як звичайний текст, відображаються лише видимі рядки.",
-  "text.partial": "Показано перші {held} МБ із {total} МБ. Решта завантажується під час прокручування.",
+  "text.partial":
+    "Показано перші {held} МБ із {total} МБ. Решта завантажується під час прокручування.",
   "text.loadingMore": "Завантаження…",
   "text.loadFailed": "Не вдалося завантажити наступну частину цього файлу.",
   "text.retry": "Спробувати ще раз",
@@ -544,8 +546,7 @@ export default {
   "edit.locked.definition": "Визначення посилань або виносок, збережено як написано",
   "edit.locked.kind": "Блок збережено як написано",
   "edit.locked.parse": "Редактор не може прочитати цей блок, тому його збережено як написано",
-  "edit.locked.differs":
-    "Редактор записав би цей блок інакше, тому його збережено як написано",
+  "edit.locked.differs": "Редактор записав би цей блок інакше, тому його збережено як написано",
   "edit.locked.reference":
     "Використовує посилання або виноску, визначені деінде, збережено як написано",
   "conflict.title": "Файл змінено на диску, поки ви редагували.",
@@ -683,8 +684,7 @@ export default {
   "settings.charactersRead.one": "Використовується {n} група з {file}.",
   "settings.charactersRead.few": "Використовуються {n} групи з {file}.",
   "settings.charactersRead.other": "Використовується {n} груп з {file}.",
-  "settings.charactersUnreadable":
-    "Не вдалося прочитати {file}, тому показано вбудовані групи.",
+  "settings.charactersUnreadable": "Не вдалося прочитати {file}, тому показано вбудовані групи.",
   "settings.charactersCreated": "Створено {file}.",
   "settings.charactersCreateFailed": "Не вдалося створити {file}.",
   // ---- search, commands, keyboard
@@ -741,7 +741,8 @@ export default {
   "search.label": "Пошук в усіх документах",
   "search.none": "Немає результатів для «{query}».",
   "search.noneHint": "Ctrl+P натомість шукає за іменами файлів.",
-  "search.noneYet": "Результатів поки немає. Індекс ще будується; результати можуть бути неповними.",
+  "search.noneYet":
+    "Результатів поки немає. Індекс ще будується; результати можуть бути неповними.",
   "search.placeholder": "Пошук в усіх документах",
   "search.placeholderFolder": "Пошук у всій папці",
   "search.placeholderProject": "Пошук у цьому проєкті ({short})",
@@ -985,8 +986,7 @@ export default {
   "review.undo": "Скасувати",
   "review.undoStale": "Не можна скасувати: {name} відтоді змінено.",
   "review.allDone": "Усі зміни перевірено",
-  "review.stale":
-    "{name} змінено під час перевірки. Перевірку оновлено; нічого не записано.",
+  "review.stale": "{name} змінено під час перевірки. Перевірку оновлено; нічого не записано.",
   "review.noBaseline":
     "Попередню версію не збережено, тому зміни не можна показати. Їх можна буде перевірити, починаючи з наступної зміни.",
   "review.tooLarge": "Цей документ завеликий для порівняння (понад 2 МБ).",
@@ -1041,7 +1041,8 @@ export default {
   "git.stateHint.busy": "Git виконує інше завдання, яке ще не завершено.",
   "git.unavailableHint": "Вибраний git недоступний. Виберіть інший у налаштуваннях.",
   "git.errorOwnership": "Git не довіряє власникові цієї папки.",
-  "git.errorHint": "Відкрийте налаштування, щоб вибрати інший git (вбудованому довіра не потрібна).",
+  "git.errorHint":
+    "Відкрийте налаштування, щоб вибрати інший git (вбудованому довіра не потрібна).",
   "git.folderChanged.one": "Усередині {n} змінений файл",
   "git.folderChanged.few": "Усередині {n} змінені файли",
   "git.folderChanged.other": "Усередині {n} змінених файлів",
@@ -1120,8 +1121,7 @@ export default {
   "review.comparing": "Порівняння з версією від {when}",
   "review.sr.basisVersion.one": "Тепер порівняння з версією від {when}. {n} зміна для перевірки.",
   "review.sr.basisVersion.few": "Тепер порівняння з версією від {when}. {n} зміни для перевірки.",
-  "review.sr.basisVersion.other":
-    "Тепер порівняння з версією від {when}. {n} змін для перевірки.",
+  "review.sr.basisVersion.other": "Тепер порівняння з версією від {when}. {n} змін для перевірки.",
   "review.bringBack": "Повернути цю версію",
   "review.bringBack.warning":
     "Ваші зміни після останнього коміту не збережено в git. Повернення версії від {when} замінить їх. Це можна скасувати одразу після цього.",
@@ -1137,8 +1137,7 @@ export default {
   "review.versions.authors": "{author} разом із {others}",
   "review.versions.compare": "Порівняти",
   "review.versions.renamed": "Попередні версії під іменем {name} не показано.",
-  "review.versions.cut":
-    "Старіших версій може бракувати: це часткова копія репозиторію.",
+  "review.versions.cut": "Старіших версій може бракувати: це часткова копія репозиторію.",
   "review.versions.retry": "Спробувати ще раз",
   "review.versions.none.unavailable": "Попередні версії тут недоступні.",
   "review.versions.none.notCommitted": "Цей файл ще не збережено в git.",
@@ -1198,12 +1197,9 @@ export default {
   "tags.noFilesAll": "Немає файлу з усіма цими тегами.",
   "tags.noFilesUntagged": "Кожен файл має тег.",
   "tags.files": "Файли з вибраними тегами",
-  "tags.pendingChanges.one":
-    "{n} зміну збережено, її буде записано, щойно файл виправлять.",
-  "tags.pendingChanges.few":
-    "{n} зміни збережено, їх буде записано, щойно файл виправлять.",
-  "tags.pendingChanges.other":
-    "{n} змін збережено, їх буде записано, щойно файл виправлять.",
+  "tags.pendingChanges.one": "{n} зміну збережено, її буде записано, щойно файл виправлять.",
+  "tags.pendingChanges.few": "{n} зміни збережено, їх буде записано, щойно файл виправлять.",
+  "tags.pendingChanges.other": "{n} змін збережено, їх буде записано, щойно файл виправлять.",
   "tags.countHint.one": "{n} файл має цей тег",
   "tags.countHint.few": "{n} файли мають цей тег",
   "tags.countHint.other": "{n} файлів мають цей тег",
@@ -1379,8 +1375,7 @@ export default {
   "notes.file.openInProject": "Відкрити в проєкті",
   "notes.file.reload": "Перезавантажити",
   "notes.file.remove": "Вилучити зі списку",
-  "notes.file.removeUnsaved":
-    "«{name}» містить незбережений текст. Усе одно вилучити зі списку?",
+  "notes.file.removeUnsaved": "«{name}» містить незбережений текст. Усе одно вилучити зі списку?",
   "notes.file.removed": "«{name}» вилучено зі списку. Сам файл не змінено.",
   "notes.file.saveAgain": "Зберегти знову",
   "notes.file.saveAsNote": "Зберегти як нотатку",
@@ -1445,7 +1440,7 @@ export default {
   "notes.recovered.title": "Відновлено після збою.",
   "notes.recoveredMark": "Відновлено після збою",
   "notes.rename": "Перейменувати…",
-  "notes.rename.chars": "Імʼя файлу не може містити \\ / : * ? \" < > |.",
+  "notes.rename.chars": 'Імʼя файлу не може містити \\ / : * ? " < > |.',
   "notes.rename.dot": "Імʼя файлу не може починатися чи закінчуватися крапкою.",
   "notes.rename.empty": "Введіть імʼя файлу.",
   "notes.rename.exists": "Нотатка з іменем {name} уже існує.",
@@ -1529,8 +1524,7 @@ export default {
   "agent.setup.claudeStep": "Claude Code: виконайте це один раз у папці проєкту",
   "agent.setup.more": "Інші способи підключення",
   "agent.groupsCount": "Що можуть робити агенти (дозволено {n} з {total})",
-  "agent.limitsLink":
-    "Обмеження для всіх, хто відкриває цей проєкт: налаштування цієї папки",
+  "agent.limitsLink": "Обмеження для всіх, хто відкриває цей проєкт: налаштування цієї папки",
   "agent.popoverRow.off": "Вимкнено",
   "agent.popoverRow.on": "Увімкнено",
   "agent.popoverRow.connected": "Увімкнено · підключено",
@@ -1631,8 +1625,7 @@ export default {
     "Після останньої передачі в PerMark нічого не зроблено: агентові передаються лише зміни, зроблені поза ним.",
   "agent.handoff.first":
     "Перша передача: вашу останню роботу позначено; старіші сеанси показано без позначки.",
-  "agent.handoff.allStale":
-    "Уся ця робота старша за тиждень: позначено лише останній сеанс.",
+  "agent.handoff.allStale": "Уся ця робота старша за тиждень: позначено лише останній сеанс.",
   "agent.handoff.trimmed": "Деякі старіші записи більше не зберігаються.",
   "agent.handoff.upgraded": "Журнал дій оновлено: старіші записи відкладено окремо.",
   "agent.handoff.total": "Разом: {actions} · {tokens}",
@@ -1641,12 +1634,9 @@ export default {
     "Копіювати повний список замість одного рядка (для агентів без підключення до PerMark)",
   "agent.handoff.confirm": "Передати й скопіювати",
   "agent.handoff.nothing": "Нічого нового після останньої передачі.",
-  "agent.handoff.done.one":
-    "Передано {n} дію — скопійовано, можна вставити у ваш промпт.",
-  "agent.handoff.done.few":
-    "Передано {n} дії — скопійовано, можна вставити у ваш промпт.",
-  "agent.handoff.done.other":
-    "Передано {n} дій — скопійовано, можна вставити у ваш промпт.",
+  "agent.handoff.done.one": "Передано {n} дію — скопійовано, можна вставити у ваш промпт.",
+  "agent.handoff.done.few": "Передано {n} дії — скопійовано, можна вставити у ваш промпт.",
+  "agent.handoff.done.other": "Передано {n} дій — скопійовано, можна вставити у ваш промпт.",
   "agent.handoff.failed": "Передача не вдалася. Спробуйте ще раз.",
   "agent.handoff.copyFailed": "Передано, але скопіювати не вдалося.",
   "config.sheet": "Налаштування в цьому файлі",
@@ -1665,8 +1655,7 @@ export default {
   "config.reason.flow":
     "Записано в потоковому стилі ([...] або {...}). Змініть це у вихідному тексті.",
   "config.reason.inlineTable": "Вбудована таблиця. Змініть її у вихідному тексті.",
-  "config.reason.nested":
-    "Список у списку або список таблиць. Змініть це у вихідному тексті.",
+  "config.reason.nested": "Список у списку або список таблиць. Змініть це у вихідному тексті.",
   "config.reason.mixed": "Список різнотипних елементів. Змініть його у вихідному тексті.",
   "config.reason.blockScalar": "Блок тексту (| або >). Змініть його у вихідному тексті.",
   "config.reason.continuation": "Продовжується на наступних рядках. Змініть це у вихідному тексті.",
@@ -1772,7 +1761,8 @@ export default {
   "project.where": "Зберігається в",
   "settings.all": "Усі налаштування",
   "settings.editorPreview": "Приклад:",
-  "settings.linkUpdateHint": "Що відбувається з посиланнями, коли файл переміщують чи перейменовують.",
+  "settings.linkUpdateHint":
+    "Що відбувається з посиланнями, коли файл переміщують чи перейменовують.",
   "settings.readingHint": "Зберігається для кожного проєкту.",
   "settings.readingNone": "Відкрийте документ, щоб змінити ширину й масштаб.",
   "settings.refPreview": "Приклад:",
@@ -1814,8 +1804,7 @@ export default {
   "plugin.follow.name": "Режим стеження",
   "plugin.follow.about": "Відкриває документ, у який пишуть, і зберігає ваше місце.",
   "plugin.unread.name": "Позначки непрочитаного",
-  "plugin.unread.about":
-    "Позначає документи, змінені відтоді, як ви їх читали, — як нову пошту.",
+  "plugin.unread.about": "Позначає документи, змінені відтоді, як ви їх читали, — як нову пошту.",
   "plugin.review.name": "Перевірка",
   "plugin.review.about":
     "Показує, що змінилося в документі відтоді, як ви його читали; кожну зміну можна залишити або повернути.",
@@ -1842,7 +1831,8 @@ export default {
   "plugin.prompt-blocks.about":
     "Показує XML-подібні теги промптів як згортувані блоки; позначає змінні шаблонів і посилання @file.",
   "plugin.frontmatter-card.name": "Картка front matter",
-  "plugin.frontmatter-card.about": "Показує front matter як картку властивостей, яку можна редагувати.",
+  "plugin.frontmatter-card.about":
+    "Показує front matter як картку властивостей, яку можна редагувати.",
   "plugin.highlight.name": "Підсвічування коду",
   "plugin.highlight.about": "Розфарбовує блоки коду й показує мову.",
   "plugin.math.name": "Математика",
@@ -1861,11 +1851,9 @@ export default {
   "plugin.xml-view.name": "XML",
   "plugin.xml-view.about": "Показує файли XML з їхньою структурою.",
   "plugin.fmt-toml.name": "Файли TOML",
-  "plugin.fmt-toml.about":
-    "Показує TOML як охайну таблицю й редагує по одному значенню за раз.",
+  "plugin.fmt-toml.about": "Показує TOML як охайну таблицю й редагує по одному значенню за раз.",
   "plugin.fmt-yaml.name": "Файли YAML",
-  "plugin.fmt-yaml.about":
-    "Показує YAML як охайну таблицю й редагує по одному значенню за раз.",
+  "plugin.fmt-yaml.about": "Показує YAML як охайну таблицю й редагує по одному значенню за раз.",
   "plugin.fmt-ini.name": "Файли INI і cfg",
   "plugin.fmt-ini.about":
     "Показує файли INI як охайну таблицю й редагує по одному значенню за раз.",
@@ -1937,8 +1925,7 @@ export default {
   "updates.status.downloading": "Завантаження версії {version}…",
   "updates.status.downloadingPercent": "Завантаження версії {version}: {percent}%",
   "updates.status.ready": "Версія {version} готова. Перезапустіть PerMark, щоб завершити.",
-  "updates.status.checkFailed":
-    "Не вдалося пошукати нову версію. PerMark спробує ще раз пізніше.",
+  "updates.status.checkFailed": "Не вдалося пошукати нову версію. PerMark спробує ще раз пізніше.",
   "updates.status.downloadFailed": "Не вдалося завантажити: {message}",
   "updates.status.installFailed": "Не вдалося встановити оновлення: {message}",
   "plugin.shell-integration.name": "Пункти файлового менеджера",
@@ -2077,8 +2064,7 @@ export default {
   "tokens.own": "Вибір лише для цього проєкту",
   "tokens.ownHint":
     "Зберігається в .permark/config.toml, тож усі, хто працює над проєктом, рахують однаково.",
-  "tokens.projectNone":
-    "Ініціалізуйте PerMark у цьому проєкті, щоб він мав власний вибір.",
+  "tokens.projectNone": "Ініціалізуйте PerMark у цьому проєкті, щоб він мав власний вибір.",
   "tokens.projectUsesApp": "Цей проєкт використовує вибір, зроблений для всіх проєктів.",
   "tokens.choose": "Вибрати токенізатор",
   "tokens.download": "Завантажити словник {tokenizer}",
@@ -2572,8 +2558,7 @@ export default {
   "tags.legend.label": "Що означають позначки",
   "tags.legend.local": "Локальний для одного проєкту",
   "tags.legend.unlisted": "Поза списками (лише у файлах)",
-  "projects.category.offered":
-    "Офіційні категорії: {names}. Виберіть одну або введіть власну.",
+  "projects.category.offered": "Офіційні категорії: {names}. Виберіть одну або введіть власну.",
   "projects.only": "Показано лише {name}",
   "projects.showAll": "Показати всі",
   "projects.vocabulary.keep":
@@ -2804,10 +2789,10 @@ export default {
     "Зараз недостатньо вільної памʼяті. Закрийте інші програми й спробуйте ще раз або виберіть меншу модель.",
   "localAi.test.failed.notAvailable": "Рушій ШІ поки недоступний для цього компʼютера.",
   "localAi.test.failed.crashed": "Рушій ШІ неочікувано зупинився.",
-  "localAi.test.failed.blocked": "Захисне програмне забезпечення на цьому компʼютері заблокувало рушій ШІ.",
+  "localAi.test.failed.blocked":
+    "Захисне програмне забезпечення на цьому компʼютері заблокувало рушій ШІ.",
   "localAi.test.failed.needsNewer": "Ця модель потребує новішої версії рушія ШІ.",
-  "localAi.test.failed.corrupt":
-    "Файли моделі пошкоджено. Вилучіть модель і отримайте її знову.",
+  "localAi.test.failed.corrupt": "Файли моделі пошкоджено. Вилучіть модель і отримайте її знову.",
   "localAi.test.retryLabel": "Протестувати {name} ще раз",
   "localAi.test.cancelled": "Тест зупинено.",
   "localAi.test.closeLabel": "Закрити тест {name}",
@@ -2845,12 +2830,9 @@ export default {
   "correction.failed": "Не вдалося перевірити текст.",
   "correction.failed.noModel":
     "Модель, вибрана для виправлення, недоступна. Виберіть її на сторінці «Локальний ШІ».",
-  "correction.discarded.one":
-    "{n} частину залишено без змін, бо модель змінила забагато.",
-  "correction.discarded.few":
-    "{n} частини залишено без змін, бо модель змінила забагато.",
-  "correction.discarded.other":
-    "{n} частин залишено без змін, бо модель змінила забагато.",
+  "correction.discarded.one": "{n} частину залишено без змін, бо модель змінила забагато.",
+  "correction.discarded.few": "{n} частини залишено без змін, бо модель змінила забагато.",
+  "correction.discarded.other": "{n} частин залишено без змін, бо модель змінила забагато.",
   "correction.outdated.one": "{n} пропозиція більше не застосовна, бо текст змінився.",
   "correction.outdated.few": "{n} пропозиції більше не застосовні, бо текст змінився.",
   "correction.outdated.other": "{n} пропозицій більше не застосовні, бо текст змінився.",
@@ -2894,8 +2876,7 @@ export default {
   "spelling.languages.offer": "Завантажити словник: {language}…",
   "spelling.languages.default": "За замовчуванням для нових документів: {language}",
   "spelling.languages.defaultTitle": "Мова за замовчуванням для нових документів",
-  "spelling.download.question":
-    "Завантажити словник «{language}» ({size}, ліцензія {license})?",
+  "spelling.download.question": "Завантажити словник «{language}» ({size}, ліцензія {license})?",
   "spelling.download.note":
     "Словник зберігається на цьому компʼютері. Ваш текст перевіряється тут і нікуди не надсилається.",
   "spelling.download.confirm": "Завантажити",
@@ -3029,8 +3010,7 @@ export default {
   "export.snapCups": "Щоб друкувати на своїх принтерах, установіть snap-пакет CUPS:",
   "export.savePdf": "Зберегти PDF…",
   "export.print": "Друк…",
-  "export.unsaved":
-    "Спочатку збережіть зміни: PDF, HTML і друк використовують збережений файл.",
+  "export.unsaved": "Спочатку збережіть зміни: PDF, HTML і друк використовують збережений файл.",
   "export.progress.pdf": "Створення PDF…",
   "export.progress.html": "Створення сторінки HTML…",
   "export.progress.print": "Підготовка до друку…",
