@@ -6,7 +6,7 @@
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import { Plugin, PluginKey, TextSelection } from "@milkdown/kit/prose/state";
 import { Decoration, DecorationSet, type EditorView } from "@milkdown/kit/prose/view";
-import { FIND_LIMIT, offsetsOf, scrollIntoPane, type Finder } from "../../doc/find";
+import { FIND_LIMIT, foldCase, offsetsOf, scrollIntoPane, type Finder } from "../../doc/find";
 
 /** A match: document positions. */
 type Match = { from: number; to: number };
@@ -58,7 +58,7 @@ export function matchesIn(
   query: string,
   limit = FIND_LIMIT,
 ): { matches: Match[]; capped: boolean } {
-  const needle = query.toLowerCase();
+  const needle = foldCase(query);
   const matches: Match[] = [];
   let capped = false;
   if (needle === "") return { matches, capped };

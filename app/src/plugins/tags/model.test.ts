@@ -32,6 +32,13 @@ describe("how a typed tag is cleaned (the backend's rules)", () => {
     expect(normalizeTag("")).toBeNull();
   });
 
+  it("lowercases a dotted capital İ to a plain i, the dotless capital I as in any language", () => {
+    // a plain lowercase turns İ into i + a combining dot, which a typed "izmir" never equals
+    expect(normalizeTag("İzmir")).toBe("izmir");
+    expect(normalizeTag("İSTANBUL Notları")).toBe("istanbul-notları");
+    expect(normalizeTag("Işık")).toBe("işık");
+  });
+
   it("cuts by characters, not by bytes", () => {
     expect([...(normalizeTag("é".repeat(60)) ?? "")]).toHaveLength(MAX_TAG_CHARS);
     expect([...(normalizeTag("😀".repeat(60)) ?? "")]).toHaveLength(MAX_TAG_CHARS);

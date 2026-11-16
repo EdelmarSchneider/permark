@@ -84,6 +84,7 @@ export function vocabularyName(raw: string): string | null {
     .split(/\s+/)
     .filter((w) => w !== "")
     .join("-")
+    .replaceAll("İ", "i")
     .toLowerCase();
   const name = [...joined].slice(0, 40).join("");
   return name === "" ? null : name;

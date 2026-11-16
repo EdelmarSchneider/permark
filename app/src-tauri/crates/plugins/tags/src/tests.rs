@@ -30,6 +30,18 @@ fn tags_are_trimmed_lowercased_and_hyphenated() {
 }
 
 #[test]
+fn a_dotted_capital_i_lowercases_to_a_plain_i() {
+    // a plain lowercase turns İ into i + a combining dot, which a typed `izmir` never equals
+    assert_eq!(normalize_tag("İzmir"), Some("izmir".into()));
+    assert_eq!(
+        normalize_tag("İSTANBUL Notları"),
+        Some("istanbul-notları".into())
+    );
+    // the dotless capital I lowercases as in every other language: tags do not depend on the UI language
+    assert_eq!(normalize_tag("Işık"), Some("işık".into()));
+}
+
+#[test]
 fn tags_are_cut_by_characters_not_bytes() {
     let long = "é".repeat(60);
     assert_eq!(

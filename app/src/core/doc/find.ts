@@ -22,11 +22,17 @@ export type Finder = {
   done?(current: number | null): void;
 };
 
-/** Offsets of every match of `needle` (lower case) in `text`, case-insensitive, in order, not overlapping. */
+/** `s` for a case-insensitive compare, every UTF-16 unit in its place (an offset in it is an offset in `s`): the dotted
+ *  and dotless i go to `i` first, as `İ` lowercases to two units and Turkish pairs the cases another way (I-ı, İ-i). */
+export function foldCase(s: string): string {
+  return s.replace(/[İı]/g, "i").toLowerCase();
+}
+
+/** Offsets of every match of `needle` (folded by `foldCase`) in `text`, case-insensitive, in order, not overlapping. */
 export function* offsetsOf(text: string, needle: string): Generator<number> {
   if (needle === "") return;
-  // lower-casing may change the length (rare scripts); then the text is searched as it is
-  const lower = text.toLowerCase();
+  // a fold of another length would shift the offsets; then the text is searched as it is
+  const lower = foldCase(text);
   const hay = lower.length === text.length ? lower : text;
   for (let at = hay.indexOf(needle); at !== -1; at = hay.indexOf(needle, at + needle.length)) {
     yield at;
@@ -35,7 +41,7 @@ export function* offsetsOf(text: string, needle: string): Generator<number> {
 
 /** Every match of `query` (case-insensitive) in the text nodes under `root`, in document order. */
 export function findIn(root: HTMLElement, query: string, limit = FIND_LIMIT): Found {
-  const needle = query.toLowerCase();
+  const needle = foldCase(query);
   const ranges: Range[] = [];
   if (needle === "") return { ranges, capped: false };
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
