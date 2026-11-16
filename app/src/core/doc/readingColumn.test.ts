@@ -102,4 +102,19 @@ describe("reading column", () => {
       "overflow-y: hidden",
     ]);
   });
+
+  it("aligns a table column as written (`:-:`, `--:`): the cells' align wins over the default", () => {
+    // a cell's `align` attribute is a presentational hint, below any author rule: the shared rule sets the start
+    // (a header cell is centered by the browser otherwise) and the written alignment is a rule of its own
+    const shared = sheet.find(
+      (rule) => rule.selectors.includes(".md th") && rule.selectors.includes(".md td"),
+    );
+    expect(declarations(shared?.body ?? "")).toContain("text-align: start");
+    for (const side of ["left", "center", "right"]) {
+      for (const cell of ["th", "td"]) {
+        const selector = `.md ${cell}[align="${side}" i]`;
+        expect(declarations(ruleBody(css, selector)), selector).toContain(`text-align: ${side}`);
+      }
+    }
+  });
 });

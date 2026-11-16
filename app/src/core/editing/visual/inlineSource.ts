@@ -128,6 +128,11 @@ const AFTER_LABEL = /^[[(:]/;
  * and is no digit to the math rule. Prose elsewhere is written as typed (a `]:` inside it defines nothing).
  */
 function afterPiece(piece: string, written: string): string {
+  if (mathParts(piece)?.close === "\\]") {
+    // a formula's `\]` closes no label: the escape the writer puts on a `(` after any `]` is dropped (a `\(` there
+    // could open a formula on the next read)
+    return written.startsWith("\\(") ? written.slice(1) : written;
+  }
   if (piece.endsWith("]") && AFTER_LABEL.test(written)) return `\\${written}`;
   const digit = /^[0-9]/.exec(written)?.[0];
   if (digit !== undefined && mathParts(piece)?.open === "$") {

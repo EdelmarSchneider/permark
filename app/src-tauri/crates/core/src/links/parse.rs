@@ -156,6 +156,7 @@ fn options() -> Options<'static> {
     options.extension.autolink = true;
     options.extension.description_lists = true;
     options.extension.math_dollars = true;
+    options.extension.math_latex = true;
     options.extension.front_matter_delimiter = Some("---".to_owned());
     options
 }

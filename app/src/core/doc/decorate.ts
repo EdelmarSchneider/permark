@@ -25,6 +25,14 @@ export function codeEmbed<T>(
   return (language === "" ? undefined : find(language)) ?? find("@code");
 }
 
+/**
+ * A ```math block (the renderer's word, exact case) is one display formula. Read from the block's own attribute: its
+ * code leaves the block while an embed draws it.
+ */
+function isMathBlock(element: Element): boolean {
+  return element.getAttribute("data-info") === "math";
+}
+
 /** The mark on an element that holds a code reference. */
 export const CODE_REF = "code-ref";
 
@@ -210,12 +218,16 @@ export class Decorator {
   #placeholders(block: HTMLElement): HTMLElement[] {
     const found = Array.from(block.querySelectorAll<HTMLElement>(".code-block, [data-math-style]"));
     if (block.matches(".code-block, [data-math-style]")) found.unshift(block);
-    return found;
+    // the code of a ```math block is the block's formula: the block draws it (two embeds would race for it)
+    return found.filter(
+      (element) => !(element.hasAttribute("data-math-style") && element.closest(".code-block")),
+    );
   }
 
   #lookup(element: HTMLElement): LazyEmbed | undefined {
     if (element.hasAttribute("data-math-style")) return this.#embeds("@math");
-    return codeEmbed(element.getAttribute("data-info") ?? "", this.#embeds);
+    const formula = isMathBlock(element) ? this.#embeds("@math") : undefined;
+    return formula ?? codeEmbed(element.getAttribute("data-info") ?? "", this.#embeds);
   }
 
   #syncEmbeds(block: HTMLElement): void {
@@ -244,7 +256,9 @@ export class Decorator {
     const props: EmbedProps = {
       source,
       info: isMath ? "" : (element.getAttribute("data-info") ?? ""),
-      display: element.getAttribute("data-math-style") === "display",
+      display: isMath
+        ? element.getAttribute("data-math-style") === "display"
+        : isMathBlock(element),
       ...(this.#theme === undefined ? {} : { theme: this.#theme }),
     };
     const loading: Promise<void> = loader()

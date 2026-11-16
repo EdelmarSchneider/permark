@@ -1,8 +1,10 @@
 // Inline math in the editor's reading, by the rules View's renderer applies (comrak `math_dollars` + `math_code`, after
-// pandoc): `$x$` (no space after the opening `$` nor before the closing one, no digit right after it, `\$` inside is
-// not a closing one), `$$x$$`, and code math `` $`x`$ ``. A run of three or more `$` is text. So `$5 and $6` stays
-// text, as in View. Without these rules the editor would read `$a_b_c$` as emphasis and change what the file says.
-// The formula becomes an `inlineSource` mdast node holding its exact source; what the person edits is the TeX inside.
+// pandoc, + `math_latex`): `$x$` (no space after the opening `$` nor before the closing one, no digit right after it,
+// `\$` inside is not a closing one), `$$x$$`, code math `` $`x`$ ``, and the LaTeX delimiters `\(x\)` | `\[x\]`
+// (closed by the first backslash right before the matching bracket; never empty). A run of three or more `$` is text.
+// So `$5 and $6` stays text, as in View. Without these rules the editor would read `$a_b_c$` as emphasis (and `\(x\)`
+// as escaped brackets) and change what the file says. The formula becomes an `inlineSource` mdast node holding its
+// exact source; what the person edits is the TeX inside.
 
 import type {
   Code,
@@ -24,6 +26,10 @@ declare module "micromark-util-types" {
 const DOLLAR = 36;
 const BACKTICK = 96;
 const BACKSLASH = 92;
+const PAREN_OPEN = 40;
+const PAREN_CLOSE = 41;
+const BRACKET_OPEN = 91;
+const BRACKET_CLOSE = 93;
 const MATH = "pmInlineMath";
 const MATH_TEXT = "pmInlineMathText";
 
@@ -156,7 +162,78 @@ function previous(this: TokenizeContext, code: Code): boolean {
 
 const mathConstruct: Construct = { name: "pmInlineMath", tokenize: tokenizeMath, previous };
 
-export const mathSyntax: Extension = { text: { [DOLLAR]: mathConstruct } };
+/** The bracket that closes a LaTeX delimiter opened by `code` (`(` -> `)`, `[` -> `]`), else null. */
+function latexCloser(code: Code): number | null {
+  if (code === PAREN_OPEN) return PAREN_CLOSE;
+  if (code === BRACKET_OPEN) return BRACKET_CLOSE;
+  return null;
+}
+
+/** `\(x\)` | `\[x\]`: tried before a backslash escape, as the renderer tries it. */
+function tokenizeLatexMath(this: TokenizeContext, effects: Effects, ok: State, nok: State): State {
+  let closer: number | null = null;
+  /** Codes of the TeX before the backslash at hand (an empty formula is text). */
+  let length = 0;
+  let inText = false;
+
+  const take = (code: Code): void => {
+    if (!inText) {
+      effects.enter(MATH_TEXT);
+      inText = true;
+    }
+    effects.consume(code);
+  };
+
+  const start: State = (code) => {
+    effects.enter(MATH);
+    take(code);
+    return open;
+  };
+  const open: State = (code) => {
+    closer = latexCloser(code);
+    if (closer === null) return nok(code);
+    take(code);
+    return inside;
+  };
+  const inside: State = (code) => {
+    if (code === null) return nok(code);
+    if (isLineEnding(code)) {
+      if (inText) {
+        effects.exit(MATH_TEXT);
+        inText = false;
+      }
+      effects.enter("lineEnding");
+      effects.consume(code);
+      effects.exit("lineEnding");
+      length += 1;
+      return inside;
+    }
+    take(code);
+    if (code === BACKSLASH) return afterBackslash;
+    length += 1;
+    return inside;
+  };
+  const afterBackslash: State = (code) => {
+    if (code !== closer) {
+      // the backslash was TeX
+      length += 1;
+      return inside(code);
+    }
+    if (length === 0) return nok(code);
+    take(code);
+    if (inText) effects.exit(MATH_TEXT);
+    effects.exit(MATH);
+    return ok;
+  };
+
+  return start;
+}
+
+const latexMathConstruct: Construct = { name: "pmLatexMath", tokenize: tokenizeLatexMath };
+
+export const mathSyntax: Extension = {
+  text: { [DOLLAR]: mathConstruct, [BACKSLASH]: latexMathConstruct },
+};
 
 export const mathFromMarkdown: FromMarkdownExtension = {
   enter: {
@@ -171,19 +248,34 @@ export const mathFromMarkdown: FromMarkdownExtension = {
   },
 };
 
+/** Each opening delimiter with its closing one, longest first (`` $` `` always opens code math). */
+const DELIMITERS: readonly (readonly [string, string])[] = [
+  ["$`", "`$"],
+  ["$$", "$$"],
+  ["$", "$"],
+  ["\\(", "\\)"],
+  ["\\[", "\\]"],
+];
+
+/** Delimiters of a formula on a line of its own. */
+const DISPLAY = new Set(["$$", "\\["]);
+
 /** A formula's source as its delimiters and the TeX between them (`text`); null when `source` is not one. */
 export function mathParts(source: string): { open: string; text: string; close: string } | null {
   // `` $` `` always opens code math: when it is not closed, the `$` is text (never `$` math)
-  const open = ["$`", "$$", "$"].find((delimiter) => source.startsWith(delimiter));
-  if (open === undefined) return null;
-  const close = open === "$`" ? "`$" : open;
+  const found = DELIMITERS.find(([open]) => source.startsWith(open));
+  if (found === undefined) return null;
+  const [open, close] = found;
   if (source.length <= open.length + close.length || !source.endsWith(close)) return null;
   return { open, text: source.slice(open.length, source.length - close.length), close };
 }
 
-/** The TeX View draws for a formula: line endings as spaces; code math loses one space on each side. */
+/**
+ * The TeX View draws for a formula: line endings as spaces; code math loses one space on each side. Display and LaTeX
+ * delimited math keep the TeX as written.
+ */
 function literal(open: string, tex: string): string {
-  if (open === "$$") return tex;
+  if (DISPLAY.has(open) || open === "\\(") return tex;
   const flat = tex.replace(/\r\n|\r|\n/g, " ");
   return open === "$`" && /^ .*\S.* $/s.test(flat) ? flat.slice(1, -1) : flat;
 }
@@ -193,7 +285,7 @@ export function mathElement(source: string): HTMLElement {
   const parts = mathParts(source);
   const code = parts?.open === "$`";
   const element = document.createElement(code ? "code" : "span");
-  element.dataset.mathStyle = parts?.open === "$$" ? "display" : "inline";
+  element.dataset.mathStyle = DISPLAY.has(parts?.open ?? "") ? "display" : "inline";
   element.textContent = parts === null ? source : literal(parts.open, parts.text);
   return element;
 }

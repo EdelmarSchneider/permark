@@ -448,8 +448,22 @@
   /* a column keeps room for about three CJK characters (they may break after each one, so without this a narrow pane
      would squeeze a cell to one character per line); a table that needs more than the pane scrolls in its wrapper */
   min-width: 5em;
-  text-align: left;
+  text-align: start;
   border-bottom: 1px solid var(--border);
+}
+/* a column's written alignment (`:-:`, `--:`) comes as the cells' `align`, a hint below the rule above: restated here.
+   Edit's cells carry it as their own style. */
+.md th[align="left" i],
+.md td[align="left" i] {
+  text-align: left;
+}
+.md th[align="center" i],
+.md td[align="center" i] {
+  text-align: center;
+}
+.md th[align="right" i],
+.md td[align="right" i] {
+  text-align: right;
 }
 .md th {
   position: sticky;

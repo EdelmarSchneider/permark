@@ -508,6 +508,18 @@ fn blocks_have_kinds_and_the_ones_to_keep_say_why() {
 }
 
 #[test]
+fn bracket_display_math_is_kept_like_dollar_math() {
+    let got = kinds("\\[\nx\n\\]\n\ntext \\(y\\) more\n");
+    assert_eq!(
+        got,
+        [
+            (1, 3, SegmentKind::Math, Some(LockReason::Math)),
+            (5, 5, SegmentKind::Paragraph, None),
+        ]
+    );
+}
+
+#[test]
 fn a_toon_block_is_kept_as_written_data() {
     let got = kinds("```toon\nusers[1]{id}:\n  1\n```\n\n```json\n{}\n```\n");
     assert_eq!(

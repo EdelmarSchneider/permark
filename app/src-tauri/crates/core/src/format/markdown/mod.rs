@@ -75,6 +75,8 @@ fn options() -> Options<'static> {
     ext.description_lists = true;
     ext.math_dollars = true;
     ext.math_code = true;
+    // `\(..\)` and `\[..\]`: the LaTeX delimiters generated text often uses
+    ext.math_latex = true;
     // Heading ids, without a prefix so that `[x](#my-heading)` works as authored.
     ext.header_id_prefix = Some(String::new());
     o.render.sourcepos = true;

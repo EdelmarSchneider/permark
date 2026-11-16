@@ -184,14 +184,32 @@ describe("inline math, read as View reads it", () => {
     ["Auto <http://a.b/$x$> $y$", ["$y$"]],
     // the element is a piece of its own (HTML written in a line): no formula inside its attribute
     ['Html <span title="$x$">t</span> $y$', ['<span title="$x$">t</span>', "$y$"]],
+    // LaTeX delimiters: closed by the first backslash before the matching bracket, never empty
+    ["Latex \\(a_b_c\\) here", ["\\(a_b_c\\)"]],
+    ["Shown \\[x^2\\] inline", ["\\[x^2\\]"]],
+    ["Empty \\(\\) x\\) y", []],
+    ["Mixed \\(x\\] y", []],
+    ["Escaped \\\\(x\\) b", []],
+    ["Code `\\(x\\)` span", []],
+    ["Inner \\(a \\\\) b\\) c", ["\\(a \\\\)"]],
+    ["Dollar in \\(a$b\\) ok", ["\\(a$b\\)"]],
+    ["Link [a \\(x\\) b](u.md) text", ["\\(x\\)"]],
   ])("%s", (text, expected) => {
     expect(atomsIn(text)).toEqual(expected);
   });
 
   it("each atom is written back as its own source", () => {
-    const text = "A $a_b_c$ and $$x$$, $`y`$ and \\$5 $q\\$r$ [l $x$](u.md) *e $z$* end.";
+    const text =
+      "A $a_b_c$ and $$x$$, $`y`$ and \\$5 $q\\$r$ [l $x$](u.md) *e $z$* \\(a_b\\) \\[c\\](d) end.";
     const doc = core.parse(text);
     expect(core.write(doc.child(0))).toBe(text);
+  });
+
+  it("a backslash typed before a parenthesis stays text: it never starts a formula on the next read", () => {
+    const doc = core.parse("x\n");
+    const typed = core.view.state.schema.text("see \\(a\\) and \\(b)");
+    const written = core.write(doc.child(0).copy(doc.child(0).content.replaceChild(0, typed)));
+    expect(atomsIn(written)).toEqual([]);
   });
 });
 
@@ -387,6 +405,27 @@ describe("an inline formula opened", () => {
     expect(second.value).toBe("y");
     type(second, "z");
     expect(compose(core, built, core.view.state.doc).text).toBe("A $$x^3$$ and $`z`$ b.\n");
+  });
+
+  it("LaTeX-delimited math is View's formula and keeps its delimiters", async () => {
+    const text = "A \\(x^2\\) and \\[y\\] b.\n";
+    const built = await load(text);
+    const looks = atoms().map((atom) => atom.querySelector("[data-math-style]"));
+    expect(looks.map((look) => look?.getAttribute("data-math-style"))).toEqual([
+      "inline",
+      "display",
+    ]);
+    expect(looks.map((look) => look?.textContent)).toEqual(["x^2", "y"]);
+    const first = openAtom(0);
+    expect(first.value).toBe("x^2");
+    type(first, "x^3");
+    key(first, "Escape");
+    const second = openAtom(1);
+    type(second, "z");
+    // a closing delimiter typed into the TeX would end the formula early: refused
+    type(second, "a\\]b");
+    expect(second.getAttribute("aria-invalid")).toBe("true");
+    expect(compose(core, built, core.view.state.doc).text).toBe("A \\(x^3\\) and \\[z\\] b.\n");
   });
 });
 
