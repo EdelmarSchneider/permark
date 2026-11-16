@@ -1059,7 +1059,7 @@ export function createMockApi(): Api & {
     settingsGet: () => ok(settings),
     settingsSet: (change) => {
       settings = applyChange(settings, change);
-      emit("settings-changed", { scope: { scope: "app" }, keys: [change.key], settings });
+      emit("settings-changed", { keys: [change.key], settings });
       if (change.key === "pluginEnabled") announceShell();
       return ok(settings);
     },
@@ -1070,7 +1070,7 @@ export function createMockApi(): Api & {
       if (settings.charactersStatus !== "builtin" || settings.charactersFile === "")
         return ok(false);
       settings = { ...settings, charactersStatus: "read" };
-      emit("settings-changed", { scope: { scope: "app" }, keys: ["charactersFile"], settings });
+      emit("settings-changed", { keys: ["charactersFile"], settings });
       return ok(true);
     },
     charactersReveal: () => ok(null),

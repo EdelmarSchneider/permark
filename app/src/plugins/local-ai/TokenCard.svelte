@@ -26,7 +26,7 @@
 </script>
 
 <section class="token" aria-labelledby={`${id}-title`}>
-  <h3 id={`${id}-title`}>{t("localAi.token.title")}</h3>
+  <h4 id={`${id}-title`}>{t("localAi.token.title")}</h4>
   <Card>
     <SettingRow
       label={t("localAi.token.label")}
@@ -74,7 +74,7 @@
     flex-direction: column;
     gap: var(--sp-2);
   }
-  h3 {
+  h4 {
     margin: 0;
     padding-left: var(--sp-1);
     color: var(--muted);

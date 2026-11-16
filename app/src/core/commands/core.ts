@@ -112,6 +112,12 @@ const SPECS: readonly Spec[] = [
   },
   { id: "app.settings", label: "cmd.settings", keys: ["Mod+,"], run: () => ui.toggleSettings() },
   { id: "app.settingsPage", label: "cmd.settingsPage", run: () => ui.openSettingsPage() },
+  {
+    id: "app.folderSettings",
+    label: "cmd.folderSettings",
+    requires: PROJECT,
+    run: () => ui.openSettingsPage("project"),
+  },
   { id: "app.keyboard", label: "cmd.keyboard", run: () => ui.openKeyboard() },
   {
     id: "tab.next",

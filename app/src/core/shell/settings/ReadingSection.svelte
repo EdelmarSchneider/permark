@@ -1,17 +1,9 @@
 <script lang="ts">
-  // Reading: the language, the look (theme + light tone), how documents are read (width, zoom) in this window, and
-  // whether long lines of text wrap (everywhere).
+  // Reading: the language, the look (theme + light tone) and whether long lines of text wrap (everywhere). Reading width
+  // and zoom are per project and act on the shown document, so they live in the document header's reading menu.
   import type { LanguagePref, ThemePref, Tone } from "../../../api";
   import { keyHint } from "../../commands/hint";
   import { setWrap } from "../../doc/wrapLines";
-  import {
-    WIDTHS,
-    ZOOM_DEFAULT,
-    ZOOM_MAX,
-    ZOOM_MIN,
-    reading,
-    type Width,
-  } from "../../doc/reading.svelte";
   import { language, LOCALE_NAMES, LOCALES, t, type MessageKey } from "../../i18n";
   import { look } from "../../look.svelte";
   import type { WindowStore } from "../../window.svelte";
@@ -32,11 +24,6 @@
     { value: "sage", label: "settings.toneSage" },
     { value: "gray", label: "settings.toneGray" },
   ];
-  const WIDTH_LABELS: Record<Width, MessageKey> = {
-    comfortable: "width.comfortable",
-    wide: "width.wide",
-    full: "width.full",
-  };
 
   function parseLanguage(value: string): LanguagePref {
     if (value === "system") return "system";
@@ -44,9 +31,6 @@
   }
 
   const wrapKeys = $derived(keyHint("doc.wrapLines"));
-
-  /** A document can be read here (a project, a file or the Notes is shown): width and zoom have a page to act on. */
-  const reads = $derived(store.view.state === "showing");
 </script>
 
 <SettingRow label={t("settings.language")} labelFor="set-language">
@@ -84,48 +68,6 @@
 </SettingRow>
 
 <SettingRow
-  label={t("settings.width")}
-  labelId="set-width"
-  hint={reads ? t("settings.readingHint") : t("settings.readingNone")}
->
-  <Segments
-    labelledby="set-width"
-    value={reading.width}
-    disabled={!reads}
-    options={WIDTHS.map((w) => ({ value: w, label: t(WIDTH_LABELS[w]) }))}
-    onchange={(value) => reading.setWidth(value)}
-  />
-</SettingRow>
-
-<SettingRow label={t("settings.zoom")} labelId="set-zoom">
-  <div class="zoom" role="group" aria-labelledby="set-zoom">
-    <button
-      type="button"
-      class="btn btn--sm"
-      aria-label={t("media.zoomOut")}
-      disabled={!reads || reading.zoom <= ZOOM_MIN}
-      onclick={() => reading.zoomBy(-1)}>−</button
-    >
-    <output class="zoom-value" aria-live="polite">{reading.zoom}%</output>
-    <button
-      type="button"
-      class="btn btn--sm"
-      aria-label={t("media.zoomIn")}
-      disabled={!reads || reading.zoom >= ZOOM_MAX}
-      onclick={() => reading.zoomBy(1)}>+</button
-    >
-    <button
-      type="button"
-      class="btn btn--ghost btn--sm"
-      disabled={!reads || reading.zoom === ZOOM_DEFAULT}
-      onclick={() => reading.setZoom(ZOOM_DEFAULT)}
-    >
-      {t("cmd.zoomReset")}
-    </button>
-  </div>
-</SettingRow>
-
-<SettingRow
   label={t("settings.wrap")}
   labelFor="set-wrap"
   hint={wrapKeys === null ? t("settings.wrapHint") : t("settings.wrapHintKeys", { keys: wrapKeys })}
@@ -138,16 +80,3 @@
     onchange={(e) => void setWrap(e.currentTarget.checked, false)}
   />
 </SettingRow>
-
-<style>
-  .zoom {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--sp-1);
-  }
-  .zoom-value {
-    min-width: 44px;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
-</style>

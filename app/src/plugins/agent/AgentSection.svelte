@@ -1,16 +1,19 @@
 <script lang="ts">
-  // Settings > AI agents (project windows): the state of this project's sharing and one button to turn it on; while on,
-  // the connected agents (each with Disconnect), the notes shared with this project (while the notes plugin is on) and
-  // the steps that connect one right below (Claude Code first); what agents may do, folded. Nothing turns on by itself: the person sees what is shared, then decides.
+  // Settings > AI agents (project windows): the state of this project's sharing and one button to turn it on (the
+  // person's own); while on, the connected agents (each with Disconnect), the notes shared with this project (while the
+  // notes plugin is on) and the steps that connect one right below (Claude Code first); what agents may do, folded;
+  // then the limits the folder sets for everyone. Nothing turns on by itself: the person sees what is shared, then
+  // decides.
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import { tick, untrack } from "svelte";
-  import { conditions } from "../../core/conditions/context.svelte";
   import { t, type MessageKey } from "../../core/i18n";
   import Card from "../../core/shell/settings/Card.svelte";
+  import ScopeChip from "../../core/shell/settings/ScopeChip.svelte";
   import { ui } from "../../core/shell/ui.svelte";
   import AgentList from "./AgentList.svelte";
+  import AgentNarrowing from "./AgentNarrowing.svelte";
   import SharedNotes from "./SharedNotes.svelte";
   import { GROUPS } from "./groups";
   import { AGENT_PAGE } from "./offer.svelte";
@@ -47,7 +50,6 @@
   const allowed = $derived(
     GROUPS.filter((g) => status?.groups[g.id] === true && !status.denied.includes(g.id)).length,
   );
-  const initialized = $derived(conditions.current.permark === "initialized");
 
   /** How long a Copy button says "Copied" (ms). */
   const COPIED_MS = 2000;
@@ -124,6 +126,7 @@
           <span class={["dot", phase !== "off" && "on"]} aria-hidden="true"></span>
         {/if}
         <span>{stateText}</span>
+        <ScopeChip scope="you" />
       </p>
       {#if phase === "off"}
         {#if status.replaced}
@@ -263,11 +266,8 @@
       </Card>
     </div>
   {/if}
-  {#if initialized}
-    <button type="button" class="link limits" onclick={() => ui.showSettingsSection("project")}>
-      {t("agent.limitsLink")}
-    </button>
-  {/if}
+  <h4 class="group-title">{t("agent.narrow.title")}</h4>
+  <AgentNarrowing />
   <p class="sr-only" role="status">{announcement}</p>
 {/if}
 
@@ -423,9 +423,5 @@
     text-align: left;
     text-decoration: underline;
     cursor: pointer;
-  }
-  .limits {
-    display: block;
-    margin-top: var(--sp-3);
   }
 </style>

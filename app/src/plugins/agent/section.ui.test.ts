@@ -92,7 +92,7 @@ afterEach(async () => {
 });
 
 describe("Settings > AI agents", () => {
-  it("has its own place in the nav, after Editing; Integration has no agent card", async () => {
+  it("has its own place in the This folder group of the nav; Integration has no agent card", async () => {
     await open();
     mountPage("reading");
     // plugins come on one by one, each when its module is loaded: wait for every page whose place is checked
@@ -100,15 +100,22 @@ describe("Settings > AI agents", () => {
       () => ["AI agents", "Local AI"].every((label) => navLabels().includes(label)),
       "nav items",
     );
-    const labels = navLabels();
-    expect(labels.indexOf("AI agents")).toBe(labels.indexOf("Editing") + 1);
-    // Local AI (order 35) sits between the agents and Integration
-    expect(labels.indexOf("Local AI")).toBe(labels.indexOf("AI agents") + 1);
-    expect(labels.indexOf("Integration")).toBe(labels.indexOf("Local AI") + 1);
+    const group = (name: string): string[] =>
+      Array.from(
+        target.querySelectorAll(`.nav [role="group"][aria-label="${name}"] .nav-item`),
+      ).map(text);
+    // the agents are a matter of this folder, after its overview and files
+    const folder = group("This folder");
+    expect(folder.indexOf("AI agents")).toBe(folder.indexOf("Files") + 1);
+    // Local AI (order 35) is the app's: between Editing and Integration
+    const app = group("App");
+    expect(app).not.toContain("AI agents");
+    expect(app.indexOf("Local AI")).toBe(app.indexOf("Editing") + 1);
+    expect(app.indexOf("Integration")).toBe(app.indexOf("Local AI") + 1);
     ui.showSettingsSection("integration");
     flushSync();
     await until(() => target.querySelectorAll("section.group").length >= 2, "integration cards");
-    const headings = Array.from(target.querySelectorAll("section.group h3")).map(text);
+    const headings = Array.from(target.querySelectorAll("section.group h4")).map(text);
     expect(headings).not.toContain("Agent connection");
     expect(text(target)).not.toContain("Share this project with agents");
   });
@@ -116,7 +123,7 @@ describe("Settings > AI agents", () => {
   it("off: says what is shared and offers one button; turning on shows the steps and moves focus to Copy", async () => {
     await open();
     mountPage(AGENT_PAGE, true);
-    await until(() => text(target).includes("Off for this project"), "state card");
+    await until(() => text(target).includes("Off for this folder"), "state card");
     expect(text(target.querySelector(".title"))).toBe("AI agents");
     expect(text(target)).toContain("agents never edit files through PerMark.");
     expect(text(target)).toContain("an agent can still open files on your computer by itself.");
@@ -149,7 +156,7 @@ describe("Settings > AI agents", () => {
     expect(text(target)).toContain("UserPromptSubmit");
     // turn off: focus back on the primary button
     button("Turn off").click();
-    await until(() => text(target).includes("Off for this project"), "off again");
+    await until(() => text(target).includes("Off for this folder"), "off again");
     expect(text(target)).not.toContain("Connect your agent");
     await until(
       () => document.activeElement === button("Share this project with agents"),
@@ -160,7 +167,7 @@ describe("Settings > AI agents", () => {
   it("a folder created again at its path shows off, says why, and goes back on with the one button", async () => {
     await open();
     mountPage(AGENT_PAGE);
-    await until(() => text(target).includes("Off for this project"), "state card");
+    await until(() => text(target).includes("Off for this folder"), "state card");
     expect(text(target)).not.toContain("This folder changed since you connected it.");
     mock.probe.plugins.agent.replaceFolder();
     await until(
@@ -170,7 +177,7 @@ describe("Settings > AI agents", () => {
         ),
       "the note",
     );
-    expect(text(target)).toContain("Off for this project");
+    expect(text(target)).toContain("Off for this folder");
     button("Share this project with agents").click();
     await until(() => text(target).includes("On · waiting for an agent"), "on");
     expect(text(target)).not.toContain("This folder changed since you connected it.");
@@ -194,7 +201,7 @@ describe("Settings > AI agents", () => {
   it("a refused switch keeps the state and says so in place", async () => {
     await open();
     mountPage(AGENT_PAGE);
-    await until(() => text(target).includes("Off for this project"), "off");
+    await until(() => text(target).includes("Off for this folder"), "off");
     const notices = windowStore.notices.length;
     const call = vi.spyOn(mock, "pluginCall").mockResolvedValueOnce({
       ok: false,
@@ -209,7 +216,7 @@ describe("Settings > AI agents", () => {
     expect(text(target.querySelector('[role="alert"]'))).toBe(
       "The change wasn't saved. Try again.",
     );
-    expect(text(target)).toContain("Off for this project");
+    expect(text(target)).toContain("Off for this folder");
     expect(windowStore.notices.length).toBe(notices);
     call.mockRestore();
   });
@@ -220,12 +227,51 @@ describe("Settings > AI agents", () => {
     const fold = await vi.waitFor(() => button("What agents may do"));
     expect(text(fold)).toBe("What agents may do (7 of 8 allowed)");
     expect(fold.getAttribute("aria-expanded")).toBe("false");
-    expect(target.querySelectorAll("input[type=checkbox]")).toHaveLength(0);
+    // the person's own groups (the folder's limits below have boxes of their own)
+    const own = (): number =>
+      Array.from(target.querySelectorAll("input[type=checkbox]")).filter(
+        (box) => box.closest(".limits-rows") === null,
+      ).length;
+    expect(own()).toBe(0);
     fold.click();
     flushSync();
     expect(fold.getAttribute("aria-expanded")).toBe("true");
-    expect(target.querySelectorAll("input[type=checkbox]")).toHaveLength(8);
+    expect(own()).toBe(8);
     expect(text(target)).toContain("Use these for new projects");
+  });
+
+  it("holds the limits for everyone below the person's own switch; no way out to another section", async () => {
+    await open();
+    mountPage(AGENT_PAGE);
+    await until(() => text(target).includes("Agent limits"), "the limits");
+    // the switch is the person's own; the limits are the folder's, for everyone
+    expect(target.querySelector(".state-card .scope-chip")?.getAttribute("data-scope")).toBe("you");
+    const limits = Array.from(target.querySelectorAll<HTMLElement>(".limits-rows .row"));
+    expect(limits.map((r) => r.querySelector(".scope-chip")?.getAttribute("data-scope"))).toEqual([
+      "everyone",
+      "everyone",
+    ]);
+    expect(text(target)).not.toContain("This folder settings");
+    expect(text(target)).toContain("Paths agents never get");
+    expect(text(target)).toContain(
+      "Files listed in .aiignore never reach agents. These patterns add to them",
+    );
+    const field = target.querySelector<HTMLInputElement>(".limits-rows .list input")!;
+    expect(field.placeholder).toBe("Pattern, for example secrets/**");
+    // no .permark/ yet: greyed, nothing written until the person sets PerMark up
+    expect(text(target)).toContain("Initialize PerMark to share this with everyone");
+    expect(field.disabled).toBe(true);
+    const box = (): HTMLInputElement =>
+      Array.from(target.querySelectorAll<HTMLLabelElement>(".limits-rows label.group"))
+        .find((l) => text(l).includes("Read notes you share"))!
+        .querySelector("input")!;
+    expect(box().disabled).toBe(true);
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => !box().disabled, "the limits work");
+    expect(text(target)).not.toContain("Initialize PerMark to share this with everyone");
+    box().click();
+    await until(() => mock.probe.shell.project().agentDeny.includes("notes"), "narrowed");
+    mock.probe.shell.forgetInit();
   });
 
   it("goes with the plugin: nav item gone, an open page on it falls back to Reading", async () => {

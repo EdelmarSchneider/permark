@@ -86,7 +86,17 @@ function byText<T extends HTMLElement = HTMLElement>(selector: string, text: str
   return found;
 }
 
-function mountPage(section: "reading" | "editing" | "integration" | "plugins" | "project"): void {
+/** The nav's groups: each label with the names of its sections, in order. */
+function groups(): [string, string[]][] {
+  return Array.from(target.querySelectorAll<HTMLElement>('.nav [role="group"]')).map((g) => [
+    g.getAttribute("aria-label") ?? "",
+    Array.from(g.querySelectorAll(".nav-item")).map((b) => b.textContent?.trim() ?? ""),
+  ]);
+}
+
+function mountPage(
+  section: "reading" | "editing" | "integration" | "plugins" | "project" | "files" | "pluginsHere",
+): void {
   ui.openSettingsPage(section);
   component = mount(SettingsPage, { target, props: { store } });
   flushSync();
@@ -130,7 +140,7 @@ afterEach(async () => {
 });
 
 describe("the settings page", () => {
-  it("lists Reading, Editing, Integration, Plugins - This folder only while a project is shown", async () => {
+  it("groups the nav: App (Reading, Editing, Integration, Plugins), This folder only while a project is shown", async () => {
     await store.start().catch(() => {});
     started = true;
     await toWelcome();
@@ -139,14 +149,30 @@ describe("the settings page", () => {
     const names = () =>
       Array.from(target.querySelectorAll(".nav-item")).map((b) => b.textContent?.trim());
     expect(names()).toEqual(["Reading", "Editing", "Integration", "Plugins"]);
-    // width and zoom have no page to act on yet, and say so
-    expect(target.textContent).toContain("Open a document to change the width and the zoom.");
+    expect(groups()).toEqual([["App", ["Reading", "Editing", "Integration", "Plugins"]]]);
+    // a window with no folder: the page is the app's settings, plainly named
+    expect(target.querySelector(".bar h2")?.textContent).toBe("Settings");
+    // width and zoom live in the document header's reading menu, not here
+    expect(target.querySelector("#set-width")).toBeNull();
+    expect(target.querySelector("#set-zoom")).toBeNull();
     await unmount(component!);
     component = null;
     await open();
     mountPage("reading");
     await tick();
-    expect(names()).toEqual(["Reading", "Editing", "Integration", "Plugins", "This folder"]);
+    expect(names()).toEqual([
+      "Reading",
+      "Editing",
+      "Integration",
+      "Plugins",
+      "Overview",
+      "Files",
+      "Plugins here",
+    ]);
+    expect(groups()).toEqual([
+      ["App", ["Reading", "Editing", "Integration", "Plugins"]],
+      ["This folder", ["Overview", "Files", "Plugins here"]],
+    ]);
     // each section wears its icon, decoration only (the name is the words)
     const icons = Array.from(target.querySelectorAll(".nav-item")).map((b) =>
       Array.from(b.querySelector("svg")?.classList ?? []).find(
@@ -159,8 +185,71 @@ describe("the settings page", () => {
       "lucide-plug",
       "lucide-puzzle",
       "lucide-folder-cog",
+      "lucide-files",
+      "lucide-blocks",
     ]);
     expect(target.querySelector(".nav-item svg")?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("the title names the folder shown; the dialog is named the same", async () => {
+    await open();
+    const name = store.view.state === "showing" ? store.view.workspace.name : "";
+    mountPage("reading");
+    const title = `Settings — ${name}`;
+    expect(target.querySelector(".bar h2")?.textContent).toBe(title);
+    expect(target.querySelector(".page")?.getAttribute("aria-label")).toBe(title);
+  });
+
+  it("a plugin's page sits in the group it asks for (App unless it says This folder)", async () => {
+    await open();
+    const page = (
+      id: `${string}.${string}`,
+      label: "agent.section" | "cmd.keyboard",
+      order: number,
+      group?: "app" | "folder",
+    ) =>
+      contributions.register({
+        kind: "settingsPage",
+        id,
+        owner: "test",
+        requires: NO_REQUIREMENT,
+        label,
+        order,
+        ...(group ? { group } : {}),
+        view: () => import("./settings/IntegrationSection.svelte"),
+      });
+    const removals = [
+      page("test.app", "cmd.keyboard", 30),
+      page("test.folder", "agent.section", 30, "folder"),
+    ];
+    try {
+      mountPage("reading");
+      await tick();
+      expect(groups()).toEqual([
+        ["App", ["Reading", "Editing", "Keyboard shortcuts…", "Integration", "Plugins"]],
+        ["This folder", ["Overview", "Files", "AI agents", "Plugins here"]],
+      ]);
+    } finally {
+      for (const remove of removals) remove();
+    }
+  });
+
+  it("Open this folder's settings: only with a project; opens the page on the folder's first section", async () => {
+    await store.start().catch(() => {});
+    started = true;
+    await toWelcome();
+    await until(() => store.view.state === "welcome", "welcome");
+    const listed = () =>
+      contributions
+        .visible("command", conditions.current)
+        .some((c) => c.id === "app.folderSettings");
+    expect(listed()).toBe(false);
+    await open();
+    expect(listed()).toBe(true);
+    const command = contributions.of("command").find((c) => c.id === "app.folderSettings")!;
+    expect(command.label).toBe("cmd.folderSettings");
+    command.run();
+    expect(ui.settingsPage).toEqual({ status: "open", section: "project" });
   });
 
   it("Escape closes it and a section the person cannot reach falls back to Reading", async () => {
@@ -202,7 +291,36 @@ describe("the settings page", () => {
     press(document.activeElement!, "ArrowUp");
     press(document.activeElement!, "ArrowUp");
     await tick();
-    expect(target.querySelector("h3.title")?.textContent).toBe("This folder");
+    // from the first section up to the last one: the folder's plugins
+    expect(target.querySelector("h3.title")?.textContent).toBe("Plugins here");
+    // the arrows cross from one group into the other (the app's last section to the folder's first)
+    ui.showSettingsSection("plugins");
+    await tick();
+    target.querySelector<HTMLElement>('[aria-current="page"]')!.focus();
+    press(document.activeElement!, "ArrowDown");
+    await tick();
+    expect(document.activeElement?.textContent?.trim()).toBe("Overview");
+    // Home | End: the first | last section of the list
+    press(document.activeElement!, "End");
+    await tick();
+    expect(document.activeElement?.textContent?.trim()).toBe("Plugins here");
+    press(document.activeElement!, "Home");
+    await tick();
+    expect(document.activeElement?.textContent?.trim()).toBe("Reading");
+    expect(target.querySelector("h3.title")?.textContent).toBe("Reading");
+  });
+
+  it("the group names show only while there are two groups (no folder: no App label)", async () => {
+    await open();
+    mountPage("reading");
+    expect(target.querySelectorAll(".nav-label")).toHaveLength(2);
+    await unmount(component!);
+    component = null;
+    await toWelcome();
+    await until(() => store.view.state === "welcome", "welcome");
+    mountPage("reading");
+    expect(groups().map(([name]) => name)).toEqual(["App"]);
+    expect(target.querySelectorAll(".nav-label")).toHaveLength(0);
   });
 
   it("Editing: a refused editor command is said in words, a good one is kept with its preview", async () => {
@@ -264,7 +382,7 @@ describe("the settings page", () => {
     );
     mountPage("integration");
     const shown = () =>
-      Array.from(target.querySelectorAll("section.group h3")).map((h) => h.textContent?.trim());
+      Array.from(target.querySelectorAll("section.group h4")).map((h) => h.textContent?.trim());
     // plugin sections arrive as their plugins activate, in no fixed order: wait for the ones checked below
     const expected = ["File manager", "Updates", "Git", "Notes"];
     await until(
@@ -311,7 +429,7 @@ describe("the plugins page", () => {
   it("every plugin is listed once, grouped by kind, with its switch on", async () => {
     await pluginsPage();
     expect(target.querySelectorAll(".plugin")).toHaveLength(41);
-    const groups = Array.from(target.querySelectorAll("section.group h3")).map(
+    const groups = Array.from(target.querySelectorAll("section.group h4")).map(
       (h) => h.textContent,
     );
     expect(groups).toEqual([
@@ -400,20 +518,15 @@ describe("the plugins page", () => {
     });
   });
 
-  it("a plugin of the project can be turned off for this project alone", async () => {
+  it("a plugin of the project has only the app switch here, and its row says when this project turned it off", async () => {
     await pluginsPage();
-    const select = row("Comments").querySelector<HTMLSelectElement>("select")!;
-    expect(select.value).toBe("app");
-    select.value = "off";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-    await until(() => /Off in this project/.test(statusOf("Comments")), "off here");
+    expect(row("Comments").querySelector("select")).toBeNull();
+    await mock.pluginSetProject("comments", false);
+    await until(() => /Off in this folder/.test(statusOf("Comments")), "off here");
     // the app's switch is untouched; the plugin is not offered for data removal
     expect(switchOf("Comments").checked).toBe(true);
     expect(row("Comments").textContent).not.toContain("Remove data");
-    row("Comments").querySelector<HTMLSelectElement>("select")!.value = "app";
-    row("Comments")
-      .querySelector("select")!
-      .dispatchEvent(new Event("change", { bubbles: true }));
+    await mock.pluginSetProject("comments", null);
     await until(() => statusOf("Comments") === "", "follows the app");
   });
 
@@ -431,30 +544,178 @@ describe("the plugins page", () => {
   });
 });
 
+describe("plugins here", () => {
+  async function herePage(): Promise<void> {
+    mountPage("pluginsHere");
+    await until(() => pluginsStore.state.status === "ready", "the list");
+    await tick();
+  }
+  const select = (id: string): HTMLSelectElement | null =>
+    target.querySelector<HTMLSelectElement>(`#here-${id}`);
+  const rowOf = (id: string): HTMLElement => select(id)!.closest<HTMLElement>(".row")!;
+  const chipOf = (id: string): string | null =>
+    rowOf(id).querySelector(".scope-chip")?.getAttribute("data-scope") ?? null;
+  function pick(id: string, value: string): void {
+    const box = select(id)!;
+    box.value = value;
+    box.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  async function info(id: string): Promise<{ choice: boolean | null; teamOff: boolean }> {
+    const listed = await mock.pluginsList();
+    const found = listed.ok ? listed.value.find((p) => p.manifest.id === id) : undefined;
+    return { choice: found?.projectChoice ?? null, teamOff: found?.projectConfigOff ?? false };
+  }
+
+  it("lists only the plugins that work per folder, each with four choices; Off for everyone waits for Initialize", async () => {
+    await open();
+    await herePage();
+    expect(target.querySelector("h3.title")?.textContent).toBe("Plugins here");
+    expect(select("comments")).not.toBeNull();
+    expect(select("notes")).toBeNull();
+    expect(select("mermaid")).toBeNull();
+    const options = Array.from(select("comments")!.options).map((o) => [
+      o.textContent?.trim(),
+      o.disabled,
+    ]);
+    expect(options).toEqual([
+      ["Same as the app", false],
+      ["On here", false],
+      ["Off here (only you)", false],
+      ["Off for everyone", true],
+    ]);
+    expect(target.textContent).toContain("Initialize PerMark to share this with everyone");
+    expect(chipOf("comments")).toBeNull();
+    pick("comments", "off");
+    await vi.waitFor(async () => expect((await info("comments")).choice).toBe(false));
+    await until(() => chipOf("comments") === "you", "the chip says Only you");
+    expect(rowOf("comments").textContent).toContain("Off in this folder.");
+    pick("comments", "app");
+    await until(() => chipOf("comments") === null, "follows the app again");
+    expect((await info("comments")).choice).toBeNull();
+  });
+
+  it("Off for everyone writes the folder's file and says so; Same as the app takes it back", async () => {
+    await open();
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    await herePage();
+    expect(target.textContent).not.toContain("Initialize PerMark to share this with everyone");
+    expect(Array.from(select("comments")!.options).every((o) => !o.disabled)).toBe(true);
+    pick("comments", "offEveryone");
+    await until(() => select("comments")?.value === "offEveryone", "shown as off for everyone");
+    expect((await info("comments")).teamOff).toBe(true);
+    expect(chipOf("comments")).toBe("everyone");
+    expect(rowOf("comments").textContent).toContain(
+      "Turned off for everyone in .permark/config.toml.",
+    );
+    pick("comments", "app");
+    await until(() => select("comments")?.value === "app", "back to the app's");
+    expect(await info("comments")).toEqual({ choice: null, teamOff: false });
+    expect(chipOf("comments")).toBeNull();
+  });
+
+  it("a refused Off for everyone says why and the box shows the choice still in force", async () => {
+    await open();
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    await herePage();
+    const refuse = vi.spyOn(mock, "projectConfigSet").mockResolvedValueOnce({
+      ok: false,
+      error: {
+        kind: "backend",
+        command: "project_config_set",
+        error: { kind: "invalidData", subject: "pluginOff", detail: "denied" },
+      },
+    });
+    pick("comments", "offEveryone");
+    await until(() => rowOf("comments").querySelector(".problem") !== null, "says why");
+    await until(() => select("comments")?.value === "app", "back on the choice in force");
+    expect((await info("comments")).teamOff).toBe(false);
+    refuse.mockRestore();
+  });
+});
+
 describe("the project settings and Initialize PerMark", () => {
-  it("not initialized: the section only offers to create .permark, in plain words; yes creates it and the controls appear", async () => {
+  it("Overview: says who each kind of setting is for; not initialized, it offers to set PerMark up, in plain words", async () => {
     await open();
     mountPage("project");
     await tick();
+    expect(target.querySelector("h3.title")?.textContent).toBe("Overview");
+    expect(target.textContent).toContain(
+      "Settings marked Everyone are kept in this folder's .permark/config.toml",
+    );
+    expect(target.textContent).toContain("Settings marked Only you stay on this computer.");
     expect(target.textContent).toContain("This folder has no PerMark settings yet");
-    expect(target.textContent).not.toMatch(/not initialized|\.permark/);
+    expect(target.textContent).not.toMatch(/not initialized/);
+    // the folder's files live in their own section
     expect(target.querySelector(".list")).toBeNull();
-    byText("button", "Initialize PerMark").click();
+    const init = byText("button", "Initialize PerMark");
+    init.focus();
+    init.click();
     expect(ui.initDialog.status).toBe("asking");
     await confirmInit(MOCK_FOLDER);
     await until(() => conditions.current.permark === "initialized", "initialized");
-    await until(() => target.querySelector(".list") !== null, "the controls");
+    await until(
+      () => !target.textContent?.includes("This folder has no PerMark settings yet"),
+      "the offer gone",
+    );
     expect(ui.initDialog.status).toBe("closed");
+    // the button that had the keyboard is gone with the offer: the section's heading takes it, not the body
+    await until(
+      () => document.activeElement === target.querySelector("h3.title"),
+      "on the heading",
+    );
+  });
+
+  it("Files, not initialized: the shared rows show greyed and do nothing until the person sets PerMark up", async () => {
+    await open();
+    mountPage("files");
+    await until(() => projectSettings.state.status === "ready", "loaded");
+    await tick();
+    expect(target.querySelector("h3.title")?.textContent).toBe("Files");
+    expect(target.textContent).toContain("Initialize PerMark to share this with everyone");
+    const fields = () => Array.from(target.querySelectorAll<HTMLInputElement>(".list input"));
+    expect(fields().length).toBe(3);
+    expect(fields().every((f) => f.disabled)).toBe(true);
+    expect(
+      Array.from(target.querySelectorAll<HTMLButtonElement>("button[role=radio]")).every(
+        (b) => b.disabled,
+      ),
+    ).toBe(true);
+    expect(target.querySelector(".shared.off")).not.toBeNull();
+    // nothing is written until the person answers the question
+    byText("button", "Initialize PerMark").click();
+    expect(ui.initDialog.status).toBe("asking");
+    expect(mock.probe.shell.project().initialized).toBe(false);
+    await confirmInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    await until(() => fields().every((f) => !f.disabled), "the rows work");
+    expect(target.textContent).not.toContain("Initialize PerMark to share this with everyone");
+    expect(target.querySelector(".shared.off")).toBeNull();
   });
 
   it("patterns are added and removed one by one, kept at once; a refused value says why", async () => {
     await open();
     await mock.projectInit(MOCK_FOLDER);
     await until(() => conditions.current.permark === "initialized", "initialized");
-    mountPage("project");
+    mountPage("files");
     await until(() => projectSettings.state.status === "ready", "loaded");
     await tick();
-    const input = target.querySelector<HTMLInputElement>('input[aria-label="Ignore patterns"]')!;
+    // every value here is shared through the folder's config file and says so, in the row's name
+    const names = Array.from(target.querySelectorAll(".shared .row .name")).map(
+      (n) => n.textContent ?? "",
+    );
+    expect(names.length).toBe(4);
+    expect(names.every((n) => n.includes("Everyone, kept in .permark/config.toml"))).toBe(true);
+    expect(names.map((n) => n.split("Everyone")[0]?.trim())).toEqual([
+      "Files shown by default",
+      "Extra files to show",
+      "Files to hide",
+      "Left out of search and live feed",
+    ]);
+    const input = target.querySelector<HTMLInputElement>(
+      'input[aria-label="Left out of search and live feed"]',
+    )!;
     input.value = "drafts/";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     press(input, "Enter");
@@ -478,27 +739,60 @@ describe("the project settings and Initialize PerMark", () => {
     await until(() => mock.probe.shell.project().tree.show === null, "preset back");
   });
 
-  it("the agent's narrowing is part of the section while the agent plugin is on", async () => {
+  it("Overview, initialized: names the shared file and shows it in the file manager; Files holds no agent rows", async () => {
     await open();
     await mock.projectInit(MOCK_FOLDER);
     await until(() => conditions.current.permark === "initialized", "initialized");
-    const agentParts = () =>
-      contributions.visible("projectSection", conditions.current).filter((c) => c.owner === "agent")
-        .length;
-    await until(() => agentParts() === 1, "the agent part");
-    mountPage("project");
-    await until(() => projectSettings.state.status === "ready", "loaded");
     await until(
-      () => target.textContent?.includes("Groups agents never get here") === true,
-      "shown",
+      () =>
+        contributions.visible("settingsPage", conditions.current).some((p) => p.owner === "agent"),
+      "the agent plugin is on",
     );
-    const box = byText("label.group", "Read notes you share").querySelector<HTMLInputElement>(
-      "input",
-    )!;
-    box.click();
-    await until(() => mock.probe.shell.project().agentDeny.includes("notes"), "narrowed");
-    await store.changeSetting({ key: "pluginEnabled", value: { plugin: "agent", enabled: false } });
-    await until(() => agentParts() === 0, "gone with the plugin");
+    mountPage("project");
+    await until(
+      () => target.textContent?.includes(".permark/config.toml") === true,
+      "the file row",
+    );
+    expect(target.textContent).toContain("Shared with whoever opens this folder.");
+    mock.probe.opened.length = 0;
+    byText("button", "Show in file manager").click();
+    await until(() => mock.probe.opened.length === 1, "revealed");
+    expect(mock.probe.opened).toEqual([{ path: ".permark/config.toml", mode: "reveal" }]);
+    ui.showSettingsSection("files");
+    await until(() => projectSettings.state.status === "ready", "loaded");
+    await tick();
+    expect(target.querySelector("h3.title")?.textContent).toBe("Files");
+    const content = target.querySelector(".content")?.textContent ?? "";
+    expect(content).not.toContain("Groups agents never get here");
+    expect(content).not.toContain("Tokenizers for this folder");
+  });
+
+  it("a plugin key the folder's file sets is said on the app row it does not change, in a quiet line", async () => {
+    await open();
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    await until(
+      () =>
+        contributions.visible("settingsSection", conditions.current).some((c) => c.owner === "git"),
+      "the git row",
+    );
+    const line = "Set in .permark/config.toml; not used here — your choice applies.";
+    mountPage("integration");
+    await until(() => target.querySelector("#set-git") !== null, "the git row shows");
+    await until(() => projectSettings.state.status === "ready", "loaded");
+    await tick();
+    expect(target.textContent).not.toContain(line);
+    await unmount(component!);
+    component = null;
+    mock.probe.shell.ignorePluginKeys(["git.backend"]);
+    const notices = store.notices.length;
+    mountPage("integration");
+    await until(() => target.textContent?.includes(line) === true, "the line");
+    const row = byText(".row", line);
+    expect(row.querySelector("#set-git")).not.toBeNull();
+    expect(row.querySelector(".note")?.textContent?.trim()).toBe(line);
+    // no notice: the line is all there is
+    expect(store.notices.length).toBe(notices);
   });
 
   it("the question names the folder and what is created; Escape and Cancel change nothing", async () => {

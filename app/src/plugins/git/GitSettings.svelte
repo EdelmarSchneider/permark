@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Settings row of the git plugin: which git it uses.
+  // Settings row of the git plugin: which git it uses (the person's own: a folder's shared file never sets it).
   import type { GitBackendPref } from "../../api";
   import { t, type MessageKey } from "../../core/i18n";
   import SettingRow from "../../core/shell/settings/SettingRow.svelte";
@@ -16,7 +16,12 @@
   }
 </script>
 
-<SettingRow label={t("git.backend.row")} labelFor="set-git" hint={t("git.backend.hint")}>
+<SettingRow
+  label={t("git.backend.row")}
+  labelFor="set-git"
+  hint={t("git.backend.hint")}
+  ignoredKey="git.backend"
+>
   <select
     id="set-git"
     class="field-select"

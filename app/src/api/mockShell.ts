@@ -111,12 +111,13 @@ function emptyProject(): ProjectSettings {
     agentDeny: [],
     agentDenyPaths: [],
     tokenizers: [],
+    ignoredPluginKeys: [],
   };
 }
 
 /** Whether a list change is acceptable (the backend's limits, lighter). */
 function listProblem(change: ProjectSettingChange): string | null {
-  if (change.key === "treeShow") return null;
+  if (change.key === "treeShow" || change.key === "pluginOff") return null;
   if (change.key === "tokenizers") {
     const ids = change.value;
     const valid = ids.every(
@@ -137,6 +138,11 @@ function listProblem(change: ProjectSettingChange): string | null {
   return null;
 }
 
+/** Only a plugin of this build that runs per project can be turned on | off for one project. */
+function isProjectPlugin(id: string): boolean {
+  return MOCK_MANIFESTS.find((m) => m.id === id)?.scope === "project";
+}
+
 export type MockShell = ReturnType<typeof createMockShell>;
 
 /** `changed`: tells the window the plugins | the window list moved. */
@@ -151,6 +157,8 @@ export function createMockShell(deps: {
   const initializedPaths = new Set<string>();
   let currentPath = "";
   const choices = new Map<string, boolean>();
+  /** Plugins the project's shared file turns off for everyone (`enabled = false`). */
+  const teamOff = new Set<string>();
   const removed: string[] = [];
   let others: WindowSummary[] = [];
   const focused: number[] = [];
@@ -163,6 +171,7 @@ export function createMockShell(deps: {
       let enabled = settings.plugins[m.id] ?? m.defaultEnabled;
       if (inProject && m.scope === "project" && choices.has(m.id))
         enabled = choices.get(m.id) ?? enabled;
+      if (inProject && m.scope === "project" && teamOff.has(m.id)) enabled = false;
       if (enabled && m.dependsOn.every((d) => on.has(d))) on.set(m.id, m);
     }
     return on;
@@ -179,6 +188,7 @@ export function createMockShell(deps: {
       currentPath = path;
       project = { ...emptyProject(), initialized: initializedPaths.has(path) };
       choices.clear();
+      teamOff.clear();
     },
     context(base: Context): Context {
       return { ...base, permark: project.initialized ? "initialized" : "notInitialized" };
@@ -194,6 +204,10 @@ export function createMockShell(deps: {
         deps.changed();
       },
       project: (): ProjectSettings => project,
+      /** The project's shared file holds plugin keys no plugin reads (`<id>.<key>`). */
+      ignorePluginKeys(keys: string[]): void {
+        project = { ...project, ignoredPluginKeys: keys };
+      },
       /** Every folder is as new: nothing is initialized. */
       forgetInit(): void {
         initializedPaths.clear();
@@ -214,6 +228,9 @@ export function createMockShell(deps: {
       },
       projectConfigGet: () => ok(project),
       projectConfigSet: (change: ProjectSettingChange) => {
+        if (change.key === "pluginOff" && !isProjectPlugin(change.value.plugin)) {
+          return refusal<ProjectSettings>("project_config_set", "unsupported", change.value.plugin);
+        }
         if (!project.initialized)
           return refusal<ProjectSettings>("project_config_set", "unavailable", "permark");
         const problem = listProblem(change);
@@ -243,6 +260,11 @@ export function createMockShell(deps: {
           case "tokenizers":
             project = { ...project, tokenizers: change.value };
             break;
+          case "pluginOff":
+            if (change.value.off) teamOff.add(change.value.plugin);
+            else teamOff.delete(change.value.plugin);
+            deps.changed();
+            break;
           default:
             change satisfies never;
         }
@@ -255,9 +277,10 @@ export function createMockShell(deps: {
           const appOn = settings.plugins[m.id] ?? m.defaultEnabled;
           const choice = inProject && m.scope === "project" ? (choices.get(m.id) ?? null) : null;
           const dependency = m.dependsOn.find((d) => !on.has(d));
+          const configOff = inProject && m.scope === "project" && teamOff.has(m.id);
           const state: PluginInfo["state"] = on.has(m.id)
             ? { state: "on" }
-            : choice === false
+            : choice === false || configOff
               ? { state: "off", why: { reason: "project" } }
               : !(choice ?? appOn)
                 ? { state: "off", why: { reason: "setting" } }
@@ -267,14 +290,13 @@ export function createMockShell(deps: {
             appOn,
             state,
             projectChoice: choice,
-            projectConfigOff: false,
+            projectConfigOff: configOff,
           };
         });
         return ok(infos);
       },
       pluginSetProject: (plugin: string, enabled: boolean | null) => {
-        const found = MOCK_MANIFESTS.find((m) => m.id === plugin);
-        if (found === undefined || found.scope !== "project") {
+        if (!isProjectPlugin(plugin)) {
           return refusal<null>("plugin_set_project", "unsupported", plugin);
         }
         if (enabled === null) choices.delete(plugin);

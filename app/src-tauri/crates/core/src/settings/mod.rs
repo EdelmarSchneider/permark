@@ -697,14 +697,6 @@ impl SettingChange {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
-#[serde(tag = "scope", content = "project", rename_all = "camelCase")]
-#[ts(export)]
-pub enum SettingsScope {
-    App,
-    Project(crate::state::ProjectId),
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsError {
     #[error("cannot write {path}: {source}")]

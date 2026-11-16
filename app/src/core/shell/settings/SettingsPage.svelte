@@ -1,9 +1,13 @@
 <script lang="ts">
-  // The full settings: a left list of sections (Reading, Editing, Integration, Plugins, Projects inside, This folder,
-  // and the plugins' own, such as AI agents, by order) and the shown one at the right, each a card of rows; Projects
-  // inside only where the folder holds projects (`projects.md` §12.2; loaded when shown). Covers the window below the
-  // top bar; Escape or Close goes back to where the person was.
+  // The full settings: a left list of sections in two groups - the app's (Reading, Editing, Integration, Plugins and
+  // the app plugins' own, such as Local AI) and, only while a folder is shown, the folder's (Overview, Files, Plugins
+  // here, Projects inside, and its plugins' own, such as AI agents and Token count), each by order - and the shown one at the right, each a card of
+  // rows; Projects inside only where the folder holds projects (`projects.md` §12.2; loaded when shown). One list for
+  // the keyboard across both groups. Covers the window below the top bar; Escape or Close goes back to where the
+  // person was.
+  import Blocks from "@lucide/svelte/icons/blocks";
   import BookOpen from "@lucide/svelte/icons/book-open";
+  import Files from "@lucide/svelte/icons/files";
   import FolderCog from "@lucide/svelte/icons/folder-cog";
   import PenLine from "@lucide/svelte/icons/pen-line";
   import Plug from "@lucide/svelte/icons/plug";
@@ -17,19 +21,26 @@
   import { projects } from "../../projects/instance.svelte";
   import type { WindowStore } from "../../window.svelte";
   import {
+    CORE_SECTION_GROUP,
     CORE_SECTION_ORDER,
+    SETTINGS_GROUPS,
     SETTINGS_SECTIONS,
     ui,
     type CoreSettingsSection,
+    type SettingsGroup,
     type SettingsSection,
   } from "../ui.svelte";
   import { dialogFocus } from "../dialogFocus";
+  import { adrift } from "../sides";
   import Card from "./Card.svelte";
   import EditingSection from "./EditingSection.svelte";
   import IntegrationSection from "./IntegrationSection.svelte";
+  import PluginsHere from "./PluginsHere.svelte";
   import PluginsSection from "./PluginsSection.svelte";
-  import ProjectSection from "./ProjectSection.svelte";
+  import FilesSection from "./FilesSection.svelte";
+  import FolderSection from "./FolderSection.svelte";
   import ReadingSection from "./ReadingSection.svelte";
+  import { projectSettings } from "./stores.svelte";
 
   type Props = { store: WindowStore };
   let { store }: Props = $props();
@@ -41,6 +52,8 @@
     plugins: "settings.section.plugins",
     projects: "settings.section.projects",
     project: "settings.section.project",
+    files: "settings.section.files",
+    pluginsHere: "settings.section.pluginsHere",
   };
   /** A small icon per section (decoration: the words name it); Projects inside wears the included project's. */
   const ICONS: Record<CoreSettingsSection, MenuIcon> = {
@@ -50,32 +63,76 @@
     plugins: Puzzle,
     projects: projectIcon("permark"),
     project: FolderCog,
+    files: Files,
+    pluginsHere: Blocks,
+  };
+
+  const GROUP_LABELS: Record<SettingsGroup, MessageKey> = {
+    app: "settings.group.app",
+    folder: "settings.group.folder",
   };
 
   const inProject = $derived(conditions.current.workspace === "project");
+  const initialized = $derived(conditions.current.permark === "initialized");
+
+  // the folder's shared settings, for every section that shows them (and the app rows a plugin key of the folder's file
+  // would have set): read while the page shows a folder, again once PerMark gets initialized there (external I/O)
+  $effect(() => {
+    if (!inProject) return;
+    void initialized;
+    void projectSettings.load();
+    return () => projectSettings.clearProblem();
+  });
+  /** The folder shown (its name in the title), `null` in a window with none (a single file, the Notes, the Welcome). */
+  const folder = $derived(
+    store.view.state === "showing" && store.view.workspace.kind === "project"
+      ? store.view.workspace.name
+      : null,
+  );
+  const title = $derived(
+    folder === null ? t("settings.title") : t("settings.titleFolder", { name: folder }),
+  );
   /** The plugins' own sections that may show here (plugin on, requirement met). */
   const pluginPages = $derived(contributions.visible("settingsPage", conditions.current));
-  type NavItem = { id: SettingsSection; label: MessageKey; order: number; icon?: MenuIcon };
-  /** Sections the person can reach here: Project only while a project is shown, Projects only where it holds some;
-   *  the plugins' sections among them by order. */
+  type NavItem = {
+    id: SettingsSection;
+    label: MessageKey;
+    group: SettingsGroup;
+    order: number;
+    icon?: MenuIcon;
+  };
+  /** Sections the person can reach here, group by group: the folder's only while a project is shown, Projects only
+   *  where it holds some; the plugins' sections among the core ones by order. */
   const nav = $derived(
     [
-      ...SETTINGS_SECTIONS.filter(
-        (s) =>
-          (s !== "project" || inProject) && (s !== "projects" || (inProject && projects.present)),
-      ).map((s): NavItem => ({
-        id: s,
-        label: LABELS[s],
-        order: CORE_SECTION_ORDER[s],
-        icon: ICONS[s],
-      })),
+      ...SETTINGS_SECTIONS.filter((s) => s !== "projects" || projects.present).map(
+        (s): NavItem => ({
+          id: s,
+          label: LABELS[s],
+          group: CORE_SECTION_GROUP[s],
+          order: CORE_SECTION_ORDER[s],
+          icon: ICONS[s],
+        }),
+      ),
       ...pluginPages.map((p): NavItem => ({
         id: p.id,
         label: p.label,
+        group: p.group ?? "app",
         order: p.order,
         icon: p.icon,
       })),
-    ].sort((a, b) => a.order - b.order),
+    ]
+      .filter((item) => item.group === "app" || inProject)
+      .sort(
+        (a, b) =>
+          SETTINGS_GROUPS.indexOf(a.group) - SETTINGS_GROUPS.indexOf(b.group) || a.order - b.order,
+      ),
+  );
+  const navGroups = $derived(
+    SETTINGS_GROUPS.map((group) => ({
+      group,
+      items: nav.filter((item) => item.group === group),
+    })).filter((g) => g.items.length > 0),
   );
   const sections = $derived(nav.map((item) => item.id));
   const wanted = $derived(ui.settingsPage.status === "open" ? ui.settingsPage.section : "reading");
@@ -89,6 +146,19 @@
   const pluginView = $derived(pluginPage?.view() ?? null);
 
   let page: HTMLElement | undefined = $state();
+  let heading: HTMLElement | undefined = $state();
+
+  // a control that held the keyboard can go with the rows around it (Initialize swaps the waiting rows for the
+  // working ones, its button among them): the keyboard goes to the section's heading, never to the body behind this
+  // modal page (external DOM focus, so an effect)
+  $effect(() => {
+    if (!page) return;
+    const watch = new MutationObserver(() => {
+      if (adrift()) heading?.focus({ preventScroll: true });
+    });
+    watch.observe(page, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  });
 
   function onEscape(): void {
     // consent mode: Esc = Cancel (back to the Explorer, the strip still asks)
@@ -109,17 +179,24 @@
     return document.querySelector<HTMLElement>("[data-settings-trigger]");
   }
 
-  function onnavkey(e: KeyboardEvent): void {
+  /** The section a key moves to from `at`: arrows step (wrapping), Home | End go to the first | last. */
+  function target(key: string, at: number): number | null {
+    if (key === "Home") return 0;
+    if (key === "End") return sections.length - 1;
     const step =
-      e.key === "ArrowDown" || e.key === "ArrowRight"
+      key === "ArrowDown" || key === "ArrowRight"
         ? 1
-        : e.key === "ArrowUp" || e.key === "ArrowLeft"
+        : key === "ArrowUp" || key === "ArrowLeft"
           ? -1
           : 0;
-    if (step === 0) return;
+    return step === 0 ? null : (at + step + sections.length) % sections.length;
+  }
+
+  function onnavkey(e: KeyboardEvent): void {
+    const to = target(e.key, sections.indexOf(section));
+    if (to === null) return;
     e.preventDefault();
-    const at = sections.indexOf(section);
-    const next = sections[(at + step + sections.length) % sections.length];
+    const next = sections[to];
     if (next) {
       ui.showSettingsSection(next);
       queueMicrotask(() => page?.querySelector<HTMLElement>('[aria-current="page"]')?.focus());
@@ -133,13 +210,13 @@
     class="page"
     role="dialog"
     aria-modal="true"
-    aria-label={t("settings.title")}
+    aria-label={title}
     tabindex="-1"
     bind:this={page}
     use:dialogFocus={{ initial: entry, onEscape, fallback: gear }}
   >
     <header class="bar">
-      <h2>{t("settings.title")}</h2>
+      <h2>{title}</h2>
       <span class="spacer"></span>
       <button type="button" class="btn btn--sm" onclick={() => ui.closeSettingsPage()}>
         <X size={13} aria-hidden="true" />
@@ -148,26 +225,38 @@
     </header>
     <div class="layout">
       <nav class="nav" aria-label={t("settings.sections")}>
-        {#each nav as item (item.id)}
-          <button
-            type="button"
-            class="nav-item"
-            aria-current={item.id === section ? "page" : undefined}
-            tabindex={item.id === section ? 0 : -1}
-            onclick={() => ui.showSettingsSection(item.id)}
-            onkeydown={onnavkey}
-          >
-            {#if item.icon}
-              {@const Icon = item.icon}
-              <Icon size={15} strokeWidth={item.id === section ? 2 : 1.8} />
+        {#each navGroups as g (g.group)}
+          <!-- the group's name is said once, from the group (the label on screen repeats it) -->
+          <div class="nav-group" role="group" aria-label={t(GROUP_LABELS[g.group])}>
+            <!-- one group alone (no folder shown) needs no name on screen -->
+            {#if navGroups.length > 1}
+              <span class="menu-label nav-label" aria-hidden="true">{t(GROUP_LABELS[g.group])}</span
+              >
             {/if}
-            {t(item.label)}
-          </button>
+            {#each g.items as item (item.id)}
+              <button
+                type="button"
+                class="nav-item"
+                aria-current={item.id === section ? "page" : undefined}
+                tabindex={item.id === section ? 0 : -1}
+                onclick={() => ui.showSettingsSection(item.id)}
+                onkeydown={onnavkey}
+              >
+                {#if item.icon}
+                  {@const Icon = item.icon}
+                  <Icon size={15} strokeWidth={item.id === section ? 2 : 1.8} />
+                {/if}
+                {t(item.label)}
+              </button>
+            {/each}
+          </div>
         {/each}
       </nav>
       <div class="content">
         <div class="inner">
-          <h3 class="title">{t(shown?.label ?? LABELS.reading)}</h3>
+          <h3 class="title" tabindex="-1" bind:this={heading}>
+            {t(shown?.label ?? LABELS.reading)}
+          </h3>
           {#if pluginView !== null}
             {#await pluginView then loaded}
               <loaded.default />
@@ -184,8 +273,12 @@
             {#await projectsSection() then loaded}
               <loaded.default />
             {/await}
+          {:else if section === "files"}
+            <FilesSection />
+          {:else if section === "pluginsHere"}
+            <PluginsHere {store} />
           {:else}
-            <ProjectSection />
+            <FolderSection />
           {/if}
         </div>
       </div>
@@ -243,6 +336,17 @@
     border-right: 1px solid var(--border);
     overflow-y: auto;
   }
+  .nav-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .nav-group + .nav-group {
+    margin-top: var(--sp-3);
+  }
+  .nav-label {
+    padding-left: var(--sp-3);
+  }
   .nav-item {
     display: flex;
     align-items: center;
@@ -272,6 +376,8 @@
     flex: 1;
     min-width: 0;
     overflow-y: auto;
+    /* the rows lay out by this pane's width (it shrinks beside the section list), not the window's */
+    container: settings / inline-size;
     /* room under the last control for the notices at the bottom (they never sit on a control for good) */
     padding: var(--sp-5) var(--sp-5) max(var(--sp-7), var(--notices-h, 0px));
     scroll-padding-bottom: var(--notices-h, 0px);
@@ -282,6 +388,7 @@
   }
   .title {
     margin: 0 0 var(--sp-4);
+    outline: none;
     font-size: 18px;
     font-weight: 600;
     letter-spacing: -0.01em;
@@ -298,6 +405,15 @@
       border-bottom: 1px solid var(--border);
       overflow-x: auto;
     }
+    .nav-group {
+      flex-direction: row;
+      align-items: center;
+    }
+    .nav-group + .nav-group {
+      margin-top: 0;
+      margin-left: var(--sp-3);
+    }
+    .nav-label,
     .nav-item {
       white-space: nowrap;
     }

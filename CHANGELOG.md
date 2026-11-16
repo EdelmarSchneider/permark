@@ -11,9 +11,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **Polish and Ukrainian.** The interface, the Windows installer and the file manager entries now speak Polish and Ukrainian, 20 languages in all; native speakers are welcome to review them. <!-- f: settings -->
 
 ### Changed
+- **Settings for the app and for this folder, apart.** The Settings page now has two groups: **App**, for choices that follow you everywhere (reading, editing, integration, plugins on or off), and **This folder**, shown when a folder is open, with Overview, Files, AI agents, Token count and Plugins here. Each folder setting says who it is for: **Everyone** (kept in `.permark/config.toml` and shared with whoever opens the folder) or **Only you** (kept on this computer). Before PerMark is initialized in a folder, the shared settings wait for you to choose **Initialize PerMark**. The title names the folder, and the command **Open this folder's settings** goes straight there. <!-- f: settings -->
+- **Plugins here.** A folder's plugins can follow the app, be on or off for you only, or be **Off for everyone**, written to the folder's shared file. When the shared file turned a plugin off, the page says so. <!-- f: settings -->
+- The AI agent switch and its limits for everyone now sit together on the folder's **AI agents** page, and the token count choice for a folder is its own page; the status bar's token count menu shows whether your choice or everyone's is in use. <!-- f: settings, agent-connection -->
+- Reading width and zoom are no longer in Settings: they stay in the document's reading menu, kept for each folder. The Explorer filter "Settings files" is now **Config files**, and the folder's file patterns have plainer names. <!-- f: settings, explorer -->
 - The Windows installer now offers the demo pages ticked. They are copied to Documents only on a first install, only when no "PerMark Demo" folder is there yet, and you can untick the box. <!-- f: windows-installer -->
 
 ### Fixed
+- A folder's shared `.permark/config.toml` could change your own plugin settings (for example the Git backend) while Settings still showed your value. Plugins now read only your settings; a value the shared file still sets is marked on its row as not used. <!-- f: settings -->
 - Table columns in YAML and TOML sheets, and in PDF and print, no longer shrink to a letter or two. Words stay whole: a sheet table scrolls sideways when it does not fit, and a printed table shares the page width by what its columns hold. <!-- f: view-mode, export -->
 
 ## [0.13.0] - 2026-11-16

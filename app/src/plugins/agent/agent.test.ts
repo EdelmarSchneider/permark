@@ -305,13 +305,7 @@ describe("the agent plugin", () => {
     await host.enable("agent");
     expect(host.state("agent")).toBe("on");
     const kinds = [...new Set(registry.ownedBy("agent").map((c) => c.kind))].sort();
-    expect(kinds).toEqual([
-      "command",
-      "explorerNote",
-      "projectSection",
-      "settingsPage",
-      "statusItem",
-    ]);
+    expect(kinds).toEqual(["command", "explorerNote", "settingsPage", "statusItem"]);
     expect(host.disable("agent")).toBe(0);
     expect(registry.items).toHaveLength(0);
   });

@@ -22,7 +22,7 @@ use permark_core::format::{
     Body, ConfigEdit, FormatRegistry, Measure, OutlineItem, Segment, TextKind,
 };
 use permark_core::paths::VaultPath;
-use permark_core::plugins::{Enablement, Manifest, PluginId, PluginScope, RpcCall};
+use permark_core::plugins::{Enablement, Manifest, PluginId, PluginRegistry, PluginScope, RpcCall};
 use permark_core::projects::{
     AgentChoice, CardChange, CardDto, CardTarget, HiddenRule, IncludeOutcome, LocateRefusal,
     ProjectPick, ProjectUid, ProjectsUndone, ProjectsView,
@@ -43,7 +43,7 @@ use tauri_plugin_opener::OpenerExt;
 use ts_rs::TS;
 
 use crate::open::{open_placed, OpenOutcome};
-use crate::shell::state;
+use crate::shell::{state, Shell};
 use crate::views::{BarTheme, CloseAnswer, ViewRequest};
 use permark_core::open::OpenPlacement;
 
@@ -1562,9 +1562,35 @@ pub fn project_config_set(
     window: Webview,
     change: ProjectSettingChange,
 ) -> Result<ProjectSettings, IpcError> {
+    let shell = state(&handle);
+    let touches_plugins = matches!(change, ProjectSettingChange::PluginOff { .. });
+    if let ProjectSettingChange::PluginOff { plugin, .. } = &change {
+        project_plugin(&shell.env.registry, plugin)?;
+    }
     let core = project_of(&handle, &window)?;
-    let config = core.change_config(&change)?;
+    let config = core.change_config(&shell.env, &change)?;
+    if touches_plugins {
+        plugins_changed(&shell);
+    }
     Ok(ProjectSettings::of(true, &config))
+}
+
+/// Only a plugin of this build that runs per project can be turned on | off for one project.
+fn project_plugin(registry: &PluginRegistry, id: &PluginId) -> Result<(), IpcError> {
+    if registry.manifest(id).map(|m| m.scope) == Some(PluginScope::Project) {
+        Ok(())
+    } else {
+        Err(IpcError::new(ErrorKind::Unsupported).subject(id.to_string()))
+    }
+}
+
+/// Every window reads the plugins page and its views again.
+fn plugins_changed(shell: &Shell) {
+    shell
+        .env
+        .sink
+        .emit(permark_core::events::CoreEvent::PluginsChanged);
+    shell.registry.refresh();
 }
 
 /// Every plugin of this build with its state for the window (the Plugins page).
@@ -1612,15 +1638,11 @@ pub fn plugin_set_project(
 ) -> Result<(), IpcError> {
     let shell = state(&handle);
     let id = PluginId::parse(&plugin)
-        .filter(|id| shell.env.registry.manifest(id).map(|m| m.scope) == Some(PluginScope::Project))
         .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject(plugin.clone()))?;
+    project_plugin(&shell.env.registry, &id)?;
     let core = project_of(&handle, &window)?;
     core.set_plugin_choice(&shell.env, &id, enabled)?;
-    shell
-        .env
-        .sink
-        .emit(permark_core::events::CoreEvent::PluginsChanged);
-    shell.registry.refresh();
+    plugins_changed(&shell);
     Ok(())
 }
 
@@ -1780,6 +1802,17 @@ mod tests {
     #[test]
     fn app_info_adapts_core() {
         assert_eq!(app_info(), permark_core::app_info());
+    }
+
+    #[test]
+    fn only_a_known_project_plugin_is_turned_on_or_off_per_project() {
+        let registry = crate::plugins::registry();
+        let id = |text: &str| PluginId::parse(text).unwrap();
+        assert!(project_plugin(&registry, &id("broken-links")).is_ok());
+        for refused in [id("token-count"), id("no-such-plugin")] {
+            let error = project_plugin(&registry, &refused).unwrap_err();
+            assert_eq!(error.kind, ErrorKind::Unsupported, "{refused}");
+        }
     }
 
     /// Writes `CommandName.ts`: the frontend `Commands` map must have exactly these keys (checked by `tsc`).

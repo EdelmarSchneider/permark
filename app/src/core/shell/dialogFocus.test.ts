@@ -197,6 +197,16 @@ describe("focus on close", () => {
     expect(document.activeElement).toBe(gear);
   });
 
+  it("an opener gone before the dialog came (the keyboard on the body): the fallback takes it", () => {
+    const gear = document.createElement("button");
+    document.body.append(gear);
+    opener.remove();
+    expect(document.activeElement).toBe(document.body);
+    const { close } = open(THREE, { fallback: () => gear });
+    close();
+    expect(document.activeElement).toBe(gear);
+  });
+
   it("an opener still on the page wins over the fallback", () => {
     const gear = document.createElement("button");
     document.body.append(gear);

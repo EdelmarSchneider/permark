@@ -58,7 +58,7 @@
 </script>
 
 <section class="models" aria-labelledby={`${id}-title`}>
-  <h3 id={`${id}-title`}>{t("localAi.models.title")}</h3>
+  <h4 id={`${id}-title`}>{t("localAi.models.title")}</h4>
   <Card>
     <ul class="list" aria-label={t("localAi.models.title")}>
       {#each rows as row (row.model.id)}
@@ -75,7 +75,7 @@
     flex-direction: column;
     gap: var(--sp-2);
   }
-  h3 {
+  h4 {
     margin: 0;
     padding-left: var(--sp-1);
     color: var(--muted);

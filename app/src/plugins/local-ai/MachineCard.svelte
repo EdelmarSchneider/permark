@@ -48,7 +48,7 @@
 {#snippet cpuNote()}{t("localAi.machine.runOn.cpuHint")}{/snippet}
 
 <section class="machine" aria-labelledby={`${id}-title`}>
-  <h3 id={`${id}-title`}>{t("localAi.machine.title")}</h3>
+  <h4 id={`${id}-title`}>{t("localAi.machine.title")}</h4>
   <Card>
     {#if profile === null}
       <p class="quiet">{t("app.loading")}</p>
@@ -108,7 +108,7 @@
     flex-direction: column;
     gap: var(--sp-2);
   }
-  h3 {
+  h4 {
     margin: 0;
     padding-left: var(--sp-1);
     color: var(--muted);
