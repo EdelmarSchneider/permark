@@ -9,6 +9,7 @@
   import ImportProgress from "./core/explorer/ImportProgress.svelte";
   import { importFlow } from "./core/explorer/importWindow.svelte";
   import DropBadge from "./core/shell/DropBadge.svelte";
+  import { demoOffer } from "./core/shell/demoOffer.svelte";
   import { dropFlow } from "./core/shell/dropView.svelte";
   import OpenManyAsk from "./core/shell/OpenManyAsk.svelte";
   import FocusExit from "./core/shell/FocusExit.svelte";
@@ -111,6 +112,8 @@
   });
 
   onMount(() => {
+    // whether this copy ships the demo pages: the palette and the quick settings offer them
+    void demoOffer.load();
     void api.appInfo().then((result) => {
       info = result.ok ? { status: "ready", info: result.value } : { status: "failed" };
     });

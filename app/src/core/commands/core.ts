@@ -18,6 +18,7 @@ import {
   type ContributionRegistry,
 } from "../plugins/registry.svelte";
 import { closeOwnTab } from "../shell/closeWorkspace";
+import { demoOffer } from "../shell/demoOffer.svelte";
 import { projects } from "../projects/instance.svelte";
 import { askInitHere } from "../shell/initProject";
 import { FILES, SEARCH } from "../shell/arrangement";
@@ -103,6 +104,12 @@ const TAB_KEYS: readonly Spec[] = (
 const SPECS: readonly Spec[] = [
   { id: "app.openFolder", label: "cmd.openFolder", keys: ["Mod+o"], run: () => store.openFolder() },
   { id: "app.openFile", label: "cmd.openFile", keys: ["Mod+Shift+o"], run: () => store.openFile() },
+  {
+    id: "app.openDemo",
+    label: "welcome.demo.open",
+    when: () => demoOffer.available,
+    run: () => demoOffer.open(store),
+  },
   { id: "app.settings", label: "cmd.settings", keys: ["Mod+,"], run: () => ui.toggleSettings() },
   { id: "app.settingsPage", label: "cmd.settingsPage", run: () => ui.openSettingsPage() },
   { id: "app.keyboard", label: "cmd.keyboard", run: () => ui.openKeyboard() },

@@ -289,8 +289,15 @@ export type MockProbe = {
   /** Opens in this tab of a view that shows something: how long the backend's Opening state lasts (0: until the page
    *  reacted to it), the folders whose open fails (`io`), the project calls refused meanwhile (`project_of`). */
   opening: { ms: number; fails: Set<string>; refused: string[] };
-  /** The demo pages offer: what the backend answers, copies asked for, dismissals, a refusal for the next copy. */
-  demo: { offer: DemoOffer; installs: number; dismissed: number; fail: ErrorKind | null };
+  /** The demo pages offer: what the backend answers, whether this copy ships the pages, copies asked for, dismissals,
+   *  a refusal for the next copy. */
+  demo: {
+    offer: DemoOffer;
+    available: boolean;
+    installs: number;
+    dismissed: number;
+    fail: ErrorKind | null;
+  };
 };
 
 /** Fresh mock (tests get their own; the dev build uses `mockApi`). */
@@ -654,7 +661,7 @@ export function createMockApi(): Api & {
     },
     opening: { ms: 0, fails: new Set(), refused: [] },
     // offered in the dev build, as on a first start
-    demo: { offer: "install", installs: 0, dismissed: 0, fail: null },
+    demo: { offer: "install", available: true, installs: 0, dismissed: 0, fail: null },
   };
   let tree: TreeView | null = null;
   /** The version of the shown document last told to the window (`null`: gone), as `document/mod.rs` keeps it. */
@@ -1407,7 +1414,7 @@ export function createMockApi(): Api & {
     defaultAppSet: distribution.defaultAppSet,
     defaultAppAsked: distribution.defaultAppAsked,
     defaultAppHandoff: distribution.defaultAppHandoff,
-    demoOffer: () => ok(probe.demo.offer),
+    demoOffer: () => ok({ offer: probe.demo.offer, available: probe.demo.available }),
     // as the backend: a refused copy leaves the offer; a copy | a folder found counts as used
     demoInstall: () => {
       probe.demo.installs += 1;
