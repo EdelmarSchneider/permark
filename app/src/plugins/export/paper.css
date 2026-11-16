@@ -120,7 +120,7 @@ body {
     object-fit: contain;
   }
   /* a table still wider than the page after a smaller font: its columns come from the measured widths the export
-     sets (`tableFit.ts`); the reading view's cell floor would push it past the page again */
+     sets (`tableColumns.ts`); the reading view's cell floor would push it past the page again */
   .md table.pm-fit-table {
     table-layout: fixed;
   }
