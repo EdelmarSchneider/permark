@@ -5,6 +5,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Table columns in YAML and TOML sheets, and in PDF and print, no longer shrink to a letter or two. Words stay whole: a sheet table scrolls sideways when it does not fit, and a printed table shares the page width by what its columns hold. <!-- f: view-mode, export -->
+
 ## [0.13.0] - 2026-11-16
 
 ### Added
