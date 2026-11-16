@@ -25,6 +25,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Removing a missing project from the list now keeps its Undo notice until you close it. <!-- f: projects -->
 - Spanish and Simplified Chinese use one consistent word for Settings, agents and comments. <!-- f: i18n -->
 - An `.opencode` folder (where the opencode coding agent keeps its project setup) now counts as a file for AI agents, like `AGENTS.md` or a `.claude` folder. In such a project the Live changes panel shows by itself below the outline, and PerMark offers once to share the project with your agent. <!-- f: live-feed, agent-connection -->
+- The file list sorts names the way your app language does, with numbers in order, like your system's file manager: "file 2" comes before "file 10", and letters such as Ё, Đ or Ş sit next to their base letters instead of after Z. Folders still come first. <!-- f: explorer -->
 
 ### Deprecated
 - This is the last version with a Windows `.msi` installer. If you installed PerMark from an `.msi`, uninstall it and install the `-setup.exe`: your settings and notes stay. Settings live in your user profile, and notes in their own folder (`Documents\PerMark Notes`, unless you chose another one). You can also get PerMark from the Microsoft Store instead; the Store version keeps settings of its own, so you choose them again there, and your notes and documents are still where they were. <!-- f: windows-installer -->

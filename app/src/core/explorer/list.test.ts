@@ -17,6 +17,7 @@ import {
   diffLists,
   dropBlock,
   edgeSpeed,
+  inNameOrder,
   movesInto,
   nameOf,
   parentOf,
@@ -197,6 +198,96 @@ describe("rowsOf", () => {
     const started = performance.now();
     expect(rowsOf([main], big, new Set(), new Set())).toHaveLength(50_000);
     expect(performance.now() - started).toBeLessThan(500);
+  });
+});
+
+describe("name order", () => {
+  const paths = (list: readonly TreeNode[]): string[] => list.map((n) => n.path);
+  const sorted = (locale: string, names: string[]): string[] =>
+    paths(
+      inNameOrder(
+        names.map((name) => node(name)),
+        locale,
+      ),
+    );
+
+  it("folders first, then names as the language sorts them, numbers by their value", () => {
+    const list = [
+      node("b.md"),
+      node("z", dir),
+      node("file 10.md"),
+      node("a", dir),
+      node("file 2.md"),
+      node("File 1.md"),
+    ];
+    expect(paths(inNameOrder(list, "en"))).toEqual([
+      "a",
+      "z",
+      "b.md",
+      "File 1.md",
+      "file 2.md",
+      "file 10.md",
+    ]);
+  });
+
+  it("Russian: Ё beside Е, Cyrillic names before Latin ones", () => {
+    expect(sorted("ru", ["Ёж.md", "Дом.md", "Жук.md", "Яблоко.md", "Ель.md", "apple.md"])).toEqual([
+      "Дом.md",
+      "Ёж.md",
+      "Ель.md",
+      "Жук.md",
+      "Яблоко.md",
+      "apple.md",
+    ]);
+  });
+
+  it("Vietnamese: Ă, Â, Đ, Ô, Ơ beside their base letters, not after Z", () => {
+    expect(
+      sorted("vi", ["Zebra.md", "Ơn.md", "Đà.md", "Ăn.md", "Ôm.md", "An.md", "Dê.md", "On.md"]),
+    ).toEqual(["An.md", "Ăn.md", "Dê.md", "Đà.md", "On.md", "Ôm.md", "Ơn.md", "Zebra.md"]);
+  });
+
+  it("Turkish: Ç, Ö, Ş beside C, O, S", () => {
+    expect(sorted("tr", ["Şeker.md", "Tas.md", "Öykü.md", "Pul.md", "Çay.md", "Dal.md"])).toEqual([
+      "Çay.md",
+      "Dal.md",
+      "Öykü.md",
+      "Pul.md",
+      "Şeker.md",
+      "Tas.md",
+    ]);
+    expect(sorted("tr", ["Su.md", "Cam.md", "Ozan.md", "Şeker.md", "Çay.md", "Öykü.md"])).toEqual([
+      "Cam.md",
+      "Çay.md",
+      "Ozan.md",
+      "Öykü.md",
+      "Su.md",
+      "Şeker.md",
+    ]);
+  });
+
+  it("names the language sees as equal keep one fixed order", () => {
+    expect(sorted("en", ["a.md", "A.md"])).toEqual(["A.md", "a.md"]);
+    expect(sorted("en", ["A.md", "a.md"])).toEqual(["A.md", "a.md"]);
+  });
+
+  it("orders each folder's entries under it; worktrees keep their place after the project", () => {
+    const list = [
+      node("b", dir),
+      node("b/z.md"),
+      node("b/a.md"),
+      node("a.md"),
+      node("@wt/x/q.md"),
+      node("@wt/x/p.md"),
+    ];
+    expect(paths(inNameOrder(list, "en"))).toEqual([
+      "b",
+      "b/a.md",
+      "b/z.md",
+      "a.md",
+      "@wt/x/p.md",
+      "@wt/x/q.md",
+    ]);
   });
 });
 
