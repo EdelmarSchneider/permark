@@ -30,3 +30,24 @@ LangString webview2Downloading ${LANG_ROMANIAN} "Se descarcă programul de insta
 LangString webview2InstallError ${LANG_ROMANIAN} "Eroare: instalarea WebView2 nu a reușit, cu codul de ieșire $1"
 LangString webview2InstallSuccess ${LANG_ROMANIAN} "WebView2 a fost instalat"
 LangString deleteAppData ${LANG_ROMANIAN} "Șterge datele aplicației"
+
+; Stock NSIS texts of this language's pages, in other words: NSIS' Romanian file addresses the person formally and
+; writes ş ţ with a cedilla, where the texts above say "tu" and write ș ț with a comma below; "Executare PerMark" names
+; the finish page's run box stiffly. Tauri includes this file after the language is inserted, so these later texts win
+; (makensis warns 6030 for each Modern UI one).
+LangString MUI_TEXT_WELCOME_INFO_TITLE ${LANG_ROMANIAN} "Bine ai venit la instalarea $(^NameDA)"
+LangString MUI_TEXT_DIRECTORY_TITLE ${LANG_ROMANIAN} "Alege locul de instalare"
+LangString MUI_TEXT_DIRECTORY_SUBTITLE ${LANG_ROMANIAN} "Alege dosarul în care vrei să instalezi $(^NameDA)."
+LangString ^DirText ${LANG_ROMANIAN} "$(^NameDA) se va instala în următorul dosar. Pentru a-l instala în alt dosar, apasă Alege și selectează alt dosar. $_CLICK"
+LangString ^DirSubText ${LANG_ROMANIAN} "Dosar de destinație"
+LangString ^SpaceAvailable ${LANG_ROMANIAN} "Spațiu disponibil: "
+LangString ^SpaceRequired ${LANG_ROMANIAN} "Spațiu necesar: "
+LangString ^ClickInstall ${LANG_ROMANIAN} "Apasă Instalează pentru a începe instalarea."
+LangString ^CancelBtn ${LANG_ROMANIAN} "&Renunță"
+LangString MUI_TEXT_INSTALLING_SUBTITLE ${LANG_ROMANIAN} "Așteaptă, $(^NameDA) se instalează."
+LangString MUI_TEXT_FINISH_INFO_TEXT ${LANG_ROMANIAN} "$(^NameDA) a fost instalat.$\r$\n$\r$\nApasă Terminare pentru a încheia instalarea."
+LangString MUI_TEXT_FINISH_RUN ${LANG_ROMANIAN} "Pornește $(^NameDA)"
+LangString MUI_UNTEXT_CONFIRM_SUBTITLE ${LANG_ROMANIAN} "Elimină $(^NameDA) de pe computer."
+LangString ^UninstallingText ${LANG_ROMANIAN} "$(^NameDA) va fi dezinstalat din următorul dosar. $_CLICK"
+LangString ^ClickUninstall ${LANG_ROMANIAN} "Apasă Dezinstalează pentru a începe dezinstalarea."
+LangString MUI_UNTEXT_UNINSTALLING_SUBTITLE ${LANG_ROMANIAN} "Așteaptă, $(^NameDA) se dezinstalează."

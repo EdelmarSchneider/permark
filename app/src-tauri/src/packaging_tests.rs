@@ -21,9 +21,32 @@ const INSTALLER_LANGUAGE_IDS: [u32; 18] = [
     1033, 1046, 3082, 1031, 2052, 1040, 1041, 1042, 1036, 2070, 1027, 1110, 1048, 1028, 1057, 1066,
     1049, 1055,
 ];
-/// Installer languages Tauri does not translate, or translates with gaps (`bundle.windows.nsis.customLanguageFiles`).
-const CUSTOM_LANGUAGES: [(&str, &str); 5] = [
+/// Installer languages Tauri does not translate, or translates with errors, and languages whose stock NSIS page texts
+/// need other words (`bundle.windows.nsis.customLanguageFiles`).
+const CUSTOM_LANGUAGES: [(&str, &str); 15] = [
     ("German", include_str!("../installer/languages/German.nsh")),
+    (
+        "PortugueseBR",
+        include_str!("../installer/languages/PortugueseBR.nsh"),
+    ),
+    (
+        "SpanishInternational",
+        include_str!("../installer/languages/SpanishInternational.nsh"),
+    ),
+    (
+        "SimpChinese",
+        include_str!("../installer/languages/SimpChinese.nsh"),
+    ),
+    (
+        "Japanese",
+        include_str!("../installer/languages/Japanese.nsh"),
+    ),
+    ("Korean", include_str!("../installer/languages/Korean.nsh")),
+    ("French", include_str!("../installer/languages/French.nsh")),
+    (
+        "Portuguese",
+        include_str!("../installer/languages/Portuguese.nsh"),
+    ),
     (
         "Catalan",
         include_str!("../installer/languages/Catalan.nsh"),
@@ -37,8 +60,20 @@ const CUSTOM_LANGUAGES: [(&str, &str); 5] = [
         include_str!("../installer/languages/Romanian.nsh"),
     ),
     (
+        "TradChinese",
+        include_str!("../installer/languages/TradChinese.nsh"),
+    ),
+    (
         "Indonesian",
         include_str!("../installer/languages/Indonesian.nsh"),
+    ),
+    (
+        "Vietnamese",
+        include_str!("../installer/languages/Vietnamese.nsh"),
+    ),
+    (
+        "Turkish",
+        include_str!("../installer/languages/Turkish.nsh"),
     ),
 ];
 
@@ -263,7 +298,33 @@ fn every_custom_installer_language_has_every_text_of_the_template() {
             .filter_map(|rest| rest.split(' ').next())
             .collect();
         let expected: std::collections::BTreeSet<&str> = TEMPLATE_TEXTS.into_iter().collect();
-        assert_eq!(keys, expected, "{name}.nsh");
+        let missing: Vec<&&str> = expected.difference(&keys).collect();
+        assert!(missing.is_empty(), "{name}.nsh lacks {missing:?}");
+        // anything else replaces a stock NSIS text of that language: a Modern UI page text (`MUI_...`) or one of
+        // NSIS' own (`^...`); the file is included after the language is inserted, so the later text wins
+        for key in keys.difference(&expected) {
+            assert!(
+                key.starts_with("MUI_") || key.starts_with('^'),
+                "{name}.nsh: {key} is neither a template text nor a stock NSIS text"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_text_of_a_custom_installer_language_is_set_for_that_language_with_the_product_name() {
+    for (name, text) in CUSTOM_LANGUAGES {
+        let id = format!("${{LANG_{}}}", name.to_uppercase());
+        for line in text.lines().filter(|line| line.starts_with("LangString ")) {
+            // `LangString <key> ${LANG_<NAME>} "<text>"`
+            assert_eq!(
+                line.split(' ').nth(2),
+                Some(id.as_str()),
+                "{name}.nsh: {line}"
+            );
+            // Tauri fills no placeholder in a language file: `{{product_name}}` would show as typed
+            assert!(!line.contains("{{"), "{name}.nsh: {line}");
+        }
     }
 }
 

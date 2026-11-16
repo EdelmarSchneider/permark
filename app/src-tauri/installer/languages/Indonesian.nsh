@@ -30,3 +30,12 @@ LangString webview2Downloading ${LANG_INDONESIAN} "Mengunduh program awal WebVie
 LangString webview2InstallError ${LANG_INDONESIAN} "Kesalahan: instalasi WebView2 gagal dengan kode keluar $1"
 LangString webview2InstallSuccess ${LANG_INDONESIAN} "WebView2 berhasil diinstal"
 LangString deleteAppData ${LANG_INDONESIAN} "Hapus data aplikasi"
+
+; Stock NSIS texts of this language's pages, in other words: NSIS' Indonesian file writes "di instal" apart, "anda" in
+; lower case where the texts above say "Anda", and the archaic "sudah paripurna". Tauri includes this file after the
+; language is inserted, so these later texts win (makensis warns 6030 for each Modern UI one).
+LangString ^DirText ${LANG_INDONESIAN} "Program $(^NameDA) akan diinstal di lokasi berikut. Untuk memilih lokasi lain, tekan tombol Cari, lalu pilih lokasi yang Anda kehendaki. $_CLICK"
+LangString MUI_TEXT_FINISH_SUBTITLE ${LANG_INDONESIAN} "Proses instalasi berhasil diselesaikan."
+LangString MUI_TEXT_FINISH_INFO_TEXT ${LANG_INDONESIAN} "$(^NameDA) sudah diinstal di komputer Anda.$\r$\n$\r$\nTekan tombol Selesai untuk menutup program ini."
+LangString MUI_UNTEXT_CONFIRM_SUBTITLE ${LANG_INDONESIAN} "Menghapus $(^NameDA) dari komputer Anda."
+LangString MUI_UNTEXT_FINISH_SUBTITLE ${LANG_INDONESIAN} "Proses penghapusan berhasil diselesaikan."
