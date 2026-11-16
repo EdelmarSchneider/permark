@@ -383,13 +383,46 @@
   font-weight: 600;
 }
 
-/* alerts */
+/* marked text (`==text==`, `<mark>`) */
+.md mark {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: var(--mark);
+  color: inherit;
+}
+
+/* alerts, callouts and `:::` containers: one box; a `details` one folds by its title */
 .md .markdown-alert {
   --alert: var(--accent);
   padding: 10px 16px;
+  border: 0;
   border-left: 3px solid var(--alert);
   border-radius: 0 var(--radius-control) var(--radius-control) 0;
   background: color-mix(in srgb, var(--alert) 7%, transparent);
+}
+.md details.markdown-alert > summary.markdown-alert-title {
+  margin-bottom: 4px;
+  cursor: pointer;
+  list-style: none;
+}
+.md details.markdown-alert:not([open]) > summary.markdown-alert-title {
+  margin-bottom: 0;
+}
+.md details.markdown-alert > summary.markdown-alert-title::-webkit-details-marker {
+  display: none;
+}
+/* the fold's chevron after the title: right when folded, down when open */
+.md details.markdown-alert > summary.markdown-alert-title::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-left: 4px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(-45deg);
+}
+.md details.markdown-alert[open] > summary.markdown-alert-title::after {
+  transform: rotate(45deg);
 }
 .md .markdown-alert > :last-child {
   margin-bottom: 0;
@@ -428,6 +461,10 @@
 }
 .md .markdown-alert-caution {
   --alert: var(--git-deleted-text);
+}
+/* quotes and `::: details`: the page's quiet tone; the title text in the muted color keeps its contrast */
+.md .markdown-alert-quote {
+  --alert: var(--muted);
 }
 
 /* tables */

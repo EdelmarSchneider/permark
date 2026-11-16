@@ -114,6 +114,19 @@ export function isLocalHref(href: string | null): href is string {
   return href !== null && href !== "" && !href.startsWith("#") && !SCHEME.test(href);
 }
 
+/** A code block's title, first line number and marked lines (the renderer checked them; `enhance` put them here). */
+function codeExtras(element: HTMLElement): Pick<EmbedProps, "title" | "start" | "marked"> {
+  const title = element.getAttribute("data-title");
+  const numbers = element.getAttribute("data-numbers");
+  const marked = element.getAttribute("data-lines");
+  const start = numbers ? Number(numbers) : NaN;
+  return {
+    ...(title ? { title } : {}),
+    ...(Number.isInteger(start) ? { start } : {}),
+    ...(marked ? { marked } : {}),
+  };
+}
+
 export class Decorator {
   readonly #api: Api;
   readonly links: LinkCache;
@@ -260,6 +273,7 @@ export class Decorator {
         ? element.getAttribute("data-math-style") === "display"
         : isMathBlock(element),
       ...(this.#theme === undefined ? {} : { theme: this.#theme }),
+      ...(isMath ? {} : codeExtras(element)),
     };
     const loading: Promise<void> = loader()
       .then(

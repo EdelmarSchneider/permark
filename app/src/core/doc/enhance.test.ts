@@ -109,6 +109,68 @@ describe("enhanceBlock", () => {
     }
   });
 
+  it("titles callouts of every kind by their kind, folded ones too", async () => {
+    // the renderer gives a callout its look and, when it differs, its kind; the default title is the kind's English
+    // name, translated here
+    const callout = (classes: string, title: string, tag = "div"): HTMLElement => {
+      const head = tag === "details" ? "summary" : "p";
+      return enhanceBlock(
+        make(
+          `<${tag} class="markdown-alert ${classes}"><${head} class="markdown-alert-title">${title}</${head}><p>x</p></${tag}>`,
+        ),
+        env,
+      );
+    };
+    const titleOf = (root: HTMLElement): Element | null =>
+      root.querySelector(".markdown-alert-title");
+    await language.choose("de", []);
+    try {
+      const info = titleOf(callout("markdown-alert-note markdown-alert-kind-info", "Info"));
+      expect(info?.textContent).toBe("Info");
+      expect(info?.querySelector("svg")).not.toBeNull();
+      expect(
+        titleOf(callout("markdown-alert-caution markdown-alert-kind-bug", "Bug"))?.textContent,
+      ).toBe("Fehler");
+      expect(titleOf(callout("markdown-alert-quote", "Quote"))?.textContent).toBe("Zitat");
+      const folded = titleOf(
+        callout("markdown-alert-quote markdown-alert-kind-details", "Details", "details"),
+      );
+      expect(folded?.localName).toBe("summary");
+      expect(folded?.textContent).toBe("Details");
+      expect(folded?.querySelector("svg")).not.toBeNull();
+      // an author's title and an unknown kind's own name stay as written
+      expect(
+        titleOf(callout("markdown-alert-tip markdown-alert-kind-success", "Shipped"))?.textContent,
+      ).toBe("Shipped");
+      expect(titleOf(callout("markdown-alert-note", "My-kind"))?.textContent).toBe("My-kind");
+      // each kind its icon: a bug is no danger
+      const icon = (classes: string): string =>
+        titleOf(callout(classes, "T"))?.querySelector("svg")?.innerHTML ?? "";
+      expect(icon("markdown-alert-caution markdown-alert-kind-bug")).not.toBe(
+        icon("markdown-alert-caution markdown-alert-kind-danger"),
+      );
+    } finally {
+      await language.choose("en", []);
+    }
+  });
+
+  it("passes a code block's title, marked lines and line numbers to its wrapper", () => {
+    const root = enhanceBlock(
+      make(
+        '<pre><code class="language-rust" data-title="main.rs" data-lines="1,3-5" data-numbers="10">x</code></pre>',
+      ),
+      env,
+    );
+    expect(root.getAttribute("data-info")).toBe("rust");
+    expect(root.getAttribute("data-title")).toBe("main.rs");
+    expect(root.getAttribute("data-lines")).toBe("1,3-5");
+    expect(root.getAttribute("data-numbers")).toBe("10");
+    const plain = enhanceBlock(make('<pre><code class="language-rust">x</code></pre>'), env);
+    for (const name of ["data-title", "data-lines", "data-numbers"]) {
+      expect(plain.hasAttribute(name), name).toBe(false);
+    }
+  });
+
   it("marks done tasks", () => {
     const root = enhanceBlock(
       make(

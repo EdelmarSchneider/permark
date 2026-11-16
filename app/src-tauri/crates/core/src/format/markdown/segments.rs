@@ -8,7 +8,7 @@ use comrak::{parse_document, Arena};
 use serde::Serialize;
 use ts_rs::TS;
 
-use super::{frontmatter, is_deeper_than, options, prompt, too_many_container_markers};
+use super::{callouts, frontmatter, is_deeper_than, options, prompt, too_many_container_markers};
 use crate::format::MarkdownFeatures;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
@@ -79,6 +79,15 @@ fn display_math_only<'a>(node: &'a AstNode<'a>) -> bool {
     math
 }
 
+/// The footnote the parser made of an inline note (`^[...]`, named `__inline_<n>`): it sits inside its paragraph's
+/// line and is no block of the text.
+fn is_inline_note<'a>(node: &'a AstNode<'a>) -> bool {
+    match &node.data().value {
+        NodeValue::FootnoteDefinition(definition) => definition.name.starts_with("__inline_"),
+        _ => false,
+    }
+}
+
 fn classify<'a>(node: &'a AstNode<'a>) -> (SegmentKind, Option<LockReason>) {
     match &node.data().value {
         NodeValue::Paragraph if display_math_only(node) => {
@@ -106,8 +115,19 @@ fn classify<'a>(node: &'a AstNode<'a>) -> (SegmentKind, Option<LockReason>) {
         NodeValue::HtmlBlock(_) => (SegmentKind::Html, Some(LockReason::Html)),
         NodeValue::FootnoteDefinition(_) => (SegmentKind::Footnote, Some(LockReason::Footnote)),
         NodeValue::ThematicBreak => (SegmentKind::Rule, None),
+        // an Obsidian callout is drawn as an alert: kept as written, as alerts are
+        NodeValue::BlockQuote if callouts::is_callout(node) => {
+            (SegmentKind::Alert, Some(LockReason::Kind))
+        }
         NodeValue::BlockQuote | NodeValue::MultilineBlockQuote(_) => (SegmentKind::Quote, None),
         NodeValue::Alert(_) => (SegmentKind::Alert, Some(LockReason::Kind)),
+        NodeValue::BlockDirective(directive) => {
+            let kind = match callouts::Callout::of_directive(&directive.info) {
+                Some(_) => SegmentKind::Alert,
+                None => SegmentKind::Other,
+            };
+            (kind, Some(LockReason::Kind))
+        }
         NodeValue::DescriptionList => (SegmentKind::DescriptionList, Some(LockReason::Kind)),
         NodeValue::FrontMatter(_) => (SegmentKind::FrontMatter, Some(LockReason::FrontMatter)),
         _ => (SegmentKind::Other, Some(LockReason::Kind)),
@@ -152,7 +172,7 @@ pub fn segments(text: &str, features: &MarkdownFeatures) -> Vec<Segment> {
         let pos = node.data().sourcepos;
         let first = pos.start.line;
         let mut last = pos.end.line.min(count);
-        if first == 0 || first > last {
+        if first == 0 || first > last || is_inline_note(node) {
             continue;
         }
         // blank lines at the end (an unclosed fence at the end of the text) are separators

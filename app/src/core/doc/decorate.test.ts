@@ -56,6 +56,27 @@ describe("Decorator embeds", () => {
     decorator.dispose();
   });
 
+  it("hands a code block's title, first line number and marked lines to its embed", async () => {
+    const decorator = new Decorator(createMockApi());
+    decorator.setEmbeds(() => probe);
+    const root = block("rust", "js");
+    const [titled, plain] = root.querySelectorAll(".code-block");
+    titled?.setAttribute("data-title", "main.rs");
+    titled?.setAttribute("data-numbers", "10");
+    titled?.setAttribute("data-lines", "1,3-5");
+    decorator.near(root);
+    await decorator.idle();
+    const [first, second] = root.querySelectorAll(".embed-probe");
+    expect(first?.getAttribute("data-title")).toBe("main.rs");
+    expect(first?.getAttribute("data-start")).toBe("10");
+    expect(first?.getAttribute("data-marked")).toBe("1,3-5");
+    expect(plain).toBeDefined();
+    for (const name of ["data-title", "data-start", "data-marked"]) {
+      expect(second?.getAttribute(name), name).toBe("none");
+    }
+    decorator.dispose();
+  });
+
   it("a ```math block is one display formula, drawn as code only when no plugin draws formulas", async () => {
     const mounted: string[] = [];
     const named =

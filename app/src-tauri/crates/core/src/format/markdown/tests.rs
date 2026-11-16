@@ -87,6 +87,19 @@ fn plain_html(text: &str) -> String {
     html_of(text, &MarkdownFeatures::default())
 }
 
+/// `html` without the block marks (`data-b`) the pipeline puts on top-level elements.
+fn unmarked(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(at) = rest.find(" data-b=\"") {
+        out.push_str(&rest[..at]);
+        let value = &rest[at + 9..];
+        rest = value.find('"').map_or("", |end| &value[end + 1..]);
+    }
+    out.push_str(rest);
+    out
+}
+
 // ---- spec ---------------------------------------------------------------------------------------------------------
 
 #[test]
@@ -169,6 +182,241 @@ fn readme_centering_and_named_anchors_survive() {
     assert_eq!(html.matches(" align=\"center\">").count(), 2, "{html}");
     for needle in ["<a name=\"setup\">", "href=\"#setup\""] {
         assert!(html.contains(needle), "{needle} missing in {html}");
+    }
+}
+
+#[test]
+fn highlight_emoji_shortcodes_and_inline_footnotes_render() {
+    let html = unmarked(&plain_html(
+        "A ==bright== word :smile: and :+1: here^[An *inline* note.].\n",
+    ));
+    for needle in [
+        "<mark>bright</mark>",
+        "<span class=\"emoji\" title=\":smile:\">\u{1f604}</span>",
+        "<span class=\"emoji\" title=\":+1:\">\u{1f44d}</span>",
+        "href=\"#fn-__inline_1\"",
+        "data-footnote-ref",
+        "<em>inline</em> note.",
+    ] {
+        assert!(html.contains(needle), "{needle} missing in {html}");
+    }
+}
+
+#[test]
+fn highlight_and_shortcode_lookalikes_stay_as_written() {
+    for (md, kept) in [
+        ("Code `a==b==c` here\n", "<code>a==b==c</code>"),
+        ("Math $a==b==c$ here\n", ">a==b==c</span>"),
+        ("```\n==x== :smile: ^[y]\n```\n", "==x== :smile: ^[y]"),
+        ("C++ and C++ stay\n", "C++ and C++ stay"),
+        ("At 12:30:45 sharp\n", "At 12:30:45 sharp"),
+        ("An :unknown_code: stays\n", "An :unknown_code: stays"),
+        ("If a == b and c == d\n", "If a == b and c == d"),
+        ("Three ===x=== stay\n", "Three ===x=== stay"),
+        // single tildes keep GitHub's strikethrough; no subscript, superscript, underline or spoiler syntax
+        ("One ~gone~ word\n", "<del>gone</del>"),
+        (
+            "No ^sup^ or ++ins++ or ||spoiler||\n",
+            "No ^sup^ or ++ins++ or ||spoiler||",
+        ),
+        ("Some __strong__ text\n", "<strong>strong</strong>"),
+    ] {
+        let html = unmarked(&plain_html(md));
+        assert!(html.contains(kept), "{md:?}: {kept} missing in {html}");
+        assert!(!html.contains("<mark"), "{md:?} -> {html}");
+        assert!(!html.contains("class=\"emoji\""), "{md:?} -> {html}");
+    }
+}
+
+#[test]
+fn obsidian_callouts_render_as_alerts_with_their_kind_title_and_fold() {
+    for (md, open_tag, title) in [
+        (
+            "> [!info]\n> Body.\n",
+            "<div class=\"markdown-alert markdown-alert-note markdown-alert-kind-info\">",
+            "<p class=\"markdown-alert-title\">Info</p>",
+        ),
+        (
+            "> [!faq] Why *now*?\n> Body.\n",
+            "<div class=\"markdown-alert markdown-alert-warning markdown-alert-kind-question\">",
+            "<p class=\"markdown-alert-title\">Why now?</p>",
+        ),
+        (
+            "> [!Success]\n> Body.\n",
+            "<div class=\"markdown-alert markdown-alert-tip markdown-alert-kind-success\">",
+            "<p class=\"markdown-alert-title\">Success</p>",
+        ),
+        (
+            "> [!my-kind]\n> Body.\n",
+            "<div class=\"markdown-alert markdown-alert-note\">",
+            "<p class=\"markdown-alert-title\">My-kind</p>",
+        ),
+        (
+            "> [!danger]- Folded\n> Body.\n",
+            "<details class=\"markdown-alert markdown-alert-caution markdown-alert-kind-danger\">",
+            "<summary class=\"markdown-alert-title\">Folded</summary>",
+        ),
+        (
+            "> [!quote]+\n> Body.\n",
+            "<details class=\"markdown-alert markdown-alert-quote\" open=\"\">",
+            "<summary class=\"markdown-alert-title\">Quote</summary>",
+        ),
+        // GitHub's own kinds fold too, and keep the classes they always had
+        (
+            "> [!NOTE]- Later\n> Body.\n",
+            "<details class=\"markdown-alert markdown-alert-note\">",
+            "<summary class=\"markdown-alert-title\">Later</summary>",
+        ),
+        (
+            "> [!WARNING]\n> Body.\n",
+            "<div class=\"markdown-alert markdown-alert-warning\">",
+            "<p class=\"markdown-alert-title\">Warning</p>",
+        ),
+    ] {
+        let html = unmarked(&plain_html(md));
+        assert!(
+            html.contains(open_tag),
+            "{md:?}: {open_tag} missing in {html}"
+        );
+        assert!(html.contains(title), "{md:?}: {title} missing in {html}");
+        assert!(html.contains("<p>Body.</p>"), "{md:?} -> {html}");
+        assert!(!html.contains("[!"), "{md:?}: marker left in {html}");
+    }
+    // nested, and a marker alone on its line followed by more text in the same paragraph
+    let html = unmarked(&plain_html(
+        "> [!tip]\n> First line\n> > [!bug] Inner\n> > x\n",
+    ));
+    assert!(html.contains("markdown-alert-kind-bug"), "{html}");
+    assert!(html.contains("<p>First line</p>"), "{html}");
+    // not a callout: a marker after other text, a plain quote
+    for md in ["> Text [!info] later\n", "> Just a quote\n", "> [!]\n> x\n"] {
+        let html = unmarked(&plain_html(md));
+        assert!(html.contains("<blockquote>"), "{md:?} -> {html}");
+        assert!(!html.contains("markdown-alert"), "{md:?} -> {html}");
+    }
+}
+
+#[test]
+fn colon_containers_render_as_alerts() {
+    for (md, open_tag, title) in [
+        (
+            ":::tip\nBody.\n:::\n",
+            "<div class=\"markdown-alert markdown-alert-tip\">",
+            "<p class=\"markdown-alert-title\">Tip</p>",
+        ),
+        (
+            "::: warning Mind the gap\nBody.\n:::\n",
+            "<div class=\"markdown-alert markdown-alert-warning\">",
+            "<p class=\"markdown-alert-title\">Mind the gap</p>",
+        ),
+        (
+            ":::info[Read this]\nBody.\n:::\n",
+            "<div class=\"markdown-alert markdown-alert-note markdown-alert-kind-info\">",
+            "<p class=\"markdown-alert-title\">Read this</p>",
+        ),
+        (
+            ":::{danger}\nBody.\n:::\n",
+            "<div class=\"markdown-alert markdown-alert-caution markdown-alert-kind-danger\">",
+            "<p class=\"markdown-alert-title\">Danger</p>",
+        ),
+        (
+            "::: details Click me\nBody.\n:::\n",
+            "<details class=\"markdown-alert markdown-alert-quote markdown-alert-kind-details\">",
+            "<summary class=\"markdown-alert-title\">Click me</summary>",
+        ),
+    ] {
+        let html = unmarked(&plain_html(md));
+        assert!(
+            html.contains(open_tag),
+            "{md:?}: {open_tag} missing in {html}"
+        );
+        assert!(html.contains(title), "{md:?}: {title} missing in {html}");
+        assert!(html.contains("<p>Body.</p>"), "{md:?} -> {html}");
+    }
+    // a container of no known kind keeps its content, in no box
+    let html = unmarked(&plain_html("::: columns\nBody.\n:::\n"));
+    assert!(html.contains("<div>\n<p>Body.</p>\n</div>"), "{html}");
+    assert!(!html.contains("markdown-alert"), "{html}");
+}
+
+#[test]
+fn callouts_and_containers_are_blocks_the_visual_editor_keeps() {
+    let md = "> [!info] Title\n> Body.\n\n> Plain quote.\n\n:::tip\nBody.\n:::\n\n> [!NOTE]\n> x\n";
+    let found: Vec<(u32, u32, SegmentKind, Option<LockReason>)> =
+        segments(md, &MarkdownFeatures::default())
+            .into_iter()
+            .map(|s| (s.line_start, s.line_end, s.kind, s.lock))
+            .collect();
+    assert_eq!(
+        found,
+        vec![
+            (1, 2, SegmentKind::Alert, Some(LockReason::Kind)),
+            (4, 4, SegmentKind::Quote, None),
+            (6, 8, SegmentKind::Alert, Some(LockReason::Kind)),
+            (10, 11, SegmentKind::Alert, Some(LockReason::Kind)),
+        ]
+    );
+}
+
+#[test]
+fn a_paragraph_with_inline_syntax_stays_one_editable_block() {
+    // an inline note becomes a footnote of the page, but its paragraph is still the only block of its line
+    let md = "Mark ==this==, :smile: and a note^[Inline *note*.].\n\nNext.\n";
+    let found: Vec<(u32, u32, SegmentKind, Option<LockReason>)> =
+        segments(md, &MarkdownFeatures::default())
+            .into_iter()
+            .map(|s| (s.line_start, s.line_end, s.kind, s.lock))
+            .collect();
+    assert_eq!(
+        found,
+        vec![
+            (1, 1, SegmentKind::Paragraph, None),
+            (3, 3, SegmentKind::Paragraph, None),
+        ]
+    );
+}
+
+#[test]
+fn code_info_extras_become_checked_data_attributes() {
+    for (md, code_tag) in [
+        (
+            "```rust title=\"main.rs\" {1,3-5} showLineNumbers\nfn main() {}\n```\n",
+            "<code class=\"language-rust\" data-title=\"main.rs\" data-lines=\"1,3-5\" data-numbers=\"1\">",
+        ),
+        (
+            "```py hl_lines=\"2 4-5\" linenums=\"10\" title='a b.py'\nx\n```\n",
+            "<code class=\"language-py\" data-title=\"a b.py\" data-lines=\"2,4-5\" data-numbers=\"10\">",
+        ),
+        (
+            "```js{2}\nx\n```\n",
+            "<code class=\"language-js\" data-lines=\"2\">",
+        ),
+        (
+            "```text {.line-numbers}\nx\n```\n",
+            "<code class=\"language-text\" data-numbers=\"1\">",
+        ),
+        (
+            "```ts showLineNumbers{7} filename=app.ts\nx\n```\n",
+            "<code class=\"language-ts\" data-title=\"app.ts\" data-numbers=\"7\">",
+        ),
+        ("```rust\nx\n```\n", "<code class=\"language-rust\">"),
+        ("```\nx\n```\n", "<pre><code>x"),
+    ] {
+        let html = unmarked(&plain_html(md));
+        assert!(html.contains(code_tag), "{md:?}: {code_tag} missing in {html}");
+    }
+    // nothing else of the info string reaches the page: unknown keys, classes, ids, handlers; bad ranges go
+    let html = unmarked(&plain_html(
+        "```js title=\"<b>x</b>\" onclick=alert(1) {.evil #id key=v} {0,5-2,99999999999,3}\nx\n```\n",
+    ));
+    assert!(
+        html.contains(
+            "<code class=\"language-js\" data-title=\"&lt;b&gt;x&lt;/b&gt;\" data-lines=\"3\">"
+        ),
+        "{html}"
+    );
+    for bad in ["onclick", "evil", "id=", "key="] {
+        assert!(!html.contains(bad), "{bad} in {html}");
     }
 }
 
