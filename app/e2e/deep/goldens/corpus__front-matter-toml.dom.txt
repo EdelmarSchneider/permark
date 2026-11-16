@@ -39,11 +39,11 @@ div.reading
             dd
               "a table inside"
       div.md-body role="document"
-        h1 id="toml-front-matter"
+        h1 id="toml-front-matter" dir="auto"
           a.anchor href="#toml-front-matter" aria-label="Link to TOML front matter"
             "#"
           "TOML front matter"
-        p
+        p dir="auto"
           "The card above comes from a"
           code
             "+++"

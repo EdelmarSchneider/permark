@@ -33,7 +33,13 @@ pub const ICONS: [&str; 12] = [
 #[must_use]
 pub fn normalize_tag(raw: &str) -> Option<String> {
     let joined = raw.split_whitespace().collect::<Vec<_>>().join("-");
-    let tag: String = joined.to_lowercase().chars().take(MAX_TAG_CHARS).collect();
+    // `İ` lowercases to `i` + a combining dot that no typed `i` equals; a plain `I` -> `i` whatever the language
+    let tag: String = joined
+        .replace('İ', "i")
+        .to_lowercase()
+        .chars()
+        .take(MAX_TAG_CHARS)
+        .collect();
     (!tag.is_empty()).then_some(tag)
 }
 

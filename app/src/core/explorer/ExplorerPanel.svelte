@@ -7,6 +7,7 @@
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import ChevronsDownUp from "@lucide/svelte/icons/chevrons-down-up";
   import Crosshair from "@lucide/svelte/icons/crosshair";
+  import Ellipsis from "@lucide/svelte/icons/ellipsis";
   import FilePlus from "@lucide/svelte/icons/file-plus";
   import FolderPlus from "@lucide/svelte/icons/folder-plus";
   import GitBranch from "@lucide/svelte/icons/git-branch";
@@ -24,6 +25,7 @@
   import { aliasOf, hueOfMember } from "../projects/model";
   import ProjectStrip from "../projects/ProjectStrip.svelte";
   import Badge from "../shell/Badge.svelte";
+  import { rowFit } from "../shell/rowFit";
   import ContextMenu from "./ContextMenu.svelte";
   import FilterPopover from "./FilterPopover.svelte";
   import { withShow } from "./filter";
@@ -61,7 +63,17 @@
   let scrollTop = $state(0);
   let viewport = $state(400);
   let filterOpen = $state(false);
-  let menu = $state.raw<{ x: number; y: number; entries: readonly MenuEntry[] } | null>(null);
+  /** An open menu; `anchor`: the header button it opened from (a press on it closes it). */
+  let menu = $state.raw<{
+    x: number;
+    y: number;
+    entries: readonly MenuEntry[];
+    anchor?: HTMLElement;
+  } | null>(null);
+  let header: HTMLElement | undefined = $state();
+  let heading: HTMLElement | undefined = $state();
+  let headerWidth = $state(0);
+  let headingWidth = $state(0);
   let press: Press | null = null;
   let stopPress: (() => void) | null = null;
   let suppressClick = false;
@@ -117,6 +129,83 @@
       ? tn("filter.showingAll", store.totalFiles)
       : tn("filter.showingOf", store.totalFiles, { shown: store.shownFiles }),
   );
+
+  const explorerName = $derived(t("project.explorer"));
+  /** The header's buttons that can move into its "…" menu, in their order: the last ones move first. */
+  const TOOLS = 5;
+  /** The header's own sizes (CSS below): side padding, gap, button width. */
+  const BAR_PAD = 16;
+  const BAR_GAP = 2;
+  const TOOL_PX = 24;
+  /** How many of those buttons stay beside the whole label, the filter and (when some moved) the "…" button. */
+  const toolsShown = $derived(
+    rowFit({
+      room: headerWidth - BAR_PAD,
+      // +1: the measured width is rounded, the drawn text is not
+      fixed: headingWidth > 0 ? headingWidth + 1 + BAR_GAP + TOOL_PX + BAR_GAP : 0,
+      count: TOOLS,
+      step: TOOL_PX + BAR_GAP,
+      more: TOOL_PX + BAR_GAP,
+    }),
+  );
+
+  // the header's width and its label's whole width (the language changes it) decide which buttons stay in the header
+  // (observer torn down with the panel; none = every button, as in tests). A resize is measured in the next frame:
+  // buttons drawn again inside the observer's call would resize what it watches there ("ResizeObserver loop").
+  $effect(() => {
+    void explorerName;
+    if (!header || !heading || typeof ResizeObserver === "undefined") return;
+    const box = header;
+    const text = heading;
+    const measure = (): void => {
+      headerWidth = box.clientWidth;
+      headingWidth = text.scrollWidth;
+    };
+    measure();
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    });
+    observer.observe(box);
+    observer.observe(text);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  });
+
+  /** The header's buttons as menu entries, in their order (the "…" menu lists those that moved). */
+  function toolEntries(): MenuEntry[] {
+    return [
+      { kind: "item", label: t("newFile.newFile"), run: () => store.beginNew("file") },
+      { kind: "item", label: t("fileOps.newFolder"), run: () => store.beginNew("folder") },
+      { kind: "item", label: t("explorer.revealOpen"), run: () => store.revealActive() },
+      { kind: "item", label: t("explorer.collapseAll"), run: () => store.collapseAll() },
+      {
+        kind: "item",
+        label: t("explorer.refresh"),
+        ...(refreshKeys === null ? {} : { hint: refreshKeys }),
+        run: () => void store.refresh(),
+      },
+    ];
+  }
+
+  function moreMenu(event: MouseEvent): void {
+    const button = event.currentTarget;
+    if (!(button instanceof HTMLElement)) return;
+    if (menu?.anchor === button) {
+      menu = null;
+      return;
+    }
+    const box = button.getBoundingClientRect();
+    menu = {
+      x: box.left,
+      y: box.bottom + 2,
+      entries: toolEntries().slice(toolsShown),
+      anchor: button,
+    };
+  }
 
   // viewport height follows the panel (observer torn down with the list)
   $effect(() => {
@@ -658,59 +747,69 @@
 </script>
 
 <div class="explorer" data-drop-explorer>
-  <div class="bar">
-    <span class="menu-label one-line" title={t("project.explorer")}>{t("project.explorer")}</span>
+  <div class="bar" bind:this={header}>
+    <span class="menu-label one-line" title={explorerName} bind:this={heading}>{explorerName}</span>
     <span class="spacer"></span>
-    <button
-      type="button"
-      class="icon"
-      title={t("newFile.newFile")}
-      aria-label={t("newFile.newFile")}
-      onclick={() => store.beginNew("file")}
-    >
-      <FilePlus size={15} />
-    </button>
-    <button
-      type="button"
-      class="icon"
-      title={t("fileOps.newFolder")}
-      aria-label={t("fileOps.newFolder")}
-      onclick={() => store.beginNew("folder")}
-    >
-      <FolderPlus size={15} />
-    </button>
-    <button
-      type="button"
-      class="icon"
-      title={t("explorer.revealOpen")}
-      aria-label={t("explorer.revealOpen")}
-      onclick={() => store.revealActive()}
-    >
-      <Crosshair size={15} />
-    </button>
-    <button
-      type="button"
-      class="icon"
-      title={t("explorer.collapseAll")}
-      aria-label={t("explorer.collapseAll")}
-      onclick={() => store.collapseAll()}
-    >
-      <ChevronsDownUp size={15} />
-    </button>
-    <!-- stays enabled while it works (a disabled button would drop the keyboard focus): the store takes one ask at a
-         time -->
-    <button
-      type="button"
-      class={["icon", refreshing && "is-busy"]}
-      title={refreshKeys === null
-        ? t("explorer.refresh")
-        : `${t("explorer.refresh")} (${refreshKeys})`}
-      aria-label={t("explorer.refresh")}
-      aria-busy={refreshing}
-      onclick={() => void store.refresh()}
-    >
-      <RefreshCw size={15} />
-    </button>
+    {#if toolsShown > 0}
+      <button
+        type="button"
+        class="icon"
+        title={t("newFile.newFile")}
+        aria-label={t("newFile.newFile")}
+        onclick={() => store.beginNew("file")}
+      >
+        <FilePlus size={15} />
+      </button>
+    {/if}
+    {#if toolsShown > 1}
+      <button
+        type="button"
+        class="icon"
+        title={t("fileOps.newFolder")}
+        aria-label={t("fileOps.newFolder")}
+        onclick={() => store.beginNew("folder")}
+      >
+        <FolderPlus size={15} />
+      </button>
+    {/if}
+    {#if toolsShown > 2}
+      <button
+        type="button"
+        class="icon"
+        title={t("explorer.revealOpen")}
+        aria-label={t("explorer.revealOpen")}
+        onclick={() => store.revealActive()}
+      >
+        <Crosshair size={15} />
+      </button>
+    {/if}
+    {#if toolsShown > 3}
+      <button
+        type="button"
+        class="icon"
+        title={t("explorer.collapseAll")}
+        aria-label={t("explorer.collapseAll")}
+        onclick={() => store.collapseAll()}
+      >
+        <ChevronsDownUp size={15} />
+      </button>
+    {/if}
+    {#if toolsShown > 4}
+      <!-- stays enabled while it works (a disabled button would drop the keyboard focus): the store takes one ask at
+           a time -->
+      <button
+        type="button"
+        class={["icon", refreshing && "is-busy"]}
+        title={refreshKeys === null
+          ? t("explorer.refresh")
+          : `${t("explorer.refresh")} (${refreshKeys})`}
+        aria-label={t("explorer.refresh")}
+        aria-busy={refreshing}
+        onclick={() => void store.refresh()}
+      >
+        <RefreshCw size={15} />
+      </button>
+    {/if}
     <button
       type="button"
       class={["icon", filterOpen && "is-on"]}
@@ -722,6 +821,21 @@
     >
       <ListFilter size={15} />
     </button>
+    {#if toolsShown < TOOLS}
+      <!-- Refresh (the last button) is the first to move in here: while it works, this button shows it in its place -->
+      <button
+        type="button"
+        class={["icon", menu?.anchor !== undefined && "is-on", refreshing && "is-busy"]}
+        title={t("header.more")}
+        aria-label={t("header.more")}
+        aria-haspopup="menu"
+        aria-expanded={menu?.anchor !== undefined}
+        aria-busy={refreshing}
+        onclick={moreMenu}
+      >
+        {#if refreshing}<RefreshCw size={15} />{:else}<Ellipsis size={15} />{/if}
+      </button>
+    {/if}
   </div>
 
   {#if filterOpen}
@@ -976,7 +1090,14 @@
 </div>
 
 {#if menu}
-  <ContextMenu x={menu.x} y={menu.y} entries={menu.entries} close={() => (menu = null)} />
+  <ContextMenu
+    x={menu.x}
+    y={menu.y}
+    entries={menu.entries}
+    label={menu.anchor === undefined ? undefined : t("header.more")}
+    anchor={menu.anchor}
+    close={() => (menu = null)}
+  />
 {/if}
 {#if projects.card !== null && cardRow !== null}
   <!-- the card's code loads the first time a card shows (a plain folder never needs it) -->
@@ -1014,6 +1135,7 @@
     flex: 1;
     min-height: 0;
   }
+  /* side padding, gap and button width are the sizes the script counts to decide which buttons stay in the header */
   .bar {
     display: flex;
     align-items: center;
@@ -1021,7 +1143,9 @@
     padding: 0 var(--sp-2);
     min-height: 32px;
   }
+  /* a button never squeezes the label: the ones that do not fit move into the "…" menu */
   .icon {
+    flex: none;
     display: grid;
     place-items: center;
     width: 24px;

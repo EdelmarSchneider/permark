@@ -2,23 +2,23 @@ div.reading
   div.doc-column
     article.md
       div.md-body role="document"
-        h1 id="attack-corpus"
+        h1 id="attack-corpus" dir="auto"
           a.anchor href="#attack-corpus" aria-label="Link to Attack corpus"
             "#"
           "Attack corpus"
-        p
+        p dir="auto"
           "Every payload below tries to run script, load a page or send a request. Rendered, none may: a run that sees a dialog, the canary"
           code
             "window.__pmCanary"
           ", a Content Security Policy violation or a request off this machine fails."
-        h2 id="raw-html"
+        h2 id="raw-html" dir="auto"
           a.anchor href="#raw-html" aria-label="Link to Raw HTML"
             "#"
           "Raw HTML"
         img src="/@permark-deep/project/corpus/security/x"
         img src="/@permark-deep/project/corpus/security/x"
         input disabled
-        p
+        p dir="auto"
           "go"
         details open
           summary
@@ -26,12 +26,12 @@ div.reading
           "x"
         video src="/@permark-deep/project/corpus/security/x" controls
         audio src="/@permark-deep/project/corpus/security/x" controls
-        p
+        p dir="auto"
           "<p title=""
         img src="/@permark-deep/project/corpus/security/x"
-        p
+        p dir="auto"
           "">"
-        p
+        p dir="auto"
         img src="/@permark-deep/project/corpus/security/x"
         a
           "javascript link"
@@ -48,15 +48,15 @@ div.reading
         img
         div
           "styled div"
-        p
+        p dir="auto"
           "hover me"
-        p
+        p dir="auto"
           "marquee <script>window.__pmCanary='textarea'</script>"
-        h2 id="markdown"
+        h2 id="markdown" dir="auto"
           a.anchor href="#markdown" aria-label="Link to Markdown"
             "#"
           "Markdown"
-        p
+        p dir="auto"
           a
             "markdown javascript link"
           a
@@ -67,7 +67,7 @@ div.reading
             "https://attacker.example/autolink"
           a
             "reference link"
-        h2 id="diagrams"
+        h2 id="diagrams" dir="auto"
           a.anchor href="#diagrams" aria-label="Link to Diagrams"
             "#"
           "Diagrams"
@@ -87,11 +87,11 @@ div.reading
           figure.figure
             div.drawing
               svg svg sized labels: dot link | html label
-        h2 id="math"
+        h2 id="math" dir="auto"
           a.anchor href="#math" aria-label="Link to Math"
             "#"
           "Math"
-        p
+        p dir="auto"
           span data-math-style="inline"
             katex tex="\href{javascript:alert(1)}{\text{katex href}}"
           "and"
@@ -104,7 +104,7 @@ div.reading
           span data-math-style="inline"
             katex tex="\includegraphics{https://attacker.example/k.png}"
           "."
-        h2 id="code"
+        h2 id="code" dir="auto"
           a.anchor href="#code" aria-label="Link to Code"
             "#"
           "Code"

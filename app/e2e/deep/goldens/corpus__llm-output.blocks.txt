@@ -3,65 +3,65 @@ format: markdown
 outline:   📊 Key findings (line 3)
 outline:     Comparison table (line 11)
 --- p 1-1
-<p>Sure! Here's a summary of the buoy data for week 46. 🌊</p>
+<p dir="auto">Sure! Here's a summary of the buoy data for week 46. 🌊</p>
 --- h2 3-3
-<h2 id="-key-findings">📊 Key findings</h2>
+<h2 dir="auto" id="-key-findings">📊 Key findings</h2>
 --- ol 5-9
 <ol>
-<li><strong>Temperature</strong> dropped by 0.4 °C across all stations.</li>
-<li><strong>pH</strong> at LH-07 fell faster than its neighbors <a href="https://example.com/lh-07" title="LH-07 notes">1</a>.
+<li dir="auto"><strong>Temperature</strong> dropped by 0.4 °C across all stations.</li>
+<li dir="auto"><strong>pH</strong> at LH-07 fell faster than its neighbors <a href="https://example.com/lh-07" title="LH-07 notes">1</a>.
 <ul>
-<li>This is <em>within</em> the drift limit.</li>
-<li>A water sample will confirm it.</li>
+<li dir="auto">This is <em>within</em> the drift limit.</li>
+<li dir="auto">A water sample will confirm it.</li>
 </ul>
 </li>
-<li><strong>Waves</strong> were calm: mean height 0.6 m.</li>
+<li dir="auto"><strong>Waves</strong> were calm: mean height 0.6 m.</li>
 </ol>
 --- h3 11-11
-<h3 id="comparison-table">Comparison table</h3>
+<h3 dir="auto" id="comparison-table">Comparison table</h3>
 --- table 13-16
 <table>
 <thead>
 <tr>
-<th>Station</th>
-<th>Temp (°C)</th>
-<th>pH</th>
+<th dir="auto">Station</th>
+<th dir="auto">Temp (°C)</th>
+<th dir="auto">pH</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>LH-06</td>
-<td>11.8</td>
-<td>8.00</td>
+<td dir="auto">LH-06</td>
+<td dir="auto">11.8</td>
+<td dir="auto">8.00</td>
 </tr>
 <tr>
-<td>LH-07</td>
-<td>11.7</td>
-<td>7.96</td>
+<td dir="auto">LH-07</td>
+<td dir="auto">11.7</td>
+<td dir="auto">7.96</td>
 </tr>
 </tbody>
 </table>
 --- p 18-18
-<p>Here's the code I used:</p>
+<p dir="auto">Here's the code I used:</p>
 --- pre 20-23
 <pre><code class="language-python">import statistics
 print(statistics.mean([8.00, 7.96, 7.99]))
 </code></pre>
 --- p 25-25
-<p>The formula for the mean is <span data-math-style="inline">\bar{x} = \frac{1}{n}\sum x_i</span>.</p>
+<p dir="auto">The formula for the mean is <span data-math-style="inline">\bar{x} = \frac{1}{n}\sum x_i</span>.</p>
 --- hr 27-27
 <hr>
 --- p 29-29
-<p><strong>Note:</strong> Let me know if you'd like me to:</p>
+<p dir="auto"><strong>Note:</strong> Let me know if you'd like me to:</p>
 --- ul 30-32
 <ul>
-<li>expand on any point,</li>
-<li>add a chart, or</li>
-<li>draft the bulletin.</li>
+<li dir="auto">expand on any point,</li>
+<li dir="auto">add a chart, or</li>
+<li dir="auto">draft the bulletin.</li>
 </ul>
 --- p 32-32
-<p>The model's hidden reasoning that leaked into the output.</p>
+<p dir="auto">The model's hidden reasoning that leaked into the output.</p>
 --- p 38-38
-<p><strong>References</strong></p>
+<p dir="auto"><strong>References</strong></p>
 --- p 42-42
-<p>Trailing markup that never closes: **bold without end and `code without end</p>
+<p dir="auto">Trailing markup that never closes: **bold without end and `code without end</p>

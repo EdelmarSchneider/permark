@@ -984,8 +984,8 @@ describe("the top bar", () => {
     );
     // the missing recent folder is left out (the Welcome lists it with its Remove)
     expect(items).toEqual([
-      "Open folder... Ctrl+O",
-      "Open file... Ctrl+Shift+O",
+      "Open folder… Ctrl+O",
+      "Open file… Ctrl+Shift+O",
       "New project…",
       "Notes",
       "api-specs C:/work/api-specs",

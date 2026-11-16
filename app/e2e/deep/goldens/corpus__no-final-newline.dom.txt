@@ -2,9 +2,9 @@ div.reading
   div.doc-column
     article.md
       div.md-body role="document"
-        h1 id="no-final-newline"
+        h1 id="no-final-newline" dir="auto"
           a.anchor href="#no-final-newline" aria-label="Link to No final newline"
             "#"
           "No final newline"
-        p
+        p dir="auto"
           "The last line of this file has no line break at its end."

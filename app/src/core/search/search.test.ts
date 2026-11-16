@@ -60,6 +60,20 @@ describe("fuzzy match", () => {
     expect(fuzzyMatch("̃", "España.md")).toBeNull();
   });
 
+  it("letters with no accent to strip (Vietnamese đ, Turkish ı and İ) match their base letter", () => {
+    const pairs: [string, string][] = [
+      ["cai dat", "Mở cài đặt"],
+      ["da nang", "Đà Nẵng"],
+      ["ılık", "ILIK"],
+      ["isik", "ışık"],
+      ["istanbul", "İstanbul"],
+    ];
+    for (const [query, text] of pairs) {
+      expect(fuzzyMatch(query, text), `${query} ~ ${text}`).not.toBeNull();
+    }
+    expect(fuzzyMatch("da nang", "Đà Nẵng")?.positions).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+
   it("drops letters strewn over a text; word starts and runs still match", () => {
     expect(fuzzyMatch("guid", "docs/guide.md")).not.toBeNull();
     expect(fuzzyMatch("guid", "programming/build/rust-tauri.md")).toBeNull();

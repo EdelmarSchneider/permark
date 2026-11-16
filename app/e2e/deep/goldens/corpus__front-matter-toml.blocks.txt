@@ -3,6 +3,6 @@ format: markdown
 front matter: {"syntax":"toml","raw":"title = \"A page with TOML front matter\"\nowner = \"Ada Example\"\nserves = 12\npublished = 2026-11-15\ntags = [\"deep\", \"fixture\", \"toml\"]\n\n[extra]\nnote = \"a table inside\"\n","fields":[{"key":"title","value":{"type":"text","text":"A page with TOML front matter"}},{"key":"owner","value":{"type":"text","text":"Ada Example"}},{"key":"serves","value":{"type":"text","text":"12"}},{"key":"published","value":{"type":"text","text":"2026-11-15"}},{"key":"tags","value":{"type":"list","items":["deep","fixture","toml"]}},{"key":"extra.note","value":{"type":"text","text":"a table inside"}}]}
 outline: TOML front matter (line 12)
 --- h1 12-12
-<h1 id="toml-front-matter">TOML front matter</h1>
+<h1 dir="auto" id="toml-front-matter">TOML front matter</h1>
 --- p 14-14
-<p>The card above comes from a <code>+++</code> block.</p>
+<p dir="auto">The card above comes from a <code>+++</code> block.</p>

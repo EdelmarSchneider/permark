@@ -2,32 +2,32 @@
 format: markdown
 outline: Right to left (line 1)
 --- h1 1-1
-<h1 id="right-to-left">Right to left</h1>
+<h1 dir="auto" id="right-to-left">Right to left</h1>
 --- p 3-3
-<p>مرحبا بالعالم. هذه فقرة باللغة العربية تحتوي على رقم 2026 وكلمة English في وسطها.</p>
+<p dir="auto">مرحبا بالعالم. هذه فقرة باللغة العربية تحتوي على رقم 2026 وكلمة English في وسطها.</p>
 --- p 5-5
-<p>שלום עולם. זוהי פסקה בעברית עם <code>code</code> ו-<strong>הדגשה</strong>.</p>
+<p dir="auto">שלום עולם. זוהי פסקה בעברית עם <code>code</code> ו-<strong>הדגשה</strong>.</p>
 --- p 5-5
-<p>A paragraph that asks for right to left with dir="rtl".</p>
+<p dir="auto">A paragraph that asks for right to left with dir="rtl".</p>
 --- table 9-11
 <table>
 <thead>
 <tr>
-<th>عمود</th>
-<th>Column</th>
-<th>עמודה</th>
+<th dir="auto">عمود</th>
+<th dir="auto">Column</th>
+<th dir="auto">עמודה</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>واحد</td>
-<td>one</td>
-<td>אחת</td>
+<td dir="auto">واحد</td>
+<td dir="auto">one</td>
+<td dir="auto">אחת</td>
 </tr>
 </tbody>
 </table>
 --- ul 13-14
 <ul>
-<li>عنصر أول</li>
-<li>عنصر ثان</li>
+<li dir="auto">عنصر أول</li>
+<li dir="auto">عنصر ثان</li>
 </ul>

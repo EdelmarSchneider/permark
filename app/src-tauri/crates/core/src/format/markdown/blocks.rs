@@ -89,7 +89,8 @@ pub(super) fn split(html: &str) -> Vec<RawBlock> {
         let text = &html[at..next];
         if !text.trim().is_empty() {
             blocks.push(RawBlock {
-                html: format!("<p>{}</p>", text.trim()),
+                // the sanitizer gives every paragraph its own direction; this one is made after it
+                html: format!("<p dir=\"auto\">{}</p>", text.trim()),
                 tag: "p".to_owned(),
                 line_start: last_end,
                 line_end: last_end,
@@ -307,10 +308,10 @@ mod tests {
         assert_eq!(
             tags,
             [
-                ("p", "<p>hello</p>"),
+                ("p", "<p dir=\"auto\">hello</p>"),
                 ("b", "<b>bold</b>"),
                 ("p", "<p>x</p>"),
-                ("p", "<p>tail</p>")
+                ("p", "<p dir=\"auto\">tail</p>")
             ]
         );
         assert!(split("").is_empty());

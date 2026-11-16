@@ -32,14 +32,15 @@ export type PluralKey = {
 }[MessageKey];
 
 /**
- * UI string for a count: the `.one` form when the language says "one", `.few` when it says "few" and the table has
- * one (Romanian), else `.other`; `{n}` is the count.
+ * UI string for a count: the `.one` form when the language says "one" or the count is exactly 1, `.few` when it says
+ * "few" and the table has one (Romanian, Russian), else `.other`; `{n}` is the count.
  */
 export function tn(base: PluralKey, count: number, params?: Params): string {
   const category = new Intl.PluralRules(language.locale).select(count);
   const few =
     category === "few" ? (language.table as Messages & FewForms)[`${base}.few`] : undefined;
-  const form = category === "one" ? "one" : "other";
+  // languages that count with "other" alone (ja, ko, zh, id, vi) still word exactly one apart: "this file", a name
+  const form = category === "one" || count === 1 ? "one" : "other";
   return fill(few ?? language.table[`${base}.${form}`], { n: count, ...params });
 }
 
@@ -48,10 +49,19 @@ export function t(key: MessageKey, params?: Params): string {
   return fill(language.table[key], params);
 }
 
+/**
+ * Tag for `Intl` date | number formats and `toLocale*String`: the interface language, written as the system's region
+ * writes it when that region speaks the same language (`en-IN` under English). Words, plurals, lists and sorting keep
+ * `language.locale`.
+ */
+export function formatLocale(): string {
+  return language.formats;
+}
+
 /** A download | disk size: "310 MB", "3.4 GB" (decimal units, as stores and disks show them). */
 export function sizeText(bytes: number): string {
   const giga = bytes >= 1e9;
-  return new Intl.NumberFormat(language.locale, {
+  return new Intl.NumberFormat(formatLocale(), {
     style: "unit",
     unit: giga ? "gigabyte" : "megabyte",
     maximumFractionDigits: giga ? 1 : 0,

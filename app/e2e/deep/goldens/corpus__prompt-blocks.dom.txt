@@ -15,14 +15,14 @@ div.reading
               span.chip
                 "prompt"
       div.md-body role="document"
-        h1 id="prompt-blocks"
+        h1 id="prompt-blocks" dir="auto"
           a.anchor href="#prompt-blocks" aria-label="Link to Prompt blocks"
             "#"
           "Prompt blocks"
         details.prompt-block data-tag="system" open
           summary
             "system"
-          p
+          p dir="auto"
             "You are a careful assistant writing for"
             span.tvar
               "{{audience}}"
@@ -34,17 +34,17 @@ div.reading
           summary
             "context"
           ul
-            li
+            li dir="auto"
               "The data sheet: @station/readings.toon"
-            li
+            li dir="auto"
               "The style guide: @style-guide.md"
         details.prompt-block data-tag="instructions" open
           summary
             "instructions"
           ol
-            li
+            li dir="auto"
               "Read the context."
-            li
+            li dir="auto"
               "Write no more than"
               span.tvar
                 "{{max_words}}"
@@ -52,9 +52,9 @@ div.reading
         details.prompt-block data-tag="example" open
           summary
             "example"
-          p
+          p dir="auto"
             "A short example answer."
-        p
+        p dir="auto"
           "Text after the blocks, with a"
           code
             "{{variable}}"

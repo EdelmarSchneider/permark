@@ -12,7 +12,7 @@ import {
   type Result,
 } from "../../api";
 import { apiErrorText } from "../../core/errors";
-import { language, t, tn } from "../../core/i18n";
+import { formatLocale, t, tn } from "../../core/i18n";
 import { pluginClient, type PluginClient } from "../../core/plugins/client";
 import type { TreeBadge } from "../../core/plugins/registry.svelte";
 import { windowStore } from "../../core/window.svelte";
@@ -166,10 +166,10 @@ export class FolderStore {
     if (badge === undefined) return null;
     const info = infoOf(badge.tokenizer);
     const tip = `${tn("tokens.count", badge.tokens, {
-      n: new Intl.NumberFormat(language.locale).format(badge.tokens),
+      n: new Intl.NumberFormat(formatLocale()).format(badge.tokens),
     })} · ${info?.short ?? badge.tokenizer}`;
     return {
-      text: badgeText(badge.tokens, badge.approx, badge.stale, language.locale),
+      text: badgeText(badge.tokens, badge.approx, badge.stale, formatLocale()),
       tone: badge.stale ? "modified" : "muted",
       tip: badge.stale ? `${tip}\n${t("tokens.folder.badge.stale")}` : tip,
       ...(badge.stale ? { title: t("tokens.folder.badge.stale") } : {}),
@@ -243,7 +243,7 @@ export class FolderStore {
   async copy(): Promise<void> {
     const open = this.summary;
     if (open === null) return;
-    const number = new Intl.NumberFormat(language.locale);
+    const number = new Intl.NumberFormat(formatLocale());
     const say: Say = { t, tn, number: (n) => number.format(n) };
     try {
       await navigator.clipboard.writeText(summaryText(open, infoOf(open.tokenizer), say));
@@ -255,7 +255,7 @@ export class FolderStore {
 
   /** The name the dialogs call a folder by. */
   nameOf(folder: string): string {
-    const number = new Intl.NumberFormat(language.locale);
+    const number = new Intl.NumberFormat(formatLocale());
     return folderName(folder, { t, tn, number: (n) => number.format(n) });
   }
 

@@ -117,7 +117,7 @@
 }
 .md .anchor {
   position: absolute;
-  left: -1.1em;
+  inset-inline-start: -1.1em;
   width: 1em;
   color: var(--faint);
   text-decoration: none;
@@ -138,7 +138,7 @@
    padding, so the pane's edge or the side panel never cuts it; a very large heading may cover its first letters a
    little (the mark's own background keeps both readable) */
 .md .anchor:focus-visible {
-  left: calc(-1 * min(1.1em, var(--sp-5) - 4px));
+  inset-inline-start: calc(-1 * min(1.1em, var(--sp-5) - 4px));
   width: auto;
   background: var(--bg);
 }
@@ -198,12 +198,31 @@
   border-bottom-width: 2px;
   white-space: nowrap;
 }
+/* lists, quotes, cells and task boxes use logical sides: a block whose text runs right to left (its `dir="auto"`)
+   puts its markers, rule and indent on the right */
 .md ul,
 .md ol {
-  padding-left: 1.5em;
+  padding-inline-start: 1.5em;
 }
 .md li + li {
   margin-top: 0.25em;
+}
+/* A list | quote lays out by its first text block (its `dir="auto"`: View's tight item `li`, loose item `li > p`, Edit's
+   `li > div > p`, a quote's `p`): containers hold no `dir` of their own, since an element with one hides its text from
+   an `auto` around it. An item lays out by its own first paragraph, as View's tight item does by its text. */
+.md :is(ul, ol):has(> li:first-child:dir(rtl)),
+.md :is(ul, ol):has(> li:first-child > p:first-child:dir(rtl)),
+.md :is(ul, ol):has(> li:first-child > div > p:first-child:dir(rtl)) {
+  direction: rtl;
+}
+.md li:has(> p:first-child:dir(rtl), > div > p:first-child:dir(rtl)) {
+  direction: rtl;
+}
+.md li:has(> p:first-child:dir(ltr), > div > p:first-child:dir(ltr)) {
+  direction: ltr;
+}
+.md blockquote:has(> p:first-child:dir(rtl)) {
+  direction: rtl;
 }
 /* Edit mode: ProseMirror holds an item's text in a paragraph (`li > div > p`, the item view's content box). A tight
    list's items have no paragraph in the reading view, so there it keeps no space of its own; a loose list
@@ -594,8 +613,9 @@
 /* blockquote */
 .md blockquote {
   margin: 0 0 1em;
-  padding: 2px 0 2px 18px;
-  border-left: 3px solid var(--accent-muted);
+  padding: 2px 0;
+  padding-inline-start: 18px;
+  border-inline-start: 3px solid var(--accent-muted);
   color: var(--muted);
 }
 .md blockquote > :last-child {
@@ -605,25 +625,25 @@
 /* task lists */
 .md .contains-task-list {
   list-style: none;
-  padding-left: 0.2em;
+  padding-inline-start: 0.2em;
 }
 /* Edit mode: `taskItemView` writes the same classes on `li[data-item-type=task]`, so the box rules below
    style its checkbox too. The editor's `ul` has no class of its own, so the bullet dots are cut by looking
    at the items it holds. */
 .md ul:has(> li[data-item-type="task"]) {
   list-style: none;
-  padding-left: 0.2em;
+  padding-inline-start: 0.2em;
 }
 /* block layout with an absolutely placed checkbox: a flex row would split mixed content (text, links, code) into
    separate flex items with a gap between each of them */
 .md .task-list-item {
   position: relative;
-  padding-left: 25px;
+  padding-inline-start: 25px;
 }
 .md .task-list-item input {
   appearance: none;
   position: absolute;
-  left: 0;
+  inset-inline-start: 0;
   top: calc((var(--lh-reading) * 1em - 15px) / 2);
   width: 15px;
   height: 15px;

@@ -2,27 +2,27 @@
 format: markdown
 outline:   Named anchors (line 15)
 --- p 1-1
-<p><a id="top" name="top"></a></p>
+<p dir="auto"><a id="top" name="top"></a></p>
 --- p 1-1
-<p align="center">
+<p align="center" dir="auto">
   <img alt="A centered square" src="pm-asset:corpus/assets/square.svg" width="96">
 </p>
 --- h1 1-1
-<h1 align="center">Aligned title</h1>
+<h1 align="center" dir="auto">Aligned title</h1>
 --- p 1-1
-<p align="center"><em>A centered tagline.</em></p>
+<p align="center" dir="auto"><em>A centered tagline.</em></p>
 --- div 1-1
 <div align="right">Right-aligned text in a div.</div>
 --- p 1-1
-<p>An alignment value the sanitizer drops: this paragraph reads left-aligned.</p>
+<p dir="auto">An alignment value the sanitizer drops: this paragraph reads left-aligned.</p>
 --- h2 15-15
-<h2 id="named-anchors">Named anchors</h2>
+<h2 dir="auto" id="named-anchors">Named anchors</h2>
 --- p 17-17
-<p><a name="spot"></a></p>
+<p dir="auto"><a name="spot"></a></p>
 --- p 19-20
-<p>A spot with no heading. Jump to <a href="#spot">the spot</a>, <a href="#top">the top</a>, <a href="#named-anchors">a heading</a> and
+<p dir="auto">A spot with no heading. Jump to <a href="#spot">the spot</a>, <a href="#top">the top</a>, <a href="#named-anchors">a heading</a> and
 <a href="#nowhere">a missing anchor</a>.</p>
 --- p 20-20
-<p align="center">
+<p align="center" dir="auto">
   <a href="gfm-blocks.md"><strong>Blocks</strong></a> · <a href="gfm-tables.md">Tables</a>
 </p>

@@ -2,7 +2,7 @@
   // One value of a sheet: text, number, date, bool (a switch), or empty, as written. In Edit mode a click opens the
   // value for typing; Enter or leaving it commits through the sheet's editor, Escape puts it back. On a card for
   // readers (a document's front matter) it reads as View's card shows it: a plain date in words, in the text font.
-  import { language } from "../i18n";
+  import { formatLocale } from "../i18n";
   import { readerDate } from "../time";
   import Lock from "@lucide/svelte/icons/lock";
   import type { NewValue, Scalar } from "../../api";
@@ -116,7 +116,7 @@
     <span class="empty">{t("config.empty")}</span>
   {:else}
     <span class="text" class:code={scalar.kind !== "string" && !card}
-      >{card ? readerDate(scalar.text, language.locale) : scalar.text}</span
+      >{card ? readerDate(scalar.text, formatLocale()) : scalar.text}</span
     >
   {/if}
   {#if draft === null}

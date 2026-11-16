@@ -3,41 +3,41 @@ format: markdown
 outline: 中文、日本語、한국어 (line 1)
 outline:   表格 (line 9)
 --- h1 1-1
-<h1 id="中文日本語한국어">中文、日本語、한국어</h1>
+<h1 dir="auto" id="中文日本語한국어">中文、日本語、한국어</h1>
 --- p 3-3
-<p>这是一个中文段落，包含全角标点符号：逗号，句号。还有<strong>粗体</strong>和<code>代码</code>。</p>
+<p dir="auto">这是一个中文段落，包含全角标点符号：逗号，句号。还有<strong>粗体</strong>和<code>代码</code>。</p>
 --- p 5-5
-<p>これは日本語の段落です。ひらがな、カタカナ、漢字が混ざっています。「かぎ括弧」も使います。</p>
+<p dir="auto">これは日本語の段落です。ひらがな、カタカナ、漢字が混ざっています。「かぎ括弧」も使います。</p>
 --- p 7-7
-<p>이것은 한국어 문단입니다. 띄어쓰기가 있는 문장입니다.</p>
+<p dir="auto">이것은 한국어 문단입니다. 띄어쓰기가 있는 문장입니다.</p>
 --- h2 9-9
-<h2 id="表格">表格</h2>
+<h2 dir="auto" id="表格">表格</h2>
 --- table 11-14
 <table>
 <thead>
 <tr>
-<th>名前</th>
-<th align="right">値</th>
-<th>説明</th>
+<th dir="auto">名前</th>
+<th align="right" dir="auto">値</th>
+<th dir="auto">説明</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>温度</td>
-<td align="right">11.8</td>
-<td>摂氏</td>
+<td dir="auto">温度</td>
+<td align="right" dir="auto">11.8</td>
+<td dir="auto">摂氏</td>
 </tr>
 <tr>
-<td>塩分</td>
-<td align="right">31.4</td>
-<td>PSU</td>
+<td dir="auto">塩分</td>
+<td align="right" dir="auto">31.4</td>
+<td dir="auto">PSU</td>
 </tr>
 </tbody>
 </table>
 --- div 16-17
 <div class="markdown-alert markdown-alert-note">
-<p class="markdown-alert-title">注意</p>
-<p>中文的提示框。</p>
+<p class="markdown-alert-title" dir="auto">注意</p>
+<p dir="auto">中文的提示框。</p>
 </div>
 --- p 19-19
-<p>縦に長い一行のテキストが折り返されるかどうかを確認するための、とても長い日本語の文章で、句読点もあまりなく続いていきます。</p>
+<p dir="auto">縦に長い一行のテキストが折り返されるかどうかを確認するための、とても長い日本語の文章で、句読点もあまりなく続いていきます。</p>

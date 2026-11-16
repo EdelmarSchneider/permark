@@ -12,9 +12,9 @@ outline:   Drift at Kittiwake Shoal (line 108)
 outline:   What we build next (line 113)
 outline:   Method notes (line 135)
 --- h1 9-9
-<h1 id="ninety-days-of-sound-data">Ninety days of Sound data</h1>
+<h1 dir="auto" id="ninety-days-of-sound-data">Ninety days of Sound data</h1>
 --- p 11-11
-<p>From August 17 to November 14, our twelve buoys sent 155,520 readings. This notebook follows them through quality control and asks one question: how closely does oxygen follow temperature?</p>
+<p dir="auto">From August 17 to November 14, our twelve buoys sent 155,520 readings. This notebook follows them through quality control and asks one question: how closely does oxygen follow temperature?</p>
 --- pre 13-20
 <pre><code class="language-mermaid">xychart
     title "Gannet Point (LH-04): oxygen rises as the water cools"
@@ -24,20 +24,20 @@ outline:   Method notes (line 135)
     line [17.4, 17.6, 17.2, 16.8, 16.3, 15.9, 15.4, 14.9, 14.4, 13.9, 13.5, 13.0, 12.6]
 </code></pre>
 --- h2 22-22
-<h2 id="the-short-version">The short version</h2>
+<h2 dir="auto" id="the-short-version">The short version</h2>
 --- div 24-27
 <div class="markdown-alert markdown-alert-note markdown-alert-kind-abstract">
-<p class="markdown-alert-title">Three things to know</p>
+<p class="markdown-alert-title" dir="auto">Three things to know</p>
 <ul>
-<li>97.2 % of readings passed quality control, and 2,980 more are published with a flag.</li>
-<li>Across all stations, daily oxygen drops by 0.21 mg/L for every degree of warming (<span data-math-style="inline">r = -0.81</span>).</li>
-<li>The pH sensor at Kittiwake Shoal is starting to drift, and QC warned us before any reading needed a flag.</li>
+<li dir="auto">97.2 % of readings passed quality control, and 2,980 more are published with a flag.</li>
+<li dir="auto">Across all stations, daily oxygen drops by 0.21 mg/L for every degree of warming (<span data-math-style="inline">r = -0.81</span>).</li>
+<li dir="auto">The pH sensor at Kittiwake Shoal is starting to drift, and QC warned us before any reading needed a flag.</li>
 </ul>
 </div>
 --- h2 29-29
-<h2 id="where-155520-readings-went">Where 155,520 readings went</h2>
+<h2 dir="auto" id="where-155520-readings-went">Where 155,520 readings went</h2>
 --- p 31-31
-<p>Every reading passes through the QC engine, which applies the range, spike, flatline and drift rules in <a href="station/qc-rules.yaml"><code>station/qc-rules.yaml</code></a>. Most pass untouched. Flagged readings get a human look: if we understand the cause and the value is still useful, it stays in the open dataset with its flag.</p>
+<p dir="auto">Every reading passes through the QC engine, which applies the range, spike, flatline and drift rules in <a href="station/qc-rules.yaml"><code>station/qc-rules.yaml</code></a>. Most pass untouched. Flagged readings get a human look: if we understand the cause and the value is still useful, it stays in the open dataset with its flag.</p>
 --- pre 33-43
 <pre><code class="language-mermaid">sankey
 
@@ -50,21 +50,21 @@ Flagged,Not published,432
 Rejected,Not published,904
 </code></pre>
 --- p 45-45
-<p>In numbers: 151,204 passed (97.2 %); 3,412 were flagged, of which 2,980 are published with their flag and 432 were removed after review; 904 were rejected outright. The open dataset holds 154,184 readings.</p>
+<p dir="auto">In numbers: 151,204 passed (97.2 %); 3,412 were flagged, of which 2,980 are published with their flag and 432 were removed after review; 904 were rejected outright. The open dataset holds 154,184 readings.</p>
 --- h2 47-47
-<h2 id="temperature-against-oxygen">Temperature against oxygen</h2>
+<h2 dir="auto" id="temperature-against-oxygen">Temperature against oxygen</h2>
 --- p 49-49
-<p>Cold water holds more dissolved oxygen (O<sub>2</sub>), so we expected the two to move in opposite directions. To measure how tightly, we took daily means for each station and computed Pearson's correlation coefficient:</p>
+<p dir="auto">Cold water holds more dissolved oxygen (O<sub>2</sub>), so we expected the two to move in opposite directions. To measure how tightly, we took daily means for each station and computed Pearson's correlation coefficient:</p>
 --- p 51-53
-<p><span data-math-style="display">
+<p dir="auto"><span data-math-style="display">
 r = \frac{\sum_i (x_i-\bar x)(y_i-\bar y)}{\sqrt{\sum_i (x_i-\bar x)^2}\,\sqrt{\sum_i (y_i-\bar y)^2}}
 </span></p>
 --- p 55-55
-<p>With <span data-math-style="inline">x</span> the daily mean temperature and <span data-math-style="inline">y</span> the daily mean oxygen over 1,074 station-days, <span data-math-style="inline">r = -0.81</span> and R<sup>2</sup> = 0.66: temperature alone explains about two thirds of the variation. The fitted slope is −0.21 mg/L per °C, a little steeper than solubility alone predicts (about −0.17 mg/L per °C at these temperatures, see <a href="ocean-chemistry.md#oxygen-and-temperature">Oxygen and temperature</a>). The difference is biology: warm water also speeds up the bacteria that use oxygen.</p>
+<p dir="auto">With <span data-math-style="inline">x</span> the daily mean temperature and <span data-math-style="inline">y</span> the daily mean oxygen over 1,074 station-days, <span data-math-style="inline">r = -0.81</span> and R<sup>2</sup> = 0.66: temperature alone explains about two thirds of the variation. The fitted slope is −0.21 mg/L per °C, a little steeper than solubility alone predicts (about −0.17 mg/L per °C at these temperatures, see <a href="ocean-chemistry.md#oxygen-and-temperature">Oxygen and temperature</a>). The difference is biology: warm water also speeds up the bacteria that use oxygen.</p>
 --- h2 57-57
-<h2 id="the-code">The code</h2>
+<h2 dir="auto" id="the-code">The code</h2>
 --- p 59-59
-<p>The whole analysis fits in a dozen lines of pandas. Lines 6 to 9 do the work: group by station and day, keep the full days, correlate, fit a straight line.</p>
+<p dir="auto">The whole analysis fits in a dozen lines of pandas. Lines 6 to 9 do the work: group by station and day, keep the full days, correlate, fit a straight line.</p>
 --- pre 61-73
 <pre><code class="language-python" data-lines="6-9" data-title="notebooks/do_vs_temp.py">import numpy as np
 import pandas as pd
@@ -79,188 +79,188 @@ slope, intercept = np.polyfit(daily["temp_c"], daily["do_mgl"], deg=1)
 print(f"r = {r:.2f}  R² = {r * r:.2f}  slope = {slope:.2f} mg/L per °C")
 </code></pre>
 --- h2 75-75
-<h2 id="station-by-station">Station by station</h2>
+<h2 dir="auto" id="station-by-station">Station by station</h2>
 --- p 77-77
-<p>Ninety-day means for every station. The table is wider than the page, so scroll it sideways; "On time" counts readings that arrived within their ten-minute cycle, and the rest were sent later from the buoy's memory.</p>
+<p dir="auto">Ninety-day means for every station. The table is wider than the page, so scroll it sideways; "On time" counts readings that arrived within their ten-minute cycle, and the rest were sent later from the buoy's memory.</p>
 --- table 79-93
 <table>
 <thead>
 <tr>
-<th>Station</th>
-<th>Name</th>
-<th align="right">Passed %</th>
-<th align="right">On time %</th>
-<th align="right">Mean T °C</th>
-<th align="right">Mean S PSU</th>
-<th align="right">Mean pH</th>
-<th align="right">Mean DO mg/L</th>
-<th align="right">Flags</th>
-<th align="right">Battery V</th>
+<th dir="auto">Station</th>
+<th dir="auto">Name</th>
+<th align="right" dir="auto">Passed %</th>
+<th align="right" dir="auto">On time %</th>
+<th align="right" dir="auto">Mean T °C</th>
+<th align="right" dir="auto">Mean S PSU</th>
+<th align="right" dir="auto">Mean pH</th>
+<th align="right" dir="auto">Mean DO mg/L</th>
+<th align="right" dir="auto">Flags</th>
+<th align="right" dir="auto">Battery V</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>LH-01</td>
-<td>—</td>
-<td align="right">97.9</td>
-<td align="right">99.6</td>
-<td align="right">15.4</td>
-<td align="right">33.7</td>
-<td align="right">8.04</td>
-<td align="right">7.31</td>
-<td align="right">214</td>
-<td align="right">13.1</td>
+<td dir="auto">LH-01</td>
+<td dir="auto">—</td>
+<td align="right" dir="auto">97.9</td>
+<td align="right" dir="auto">99.6</td>
+<td align="right" dir="auto">15.4</td>
+<td align="right" dir="auto">33.7</td>
+<td align="right" dir="auto">8.04</td>
+<td align="right" dir="auto">7.31</td>
+<td align="right" dir="auto">214</td>
+<td align="right" dir="auto">13.1</td>
 </tr>
 <tr>
-<td>LH-02</td>
-<td>—</td>
-<td align="right">98.2</td>
-<td align="right">99.7</td>
-<td align="right">15.2</td>
-<td align="right">33.9</td>
-<td align="right">8.05</td>
-<td align="right">7.36</td>
-<td align="right">188</td>
-<td align="right">13.2</td>
+<td dir="auto">LH-02</td>
+<td dir="auto">—</td>
+<td align="right" dir="auto">98.2</td>
+<td align="right" dir="auto">99.7</td>
+<td align="right" dir="auto">15.2</td>
+<td align="right" dir="auto">33.9</td>
+<td align="right" dir="auto">8.05</td>
+<td align="right" dir="auto">7.36</td>
+<td align="right" dir="auto">188</td>
+<td align="right" dir="auto">13.2</td>
 </tr>
 <tr>
-<td>LH-03</td>
-<td>—</td>
-<td align="right">97.7</td>
-<td align="right">99.4</td>
-<td align="right">15.6</td>
-<td align="right">33.5</td>
-<td align="right">8.03</td>
-<td align="right">7.27</td>
-<td align="right">236</td>
-<td align="right">13.0</td>
+<td dir="auto">LH-03</td>
+<td dir="auto">—</td>
+<td align="right" dir="auto">97.7</td>
+<td align="right" dir="auto">99.4</td>
+<td align="right" dir="auto">15.6</td>
+<td align="right" dir="auto">33.5</td>
+<td align="right" dir="auto">8.03</td>
+<td align="right" dir="auto">7.27</td>
+<td align="right" dir="auto">236</td>
+<td align="right" dir="auto">13.0</td>
 </tr>
 <tr>
-<td>LH-04</td>
-<td>Gannet Point</td>
-<td align="right">97.7</td>
-<td align="right">99.5</td>
-<td align="right">15.1</td>
-<td align="right">33.6</td>
-<td align="right">8.03</td>
-<td align="right">7.38</td>
-<td align="right">251</td>
-<td align="right">13.1</td>
+<td dir="auto">LH-04</td>
+<td dir="auto">Gannet Point</td>
+<td align="right" dir="auto">97.7</td>
+<td align="right" dir="auto">99.5</td>
+<td align="right" dir="auto">15.1</td>
+<td align="right" dir="auto">33.6</td>
+<td align="right" dir="auto">8.03</td>
+<td align="right" dir="auto">7.38</td>
+<td align="right" dir="auto">251</td>
+<td align="right" dir="auto">13.1</td>
 </tr>
 <tr>
-<td>LH-05</td>
-<td>—</td>
-<td align="right">98.3</td>
-<td align="right">99.8</td>
-<td align="right">14.8</td>
-<td align="right">34.0</td>
-<td align="right">8.05</td>
-<td align="right">7.44</td>
-<td align="right">173</td>
-<td align="right">13.2</td>
+<td dir="auto">LH-05</td>
+<td dir="auto">—</td>
+<td align="right" dir="auto">98.3</td>
+<td align="right" dir="auto">99.8</td>
+<td align="right" dir="auto">14.8</td>
+<td align="right" dir="auto">34.0</td>
+<td align="right" dir="auto">8.05</td>
+<td align="right" dir="auto">7.44</td>
+<td align="right" dir="auto">173</td>
+<td align="right" dir="auto">13.2</td>
 </tr>
 <tr>
-<td>LH-06</td>
-<td>—</td>
-<td align="right">97.9</td>
-<td align="right">99.3</td>
-<td align="right">15.0</td>
-<td align="right">33.8</td>
-<td align="right">8.04</td>
-<td align="right">7.40</td>
-<td align="right">205</td>
-<td align="right">13.0</td>
+<td dir="auto">LH-06</td>
+<td dir="auto">—</td>
+<td align="right" dir="auto">97.9</td>
+<td align="right" dir="auto">99.3</td>
+<td align="right" dir="auto">15.0</td>
+<td align="right" dir="auto">33.8</td>
+<td align="right" dir="auto">8.04</td>
+<td align="right" dir="auto">7.40</td>
+<td align="right" dir="auto">205</td>
+<td align="right" dir="auto">13.0</td>
 </tr>
 <tr>
-<td>LH-07</td>
-<td>Kittiwake Shoal</td>
-<td align="right">93.3</td>
-<td align="right">98.9</td>
-<td align="right">14.2</td>
-<td align="right">34.2</td>
-<td align="right">8.08</td>
-<td align="right">7.57</td>
-<td align="right">742</td>
-<td align="right">12.9</td>
+<td dir="auto">LH-07</td>
+<td dir="auto">Kittiwake Shoal</td>
+<td align="right" dir="auto">93.3</td>
+<td align="right" dir="auto">98.9</td>
+<td align="right" dir="auto">14.2</td>
+<td align="right" dir="auto">34.2</td>
+<td align="right" dir="auto">8.08</td>
+<td align="right" dir="auto">7.57</td>
+<td align="right" dir="auto">742</td>
+<td align="right" dir="auto">12.9</td>
 </tr>
 <tr>
-<td>LH-08</td>
-<td>—</td>
-<td align="right">98.1</td>
-<td align="right">99.6</td>
-<td align="right">14.6</td>
-<td align="right">34.1</td>
-<td align="right">8.05</td>
-<td align="right">7.49</td>
-<td align="right">196</td>
-<td align="right">13.1</td>
+<td dir="auto">LH-08</td>
+<td dir="auto">—</td>
+<td align="right" dir="auto">98.1</td>
+<td align="right" dir="auto">99.6</td>
+<td align="right" dir="auto">14.6</td>
+<td align="right" dir="auto">34.1</td>
+<td align="right" dir="auto">8.05</td>
+<td align="right" dir="auto">7.49</td>
+<td align="right" dir="auto">196</td>
+<td align="right" dir="auto">13.1</td>
 </tr>
 <tr>
-<td>LH-09</td>
-<td>—</td>
-<td align="right">97.1</td>
-<td align="right">98.2</td>
-<td align="right">15.3</td>
-<td align="right">33.4</td>
-<td align="right">8.02</td>
-<td align="right">7.33</td>
-<td align="right">287</td>
-<td align="right">12.7</td>
+<td dir="auto">LH-09</td>
+<td dir="auto">—</td>
+<td align="right" dir="auto">97.1</td>
+<td align="right" dir="auto">98.2</td>
+<td align="right" dir="auto">15.3</td>
+<td align="right" dir="auto">33.4</td>
+<td align="right" dir="auto">8.02</td>
+<td align="right" dir="auto">7.33</td>
+<td align="right" dir="auto">287</td>
+<td align="right" dir="auto">12.7</td>
 </tr>
 <tr>
-<td>LH-10</td>
-<td>—</td>
-<td align="right">98.2</td>
-<td align="right">99.5</td>
-<td align="right">14.9</td>
-<td align="right">33.9</td>
-<td align="right">8.04</td>
-<td align="right">7.42</td>
-<td align="right">182</td>
-<td align="right">13.2</td>
+<td dir="auto">LH-10</td>
+<td dir="auto">—</td>
+<td align="right" dir="auto">98.2</td>
+<td align="right" dir="auto">99.5</td>
+<td align="right" dir="auto">14.9</td>
+<td align="right" dir="auto">33.9</td>
+<td align="right" dir="auto">8.04</td>
+<td align="right" dir="auto">7.42</td>
+<td align="right" dir="auto">182</td>
+<td align="right" dir="auto">13.2</td>
 </tr>
 <tr>
-<td>LH-11</td>
-<td>Heron Flats</td>
-<td align="right">94.3</td>
-<td align="right">96.4</td>
-<td align="right">15.9</td>
-<td align="right">31.8</td>
-<td align="right">7.98</td>
-<td align="right">7.12</td>
-<td align="right">548</td>
-<td align="right">12.6</td>
+<td dir="auto">LH-11</td>
+<td dir="auto">Heron Flats</td>
+<td align="right" dir="auto">94.3</td>
+<td align="right" dir="auto">96.4</td>
+<td align="right" dir="auto">15.9</td>
+<td align="right" dir="auto">31.8</td>
+<td align="right" dir="auto">7.98</td>
+<td align="right" dir="auto">7.12</td>
+<td align="right" dir="auto">548</td>
+<td align="right" dir="auto">12.6</td>
 </tr>
 <tr>
-<td>LH-12</td>
-<td>—</td>
-<td align="right">98.1</td>
-<td align="right">99.7</td>
-<td align="right">14.7</td>
-<td align="right">34.0</td>
-<td align="right">8.05</td>
-<td align="right">7.47</td>
-<td align="right">190</td>
-<td align="right">13.1</td>
+<td dir="auto">LH-12</td>
+<td dir="auto">—</td>
+<td align="right" dir="auto">98.1</td>
+<td align="right" dir="auto">99.7</td>
+<td align="right" dir="auto">14.7</td>
+<td align="right" dir="auto">34.0</td>
+<td align="right" dir="auto">8.05</td>
+<td align="right" dir="auto">7.47</td>
+<td align="right" dir="auto">190</td>
+<td align="right" dir="auto">13.1</td>
 </tr>
 <tr>
-<td><strong>All</strong></td>
-<td></td>
-<td align="right"><strong>97.2</strong></td>
-<td align="right"><strong>99.1</strong></td>
-<td align="right"><strong>15.1</strong></td>
-<td align="right"><strong>33.7</strong></td>
-<td align="right"><strong>8.04</strong></td>
-<td align="right"><strong>7.38</strong></td>
-<td align="right"><strong>3,412</strong></td>
-<td align="right"><strong>13.0</strong></td>
+<td dir="auto"><strong>All</strong></td>
+<td dir="auto"></td>
+<td align="right" dir="auto"><strong>97.2</strong></td>
+<td align="right" dir="auto"><strong>99.1</strong></td>
+<td align="right" dir="auto"><strong>15.1</strong></td>
+<td align="right" dir="auto"><strong>33.7</strong></td>
+<td align="right" dir="auto"><strong>8.04</strong></td>
+<td align="right" dir="auto"><strong>7.38</strong></td>
+<td align="right" dir="auto"><strong>3,412</strong></td>
+<td align="right" dir="auto"><strong>13.0</strong></td>
 </tr>
 </tbody>
 </table>
 --- h2 95-95
-<h2 id="where-the-flags-came-from">Where the flags came from</h2>
+<h2 dir="auto" id="where-the-flags-came-from">Where the flags came from</h2>
 --- p 97-97
-<p>Biofouling leads, as it does every autumn: algae and barnacles on the sensor cage slowly cut the oxygen and pH sensors off from fresh water. Heron Flats, shallow and warm all summer, fouled fastest.</p>
+<p dir="auto">Biofouling leads, as it does every autumn: algae and barnacles on the sensor cage slowly cut the oxygen and pH sensors off from fresh water. Heron Flats, shallow and warm all summer, fouled fastest.</p>
 --- pre 99-106
 <pre><code class="language-mermaid">pie showData
     title Why 3,412 readings were flagged
@@ -270,16 +270,16 @@ print(f"r = {r:.2f}  R² = {r * r:.2f}  slope = {slope:.2f} mg/L per °C")
     "Calibration drift" : 511
 </code></pre>
 --- h2 108-108
-<h2 id="drift-at-kittiwake-shoal">Drift at Kittiwake Shoal</h2>
+<h2 dir="auto" id="drift-at-kittiwake-shoal">Drift at Kittiwake Shoal</h2>
 --- div 110-111
 <div class="markdown-alert markdown-alert-caution markdown-alert-kind-bug">
-<p class="markdown-alert-title">The pH at LH-07 is sliding</p>
-<p>In early November, pH at Kittiwake Shoal began to fall faster than the water around it<sup class="footnote-ref"><a data-footnote-ref="" href="#fn-__inline_1" id="fnref-__inline_1">1</a></sup>. On November 12 the trend reached −0.008 a day against the station's own 14-day median, 80 % of the drift limit, and the QC engine logged a warning (see the <a href="station/ingest-2026-11-12.log">ingest log</a>). Nothing is flagged yet: Beatriz will check the sensor against a water sample before winter maintenance starts on December 1.</p>
+<p class="markdown-alert-title" dir="auto">The pH at LH-07 is sliding</p>
+<p dir="auto">In early November, pH at Kittiwake Shoal began to fall faster than the water around it<sup class="footnote-ref"><a data-footnote-ref="" href="#fn-__inline_1" id="fnref-__inline_1">1</a></sup>. On November 12 the trend reached −0.008 a day against the station's own 14-day median, 80 % of the drift limit, and the QC engine logged a warning (see the <a href="station/ingest-2026-11-12.log">ingest log</a>). Nothing is flagged yet: Beatriz will check the sensor against a water sample before winter maintenance starts on December 1.</p>
 </div>
 --- h2 113-113
-<h2 id="what-we-build-next">What we build next</h2>
+<h2 dir="auto" id="what-we-build-next">What we build next</h2>
 --- p 115-115
-<p>Readers asked for one card per station instead of a spreadsheet. This is the wireframe we are testing, drawn as plain text:</p>
+<p dir="auto">Readers asked for one card per station instead of a spreadsheet. This is the wireframe we are testing, drawn as plain text:</p>
 --- pre 117-133
 <pre><code class="language-plantuml">@startsalt
 {+
@@ -298,26 +298,26 @@ print(f"r = {r:.2f}  R² = {r * r:.2f}  slope = {slope:.2f} mg/L per °C")
 @endsalt
 </code></pre>
 --- h2 135-135
-<h2 id="method-notes">Method notes</h2>
+<h2 dir="auto" id="method-notes">Method notes</h2>
 --- details 137-141
 <details class="markdown-alert markdown-alert-note markdown-alert-kind-info">
 <summary class="markdown-alert-title">Method notes</summary>
 <ul>
-<li>Times are UTC. A daily mean needs at least 120 of the day's 144 readings; 6 of the 1,080 station-days fell short.</li>
-<li>Oxygen is measured optically as dissolved <span data-math-style="inline">\ce{O2}</span> and corrected for salinity before it reaches the API.</li>
-<li>Correlations use the open dataset only: readings that passed, plus flagged readings we kept.</li>
-<li>Weeks are ISO weeks. Week 46 runs November 9 to 15, so it has six days in this dataset.</li>
+<li dir="auto">Times are UTC. A daily mean needs at least 120 of the day's 144 readings; 6 of the 1,080 station-days fell short.</li>
+<li dir="auto">Oxygen is measured optically as dissolved <span data-math-style="inline">\ce{O2}</span> and corrected for salinity before it reaches the API.</li>
+<li dir="auto">Correlations use the open dataset only: readings that passed, plus flagged readings we kept.</li>
+<li dir="auto">Weeks are ISO weeks. Week 46 runs November 9 to 15, so it has six days in this dataset.</li>
 </ul>
 </details>
 --- hr 143-143
 <hr>
 --- p 145-145
-<p>Next: <a href="season-plan.md">Season 3 deployment plan</a> · <a href="README.md">Start here</a></p>
+<p dir="auto">Next: <a href="season-plan.md">Season 3 deployment plan</a> · <a href="README.md">Start here</a></p>
 --- section 111-111
 <section class="footnotes" data-footnotes="">
 <ol>
-<li id="fn-__inline_1">
-<p>The neighbors are LH-06 and LH-08, the two stations closest to the shoal. Their week-46 means were 8.00 and 7.99, against 7.96 at LH-07. <a aria-label="Back to reference 1" class="footnote-backref" data-footnote-backref-idx="1" data-footnote-backref="" href="#fnref-__inline_1">↩</a></p>
+<li dir="auto" id="fn-__inline_1">
+<p dir="auto">The neighbors are LH-06 and LH-08, the two stations closest to the shoal. Their week-46 means were 8.00 and 7.99, against 7.96 at LH-07. <a aria-label="Back to reference 1" class="footnote-backref" data-footnote-backref-idx="1" data-footnote-backref="" href="#fnref-__inline_1">↩</a></p>
 </li>
 </ol>
 </section>

@@ -109,7 +109,7 @@ fn gfm_features_render() {
     for needle in [
         "<h1",
         "<table",
-        "<th>a</th>",
+        "<th dir=\"auto\">a</th>",
         "type=\"checkbox\"",
         "checked",
         "task-list-item",
@@ -224,7 +224,11 @@ fn table_column_alignment_reaches_the_cells() {
 fn readme_centering_and_named_anchors_survive() {
     let md = "<p align=\"center\">\n  <img src=\"logo.png\" width=\"80\">\n</p>\n\n<h1 align=\"center\">Name</h1>\n\n<a name=\"setup\"></a>\n\nSee [setup](#setup).\n";
     let html = plain_html(md);
-    assert_eq!(html.matches(" align=\"center\">").count(), 2, "{html}");
+    assert_eq!(
+        html.matches(" align=\"center\" dir=\"auto\">").count(),
+        2,
+        "{html}"
+    );
     for needle in ["<a name=\"setup\">", "href=\"#setup\""] {
         assert!(html.contains(needle), "{needle} missing in {html}");
     }
@@ -288,22 +292,22 @@ fn obsidian_callouts_render_as_alerts_with_their_kind_title_and_fold() {
         (
             "> [!info]\n> Body.\n",
             "<div class=\"markdown-alert markdown-alert-note markdown-alert-kind-info\">",
-            "<p class=\"markdown-alert-title\">Info</p>",
+            "<p class=\"markdown-alert-title\" dir=\"auto\">Info</p>",
         ),
         (
             "> [!faq] Why *now*?\n> Body.\n",
             "<div class=\"markdown-alert markdown-alert-warning markdown-alert-kind-question\">",
-            "<p class=\"markdown-alert-title\">Why now?</p>",
+            "<p class=\"markdown-alert-title\" dir=\"auto\">Why now?</p>",
         ),
         (
             "> [!Success]\n> Body.\n",
             "<div class=\"markdown-alert markdown-alert-tip markdown-alert-kind-success\">",
-            "<p class=\"markdown-alert-title\">Success</p>",
+            "<p class=\"markdown-alert-title\" dir=\"auto\">Success</p>",
         ),
         (
             "> [!my-kind]\n> Body.\n",
             "<div class=\"markdown-alert markdown-alert-note\">",
-            "<p class=\"markdown-alert-title\">My-kind</p>",
+            "<p class=\"markdown-alert-title\" dir=\"auto\">My-kind</p>",
         ),
         (
             "> [!danger]- Folded\n> Body.\n",
@@ -324,7 +328,7 @@ fn obsidian_callouts_render_as_alerts_with_their_kind_title_and_fold() {
         (
             "> [!WARNING]\n> Body.\n",
             "<div class=\"markdown-alert markdown-alert-warning\">",
-            "<p class=\"markdown-alert-title\">Warning</p>",
+            "<p class=\"markdown-alert-title\" dir=\"auto\">Warning</p>",
         ),
     ] {
         let html = unmarked(&plain_html(md));
@@ -333,7 +337,10 @@ fn obsidian_callouts_render_as_alerts_with_their_kind_title_and_fold() {
             "{md:?}: {open_tag} missing in {html}"
         );
         assert!(html.contains(title), "{md:?}: {title} missing in {html}");
-        assert!(html.contains("<p>Body.</p>"), "{md:?} -> {html}");
+        assert!(
+            html.contains("<p dir=\"auto\">Body.</p>"),
+            "{md:?} -> {html}"
+        );
         assert!(!html.contains("[!"), "{md:?}: marker left in {html}");
     }
     // nested, and a marker alone on its line followed by more text in the same paragraph
@@ -341,7 +348,7 @@ fn obsidian_callouts_render_as_alerts_with_their_kind_title_and_fold() {
         "> [!tip]\n> First line\n> > [!bug] Inner\n> > x\n",
     ));
     assert!(html.contains("markdown-alert-kind-bug"), "{html}");
-    assert!(html.contains("<p>First line</p>"), "{html}");
+    assert!(html.contains("<p dir=\"auto\">First line</p>"), "{html}");
     // not a callout: a marker after other text, a plain quote
     for md in ["> Text [!info] later\n", "> Just a quote\n", "> [!]\n> x\n"] {
         let html = unmarked(&plain_html(md));
@@ -356,22 +363,22 @@ fn colon_containers_render_as_alerts() {
         (
             ":::tip\nBody.\n:::\n",
             "<div class=\"markdown-alert markdown-alert-tip\">",
-            "<p class=\"markdown-alert-title\">Tip</p>",
+            "<p class=\"markdown-alert-title\" dir=\"auto\">Tip</p>",
         ),
         (
             "::: warning Mind the gap\nBody.\n:::\n",
             "<div class=\"markdown-alert markdown-alert-warning\">",
-            "<p class=\"markdown-alert-title\">Mind the gap</p>",
+            "<p class=\"markdown-alert-title\" dir=\"auto\">Mind the gap</p>",
         ),
         (
             ":::info[Read this]\nBody.\n:::\n",
             "<div class=\"markdown-alert markdown-alert-note markdown-alert-kind-info\">",
-            "<p class=\"markdown-alert-title\">Read this</p>",
+            "<p class=\"markdown-alert-title\" dir=\"auto\">Read this</p>",
         ),
         (
             ":::{danger}\nBody.\n:::\n",
             "<div class=\"markdown-alert markdown-alert-caution markdown-alert-kind-danger\">",
-            "<p class=\"markdown-alert-title\">Danger</p>",
+            "<p class=\"markdown-alert-title\" dir=\"auto\">Danger</p>",
         ),
         (
             "::: details Click me\nBody.\n:::\n",
@@ -385,11 +392,17 @@ fn colon_containers_render_as_alerts() {
             "{md:?}: {open_tag} missing in {html}"
         );
         assert!(html.contains(title), "{md:?}: {title} missing in {html}");
-        assert!(html.contains("<p>Body.</p>"), "{md:?} -> {html}");
+        assert!(
+            html.contains("<p dir=\"auto\">Body.</p>"),
+            "{md:?} -> {html}"
+        );
     }
     // a container of no known kind keeps its content, in no box
     let html = unmarked(&plain_html("::: columns\nBody.\n:::\n"));
-    assert!(html.contains("<div>\n<p>Body.</p>\n</div>"), "{html}");
+    assert!(
+        html.contains("<div>\n<p dir=\"auto\">Body.</p>\n</div>"),
+        "{html}"
+    );
     assert!(!html.contains("markdown-alert"), "{html}");
 }
 
@@ -560,7 +573,7 @@ fn prompt_blocks_fold_and_keep_inner_markdown() {
     assert!(
         html.contains("<summary>context</summary>")
             && html.contains("<h1")
-            && html.contains("<li>item</li>")
+            && html.contains("<li dir=\"auto\">item</li>")
     );
     // lines: the details block covers the tags
     assert_eq!((blocks[0].line_start, blocks[0].line_end), (2, 4));

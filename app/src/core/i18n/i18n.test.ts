@@ -1,8 +1,10 @@
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { fill, language, t, tn } from "./index";
+import { fill, formatLocale, language, sizeText, t, tn } from "./index";
+import type { FewForms, Messages } from "./messages";
 import {
+  formatTag,
   LOCALES,
   matchLocale,
   parsePreference,
@@ -92,6 +94,83 @@ describe("tn", () => {
     expect(tn("fileOps.files", 101)).toBe("101 fișiere");
     expect(tn("fileOps.files", 120)).toBe("120 de fișiere");
   });
+
+  // Russian counts in three forms (one: 1, 21; few: 2-4, 22-24; many: 0, 5-20, 25-30): many shares `.other`
+  it("reads Russian's one, few and many forms, many from .other", async () => {
+    const before = language.tables;
+    const ru: Messages & FewForms = {
+      ...en,
+      "fileOps.files.one": "{n} файл",
+      "fileOps.files.few": "{n} файла",
+      "fileOps.files.other": "{n} файлов",
+    };
+    language.tables = { ...before, ru };
+    try {
+      await language.choose("ru", []);
+      const said = [1, 2, 5, 11, 21, 22, 25].map((n) => tn("fileOps.files", n));
+      expect(said).toEqual([
+        "1 файл",
+        "2 файла",
+        "5 файлов",
+        "11 файлов",
+        "21 файл",
+        "22 файла",
+        "25 файлов",
+      ]);
+    } finally {
+      language.tables = before;
+    }
+  });
+
+  // Indonesian, Japanese, Korean, Chinese and Vietnamese count with one form only ("other"): their `.one` text still
+  // says exactly one (a name, "this file"), so a count of 1 reads it
+  it.each([
+    ["en", ["other 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+    ["fr", ["one 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+    ["ru", ["other 0", "one 1", "few 2", "other 5", "one 21", "one 101"]],
+    ["ro", ["few 0", "one 1", "few 2", "few 5", "other 21", "few 101"]],
+    ["id", ["other 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+    ["ja", ["other 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+    ["ko", ["other 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+    ["zh-CN", ["other 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+    ["zh-TW", ["other 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+    ["vi", ["other 0", "one 1", "other 2", "other 5", "other 21", "other 101"]],
+  ] as const)("picks the %s form for 0, 1, 2, 5, 21 and 101", async (locale, expected) => {
+    const before = language.tables;
+    const table: Messages & FewForms = {
+      ...en,
+      "fileOps.files.one": "one {n}",
+      "fileOps.files.few": "few {n}",
+      "fileOps.files.other": "other {n}",
+    };
+    language.tables = { ...before, [locale]: table };
+    try {
+      await language.choose(locale, []);
+      expect([0, 1, 2, 5, 21, 101].map((n) => tn("fileOps.files", n))).toEqual(expected);
+    } finally {
+      language.tables = before;
+    }
+  });
+});
+
+describe("formatLocale", () => {
+  it("follows the region the backend reports, ahead of the web view's languages, for the interface language only", async () => {
+    try {
+      language.region = "en-IN";
+      await language.choose("en", ["en-US"]);
+      expect(formatLocale()).toBe("en-IN");
+      expect(sizeText(310e6)).toBe(
+        new Intl.NumberFormat("en-IN", { style: "unit", unit: "megabyte" }).format(310),
+      );
+      await language.choose("de", ["en-US"]);
+      expect(formatLocale()).toBe("de");
+      language.region = null;
+      await language.choose("system", ["en-GB"]);
+      expect(formatLocale()).toBe("en-GB");
+    } finally {
+      language.region = null;
+    }
+  });
 });
 
 describe("matchLocale, systemLocale, resolveLocale", () => {
@@ -100,7 +179,6 @@ describe("matchLocale, systemLocale, resolveLocale", () => {
     expect(matchLocale("pt-PT")).toBe("pt-PT");
     expect(matchLocale("es_AR")).toBe("es");
     expect(matchLocale("DE-at")).toBe("de");
-    expect(matchLocale("zh-Hant-TW")).toBe("zh-CN");
     expect(matchLocale("it-CH")).toBe("it");
     for (const tag of ["ja", "ja-JP", "ja_JP", "JA-jp"]) expect(matchLocale(tag), tag).toBe("ja");
     for (const tag of ["ko", "ko-KR", "ko_KR", "KO-kr"]) {
@@ -112,6 +190,37 @@ describe("matchLocale, systemLocale, resolveLocale", () => {
     }
     for (const tag of ["gl", "gl-ES", "GL_es"]) expect(matchLocale(tag), tag).toBe("gl");
     for (const tag of ["ro", "ro-RO", "ro_MD", "RO-ro"]) expect(matchLocale(tag), tag).toBe("ro");
+    for (const tag of ["id", "id-ID", "ID_id"]) expect(matchLocale(tag), tag).toBe("id");
+    for (const tag of ["vi", "vi-VN", "vi_VN"]) expect(matchLocale(tag), tag).toBe("vi");
+    for (const tag of ["ru", "ru-RU", "ru_UA", "RU-kz"]) expect(matchLocale(tag), tag).toBe("ru");
+    for (const tag of ["tr", "tr-TR", "tr_CY"]) expect(matchLocale(tag), tag).toBe("tr");
+  });
+
+  it("reads Chinese by script, else by region: Traditional for Taiwan, Hong Kong and Macao", () => {
+    for (const tag of [
+      "zh-TW",
+      "zh_TW",
+      "zh-HK",
+      "zh-MO",
+      "ZH-hk",
+      "zh-Hant",
+      "zh-Hant-TW",
+      "zh-Hant-CN",
+    ]) {
+      expect(matchLocale(tag), tag).toBe("zh-TW");
+    }
+    for (const tag of [
+      "zh",
+      "zh-CN",
+      "zh_CN",
+      "zh-SG",
+      "zh-Hans",
+      "zh-Hans-CN",
+      "zh-Hans-TW",
+      "zh-Hans-HK",
+    ]) {
+      expect(matchLocale(tag), tag).toBe("zh-CN");
+    }
   });
 
   it("reads Portuguese by region: Brazil (and a bare pt) or Portugal's norm", () => {
@@ -128,6 +237,18 @@ describe("matchLocale, systemLocale, resolveLocale", () => {
     expect(systemLocale(["sv-SE", "nl"])).toBe("en");
     expect(systemLocale(["sv-SE", "ja-JP", "en"])).toBe("ja");
     expect(systemLocale([])).toBe("en");
+  });
+
+  it("writes dates and numbers as the system's region does when it speaks the interface language", () => {
+    expect(formatTag("en", ["en-IN"])).toBe("en-IN");
+    expect(formatTag("en", ["pt-BR", "en_AU", "en-GB"])).toBe("en-AU");
+    expect(formatTag("zh-TW", ["zh-HK"])).toBe("zh-HK");
+    expect(formatTag("pt-BR", ["pt-PT", "pt-BR"])).toBe("pt-BR");
+    // another interface language, or a tag Intl cannot read, never counts
+    expect(formatTag("pt-BR", ["pt-PT"])).toBe("pt-BR");
+    expect(formatTag("de", ["en-GB", "fr-CH"])).toBe("de");
+    expect(formatTag("en", ["en-IN-x-", "en-GB"])).toBe("en-GB");
+    expect(formatTag("en", [])).toBe("en");
   });
 
   it("lets a chosen language win over the system's", () => {
@@ -150,6 +271,9 @@ describe("malformed input", () => {
     for (const tag of ["fra", "frr", "cat", "glg", "gla", "ron", "rom", "rum", "por", "por-PT"]) {
       expect(matchLocale(tag), JSON.stringify(tag)).toBeNull();
     }
+    for (const tag of ["ind", "in", "vie", "rus", "tur", "tu", "zht", "zho-TW"]) {
+      expect(matchLocale(tag), JSON.stringify(tag)).toBeNull();
+    }
   });
 
   it("reads any unknown stored preference as 'system'", () => {
@@ -166,6 +290,13 @@ describe("malformed input", () => {
       "KO",
       "ko-KR",
       "RO",
+      "zh-tw",
+      "ZH-TW",
+      "zh-Hant",
+      "RU",
+      "id-ID",
+      "vi-VN",
+      "tr-TR",
       "",
       " de",
       null,
@@ -221,6 +352,20 @@ function placeholders(text: string): string[] {
   return [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1] ?? "").sort();
 }
 
+/**
+ * `<base>.one` -> the placeholder(s) of the count that English writes out there ("1 file" beside "{n} files"): a table
+ * may still write them in its `.one` form, which some languages also read for other counts.
+ */
+const COUNT = new Map(
+  KEYS.filter((key) => key.endsWith(".one"))
+    .map((key): [string, string[]] => {
+      const own = placeholders(english[key] ?? "");
+      const other = placeholders(english[`${key.slice(0, -".one".length)}.other`] ?? "");
+      return [key, other.filter((p) => !own.includes(p))];
+    })
+    .filter(([, count]) => count.length > 0),
+);
+
 describe("locale directory", () => {
   const dir = fileURLToPath(new URL("./locales/", import.meta.url));
   const files = readdirSync(dir)
@@ -251,7 +396,10 @@ describe.each(LOCALES.filter((locale) => locale !== "en"))("the %s table", (loca
     const table: Record<string, string> = result.table;
     for (const key of KEYS) {
       const value = table[key] ?? "";
-      expect(placeholders(value), `${locale} ${key}`).toEqual(placeholders(english[key] ?? ""));
+      const own = placeholders(english[key] ?? "");
+      const count = COUNT.get(key) ?? [];
+      const said = placeholders(value).filter((p) => own.includes(p) || !count.includes(p));
+      expect(said, `${locale} ${key}`).toEqual(own);
       expect(value.trim(), `${locale} ${key}`).not.toBe("");
     }
     for (const [key, other] of FEW) {
@@ -266,6 +414,50 @@ describe.each(LOCALES.filter((locale) => locale !== "en"))("the %s table", (loca
     const result = await loadTable(locale);
     if (result.status !== "loaded") throw new Error(`${locale}: ${result.status}`);
     expect(result.table["app.name"]).toBe("PerMark");
+  });
+
+  // Russian reads `.one` for 21 and 101, French and Brazilian Portuguese for 0: a literal "1" there says a wrong count
+  it("says the count in a .one form the language also reads for other counts", async () => {
+    const result = await loadTable(locale);
+    if (result.status !== "loaded") throw new Error(`${locale}: ${result.status}`);
+    const table: Record<string, string> = result.table;
+    const rules = new Intl.PluralRules(locale);
+    if (![0, 2, 5, 21, 101].some((n) => rules.select(n) === "one")) return;
+    const wordless = [...COUNT].filter(
+      ([key, count]) => !placeholders(table[key] ?? "").some((p) => count.includes(p)),
+    );
+    expect(wordless.map(([key]) => key)).toEqual([]);
+  });
+});
+
+describe.each(LOCALES)("the %s table's typography", (locale) => {
+  const table = async (): Promise<Record<string, string>> => {
+    const result = await loadTable(locale);
+    if (result.status !== "loaded") throw new Error(`${locale}: ${result.status}`);
+    return result.table;
+  };
+
+  // shortcuts name the arrow keys with arrows in every language (`comboLabel`)
+  it("names the back and forward keys with arrows", async () => {
+    const words = await table();
+    expect(
+      [words["header.backHint"], words["follow.back"]].map((w) => w?.includes("Alt+←")),
+    ).toEqual([true, true]);
+    expect(words["header.forwardHint"]).toContain("Alt+→");
+  });
+
+  it("names the keys that move in a list with arrows", async () => {
+    const words = await table();
+    expect(words["finder.footMove"]).toMatch(/^↑\/↓ /);
+  });
+
+  // `[...]` and `{...}` are code (YAML flow style), not an ellipsis
+  it("writes an ellipsis as one character", async () => {
+    const words = await table();
+    const dotted = Object.keys(words).filter((key) =>
+      (words[key] ?? "").replace(/[[{]\.\.\.[\]}]/g, "").includes("..."),
+    );
+    expect(dotted).toEqual([]);
   });
 });
 
@@ -377,6 +569,16 @@ describe("the es table's words", () => {
       expect(value, `es ${key}`).not.toMatch(/\bajustes\b/iu);
       expect(value, `es ${key}`).not.toMatch(usted);
     }
+  });
+});
+
+describe("the ru table's plurals", () => {
+  it("gives every counted string its few form (2-4, 22-24)", async () => {
+    const result = await loadTable("ru");
+    if (result.status !== "loaded") throw new Error(`ru: ${result.status}`);
+    const table: Record<string, string> = result.table;
+    const missing = [...FEW.keys()].filter((key) => !(key in table));
+    expect(missing).toEqual([]);
   });
 });
 

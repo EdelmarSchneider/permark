@@ -2,11 +2,11 @@ div.reading
   div.doc-column
     article.md
       div.md-body role="document"
-        h1 id="中文日本語한국어"
+        h1 id="中文日本語한국어" dir="auto"
           a.anchor href="#中文日本語한국어" aria-label="Link to 中文、日本語、한국어"
             "#"
           "中文、日本語、한국어"
-        p
+        p dir="auto"
           "这是一个中文段落，包含全角标点符号：逗号，句号。还有"
           strong
             "粗体"
@@ -14,11 +14,11 @@ div.reading
           code
             "代码"
           "。"
-        p
+        p dir="auto"
           "これは日本語の段落です。ひらがな、カタカナ、漢字が混ざっています。「かぎ括弧」も使います。"
-        p
+        p dir="auto"
           "이것은 한국어 문단입니다. 띄어쓰기가 있는 문장입니다."
-        h2 id="表格"
+        h2 id="表格" dir="auto"
           a.anchor href="#表格" aria-label="Link to 表格"
             "#"
           "表格"
@@ -26,32 +26,32 @@ div.reading
           table
             thead
               tr
-                th
+                th dir="auto"
                   "名前"
-                th align="right"
+                th align="right" dir="auto"
                   "値"
-                th
+                th dir="auto"
                   "説明"
             tbody
               tr
-                td
+                td dir="auto"
                   "温度"
-                td align="right"
+                td align="right" dir="auto"
                   "11.8"
-                td
+                td dir="auto"
                   "摂氏"
               tr
-                td
+                td dir="auto"
                   "塩分"
-                td align="right"
+                td align="right" dir="auto"
                   "31.4"
-                td
+                td dir="auto"
                   "PSU"
         div.markdown-alert.markdown-alert-note
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "注意"
-          p
+          p dir="auto"
             "中文的提示框。"
-        p
+        p dir="auto"
           "縦に長い一行のテキストが折り返されるかどうかを確認するための、とても長い日本語の文章で、句読点もあまりなく続いていきます。"

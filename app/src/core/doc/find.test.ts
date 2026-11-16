@@ -55,6 +55,16 @@ describe("findIn", () => {
     expect(findIn(root, "and").ranges).toHaveLength(1);
   });
 
+  it("stays case-insensitive in a text with a dotted İ, and the dotted and dotless i match each other", () => {
+    // "İ".toLowerCase() is two characters: offsets after it would shift
+    const root = page("<p>İSTANBUL, İstanbul ve Işık; IŞIK and ışık</p>");
+    expect(texts(findIn(root, "istanbul"))).toEqual(["İSTANBUL", "İstanbul"]);
+    expect(texts(findIn(root, "İstanbul"))).toEqual(["İSTANBUL", "İstanbul"]);
+    expect(texts(findIn(root, "ve"))).toEqual(["ve"]);
+    expect(texts(findIn(root, "ışık"))).toEqual(["Işık", "IŞIK", "ışık"]);
+    expect(texts(findIn(root, "IŞIK"))).toEqual(["Işık", "IŞIK", "ışık"]);
+  });
+
   it("matches inside nested inline elements, one node at a time", () => {
     const root = page("<p>one <b>two</b> three</p>");
     expect(texts(findIn(root, "two"))).toEqual(["two"]);

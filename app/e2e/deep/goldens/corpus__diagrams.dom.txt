@@ -2,7 +2,7 @@ div.reading
   div.doc-column
     article.md
       div.md-body role="document"
-        h1 id="diagrams"
+        h1 id="diagrams" dir="auto"
           a.anchor href="#diagrams" aria-label="Link to Diagrams"
             "#"
           "Diagrams"
@@ -14,7 +14,7 @@ div.reading
           figure.figure
             div.drawing
               svg sequence sized labels: Gateway | Buoy | Gateway | Buoy | reading | ack
-        p
+        p dir="auto"
           "A Mermaid diagram with a syntax error:"
         div.code-block.diagram
           figure.figure.is-failed
@@ -27,7 +27,7 @@ div.reading
           figure.figure
             div.drawing
               svg svg sized labels: Person | App | Person | App | opens a file | shows it
-        p
+        p dir="auto"
           "A PlantUML diagram with a syntax error:"
         div.code-block.diagram
           figure.figure
@@ -37,7 +37,7 @@ div.reading
           figure.figure
             div.drawing
               svg svg sized labels: read | check | publish | flag | doubtful
-        p
+        p dir="auto"
           "A Graphviz diagram with a syntax error:"
         div.code-block.diagram
           figure.figure.is-failed

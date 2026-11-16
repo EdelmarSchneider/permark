@@ -5,7 +5,7 @@
   // the setup command and the way to the settings section.
   import Bot from "@lucide/svelte/icons/bot";
   import type { AgentRequest } from "../../api";
-  import { t, tn, type MessageKey } from "../../core/i18n";
+  import { formatLocale, t, tn, type MessageKey } from "../../core/i18n";
   import { ui } from "../../core/shell/ui.svelte";
   import { claudeCodeCommand } from "./setup";
   import { GROUPS } from "./groups";
@@ -72,7 +72,7 @@
   }
 
   function time(ms: number): string {
-    return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return new Date(ms).toLocaleTimeString(formatLocale(), { hour: "2-digit", minute: "2-digit" });
   }
 
   let box: HTMLElement | undefined = $state();

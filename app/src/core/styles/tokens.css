@@ -82,6 +82,24 @@
     "Noto Sans CJK JP", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", monospace;
 }
 
+/* Traditional Chinese interface: Traditional Chinese fonts come before system-ui and the Simplified ones above, so Han
+   characters take the shapes Taiwan and Hong Kong readers expect; Inter and JetBrains Mono still draw Latin letters and
+   digits. */
+:root:lang(zh-TW) {
+  --font-ui:
+    "Inter Variable", "Inter", "Microsoft JhengHei UI", "PingFang TC", "Noto Sans CJK TC",
+    system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC",
+    sans-serif;
+  --font-reading:
+    "Inter Variable", "Inter", "Microsoft JhengHei UI", "PingFang TC", "Noto Sans CJK TC",
+    system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC",
+    sans-serif;
+  --font-code:
+    "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", Consolas, "Microsoft JhengHei UI",
+    "PingFang TC", "Noto Sans Mono CJK TC", "Noto Sans CJK TC", "Microsoft YaHei UI", "PingFang SC",
+    "Noto Sans CJK SC", monospace;
+}
+
 /* Korean interface: Korean fonts come before system-ui and the Chinese ones above, so Hangul (and hanja) is drawn by a
    Korean font; Inter and JetBrains Mono still draw Latin letters and digits. */
 :root:lang(ko) {

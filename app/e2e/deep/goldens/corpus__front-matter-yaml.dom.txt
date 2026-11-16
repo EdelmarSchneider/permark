@@ -62,9 +62,9 @@ div.reading
             dd
               "3"
       div.md-body role="document"
-        h1 id="yaml-front-matter"
+        h1 id="yaml-front-matter" dir="auto"
           a.anchor href="#yaml-front-matter" aria-label="Link to YAML front matter"
             "#"
           "YAML front matter"
-        p
+        p dir="auto"
           "The card above shows the properties, with the tags as chips."

@@ -4,6 +4,8 @@
 import {
   closeSearchPanel,
   findNext,
+  findPrevious,
+  getSearchQuery,
   gotoLine,
   openSearchPanel,
   replaceAll,
@@ -77,6 +79,38 @@ describe("Source find panel", () => {
     expect(s.text()).toBe("omega beta\nAlpha delta\nomega\n");
     expect(closeSearchPanel(s.view)).toBe(true);
     expect(parent?.querySelector(".cm-search")).toBeNull();
+  });
+
+  it("finds the dotted and dotless i of Turkish either way, as find in page does", () => {
+    const text = "İstanbul\nIşık ılık\nistanbul\n";
+    const s = source(text);
+    const reset = (): void =>
+      s.view.dispatch({
+        changes: { from: 0, to: s.view.state.doc.length, insert: text },
+        selection: { anchor: 0 },
+      });
+    // every match replaced by "#"
+    const replaced = (search: string, more: Partial<{ wholeWord: boolean }> = {}): string => {
+      reset();
+      s.view.dispatch({
+        effects: setSearchQuery.of(new SearchQuery({ search, replace: "#", ...more })),
+      });
+      replaceAll(s.view);
+      return s.text();
+    };
+    expect(replaced("istanbul")).toBe("#\nIşık ılık\n#\n");
+    expect(replaced("İSTANBUL")).toBe("#\nIşık ılık\n#\n");
+    expect(replaced("ışık")).toBe("İstanbul\n# ılık\nistanbul\n");
+    expect(replaced("ILIK", { wholeWord: true })).toBe("İstanbul\nIşık #\nistanbul\n");
+    // the panel's own query (what the person typed) is what it shows
+    expect(getSearchQuery(s.view.state).search).toBe("ILIK");
+    // the first match from the caret; before it, back around to the last
+    reset();
+    s.view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: "istanbul" })) });
+    expect(findNext(s.view)).toBe(true);
+    expect(s.selection()).toBe("İstanbul");
+    expect(findPrevious(s.view)).toBe(true);
+    expect(s.selection()).toBe("istanbul");
   });
 
   it("go to line opens its own field in the app's words", () => {

@@ -27,7 +27,9 @@ describe("relativeTime", () => {
     expect(compactRelativeFormat("fr").format(-3, "minute")).toMatch(/^il\sy\sa\s3\smin$/);
     expect(compactRelativeFormat("pt-PT").format(-2, "hour")).toMatch(/^há\s2\sh$/);
     expect(compactRelativeFormat("ro").format(-4, "day")).toMatch(/^acum\s4\szile$/);
-    for (const locale of ["en", "pt-BR", "es", "de", "zh-CN", "it", "ja", "ko", "ca", "gl"]) {
+    expect(compactRelativeFormat("ru").format(-3, "minute")).toMatch(/^3\sмин\.\sназад$/);
+    const locales = ["en", "pt-BR", "es", "de", "zh-CN", "it", "ja", "ko", "ca", "gl"];
+    for (const locale of [...locales, "zh-TW", "id", "vi", "ru", "tr"]) {
       expect(compactRelativeFormat(locale).format(-3, "minute"), locale).not.toMatch(/^[-\u2212]/);
     }
   });
@@ -46,5 +48,11 @@ describe("exactTime", () => {
     expect(exactTime(noon, "de")).toBe("13.11.2026, 12:05");
     expect(exactTime(noon, "pt-BR")).toMatch(/^13 de nov\. de 2026, 12:05$/);
     expect(exactTime(noon, "ja")).toBe("2026/11/13 12:05");
+  });
+
+  it("writes a region's own way of the same language", () => {
+    const noon = new Date(2026, 10, 13, 12, 5).getTime();
+    expect(exactTime(noon, "en-GB")).toBe("13 Nov 2026, 12:05");
+    expect(exactTime(noon, "en-IN")).toMatch(/^13 Nov 2026, 12:05\spm$/);
   });
 });

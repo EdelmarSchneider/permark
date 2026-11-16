@@ -26,4 +26,9 @@ tab: TabId | null, view: WindowView, context: Context, settings: AppSettings, no
 /**
  * Opens from outside that failed before this window could listen.
  */
-failures: Array<OpenFailed>, platform: Platform, };
+failures: Array<OpenFailed>, platform: Platform, 
+/**
+ * The system's format region (`en-IN`): Windows' regional format, Linux's locale of dates; `None` when the system
+ * names none.
+ */
+region: string | null, };

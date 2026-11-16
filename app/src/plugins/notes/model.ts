@@ -195,21 +195,22 @@ export function stopSharingItems(
   return shared.map((s) => ({ project: s.project, label: shared.length > 1 ? s.label : null }));
 }
 
-/** When a note was edited as a row says it: the time today, the weekday this week, the date otherwise. */
-export function timeLabel(modifiedMs: number, now: number): string {
+/** When a note was edited as a row says it: the time today, the weekday this week, the date otherwise (as
+ *  readers of `locale` write them). */
+export function timeLabel(modifiedMs: number, now: number, locale: string): string {
   const d = new Date(modifiedMs);
   switch (groupOf(modifiedMs, now)) {
     case "today":
-      return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      return d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
     case "yesterday":
     case "week":
-      return d.toLocaleDateString(undefined, { weekday: "short" });
+      return d.toLocaleDateString(locale, { weekday: "short" });
     case "month":
-      return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+      return d.toLocaleDateString(locale, { day: "numeric", month: "short" });
     case "older": {
       const sameYear = d.getFullYear() === new Date(now).getFullYear();
       return d.toLocaleDateString(
-        undefined,
+        locale,
         sameYear
           ? { day: "numeric", month: "short" }
           : { day: "numeric", month: "short", year: "numeric" },

@@ -2,25 +2,25 @@ div.reading
   div.doc-column
     article.md
       div.md-body role="document"
-        h1 id="invisible-characters"
+        h1 id="invisible-characters" dir="auto"
           a.anchor href="#invisible-characters" aria-label="Link to Invisible characters"
             "#"
           "Invisible characters"
-        p
+        p dir="auto"
           "Zero width space between letters: a​b​c (three letters, two zero width spaces)."
-        p
+        p dir="auto"
           "Zero width joiner emoji: 👩‍💻 👨‍👩‍👧 🏳️‍🌈 and a flag 🇧🇷."
-        p
+        p dir="auto"
           "Zero width non-joiner: می‌خواهم."
-        p
+        p dir="auto"
           "Soft hyphen: super­cali­fragilistic­expialidocious."
-        p
+        p dir="auto"
           "No-break space: 10 km, narrow no-break: 5 %, and a word joiner: a⁠b."
-        p
+        p dir="auto"
           "Right-to-left mark inside text: abc‏def, and a left-to-right mark: abc‎def."
-        p
+        p dir="auto"
           "Byte order mark in the middle: a b."
-        h2 id="a-heading-with-a-zero-width-spaceinside"
+        h2 id="a-heading-with-a-zero-width-spaceinside" dir="auto"
           a.anchor href="#a-heading-with-a-zero-width-spaceinside" aria-label="Link to A heading with a zero width space​inside"
             "#"
           "A heading with a zero width space​inside"

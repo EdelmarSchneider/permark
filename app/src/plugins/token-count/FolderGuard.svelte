@@ -1,7 +1,7 @@
 <script lang="ts">
   // The guard of a folder count: a big folder asks first (how many files, how many bytes, about how long), a folder that
   // is too big says so and why. Enter = the answer in bold, Escape | Cancel | backdrop = no.
-  import { language, t, tn } from "../../core/i18n";
+  import { formatLocale, t, tn } from "../../core/i18n";
   import { dialogFocus } from "../../core/shell/dialogFocus";
   import { REFUSE_FILES, timeUnit } from "./folders";
   import { folders } from "./folders.svelte";
@@ -12,7 +12,7 @@
   const refused = $derived(job.state === "refused" ? job : null);
   const open = $derived(ask !== null || refused !== null);
 
-  const number = (n: number): string => new Intl.NumberFormat(language.locale).format(n);
+  const number = (n: number): string => new Intl.NumberFormat(formatLocale()).format(n);
 
   const time = $derived.by((): string => {
     if (ask === null) return "";
@@ -53,7 +53,7 @@
           <p>
             {t("tokens.folder.guard.body", {
               files: tn("tokens.folder.files", ask.files, { n: number(ask.files) }),
-              size: formatMegabytes(ask.bytes, language.locale),
+              size: formatMegabytes(ask.bytes, formatLocale()),
               time,
             })}
           </p>

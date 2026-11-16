@@ -34,29 +34,29 @@ div.reading
               span.chip
                 "operations"
       div.md-body role="document"
-        h1 id="season-3-deployment-plan"
+        h1 id="season-3-deployment-plan" dir="auto"
           a.anchor href="#season-3-deployment-plan" aria-label="Link to Season 3 deployment plan"
             "#"
           "Season 3 deployment plan"
-        p
+        p dir="auto"
           "Twelve buoys are in the water and one dataset is about to open. This is where Season 3 stands, what is left before launch day, and what could still go wrong."
         div.code-block.diagram
           figure.figure
             div.drawing
               svg gantt sized labels: Sep 20 | Sep 27 | Oct 04 | Oct 11 | Oct 18 | Oct 25 | Nov 01 | Nov 08 | Nov 15 | Nov 22 | Nov 29 | Dec 06 | Dec 13 | Build and test buoys | Install gateways | Calibrate sensors | Load the Petrel | Deploy LH-01 to LH-12 | Shakedown and QC | API v2.3 freeze | Volunteer briefing | Launch rehearsal | Open data launch | First weekly bulletin | Winter maintenance | Prep | Voyage | Shakedown | Launch | Winter | Season 3, September to December
-        h2 id="where-we-are"
+        h2 id="where-we-are" dir="auto"
           a.anchor href="#where-we-are" aria-label="Link to Where we are"
             "#"
           "Where we are"
         div.markdown-alert.markdown-alert-important
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "Open data launch: Tuesday, November 17"
-          p
+          p dir="auto"
             "All twelve buoys are reporting, the QC rules are signed off and API v2.3 is frozen. Until launch, any change to the API needs a yes from both Tomás and Hana."
-        p
+        p dir="auto"
           "What remains is Monday's rehearsal, where the whole crew walks through launch day minute by minute, and then the launch itself."
-        h2 id="milestones"
+        h2 id="milestones" dir="auto"
           a.anchor href="#milestones" aria-label="Link to Milestones"
             "#"
           "Milestones"
@@ -64,138 +64,138 @@ div.reading
           table
             thead
               tr
-                th
+                th dir="auto"
                   "Milestone"
-                th
+                th dir="auto"
                   "Date"
-                th
+                th dir="auto"
                   "Owner"
-                th
+                th dir="auto"
                   "Status"
             tbody
               tr
-                td
+                td dir="auto"
                   "Gateways online"
-                td
+                td dir="auto"
                   "Tue, Oct 6"
-                td
+                td dir="auto"
                   "Tomás Varela"
-                td
+                td dir="auto"
                   span.emoji title=":white_check_mark:"
                     "✅"
                   "Done"
               tr
-                td
+                td dir="auto"
                   "Buoys built and calibrated"
-                td
+                td dir="auto"
                   "Fri, Oct 9"
-                td
+                td dir="auto"
                   "Tomás Varela"
-                td
+                td dir="auto"
                   span.emoji title=":white_check_mark:"
                     "✅"
                   "Done"
               tr
-                td
+                td dir="auto"
                   "All twelve buoys deployed"
-                td
+                td dir="auto"
                   "Tue, Oct 20"
-                td
+                td dir="auto"
                   "Beatriz Nogueira"
-                td
+                td dir="auto"
                   span.emoji title=":white_check_mark:"
                     "✅"
                   "Done"
               tr
-                td
+                td dir="auto"
                   "QC rules signed off"
-                td
+                td dir="auto"
                   "Fri, Nov 13"
-                td
+                td dir="auto"
                   "Dr. Imani Okafor"
-                td
+                td dir="auto"
                   span.emoji title=":white_check_mark:"
                     "✅"
                   "Done"
               tr
-                td
+                td dir="auto"
                   "Launch rehearsal"
-                td
+                td dir="auto"
                   "Mon, Nov 16"
-                td
+                td dir="auto"
                   "Hana Kowalski"
-                td
+                td dir="auto"
                   span.emoji title=":hourglass:"
                     "⌛"
                   "In progress"
               tr
-                td
+                td dir="auto"
                   "Open data launch, API v2.3"
-                td
+                td dir="auto"
                   "Tue, Nov 17"
-                td
+                td dir="auto"
                   "Hana Kowalski"
-                td
+                td dir="auto"
                   span.emoji title=":calendar:"
                     "📆"
                   "Next"
               tr
-                td
+                td dir="auto"
                   "First weekly bulletin"
-                td
+                td dir="auto"
                   "Fri, Nov 20"
-                td
+                td dir="auto"
                   "Leo Park"
-                td
+                td dir="auto"
                   span.emoji title=":calendar:"
                     "📆"
                   "Planned"
               tr
-                td
+                td dir="auto"
                   "Winter maintenance done"
-                td
+                td dir="auto"
                   "Fri, Dec 18"
-                td
+                td dir="auto"
                   "Beatriz Nogueira"
-                td
+                td dir="auto"
                   span.emoji title=":calendar:"
                     "📆"
                   "Planned"
-        h2 id="workstreams"
+        h2 id="workstreams" dir="auto"
           a.anchor href="#workstreams" aria-label="Link to Workstreams"
             "#"
           "Workstreams"
-        p
+        p dir="auto"
           "Each lead keeps their own list here, so the whole plan stays on one page."
         ul
-          li
+          li dir="auto"
             strong
               "Platform"
             "· Tomás"
             ul.contains-task-list
-              li.task-list-item.is-done
+              li.task-list-item.is-done dir="auto"
                 input.task-list-item-checkbox aria-label="Ingest receives readings from North Light, Avery Pier and Saddle Hill" checked disabled
                 "Ingest receives readings from North Light, Avery Pier and Saddle Hill"
-              li.task-list-item.is-done
+              li.task-list-item.is-done dir="auto"
                 input.task-list-item-checkbox aria-label="QC engine loads its rules from station/qc-rules.yaml" checked disabled
                 "QC engine loads its rules from"
                 a href="station/qc-rules.yaml"
                   code
                     "station/qc-rules.yaml"
-              li.task-list-item
+              li.task-list-item dir="auto"
                 input.task-list-item-checkbox aria-label="Load test API v2.3 at ten times the expected traffic" disabled
                 "Load test API v2.3 at ten times the expected traffic"
-              li.task-list-item
+              li.task-list-item dir="auto"
                 input.task-list-item-checkbox aria-label="Cellular fallback for Heron Flats dropped, see the decision log below" disabled
                 del
                   "Cellular fallback for Heron Flats"
                 "dropped, see the decision log below"
-          li
+          li dir="auto"
             strong
               "Field"
             "· Beatriz"
             ul.contains-task-list
-              li.task-list-item.is-done
+              li.task-list-item.is-done dir="auto"
                 input.task-list-item-checkbox aria-label="Deploy LH-01 to LH-12 from the Petrel ( journal )" checked disabled
                 "Deploy LH-01 to LH-12 from the"
                 em
@@ -204,68 +204,68 @@ div.reading
                 a href="field-journal.md"
                   "journal"
                 ")"
-              li.task-list-item.is-done
+              li.task-list-item.is-done dir="auto"
                 input.task-list-item-checkbox aria-label="Take a water sample at every station" checked disabled
                 "Take a water sample at every station"
-              li.task-list-item
+              li.task-list-item dir="auto"
                 input.task-list-item-checkbox aria-label="Check the pH sensor at Kittiwake Shoal against a water sample" disabled
                 "Check the pH sensor at Kittiwake Shoal against a water sample"
-          li
+          li dir="auto"
             strong
               "Data"
             "· Leo"
             ul.contains-task-list
-              li.task-list-item.is-done
+              li.task-list-item.is-done dir="auto"
                 input.task-list-item-checkbox aria-label="Review the 90-day dataset ( notebook )" checked disabled
                 "Review the 90-day dataset ("
                 a href="data-notebook.md"
                   "notebook"
                 ")"
-              li.task-list-item
+              li.task-list-item dir="auto"
                 input.task-list-item-checkbox aria-label="First bulletin drafted by Gull and signed off by Leo ( how it works )" disabled
                 "First bulletin drafted by Gull and signed off by Leo ("
                 a href="bulletin-agent.md"
                   "how it works"
                 ")"
-          li
+          li dir="auto"
             strong
               "Science"
             "· Imani"
             ul.contains-task-list
-              li.task-list-item.is-done
+              li.task-list-item.is-done dir="auto"
                 input.task-list-item-checkbox aria-label="Sign off the QC thresholds" checked disabled
                 "Sign off the QC thresholds"
-              li.task-list-item
+              li.task-list-item dir="auto"
                 input.task-list-item-checkbox aria-label="Publish a short guide to reading pH ( draft )" disabled
                 "Publish a short guide to reading pH ("
                 a href="ocean-chemistry.md#ph-is-a-logarithm"
                   "draft"
                 ")"
-          li
+          li dir="auto"
             strong
               "Launch"
             "· Hana"
             ul.contains-task-list
-              li.task-list-item.is-done
+              li.task-list-item.is-done dir="auto"
                 input.task-list-item-checkbox aria-label="Brief the volunteers" checked disabled
                 "Brief the volunteers"
-              li.task-list-item
+              li.task-list-item dir="auto"
                 input.task-list-item-checkbox aria-label="Monday rehearsal with the whole crew" disabled
                 "Monday rehearsal with the whole crew"
-              li.task-list-item
+              li.task-list-item dir="auto"
                 input.task-list-item-checkbox aria-label="Launch post for the lab's newsletter" disabled
                 "Launch post for the lab's newsletter"
-        h2 id="critical-path"
+        h2 id="critical-path" dir="auto"
           a.anchor href="#critical-path" aria-label="Link to Critical path"
             "#"
           "Critical path"
-        p
+        p dir="auto"
           "Sixty-four days stood between the first buoy build and launch day, and every one of them sat on the chain of bold arrows below: a day lost there is a day lost a…"
         div.code-block.diagram
           figure.figure
             div.drawing
               svg svg sized labels: Build buoys | 19 d | Calibrate | 7 d | Load Petrel | 2 d | Deploy | 9 d | Shakedown + QC | 24 d | Rehearsal | 3 d | Launch | Nov 17 | Gateways | 16 d | API freeze | 12 d | Volunteers | 2 d
-        h2 id="budget"
+        h2 id="budget" dir="auto"
           a.anchor href="#budget" aria-label="Link to Budget"
             "#"
           "Budget"
@@ -273,134 +273,134 @@ div.reading
           table
             thead
               tr
-                th
+                th dir="auto"
                   "Item"
-                th
+                th dir="auto"
                   "Detail"
-                th align="right"
+                th align="right" dir="auto"
                   "Cost (USD)"
-                th align="right"
+                th align="right" dir="auto"
                   "Share"
             tbody
               tr
-                td
+                td dir="auto"
                   "Buoy hardware"
-                td
+                td dir="auto"
                   "12 buoys × $1,850"
-                td align="right"
+                td align="right" dir="auto"
                   "22,200"
-                td align="right"
+                td align="right" dir="auto"
                   "45.7 %"
               tr
-                td
+                td dir="auto"
                   "Boat time"
-                td
+                td dir="auto"
                   "9 days × $1,400"
-                td align="right"
+                td align="right" dir="auto"
                   "12,600"
-                td align="right"
+                td align="right" dir="auto"
                   "25.9 %"
               tr
-                td
+                td dir="auto"
                   "Calibration"
-                td
+                td dir="auto"
                   "sensors and reference samples"
-                td align="right"
+                td align="right" dir="auto"
                   "3,900"
-                td align="right"
+                td align="right" dir="auto"
                   "8.0 %"
               tr
-                td
+                td dir="auto"
                   "Gateways"
-                td
+                td dir="auto"
                   "3 × $950"
-                td align="right"
+                td align="right" dir="auto"
                   "2,850"
-                td align="right"
+                td align="right" dir="auto"
                   "5.9 %"
               tr
-                td
+                td dir="auto"
                   "Cloud and data"
-                td
+                td dir="auto"
                   "hosting, storage, transfer"
-                td align="right"
+                td align="right" dir="auto"
                   "1,650"
-                td align="right"
+                td align="right" dir="auto"
                   "3.4 %"
               tr
-                td
+                td dir="auto"
                   "Contingency"
-                td
+                td dir="auto"
                   "held for repairs"
-                td align="right"
+                td align="right" dir="auto"
                   "5,400"
-                td align="right"
+                td align="right" dir="auto"
                   "11.1 %"
               tr
-                td
+                td dir="auto"
                   strong
                     "Total"
-                td
-                td align="right"
+                td dir="auto"
+                td align="right" dir="auto"
                   strong
                     "48,600"
-                td align="right"
+                td align="right" dir="auto"
                   strong
                     "100.0 %"
-        p
+        p dir="auto"
           "Hardware and boat time are spent. The contingency carries us through winter maintenance."
-        h2 id="risks"
+        h2 id="risks" dir="auto"
           a.anchor href="#risks" aria-label="Link to Risks"
             "#"
           "Risks"
-        p
+        p dir="auto"
           "We rate each risk twice a month on two questions: how likely is it, and how much would it hurt?"
         div.code-block.diagram
           figure.figure
             div.drawing
               svg quadrantChart sized labels: Act now | Plan for it | Keep an eye on | Reduce | Launch day API load | Volunteer shortage | Sensor drift | Gateway outage | Biofouling | Storm delay | Unlikely | Likely | Minor impact | Severe impact | Season 3 risks
-        p
+        p dir="auto"
           "The two risks in the top right get work this week; the rest have a standing answer."
         div.markdown-alert.markdown-alert-note.markdown-alert-kind-todo
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "Mitigations"
           ul
-            li
+            li dir="auto"
               strong
                 "Launch day API load:"
               "cache the latest-readings endpoint for 60 seconds and finish the load test before Monday."
-            li
+            li dir="auto"
               strong
                 "Sensor drift:"
               "check the pH sensor at Kittiwake Shoal before December 1, and compare every pH sensor with a water sample on each visit."
-            li
+            li dir="auto"
               strong
                 "Gateway outage:"
               "buoys keep unsent readings and resend them when the link returns; a spare gateway waits at Port Avery."
-            li
+            li dir="auto"
               strong
                 "Storm delay:"
               "winter maintenance carries a five-day weather buffer."
-            li
+            li dir="auto"
               strong
                 "Biofouling:"
               "copper mesh on the sensor cages, cleaned on every visit."
-            li
+            li dir="auto"
               strong
                 "Volunteer shortage:"
               "two backups for every launch-day role."
-        h2 id="work-breakdown"
+        h2 id="work-breakdown" dir="auto"
           a.anchor href="#work-breakdown" aria-label="Link to Work breakdown"
             "#"
           "Work breakdown"
-        p
+        p dir="auto"
           "The same season, cut into pieces of work instead of dates."
         div.code-block.diagram
           figure.figure
             div.drawing
               svg svg sized labels: Prep | Build buoys | Calibrate sensors | Voyage | Deploy 12 buoys | Water samples | Shakedown | Tune QC rules | Launch | API v2.3 | Volunteers | Winter | Maintenance | Season 3
-        h2 id="decisions"
+        h2 id="decisions" dir="auto"
           a.anchor href="#decisions" aria-label="Link to Decisions"
             "#"
           "Decisions"
@@ -411,56 +411,56 @@ div.reading
             table
               thead
                 tr
-                  th
+                  th dir="auto"
                     "Date"
-                  th
+                  th dir="auto"
                     "Decision"
-                  th
+                  th dir="auto"
                     "Why"
-                  th
+                  th dir="auto"
                     "By"
               tbody
                 tr
-                  td
+                  td dir="auto"
                     "Sep 30"
-                  td
+                  td dir="auto"
                     "Take a water sample at every station during the voyage"
-                  td
+                  td dir="auto"
                     "Gives each pH and oxygen sensor a reference point"
-                  td
+                  td dir="auto"
                     "Dr. Imani Okafor"
                 tr
-                  td
+                  td dir="auto"
                     "Oct 22"
-                  td
+                  td dir="auto"
                     "Publish flagged readings with their flag instead of deleting them"
-                  td
+                  td dir="auto"
                     "People can judge for themselves, and nothing disappears silently"
-                  td
+                  td dir="auto"
                     "Dr. Imani Okafor"
                 tr
-                  td
+                  td dir="auto"
                     "Nov 4"
-                  td
+                  td dir="auto"
                     "Drop the cellular fallback for Heron Flats"
-                  td
+                  td dir="auto"
                     "LoRa through Saddle Hill delivers 96 % of readings on time, and the buoy resends the rest ("
                     a href="station-architecture.md#decision-lora-not-cellular"
                       "why LoRa"
                     ")"
-                  td
+                  td dir="auto"
                     "Tomás Varela"
                 tr
-                  td
+                  td dir="auto"
                     "Nov 10"
-                  td
+                  td dir="auto"
                     "Launch on Tuesday, not Monday"
-                  td
+                  td dir="auto"
                     "Leaves a full working day for the rehearsal"
-                  td
+                  td dir="auto"
                     "Hana Kowalski"
         hr
-        p
+        p dir="auto"
           "Next:"
           a href="galley-recipe.md"
             "Moqueca for twelve"

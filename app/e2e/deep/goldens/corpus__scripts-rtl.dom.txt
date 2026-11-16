@@ -2,13 +2,13 @@ div.reading
   div.doc-column
     article.md
       div.md-body role="document"
-        h1 id="right-to-left"
+        h1 id="right-to-left" dir="auto"
           a.anchor href="#right-to-left" aria-label="Link to Right to left"
             "#"
           "Right to left"
-        p
+        p dir="auto"
           "مرحبا بالعالم. هذه فقرة باللغة العربية تحتوي على رقم 2026 وكلمة English في وسطها."
-        p
+        p dir="auto"
           "שלום עולם. זוהי פסקה בעברית עם"
           code
             "code"
@@ -16,28 +16,28 @@ div.reading
           strong
             "הדגשה"
           "."
-        p
+        p dir="auto"
           "A paragraph that asks for right to left with dir="rtl"."
         div.table-wrap
           table
             thead
               tr
-                th
+                th dir="auto"
                   "عمود"
-                th
+                th dir="auto"
                   "Column"
-                th
+                th dir="auto"
                   "עמודה"
             tbody
               tr
-                td
+                td dir="auto"
                   "واحد"
-                td
+                td dir="auto"
                   "one"
-                td
+                td dir="auto"
                   "אחת"
         ul
-          li
+          li dir="auto"
             "عنصر أول"
-          li
+          li dir="auto"
             "عنصر ثان"

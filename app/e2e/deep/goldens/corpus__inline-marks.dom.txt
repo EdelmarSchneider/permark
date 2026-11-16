@@ -2,11 +2,11 @@ div.reading
   div.doc-column
     article.md
       div.md-body role="document"
-        h1 id="inline-marks"
+        h1 id="inline-marks" dir="auto"
           a.anchor href="#inline-marks" aria-label="Link to Inline marks"
             "#"
           "Inline marks"
-        p
+        p dir="auto"
           "A"
           mark
             "highlighted phrase"
@@ -16,7 +16,7 @@ div.reading
           mark
             "highlights"
           "side by side."
-        p
+        p dir="auto"
           "Emoji shortcodes:"
           span.emoji title=":ocean:"
             "🌊"
@@ -27,7 +27,7 @@ div.reading
           span.emoji title=":heart:"
             "❤️"
           "and an unknown one :not_an_emoji_code: that stays text."
-        p
+        p dir="auto"
           "An inline footnote"
           sup.footnote-ref
             a href="#fn-__inline_1" id="fnref-__inline_1"
@@ -37,7 +37,7 @@ div.reading
             a href="#fn-__inline_2" id="fnref-__inline_2"
               "2"
           "."
-        p
+        p dir="auto"
           kbd
             "Ctrl"
           "+"
@@ -89,7 +89,7 @@ div.reading
           u
             "underlined"
           "."
-        p
+        p dir="auto"
           "Mentions and variables outside a prompt file: @someone,"
           span.tvar
             "{{not_a_variable}}"
@@ -97,20 +97,20 @@ div.reading
           code
             "{{in_code}}"
           "."
-        p
+        p dir="auto"
           "Typography: "straight quotes", 'single', -- dashes --- and ... dots, (c) (tm), 1/2, 30°C, x² ≠ y³."
         section.footnotes
           ol
-            li id="fn-__inline_1"
-              p
+            li id="fn-__inline_1" dir="auto"
+              p dir="auto"
                 "Written right where it is used, with"
                 em
                   "emphasis"
                 "."
                 a.footnote-backref href="#fnref-__inline_1" aria-label="Back to reference 1"
                   "↩"
-            li id="fn-__inline_2"
-              p
+            li id="fn-__inline_2" dir="auto"
+              p dir="auto"
                 "Short."
                 a.footnote-backref href="#fnref-__inline_2" aria-label="Back to reference 2"
                   "↩"

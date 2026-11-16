@@ -124,11 +124,12 @@ export function isSingleKey(combo: string): boolean {
   return parsed !== null && !parsed.mod && !parsed.ctrl && !parsed.alt;
 }
 
+// arrows over English words: one name for every interface language
 const WORDS: Readonly<Record<string, string>> = {
-  ArrowLeft: "Left",
-  ArrowRight: "Right",
-  ArrowUp: "Up",
-  ArrowDown: "Down",
+  ArrowLeft: "←",
+  ArrowRight: "→",
+  ArrowUp: "↑",
+  ArrowDown: "↓",
   Escape: "Esc",
   Backspace: "Backspace",
 };

@@ -17,7 +17,19 @@ pub fn fold(s: &str) -> String {
     s.nfkd()
         .filter(|c| !is_combining_mark(*c) || matches!(*c, '\u{3099}' | '\u{309A}'))
         .flat_map(char::to_lowercase)
+        .map(base_letter)
         .collect()
+}
+
+/// The base letter of a lowercase letter that has no decomposition to strip: Vietnamese `đ`, Turkish dotless `ı`
+/// (`İ` needs no entry: it decomposes to `I` + a combining dot).
+#[must_use]
+pub(super) fn base_letter(c: char) -> char {
+    match c {
+        'đ' => 'd',
+        'ı' => 'i',
+        _ => c,
+    }
 }
 
 fn ends_with_vowel_m(w: &str) -> bool {

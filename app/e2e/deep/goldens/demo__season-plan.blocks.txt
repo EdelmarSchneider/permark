@@ -11,9 +11,9 @@ outline:   Risks (line 123)
 outline:   Work breakdown (line 154)
 outline:   Decisions (line 179)
 --- h1 9-9
-<h1 id="season-3-deployment-plan">Season 3 deployment plan</h1>
+<h1 dir="auto" id="season-3-deployment-plan">Season 3 deployment plan</h1>
 --- p 11-11
-<p>Twelve buoys are in the water and one dataset is about to open. This is where Season 3 stands, what is left before launch day, and what could still go wrong.</p>
+<p dir="auto">Twelve buoys are in the water and one dataset is about to open. This is where Season 3 stands, what is left before launch day, and what could still go wrong.</p>
 --- pre 13-35
 <pre><code class="language-mermaid">gantt
     title Season 3, September to December
@@ -38,122 +38,122 @@ outline:   Decisions (line 179)
         Winter maintenance      :maint, 2026-12-01, 18d
 </code></pre>
 --- h2 37-37
-<h2 id="where-we-are">Where we are</h2>
+<h2 dir="auto" id="where-we-are">Where we are</h2>
 --- div 39-40
 <div class="markdown-alert markdown-alert-important">
-<p class="markdown-alert-title">Open data launch: Tuesday, November 17</p>
-<p>All twelve buoys are reporting, the QC rules are signed off and API v2.3 is frozen. Until launch, any change to the API needs a yes from both Tomás and Hana.</p>
+<p class="markdown-alert-title" dir="auto">Open data launch: Tuesday, November 17</p>
+<p dir="auto">All twelve buoys are reporting, the QC rules are signed off and API v2.3 is frozen. Until launch, any change to the API needs a yes from both Tomás and Hana.</p>
 </div>
 --- p 42-42
-<p>What remains is Monday's rehearsal, where the whole crew walks through launch day minute by minute, and then the launch itself.</p>
+<p dir="auto">What remains is Monday's rehearsal, where the whole crew walks through launch day minute by minute, and then the launch itself.</p>
 --- h2 44-44
-<h2 id="milestones">Milestones</h2>
+<h2 dir="auto" id="milestones">Milestones</h2>
 --- table 46-55
 <table>
 <thead>
 <tr>
-<th>Milestone</th>
-<th>Date</th>
-<th>Owner</th>
-<th>Status</th>
+<th dir="auto">Milestone</th>
+<th dir="auto">Date</th>
+<th dir="auto">Owner</th>
+<th dir="auto">Status</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Gateways online</td>
-<td>Tue, Oct 6</td>
-<td>Tomás Varela</td>
-<td><span class="emoji" title=":white_check_mark:">✅</span> Done</td>
+<td dir="auto">Gateways online</td>
+<td dir="auto">Tue, Oct 6</td>
+<td dir="auto">Tomás Varela</td>
+<td dir="auto"><span class="emoji" title=":white_check_mark:">✅</span> Done</td>
 </tr>
 <tr>
-<td>Buoys built and calibrated</td>
-<td>Fri, Oct 9</td>
-<td>Tomás Varela</td>
-<td><span class="emoji" title=":white_check_mark:">✅</span> Done</td>
+<td dir="auto">Buoys built and calibrated</td>
+<td dir="auto">Fri, Oct 9</td>
+<td dir="auto">Tomás Varela</td>
+<td dir="auto"><span class="emoji" title=":white_check_mark:">✅</span> Done</td>
 </tr>
 <tr>
-<td>All twelve buoys deployed</td>
-<td>Tue, Oct 20</td>
-<td>Beatriz Nogueira</td>
-<td><span class="emoji" title=":white_check_mark:">✅</span> Done</td>
+<td dir="auto">All twelve buoys deployed</td>
+<td dir="auto">Tue, Oct 20</td>
+<td dir="auto">Beatriz Nogueira</td>
+<td dir="auto"><span class="emoji" title=":white_check_mark:">✅</span> Done</td>
 </tr>
 <tr>
-<td>QC rules signed off</td>
-<td>Fri, Nov 13</td>
-<td>Dr. Imani Okafor</td>
-<td><span class="emoji" title=":white_check_mark:">✅</span> Done</td>
+<td dir="auto">QC rules signed off</td>
+<td dir="auto">Fri, Nov 13</td>
+<td dir="auto">Dr. Imani Okafor</td>
+<td dir="auto"><span class="emoji" title=":white_check_mark:">✅</span> Done</td>
 </tr>
 <tr>
-<td>Launch rehearsal</td>
-<td>Mon, Nov 16</td>
-<td>Hana Kowalski</td>
-<td><span class="emoji" title=":hourglass:">⌛</span> In progress</td>
+<td dir="auto">Launch rehearsal</td>
+<td dir="auto">Mon, Nov 16</td>
+<td dir="auto">Hana Kowalski</td>
+<td dir="auto"><span class="emoji" title=":hourglass:">⌛</span> In progress</td>
 </tr>
 <tr>
-<td>Open data launch, API v2.3</td>
-<td>Tue, Nov 17</td>
-<td>Hana Kowalski</td>
-<td><span class="emoji" title=":calendar:">📆</span> Next</td>
+<td dir="auto">Open data launch, API v2.3</td>
+<td dir="auto">Tue, Nov 17</td>
+<td dir="auto">Hana Kowalski</td>
+<td dir="auto"><span class="emoji" title=":calendar:">📆</span> Next</td>
 </tr>
 <tr>
-<td>First weekly bulletin</td>
-<td>Fri, Nov 20</td>
-<td>Leo Park</td>
-<td><span class="emoji" title=":calendar:">📆</span> Planned</td>
+<td dir="auto">First weekly bulletin</td>
+<td dir="auto">Fri, Nov 20</td>
+<td dir="auto">Leo Park</td>
+<td dir="auto"><span class="emoji" title=":calendar:">📆</span> Planned</td>
 </tr>
 <tr>
-<td>Winter maintenance done</td>
-<td>Fri, Dec 18</td>
-<td>Beatriz Nogueira</td>
-<td><span class="emoji" title=":calendar:">📆</span> Planned</td>
+<td dir="auto">Winter maintenance done</td>
+<td dir="auto">Fri, Dec 18</td>
+<td dir="auto">Beatriz Nogueira</td>
+<td dir="auto"><span class="emoji" title=":calendar:">📆</span> Planned</td>
 </tr>
 </tbody>
 </table>
 --- h2 57-57
-<h2 id="workstreams">Workstreams</h2>
+<h2 dir="auto" id="workstreams">Workstreams</h2>
 --- p 59-59
-<p>Each lead keeps their own list here, so the whole plan stays on one page.</p>
+<p dir="auto">Each lead keeps their own list here, so the whole plan stays on one page.</p>
 --- ul 61-79
 <ul>
-<li><strong>Platform</strong> · Tomás
+<li dir="auto"><strong>Platform</strong> · Tomás
 <ul class="contains-task-list">
-<li class="task-list-item"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Ingest receives readings from North Light, Avery Pier and Saddle Hill</li>
-<li class="task-list-item"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> QC engine loads its rules from <a href="station/qc-rules.yaml"><code>station/qc-rules.yaml</code></a></li>
-<li class="task-list-item"><input class="task-list-item-checkbox" disabled="" type="checkbox"> Load test API v2.3 at ten times the expected traffic</li>
-<li class="task-list-item"><input class="task-list-item-checkbox" disabled="" type="checkbox"> <del>Cellular fallback for Heron Flats</del> dropped, see the decision log below</li>
+<li class="task-list-item" dir="auto"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Ingest receives readings from North Light, Avery Pier and Saddle Hill</li>
+<li class="task-list-item" dir="auto"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> QC engine loads its rules from <a href="station/qc-rules.yaml"><code>station/qc-rules.yaml</code></a></li>
+<li class="task-list-item" dir="auto"><input class="task-list-item-checkbox" disabled="" type="checkbox"> Load test API v2.3 at ten times the expected traffic</li>
+<li class="task-list-item" dir="auto"><input class="task-list-item-checkbox" disabled="" type="checkbox"> <del>Cellular fallback for Heron Flats</del> dropped, see the decision log below</li>
 </ul>
 </li>
-<li><strong>Field</strong> · Beatriz
+<li dir="auto"><strong>Field</strong> · Beatriz
 <ul class="contains-task-list">
-<li class="task-list-item"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Deploy LH-01 to LH-12 from the <em>Petrel</em> (<a href="field-journal.md">journal</a>)</li>
-<li class="task-list-item"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Take a water sample at every station</li>
-<li class="task-list-item"><input class="task-list-item-checkbox" disabled="" type="checkbox"> Check the pH sensor at Kittiwake Shoal against a water sample</li>
+<li class="task-list-item" dir="auto"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Deploy LH-01 to LH-12 from the <em>Petrel</em> (<a href="field-journal.md">journal</a>)</li>
+<li class="task-list-item" dir="auto"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Take a water sample at every station</li>
+<li class="task-list-item" dir="auto"><input class="task-list-item-checkbox" disabled="" type="checkbox"> Check the pH sensor at Kittiwake Shoal against a water sample</li>
 </ul>
 </li>
-<li><strong>Data</strong> · Leo
+<li dir="auto"><strong>Data</strong> · Leo
 <ul class="contains-task-list">
-<li class="task-list-item"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Review the 90-day dataset (<a href="data-notebook.md">notebook</a>)</li>
-<li class="task-list-item"><input class="task-list-item-checkbox" disabled="" type="checkbox"> First bulletin drafted by Gull and signed off by Leo (<a href="bulletin-agent.md">how it works</a>)</li>
+<li class="task-list-item" dir="auto"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Review the 90-day dataset (<a href="data-notebook.md">notebook</a>)</li>
+<li class="task-list-item" dir="auto"><input class="task-list-item-checkbox" disabled="" type="checkbox"> First bulletin drafted by Gull and signed off by Leo (<a href="bulletin-agent.md">how it works</a>)</li>
 </ul>
 </li>
-<li><strong>Science</strong> · Imani
+<li dir="auto"><strong>Science</strong> · Imani
 <ul class="contains-task-list">
-<li class="task-list-item"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Sign off the QC thresholds</li>
-<li class="task-list-item"><input class="task-list-item-checkbox" disabled="" type="checkbox"> Publish a short guide to reading pH (<a href="ocean-chemistry.md#ph-is-a-logarithm">draft</a>)</li>
+<li class="task-list-item" dir="auto"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Sign off the QC thresholds</li>
+<li class="task-list-item" dir="auto"><input class="task-list-item-checkbox" disabled="" type="checkbox"> Publish a short guide to reading pH (<a href="ocean-chemistry.md#ph-is-a-logarithm">draft</a>)</li>
 </ul>
 </li>
-<li><strong>Launch</strong> · Hana
+<li dir="auto"><strong>Launch</strong> · Hana
 <ul class="contains-task-list">
-<li class="task-list-item"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Brief the volunteers</li>
-<li class="task-list-item"><input class="task-list-item-checkbox" disabled="" type="checkbox"> Monday rehearsal with the whole crew</li>
-<li class="task-list-item"><input class="task-list-item-checkbox" disabled="" type="checkbox"> Launch post for the lab's newsletter</li>
+<li class="task-list-item" dir="auto"><input checked="" class="task-list-item-checkbox" disabled="" type="checkbox"> Brief the volunteers</li>
+<li class="task-list-item" dir="auto"><input class="task-list-item-checkbox" disabled="" type="checkbox"> Monday rehearsal with the whole crew</li>
+<li class="task-list-item" dir="auto"><input class="task-list-item-checkbox" disabled="" type="checkbox"> Launch post for the lab's newsletter</li>
 </ul>
 </li>
 </ul>
 --- h2 81-81
-<h2 id="critical-path">Critical path</h2>
+<h2 dir="auto" id="critical-path">Critical path</h2>
 --- p 83-83
-<p>Sixty-four days stood between the first buoy build and launch day, and every one of them sat on the chain of bold arrows below: a day lost there is a day lost at launch. The tasks on dashed arrows had slack.</p>
+<p dir="auto">Sixty-four days stood between the first buoy build and launch day, and every one of them sat on the chain of bold arrows below: a day lost there is a day lost at launch. The tasks on dashed arrows had slack.</p>
 --- pre 85-107
 <pre><code class="language-dot">digraph critical_path {
   rankdir=LR;
@@ -178,68 +178,68 @@ outline:   Decisions (line 179)
 }
 </code></pre>
 --- h2 109-109
-<h2 id="budget">Budget</h2>
+<h2 dir="auto" id="budget">Budget</h2>
 --- table 111-119
 <table>
 <thead>
 <tr>
-<th>Item</th>
-<th>Detail</th>
-<th align="right">Cost (USD)</th>
-<th align="right">Share</th>
+<th dir="auto">Item</th>
+<th dir="auto">Detail</th>
+<th align="right" dir="auto">Cost (USD)</th>
+<th align="right" dir="auto">Share</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Buoy hardware</td>
-<td>12 buoys × $1,850</td>
-<td align="right">22,200</td>
-<td align="right">45.7 %</td>
+<td dir="auto">Buoy hardware</td>
+<td dir="auto">12 buoys × $1,850</td>
+<td align="right" dir="auto">22,200</td>
+<td align="right" dir="auto">45.7 %</td>
 </tr>
 <tr>
-<td>Boat time</td>
-<td>9 days × $1,400</td>
-<td align="right">12,600</td>
-<td align="right">25.9 %</td>
+<td dir="auto">Boat time</td>
+<td dir="auto">9 days × $1,400</td>
+<td align="right" dir="auto">12,600</td>
+<td align="right" dir="auto">25.9 %</td>
 </tr>
 <tr>
-<td>Calibration</td>
-<td>sensors and reference samples</td>
-<td align="right">3,900</td>
-<td align="right">8.0 %</td>
+<td dir="auto">Calibration</td>
+<td dir="auto">sensors and reference samples</td>
+<td align="right" dir="auto">3,900</td>
+<td align="right" dir="auto">8.0 %</td>
 </tr>
 <tr>
-<td>Gateways</td>
-<td>3 × $950</td>
-<td align="right">2,850</td>
-<td align="right">5.9 %</td>
+<td dir="auto">Gateways</td>
+<td dir="auto">3 × $950</td>
+<td align="right" dir="auto">2,850</td>
+<td align="right" dir="auto">5.9 %</td>
 </tr>
 <tr>
-<td>Cloud and data</td>
-<td>hosting, storage, transfer</td>
-<td align="right">1,650</td>
-<td align="right">3.4 %</td>
+<td dir="auto">Cloud and data</td>
+<td dir="auto">hosting, storage, transfer</td>
+<td align="right" dir="auto">1,650</td>
+<td align="right" dir="auto">3.4 %</td>
 </tr>
 <tr>
-<td>Contingency</td>
-<td>held for repairs</td>
-<td align="right">5,400</td>
-<td align="right">11.1 %</td>
+<td dir="auto">Contingency</td>
+<td dir="auto">held for repairs</td>
+<td align="right" dir="auto">5,400</td>
+<td align="right" dir="auto">11.1 %</td>
 </tr>
 <tr>
-<td><strong>Total</strong></td>
-<td></td>
-<td align="right"><strong>48,600</strong></td>
-<td align="right"><strong>100.0 %</strong></td>
+<td dir="auto"><strong>Total</strong></td>
+<td dir="auto"></td>
+<td align="right" dir="auto"><strong>48,600</strong></td>
+<td align="right" dir="auto"><strong>100.0 %</strong></td>
 </tr>
 </tbody>
 </table>
 --- p 121-121
-<p>Hardware and boat time are spent. The contingency carries us through winter maintenance.</p>
+<p dir="auto">Hardware and boat time are spent. The contingency carries us through winter maintenance.</p>
 --- h2 123-123
-<h2 id="risks">Risks</h2>
+<h2 dir="auto" id="risks">Risks</h2>
 --- p 125-125
-<p>We rate each risk twice a month on two questions: how likely is it, and how much would it hurt?</p>
+<p dir="auto">We rate each risk twice a month on two questions: how likely is it, and how much would it hurt?</p>
 --- pre 127-142
 <pre><code class="language-mermaid">quadrantChart
     title Season 3 risks
@@ -257,23 +257,23 @@ outline:   Decisions (line 179)
     Launch day API load: [0.66, 0.85]
 </code></pre>
 --- p 144-144
-<p>The two risks in the top right get work this week; the rest have a standing answer.</p>
+<p dir="auto">The two risks in the top right get work this week; the rest have a standing answer.</p>
 --- div 146-152
 <div class="markdown-alert markdown-alert-note markdown-alert-kind-todo">
-<p class="markdown-alert-title">Mitigations</p>
+<p class="markdown-alert-title" dir="auto">Mitigations</p>
 <ul>
-<li><strong>Launch day API load:</strong> cache the latest-readings endpoint for 60 seconds and finish the load test before Monday.</li>
-<li><strong>Sensor drift:</strong> check the pH sensor at Kittiwake Shoal before December 1, and compare every pH sensor with a water sample on each visit.</li>
-<li><strong>Gateway outage:</strong> buoys keep unsent readings and resend them when the link returns; a spare gateway waits at Port Avery.</li>
-<li><strong>Storm delay:</strong> winter maintenance carries a five-day weather buffer.</li>
-<li><strong>Biofouling:</strong> copper mesh on the sensor cages, cleaned on every visit.</li>
-<li><strong>Volunteer shortage:</strong> two backups for every launch-day role.</li>
+<li dir="auto"><strong>Launch day API load:</strong> cache the latest-readings endpoint for 60 seconds and finish the load test before Monday.</li>
+<li dir="auto"><strong>Sensor drift:</strong> check the pH sensor at Kittiwake Shoal before December 1, and compare every pH sensor with a water sample on each visit.</li>
+<li dir="auto"><strong>Gateway outage:</strong> buoys keep unsent readings and resend them when the link returns; a spare gateway waits at Port Avery.</li>
+<li dir="auto"><strong>Storm delay:</strong> winter maintenance carries a five-day weather buffer.</li>
+<li dir="auto"><strong>Biofouling:</strong> copper mesh on the sensor cages, cleaned on every visit.</li>
+<li dir="auto"><strong>Volunteer shortage:</strong> two backups for every launch-day role.</li>
 </ul>
 </div>
 --- h2 154-154
-<h2 id="work-breakdown">Work breakdown</h2>
+<h2 dir="auto" id="work-breakdown">Work breakdown</h2>
 --- p 156-156
-<p>The same season, cut into pieces of work instead of dates.</p>
+<p dir="auto">The same season, cut into pieces of work instead of dates.</p>
 --- pre 158-177
 <pre><code class="language-plantuml">@startwbs
 skinparam shadowing false
@@ -295,43 +295,43 @@ skinparam roundCorner 10
 @endwbs
 </code></pre>
 --- h2 179-179
-<h2 id="decisions">Decisions</h2>
+<h2 dir="auto" id="decisions">Decisions</h2>
 --- details 184-189
 <details>
 <summary>Decision log: four decisions that shaped the season</summary>
 <table>
 <thead>
 <tr>
-<th>Date</th>
-<th>Decision</th>
-<th>Why</th>
-<th>By</th>
+<th dir="auto">Date</th>
+<th dir="auto">Decision</th>
+<th dir="auto">Why</th>
+<th dir="auto">By</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Sep 30</td>
-<td>Take a water sample at every station during the voyage</td>
-<td>Gives each pH and oxygen sensor a reference point</td>
-<td>Dr. Imani Okafor</td>
+<td dir="auto">Sep 30</td>
+<td dir="auto">Take a water sample at every station during the voyage</td>
+<td dir="auto">Gives each pH and oxygen sensor a reference point</td>
+<td dir="auto">Dr. Imani Okafor</td>
 </tr>
 <tr>
-<td>Oct 22</td>
-<td>Publish flagged readings with their flag instead of deleting them</td>
-<td>People can judge for themselves, and nothing disappears silently</td>
-<td>Dr. Imani Okafor</td>
+<td dir="auto">Oct 22</td>
+<td dir="auto">Publish flagged readings with their flag instead of deleting them</td>
+<td dir="auto">People can judge for themselves, and nothing disappears silently</td>
+<td dir="auto">Dr. Imani Okafor</td>
 </tr>
 <tr>
-<td>Nov 4</td>
-<td>Drop the cellular fallback for Heron Flats</td>
-<td>LoRa through Saddle Hill delivers 96 % of readings on time, and the buoy resends the rest (<a href="station-architecture.md#decision-lora-not-cellular">why LoRa</a>)</td>
-<td>Tomás Varela</td>
+<td dir="auto">Nov 4</td>
+<td dir="auto">Drop the cellular fallback for Heron Flats</td>
+<td dir="auto">LoRa through Saddle Hill delivers 96 % of readings on time, and the buoy resends the rest (<a href="station-architecture.md#decision-lora-not-cellular">why LoRa</a>)</td>
+<td dir="auto">Tomás Varela</td>
 </tr>
 <tr>
-<td>Nov 10</td>
-<td>Launch on Tuesday, not Monday</td>
-<td>Leaves a full working day for the rehearsal</td>
-<td>Hana Kowalski</td>
+<td dir="auto">Nov 10</td>
+<td dir="auto">Launch on Tuesday, not Monday</td>
+<td dir="auto">Leaves a full working day for the rehearsal</td>
+<td dir="auto">Hana Kowalski</td>
 </tr>
 </tbody>
 </table>
@@ -339,4 +339,4 @@ skinparam roundCorner 10
 --- hr 193-193
 <hr>
 --- p 195-195
-<p>Next: <a href="galley-recipe.md">Moqueca for twelve</a> · <a href="README.md">Start here</a></p>
+<p dir="auto">Next: <a href="galley-recipe.md">Moqueca for twelve</a> · <a href="README.md">Start here</a></p>

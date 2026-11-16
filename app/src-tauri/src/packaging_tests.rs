@@ -17,11 +17,36 @@ const DESKTOP: &str = include_str!("../linux/permark.desktop");
 const WORKSPACE: &str = include_str!("../Cargo.toml");
 const HOOKS: &str = include_str!("../installer/hooks.nsh");
 /// Windows language ids of `bundle.windows.nsis.languages`, in the same order.
-const INSTALLER_LANGUAGE_IDS: [u32; 13] = [
-    1033, 1046, 3082, 1031, 2052, 1040, 1041, 1042, 1036, 2070, 1027, 1110, 1048,
+const INSTALLER_LANGUAGE_IDS: [u32; 18] = [
+    1033, 1046, 3082, 1031, 2052, 1040, 1041, 1042, 1036, 2070, 1027, 1110, 1048, 1028, 1057, 1066,
+    1049, 1055,
 ];
-/// Installer languages Tauri does not translate (`bundle.windows.nsis.customLanguageFiles`).
-const CUSTOM_LANGUAGES: [(&str, &str); 3] = [
+/// Installer languages Tauri does not translate, or translates with errors, and languages whose stock NSIS page texts
+/// need other words (`bundle.windows.nsis.customLanguageFiles`).
+const CUSTOM_LANGUAGES: [(&str, &str); 15] = [
+    ("German", include_str!("../installer/languages/German.nsh")),
+    (
+        "PortugueseBR",
+        include_str!("../installer/languages/PortugueseBR.nsh"),
+    ),
+    (
+        "SpanishInternational",
+        include_str!("../installer/languages/SpanishInternational.nsh"),
+    ),
+    (
+        "SimpChinese",
+        include_str!("../installer/languages/SimpChinese.nsh"),
+    ),
+    (
+        "Japanese",
+        include_str!("../installer/languages/Japanese.nsh"),
+    ),
+    ("Korean", include_str!("../installer/languages/Korean.nsh")),
+    ("French", include_str!("../installer/languages/French.nsh")),
+    (
+        "Portuguese",
+        include_str!("../installer/languages/Portuguese.nsh"),
+    ),
     (
         "Catalan",
         include_str!("../installer/languages/Catalan.nsh"),
@@ -33,6 +58,22 @@ const CUSTOM_LANGUAGES: [(&str, &str); 3] = [
     (
         "Romanian",
         include_str!("../installer/languages/Romanian.nsh"),
+    ),
+    (
+        "TradChinese",
+        include_str!("../installer/languages/TradChinese.nsh"),
+    ),
+    (
+        "Indonesian",
+        include_str!("../installer/languages/Indonesian.nsh"),
+    ),
+    (
+        "Vietnamese",
+        include_str!("../installer/languages/Vietnamese.nsh"),
+    ),
+    (
+        "Turkish",
+        include_str!("../installer/languages/Turkish.nsh"),
     ),
 ];
 
@@ -212,6 +253,114 @@ fn the_custom_installer_languages_are_listed_and_carry_both_spellings_of_the_ins
         let new = value("chooseHowToInstall");
         assert!(new.is_some(), "{name}.nsh lacks chooseHowToInstall");
         assert_eq!(new, value("choowHowToInstall"), "{name}.nsh");
+    }
+}
+
+/// The texts of Tauri's NSIS template (Tauri CLI 2.12.3 English.nsh, plus the 2.12.4 spelling `chooseHowToInstall`).
+const TEMPLATE_TEXTS: [&str; 28] = [
+    "addOrReinstall",
+    "alreadyInstalled",
+    "alreadyInstalledLong",
+    "appRunning",
+    "appRunningOkKill",
+    "chooseMaintenanceOption",
+    "chooseHowToInstall",
+    "choowHowToInstall",
+    "createDesktop",
+    "dontUninstall",
+    "dontUninstallDowngrade",
+    "failedToKillApp",
+    "installingWebview2",
+    "newerVersionInstalled",
+    "older",
+    "olderOrUnknownVersionInstalled",
+    "silentDowngrades",
+    "unableToUninstall",
+    "uninstallApp",
+    "uninstallBeforeInstalling",
+    "unknown",
+    "webview2AbortError",
+    "webview2DownloadError",
+    "webview2DownloadSuccess",
+    "webview2Downloading",
+    "webview2InstallError",
+    "webview2InstallSuccess",
+    "deleteAppData",
+];
+
+#[test]
+fn every_custom_installer_language_has_every_text_of_the_template() {
+    // a missing one falls back to English, or to nothing inside a sentence ("Eine -Version von ...")
+    for (name, text) in CUSTOM_LANGUAGES {
+        let keys: std::collections::BTreeSet<&str> = text
+            .lines()
+            .filter_map(|line| line.strip_prefix("LangString "))
+            .filter_map(|rest| rest.split(' ').next())
+            .collect();
+        let expected: std::collections::BTreeSet<&str> = TEMPLATE_TEXTS.into_iter().collect();
+        let missing: Vec<&&str> = expected.difference(&keys).collect();
+        assert!(missing.is_empty(), "{name}.nsh lacks {missing:?}");
+        // anything else replaces a stock NSIS text of that language: a Modern UI page text (`MUI_...`) or one of
+        // NSIS' own (`^...`); the file is included after the language is inserted, so the later text wins
+        for key in keys.difference(&expected) {
+            assert!(
+                key.starts_with("MUI_") || key.starts_with('^'),
+                "{name}.nsh: {key} is neither a template text nor a stock NSIS text"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_text_of_a_custom_installer_language_is_set_for_that_language_with_the_product_name() {
+    for (name, text) in CUSTOM_LANGUAGES {
+        let id = format!("${{LANG_{}}}", name.to_uppercase());
+        for line in text.lines().filter(|line| line.starts_with("LangString ")) {
+            // `LangString <key> ${LANG_<NAME>} "<text>"`
+            assert_eq!(
+                line.split(' ').nth(2),
+                Some(id.as_str()),
+                "{name}.nsh: {line}"
+            );
+            // Tauri fills no placeholder in a language file: `{{product_name}}` would show as typed
+            assert!(!line.contains("{{"), "{name}.nsh: {line}");
+        }
+    }
+}
+
+#[test]
+fn every_installer_text_is_whole_on_its_line() {
+    // `LangString <key> <language> "<text>"`: closed at the end of its line, a quote inside written `$\"`, a line break
+    // `$\r$\n` | `$\n`. A raw line break inside a text (a `$\n` typed as `$` and Enter) fails the whole makensis run.
+    let files = std::iter::once(("hooks", HOOKS)).chain(CUSTOM_LANGUAGES);
+    for (name, text) in files {
+        for (index, line) in text.lines().enumerate() {
+            // a Windows checkout may end lines with CRLF
+            let line = line.trim_end_matches('\r');
+            let at = format!("{name}.nsh:{}", index + 1);
+            let Some(rest) = line.strip_prefix("LangString ") else {
+                // a language file holds only comments and texts
+                if name != "hooks" {
+                    assert!(line.is_empty() || line.starts_with(';'), "{at}: {line}");
+                }
+                continue;
+            };
+            let quoted = rest.splitn(3, ' ').nth(2).unwrap_or_default();
+            let inner = quoted
+                .strip_prefix('"')
+                .and_then(|text| text.strip_suffix('"'));
+            let Some(inner) = inner else {
+                panic!("{at}: the text is not closed on its line");
+            };
+            assert!(
+                !inner.replace("$\\\"", "").contains('"'),
+                "{at}: a quote inside the text is not written $\\\""
+            );
+            assert!(
+                !inner.trim_end_matches("$$").ends_with('$'),
+                "{at}: the text ends with a bare $"
+            );
+        }
     }
 }
 

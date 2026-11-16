@@ -10,7 +10,7 @@
   import Send from "@lucide/svelte/icons/send";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import type { CommentView } from "../../api";
-  import { language, t } from "../../core/i18n";
+  import { formatLocale, t } from "../../core/i18n";
   import { exactTime } from "../../core/time";
   import { excerpt, trail } from "./model";
   import { comments, type EditTarget } from "./store.svelte";
@@ -27,7 +27,7 @@
       .filter((part) => part !== "")
       .join(" · "),
   );
-  const when = $derived(exactTime(comment.createdMs, language.locale));
+  const when = $derived(exactTime(comment.createdMs, formatLocale()));
 
   /** The field opens under this comment; closing it gives the focus back to the Edit button that opened it. */
   function edit(button: HTMLElement, target: EditTarget): void {
@@ -79,7 +79,7 @@
   <p class="when">
     {when}
     {#if comment.editedMs !== null}
-      · <span class="edited" title={exactTime(comment.editedMs, language.locale)}
+      · <span class="edited" title={exactTime(comment.editedMs, formatLocale())}
         >{t("comments.edited")}</span
       >
     {/if}
@@ -98,7 +98,7 @@
       <span class="said">
         {reply.text}
         {#if reply.editedMs !== null}
-          <span class="edited" title={exactTime(reply.editedMs, language.locale)}
+          <span class="edited" title={exactTime(reply.editedMs, formatLocale())}
             >{t("comments.edited")}</span
           >
         {/if}

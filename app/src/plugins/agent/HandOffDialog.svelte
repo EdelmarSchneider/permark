@@ -3,7 +3,7 @@
   // approximate tokens; stale ones unchecked), the changes made outside PerMark, the notes of the case, the total.
   // Confirm sets the checkpoint and copies one line for the prompt (or the full list). Cancel changes nothing.
   import X from "@lucide/svelte/icons/x";
-  import { language, t, tn } from "../../core/i18n";
+  import { formatLocale, t, tn } from "../../core/i18n";
   import { dialogFocus } from "../../core/shell/dialogFocus";
   import { relativeTime } from "../../core/time";
   import { approx, canConfirm, included, notes, when } from "./handoff";
@@ -53,7 +53,7 @@
         <p class="label">{t("agent.handoff.sessions")}</p>
         <ul class="sessions">
           {#each preview.sessions as session (session.id)}
-            {@const at = when(session, language.locale)}
+            {@const at = when(session, formatLocale())}
             <li class:off={!session.checked || session.dropped}>
               <label>
                 <input
@@ -63,10 +63,10 @@
                   onchange={() => void handOff.toggle(session.id)}
                 />
                 <span class="when">{t("agent.handoff.session", at)}</span>
-                <span class="age">{relativeTime(session.end, now, language.locale)}</span>
+                <span class="age">{relativeTime(session.end, now, formatLocale())}</span>
                 <span class="count">{tn("agent.handoff.actions", session.rows)}</span>
                 <span class="size"
-                  >{t("agent.handoff.tokens", { n: approx(session.tokens, language.locale) })}</span
+                  >{t("agent.handoff.tokens", { n: approx(session.tokens, formatLocale()) })}</span
                 >
                 {#if session.stale}<span class="badge">{t("agent.handoff.stale")}</span>{/if}
                 {#if session.dropped}<span class="badge warn">{t("agent.handoff.dropped")}</span
@@ -95,7 +95,7 @@
       <p class="total" role="status">
         {t("agent.handoff.total", {
           actions: tn("agent.handoff.actions", actions),
-          tokens: t("agent.handoff.tokens", { n: approx(preview.tokens, language.locale) }),
+          tokens: t("agent.handoff.tokens", { n: approx(preview.tokens, formatLocale()) }),
         })}
       </p>
       {#if !canConfirm(preview)}

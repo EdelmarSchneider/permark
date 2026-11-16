@@ -608,7 +608,7 @@ describe("Go to a recent place (UX regressions #12)", () => {
     }
     documents.trail.visit({ path: "docs/guide.md", anchor: "setup" });
     const command = contributions.of("command").find((c) => c.id === "trail.show");
-    expect(command && t(command.label)).toBe("Go to a recent place...");
+    expect(command && t(command.label)).toBe("Go to a recent place…");
     expect(command?.when?.()).toBe(true);
     command?.run();
     expect(ui.finder).toMatchObject({ status: "open", preset: "trail" });
@@ -628,7 +628,7 @@ describe("Go to a recent place (UX regressions #12)", () => {
     expect(rowTexts().filter((text) => text.includes("You are here"))).toHaveLength(1);
     const input = target.querySelector<HTMLInputElement>("input.field");
     if (!input) throw new Error("no field");
-    expect(input.placeholder).toBe("Filter recent places...");
+    expect(input.placeholder).toBe("Filter recent places…");
     type(input, "read");
     flushSync();
     await tick();

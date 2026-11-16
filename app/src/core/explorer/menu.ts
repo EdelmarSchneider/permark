@@ -19,6 +19,9 @@ export type MenuEntry =
       opens?: boolean;
       /** Can't act now: still reached by the arrows and announced (`aria-disabled`), does nothing. */
       disabled?: boolean;
+      /** One of a set where one is chosen (`menuitemradio`): its state, announced as such and drawn as a check mark
+       *  before the label (never a mark in the label, read aloud as a word); the labels of the set stay aligned. */
+      checked?: boolean;
       /** `shift`: picked with Shift held (Shift+click | Shift+Enter). */
       run: (shift: boolean) => void;
     }

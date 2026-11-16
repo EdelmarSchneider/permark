@@ -2,21 +2,21 @@ div.reading
   div.doc-column
     article.md
       div.md-body role="document"
-        h1 id="callouts-and-containers"
+        h1 id="callouts-and-containers" dir="auto"
           a.anchor href="#callouts-and-containers" aria-label="Link to Callouts and containers"
             "#"
           "Callouts and containers"
         div.markdown-alert.markdown-alert-note
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "Note"
-          p
+          p dir="auto"
             "A note with the default title."
         div.markdown-alert.markdown-alert-tip
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "A tip with its own title"
-          p
+          p dir="auto"
             "Text of the tip, with"
             code
               "code"
@@ -25,76 +25,76 @@ div.reading
               "link"
             "."
         div.markdown-alert.markdown-alert-important
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "Important"
-          p
+          p dir="auto"
             "Important text."
         div.markdown-alert.markdown-alert-warning
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "Warning"
-          p
+          p dir="auto"
             "A warning with a list:"
           ul
-            li
+            li dir="auto"
               "first"
-            li
+            li dir="auto"
               "second"
         div.markdown-alert.markdown-alert-caution
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "Caution"
-          p
+          p dir="auto"
             "Caution text."
         details.markdown-alert.markdown-alert-note.markdown-alert-kind-info
           summary.markdown-alert-title
             svg svg sized
             "Folded by default"
-          p
+          p dir="auto"
             "Hidden until opened."
         details.markdown-alert.markdown-alert-tip.markdown-alert-kind-success open
           summary.markdown-alert-title
             svg svg sized
             "Open and foldable"
-          p
+          p dir="auto"
             "Shown, can be folded."
         div.markdown-alert.markdown-alert-caution.markdown-alert-kind-bug
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "A bug callout"
           div.markdown-alert.markdown-alert-warning.markdown-alert-kind-question
-            p.markdown-alert-title
+            p.markdown-alert-title dir="auto"
               svg svg sized
               "Nested question"
-            p
+            p dir="auto"
               "A callout inside a callout."
         div.markdown-alert.markdown-alert-note
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "An unknown kind"
-          p
+          p dir="auto"
             "Falls back to a note."
         div.markdown-alert.markdown-alert-note
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "A container with a title"
-          p
+          p dir="auto"
             "A container holds a longer aside, with"
             strong
               "strong"
             "text."
           ul
-            li
+            li dir="auto"
               "and a list"
         div.markdown-alert.markdown-alert-tip
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "Tip"
-          p
+          p dir="auto"
             "A tip container without a title."
         div.markdown-alert.markdown-alert-warning
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "Nested content"
           div.code-block
@@ -110,5 +110,5 @@ div.reading
         details
           summary
             "A plain details block"
-          p
+          p dir="auto"
             "Text that most readers can skip."

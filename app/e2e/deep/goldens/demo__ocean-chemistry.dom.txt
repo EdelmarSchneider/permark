@@ -34,23 +34,23 @@ div.reading
               span.chip
                 "waves"
       div.md-body role="document"
-        h1 id="carbon-in-the-sound"
+        h1 id="carbon-in-the-sound" dir="auto"
           a.anchor href="#carbon-in-the-sound" aria-label="Link to Carbon in the Sound"
             "#"
           "Carbon in the Sound"
-        p
+        p dir="auto"
           "Every Tidewell buoy carries a pH sensor, because the sea is slowly changing its chemistry. This page explains what our sensors see, from carbonic acid to the en…"
-        p
+        p dir="auto"
           span data-math-style="display"
             span.katex-display
               katex tex="\ce{CO2(aq) + H2O <=> H2CO3 <=> H+ + HCO3- <=> 2H+ + CO3^2-}"
-        p.pm-wide align="center"
+        p.pm-wide align="center" dir="auto"
           img src="/@permark-deep/project/demo/assets/carbonate-seesaw.svg" alt="A seesaw carrying carbon dioxide, bicarbonate and carbonate, tipped toward carbo…"
-        h2 id="the-carbonate-system"
+        h2 id="the-carbonate-system" dir="auto"
           a.anchor href="#the-carbonate-system" aria-label="Link to The carbonate system"
             "#"
           "The carbonate system"
-        p
+        p dir="auto"
           "When carbon dioxide from the air dissolves in seawater, very little of it stays as CO₂. It reacts with water to form carbonic acid, which quickly gives up hydro…"
           span data-math-style="inline"
             katex tex="\ce{HCO3-}"
@@ -58,55 +58,55 @@ div.reading
           span data-math-style="inline"
             katex tex="\ce{CO3^2-}"
           ", and under 1 % is dissolved CO₂."
-        p
+        p dir="auto"
           "The sea resists the change because carbonate soaks up most of the new hydrogen ions:"
-        p
+        p dir="auto"
           span data-math-style="display"
             span.katex-display
               katex tex="\ce{CO2 + CO3^2- + H2O -> 2HCO3-}"
-        p
+        p dir="auto"
           "That buffer has a price. Each extra CO₂ molecule uses up a carbonate ion, and carbonate is what oysters, pteropods and corals build their shells from. Shells st…"
           span data-math-style="inline"
             katex tex="\ce{CaCO3 <=> Ca^2+ + CO3^2-}"
           ": take carbonate away and the balance leans toward dissolving."
-        h2 id="ph-is-a-logarithm"
+        h2 id="ph-is-a-logarithm" dir="auto"
           a.anchor href="#ph-is-a-logarithm" aria-label="Link to pH is a logarithm"
             "#"
           "pH is a logarithm"
-        p
+        p dir="auto"
           "pH counts hydrogen ions on a logarithmic scale"
           sup.footnote-ref
             a href="#fn-scale" id="fnref-scale"
               "1"
           ":"
-        p
+        p dir="auto"
           span data-math-style="display"
             span.katex-display
               katex tex="\mathrm{pH} = -\log_{10} a_{\mathrm{H^+}}"
-        p
+        p dir="auto"
           "Here"
           span data-math-style="inline"
             katex tex="a_{\mathrm{H^+}}"
           "is the activity of hydrogen ions, which in seawater closely tracks their concentration. Because of the logarithm, one pH unit is a factor of ten. Since about 18…"
         div.markdown-alert.markdown-alert-warning
-          p.markdown-alert-title
+          p.markdown-alert-title dir="auto"
             svg svg sized
             "A small number is a big change"
-          p
+          p dir="auto"
             "A drop of 0.1 in pH means"
             span data-math-style="inline"
               katex tex="10^{0.1} \approx 1.26"
             "times as many hydrogen ions: 26 % more. When you write about two pH values, turn the difference into a ratio before you call it small."
-        h2 id="will-shells-dissolve"
+        h2 id="will-shells-dissolve" dir="auto"
           a.anchor href="#will-shells-dissolve" aria-label="Link to Will shells dissolve?"
             "#"
           "Will shells dissolve?"
-        p
+        p dir="auto"
           "Whether calcium carbonate forms or dissolves depends on its saturation state, Ω (omega). It compares the ions actually in the water with what the water holds at…"
         div.code-block
           span.katex-display
             katex tex="\Omega_{\mathrm{arag}} = \frac{[\ce{Ca^2+}][\ce{CO3^2-}]}{K^{*}_{\mathrm{sp,arag}}} \tag{1}"
-        p
+        p dir="auto"
           span data-math-style="inline"
             katex tex="K^{*}_{\mathrm{sp,arag}}"
           "is the solubility product of aragonite, the form of calcium carbonate that corals and many young shellfish build. It depends on temperature, salinity and pressu…"
@@ -114,45 +114,45 @@ div.reading
           table
             thead
               tr
-                th align="center"
+                th align="center" dir="auto"
                   "Ω"
-                th
+                th dir="auto"
                   "Seawater is"
-                th
+                th dir="auto"
                   "What it means for shells"
             tbody
               tr
-                td align="center"
+                td align="center" dir="auto"
                   "> 1"
-                td
+                td dir="auto"
                   "supersaturated"
-                td
+                td dir="auto"
                   "Shells and skeletons can form; the higher Ω, the less energy they cost"
               tr
-                td align="center"
+                td align="center" dir="auto"
                   "= 1"
-                td
+                td dir="auto"
                   "in balance"
-                td
+                td dir="auto"
                   "Calcium carbonate neither forms nor dissolves"
               tr
-                td align="center"
+                td align="center" dir="auto"
                   "< 1"
-                td
+                td dir="auto"
                   "corrosive"
-                td
+                td dir="auto"
                   "Unprotected aragonite starts to dissolve"
-        p
+        p dir="auto"
           "Gannet Point sat at Ω ≈ 2.0 in week 46"
           sup.footnote-ref
             a href="#fn-omega" id="fnref-omega"
               "2"
           ". That is comfortably above 1, but at the same alkalinity a drop of 0.1 in pH would take nearly a fifth off it."
-        h2 id="oxygen-and-temperature"
+        h2 id="oxygen-and-temperature" dir="auto"
           a.anchor href="#oxygen-and-temperature" aria-label="Link to Oxygen and temperature"
             "#"
           "Oxygen and temperature"
-        p
+        p dir="auto"
           "Oxygen reaches the Sound from the air and from everything green in it. At the surface the gas dissolves in proportion to its partial pressure, as Henry's law sa…"
           span data-math-style="inline"
             katex tex="c = k_H\,p"
@@ -160,26 +160,26 @@ div.reading
           span data-math-style="inline"
             katex tex="k_H"
           "falls as the water warms. In daylight, phytoplankton add their own:"
-        p
+        p dir="auto"
           span data-math-style="display"
             span.katex-display
               katex tex="\ce{6CO2 + 6H2O ->[light] C6H12O6 + 6O2}"
-        p
+        p dir="auto"
           mark
             "Warmer water holds less oxygen."
           "At Gannet Point's 12.6 °C and 33.8 PSU, fully saturated seawater holds about 8.6 mg/L. In week 46 the buoy read 7.9 mg/L, about 92 % of saturation. Back in Augu…"
           a href="data-notebook.md#temperature-against-oxygen"
             "Leo's notebook"
           "measures the link across all twelve stations."
-        h2 id="waves-briefly"
+        h2 id="waves-briefly" dir="auto"
           a.anchor href="#waves-briefly" aria-label="Link to Waves, briefly"
             "#"
           "Waves, briefly"
-        p
+        p dir="auto"
           "Our buoys also log the sea state, because waves mix the water column and stir up the bottom."
-        p.pm-wide
+        p.pm-wide dir="auto"
           img src="/@permark-deep/project/demo/assets/wave-anatomy.svg" alt="Diagram of a wave over the still-water level: crest, trough, wavelength L from c…"
-        p
+        p dir="auto"
           "For small waves, linear wave theory ties the angular frequency"
           span data-math-style="inline"
             katex tex="\omega = 2\pi/T"
@@ -190,11 +190,11 @@ div.reading
           span data-math-style="inline"
             katex tex="h"
           ":"
-        p
+        p dir="auto"
           span data-math-style="display"
             span.katex-display
               katex tex="\omega^2 = g k \tanh(kh) \tag{2}"
-        p
+        p dir="auto"
           "In deep water ("
           span data-math-style="inline"
             katex tex="kh \gg 1"
@@ -214,17 +214,17 @@ div.reading
           span data-math-style="inline"
             katex tex="L \approx \pu{99.9 m}"
           "from crest to crest. Over 20 m of water the same swell already feels the bottom: equation (2) gives about 89 m and 11.1 m/s."
-        h3 id="energy-in-a-wave"
+        h3 id="energy-in-a-wave" dir="auto"
           a.anchor href="#energy-in-a-wave" aria-label="Link to Energy in a wave"
             "#"
           "Energy in a wave"
-        p
+        p dir="auto"
           "The energy a wave carries per square meter of sea surface grows with the square of its height:"
-        p
+        p dir="auto"
           span data-math-style="display"
             span.katex-display
               katex tex="E = \tfrac{1}{8}\rho g H^2"
-        p
+        p dir="auto"
           "With"
           span data-math-style="inline"
             katex tex="\rho = \pu{1025 kg/m^3}"
@@ -242,7 +242,7 @@ div.reading
             a href="#fn-hs" id="fnref-hs"
               "3"
           "."
-        h2 id="what-our-buoys-measure"
+        h2 id="what-our-buoys-measure" dir="auto"
           a.anchor href="#what-our-buoys-measure" aria-label="Link to What our buoys measure"
             "#"
           "What our buoys measure"
@@ -250,76 +250,76 @@ div.reading
           table
             thead
               tr
-                th
+                th dir="auto"
                   "Quantity"
-                th align="center"
+                th align="center" dir="auto"
                   "Symbol"
-                th align="center"
+                th align="center" dir="auto"
                   "Unit"
-                th align="right"
+                th align="right" dir="auto"
                   "Accuracy"
             tbody
               tr
-                td
+                td dir="auto"
                   "Temperature"
-                td align="center"
+                td align="center" dir="auto"
                   span data-math-style="inline"
                     katex tex="T"
-                td align="center"
+                td align="center" dir="auto"
                   "°C"
-                td align="right"
+                td align="right" dir="auto"
                   "±0.10"
               tr
-                td
+                td dir="auto"
                   "Salinity"
-                td align="center"
+                td align="center" dir="auto"
                   span data-math-style="inline"
                     katex tex="S"
-                td align="center"
+                td align="center" dir="auto"
                   "PSU"
-                td align="right"
+                td align="right" dir="auto"
                   "±0.10"
               tr
-                td
+                td dir="auto"
                   "pH, total scale"
-                td align="center"
+                td align="center" dir="auto"
                   span data-math-style="inline"
                     katex tex="\mathrm{pH_T}"
-                td align="center"
+                td align="center" dir="auto"
                   "—"
-                td align="right"
+                td align="right" dir="auto"
                   "±0.05"
               tr
-                td
+                td dir="auto"
                   "Dissolved oxygen"
-                td align="center"
+                td align="center" dir="auto"
                   span data-math-style="inline"
                     katex tex="\ce{O2}"
-                td align="center"
+                td align="center" dir="auto"
                   "mg/L"
-                td align="right"
+                td align="right" dir="auto"
                   "±0.20"
               tr
-                td
+                td dir="auto"
                   "Significant wave height"
-                td align="center"
+                td align="center" dir="auto"
                   span data-math-style="inline"
                     katex tex="H_s"
-                td align="center"
+                td align="center" dir="auto"
                   "m"
-                td align="right"
+                td align="right" dir="auto"
                   "±0.10"
               tr
-                td
+                td dir="auto"
                   "Peak wave period"
-                td align="center"
+                td align="center" dir="auto"
                   span data-math-style="inline"
                     katex tex="T_p"
-                td align="center"
+                td align="center" dir="auto"
                   "s"
-                td align="right"
+                td align="right" dir="auto"
                   "±0.50"
-        p
+        p dir="auto"
           "These are the accuracies after calibration. Between visits, sensors drift, which is why we check them against water samples taken by hand, like the ones from th…"
           em
             "Petrel"
@@ -327,7 +327,7 @@ div.reading
           a href="field-journal.md"
             "Nine Days on the Petrel"
           ")."
-        h2 id="glossary"
+        h2 id="glossary" dir="auto"
           a.anchor href="#glossary" aria-label="Link to Glossary"
             "#"
           "Glossary"
@@ -351,7 +351,7 @@ div.reading
           dd
             "The label written after practical salinity, which is measured from conductivity. Strictly, practical salinity has no unit; 35 PSU is close to 35 grams of salt p…"
         hr
-        p
+        p dir="auto"
           "Next:"
           a href="data-notebook.md"
             "Ninety days of Sound data"
@@ -360,21 +360,21 @@ div.reading
             "Start here"
         section.footnotes
           ol
-            li id="fn-scale"
-              p
+            li id="fn-scale" dir="auto"
+              p dir="auto"
                 "Seawater pH is reported on the total scale, which counts free hydrogen ions plus those paired with sulfate. Our sensors report total-scale pH, so every pH on th…"
                 a href="tidewell-api.md"
                   "open data API"
                 "is on the same scale."
                 a.footnote-backref href="#fnref-scale" aria-label="Back to reference 1"
                   "↩"
-            li id="fn-omega"
-              p
+            li id="fn-omega" dir="auto"
+              p dir="auto"
                 "Ω needs two measured parts of the carbonate system. We measure pH, estimate total alkalinity from salinity, and compute Ω with the standard equilibrium constant…"
                 a.footnote-backref href="#fnref-omega" aria-label="Back to reference 2"
                   "↩"
-            li id="fn-hs"
-              p
+            li id="fn-hs" dir="auto"
+              p dir="auto"
                 "Real seas mix many waves of different heights. Our buoys report the significant wave height"
                 span data-math-style="inline"
                   katex tex="H_s"

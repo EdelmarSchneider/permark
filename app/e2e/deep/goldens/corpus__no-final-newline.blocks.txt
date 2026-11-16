@@ -2,6 +2,6 @@
 format: markdown
 outline: No final newline (line 1)
 --- h1 1-1
-<h1 id="no-final-newline">No final newline</h1>
+<h1 dir="auto" id="no-final-newline">No final newline</h1>
 --- p 3-3
-<p>The last line of this file has no line break at its end.</p>
+<p dir="auto">The last line of this file has no line break at its end.</p>

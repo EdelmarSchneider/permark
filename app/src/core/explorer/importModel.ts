@@ -136,17 +136,25 @@ export function badgeOf(route: DropRoute, count: number, folder: string, busy: b
         ? { icon: "import", text: t("import.busy") }
         : { icon: "import", text: tn("drop.badge.add", count, { folder: middle(folder) }) };
     case "open":
-      return { icon: "open", text: tn("drop.badge.open", count) };
+      return { icon: "open", text: openText(count) };
     case "pictures":
       return { icon: "pictures", text: tn("drop.badge.pictures", count) };
     case "notes":
-      if (route.loose.length === 0) return { icon: "open", text: tn("drop.badge.open", count) };
+      if (route.loose.length === 0) return { icon: "open", text: openText(count) };
       return route.open.length === 0
-        ? { icon: "notes", text: tn("drop.badge.notes", count) }
+        ? {
+            icon: "notes",
+            text: count === 1 ? t("drop.badge.notesOne") : tn("drop.badge.notes", count),
+          }
         : { icon: "notes", text: t("drop.badge.mixed", { n: count }) };
     default:
       return route satisfies never;
   }
+}
+
+// exactly one item has its own words: languages that read `.one` for other counts too (Russian 21) need the count
+function openText(count: number): string {
+  return count === 1 ? t("drop.badge.openOne") : tn("drop.badge.open", count);
 }
 
 // ---- the question -----------------------------------------------------------------------------------------------------
@@ -215,11 +223,11 @@ export function outcomeText(outcome: ImportOutcome, where: string): string {
   if (outcome.skipped > 0) parts.push(tn("import.skipped", outcome.skipped));
   const first = outcome.failed[0];
   if (first) {
+    const said = { name: first.name, reason: ipcErrorText(first.error) };
     parts.push(
-      tn("import.failed", outcome.failed.length, {
-        name: first.name,
-        reason: ipcErrorText(first.error),
-      }),
+      outcome.failed.length === 1
+        ? t("import.failedOne", said)
+        : tn("import.failed", outcome.failed.length, said),
     );
   }
   if (outcome.links > 0) parts.push(tn("import.links", outcome.links));
@@ -240,8 +248,8 @@ export function addedAnything(outcome: ImportOutcome): boolean {
 export function openFailedText(failed: DropOpened["failed"]): string | null {
   const first = failed[0];
   if (first === undefined) return null;
-  return tn("drop.openFailed", failed.length, {
-    name: baseName(first.path),
-    reason: ipcErrorText(first.error),
-  });
+  const said = { name: baseName(first.path), reason: ipcErrorText(first.error) };
+  return failed.length === 1
+    ? t("drop.openFailedOne", said)
+    : tn("drop.openFailed", failed.length, said);
 }

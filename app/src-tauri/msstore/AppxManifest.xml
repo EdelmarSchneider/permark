@@ -49,6 +49,11 @@
     <Resource Language="ca" />
     <Resource Language="gl" />
     <Resource Language="ro" />
+    <Resource Language="zh-TW" />
+    <Resource Language="id" />
+    <Resource Language="vi" />
+    <Resource Language="ru" />
+    <Resource Language="tr" />
   </Resources>
 
   <Applications>

@@ -254,11 +254,21 @@ fn builder(doc: &str) -> ammonia::Builder<'static> {
         .set_tag_attribute_value("video", "preload", "metadata")
         .set_tag_attribute_value("audio", "preload", "metadata")
         .attribute_filter(move |element, attr, value| filter_attribute(&doc, element, attr, value));
+    // Each text block takes its direction from its own first letters: an Arabic | Hebrew paragraph reads right to left,
+    // an English one left to right, whatever the interface language. Lists and quotes hold no `dir`: an element with one
+    // hides its text from an `auto` around it, so they follow their first text block by style (`markdown.css`). Code
+    // keeps the page's direction.
+    for tag in TEXT_BLOCKS {
+        builder.set_tag_attribute_value(tag, "dir", "auto");
+    }
     for element in BLOCK_ALIGNED {
         builder.add_tag_attributes(element, ["align"]);
     }
     builder
 }
+
+/// The blocks that get `dir="auto"` (see `builder`); a list item counts for the text it holds itself (a tight list).
+const TEXT_BLOCKS: [&str; 10] = ["p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "td", "th"];
 
 #[cfg(test)]
 #[path = "sanitize_props.rs"]
@@ -270,6 +280,28 @@ mod tests {
 
     fn clean(html: &str) -> String {
         sanitize(html, "docs/guide/a.md")
+    }
+
+    #[test]
+    fn every_text_block_takes_its_direction_from_its_own_text() {
+        let html = "<h2>שלום עולם</h2><p>مرحبا بالعالم</p><p>Hello world</p>            <ul><li>عنصر</li><li>item</li></ul><ol><li>פריט</li></ol>            <blockquote><p>اقتباس</p></blockquote>            <table><thead><tr><th>עמודה</th></tr></thead><tbody><tr><td>خلية</td></tr></tbody></table>            <pre><code>let x = 1;</code></pre>";
+        let out = clean(html);
+        for block in [
+            "<h2 dir=\"auto\">שלום עולם</h2>",
+            "<p dir=\"auto\">مرحبا بالعالم</p>",
+            "<p dir=\"auto\">Hello world</p>",
+            "<ul><li dir=\"auto\">عنصر</li><li dir=\"auto\">item</li></ul>",
+            "<ol><li dir=\"auto\">פריט</li></ol>",
+            "<blockquote><p dir=\"auto\">اقتباس</p></blockquote>",
+            "<th dir=\"auto\">עמודה</th>",
+            "<td dir=\"auto\">خلية</td>",
+            // code keeps the page's direction
+            "<pre><code>let x = 1;</code></pre>",
+        ] {
+            assert!(out.contains(block), "{block} in {out}");
+        }
+        // a direction written in the document is not kept: every block reads its own text
+        assert_eq!(clean("<p dir=\"rtl\">x</p>"), "<p dir=\"auto\">x</p>");
     }
 
     #[test]
@@ -315,7 +347,7 @@ mod tests {
                 assert!(!out.contains(bad), "{html} -> {out}");
             }
         }
-        assert!(clean("<script>alert(1)</script><p>ok</p>").contains("<p>ok</p>"));
+        assert!(clean("<script>alert(1)</script><p>ok</p>").contains("<p dir=\"auto\">ok</p>"));
     }
 
     #[test]
@@ -401,7 +433,10 @@ mod tests {
         }
         // the same words in text stay as written
         let text = "<p>preload=\"metadata\" controls=\"\"&gt;</p>";
-        assert_eq!(clean(text), text);
+        assert_eq!(
+            clean(text),
+            "<p dir=\"auto\">preload=\"metadata\" controls=\"\"&gt;</p>"
+        );
     }
 
     #[test]
@@ -430,7 +465,7 @@ mod tests {
         let callout = clean("<details class=\"markdown-alert markdown-alert-caution markdown-alert-kind-bug evil\" open><summary class=\"markdown-alert-title\">T</summary><p>x</p></details>");
         assert_eq!(
             callout,
-            "<details class=\"markdown-alert markdown-alert-caution markdown-alert-kind-bug\" open=\"\"><summary class=\"markdown-alert-title\">T</summary><p>x</p></details>"
+            "<details class=\"markdown-alert markdown-alert-caution markdown-alert-kind-bug\" open=\"\"><summary class=\"markdown-alert-title\">T</summary><p dir=\"auto\">x</p></details>"
         );
         assert_eq!(
             clean("<mark>m</mark><span class=\"emoji x\" title=\":smile:\">s</span>"),
@@ -454,15 +489,27 @@ mod tests {
     #[test]
     fn block_alignment_keeps_only_left_center_right() {
         for (html, kept) in [
-            ("<p align=\"center\">x</p>", "<p align=\"center\">x</p>"),
+            (
+                "<p align=\"center\">x</p>",
+                "<p align=\"center\" dir=\"auto\">x</p>",
+            ),
             (
                 "<div align=\"RIGHT\">x</div>",
                 "<div align=\"right\">x</div>",
             ),
-            ("<h1 align=\"Left\">x</h1>", "<h1 align=\"left\">x</h1>"),
-            ("<h6 align=\"center\">x</h6>", "<h6 align=\"center\">x</h6>"),
-            ("<p align=\"justify\">x</p>", "<p>x</p>"),
-            ("<p align=\"center;color:red\">x</p>", "<p>x</p>"),
+            (
+                "<h1 align=\"Left\">x</h1>",
+                "<h1 align=\"left\" dir=\"auto\">x</h1>",
+            ),
+            (
+                "<h6 align=\"center\">x</h6>",
+                "<h6 align=\"center\" dir=\"auto\">x</h6>",
+            ),
+            ("<p align=\"justify\">x</p>", "<p dir=\"auto\">x</p>"),
+            (
+                "<p align=\"center;color:red\">x</p>",
+                "<p dir=\"auto\">x</p>",
+            ),
             ("<div align=\"\">x</div>", "<div>x</div>"),
             ("<span align=\"center\">x</span>", "<span>x</span>"),
         ] {

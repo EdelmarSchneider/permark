@@ -3,7 +3,7 @@
   // left out (and why), the file types, the biggest files, how long it took. Copy summary puts it on the clipboard as
   // plain text; Count again reads only what changed.
   import X from "@lucide/svelte/icons/x";
-  import { language, t, tn } from "../../core/i18n";
+  import { formatLocale, t, tn } from "../../core/i18n";
   import { dialogFocus } from "../../core/shell/dialogFocus";
   import { skipKey, skippedReasons, typeName, type Say } from "./folders";
   import { folders } from "./folders.svelte";
@@ -13,16 +13,16 @@
   const info = $derived(summary === null ? null : infoOf(summary.tokenizer));
   const stale = $derived(summary !== null && folders.isStale(summary.folder));
 
-  const formatter = $derived(new Intl.NumberFormat(language.locale));
+  const formatter = $derived(new Intl.NumberFormat(formatLocale()));
   const number = (n: number): string => formatter.format(n);
   const say: Say = {
     t,
     tn,
-    number: (n) => new Intl.NumberFormat(language.locale).format(n),
+    number: (n) => new Intl.NumberFormat(formatLocale()).format(n),
   };
 
   function seconds(millis: number): string {
-    return new Intl.NumberFormat(language.locale, { maximumFractionDigits: 1 }).format(
+    return new Intl.NumberFormat(formatLocale(), { maximumFractionDigits: 1 }).format(
       Math.max(0.1, millis / 1000),
     );
   }

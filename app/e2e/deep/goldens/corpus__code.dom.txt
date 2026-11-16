@@ -2,7 +2,7 @@ div.reading
   div.doc-column
     article.md
       div.md-body role="document"
-        h1 id="code-blocks"
+        h1 id="code-blocks" dir="auto"
           a.anchor href="#code-blocks" aria-label="Link to Code blocks"
             "#"
           "Code blocks"

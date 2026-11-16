@@ -65,6 +65,9 @@ pub struct BootInfo {
     /// Opens from outside that failed before this window could listen.
     pub failures: Vec<OpenFailed>,
     pub platform: Platform,
+    /// The system's format region (`en-IN`): Windows' regional format, Linux's locale of dates; `None` when the system
+    /// names none.
+    pub region: Option<String>,
 }
 
 /// One plugin as the Plugins page shows it, for the invoking window.
@@ -113,6 +116,7 @@ pub fn window_boot(handle: AppHandle, window: Webview) -> BootInfo {
         notices: shell.take_notices(),
         failures: shell.window_booted(&label),
         platform: Platform::current(),
+        region: permark_core::settings::system_region(),
         label,
     }
 }

@@ -14,13 +14,13 @@ outline:   Errors (line 211)
 outline:   Rate limits (line 223)
 outline:   Versions (line 233)
 --- h1 9-9
-<h1 id="tidewell-open-data-api">Tidewell Open Data API</h1>
+<h1 dir="auto" id="tidewell-open-data-api">Tidewell Open Data API</h1>
 --- p 11-11
-<p>Every reading from every Tidewell buoy, free to use, in plain JSON. You don't need to sign up: a key only raises your rate limit.</p>
+<p dir="auto">Every reading from every Tidewell buoy, free to use, in plain JSON. You don't need to sign up: a key only raises your rate limit.</p>
 --- div 13-14
 <div class="markdown-alert markdown-alert-note">
-<p class="markdown-alert-title">Base URL</p>
-<p>Every endpoint lives under <a href="https://api.tidewell.example/v2">https://api.tidewell.example/v2</a>. Times are ISO 8601 in <abbr title="Coordinated Universal Time">UTC</abbr>, and values use the units of the <a href="station/buoy.toml">buoy settings</a>.</p>
+<p class="markdown-alert-title" dir="auto">Base URL</p>
+<p dir="auto">Every endpoint lives under <a href="https://api.tidewell.example/v2">https://api.tidewell.example/v2</a>. Times are ISO 8601 in <abbr title="Coordinated Universal Time">UTC</abbr>, and values use the units of the <a href="station/buoy.toml">buoy settings</a>.</p>
 </div>
 --- pre 16-20
 <pre><code class="language-bash" data-title="Quickstart"># The newest reading from Gannet Point. No key needed.
@@ -28,9 +28,9 @@ curl -s https://api.tidewell.example/v2/stations/LH-04/latest \
   -H "X-Tidewell-Client: my-first-script/1.0"
 </code></pre>
 --- h2 22-22
-<h2 id="authentication">Authentication</h2>
+<h2 dir="auto" id="authentication">Authentication</h2>
 --- p 24-24
-<p>Two headers matter. Both are plain text, and neither is required for your first request.</p>
+<p dir="auto">Two headers matter. Both are plain text, and neither is required for your first request.</p>
 --- dl 26-31
 <dl>
 <dt><code>Authorization</code></dt>
@@ -40,66 +40,66 @@ curl -s https://api.tidewell.example/v2/stations/LH-04/latest \
 </dl>
 --- div 32-33
 <div class="markdown-alert markdown-alert-warning">
-<p class="markdown-alert-title">Keep keys out of your pages</p>
-<p>Never paste a key into a document, a notebook or a chat. Keep it in an environment file like <a href="station/deploy.env"><code>station/deploy.env</code></a>, and list that file in <a href=".aiignore"><code>.aiignore</code></a> so agents connected through PerMark never see it. Our own services read the base URL from <code>station/deploy.env:4</code>.</p>
+<p class="markdown-alert-title" dir="auto">Keep keys out of your pages</p>
+<p dir="auto">Never paste a key into a document, a notebook or a chat. Keep it in an environment file like <a href="station/deploy.env"><code>station/deploy.env</code></a>, and list that file in <a href=".aiignore"><code>.aiignore</code></a> so agents connected through PerMark never see it. Our own services read the base URL from <code>station/deploy.env:4</code>.</p>
 </div>
 --- h2 35-35
-<h2 id="endpoints">Endpoints</h2>
+<h2 dir="auto" id="endpoints">Endpoints</h2>
 --- p 37-37
-<p>All endpoints answer <code>GET</code> and return JSON, except bulletins, which come back as Markdown. Limits are per minute with a free key.</p>
+<p dir="auto">All endpoints answer <code>GET</code> and return JSON, except bulletins, which come back as Markdown. Limits are per minute with a free key.</p>
 --- table 39-46
 <table>
 <thead>
 <tr>
-<th>Method</th>
-<th>Path</th>
-<th>Returns</th>
-<th align="right">Limit/min</th>
+<th dir="auto">Method</th>
+<th dir="auto">Path</th>
+<th dir="auto">Returns</th>
+<th align="right" dir="auto">Limit/min</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>GET</code></td>
-<td><code>/v2/stations</code></td>
-<td>All twelve stations</td>
-<td align="right">600</td>
+<td dir="auto"><code>GET</code></td>
+<td dir="auto"><code>/v2/stations</code></td>
+<td dir="auto">All twelve stations</td>
+<td align="right" dir="auto">600</td>
 </tr>
 <tr>
-<td><code>GET</code></td>
-<td><code>/v2/stations/{id}</code></td>
-<td>One station and its current deployment</td>
-<td align="right">600</td>
+<td dir="auto"><code>GET</code></td>
+<td dir="auto"><code>/v2/stations/{id}</code></td>
+<td dir="auto">One station and its current deployment</td>
+<td align="right" dir="auto">600</td>
 </tr>
 <tr>
-<td><code>GET</code></td>
-<td><code>/v2/stations/{id}/latest</code></td>
-<td>The newest reading</td>
-<td align="right">600</td>
+<td dir="auto"><code>GET</code></td>
+<td dir="auto"><code>/v2/stations/{id}/latest</code></td>
+<td dir="auto">The newest reading</td>
+<td align="right" dir="auto">600</td>
 </tr>
 <tr>
-<td><code>GET</code></td>
-<td><code>/v2/stations/{id}/readings</code></td>
-<td>Readings in a time range, paged</td>
-<td align="right">120</td>
+<td dir="auto"><code>GET</code></td>
+<td dir="auto"><code>/v2/stations/{id}/readings</code></td>
+<td dir="auto">Readings in a time range, paged</td>
+<td align="right" dir="auto">120</td>
 </tr>
 <tr>
-<td><code>GET</code></td>
-<td><code>/v2/flags</code></td>
-<td><abbr title="quality control">QC</abbr> flags and review decisions</td>
-<td align="right">120</td>
+<td dir="auto"><code>GET</code></td>
+<td dir="auto"><code>/v2/flags</code></td>
+<td dir="auto"><abbr title="quality control">QC</abbr> flags and review decisions</td>
+<td align="right" dir="auto">120</td>
 </tr>
 <tr>
-<td><code>GET</code></td>
-<td><code>/v2/bulletins/{week}</code></td>
-<td>The weekly bulletin</td>
-<td align="right">60</td>
+<td dir="auto"><code>GET</code></td>
+<td dir="auto"><code>/v2/bulletins/{week}</code></td>
+<td dir="auto">The weekly bulletin</td>
+<td align="right" dir="auto">60</td>
 </tr>
 </tbody>
 </table>
 --- h2 48-48
-<h2 id="readings">Readings</h2>
+<h2 dir="auto" id="readings">Readings</h2>
 --- p 50-50
-<p><code>/v2/stations/{id}/readings</code> is the workhorse. It takes five query parameters:</p>
+<p dir="auto"><code>/v2/stations/{id}/readings</code> is the workhorse. It takes five query parameters:</p>
 --- dl 52-63
 <dl>
 <dt><code>from</code>, <code>to</code></dt>
@@ -112,7 +112,7 @@ curl -s https://api.tidewell.example/v2/stations/LH-04/latest \
 <dd>Up to 1,000 readings per page, 500 by default. For the next page, pass back the <code>next_cursor</code> you received.</dd>
 </dl>
 --- p 64-64
-<p>Here is one reading from Gannet Point, asked for with <code>?from=2026-11-14T09:40:00Z&amp;limit=1</code>:</p>
+<p dir="auto">Here is one reading from Gannet Point, asked for with <code>?from=2026-11-14T09:40:00Z&amp;limit=1</code>:</p>
 --- pre 66-83
 <pre><code class="language-json" data-lines="3,7-9" data-title="200 OK">{
   "station": "LH-04",
@@ -132,15 +132,15 @@ curl -s https://api.tidewell.example/v2/stations/LH-04/latest \
 }
 </code></pre>
 --- p 85-85
-<p>Line 3 is your bookmark for the next page. Lines 7 to 9 show a flagged reading: oxygen jumped 1.5 mg/L in ten minutes, more than the spike rule allows, so the value is published with a flag instead of quietly dropped. Whether to trust it is your call.</p>
+<p dir="auto">Line 3 is your bookmark for the next page. Lines 7 to 9 show a flagged reading: oxygen jumped 1.5 mg/L in ten minutes, more than the spike rule allows, so the value is published with a flag instead of quietly dropped. Whether to trust it is your call.</p>
 --- h2 87-87
-<h2 id="client-examples">Client examples</h2>
+<h2 dir="auto" id="client-examples">Client examples</h2>
 --- p 89-89
-<p>Any HTTP client works. These three print the newest reading from Gannet Point.</p>
+<p dir="auto">Any HTTP client works. These three print the newest reading from Gannet Point.</p>
 --- h3 91-91
-<h3 id="rust">Rust</h3>
+<h3 dir="auto" id="rust">Rust</h3>
 --- p 93-93
-<p>Add <code>reqwest</code> with the <code>blocking</code> and <code>json</code> features, and <code>serde</code> with <code>derive</code>.</p>
+<p dir="auto">Add <code>reqwest</code> with the <code>blocking</code> and <code>json</code> features, and <code>serde</code> with <code>derive</code>.</p>
 --- pre 95-114
 <pre><code class="language-rust" data-lines="9-14" data-numbers="1" data-title="examples/latest.rs">use serde::Deserialize;
 
@@ -162,9 +162,9 @@ fn main() -&gt; Result&lt;(), Box&lt;dyn std::error::Error&gt;&gt; {
 }
 </code></pre>
 --- p 116-116
-<p><code>error_for_status</code> turns a 4xx or 5xx answer into an error, so a typo in the station id fails loudly instead of printing nonsense.</p>
+<p dir="auto"><code>error_for_status</code> turns a 4xx or 5xx answer into an error, so a typo in the station id fails loudly instead of printing nonsense.</p>
 --- h3 118-118
-<h3 id="python">Python</h3>
+<h3 dir="auto" id="python">Python</h3>
 --- pre 120-133
 <pre><code class="language-python" data-title="latest.py">import os
 import requests
@@ -194,9 +194,9 @@ console.log(`${reading.time}: ${reading.temp_c} °C, ${reading.do_mgl} mg/L (${r
 </code></pre>
 </details>
 --- h2 152-152
-<h2 id="data-model">Data model</h2>
+<h2 dir="auto" id="data-model">Data model</h2>
 --- p 154-154
-<p>The API speaks in three objects and one short list of flags. A flag never replaces a value; it travels with it.</p>
+<p dir="auto">The API speaks in three objects and one short list of flags. A flag never replaces a value; it travels with it.</p>
 --- pre 156-188
 <pre><code class="language-mermaid">classDiagram
   direction LR
@@ -231,9 +231,9 @@ console.log(`${reading.time}: ${reading.temp_c} °C, ${reading.do_mgl} mg/L (${r
   Reading "1" --&gt; "0..*" QcFlag : flagged by
 </code></pre>
 --- h2 190-190
-<h2 id="paging-through-history">Paging through history</h2>
+<h2 dir="auto" id="paging-through-history">Paging through history</h2>
 --- p 192-192
-<p>Ninety days of one station is 12,960 readings, so history comes in pages. Keep asking until <code>next_cursor</code> comes back empty.</p>
+<p dir="auto">Ninety days of one station is 12,960 readings, so history comes in pages. Keep asking until <code>next_cursor</code> comes back empty.</p>
 --- pre 194-209
 <pre><code class="language-mermaid">sequenceDiagram
   participant C as Your client
@@ -251,91 +251,91 @@ console.log(`${reading.time}: ${reading.temp_c} °C, ${reading.do_mgl} mg/L (${r
   end
 </code></pre>
 --- h2 211-211
-<h2 id="errors">Errors</h2>
+<h2 dir="auto" id="errors">Errors</h2>
 --- p 213-213
-<p>Errors come back as JSON with a stable <code>code</code> you can match on, and a human-readable <code>message</code> you shouldn't.</p>
+<p dir="auto">Errors come back as JSON with a stable <code>code</code> you can match on, and a human-readable <code>message</code> you shouldn't.</p>
 --- table 215-221
 <table>
 <thead>
 <tr>
-<th align="right">Status</th>
-<th>Code</th>
-<th>Meaning</th>
-<th>Retry?</th>
+<th align="right" dir="auto">Status</th>
+<th dir="auto">Code</th>
+<th dir="auto">Meaning</th>
+<th dir="auto">Retry?</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td align="right">400</td>
-<td><code>bad_range</code></td>
-<td><code>from</code> is after <code>to</code>, or the range is over 31 days</td>
-<td>No, fix the query</td>
+<td align="right" dir="auto">400</td>
+<td dir="auto"><code>bad_range</code></td>
+<td dir="auto"><code>from</code> is after <code>to</code>, or the range is over 31 days</td>
+<td dir="auto">No, fix the query</td>
 </tr>
 <tr>
-<td align="right">401</td>
-<td><code>bad_key</code></td>
-<td>The key is unknown or was revoked</td>
-<td>No</td>
+<td align="right" dir="auto">401</td>
+<td dir="auto"><code>bad_key</code></td>
+<td dir="auto">The key is unknown or was revoked</td>
+<td dir="auto">No</td>
 </tr>
 <tr>
-<td align="right">404</td>
-<td><code>no_station</code></td>
-<td>No station has that id</td>
-<td>No</td>
+<td align="right" dir="auto">404</td>
+<td dir="auto"><code>no_station</code></td>
+<td dir="auto">No station has that id</td>
+<td dir="auto">No</td>
 </tr>
 <tr>
-<td align="right">429</td>
-<td><code>rate_limited</code></td>
-<td>Too many requests this minute</td>
-<td>Yes, after <code>Retry-After</code></td>
+<td align="right" dir="auto">429</td>
+<td dir="auto"><code>rate_limited</code></td>
+<td dir="auto">Too many requests this minute</td>
+<td dir="auto">Yes, after <code>Retry-After</code></td>
 </tr>
 <tr>
-<td align="right">503</td>
-<td><code>catching_up</code></td>
-<td>A gateway is replaying buffered frames</td>
-<td>Yes, with backoff</td>
+<td align="right" dir="auto">503</td>
+<td dir="auto"><code>catching_up</code></td>
+<td dir="auto">A gateway is replaying buffered frames</td>
+<td dir="auto">Yes, with backoff</td>
 </tr>
 </tbody>
 </table>
 --- h2 223-223
-<h2 id="rate-limits">Rate limits</h2>
+<h2 dir="auto" id="rate-limits">Rate limits</h2>
 --- p 225-225
-<p>Limits are counted per key, or per address without one. Every answer carries <code>X-RateLimit-Remaining</code>.</p>
+<p dir="auto">Limits are counted per key, or per address without one. Every answer carries <code>X-RateLimit-Remaining</code>.</p>
 --- table 227-231
 <table>
 <thead>
 <tr>
-<th>Client</th>
-<th align="right">Requests/min</th>
-<th align="right">Burst</th>
-<th align="right">Requests/day</th>
+<th dir="auto">Client</th>
+<th align="right" dir="auto">Requests/min</th>
+<th align="right" dir="auto">Burst</th>
+<th align="right" dir="auto">Requests/day</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>No key</td>
-<td align="right">60</td>
-<td align="right">10</td>
-<td align="right">5,000</td>
+<td dir="auto">No key</td>
+<td align="right" dir="auto">60</td>
+<td align="right" dir="auto">10</td>
+<td align="right" dir="auto">5,000</td>
 </tr>
 <tr>
-<td>Free key</td>
-<td align="right">600</td>
-<td align="right">50</td>
-<td align="right">100,000</td>
+<td dir="auto">Free key</td>
+<td align="right" dir="auto">600</td>
+<td align="right" dir="auto">50</td>
+<td align="right" dir="auto">100,000</td>
 </tr>
 <tr>
-<td>Partner key</td>
-<td align="right">3,000</td>
-<td align="right">200</td>
-<td align="right">1,000,000</td>
+<td dir="auto">Partner key</td>
+<td align="right" dir="auto">3,000</td>
+<td align="right" dir="auto">200</td>
+<td align="right" dir="auto">1,000,000</td>
 </tr>
 </tbody>
 </table>
 --- h2 233-233
-<h2 id="versions">Versions</h2>
+<h2 dir="auto" id="versions">Versions</h2>
 --- p 235-235
-<p>Version 2.3 ships with the open data launch on Tuesday, November 17, 2026.</p>
+<p dir="auto">Version 2.3 ships with the open data launch on Tuesday, November 17, 2026.</p>
 --- pre 237-243
 <pre><code class="language-mermaid">timeline
   title Tidewell API
@@ -347,13 +347,13 @@ console.log(`${reading.time}: ${reading.temp_c} °C, ${reading.do_mgl} mg/L (${r
 <details>
 <summary>What changed in v2.3</summary>
 <ul>
-<li><strong>New:</strong> requests without a key, up to 60 a minute.</li>
-<li><strong>New:</strong> <code>qc=passed</code> returns clean readings only.</li>
-<li><strong>Changed:</strong> <del><code>/v1/latest?station=LH-04</code></del> is now <ins><code>/v2/stations/{id}/latest</code></ins>. The old path answers <code>410 Gone</code>.</li>
-<li><strong>Changed:</strong> flags name the value they apply to, as in <code>spike:do_mgl</code>.</li>
+<li dir="auto"><strong>New:</strong> requests without a key, up to 60 a minute.</li>
+<li dir="auto"><strong>New:</strong> <code>qc=passed</code> returns clean readings only.</li>
+<li dir="auto"><strong>Changed:</strong> <del><code>/v1/latest?station=LH-04</code></del> is now <ins><code>/v2/stations/{id}/latest</code></ins>. The old path answers <code>410 Gone</code>.</li>
+<li dir="auto"><strong>Changed:</strong> flags name the value they apply to, as in <code>spike:do_mgl</code>.</li>
 </ul>
 </details>
 --- hr 255-255
 <hr>
 --- p 257-257
-<p>Next: <a href="bulletin-agent.md">Gull, the weekly bulletin agent</a> · <a href="README.md">Start here</a></p>
+<p dir="auto">Next: <a href="bulletin-agent.md">Gull, the weekly bulletin agent</a> · <a href="README.md">Start here</a></p>

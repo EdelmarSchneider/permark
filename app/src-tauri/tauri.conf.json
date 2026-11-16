@@ -50,12 +50,29 @@
           "Portuguese",
           "Catalan",
           "Galician",
-          "Romanian"
+          "Romanian",
+          "TradChinese",
+          "Indonesian",
+          "Vietnamese",
+          "Russian",
+          "Turkish"
         ],
         "customLanguageFiles": {
+          "German": "installer/languages/German.nsh",
+          "PortugueseBR": "installer/languages/PortugueseBR.nsh",
+          "SpanishInternational": "installer/languages/SpanishInternational.nsh",
+          "SimpChinese": "installer/languages/SimpChinese.nsh",
+          "Japanese": "installer/languages/Japanese.nsh",
+          "Korean": "installer/languages/Korean.nsh",
+          "French": "installer/languages/French.nsh",
+          "Portuguese": "installer/languages/Portuguese.nsh",
           "Catalan": "installer/languages/Catalan.nsh",
           "Galician": "installer/languages/Galician.nsh",
-          "Romanian": "installer/languages/Romanian.nsh"
+          "Romanian": "installer/languages/Romanian.nsh",
+          "TradChinese": "installer/languages/TradChinese.nsh",
+          "Indonesian": "installer/languages/Indonesian.nsh",
+          "Vietnamese": "installer/languages/Vietnamese.nsh",
+          "Turkish": "installer/languages/Turkish.nsh"
         },
         "displayLanguageSelector": true,
         "installerHooks": "installer/hooks.nsh"

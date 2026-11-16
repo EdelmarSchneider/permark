@@ -11,9 +11,9 @@ outline:   The data model (line 182)
 outline:   Configuration (line 224)
 outline:   Decision: LoRa, not cellular (line 247)
 --- h1 9-9
-<h1 id="how-a-reading-travels">How a reading travels</h1>
+<h1 dir="auto" id="how-a-reading-travels">How a reading travels</h1>
 --- p 11-11
-<p>Every ten minutes, twelve buoys on Larkhaven Sound wake up, measure the water and go back to sleep. This page follows one reading from a sensor one meter down to your screen, a trip of less than a minute.</p>
+<p dir="auto">Every ten minutes, twelve buoys on Larkhaven Sound wake up, measure the water and go back to sleep. This page follows one reading from a sensor one meter down to your screen, a trip of less than a minute.</p>
 --- pre 13-26
 <pre><code class="language-mermaid">flowchart TB
   subgraph sea [Sea to shore]
@@ -29,11 +29,11 @@ outline:   Decision: LoRa, not cellular (line 247)
   class Q accent
 </code></pre>
 --- p 28-28
-<p>From the API, the same numbers reach the harbor dashboard, Gull's weekly bulletin and any researcher who asks. Nothing on this path is exotic: each part is small, boring and replaceable, which is exactly what you want from equipment that spends the winter in salt water.</p>
+<p dir="auto">From the API, the same numbers reach the harbor dashboard, Gull's weekly bulletin and any researcher who asks. Nothing on this path is exotic: each part is small, boring and replaceable, which is exactly what you want from equipment that spends the winter in salt water.</p>
 --- h2 30-30
-<h2 id="the-40-second-wake-cycle">The 40-second wake cycle</h2>
+<h2 dir="auto" id="the-40-second-wake-cycle">The 40-second wake cycle</h2>
 --- p 32-32
-<p>A buoy spends most of its life asleep. Its <abbr title="microcontroller unit">MCU</abbr> wakes on a timer, powers the sensors, takes a reading, sends it and goes back to sleep. One wake lasts 40 seconds; the other 9 minutes and 20 seconds are quiet.</p>
+<p dir="auto">A buoy spends most of its life asleep. Its <abbr title="microcontroller unit">MCU</abbr> wakes on a timer, powers the sensors, takes a reading, sends it and goes back to sleep. One wake lasts 40 seconds; the other 9 minutes and 20 seconds are quiet.</p>
 --- pre 34-59
 <pre><code class="language-plantuml">@startuml
 skinparam shadowing false
@@ -61,11 +61,11 @@ MCU -&gt; MCU : sleep 9 min 20 s
 @enduml
 </code></pre>
 --- p 61-61
-<p>The gateway answers the radio at once and forwards the frame on its own time, so the radio never waits for the shore. Its listening window stays at three seconds.</p>
+<p dir="auto">The gateway answers the radio at once and forwards the frame on its own time, so the radio never waits for the shore. Its listening window stays at three seconds.</p>
 --- h2 63-63
-<h2 id="power-during-a-wake">Power during a wake</h2>
+<h2 dir="auto" id="power-during-a-wake">Power during a wake</h2>
 --- p 65-65
-<p>Where does the energy go? Mostly into warming up the sensors. The radio, despite its reputation, is on for barely four seconds.</p>
+<p dir="auto">Where does the energy go? Mostly into warming up the sensors. The radio, despite its reputation, is on for barely four seconds.</p>
 --- pre 67-110
 <pre><code class="language-plantuml">@startuml
 skinparam shadowing false
@@ -111,17 +111,17 @@ MCU is Asleep
 @enduml
 </code></pre>
 --- p 112-112
-<p>Add it up and one wake costs about 19 joules. With the wave sensor ticking along between wakes, a buoy uses under 1 Wh a day: the 10 W panels earn that back in a few minutes of full sun, and the 154 Wh battery could carry a buoy through five months of gray skies.</p>
+<p dir="auto">Add it up and one wake costs about 19 joules. With the wave sensor ticking along between wakes, a buoy uses under 1 Wh a day: the 10 W panels earn that back in a few minutes of full sun, and the 154 Wh battery could carry a buoy through five months of gray skies.</p>
 --- h2 114-114
-<h2 id="inside-a-buoy">Inside a buoy</h2>
+<h2 dir="auto" id="inside-a-buoy">Inside a buoy</h2>
 --- p 116-116
-<p>Each buoy is a float, a short tower and a sensor cage, held in place by a chain. The electronics bay sits inside the float, just above the waterline.</p>
+<p dir="auto">Each buoy is a float, a short tower and a sensor cage, held in place by a chain. The electronics bay sits inside the float, just above the waterline.</p>
 --- p 118-118
-<p><img alt="Cutaway of a Tidewell buoy: LoRa antenna and marker light on top, solar panels on the tower, MCU and battery in the float, sensor cage one meter down, mooring chain to a seabed weight" src="pm-asset:demo/assets/buoy-anatomy.svg"></p>
+<p dir="auto"><img alt="Cutaway of a Tidewell buoy: LoRa antenna and marker light on top, solar panels on the tower, MCU and battery in the float, sensor cage one meter down, mooring chain to a seabed weight" src="pm-asset:demo/assets/buoy-anatomy.svg"></p>
 --- h2 120-120
-<h2 id="twelve-buoys-three-gateways">Twelve buoys, three gateways</h2>
+<h2 dir="auto" id="twelve-buoys-three-gateways">Twelve buoys, three gateways</h2>
 --- p 122-122
-<p>The buoys talk to three gateways on shore, four buoys each. Every buoy also knows a fallback gateway; the dashed line shows Gannet Point's.</p>
+<p dir="auto">The buoys talk to three gateways on shore, four buoys each. Every buoy also knows a fallback gateway; the dashed line shows Gannet Point's.</p>
 --- pre 124-158
 <pre><code class="language-dot">digraph network {
   rankdir=TB;
@@ -158,11 +158,11 @@ MCU is Asleep
 }
 </code></pre>
 --- p 160-160
-<p>When a gateway loses its link to shore, it buffers frames and replays them later. The <a href="station/ingest-2026-11-12.log">ingest log for November 12</a> shows Saddle Hill doing exactly that, with no reading lost.</p>
+<p dir="auto">When a gateway loses its link to shore, it buffers frames and replays them later. The <a href="station/ingest-2026-11-12.log">ingest log for November 12</a> shows Saddle Hill doing exactly that, with no reading lost.</p>
 --- h2 162-162
-<h2 id="a-buoys-life">A buoy's life</h2>
+<h2 dir="auto" id="a-buoys-life">A buoy's life</h2>
 --- p 164-164
-<p>A buoy is always in one of a few states. Most of the season it simply alternates between sampling and sleeping.</p>
+<p dir="auto">A buoy is always in one of a few states. Most of the season it simply alternates between sampling and sleeping.</p>
 --- pre 166-180
 <pre><code class="language-mermaid">stateDiagram-v2
   [*] --&gt; Docked
@@ -179,9 +179,9 @@ MCU is Asleep
   Recovered --&gt; Docked : cleaned and logged
 </code></pre>
 --- h2 182-182
-<h2 id="the-data-model">The data model</h2>
+<h2 dir="auto" id="the-data-model">The data model</h2>
 --- p 184-184
-<p>Behind the API sit five tables. A station hosts one deployment for every buoy moored there; each deployment carries its sensors and records its readings; a reading may collect QC flags.</p>
+<p dir="auto">Behind the API sit five tables. A station hosts one deployment for every buoy moored there; each deployment carries its sensors and records its readings; a reading may collect QC flags.</p>
 --- pre 186-220
 <pre><code class="language-mermaid">erDiagram
   direction LR
@@ -218,11 +218,11 @@ MCU is Asleep
   }
 </code></pre>
 --- p 222-222
-<p>Readings belong to a deployment, not to a station. A buoy swapped mid-season never mixes its numbers with its replacement's.</p>
+<p dir="auto">Readings belong to a deployment, not to a station. A buoy swapped mid-season never mixes its numbers with its replacement's.</p>
 --- h2 224-224
-<h2 id="configuration">Configuration</h2>
+<h2 dir="auto" id="configuration">Configuration</h2>
 --- p 226-226
-<p>Two plain files steer the whole pipeline. The buoy reads <a href="station/buoy.toml">its settings</a> at every boot, and the ingest service checks each reading against <a href="station/qc-rules.yaml">the QC rules</a>. Here are the first lines of the rules:</p>
+<p dir="auto">Two plain files steer the whole pipeline. The buoy reads <a href="station/buoy.toml">its settings</a> at every boot, and the ingest service checks each reading against <a href="station/qc-rules.yaml">the QC rules</a>. Here are the first lines of the rules:</p>
 --- pre 228-243
 <pre><code class="language-yaml" data-lines="4-6" data-title="station/qc-rules.yaml"># Tidewell QC rules, applied by the ingest service to every reading.
 # Units follow each sensor: °C, PSU, pH units, mg/L and meters.
@@ -240,53 +240,53 @@ range:
   hs_m: [0.0, 12.0]
 </code></pre>
 --- p 245-245
-<p>Lines 4 to 6 are the whole policy: the order of the checks, the one failure that rejects a reading outright, and the promise that flagged readings are still published, flag attached. When you want to point a colleague at a rule, a reference like <code>station/qc-rules.yaml:5</code> opens the file at that line. The early warning about Kittiwake Shoal's pH sensor is at <code>station/ingest-2026-11-12.log:22</code>.</p>
+<p dir="auto">Lines 4 to 6 are the whole policy: the order of the checks, the one failure that rejects a reading outright, and the promise that flagged readings are still published, flag attached. When you want to point a colleague at a rule, a reference like <code>station/qc-rules.yaml:5</code> opens the file at that line. The early warning about Kittiwake Shoal's pH sensor is at <code>station/ingest-2026-11-12.log:22</code>.</p>
 --- h2 247-247
-<h2 id="decision-lora-not-cellular">Decision: LoRa, not cellular</h2>
+<h2 dir="auto" id="decision-lora-not-cellular">Decision: LoRa, not cellular</h2>
 --- p 249-249
-<p>We chose the radio before we chose anything else, because it decides the battery, the budget and where buoys can go.</p>
+<p dir="auto">We chose the radio before we chose anything else, because it decides the battery, the budget and where buoys can go.</p>
 --- details 254-264
 <details>
 <summary>ADR-007 · Use LoRa with our own gateways (accepted, June 2025)</summary>
-<p><strong>Context.</strong> Buoys send 24 bytes every 10 minutes from up to 14 km offshore. The inner Sound, around Heron Flats, has patchy cell coverage.</p>
+<p dir="auto"><strong>Context.</strong> Buoys send 24 bytes every 10 minutes from up to 14 km offshore. The inner Sound, around Heron Flats, has patchy cell coverage.</p>
 <table>
 <thead>
 <tr>
-<th>Option</th>
-<th>Range over water</th>
-<th align="right">Energy per send</th>
-<th align="right">Cost per buoy, 5 years</th>
-<th>Verdict</th>
+<th dir="auto">Option</th>
+<th dir="auto">Range over water</th>
+<th align="right" dir="auto">Energy per send</th>
+<th align="right" dir="auto">Cost per buoy, 5 years</th>
+<th dir="auto">Verdict</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><abbr title="Long Range, a low-power radio protocol">LoRa</abbr>, 3 own gateways</td>
-<td>10–15 km</td>
-<td align="right">0.4 J</td>
-<td align="right">$263</td>
-<td>Chosen</td>
+<td dir="auto"><abbr title="Long Range, a low-power radio protocol">LoRa</abbr>, 3 own gateways</td>
+<td dir="auto">10–15 km</td>
+<td align="right" dir="auto">0.4 J</td>
+<td align="right" dir="auto">$263</td>
+<td dir="auto">Chosen</td>
 </tr>
 <tr>
-<td>LTE-M cellular</td>
-<td>patchy past Saddle Hill</td>
-<td align="right">4 J</td>
-<td align="right">$345</td>
-<td>Fallback study</td>
+<td dir="auto">LTE-M cellular</td>
+<td dir="auto">patchy past Saddle Hill</td>
+<td align="right" dir="auto">4 J</td>
+<td align="right" dir="auto">$345</td>
+<td dir="auto">Fallback study</td>
 </tr>
 <tr>
-<td>Satellite short-burst</td>
-<td>anywhere</td>
-<td align="right">20 J</td>
-<td align="right">$10,760</td>
-<td>Too costly</td>
+<td dir="auto">Satellite short-burst</td>
+<td dir="auto">anywhere</td>
+<td align="right" dir="auto">20 J</td>
+<td align="right" dir="auto">$10,760</td>
+<td dir="auto">Too costly</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Decision.</strong> LoRa in the US915 band, spreading factor 9, three gateways on land we can reach by car.</p>
-<p><strong>Consequences.</strong> No monthly fees and no gaps, but we maintain three gateways ourselves. Frames must stay small: at spreading factor 9, a frame has to fit in the band's 400 ms limit on air.</p>
+<p dir="auto"><strong>Decision.</strong> LoRa in the US915 band, spreading factor 9, three gateways on land we can reach by car.</p>
+<p dir="auto"><strong>Consequences.</strong> No monthly fees and no gaps, but we maintain three gateways ourselves. Frames must stay small: at spreading factor 9, a frame has to fit in the band's 400 ms limit on air.</p>
 </details>
 --- hr 268-268
 <hr>
 --- p 270-270
-<p>Next: <a href="tidewell-api.md">Tidewell Open Data API</a> · <a href="README.md">Start here</a></p>
+<p dir="auto">Next: <a href="tidewell-api.md">Tidewell Open Data API</a> · <a href="README.md">Start here</a></p>
