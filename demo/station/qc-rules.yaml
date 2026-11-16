@@ -1,0 +1,38 @@
+# Tidewell QC rules, applied by the ingest service to every reading.
+# Units follow each sensor: °C, PSU, pH units, mg/L and meters.
+version: 3
+order: [range, spike, flatline, drift]
+reject_on: [range]
+publish_flagged: true
+
+# Physical limits as [min, max]. Outside them, a reading is rejected.
+range:
+  temp_c: [-2.0, 35.0]
+  sal_psu: [0.0, 42.0]
+  ph: [7.2, 8.6]
+  do_mgl: [0.0, 15.0]
+  hs_m: [0.0, 12.0]
+
+# Largest believable step between two readings taken 10 minutes apart.
+spike:
+  temp_c: 1.5
+  sal_psu: 2.0
+  ph: 0.15
+  do_mgl: 1.2
+
+# A stuck sensor repeats itself: 6 identical readings is one hour.
+flatline:
+  repeats: 6
+  sensors: [temp_c, sal_psu, ph, do_mgl]
+
+# Slow creep, measured against the station's own 14-day median.
+drift:
+  window_days: 14
+  ph_per_day: 0.01
+  do_mgl_per_day: 0.08
+  warn_share: 0.8   # log a warning at 80% of a limit, before any flag
+
+# A person reviews every flagged reading: keep it (the flag stays) or remove it.
+review:
+  decide_within_hours: 48
+  reviewers: [leo, tomas]

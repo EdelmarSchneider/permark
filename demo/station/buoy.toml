@@ -1,0 +1,50 @@
+# Tidewell buoy settings, read by firmware 3.2.0 at every boot.
+# One file per buoy. This one belongs to Gannet Point.
+
+[station]
+id = "LH-04"
+name = "Gannet Point"
+gateway = "North Light"
+fallback_gateway = "Avery Pier"
+mooring_depth_m = 18.5
+calibrated = 2026-10-02
+
+[sampling]
+interval_min = 10   # one reading every 10 minutes
+wake_s = 40         # awake 40 s, asleep the rest
+warmup_s = 20       # sensors settle before the first sample
+average_s = 8       # each value is the mean of 8 s of samples
+
+[sensors.temperature]
+unit = "°C"
+depth_m = 1.0
+
+[sensors.salinity]
+unit = "PSU"
+depth_m = 1.0
+
+[sensors.ph]
+unit = "pH"
+depth_m = 1.0
+
+[sensors.oxygen]
+unit = "mg/L"
+depth_m = 1.0
+
+[sensors.waves]
+unit = "m"            # significant wave height (Hs)
+window_min = 10       # the motion sensor logs on its own between wakes
+
+[radio]
+band = "US915"
+spreading_factor = 9
+tx_power_dbm = 17
+frame_bytes = 24
+retries = 1
+
+[power]
+solar_w = 10
+battery = "LiFePO4"
+battery_wh = 154      # 12 Ah at 12.8 V
+low_v = 12.4          # below this, sample every 30 minutes
+cutoff_v = 11.6       # below this, sleep until the sun returns
