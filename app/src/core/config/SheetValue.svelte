@@ -149,11 +149,13 @@
     max-width: 100%;
     flex-wrap: wrap;
   }
+  /* `break-word`, not `anywhere`: a word breaks only where it would overflow its box, and still counts whole in the
+     table's column widths (`anywhere` let a sheet table squeeze a value column to one character) */
   .text,
   .empty,
   .word {
     min-width: 0;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
   }
   .code,
   .word {

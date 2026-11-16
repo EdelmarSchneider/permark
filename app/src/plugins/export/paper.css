@@ -102,7 +102,8 @@ body {
     overflow: visible;
   }
   /* paper cannot scroll: the reading view's sideways scroll of a table (`.md .table-wrap`, more specific than the
-     rule above) would cut it at the frame; a long token wraps in its cell instead */
+     rule above) would cut it at the frame; a token longer than its column wraps in its cell instead (last resort:
+     the export sets the widths of a wide table so words stay whole where they fit) */
   .md .table-wrap {
     overflow: visible;
   }
@@ -118,7 +119,13 @@ body {
     max-height: var(--page-h, none);
     object-fit: contain;
   }
-  .pm-wide-table table {
-    font-size: 0.85em;
+  /* a table still wider than the page after a smaller font: its columns come from the measured widths the export
+     sets (`tableFit.ts`); the reading view's cell floor would push it past the page again */
+  .md table.pm-fit-table {
+    table-layout: fixed;
+  }
+  .md .pm-fit-table th,
+  .md .pm-fit-table td {
+    min-width: 0;
   }
 }
