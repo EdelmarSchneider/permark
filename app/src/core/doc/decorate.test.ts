@@ -56,6 +56,73 @@ describe("Decorator embeds", () => {
     decorator.dispose();
   });
 
+  it("hands a code block's title, first line number and marked lines to its embed", async () => {
+    const decorator = new Decorator(createMockApi());
+    decorator.setEmbeds(() => probe);
+    const root = block("rust", "js");
+    const [titled, plain] = root.querySelectorAll(".code-block");
+    titled?.setAttribute("data-title", "main.rs");
+    titled?.setAttribute("data-numbers", "10");
+    titled?.setAttribute("data-lines", "1,3-5");
+    decorator.near(root);
+    await decorator.idle();
+    const [first, second] = root.querySelectorAll(".embed-probe");
+    expect(first?.getAttribute("data-title")).toBe("main.rs");
+    expect(first?.getAttribute("data-start")).toBe("10");
+    expect(first?.getAttribute("data-marked")).toBe("1,3-5");
+    expect(plain).toBeDefined();
+    for (const name of ["data-title", "data-start", "data-marked"]) {
+      expect(second?.getAttribute(name), name).toBe("none");
+    }
+    decorator.dispose();
+  });
+
+  it("a ```math block is one display formula, drawn as code only when no plugin draws formulas", async () => {
+    const mounted: string[] = [];
+    const named =
+      (name: string): LazyEmbed =>
+      () => {
+        mounted.push(name);
+        return probe();
+      };
+    const fence = (): HTMLElement => {
+      const root = document.createElement("div");
+      root.innerHTML =
+        '<div class="code-block" data-info="math"><pre><code class="language-math" data-math-style="display">x^2\n</code></pre></div>';
+      document.body.append(root);
+      return root;
+    };
+    const loaders = new Map([
+      ["@math", named("@math")],
+      ["@code", named("@code")],
+    ]);
+    const lookup = (language: string): LazyEmbed | undefined => loaders.get(language);
+    const decorator = new Decorator(createMockApi());
+    decorator.setEmbeds(lookup);
+    const root = fence();
+    decorator.near(root);
+    await decorator.idle();
+    expect(mounted).toEqual(["@math"]);
+    const formula = root.querySelectorAll(".embed-probe");
+    expect(formula).toHaveLength(1);
+    expect(formula[0]?.textContent).toBe("x^2\n");
+    expect(formula[0]?.getAttribute("data-display")).toBe("true");
+    // the embeds on offer are asked again (a plugin came or went): the drawn formula stays
+    decorator.setEmbeds(lookup);
+    await decorator.idle();
+    expect(mounted).toEqual(["@math"]);
+    decorator.dispose();
+
+    mounted.length = 0;
+    const plain = new Decorator(createMockApi());
+    plain.setEmbeds((language) => (language === "@code" ? named(language) : undefined));
+    const code = fence();
+    plain.near(code);
+    await plain.idle();
+    expect(mounted).toEqual(["@code"]);
+    plain.dispose();
+  });
+
   it("idle settles at once when nothing is loading", async () => {
     const decorator = new Decorator(createMockApi());
     await expect(decorator.idle()).resolves.toBeUndefined();

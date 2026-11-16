@@ -23,8 +23,8 @@ pub use facts::{
     CommitId, FileVersion, FileVersions, NoBlob, NoVersions, ProjectFacts, RepoHandle, RepoReader,
 };
 pub use files::{
-    nesting, ChangeListener, FolderReveal, FolderRevealApi, FolderScan, Nesting, ProjectPlaces,
-    ProjectPlacesApi, WindowFiles, WindowFilesApi,
+    is_shared_name, nesting, ChangeListener, FolderReveal, FolderRevealApi, FolderScan, Nesting,
+    ProjectPlaces, ProjectPlacesApi, WindowFiles, WindowFilesApi,
 };
 pub use print::{
     output_path, write_output, HtmlPrinter, HtmlPrinterApi, Margins, Orientation, Origin,

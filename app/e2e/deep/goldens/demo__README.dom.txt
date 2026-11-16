@@ -1,0 +1,259 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        p
+          a id="top" name="top"
+        p.pm-wide align="center"
+          img src="/@permark-deep/project/demo/assets/tidewell-emblem.svg" alt="Tidewell emblem: an amber buoy with a teal light riding three waves inside a com…"
+        h1 align="center"
+          "Tidewell Field Notes"
+        p align="center"
+          em
+            "Twelve buoys, one small lab, and every page a plain Markdown file."
+        p align="center"
+          a href="field-journal.md"
+            strong
+              "Start reading"
+          "·"
+          a href="station-architecture.md"
+            "Diagrams"
+          "·"
+          a href="ocean-chemistry.md"
+            "Math"
+          "·"
+          a href="tidewell-api.md"
+            "API"
+          "·"
+          a href="season-plan.md"
+            "Plan"
+          "·"
+          a href="bulletin-agent.md"
+            "Prompts"
+        h2 id="welcome-aboard"
+          a.anchor href="#welcome-aboard" aria-label="Link to Welcome aboard"
+            "#"
+          "Welcome aboard"
+        p
+          "Larkhaven Marine Lab runs Tidewell: twelve solar buoys on Larkhaven Sound that measure temperature, salinity, pH, dissolved oxygen and waves every ten minutes, …"
+        p
+          "It is also a sample project for PerMark. Every page here is a plain Markdown file you could open in any text editor. The diagrams, formulas, callouts and tables…"
+        div.markdown-alert.markdown-alert-tip
+          p.markdown-alert-title
+            svg svg sized
+            "This folder is yours"
+          p
+            "Edit any page, break it, delete it. Nothing here is precious, and PerMark only ever saves the parts you change."
+        h2 id="the-tour"
+          a.anchor href="#the-tour" aria-label="Link to The tour"
+            "#"
+          "The tour"
+        p
+          "Ten pages, each one a real document from the lab, and each showing off something different."
+        div.table-wrap
+          table
+            thead
+              tr
+                th align="center"
+                th
+                  "Page"
+                th
+                  "What you'll see"
+            tbody
+              tr
+                td align="center"
+                  span.emoji title=":sailboat:"
+                    "⛵"
+                td
+                  a href="field-journal.md"
+                    "Nine Days on the Petrel"
+                td
+                  "A voyage journal with a map, footnotes, a sound clip and a letter in Portuguese"
+              tr
+                td align="center"
+                  span.emoji title=":satellite:"
+                    "📡"
+                td
+                  a href="station-architecture.md"
+                    "How a reading travels"
+                td
+                  "Flowchart, sequence, timing and state diagrams, all written as text"
+              tr
+                td align="center"
+                  span.emoji title=":electric_plug:"
+                    "🔌"
+                td
+                  a href="tidewell-api.md"
+                    "Tidewell Open Data API"
+                td
+                  "An API reference with titled code, highlighted lines and a version timeline"
+              tr
+                td align="center"
+                  span.emoji title=":test_tube:"
+                    "🧪"
+                td
+                  a href="ocean-chemistry.md"
+                    "Carbon in the Sound"
+                td
+                  "Chemical equations and wave physics, typeset"
+              tr
+                td align="center"
+                  span.emoji title=":bar_chart:"
+                    "📊"
+                td
+                  a href="data-notebook.md"
+                    "Ninety days of Sound data"
+                td
+                  "Charts, a flow of 155,520 readings and a wide table that scrolls"
+              tr
+                td align="center"
+                  span.emoji title=":calendar:"
+                    "📆"
+                td
+                  a href="season-plan.md"
+                    "Season 3 deployment plan"
+                td
+                  "A Gantt chart, a risk quadrant, the budget and task lists"
+              tr
+                td align="center"
+                  span.emoji title=":bird:"
+                    "🐦"
+                td
+                  a href="bulletin-agent.md"
+                    "Gull: the weekly bulletin agent"
+                td
+                  "A prompt file with foldable blocks and marked variables"
+              tr
+                td align="center"
+                  span.emoji title=":pencil2:"
+                    "✏️"
+                td
+                  a href="style-guide.md"
+                    "How we write"
+                td
+                  "Every callout and small mark, with the source beside it"
+              tr
+                td align="center"
+                  span.emoji title=":compass:"
+                    "🧭"
+                td
+                  a href="permark-guide.md"
+                    "Working in PerMark"
+                td
+                  "A ten-minute tour of reading, editing, review and sharing"
+              tr
+                td align="center"
+                  span.emoji title=":stew:"
+                    "🍲"
+                td
+                  a href="galley-recipe.md"
+                    "Moqueca for twelve"
+                td
+                  "The stew that fed the crew, scaled from four servings to twelve"
+        h2 id="the-crew"
+          a.anchor href="#the-crew" aria-label="Link to The crew"
+            "#"
+          "The crew"
+        p
+          "Five people and one patient agent keep Tidewell afloat."
+        p.pm-wide
+          img src="/@permark-deep/project/demo/assets/crew.svg" alt="Avatars of the crew: Imani, Tomás, Beatriz, Hana and Leo, plus Gull, the bulleti…"
+        dl
+          dt
+            "Dr. Imani Okafor"
+          dd
+            "Lab director and chemical oceanographer. Keeps the science honest and the"
+            a href="style-guide.md"
+              "style guide"
+            "short."
+          dt
+            "Tomás Varela"
+          dd
+            "Platform lead. Built the path from buoy to"
+            a href="tidewell-api.md"
+              "API"
+            ", one 40-second wake at a time."
+          dt
+            "Beatriz Nogueira"
+          dd
+            "Field technician and skipper of the research boat"
+            em
+              "Petrel"
+            ". Writes the"
+            a href="field-journal.md"
+              "journal"
+            "and cooks the"
+            a href="galley-recipe.md"
+              "moqueca"
+            "."
+          dt
+            "Hana Kowalski"
+          dd
+            "Program manager and volunteer coordinator. Owns the"
+            a href="season-plan.md"
+              "season plan"
+            "and the"
+            a href="permark-guide.md"
+              "PerMark guide"
+            "."
+          dt
+            "Leo Park"
+          dd
+            "Data scientist. Turns readings into the"
+            a href="data-notebook.md"
+              "data notebook"
+            "and taught Gull to write."
+          dt
+            "Gull"
+          dd
+            "The lab's read-only agent. Drafts the weekly"
+            a href="bulletin-agent.md"
+              "bulletin"
+            "; a person always signs it off."
+        h2 id="find-your-way"
+          a.anchor href="#find-your-way" aria-label="Link to Find your way"
+            "#"
+          "Find your way"
+        p
+          "Press"
+          kbd
+            "Ctrl"
+          "+"
+          kbd
+            "P"
+          "to jump to any page by name, or"
+          kbd
+            "Ctrl"
+          "+"
+          kbd
+            "Shift"
+          "+"
+          kbd
+            "F"
+          "to search all of them at once. On a long page,"
+          kbd
+            "Ctrl"
+          "+"
+          kbd
+            "Alt"
+          "+"
+          kbd
+            "O"
+          "opens the outline, so you can skip straight to the section you want. On macOS, press"
+          kbd
+            "Cmd"
+          "where you see Ctrl, and"
+          kbd
+            "Option"
+          "for Alt."
+        p
+          "New here? The"
+          a href="permark-guide.md"
+            "ten-minute tour"
+          "covers the rest."
+        hr
+        p
+          sub
+            "Larkhaven Marine Lab, Tidewell and everyone in these pages are fictional."
+            a href="#top"
+              "Back to top"

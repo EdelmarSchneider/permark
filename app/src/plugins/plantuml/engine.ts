@@ -47,6 +47,17 @@ function loadEngine(): Promise<RenderToString> {
   return engine;
 }
 
+/**
+ * The engine's build line atop its error picture (`PlantUML version $version$ / $git.commit.id$ ...`, in italics): its
+ * placeholders mean nothing to the reader. A diagram's own labels are never italic text of this shape.
+ */
+const BUILD_LINE = /<text\b[^>]*\bfont-style="italic"[^>]*>PlantUML version [^<]*<\/text>/;
+
+/** The error picture shows the message and the lines around it only. */
+function withoutBuildLine(svg: string): string {
+  return svg.replace(BUILD_LINE, "");
+}
+
 /** The SVG for a PlantUML source in this theme, or null when it cannot be drawn or asks for something off the machine. */
 export function drawPlantuml(source: string, theme: "light" | "dark"): Promise<string | null> {
   if (plantumlFetches(source)) return Promise.resolve(null);
@@ -57,7 +68,7 @@ export function drawPlantuml(source: string, theme: "light" | "dark"): Promise<s
           try {
             renderToString(
               source.split(/\r?\n/),
-              (svg) => resolve(sanitizeSvg(svg)),
+              (svg) => resolve(sanitizeSvg(withoutBuildLine(svg))),
               () => resolve(null),
               { dark: theme === "dark" },
             );

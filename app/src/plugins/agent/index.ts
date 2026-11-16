@@ -3,6 +3,7 @@
 // section (+ a row in the gear popover), the hand-off (palette; the status popover too while the switch is on) and the
 // once-only offer of a project holding agent files are there whenever the plugin is on.
 
+import Bot from "@lucide/svelte/icons/bot";
 import type { Requirement } from "../../core/conditions/available";
 import { definePlugin } from "../../core/plugins/registry.svelte";
 import { ui } from "../../core/shell/ui.svelte";
@@ -51,6 +52,7 @@ export default definePlugin({
         kind: "settingsPage",
         id: AGENT_PAGE,
         label: "agent.section",
+        icon: Bot,
         order: 30,
         requires: PROJECT,
         view: () => import("./AgentSection.svelte"),

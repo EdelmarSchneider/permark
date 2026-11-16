@@ -25,6 +25,14 @@ export function codeEmbed<T>(
   return (language === "" ? undefined : find(language)) ?? find("@code");
 }
 
+/**
+ * A ```math block (the renderer's word, exact case) is one display formula. Read from the block's own attribute: its
+ * code leaves the block while an embed draws it.
+ */
+function isMathBlock(element: Element): boolean {
+  return element.getAttribute("data-info") === "math";
+}
+
 /** The mark on an element that holds a code reference. */
 export const CODE_REF = "code-ref";
 
@@ -104,6 +112,19 @@ export class LinkCache {
 /** A link to a file of the project (not a heading of the page, not a URL): the ones whose target may be missing. */
 export function isLocalHref(href: string | null): href is string {
   return href !== null && href !== "" && !href.startsWith("#") && !SCHEME.test(href);
+}
+
+/** A code block's title, first line number and marked lines (the renderer checked them; `enhance` put them here). */
+function codeExtras(element: HTMLElement): Pick<EmbedProps, "title" | "start" | "marked"> {
+  const title = element.getAttribute("data-title");
+  const numbers = element.getAttribute("data-numbers");
+  const marked = element.getAttribute("data-lines");
+  const start = numbers ? Number(numbers) : NaN;
+  return {
+    ...(title ? { title } : {}),
+    ...(Number.isInteger(start) ? { start } : {}),
+    ...(marked ? { marked } : {}),
+  };
 }
 
 export class Decorator {
@@ -210,12 +231,16 @@ export class Decorator {
   #placeholders(block: HTMLElement): HTMLElement[] {
     const found = Array.from(block.querySelectorAll<HTMLElement>(".code-block, [data-math-style]"));
     if (block.matches(".code-block, [data-math-style]")) found.unshift(block);
-    return found;
+    // the code of a ```math block is the block's formula: the block draws it (two embeds would race for it)
+    return found.filter(
+      (element) => !(element.hasAttribute("data-math-style") && element.closest(".code-block")),
+    );
   }
 
   #lookup(element: HTMLElement): LazyEmbed | undefined {
     if (element.hasAttribute("data-math-style")) return this.#embeds("@math");
-    return codeEmbed(element.getAttribute("data-info") ?? "", this.#embeds);
+    const formula = isMathBlock(element) ? this.#embeds("@math") : undefined;
+    return formula ?? codeEmbed(element.getAttribute("data-info") ?? "", this.#embeds);
   }
 
   #syncEmbeds(block: HTMLElement): void {
@@ -244,8 +269,11 @@ export class Decorator {
     const props: EmbedProps = {
       source,
       info: isMath ? "" : (element.getAttribute("data-info") ?? ""),
-      display: element.getAttribute("data-math-style") === "display",
+      display: isMath
+        ? element.getAttribute("data-math-style") === "display"
+        : isMathBlock(element),
       ...(this.#theme === undefined ? {} : { theme: this.#theme }),
+      ...(isMath ? {} : codeExtras(element)),
     };
     const loading: Promise<void> = loader()
       .then(

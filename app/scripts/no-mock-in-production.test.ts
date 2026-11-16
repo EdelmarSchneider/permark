@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { isMockModule, mockModulesIn } from "./no-mock-in-production";
+import { isMockModule, mockModulesIn, servesMock } from "./no-mock-in-production";
+
+describe("servesMock", () => {
+  it("is true for the modes that run on the mock backend: dev:mock and the deep suite", () => {
+    expect(servesMock("mock")).toBe(true);
+    expect(servesMock("deep")).toBe(true);
+  });
+
+  it("is false for every other mode, so their builds are checked", () => {
+    expect(servesMock("production")).toBe(false);
+    expect(servesMock("development")).toBe(false);
+    expect(servesMock("Mock")).toBe(false);
+  });
+});
 
 describe("isMockModule", () => {
   it("matches the mock backend modules and fixtures, on any separator", () => {

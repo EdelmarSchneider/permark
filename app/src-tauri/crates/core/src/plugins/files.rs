@@ -9,7 +9,8 @@ use std::sync::Arc;
 use unicode_normalization::UnicodeNormalization;
 
 use crate::error::{ErrorKind, IpcError};
-use crate::paths::{canonicalize_lenient, RootKey};
+use crate::paths::{canonicalize_lenient, windows_name_ok, RootKey};
+use crate::state::RawFile;
 use crate::tree::{Scan, ScanFile};
 use crate::watch::{FsBatch, Subscription};
 
@@ -81,6 +82,29 @@ pub trait WindowFiles: Send + Sync {
         let _ = (window, listener);
         None
     }
+
+    /// The file `name` the project of `window` shares with its team (`StateStore::shared_file`: `.permark/<name>`,
+    /// the project's profile copy while it has no `.permark/`), for a plugin that keeps a choice about the project's
+    /// documents with the project. `None`: the window shows no project (a single file, the Notes) | `name` fails
+    /// [`is_shared_name`].
+    fn shared_file(&self, window: &str, name: &str) -> Option<RawFile> {
+        let _ = (window, name);
+        None
+    }
+}
+
+/// Whether `name` may name a file the project shares with its team ([`WindowFiles::shared_file`]): one plain name
+/// that every system keeps as written (ASCII letters, digits, `.` `_` `-`; no dot first | last; no Windows device
+/// name), never a path that could leave `.permark/`.
+#[must_use]
+pub fn is_shared_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+        && !name.starts_with('.')
+        && !name.ends_with('.')
+        && windows_name_ok(name)
 }
 
 /// The service plugins look up (`AppServices.services.get::<WindowFilesApi>()`).
@@ -218,6 +242,52 @@ mod tests {
             gone.overlaps(&tmp.path().join("GONE").join("m")),
             CASE_INSENSITIVE
         );
+    }
+
+    struct Bare;
+
+    impl WindowFiles for Bare {
+        fn read(&self, _: &str, _: &str, _: u64) -> Result<String, IpcError> {
+            Err(IpcError::new(ErrorKind::Unsupported))
+        }
+
+        fn write_beside(&self, _: &str, _: &str, _: &str, _: &str) -> Result<String, IpcError> {
+            Err(IpcError::new(ErrorKind::Unsupported))
+        }
+
+        fn note(&self, _: &str, _: crate::activity::Fact) {}
+    }
+
+    #[test]
+    fn a_shell_without_projects_shares_no_file() {
+        assert!(Bare.shared_file("main", "spelling.json").is_none());
+    }
+
+    #[test]
+    fn a_shared_file_name_is_one_plain_portable_name() {
+        for ok in ["spelling.json", "meta.toml", "a_b-c.v2.json", "x"] {
+            assert!(is_shared_name(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            ".",
+            "..",
+            "a/b",
+            "a\\b",
+            "C:x",
+            "x:y",
+            "CON",
+            "con.json",
+            "LPT1",
+            ".x",
+            "x.",
+            "a b",
+            "café.json",
+            "a\u{0}b",
+            "../x",
+        ] {
+            assert!(!is_shared_name(bad), "{bad:?}");
+        }
     }
 
     #[test]

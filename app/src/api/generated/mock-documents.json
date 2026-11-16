@@ -106,11 +106,11 @@
           "html": "<h2 data-b=\"a7f9b3d695dc0ba8\" id=\"math\" dir=\"auto\">Math</h2>"
         },
         {
-          "id": "7205fbf5558f4cb5",
+          "id": "f1a6ce345910fb86",
           "kind": "p",
           "lineStart": 55,
           "lineEnd": 55,
-          "html": "<p data-b=\"7205fbf5558f4cb5\" dir=\"auto\">Inline math <span data-math-style=\"inline\">E = mc^2</span> sits in the text. A display formula:</p>"
+          "html": "<p data-b=\"f1a6ce345910fb86\" dir=\"auto\">Inline math <span data-math-style=\"inline\">E = mc^2</span> sits in the text, and so does chemistry: <span data-math-style=\"inline\">\\ce{2 H2 + O2 -&gt; 2 H2O}</span>. A display formula:</p>"
         },
         {
           "id": "bd49a96604b7de11",
@@ -134,32 +134,67 @@
           "html": "<pre data-b=\"ae4de58cc43ef70f\"><code class=\"language-mermaid\">graph LR\n  A[Markdown] --&gt; B(Render)\n  B --&gt; C{Sanitize}\n  C --&gt;|safe| D[Page]\n  C --&gt;|unsafe| E[Dropped]\n</code></pre>"
         },
         {
+          "id": "3f7f012c7b767d6b",
+          "kind": "pre",
+          "lineStart": 71,
+          "lineEnd": 77,
+          "html": "<pre data-b=\"3f7f012c7b767d6b\"><code class=\"language-dot\">digraph {\n  rankdir=LR\n  Markdown -&gt; Render -&gt; Page\n  Render -&gt; Dropped [label=\"unsafe\"]\n}\n</code></pre>"
+        },
+        {
           "id": "ae35c49b9c341881",
           "kind": "h2",
-          "lineStart": 71,
-          "lineEnd": 71,
+          "lineStart": 79,
+          "lineEnd": 79,
           "html": "<h2 data-b=\"ae35c49b9c341881\" id=\"prompt-blocks\" dir=\"auto\">Prompt blocks</h2>"
         },
         {
           "id": "e3adcb978e486f04",
           "kind": "details",
-          "lineStart": 74,
-          "lineEnd": 77,
+          "lineStart": 82,
+          "lineEnd": 85,
           "html": "<details data-b=\"e3adcb978e486f04\" class=\"prompt-block\" data-tag=\"context\" open=\"\"><summary>context</summary>\n<p dir=\"auto\">You are reading a prompt file. The tags below fold, and <strong>Markdown inside them</strong> still renders.</p>\n<ul>\n<li dir=\"auto\">Variables look like <span class=\"tvar\">{{customer_name}}</span> and are marked.</li>\n<li dir=\"auto\">Files are linked: see <a class=\"at-ref\" href=\"/docs/guide.md\">@docs/guide.md</a> for the guide.</li>\n</ul>\n</details>"
         },
         {
           "id": "489e1dad30a610a7",
           "kind": "details",
-          "lineStart": 81,
-          "lineEnd": 82,
+          "lineStart": 89,
+          "lineEnd": 90,
           "html": "<details data-b=\"489e1dad30a610a7\" class=\"prompt-block\" data-tag=\"instructions\" open=\"\"><summary>instructions</summary>\n<ol>\n<li dir=\"auto\">Be brief.</li>\n<li dir=\"auto\">Quote the source.</li>\n</ol>\n</details>"
         },
         {
-          "id": "0341112419a97b64",
+          "id": "42d134764e88333f",
+          "kind": "p",
+          "lineStart": 95,
+          "lineEnd": 95,
+          "html": "<p data-b=\"42d134764e88333f\" dir=\"auto\">Mark <mark>what matters</mark>, add an emoji <span class=\"emoji\" title=\":sparkles:\">✨</span> or a note right where it belongs<sup class=\"footnote-ref\"><a href=\"#fn-__inline_1\" id=\"fnref-__inline_1\" data-footnote-ref=\"\">2</a></sup>.</p>"
+        },
+        {
+          "id": "d94712302ec7e7db",
+          "kind": "details",
+          "lineStart": 97,
+          "lineEnd": 98,
+          "html": "<details data-b=\"d94712302ec7e7db\" class=\"markdown-alert markdown-alert-tip\">\n<summary class=\"markdown-alert-title\">A folded callout</summary>\n<p dir=\"auto\">Obsidian callouts fold: this text shows when you open the box.</p>\n</details>"
+        },
+        {
+          "id": "f345f7af5a00f543",
+          "kind": "div",
+          "lineStart": 100,
+          "lineEnd": 102,
+          "html": "<div data-b=\"f345f7af5a00f543\" class=\"markdown-alert markdown-alert-note markdown-alert-kind-info\">\n<p class=\"markdown-alert-title\" dir=\"auto\">Containers</p>\n<p dir=\"auto\"><code>:::</code> containers draw the same boxes.</p>\n</div>"
+        },
+        {
+          "id": "94fe018ebadf9b96",
+          "kind": "pre",
+          "lineStart": 104,
+          "lineEnd": 107,
+          "html": "<pre data-b=\"94fe018ebadf9b96\"><code class=\"language-js\" data-title=\"greet.js\" data-lines=\"2\" data-numbers=\"1\">const name = \"PerMark\";\nconsole.log(`Hello, ${name}!`);\n</code></pre>"
+        },
+        {
+          "id": "4e45759ca4187031",
           "kind": "section",
-          "lineStart": 85,
-          "lineEnd": 85,
-          "html": "<section data-b=\"0341112419a97b64\" class=\"footnotes\" data-footnotes=\"\">\n<ol>\n<li id=\"fn-1\" dir=\"auto\">\n<p dir=\"auto\">Footnotes list at the end of the page, with a way back. <a href=\"#fnref-1\" class=\"footnote-backref\" data-footnote-backref=\"\" data-footnote-backref-idx=\"1\" aria-label=\"Back to reference 1\">↩</a></p>\n</li>\n</ol>\n</section>"
+          "lineStart": 93,
+          "lineEnd": 93,
+          "html": "<section data-b=\"4e45759ca4187031\" class=\"footnotes\" data-footnotes=\"\">\n<ol>\n<li id=\"fn-1\" dir=\"auto\">\n<p dir=\"auto\">Footnotes list at the end of the page, with a way back. <a href=\"#fnref-1\" class=\"footnote-backref\" data-footnote-backref=\"\" data-footnote-backref-idx=\"1\" aria-label=\"Back to reference 1\">↩</a></p>\n</li>\n<li id=\"fn-__inline_1\" dir=\"auto\">\n<p dir=\"auto\">Inline notes are numbered with the others. <a href=\"#fnref-__inline_1\" class=\"footnote-backref\" data-footnote-backref=\"\" data-footnote-backref-idx=\"2\" aria-label=\"Back to reference 2\">↩</a></p>\n</li>\n</ol>\n</section>"
         }
       ],
       "outline": [
@@ -209,7 +244,7 @@
           "label": "Prompt blocks",
           "level": 2,
           "id": "prompt-blocks",
-          "line": 71,
+          "line": 79,
           "block": "ae35c49b9c341881"
         }
       ],
@@ -259,8 +294,8 @@
         ]
       }
     },
-    "hash": "e873f21c2d5f5e0b",
-    "size": 1975,
+    "hash": "c8d5bf116477af6b",
+    "size": 2514,
     "mtimeMs": 0,
     "editable": {
       "editable": "surgical"

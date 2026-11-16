@@ -7,9 +7,16 @@ import { createCore, type Core } from "./core";
 import { appPlugins, type PluginHost } from "./plugins";
 
 const DOC = "docs/note.md";
+/** Web pictures the person already fetched in this window. */
+const kept = new Map<string, string>([["https://example.com/kept.png", "blob:kept-1"]]);
 
-function display(src: string): string {
-  return pictureDisplayUrl(DOC, src, (path) => `pm://${path}`);
+function display(src: string): string | null {
+  return pictureDisplayUrl(
+    DOC,
+    src,
+    (path) => `pm://${path}`,
+    (url) => kept.get(url),
+  );
 }
 
 function host(): PluginHost {
@@ -57,5 +64,45 @@ describe("edit image view", () => {
     expect(written).toContain("img/a.png");
     expect(written).toContain("shot.png");
     expect(written).not.toContain("pm://");
+  });
+
+  it("shows View's chip for a picture on the web (nothing is fetched); one fetched in this window paints", async () => {
+    const el = document.createElement("div");
+    document.body.append(el);
+    core = await createCore({ host: el, first: appPlugins(host()) });
+    core.setDoc(core.parse("![far](https://example.com/a.png) and ![](//example.com/b.png)\n"));
+    const pictures = (): HTMLImageElement[] => [
+      ...el.querySelectorAll<HTMLImageElement>("img:not(.ProseMirror-separator)"),
+    ];
+    expect(pictures()).toHaveLength(0);
+    const chips = [...el.querySelectorAll(".remote-image")];
+    expect(chips.map((chip) => chip.textContent)).toEqual(["far", "Picture from the web"]);
+    expect(chips[0]?.getAttribute("aria-label")).toBe("far");
+    expect(chips[0]?.getAttribute("title")).toBe("https://example.com/a.png");
+    // no fetch of View's swaps this chip: the editor owns its place
+    expect(chips[0]?.hasAttribute("data-url")).toBe(false);
+
+    // the address edited to a project file: the picture paints; back to the web: the chip again
+    const at = (): number => {
+      let found = -1;
+      core?.view.state.doc.descendants((node, pos) => {
+        if (found < 0 && node.type.name === "image") found = pos;
+      });
+      return found;
+    };
+    const set = (src: string): void => {
+      if (!core) return;
+      const pos = at();
+      const node = core.view.state.doc.nodeAt(pos);
+      core.view.dispatch(core.view.state.tr.setNodeMarkup(pos, undefined, { ...node?.attrs, src }));
+    };
+    set("img/a.png");
+    expect(pictures().map((img) => img.getAttribute("src"))).toEqual(["pm://docs/img/a.png"]);
+    set("https://example.com/kept.png");
+    expect(pictures().map((img) => img.getAttribute("src"))).toEqual(["blob:kept-1"]);
+    set("https://example.com/c.png");
+    expect(pictures()).toHaveLength(0);
+    expect(el.querySelectorAll(".remote-image")).toHaveLength(2);
+    expect(core.serialize(core.view.state.doc)).toContain("https://example.com/c.png");
   });
 });

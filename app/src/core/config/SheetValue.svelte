@@ -204,7 +204,7 @@
     height: 18px;
     padding: 0;
     border: 1px solid var(--border-strong);
-    border-radius: 9px;
+    border-radius: 999px;
     background: var(--surface-2);
     transition: background var(--dur-fast);
   }

@@ -709,6 +709,75 @@ describe("edits handed to the editor on screen (correction)", () => {
     expect(none).toEqual([]);
   });
 
+  it("mark layers are independent; the default layer keeps the plain call", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    const seen: unknown[] = [];
+    editor.marks = (ranges, current, _pick, layer, options) =>
+      seen.push([layer, ranges, current, options]);
+    const asked: unknown[] = [];
+    editor.markAt = (layer) => {
+      asked.push(layer);
+      return layer === "other" ? 5 : 1;
+    };
+    const menu = (): void => {};
+    session.marks([{ from: 0, to: 1 }], 0, () => {});
+    session.marks([{ from: 2, to: 3 }], null, () => {}, "other", { className: "x", menu });
+    expect(seen).toEqual([
+      ["correction", [{ from: 0, to: 1 }], 0, {}],
+      ["other", [{ from: 2, to: 3 }], null, { className: "x", menu }],
+    ]);
+    expect(session.markAt()).toBe(1);
+    expect(session.markAt("other")).toBe(5);
+    expect(asked).toEqual(["correction", "other"]);
+    // clearing one layer leaves the other for the next editor
+    session.marks([], null, () => {});
+    await session.switchTo("edit");
+    const next = fakeEditor(session.content?.text ?? "");
+    const again: unknown[] = [];
+    next.marks = (ranges, _current, _pick, layer) => again.push([layer, ranges]);
+    session.attach(session.content?.seq ?? -1, next);
+    expect(again).toEqual([["other", [{ from: 2, to: 3 }]]]);
+  });
+
+  it("the next editor gets every layer; another document starts with none", async () => {
+    const { session } = setup();
+    await open(session);
+    session.marks([{ from: 0, to: 1 }], 0, () => {});
+    session.marks([{ from: 2, to: 3 }], null, () => {}, "other");
+    await session.switchTo("edit");
+    const next = fakeEditor(session.content?.text ?? "");
+    const layers: unknown[] = [];
+    next.marks = (_ranges, _current, _pick, layer) => layers.push(layer);
+    session.attach(session.content?.seq ?? -1, next);
+    expect(layers).toEqual(["correction", "other"]);
+    await session.enter("source", "notes/other.md", "markdown", { kind: "explicit" });
+    const fresh = fakeEditor(session.content?.text ?? "");
+    const none: unknown[] = [];
+    fresh.marks = (_ranges, _current, _pick, layer) => none.push(layer);
+    session.attach(session.content?.seq ?? -1, fresh);
+    expect(none).toEqual([]);
+  });
+
+  it("native spellcheck: on by default, the editor on screen and the next one follow the flag", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    expect(session.nativeSpellcheck).toBe(true);
+    const told: boolean[] = [];
+    editor.spellcheck = (on) => told.push(on);
+    session.setNativeSpellcheck(false);
+    expect(session.nativeSpellcheck).toBe(false);
+    expect(told).toEqual([false]);
+    await session.switchTo("edit");
+    const next = fakeEditor(session.content?.text ?? "");
+    const nextTold: boolean[] = [];
+    next.spellcheck = (on) => nextTold.push(on);
+    session.attach(session.content?.seq ?? -1, next);
+    expect(nextTold).toEqual([false]);
+    session.setNativeSpellcheck(true);
+    expect(nextTold).toEqual([false, true]);
+  });
+
   it("what an edit could change is the editor's to say; one that does not say takes any", async () => {
     const { session } = setup();
     const { editor } = await open(session);

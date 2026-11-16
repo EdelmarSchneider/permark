@@ -3,6 +3,7 @@
 // every plugin that reviews what a model proposes, not offered while none is open) are all it adds; nothing is read
 // until the page opens, nothing downloaded until the person asks.
 
+import Cpu from "@lucide/svelte/icons/cpu";
 import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { definePlugin } from "../../core/plugins/registry.svelte";
 import { ui } from "../../core/shell/ui.svelte";
@@ -17,6 +18,7 @@ export default definePlugin({
         kind: "settingsPage",
         id: LOCAL_AI_PAGE,
         label: "localAi.section",
+        icon: Cpu,
         order: 35,
         requires: NO_REQUIREMENT,
         view: () => import("./LocalAiSection.svelte"),

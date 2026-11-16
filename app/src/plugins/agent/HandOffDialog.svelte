@@ -152,7 +152,7 @@
     padding: var(--sp-4) var(--sp-5);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--bg);
+    background: var(--pop);
     color: var(--text);
     box-shadow: var(--shadow-pop);
     outline: none;
@@ -217,7 +217,7 @@
   }
   .badge {
     padding: 0 6px;
-    border-radius: 8px;
+    border-radius: var(--radius-surface);
     background: var(--surface-2);
     color: var(--muted);
     font-size: var(--fs-ui-xs);

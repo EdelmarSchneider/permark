@@ -11,6 +11,8 @@
   max-width: calc(var(--column) * var(--zoom));
   margin: 0 auto;
   font: calc(var(--fs-reading) * var(--zoom)) / var(--lh-reading) var(--font-reading);
+  /* Inter reads best a little tighter at text size; headings tighten more as they grow */
+  letter-spacing: -0.011em;
   color: var(--text);
   /* a fold's edge and inner space, and a prompt box's left edge (Edit builds the box from the same) */
   --details-rule: 1px;
@@ -64,7 +66,7 @@
 .md h1 {
   font-size: 2em;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.026em;
   margin: 0.2em 0 0.6em;
   padding-bottom: 0.3em;
   border-bottom: 1px solid var(--border);
@@ -75,14 +77,25 @@
 .md h2 {
   font-size: 1.55em;
   font-weight: 650;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
   margin: 1.8em 0 0.6em;
 }
 .md h3 {
   font-size: 1.27em;
   font-weight: 600;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.02em;
   margin: 1.6em 0 0.5em;
+}
+/* a heading over two lines splits into even lines; a paragraph avoids a lone word on its last line */
+.md :is(h1, h2, h3) {
+  text-wrap: balance;
+}
+.md :is(p, li) {
+  text-wrap: pretty;
+}
+/* code keeps the monospace font's own spacing */
+.md :is(code, kbd, pre) {
+  letter-spacing: normal;
 }
 .md h4 {
   font-size: 1.08em;
@@ -249,6 +262,10 @@
   color: var(--text);
   border-color: var(--muted);
 }
+/* Edit's chip (no address to load): a click there selects it, nothing loads */
+.md .remote-image:not([data-url]) {
+  cursor: inherit;
+}
 .md .remote-image.is-loading {
   opacity: 0.6;
   cursor: progress;
@@ -402,13 +419,46 @@
   font-weight: 600;
 }
 
-/* alerts */
+/* marked text (`==text==`, `<mark>`) */
+.md mark {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: var(--mark);
+  color: inherit;
+}
+
+/* alerts, callouts and `:::` containers: one box; a `details` one folds by its title */
 .md .markdown-alert {
   --alert: var(--accent);
   padding: 10px 16px;
+  border: 0;
   border-left: 3px solid var(--alert);
   border-radius: 0 var(--radius-control) var(--radius-control) 0;
   background: color-mix(in srgb, var(--alert) 7%, transparent);
+}
+.md details.markdown-alert > summary.markdown-alert-title {
+  margin-bottom: 4px;
+  cursor: pointer;
+  list-style: none;
+}
+.md details.markdown-alert:not([open]) > summary.markdown-alert-title {
+  margin-bottom: 0;
+}
+.md details.markdown-alert > summary.markdown-alert-title::-webkit-details-marker {
+  display: none;
+}
+/* the fold's chevron after the title: right when folded, down when open */
+.md details.markdown-alert > summary.markdown-alert-title::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-left: 4px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(-45deg);
+}
+.md details.markdown-alert[open] > summary.markdown-alert-title::after {
+  transform: rotate(45deg);
 }
 .md .markdown-alert > :last-child {
   margin-bottom: 0;
@@ -448,6 +498,10 @@
 .md .markdown-alert-caution {
   --alert: var(--git-deleted-text);
 }
+/* quotes and `::: details`: the page's quiet tone; the title text in the muted color keeps its contrast */
+.md .markdown-alert-quote {
+  --alert: var(--muted);
+}
 
 /* tables */
 .md .table-wrap {
@@ -470,6 +524,20 @@
   text-align: start;
   border-bottom: 1px solid var(--border);
 }
+/* a column's written alignment (`:-:`, `--:`) comes as the cells' `align`, a hint below the rule above: restated here.
+   Edit's cells carry it as their own style. */
+.md th[align="left" i],
+.md td[align="left" i] {
+  text-align: left;
+}
+.md th[align="center" i],
+.md td[align="center" i] {
+  text-align: center;
+}
+.md th[align="right" i],
+.md td[align="right" i] {
+  text-align: right;
+}
 .md th {
   position: sticky;
   top: 0;
@@ -477,12 +545,8 @@
   font-weight: 600;
   font-size: 0.92em;
 }
-/* Reading view only: the visual editor matches `.md th` / `.md td` and has no `.doc-column`. A long token wraps
-   in the cell. The 5em floor stays on the shared rule, so a table that still cannot fit scrolls in `.table-wrap`. */
-.doc-column .md th,
-.doc-column .md td {
-  overflow-wrap: anywhere;
-}
+/* Words stay whole in a cell (no `overflow-wrap: anywhere` on screen: it lets the table squeeze a column below its
+   longest word); a table wider than the column scrolls in `.table-wrap`. Paper cannot scroll: `paper.css` wraps. */
 .md tbody tr:nth-child(even) {
   background: var(--zebra);
 }

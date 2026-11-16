@@ -87,6 +87,39 @@ function headingLines(text: string): number[] {
   return headingStarts(tree).map((pos) => state.doc.lineAt(pos).number);
 }
 
+/** The Markdown node names Source reads over each piece of `text` that is `name`d (`[name, text]` pairs). */
+function inlineNodes(text: string): [string, string][] {
+  const language = languageFor("notes.md", true);
+  if (language instanceof Promise) throw new Error("Markdown loads at once");
+  const state = EditorState.create({ doc: text, extensions: [language] });
+  const tree = ensureSyntaxTree(state, state.doc.length, 5_000);
+  if (!tree) throw new Error("not parsed");
+  const found: [string, string][] = [];
+  tree.iterate({
+    enter: (node) => {
+      if (/^(Strikethrough|Highlight|Subscript|Superscript|Emoji)$/.test(node.name)) {
+        found.push([node.name, state.doc.sliceString(node.from, node.to)]);
+      }
+    },
+  });
+  return found;
+}
+
+describe("Source reads inline syntax as View draws it", () => {
+  it("single and double tildes strike through, == marks, :name: is an emoji; no sub- or superscript", () => {
+    expect(inlineNodes("One ~gone~ and ~~both~~ go, ==bright== stays, :smile: smiles.\n")).toEqual([
+      ["Strikethrough", "~gone~"],
+      ["Strikethrough", "~~both~~"],
+      ["Highlight", "==bright=="],
+      ["Emoji", ":smile:"],
+    ]);
+    // inside a word too, as View strikes it; never in code, around spaces or in runs of three
+    expect(inlineNodes("No ^sup^, H~2~O, `==code==`, a == b == c, ===x===\n")).toEqual([
+      ["Strikethrough", "~2~"],
+    ]);
+  });
+});
+
 describe("Source headings for the outline", () => {
   it("finds headings in quotes and lists and setext ones; none in code, front matter or HTML", () => {
     const text = [

@@ -290,7 +290,7 @@
     padding: var(--sp-4);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--bg);
+    background: var(--pop);
     color: var(--text);
     box-shadow: var(--shadow-pop);
     outline: none;
@@ -394,7 +394,7 @@
   }
   .same {
     padding: 0 6px;
-    border-radius: 8px;
+    border-radius: var(--radius-surface);
     background: var(--surface-2);
   }
   /* what a pick does, on the row the keyboard | the pointer is on (kept in the layout: the text never jumps) */

@@ -1,0 +1,2 @@
+# Files listed here never reach an AI agent connected through PerMark.
+station/deploy.env

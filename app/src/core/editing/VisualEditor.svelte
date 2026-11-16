@@ -25,6 +25,7 @@
   import { frontMatterSyntax } from "../config/frontMatter";
   import { documents } from "../doc/document.svelte";
   import { reading } from "../doc/reading.svelte";
+  import { webPictures } from "../doc/webPictures.svelte";
   import { pictureDisplayUrl, pictureFiles, pictureLink } from "./pictures";
   import { baseName, pictureType } from "../explorer/importModel";
   import { relativeLink } from "./source/complete";
@@ -108,6 +109,8 @@
     link: "link.label",
     diagram: "edit.block.diagram",
     alert: "edit.block.alert",
+    highlight: "edit.block.highlight",
+    emoji: "edit.block.emoji",
     other: "edit.block.other",
   };
 
@@ -457,8 +460,11 @@
           pictures: (files, at) => void insertPictures(files, at),
           followLink: (href) => void followLink(href),
           displaySrc: (src) =>
-            pictureDisplayUrl(content.path, src, (path) =>
-              api.assetUrl(documents.workspaceId ?? 0, path, null),
+            pictureDisplayUrl(
+              content.path,
+              src,
+              (path) => api.assetUrl(documents.workspaceId ?? 0, path, null),
+              (url) => webPictures.kept(url),
             ),
         }),
         plugins: [loaded.emptyHint(t("edit.emptyHint"))],
@@ -469,12 +475,11 @@
       }
       const editor = made;
       const doc = await loaded.buildDoc(editor, current.text, current.segments ?? []);
-      // locked blocks and HTML written in a line draw View's look from their first paint when the render and the card
-      // come in time; a render that comes later (a large document, a busy backend) brings it then, the blocks show
-      // their source until it does
+      // locked blocks and the pieces drawn from View's render (HTML written in a line, marked text, emoji, inline
+      // notes) draw View's look from their first paint when the render and the card come in time; a render that comes
+      // later (a large document, a busy backend) brings it then, the blocks show their source until it does
       const asked =
-        doc.sources.some((s) => s.locked !== null) ||
-        loaded.pieceSources(doc.doc, "html").length > 0
+        doc.sources.some((s) => s.locked !== null) || loaded.pieceSources(doc.doc, true).length > 0
           ? (early ?? viewOf(current.path, current.text))
           : null;
       const ticket = book.ask();
@@ -566,11 +571,13 @@
           return core && mod && now ? mod.changeable(core, now, range, insert) : true;
         },
         reveal: (range) => reveal(range),
-        marks: (ranges, current, pick) => {
+        marks: (ranges, current, pick, layer, options) => {
           const now = composed();
-          if (core && mod && now) mod.setMarks(core.view, now, ranges, current, pick);
+          if (core && mod && now)
+            mod.setMarks(core.view, now, ranges, current, pick, layer, options);
         },
-        markAt: () => (core && mod ? mod.markAt(core.view.state) : null),
+        markAt: (layer) => (core && mod ? mod.markAt(core.view.state, layer) : null),
+        spellcheck: (on) => core?.setSpellcheck(on),
         composing: () => core?.view.composing ?? false,
         lost: () => (composed()?.lost.length ?? 0) > 0,
         find: loaded.editFinder(() => core?.view ?? null, scroller),
@@ -999,7 +1006,7 @@
     padding: var(--sp-2);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--surface);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .host :global(.pm-inline__field) {
@@ -1106,7 +1113,7 @@
     width: calc(100% - 2 * var(--sp-4));
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
-    background: var(--surface);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .popover--picker {
@@ -1136,10 +1143,10 @@
     min-width: 200px;
     max-height: 280px;
     overflow-y: auto;
-    padding: 4px;
+    padding: 6px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    background: var(--bg);
+    border-radius: var(--radius-menu);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
   }
   .slash button {

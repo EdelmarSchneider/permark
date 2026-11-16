@@ -1,0 +1,469 @@
+div.reading
+  div.doc-column
+    article.md
+      section.card aria-label="Front matter"
+        dl.grid
+          div.field
+            dt
+              "title"
+            dd
+              "Season 3 deployment plan"
+          div.field
+            dt
+              "owner"
+            dd
+              "Hana Kowalski"
+          div.field
+            dt
+              "status"
+            dd
+              "in progress"
+          div.field
+            dt
+              "updated"
+            dd
+              "November 15, 2026"
+          div.field
+            dt
+              "tags"
+            dd.chips
+              span.chip
+                "plan"
+              span.chip
+                "season-3"
+              span.chip
+                "operations"
+      div.md-body role="document"
+        h1 id="season-3-deployment-plan"
+          a.anchor href="#season-3-deployment-plan" aria-label="Link to Season 3 deployment plan"
+            "#"
+          "Season 3 deployment plan"
+        p
+          "Twelve buoys are in the water and one dataset is about to open. This is where Season 3 stands, what is left before launch day, and what could still go wrong."
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg gantt sized labels: Sep 20 | Sep 27 | Oct 04 | Oct 11 | Oct 18 | Oct 25 | Nov 01 | Nov 08 | Nov 15 | Nov 22 | Nov 29 | Dec 06 | Dec 13 | Build and test buoys | Install gateways | Calibrate sensors | Load the Petrel | Deploy LH-01 to LH-12 | Shakedown and QC | API v2.3 freeze | Volunteer briefing | Launch rehearsal | Open data launch | First weekly bulletin | Winter maintenance | Prep | Voyage | Shakedown | Launch | Winter | Season 3, September to December
+        h2 id="where-we-are"
+          a.anchor href="#where-we-are" aria-label="Link to Where we are"
+            "#"
+          "Where we are"
+        div.markdown-alert.markdown-alert-important
+          p.markdown-alert-title
+            svg svg sized
+            "Open data launch: Tuesday, November 17"
+          p
+            "All twelve buoys are reporting, the QC rules are signed off and API v2.3 is frozen. Until launch, any change to the API needs a yes from both Tomás and Hana."
+        p
+          "What remains is Monday's rehearsal, where the whole crew walks through launch day minute by minute, and then the launch itself."
+        h2 id="milestones"
+          a.anchor href="#milestones" aria-label="Link to Milestones"
+            "#"
+          "Milestones"
+        div.table-wrap
+          table
+            thead
+              tr
+                th
+                  "Milestone"
+                th
+                  "Date"
+                th
+                  "Owner"
+                th
+                  "Status"
+            tbody
+              tr
+                td
+                  "Gateways online"
+                td
+                  "Tue, Oct 6"
+                td
+                  "Tomás Varela"
+                td
+                  span.emoji title=":white_check_mark:"
+                    "✅"
+                  "Done"
+              tr
+                td
+                  "Buoys built and calibrated"
+                td
+                  "Fri, Oct 9"
+                td
+                  "Tomás Varela"
+                td
+                  span.emoji title=":white_check_mark:"
+                    "✅"
+                  "Done"
+              tr
+                td
+                  "All twelve buoys deployed"
+                td
+                  "Tue, Oct 20"
+                td
+                  "Beatriz Nogueira"
+                td
+                  span.emoji title=":white_check_mark:"
+                    "✅"
+                  "Done"
+              tr
+                td
+                  "QC rules signed off"
+                td
+                  "Fri, Nov 13"
+                td
+                  "Dr. Imani Okafor"
+                td
+                  span.emoji title=":white_check_mark:"
+                    "✅"
+                  "Done"
+              tr
+                td
+                  "Launch rehearsal"
+                td
+                  "Mon, Nov 16"
+                td
+                  "Hana Kowalski"
+                td
+                  span.emoji title=":hourglass:"
+                    "⌛"
+                  "In progress"
+              tr
+                td
+                  "Open data launch, API v2.3"
+                td
+                  "Tue, Nov 17"
+                td
+                  "Hana Kowalski"
+                td
+                  span.emoji title=":calendar:"
+                    "📆"
+                  "Next"
+              tr
+                td
+                  "First weekly bulletin"
+                td
+                  "Fri, Nov 20"
+                td
+                  "Leo Park"
+                td
+                  span.emoji title=":calendar:"
+                    "📆"
+                  "Planned"
+              tr
+                td
+                  "Winter maintenance done"
+                td
+                  "Fri, Dec 18"
+                td
+                  "Beatriz Nogueira"
+                td
+                  span.emoji title=":calendar:"
+                    "📆"
+                  "Planned"
+        h2 id="workstreams"
+          a.anchor href="#workstreams" aria-label="Link to Workstreams"
+            "#"
+          "Workstreams"
+        p
+          "Each lead keeps their own list here, so the whole plan stays on one page."
+        ul
+          li
+            strong
+              "Platform"
+            "· Tomás"
+            ul.contains-task-list
+              li.task-list-item.is-done
+                input.task-list-item-checkbox aria-label="Ingest receives readings from North Light, Avery Pier and Saddle Hill" checked disabled
+                "Ingest receives readings from North Light, Avery Pier and Saddle Hill"
+              li.task-list-item.is-done
+                input.task-list-item-checkbox aria-label="QC engine loads its rules from station/qc-rules.yaml" checked disabled
+                "QC engine loads its rules from"
+                a href="station/qc-rules.yaml"
+                  code
+                    "station/qc-rules.yaml"
+              li.task-list-item
+                input.task-list-item-checkbox aria-label="Load test API v2.3 at ten times the expected traffic" disabled
+                "Load test API v2.3 at ten times the expected traffic"
+              li.task-list-item
+                input.task-list-item-checkbox aria-label="Cellular fallback for Heron Flats dropped, see the decision log below" disabled
+                del
+                  "Cellular fallback for Heron Flats"
+                "dropped, see the decision log below"
+          li
+            strong
+              "Field"
+            "· Beatriz"
+            ul.contains-task-list
+              li.task-list-item.is-done
+                input.task-list-item-checkbox aria-label="Deploy LH-01 to LH-12 from the Petrel ( journal )" checked disabled
+                "Deploy LH-01 to LH-12 from the"
+                em
+                  "Petrel"
+                "("
+                a href="field-journal.md"
+                  "journal"
+                ")"
+              li.task-list-item.is-done
+                input.task-list-item-checkbox aria-label="Take a water sample at every station" checked disabled
+                "Take a water sample at every station"
+              li.task-list-item
+                input.task-list-item-checkbox aria-label="Check the pH sensor at Kittiwake Shoal against a water sample" disabled
+                "Check the pH sensor at Kittiwake Shoal against a water sample"
+          li
+            strong
+              "Data"
+            "· Leo"
+            ul.contains-task-list
+              li.task-list-item.is-done
+                input.task-list-item-checkbox aria-label="Review the 90-day dataset ( notebook )" checked disabled
+                "Review the 90-day dataset ("
+                a href="data-notebook.md"
+                  "notebook"
+                ")"
+              li.task-list-item
+                input.task-list-item-checkbox aria-label="First bulletin drafted by Gull and signed off by Leo ( how it works )" disabled
+                "First bulletin drafted by Gull and signed off by Leo ("
+                a href="bulletin-agent.md"
+                  "how it works"
+                ")"
+          li
+            strong
+              "Science"
+            "· Imani"
+            ul.contains-task-list
+              li.task-list-item.is-done
+                input.task-list-item-checkbox aria-label="Sign off the QC thresholds" checked disabled
+                "Sign off the QC thresholds"
+              li.task-list-item
+                input.task-list-item-checkbox aria-label="Publish a short guide to reading pH ( draft )" disabled
+                "Publish a short guide to reading pH ("
+                a href="ocean-chemistry.md#ph-is-a-logarithm"
+                  "draft"
+                ")"
+          li
+            strong
+              "Launch"
+            "· Hana"
+            ul.contains-task-list
+              li.task-list-item.is-done
+                input.task-list-item-checkbox aria-label="Brief the volunteers" checked disabled
+                "Brief the volunteers"
+              li.task-list-item
+                input.task-list-item-checkbox aria-label="Monday rehearsal with the whole crew" disabled
+                "Monday rehearsal with the whole crew"
+              li.task-list-item
+                input.task-list-item-checkbox aria-label="Launch post for the lab's newsletter" disabled
+                "Launch post for the lab's newsletter"
+        h2 id="critical-path"
+          a.anchor href="#critical-path" aria-label="Link to Critical path"
+            "#"
+          "Critical path"
+        p
+          "Sixty-four days stood between the first buoy build and launch day, and every one of them sat on the chain of bold arrows below: a day lost there is a day lost a…"
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg svg sized labels: Build buoys | 19 d | Calibrate | 7 d | Load Petrel | 2 d | Deploy | 9 d | Shakedown + QC | 24 d | Rehearsal | 3 d | Launch | Nov 17 | Gateways | 16 d | API freeze | 12 d | Volunteers | 2 d
+        h2 id="budget"
+          a.anchor href="#budget" aria-label="Link to Budget"
+            "#"
+          "Budget"
+        div.table-wrap
+          table
+            thead
+              tr
+                th
+                  "Item"
+                th
+                  "Detail"
+                th align="right"
+                  "Cost (USD)"
+                th align="right"
+                  "Share"
+            tbody
+              tr
+                td
+                  "Buoy hardware"
+                td
+                  "12 buoys × $1,850"
+                td align="right"
+                  "22,200"
+                td align="right"
+                  "45.7 %"
+              tr
+                td
+                  "Boat time"
+                td
+                  "9 days × $1,400"
+                td align="right"
+                  "12,600"
+                td align="right"
+                  "25.9 %"
+              tr
+                td
+                  "Calibration"
+                td
+                  "sensors and reference samples"
+                td align="right"
+                  "3,900"
+                td align="right"
+                  "8.0 %"
+              tr
+                td
+                  "Gateways"
+                td
+                  "3 × $950"
+                td align="right"
+                  "2,850"
+                td align="right"
+                  "5.9 %"
+              tr
+                td
+                  "Cloud and data"
+                td
+                  "hosting, storage, transfer"
+                td align="right"
+                  "1,650"
+                td align="right"
+                  "3.4 %"
+              tr
+                td
+                  "Contingency"
+                td
+                  "held for repairs"
+                td align="right"
+                  "5,400"
+                td align="right"
+                  "11.1 %"
+              tr
+                td
+                  strong
+                    "Total"
+                td
+                td align="right"
+                  strong
+                    "48,600"
+                td align="right"
+                  strong
+                    "100.0 %"
+        p
+          "Hardware and boat time are spent. The contingency carries us through winter maintenance."
+        h2 id="risks"
+          a.anchor href="#risks" aria-label="Link to Risks"
+            "#"
+          "Risks"
+        p
+          "We rate each risk twice a month on two questions: how likely is it, and how much would it hurt?"
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg quadrantChart sized labels: Act now | Plan for it | Keep an eye on | Reduce | Launch day API load | Volunteer shortage | Sensor drift | Gateway outage | Biofouling | Storm delay | Unlikely | Likely | Minor impact | Severe impact | Season 3 risks
+        p
+          "The two risks in the top right get work this week; the rest have a standing answer."
+        div.markdown-alert.markdown-alert-note.markdown-alert-kind-todo
+          p.markdown-alert-title
+            svg svg sized
+            "Mitigations"
+          ul
+            li
+              strong
+                "Launch day API load:"
+              "cache the latest-readings endpoint for 60 seconds and finish the load test before Monday."
+            li
+              strong
+                "Sensor drift:"
+              "check the pH sensor at Kittiwake Shoal before December 1, and compare every pH sensor with a water sample on each visit."
+            li
+              strong
+                "Gateway outage:"
+              "buoys keep unsent readings and resend them when the link returns; a spare gateway waits at Port Avery."
+            li
+              strong
+                "Storm delay:"
+              "winter maintenance carries a five-day weather buffer."
+            li
+              strong
+                "Biofouling:"
+              "copper mesh on the sensor cages, cleaned on every visit."
+            li
+              strong
+                "Volunteer shortage:"
+              "two backups for every launch-day role."
+        h2 id="work-breakdown"
+          a.anchor href="#work-breakdown" aria-label="Link to Work breakdown"
+            "#"
+          "Work breakdown"
+        p
+          "The same season, cut into pieces of work instead of dates."
+        div.code-block.diagram
+          figure.figure
+            div.drawing
+              svg svg sized labels: Prep | Build buoys | Calibrate sensors | Voyage | Deploy 12 buoys | Water samples | Shakedown | Tune QC rules | Launch | API v2.3 | Volunteers | Winter | Maintenance | Season 3
+        h2 id="decisions"
+          a.anchor href="#decisions" aria-label="Link to Decisions"
+            "#"
+          "Decisions"
+        details
+          summary
+            "Decision log: four decisions that shaped the season"
+          div.table-wrap
+            table
+              thead
+                tr
+                  th
+                    "Date"
+                  th
+                    "Decision"
+                  th
+                    "Why"
+                  th
+                    "By"
+              tbody
+                tr
+                  td
+                    "Sep 30"
+                  td
+                    "Take a water sample at every station during the voyage"
+                  td
+                    "Gives each pH and oxygen sensor a reference point"
+                  td
+                    "Dr. Imani Okafor"
+                tr
+                  td
+                    "Oct 22"
+                  td
+                    "Publish flagged readings with their flag instead of deleting them"
+                  td
+                    "People can judge for themselves, and nothing disappears silently"
+                  td
+                    "Dr. Imani Okafor"
+                tr
+                  td
+                    "Nov 4"
+                  td
+                    "Drop the cellular fallback for Heron Flats"
+                  td
+                    "LoRa through Saddle Hill delivers 96 % of readings on time, and the buoy resends the rest ("
+                    a href="station-architecture.md#decision-lora-not-cellular"
+                      "why LoRa"
+                    ")"
+                  td
+                    "Tomás Varela"
+                tr
+                  td
+                    "Nov 10"
+                  td
+                    "Launch on Tuesday, not Monday"
+                  td
+                    "Leaves a full working day for the rehearsal"
+                  td
+                    "Hana Kowalski"
+        hr
+        p
+          "Next:"
+          a href="galley-recipe.md"
+            "Moqueca for twelve"
+          "·"
+          a href="README.md"
+            "Start here"

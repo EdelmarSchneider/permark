@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 const css = readFileSync(new URL("./markdown.css", import.meta.url), "utf8");
 const math = readFileSync(new URL("../../plugins/math/Math.svelte", import.meta.url), "utf8");
+const paper = readFileSync(new URL("../../plugins/export/paper.css", import.meta.url), "utf8");
 
 /** CSS with comments removed, so a note cannot hide or satisfy a declaration. */
 function codeOnly(source: string): string {
@@ -59,23 +60,22 @@ describe("reading column", () => {
     expect(image.some((decl) => /^(?:min-)?width:/.test(decl))).toBe(false);
   });
 
-  it("wraps reading-view cells, including long tokens, under .doc-column", () => {
-    const wrapped = sheet.filter(
+  it("keeps words whole in screen cells (a wide table scrolls in its wrapper); paper wraps long tokens", () => {
+    // `anywhere` | `break-all` let the table squeeze a column below its longest word: words break mid-word
+    const breaking = sheet.filter(
       (rule) =>
-        /overflow-wrap\s*:/.test(rule.body) &&
+        /overflow-wrap\s*:\s*anywhere|word-break\s*:\s*break-(?:all|word)/.test(rule.body) &&
         rule.selectors.some((selector) => /(?:^|\s)(?:th|td)$/.test(selector)),
     );
-    expect(wrapped, "cell overflow-wrap under .doc-column").not.toEqual([]);
-    for (const rule of wrapped) {
-      expect(rule.selectors.every((selector) => selector.includes(".doc-column"))).toBe(true);
-      expect(declarations(rule.body)).toContain("overflow-wrap: anywhere");
-    }
+    expect(breaking.map((rule) => rule.selectors.join(", "))).toEqual([]);
     const shared = sheet.find(
       (rule) => rule.selectors.includes(".md th") && rule.selectors.includes(".md td"),
     );
     expect(shared).toBeDefined();
     expect(declarations(shared?.body ?? "")).toContain("min-width: 5em");
-    expect(shared?.body ?? "").not.toMatch(/overflow-wrap/);
+    // paper cannot scroll: its cells wrap
+    expect(declarations(ruleBody(paper, ".md td"))).toContain("overflow-wrap: anywhere");
+    expect(declarations(ruleBody(paper, ".md .table-wrap"))).toContain("overflow: visible");
   });
 
   it("keeps inner table scroll, the 5em floor, Full, code, and display math", () => {
@@ -101,5 +101,20 @@ describe("reading column", () => {
       "overflow-x: auto",
       "overflow-y: hidden",
     ]);
+  });
+
+  it("aligns a table column as written (`:-:`, `--:`): the cells' align wins over the default", () => {
+    // a cell's `align` attribute is a presentational hint, below any author rule: the shared rule sets the start
+    // (a header cell is centered by the browser otherwise) and the written alignment is a rule of its own
+    const shared = sheet.find(
+      (rule) => rule.selectors.includes(".md th") && rule.selectors.includes(".md td"),
+    );
+    expect(declarations(shared?.body ?? "")).toContain("text-align: start");
+    for (const side of ["left", "center", "right"]) {
+      for (const cell of ["th", "td"]) {
+        const selector = `.md ${cell}[align="${side}" i]`;
+        expect(declarations(ruleBody(css, selector)), selector).toContain(`text-align: ${side}`);
+      }
+    }
   });
 });

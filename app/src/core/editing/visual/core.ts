@@ -294,6 +294,8 @@ export type Core = {
   parseRaw(text: string): MdastNode;
   /** Replaces the whole document (history starts over). */
   setDoc(doc: PMNode): void;
+  /** The webview's own spellcheck over the text on | off (on when made). */
+  setSpellcheck(on: boolean): void;
   destroy(): Promise<void>;
 };
 
@@ -320,17 +322,19 @@ function stripPositions(node: MdastNode): MdastNode {
 
 /** Creates the editor in `host` with an empty document. */
 export async function createCore(options: CoreOptions): Promise<Core> {
+  let spellcheck = true;
   const editor = Editor.make()
     .config((ctx) => {
       ctx.set(rootCtx, options.host);
-      // the blocks are the children of `.md-body`: the reading styles apply as they are
+      // the blocks are the children of `.md-body`: the reading styles apply as they are; a function, so a view update
+      // brings a changed spellcheck flag (a set attribute would be written over by the next update)
       ctx.update(editorViewOptionsCtx, (previous) => ({
         ...previous,
-        attributes: {
+        attributes: () => ({
           class: "md-body pm-editor",
-          spellcheck: "true",
+          spellcheck: spellcheck ? "true" : "false",
           ...(options.label === undefined ? {} : { "aria-label": options.label }),
-        },
+        }),
       }));
       ctx.update(remarkStringifyOptionsCtx, (previous) => ({
         ...previous,
@@ -404,6 +408,12 @@ export async function createCore(options: CoreOptions): Promise<Core> {
           plugins: view.state.plugins,
         });
         view.updateState(state);
+      },
+      setSpellcheck: (on) => {
+        if (on === spellcheck) return;
+        spellcheck = on;
+        // same props, attributes read again
+        view.setProps({});
       },
       destroy: async () => {
         await editor.destroy();

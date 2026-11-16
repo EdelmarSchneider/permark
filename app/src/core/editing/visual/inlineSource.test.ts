@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { undo } from "@milkdown/kit/prose/history";
 import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import type { Segment } from "../../../api/generated/Segment";
+import { enhanceBlock } from "../../doc/enhance";
 import { classify } from "./classify";
 import { buildDoc, compose, type Built } from "./compose";
 import { createCore, INLINE_SOURCE, LOCKED, relook, type Core, type LockedHost } from "./core";
@@ -16,6 +17,8 @@ const followed: string[] = [];
 /** View's elements for HTML pieces by source (what a render of the document gave) and the renders asked for. */
 const viewHtml = new Map<string, string>();
 let renders = 0;
+/** View's block hook (a test may put View's real one in). */
+let enhance = (element: HTMLElement): HTMLElement => element;
 
 const host: LockedHost = {
   render: () => null,
@@ -25,7 +28,7 @@ const host: LockedHost = {
   },
   inline: (source) => viewHtml.get(source) ?? null,
   blocks: {
-    enhance: (element) => element,
+    enhance: (element) => enhance(element),
     near: (element) => {
       neared.push(element);
       return () => void undone.push(element);
@@ -184,14 +187,54 @@ describe("inline math, read as View reads it", () => {
     ["Auto <http://a.b/$x$> $y$", ["$y$"]],
     // the element is a piece of its own (HTML written in a line): no formula inside its attribute
     ['Html <span title="$x$">t</span> $y$', ['<span title="$x$">t</span>', "$y$"]],
+    // LaTeX delimiters: closed by the first backslash before the matching bracket, never empty
+    ["Latex \\(a_b_c\\) here", ["\\(a_b_c\\)"]],
+    // `\[..\]` only on lines of its own (or as the whole paragraph): escaped brackets in prose stay text
+    ["Shown \\[x^2\\] inline", []],
+    ["see \\[1\\] and \\[2\\]", []],
+    ["\\[ whole \\]", ["\\[ whole \\]"]],
+    ["\\[ a \\] trailing", []],
+    ["Text\n\\[\nown\n\\]\nmore", ["\\[\nown\n\\]"]],
+    ["Text\n  \\[  \nown\n\\]  \nmore", ["\\[  \nown\n\\]"]],
+    ["Lead \\[\nb\n\\]", []],
+    ["Text\n\\[\nb\n\\] tail", []],
+    ["Inner \\[1 \\[2\\]", []],
+    ["Link [\\[1\\]](u.md) text", []],
+    ["*a\n\\[\nb\n\\]\nc*", []],
+    ["# \\[1\\]", []],
+    ["| \\[1\\] | x |\n|---|---|", []],
+    ["Empty \\(\\) x\\) y", []],
+    ["Mixed \\(x\\] y", []],
+    ["Escaped \\\\(x\\) b", []],
+    ["Code `\\(x\\)` span", []],
+    ["Inner \\(a \\\\) b\\) c", ["\\(a \\\\)"]],
+    ["Dollar in \\(a$b\\) ok", ["\\(a$b\\)"]],
+    ["Link [a \\(x\\) b](u.md) text", ["\\(x\\)"]],
   ])("%s", (text, expected) => {
     expect(atomsIn(text)).toEqual(expected);
   });
 
   it("each atom is written back as its own source", () => {
-    const text = "A $a_b_c$ and $$x$$, $`y`$ and \\$5 $q\\$r$ [l $x$](u.md) *e $z$* end.";
+    const text =
+      "A $a_b_c$ and $$x$$, $`y`$ and \\$5 $q\\$r$ [l $x$](u.md) *e $z$* \\(a_b\\) end\n\\[\nc\n\\]\n(d).";
     const doc = core.parse(text);
     expect(core.write(doc.child(0))).toBe(text);
+  });
+
+  it("escaped brackets in prose, a heading or a table cell read as View reads them: text with its brackets", () => {
+    const doc = core.parse(
+      "See \\[1\\] and *\\[a\\_b\\]*\n\n# \\[2\\]\n\n| \\[3\\] | x |\n|---|---|\n",
+    );
+    expect(doc.child(0).textContent).toBe("See [1] and [a_b]");
+    expect(doc.child(1).textContent).toBe("[2]");
+    expect(doc.child(2).textContent).toContain("[3]");
+  });
+
+  it("a backslash typed before a parenthesis stays text: it never starts a formula on the next read", () => {
+    const doc = core.parse("x\n");
+    const typed = core.view.state.schema.text("see \\(a\\) and \\(b)");
+    const written = core.write(doc.child(0).copy(doc.child(0).content.replaceChild(0, typed)));
+    expect(atomsIn(written)).toEqual([]);
   });
 });
 
@@ -388,12 +431,44 @@ describe("an inline formula opened", () => {
     type(second, "z");
     expect(compose(core, built, core.view.state.doc).text).toBe("A $$x^3$$ and $`z`$ b.\n");
   });
+
+  it("LaTeX-delimited math is View's formula and keeps its delimiters", async () => {
+    // a list item's whole paragraph: display math that stays a piece of its line
+    const text = "A \\(x^2\\) and b.\n\n- \\[y\\]\n";
+    const built = await load(text);
+    const looks = atoms().map((atom) => atom.querySelector("[data-math-style]"));
+    expect(looks.map((look) => look?.getAttribute("data-math-style"))).toEqual([
+      "inline",
+      "display",
+    ]);
+    expect(looks.map((look) => look?.textContent)).toEqual(["x^2", "y"]);
+    const first = openAtom(0);
+    expect(first.value).toBe("x^2");
+    type(first, "x^3");
+    key(first, "Escape");
+    const second = openAtom(1);
+    type(second, "z");
+    // a closing delimiter typed into the TeX would end the formula early: refused
+    type(second, "a\\]b");
+    expect(second.getAttribute("aria-invalid")).toBe("true");
+    expect(compose(core, built, core.view.state.doc).text).toBe(
+      "A \\(x^3\\) and b.\n\n- \\[z\\]\n",
+    );
+  });
 });
 
 describe("a block that keeps its math as written", () => {
   it("multi-line inline math stays a locked block", async () => {
     await load("Energy $E=\nmc^2$ here.\n");
     expect(core.view.state.doc.child(0).type.name).toBe(LOCKED);
+  });
+
+  it("display math on lines of its own inside a paragraph keeps the paragraph as written", async () => {
+    const text = "Text\n\\[\nE = mc^2\n\\]\nmore.\n\nSee \\[1\\] here.\n";
+    const built = await load(text);
+    expect(core.view.state.doc.child(0).type.name).toBe(LOCKED);
+    expect(core.view.state.doc.child(1).type.name).toBe("paragraph");
+    expect(compose(core, built, core.view.state.doc).text).toBe(text);
   });
 });
 
@@ -594,6 +669,30 @@ describe("HTML written in a line", () => {
     expect(atoms()[1]?.querySelector("kbd")?.textContent).toBe("G");
   });
 
+  it("a player or picture written in a line takes View's addresses: the project file, never a web picture", async () => {
+    const player = '<audio controls src="a.wav"></audio>';
+    const picture = '<img src="https://example.com/a.png" alt="far" />';
+    viewHtml.set(
+      player,
+      '<audio controls="" src="pm-asset:docs/a.wav" preload="metadata"></audio>',
+    );
+    viewHtml.set(picture, '<img src="https://example.com/a.png" alt="far">');
+    enhance = (element) => enhanceBlock(element, { assetUrl: (path) => `asset://w/${path}` });
+    try {
+      await load(`Listen ${player} and look ${picture} now.\n`);
+      const [sound, seen] = atoms();
+      expect(sound?.querySelector("audio")?.getAttribute("src")).toBe("asset://w/docs/a.wav");
+      expect(seen?.querySelector("img")).toBeNull();
+      const chip = seen?.querySelector(".remote-image");
+      expect(chip?.textContent).toBe("far");
+      expect(chip?.hasAttribute("data-url")).toBe(false);
+      expect(core.view.dom.innerHTML).not.toContain("pm-asset:");
+      expect(core.view.dom.innerHTML).not.toContain('src="https:');
+    } finally {
+      enhance = (element) => element;
+    }
+  });
+
   it("a click opens its source; what is typed goes in as written, drawn from View's look of it", async () => {
     viewHtml.set("<kbd>Ctrl</kbd>", "<kbd>Ctrl</kbd>");
     viewHtml.set("<kbd>Alt</kbd>", "<kbd>Alt</kbd>");
@@ -609,6 +708,67 @@ describe("HTML written in a line", () => {
     // a source no render has drawn yet: the document is rendered again once typing pauses
     type(openAtom(0), "<kbd>Shift</kbd>");
     await vi.waitFor(() => expect(renders).toBe(1));
+  });
+});
+
+describe("marked text, emoji shortcodes and inline notes", () => {
+  beforeEach(() => {
+    viewHtml.clear();
+    renders = 0;
+  });
+
+  it.each([
+    ["A ==bright== word", ["==bright=="]],
+    ["Mixed ==a *b* `c`== here", ["==a *b* `c`=="]],
+    ["Smile :smile: and :+1: now", [":smile:", ":+1:"]],
+    ["A note^[An *inline* note.] here", ["^[An *inline* note.]"]],
+    ["Nested ^[see [x] and `]`] end", ["^[see [x] and `]`]"]],
+    ["In ==a :smile: b== one piece", ["==a :smile: b=="]],
+    // kept as text, as View keeps them
+    ["Code `a==b==c` and $a==b$ stay", ["$a==b$"]],
+    ["C++ and C++ stay", []],
+    ["At 12:30:45 sharp", []],
+    ["If a == b and c == d", []],
+    ["Three ===x=== stay", []],
+    ["Escaped \\==x== and \\:smile: stay", []],
+    ["Empty ^[] and open ^[note", []],
+  ])("%s", (text, expected) => {
+    expect(atomsIn(`${text}\n`)).toEqual(expected);
+  });
+
+  it("a paragraph using them is editable text, each piece kept as written", async () => {
+    const LINE = "A ==bright== word :smile: and a note^[Inline.] here.\n";
+    const built = await load(LINE);
+    expect(built.sources.map((s) => s.locked)).toEqual([null]);
+    expect(atoms().map((atom) => atom.dataset.kind)).toEqual(["mark", "emoji", "note"]);
+    expect(atoms().map((atom) => atom.getAttribute("aria-label"))).toEqual([
+      "block: highlight",
+      "block: emoji",
+      "block: footnote",
+    ]);
+    const composed = compose(core, built, core.view.state.doc);
+    expect(composed.text).toBe(LINE);
+    expect(composed.changed).toBe(0);
+  });
+
+  it("is drawn as View's element for it; with none known, its source shows as text", async () => {
+    viewHtml.set("==bright==", "<mark>bright</mark>");
+    viewHtml.set(":smile:", '<span class="emoji" title=":smile:">😄</span>');
+    await load("A ==bright== word :smile: and ==dim== too.\n");
+    const [bright, smile, dim] = atoms();
+    expect(bright?.querySelector("mark")?.textContent).toBe("bright");
+    expect(smile?.querySelector("span.emoji")?.textContent).toBe("😄");
+    expect(dim?.querySelector("mark")).toBeNull();
+    expect(dim?.textContent).toBe("==dim==");
+  });
+
+  it("an inline note takes its number among the footnotes, as View counts them", async () => {
+    await load("First^[inline] then [^a] and [^a].\n\n[^a]: Note.\n");
+    const numbers = atoms().map(
+      (atom) => atom.querySelector("sup.footnote-ref > a[data-footnote-ref]")?.textContent,
+    );
+    // the inline note's own number is View's (none rendered here); the reference after it is the second footnote
+    expect(numbers).toEqual([undefined, "2", "2"]);
   });
 });
 

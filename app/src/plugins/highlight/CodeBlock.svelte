@@ -1,16 +1,17 @@
 <script lang="ts">
-  // A fenced code block: the text, highlighted when it can be, the language in the corner, a copy button.
-  // Mounted into the block's wrapper when the block comes near the screen.
+  // A fenced code block: the text, highlighted when it can be, the language in the corner, a copy button; the title,
+  // line numbers and marked lines its info string asks for. Mounted into the block's wrapper when the block comes near
+  // the screen.
   import Check from "@lucide/svelte/icons/check";
   import Copy from "@lucide/svelte/icons/copy";
   import CodeActions from "../../core/doc/CodeActions.svelte";
   import { t } from "../../core/i18n";
   import type { EmbedProps } from "../../core/plugins/props";
   import { highlightFence, type CodeOutcome } from "./highlighter";
-  import { leadCols, lineSpans } from "./htmlLines";
+  import { leadCols, lineSpans, markedLines } from "./htmlLines";
   import "./tokens.css";
 
-  let { source, info, lines = false, region }: EmbedProps = $props();
+  let { source, info, lines = false, region, title, start, marked }: EmbedProps = $props();
 
   let outcome = $state.raw<CodeOutcome>({ html: null, label: null });
   /** The first answer of the highlighter came: a copy of the page taken now (export) holds the colors. */
@@ -21,10 +22,16 @@
     return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
-  /** One element per line when the viewer asks for it (the plain text too, before highlighting). */
+  const lineCount = $derived(source.split("\n").length);
+  const marks = $derived(marked === undefined ? new Set<number>() : markedLines(marked, lineCount));
+  /** Digits of the highest line number (the width of the numbers' column). */
+  const digits = $derived(start === undefined ? 0 : String(start + lineCount - 1).length);
+
+  /** One element per line when the viewer asks for it or lines are numbered | marked (the plain text too, before
+   *  highlighting). The numbers are drawn by the style: never text to select or copy. */
   const drawn = $derived(
-    lines
-      ? lineSpans(outcome.html ?? escape(source), source.split("\n").map(leadCols))
+    lines || start !== undefined || marks.size > 0
+      ? lineSpans(outcome.html ?? escape(source), source.split("\n").map(leadCols), marks)
       : outcome.html,
   );
 
@@ -60,8 +67,13 @@
   }
 </script>
 
+{#if title}<div class="code-title">{title}</div>{/if}
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <pre
+  class:is-numbered={start !== undefined}
+  class:has-title={!!title}
+  style:--ln-start={start === undefined ? undefined : start - 1}
+  style:--ln-digits={start === undefined ? undefined : digits}
   tabindex={region === undefined ? undefined : 0}
   role={region === undefined ? undefined : "region"}
   aria-label={region}
@@ -92,6 +104,56 @@
 </div>
 
 <style>
+  /* the title over the block: one box with the code below it */
+  .code-title {
+    padding: 6px 16px;
+    border: 1px solid var(--border);
+    border-bottom: 0;
+    border-radius: var(--radius-card) var(--radius-card) 0 0;
+    background: var(--surface);
+    font: var(--code-label-fs) / var(--code-label-lh) var(--font-code);
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+  pre.has-title {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-top-style: dashed;
+  }
+  /* numbered | marked lines: one block per line; a number sits in the line's own room at the left (`--ln-pad`). A
+     wrapped line's further rows stay in the code column, 2 columns right of the line's own indentation (`--lead`). */
+  pre :global(.ln) {
+    display: block;
+    position: relative;
+    --hang: calc((2 + var(--lead, 0)) * 1ch);
+    padding-left: calc(var(--ln-pad, 0px) + var(--hang));
+    text-indent: calc(-1 * var(--hang));
+  }
+  pre.is-numbered {
+    counter-reset: ln var(--ln-start);
+    --ln-pad: calc(var(--ln-digits) * 1ch + 14px);
+  }
+  pre.is-numbered :global(.ln) {
+    counter-increment: ln;
+  }
+  pre.is-numbered :global(.ln::before) {
+    content: counter(ln);
+    position: absolute;
+    left: var(--ln-edge, 0px);
+    width: calc(var(--ln-digits) * 1ch);
+    text-align: right;
+    text-indent: 0;
+    color: var(--faint);
+    user-select: none;
+  }
+  /* a marked line is tinted from edge to edge of the block */
+  pre :global(.ln.is-marked) {
+    --ln-edge: 16px;
+    margin-inline: -16px;
+    padding-inline: calc(16px + var(--ln-pad, 0px) + var(--hang)) 16px;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
   /* the language, the plugins' buttons and Copy in the corner */
   .corner {
     position: absolute;

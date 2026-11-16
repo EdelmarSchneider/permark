@@ -47,6 +47,8 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_correction::plugin());
     #[cfg(feature = "plugin-translation")]
     plugins.push(permark_plugin_translation::plugin());
+    #[cfg(feature = "plugin-spelling")]
+    plugins.push(permark_plugin_spelling::plugin());
     #[cfg(feature = "plugin-prompt-blocks")]
     plugins.push(permark_plugin_prompt_blocks::plugin());
     #[cfg(feature = "plugin-frontmatter-card")]
@@ -59,6 +61,8 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_mermaid::plugin());
     #[cfg(feature = "plugin-plantuml")]
     plugins.push(permark_plugin_plantuml::plugin());
+    #[cfg(feature = "plugin-graphviz")]
+    plugins.push(permark_plugin_graphviz::plugin());
     #[cfg(feature = "plugin-media")]
     plugins.push(permark_plugin_media::plugin());
     #[cfg(feature = "plugin-json-view")]
@@ -141,6 +145,7 @@ mod tests {
             "local-ai",
             "correction",
             "translation",
+            "spelling",
             "md-family",
             "symbols",
             "prompt-blocks",
@@ -149,6 +154,7 @@ mod tests {
             "math",
             "mermaid",
             "plantuml",
+            "graphviz",
             "media",
             "json-view",
             "xml-view",
@@ -565,11 +571,21 @@ mod tests {
         }
     }
 
-    /// Renders the fixture documents (`src/api/fixtures/`) with every plugin on and writes the views the mock backend
-    /// (`dev:mock`, UI tests) serves: `src/api/generated/mock-documents.json`. `cargo test` regenerates it; CI fails when
-    /// regeneration changes the file.
-    #[test]
-    fn export_mock_documents() {
+    type JsonMap = serde_json::Map<String, serde_json::Value>;
+
+    /// What the mock backend serves for documents, as the real backend makes it with every plugin on.
+    struct Rendered {
+        /// The views (`Documents::open`).
+        views: JsonMap,
+        /// What the editors start from (mock `edit_source`).
+        sources: JsonMap,
+        /// The properties of each YAML front matter as Edit asks for them (`config_sheet` of the text between the
+        /// fences): the mock serves the real sheets, not made-up ones.
+        sheets: JsonMap,
+    }
+
+    /// Renders `paths` (project paths) of the project folder `project`.
+    fn render_documents(project: &std::path::Path, paths: &[String]) -> Rendered {
         use permark_core::document::{DocScope, Documents};
         use permark_core::events::{CoreEvent, EventSink};
         use permark_core::paths::{Root, Vault};
@@ -579,11 +595,71 @@ mod tests {
             fn emit(&self, _event: CoreEvent) {}
         }
 
-        let generated = std::path::Path::new(env!("TS_RS_EXPORT_DIR"));
-        let fixtures = generated.parent().unwrap().join("fixtures");
         let registry = registry_of_all();
         let all_on: BTreeSet<PluginId> = registry.ordered().map(|m| m.id.clone()).collect();
         let formats = FormatRegistry::build(&registry.contributions(&all_on));
+        let docs = Documents::for_project(
+            DocScope::Project(Vault::new(Root::open(project).unwrap())),
+            Arc::new(Quiet),
+        );
+        let editor = permark_core::edit::Editor {
+            scope: docs.scope(),
+            formats: &formats,
+            own: None,
+            observer: None,
+            tree: None,
+        };
+        let mut rendered = Rendered {
+            views: JsonMap::new(),
+            sources: JsonMap::new(),
+            sheets: JsonMap::new(),
+        };
+        for path in paths {
+            let mut view = docs
+                .open("mock", path, &[], &formats)
+                .unwrap_or_else(|e| panic!("{path}: {e:?}"));
+            // the time of a file is not part of the fixture (the generated file must not change with the clock)
+            view.mtime_ms = 0;
+            rendered
+                .views
+                .insert(path.clone(), serde_json::to_value(view).unwrap());
+            let source = editor
+                .source(path)
+                .unwrap_or_else(|e| panic!("{path}: {e:?}"));
+            let text = source.text.clone();
+            rendered
+                .sources
+                .insert(path.clone(), serde_json::to_value(source).unwrap());
+            let Some((inner, _)) = text
+                .strip_prefix("---\n")
+                .and_then(|rest| rest.split_once("\n---\n"))
+            else {
+                continue;
+            };
+            let body = editor.config_sheet("front-matter.yaml", inner).unwrap();
+            rendered.sheets.insert(
+                path.clone(),
+                serde_json::json!({ "path": "front-matter.yaml", "text": inner, "body": body }),
+            );
+        }
+        rendered
+    }
+
+    /// Writes `map` as JSON to `target` unless the file already holds that text.
+    fn write_json(target: &std::path::Path, map: &JsonMap) {
+        let text = format!("{}\n", serde_json::to_string_pretty(map).unwrap());
+        if std::fs::read_to_string(target).ok().as_deref() != Some(text.as_str()) {
+            std::fs::write(target, text).unwrap();
+        }
+    }
+
+    /// Renders the fixture documents (`src/api/fixtures/`) with every plugin on and writes the views the mock backend
+    /// (`dev:mock`, UI tests) serves: `src/api/generated/mock-documents.json`. `cargo test` regenerates it; CI fails when
+    /// regeneration changes the file.
+    #[test]
+    fn export_mock_documents() {
+        let generated = std::path::Path::new(env!("TS_RS_EXPORT_DIR"));
+        let fixtures = generated.parent().unwrap().join("fixtures");
         // the project the documents live in: the same paths as the mock project
         let project = tempfile::tempdir().unwrap();
         let place = |path: &str, text: &[u8]| {
@@ -612,61 +688,83 @@ mod tests {
             place(path, text.as_bytes());
         }
         place("src/main.rs", b"fn main() {}");
-        let docs = Documents::for_project(
-            DocScope::Project(Vault::new(Root::open(project.path()).unwrap())),
-            Arc::new(Quiet),
-        );
-        let mut views = serde_json::Map::new();
-        for (path, _) in documents {
-            let mut view = docs.open("mock", path, &[], &formats).unwrap();
-            // the time of a file is not part of the fixture (the generated file must not change with the clock)
-            view.mtime_ms = 0;
-            views.insert(path.to_owned(), serde_json::to_value(view).unwrap());
-        }
-        let text = format!("{}\n", serde_json::to_string_pretty(&views).unwrap());
-        let target = generated.join("mock-documents.json");
-        if std::fs::read_to_string(&target).ok().as_deref() != Some(text.as_str()) {
-            std::fs::write(target, text).unwrap();
-        }
-        // what the editors start from (mock `edit_source`)
-        let editor = permark_core::edit::Editor {
-            scope: docs.scope(),
-            formats: &formats,
-            own: None,
-            observer: None,
-            tree: None,
-        };
-        let mut sources = serde_json::Map::new();
-        for (path, _) in documents {
-            let source = editor.source(path).unwrap();
-            sources.insert(path.to_owned(), serde_json::to_value(source).unwrap());
-        }
-        let text = format!("{}\n", serde_json::to_string_pretty(&sources).unwrap());
-        let target = generated.join("mock-edit-sources.json");
-        if std::fs::read_to_string(&target).ok().as_deref() != Some(text.as_str()) {
-            std::fs::write(target, text).unwrap();
-        }
-        // the properties of each YAML front matter as Edit asks for them (`config_sheet` of the text between the
-        // fences): the mock serves the real sheets, not made-up ones
-        let mut sheets = serde_json::Map::new();
-        for (path, _) in documents {
-            let source = editor.source(path).unwrap().text;
-            let Some((inner, _)) = source
-                .strip_prefix("---\n")
-                .and_then(|rest| rest.split_once("\n---\n"))
-            else {
+        let paths: Vec<String> = documents.iter().map(|(p, _)| (*p).to_owned()).collect();
+        let rendered = render_documents(project.path(), &paths);
+        write_json(&generated.join("mock-documents.json"), &rendered.views);
+        write_json(&generated.join("mock-edit-sources.json"), &rendered.sources);
+        write_json(&generated.join("mock-config-sheets.json"), &rendered.sheets);
+    }
+
+    /// Files of the corpus served as they are (pictures, sound, video), not rendered.
+    const CORPUS_MEDIA: [&str; 15] = [
+        "svg", "png", "jpg", "jpeg", "gif", "webp", "avif", "wav", "mp3", "ogg", "m4a", "flac",
+        "mp4", "webm", "mov",
+    ];
+
+    /// Copies the folder `from` to `to` byte for byte; the project path (under `at`) of each file that renders goes to
+    /// `paths`.
+    fn copy_corpus(
+        from: &std::path::Path,
+        to: &std::path::Path,
+        at: &str,
+        paths: &mut Vec<String>,
+    ) {
+        std::fs::create_dir_all(to).unwrap();
+        let mut entries: Vec<_> = std::fs::read_dir(from)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        entries.sort();
+        for entry in entries {
+            let name = entry.file_name().unwrap().to_string_lossy().into_owned();
+            let path = format!("{at}/{name}");
+            if entry.is_dir() {
+                copy_corpus(&entry, &to.join(&name), &path, paths);
                 continue;
-            };
-            let body = editor.config_sheet("front-matter.yaml", inner).unwrap();
-            sheets.insert(
-                path.to_owned(),
-                serde_json::json!({ "path": "front-matter.yaml", "text": inner, "body": body }),
-            );
+            }
+            std::fs::copy(&entry, to.join(&name)).unwrap();
+            let ext = entry
+                .extension()
+                .map(|e| e.to_string_lossy().to_ascii_lowercase());
+            if !ext.is_some_and(|e| CORPUS_MEDIA.contains(&e.as_str())) {
+                paths.push(path);
+            }
         }
-        let text = format!("{}\n", serde_json::to_string_pretty(&sheets).unwrap());
-        let target = generated.join("mock-config-sheets.json");
-        if std::fs::read_to_string(&target).ok().as_deref() != Some(text.as_str()) {
-            std::fs::write(target, text).unwrap();
+    }
+
+    /// Renders the corpus of the deep suite (`npm run deep`) the way `export_mock_documents` renders the mock's: folders
+    /// in `PERMARK_DEEP_CORPUS` (a path list; default: the repository's `demo/` and `app/e2e/deep/corpus/`), copied byte
+    /// for byte into `<out>/project/<folder name>/`, views + sources + sheets written to `<out>` (`PERMARK_DEEP_OUT`,
+    /// default `<temp>/permark-deep/corpus`). The deep server serves them in place of the mock's documents.
+    #[test]
+    #[ignore = "run by the deep suite: renders folders outside the test's own fixtures"]
+    fn render_corpus() {
+        let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .unwrap();
+        let roots: Vec<std::path::PathBuf> = match std::env::var_os("PERMARK_DEEP_CORPUS") {
+            Some(list) => std::env::split_paths(&list).collect(),
+            None => vec![repo.join("demo"), repo.join("app/e2e/deep/corpus")],
+        };
+        let out = std::env::var_os("PERMARK_DEEP_OUT").map_or_else(
+            || std::env::temp_dir().join("permark-deep").join("corpus"),
+            std::path::PathBuf::from,
+        );
+        let project = out.join("project");
+        if project.exists() {
+            std::fs::remove_dir_all(&project).unwrap();
         }
+        let mut paths = Vec::new();
+        for root in &roots {
+            let name = root.file_name().unwrap().to_string_lossy().into_owned();
+            copy_corpus(root, &project.join(&name), &name, &mut paths);
+        }
+        assert!(!paths.is_empty(), "no documents in {roots:?}");
+        let rendered = render_documents(&project, &paths);
+        write_json(&out.join("documents.json"), &rendered.views);
+        write_json(&out.join("edit-sources.json"), &rendered.sources);
+        write_json(&out.join("config-sheets.json"), &rendered.sheets);
+        println!("rendered {} files into {}", paths.len(), out.display());
     }
 }

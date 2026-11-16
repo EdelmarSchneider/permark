@@ -40,6 +40,16 @@ describe("the diagram fence the caret is in", () => {
     });
   });
 
+  it("finds a Graphviz block by either of its names", () => {
+    for (const language of ["dot", "graphviz"]) {
+      expect(fenceAround([`\`\`\`${language}`, "digraph { a -> b }", "```"], 2)).toEqual({
+        language,
+        code: "digraph { a -> b }",
+        from: 1,
+      });
+    }
+  });
+
   it("is nothing on the fence lines, outside blocks and in code of another language", () => {
     for (const line of [1, 2, 3, 6, 7, 8, 11, 13])
       expect(fenceAround(DOC, line), `${line}`).toBeNull();

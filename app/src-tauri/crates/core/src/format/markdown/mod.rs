@@ -5,8 +5,11 @@
 //! and markers keep each line in place.
 
 mod blocks;
+mod callouts;
+mod fences;
 mod frontmatter;
 mod inline;
+mod latex;
 mod prompt;
 mod refs;
 mod sanitize;
@@ -18,9 +21,14 @@ mod tests;
 use std::borrow::Cow;
 use std::collections::HashSet;
 
-use comrak::nodes::{AstNode, NodeValue};
-use comrak::{format_html, parse_document, Anchorizer, Arena, Options};
+use std::fmt::Write as _;
 
+use comrak::html::format_node_default;
+use comrak::nodes::{AstNode, NodeValue};
+use comrak::options::Plugins;
+use comrak::{create_formatter, Anchorizer, Arena, Options};
+
+pub(crate) use latex::parse_document;
 pub use refs::{at_refs, AtRef};
 pub use sections::{sections, units, Section, TextUnit};
 pub use segments::{segments, LockReason, Segment, SegmentKind};
@@ -75,10 +83,20 @@ fn options() -> Options<'static> {
     ext.description_lists = true;
     ext.math_dollars = true;
     ext.math_code = true;
+    // `\(..\)` and `\[..\]`: the LaTeX delimiters generated text often uses
+    ext.math_latex = true;
+    // `==marked==`, `:smile:` (GitHub's shortcode names; an unknown name stays text), `^[an inline note]`, `:::kind`
+    // containers. Single tildes stay GitHub's strikethrough: no subscript, superscript, underline or spoiler syntax.
+    ext.highlight = true;
+    ext.shortcodes = true;
+    ext.inline_footnotes = true;
+    ext.block_directive = true;
     // Heading ids, without a prefix so that `[x](#my-heading)` works as authored.
     ext.header_id_prefix = Some(String::new());
     o.render.sourcepos = true;
     o.render.tasklist_classes = true;
+    // the rest of a fence's info string reaches `fences::Fences`, which keeps only its checked extras
+    o.render.full_info_string = true;
     // Raw HTML is passed through here and made safe by the sanitizer afterwards.
     o.render.r#unsafe = true;
     o
@@ -110,10 +128,13 @@ fn render(text: &str, cx: &RenderCx<'_>) -> Rendered {
         mark_inline(root, cx);
     }
     let headings = headings_of(root);
+    let boxes = callouts::take(root);
     // 5. HTML
     let mut raw = String::with_capacity(prepared.len() + prepared.len() / 2);
+    let mut plugins = Plugins::default();
+    plugins.render.codefence_syntax_highlighter = Some(&fences::Fences);
     // Writing into a String cannot fail; an error here would only mean an empty document.
-    let _ = format_html(root, &opts, &mut raw);
+    let _ = PageHtml::format_document_with_plugins(root, &opts, &mut raw, &plugins, boxes);
     let raw = strip_heading_anchors(&raw);
     let raw = match cx.features.prompt_blocks {
         Some(_) => prompt::to_details(&raw).into_owned(),
@@ -283,6 +304,46 @@ fn plain(text: &str) -> Rendered {
         notes: vec![DEEP_NESTING_NOTE],
     }
 }
+
+// ---- HTML -----------------------------------------------------------------------------------------------------------
+
+create_formatter!(PageHtml<callouts::Boxes>, {
+    // GitHub alerts, Obsidian callouts and known `:::` containers draw as one box
+    NodeValue::Alert(ref alert) => |context, node, entering| {
+        callouts::write(context, node, entering, &callouts::Callout::of_alert(alert))?;
+    },
+    NodeValue::BlockQuote => |context, node, entering| {
+        match callouts::found(&context.user, node) {
+            Some(callout) => callouts::write(context, node, entering, &callout)?,
+            None => return format_node_default(context, node, entering),
+        }
+    },
+    // a container of no known kind keeps its content in a plain `div` (its info string is no class)
+    NodeValue::BlockDirective(ref directive) => |context, node, entering| {
+        match callouts::Callout::of_directive(&directive.info) {
+            Some(callout) => callouts::write(context, node, entering, &callout)?,
+            None if entering => {
+                context.cr()?;
+                context.write_str("<div")?;
+                comrak::html::render_sourcepos(context, node)?;
+                context.write_str(">")?;
+            }
+            None => {
+                context.cr()?;
+                context.write_str("</div>")?;
+                context.lf()?;
+            }
+        }
+    },
+    // an emoji says its shortcode on hover (and the visual editor finds it by that)
+    NodeValue::ShortCode(ref short) => |context, entering| {
+        if entering {
+            context.write_str("<span class=\"emoji\" title=\":")?;
+            context.escape(&short.code)?;
+            write!(context, ":\">{}</span>", short.emoji)?;
+        }
+    },
+});
 
 // ---- AST ------------------------------------------------------------------------------------------------------------
 

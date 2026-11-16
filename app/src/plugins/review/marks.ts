@@ -1,10 +1,18 @@
 // The review on the page itself: the changed blocks of the document are tinted (classes on the elements the page
-// keeps by id), the current change is marked and scrolled to, and the buttons of the bars are heard on the page root.
+// keeps by id) with their folded callouts opened (as the ghosts' ones), the current change is marked and scrolled to,
+// and the buttons of the bars are heard on the page root.
 
 import { documents } from "../../core/doc/document.svelte";
 import { review, type ReviewStore } from "./store.svelte";
 
 const MARKS = ["rv-added", "rv-edited", "rv-current"] as const;
+
+/** Opens every folded callout in `root`: a change inside one is never hidden (opening it writes nothing). */
+export function unfold(root: ParentNode): void {
+  for (const fold of root.querySelectorAll<HTMLDetailsElement>("details.markdown-alert")) {
+    fold.open = true;
+  }
+}
 
 /** Tints the blocks of the changes (and clears the tint of the ones that are not any more). */
 export function paintMarks(store: ReviewStore = review): void {
@@ -30,8 +38,10 @@ export function paintMarks(store: ReviewStore = review): void {
       const el = documents.host.element(block.id);
       el?.classList.add(kind);
       if (change.index === store.current) el?.classList.add("rv-current");
+      if (el) unfold(el);
     }
   }
+  for (const ghost of container.querySelectorAll(".rv-ghost")) unfold(ghost);
 }
 
 /** Brings the current change into view. */

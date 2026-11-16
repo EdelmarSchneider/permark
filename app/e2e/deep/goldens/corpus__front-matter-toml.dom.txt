@@ -1,0 +1,50 @@
+div.reading
+  div.doc-column
+    article.md
+      section.card aria-label="Front matter"
+        dl.grid
+          div.field
+            dt
+              "title"
+            dd
+              "A page with TOML front matter"
+          div.field
+            dt
+              "owner"
+            dd
+              "Ada Example"
+          div.field
+            dt
+              "serves"
+            dd
+              "12"
+          div.field
+            dt
+              "published"
+            dd
+              "November 15, 2026"
+          div.field
+            dt
+              "tags"
+            dd.chips
+              span.chip
+                "deep"
+              span.chip
+                "fixture"
+              span.chip
+                "toml"
+          div.field
+            dt
+              "extra.note"
+            dd
+              "a table inside"
+      div.md-body role="document"
+        h1 id="toml-front-matter"
+          a.anchor href="#toml-front-matter" aria-label="Link to TOML front matter"
+            "#"
+          "TOML front matter"
+        p
+          "The card above comes from a"
+          code
+            "+++"
+          "block."

@@ -25,6 +25,7 @@ permark-plugin-symbols = { path = "crates/plugins/symbols" }
 permark-plugin-media = { path = "crates/plugins/media" }
 permark-plugin-mermaid = { path = "crates/plugins/mermaid" }
 permark-plugin-plantuml = { path = "crates/plugins/plantuml" }
+permark-plugin-graphviz = { path = "crates/plugins/graphviz" }
 permark-plugin-review = { path = "crates/plugins/review" }
 permark-plugin-prompt-blocks = { path = "crates/plugins/prompt-blocks" }
 permark-plugin-text-view = { path = "crates/plugins/text-view" }
@@ -37,6 +38,7 @@ permark-plugin-tags = { path = "crates/plugins/tags" }
 permark-plugin-unread = { path = "crates/plugins/unread" }
 permark-plugin-word-count = { path = "crates/plugins/word-count" }
 permark-plugin-token-count = { path = "crates/plugins/token-count" }
+permark-plugin-spelling = { path = "crates/plugins/spelling" }
 permark-plugin-local-ai = { path = "crates/plugins/local-ai" }
 permark-plugin-correction = { path = "crates/plugins/correction" }
 permark-plugin-translation = { path = "crates/plugins/translation" }
@@ -80,10 +82,12 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_System_Pipes",
 ] }
 tempfile = "3.27.0"
+# property tests only (no forked runs, no timeouts: plain in-process cases)
+proptest = { version = "1.12", default-features = false, features = ["std"] }
 ignore = "0.4.33"
 notify = "8.2.0"
 trash = "5.2.9"
-comrak = { version = "0.56", default-features = false }
+comrak = { version = "0.56", default-features = false, features = ["shortcodes"] }
 ammonia = "4.2"
 git2 = { version = "0.21.0", default-features = false }
 rmcp = { version = "3.5.0", default-features = false, features = ["server", "transport-io"] }
@@ -137,7 +141,7 @@ name = "permark_lib"
 # default = the direct build; `store` = the Microsoft Store build (`--no-default-features --features store`): the
 # store updates the app and the package declares the file manager entries.
 default = ["common", "plugin-updates", "plugin-shell-integration"]
-common = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-symbols", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-token-count", "plugin-local-ai", "plugin-correction", "plugin-translation", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore", "plugin-fmt-toon", "plugin-convert", "plugin-export"]
+common = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-symbols", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-graphviz", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-token-count", "plugin-local-ai", "plugin-correction", "plugin-translation", "plugin-spelling", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore", "plugin-fmt-toon", "plugin-convert", "plugin-export"]
 plugin-git = ["dep:permark-plugin-git"]
 plugin-live-feed = ["dep:permark-plugin-live-feed"]
 # follow needs the feed; review needs unread (a build without the dependency has no plugin that needs it)
@@ -148,6 +152,7 @@ plugin-md-family = ["dep:permark-plugin-md-family"]
 plugin-symbols = ["dep:permark-plugin-symbols"]
 plugin-word-count = ["dep:permark-plugin-word-count"]
 plugin-token-count = ["dep:permark-plugin-token-count"]
+plugin-spelling = ["dep:permark-plugin-spelling"]
 plugin-local-ai = ["dep:permark-plugin-local-ai"]
 # correction runs on the model service of local-ai
 plugin-correction = ["dep:permark-plugin-correction", "plugin-local-ai"]
@@ -159,6 +164,7 @@ plugin-highlight = ["dep:permark-plugin-highlight"]
 plugin-math = ["dep:permark-plugin-math"]
 plugin-mermaid = ["dep:permark-plugin-mermaid"]
 plugin-plantuml = ["dep:permark-plugin-plantuml"]
+plugin-graphviz = ["dep:permark-plugin-graphviz"]
 plugin-media = ["dep:permark-plugin-media"]
 plugin-json-view = ["dep:permark-plugin-json-view"]
 plugin-xml-view = ["dep:permark-plugin-xml-view"]
@@ -198,6 +204,7 @@ permark-plugin-md-family = { workspace = true, optional = true }
 permark-plugin-symbols = { workspace = true, optional = true }
 permark-plugin-word-count = { workspace = true, optional = true }
 permark-plugin-token-count = { workspace = true, optional = true }
+permark-plugin-spelling = { workspace = true, optional = true }
 permark-plugin-local-ai = { workspace = true, optional = true }
 permark-plugin-correction = { workspace = true, optional = true }
 permark-plugin-translation = { workspace = true, optional = true }
@@ -207,6 +214,7 @@ permark-plugin-highlight = { workspace = true, optional = true }
 permark-plugin-math = { workspace = true, optional = true }
 permark-plugin-mermaid = { workspace = true, optional = true }
 permark-plugin-plantuml = { workspace = true, optional = true }
+permark-plugin-graphviz = { workspace = true, optional = true }
 permark-plugin-media = { workspace = true, optional = true }
 permark-plugin-json-view = { workspace = true, optional = true }
 permark-plugin-xml-view = { workspace = true, optional = true }

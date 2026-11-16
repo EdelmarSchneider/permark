@@ -11,9 +11,13 @@
   --sp-6: 32px;
   --sp-7: 48px;
   --sp-8: 64px;
-  /* radius */
+  /* radius: small marks (badges, inline code) < controls < rows, chips, tabs < menus < cards, code blocks, tables */
+  --radius-sm: 4px;
   --radius-control: 6px;
-  --radius-card: 10px;
+  --radius-surface: 8px;
+  /* menus (items inside at --radius-control, 6 px padding around them) */
+  --radius-menu: 10px;
+  --radius-card: 12px;
   /* type */
   --font-ui:
     "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI",
@@ -117,24 +121,27 @@
 [data-theme="light"] {
   color-scheme: light;
   --bg: #ffffff;
-  --surface: #f7f7f8;
-  --surface-2: #efeff1;
-  --border: #e6e6e9;
-  --border-strong: #d4d4d9;
-  --text: #1f2328;
-  --muted: #656d76;
-  --faint: #8b929a;
-  --accent: #4f6bed;
+  --surface: #f6f6f9;
+  --surface-2: #ececf2;
+  --border: #e3e4eb;
+  --border-strong: #c9cbd6;
+  --text: #1b1d23;
+  --muted: #4d5461;
+  --faint: #646b7a; /* small text too: 4.5:1 even on surface-2 */
+  /* elevated surfaces (menus, popovers, dialogs): the page itself in light, since a white page can be no lighter;
+     a tone's page through `var`, so its menus keep the tone */
+  --pop: var(--bg);
+  --accent: #4f46e5; /* white on it 6.3:1 */
   --accent-fg: #ffffff;
-  --accent-text: #4259e0; /* accent as small text: 4.9:1 even on surface-2 (the accent itself is 3.9:1 there) */
-  --accent-soft: rgb(79 107 237 / 0.1);
+  --accent-text: #4338ca; /* accent as small text: 6.7:1 even on surface-2 */
+  --accent-soft: rgb(79 70 229 / 0.09);
   --accent-drop: rgb(
-    79 107 237 / 0.2
+    79 70 229 / 0.18
   ); /* the folder a drop from outside lands in (with a 2 px accent ring) */
-  --accent-muted: rgb(79 107 237 / 0.45);
-  --live: rgb(79 107 237 / 0.18); /* live-change glow, design-system spec */
-  --hover: rgb(31 35 40 / 0.05);
-  --pressed: rgb(31 35 40 / 0.09);
+  --accent-muted: rgb(79 70 229 / 0.45);
+  --live: rgb(79 70 229 / 0.16); /* live-change glow, design-system spec */
+  --hover: rgb(27 29 35 / 0.05);
+  --pressed: rgb(27 29 35 / 0.09);
   /* git: base colors for dots, darker text variants for AA on light backgrounds */
   --git-modified: #d29922;
   --git-added: #3fb950;
@@ -161,10 +168,12 @@
   /* find / search marks: neutral, so the accent keeps meaning "live change" */
   --mark: #fff0a3;
   --mark-strong: #ffd33d;
-  --zebra: #fafafb;
-  --shadow-pop: 0 10px 28px rgb(31 35 40 / 0.12), 0 1px 3px rgb(31 35 40 / 0.08);
-  --shadow-chip: 0 1px 2px rgb(31 35 40 / 0.07), 0 1px 1px rgb(31 35 40 / 0.04);
-  --backdrop: rgb(31 35 40 / 0.28);
+  --zebra: #fafafc;
+  --shadow-pop: 0 12px 32px rgb(27 29 55 / 0.14), 0 2px 6px rgb(27 29 55 / 0.08);
+  --shadow-chip: 0 1px 2px rgb(27 29 55 / 0.08);
+  /* the primary button: a light top edge and a little depth in the accent's own hue */
+  --shadow-primary: inset 0 1px 0 rgb(255 255 255 / 0.2), 0 1px 2px rgb(49 46 129 / 0.3);
+  --backdrop: rgb(27 29 35 / 0.28);
   /* behind a picture with transparency (the image viewer), and behind a video */
   --checker-a: #ffffff;
   --checker-b: #e4e5e8;
@@ -179,8 +188,9 @@
 
 /* Soft tones of the light theme (Settings > Light tone): the page carries data-tone next to data-theme, and the plain
    white tone is the block above. A tone only moves the surfaces, the borders and the tint of the hover shade, and
-   darkens the small text colours just enough that every text pair keeps at least 4.5:1 (UI marks 3:1), the same
-   as on white or better. Dark ignores the tone. */
+   darkens the small text colours just enough that every text pair keeps the white tone's contrast (at least 4.5:1,
+   UI marks 3:1). The white tone's accent text already keeps 5.6:1 or more on every tone surface. Dark ignores the
+   tone. */
 :root[data-tone="paper"]:not([data-theme="dark"]) {
   --bg: #f6f0e1;
   --surface: #eee7d5;
@@ -188,9 +198,8 @@
   --border: #d9cfb6;
   --border-strong: #c5b99b;
   --text: #26221b;
-  --muted: #5f5849;
-  --faint: #857d6b;
-  --accent-text: #3e53d2;
+  --muted: #504a3e;
+  --faint: #686153;
   --hover: rgb(60 45 20 / 0.05);
   --pressed: rgb(60 45 20 / 0.09);
   --git-modified: #c38e20;
@@ -215,9 +224,8 @@
   --border: #c8d6bd;
   --border-strong: #b1c3a4;
   --text: #1f2a21;
-  --muted: #515b52;
-  --faint: #758277;
-  --accent-text: #3d52cf;
+  --muted: #454d46;
+  --faint: #5a645c;
   --hover: rgb(27 58 31 / 0.05);
   --pressed: rgb(27 58 31 / 0.09);
   --git-modified: #c28d1f;
@@ -242,9 +250,8 @@
   --border: #d2cfc9;
   --border-strong: #bbb8b0;
   --text: #25262a;
-  --muted: #575550;
-  --faint: #7e7b74;
-  --accent-text: #3c51cd;
+  --muted: #4a4844;
+  --faint: #615f59;
   --hover: rgb(42 40 35 / 0.05);
   --pressed: rgb(42 40 35 / 0.09);
   --git-modified: #bf8b1f;
@@ -264,23 +271,24 @@
 
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #16171a;
-  --surface: #1d1f23;
-  --surface-2: #24272c;
-  --border: #2b2e34;
-  --border-strong: #3a3e46;
-  --text: #e6e8eb;
-  --muted: #9198a1;
-  --faint: #6f7680;
-  --accent: #7b93ff;
-  --accent-fg: #0f1117;
+  --bg: #141519;
+  --surface: #1b1d23;
+  --surface-2: #23262e;
+  --border: #2a2d36;
+  --border-strong: #3b3f4b;
+  --text: #e9eaee;
+  --muted: #a9afbc;
+  --faint: #8a91a1; /* small text too: 4.8:1 even on surface-2 */
+  --pop: #1f2229; /* elevated surfaces are lighter than the page */
+  --accent: #8c8fff;
+  --accent-fg: #0e0f1f;
   --accent-text: var(--accent);
-  --accent-soft: rgb(123 147 255 / 0.13);
-  --accent-drop: rgb(123 147 255 / 0.24);
-  --accent-muted: rgb(123 147 255 / 0.5);
-  --live: rgb(123 147 255 / 0.18);
-  --hover: rgb(230 232 235 / 0.05);
-  --pressed: rgb(230 232 235 / 0.09);
+  --accent-soft: rgb(140 143 255 / 0.14);
+  --accent-drop: rgb(140 143 255 / 0.26);
+  --accent-muted: rgb(140 143 255 / 0.5);
+  --live: rgb(140 143 255 / 0.18);
+  --hover: rgb(233 234 238 / 0.055);
+  --pressed: rgb(233 234 238 / 0.1);
   --git-modified-text: #d29922;
   --git-added-text: #3fb950;
   --git-deleted-text: #f85149;
@@ -297,12 +305,15 @@
   --tag-purple: #c29bff;
   --mark: rgb(242 204 96 / 0.26);
   --mark-strong: rgb(242 204 96 / 0.55);
-  --zebra: #1a1c1f;
-  --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.35);
-  --shadow-chip: 0 1px 2px rgb(0 0 0 / 0.35);
+  --zebra: #18191e;
+  /* a faint light ring: a dark menu still shows its edge on a dark page */
+  --shadow-pop: 0 14px 36px rgb(0 0 0 / 0.55), 0 0 0 1px rgb(255 255 255 / 0.04);
+  --shadow-chip: 0 1px 2px rgb(0 0 0 / 0.4);
+  /* the light accent needs no glow: the top edge and a dark drop only */
+  --shadow-primary: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 1px 2px rgb(0 0 0 / 0.5);
   --backdrop: rgb(0 0 0 / 0.45);
-  --checker-a: #23262b;
-  --checker-b: #2e3238;
+  --checker-a: #23262e;
+  --checker-b: #2e313a;
   --video-bg: #000000;
   --syn-comment: #8b949e;
   --syn-keyword: #d2a8ff;

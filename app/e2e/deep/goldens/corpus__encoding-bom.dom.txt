@@ -1,0 +1,10 @@
+div.reading
+  div.doc-column
+    article.md
+      div.md-body role="document"
+        h1 id="starts-with-a-bom"
+          a.anchor href="#starts-with-a-bom" aria-label="Link to Starts with a BOM"
+            "#"
+          "Starts with a BOM"
+        p
+          "The file begins with the UTF-8 byte order mark; the heading above must not show it."

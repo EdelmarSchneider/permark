@@ -98,6 +98,70 @@ describe("correction marks in Source", () => {
     expect(view.markAt()).toBeNull();
   });
 
+  it("layers are independent: each keeps its own marks, look and caret answer", () => {
+    const view = source(TEXT);
+    view.marks([range("teh")], 0, () => {});
+    view.marks([range("recieve"), range("cat")], null, () => {}, "other", {
+      className: "wavy-mark",
+    });
+    expect(marked(view)).toEqual(["teh*"]);
+    const others = Array.from(view.view.contentDOM.querySelectorAll(".wavy-mark"));
+    expect(others.map((el) => el.textContent)).toEqual(["cat", "recieve"]);
+    expect(others.map((el) => el.getAttribute("data-mark-layer"))).toEqual(["other", "other"]);
+    expect(others.map((el) => el.getAttribute("data-mark-index"))).toEqual(["1", "0"]);
+    expect(others[0]?.hasAttribute("data-correction-mark")).toBe(false);
+    view.view.dispatch({ selection: EditorSelection.cursor(range("recieve").from + 1) });
+    expect(view.markAt()).toBeNull();
+    expect(view.markAt("other")).toBe(0);
+    // clearing one layer leaves the other
+    view.marks([], null, () => {}, "other");
+    expect(marked(view)).toEqual(["teh*"]);
+    expect(view.view.contentDOM.querySelectorAll(".wavy-mark")).toHaveLength(0);
+    view.marks([range("cat")], null, () => {}, "other", { className: "wavy-mark" });
+    view.marks([], null, () => {});
+    expect(marked(view)).toEqual([]);
+    expect(view.view.contentDOM.querySelectorAll(".wavy-mark")).toHaveLength(1);
+  });
+
+  it("each layer's marks follow edits", () => {
+    const view = source(TEXT);
+    view.marks([range("teh")], 0, () => {});
+    view.marks([range("recieve")], null, () => {}, "other", { className: "wavy-mark" });
+    view.view.dispatch({ changes: { from: 0, insert: "Well, " } });
+    const other = view.view.contentDOM.querySelector(".wavy-mark");
+    expect(other && view.view.posAtDOM(other)).toBe(range("recieve").from + "Well, ".length);
+    const own = view.view.contentDOM.querySelector(".correction-mark");
+    expect(own && view.view.posAtDOM(own)).toBe(range("teh").from + "Well, ".length);
+  });
+
+  it("a click picks in the clicked mark's layer; a right-click opens that layer's menu", () => {
+    const view = source(TEXT);
+    const picked: string[] = [];
+    const menus: unknown[] = [];
+    view.marks([range("teh")], 0, (i) => picked.push(`correction ${i}`));
+    view.marks([range("recieve")], null, (i) => picked.push(`other ${i}`), "other", {
+      className: "wavy-mark",
+      menu: (index, x, y) => menus.push([index, x, y]),
+    });
+    const other = view.view.contentDOM.querySelector(".wavy-mark");
+    other?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(picked).toEqual(["other 0"]);
+    const right = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 12,
+      clientY: 34,
+    });
+    other?.dispatchEvent(right);
+    expect(menus).toEqual([[0, 12, 34]]);
+    expect(right.defaultPrevented).toBe(true);
+    // a layer without a menu leaves the webview's own
+    const own = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    view.view.contentDOM.querySelector(".correction-mark")?.dispatchEvent(own);
+    expect(own.defaultPrevented).toBe(false);
+    expect(menus).toHaveLength(1);
+  });
+
   it("reveal selects the exact range", () => {
     const view = source(TEXT);
     view.reveal(range("recieve"));

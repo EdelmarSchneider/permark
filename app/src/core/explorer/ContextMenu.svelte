@@ -26,6 +26,8 @@
   let picked = $state(-1);
 
   const items = $derived(entries.flatMap((e, at) => (e.kind === "item" ? [at] : [])));
+  /** Some item has an icon: every item gets the icon column, so the labels line up. */
+  const iconic = $derived(entries.some((e) => e.kind === "item" && e.icon !== undefined));
   /** The entry the keyboard is on: the one picked, else `start`, else the first. */
   const active = $derived(
     picked >= 0 && items.includes(picked)
@@ -137,6 +139,14 @@
         onpointerenter={() => focusItem(at)}
         onclick={(e) => run(at, e.shiftKey)}
       >
+        {#if iconic}
+          <span class="icon" aria-hidden="true">
+            {#if entry.icon}
+              {@const Icon = entry.icon}
+              <Icon size={15} strokeWidth={1.8} />
+            {/if}
+          </span>
+        {/if}
         {#if entry.detail}
           <span class="two" title={entry.detail}>
             <span class="label">{entry.label}</span>
@@ -150,7 +160,7 @@
             <span>{entry.label}</span>
           </span>
         {:else}
-          <span>{entry.label}</span>
+          <span class="text">{entry.label}</span>
         {/if}
         {#if entry.hint}<kbd>{entry.hint}</kbd>{/if}
         {#if entry.opens}<span class="opens" aria-hidden="true">▸</span>{/if}
@@ -165,10 +175,10 @@
     z-index: 55;
     min-width: 200px;
     max-width: min(380px, calc(100vw - 8px));
-    padding: var(--sp-1);
+    padding: 6px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-control);
-    background: var(--bg);
+    border-radius: var(--radius-menu);
+    background: var(--pop);
     box-shadow: var(--shadow-pop);
     outline: none;
     animation: pm-fade var(--dur-fast) var(--ease);
@@ -176,12 +186,11 @@
   .item {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-4);
+    gap: var(--sp-2);
     width: 100%;
-    padding: 5px 10px;
+    padding: 6px 10px;
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-control);
     background: transparent;
     color: var(--text);
     font: inherit;
@@ -200,8 +209,22 @@
   .item.danger {
     color: var(--git-deleted-text);
   }
+  .icon {
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 15px;
+    height: 15px;
+    color: var(--muted);
+  }
+  .text {
+    flex: 1;
+    min-width: 0;
+  }
+  /* the label takes the room; the hint keeps a clear gap after it */
   kbd,
   .opens {
+    margin-left: var(--sp-2);
     color: var(--faint);
     font: inherit;
     font-size: var(--fs-ui-xs);

@@ -52,7 +52,7 @@ fn main() {
 
 ## Math
 
-Inline math $E = mc^2$ sits in the text. A display formula:
+Inline math $E = mc^2$ sits in the text, and so does chemistry: $\ce{2 H2 + O2 -> 2 H2O}$. A display formula:
 
 $$
 \int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}
@@ -66,6 +66,14 @@ graph LR
   B --> C{Sanitize}
   C -->|safe| D[Page]
   C -->|unsafe| E[Dropped]
+```
+
+```dot
+digraph {
+  rankdir=LR
+  Markdown -> Render -> Page
+  Render -> Dropped [label="unsafe"]
+}
 ```
 
 ## Prompt blocks
@@ -83,3 +91,17 @@ You are reading a prompt file. The tags below fold, and **Markdown inside them**
 </instructions>
 
 [^1]: Footnotes list at the end of the page, with a way back.
+
+Mark ==what matters==, add an emoji :sparkles: or a note right where it belongs^[Inline notes are numbered with the others.].
+
+> [!tip]- A folded callout
+> Obsidian callouts fold: this text shows when you open the box.
+
+:::info Containers
+`:::` containers draw the same boxes.
+:::
+
+```js title="greet.js" {2} showLineNumbers
+const name = "PerMark";
+console.log(`Hello, ${name}!`);
+```

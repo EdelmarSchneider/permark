@@ -172,6 +172,53 @@ describe("table rows above and columns to the left", () => {
     expect(compose(core, built, core.view.state.doc).text).toBe(TEXT);
   });
 
+  it("a column added to a table written without padding: the other cells keep their bytes, the new one has no alignment", async () => {
+    const lines = [
+      "| Ingredient | For 4 | For 12 | Note |",
+      "|---|---:|---:|---|",
+      "| Limes | 2 | 6 | Juice |",
+    ];
+    const text = `${lines.join("\n")}\n`;
+    const segments: Segment[] = [{ lineStart: 1, lineEnd: 3, kind: "table", lock: null }];
+    for (const [kind, at] of [
+      ["addColumnLeft", "Limes"],
+      ["addColumn", "Limes"],
+      ["addColumnLeft", "Juice"],
+    ] as const) {
+      const built = await buildDoc(core, text, segments);
+      core.setDoc(built.doc);
+      caretIn(at);
+      expect(run(core, { kind })).toBe(true);
+      const saved = compose(core, built, core.view.state.doc).text.split("\n").filter(Boolean);
+      // each saved line is its old line with one cell put in: take that cell out, the old bytes are left
+      const column = kind === "addColumn" ? 1 : at === "Juice" ? 3 : 0;
+      saved.forEach((line, row) => {
+        const parts = line.split("|");
+        const added = parts.splice(column + 1, 1)[0] ?? "";
+        expect(parts.join("|"), `${kind} ${at} row ${row}: ${line}`).toBe(lines[row]);
+        // a new column has no alignment of its own: plain dashes, no colon
+        expect(added.trim(), `${kind} ${at} row ${row}`).toMatch(row === 1 ? /^-+$/ : /^$/);
+      });
+    }
+  });
+
+  it("a row above, then a column to the left: the old rows keep their bytes after the new cell", async () => {
+    const lines = ["| A | B |", "|---|--:|", "| a1 | b1 |", "| a2 | b2 |"];
+    const built = await buildDoc(core, `${lines.join("\n")}\n`, [
+      { lineStart: 1, lineEnd: 4, kind: "table", lock: null },
+    ]);
+    core.setDoc(built.doc);
+    caretIn("a2");
+    run(core, { kind: "addRowAbove" });
+    caretIn("a2");
+    run(core, { kind: "addColumnLeft" });
+    const saved = compose(core, built, core.view.state.doc).text.split("\n").filter(Boolean);
+    expect(saved).toHaveLength(5);
+    const old = saved.filter((_, row) => row !== 3).map((line) => line.replace(/^\|[^|]*/, ""));
+    expect(old).toEqual(lines);
+    expect(saved[1]).toBe("| --- |---|--:|");
+  });
+
   it("rapid adds then undo all of them restores the bytes", async () => {
     const built = await load();
     caretIn("second");

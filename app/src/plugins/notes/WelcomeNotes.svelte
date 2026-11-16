@@ -2,6 +2,7 @@
   // The Notes on the welcome screen: a new note, the pinned ones and the latest five. Clicking opens the Notes tab (or
   // brings it forward where it is) with that note shown.
   import FilePlus from "@lucide/svelte/icons/file-plus";
+  import NotebookPen from "@lucide/svelte/icons/notebook-pen";
   import type { NotesSummary } from "../../api";
   import { formatLocale, t } from "../../core/i18n";
   import { pluginClient } from "../../core/plugins/client";
@@ -30,7 +31,10 @@
 
 <section class="notes" aria-label={t("notes.title")}>
   <div class="head">
-    <h2>{t("notes.title")}</h2>
+    <h2>
+      <NotebookPen size={13} strokeWidth={1.8} aria-hidden="true" />
+      {t("notes.title")}
+    </h2>
     <button type="button" class="btn btn--sm" onclick={() => void openNotes(null)}>
       <FilePlus size={13} aria-hidden="true" />
       {t("notes.new")}
@@ -67,13 +71,20 @@
     justify-content: space-between;
     padding-left: var(--sp-3);
   }
+  /* the notebook in the Notes' own color, as on their button and tab chip */
   h2 {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     margin: 0;
     color: var(--faint);
     font-size: var(--fs-ui-xs);
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
+  }
+  h2 :global(svg) {
+    color: var(--tag-yellow);
   }
   ul {
     margin: 0;

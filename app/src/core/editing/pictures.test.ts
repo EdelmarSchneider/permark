@@ -75,32 +75,35 @@ describe("clipboardPictures", () => {
 
 describe("pictureDisplayUrl", () => {
   const asset = (path: string): string => `asset:${path}`;
+  const kept = new Map([["https://example.com/kept.png", "blob:kept-1"]]);
+  const shown = (src: string): string | null =>
+    pictureDisplayUrl("docs/note.md", src, asset, (url) => kept.get(url));
 
   it("resolves a picture next to the document and one in a subfolder", () => {
-    expect(pictureDisplayUrl("docs/note.md", "a.png", asset)).toBe("asset:docs/a.png");
-    expect(pictureDisplayUrl("docs/note.md", "img/a%20b.png", asset)).toBe(
-      "asset:docs/img/a b.png",
-    );
+    expect(shown("a.png")).toBe("asset:docs/a.png");
+    expect(shown("img/a%20b.png")).toBe("asset:docs/img/a b.png");
   });
 
-  it("keeps a remote address and a data address", () => {
-    expect(pictureDisplayUrl("docs/note.md", "https://example.com/a.png", asset)).toBe(
-      "https://example.com/a.png",
-    );
-    expect(pictureDisplayUrl("docs/note.md", "data:image/png,xx", asset)).toBe("data:image/png,xx");
-    expect(pictureDisplayUrl("docs/note.md", "blob:https://x/1", asset)).toBe("blob:https://x/1");
+  it("never gives a web address: a picture fetched in this window | none (the chip)", () => {
+    expect(shown("https://example.com/a.png")).toBeNull();
+    expect(shown(" HTTP://example.com/a.png")).toBeNull();
+    expect(shown("//example.com/a.png")).toBeNull();
+    expect(shown("https://example.com/kept.png")).toBe("blob:kept-1");
+  });
+
+  it("keeps a data address and a blob address", () => {
+    expect(shown("data:image/png,xx")).toBe("data:image/png,xx");
+    expect(shown("blob:https://x/1")).toBe("blob:https://x/1");
   });
 
   it("reads a pm-asset path and a project-root path", () => {
-    expect(pictureDisplayUrl("docs/note.md", "pm-asset:docs/img/a%20b.png", asset)).toBe(
-      "asset:docs/img/a b.png",
-    );
-    expect(pictureDisplayUrl("docs/note.md", "/img/a.png", asset)).toBe("asset:img/a.png");
+    expect(shown("pm-asset:docs/img/a%20b.png")).toBe("asset:docs/img/a b.png");
+    expect(shown("/img/a.png")).toBe("asset:img/a.png");
   });
 
   it("leaves a path that climbs out of the project", () => {
-    expect(pictureDisplayUrl("docs/note.md", "../../x.png", asset)).toBe("../../x.png");
-    expect(pictureDisplayUrl("docs/note.md", "", asset)).toBe("");
+    expect(shown("../../x.png")).toBe("../../x.png");
+    expect(shown("")).toBe("");
   });
 });
 

@@ -1,0 +1,155 @@
+# corpus/gfm-tables.md
+format: markdown
+outline: Tables (line 1)
+--- h1 1-1
+<h1 id="tables">Tables</h1>
+--- table 3-8
+<table>
+<thead>
+<tr>
+<th align="left">Left</th>
+<th align="center">Center</th>
+<th align="right">Right</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td align="left">a</td>
+<td align="center">b</td>
+<td align="right">c</td>
+<td>d</td>
+</tr>
+<tr>
+<td align="left"><strong>bold</strong></td>
+<td align="center"><code>code</code></td>
+<td align="right">1,234.50</td>
+<td><a href="gfm-blocks.md">link</a></td>
+</tr>
+<tr>
+<td align="left">escaped | pipe</td>
+<td align="center"><mark>mark</mark></td>
+<td align="right"><span class="emoji" title=":ocean:">🌊</span></td>
+<td></td>
+</tr>
+<tr>
+<td align="left">long text that wraps inside a narrow column of the table</td>
+<td align="center">x</td>
+<td align="right">0.1</td>
+<td><del>old</del></td>
+</tr>
+</tbody>
+</table>
+--- p 10-10
+<p>A table with one column:</p>
+--- table 12-14
+<table>
+<thead>
+<tr>
+<th>Only</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>one</td>
+</tr>
+</tbody>
+</table>
+--- p 16-16
+<p>A wide table that scrolls sideways:</p>
+--- table 18-22
+<table>
+<thead>
+<tr>
+<th>Station</th>
+<th align="right">Lat</th>
+<th align="right">Lon</th>
+<th align="right">Depth (m)</th>
+<th align="right">Temp (°C)</th>
+<th align="right">Salinity (PSU)</th>
+<th align="right">pH</th>
+<th align="right">O₂ (mg/L)</th>
+<th align="right">Wave (m)</th>
+<th align="right">Period (s)</th>
+<th align="right">Wind (kn)</th>
+<th align="right">Battery (V)</th>
+<th>Firmware</th>
+<th>Last seen</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>LH-01</td>
+<td align="right">41.512</td>
+<td align="right">-70.671</td>
+<td align="right">12.4</td>
+<td align="right">11.82</td>
+<td align="right">31.40</td>
+<td align="right">8.02</td>
+<td align="right">8.91</td>
+<td align="right">0.62</td>
+<td align="right">5.1</td>
+<td align="right">11</td>
+<td align="right">12.71</td>
+<td>2.3.1</td>
+<td>2026-11-15 09:40 UTC</td>
+</tr>
+<tr>
+<td>LH-02</td>
+<td align="right">41.498</td>
+<td align="right">-70.702</td>
+<td align="right">18.9</td>
+<td align="right">11.64</td>
+<td align="right">31.52</td>
+<td align="right">8.01</td>
+<td align="right">8.87</td>
+<td align="right">0.71</td>
+<td align="right">5.4</td>
+<td align="right">12</td>
+<td align="right">12.69</td>
+<td>2.3.1</td>
+<td>2026-11-15 09:40 UTC</td>
+</tr>
+<tr>
+<td>LH-03</td>
+<td align="right">41.476</td>
+<td align="right">-70.735</td>
+<td align="right">22.1</td>
+<td align="right">11.51</td>
+<td align="right">31.61</td>
+<td align="right">7.99</td>
+<td align="right">8.80</td>
+<td align="right">0.84</td>
+<td align="right">5.9</td>
+<td align="right">14</td>
+<td align="right">12.55</td>
+<td>2.3.0</td>
+<td>2026-11-15 09:30 UTC</td>
+</tr>
+</tbody>
+</table>
+--- p 24-24
+<p>A table with inline HTML and a picture:</p>
+--- table 26-30
+<table>
+<thead>
+<tr>
+<th>Mark</th>
+<th>Sample</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>keys</td>
+<td><kbd>Ctrl</kbd>+<kbd>K</kbd></td>
+</tr>
+<tr>
+<td>sub/sup</td>
+<td>H<sub>2</sub>O, 10<sup>3</sup></td>
+</tr>
+<tr>
+<td>picture</td>
+<td><img alt="square" src="pm-asset:corpus/assets/square.svg"></td>
+</tr>
+</tbody>
+</table>

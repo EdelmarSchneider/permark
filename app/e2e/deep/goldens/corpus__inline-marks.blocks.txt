@@ -1,0 +1,30 @@
+# corpus/inline-marks.md
+format: markdown
+outline: Inline marks (line 1)
+--- h1 1-1
+<h1 id="inline-marks">Inline marks</h1>
+--- p 3-3
+<p>A <mark>highlighted phrase</mark> in a sentence, and <mark>two</mark> <mark>highlights</mark> side by side.</p>
+--- p 5-5
+<p>Emoji shortcodes: <span class="emoji" title=":ocean:">🌊</span> <span class="emoji" title=":sailboat:">⛵</span> <span class="emoji" title=":+1:">👍</span> <span class="emoji" title=":heart:">❤️</span> and an unknown one :not_an_emoji_code: that stays text.</p>
+--- p 7-7
+<p>An inline footnote<sup class="footnote-ref"><a data-footnote-ref="" href="#fn-__inline_1" id="fnref-__inline_1">1</a></sup> and a second one<sup class="footnote-ref"><a data-footnote-ref="" href="#fn-__inline_2" id="fnref-__inline_2">2</a></sup>.</p>
+--- p 9-11
+<p><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>, <abbr title="practical salinity unit">PSU</abbr>, CO<sub>2</sub>,
+10<sup>3</sup>, <ins>inserted</ins>, <del>deleted</del>, <mark>marked</mark>, <small>small</small>, <q>quoted</q>,
+<cite>a cite</cite>, <dfn>a definition</dfn>, <var>x</var>, <samp>output</samp>, <s>struck</s>, <u>underlined</u>.</p>
+--- p 13-13
+<p>Mentions and variables outside a prompt file: @someone, <span class="tvar">{{not_a_variable}}</span>, <code>{{in_code}}</code>.</p>
+--- p 15-15
+<p>Typography: "straight quotes", 'single', -- dashes --- and ... dots, (c) (tm), 1/2, 30°C, x² ≠ y³.</p>
+--- section 7-7
+<section class="footnotes" data-footnotes="">
+<ol>
+<li id="fn-__inline_1">
+<p>Written right where it is used, with <em>emphasis</em>. <a aria-label="Back to reference 1" class="footnote-backref" data-footnote-backref-idx="1" data-footnote-backref="" href="#fnref-__inline_1">↩</a></p>
+</li>
+<li id="fn-__inline_2">
+<p>Short. <a aria-label="Back to reference 2" class="footnote-backref" data-footnote-backref-idx="2" data-footnote-backref="" href="#fnref-__inline_2">↩</a></p>
+</li>
+</ol>
+</section>

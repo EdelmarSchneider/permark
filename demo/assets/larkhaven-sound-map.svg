@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 300" width="760" height="300" role="img" aria-labelledby="t">
+  <title id="t">Map of Larkhaven Sound: twelve Tidewell stations, three gateways and the dashed track of the Petrel from Port Avery and back</title>
+  <defs>
+    <pattern id="swell" width="32" height="18" patternUnits="userSpaceOnUse">
+      <path d="M4 12 q6 -6 12 0 t12 0" fill="none" stroke="#0d9488" stroke-width="2" stroke-opacity="0.22" stroke-linecap="round"/>
+    </pattern>
+  </defs>
+
+  <!-- water -->
+  <path d="M640 8 H734 Q752 8 752 26 V274 Q752 292 734 292 H652 C628 284 596 278 560 270 C532 264 500 264 470 256 C444 248 424 232 394 234 C366 236 344 250 318 244 C292 238 282 220 258 212 C230 204 196 204 160 192 C132 182 116 166 112 150 C128 146 148 140 170 132 C196 122 222 108 262 106 C300 104 336 92 368 82 C392 74 420 66 448 74 C466 80 474 96 488 96 C500 96 508 86 516 76 C528 62 548 54 572 48 C604 40 628 24 640 8 Z" fill="#0d9488" fill-opacity="0.10"/>
+  <path d="M640 8 H734 Q752 8 752 26 V274 Q752 292 734 292 H652 C628 284 596 278 560 270 C532 264 500 264 470 256 C444 248 424 232 394 234 C366 236 344 250 318 244 C292 238 282 220 258 212 C230 204 196 204 160 192 C132 182 116 166 112 150 C128 146 148 140 170 132 C196 122 222 108 262 106 C300 104 336 92 368 82 C392 74 420 66 448 74 C466 80 474 96 488 96 C500 96 508 86 516 76 C528 62 548 54 572 48 C604 40 628 24 640 8 Z" fill="url(#swell)"/>
+
+  <!-- land: north shore, the head of the Sound at Port Avery, south shore -->
+  <path d="M26 8 H640
+           C628 24 604 40 572 48
+           C548 54 528 62 516 76
+           C508 86 500 96 488 96
+           C474 96 466 80 448 74
+           C420 66 392 74 368 82
+           C336 92 300 104 262 106
+           C222 108 196 122 170 132
+           C148 140 128 146 112 150
+           C116 166 132 182 160 192
+           C196 204 230 204 258 212
+           C282 220 292 238 318 244
+           C344 250 366 236 394 234
+           C424 232 444 248 470 256
+           C500 264 532 264 560 270
+           C596 278 628 284 652 292
+           H26 Q8 292 8 274 V26 Q8 8 26 8 Z"
+        fill="#64748b" fill-opacity="0.22" stroke="#64748b" stroke-width="2.5" stroke-linejoin="round"/>
+  <rect x="8" y="8" width="744" height="284" rx="18" fill="none" stroke="#64748b" stroke-opacity="0.45" stroke-width="2"/>
+
+  <!-- Kittiwake Shoal: shallow ground -->
+  <ellipse cx="560" cy="170" rx="34" ry="18" fill="#0d9488" fill-opacity="0.18" stroke="#0d9488" stroke-width="2" stroke-dasharray="3 5" stroke-linecap="round"/>
+
+  <!-- the Petrel's track -->
+  <path d="M112 150 L150 160 L205 150 L330 140 L488 118 L620 110 L700 160 L640 230 L560 170 L470 220 L410 180 L300 214 L250 175 L122 168"
+        fill="none" stroke="#d97706" stroke-width="2.5" stroke-dasharray="7 7" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- gateways -->
+  <g fill="#e11d48">
+    <path d="M604 16 L611 29 H597 Z"/>
+    <path d="M86 128 L93 141 H79 Z"/>
+    <path d="M540 272 L547 285 H533 Z"/>
+  </g>
+
+  <!-- stations -->
+  <g fill="#4f46e5">
+    <circle cx="150" cy="160" r="6"/>
+    <circle cx="205" cy="150" r="6"/>
+    <circle cx="250" cy="175" r="6"/>
+    <circle cx="330" cy="140" r="6"/>
+    <circle cx="410" cy="180" r="6"/>
+    <circle cx="470" cy="220" r="6"/>
+    <circle cx="620" cy="110" r="6"/>
+    <circle cx="640" cy="230" r="6"/>
+    <circle cx="700" cy="160" r="6"/>
+  </g>
+  <!-- named stations -->
+  <g fill="#0d9488">
+    <circle cx="488" cy="118" r="8"/>
+    <circle cx="560" cy="170" r="8"/>
+    <circle cx="300" cy="214" r="8"/>
+  </g>
+
+  <!-- Port Avery -->
+  <circle cx="112" cy="150" r="7" fill="#d97706"/>
+
+  <g font-family="sans-serif" font-weight="600" font-size="15">
+    <text x="98" y="170" fill="#64748b" text-anchor="end">Port Avery</text>
+    <text x="488" y="50" fill="#64748b" text-anchor="middle">Gannet Point</text>
+    <text x="560" y="146" fill="#0d9488" text-anchor="middle">Kittiwake Shoal</text>
+    <text x="300" y="272" fill="#64748b" text-anchor="middle">Heron Flats</text>
+    <text x="395" y="160" fill="#0d9488" font-size="14" font-style="italic" letter-spacing="2" text-anchor="middle">LARKHAVEN SOUND</text>
+  </g>
+
+  <!-- compass rose -->
+  <g>
+    <path d="M706 44 L713 72 L706 100 L699 72 Z" fill="#64748b" fill-opacity="0.45"/>
+    <path d="M706 44 L713 72 H699 Z" fill="#d97706"/>
+    <path d="M678 72 L706 65 L734 72 L706 79 Z" fill="#64748b" fill-opacity="0.35"/>
+    <circle cx="706" cy="72" r="3" fill="#64748b"/>
+    <text x="706" y="38" font-family="sans-serif" font-weight="600" font-size="14" fill="#64748b" text-anchor="middle">N</text>
+  </g>
+
+  <!-- legend -->
+  <g font-family="sans-serif" font-weight="600" font-size="14" fill="#64748b">
+    <circle cx="30" cy="236" r="6" fill="#4f46e5"/>
+    <text x="44" y="241">Station</text>
+    <path d="M30 252 L37 265 H23 Z" fill="#e11d48"/>
+    <text x="44" y="264">Gateway</text>
+    <line x1="120" y1="236" x2="150" y2="236" stroke="#d97706" stroke-width="2.5" stroke-dasharray="7 7" stroke-linecap="round"/>
+    <text x="158" y="241">Petrel</text>
+  </g>
+</svg>
