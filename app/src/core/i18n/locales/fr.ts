@@ -1740,8 +1740,6 @@ export default {
   "settings.all": "Tous les paramètres",
   "settings.editorPreview": "Exemple :",
   "settings.linkUpdateHint": "Ce qui arrive aux liens quand un fichier est déplacé ou renommé.",
-  "settings.readingHint": "Conservé pour chaque projet.",
-  "settings.readingNone": "Ouvrez un document pour modifier la largeur et le zoom.",
   "settings.refPreview": "Exemple :",
   "settings.sections": "Sections des paramètres",
   "settings.toneHint": "S'applique au thème clair.",

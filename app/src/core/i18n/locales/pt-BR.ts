@@ -1697,8 +1697,6 @@ export default {
   "settings.all": "Todas as configurações",
   "settings.editorPreview": "Exemplo:",
   "settings.linkUpdateHint": "O que acontece com os links quando um arquivo é movido ou renomeado.",
-  "settings.readingHint": "Guardado para cada projeto.",
-  "settings.readingNone": "Abra um documento para mudar a largura e o zoom.",
   "settings.refPreview": "Exemplo:",
   "settings.sections": "Seções das configurações",
   "settings.toneHint": "Vale para o tema claro.",

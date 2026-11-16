@@ -139,8 +139,9 @@ describe("the settings page", () => {
     const names = () =>
       Array.from(target.querySelectorAll(".nav-item")).map((b) => b.textContent?.trim());
     expect(names()).toEqual(["Reading", "Editing", "Integration", "Plugins"]);
-    // width and zoom have no page to act on yet, and say so
-    expect(target.textContent).toContain("Open a document to change the width and the zoom.");
+    // width and zoom live in the document header's reading menu, not here
+    expect(target.querySelector("#set-width")).toBeNull();
+    expect(target.querySelector("#set-zoom")).toBeNull();
     await unmount(component!);
     component = null;
     await open();
@@ -400,20 +401,15 @@ describe("the plugins page", () => {
     });
   });
 
-  it("a plugin of the project can be turned off for this project alone", async () => {
+  it("a plugin of the project has only the app switch here, and its row says when this project turned it off", async () => {
     await pluginsPage();
-    const select = row("Comments").querySelector<HTMLSelectElement>("select")!;
-    expect(select.value).toBe("app");
-    select.value = "off";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(row("Comments").querySelector("select")).toBeNull();
+    await mock.pluginSetProject("comments", false);
     await until(() => /Off in this project/.test(statusOf("Comments")), "off here");
     // the app's switch is untouched; the plugin is not offered for data removal
     expect(switchOf("Comments").checked).toBe(true);
     expect(row("Comments").textContent).not.toContain("Remove data");
-    row("Comments").querySelector<HTMLSelectElement>("select")!.value = "app";
-    row("Comments")
-      .querySelector("select")!
-      .dispatchEvent(new Event("change", { bubbles: true }));
+    await mock.pluginSetProject("comments", null);
     await until(() => statusOf("Comments") === "", "follows the app");
   });
 

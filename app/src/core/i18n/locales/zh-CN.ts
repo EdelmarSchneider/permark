@@ -1624,8 +1624,6 @@ export default {
   "settings.all": "全部设置",
   "settings.editorPreview": "示例：",
   "settings.linkUpdateHint": "移动或重命名文件时链接如何处理。",
-  "settings.readingHint": "按项目分别保存。",
-  "settings.readingNone": "打开文档后才能更改宽度和缩放。",
   "settings.refPreview": "示例：",
   "settings.sections": "设置分区",
   "settings.toneHint": "适用于浅色主题。",

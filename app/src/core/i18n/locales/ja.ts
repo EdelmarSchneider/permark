@@ -1714,8 +1714,6 @@ export default {
   "settings.all": "すべての設定",
   "settings.editorPreview": "例：",
   "settings.linkUpdateHint": "ファイルの移動や名前の変更時に、リンクをどうするかを指定します。",
-  "settings.readingHint": "プロジェクトごとに保存されます。",
-  "settings.readingNone": "幅とズームを変更するには、ドキュメントを開いてください。",
   "settings.refPreview": "例：",
   "settings.sections": "設定のセクション",
   "settings.toneHint": "ライトテーマに適用されます。",

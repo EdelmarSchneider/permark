@@ -1774,8 +1774,6 @@ export default {
   "settings.all": "Все настройки",
   "settings.editorPreview": "Пример:",
   "settings.linkUpdateHint": "Что происходит со ссылками при перемещении или переименовании файла.",
-  "settings.readingHint": "Сохраняется для каждого проекта.",
-  "settings.readingNone": "Откройте документ, чтобы изменить ширину и масштаб.",
   "settings.refPreview": "Пример:",
   "settings.sections": "Разделы настроек",
   "settings.toneHint": "Применяется к светлой теме.",

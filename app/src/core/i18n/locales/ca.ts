@@ -1718,8 +1718,6 @@ export default {
   "settings.editorPreview": "Exemple:",
   "settings.linkUpdateHint":
     "Què passa amb els enllaços quan es mou o es canvia el nom d'un fitxer.",
-  "settings.readingHint": "Es desa per a cada projecte.",
-  "settings.readingNone": "Obriu un document per a canviar-ne l'amplada i el zoom.",
   "settings.refPreview": "Exemple:",
   "settings.sections": "Seccions de la configuració",
   "settings.toneHint": "S'aplica al tema clar.",

@@ -1723,8 +1723,6 @@ export default {
   "settings.editorPreview": "Beispiel:",
   "settings.linkUpdateHint":
     "Was mit Links geschieht, wenn eine Datei verschoben oder umbenannt wird.",
-  "settings.readingHint": "Wird je Projekt gemerkt.",
-  "settings.readingNone": "Ein Dokument öffnen, um Breite und Zoom zu ändern.",
   "settings.refPreview": "Beispiel:",
   "settings.sections": "Bereiche der Einstellungen",
   "settings.toneHint": "Gilt für das helle Design.",

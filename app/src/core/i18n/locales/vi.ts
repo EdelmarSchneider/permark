@@ -1699,8 +1699,6 @@ export default {
   "settings.all": "Toàn bộ cài đặt",
   "settings.editorPreview": "Ví dụ:",
   "settings.linkUpdateHint": "Điều gì xảy ra với liên kết khi một tệp bị di chuyển hoặc đổi tên.",
-  "settings.readingHint": "Lưu riêng cho từng dự án.",
-  "settings.readingNone": "Mở một tài liệu để thay đổi độ rộng và thu phóng.",
   "settings.refPreview": "Ví dụ:",
   "settings.sections": "Các mục cài đặt",
   "settings.toneHint": "Áp dụng cho chủ đề sáng.",

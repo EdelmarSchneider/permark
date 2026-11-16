@@ -1667,8 +1667,6 @@ export default {
   "settings.all": "모든 설정",
   "settings.editorPreview": "예:",
   "settings.linkUpdateHint": "파일을 이동하거나 이름을 바꿀 때 링크를 어떻게 처리할지 정합니다.",
-  "settings.readingHint": "프로젝트별로 저장됩니다.",
-  "settings.readingNone": "너비와 확대/축소를 변경하려면 문서를 여세요.",
   "settings.refPreview": "예:",
   "settings.sections": "설정 섹션",
   "settings.toneHint": "밝은 테마에 적용됩니다.",

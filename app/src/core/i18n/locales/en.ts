@@ -1668,8 +1668,6 @@ const en = {
   "settings.all": "All settings",
   "settings.editorPreview": "Example:",
   "settings.linkUpdateHint": "What happens to links when a file is moved or renamed.",
-  "settings.readingHint": "Kept for each project.",
-  "settings.readingNone": "Open a document to change the width and the zoom.",
   "settings.refPreview": "Example:",
   "settings.sections": "Settings sections",
   "settings.toneHint": "Applies to the light theme.",

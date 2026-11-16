@@ -1702,8 +1702,6 @@ export default {
   "settings.all": "Toda a configuración",
   "settings.editorPreview": "Exemplo:",
   "settings.linkUpdateHint": "Que lles pasa ás ligazóns cando se move ou se renomea un ficheiro.",
-  "settings.readingHint": "Gárdase para cada proxecto.",
-  "settings.readingNone": "Abra un documento para cambiar a largura e o zoom.",
   "settings.refPreview": "Exemplo:",
   "settings.sections": "Seccións da configuración",
   "settings.toneHint": "Aplícase ao tema claro.",

@@ -1780,8 +1780,6 @@ export default {
   "settings.all": "Toate setările",
   "settings.editorPreview": "Exemplu:",
   "settings.linkUpdateHint": "Ce se întâmplă cu linkurile când un fișier este mutat sau redenumit.",
-  "settings.readingHint": "Păstrat pentru fiecare proiect.",
-  "settings.readingNone": "Deschide un document pentru a schimba lățimea și zoomul.",
   "settings.refPreview": "Exemplu:",
   "settings.sections": "Secțiunile setărilor",
   "settings.toneHint": "Se aplică temei luminoase.",

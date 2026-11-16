@@ -1705,8 +1705,6 @@ export default {
   "settings.editorPreview": "Örnek:",
   "settings.linkUpdateHint":
     "Bir dosya taşındığında veya yeniden adlandırıldığında bağlantılara ne olacağı.",
-  "settings.readingHint": "Her proje için ayrı saklanır.",
-  "settings.readingNone": "Genişliği ve yakınlaştırmayı değiştirmek için bir belge açın.",
   "settings.refPreview": "Örnek:",
   "settings.sections": "Ayar bölümleri",
   "settings.toneHint": "Açık temaya uygulanır.",

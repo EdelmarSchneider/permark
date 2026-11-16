@@ -1638,8 +1638,6 @@ export default {
   "settings.all": "所有設定",
   "settings.editorPreview": "範例：",
   "settings.linkUpdateHint": "移動或重新命名檔案時，連結會如何處理。",
-  "settings.readingHint": "依專案分別保存。",
-  "settings.readingNone": "開啟文件即可變更寬度和縮放。",
   "settings.refPreview": "範例：",
   "settings.sections": "設定區段",
   "settings.toneHint": "套用於淺色佈景主題。",

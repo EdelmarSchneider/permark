@@ -1707,8 +1707,6 @@ export default {
   "settings.editorPreview": "Contoh:",
   "settings.linkUpdateHint":
     "Apa yang terjadi pada tautan saat file dipindahkan atau diganti namanya.",
-  "settings.readingHint": "Disimpan untuk setiap proyek.",
-  "settings.readingNone": "Buka dokumen untuk mengubah lebar dan zoom.",
   "settings.refPreview": "Contoh:",
   "settings.sections": "Bagian pengaturan",
   "settings.toneHint": "Berlaku untuk tema terang.",
