@@ -2,7 +2,7 @@
 // (invisible characters made visible). Markdown (fenced code highlighted by language, loaded on demand; YAML front
 // matter) or any text by file name. Completions without AI (complete.ts), a small find, keys that never misfire under
 // IME, picture paste | drop. Find + replace (case, regexp, whole word) and go to line: `@codemirror/search`, its
-// panel in the theme's colors and the app's language.
+// panel in the theme's colors and the app's language; ignoring case folds as find in page does (foldedFind.ts).
 
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -40,6 +40,7 @@ import { clipboardPictures } from "../pictures";
 import { configLanguage } from "./configLang";
 import { lineDirection } from "./direction";
 import { fenceAround, type Fence } from "./fence";
+import { foldedFind } from "./foldedFind";
 import { completionSources, type CompletionHost } from "./complete";
 import { toggleBold } from "./bold";
 import { editsSpec, scopeIn } from "./edits";
@@ -289,6 +290,7 @@ export function createSource(options: {
         keys,
         EditorState.phrases.of(options.phrases ?? {}),
         search({ top: true }),
+        foldedFind,
         lineNumbers(),
         highlightSpecialChars(),
         highlightActiveLineGutter(),
