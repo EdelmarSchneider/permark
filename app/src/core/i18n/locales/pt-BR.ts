@@ -496,11 +496,11 @@ export default {
   "edit.codeRefTitleMany": "{count} arquivos correspondem. {mod}+clique para escolher um.",
   "edit.visualForMarkdown":
     "O modo Editar é para arquivos Markdown e de configurações; use Código.",
-  "edit.diagramNoPlugin": "Ative o plugin Mermaid ou PlantUML para ver o desenho.",
+  "edit.diagramNoPlugin": "Ative o plugin Mermaid, PlantUML ou Graphviz para ver o desenho.",
   "edit.diagramPanel": "Prévia do diagrama",
   "edit.diagramPanelHint": "Mostrar o diagrama onde está o cursor, ao lado do texto",
   "edit.diagramPanelEmpty":
-    "Coloque o cursor em um bloco mermaid ou plantuml para ver o desenho aqui.",
+    "Coloque o cursor em um bloco mermaid, plantuml ou dot para ver o desenho aqui.",
   "edit.diagramFailed": "Não foi possível desenhar o diagrama.",
   "cmd.diagramPanel": "Prévia de diagramas ao lado do código-fonte (liga | desliga)",
   "edit.disabled.binary": "Arquivos binários não podem ser editados.",
@@ -1770,6 +1770,9 @@ export default {
   "plugin.mermaid.about": "Desenha diagramas Mermaid a partir de blocos de código.",
   "plugin.plantuml.name": "Diagramas PlantUML",
   "plugin.plantuml.about": "Desenha diagramas PlantUML a partir de blocos de código.",
+  "plugin.graphviz.name": "Diagramas Graphviz",
+  "plugin.graphviz.about": "Desenha grafos Graphviz (DOT) a partir de blocos de código.",
+  "graphviz.tooLarge": "Este grafo é grande demais para ser desenhado aqui.",
   "plugin.media.name": "Imagens, áudio e vídeo",
   "plugin.media.about": "Abre imagens, som e vídeo no próprio lugar.",
   "plugin.json-view.name": "JSON",

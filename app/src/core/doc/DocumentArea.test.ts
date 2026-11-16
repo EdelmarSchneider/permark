@@ -702,7 +702,7 @@ describe("editing", () => {
     const panel = target.querySelector(".source .preview");
     expect(panel?.closest(".cm-editor")).toBeNull();
     expect(panel?.previousElementSibling?.classList.contains("cm")).toBe(true);
-    expect(panel?.textContent).toContain("mermaid or plantuml");
+    expect(panel?.textContent).toContain("mermaid, plantuml or dot");
     toggle?.click();
     await until(() => target.querySelector(".source .preview") === null, "panel off");
   });

@@ -52,7 +52,7 @@ fn main() {
 
 ## Math
 
-Inline math $E = mc^2$ sits in the text. A display formula:
+Inline math $E = mc^2$ sits in the text, and so does chemistry: $\ce{2 H2 + O2 -> 2 H2O}$. A display formula:
 
 $$
 \int_0^\infty e^{-x^2}\,dx = \frac{\sqrt{\pi}}{2}
@@ -66,6 +66,14 @@ graph LR
   B --> C{Sanitize}
   C -->|safe| D[Page]
   C -->|unsafe| E[Dropped]
+```
+
+```dot
+digraph {
+  rankdir=LR
+  Markdown -> Render -> Page
+  Render -> Dropped [label="unsafe"]
+}
 ```
 
 ## Prompt blocks

@@ -498,11 +498,11 @@ export default {
   "edit.codeRefTitleMany": "Coinciden {count} ficheiros. {mod}+clic para escoller un.",
   "edit.visualForMarkdown":
     "O modo Editar é para ficheiros Markdown e de configuración; use Fonte.",
-  "edit.diagramNoPlugin": "Active o complemento Mermaid ou PlantUML para ver o debuxo.",
+  "edit.diagramNoPlugin": "Active o complemento Mermaid, PlantUML ou Graphviz para ver o debuxo.",
   "edit.diagramPanel": "Vista previa do diagrama",
   "edit.diagramPanelHint": "Mostrar xunto ao texto o diagrama no que está o cursor",
   "edit.diagramPanelEmpty":
-    "Poña o cursor nun bloque mermaid ou plantuml para ver aquí o seu debuxo.",
+    "Poña o cursor nun bloque mermaid, plantuml ou dot para ver aquí o seu debuxo.",
   "edit.diagramFailed": "Non foi posíbel facer o debuxo.",
   "cmd.diagramPanel": "Vista previa do diagrama xunto a Fonte (si | non)",
   "edit.disabled.binary": "Os ficheiros binarios non se poden editar.",
@@ -1776,6 +1776,9 @@ export default {
   "plugin.mermaid.about": "Debuxa diagramas Mermaid a partir de bloques de código.",
   "plugin.plantuml.name": "Diagramas PlantUML",
   "plugin.plantuml.about": "Debuxa diagramas PlantUML a partir de bloques de código.",
+  "plugin.graphviz.name": "Diagramas Graphviz",
+  "plugin.graphviz.about": "Debuxa grafos Graphviz (DOT) a partir de bloques de código.",
+  "graphviz.tooLarge": "Este grafo é demasiado grande para debuxalo aquí.",
   "plugin.media.name": "Imaxes, audio e vídeo",
   "plugin.media.about": "Abre imaxes, son e vídeo aquí mesmo.",
   "plugin.json-view.name": "JSON",

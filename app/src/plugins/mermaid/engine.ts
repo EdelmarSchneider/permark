@@ -1,44 +1,13 @@
 // Mermaid, loaded when the first diagram comes near the screen. Strict security level; the palette comes from the
 // design tokens so the diagram looks like the page in every theme and tone.
 
-import { diagrams, sanitizeSvg } from "../../core/doc/diagram";
+import { diagrams, paletteKey, sanitizeSvg, withTokens } from "../../core/doc/diagram";
 
 type Mermaid = typeof import("mermaid").default;
 
 let engine: Promise<Mermaid> | null = null;
 let configuredFor: string | null = null;
 let counter = 0;
-
-/** A forced theme ignores the page's light tone: its drawings never share a cache entry with the page's. */
-function paletteKey(theme: "light" | "dark", forced: boolean): string {
-  return forced ? `${theme}:forced` : `${theme}:${document.documentElement.dataset["tone"] ?? ""}`;
-}
-
-/**
- * `read` gets the design tokens: the page's (theme + tone), or for a forced theme those of a probe element scoped to
- * that theme alone (the tokens scope each theme by `data-theme`; the tones apply to the root only).
- */
-function withTokens<T>(
-  theme: "light" | "dark",
-  forced: boolean,
-  read: (token: (name: string) => string) => T,
-): T {
-  const reader = (element: Element) => {
-    const css = getComputedStyle(element);
-    return (name: string): string => css.getPropertyValue(name).trim();
-  };
-  if (!forced) return read(reader(document.documentElement));
-  const probe = document.createElement("div");
-  probe.hidden = true;
-  probe.dataset["theme"] = theme;
-  document.body.append(probe);
-  try {
-    // read before the probe leaves: a detached element has no computed tokens
-    return read(reader(probe));
-  } finally {
-    probe.remove();
-  }
-}
 
 async function load(theme: "light" | "dark", forced: boolean): Promise<Mermaid> {
   engine ??= import("mermaid").then((module) => module.default);

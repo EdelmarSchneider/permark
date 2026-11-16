@@ -501,11 +501,11 @@ export default {
   "edit.visualForMarkdown":
     "編集モードは Markdown ファイルと設定ファイル用です。ソースモードを使用してください。",
   "edit.diagramNoPlugin":
-    "図を表示するには、Mermaid または PlantUML プラグインをオンにしてください。",
+    "図を表示するには、Mermaid、PlantUML または Graphviz プラグインをオンにしてください。",
   "edit.diagramPanel": "図のプレビュー",
   "edit.diagramPanelHint": "カーソルがある図を、テキストの横に表示します",
   "edit.diagramPanelEmpty":
-    "mermaid または plantuml ブロックにカーソルを置くと、ここに図が表示されます。",
+    "mermaid、plantuml または dot ブロックにカーソルを置くと、ここに図が表示されます。",
   "edit.diagramFailed": "図を作成できませんでした。",
   "cmd.diagramPanel": "ソースの横に図のプレビュー（オン | オフ）",
   "edit.disabled.binary": "バイナリファイルは編集できません。",
@@ -1785,6 +1785,9 @@ export default {
   "plugin.mermaid.about": "コードブロックから Mermaid 図を描画します。",
   "plugin.plantuml.name": "PlantUML 図",
   "plugin.plantuml.about": "コードブロックから PlantUML 図を描画します。",
+  "plugin.graphviz.name": "Graphviz 図",
+  "plugin.graphviz.about": "コードブロックから Graphviz（DOT）のグラフを描画します。",
+  "graphviz.tooLarge": "このグラフは大きすぎるため、ここでは描画できません。",
   "plugin.media.name": "画像、音声、動画",
   "plugin.media.about": "画像、音声、動画をその場で開きます。",
   "plugin.json-view.name": "JSON",

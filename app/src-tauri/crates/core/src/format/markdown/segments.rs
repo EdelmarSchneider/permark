@@ -104,7 +104,7 @@ fn classify<'a>(node: &'a AstNode<'a>) -> (SegmentKind, Option<LockReason>) {
             let first = code.info.split_whitespace().next().unwrap_or("");
             if first.eq_ignore_ascii_case("math") {
                 (SegmentKind::Math, Some(LockReason::Math))
-            } else if ["mermaid", "plantuml", "puml"]
+            } else if ["mermaid", "plantuml", "puml", "dot", "graphviz"]
                 .iter()
                 .any(|d| first.eq_ignore_ascii_case(d))
             {

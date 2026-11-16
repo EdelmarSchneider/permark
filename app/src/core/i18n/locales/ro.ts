@@ -516,11 +516,12 @@ export default {
     "Se potrivesc mai multe fișiere ({count}). {mod}+clic pentru a alege unul.",
   "edit.visualForMarkdown":
     "Modul Editare este pentru fișierele Markdown și fișierele de configurare; folosește Sursă.",
-  "edit.diagramNoPlugin": "Activează pluginul Mermaid sau PlantUML pentru a vedea desenul.",
+  "edit.diagramNoPlugin":
+    "Activează pluginul Mermaid, PlantUML sau Graphviz pentru a vedea desenul.",
   "edit.diagramPanel": "Previzualizarea diagramei",
   "edit.diagramPanelHint": "Arată lângă text diagrama în care se află cursorul",
   "edit.diagramPanelEmpty":
-    "Pune cursorul într-un bloc mermaid sau plantuml pentru a-i vedea desenul aici.",
+    "Pune cursorul într-un bloc mermaid, plantuml sau dot pentru a-i vedea desenul aici.",
   "edit.diagramFailed": "Desenul nu a putut fi realizat.",
   "cmd.diagramPanel": "Previzualizarea diagramei lângă Sursă (activat | dezactivat)",
   "edit.disabled.binary": "Fișierele binare nu pot fi editate.",
@@ -1853,6 +1854,9 @@ export default {
   "plugin.mermaid.about": "Desenează diagrame Mermaid din blocuri de cod.",
   "plugin.plantuml.name": "Diagrame PlantUML",
   "plugin.plantuml.about": "Desenează diagrame PlantUML din blocuri de cod.",
+  "plugin.graphviz.name": "Diagrame Graphviz",
+  "plugin.graphviz.about": "Desenează grafuri Graphviz (DOT) din blocuri de cod.",
+  "graphviz.tooLarge": "Acest graf este prea mare pentru a fi desenat aici.",
   "plugin.media.name": "Imagini, audio și video",
   "plugin.media.about": "Deschide pe loc imaginile, fișierele audio și video.",
   "plugin.json-view.name": "JSON",
