@@ -24,6 +24,9 @@
 ;    (box unticked, uninstall), never one the person wrote. An update leaves PATH as it is. A PATH this installer cannot
 ;    rewrite whole (see "Command line" below) is never changed: the installer says so and names the folder to add.
 ;
+; 5. THE TEMPLATE'S PAGES. Taller boxes on the reinstall page, short words for the uninstall page's folder label, and
+;    Windows' own UI fonts for Chinese and Korean, so that no translation is cut off (see "The template's other pages").
+;
 ; Uninstalling removes everything above (and the keys it leaves empty); with "Delete the application data" it also removes
 ; HKCU\Software\PerMark and PerMark's folders in the profile. An update's uninstall step removes nothing.
 ; The layout is the one the app writes (crates/plugins/shell-integration, crates/core/src/desktop); a Rust test keeps them
@@ -861,34 +864,30 @@ Var PermarkPathDir
 
 ; ---- The welcome page: short text, the types, the three entries -----------------------------------------------------
 ; Everything under the page's title sits in fixed boxes (dialog units, x 120..315, y 42..192 of 193), each as tall as the
-; longest of the six languages needs, so no text can run into the next control (the template's own text label is one 130u
-; box, tall enough to cover the grid below it; ours stays empty and our boxes replace it):
+; longest language needs, so no text can run into the next control:
 ;   42  the welcome text: two paragraphs, <= 6 lines
 ;   96  the title of the check grid, <= 3 lines (it carries the sentence "Windows asks you to confirm")
 ;  123  the grid: 2 rows of 4 boxes, widths 52 + 44 + 42 + 57 (the last holds "Properties", the widest label)
 ;  147  the two file manager entries, 2 lines each
 ;  181  the PATH option, 1 line (the shortest words on the page: no language wraps them)
-; Windows CJK fonts make a line ~8.5u, Latin ~8u; the lines above are measured in all six languages with the dialog font.
+; A line of text in the dialog font is 8u; CJK glyphs drawn from a fallback font make it ~8.5u.
+; The template's own text label (one white 130u box from 45u down) is hidden before ours are made. Left visible, it
+; repaints over every static control it overlaps on a real screen, whatever the z-order: only the top 3u of the welcome
+; text and none of the grid title showed (an off-screen PrintWindow capture draws in z-order and hides the fault).
 
+; the template's label gets this text, so that PermarkWelcomeShow can find it by its text
 !define MUI_WELCOMEPAGE_TEXT " "
-
-; raise a control above the template's tall (empty) text label
-!macro PERMARK_RAISE VAR
-  System::Call 'user32::SetWindowPos(p ${VAR}, p 0, i 0, i 0, i 0, i 0, i 3)'
-!macroend
 
 !macro PERMARK_LABEL Y H TEXT
   ${NSD_CreateLabel} 120u ${Y} 195u ${H} "${TEXT}"
   Pop $0
   SetCtlColors $0 "000000" "FFFFFF"
-  !insertmacro PERMARK_RAISE $0
 !macroend
 
 !macro PERMARK_TYPE_BOX VAR X Y W LABEL NAME
   ${NSD_CreateCheckbox} ${X} ${Y} ${W} 11u "${LABEL}"
   Pop ${VAR}
   SetCtlColors ${VAR} "000000" "FFFFFF"
-  !insertmacro PERMARK_RAISE ${VAR}
   ; $R9 = ";markdown;json;" (recorded | default); StrLoc is declared by the template
   ${StrLoc} $R8 "$R9" "${NAME};" ">"
   ${If} $R8 != ""
@@ -913,7 +912,6 @@ Var PermarkPathDir
   ${NSD_CreateCheckbox} 120u ${Y} 195u ${H} "${LABEL}"
   Pop ${VAR}
   SetCtlColors ${VAR} "000000" "FFFFFF"
-  !insertmacro PERMARK_RAISE ${VAR}
   ${If} $0 <> 0
     ${NSD_Check} ${VAR}
   ${EndIf}
@@ -943,6 +941,12 @@ Function PermarkWelcomeShow
   ClearErrors
 
   !insertmacro PERMARK_LABEL 42u 52u "$(PermarkWelcome)"
+  ; the template's text label: in the same page as ours, the static control whose text is " " (see above)
+  System::Call 'user32::GetParent(p r0) p .r0'
+  FindWindow $0 "Static" " " $0
+  ${If} $0 <> 0
+    ShowWindow $0 ${SW_HIDE}
+  ${EndIf}
   !insertmacro PERMARK_LABEL 96u 25u "$(PermarkTypesTitle)"
 
   !insertmacro PERMARK_TYPE_BOX $PermarkBoxMarkdown 120u 123u 52u "Markdown" ";markdown"
@@ -986,6 +990,63 @@ FunctionEnd
 ; The welcome page is the first page the template inserts after this file: these apply to it.
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW PermarkWelcomeShow
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE PermarkWelcomeLeave
+
+; ---- The template's other pages -------------------------------------------------------------------------------------
+; Everything below changes only how the template's pages are laid out or worded; it must stay after every control this
+; file creates itself.
+
+; The reinstall page (an earlier install found) gives its text a 3-line label (0 0 100% 24u) and each option a one-line
+; radio button (30u 50u|70u -30u 8u). Most translations need 4 lines for the downgrade text and 2 for "Do not uninstall
+; (...)", so their ends were cut off. The page has no show callback, so the two control makers are redefined for the rest
+; of the template: exactly those boxes are made taller (text up to 5 lines, buttons up to 2 lines: BS_MULTILINE is in
+; nsDialogs' radio style, and 18u stays above the next button at +20u); every other control passes through unchanged.
+!macro PERMARK_TEMPLATE_LABEL X Y W H TEXT
+  !if "${X} ${Y} ${W} ${H}" == "0 0 100% 24u"
+    nsDialogs::CreateControl ${__NSD_Label_CLASS} ${__NSD_Label_STYLE} ${__NSD_Label_EXSTYLE} 0 0 100% 40u "${TEXT}"
+  !else
+    nsDialogs::CreateControl ${__NSD_Label_CLASS} ${__NSD_Label_STYLE} ${__NSD_Label_EXSTYLE} ${X} ${Y} ${W} ${H} "${TEXT}"
+  !endif
+!macroend
+!macro PERMARK_TEMPLATE_RADIO X Y W H TEXT
+  !if "${X} ${W} ${H}" == "30u -30u 8u"
+    nsDialogs::CreateControl ${__NSD_RadioButton_CLASS} ${__NSD_RadioButton_STYLE} ${__NSD_RadioButton_EXSTYLE} ${X} ${Y} ${W} 18u "${TEXT}"
+  !else
+    nsDialogs::CreateControl ${__NSD_RadioButton_CLASS} ${__NSD_RadioButton_STYLE} ${__NSD_RadioButton_EXSTYLE} ${X} ${Y} ${W} ${H} "${TEXT}"
+  !endif
+!macroend
+!define /redef NSD_CreateLabel "!insertmacro PERMARK_TEMPLATE_LABEL"
+!define /redef NSD_CreateRadioButton "!insertmacro PERMARK_TEMPLATE_RADIO"
+
+; The uninstall confirm page labels the folder field with a one-line box about 55u wide: NSIS' own words for
+; "Uninstalling from:" are cut to their first word in Spanish, French, Catalan and Indonesian. Words that fit, per language.
+!define MUI_UNCONFIRMPAGE_TEXT_LOCATION "$(PermarkUninstallFrom)"
+LangString PermarkUninstallFrom 1033 "Uninstalling from:"
+LangString PermarkUninstallFrom 1046 "Desinstalando de:"
+LangString PermarkUninstallFrom 3082 "Desinstalando de:"
+LangString PermarkUninstallFrom 1031 "Wird entfernt aus:"
+LangString PermarkUninstallFrom 2052 "卸载目录:"
+LangString PermarkUninstallFrom 1040 "Rimozione da:"
+LangString PermarkUninstallFrom 1041 "アンインストール元:"
+LangString PermarkUninstallFrom 1042 "제거 대상:"
+LangString PermarkUninstallFrom 1036 "Dossier :"
+LangString PermarkUninstallFrom 2070 "A desinstalar de:"
+LangString PermarkUninstallFrom 1027 "Carpeta:"
+LangString PermarkUninstallFrom 1110 "Desinstalando de:"
+LangString PermarkUninstallFrom 1048 "Dezinstalare din:"
+LangString PermarkUninstallFrom 1028 "解除安裝目錄:"
+LangString PermarkUninstallFrom 1057 "Hapus dari:"
+LangString PermarkUninstallFrom 1066 "Đang gỡ bỏ khỏi:"
+LangString PermarkUninstallFrom 1049 "Удаление из:"
+LangString PermarkUninstallFrom 1055 "Kaldırılan yer:"
+
+; Chinese and Korean: NSIS' language files name fonts that draw poorly or may be missing (SimSun's synthesized bold
+; blots "M" in the titles; PMingLiU and Gulim are optional Windows fonts, and their stand-ins lack glyphs such as “ ”).
+; The UI fonts every Windows 10 and 11 installs instead. A bigger font makes every dialog unit bigger, but the template
+; places the uninstall page's "Delete the application data" box in pixels (100 px down): YaHei's tall lines at 9 pt
+; pushed the folder field onto it, so YaHei is 8 pt.
+SetFont /LANG=2052 "Microsoft YaHei UI" 8
+SetFont /LANG=1028 "Microsoft JhengHei UI" 9
+SetFont /LANG=1042 "Malgun Gothic" 9
 
 ; ---- Hooks ----------------------------------------------------------------------------------------------------------
 

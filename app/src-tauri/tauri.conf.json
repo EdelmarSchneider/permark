@@ -58,6 +58,7 @@
           "Turkish"
         ],
         "customLanguageFiles": {
+          "German": "installer/languages/German.nsh",
           "Catalan": "installer/languages/Catalan.nsh",
           "Galician": "installer/languages/Galician.nsh",
           "Romanian": "installer/languages/Romanian.nsh",

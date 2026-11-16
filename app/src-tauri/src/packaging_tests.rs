@@ -21,8 +21,9 @@ const INSTALLER_LANGUAGE_IDS: [u32; 18] = [
     1033, 1046, 3082, 1031, 2052, 1040, 1041, 1042, 1036, 2070, 1027, 1110, 1048, 1028, 1057, 1066,
     1049, 1055,
 ];
-/// Installer languages Tauri does not translate (`bundle.windows.nsis.customLanguageFiles`).
-const CUSTOM_LANGUAGES: [(&str, &str); 4] = [
+/// Installer languages Tauri does not translate, or translates with gaps (`bundle.windows.nsis.customLanguageFiles`).
+const CUSTOM_LANGUAGES: [(&str, &str); 5] = [
+    ("German", include_str!("../installer/languages/German.nsh")),
     (
         "Catalan",
         include_str!("../installer/languages/Catalan.nsh"),
@@ -217,6 +218,88 @@ fn the_custom_installer_languages_are_listed_and_carry_both_spellings_of_the_ins
         let new = value("chooseHowToInstall");
         assert!(new.is_some(), "{name}.nsh lacks chooseHowToInstall");
         assert_eq!(new, value("choowHowToInstall"), "{name}.nsh");
+    }
+}
+
+/// The texts of Tauri's NSIS template (Tauri CLI 2.12.3 English.nsh, plus the 2.12.4 spelling `chooseHowToInstall`).
+const TEMPLATE_TEXTS: [&str; 28] = [
+    "addOrReinstall",
+    "alreadyInstalled",
+    "alreadyInstalledLong",
+    "appRunning",
+    "appRunningOkKill",
+    "chooseMaintenanceOption",
+    "chooseHowToInstall",
+    "choowHowToInstall",
+    "createDesktop",
+    "dontUninstall",
+    "dontUninstallDowngrade",
+    "failedToKillApp",
+    "installingWebview2",
+    "newerVersionInstalled",
+    "older",
+    "olderOrUnknownVersionInstalled",
+    "silentDowngrades",
+    "unableToUninstall",
+    "uninstallApp",
+    "uninstallBeforeInstalling",
+    "unknown",
+    "webview2AbortError",
+    "webview2DownloadError",
+    "webview2DownloadSuccess",
+    "webview2Downloading",
+    "webview2InstallError",
+    "webview2InstallSuccess",
+    "deleteAppData",
+];
+
+#[test]
+fn every_custom_installer_language_has_every_text_of_the_template() {
+    // a missing one falls back to English, or to nothing inside a sentence ("Eine -Version von ...")
+    for (name, text) in CUSTOM_LANGUAGES {
+        let keys: std::collections::BTreeSet<&str> = text
+            .lines()
+            .filter_map(|line| line.strip_prefix("LangString "))
+            .filter_map(|rest| rest.split(' ').next())
+            .collect();
+        let expected: std::collections::BTreeSet<&str> = TEMPLATE_TEXTS.into_iter().collect();
+        assert_eq!(keys, expected, "{name}.nsh");
+    }
+}
+
+#[test]
+fn every_installer_text_is_whole_on_its_line() {
+    // `LangString <key> <language> "<text>"`: closed at the end of its line, a quote inside written `$\"`, a line break
+    // `$\r$\n` | `$\n`. A raw line break inside a text (a `$\n` typed as `$` and Enter) fails the whole makensis run.
+    let files = std::iter::once(("hooks", HOOKS)).chain(CUSTOM_LANGUAGES);
+    for (name, text) in files {
+        for (index, line) in text.lines().enumerate() {
+            // a Windows checkout may end lines with CRLF
+            let line = line.trim_end_matches('\r');
+            let at = format!("{name}.nsh:{}", index + 1);
+            let Some(rest) = line.strip_prefix("LangString ") else {
+                // a language file holds only comments and texts
+                if name != "hooks" {
+                    assert!(line.is_empty() || line.starts_with(';'), "{at}: {line}");
+                }
+                continue;
+            };
+            let quoted = rest.splitn(3, ' ').nth(2).unwrap_or_default();
+            let inner = quoted
+                .strip_prefix('"')
+                .and_then(|text| text.strip_suffix('"'));
+            let Some(inner) = inner else {
+                panic!("{at}: the text is not closed on its line");
+            };
+            assert!(
+                !inner.replace("$\\\"", "").contains('"'),
+                "{at}: a quote inside the text is not written $\\\""
+            );
+            assert!(
+                !inner.trim_end_matches("$$").ends_with('$'),
+                "{at}: the text ends with a bare $"
+            );
+        }
     }
 }
 
