@@ -1506,9 +1506,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "Conexiunea cu agenții",
-  "agent.switch": "Partajează acest proiect cu agenții",
+  "agent.switch": "Partajează acest dosar cu agenții",
   "agent.switchHint":
-    "Un agent pe care îl conectezi (un instrument AI compatibil cu MCP, cum ar fi Claude Code sau Cursor) poate vedea ce ai pe ecran și ce s-a modificat, poate căuta și citi fișierele acestui proiect, îți poate citi comentariile și notele pe care le partajezi și îți poate arăta un loc. Doar pe acest computer. Fișierele listate în .aiignore rămân în afara accesului lor, iar agenții nu editează niciodată fișiere prin PerMark. Acest lucru acoperă doar ce primesc agenții de la PerMark: un agent poate deschide în continuare singur fișiere de pe computerul tău.",
+    "Un agent pe care îl conectezi (un instrument AI compatibil cu MCP, cum ar fi Claude Code sau Cursor) poate vedea ce ai pe ecran și ce s-a modificat, poate căuta și citi fișierele acestui dosar, îți poate citi comentariile și notele pe care le partajezi și îți poate arăta un loc. Doar pe acest computer. Fișierele listate în .aiignore rămân în afara accesului lor, iar agenții nu editează niciodată fișiere prin PerMark. Acest lucru acoperă doar ce primesc agenții de la PerMark: un agent poate deschide în continuare singur fișiere de pe computerul tău.",
   "agent.folderReplaced":
     "Acest folder s-a schimbat de când l-ai conectat. Activează din nou conexiunea pentru a permite agenți aici.",
   "agent.groups": "Ce pot face agenții",
@@ -1708,8 +1708,9 @@ export default {
 
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "Limitele agenților",
-  "agent.narrow.groups": "Ce nu pot face niciodată agenții aici",
-  "agent.narrow.groupsHint": "Acest dosar poate doar să restrângă ce permite fiecare persoană.",
+  "agent.narrow.groups": "Grupuri blocate aici pentru agenți",
+  "agent.narrow.groupsHint":
+    "Bifează un grup ca să ții agenții departe de el, pentru toți. Un dosar poate doar să restrângă ce permite fiecare persoană.",
   "agent.narrow.paths": "Căi pe care agenții nu le primesc niciodată",
   "agent.narrow.pathsHint":
     "Fișierele listate în .aiignore nu ajung niciodată la agenți. Aceste modele se adaugă pentru acest dosar (aceleași reguli ca în .gitignore).",
@@ -1726,6 +1727,7 @@ export default {
   "plugins.choice.on": "Activat aici",
   "plugins.choice.off": "Dezactivat aici (doar tu)",
   "plugins.choice.offEveryone": "Dezactivat pentru toți",
+  "plugins.choice.offEveryoneNeedsInit": "Dezactivat pentru toți (inițializează mai întâi PerMark)",
   "plugins.dataNotRemoved": "Datele nu au putut fi eliminate: {message}",
   "plugins.dataRemoved": "Datele pluginului {name} au fost eliminate.",
   "plugins.failedToStart": "Pluginul {name} nu a putut porni. {reason}",

@@ -1,15 +1,16 @@
 <script lang="ts">
-  // This folder's overview: who each kind of folder setting is for (Everyone = its `.permark/config.toml`, Only you =
-  // this computer), the folder's own card where it holds projects, and the offer to set PerMark up while `.permark/`
-  // is missing (once set up: the shared file, with a way to see it in the file manager). Nothing is written into the
-  // folder until the person answers the Initialize question.
+  // This folder's overview: the offer to set PerMark up while `.permark/` is missing (the full card lives here only);
+  // once set up, who each kind of folder setting is for (Everyone = its `.permark/config.toml`, Only you = this
+  // computer: before, nothing is marked Everyone yet) and the shared file, with a way to see it in the file manager;
+  // the folder's own card where it holds projects. Nothing is written into the folder until the person answers the
+  // Initialize question.
   import { conditions } from "../../conditions/context.svelte";
   import { documents } from "../../doc/document.svelte";
   import { t } from "../../i18n";
   import { projects } from "../../projects/instance.svelte";
-  import { askInitHere } from "../initProject";
   import Card from "./Card.svelte";
   import SettingRow from "./SettingRow.svelte";
+  import ShareInit from "./ShareInit.svelte";
 
   const initialized = $derived(conditions.current.permark === "initialized");
   /** The folder's shared settings file (what Everyone means), relative to the folder. */
@@ -21,16 +22,10 @@
 </script>
 
 <div class="overview">
-  <p class="scopes">{t("project.scopes")}</p>
   {#if !initialized}
-    <Card>
-      <SettingRow label={t("project.notInitialized")} hint={t("project.notInitializedHint")}>
-        <button type="button" class="btn btn--primary btn--sm" onclick={() => askInitHere()}>
-          {t("project.initButton")}
-        </button>
-      </SettingRow>
-    </Card>
+    <ShareInit />
   {:else}
+    <p class="scopes">{t("project.scopes")}</p>
     <Card>
       <SettingRow label={SHARED_FILE} hint={t("project.sharedFileHint")}>
         <button

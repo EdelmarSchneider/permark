@@ -3,6 +3,7 @@
   import type { GitBackendPref } from "../../api";
   import { t, type MessageKey } from "../../core/i18n";
   import SettingRow from "../../core/shell/settings/SettingRow.svelte";
+  import { projectSettings } from "../../core/shell/settings/stores.svelte";
   import { windowStore } from "../../core/window.svelte";
 
   const OPTIONS: { value: GitBackendPref; label: MessageKey }[] = [
@@ -20,7 +21,7 @@
   label={t("git.backend.row")}
   labelFor="set-git"
   hint={t("git.backend.hint")}
-  ignoredKey="git.backend"
+  ignored={projectSettings.ignores("git.backend")}
 >
   <select
     id="set-git"

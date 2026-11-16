@@ -1453,9 +1453,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "Agentenverbindung",
-  "agent.switch": "Dieses Projekt mit Agenten teilen",
+  "agent.switch": "Diesen Ordner mit Agenten teilen",
   "agent.switchHint":
-    "Ein verbundener Agent (ein KI-Werkzeug mit MCP-Unterstützung, etwa Claude Code oder Cursor) sieht, was gerade angezeigt wird und was sich geändert hat, kann die Dateien dieses Projekts suchen und lesen, Kommentare und geteilte Notizen lesen und eine Stelle zeigen. Nur auf diesem Computer. Dateien, die in .aiignore stehen, bleiben außer Reichweite, und Agenten bearbeiten nie Dateien über PerMark. Das gilt nur für das, was Agenten von PerMark bekommen: Ein Agent kann Dateien auf diesem Computer weiterhin selbst öffnen.",
+    "Ein verbundener Agent (ein KI-Werkzeug mit MCP-Unterstützung, etwa Claude Code oder Cursor) sieht, was gerade angezeigt wird und was sich geändert hat, kann die Dateien dieses Ordners suchen und lesen, Kommentare und geteilte Notizen lesen und eine Stelle zeigen. Nur auf diesem Computer. Dateien, die in .aiignore stehen, bleiben außer Reichweite, und Agenten bearbeiten nie Dateien über PerMark. Das gilt nur für das, was Agenten von PerMark bekommen: Ein Agent kann Dateien auf diesem Computer weiterhin selbst öffnen.",
   "agent.folderReplaced":
     "Dieser Ordner hat sich geändert, seit Sie ihn verbunden haben. Schalten Sie die Verbindung wieder ein, um hier Agenten zuzulassen.",
   "agent.groups": "Was Agenten dürfen",
@@ -1650,8 +1650,9 @@ export default {
   "note.parseError": "Als Text gezeigt: Die Datei ist in ihrem Format nicht gültig",
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "Grenzen für Agenten",
-  "agent.narrow.groups": "Gruppen, die Agenten hier nie erhalten",
-  "agent.narrow.groupsHint": "Dieser Ordner kann nur einschränken, was jede Person erlaubt.",
+  "agent.narrow.groups": "Hier für Agenten gesperrte Gruppen",
+  "agent.narrow.groupsHint":
+    "Kreuze eine Gruppe an, um Agenten für alle davon auszuschließen. Ein Ordner kann nur einschränken, was jede Person erlaubt.",
   "agent.narrow.paths": "Pfade, die Agenten nie bekommen",
   "agent.narrow.pathsHint":
     "In .aiignore aufgeführte Dateien erreichen Agenten nie. Diese Muster kommen für diesen Ordner hinzu (dieselben Regeln wie bei .gitignore).",
@@ -1668,6 +1669,7 @@ export default {
   "plugins.choice.on": "Hier an",
   "plugins.choice.off": "Hier aus (nur du)",
   "plugins.choice.offEveryone": "Für alle aus",
+  "plugins.choice.offEveryoneNeedsInit": "Für alle aus (zuerst PerMark einrichten)",
   "plugins.dataNotRemoved": "Die Daten konnten nicht entfernt werden: {message}",
   "plugins.dataRemoved": "Daten von {name} entfernt.",
   "plugins.failedToStart": "{name} konnte nicht starten. {reason}",

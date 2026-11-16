@@ -1468,9 +1468,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "Connexion aux agents",
-  "agent.switch": "Partager ce projet avec les agents",
+  "agent.switch": "Partager ce dossier avec les agents",
   "agent.switchHint":
-    "Un agent que vous connectez (un outil d'IA compatible MCP, comme Claude Code ou Cursor) peut voir ce que vous regardez et ce qui a changé, rechercher et lire les fichiers de ce projet, lire vos commentaires et les notes que vous partagez, et vous montrer un emplacement. Uniquement sur cet ordinateur. Les fichiers listés dans .aiignore restent hors de leur portée, et les agents ne modifient jamais de fichiers via PerMark. Cela ne couvre que ce que les agents obtiennent de PerMark : un agent peut toujours ouvrir lui-même des fichiers sur votre ordinateur.",
+    "Un agent que vous connectez (un outil d'IA compatible MCP, comme Claude Code ou Cursor) peut voir ce que vous regardez et ce qui a changé, rechercher et lire les fichiers de ce dossier, lire vos commentaires et les notes que vous partagez, et vous montrer un emplacement. Uniquement sur cet ordinateur. Les fichiers listés dans .aiignore restent hors de leur portée, et les agents ne modifient jamais de fichiers via PerMark. Cela ne couvre que ce que les agents obtiennent de PerMark : un agent peut toujours ouvrir lui-même des fichiers sur votre ordinateur.",
   "agent.folderReplaced":
     "Ce dossier a changé depuis que vous l'avez connecté. Réactivez la connexion pour autoriser les agents ici.",
   "agent.groups": "Ce que les agents peuvent faire",
@@ -1667,9 +1667,9 @@ export default {
 
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "Limites des agents",
-  "agent.narrow.groups": "Groupes jamais accordés aux agents ici",
+  "agent.narrow.groups": "Groupes bloqués pour les agents ici",
   "agent.narrow.groupsHint":
-    "Ce dossier peut seulement restreindre ce que chaque personne autorise.",
+    "Cochez un groupe pour en tenir les agents à l'écart, pour tout le monde. Un dossier peut seulement restreindre ce que chaque personne autorise.",
   "agent.narrow.paths": "Chemins que les agents n'obtiennent jamais",
   "agent.narrow.pathsHint":
     "Les fichiers listés dans .aiignore n'atteignent jamais les agents. Ces motifs s'y ajoutent pour ce dossier (les mêmes règles que .gitignore).",
@@ -1686,6 +1686,8 @@ export default {
   "plugins.choice.on": "Activé ici",
   "plugins.choice.off": "Désactivé ici (vous seul)",
   "plugins.choice.offEveryone": "Désactivé pour tout le monde",
+  "plugins.choice.offEveryoneNeedsInit":
+    "Désactivé pour tout le monde (initialisez d'abord PerMark)",
   "plugins.dataNotRemoved": "Impossible de supprimer les données : {message}",
   "plugins.dataRemoved": "Données de {name} supprimées.",
   "plugins.failedToStart": "{name} n'a pas pu démarrer. {reason}",

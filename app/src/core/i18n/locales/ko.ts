@@ -1410,9 +1410,9 @@ export default {
 
   // ---- agent connection
   "agent.title": "에이전트 연결",
-  "agent.switch": "이 프로젝트를 에이전트와 공유",
+  "agent.switch": "이 폴더를 에이전트와 공유",
   "agent.switchHint":
-    "연결한 에이전트(Claude Code나 Cursor처럼 MCP를 지원하는 AI 도구)가 지금 보고 있는 내용과 변경된 내용을 확인하고, 이 프로젝트의 파일을 검색하고 읽으며, 댓글과 공유한 메모를 읽고, 특정 위치를 보여 줄 수 있습니다. 이 컴퓨터에서만 작동합니다. .aiignore에 적은 파일은 에이전트에게 전달되지 않으며, 에이전트는 PerMark를 통해 파일을 편집하지 않습니다. 이는 에이전트가 PerMark에서 받는 내용에만 해당합니다. 에이전트는 여전히 컴퓨터의 파일을 직접 열 수 있습니다.",
+    "연결한 에이전트(Claude Code나 Cursor처럼 MCP를 지원하는 AI 도구)가 지금 보고 있는 내용과 변경된 내용을 확인하고, 이 폴더의 파일을 검색하고 읽으며, 댓글과 공유한 메모를 읽고, 특정 위치를 보여 줄 수 있습니다. 이 컴퓨터에서만 작동합니다. .aiignore에 적은 파일은 에이전트에게 전달되지 않으며, 에이전트는 PerMark를 통해 파일을 편집하지 않습니다. 이는 에이전트가 PerMark에서 받는 내용에만 해당합니다. 에이전트는 여전히 컴퓨터의 파일을 직접 열 수 있습니다.",
   "agent.folderReplaced":
     "연결한 후 이 폴더가 바뀌었습니다. 여기에서 에이전트를 허용하려면 연결을 다시 켜세요.",
   "agent.groups": "에이전트가 할 수 있는 작업",
@@ -1598,8 +1598,9 @@ export default {
   "note.parseError": "텍스트로 표시: 파일 형식이 올바르지 않음",
   // ---- shell: switcher, settings page, plugins page, project settings, initialize PerMark
   "agent.narrow.title": "에이전트 제한",
-  "agent.narrow.groups": "여기서 에이전트에게 허용하지 않는 그룹",
-  "agent.narrow.groupsHint": "이 폴더는 각 사용자가 허용한 범위를 좁히기만 할 수 있습니다.",
+  "agent.narrow.groups": "여기서 에이전트에게 차단할 그룹",
+  "agent.narrow.groupsHint":
+    "그룹에 체크하면 모든 사람에 대해 에이전트가 그 그룹을 쓸 수 없습니다. 폴더는 각 사용자가 허용한 범위를 좁히기만 할 수 있습니다.",
   "agent.narrow.paths": "에이전트가 받지 않는 경로",
   "agent.narrow.pathsHint":
     ".aiignore에 나열된 파일은 에이전트에게 전달되지 않습니다. 이 폴더에서는 이 패턴이 더해집니다(.gitignore와 같은 규칙).",
@@ -1616,6 +1617,7 @@ export default {
   "plugins.choice.on": "여기서 켜짐",
   "plugins.choice.off": "여기서 꺼짐(나만)",
   "plugins.choice.offEveryone": "모두에게 꺼짐",
+  "plugins.choice.offEveryoneNeedsInit": "모두에게 꺼짐(먼저 PerMark 초기화)",
   "plugins.dataNotRemoved": "데이터를 제거할 수 없습니다: {message}",
   "plugins.dataRemoved": "{name}의 데이터를 제거했습니다.",
   "plugins.failedToStart": "{name}을(를) 시작할 수 없습니다. {reason}",
