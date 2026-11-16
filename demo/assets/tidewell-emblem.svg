@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-labelledby="t">
+  <title id="t">Tidewell emblem: an amber buoy with a teal light riding three waves inside a compass ring</title>
+  <defs>
+    <clipPath id="disk">
+      <circle cx="120" cy="120" r="86"/>
+    </clipPath>
+    <line id="minor" x1="120" y1="16" x2="120" y2="23" stroke="#64748b" stroke-width="2" stroke-linecap="round"/>
+    <line id="major" x1="120" y1="14" x2="120" y2="28" stroke="#4f46e5" stroke-width="3" stroke-linecap="round"/>
+  </defs>
+
+  <!-- compass ring -->
+  <circle cx="120" cy="120" r="110" fill="none" stroke="#64748b" stroke-width="2.5"/>
+  <g>
+    <use href="#major" transform="rotate(90 120 120)"/>
+    <use href="#major" transform="rotate(180 120 120)"/>
+    <use href="#major" transform="rotate(270 120 120)"/>
+    <use href="#minor" transform="rotate(10 120 120)"/>
+    <use href="#minor" transform="rotate(20 120 120)"/>
+    <use href="#minor" transform="rotate(30 120 120)"/>
+    <use href="#minor" transform="rotate(40 120 120)"/>
+    <use href="#minor" transform="rotate(50 120 120)"/>
+    <use href="#minor" transform="rotate(60 120 120)"/>
+    <use href="#minor" transform="rotate(70 120 120)"/>
+    <use href="#minor" transform="rotate(80 120 120)"/>
+    <use href="#minor" transform="rotate(100 120 120)"/>
+    <use href="#minor" transform="rotate(110 120 120)"/>
+    <use href="#minor" transform="rotate(120 120 120)"/>
+    <use href="#minor" transform="rotate(130 120 120)"/>
+    <use href="#minor" transform="rotate(140 120 120)"/>
+    <use href="#minor" transform="rotate(150 120 120)"/>
+    <use href="#minor" transform="rotate(160 120 120)"/>
+    <use href="#minor" transform="rotate(170 120 120)"/>
+    <use href="#minor" transform="rotate(190 120 120)"/>
+    <use href="#minor" transform="rotate(200 120 120)"/>
+    <use href="#minor" transform="rotate(210 120 120)"/>
+    <use href="#minor" transform="rotate(220 120 120)"/>
+    <use href="#minor" transform="rotate(230 120 120)"/>
+    <use href="#minor" transform="rotate(240 120 120)"/>
+    <use href="#minor" transform="rotate(250 120 120)"/>
+    <use href="#minor" transform="rotate(260 120 120)"/>
+    <use href="#minor" transform="rotate(280 120 120)"/>
+    <use href="#minor" transform="rotate(290 120 120)"/>
+    <use href="#minor" transform="rotate(300 120 120)"/>
+    <use href="#minor" transform="rotate(310 120 120)"/>
+    <use href="#minor" transform="rotate(320 120 120)"/>
+    <use href="#minor" transform="rotate(330 120 120)"/>
+    <use href="#minor" transform="rotate(340 120 120)"/>
+    <use href="#minor" transform="rotate(350 120 120)"/>
+  </g>
+  <!-- north marker -->
+  <path d="M120 10 L127 26 H113 Z" fill="#d97706"/>
+
+  <!-- inner disk -->
+  <circle cx="120" cy="120" r="86" fill="#4f46e5" fill-opacity="0.12"/>
+
+  <g transform="translate(120 130) scale(1.15) translate(-120 -130)">
+  <!-- light and halo -->
+  <circle cx="120" cy="72" r="16" fill="#0d9488" fill-opacity="0.25"/>
+  <path d="M99.2 60 A24 24 0 0 0 99.2 84" fill="none" stroke="#0d9488" stroke-width="3" stroke-linecap="round"/>
+  <path d="M140.8 60 A24 24 0 0 1 140.8 84" fill="none" stroke="#0d9488" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="120" cy="72" r="7" fill="#0d9488"/>
+
+  <!-- mast, tripod and solar panel -->
+  <g stroke="#4f46e5" stroke-linecap="round" fill="none">
+    <line x1="120" y1="132" x2="120" y2="80" stroke-width="4"/>
+    <line x1="104" y1="132" x2="120" y2="90" stroke-width="4"/>
+    <line x1="136" y1="132" x2="120" y2="90" stroke-width="4"/>
+    <line x1="111" y1="112" x2="129" y2="112" stroke-width="3"/>
+  </g>
+  <rect x="124" y="96" width="20" height="9" rx="2" fill="#4f46e5" fill-opacity="0.35" stroke="#4f46e5" stroke-width="2" transform="rotate(-18 124 100)"/>
+
+  <!-- hull -->
+  <rect x="96" y="128" width="48" height="12" rx="4" fill="#64748b"/>
+  <path d="M86 140 H154 L146 166 Q120 174 94 166 Z" fill="#d97706"/>
+  <path d="M88.5 148 H151.5 L149.7 154 H90.3 Z" fill="#4f46e5"/>
+  </g>
+
+  <!-- water, clipped to the disk -->
+  <g clip-path="url(#disk)">
+    <path d="M24 162 q12 -9 24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 V216 H24 Z" fill="#0d9488" fill-opacity="0.18"/>
+    <g fill="none" stroke="#0d9488" stroke-width="4" stroke-linecap="round">
+      <path d="M24 162 q12 -9 24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0"/>
+      <path d="M12 180 q12 -9 24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0" stroke-opacity="0.7"/>
+      <path d="M24 198 q12 -9 24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0 t24 0" stroke-opacity="0.45"/>
+    </g>
+  </g>
+</svg>

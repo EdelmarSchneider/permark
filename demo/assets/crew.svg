@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 140" width="760" height="140" role="img" aria-labelledby="t">
+  <title id="t">The Tidewell crew: Imani, Tomás, Beatriz, Hana and Leo, plus Gull, the bulletin agent</title>
+  <g font-family="sans-serif" font-weight="600" text-anchor="middle">
+    <!-- Imani Okafor -->
+    <circle cx="80" cy="58" r="45" fill="none" stroke="#4f46e5" stroke-width="2" stroke-opacity="0.35"/>
+    <circle cx="80" cy="58" r="38" fill="#4f46e5"/>
+    <text x="80" y="67" font-size="24" fill="#eef2ff">IO</text>
+    <text x="80" y="128" font-size="15" fill="#64748b">Imani</text>
+
+    <!-- Tomás Varela -->
+    <circle cx="200" cy="58" r="45" fill="none" stroke="#0d9488" stroke-width="2" stroke-opacity="0.35"/>
+    <circle cx="200" cy="58" r="38" fill="#0d9488"/>
+    <text x="200" y="67" font-size="24" fill="#eef2ff">TV</text>
+    <text x="200" y="128" font-size="15" fill="#64748b">Tomás</text>
+
+    <!-- Beatriz Nogueira -->
+    <circle cx="320" cy="58" r="45" fill="none" stroke="#d97706" stroke-width="2" stroke-opacity="0.35"/>
+    <circle cx="320" cy="58" r="38" fill="#d97706"/>
+    <text x="320" y="67" font-size="24" fill="#eef2ff">BN</text>
+    <text x="320" y="128" font-size="15" fill="#64748b">Beatriz</text>
+
+    <!-- Hana Kowalski -->
+    <circle cx="440" cy="58" r="45" fill="none" stroke="#e11d48" stroke-width="2" stroke-opacity="0.35"/>
+    <circle cx="440" cy="58" r="38" fill="#e11d48"/>
+    <text x="440" y="67" font-size="24" fill="#eef2ff">HK</text>
+    <text x="440" y="128" font-size="15" fill="#64748b">Hana</text>
+
+    <!-- Leo Park -->
+    <circle cx="560" cy="58" r="45" fill="none" stroke="#64748b" stroke-width="2" stroke-opacity="0.35"/>
+    <circle cx="560" cy="58" r="38" fill="#64748b"/>
+    <text x="560" y="67" font-size="24" fill="#eef2ff">LP</text>
+    <text x="560" y="128" font-size="15" fill="#64748b">Leo</text>
+
+    <!-- Gull, the agent: dashed, not a person -->
+    <circle cx="680" cy="58" r="38" fill="#64748b" fill-opacity="0.12" stroke="#64748b" stroke-width="2" stroke-dasharray="6 6"/>
+    <path d="M656 62 q12 -16 24 0 q12 -16 24 0" fill="none" stroke="#64748b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="680" y="128" font-size="15" fill="#64748b" font-style="italic">Gull</text>
+  </g>
+</svg>
