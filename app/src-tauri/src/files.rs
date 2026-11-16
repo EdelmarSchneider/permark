@@ -3,14 +3,14 @@
 //! Also the project folders (open + recent) a plugin's own folder must stay clear of, and showing a plugin's folder in
 //! the file manager.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use permark_core::paths::VaultPath;
 use permark_core::plugins::{
-    ChangeListener, FolderReveal, FolderRevealApi, FolderScan, ProjectPlaces, ProjectPlacesApi,
-    ServiceLease, WindowFiles, WindowFilesApi,
+    is_shared_name, ChangeListener, FolderReveal, FolderRevealApi, FolderScan, ProjectPlaces,
+    ProjectPlacesApi, ServiceLease, WindowFiles, WindowFilesApi,
 };
 use permark_core::state::RawFile;
 use permark_core::tree::ScanFile;
@@ -105,11 +105,7 @@ impl WindowFiles for ShellFiles {
 
     fn shared_file(&self, window: &str, name: &str) -> Option<RawFile> {
         // one name inside `.permark/`, never a path that leaves it
-        let plain = matches!(
-            Path::new(name).components().collect::<Vec<_>>().as_slice(),
-            [Component::Normal(only)] if *only == name
-        );
-        if !plain {
+        if !is_shared_name(name) {
             return None;
         }
         // asked each time: the store moves when PerMark is initialized in the folder

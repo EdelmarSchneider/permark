@@ -372,6 +372,61 @@ fn a_shared_write_is_refused_when_permark_stops_being_a_folder() {
 }
 
 #[test]
+fn a_shared_file_is_read_only_as_a_plain_file_of_at_most_a_mebibyte() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let shared = f.store().shared_file("spelling.json");
+    let path = f.project.path().join(".permark/spelling.json");
+    fs::write(&path, b"{}").unwrap();
+    assert_eq!(shared.read().unwrap().as_deref(), Some(&b"{}"[..]));
+    // the cap itself: read; one byte more: unreadable, and an update writes nothing
+    let cap = usize::try_from(SHARED_MAX_BYTES).unwrap();
+    fs::write(&path, vec![b' '; cap]).unwrap();
+    assert_eq!(shared.read().unwrap().map(|b| b.len()), Some(cap));
+    let big = vec![b' '; cap + 1];
+    fs::write(&path, &big).unwrap();
+    assert_eq!(
+        shared.read().err().map(|e| e.kind()),
+        Some(std::io::ErrorKind::InvalidData)
+    );
+    assert!(shared.update(|_| Some(b"{}".to_vec())).is_err());
+    assert_eq!(fs::read(&path).unwrap(), big);
+    // a folder in its place: unreadable
+    fs::remove_file(&path).unwrap();
+    fs::create_dir(&path).unwrap();
+    assert!(shared.read().is_err());
+    fs::remove_dir(&path).unwrap();
+    // a link in its place is never followed: refused, its target untouched
+    let outside = tempfile::tempdir().unwrap();
+    let target = outside.path().join("elsewhere.json");
+    fs::write(&target, b"{\"x\": 1}").unwrap();
+    // Windows makes file links only with the privilege (developer mode): `false` then
+    let link = |at: &std::path::Path| -> bool {
+        #[cfg(unix)]
+        return std::os::unix::fs::symlink(&target, at).is_ok();
+        #[cfg(windows)]
+        return std::os::windows::fs::symlink_file(&target, at).is_ok();
+    };
+    if !link(&path) {
+        eprintln!("skipped the link cases: no file links here");
+        return;
+    }
+    assert_eq!(
+        shared.read().err().map(|e| e.kind()),
+        Some(std::io::ErrorKind::InvalidData)
+    );
+    assert!(shared.update(|_| Some(b"{}".to_vec())).is_err());
+    assert_eq!(fs::read(&target).unwrap(), b"{\"x\": 1}");
+    // the same for a file in the state folder
+    let private = f.store().raw_file("comments.json");
+    private.write(b"{}").unwrap();
+    let private_path = f.project.path().join(".permark/local/comments.json");
+    fs::remove_file(&private_path).unwrap();
+    assert!(link(&private_path));
+    assert!(private.read().is_err());
+}
+
+#[test]
 fn a_raw_file_reads_bytes_exactly_and_tells_a_change_by_its_stamp() {
     let f = fx();
     let raw = f.store().raw_file("quiet.json");
