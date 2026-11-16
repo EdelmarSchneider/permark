@@ -9,6 +9,8 @@ import {
   canRemoveData,
   choiceOf,
   choiceValue,
+  choiceWrite,
+  choiceScope,
   grouped,
   KNOWN_PLUGINS,
   nameKey,
@@ -135,5 +137,24 @@ describe("what a row says", () => {
       true,
       false,
     ]);
+  });
+
+  it("the folder's file turning a plugin off is its own choice, for everyone, over the person's", () => {
+    expect(choiceOf(info({ projectConfigOff: true, projectChoice: true }))).toBe("offEveryone");
+    expect(choiceScope(info({ projectConfigOff: true, projectChoice: false }))).toBe("everyone");
+    expect(choiceScope(info({ projectChoice: false }))).toBe("you");
+    expect(choiceScope(info({ projectChoice: true }))).toBe("you");
+    expect(choiceScope(info({}))).toBeNull();
+  });
+
+  it("a new choice writes only what changes: the folder's switch, the person's own, or both", () => {
+    const plain = info({});
+    expect(choiceWrite(plain, "offEveryone")).toEqual({ teamOff: true, person: undefined });
+    expect(choiceWrite(plain, "off")).toEqual({ teamOff: null, person: false });
+    const teamOff = info({ projectConfigOff: true, projectChoice: true });
+    // leaving Off for everyone takes the folder's switch back and sets the person's choice
+    expect(choiceWrite(teamOff, "app")).toEqual({ teamOff: false, person: null });
+    expect(choiceWrite(teamOff, "on")).toEqual({ teamOff: false, person: true });
+    expect(choiceWrite(teamOff, "offEveryone")).toEqual({ teamOff: null, person: undefined });
   });
 });

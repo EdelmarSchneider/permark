@@ -6,27 +6,17 @@
   import type { TreeShow } from "../../../api";
   import { conditions } from "../../conditions/context.svelte";
   import { t, type MessageKey } from "../../i18n";
-  import { contributions } from "../../plugins/instance.svelte";
-  import { askInitHere } from "../initProject";
   import Card from "./Card.svelte";
   import ListEditor from "./ListEditor.svelte";
   import { problemKey } from "./problems";
   import Segments from "./Segments.svelte";
   import SettingRow from "./SettingRow.svelte";
+  import ShareInit from "./ShareInit.svelte";
   import { projectSettings } from "./stores.svelte";
 
   const initialized = $derived(conditions.current.permark === "initialized");
   const loaded = $derived(projectSettings.state);
   const problem = $derived(projectSettings.problem);
-  /** Parts plugins add (the agent's narrowing). */
-  const extra = $derived(contributions.visible("projectSection", conditions.current));
-
-  // read when the section shows, and again when PerMark gets initialized while it shows (external I/O)
-  $effect(() => {
-    void initialized;
-    void projectSettings.load();
-    return () => projectSettings.clearProblem();
-  });
 
   type Preset = TreeShow | "unset";
   const PRESETS: { value: Preset; label: MessageKey }[] = [
@@ -47,15 +37,7 @@
     {/if}
   {/snippet}
   {#if off}
-    <div class="offer">
-      <Card>
-        <SettingRow label={t("project.shareInit")}>
-          <button type="button" class="btn btn--primary btn--sm" onclick={() => askInitHere()}>
-            {t("project.initButton")}
-          </button>
-        </SettingRow>
-      </Card>
-    </div>
+    <ShareInit />
   {/if}
   <div class="shared" class:off>
     <section class="group" aria-labelledby="proj-tree">
@@ -133,19 +115,6 @@
       </Card>
     </section>
   </div>
-  {#if !off}
-    {#each extra as section (section.owner + section.id)}
-      <section class="group extra" aria-labelledby={`proj-${section.owner}-${section.id}`}>
-        <h3 id={`proj-${section.owner}-${section.id}`}>{t(section.label)}</h3>
-        <Card>
-          {#await section.view() then loaded}
-            {@const Section = loaded.default}
-            <Section />
-          {/await}
-        </Card>
-      </section>
-    {/each}
-  {/if}
 {:else if loaded.status === "failed"}
   <p class="quiet" role="alert">{t("project.loadFailed")}</p>
 {:else}
@@ -158,15 +127,11 @@
     color: var(--muted);
     font-size: var(--fs-ui-sm);
   }
-  .offer {
-    margin-bottom: var(--sp-5);
-  }
   /* without .permark/ the shared rows only show what they would hold */
   .shared.off {
     opacity: 0.6;
   }
-  .group + .group,
-  .shared + .extra {
+  .group + .group {
     margin-top: var(--sp-5);
   }
   h3 {

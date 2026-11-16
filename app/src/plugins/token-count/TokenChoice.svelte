@@ -35,9 +35,7 @@
     </span>
   </label>
 {/if}
-{#if mode === "project" && !canOwn}
-  <p class="note">{t("tokens.projectNone")}</p>
-{:else if mode !== "project" || own}
+{#if mode !== "project" || own}
   <TokenChooser {ids} {removable} onchange={(next) => void tokens.choose(scope, next)} />
 {:else}
   <p class="note">{t("tokens.projectUsesApp")}</p>

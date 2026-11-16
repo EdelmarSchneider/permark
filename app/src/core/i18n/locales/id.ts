@@ -1474,7 +1474,6 @@ export default {
   "agent.setup.claudeStep": "Claude Code: jalankan ini sekali di folder proyek",
   "agent.setup.more": "Cara lain untuk menghubungkan",
   "agent.groupsCount": "Yang boleh dilakukan agen ({n} dari {total} diizinkan)",
-  "agent.limitsLink": "Batasan untuk semua orang yang membuka proyek ini: pengaturan Folder ini",
   "agent.popoverRow.off": "Nonaktif",
   "agent.popoverRow.on": "Aktif",
   "agent.popoverRow.connected": "Aktif · terhubung",
@@ -1636,9 +1635,10 @@ export default {
   "agent.narrow.title": "Batasan agen",
   "agent.narrow.groups": "Grup yang tidak pernah didapat agen di sini",
   "agent.narrow.groupsHint": "Proyek hanya dapat mempersempit apa yang diizinkan setiap orang.",
-  "agent.narrow.groupsNote": "Dibagikan dengan semua orang yang membuka proyek ini.",
-  "agent.narrow.paths": "Jalur yang tidak pernah dilihat agen di sini",
-  "agent.narrow.pathsHint": "Pola seperti secret/** (aturan yang sama dengan .gitignore).",
+  "agent.narrow.paths": "Jalur yang tidak pernah didapat agen",
+  "agent.narrow.pathsHint":
+    "File yang tercantum di .aiignore tidak pernah sampai ke agen. Pola ini ditambahkan untuk folder ini (aturan yang sama dengan .gitignore).",
+  "agent.narrow.pathsPlaceholder": "Pola, misalnya secrets/**",
   "cmd.initProject": "Inisialisasi PerMark di proyek ini…",
   "cmd.settingsPage": "Buka semua pengaturan",
   "dialog.newProject": "Pilih folder untuk proyek baru",
@@ -1648,12 +1648,12 @@ export default {
   "list.add": "Tambah",
   "list.remove": "Hapus {item}",
   "plugins.choice.app": "Sama seperti aplikasi",
-  "plugins.choice.on": "Aktif di proyek ini",
-  "plugins.choice.off": "Nonaktif di proyek ini",
+  "plugins.choice.on": "Aktif di sini",
+  "plugins.choice.off": "Nonaktif di sini (hanya Anda)",
+  "plugins.choice.offEveryone": "Nonaktif untuk semua orang",
   "plugins.dataNotRemoved": "Tidak dapat menghapus data: {message}",
   "plugins.dataRemoved": "Data {name} telah dihapus.",
   "plugins.failedToStart": "{name} tidak dapat dimulai. {reason}",
-  "plugins.inProject": "Di proyek ini",
   "plugins.intro":
     "Aktifkan atau nonaktifkan fitur. Plugin yang nonaktif tidak meninggalkan apa pun.",
   "plugins.kind.feature": "Fitur",
@@ -1664,6 +1664,9 @@ export default {
   "plugins.kind.embed": "Blok dalam Markdown",
   "plugins.needs": "Memerlukan {name}.",
   "plugins.offHere": "Nonaktif di proyek ini.",
+  "plugins.offEveryone": "Dinonaktifkan untuk semua orang di .permark/config.toml.",
+  "plugins.hereIntro":
+    'Pilihan Anda untuk setiap plugin di folder ini. "Nonaktif untuk semua orang" disimpan di .permark/config.toml dan berlaku bagi siapa pun yang membuka folder ini.',
   "plugins.removeConfirm": "Hapus data {name}?",
   "plugins.removeConfirmBytes": "Hapus data {name}? Ini akan mengosongkan {size}.",
   "plugins.removeData": "Hapus data",
@@ -1707,6 +1710,7 @@ export default {
   "project.scopes":
     "Pengaturan bertanda Semua orang disimpan di .permark/config.toml folder ini dan dibagikan kepada siapa pun yang membukanya. Pengaturan bertanda Hanya Anda tetap di komputer ini.",
   "project.shareInit": "Inisialisasi PerMark untuk membagikan ini kepada semua orang",
+  "project.sharedFileHint": "Dibagikan dengan siapa pun yang membuka folder ini.",
   "settings.all": "Semua pengaturan",
   "settings.editorPreview": "Contoh:",
   "settings.linkUpdateHint":
@@ -1720,6 +1724,9 @@ export default {
   "settings.section.plugins": "Plugin",
   "settings.section.project": "Ikhtisar",
   "settings.section.files": "File",
+  "settings.section.pluginsHere": "Plugin di sini",
+  "settings.ignoredKey":
+    "Diatur di .permark/config.toml; tidak dipakai di sini — pilihan Anda yang berlaku.",
   "settings.group.app": "Aplikasi",
   "settings.group.folder": "Folder ini",
   "settings.titleFolder": "Pengaturan — {name}",
@@ -2003,8 +2010,6 @@ export default {
   "tokens.own": "Pilihan khusus untuk proyek ini",
   "tokens.ownHint":
     "Disimpan di .permark/config.toml, sehingga semua orang yang mengerjakan proyek ini menghitung dengan cara yang sama.",
-  "tokens.projectNone":
-    "Inisialisasi PerMark di proyek ini agar proyek ini dapat memiliki pilihannya sendiri.",
   "tokens.projectUsesApp": "Proyek ini menggunakan pilihan yang dibuat untuk semua proyek.",
   "tokens.choose": "Pilih tokenizer",
   "tokens.download": "Unduh kosakata {tokenizer}",

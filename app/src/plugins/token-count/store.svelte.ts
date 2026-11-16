@@ -84,6 +84,12 @@ export class TokenStore {
     return this.#project?.tokenizers ?? [];
   }
 
+  /** Whose choice counts now: the project's own (kept for everyone in `.permark/config.toml`) or the app's. */
+  get source(): Scope {
+    // the same rule as `effective`: a project list of no known tokenizer leaves the app's in use
+    return this.projectList.some((id) => infoOf(id) !== null) ? "project" : "app";
+  }
+
   /** This project can keep a choice of its own: it has `.permark/`. */
   get projectCanChoose(): boolean {
     return this.#project?.initialized ?? false;

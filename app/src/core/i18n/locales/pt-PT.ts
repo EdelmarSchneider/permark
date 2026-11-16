@@ -1477,7 +1477,6 @@ export default {
   "agent.setup.claudeStep": "Claude Code: executar uma vez na pasta do projeto",
   "agent.setup.more": "Outras formas de ligar",
   "agent.groupsCount": "O que os agentes podem fazer ({n} de {total} permitidos)",
-  "agent.limitsLink": "Limites para todos os que abrem este projeto: definições de «Esta pasta»",
   "agent.popoverRow.off": "Desativada",
   "agent.popoverRow.on": "Ativa",
   "agent.popoverRow.connected": "Ativa · ligado",
@@ -1642,9 +1641,10 @@ export default {
   "agent.narrow.title": "Limites para agentes",
   "agent.narrow.groups": "Grupos que os agentes nunca recebem aqui",
   "agent.narrow.groupsHint": "Um projeto só pode restringir o que cada pessoa permite.",
-  "agent.narrow.groupsNote": "Partilhado com todos os que abrem este projeto.",
-  "agent.narrow.paths": "Caminhos que os agentes nunca veem aqui",
-  "agent.narrow.pathsHint": "Padrões como secret/** (as mesmas regras do .gitignore).",
+  "agent.narrow.paths": "Caminhos que os agentes nunca recebem",
+  "agent.narrow.pathsHint":
+    "Os ficheiros listados em .aiignore nunca chegam aos agentes. Estes padrões juntam-se a eles nesta pasta (as mesmas regras do .gitignore).",
+  "agent.narrow.pathsPlaceholder": "Padrão, por exemplo secrets/**",
   "cmd.initProject": "Inicializar o PerMark neste projeto…",
   "cmd.settingsPage": "Abrir todas as definições",
   "dialog.newProject": "Escolher uma pasta para o novo projeto",
@@ -1654,12 +1654,12 @@ export default {
   "list.add": "Adicionar",
   "list.remove": "Remover {item}",
   "plugins.choice.app": "Igual à aplicação",
-  "plugins.choice.on": "Ativado neste projeto",
-  "plugins.choice.off": "Desativado neste projeto",
+  "plugins.choice.on": "Ativado aqui",
+  "plugins.choice.off": "Desativado aqui (só para si)",
+  "plugins.choice.offEveryone": "Desativado para todos",
   "plugins.dataNotRemoved": "Não foi possível remover os dados: {message}",
   "plugins.dataRemoved": "Os dados de {name} foram removidos.",
   "plugins.failedToStart": "Não foi possível iniciar {name}. {reason}",
-  "plugins.inProject": "Neste projeto",
   "plugins.intro":
     "Ative ou desative funcionalidades. Um plug-in desativado não deixa nada para trás.",
   "plugins.kind.feature": "Funcionalidades",
@@ -1670,6 +1670,9 @@ export default {
   "plugins.kind.embed": "Blocos no Markdown",
   "plugins.needs": "Precisa de {name}.",
   "plugins.offHere": "Desativado neste projeto.",
+  "plugins.offEveryone": "Desativado para todos em .permark/config.toml.",
+  "plugins.hereIntro":
+    "A sua escolha para cada plug-in nesta pasta. «Desativado para todos» fica em .permark/config.toml e aplica-se a quem abrir a pasta.",
   "plugins.removeConfirm": "Remover os dados de {name}?",
   "plugins.removeConfirmBytes": "Remover os dados de {name}? Isto liberta {size}.",
   "plugins.removeData": "Remover dados",
@@ -1714,6 +1717,7 @@ export default {
   "project.scopes":
     "As definições marcadas com Todos ficam guardadas no .permark/config.toml desta pasta e são partilhadas com quem a abrir. As marcadas com Só para si ficam neste computador.",
   "project.shareInit": "Inicialize o PerMark para partilhar isto com todos",
+  "project.sharedFileHint": "Partilhado com quem abrir esta pasta.",
   "settings.all": "Todas as definições",
   "settings.editorPreview": "Exemplo:",
   "settings.linkUpdateHint":
@@ -1727,6 +1731,9 @@ export default {
   "settings.section.plugins": "Plug-ins",
   "settings.section.project": "Visão geral",
   "settings.section.files": "Ficheiros",
+  "settings.section.pluginsHere": "Plug-ins aqui",
+  "settings.ignoredKey":
+    "Definido em .permark/config.toml; não é usado aqui — aplica-se a sua escolha.",
   "settings.group.app": "Aplicação",
   "settings.group.folder": "Esta pasta",
   "settings.titleFolder": "Definições — {name}",
@@ -2011,7 +2018,6 @@ export default {
   "tokens.own": "Uma escolha só para este projeto",
   "tokens.ownHint":
     "Fica em .permark/config.toml, para que todos os que trabalham no projeto contem da mesma forma.",
-  "tokens.projectNone": "Inicialize o PerMark neste projeto para lhe dar uma escolha própria.",
   "tokens.projectUsesApp": "Este projeto usa a escolha feita para todos os projetos.",
   "tokens.choose": "Escolher um tokenizador",
   "tokens.download": "Transferir o vocabulário {tokenizer}",

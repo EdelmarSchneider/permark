@@ -1,8 +1,10 @@
 <script lang="ts">
   // This folder's overview: who each kind of folder setting is for (Everyone = its `.permark/config.toml`, Only you =
   // this computer), the folder's own card where it holds projects, and the offer to set PerMark up while `.permark/`
-  // is missing. Nothing is written into the folder until the person answers the Initialize question.
+  // is missing (once set up: the shared file, with a way to see it in the file manager). Nothing is written into the
+  // folder until the person answers the Initialize question.
   import { conditions } from "../../conditions/context.svelte";
+  import { documents } from "../../doc/document.svelte";
   import { t } from "../../i18n";
   import { projects } from "../../projects/instance.svelte";
   import { askInitHere } from "../initProject";
@@ -10,6 +12,8 @@
   import SettingRow from "./SettingRow.svelte";
 
   const initialized = $derived(conditions.current.permark === "initialized");
+  /** The folder's shared settings file (what Everyone means), relative to the folder. */
+  const SHARED_FILE = ".permark/config.toml";
 
   /** The card fields load only where the folder holds projects (a plain folder never needs them). */
   const cardFields = (): Promise<typeof import("../../projects/CardFields.svelte")> =>
@@ -23,6 +27,18 @@
       <SettingRow label={t("project.notInitialized")} hint={t("project.notInitializedHint")}>
         <button type="button" class="btn btn--primary btn--sm" onclick={() => askInitHere()}>
           {t("project.initButton")}
+        </button>
+      </SettingRow>
+    </Card>
+  {:else}
+    <Card>
+      <SettingRow label={SHARED_FILE} hint={t("project.sharedFileHint")}>
+        <button
+          type="button"
+          class="btn btn--sm"
+          onclick={() => void documents.openExternal(SHARED_FILE, "reveal")}
+        >
+          {t("menu.showInFileManager")}
         </button>
       </SettingRow>
     </Card>

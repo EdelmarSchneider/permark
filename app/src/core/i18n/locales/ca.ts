@@ -1478,8 +1478,6 @@ export default {
   "agent.setup.claudeStep": "Claude Code: executeu-ho una vegada a la carpeta del projecte",
   "agent.setup.more": "Altres maneres de connectar-se",
   "agent.groupsCount": "Què poden fer els agents ({n} de {total} permesos)",
-  "agent.limitsLink":
-    "Límits per a tothom qui obri aquest projecte: configuració d'«Aquesta carpeta»",
   "agent.popoverRow.off": "Desactivada",
   "agent.popoverRow.on": "Activada",
   "agent.popoverRow.connected": "Activada · connectat",
@@ -1647,9 +1645,10 @@ export default {
   "agent.narrow.title": "Límits dels agents",
   "agent.narrow.groups": "Permisos que els agents no tenen mai aquí",
   "agent.narrow.groupsHint": "Un projecte només pot restringir el que permet cada persona.",
-  "agent.narrow.groupsNote": "Es comparteix amb tothom que obri aquest projecte.",
-  "agent.narrow.paths": "Camins que els agents no veuen mai aquí",
-  "agent.narrow.pathsHint": "Patrons com secret/** (les mateixes regles que .gitignore).",
+  "agent.narrow.paths": "Camins que els agents no obtenen mai",
+  "agent.narrow.pathsHint":
+    "Els fitxers llistats a .aiignore no arriben mai als agents. Aquests patrons s'hi afegeixen per a aquesta carpeta (les mateixes regles que .gitignore).",
+  "agent.narrow.pathsPlaceholder": "Patró, per exemple secrets/**",
   "cmd.initProject": "Inicialitza el PerMark en aquest projecte…",
   "cmd.settingsPage": "Obre tota la configuració",
   "dialog.newProject": "Tria una carpeta per al projecte nou",
@@ -1659,12 +1658,12 @@ export default {
   "list.add": "Afegeix",
   "list.remove": "Elimina {item}",
   "plugins.choice.app": "Igual que l'aplicació",
-  "plugins.choice.on": "Activat en aquest projecte",
-  "plugins.choice.off": "Desactivat en aquest projecte",
+  "plugins.choice.on": "Activat aquí",
+  "plugins.choice.off": "Desactivat aquí (només vós)",
+  "plugins.choice.offEveryone": "Desactivat per a tothom",
   "plugins.dataNotRemoved": "No s'han pogut eliminar les dades: {message}",
   "plugins.dataRemoved": "S'han eliminat les dades de {name}.",
   "plugins.failedToStart": "{name} no s'ha pogut iniciar. {reason}",
-  "plugins.inProject": "En aquest projecte",
   "plugins.intro": "Activeu o desactiveu funcions. Un connector desactivat no deixa cap rastre.",
   "plugins.kind.feature": "Funcions",
   "plugins.kind.format": "Formats de fitxer",
@@ -1674,6 +1673,9 @@ export default {
   "plugins.kind.embed": "Blocs dins del Markdown",
   "plugins.needs": "Necessita {name}.",
   "plugins.offHere": "Desactivat en aquest projecte.",
+  "plugins.offEveryone": "Desactivat per a tothom a .permark/config.toml.",
+  "plugins.hereIntro":
+    "La vostra elecció per a cada connector en aquesta carpeta. «Desactivat per a tothom» es desa a .permark/config.toml i s'aplica a qui obri la carpeta.",
   "plugins.removeConfirm": "Voleu eliminar les dades de {name}?",
   "plugins.removeConfirmBytes": "Voleu eliminar les dades de {name}? Això allibera {size}.",
   "plugins.removeData": "Elimina les dades",
@@ -1718,6 +1720,7 @@ export default {
   "project.scopes":
     "La configuració marcada amb Tothom es desa a .permark/config.toml d'aquesta carpeta i es comparteix amb qui l'obri. La marcada amb Només vós es queda en aquest ordinador.",
   "project.shareInit": "Inicialitzeu el PerMark per compartir-ho amb tothom",
+  "project.sharedFileHint": "Compartit amb qui obri aquesta carpeta.",
   "settings.all": "Tota la configuració",
   "settings.editorPreview": "Exemple:",
   "settings.linkUpdateHint":
@@ -1731,6 +1734,9 @@ export default {
   "settings.section.plugins": "Connectors",
   "settings.section.project": "Resum",
   "settings.section.files": "Fitxers",
+  "settings.section.pluginsHere": "Connectors aquí",
+  "settings.ignoredKey":
+    "Definit a .permark/config.toml; aquí no s'usa: s'aplica la vostra elecció.",
   "settings.group.app": "Aplicació",
   "settings.group.folder": "Aquesta carpeta",
   "settings.titleFolder": "Configuració — {name}",
@@ -2018,8 +2024,6 @@ export default {
   "tokens.own": "Una elecció només per a aquest projecte",
   "tokens.ownHint":
     "Es desa a .permark/config.toml, perquè tothom que treballi en el projecte compti de la mateixa manera.",
-  "tokens.projectNone":
-    "Inicialitzeu el PerMark en aquest projecte per a donar-li una elecció pròpia.",
   "tokens.projectUsesApp": "Aquest projecte fa servir l'elecció feta per a tots els projectes.",
   "tokens.choose": "Tria un tokenitzador",
   "tokens.download": "Baixa el vocabulari de {tokenizer}",

@@ -17,27 +17,8 @@
   type Props = { store: WindowStore };
   let { store }: Props = $props();
 
-  // the list is read when the section shows and again whenever the plugins or this view's conditions change (another
-  // view's conditions are not this list's)
-  $effect(() => {
-    void pluginsStore.load();
-    const offs: (() => void)[] = [];
-    let gone = false;
-    const keep = (off: () => void): void => {
-      if (gone) off();
-      else offs.push(off);
-    };
-    void api.on("plugins-changed", () => void pluginsStore.load()).then(keep);
-    void api
-      .on("context-changed", (e) => {
-        if (e.window === store.label) void pluginsStore.load();
-      })
-      .then(keep);
-    return () => {
-      gone = true;
-      for (const off of offs) off();
-    };
-  });
+  // the list is read when the section shows and follows the plugins and this view's conditions (external I/O)
+  $effect(() => pluginsStore.follow(store.label));
 
   const listing = $derived(pluginsStore.state);
   const infos = $derived(listing.status === "ready" ? listing.plugins : []);

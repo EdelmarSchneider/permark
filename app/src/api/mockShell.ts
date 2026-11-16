@@ -204,6 +204,10 @@ export function createMockShell(deps: {
         deps.changed();
       },
       project: (): ProjectSettings => project,
+      /** The project's shared file holds plugin keys no plugin reads (`<id>.<key>`). */
+      ignorePluginKeys(keys: string[]): void {
+        project = { ...project, ignoredPluginKeys: keys };
+      },
       /** Every folder is as new: nothing is initialized. */
       forgetInit(): void {
         initializedPaths.clear();

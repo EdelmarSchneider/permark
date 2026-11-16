@@ -1,9 +1,12 @@
 <script lang="ts">
   // One row of the settings page: what it is (label + hint) at the left, the control at the right. Stacks when the page
   // is narrow, or when `wide` (a long control: a text field, a list). Rows of one card are separated by a line. A folder
-  // setting says who it is for (`scope`) with a chip in its label.
+  // setting says who it is for (`scope`) with a chip in its label. An app row a plugin key of the folder's shared file
+  // would once have set (`ignoredKey`) says, in a quiet line, that the file's value is not used.
   import type { Snippet } from "svelte";
+  import { t } from "../../i18n";
   import ScopeChip from "./ScopeChip.svelte";
+  import { projectSettings } from "./stores.svelte";
 
   type Props = {
     label: string;
@@ -18,8 +21,22 @@
     children: Snippet;
     /** A line under the control (a problem, a preview). */
     note?: Snippet;
+    /** The plugin key (`<id>.<key>`) this app row holds, which the folder's shared file may also set (not used). */
+    ignoredKey?: `${string}.${string}`;
   };
-  let { label, hint, labelFor, labelId, wide = false, scope, children, note }: Props = $props();
+  let {
+    label,
+    hint,
+    labelFor,
+    labelId,
+    wide = false,
+    scope,
+    children,
+    note,
+    ignoredKey,
+  }: Props = $props();
+
+  const ignored = $derived(ignoredKey !== undefined && projectSettings.ignores(ignoredKey));
 </script>
 
 <div class="row" class:wide>
@@ -36,7 +53,12 @@
     {#if hint}<span class="hint">{hint}</span>{/if}
   </div>
   <div class="control">{@render children()}</div>
-  {#if note}<div class="note">{@render note()}</div>{/if}
+  {#if note || ignored}
+    <div class="note">
+      {#if note}{@render note()}{/if}
+      {#if ignored}<span>{t("settings.ignoredKey")}</span>{/if}
+    </div>
+  {/if}
 </div>
 
 <style>

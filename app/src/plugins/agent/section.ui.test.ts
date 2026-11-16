@@ -227,12 +227,51 @@ describe("Settings > AI agents", () => {
     const fold = await vi.waitFor(() => button("What agents may do"));
     expect(text(fold)).toBe("What agents may do (7 of 8 allowed)");
     expect(fold.getAttribute("aria-expanded")).toBe("false");
-    expect(target.querySelectorAll("input[type=checkbox]")).toHaveLength(0);
+    // the person's own groups (the folder's limits below have boxes of their own)
+    const own = (): number =>
+      Array.from(target.querySelectorAll("input[type=checkbox]")).filter(
+        (box) => box.closest(".limits-rows") === null,
+      ).length;
+    expect(own()).toBe(0);
     fold.click();
     flushSync();
     expect(fold.getAttribute("aria-expanded")).toBe("true");
-    expect(target.querySelectorAll("input[type=checkbox]")).toHaveLength(8);
+    expect(own()).toBe(8);
     expect(text(target)).toContain("Use these for new projects");
+  });
+
+  it("holds the limits for everyone below the person's own switch; no way out to another section", async () => {
+    await open();
+    mountPage(AGENT_PAGE);
+    await until(() => text(target).includes("Agent limits"), "the limits");
+    // the switch is the person's own; the limits are the folder's, for everyone
+    expect(target.querySelector(".state-card .scope-chip")?.getAttribute("data-scope")).toBe("you");
+    const limits = Array.from(target.querySelectorAll<HTMLElement>(".limits-rows .row"));
+    expect(limits.map((r) => r.querySelector(".scope-chip")?.getAttribute("data-scope"))).toEqual([
+      "everyone",
+      "everyone",
+    ]);
+    expect(text(target)).not.toContain("This folder settings");
+    expect(text(target)).toContain("Paths agents never get");
+    expect(text(target)).toContain(
+      "Files listed in .aiignore never reach agents. These patterns add to them",
+    );
+    const field = target.querySelector<HTMLInputElement>(".limits-rows .list input")!;
+    expect(field.placeholder).toBe("Pattern, for example secrets/**");
+    // no .permark/ yet: greyed, nothing written until the person sets PerMark up
+    expect(text(target)).toContain("Initialize PerMark to share this with everyone");
+    expect(field.disabled).toBe(true);
+    const box = (): HTMLInputElement =>
+      Array.from(target.querySelectorAll<HTMLLabelElement>(".limits-rows label.group"))
+        .find((l) => text(l).includes("Read notes you share"))!
+        .querySelector("input")!;
+    expect(box().disabled).toBe(true);
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => !box().disabled, "the limits work");
+    expect(text(target)).not.toContain("Initialize PerMark to share this with everyone");
+    box().click();
+    await until(() => mock.probe.shell.project().agentDeny.includes("notes"), "narrowed");
+    mock.probe.shell.forgetInit();
   });
 
   it("goes with the plugin: nav item gone, an open page on it falls back to Reading", async () => {

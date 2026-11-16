@@ -1485,7 +1485,6 @@ export default {
   "agent.setup.claudeStep": "Claude Code: einmal im Projektordner ausführen",
   "agent.setup.more": "Weitere Wege zum Verbinden",
   "agent.groupsCount": "Was Agenten dürfen ({n} von {total} erlaubt)",
-  "agent.limitsLink": "Grenzen für alle, die dieses Projekt öffnen: Einstellungen „Dieser Ordner“",
   "agent.popoverRow.off": "Aus",
   "agent.popoverRow.on": "An",
   "agent.popoverRow.connected": "An · verbunden",
@@ -1651,9 +1650,10 @@ export default {
   "agent.narrow.title": "Grenzen für Agenten",
   "agent.narrow.groups": "Gruppen, die Agenten hier nie erhalten",
   "agent.narrow.groupsHint": "Ein Projekt kann nur einschränken, was jede Person erlaubt.",
-  "agent.narrow.groupsNote": "Gilt für alle, die dieses Projekt öffnen.",
-  "agent.narrow.paths": "Pfade, die Agenten hier nie sehen",
-  "agent.narrow.pathsHint": "Muster wie secret/** (dieselben Regeln wie bei .gitignore).",
+  "agent.narrow.paths": "Pfade, die Agenten nie bekommen",
+  "agent.narrow.pathsHint":
+    "In .aiignore aufgeführte Dateien erreichen Agenten nie. Diese Muster kommen für diesen Ordner hinzu (dieselben Regeln wie bei .gitignore).",
+  "agent.narrow.pathsPlaceholder": "Muster, zum Beispiel secrets/**",
   "cmd.initProject": "PerMark in diesem Projekt einrichten …",
   "cmd.settingsPage": "Alle Einstellungen öffnen",
   "dialog.newProject": "Ordner für das neue Projekt wählen",
@@ -1663,12 +1663,12 @@ export default {
   "list.add": "Hinzufügen",
   "list.remove": "{item} entfernen",
   "plugins.choice.app": "Wie in der App",
-  "plugins.choice.on": "In diesem Projekt an",
-  "plugins.choice.off": "In diesem Projekt aus",
+  "plugins.choice.on": "Hier an",
+  "plugins.choice.off": "Hier aus (nur du)",
+  "plugins.choice.offEveryone": "Für alle aus",
   "plugins.dataNotRemoved": "Die Daten konnten nicht entfernt werden: {message}",
   "plugins.dataRemoved": "Daten von {name} entfernt.",
   "plugins.failedToStart": "{name} konnte nicht starten. {reason}",
-  "plugins.inProject": "In diesem Projekt",
   "plugins.intro":
     "Funktionen ein- oder ausschalten. Ein ausgeschaltetes Plugin hinterlässt nichts.",
   "plugins.kind.feature": "Funktionen",
@@ -1679,6 +1679,9 @@ export default {
   "plugins.kind.embed": "Blöcke in Markdown",
   "plugins.needs": "Benötigt {name}.",
   "plugins.offHere": "In diesem Projekt ausgeschaltet.",
+  "plugins.offEveryone": "In .permark/config.toml für alle ausgeschaltet.",
+  "plugins.hereIntro":
+    "Deine Wahl für jedes Plugin in diesem Ordner. „Für alle aus“ wird in .permark/config.toml gespeichert und gilt für alle, die den Ordner öffnen.",
   "plugins.removeConfirm": "Daten von {name} entfernen?",
   "plugins.removeConfirmBytes": "Daten von {name} entfernen? Das gibt {size} frei.",
   "plugins.removeData": "Daten entfernen",
@@ -1722,6 +1725,7 @@ export default {
   "project.scopes":
     "Mit „Alle“ markierte Einstellungen werden in .permark/config.toml dieses Ordners gespeichert und mit allen geteilt, die ihn öffnen. Mit „Nur du“ markierte Einstellungen bleiben auf diesem Computer.",
   "project.shareInit": "PerMark einrichten, um dies mit allen zu teilen",
+  "project.sharedFileHint": "Geteilt mit allen, die diesen Ordner öffnen.",
   "settings.all": "Alle Einstellungen",
   "settings.editorPreview": "Beispiel:",
   "settings.linkUpdateHint":
@@ -1735,6 +1739,8 @@ export default {
   "settings.section.plugins": "Plugins",
   "settings.section.project": "Übersicht",
   "settings.section.files": "Dateien",
+  "settings.section.pluginsHere": "Plugins hier",
+  "settings.ignoredKey": "In .permark/config.toml gesetzt; hier nicht verwendet – deine Wahl gilt.",
   "settings.group.app": "App",
   "settings.group.folder": "Dieser Ordner",
   "settings.titleFolder": "Einstellungen — {name}",
@@ -2028,8 +2034,6 @@ export default {
   "tokens.own": "Eine Auswahl nur für dieses Projekt",
   "tokens.ownHint":
     "Wird in .permark/config.toml gespeichert, damit alle im Projekt gleich zählen.",
-  "tokens.projectNone":
-    "PerMark in diesem Projekt einrichten, um ihm eine eigene Auswahl zu geben.",
   "tokens.projectUsesApp": "Dieses Projekt verwendet die Auswahl für alle Projekte.",
   "tokens.choose": "Tokenizer wählen",
   "tokens.download": "Vokabular von {tokenizer} herunterladen",

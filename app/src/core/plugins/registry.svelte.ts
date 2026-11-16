@@ -253,8 +253,6 @@ export type Contribution = Owned &
         when: () => boolean;
         view: LazyComponent<ExplorerNoteProps>;
       }
-    /** Rows a plugin adds to the Project section of the settings (what the project shares in `.permark/`). */
-    | { kind: "projectSection"; id: string; label: MessageKey; view: LazyComponent }
     /** What the window shows for a workspace of a kind the core has no page for (the Notes): its sidebar and its page. */
     | {
         kind: "workspaceView";

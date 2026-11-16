@@ -95,7 +95,7 @@ function groups(): [string, string[]][] {
 }
 
 function mountPage(
-  section: "reading" | "editing" | "integration" | "plugins" | "project" | "files",
+  section: "reading" | "editing" | "integration" | "plugins" | "project" | "files" | "pluginsHere",
 ): void {
   ui.openSettingsPage(section);
   component = mount(SettingsPage, { target, props: { store } });
@@ -160,10 +160,18 @@ describe("the settings page", () => {
     await open();
     mountPage("reading");
     await tick();
-    expect(names()).toEqual(["Reading", "Editing", "Integration", "Plugins", "Overview", "Files"]);
+    expect(names()).toEqual([
+      "Reading",
+      "Editing",
+      "Integration",
+      "Plugins",
+      "Overview",
+      "Files",
+      "Plugins here",
+    ]);
     expect(groups()).toEqual([
       ["App", ["Reading", "Editing", "Integration", "Plugins"]],
-      ["This folder", ["Overview", "Files"]],
+      ["This folder", ["Overview", "Files", "Plugins here"]],
     ]);
     // each section wears its icon, decoration only (the name is the words)
     const icons = Array.from(target.querySelectorAll(".nav-item")).map((b) =>
@@ -178,6 +186,7 @@ describe("the settings page", () => {
       "lucide-puzzle",
       "lucide-folder-cog",
       "lucide-files",
+      "lucide-blocks",
     ]);
     expect(target.querySelector(".nav-item svg")?.getAttribute("aria-hidden")).toBe("true");
   });
@@ -218,7 +227,7 @@ describe("the settings page", () => {
       await tick();
       expect(groups()).toEqual([
         ["App", ["Reading", "Editing", "Keyboard shortcuts…", "Integration", "Plugins"]],
-        ["This folder", ["Overview", "Files", "AI agents"]],
+        ["This folder", ["Overview", "Files", "AI agents", "Plugins here"]],
       ]);
     } finally {
       for (const remove of removals) remove();
@@ -282,12 +291,12 @@ describe("the settings page", () => {
     press(document.activeElement!, "ArrowUp");
     press(document.activeElement!, "ArrowUp");
     await tick();
-    expect(target.querySelector("h3.title")?.textContent).toBe("Files");
-    // the arrows cross from one group into the other
-    press(document.activeElement!, "ArrowUp");
-    press(document.activeElement!, "ArrowUp");
+    // from the first section up to the last one: the folder's plugins
+    expect(target.querySelector("h3.title")?.textContent).toBe("Plugins here");
+    // the arrows cross from one group into the other (the app's last section to the folder's first)
+    ui.showSettingsSection("plugins");
     await tick();
-    expect(document.activeElement?.textContent?.trim()).toBe("Plugins");
+    target.querySelector<HTMLElement>('[aria-current="page"]')!.focus();
     press(document.activeElement!, "ArrowDown");
     await tick();
     expect(document.activeElement?.textContent?.trim()).toBe("Overview");
@@ -514,6 +523,77 @@ describe("the plugins page", () => {
   });
 });
 
+describe("plugins here", () => {
+  async function herePage(): Promise<void> {
+    mountPage("pluginsHere");
+    await until(() => pluginsStore.state.status === "ready", "the list");
+    await tick();
+  }
+  const select = (id: string): HTMLSelectElement | null =>
+    target.querySelector<HTMLSelectElement>(`#here-${id}`);
+  const rowOf = (id: string): HTMLElement => select(id)!.closest<HTMLElement>(".row")!;
+  const chipOf = (id: string): string | null =>
+    rowOf(id).querySelector(".scope-chip")?.getAttribute("data-scope") ?? null;
+  function pick(id: string, value: string): void {
+    const box = select(id)!;
+    box.value = value;
+    box.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  async function info(id: string): Promise<{ choice: boolean | null; teamOff: boolean }> {
+    const listed = await mock.pluginsList();
+    const found = listed.ok ? listed.value.find((p) => p.manifest.id === id) : undefined;
+    return { choice: found?.projectChoice ?? null, teamOff: found?.projectConfigOff ?? false };
+  }
+
+  it("lists only the plugins that work per folder, each with four choices; Off for everyone waits for Initialize", async () => {
+    await open();
+    await herePage();
+    expect(target.querySelector("h3.title")?.textContent).toBe("Plugins here");
+    expect(select("comments")).not.toBeNull();
+    expect(select("notes")).toBeNull();
+    expect(select("mermaid")).toBeNull();
+    const options = Array.from(select("comments")!.options).map((o) => [
+      o.textContent?.trim(),
+      o.disabled,
+    ]);
+    expect(options).toEqual([
+      ["Same as the app", false],
+      ["On here", false],
+      ["Off here (only you)", false],
+      ["Off for everyone", true],
+    ]);
+    expect(target.textContent).toContain("Initialize PerMark to share this with everyone");
+    expect(chipOf("comments")).toBeNull();
+    pick("comments", "off");
+    await vi.waitFor(async () => expect((await info("comments")).choice).toBe(false));
+    await until(() => chipOf("comments") === "you", "the chip says Only you");
+    expect(rowOf("comments").textContent).toContain("Off in this project.");
+    pick("comments", "app");
+    await until(() => chipOf("comments") === null, "follows the app again");
+    expect((await info("comments")).choice).toBeNull();
+  });
+
+  it("Off for everyone writes the folder's file and says so; Same as the app takes it back", async () => {
+    await open();
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    await herePage();
+    expect(target.textContent).not.toContain("Initialize PerMark to share this with everyone");
+    expect(Array.from(select("comments")!.options).every((o) => !o.disabled)).toBe(true);
+    pick("comments", "offEveryone");
+    await until(() => select("comments")?.value === "offEveryone", "shown as off for everyone");
+    expect((await info("comments")).teamOff).toBe(true);
+    expect(chipOf("comments")).toBe("everyone");
+    expect(rowOf("comments").textContent).toContain(
+      "Turned off for everyone in .permark/config.toml.",
+    );
+    pick("comments", "app");
+    await until(() => select("comments")?.value === "app", "back to the app's");
+    expect(await info("comments")).toEqual({ choice: null, teamOff: false });
+    expect(chipOf("comments")).toBeNull();
+  });
+});
+
 describe("the project settings and Initialize PerMark", () => {
   it("Overview: says who each kind of setting is for; not initialized, it offers to set PerMark up, in plain words", async () => {
     await open();
@@ -611,27 +691,60 @@ describe("the project settings and Initialize PerMark", () => {
     await until(() => mock.probe.shell.project().tree.show === null, "preset back");
   });
 
-  it("the agent's narrowing is part of the section while the agent plugin is on", async () => {
+  it("Overview, initialized: names the shared file and shows it in the file manager; Files holds no agent rows", async () => {
     await open();
     await mock.projectInit(MOCK_FOLDER);
     await until(() => conditions.current.permark === "initialized", "initialized");
-    const agentParts = () =>
-      contributions.visible("projectSection", conditions.current).filter((c) => c.owner === "agent")
-        .length;
-    await until(() => agentParts() === 1, "the agent part");
-    mountPage("files");
-    await until(() => projectSettings.state.status === "ready", "loaded");
     await until(
-      () => target.textContent?.includes("Groups agents never get here") === true,
-      "shown",
+      () =>
+        contributions.visible("settingsPage", conditions.current).some((p) => p.owner === "agent"),
+      "the agent plugin is on",
     );
-    const box = byText("label.group", "Read notes you share").querySelector<HTMLInputElement>(
-      "input",
-    )!;
-    box.click();
-    await until(() => mock.probe.shell.project().agentDeny.includes("notes"), "narrowed");
-    await store.changeSetting({ key: "pluginEnabled", value: { plugin: "agent", enabled: false } });
-    await until(() => agentParts() === 0, "gone with the plugin");
+    mountPage("project");
+    await until(
+      () => target.textContent?.includes(".permark/config.toml") === true,
+      "the file row",
+    );
+    expect(target.textContent).toContain("Shared with whoever opens this folder.");
+    mock.probe.opened.length = 0;
+    byText("button", "Show in file manager").click();
+    await until(() => mock.probe.opened.length === 1, "revealed");
+    expect(mock.probe.opened).toEqual([{ path: ".permark/config.toml", mode: "reveal" }]);
+    ui.showSettingsSection("files");
+    await until(() => projectSettings.state.status === "ready", "loaded");
+    await tick();
+    expect(target.querySelector("h3.title")?.textContent).toBe("Files");
+    const content = target.querySelector(".content")?.textContent ?? "";
+    expect(content).not.toContain("Groups agents never get here");
+    expect(content).not.toContain("Tokenizers for this project");
+  });
+
+  it("a plugin key the folder's file sets is said on the app row it does not change, in a quiet line", async () => {
+    await open();
+    await mock.projectInit(MOCK_FOLDER);
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    await until(
+      () =>
+        contributions.visible("settingsSection", conditions.current).some((c) => c.owner === "git"),
+      "the git row",
+    );
+    const line = "Set in .permark/config.toml; not used here — your choice applies.";
+    mountPage("integration");
+    await until(() => target.querySelector("#set-git") !== null, "the git row shows");
+    await until(() => projectSettings.state.status === "ready", "loaded");
+    await tick();
+    expect(target.textContent).not.toContain(line);
+    await unmount(component!);
+    component = null;
+    mock.probe.shell.ignorePluginKeys(["git.backend"]);
+    const notices = store.notices.length;
+    mountPage("integration");
+    await until(() => target.textContent?.includes(line) === true, "the line");
+    const row = byText(".row", line);
+    expect(row.querySelector("#set-git")).not.toBeNull();
+    expect(row.querySelector(".note")?.textContent?.trim()).toBe(line);
+    // no notice: the line is all there is
+    expect(store.notices.length).toBe(notices);
   });
 
   it("the question names the folder and what is created; Escape and Cancel change nothing", async () => {

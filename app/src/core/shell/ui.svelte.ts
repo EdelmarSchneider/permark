@@ -15,7 +15,14 @@ export type Finder =
 
 /** The core sections of the settings page. */
 export type CoreSettingsSection =
-  "reading" | "editing" | "integration" | "plugins" | "projects" | "project" | "files";
+  | "reading"
+  | "editing"
+  | "integration"
+  | "plugins"
+  | "projects"
+  | "project"
+  | "files"
+  | "pluginsHere";
 export const SETTINGS_SECTIONS: readonly CoreSettingsSection[] = [
   "reading",
   "editing",
@@ -24,6 +31,7 @@ export const SETTINGS_SECTIONS: readonly CoreSettingsSection[] = [
   "projects",
   "project",
   "files",
+  "pluginsHere",
 ];
 /** The two groups of the settings nav: the app's own settings, and those of the folder shown (only while one is). */
 export type SettingsGroup = "app" | "folder";
@@ -37,9 +45,11 @@ export const CORE_SECTION_GROUP: Readonly<Record<CoreSettingsSection, SettingsGr
   projects: "folder",
   project: "folder",
   files: "folder",
+  pluginsHere: "folder",
 };
 /** Where each core section sits among the plugins' own (`settingsPage { order }`), within its group: the folder's
- *  overview (`project`) leads its group, its files come next. */
+ *  overview (`project`) leads its group, its files come next, its plugins after the plugins' own pages (AI agents 30,
+ *  Token count 40). */
 export const CORE_SECTION_ORDER: Readonly<Record<CoreSettingsSection, number>> = {
   reading: 10,
   editing: 20,
@@ -47,6 +57,7 @@ export const CORE_SECTION_ORDER: Readonly<Record<CoreSettingsSection, number>> =
   plugins: 50,
   project: 10,
   files: 20,
+  pluginsHere: 50,
   projects: 60,
 };
 /** A plugin's own section (`<plugin>.<name>`: the dot keeps it apart from every core section name). */

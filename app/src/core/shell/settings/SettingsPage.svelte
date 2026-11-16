@@ -1,10 +1,11 @@
 <script lang="ts">
   // The full settings: a left list of sections in two groups - the app's (Reading, Editing, Integration, Plugins and
-  // the app plugins' own, such as Local AI) and, only while a folder is shown, the folder's (Overview, Files, Projects
-  // inside, and its plugins' own, such as AI agents), each by order - and the shown one at the right, each a card of
+  // the app plugins' own, such as Local AI) and, only while a folder is shown, the folder's (Overview, Files, Plugins
+  // here, Projects inside, and its plugins' own, such as AI agents and Token count), each by order - and the shown one at the right, each a card of
   // rows; Projects inside only where the folder holds projects (`projects.md` §12.2; loaded when shown). One list for
   // the keyboard across both groups. Covers the window below the top bar; Escape or Close goes back to where the
   // person was.
+  import Blocks from "@lucide/svelte/icons/blocks";
   import BookOpen from "@lucide/svelte/icons/book-open";
   import Files from "@lucide/svelte/icons/files";
   import FolderCog from "@lucide/svelte/icons/folder-cog";
@@ -33,10 +34,12 @@
   import Card from "./Card.svelte";
   import EditingSection from "./EditingSection.svelte";
   import IntegrationSection from "./IntegrationSection.svelte";
+  import PluginsHere from "./PluginsHere.svelte";
   import PluginsSection from "./PluginsSection.svelte";
   import FilesSection from "./FilesSection.svelte";
   import FolderSection from "./FolderSection.svelte";
   import ReadingSection from "./ReadingSection.svelte";
+  import { projectSettings } from "./stores.svelte";
 
   type Props = { store: WindowStore };
   let { store }: Props = $props();
@@ -49,6 +52,7 @@
     projects: "settings.section.projects",
     project: "settings.section.project",
     files: "settings.section.files",
+    pluginsHere: "settings.section.pluginsHere",
   };
   /** A small icon per section (decoration: the words name it); Projects inside wears the included project's. */
   const ICONS: Record<CoreSettingsSection, MenuIcon> = {
@@ -59,6 +63,7 @@
     projects: projectIcon("permark"),
     project: FolderCog,
     files: Files,
+    pluginsHere: Blocks,
   };
 
   const GROUP_LABELS: Record<SettingsGroup, MessageKey> = {
@@ -67,6 +72,16 @@
   };
 
   const inProject = $derived(conditions.current.workspace === "project");
+  const initialized = $derived(conditions.current.permark === "initialized");
+
+  // the folder's shared settings, for every section that shows them (and the app rows a plugin key of the folder's file
+  // would have set): read while the page shows a folder, again once PerMark gets initialized there (external I/O)
+  $effect(() => {
+    if (!inProject) return;
+    void initialized;
+    void projectSettings.load();
+    return () => projectSettings.clearProblem();
+  });
   /** The folder shown (its name in the title), `null` in a window with none (a single file, the Notes, the Welcome). */
   const folder = $derived(
     store.view.state === "showing" && store.view.workspace.kind === "project"
@@ -233,6 +248,8 @@
             {/await}
           {:else if section === "files"}
             <FilesSection />
+          {:else if section === "pluginsHere"}
+            <PluginsHere {store} />
           {:else}
             <FolderSection />
           {/if}

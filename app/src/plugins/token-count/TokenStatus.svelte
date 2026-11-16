@@ -7,6 +7,7 @@
   import Hash from "@lucide/svelte/icons/hash";
   import { createAnalysisText } from "../../core/doc/analysisText.svelte";
   import { formatLocale, t, tn } from "../../core/i18n";
+  import ScopeChip from "../../core/shell/settings/ScopeChip.svelte";
   import { createFigures } from "./figures.svelte";
   import { isWorking } from "./folders";
   import { folders } from "./folders.svelte";
@@ -23,6 +24,8 @@
   const mark = (figure: Figure): string => (figure.approx ? "≈ " : "");
 
   const primary = $derived(tokens.primary);
+  /** Whose choice counts: the project's own (for everyone) or the person's. */
+  const scope = $derived(tokens.source === "project" ? "everyone" : "you");
   const working = $derived(isWorking(folders.job));
   const progress = $derived(folders.progress);
   const display = $derived.by(() => {
@@ -277,13 +280,16 @@
         {/if}
         {#if tokens.choosing || tokens.chosen.length === 0}
           <div class="choice">
-            <p class="subtitle">{t("tokens.change")}</p>
+            <p class="subtitle">{t("tokens.change")}<ScopeChip {scope} /></p>
             <TokenChoice mode="both" />
           </div>
         {:else}
-          <button type="button" class="btn btn--sm" onclick={() => (tokens.choosing = true)}>
-            {t("tokens.change")}
-          </button>
+          <div class="change">
+            <button type="button" class="btn btn--sm" onclick={() => (tokens.choosing = true)}>
+              {t("tokens.change")}
+            </button>
+            <ScopeChip {scope} />
+          </div>
         {/if}
       </div>
     {/if}
@@ -459,5 +465,10 @@
   .choice {
     padding-top: var(--sp-2);
     border-top: 1px solid var(--border);
+  }
+  .change {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
   }
 </style>
