@@ -47,6 +47,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Formulas written as `\(…\)` and `\[…\]`, the way many AI assistants write them, are now drawn like `$…$` and `$$…$$`, in View and in Edit. A `\[…\]` formula must stand on lines of its own (or be a paragraph by itself), so escaped brackets in a sentence, such as `see \[1\]`, still show as `[1]`. <!-- f: view-mode, edit-mode -->
 - Text centered with HTML, such as `<p align="center">` or `<h1 align="center">` at the top of many README files, is now centered. <!-- f: view-mode -->
 - A link to an old-style anchor such as `<a name="setup"></a>` now goes to it. <!-- f: view-mode, links -->
+- Edit no longer tries to load pictures from the web. Like View, it shows a placeholder with the picture's description, or the picture itself when you already loaded it in View. <!-- f: edit-mode -->
+- A sound or video player written as HTML in a line, such as `<audio controls src="bell.wav"></audio>`, now plays in Edit too. <!-- f: edit-mode -->
+- In Edit, adding a column to a table no longer rewrites the other columns' alignment row, and the new column gets no alignment of its own (`---`). <!-- f: editing, edit-mode -->
+- A wide table in a narrow window now scrolls sideways instead of breaking words in the middle. <!-- f: view-mode -->
+- In a code block with line numbers, a long line that wraps now continues in the code column, under its own indentation, instead of under the numbers. <!-- f: code-blocks, view-mode -->
+- Mermaid charts are easier to read in both themes: pie slices, bar charts and Gantt tasks use clear, distinct colors with readable text on them, Gantt text is larger, and Sankey flows show in the dark theme. <!-- f: view-mode -->
+- A PlantUML diagram with an error shows the error without a line about the PlantUML version. <!-- f: view-mode -->
 
 ## [0.12.0] - 2026-11-14
 

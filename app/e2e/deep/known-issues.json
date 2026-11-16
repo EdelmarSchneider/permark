@@ -1,10 +1,1 @@
-[
-  {
-    "finding": "edit: CSP violation: img-src https://attacker.example/md.png",
-    "why": "Edit draws a Markdown picture from the web (View shows a chip instead); only the CSP stops the request."
-  },
-  {
-    "finding": "edit: request off this machine: pm-asset:",
-    "why": "Edit gives a player written as HTML the sanitizer's pm-asset: address, not the workspace's asset URL (View rewrites it): the sound does not load."
-  }
-]
+[]

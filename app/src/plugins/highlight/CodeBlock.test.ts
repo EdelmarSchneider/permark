@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { flushSync, mount, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import CodeBlock from "./CodeBlock.svelte";
@@ -80,6 +82,26 @@ describe("code blocks", () => {
     expect(target.querySelector("pre code")?.textContent).toBe(source);
     target.querySelector<HTMLButtonElement>("button.copy")?.click();
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(source));
+  });
+
+  it("a wrapped numbered line goes on in the code column, under its own indentation", () => {
+    const target = show('fn main() {\n    println!("a long line");\n}\n', "rust", { start: 1 });
+    flushSync();
+    const lines = [...target.querySelectorAll<HTMLElement>("pre .ln")];
+    expect(lines.map((line) => line.style.getPropertyValue("--lead"))).toEqual(["", "4", ""]);
+    // the further rows hang right of the number column plus the line's indentation; the number stays put
+    const css = readFileSync(
+      resolve(process.cwd(), "src/plugins/highlight/CodeBlock.svelte"),
+      "utf8",
+    );
+    const rule = (selector: string): string =>
+      new RegExp(`${selector.replace(/[.()[\]:]/g, "\\$&")}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+    const line = rule("pre :global(.ln)");
+    expect(line).toMatch(/padding-left:\s*calc\(var\(--ln-pad, 0px\) \+ var\(--hang\)\)/);
+    expect(line).toMatch(/text-indent:\s*calc\(-1 \* var\(--hang\)\)/);
+    expect(line).toMatch(/--hang:\s*calc\(\(2 \+ var\(--lead, 0\)\) \* 1ch\)/);
+    expect(rule("pre :global(.ln.is-marked)")).toMatch(/var\(--hang\)/);
+    expect(rule("pre.is-numbered :global(.ln::before)")).toMatch(/text-indent:\s*0/);
   });
 
   it("keeps a block without extras as it was: no title, no numbered lines", () => {

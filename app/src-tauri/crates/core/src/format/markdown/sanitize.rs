@@ -182,7 +182,22 @@ impl Cleaner {
     }
 
     pub(super) fn clean(&self, html: &str) -> String {
-        self.0.clean(html).to_string()
+        players_in_order(self.0.clean(html).to_string())
+    }
+}
+
+/// The forced player attributes as ammonia appends them in the other order.
+const PLAYER_SWAPPED: &str = " preload=\"metadata\" controls=\"\">";
+const PLAYER_ORDERED: &str = " controls=\"\" preload=\"metadata\">";
+
+/// ammonia appends the forced attributes of a player from a hash map, in an order that changes from run to run: put in
+/// one order, so a document always renders to the same bytes. Only an open tag can hold the pattern: the serializer
+/// writes `>` in text as `&gt;` and `"` in an attribute value as `&quot;`.
+fn players_in_order(html: String) -> String {
+    if html.contains(PLAYER_SWAPPED) {
+        html.replace(PLAYER_SWAPPED, PLAYER_ORDERED)
+    } else {
+        html
     }
 }
 
@@ -361,6 +376,32 @@ mod tests {
         // unicode and spaces in names
         assert!(clean("<img src=\"fotos/caf%C3%A9.png\">")
             .contains("pm-asset:docs/guide/fotos/caf%C3%A9.png"));
+    }
+
+    #[test]
+    fn players_get_their_attributes_in_one_order() {
+        // each cleaner holds its own hash maps (a new seed each): the order must not depend on them
+        for (html, want) in [
+            (
+                "<audio src=\"a.wav\"></audio>",
+                "<audio src=\"pm-asset:docs/guide/a.wav\" controls=\"\" preload=\"metadata\"></audio>",
+            ),
+            (
+                "<video src=\"a.mp4\" muted></video>",
+                "<video src=\"pm-asset:docs/guide/a.mp4\" muted=\"\" controls=\"\" preload=\"metadata\"></video>",
+            ),
+            (
+                "<audio preload=\"auto\" src=\"a.wav\"></audio>",
+                "<audio preload=\"metadata\" src=\"pm-asset:docs/guide/a.wav\" controls=\"\"></audio>",
+            ),
+        ] {
+            for _ in 0..32 {
+                assert_eq!(clean(html), want, "{html}");
+            }
+        }
+        // the same words in text stay as written
+        let text = "<p>preload=\"metadata\" controls=\"\"&gt;</p>";
+        assert_eq!(clean(text), text);
     }
 
     #[test]

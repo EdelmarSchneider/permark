@@ -25,6 +25,7 @@
   import { frontMatterSyntax } from "../config/frontMatter";
   import { documents } from "../doc/document.svelte";
   import { reading } from "../doc/reading.svelte";
+  import { webPictures } from "../doc/webPictures.svelte";
   import { pictureDisplayUrl, pictureFiles, pictureLink } from "./pictures";
   import { baseName, pictureType } from "../explorer/importModel";
   import { relativeLink } from "./source/complete";
@@ -459,8 +460,11 @@
           pictures: (files, at) => void insertPictures(files, at),
           followLink: (href) => void followLink(href),
           displaySrc: (src) =>
-            pictureDisplayUrl(content.path, src, (path) =>
-              api.assetUrl(documents.workspaceId ?? 0, path, null),
+            pictureDisplayUrl(
+              content.path,
+              src,
+              (path) => api.assetUrl(documents.workspaceId ?? 0, path, null),
+              (url) => webPictures.kept(url),
             ),
         }),
         plugins: [loaded.emptyHint(t("edit.emptyHint"))],

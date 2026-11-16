@@ -305,9 +305,85 @@ function spliceOf(core: Core, source: Source, node: PMNode): string | null {
     return null;
   }
   const runs = alignment(source, before);
+  // a column added | removed: cell by cell (character by character, a new delimiter cell takes the dashes of its
+  // neighbour and leaves it with its own cut)
+  const cells = columnChanged(before, now) ? cellChanges(before, now) : null;
+  if (cells !== null) {
+    const text = spliceChanges(core, source, runs, now, cells);
+    if (text !== null) return text;
+  }
   const changes = diff(before.split(""), now.split("")).flatMap((op) =>
-    op.kind === "change" ? [op] : [],
+    op.kind === "change" ? [{ ...op, insert: now.slice(op.b, op.b + op.add) }] : [],
   );
+  return spliceChanges(core, source, runs, now, changes);
+}
+
+/** A change of the writing at load (`a`, `remove` characters) into `insert`. */
+type Change = { a: number; remove: number; insert: string };
+
+/** A table's writing in cells: each piece starts at a `|` (a line's last one holds its line break). */
+function cellsOf(written: string): string[] {
+  return written.split(/(?=\|)/);
+}
+
+/** The editor writes a table (its first line holds the header's cells) with another number of columns. */
+function columnChanged(before: string, now: string): boolean {
+  const header = (written: string): number | null =>
+    /^\|/.test(written) ? cellsOf(written.split("\n")[0] ?? "").length : null;
+  const was = header(before);
+  return was !== null && was !== header(now);
+}
+
+/**
+ * The editor's change of a table's writing, cell by cell. A cell is compared without the spaces the editor pads a
+ * column with (a delimiter cell keeps its dashes: they tell the columns apart); a re-padding the result reads the same
+ * without is left out later. A cell put in is written `| text ` (a delimiter at least `---`); one next to an escaped
+ * `\|` as the editor wrote it.
+ */
+function cellChanges(before: string, now: string): Change[] {
+  const old = cellsOf(before);
+  const next = cellsOf(now);
+  const keys = (cells: readonly string[]): string[] =>
+    cells.map((cell) => (cell.includes("\n") ? cell : `|${cell.slice(1).trim()}`));
+  const offsets = (cells: readonly string[]): number[] => {
+    const at = [0];
+    for (const cell of cells) at.push((at.at(-1) ?? 0) + cell.length);
+    return at;
+  };
+  const from = offsets(old);
+  const lines = offsets(next.map((cell) => (cell.includes("\n") ? "\n" : "")));
+  const tidy = (cell: string, k: number): string => {
+    const inner = cell.slice(1).trim();
+    if (cell.includes("\n") || inner.endsWith("\\") || next[k - 1]?.trimEnd().endsWith("\\")) {
+      return cell;
+    }
+    const delimiter = (lines[k] ?? 0) === 1;
+    return `| ${delimiter ? inner.replace(/-+/, (dashes) => dashes.padEnd(3, "-")) : inner} `;
+  };
+  return diff(keys(old), keys(next)).flatMap((op) =>
+    op.kind === "change"
+      ? [
+          {
+            a: from[op.a] ?? 0,
+            remove: (from[op.a + op.remove] ?? 0) - (from[op.a] ?? 0),
+            insert: next
+              .slice(op.b, op.b + op.add)
+              .map((cell, k) => tidy(cell, op.b + k))
+              .join(""),
+          },
+        ]
+      : [],
+  );
+}
+
+/** The block's text with `changes` placed in it; null when no placing reads as the editor's writing `now`. */
+function spliceChanges(
+  core: Core,
+  source: Source,
+  runs: readonly Run[],
+  now: string,
+  changes: readonly Change[],
+): string | null {
   let tried: string | null = null;
   // first a deletion keeps the text's own characters at its edges and an insertion goes before them; then the reverse
   for (const inner of [true, false]) {
@@ -316,7 +392,7 @@ function spliceOf(core: Core, source: Source, node: PMNode): string | null {
       const from = place(runs, op.a, op.remove === 0 ? !inner : inner);
       const to = op.remove === 0 ? from : place(runs, op.a + op.remove, !inner);
       if (from === null || to === null || to < from || from < (hunks.at(-1)?.to ?? 0)) continue;
-      hunks.push({ from, to, insert: now.slice(op.b, op.b + op.add) });
+      hunks.push({ from, to, insert: op.insert });
     }
     // no change placed: the block's own bytes, kept only when the edit does not change what the block reads as
     const out = applied(source.text, hunks);
