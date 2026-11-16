@@ -1801,6 +1801,11 @@ export default {
   "settings.problem.other": "Это значение не принято.",
   "welcome.newProject": "Новый проект…",
   "welcome.newProjectHint": "Выберите папку, и PerMark настроит ее как проект.",
+  "welcome.demo.explore": "Посмотреть демо-страницы",
+  "welcome.demo.open": "Открыть демо-страницы",
+  "welcome.demo.hint":
+    "Примеры документов, которые показывают возможности PerMark, в папке «Документы».",
+  "welcome.demo.failed": "Не удается скопировать демо-страницы: {message}",
   "plugin.git.name": "Git",
   "plugin.git.about":
     "Буквы изменений, ветка и состояние репозитория. Только чтение: PerMark никогда не делает коммиты.",

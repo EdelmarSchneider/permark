@@ -1807,6 +1807,11 @@ export default {
   "settings.problem.other": "Această valoare nu a fost acceptată.",
   "welcome.newProject": "Proiect nou…",
   "welcome.newProjectHint": "Alege un dosar; PerMark îl configurează ca proiect.",
+  "welcome.demo.explore": "Explorează paginile demonstrative",
+  "welcome.demo.open": "Deschide paginile demonstrative",
+  "welcome.demo.hint":
+    "Documente exemplu care arată ce poate face PerMark, în dosarul tău Documente.",
+  "welcome.demo.failed": "Nu se pot copia paginile demonstrative: {message}",
   "plugin.git.name": "Git",
   "plugin.git.about":
     "Literele modificărilor, branchul și starea depozitului. Doar citire: PerMark nu face niciodată commit.",

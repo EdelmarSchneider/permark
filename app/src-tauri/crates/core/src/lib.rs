@@ -3,6 +3,7 @@
 pub mod activity;
 pub mod app_info;
 pub mod conditions;
+pub mod demo;
 pub mod desktop;
 pub mod document;
 pub mod downloads;

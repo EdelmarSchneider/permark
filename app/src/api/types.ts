@@ -5,6 +5,7 @@ import type { AppSettings } from "./generated/AppSettings";
 import type { BootInfo } from "./generated/BootInfo";
 import type { CommandName } from "./generated/CommandName";
 import type { DefaultAppView } from "./generated/DefaultAppView";
+import type { DemoOffer } from "./generated/DemoOffer";
 import type { FileGroup } from "./generated/FileGroup";
 import type { ShellEntry } from "./generated/ShellEntry";
 import type { ShellState } from "./generated/ShellState";
@@ -519,6 +520,9 @@ export interface Commands {
   default_app_set: { args: { group: FileGroup; on: boolean }; result: DefaultAppView };
   default_app_asked: { args: Record<string, never>; result: null };
   default_app_handoff: { args: Record<string, never>; result: null };
+  demo_offer: { args: Record<string, never>; result: DemoOffer };
+  demo_install: { args: Record<string, never>; result: string };
+  demo_dismiss: { args: Record<string, never>; result: null };
 }
 
 /**
@@ -898,7 +902,7 @@ export interface AppPluginEvents {
   "translation:run": PieceRun;
 }
 export type AppPluginEventName = keyof AppPluginEvents;
-export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };
+export type { DefaultAppView, DemoOffer, FileGroup, ShellEntry, ShellState, UpdateState };
 export type { CountResult, TokenCountState };
 export type { SpellingDefault, SpellingDocLanguage, SpellingDownload, SpellingLanguage };
 export type { SpellingLanguageSource } from "./generated/SpellingLanguageSource";
@@ -1248,6 +1252,12 @@ export interface Api {
   defaultAppAsked(): Promise<Result<null>>;
   /** Opens Windows' Default Apps page. */
   defaultAppHandoff(): Promise<Result<null>>;
+  /** What the Welcome screen offers about the demo pages: copy them into Documents, open them there, or nothing. */
+  demoOffer(): Promise<Result<DemoOffer>>;
+  /** The demo pages' folder in Documents (copied there first when nothing is at its place): the path to open. */
+  demoInstall(): Promise<Result<string>>;
+  /** The demo pages offer was dismissed: not shown again. */
+  demoDismiss(): Promise<Result<null>>;
   /** Creates `.permark/` in a folder; a project open on it reloads its state at once. */
   projectInit(path: string): Promise<Result<null>>;
   /** Whether a folder has nothing in it yet (one that cannot be read counts as not empty). */

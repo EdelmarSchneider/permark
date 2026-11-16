@@ -1694,6 +1694,10 @@ const en = {
   "settings.problem.other": "This value was not accepted.",
   "welcome.newProject": "New project…",
   "welcome.newProjectHint": "Choose a folder; PerMark sets it up as a project.",
+  "welcome.demo.explore": "Explore the demo pages",
+  "welcome.demo.open": "Open the demo pages",
+  "welcome.demo.hint": "Sample documents that show what PerMark can do, in your Documents folder.",
+  "welcome.demo.failed": "Can't copy the demo pages: {message}",
   "plugin.git.name": "Git",
   "plugin.git.about":
     "Change letters, branch and repository state. Read-only: PerMark never commits.",

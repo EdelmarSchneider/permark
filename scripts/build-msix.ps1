@@ -151,6 +151,11 @@ Copy-Item (Join-Path $Assets '*.png') (Join-Path $Stage 'Assets')
 $Notices = Join-Path $Tauri 'resources\THIRD-PARTY-NOTICES.md'
 if (-not (Test-Path $Notices)) { throw "$Notices was not found." }
 Copy-Item $Notices (Join-Path $Stage 'THIRD-PARTY-NOTICES.md')
+# The demo pages the Welcome screen offers to copy into Documents (bundle.resources in tauri.conf.json: the app looks for
+# them in a folder named demo beside the program).
+$Demo = Join-Path $Root 'demo'
+if (-not (Test-Path (Join-Path $Demo 'README.md'))) { throw "$Demo has no README.md." }
+Copy-Item $Demo (Join-Path $Stage 'demo') -Recurse -Force
 
 $manifest = Get-Content $Template -Raw -Encoding UTF8
 foreach ($token in '@VERSION@', '@DESCRIPTION@') {

@@ -1451,3 +1451,92 @@ fn with_the_watcher_running_the_view_keeps_the_imported_items() {
         }
     }
 }
+
+// ---- copy_folder: a whole folder to a new place, all or nothing ----------------------------------------------------
+
+/// Bytes that a text-aware copy would change: a BOM, CRLF line ends, a lone CR, bytes that are not UTF-8.
+const RAW: &[u8] = b"\xEF\xBB\xBF# Title\r\nline two\r\nlone\rend\xFF\x00";
+
+#[test]
+fn copy_folder_copies_every_file_byte_for_byte_dot_files_included() {
+    let src = tempfile::tempdir().unwrap();
+    put(
+        src.path(),
+        &[
+            (".aiignore", "secret.env\n"),
+            ("assets/a.svg", "<svg/>"),
+            ("empty/", ""),
+        ],
+    );
+    fs::write(src.path().join("crlf.md"), RAW).unwrap();
+    let parent = tempfile::tempdir().unwrap();
+    let dest = parent.path().join("Copy here");
+    copy_folder(src.path(), &dest).unwrap();
+    assert_eq!(fs::read(dest.join("crlf.md")).unwrap(), RAW);
+    assert_eq!(
+        fs::read_to_string(dest.join(".aiignore")).unwrap(),
+        "secret.env\n"
+    );
+    assert_eq!(
+        fs::read_to_string(dest.join("assets/a.svg")).unwrap(),
+        "<svg/>"
+    );
+    assert!(dest.join("empty").is_dir());
+    assert_eq!(names(parent.path()), ["Copy here"]);
+}
+
+#[test]
+fn copy_folder_never_writes_into_something_already_there() {
+    let src = tempfile::tempdir().unwrap();
+    put(src.path(), &[("a.md", "new")]);
+    let parent = tempfile::tempdir().unwrap();
+    let dest = parent.path().join("taken");
+    put(&dest, &[("a.md", "mine")]);
+    let error = copy_folder(src.path(), &dest).unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+    assert_eq!(fs::read_to_string(dest.join("a.md")).unwrap(), "mine");
+    assert_eq!(names(&dest), ["a.md"]);
+    no_temps(parent.path());
+}
+
+#[test]
+fn copy_folder_refuses_a_link_inside_and_leaves_nothing_behind() {
+    let src = tempfile::tempdir().unwrap();
+    put(src.path(), &[("a.md", "a"), ("b/c.md", "c"), ("z.md", "z")]);
+    let secret = tempfile::tempdir().unwrap();
+    fs::write(secret.path().join("secret.txt"), "private").unwrap();
+    // one kind of separator: `mklink` refuses a mixed path
+    if !make_link(&src.path().join("b").join("jump"), secret.path()) {
+        eprintln!("skipped: cannot create a link here");
+        return;
+    }
+    let parent = tempfile::tempdir().unwrap();
+    let dest = parent.path().join("Copy here");
+    assert!(copy_folder(src.path(), &dest).is_err());
+    // neither the folder nor a half-built temp of it
+    assert!(
+        names(parent.path()).is_empty(),
+        "{:?}",
+        names(parent.path())
+    );
+}
+
+#[test]
+fn copy_folder_refuses_a_source_that_is_a_link_or_a_file() {
+    let real = tempfile::tempdir().unwrap();
+    put(real.path(), &[("a.md", "a")]);
+    let holder = tempfile::tempdir().unwrap();
+    let parent = tempfile::tempdir().unwrap();
+    let file = holder.path().join("file.md");
+    fs::write(&file, "x").unwrap();
+    assert!(copy_folder(&file, &parent.path().join("one")).is_err());
+    if make_link(&holder.path().join("link"), real.path()) {
+        assert!(copy_folder(&holder.path().join("link"), &parent.path().join("two")).is_err());
+    }
+    assert!(copy_folder(&holder.path().join("missing"), &parent.path().join("three")).is_err());
+    assert!(
+        names(parent.path()).is_empty(),
+        "{:?}",
+        names(parent.path())
+    );
+}
