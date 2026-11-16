@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-16
+
 ### Added
 - **Five more interface languages.** PerMark now speaks Traditional Chinese (chosen for Taiwan, Hong Kong and Macau), Indonesian, Vietnamese, Russian and Turkish, 18 languages in all, in the app and in the Windows installer; native speakers are welcome to review them. <!-- f: settings -->
 - **Right-to-left paragraphs.** Paragraphs, headings, list items and table cells written in Arabic, Hebrew, Persian or Urdu show right to left in View, Edit and Source, whatever the interface language. <!-- f: view-mode, edit-mode -->
