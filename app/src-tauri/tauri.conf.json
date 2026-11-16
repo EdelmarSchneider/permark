@@ -50,12 +50,18 @@
           "Portuguese",
           "Catalan",
           "Galician",
-          "Romanian"
+          "Romanian",
+          "TradChinese",
+          "Indonesian",
+          "Vietnamese",
+          "Russian",
+          "Turkish"
         ],
         "customLanguageFiles": {
           "Catalan": "installer/languages/Catalan.nsh",
           "Galician": "installer/languages/Galician.nsh",
-          "Romanian": "installer/languages/Romanian.nsh"
+          "Romanian": "installer/languages/Romanian.nsh",
+          "Indonesian": "installer/languages/Indonesian.nsh"
         },
         "displayLanguageSelector": true,
         "installerHooks": "installer/hooks.nsh"
