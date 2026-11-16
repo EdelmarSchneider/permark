@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
+import { language } from "../i18n";
 import { assetPathOf, enhanceBlock, languageOf, type EnhanceEnv } from "./enhance";
 
 const env: EnhanceEnv = { assetUrl: (path) => `asset://localhost/${path}` };
@@ -73,6 +74,39 @@ describe("enhanceBlock", () => {
     expect(title?.textContent).toBe("Warning");
     enhanceBlock(root, env);
     expect(root.querySelectorAll(".markdown-alert-title svg")).toHaveLength(1);
+  });
+
+  it("keeps an alert title the author wrote; only the default one is translated", async () => {
+    // the renderer writes the English default (`Note`, ...) when the alert has no title of its own
+    const alert = (kind: string, title: string): HTMLElement =>
+      enhanceBlock(
+        make(
+          `<div class="markdown-alert markdown-alert-${kind}"><p class="markdown-alert-title">${title}</p><p>x</p></div>`,
+        ),
+        env,
+      );
+    await language.choose("de", []);
+    try {
+      const kinds = ["note", "tip", "important", "warning", "caution"];
+      const defaults = kinds.map((kind) => {
+        const title = alert(kind, kind.charAt(0).toUpperCase() + kind.slice(1));
+        return title.querySelector(".markdown-alert-title")?.textContent;
+      });
+      expect(defaults).toEqual(["Hinweis", "Tipp", "Wichtig", "Warnung", "Vorsicht"]);
+      for (const kind of kinds) {
+        const title = alert(kind, "Before you start &amp; more").querySelector(
+          ".markdown-alert-title",
+        );
+        expect(title?.textContent).toBe("Before you start & more");
+        expect(title?.querySelector("svg")).not.toBeNull();
+      }
+      // the default of another kind is a title of its own
+      expect(alert("note", "Warning").querySelector(".markdown-alert-title")?.textContent).toBe(
+        "Warning",
+      );
+    } finally {
+      await language.choose("en", []);
+    }
   });
 
   it("marks done tasks", () => {

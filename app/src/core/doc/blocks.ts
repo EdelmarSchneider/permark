@@ -132,11 +132,17 @@ export class BlockHost {
     return this.#els.get(id);
   }
 
-  /** The element with this `id` attribute (a heading, a footnote) inside the document, if it is built. */
+  /**
+   * The element with this `id` attribute (a heading, a footnote) inside the document, if it is built; else an old-style
+   * anchor `<a name>` of that name (a browser's order for a `#fragment`).
+   */
   byAnchor(id: string): HTMLElement | null {
     if (this.#container === null || id === "") return null;
     const quoted = id.replace(/["\\]/g, "\\$&");
-    return this.#container.querySelector<HTMLElement>(`[id="${quoted}"]`);
+    return (
+      this.#container.querySelector<HTMLElement>(`[id="${quoted}"]`) ??
+      this.#container.querySelector<HTMLElement>(`a[name="${quoted}"]`)
+    );
   }
 
   get container(): HTMLElement | null {

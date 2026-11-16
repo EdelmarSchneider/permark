@@ -35,6 +35,15 @@ const ALERT_TITLES = {
 
 type AlertKind = keyof typeof ALERT_TITLES;
 
+/** The title the renderer (comrak) gives an alert written without one, e.g. `> [!NOTE]`. */
+const ALERT_DEFAULTS: Record<AlertKind, string> = {
+  note: "Note",
+  tip: "Tip",
+  important: "Important",
+  warning: "Warning",
+  caution: "Caution",
+};
+
 function isAlertKind(kind: string): kind is AlertKind {
   return kind in ALERT_TITLES;
 }
@@ -201,7 +210,10 @@ function enhanceOne(element: HTMLElement, env: EnhanceEnv): HTMLElement {
         const kind = /markdown-alert-(\w+)/.exec(alert?.className ?? "")?.[1] ?? "note";
         const known = isAlertKind(kind) ? kind : "note";
         if (!element.querySelector("svg")) {
-          element.textContent = t(ALERT_TITLES[known]);
+          // the renderer writes its English default when the author gave no title: only that one is translated
+          if ((element.textContent ?? "").trim() === ALERT_DEFAULTS[known]) {
+            element.textContent = t(ALERT_TITLES[known]);
+          }
           element.insertAdjacentHTML("afterbegin", ALERT_ICONS[known] ?? "");
         }
       }

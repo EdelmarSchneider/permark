@@ -5,10 +5,11 @@
 use std::collections::HashMap;
 
 use comrak::nodes::{AstNode, NodeValue};
-use comrak::{parse_document, Arena};
+use comrak::Arena;
 
 use super::{
-    frontmatter, headings_of, is_deeper_than, options, too_many_container_markers, MAX_TREE_DEPTH,
+    frontmatter, headings_of, is_deeper_than, options, parse_document, too_many_container_markers,
+    MAX_TREE_DEPTH,
 };
 
 /// One section of a document.

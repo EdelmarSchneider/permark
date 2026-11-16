@@ -127,6 +127,97 @@ fn a_character_reference_right_after_inline_math_keeps_the_formula() {
 }
 
 #[test]
+fn bracket_math_renders_as_formulas_outside_code() {
+    // `\(..\)` and `\[..\]` (LaTeX delimiters, common in generated text) are formulas like `$..$` and `$$..$$`; code
+    // spans and blocks keep them as written, and an escaped backslash before `(` starts nothing
+    let md = "Inline \\(a+b\\) here.\n\n\\[\nx^2\n\\]\n\nCode `\\(c\\)` and \\\\(d\\) stay text.\n\n```\n\\(e\\)\n```\n";
+    let html = plain_html(md);
+    assert_eq!(
+        html.matches("data-math-style=\"inline\"").count(),
+        1,
+        "{html}"
+    );
+    assert_eq!(
+        html.matches("data-math-style=\"display\"").count(),
+        1,
+        "{html}"
+    );
+    assert!(html.contains(">a+b</span>"), "{html}");
+    assert!(html.contains(">\\(c\\)</code>"), "{html}");
+    assert!(html.contains("\\(d) stay"), "{html}");
+    assert!(html.contains("\\(e\\)\n</code></pre>"), "{html}");
+}
+
+#[test]
+fn bracket_display_math_stands_only_on_lines_of_its_own() {
+    // escaped brackets in prose (what HTML converters write) stay text with their inner Markdown; `\[..\]` is a
+    // formula on lines of its own or as a whole paragraph; `\(..\)` is one anywhere
+    let md = concat!(
+        "see \\[1\\] and \\[2\\] here, \\[*em* [r](r.md)\\] and \\[3 \\[4\\]\n\n",
+        "\\[\nE = mc^2\n\\]\n\n",
+        "\\[ whole \\]\n\n",
+        "text\n\\[\nown\n\\]  \nmore \\(z\\)\n\n",
+        "> \\[\n> quoted\n> \\]\n\n",
+        "\\[ a \\] trailing\n\n",
+        "lead \\[\nb\n\\]\n\n",
+        "`\\[c\\]` and [\\[5\\]](#n)\n\n",
+        "| \\[6\\] | x |\n|---|---|\n\n",
+        "# \\[7\\]\n"
+    );
+    let html = plain_html(md);
+    assert_eq!(
+        html.matches("data-math-style=\"display\"").count(),
+        4,
+        "{html}"
+    );
+    assert_eq!(
+        html.matches("data-math-style=\"inline\"").count(),
+        1,
+        "{html}"
+    );
+    for needle in [
+        "see [1] and [2] here, [<em>em</em> <a",
+        ">r</a>] and [3 [4]</p>",
+        ">\nE = mc^2\n</span>",
+        "> whole </span>",
+        ">\nown\n</span>",
+        ">\nquoted\n</span>",
+        "[ a ] trailing",
+        "lead [\nb\n]",
+        ">\\[c\\]</code>",
+        ">[5]</a>",
+        ">[6]</th>",
+        ">[7]</h1>",
+    ] {
+        assert!(html.contains(needle), "{needle} missing in {html}");
+    }
+}
+
+#[test]
+fn table_column_alignment_reaches_the_cells() {
+    let html = plain_html("| l | c | r | n |\n|:--|:-:|--:|---|\n| 1 | 2 | 3 | 4 |\n");
+    for needle in [
+        "<th align=\"left\"",
+        "<th align=\"center\"",
+        "<th align=\"right\"",
+        "<td align=\"center\"",
+        "<td align=\"right\"",
+    ] {
+        assert!(html.contains(needle), "{needle} missing in {html}");
+    }
+}
+
+#[test]
+fn readme_centering_and_named_anchors_survive() {
+    let md = "<p align=\"center\">\n  <img src=\"logo.png\" width=\"80\">\n</p>\n\n<h1 align=\"center\">Name</h1>\n\n<a name=\"setup\"></a>\n\nSee [setup](#setup).\n";
+    let html = plain_html(md);
+    assert_eq!(html.matches(" align=\"center\">").count(), 2, "{html}");
+    for needle in ["<a name=\"setup\">", "href=\"#setup\""] {
+        assert!(html.contains(needle), "{needle} missing in {html}");
+    }
+}
+
+#[test]
 fn blocks_have_lines_kinds_and_marks() {
     let (blocks, _, _, _) = parts(
         "# One\n\nPara\ntwo lines\n\n- a\n- b\n\n```\ncode\n```\n",
