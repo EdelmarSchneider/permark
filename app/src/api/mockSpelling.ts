@@ -174,8 +174,14 @@ function near(a: string, b: string): boolean {
 export function createMockSpelling(
   emit: <E extends AppPluginEventName>(event: E, payload: AppPluginEvents[E]) => void,
 ) {
+  // The deep regression mode renders pages for golden screenshots: no dictionary is ready there, so the
+  // mock's tiny word list never marks the corpus (spelling has tests of its own).
+  const startReady = import.meta.env.MODE !== "deep";
   const states = new Map<string, SpellingState>(
-    LANGUAGES.map((l) => [l.id, l.id === "en" ? { kind: "ready" } : { kind: "absent" }]),
+    LANGUAGES.map((l) => [
+      l.id,
+      startReady && l.id === "en" ? { kind: "ready" } : { kind: "absent" },
+    ]),
   );
   const personal = new Set<string>();
   const timers = new Map<string, ReturnType<typeof setInterval>>();
