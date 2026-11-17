@@ -1,58 +1,28 @@
 <script lang="ts">
   // Plugins: every plugin of this build grouped by kind, each with its switch. Off leaves nothing behind (its data can
   // be removed); a plugin that is on but cannot work in this window says why in one sentence, with the fix when there
-  // is one. In a project window a plugin of the project can also be turned on | off for that project alone.
+  // is one. Only the app-wide switch here: a folder's own plugin choices belong with that folder's settings.
   import type { PluginInfo } from "../../../api";
   import { remedyAction } from "../../commands/remedy";
   import { conditions } from "../../conditions/context.svelte";
   import { reasonKey, remedyKey } from "../../conditions/guidance";
-  import { sizeText, t, type MessageKey } from "../../i18n";
+  import { sizeText, t } from "../../i18n";
   import { api } from "../../../api";
   import { apiErrorText } from "../../errors";
   import type { WindowStore } from "../../window.svelte";
   import Card from "./Card.svelte";
-  import {
-    aboutKey,
-    canRemoveData,
-    choiceOf,
-    choiceValue,
-    grouped,
-    kindKey,
-    nameKey,
-    statusOf,
-    type ProjectChoice,
-  } from "./pluginsModel";
+  import { aboutKey, canRemoveData, grouped, kindKey, nameKey, statusOf } from "./pluginsModel";
   import { pluginsStore } from "./stores.svelte";
 
   type Props = { store: WindowStore };
   let { store }: Props = $props();
 
-  // the list is read when the section shows and again whenever the plugins or this view's conditions change (another
-  // view's conditions are not this list's)
-  $effect(() => {
-    void pluginsStore.load();
-    const offs: (() => void)[] = [];
-    let gone = false;
-    const keep = (off: () => void): void => {
-      if (gone) off();
-      else offs.push(off);
-    };
-    void api.on("plugins-changed", () => void pluginsStore.load()).then(keep);
-    void api
-      .on("context-changed", (e) => {
-        if (e.window === store.label) void pluginsStore.load();
-      })
-      .then(keep);
-    return () => {
-      gone = true;
-      for (const off of offs) off();
-    };
-  });
+  // the list is read when the section shows and follows the plugins and this view's conditions (external I/O)
+  $effect(() => pluginsStore.follow(store.label));
 
   const listing = $derived(pluginsStore.state);
   const infos = $derived(listing.status === "ready" ? listing.plugins : []);
   const groups = $derived(grouped(infos));
-  const inProject = $derived(conditions.current.workspace === "project");
   /** The plugin whose "Remove data" is being confirmed, with the bytes it frees (`null`: not known). */
   let confirming = $state<{ id: string; bytes: number | null } | null>(null);
 
@@ -66,23 +36,11 @@
     return key === null ? "" : t(key);
   }
 
-  const CHOICES: { value: ProjectChoice; label: MessageKey }[] = [
-    { value: "app", label: "plugins.choice.app" },
-    { value: "on", label: "plugins.choice.on" },
-    { value: "off", label: "plugins.choice.off" },
-  ];
-
   async function setApp(info: PluginInfo, on: boolean): Promise<void> {
     await store.changeSetting({
       key: "pluginEnabled",
       value: { plugin: info.manifest.id, enabled: on },
     });
-    await pluginsStore.load();
-  }
-
-  async function setProject(info: PluginInfo, choice: ProjectChoice): Promise<void> {
-    const result = await api.pluginSetProject(info.manifest.id, choiceValue(choice));
-    if (!result.ok) store.notifyFileOpFailed(result.error);
     await pluginsStore.load();
   }
 
@@ -121,7 +79,7 @@
   <p class="intro">{t("plugins.intro")}</p>
   {#each groups as group (group.kind)}
     <section class="group" aria-labelledby={`plugins-${group.kind}`}>
-      <h3 id={`plugins-${group.kind}`}>{t(kindKey(group.kind))}</h3>
+      <h4 id={`plugins-${group.kind}`}>{t(kindKey(group.kind))}</h4>
       <Card>
         {#each group.plugins as info (info.manifest.id)}
           {@const id = info.manifest.id}
@@ -148,23 +106,6 @@
                 </span>
               {:else if status.kind === "project"}
                 <span class="status">{t("plugins.offHere")}</span>
-              {/if}
-              {#if inProject && info.manifest.scope === "project"}
-                <label class="choice">
-                  <span>{t("plugins.inProject")}</span>
-                  <select
-                    class="field-select"
-                    value={choiceOf(info)}
-                    onchange={(e) => {
-                      const found = CHOICES.find((c) => c.value === e.currentTarget.value);
-                      if (found) void setProject(info, found.value);
-                    }}
-                  >
-                    {#each CHOICES as choice (choice.value)}
-                      <option value={choice.value}>{t(choice.label)}</option>
-                    {/each}
-                  </select>
-                </label>
               {/if}
             </div>
             <div class="control">
@@ -218,7 +159,7 @@
   .group + .group {
     margin-top: var(--sp-5);
   }
-  h3 {
+  h4 {
     margin: 0 0 var(--sp-2);
     padding-left: var(--sp-1);
     color: var(--muted);
@@ -266,19 +207,6 @@
     font: inherit;
     text-decoration: underline;
     cursor: pointer;
-  }
-  .choice {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--sp-2);
-    margin-top: var(--sp-1);
-    color: var(--muted);
-    font-size: var(--fs-ui-sm);
-  }
-  .choice select {
-    height: 24px;
-    font-size: var(--fs-ui-sm);
   }
   .control {
     display: flex;

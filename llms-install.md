@@ -21,7 +21,7 @@ brew install --cask permark
 
 ### Linux (Debian / Ubuntu / Mint / Pop!_OS — `x86_64`)
 ```bash
-curl -fsSL https://github.com/EdelmarSchneider/permark/releases/latest/download/PerMark_0.13.0_amd64.deb -o /tmp/permark.deb
+curl -fsSL https://github.com/EdelmarSchneider/permark/releases/latest/download/PerMark_0.14.0_amd64.deb -o /tmp/permark.deb
 sudo apt-get update && sudo apt-get install -y /tmp/permark.deb
 rm -f /tmp/permark.deb
 ```
@@ -48,4 +48,4 @@ Add the `permark` server entry using `stdio` transport:
 ```
 
 ## Step 4: Enable Agent Connection for the Project Folder
-The connection is off until the person turns it on, per project. In the PerMark desktop app, open the project folder and switch on **Share this project with agents** in the Settings (the choice is kept in the person's own PerMark data, never in the project, so nothing inside a project can turn it on). `permark mcp` then serves 13 tools for that folder: `get_context`, `list_unread`, `map`, `search`, `list_tags`, `outline`, `read`, `list_comments`, `resolve_comment`, `list_notes`, `read_note`, `activity` and `open`. An agent reads, shows a place and marks comments done; it never edits files through PerMark. The tools answer only while PerMark has the project open: with PerMark closed, each tool says so, and `open` starts PerMark on the project.
+The connection is off until the person turns it on, per project. In the PerMark desktop app, open the project folder and switch on **Share this folder with agents** in the Settings (the choice is kept in the person's own PerMark data, never in the project, so nothing inside a project can turn it on). `permark mcp` then serves 13 tools for that folder: `get_context`, `list_unread`, `map`, `search`, `list_tags`, `outline`, `read`, `list_comments`, `resolve_comment`, `list_notes`, `read_note`, `activity` and `open`. An agent reads, shows a place and marks comments done; it never edits files through PerMark. The tools answer only while PerMark has the project open: with PerMark closed, each tool says so, and `open` starts PerMark on the project.

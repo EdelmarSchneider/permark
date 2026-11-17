@@ -761,16 +761,20 @@ impl ProjectCore {
     }
 
     /// One setting of `.permark/config.toml` changed: written surgically, then live (the Explorer's default filter, the
-    /// ignore rules; the agent reads the file at each call).
+    /// ignore rules, the plugins turned off for everyone; the agent reads the file at each call).
     ///
     /// # Errors
     /// `NotInitialized`, an invalid value, an IO failure.
     pub fn change_config(
         &self,
+        env: &CoreEnv,
         change: &ProjectSettingChange,
     ) -> Result<ProjectConfig, SettingsError> {
         let config = ProjectConfigFile::of(self.vault.main()).apply(change)?;
         *self.config.write().unwrap_or_else(PoisonError::into_inner) = config.clone();
+        if matches!(change, ProjectSettingChange::PluginOff { .. }) {
+            self.apply_plugins(env);
+        }
         self.explorer.reconfigure(&config);
         self.rescan();
         Ok(config)
@@ -876,7 +880,6 @@ impl ProjectCore {
     ) {
         let settings = env.settings();
         let store = self.store();
-        let config = self.config();
         *self
             .enablement
             .lock()
@@ -904,13 +907,12 @@ impl ProjectCore {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .apply(&env.registry, on, |id| {
-                let table =
-                    merged_table(settings.plugin_tables.get(id), config.plugin_tables.get(id));
+                // the person's own settings only: a shared project file never sets a plugin's keys for everyone
                 PluginCx::new(
                     id.clone(),
                     CxWorkspace::Project(self.vault.clone()),
                     store.plugin_dir(id),
-                    table,
+                    settings.plugin_tables.get(id).map(|t| t.0.clone()),
                     context.clone(),
                     Arc::clone(&env.sink),
                 )
@@ -932,24 +934,6 @@ impl ProjectCore {
                 failure,
                 Some(root.clone()),
             )));
-        }
-    }
-}
-
-/// The plugin's table: the app's keys, the project's keys over them.
-fn merged_table(
-    app: Option<&crate::settings::RawTable>,
-    project: Option<&crate::settings::RawTable>,
-) -> Option<toml_edit::Table> {
-    match (app, project) {
-        (None, None) => None,
-        (Some(table), None) | (None, Some(table)) => Some(table.0.clone()),
-        (Some(app), Some(project)) => {
-            let mut merged = app.0.clone();
-            for (key, item) in &project.0 {
-                merged.insert(key, item.clone());
-            }
-            Some(merged)
         }
     }
 }

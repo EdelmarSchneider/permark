@@ -143,14 +143,18 @@ export function canRemoveData(info: PluginInfo): boolean {
   return !info.appOn && info.state.state === "off";
 }
 
-/** The choice a per-project select shows. */
-export type ProjectChoice = "app" | "on" | "off";
+/** The person's own choice for one folder (kept on this computer). */
+export type PersonChoice = "app" | "on" | "off";
+/** The choice a folder's select shows: the person's own, or the folder's shared file turning the plugin off for
+ *  everyone (which wins over the person's). */
+export type ProjectChoice = PersonChoice | "offEveryone";
 
 export function choiceOf(info: PluginInfo): ProjectChoice {
+  if (info.projectConfigOff) return "offEveryone";
   return info.projectChoice === null ? "app" : info.projectChoice ? "on" : "off";
 }
 
-export function choiceValue(choice: ProjectChoice): boolean | null {
+export function choiceValue(choice: PersonChoice): boolean | null {
   switch (choice) {
     case "app":
       return null;
@@ -161,4 +165,22 @@ export function choiceValue(choice: ProjectChoice): boolean | null {
     default:
       return choice satisfies never;
   }
+}
+
+/** Who a folder choice is for: everyone (the shared file turns it off), only this person, or none (follows the app). */
+export function choiceScope(info: PluginInfo): "everyone" | "you" | null {
+  if (info.projectConfigOff) return "everyone";
+  return info.projectChoice === null ? null : "you";
+}
+
+/** What picking `next` writes: the shared file's switch (`teamOff`, `null` = unchanged) and the person's own choice
+ *  (`person`, `undefined` = unchanged). Off for everyone leaves the person's choice as it is: it counts again once the
+ *  folder's switch is taken back. */
+export type ChoiceWrite = { teamOff: boolean | null; person: boolean | null | undefined };
+
+export function choiceWrite(info: PluginInfo, next: ProjectChoice): ChoiceWrite {
+  if (next === "offEveryone") {
+    return { teamOff: info.projectConfigOff ? null : true, person: undefined };
+  }
+  return { teamOff: info.projectConfigOff ? false : null, person: choiceValue(next) };
 }

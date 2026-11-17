@@ -1541,18 +1541,24 @@ fn a_project_setting_is_written_and_applies_at_once() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.md"), "# a\n").unwrap();
     let (core, _) = open_project(&f, dir.path());
+    let env = f.registry.env().clone();
     // not initialized: refused, nothing written
-    let refused = core.change_config(&ProjectSettingChange::TreeShow(Some(TreeShow::Everything)));
+    let refused = core.change_config(
+        &env,
+        &ProjectSettingChange::TreeShow(Some(TreeShow::Everything)),
+    );
     assert!(matches!(
         refused,
         Err(crate::settings::SettingsError::NotInitialized)
     ));
     assert!(!dir.path().join(".permark").exists());
-    let env = f.registry.env().clone();
     crate::state::init_project(&env.dirs, core.root()).unwrap();
     core.reload_state(&env);
     let config = core
-        .change_config(&ProjectSettingChange::TreeShow(Some(TreeShow::Everything)))
+        .change_config(
+            &env,
+            &ProjectSettingChange::TreeShow(Some(TreeShow::Everything)),
+        )
         .unwrap();
     assert_eq!(config.tree.show, Some(TreeShow::Everything));
     assert_eq!(core.config().tree.show, Some(TreeShow::Everything));
@@ -1587,8 +1593,11 @@ fn a_window_on_the_default_filter_follows_the_new_default_and_one_with_its_own_s
         }),
     );
     f.sink.take();
-    core.change_config(&ProjectSettingChange::TreeShow(Some(TreeShow::Everything)))
-        .unwrap();
+    core.change_config(
+        &env,
+        &ProjectSettingChange::TreeShow(Some(TreeShow::Everything)),
+    )
+    .unwrap();
     let moved: Vec<_> = f
         .sink
         .take()
@@ -1635,12 +1644,15 @@ fn the_ignore_patterns_apply_at_once_and_back() {
         snapshot.nodes.iter().map(|n| n.path.clone()).collect()
     };
     assert!(shown(&core).contains(&"draft.md".to_owned()));
-    core.change_config(&ProjectSettingChange::Ignore(vec!["draft.md".to_owned()]))
-        .unwrap();
+    core.change_config(
+        &env,
+        &ProjectSettingChange::Ignore(vec!["draft.md".to_owned()]),
+    )
+    .unwrap();
     let after = shown(&core);
     assert!(!after.contains(&"draft.md".to_owned()), "{after:?}");
     assert!(after.contains(&"a.md".to_owned()));
-    core.change_config(&ProjectSettingChange::Ignore(Vec::new()))
+    core.change_config(&env, &ProjectSettingChange::Ignore(Vec::new()))
         .unwrap();
     assert!(shown(&core).contains(&"draft.md".to_owned()));
 }
@@ -1666,6 +1678,79 @@ fn a_per_project_choice_stops_and_starts_the_plugin_and_is_kept_in_the_profile()
     core.set_plugin_choice(&env, &git, None).unwrap();
     assert_eq!(take(&f.log), ["start:git", "start:unread"]);
     assert_eq!(core.plugin_choices().len(), 0);
+}
+
+#[test]
+fn a_team_file_key_never_reaches_a_plugin_and_the_app_value_does() {
+    let log = Log::default();
+    let seen = crate::plugins::fake::Seen::default();
+    let plugins: Vec<Arc<dyn Plugin>> = vec![Arc::new(
+        Fake::new("git", PluginScope::Project, &[])
+            .with_log(&log)
+            .seeing(&seen),
+    )];
+    let f = fx_with(plugins, log);
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join(".permark")).unwrap();
+    std::fs::write(
+        dir.path().join(".permark/config.toml"),
+        "[plugins.git]\nbackend = \"cli\"\nlimit = 3\n",
+    )
+    .unwrap();
+    let backend = |table: &Option<toml_edit::Table>| {
+        table
+            .as_ref()
+            .and_then(|t| t.get("backend"))
+            .and_then(toml_edit::Item::as_str)
+            .map(str::to_owned)
+    };
+    // no app value: the team's key is not handed over either
+    let (core, _) = open_project(&f, dir.path());
+    let first = seen.lock().unwrap().pop().unwrap();
+    assert_eq!(backend(&first), None);
+    assert!(first.as_ref().is_none_or(|t| t.get("limit").is_none()));
+    // the app's value is what the plugin reads, the team's never goes over it
+    let env = f.registry.env().clone();
+    let mut settings = env.settings();
+    let mut table = toml_edit::Table::new();
+    table.insert("backend", toml_edit::value("libgit2"));
+    settings
+        .plugin_tables
+        .insert(PluginId::of("git"), crate::settings::RawTable(table));
+    env.set_settings(settings);
+    core.restart_plugin(&env, &PluginId::of("git"));
+    let second = seen.lock().unwrap().pop().unwrap();
+    assert_eq!(backend(&second).as_deref(), Some("libgit2"));
+    assert!(second.as_ref().is_some_and(|t| t.get("limit").is_none()));
+}
+
+#[test]
+fn off_for_everyone_stops_the_plugin_at_once_and_back_on_starts_it() {
+    use crate::settings::ProjectSettingChange;
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _) = open_project(&f, dir.path());
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, core.root()).unwrap();
+    core.reload_state(&env);
+    take(&f.log);
+    let git = PluginId::of("git");
+    let off = |off| ProjectSettingChange::PluginOff {
+        plugin: git.clone(),
+        off,
+    };
+    let config = core.change_config(&env, &off(true)).unwrap();
+    assert!(config.plugins_off.contains(&git));
+    assert_eq!(take(&f.log), ["stop:unread", "stop:git"]);
+    assert!(!core.plugins_on().contains(&git));
+    let text = std::fs::read_to_string(dir.path().join(".permark/config.toml")).unwrap();
+    assert!(text.contains("[plugins.git]\nenabled = false"), "{text}");
+    core.change_config(&env, &off(false)).unwrap();
+    assert_eq!(take(&f.log), ["start:git", "start:unread"]);
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(".permark/config.toml")).unwrap(),
+        crate::state::DEFAULT_CONFIG_TOML
+    );
 }
 // ---- move to window: adversarial (verifier) ---------------------------------------------------------------------
 

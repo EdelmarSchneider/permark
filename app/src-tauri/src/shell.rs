@@ -15,7 +15,7 @@ use permark_core::session::{
     app_session_file, AppSession, Geometry, RecentStore, SavedNotes, SavedWindow,
 };
 use permark_core::settings::{
-    installer_language, AppSettings, SettingChange, SettingsError, SettingsFile, SettingsScope,
+    installer_language, AppSettings, SettingChange, SettingsError, SettingsFile,
 };
 use permark_core::state::{AppDirs, Loaded, StateStore};
 use permark_core::workspace::{CoreEnv, WorkspaceRegistry};
@@ -109,7 +109,6 @@ fn refresh_characters(env: &CoreEnv, file: &SettingsFile, writes: &Mutex<()>) ->
     env.settings_changed();
     env.sink
         .emit(CoreEvent::SettingsChanged(Box::new(SettingsChanged {
-            scope: SettingsScope::App,
             // the groups come from the file this key names
             keys: vec!["characters_file".to_owned()],
             settings,
@@ -338,7 +337,6 @@ impl Shell {
         self.env
             .sink
             .emit(CoreEvent::SettingsChanged(Box::new(SettingsChanged {
-                scope: SettingsScope::App,
                 keys: vec![change.key()],
                 settings: settings.clone(),
             })));

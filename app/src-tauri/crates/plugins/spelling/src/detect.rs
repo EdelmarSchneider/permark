@@ -18,7 +18,7 @@ pub const LONG_LETTERS: usize = 150;
 pub const LONG_CONFIDENCE: f64 = 0.3;
 
 /// Languages the detector tells apart, each mapped onto a dictionary by [`id_of`].
-const CANDIDATES: [Lang; 8] = [
+const CANDIDATES: [Lang; 13] = [
     Lang::Eng,
     Lang::Por,
     Lang::Spa,
@@ -27,6 +27,11 @@ const CANDIDATES: [Lang; 8] = [
     Lang::Ita,
     Lang::Cat,
     Lang::Ron,
+    Lang::Pol,
+    Lang::Tur,
+    Lang::Vie,
+    Lang::Rus,
+    Lang::Ukr,
 ];
 
 /// What a sample says about its language.
@@ -48,10 +53,19 @@ pub fn detect(sample: &str, ids: &[&'static str], default: &str) -> Detection {
         Some((end, _)) => &sample[..end],
         None => sample,
     };
-    match whatlang::detect_script(sample) {
-        None => return Detection::Unsure(None),
-        Some(Script::Latin) => {}
-        Some(other) => return Detection::Unsupported(script_name(other)),
+    let Some(script) = whatlang::detect_script(sample) else {
+        return Detection::Unsure(None);
+    };
+    // only languages of the sample's script: the detector answers within that script anyway
+    let allowed: Vec<Lang> = CANDIDATES
+        .into_iter()
+        .filter(|lang| script.langs().contains(lang) && id_of(*lang, ids, default).is_some())
+        .collect();
+    if allowed.is_empty() {
+        return match script {
+            Script::Latin => Detection::Unsure(None),
+            other => Detection::Unsupported(script_name(other)),
+        };
     }
     let letters = sample.chars().filter(|c| c.is_alphabetic()).count();
     if letters < MIN_LETTERS {
@@ -62,13 +76,6 @@ pub fn detect(sample: &str, ids: &[&'static str], default: &str) -> Detection {
     } else {
         MIN_CONFIDENCE
     };
-    let allowed: Vec<Lang> = CANDIDATES
-        .into_iter()
-        .filter(|lang| id_of(*lang, ids, default).is_some())
-        .collect();
-    if allowed.is_empty() {
-        return Detection::Unsure(None);
-    }
     let Some(info) = Detector::with_allowlist(allowed).detect(sample) else {
         return Detection::Unsure(None);
     };
@@ -97,6 +104,11 @@ pub fn id_of(lang: Lang, ids: &[&'static str], default: &str) -> Option<&'static
         Lang::Ita => ("it", "it"),
         Lang::Cat => ("ca", "ca"),
         Lang::Ron => ("ro", "ro"),
+        Lang::Pol => ("pl", "pl"),
+        Lang::Tur => ("tr", "tr"),
+        Lang::Vie => ("vi", "vi"),
+        Lang::Rus => ("ru", "ru"),
+        Lang::Ukr => ("uk", "uk"),
         _ => return None,
     };
     has(first).or_else(|| has(second))

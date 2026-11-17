@@ -169,7 +169,7 @@ stop
 --- div 160-161
 <div class="markdown-alert markdown-alert-important">
 <p class="markdown-alert-title" dir="auto">Read-only, and only where you say so</p>
-<p dir="auto">PerMark's agent connection stays off in every project until you turn on <strong>Share this project with agents</strong> in <strong>Settings › AI agents</strong>. Then Gull can read the pages and your comments, and mark a comment done. It never edits a file through PerMark, and files listed in <a href=".aiignore"><code>.aiignore</code></a> stay out of its reach. More in <a href="permark-guide.md#let-an-agent-read-the-project">Let an agent read the project</a>.</p>
+<p dir="auto">PerMark's agent connection stays off in every project until you turn on <strong>Share this folder with agents</strong> in <strong>Settings › AI agents</strong>. Then Gull can read the pages and your comments, and mark a comment done. It never edits a file through PerMark, and files listed in <a href=".aiignore"><code>.aiignore</code></a> stay out of its reach. More in <a href="permark-guide.md#let-an-agent-read-the-project">Let an agent read the project</a>.</p>
 </div>
 --- hr 163-163
 <hr>

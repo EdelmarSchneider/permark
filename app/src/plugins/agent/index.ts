@@ -1,7 +1,8 @@
 // Plugin `agent`: the agent connection of a project. Dormant until the person turns it on: then a status item (who is
 // connected, what was asked), the context the window publishes, and the places an agent asks to show. Its own settings
-// section (+ a row in the gear popover), the hand-off (palette; the status popover too while the switch is on) and the
-// once-only offer of a project holding agent files are there whenever the plugin is on.
+// section in the folder's group, the folder's limits included (+ a row in the gear popover), the hand-off (palette;
+// the status popover too while the switch is on) and the once-only offer of a project holding agent files are there
+// whenever the plugin is on.
 
 import Bot from "@lucide/svelte/icons/bot";
 import type { Requirement } from "../../core/conditions/available";
@@ -53,6 +54,7 @@ export default definePlugin({
         id: AGENT_PAGE,
         label: "agent.section",
         icon: Bot,
+        group: "folder",
         order: 30,
         requires: PROJECT,
         view: () => import("./AgentSection.svelte"),
@@ -72,13 +74,6 @@ export default definePlugin({
         label: "agent.cmd.settings",
         requires: PROJECT,
         run: () => ui.openSettingsPage(AGENT_PAGE, "content"),
-      }),
-      cx.contribute({
-        kind: "projectSection",
-        id: "agent.narrowing",
-        label: "agent.narrow.title",
-        requires: PROJECT,
-        view: () => import("./AgentNarrowing.svelte"),
       }),
       cx.contribute({
         kind: "command",

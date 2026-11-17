@@ -28,6 +28,7 @@ const { estimate } = await import("./estimate");
 const { default: TokenChooser } = await import("./TokenChooser.svelte");
 const { default: TokenChoice } = await import("./TokenChoice.svelte");
 const { default: TokenStatus } = await import("./TokenStatus.svelte");
+const { default: TokenProject } = await import("./TokenProject.svelte");
 const { default: OutlineTokens } = await import("./OutlineTokens.svelte");
 
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
@@ -109,12 +110,19 @@ describe("what the plugin adds", () => {
     expect([...new Set(registry.ownedBy("token-count").map((c) => c.kind))].sort()).toEqual([
       "command",
       "outlineColumn",
-      "projectSection",
+      "settingsPage",
       "settingsSection",
       "statusItem",
       "treeBadge",
       "treeMenu",
     ]);
+    // the folder's own choice is a page of the This folder group
+    const page = registry.ownedBy("token-count").find((c) => c.kind === "settingsPage");
+    expect(page).toMatchObject({
+      id: "token-count.project",
+      label: "tokens.section",
+      group: "folder",
+    });
     await until(() => tokens.state !== null, "the store started with the plugin");
     expect(host.disable("token-count"), "contributions left after deactivate").toBe(0);
     expect(registry.items).toHaveLength(0);
@@ -247,7 +255,7 @@ describe("the choice with its scope", () => {
     await projectSettings.load(mock);
     component = mount(TokenChoice, { target, props: { mode: "both" } });
     flushSync();
-    expect(text()).not.toContain("A choice for this project only");
+    expect(text()).not.toContain("A choice for this folder only");
     await unmount(component);
     component = null;
 
@@ -256,7 +264,7 @@ describe("the choice with its scope", () => {
     await choose("claude");
     component = mount(TokenChoice, { target, props: { mode: "both" } });
     flushSync();
-    const own = byText<HTMLLabelElement>("label", "A choice for this project only").querySelector(
+    const own = byText<HTMLLabelElement>("label", "A choice for this folder only").querySelector(
       "input",
     ) as HTMLInputElement;
     expect(own.checked).toBe(false);
@@ -280,7 +288,7 @@ describe("the choice with its scope", () => {
     expect(tokens.chosen.map((info) => info.id)).toEqual(["gemini"]);
     component = mount(TokenChoice, { target, props: { mode: "both" } });
     flushSync();
-    const own = byText<HTMLLabelElement>("label", "A choice for this project only").querySelector(
+    const own = byText<HTMLLabelElement>("label", "A choice for this folder only").querySelector(
       "input",
     ) as HTMLInputElement;
     expect(own.checked).toBe(true);
@@ -289,11 +297,23 @@ describe("the choice with its scope", () => {
     await until(() => tokens.projectList.length === 0, "the project's list is emptied");
   });
 
-  it("the project card says so when the project has no .permark/", async () => {
+  it("the folder's page: for everyone; without .permark/ greyed beside the offer to set PerMark up", async () => {
     await projectSettings.load(mock);
-    component = mount(TokenChoice, { target, props: { mode: "project" } });
+    component = mount(TokenProject, { target });
     flushSync();
-    expect(text()).toContain("Initialize PerMark in this project");
+    expect(target.querySelector(".scope-chip")?.getAttribute("data-scope")).toBe("everyone");
+    expect(text()).toContain("Initialize PerMark to share this with everyone");
+    expect(text()).toContain("This folder uses the choice made for all folders.");
+    expect(target.querySelector(".shared.off")).not.toBeNull();
+    await unmount(component);
+    component = null;
+    await api.projectInit(workspace.root);
+    await projectSettings.load(mock);
+    component = mount(TokenProject, { target });
+    flushSync();
+    expect(text()).not.toContain("Initialize PerMark to share this with everyone");
+    expect(target.querySelector(".shared.off")).toBeNull();
+    expect(text()).toContain("A choice for this folder only");
   });
 });
 
@@ -367,6 +387,45 @@ describe("the status item", () => {
     expect(text()).toContain("Document");
     expect(text()).toContain("A token is a piece of text a model reads");
     expect(text()).toContain("Show tokens in the outline");
+  });
+
+  it("the popover says whose choice counts: Only you, or Everyone while the project's own is in use", async () => {
+    await choose("claude");
+    await show("README.md");
+    target.querySelector<HTMLButtonElement>(".item")?.click();
+    await until(() => tokens.popover, "open");
+    flushSync();
+    const chip = (): string | null =>
+      target.querySelector(".popover .scope-chip")?.getAttribute("data-scope") ?? null;
+    expect(chip()).toBe("you");
+    await api.projectInit(workspace.root);
+    await projectSettings.load(mock);
+    await tokens.choose("project", ["gemini"]);
+    await until(() => chip() === "everyone", "the project's choice counts");
+    await tokens.choose("project", []);
+    await until(() => chip() === "you", "the person's again");
+  });
+
+  it("ticking a choice for this folder with nothing chosen: the chip says Everyone, the next pick goes to the folder", async () => {
+    await api.projectInit(workspace.root);
+    await projectSettings.load(mock);
+    await show("README.md");
+    target.querySelector<HTMLButtonElement>(".item")?.click();
+    await until(() => tokens.popover, "open");
+    flushSync();
+    const chip = (): string | null =>
+      target.querySelector(".popover .scope-chip")?.getAttribute("data-scope") ?? null;
+    const own = (): HTMLInputElement =>
+      byText<HTMLLabelElement>("label", "A choice for this folder only").querySelector("input")!;
+    expect(chip()).toBe("you");
+    own().click();
+    await until(() => chip() === "everyone", "the folder's choice is the one being made");
+    expect(own().checked).toBe(true);
+    byText<HTMLInputElement>("li", "Gemini").querySelector("input")?.click();
+    await until(() => tokens.projectList.join() === "gemini", "kept in the folder's list");
+    expect(windowStore.tokenizers).toEqual([]);
+    own().click();
+    await until(() => chip() === "you" && tokens.projectList.length === 0, "the person's again");
   });
 
   it("closes on Escape", async () => {

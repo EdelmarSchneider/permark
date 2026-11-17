@@ -1,6 +1,6 @@
 //! `.permark/config.toml`: project settings shared with the team. Read only when `.permark/` is a real folder.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use std::path::PathBuf;
 
@@ -10,7 +10,7 @@ use ts_rs::TS;
 
 use super::{
     edit_file, plugin_tables, read_doc, set_keeping_decor, set_plugin_key, tokenizers_of,
-    tokenizers_value, valid_tokenizers, RawTable, SettingsError,
+    tokenizers_value, valid_tokenizers, SettingsError,
 };
 use crate::paths::Root;
 use crate::plugins::PluginId;
@@ -72,8 +72,13 @@ pub struct ProjectConfig {
     pub tokenizers: Vec<String>,
     /// `[plugins.<id>] enabled = false` (a project may only disable).
     pub plugins_off: BTreeSet<PluginId>,
-    pub plugin_tables: BTreeMap<PluginId, RawTable>,
+    /// `<id>.<key>` of every other plugin key in the file, sorted: a plugin reads its settings from the person's own
+    /// app settings only, so a shared file never changes them for everyone.
+    pub ignored_plugin_keys: Vec<String>,
 }
+
+/// The one plugin key besides `enabled` a project file is read for.
+const TOKENIZERS: (&str, &str) = ("token-count", "tokenizers");
 
 fn strings(item: Option<&Item>) -> Vec<String> {
     item.and_then(Item::as_array)
@@ -118,6 +123,24 @@ impl ProjectConfig {
             .filter(|(_, table)| table.0.get("enabled").and_then(Item::as_bool) == Some(false))
             .map(|(id, _)| id.clone())
             .collect();
+        let mut ignored_plugin_keys: Vec<String> = plugin_tables
+            .iter()
+            .flat_map(|(id, table)| {
+                table
+                    .0
+                    .iter()
+                    // `enabled` is read only as true | false: any other value turns nothing off
+                    .filter(|(key, value)| {
+                        if *key == "enabled" {
+                            value.as_bool().is_none()
+                        } else {
+                            (id.as_str(), *key) != TOKENIZERS
+                        }
+                    })
+                    .map(move |(key, _)| format!("{id}.{key}"))
+            })
+            .collect();
+        ignored_plugin_keys.sort();
         Self {
             tree,
             ignore: strings(doc.get("ignore")),
@@ -126,12 +149,12 @@ impl ProjectConfig {
                 .collect(),
             agent_deny_paths: strings(agent.and_then(|t| t.get("deny_paths"))),
             tokenizers: tokenizers_of(
-                PluginId::parse("token-count")
+                PluginId::parse(TOKENIZERS.0)
                     .and_then(|id| plugin_tables.get(&id))
                     .map(|table| &table.0),
             ),
             plugins_off,
-            plugin_tables,
+            ignored_plugin_keys,
         }
     }
 }
@@ -154,6 +177,8 @@ pub struct ProjectSettings {
     pub agent_deny: Vec<String>,
     pub agent_deny_paths: Vec<String>,
     pub tokenizers: Vec<String>,
+    /// Plugin keys of the file no plugin reads (`<id>.<key>`, sorted).
+    pub ignored_plugin_keys: Vec<String>,
 }
 
 impl ProjectSettings {
@@ -166,6 +191,7 @@ impl ProjectSettings {
             agent_deny: config.agent_deny.iter().cloned().collect(),
             agent_deny_paths: config.agent_deny_paths.clone(),
             tokenizers: config.tokenizers.clone(),
+            ignored_plugin_keys: config.ignored_plugin_keys.clone(),
         }
     }
 }
@@ -185,26 +211,33 @@ pub enum ProjectSettingChange {
     AgentDenyPaths(Vec<String>),
     /// The token count's tokenizers for this project (empty = the app's choice; key removed).
     Tokenizers(Vec<String>),
+    /// A plugin off for everyone in this project (`enabled = false`); `off: false` removes the key (a project can only
+    /// turn a plugin off, never on).
+    PluginOff {
+        plugin: PluginId,
+        off: bool,
+    },
 }
 
 impl ProjectSettingChange {
     /// Key path as written in the file.
     #[must_use]
-    pub fn key(&self) -> &'static str {
+    pub fn key(&self) -> String {
         match self {
-            Self::TreeShow(_) => "tree.show",
-            Self::TreeInclude(_) => "tree.include",
-            Self::TreeExclude(_) => "tree.exclude",
-            Self::Ignore(_) => "ignore",
-            Self::AgentDeny(_) => "agent.deny",
-            Self::AgentDenyPaths(_) => "agent.deny_paths",
-            Self::Tokenizers(_) => "plugins.token-count.tokenizers",
+            Self::TreeShow(_) => "tree.show".to_owned(),
+            Self::TreeInclude(_) => "tree.include".to_owned(),
+            Self::TreeExclude(_) => "tree.exclude".to_owned(),
+            Self::Ignore(_) => "ignore".to_owned(),
+            Self::AgentDeny(_) => "agent.deny".to_owned(),
+            Self::AgentDenyPaths(_) => "agent.deny_paths".to_owned(),
+            Self::Tokenizers(_) => format!("plugins.{}.{}", TOKENIZERS.0, TOKENIZERS.1),
+            Self::PluginOff { plugin, .. } => format!("plugins.{plugin}.enabled"),
         }
     }
 
     fn list(&self) -> Option<&[String]> {
         match self {
-            Self::TreeShow(_) | Self::Tokenizers(_) => None,
+            Self::TreeShow(_) | Self::Tokenizers(_) | Self::PluginOff { .. } => None,
             Self::TreeInclude(v)
             | Self::TreeExclude(v)
             | Self::Ignore(v)
@@ -220,7 +253,7 @@ impl ProjectSettingChange {
     /// (a control character) | `group` (an agent group name that is not `name` or `name.name`).
     pub fn validate(&self) -> Result<(), SettingsError> {
         let invalid = |reason: &str| SettingsError::Invalid {
-            key: self.key().to_owned(),
+            key: self.key(),
             reason: reason.to_owned(),
         };
         if let Self::Tokenizers(ids) = self {
@@ -370,10 +403,13 @@ fn change_keys(doc: &mut DocumentMut, change: &ProjectSettingChange) {
         ProjectSettingChange::Tokenizers(ids) => {
             set_plugin_key(
                 root,
-                &PluginId::of("token-count"),
-                "tokenizers",
+                &PluginId::of(TOKENIZERS.0),
+                TOKENIZERS.1,
                 tokenizers_value(ids),
             );
+        }
+        ProjectSettingChange::PluginOff { plugin, off } => {
+            set_plugin_key(root, plugin, "enabled", off.then(|| Value::from(false)));
         }
     }
 }
@@ -412,7 +448,7 @@ impl ProjectConfigFile {
         }
         if std::fs::symlink_metadata(&self.path).is_ok_and(|m| m.file_type().is_symlink()) {
             return Err(SettingsError::Invalid {
-                key: change.key().to_owned(),
+                key: change.key(),
                 reason: "link".to_owned(),
             });
         }

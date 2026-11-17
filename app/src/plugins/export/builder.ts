@@ -12,6 +12,7 @@ import { webPictures } from "../../core/doc/webPictures.svelte";
 import { contributions } from "../../core/plugins/instance.svelte";
 import { fetchDataUri } from "./assets";
 import { exportCss } from "./look";
+import { columnWidths, fitColumns, FIT_TABLE, measureColumns } from "../../core/doc/tableColumns";
 
 export type ExportTarget = "paper" | "html";
 
@@ -65,6 +66,8 @@ const SETTLE_MS = 60_000;
 const QUIET_MS = 150;
 const POLL_MS = 30;
 const DECODE_MS = 10_000;
+/** Font of a table wider than the printable width, before its columns are shared out. */
+const WIDE_TABLE_FONT = "0.85em";
 /** Embeds that say they are still drawing: a diagram's figure, a code block waiting for its colors. */
 const BUSY = ".figure.is-pending, [aria-busy='true']";
 const KEPT_LINK = /^(?:https?:|mailto:|#)/i;
@@ -239,7 +242,7 @@ export async function buildExport(
       signal,
     );
     signal?.throwIfAborted();
-    if (paper) markWideTables(light.body);
+    if (paper) fitTables(light.body);
 
     const page = light.body.cloneNode(true);
     if (!(page instanceof HTMLElement)) return cancelled;
@@ -273,10 +276,20 @@ export async function buildExport(
   }
 }
 
-/** A table wider than the printable width gets a smaller font on paper. */
-function markWideTables(root: HTMLElement): void {
+/**
+ * A table wider than the printable width gets a smaller font. Any table whose lines do not all fit the page then gets
+ * column widths from its measured content (`core/doc/tableColumns.ts`): paper's cells may break inside a word, which
+ * would let the browser squeeze a column of short words to a letter or two. Measured here, where the page lays out at
+ * paper width.
+ */
+function fitTables(root: HTMLElement): void {
   for (const wrap of root.querySelectorAll<HTMLElement>(".table-wrap")) {
-    if (wrap.scrollWidth > wrap.clientWidth + 1) wrap.classList.add("pm-wide-table");
+    const table = wrap.firstElementChild;
+    if (!(table instanceof HTMLTableElement)) continue;
+    if (wrap.scrollWidth > wrap.clientWidth + 1) table.style.fontSize = WIDE_TABLE_FONT;
+    const columns = measureColumns(table);
+    const widths = columns && columnWidths(columns, wrap.clientWidth);
+    if (widths) fitColumns(table, widths, FIT_TABLE);
   }
 }
 

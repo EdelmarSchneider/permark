@@ -903,13 +903,17 @@ fn a_language_tag_reads_as_the_app_language_it_stands_for() {
         (&["vi", "vi-VN"], LanguagePref::Vi),
         (&["ru", "ru-RU", "ru_UA"], LanguagePref::Ru),
         (&["tr", "tr-TR", "TR_cy"], LanguagePref::Tr),
+        (&["pl", "pl-PL", "PL_pl"], LanguagePref::Pl),
+        // Ukrainian never falls to Russian, wherever the region
+        (&["uk", "uk-UA", "uk_RU", "UK-ua"], LanguagePref::Uk),
     ] {
         for tag in tags {
             assert_eq!(of(tag), Some(language), "{tag}");
         }
     }
     for tag in [
-        "", "-", "_x", "jpn", "kor", "rom", "ind", "vie", "rus", "tur", "zho-TW", "sv-SE",
+        "", "-", "_x", "jpn", "kor", "rom", "ind", "vie", "rus", "tur", "pol", "ukr", "zho-TW",
+        "sv-SE",
     ] {
         assert_eq!(of(tag), None, "{tag:?}");
     }
@@ -917,6 +921,10 @@ fn a_language_tag_reads_as_the_app_language_it_stands_for() {
     assert_eq!(
         LanguagePref::System.resolve(&["sv-SE", "zh-HK"]),
         LanguagePref::ZhTw
+    );
+    assert_eq!(
+        LanguagePref::System.resolve(&["uk-UA", "ru-RU"]),
+        LanguagePref::Uk
     );
     assert_eq!(LanguagePref::System.resolve(&["sv-SE"]), LanguagePref::En);
     assert_eq!(LanguagePref::System.resolve::<&str>(&[]), LanguagePref::En);
@@ -961,6 +969,8 @@ fn installer_codes_are_one_of_the_apps_languages_and_nothing_else() {
     assert_eq!(language_from_code("ca"), Some(LanguagePref::Ca));
     assert_eq!(language_from_code("gl"), Some(LanguagePref::Gl));
     assert_eq!(language_from_code("ro"), Some(LanguagePref::Ro));
+    assert_eq!(language_from_code("pl"), Some(LanguagePref::Pl));
+    assert_eq!(language_from_code("uk"), Some(LanguagePref::Uk));
     assert_eq!(
         language_from_code("de\0"),
         None,
@@ -1083,6 +1093,7 @@ fn removing_every_project_setting_gives_the_file_back_byte_for_byte() {
         ProjectSettingChange::AgentDeny(list(&["notes"])),
         ProjectSettingChange::AgentDenyPaths(list(&["d"])),
         ProjectSettingChange::Tokenizers(list(&["gemini"])),
+        plugin_off("comments", true),
     ];
     for change in &changes {
         text = project_applied(&text, change);
@@ -1096,6 +1107,7 @@ fn removing_every_project_setting_gives_the_file_back_byte_for_byte() {
         ProjectSettingChange::AgentDeny(Vec::new()),
         ProjectSettingChange::AgentDenyPaths(Vec::new()),
         ProjectSettingChange::Tokenizers(Vec::new()),
+        plugin_off("comments", false),
     ];
     for change in &clears {
         text = project_applied(&text, change);
@@ -1151,6 +1163,97 @@ fn a_project_write_keeps_hand_edits_comments_unknown_keys_and_crlf() {
     );
     assert!(out.contains("future = 1") && out.contains("enabled = false"));
     assert!(!out.replace("\r\n", "").contains('\n'), "CRLF kept");
+}
+
+fn plugin_off(id: &'static str, off: bool) -> ProjectSettingChange {
+    ProjectSettingChange::PluginOff {
+        plugin: PluginId::of(id),
+        off,
+    }
+}
+
+#[test]
+fn a_team_file_lists_the_plugin_keys_it_holds_that_are_not_read() {
+    let text = "[plugins.git]\nbackend = \"cli\"\nenabled = false\n\n[plugins.token-count]\ntokenizers = [\"claude\"]\nextra = 1\n\n[plugins.comments]\nenabled = true\n\n[plugins.agent]\nzeta = 1\nalpha = 2\n";
+    let config = ProjectConfig::from_doc(&doc(text));
+    let expected = list(&[
+        "agent.alpha",
+        "agent.zeta",
+        "git.backend",
+        "token-count.extra",
+    ]);
+    assert_eq!(config.ignored_plugin_keys, expected);
+    let settings = ProjectSettings::of(true, &config);
+    assert_eq!(settings.ignored_plugin_keys, expected);
+    let json = serde_json::to_value(&settings).unwrap();
+    assert_eq!(json["ignoredPluginKeys"][2], "git.backend");
+    // only on | off and the tokenizers are read: nothing to list
+    let read = "[plugins.git]\nenabled = false\n[plugins.token-count]\ntokenizers = [\"o200k\"]\n";
+    assert_eq!(
+        ProjectConfig::from_doc(&doc(read)).ignored_plugin_keys,
+        Vec::<String>::new()
+    );
+    // an `enabled` that is no true | false turns nothing off: listed, so the page says it is not used
+    let odd = "[plugins.git]\nenabled = \"no\"\n[plugins.comments]\nenabled = 0\n";
+    let config = ProjectConfig::from_doc(&doc(odd));
+    assert_eq!(
+        config.ignored_plugin_keys,
+        list(&["comments.enabled", "git.enabled"])
+    );
+    assert!(config.plugins_off.is_empty());
+}
+
+#[test]
+fn off_for_everyone_writes_enabled_false_and_back_gives_the_file_back() {
+    let off = project_applied(DEFAULT_CONFIG_TOML, &plugin_off("git", true));
+    assert_eq!(
+        off,
+        format!("{DEFAULT_CONFIG_TOML}[plugins.git]\nenabled = false\n")
+    );
+    let config = ProjectConfig::from_doc(&doc(&off));
+    assert!(config.plugins_off.contains(&PluginId::of("git")));
+    assert_eq!(config.ignored_plugin_keys, Vec::<String>::new());
+    let back = project_applied(&off, &plugin_off("git", false));
+    assert_eq!(back, DEFAULT_CONFIG_TOML, "nothing of ours is left behind");
+    // the team's other keys of that plugin, their comments and the line ends stay
+    let hand = "# team\r\n[plugins.git]\r\nbackend = \"cli\" # CI has no libgit2\r\n\r\n[tree]\r\nshow = \"documents\"\r\n";
+    let off = project_applied(hand, &plugin_off("git", true));
+    assert_eq!(
+        off,
+        hand.replace(
+            "# CI has no libgit2\r\n",
+            "# CI has no libgit2\r\nenabled = false\r\n"
+        )
+    );
+    assert_eq!(project_applied(&off, &plugin_off("git", false)), hand);
+    // a value already there keeps its comment
+    let paused = "[plugins.git]\nenabled = true # paused\n";
+    assert_eq!(
+        project_applied(paused, &plugin_off("git", true)),
+        "[plugins.git]\nenabled = false # paused\n"
+    );
+    // back on when it was never off: nothing changes
+    assert_eq!(project_applied(hand, &plugin_off("git", false)), hand);
+}
+
+#[test]
+fn off_for_everyone_names_its_key_and_reads_from_the_view() {
+    assert_eq!(plugin_off("git", true).key(), "plugins.git.enabled");
+    let change: ProjectSettingChange = serde_json::from_value(serde_json::json!({
+        "key": "pluginOff",
+        "value": { "plugin": "broken-links", "off": true }
+    }))
+    .unwrap();
+    assert_eq!(change, plugin_off("broken-links", true));
+    assert!(change.validate().is_ok());
+    // an id that is no plugin id never reads
+    assert!(
+        serde_json::from_value::<ProjectSettingChange>(serde_json::json!({
+            "key": "pluginOff",
+            "value": { "plugin": "Not An Id", "off": true }
+        }))
+        .is_err()
+    );
 }
 
 #[test]

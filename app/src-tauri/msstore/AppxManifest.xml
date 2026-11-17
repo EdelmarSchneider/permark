@@ -54,6 +54,8 @@
     <Resource Language="vi" />
     <Resource Language="ru" />
     <Resource Language="tr" />
+    <Resource Language="pl" />
+    <Resource Language="uk" />
   </Resources>
 
   <Applications>

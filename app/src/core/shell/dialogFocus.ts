@@ -85,7 +85,9 @@ export function dialogFocus(
   options: DialogFocusOptions = {},
 ): ActionReturn<DialogFocusOptions> {
   let current = options;
-  const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  // the body is no opener: what had the keyboard went before the dialog came (a popover that closed as it opened it)
+  const active = document.activeElement;
+  const opener = active instanceof HTMLElement && active !== document.body ? active : null;
   enter(node, current.initial);
   const off = on(node, "keydown", (event) => {
     if (event.defaultPrevented || isComposition(event)) return;

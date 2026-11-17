@@ -12,14 +12,14 @@
 </script>
 
 <section class="group" aria-labelledby="int-core-default-app">
-  <h3 id="int-core-default-app">{t("defaultApp.title")}</h3>
+  <h4 id="int-core-default-app">{t("defaultApp.title")}</h4>
   <Card>
     <DefaultAppCard />
   </Card>
 </section>
 {#each sections as section (section.owner + section.id)}
   <section class="group" aria-labelledby={`int-${section.owner}-${section.id}`}>
-    <h3 id={`int-${section.owner}-${section.id}`}>{t(section.label)}</h3>
+    <h4 id={`int-${section.owner}-${section.id}`}>{t(section.label)}</h4>
     <Card>
       {#await section.view() then loaded}
         {@const Section = loaded.default}
@@ -33,7 +33,7 @@
   .group + .group {
     margin-top: var(--sp-5);
   }
-  h3 {
+  h4 {
     margin: 0 0 var(--sp-2);
     padding-left: var(--sp-1);
     color: var(--muted);

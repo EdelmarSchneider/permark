@@ -97,6 +97,37 @@ fn a_sanitized_dictionary_loads() {
 }
 
 #[test]
+fn a_numeric_flag_zero_is_renumbered_in_both_files() {
+    let aff = "SET UTF-8\r\nFLAG num\r\nSFX 0 N 1\r\nSFX 0 0 de/7 .\r\n\r\nSFX 7 N 1\r\nSFX 7 0 ki .\r\nNEEDAFFIX 0\r\n";
+    let dic = "3\nev/0,7\nkitap/7,0 po:noun\nsu\n";
+    assert!(Dictionary::new(aff, dic).is_err());
+    let (fixed_aff, fixed_dic) = readable(aff, dic);
+    // the next number after the highest flag; every other byte (line ends, strip `0`) stays
+    assert_eq!(
+        fixed_aff,
+        "SET UTF-8\r\nFLAG num\r\nSFX 8 N 1\r\nSFX 8 0 de/7 .\r\n\r\nSFX 7 N 1\r\nSFX 7 0 ki .\r\nNEEDAFFIX 8\r\n"
+    );
+    assert_eq!(fixed_dic, "3\nev/8,7\nkitap/7,8 po:noun\nsu\n");
+    let dictionary = Dictionary::new(&fixed_aff, &fixed_dic).unwrap();
+    assert!(dictionary.check("evde"));
+    assert!(dictionary.check("evdeki"));
+    assert!(dictionary.check("kitapki"));
+    assert!(!dictionary.check("ev"));
+    // no flag 0, other flag kinds, aliased flags: the files as they are
+    for (aff, dic) in [
+        ("FLAG num\nSFX 1 N 1\nSFX 1 0 s .\n", "1\nev/1\n"),
+        ("SET UTF-8\nSFX A N 1\nSFX A 0 s .\n", "1\nev/A\n"),
+        ("FLAG num\nAF 1\nAF 0,1\n", "1\nev/1\n"),
+    ] {
+        let (a, d) = readable(aff, dic);
+        assert!(
+            matches!((a, d), (Cow::Borrowed(_), Cow::Borrowed(_))),
+            "{aff}"
+        );
+    }
+}
+
+#[test]
 fn spaced_suggestions_need_every_part_to_be_a_word() {
     let known = |w: &str| ["usa", "de", "a"].contains(&w);
     assert!(keep_suggestion("usada", known));
@@ -196,7 +227,10 @@ fn the_official_table_builds_a_unit_per_language() {
     }
     assert_eq!(
         OFFICIAL.iter().map(|l| l.id).collect::<Vec<_>>(),
-        ["en", "en-GB", "pt-BR", "pt-PT", "es", "fr", "de", "it", "ca", "gl", "ro"]
+        [
+            "en", "en-GB", "pt-BR", "pt-PT", "es", "fr", "de", "it", "ca", "gl", "ro", "pl", "ru",
+            "tr", "uk", "vi"
+        ]
     );
 }
 
@@ -733,6 +767,11 @@ fn the_official_dictionaries_load() {
         ("ca", "casa"),
         ("gl", "casa"),
         ("ro", "știință"),
+        ("pl", "książka"),
+        ("ru", "молоко"),
+        ("tr", "ağaç"),
+        ("uk", "будинок"),
+        ("vi", "người"),
     ];
     for language in OFFICIAL {
         let (_, _, dictionary) = official(Path::new(&root), language);
@@ -745,6 +784,73 @@ fn the_official_dictionaries_load() {
     }
 }
 
+/// The real dictionaries with complex affix rules or other scripts: each loads in a few seconds at most, knows the
+/// words of its script (Turkish dotted and dotless i, Ukrainian with every apostrophe form, Vietnamese in decomposed
+/// form too), flags a typo and corrects it. Needs the files like [`the_official_dictionaries_load`]; prints the load time of each.
+#[test]
+#[ignore = "needs the downloaded dictionaries"]
+fn the_other_script_dictionaries_check_and_correct() {
+    let Ok(root) = std::env::var("SPELLING_DICTS") else {
+        return;
+    };
+    let cases: [(&str, &[&str], &str, &str); 5] = [
+        (
+            "pl",
+            &["dom", "książka", "źródło", "Łódź", "żółć"],
+            "dzien",
+            "dzień",
+        ),
+        (
+            "ru",
+            &["дом", "книга", "ещё", "съезд", "Москва"],
+            "малоко",
+            "молоко",
+        ),
+        (
+            "tr",
+            &[
+                "ev",
+                "evde",
+                "kitap",
+                "ağaç",
+                "ılık",
+                "ışık",
+                "güzel",
+                "İstanbul",
+            ],
+            "guzel",
+            "güzel",
+        ),
+        (
+            "uk",
+            &["будинок", "їжак", "ґанок", "м'ясо", "мʼясо", "м’ясо"],
+            "будинак",
+            "будинок",
+        ),
+        (
+            "vi",
+            &["nhà", "người", "Việt", "nha\u{300}", "đường"],
+            "ngừoi",
+            "người",
+        ),
+    ];
+    for (id, known, typo, fix) in cases {
+        let language = OFFICIAL.into_iter().find(|l| l.id == id).unwrap();
+        let started = Instant::now();
+        let (_, _, dictionary) = official(Path::new(&root), language);
+        let took = started.elapsed();
+        println!("{id}: loaded in {took:?}, {} bytes", language.bytes());
+        assert!(took < Duration::from_secs(3), "{id} loads in {took:?}");
+        for word in known {
+            assert!(dictionary.check(&normalize(word, id)), "{id}: {word}");
+        }
+        assert!(!dictionary.check(&normalize(typo, id)), "{id}: {typo}");
+        let mut found = Vec::new();
+        dictionary.suggest(&normalize(typo, id), &mut found);
+        assert!(found.iter().any(|s| s == fix), "{id}: {typo} -> {found:?}");
+    }
+}
+
 /// The pinned files of `language` under `root` (checked against the pins) and its dictionary, loaded as the plugin
 /// loads it: `(aff, dic, dictionary)`.
 fn official(root: &Path, language: Language) -> (String, String, Dictionary) {
@@ -753,9 +859,9 @@ fn official(root: &Path, language: Language) -> (String, String, Dictionary) {
     let dic = std::fs::read_to_string(dir.join("index.dic")).unwrap();
     assert_eq!(pin_of(&aff), language.aff, "{}", language.id);
     assert_eq!(pin_of(&dic), language.dic, "{}", language.id);
-    let fixed = sanitize_dic(&dic, FlagKind::of(&aff));
+    let (fixed_aff, fixed_dic) = readable(&aff, &dic);
     let dictionary =
-        Dictionary::new(&aff, &fixed).unwrap_or_else(|e| panic!("{}: {e}", language.id));
+        Dictionary::new(&fixed_aff, &fixed_dic).unwrap_or_else(|e| panic!("{}: {e}", language.id));
     (aff, dic, dictionary)
 }
 

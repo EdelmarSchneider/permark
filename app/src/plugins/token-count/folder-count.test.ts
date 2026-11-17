@@ -522,7 +522,7 @@ describe("what the plugin adds", () => {
     expect(kinds).toEqual([
       "command",
       "outlineColumn",
-      "projectSection",
+      "settingsPage",
       "settingsSection",
       "statusItem",
       "treeBadge",

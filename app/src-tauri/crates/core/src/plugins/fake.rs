@@ -9,10 +9,14 @@ use crate::conditions::Requirement;
 /// Shared log of lifecycle events: `"start:<id>"`, `"stop:<id>"`.
 pub(crate) type Log = Arc<Mutex<Vec<String>>>;
 
+/// The settings table each start was handed (`None`: no table).
+pub(crate) type Seen = Arc<Mutex<Vec<Option<toml_edit::Table>>>>;
+
 pub(crate) struct Fake {
     manifest: Manifest,
     pub(crate) log: Log,
     pub(crate) fail: bool,
+    seen: Option<Seen>,
 }
 
 impl Fake {
@@ -28,11 +32,17 @@ impl Fake {
             },
             log: Log::default(),
             fail: false,
+            seen: None,
         }
     }
 
     pub(crate) fn with_log(mut self, log: &Log) -> Self {
         self.log = Arc::clone(log);
+        self
+    }
+
+    pub(crate) fn seeing(mut self, seen: &Seen) -> Self {
+        self.seen = Some(Arc::clone(seen));
         self
     }
 
@@ -84,6 +94,9 @@ impl Plugin for Fake {
         }
         if let Ok(mut log) = self.log.lock() {
             log.push(format!("start:{}", cx.id));
+        }
+        if let Some(mut seen) = self.seen.as_ref().and_then(|seen| seen.lock().ok()) {
+            seen.push(cx.settings.clone());
         }
         Ok(Box::new(FakeRunning {
             id: cx.id.clone(),

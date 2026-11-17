@@ -2,7 +2,9 @@
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockView } from "../../api/mockDocs";
-import type { NewValue, Sheet } from "../../api";
+import type { ConfigEdit, NewValue, Sheet } from "../../api";
+import { OPEN_BUDGET } from "../doc/tree";
+import { bigSheet } from "../testing/sheets";
 import ConfigSheet from "./ConfigSheet.svelte";
 
 let target: HTMLElement;
@@ -28,6 +30,8 @@ type Props = {
   add?: (after: string | null, text: string) => Promise<string | null>;
   source?: ((line: number) => void) | null;
   matches?: ReadonlyMap<number, number> | null;
+  edit?: (edit: ConfigEdit) => Promise<string | null>;
+  spread?: boolean;
 };
 
 async function show(sheet: Sheet, props: Props = {}): Promise<HTMLElement> {
@@ -255,5 +259,84 @@ describe("ignore files", () => {
     }
     await tick();
     expect(add).toHaveBeenLastCalledWith(null, "*.bak");
+  });
+});
+
+describe("Expand all and Collapse all", () => {
+  const folds = (root: HTMLElement): (string | null)[] =>
+    Array.from(root.querySelectorAll(".fold")).map((b) => b.getAttribute("aria-expanded"));
+  const press = (root: HTMLElement, name: RegExp): void => {
+    const button = Array.from(root.querySelectorAll<HTMLButtonElement>(".spread")).find((b) =>
+      name.test(b.textContent ?? ""),
+    );
+    if (!button) throw new Error(`no button ${name}`);
+    button.click();
+    flushSync();
+  };
+
+  it("sit above the cards of a whole document only, and only when cards can fold", async () => {
+    let root = await show(sheetOf("Cargo.toml"), { spread: true });
+    expect(root.querySelectorAll(".spread")).toHaveLength(2);
+    expect(root.querySelector(".sheet > .bar .spread")).not.toBeNull();
+    root = await show(sheetOf("Cargo.toml"));
+    expect(root.querySelector(".spread")).toBeNull();
+    // one card without a header: nothing to fold
+    const [only] = bigSheet(1, 3).groups;
+    if (!only) throw new Error("no card");
+    root = await show(
+      { kind: "config", groups: [{ ...only, path: "", title: "" }] },
+      { spread: true },
+    );
+    expect(root.querySelector(".spread")).toBeNull();
+  });
+
+  it("open a small document fully; fold and open every card; a card still folds alone after", async () => {
+    const root = await show(sheetOf("Cargo.toml"), { spread: true });
+    expect(folds(root).every((f) => f === "true")).toBe(true);
+    press(root, /collapse all/i);
+    expect(folds(root).every((f) => f === "false")).toBe(true);
+    expect(root.querySelectorAll("h3")).toHaveLength(4);
+    expect(root.querySelector(".row")).toBeNull();
+    press(root, /expand all/i);
+    expect(folds(root).every((f) => f === "true")).toBe(true);
+    root.querySelector<HTMLButtonElement>(".fold")?.click();
+    flushSync();
+    expect(folds(root)).toEqual(["false", "true", "true", "true"]);
+    press(root, /collapse all/i);
+    root.querySelectorAll<HTMLButtonElement>(".fold")[2]?.click();
+    flushSync();
+    expect(folds(root)).toEqual(["false", "false", "true", "false"]);
+  });
+
+  it("open a big document with only the leading cards that fit; Expand all opens the rest", async () => {
+    const sheet = bigSheet(8, Math.ceil(OPEN_BUDGET / 5));
+    const root = await show(sheet, { spread: true });
+    const shown = folds(root);
+    expect(shown[0]).toBe("true");
+    expect(shown.at(-1)).toBe("false");
+    expect(root.querySelectorAll(".row").length).toBeLessThanOrEqual(OPEN_BUDGET);
+    press(root, /expand all/i);
+    expect(folds(root).every((f) => f === "true")).toBe(true);
+  });
+
+  it("keep every card open in an embedded sheet, as before", async () => {
+    const root = await show(bigSheet(8, Math.ceil(OPEN_BUDGET / 5)));
+    expect(folds(root).every((f) => f === "true")).toBe(true);
+  });
+
+  it("change only what is shown, never the text, while values take typing", async () => {
+    const calls = vi.fn(() => Promise.resolve(null));
+    const root = await show(sheetOf("Cargo.toml"), {
+      spread: true,
+      editable: true,
+      commit: calls,
+      remove: calls,
+      add: calls,
+      edit: calls,
+    });
+    press(root, /collapse all/i);
+    press(root, /expand all/i);
+    expect(calls).not.toHaveBeenCalled();
+    expect(rowOf(root, "name").textContent).toContain("docs-site");
   });
 });

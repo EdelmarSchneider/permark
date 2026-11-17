@@ -3,7 +3,8 @@
 // is not; an approximate number is always marked. A folder can be counted from the Explorer (a guard asks first when
 // it is big; the count never blocks the app). On by default (director 2026-10-20); off, it leaves nothing on screen.
 
-import { NO_REQUIREMENT } from "../../core/conditions/available";
+import Hash from "@lucide/svelte/icons/hash";
+import { NO_REQUIREMENT, type Requirement } from "../../core/conditions/available";
 import { documents } from "../../core/doc/document.svelte";
 import { explorerSelectedFolder } from "../../core/explorer/current";
 import { definePlugin } from "../../core/plugins/registry.svelte";
@@ -12,6 +13,8 @@ import { parentOf } from "./folders";
 import { folders } from "./folders.svelte";
 import { sections } from "./sections.svelte";
 import { tokens } from "./store.svelte";
+
+const PROJECT: Requirement = { needs: [{ need: "workspace", kinds: ["project"] }], prefers: [] };
 
 export default definePlugin({
   manifest: { id: "token-count", kind: "analysis", dependsOn: [] },
@@ -34,11 +37,15 @@ export default definePlugin({
         requires: NO_REQUIREMENT,
         view: () => import("./TokenSettings.svelte"),
       }),
+      // the folder's own choice, for everyone who opens it: a page of the folder's group
       cx.contribute({
-        kind: "projectSection",
+        kind: "settingsPage",
         id: "token-count.project",
         label: "tokens.section",
-        requires: NO_REQUIREMENT,
+        icon: Hash,
+        group: "folder",
+        order: 40,
+        requires: PROJECT,
         view: () => import("./TokenProject.svelte"),
       }),
       cx.contribute({

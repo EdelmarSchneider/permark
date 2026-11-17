@@ -34,7 +34,7 @@ async function until(check: () => boolean, what: string): Promise<void> {
 
 function card(): HTMLElement {
   const found = Array.from(target.querySelectorAll<HTMLElement>("section")).find(
-    (s) => s.querySelector("h3")?.textContent === "Storage",
+    (s) => s.querySelector("h4")?.textContent === "Storage",
   );
   if (!found) throw new Error("no Storage card");
   return found;

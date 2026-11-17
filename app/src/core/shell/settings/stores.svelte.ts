@@ -57,6 +57,11 @@ class ProjectSettingsStore {
   clearProblem(): void {
     this.problem = null;
   }
+
+  /** The shared file sets plugin key `key` (`<id>.<key>`), which no plugin reads: the person's own value applies. */
+  ignores(key: string): boolean {
+    return this.state.status === "ready" && this.state.settings.ignoredPluginKeys.includes(key);
+  }
 }
 
 export const projectSettings = new ProjectSettingsStore();
@@ -78,6 +83,28 @@ class PluginsStore {
     this.state = result.ok
       ? { status: "ready", plugins: result.value }
       : { status: "failed", error: result.error };
+  }
+
+  /** Reads the list now and again whenever the plugins or the conditions of window `label` change (another window's
+   *  conditions are not this list's); returns what stops following. */
+  follow(label: string, backend: Api = api): () => void {
+    void this.load(backend);
+    const offs: (() => void)[] = [];
+    let gone = false;
+    const keep = (off: () => void): void => {
+      if (gone) off();
+      else offs.push(off);
+    };
+    void backend.on("plugins-changed", () => void this.load(backend)).then(keep);
+    void backend
+      .on("context-changed", (e) => {
+        if (e.window === label) void this.load(backend);
+      })
+      .then(keep);
+    return () => {
+      gone = true;
+      for (const off of offs) off();
+    };
   }
 }
 

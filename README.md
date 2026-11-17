@@ -221,7 +221,7 @@ PerMark becomes your default app for Markdown only if you choose it: it asks onc
 unchecked. On Windows, you confirm the choice in Windows Settings.
 
 **Coming from TrailMark?** The command is now `permark`. If an agent is set up with the old `trailmark` command, run the setup
-lines from **Settings → Integration → Agent connection** again. PerMark 0.6 no longer renames old `.trailmark/` folders: update
+lines from **Settings → AI agents** again. PerMark 0.6 no longer renames old `.trailmark/` folders: update
 to 0.5.8 before you update to 0.6.
 
 <details>
@@ -264,7 +264,7 @@ that speaks the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
 
 **What it shares, and how it stays in your hands:**
 
-- **Off until you turn it on, per project.** Choose **Share this project with agents** in **Settings → Integration → Agent connection**,
+- **Off until you turn it on, per project.** Choose **Share this folder with agents** in **Settings → AI agents**,
   or run **Agent connection: turn on** from the command palette. Nothing inside a project can turn it on.
 - **Local.** It talks only to programs on your computer and opens no network port.
 - **Read, never edit.** The agent sees where you are, what you selected, what changed, your comments and the notes you shared one
@@ -438,6 +438,9 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 
 **PerMark 0.6** rebuilt the whole program. Every release is in the [CHANGELOG](CHANGELOG.md).
 
+- **0.14.0:** Settings split into **App** and **This folder**, with each folder setting saying whether it is for everyone or only you;
+  table columns sized by what they hold; **Expand all** and **Collapse all** in JSON, XML and config trees; spelling in five
+  more languages (16 in all); Polish and Ukrainian in the interface (20 languages); and the demo pages one click away.
 - **0.13.0:** spelling while you edit, with 11 dictionaries that download only when you choose a language; **Save as PDF**,
   **Save as HTML** and **Print**; a refreshed look with a clearer Notes button; more Markdown on the page: Obsidian-style callouts
   that fold, `:::` containers, highlights, emoji shortcodes, inline footnotes, code block titles and line numbers, Graphviz

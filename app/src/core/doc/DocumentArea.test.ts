@@ -460,17 +460,18 @@ describe("other kinds of file", () => {
     await until(() => target.querySelector(".text .lang")?.textContent === "Rust", "highlight");
   });
 
-  it("shows JSON as a tree you can open, and the text on demand", async () => {
+  it("shows a small JSON file as an open tree you can fold, and the text on demand", async () => {
     await show("package.json");
     await until(() => target.querySelector(".structured [role=tree]") !== null, "tree");
     const rows = [...target.querySelectorAll(".structured .label")].map((el) => el.textContent);
     expect(rows).toEqual(expect.arrayContaining(["name", "version", "scripts"]));
+    expect(target.querySelector(".structured")?.textContent).toContain("build");
     const toggle = [...target.querySelectorAll<HTMLButtonElement>(".structured .head")].find((b) =>
       b.textContent?.includes("scripts"),
     );
     toggle?.click();
     await tick();
-    expect(target.querySelector(".structured")?.textContent).toContain("build");
+    expect(target.querySelector(".structured")?.textContent).not.toContain("build");
     [...target.querySelectorAll<HTMLButtonElement>(".structured .segment")]
       .find((b) => b.textContent === "Source")
       ?.click();

@@ -57,7 +57,7 @@ pub const DEFAULT_CONFIG_TOML: &str = "\
 # deny = [\"notes\"]
 
 # Turn a plugin off for everyone in this project.
-# [plugins.word-count]
+# [plugins.comments]
 # enabled = false
 ";
 
