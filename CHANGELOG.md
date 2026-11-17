@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-17
+
 ### Added
 - **Open the demo pages at any time.** The quick settings menu and the command palette have **Open the demo pages**, also after you used or closed the offer on the start screen. If the folder is gone from Documents, PerMark copies the pages there again first. <!-- f: start-screen -->
 - **Expand all and Collapse all.** JSON, XML and JSONL trees, and YAML, TOML, INI and properties sheets, have **Expand all** and **Collapse all** beside the view options. A document now opens expanded when it is small enough; a very large one opens its first levels so it stays fast. <!-- f: view-mode -->

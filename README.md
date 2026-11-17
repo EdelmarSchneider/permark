@@ -438,6 +438,9 @@ All of them, and you can change them, in **Settings → Keyboard shortcuts**.
 
 **PerMark 0.6** rebuilt the whole program. Every release is in the [CHANGELOG](CHANGELOG.md).
 
+- **0.14.0:** Settings split into **App** and **This folder**, with each folder setting saying whether it is for everyone or only you;
+  table columns sized by what they hold; **Expand all** and **Collapse all** in JSON, XML and config trees; spelling in five
+  more languages (16 in all); Polish and Ukrainian in the interface (20 languages); and the demo pages one click away.
 - **0.13.0:** spelling while you edit, with 11 dictionaries that download only when you choose a language; **Save as PDF**,
   **Save as HTML** and **Print**; a refreshed look with a clearer Notes button; more Markdown on the page: Obsidian-style callouts
   that fold, `:::` containers, highlights, emoji shortcodes, inline footnotes, code block titles and line numbers, Graphviz
