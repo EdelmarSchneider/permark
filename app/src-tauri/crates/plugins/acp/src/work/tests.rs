@@ -1,14 +1,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use permark_core::document::{DocScope, Documents};
+use permark_core::document::Documents;
 use permark_core::edit::lines;
-use permark_core::events::NoEvents;
 use permark_core::fsx::Encoding;
-use permark_core::paths::{Root, Vault};
-use permark_core::settings::ProjectConfig;
-use permark_core::tree::Explorer;
-use permark_core::watch::OwnWrites;
+use permark_core::paths::Vault;
 use permark_core::ErrorKind;
 
 use super::*;
@@ -26,8 +22,7 @@ fn fx(files: &[(&str, &[u8])]) -> Fx {
     for (path, bytes) in files {
         put(project.path(), path, bytes);
     }
-    let vault = Vault::new(Root::open(project.path()).unwrap());
-    let documents = Documents::for_project(DocScope::Project(vault.clone()), Arc::new(NoEvents));
+    let (vault, documents) = crate::testing::open(project.path());
     Fx {
         project,
         profile: tempfile::tempdir().unwrap(),
@@ -44,18 +39,7 @@ fn put(base: &Path, path: &str, bytes: &[u8]) {
 
 impl Fx {
     fn access(&self) -> Project {
-        let explorer = Explorer::new(
-            &self.vault,
-            &ProjectConfig::load(self.vault.main()),
-            Arc::new(NoEvents),
-            None,
-        );
-        Project::new(
-            self.vault.clone(),
-            Arc::clone(&self.documents),
-            Arc::new(explorer),
-            Arc::new(OwnWrites::new()),
-        )
+        crate::testing::project(&self.vault, &self.documents)
     }
 
     fn dir(&self) -> PathBuf {

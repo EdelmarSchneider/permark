@@ -1,13 +1,20 @@
 //! Plugin `acp` (experimental, off by default; UI name "Assistant"): the person's own agent works in a copy of the
 //! project's files the agent may see ([`work`]), kept in the profile, never in the project. A real file changes only
-//! when the person accepts a change of the copy, hunk by hunk.
+//! when the person accepts a change of the copy, hunk by hunk. The agent is spoken to over the Agent Client Protocol
+//! ([`session`], [`client`]); its command comes only from the person's app settings (`[plugins.acp] command`).
 //!
-//! RPC (project scope): `changes {}` -> [`FileChange`]`[]` (empty while no copy exists); `accept | reject { path,
-//! hunks: number[] | null }` -> the fresh [`FileChange`]`[]` (`null`: the whole file).
+//! RPC (project scope): `status {}` -> [`AcpStatus`]; `prompt` [`PromptArgs`] -> `null` (the reply comes as events);
+//! `cancel {}` | `reset {}` -> `null`; `answer` [`AnswerArgs`] -> `null`; `changes {}` -> [`FileChange`]`[]` (empty
+//! while no copy exists); `accept | reject { path, hunks: number[] | null }` -> the fresh [`FileChange`]`[]`
+//! (`null`: the whole file). Event `acp:update` -> [`AcpUpdate`].
 //!
-//! Off | project closed: the copy is deleted (pending changes with it).
+//! Off | project closed: the agent stops, then the copy is deleted (pending changes with it).
 
+pub mod client;
 pub mod dto;
+pub mod session;
+#[cfg(test)]
+mod testing;
 pub mod work;
 
 use std::borrow::Cow;
@@ -21,7 +28,11 @@ use permark_core::plugins::{
 };
 use permark_core::{ErrorKind, IpcError};
 
-pub use dto::{DecideArgs, FileChange, FileChangeKind, HunkView};
+pub use dto::{
+    AcpState, AcpStatus, AcpUpdate, AnswerArgs, DecideArgs, FileChange, FileChangeKind, HunkView,
+    PermissionChoice, PromptArgs, PromptSelection,
+};
+pub use session::{person_launch, AgentCommand, Host, Session, DEFAULT_COMMAND};
 pub use work::{copy_dir, Project, WorkCopy};
 
 const ID: PluginId = PluginId::of("acp");
@@ -54,6 +65,7 @@ struct Acp {
 
 struct Started {
     _rpc: Vec<RpcRegistration>,
+    session: Session,
     copy: SharedCopy,
     /// `<profile>/projects/<id>/plugins/acp/work/` (`None`: no state store, so no copy can exist).
     place: Option<PathBuf>,
@@ -63,6 +75,8 @@ impl Running for Started {}
 
 impl Drop for Started {
     fn drop(&mut self) {
+        // the agent first: it may be writing into the copy
+        self.session.shutdown();
         // off leaves nothing: the copy goes, and whatever an earlier run left in the plugin's own folder
         if let Some(copy) = lock(&self.copy).take() {
             let _ = copy.remove();
@@ -96,8 +110,30 @@ fn decide(
     choose(copy, &args.path, args.hunks.as_deref())
 }
 
-fn register(cx: &PluginCx, copy: &SharedCopy) -> Vec<RpcRegistration> {
+fn register(cx: &PluginCx, copy: &SharedCopy, session: &Session) -> Vec<RpcRegistration> {
     let mut rpc = Vec::new();
+    let s = session.clone();
+    rpc.extend(cx.rpc("status", typed(move |_: NoArgs, _| Ok(s.status()))));
+    let s = session.clone();
+    rpc.extend(cx.rpc("prompt", typed(move |args: PromptArgs, _| s.prompt(args))));
+    let s = session.clone();
+    rpc.extend(cx.rpc(
+        "cancel",
+        typed(move |_: NoArgs, _| {
+            s.cancel();
+            Ok(())
+        }),
+    ));
+    let s = session.clone();
+    rpc.extend(cx.rpc(
+        "reset",
+        typed(move |_: NoArgs, _| {
+            s.reset();
+            Ok(())
+        }),
+    ));
+    let s = session.clone();
+    rpc.extend(cx.rpc("answer", typed(move |args: AnswerArgs, _| s.answer(&args))));
     let c = Arc::clone(copy);
     rpc.extend(cx.rpc(
         "changes",
@@ -125,18 +161,30 @@ impl Plugin for Acp {
     }
 
     fn start(&self, cx: &PluginCx) -> Result<Box<dyn Running>, PluginError> {
-        let (Some(_), CxWorkspace::Project(_)) = (cx.project(), &cx.workspace) else {
+        let (Some(services), CxWorkspace::Project(vault)) = (cx.project(), &cx.workspace) else {
             return Err(PluginError::Start {
                 id: ID,
                 reason: "needs a project".to_owned(),
             });
         };
         let copy: SharedCopy = Arc::new(Mutex::new(None));
+        let place = cx
+            .store()
+            .map(|store| store.profile_plugin_dir(&cx.id).join(WORK));
+        // read once: a changed command takes effect when the plugin starts again
+        let command = AgentCommand::from_settings(cx.settings.as_ref());
+        let session = Session::new(Host {
+            launch: person_launch(&command),
+            command,
+            project: Project::of(vault, services),
+            place: place.clone(),
+            copy: Arc::clone(&copy),
+            events: cx.events().clone(),
+        });
         Ok(Box::new(Started {
-            _rpc: register(cx, &copy),
-            place: cx
-                .store()
-                .map(|store| store.profile_plugin_dir(&cx.id).join(WORK)),
+            _rpc: register(cx, &copy, &session),
+            session,
+            place,
             copy,
         }))
     }
@@ -183,9 +231,21 @@ mod tests {
         let work = place.path().join(WORK);
         std::fs::create_dir_all(work.join("old-copy")).unwrap();
         std::fs::write(work.join("old-copy").join("a.md"), "a").unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let (vault, documents) = testing::open(project.path());
+        let copy: SharedCopy = Arc::new(Mutex::new(None));
+        let session = Session::new(Host {
+            command: AgentCommand::default(),
+            launch: Arc::new(|_: &std::path::Path| Err(std::io::Error::other("never started"))),
+            project: testing::project(&vault, &documents),
+            place: Some(work.clone()),
+            copy: Arc::clone(&copy),
+            events: testing::events(Arc::new(NoEvents)),
+        });
         let started = Started {
             _rpc: Vec::new(),
-            copy: Arc::new(Mutex::new(None)),
+            session,
+            copy,
             place: Some(work.clone()),
         };
         drop(started);
