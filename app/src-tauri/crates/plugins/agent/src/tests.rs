@@ -1526,9 +1526,11 @@ fn a_disconnected_agent_is_refused_opens_no_session_and_pairs_again_after_undo()
     assert!(late.is_disconnected());
 }
 
-/// Like [`wait_for`], but sleeps on the runtime so the tasks spawned on it run meanwhile.
+/// Like [`wait_for`], but sleeps on the runtime so the tasks spawned on it run meanwhile. The deadline is reached only
+/// on failure; it is wide because a pairing needs a repair tick + a local IPC round trip (after an Undo, the slower
+/// ask-again tick), which a loaded CI runner can stall for seconds.
 async fn wait_on_runtime(what: impl Fn() -> bool) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         if what() {
             return true;
