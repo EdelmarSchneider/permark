@@ -231,7 +231,7 @@ describe("a strip too narrow for its labels", () => {
     expect(rule('.tab[aria-selected="true"]')).not.toMatch(/min-width|max-width/);
   });
 
-  it("another tab shortens its label down to a few letters, then shows its icon alone; without an icon the letters stay", () => {
+  it("a tab that gives way, the one shown too, shortens its label down to a few letters, then shows its icon alone; without an icon the letters stay", () => {
     const target = document.createElement("div");
     document.body.append(target);
     component = mount(ViewTabs, {
@@ -265,19 +265,29 @@ describe("a strip too narrow for its labels", () => {
       "Broken links",
       "Plain",
     ]);
-    // with an icon: never narrower than the icon; the label is whole-or-ellipsis above the floor, gone under it
-    const withIcon = rule('.tab.has-icon:not([aria-selected="true"])');
+    // with an icon: never narrower than the icon; the label is whole-or-ellipsis above the floor, gone under it (the
+    // tab shown as well: it only gives way last, by its weight)
+    const withIcon = rule(".tab.has-icon");
     expect(withIcon).toMatch(/min-width: calc\(14px \+ 2 \* var\(--tab-pad\)\);/);
-    expect(rule('.tab.has-icon:not([aria-selected="true"]) .label')).toMatch(
+    expect(rule(".tab.has-icon .label")).toMatch(
       /max-width: max\(0px, calc\(\(100% - var\(--label-floor\)\) \* 999\)\);/,
     );
     // without one: the label keeps a readable width
-    expect(rule('.tab:not(.has-icon):not([aria-selected="true"]) .label')).toMatch(
-      /min-width: 3em;/,
-    );
+    expect(rule(".tab:not(.has-icon) .label")).toMatch(/min-width: 3em;/);
   });
 
-  it("a crowded strip keeps the label of the tab shown whole: the last other tabs move into a menu of its views", async () => {
+  /** A crowded strip of six tabs, the third one shown (`shownIcon`: whether it has an icon), sized by the test:
+   *  `size(width)` gives the strip that width (its tabs get it less 16 px of padding and 32 px of options button) and
+   *  draws the tab shown 82 px wide with its label cut to 46 of its 101 px. The five other tabs, icons alone, take
+   *  26 px each with their gap. */
+  function crowdedStrip(shownIcon: boolean): {
+    target: HTMLElement;
+    onselect: ReturnType<typeof vi.fn>;
+    drawn: () => (string | null)[];
+    more: () => HTMLButtonElement | null;
+    shownTab: () => HTMLElement | null;
+    size: (width: number) => void;
+  } {
     const observers: (() => void)[] = [];
     vi.stubGlobal(
       "ResizeObserver",
@@ -289,35 +299,40 @@ describe("a strip too narrow for its labels", () => {
         disconnect(): void {}
       },
     );
-    try {
-      const target = document.createElement("div");
-      document.body.append(target);
-      const onselect = vi.fn();
-      const views = ["Files", "Search", "Broken links", "Comments", "Tags", "Unread"].map(
-        (label, at) => ({ id: `v${at}`, label, icon: Icon, badge: at === 5 ? "1" : null }),
-      );
-      component = mount(ViewTabs, {
-        target,
-        props: {
-          views,
-          selected: "v2",
-          onselect,
-          onoptions: vi.fn(),
-          label: "Sidebar views",
-          roomy: 3,
-        },
-      });
-      flushSync();
-      const drawn = (): (string | null)[] => tabs(target).map((tab) => tab.dataset["view"] ?? null);
-      const more = (): HTMLButtonElement | null =>
-        target.querySelector<HTMLButtonElement>('button[aria-label="Sidebar views"]');
-      // not measured yet: every tab, no menu button
-      expect(drawn()).toEqual(["v0", "v1", "v2", "v3", "v4", "v5"]);
-      expect(more()).toBeNull();
-      // a 244 px strip; the tab shown is 82 px wide with its label cut to 46 of its 101 px
-      const size = (width: number): void => {
+    const target = document.createElement("div");
+    document.body.append(target);
+    const onselect = vi.fn();
+    const views = ["Files", "Search", "Broken links", "Comments", "Tags", "Unread"].map(
+      (label, at) => ({
+        id: `v${at}`,
+        label,
+        icon: at === 2 && !shownIcon ? undefined : Icon,
+        badge: at === 5 ? "1" : null,
+      }),
+    );
+    component = mount(ViewTabs, {
+      target,
+      props: {
+        views,
+        selected: "v2",
+        onselect,
+        onoptions: vi.fn(),
+        label: "Sidebar views",
+        roomy: 3,
+      },
+    });
+    flushSync();
+    const shownTab = (): HTMLElement | null =>
+      target.querySelector<HTMLElement>('[aria-selected="true"]');
+    return {
+      target,
+      onselect,
+      drawn: () => tabs(target).map((tab) => tab.dataset["view"] ?? null),
+      more: () => target.querySelector<HTMLButtonElement>('button[aria-label="Sidebar views"]'),
+      shownTab,
+      size: (width) => {
         const bar = target.querySelector<HTMLElement>(".bar");
-        const tab = target.querySelector<HTMLElement>('[aria-selected="true"]');
+        const tab = shownTab();
         const label = tab?.querySelector<HTMLElement>(".label");
         if (!bar || !tab || !label) throw new Error("no strip");
         Object.defineProperty(bar, "clientWidth", { configurable: true, get: () => width });
@@ -326,52 +341,106 @@ describe("a strip too narrow for its labels", () => {
         Object.defineProperty(label, "scrollWidth", { configurable: true, get: () => 101 });
         for (const observer of observers) observer();
         flushSync();
-      };
-      size(244);
-      // the strip changes in the next frame, not inside the observer's call (a resize there would loop)
-      expect(drawn()).toEqual(["v0", "v1", "v2", "v3", "v4", "v5"]);
-      await nextFrame();
-      expect(drawn()).toEqual(["v0", "v2"]);
-      const button = more();
-      expect(button?.title).toBe("Sidebar views");
-      expect(button?.getAttribute("aria-haspopup")).toBe("menu");
-      // the arrows go over the tabs drawn
-      key(target, { key: "ArrowRight" });
-      expect(document.activeElement).toBe(tabs(target)[0]);
-      // the menu lists every view of the strip, the one shown checked (a state, not a word read aloud), a count beside
-      // its view
-      button?.click();
-      flushSync();
-      expect(button?.getAttribute("aria-expanded")).toBe("true");
-      const items = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
-      expect(items.map((item) => item.textContent?.trim())).toEqual([
-        "Files",
-        "Search",
-        "Broken links",
-        "Comments",
-        "Tags",
-        "Unread (1)",
-      ]);
-      expect(items.map((item) => item.getAttribute("aria-checked"))).toEqual([
-        "false",
-        "false",
-        "true",
-        "false",
-        "false",
-        "false",
-      ]);
-      items[4]?.click();
-      flushSync();
-      expect(onselect).toHaveBeenCalledWith("v4");
-      expect(document.querySelector('[role="menu"]')).toBeNull();
-      // room again: every tab is back and the menu button goes
-      size(400);
-      await nextFrame();
-      expect(drawn()).toEqual(["v0", "v1", "v2", "v3", "v4", "v5"]);
-      expect(more()).toBeNull();
-    } finally {
-      vi.unstubAllGlobals();
-    }
+      },
+    };
+  }
+  const ALL = ["v0", "v1", "v2", "v3", "v4", "v5"];
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("a crowded strip keeps every tab while all fit as icons: the label of the tab shown gives way first, then the last other tabs move into a menu of its views", async () => {
+    const { target, onselect, drawn, more, shownTab, size } = crowdedStrip(true);
+    // not measured yet: every tab, no menu button
+    expect(drawn()).toEqual(ALL);
+    expect(more()).toBeNull();
+    // wide: the tab shown with its whole label, the others as icons, nothing in a menu
+    size(400);
+    await nextFrame();
+    expect(drawn()).toEqual(ALL);
+    expect(more()).toBeNull();
+    expect(tabs(target).map((tab) => tab.classList.contains("icon-only"))).toEqual([
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+    ]);
+    expect(shownTab()?.querySelector(".label")?.textContent).toBe("Broken links");
+    // room for the icons and a few letters of the label shown: its label shortens (CSS), no tab leaves; the label
+    // stays in the page, so the tab keeps its name
+    size(244);
+    await nextFrame();
+    expect(drawn()).toEqual(ALL);
+    expect(more()).toBeNull();
+    expect(shownTab()?.querySelector(".label")?.textContent).toBe("Broken links");
+    expect(shownTab()?.getAttribute("title")).toBe("Broken links");
+    // room for the six icons alone (36 px for the tab shown): its label at no width, still every tab
+    size(214);
+    await nextFrame();
+    expect(drawn()).toEqual(ALL);
+    expect(more()).toBeNull();
+    // less than six icons: the last other tabs move into the views menu, in the next frame, not inside the
+    // observer's call (a resize there would loop)
+    size(180);
+    expect(drawn()).toEqual(ALL);
+    await nextFrame();
+    expect(drawn()).toEqual(["v0", "v1", "v2"]);
+    const button = more();
+    expect(button?.title).toBe("Sidebar views");
+    expect(button?.getAttribute("aria-haspopup")).toBe("menu");
+    // the arrows go over the tabs drawn
+    key(target, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(tabs(target)[0]);
+    // the menu lists every view of the strip, the one shown checked (a state, not a word read aloud), a count beside
+    // its view
+    button?.click();
+    flushSync();
+    expect(button?.getAttribute("aria-expanded")).toBe("true");
+    const items = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
+    expect(items.map((item) => item.textContent?.trim())).toEqual([
+      "Files",
+      "Search",
+      "Broken links",
+      "Comments",
+      "Tags",
+      "Unread (1)",
+    ]);
+    expect(items.map((item) => item.getAttribute("aria-checked"))).toEqual([
+      "false",
+      "false",
+      "true",
+      "false",
+      "false",
+      "false",
+    ]);
+    items[4]?.click();
+    flushSync();
+    expect(onselect).toHaveBeenCalledWith("v4");
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+    // room again: every tab is back and the menu button goes
+    size(400);
+    await nextFrame();
+    expect(drawn()).toEqual(ALL);
+    expect(more()).toBeNull();
+  });
+
+  it("a crowded strip whose tab shown has no icon keeps a few of its letters: the other tabs move out before they go", async () => {
+    const { drawn, more, shownTab, size } = crowdedStrip(false);
+    // the label's floor (3em in the page) measured in px: 36 + 39 px for the tab shown, 130 for the other five
+    const label = shownTab()?.querySelector<HTMLElement>(".label");
+    if (!label) throw new Error("no label");
+    label.style.minWidth = "39px";
+    size(253);
+    await nextFrame();
+    expect(drawn()).toEqual(ALL);
+    expect(more()).toBeNull();
+    size(252);
+    await nextFrame();
+    expect(drawn()).toEqual(["v0", "v1", "v2", "v3", "v4"]);
+    expect(more()).not.toBeNull();
   });
 
   it("past its roomy count the strip still shows the icons alone of the tabs that are not shown", () => {
