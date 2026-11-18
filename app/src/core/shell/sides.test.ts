@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // Adversarial: the region toggles against the stores (outline | plugin panel while its region is hidden, wherever
 // the view is arranged; the bottom region's toggle; Ctrl+B in each editor, storms of toggles).
+import { tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../api", async () => {
@@ -359,5 +360,88 @@ describe("Ctrl+B by editor", () => {
   it("outside the editors (page, panels) -> the sidebar toggles", () => {
     const page = document.createElement("div");
     expect(resolveKey(ev(false), env(page)).kind).toBe("run");
+  });
+});
+
+const { closeView } = await import("./sides");
+const { windowStore } = await import("../window.svelte");
+const { documents } = await import("../doc/document.svelte");
+const { en } = await import("../i18n/table");
+
+describe("closing a view", () => {
+  const closedNotices = () =>
+    windowStore.notices.flatMap((n) => (n.kind === "action" && n.key === "view-closed" ? [n] : []));
+
+  afterEach(() => {
+    windowStore.dismissKey("view-closed");
+    documents.state = { status: "empty" };
+  });
+
+  it("by its close button: one notice says it, its Undo opens the view again where it was", async () => {
+    offerLive();
+    layout.setOpen(LIVE_VIEW, true);
+    closeView(LIVE_VIEW);
+    expect(arrangement.isPresent(LIVE_VIEW)).toBe(false);
+    const [notice] = closedNotices();
+    expect([notice?.text, notice?.actions.map((a) => a.label)]).toEqual([
+      "Live changes closed",
+      [en["fileOps.undo"]],
+    ]);
+    // the polite status line says it too
+    await tick();
+    await tick();
+    expect(arrangement.status).toBe("Live changes closed");
+    layout.setRightHidden(true);
+    await notice?.actions[0]?.run();
+    expect(arrangement.isPresent(LIVE_VIEW)).toBe(true);
+    expect(arrangement.isSelected(LIVE_VIEW)).toBe(true);
+    expect(layout.rightHidden).toBe(false);
+    // the status line follows: the view is back
+    await tick();
+    await tick();
+    expect(arrangement.status).toBe(en["panel.shown"].replace("{name}", "Live changes"));
+  });
+
+  it("by its toggle (a command, a status item) and the outline's toggle: the same one notice, the newest", () => {
+    offerLive();
+    layout.setOpen(LIVE_VIEW, true);
+    showView(LIVE_VIEW);
+    togglePanel(LIVE_VIEW);
+    expect(closedNotices().map((n) => n.text)).toEqual(["Live changes closed"]);
+    documents.state = {
+      status: "ready",
+      view: {
+        path: "a.md",
+        name: "a.md",
+        format: "markdown",
+        role: null,
+        body: {
+          kind: "markdown",
+          blocks: [],
+          outline: [{ label: "Title", level: 1, id: "title", line: 1, block: "b1" }],
+          frontMatter: null,
+        },
+        hash: "ab".repeat(8),
+        size: 8,
+        mtimeMs: 1,
+        editable: { editable: "surgical" },
+        notes: [],
+      },
+      deleted: null,
+      fresh: true,
+    };
+    reading.setOutline(true);
+    showView(OUTLINE);
+    toggleOutlinePanel();
+    expect(reading.outline).toBe(false);
+    expect(closedNotices().map((n) => n.text)).toEqual(["Outline closed"]);
+  });
+
+  it("nothing closed (a view not there, a toggle that opens): no notice", () => {
+    offerLive();
+    closeView(LIVE_VIEW);
+    togglePanel(LIVE_VIEW);
+    closeView("gone.panel");
+    expect(closedNotices()).toEqual([]);
   });
 });

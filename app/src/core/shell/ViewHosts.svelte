@@ -161,7 +161,7 @@
     {/snippet}
     <div data-view-home={id}>
       <div class="host" data-view-host={id} {@attach placed(id)}>
-        {#if view?.closable === false}
+        {#if view?.projectOnly === true}
           <!-- a view of the project (Files, Search, a plugin's sidebar tab): a new one for each project shown -->
           {#if project}
             {#key project.id}{@render body()}{/key}

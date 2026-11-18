@@ -1,5 +1,5 @@
 // Window UI state the commands act on: focus mode, the Search everywhere box, the keyboard dialog, the Layouts dialog,
-// settings, find in page. Small tagged states; components read, commands call the methods. Which view a region shows is not here: the
+// the Panels menu, settings, find in page. Small tagged states; components read, commands call the methods. Which view a region shows is not here: the
 // arrangement of the views has it (`arrangement.svelte.ts`, `sides.ts`).
 
 import type { ClosingTab } from "../../api";
@@ -96,6 +96,8 @@ class UiStore {
   #contentFocus: SettingsSection | null = null;
   initDialog = $state.raw<InitDialog>({ status: "closed" });
   layoutsDialog = $state.raw<LayoutsDialog>({ status: "closed" });
+  /** The Panels menu of the status bar is open. */
+  panels = $state(false);
   finding = $state(false);
   /** The window close prompt (this view is the one on screen): the tabs with unsaved edits; `null`: not asking. */
   closePrompt = $state.raw<readonly ClosingTab[] | null>(null);
@@ -217,6 +219,20 @@ class UiStore {
 
   closeLayouts(): void {
     this.layoutsDialog = { status: "closed" };
+  }
+
+  openPanels(): void {
+    this.settings = false;
+    this.panels = true;
+  }
+
+  togglePanels(): void {
+    if (this.panels) this.closePanels();
+    else this.openPanels();
+  }
+
+  closePanels(): void {
+    this.panels = false;
   }
 
   openKeyboard(): void {

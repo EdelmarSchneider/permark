@@ -29,6 +29,8 @@ export default definePlugin({
         kind: "command",
         id: "acp.toggle",
         label: "acp.toggle",
+        // the Panels menu and its "Show" palette entry cover it; the id stays for a person's own key
+        inPalette: false,
         requires: PROJECT,
         run: () => acp.toggle(),
       }),
