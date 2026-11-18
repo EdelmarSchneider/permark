@@ -92,6 +92,11 @@ pub struct AcpStatus {
     pub error: Option<String>,
     /// How the person can sign in (`needsLogin` only; else empty).
     pub methods: Vec<LoginMethod>,
+    /// What the person must do before the chosen agent can start (absent: nothing); `snap` also when none is chosen
+    /// (no agent can start in this package).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub needs: Option<AgentNeed>,
 }
 
 /// How a sign-in works.
@@ -150,6 +155,8 @@ pub enum AgentNeed {
     Uv,
     /// The agent's own program (see `website`) | the own command's program was not found.
     Install,
+    /// Nothing can start: the app runs inside a strict Snap, which sees none of the computer's programs.
+    Snap,
 }
 
 /// One agent the person can choose (`acp.agents`).
@@ -166,7 +173,8 @@ pub struct AgentEntry {
     pub how: AgentHow,
     /// Set when `how` is `missing` (or a custom program is not found).
     pub needs: Option<AgentNeed>,
-    /// The command as it would run (program by name).
+    /// The command as it would run: a found own program | own command by its full path (what really starts); else
+    /// the program by name.
     pub command: String,
     /// The agent's website, else its repository.
     pub website: Option<String>,

@@ -4,7 +4,9 @@
 //!   refreshed by hand with `agents/refresh.mjs`): the app never fetches the registry. Agents without a way to run on
 //!   this platform are left out.
 //! - start: the agent's own program when it is on `PATH`, else its package through `npx`, else through `uvx`, else
-//!   missing (what to install). Programs are found by looking at `PATH` only, never by running anything.
+//!   missing (what to install). Programs are found by looking at `PATH` and the usual tool folders only
+//!   (`process::resolve_program`), never by running anything. The list shows the full path of a found program (what
+//!   really runs). Inside a strict Snap nothing starts: the snap sees none of the computer's programs.
 //! - choice: `acp-agent.json` in the profile folder itself (a registry id | the person's own command), read at every
 //!   agent start. Never in a project's state folder: that can be `.permark/local` inside the project, and a folder
 //!   someone shares must never choose the program the app starts.
@@ -149,7 +151,8 @@ pub struct Plan {
 pub struct Resolved {
     pub how: AgentHow,
     pub needs: Option<AgentNeed>,
-    /// The command as it would run (as it would, once installed, for a missing one).
+    /// The command as it would run: a found own program | own command by its full path (as it would, once
+    /// installed, for a missing one).
     pub shown: String,
     /// `None`: nothing to start it with (`needs` says what).
     pub plan: Option<Plan>,
@@ -161,11 +164,28 @@ pub type Find = Arc<dyn Fn(&OsStr) -> Option<PathBuf> + Send + Sync>;
 /// Starts an agent's plan with its working folder.
 pub type Launch = Arc<dyn Fn(&Plan, &Path) -> io::Result<AgentPipes> + Send + Sync>;
 
+/// A command line as the person reads it (and could type it back as an own command): a word with a space, or an
+/// empty one, in double quotes.
 fn shown(program: &str, args: &[String]) -> String {
     std::iter::once(program)
         .chain(args.iter().map(String::as_str))
+        .map(|word| {
+            if word.is_empty() || word.contains(char::is_whitespace) {
+                format!("\"{word}\"")
+            } else {
+                word.to_owned()
+            }
+        })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Finds a program by name (`None`: not found).
+type FindFn = dyn Fn(&OsStr) -> Option<PathBuf>;
+
+/// Finds nothing: inside a Snap no program of the computer can start.
+fn nothing(_: &OsStr) -> Option<PathBuf> {
+    None
 }
 
 /// The file name of a registry `cmd` (a path inside the agent's archive, `/` or `\` separated).
@@ -186,7 +206,7 @@ fn pairs(env: &BTreeMap<String, String>) -> Vec<(String, String)> {
 }
 
 /// How `listed` would start with the programs `find` sees: own program, else `npx`, else `uvx`, else missing.
-fn resolve_listed(listed: &Listed, platforms: &[&str], find: &Find) -> Resolved {
+fn resolve_listed(listed: &Listed, platforms: &[&str], find: &FindFn) -> Resolved {
     let build = listed.build(platforms);
     if let Some(build) = build {
         let name = file_name(&build.cmd);
@@ -194,16 +214,17 @@ fn resolve_listed(listed: &Listed, platforms: &[&str], find: &Find) -> Resolved 
             .filter(|n| !n.is_empty())
             .and_then(|n| find(OsStr::new(n)))
         {
-            let line = shown(name, &build.args);
             return Resolved {
                 how: AgentHow::Native,
                 needs: None,
-                shown: line.clone(),
+                // a program of the same name anywhere on `PATH` would start: the person sees which file
+                shown: shown(&program.to_string_lossy(), &build.args),
                 plan: Some(Plan {
                     program,
                     args: build.args.clone(),
                     env: pairs(&build.env),
-                    shown: line,
+                    // a terminal sign-in line: the person's terminal finds it by name
+                    shown: shown(name, &build.args),
                 }),
             };
         }
@@ -297,7 +318,7 @@ pub(crate) fn command_program(typed: &str) -> Option<String> {
 }
 
 /// The person's own command: its words (double quotes group), its program found like any other.
-fn resolve_command(typed: &str, find: &Find) -> Resolved {
+fn resolve_command(typed: &str, find: &FindFn) -> Resolved {
     let mut words = command_words(typed).unwrap_or_default().into_iter();
     let program = words.next().unwrap_or_default();
     let args: Vec<String> = words.collect();
@@ -307,14 +328,28 @@ fn resolve_command(typed: &str, find: &Find) -> Resolved {
     Resolved {
         how: AgentHow::Custom,
         needs: found.is_none().then_some(AgentNeed::Install),
-        shown: typed.to_owned(),
+        shown: found.as_ref().map_or_else(
+            || typed.to_owned(),
+            |program| shown(&program.to_string_lossy(), &args),
+        ),
         plan: found.map(|program| Plan {
             program,
             args,
             env: Vec::new(),
+            // a terminal sign-in line: the command as the person typed it
             shown: typed.to_owned(),
         }),
     }
+}
+
+/// Inside a Snap: nothing starts (`needs`: `snap`), the command as it would run elsewhere.
+fn in_snap(mut resolved: Resolved) -> Resolved {
+    if resolved.how != AgentHow::Custom {
+        resolved.how = AgentHow::Missing;
+    }
+    resolved.needs = Some(AgentNeed::Snap);
+    resolved.plan = None;
+    resolved
 }
 
 /// The person's choice (`acp-agent.json`): `{ "agent": <registry id> }` | `{ "command": <own command> }`.
@@ -343,13 +378,17 @@ pub struct Agents {
     file: Option<StateFile<Choice>>,
     find: Find,
     platforms: &'static [&'static str],
+    /// The app runs inside a strict Snap: it sees none of the computer's programs, so no agent can start.
+    snap: bool,
 }
 
 impl Agents {
-    /// Programs found on this process's `PATH`, builds of this platform.
+    /// Programs found as the app starts them, builds of this platform; inside a Snap when `SNAP` is set (Linux).
     #[must_use]
     pub fn new(file: Option<StateFile<Choice>>) -> Self {
-        Self::with(file, Arc::new(process::resolve_program), platforms())
+        let snap =
+            cfg!(target_os = "linux") && std::env::var_os("SNAP").is_some_and(|v| !v.is_empty());
+        Self::with(file, Arc::new(process::resolve_program), platforms()).in_snap(snap)
     }
 
     #[must_use]
@@ -362,7 +401,35 @@ impl Agents {
             file,
             find,
             platforms,
+            snap: false,
         }
+    }
+
+    /// `snap`: the app runs inside a strict Snap (every agent then needs `snap`, a choice is refused).
+    #[must_use]
+    pub fn in_snap(mut self, snap: bool) -> Self {
+        self.snap = snap;
+        self
+    }
+
+    /// What every start needs first, whatever is chosen (`snap`); else `None`.
+    #[must_use]
+    pub fn blocked(&self) -> Option<AgentNeed> {
+        self.snap.then_some(AgentNeed::Snap)
+    }
+
+    fn resolve(&self, listed: &Listed) -> Resolved {
+        if self.snap {
+            return in_snap(resolve_listed(listed, self.platforms, &nothing));
+        }
+        resolve_listed(listed, self.platforms, &*self.find)
+    }
+
+    fn resolve_typed(&self, typed: &str) -> Resolved {
+        if self.snap {
+            return in_snap(resolve_command(typed, &nothing));
+        }
+        resolve_command(typed, &*self.find)
     }
 
     fn listed(&self, id: &str) -> Option<&'static Listed> {
@@ -387,11 +454,11 @@ impl Agents {
         match self.choice()? {
             Choice::Agent(id) => self.listed(&id).map(|listed| Chosen {
                 name: Some(listed.name.clone()),
-                resolved: resolve_listed(listed, self.platforms, &self.find),
+                resolved: self.resolve(listed),
             }),
             Choice::Command(typed) => Some(Chosen {
                 name: None,
-                resolved: resolve_command(&typed, &self.find),
+                resolved: self.resolve_typed(&typed),
             }),
         }
     }
@@ -402,7 +469,7 @@ impl Agents {
         let choice = self.choice();
         let mut list: Vec<AgentEntry> = catalog(self.platforms)
             .map(|listed| {
-                let resolved = resolve_listed(listed, self.platforms, &self.find);
+                let resolved = self.resolve(listed);
                 AgentEntry {
                     id: listed.id.clone(),
                     name: listed.name.clone(),
@@ -417,7 +484,7 @@ impl Agents {
             })
             .collect();
         if let Some(Choice::Command(typed)) = choice {
-            let resolved = resolve_command(&typed, &self.find);
+            let resolved = self.resolve_typed(&typed);
             list.push(AgentEntry {
                 id: CUSTOM_ID.to_owned(),
                 name: String::new(),
@@ -437,8 +504,13 @@ impl Agents {
     ///
     /// # Errors
     /// `InvalidData`: `unknownAgent` (not in this computer's list) | `emptyCommand` (no program) | `openQuote` (a
-    /// quote of the command left open) | `oneChoice` (none or both given); `Unavailable` (`noProfile`); IO.
+    /// quote of the command left open) | `relativeProgram` (a program path that is not absolute: it would name a
+    /// file under the folder the agent starts in) | `oneChoice` (none or both given); `Unavailable` (`snap`: inside a
+    /// Snap nothing can start | `noProfile`); IO.
     pub fn choose(&self, args: &ChooseArgs) -> Result<(), IpcError> {
+        if self.snap {
+            return Err(IpcError::new(ErrorKind::Unavailable).detail("snap"));
+        }
         let refused = |detail: &str| IpcError::new(ErrorKind::InvalidData).detail(detail);
         let choice = match (
             args.agent.as_deref(),
@@ -455,6 +527,13 @@ impl Agents {
                 Some(words) if words.first().is_none_or(String::is_empty) => {
                     return Err(refused("emptyCommand"));
                 }
+                Some(words)
+                    if words
+                        .first()
+                        .is_some_and(|program| process::is_relative_path(OsStr::new(program))) =>
+                {
+                    return Err(refused("relativeProgram"));
+                }
                 Some(_) => Choice::Command(typed.to_owned()),
             },
             _ => return Err(refused("oneChoice")),
@@ -468,7 +547,8 @@ impl Agents {
     }
 }
 
-/// Starts a plan: its program with its arguments, its variables on top of the app's, no shell, the copy as folder.
+/// Starts a plan: its program with its arguments, its variables on top of the app's, no shell, in the given folder
+/// (an empty one of the plugin's own: never the copy, whose project files a runner would read as its settings).
 #[must_use]
 pub fn person_launch() -> Launch {
     Arc::new(|plan: &Plan, cwd: &Path| {

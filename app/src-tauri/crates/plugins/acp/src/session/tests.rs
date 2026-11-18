@@ -3,7 +3,7 @@
 use std::io::{BufRead, BufReader, PipeReader, PipeWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use permark_core::events::{CoreEvent, EventSink};
@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 use super::*;
 use crate::agents::{platforms, Choice, Plan, CHOICE_FILE};
 use crate::testing;
+use permark_core::state::StateFile;
 
 /// Longest wait for something a fake agent does.
 const WAIT: Duration = Duration::from_secs(20);
@@ -85,6 +86,8 @@ struct Peer {
     /// The session's folder, from `session/new`.
     cwd: PathBuf,
     auth: Arc<Auth>,
+    /// `Some`: stops reading its stdin once the session is set up, until it is stopped (this ends).
+    deaf: Option<mpsc::Receiver<()>>,
 }
 
 /// What the fake agent asks of sign-ins.
@@ -206,7 +209,14 @@ fn agent_loop(mut peer: Peer, turn: &Turn) {
                     },
                 })
             }
-            "session/set_mode" => json!({}),
+            "session/set_mode" => {
+                peer.send(&json!({ "jsonrpc": "2.0", "id": id, "result": {} }));
+                if let Some(stopped) = peer.deaf.take() {
+                    let _ = stopped.recv();
+                    return;
+                }
+                continue;
+            }
             "session/prompt" => match turn(&mut peer, &message) {
                 Some(reason) => json!({ "stopReason": reason }),
                 None => return,
@@ -217,6 +227,9 @@ fn agent_loop(mut peer: Peer, turn: &Turn) {
     }
 }
 
+/// A start's folder + the names in it at the start.
+type StartFolder = (PathBuf, Vec<String>);
+
 /// What the test sees of the fake agents it started.
 #[derive(Clone, Default)]
 struct Fake {
@@ -225,6 +238,10 @@ struct Fake {
     stops: Arc<AtomicUsize>,
     /// What each start was asked to run.
     plans: Arc<Mutex<Vec<Plan>>>,
+    /// Each start's folder.
+    folders: Arc<Mutex<Vec<StartFolder>>>,
+    /// The agents started from now on stop reading once their session is set up.
+    deaf: Arc<AtomicBool>,
     auth: Arc<Auth>,
 }
 
@@ -256,6 +273,14 @@ impl Fake {
         Arc::new(move |plan: &Plan, cwd: &Path| {
             fake.launches.fetch_add(1, Ordering::SeqCst);
             fake.plans.lock().unwrap().push(plan.clone());
+            let names = std::fs::read_dir(cwd)?
+                .map(|entry| entry.map(|e| e.file_name().to_string_lossy().into_owned()))
+                .collect::<std::io::Result<Vec<_>>>()?;
+            fake.folders
+                .lock()
+                .unwrap()
+                .push((cwd.to_path_buf(), names));
+            let (stop_tx, stop_rx) = mpsc::channel::<()>();
             let (agent_in, client_out) = std::io::pipe()?;
             let (client_in, agent_out) = std::io::pipe()?;
             let (client_err, agent_err) = std::io::pipe()?;
@@ -266,6 +291,7 @@ impl Fake {
                 seen: Arc::clone(&fake.seen),
                 cwd: cwd.to_path_buf(),
                 auth: Arc::clone(&fake.auth),
+                deaf: fake.deaf.load(Ordering::SeqCst).then_some(stop_rx),
             };
             let turn = Arc::clone(&turn);
             let agent = std::thread::spawn(move || agent_loop(peer, &turn));
@@ -275,7 +301,8 @@ impl Fake {
                 from_agent: Box::new(client_in),
                 stderr: Box::new(client_err),
                 stop: Box::new(move || {
-                    // its stdin is closed by now: the fake's loop ends
+                    // its stdin is closed by now: the fake's loop ends (a deaf one: on this signal)
+                    drop(stop_tx);
                     let _ = agent.join();
                     stops.fetch_add(1, Ordering::SeqCst);
                 }),
@@ -301,6 +328,18 @@ const CLAUDE: &str = "npx -y @agentclientprotocol/claude-agent-acp@0.108.0";
 
 type TurnFn = dyn Fn(&mut Peer, &Value) -> Option<&'static str> + Send + Sync;
 
+type MakeAgents = fn(StateFile<Choice>, &Path) -> Agents;
+
+/// Programs found only on the fake `PATH`.
+fn fake_path(file: StateFile<Choice>, bin: &Path) -> Agents {
+    Agents::with(Some(file), testing::find_in(bin), platforms())
+}
+
+/// Programs found on this process's own `PATH`.
+fn real_path(file: StateFile<Choice>, _: &Path) -> Agents {
+    Agents::new(Some(file))
+}
+
 impl Fx {
     /// Claude's agent chosen (through `npx`).
     fn new(
@@ -315,11 +354,11 @@ impl Fx {
     fn choosing(choice: Option<&Choice>, turn: Arc<TurnFn>) -> Self {
         let fake = Fake::default();
         let launch = fake.launch(turn);
-        Self::with(launch, fake, choice, false)
+        Self::with(launch, fake, choice, fake_path)
     }
 
-    /// `real_path`: programs found on this process's own `PATH`.
-    fn with(launch: Launch, fake: Fake, choice: Option<&Choice>, real_path: bool) -> Self {
+    /// `agents`: the catalog over the choice file and the fake `PATH`'s folder.
+    fn with(launch: Launch, fake: Fake, choice: Option<&Choice>, agents: MakeAgents) -> Self {
         let project = tempfile::tempdir().unwrap();
         std::fs::write(project.path().join("notes.md"), NOTES).unwrap();
         let profile = tempfile::tempdir().unwrap();
@@ -329,11 +368,7 @@ impl Fx {
         if let Some(choice) = choice {
             file.save(choice).unwrap();
         }
-        let agents = if real_path {
-            Agents::new(Some(file))
-        } else {
-            Agents::with(Some(file), testing::find_in(bin.path()), platforms())
-        };
+        let agents = agents(file, bin.path());
         let (vault, documents) = testing::open(project.path());
         let events = Arc::new(Events::default());
         let copy: SharedCopy = Arc::new(Mutex::new(None));
@@ -342,6 +377,7 @@ impl Fx {
             launch,
             project: testing::project(&vault, &documents),
             place: Some(profile.path().join("work")),
+            run: Some(profile.path().join("run")),
             copy: Arc::clone(&copy),
             events: testing::events(events.clone()),
         });
@@ -454,6 +490,7 @@ fn the_first_prompt_starts_the_agent_in_the_copy_and_streams_the_reply() {
     );
     assert_eq!(fx.session.status().state, AcpState::Ready);
     assert_eq!(fx.session.status().agent, CLAUDE);
+    assert_eq!(fx.session.status().needs, None);
 
     assert_eq!(
         fx.fake.methods(),
@@ -901,7 +938,7 @@ fn the_real_claude_agent_answers() {
         crate::agents::person_launch(),
         Fake::default(),
         Some(&Choice::Agent("claude-acp".to_owned())),
-        true,
+        real_path,
     );
     fx.ask("Reply with one word: ok");
     let list = fx
@@ -1167,4 +1204,106 @@ fn an_agent_that_needs_a_sign_in_asks_for_it_and_the_prompt_goes_on_after() {
     assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 1);
     let none = fx.session.login(&LoginArgs::default()).unwrap_err();
     assert_eq!(none.detail.as_deref(), Some("noLogin"));
+}
+
+/// The agent's program starts in an empty folder of the plugin's own, never in the copy: a runner (`npx`, `uvx`) reads
+/// its settings (`.npmrc`, `uv.toml`, `package.json`) and a Windows script its `node` from the folder it starts in, and
+/// the copy holds the project's files. The copy is only the session's folder.
+#[test]
+fn the_agent_program_starts_in_an_empty_folder_never_in_the_copy() {
+    let fx = Fx::new(|_, _| Some("end_turn"));
+    for (name, text) in [
+        (
+            ".npmrc",
+            "registry=https://example.invalid/
+",
+        ),
+        (
+            "package.json",
+            "{}
+",
+        ),
+        (
+            "uv.toml",
+            "index-url = \"https://example.invalid/\"
+",
+        ),
+        (
+            "node.cmd",
+            "@echo off
+",
+        ),
+    ] {
+        std::fs::write(fx.project.path().join(name), text).unwrap();
+    }
+    // whatever an earlier run left in the start folder goes first
+    let run = fx.profile.path().join("run");
+    std::fs::create_dir_all(run.join("node_modules")).unwrap();
+    std::fs::write(
+        run.join(".npmrc"),
+        "registry=https://example.invalid/
+",
+    )
+    .unwrap();
+    fx.ask("Hello.");
+    fx.events.turn_end();
+    let folders = fx.fake.folders.lock().unwrap().clone();
+    assert_eq!(folders, [(run.clone(), Vec::<String>::new())]);
+    let copy = fx.copy_dir();
+    assert_ne!(folders[0].0, copy);
+    assert!(!run.starts_with(&copy) && !copy.starts_with(&run));
+    assert!(!run.starts_with(fx.project.path()));
+    let new = fx
+        .fake
+        .seen()
+        .into_iter()
+        .find(|m| m["method"] == "session/new")
+        .unwrap();
+    assert_eq!(PathBuf::from(new["params"]["cwd"].as_str().unwrap()), copy);
+}
+
+/// An agent that stops reading its stdin while a prompt larger than a pipe holds is being written: the shutdown
+/// never waits on the write, and the agent is stopped.
+#[test]
+fn an_agent_that_stops_reading_never_holds_up_the_shutdown() {
+    let fx = Fx::new(|_, _| Some("end_turn"));
+    fx.fake.deaf.store(true, Ordering::SeqCst);
+    fx.ask(&"x".repeat(4 << 20));
+    fx.events.wait_for("working", WAIT, |list| {
+        list.iter()
+            .any(|e| e["type"] == "status" && e["state"] == "working")
+    });
+    // the prompt's write is under way by now, on a full pipe
+    std::thread::sleep(Duration::from_millis(500));
+    let session = fx.session.clone();
+    let (done_tx, done_rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        session.shutdown();
+        let _ = done_tx.send(());
+    });
+    assert!(done_rx.recv_timeout(WAIT).is_ok(), "the shutdown hangs");
+    assert_eq!(fx.fake.stops.load(Ordering::SeqCst), 1);
+}
+
+/// Inside a strict Snap no program of the computer can start: the status says so, the prompt fails with the reason.
+#[test]
+fn inside_a_snap_the_status_says_no_agent_can_start() {
+    let fake = Fake::default();
+    let launch = fake.launch(Arc::new(|_: &mut Peer, _: &Value| Some("end_turn")));
+    let fx = Fx::with(
+        launch,
+        fake,
+        Some(&Choice::Agent("claude-acp".to_owned())),
+        |file, bin| fake_path(file, bin).in_snap(true),
+    );
+    let status = fx.session.status();
+    assert_eq!(status.needs, Some(AgentNeed::Snap));
+    assert!(status.chosen);
+    fx.ask("Hello.");
+    let list = fx.events.wait_for("error", WAIT, |list| {
+        list.iter().any(|e| e["state"] == "error")
+    });
+    let error = list.iter().find(|e| e["state"] == "error").unwrap();
+    assert!(error["error"].as_str().unwrap().contains("Snap"), "{error}");
+    assert_eq!(fx.fake.launches.load(Ordering::SeqCst), 0);
 }

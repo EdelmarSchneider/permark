@@ -454,6 +454,7 @@ export function createMockAcp(
           chosen: agent !== null,
           error,
           methods: state === "needsLogin" ? [...MOCK_LOGIN_METHODS] : [],
+          ...(agent !== null && agent.needs !== null ? { needs: agent.needs } : {}),
         };
       },
       "acp.agents": () => {

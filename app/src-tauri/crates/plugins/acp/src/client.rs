@@ -5,15 +5,16 @@
 //! - each message is decoded on its own: a line that is no JSON-RPC message, or one longer than [`LINE_CAP`], is
 //!   skipped, never fatal (agents add kinds of news faster than any client learns them).
 //! - an error answer keeps its JSON-RPC code ([`CallError::Refused`]): `auth_required` asks the person to sign in.
-//! - writes go through one lock (a whole line at a time, flushed).
+//! - writes: one writer thread takes whole lines from a queue, in order, and flushes each; a caller only queues (a full
+//!   pipe of an agent that stopped reading never holds up a stop, a cancel or the reader thread's replies).
 //! - the agent's stderr is drained into a short tail ([`TAIL_CAP`]) for error reports; it is never written anywhere.
 //! - end of the agent's output (it exited) | [`Connection::close`] -> every waiting call answers `Closed`.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
 use agent_client_protocol_schema::v1::{
@@ -103,15 +104,15 @@ struct Incoming {
 
 /// The connection to one running agent.
 pub struct Connection {
-    /// The agent's stdin; `None` once closed.
-    writer: Mutex<Option<Box<dyn Write + Send>>>,
+    /// Lines for the writer thread (the only writer of the agent's stdin); `None` once closed.
+    outbox: Mutex<Option<Sender<Vec<u8>>>>,
     waiting: Mutex<Waiting>,
     next: AtomicI64,
     tail: Tail,
 }
 
 impl Connection {
-    /// Starts the reader and stderr threads.
+    /// Starts the writer, reader and stderr threads.
     ///
     /// # Errors
     /// A thread cannot be started.
@@ -122,8 +123,9 @@ impl Connection {
         inbox: Arc<dyn Inbox>,
     ) -> io::Result<Arc<Self>> {
         let (done_tx, done_rx) = mpsc::sync_channel(1);
+        let (lines, queued) = mpsc::channel();
         let connection = Arc::new(Self {
-            writer: Mutex::new(Some(to_agent)),
+            outbox: Mutex::new(Some(lines)),
             waiting: Mutex::new(Waiting::default()),
             next: AtomicI64::new(1),
             tail: Tail {
@@ -131,10 +133,18 @@ impl Connection {
                 done: Mutex::new(done_rx),
             },
         });
-        let reader = Arc::clone(&connection);
+        let writer = Arc::downgrade(&connection);
         std::thread::Builder::new()
+            .name("acp-agent-in".into())
+            .spawn(move || write_loop(&queued, to_agent, &writer))?;
+        let reader = Arc::clone(&connection);
+        let read = std::thread::Builder::new()
             .name("acp-agent-out".into())
-            .spawn(move || reader.read_loop(from_agent, inbox.as_ref()))?;
+            .spawn(move || reader.read_loop(from_agent, inbox.as_ref()));
+        if let Err(error) = read {
+            connection.close();
+            return Err(error);
+        }
         let drain = Arc::clone(&connection);
         let drained = std::thread::Builder::new()
             .name("acp-agent-err".into())
@@ -267,20 +277,23 @@ impl Connection {
         self.send(&JsonRpcMessage::wrap(Response::new(id, answer)))
     }
 
+    /// Queues one line for the writer thread (never waits on the agent).
     fn send(&self, message: &impl Serialize) -> io::Result<()> {
         let mut line = serde_json::to_vec(message).map_err(io::Error::other)?;
         line.push(b'\n');
-        let mut writer = lock(&self.writer);
-        let to = writer
-            .as_mut()
-            .ok_or_else(|| io::Error::from(io::ErrorKind::BrokenPipe))?;
-        to.write_all(&line).and_then(|()| to.flush())
+        let closed = || io::Error::from(io::ErrorKind::BrokenPipe);
+        lock(&self.outbox)
+            .as_ref()
+            .ok_or_else(closed)?
+            .send(line)
+            .map_err(|_| closed())
     }
 
-    /// Closes the agent's stdin (an ACP agent exits on it) and ends every waiting call (`Closed`), even while the
-    /// agent's output stays open (a grandchild holding it).
+    /// Ends every waiting call (`Closed`), even while the agent's output stays open (a grandchild holding it), and
+    /// closes the agent's stdin once the lines already queued are written (an ACP agent exits on it). Never waits on
+    /// the agent: a writer stuck on a full pipe ends when the agent is stopped.
     pub fn close(&self) {
-        drop(lock(&self.writer).take());
+        drop(lock(&self.outbox).take());
         self.close_calls();
     }
 
@@ -296,6 +309,24 @@ impl Connection {
     pub fn stderr_tail(&self, max_chars: usize, wait: Duration) -> String {
         self.tail.settle(wait);
         self.tail.text(max_chars)
+    }
+}
+
+/// The writer thread: each queued line in order, flushed. Ends once the queue's sender is gone ([`Connection::close`])
+/// and the queue is written, then closes the agent's stdin | when the stdin broke (every waiting call then answers
+/// `Closed`: nothing more reaches the agent).
+fn write_loop(
+    queued: &Receiver<Vec<u8>>,
+    mut to: Box<dyn Write + Send>,
+    connection: &Weak<Connection>,
+) {
+    for line in queued {
+        if to.write_all(&line).and_then(|()| to.flush()).is_err() {
+            if let Some(connection) = connection.upgrade() {
+                connection.close();
+            }
+            return;
+        }
     }
 }
 

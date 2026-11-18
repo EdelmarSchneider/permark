@@ -44,6 +44,8 @@ const ID: PluginId = PluginId::of("acp");
 
 /// Folder of the copies under the plugin's profile folder for the project.
 const WORK: &str = "work";
+/// Empty folder the agent's program starts in, beside the copies.
+const RUN: &str = "run";
 
 /// The work copy of one instance (`None` until the first prompt makes it).
 pub type SharedCopy = Arc<Mutex<Option<WorkCopy>>>;
@@ -74,6 +76,8 @@ struct Started {
     copy: SharedCopy,
     /// `<profile>/projects/<id>/plugins/acp/work/` (`None`: no state store, so no copy can exist).
     place: Option<PathBuf>,
+    /// `<profile>/projects/<id>/plugins/acp/run/`, the agent's start folder.
+    run: Option<PathBuf>,
 }
 
 impl Running for Started {}
@@ -86,9 +90,9 @@ impl Drop for Started {
         if let Some(copy) = lock(&self.copy).take() {
             let _ = copy.remove();
         }
-        if let Some(place) = &self.place {
+        for folder in [&self.place, &self.run].into_iter().flatten() {
             // never follows a link: a link in its place is removed itself
-            let _ = std::fs::remove_dir_all(place);
+            let _ = std::fs::remove_dir_all(folder);
         }
     }
 }
@@ -179,9 +183,9 @@ impl Plugin for Acp {
             });
         };
         let copy: SharedCopy = Arc::new(Mutex::new(None));
-        let place = cx
-            .store()
-            .map(|store| store.profile_plugin_dir(&cx.id).join(WORK));
+        let own = cx.store().map(|store| store.profile_plugin_dir(&cx.id));
+        let place = own.as_ref().map(|dir| dir.join(WORK));
+        let run = own.map(|dir| dir.join(RUN));
         // the profile folder itself, whatever the project holds: read at every agent start
         let choice = cx
             .store()
@@ -191,6 +195,7 @@ impl Plugin for Acp {
             launch: person_launch(),
             project: Project::of(vault, services),
             place: place.clone(),
+            run: run.clone(),
             copy: Arc::clone(&copy),
             events: cx.events().clone(),
         });
@@ -198,6 +203,7 @@ impl Plugin for Acp {
             _rpc: register(cx, &copy, &session),
             session,
             place,
+            run,
             copy,
         }))
     }
@@ -237,13 +243,16 @@ mod tests {
         assert!(plugin().start(&cx).is_err());
     }
 
-    /// Turning the plugin off removes its work folder: the copy and anything an earlier run left there.
+    /// Turning the plugin off removes its work and start folders: the copy and anything an earlier run left there.
     #[test]
     fn stopping_leaves_nothing() {
         let place = tempfile::tempdir().unwrap();
         let work = place.path().join(WORK);
+        let run = place.path().join(RUN);
         std::fs::create_dir_all(work.join("old-copy")).unwrap();
         std::fs::write(work.join("old-copy").join("a.md"), "a").unwrap();
+        std::fs::create_dir_all(&run).unwrap();
+        std::fs::write(run.join(".npmrc"), "x").unwrap();
         let project = tempfile::tempdir().unwrap();
         let (vault, documents) = testing::open(project.path());
         let copy: SharedCopy = Arc::new(Mutex::new(None));
@@ -254,6 +263,7 @@ mod tests {
             }),
             project: testing::project(&vault, &documents),
             place: Some(work.clone()),
+            run: Some(run.clone()),
             copy: Arc::clone(&copy),
             events: testing::events(Arc::new(NoEvents)),
         });
@@ -262,9 +272,11 @@ mod tests {
             session,
             copy,
             place: Some(work.clone()),
+            run: Some(run.clone()),
         };
         drop(started);
         assert!(!work.exists());
+        assert!(!run.exists());
         assert!(place.path().exists());
     }
 }

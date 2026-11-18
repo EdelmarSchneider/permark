@@ -169,6 +169,7 @@ export class AcpStore {
           state: update.state,
           error: update.error,
           methods: update.methods ?? [],
+          needs: this.status?.needs,
         };
         if (update.error !== null)
           this.#push({
@@ -437,7 +438,13 @@ export class AcpStore {
     this.status =
       now === null
         ? answer
-        : { ...now, agent: answer.agent, agentName: answer.agentName, chosen: answer.chosen };
+        : {
+            ...now,
+            agent: answer.agent,
+            agentName: answer.agentName,
+            chosen: answer.chosen,
+            needs: answer.needs,
+          };
   }
 
   #push(entry: NewEntry): void {
@@ -571,6 +578,8 @@ export function howKey(entry: AgentEntry): MessageKey {
         case "install":
         case null:
           return "acp.needs.install";
+        case "snap":
+          return "acp.how.notFound";
         default:
           return entry.needs satisfies never;
       }

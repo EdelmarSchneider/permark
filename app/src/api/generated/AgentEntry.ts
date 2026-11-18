@@ -19,7 +19,8 @@ name: string, description: string, version: string, how: AgentHow,
  */
 needs: AgentNeed | null, 
 /**
- * The command as it would run (program by name).
+ * The command as it would run: a found own program | own command by its full path (what really starts); else
+ * the program by name.
  */
 command: string, 
 /**

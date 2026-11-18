@@ -96,7 +96,7 @@ fn each_agent_starts_the_best_way_this_computer_has() {
     let bin = tempfile::tempdir().unwrap();
     let find = testing::find_in(bin.path());
     let here = platforms();
-    let resolve = |id: &str| resolve_listed(listed(id), here, &find);
+    let resolve = |id: &str| resolve_listed(listed(id), here, &*find);
 
     let claude = resolve("claude-acp");
     assert_eq!(
@@ -153,7 +153,12 @@ fn each_agent_starts_the_best_way_this_computer_has() {
         assert_eq!((claude.how, claude.needs), (AgentHow::Native, None));
         let plan = claude.plan.unwrap();
         same_file(&plan.program, &own);
-        assert_eq!(claude.shown, file_name(&build.cmd));
+        // the list shows which file starts; a terminal sign-in line names it as a terminal finds it
+        assert_eq!(
+            claude.shown,
+            shown(&plan.program.to_string_lossy(), &build.args)
+        );
+        assert_eq!(plan.shown, shown(file_name(&build.cmd), &build.args));
     }
     if let Some(build) = listed("goose").build(here) {
         testing::program(bin.path(), file_name(&build.cmd));
@@ -245,12 +250,15 @@ fn a_choice_is_one_listed_agent_or_an_own_command() {
     // no registry name: the window names an own command in its language, never by its program file
     assert_eq!(chosen.name, None);
     assert_eq!(chosen.resolved.how, AgentHow::Custom);
-    assert_eq!(chosen.resolved.shown, typed);
+    let resolved_line = format!("{} --acp --verbose", own.display());
+    assert_eq!(chosen.resolved.shown, resolved_line);
     let plan = chosen.resolved.plan.unwrap();
     assert_eq!(plan.program, own);
     assert_eq!(plan.args, ["--acp", "--verbose"]);
+    assert_eq!(plan.shown, typed);
     let list = agents.list();
     let custom = list.last().unwrap();
+    assert_eq!(custom.command, resolved_line);
     assert_eq!(
         (custom.id.as_str(), custom.how, custom.needs, custom.chosen),
         (CUSTOM_ID, AgentHow::Custom, None, true)
@@ -358,4 +366,92 @@ fn a_stored_agent_the_list_lacks_is_no_choice() {
     let agents = testing::agents(profile.path(), bin.path());
     assert_eq!(agents.chosen(), None);
     assert!(agents.list().iter().all(|entry| !entry.chosen));
+}
+
+/// An own command found by its bare name shows the full path of the file that starts (a same-named program
+/// elsewhere on `PATH` would be a different one).
+#[test]
+fn an_own_command_shows_the_file_that_starts() {
+    let profile = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    let own = testing::program(bin.path(), "my-agent");
+    let agents = testing::agents(profile.path(), bin.path());
+    agents.choose(&command(r#"my-agent --acp "a b""#)).unwrap();
+    let custom = agents.list().pop().unwrap();
+    let shown_program = custom.command.split(" --acp").next().unwrap().to_owned();
+    same_file(Path::new(&shown_program), &own);
+    assert!(
+        custom.command.ends_with(r#" --acp "a b""#),
+        "{}",
+        custom.command
+    );
+}
+
+/// A program named by a relative path would be a file under the folder the agent starts in: refused.
+#[test]
+fn an_own_command_with_a_relative_program_path_is_refused() {
+    let profile = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    let agents = testing::agents(profile.path(), bin.path());
+    let mut relative = vec!["./agent --acp", "bin/agent", r#""tools/my agent" --acp"#];
+    if cfg!(windows) {
+        relative.extend([
+            r".\agent.cmd",
+            r"bin\agent.exe",
+            r"\agent.exe",
+            "C:agent.exe",
+        ]);
+    }
+    for typed in relative {
+        let error = agents.choose(&command(typed)).unwrap_err();
+        assert_eq!(
+            (error.kind, error.detail.as_deref()),
+            (ErrorKind::InvalidData, Some("relativeProgram")),
+            "{typed}"
+        );
+    }
+    assert!(!profile.path().join(CHOICE_FILE).exists());
+}
+
+/// Inside a strict Snap no program of the computer can start: every agent needs `snap`, nothing can be chosen, and
+/// a choice made before starts nothing.
+#[test]
+fn inside_a_snap_no_agent_can_start() {
+    let profile = tempfile::tempdir().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    testing::program(bin.path(), "npx");
+    testing::program(bin.path(), "my-agent");
+    let free = testing::agents(profile.path(), bin.path());
+    assert!(free.blocked().is_none());
+    free.choose(&command("my-agent --acp")).unwrap();
+    let snap = testing::agents(profile.path(), bin.path()).in_snap(true);
+    assert_eq!(snap.blocked(), Some(AgentNeed::Snap));
+    let list = snap.list();
+    assert!(list.len() > 40);
+    for entry in &list {
+        let how = if entry.id == CUSTOM_ID {
+            AgentHow::Custom
+        } else {
+            AgentHow::Missing
+        };
+        assert_eq!(
+            (entry.how, entry.needs),
+            (how, Some(AgentNeed::Snap)),
+            "{}",
+            entry.id
+        );
+    }
+    let claude = list.iter().find(|entry| entry.id == "claude-acp").unwrap();
+    assert_eq!(
+        claude.command,
+        "npx -y @agentclientprotocol/claude-agent-acp@0.108.0"
+    );
+    let chosen = snap.chosen().unwrap();
+    assert_eq!(chosen.resolved.needs, Some(AgentNeed::Snap));
+    assert_eq!(chosen.resolved.plan, None);
+    let error = snap.choose(&agent("gemini")).unwrap_err();
+    assert_eq!(
+        (error.kind, error.detail.as_deref()),
+        (ErrorKind::Unavailable, Some("snap"))
+    );
 }

@@ -3,4 +3,4 @@
 /**
  * What the person must install before an agent can start.
  */
-export type AgentNeed = "node" | "uv" | "install";
+export type AgentNeed = "node" | "uv" | "install" | "snap";

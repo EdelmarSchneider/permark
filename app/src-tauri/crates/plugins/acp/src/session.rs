@@ -1,11 +1,12 @@
 //! The agent of one project instance, spoken to over the Agent Client Protocol (v1).
 //!
 //! - started at the first prompt, on a thread of its own (the RPC thread never waits on the agent): the person's
-//!   choice read now ([`Agents`]: a new choice applies at the next start), work copy made when absent, the agent
-//!   started in it, `initialize` (no file system, no terminal offered: the agent works on the copy with its own
-//!   tools; terminal sign-in methods are welcome: the person runs them) -> `session/new` (folder = the copy, no MCP
-//!   servers) -> `session/set_mode` `default` when offered (a person's own "auto" default would let the agent skip
-//!   every question).
+//!   choice read now ([`Agents`]: a new choice applies at the next start), work copy made when absent, the agent's
+//!   program started in an empty folder of the plugin's own ([`Host::run`]: never the copy, whose project files a
+//!   runner such as `npx` would read as its settings), `initialize` (no file system, no terminal offered: the agent
+//!   works on the copy with its own tools; terminal sign-in methods are welcome: the person runs them) ->
+//!   `session/new` (folder = the copy, no MCP servers) -> `session/set_mode` `default` when offered (a person's own
+//!   "auto" default would let the agent skip every question).
 //! - `auth_required` at `session/new` | a prompt -> `NeedsLogin` with the agent's sign-in methods; `acp.login` has the
 //!   agent sign in (`authenticate`, agent methods only) or just tries again, then the waiting prompt goes on.
 //! - each prompt: the copy takes the person's latest changes first ([`WorkCopy::sync`]), then `session/prompt`; the
@@ -71,6 +72,10 @@ pub struct Host {
     pub project: Project,
     /// Folder the copy is made in (`None`: no profile, no copy can be made).
     pub place: Option<PathBuf>,
+    /// Folder the agent's program starts in, emptied before each start, outside the project and the copy: a runner
+    /// (`npx`, `uvx`) reads its settings from the folder it starts in, and a project's must never choose what it runs
+    /// (`None`: no profile, nothing starts).
+    pub run: Option<PathBuf>,
     pub copy: SharedCopy,
     pub events: PluginEvents,
 }
@@ -188,7 +193,8 @@ struct Agent {
 }
 
 impl Agent {
-    /// Closes its stdin, then ends it (grace, then kill); every call waiting on it answers `Closed`.
+    /// Closes its stdin (never waits on a write the agent does not read), then ends it (grace, then its whole process
+    /// tree killed); every call waiting on it answers `Closed`.
     fn stop(&self) {
         self.connection.close();
         let stop = lock(&self.stop).take();
@@ -309,6 +315,9 @@ impl Session {
             chosen: chosen.is_some(),
             error: inner.state.error(),
             methods: inner.state.methods().unwrap_or_default(),
+            needs: chosen
+                .as_ref()
+                .map_or_else(|| self.core.host.agents.blocked(), |c| c.resolved.needs),
         }
     }
 
@@ -868,6 +877,18 @@ impl Core {
         Ok(Some(dir))
     }
 
+    /// The agent's start folder, empty: anything an earlier run left there would be read as a runner's settings.
+    fn start_folder(&self) -> Result<PathBuf, String> {
+        let run = self
+            .host
+            .run
+            .as_ref()
+            .ok_or_else(|| "There is no profile folder to start the agent in.".to_owned())?;
+        empty_folder(run)
+            .map_err(|e| format!("The agent's start folder cannot be prepared ({e})."))?;
+        Ok(run.clone())
+    }
+
     /// Reads the person's choice, makes the copy, starts the program, opens the session (`None`: replaced meanwhile).
     fn open(self: &Arc<Self>, generation: u64) -> Result<Option<Opened>, String> {
         let chosen = self
@@ -886,12 +907,13 @@ impl Core {
         let copy = Root::open(&dir)
             .map(Vault::new)
             .map_err(|e| format!("The work copy cannot be opened ({e})."))?;
+        let run = self.start_folder()?;
         let AgentPipes {
             to_agent,
             from_agent,
             stderr,
             stop,
-        } = (self.host.launch)(&plan, &dir)
+        } = (self.host.launch)(&plan, &run)
             .map_err(|e| format!("The agent could not be started ({}): {e}", plan.shown))?;
         let inbox = Arc::new(Listener {
             core: Arc::clone(self),
@@ -1083,8 +1105,30 @@ fn call_failed(connection: &Connection, step: &str, error: CallError) -> String 
     }
 }
 
+/// Makes `dir` an empty folder: what it holds is removed (a link in its place is removed itself, never followed). An
+/// empty one stays as it is: an agent still stopping may have it as its working folder, which Windows will not remove.
+fn empty_folder(dir: &Path) -> std::io::Result<()> {
+    match std::fs::symlink_metadata(dir) {
+        Ok(meta) if meta.is_dir() => {
+            if std::fs::read_dir(dir)?.next().is_none() {
+                return Ok(());
+            }
+            std::fs::remove_dir_all(dir)?;
+        }
+        // a file | a link (Windows: a folder link goes with `remove_dir`)
+        Ok(_) => std::fs::remove_file(dir).or_else(|_| std::fs::remove_dir(dir))?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    std::fs::create_dir_all(dir)
+}
+
 /// Plain-English text of a chosen agent that cannot start on this computer.
 fn missing_text(chosen: &Chosen) -> String {
+    if chosen.resolved.needs == Some(AgentNeed::Snap) {
+        return "The Snap package of PerMark cannot start programs installed on this computer."
+            .to_owned();
+    }
     let Some(name) = &chosen.name else {
         let program = agents::command_program(&chosen.resolved.shown).unwrap_or_default();
         return format!("The program of your command was not found: {program}");
@@ -1092,7 +1136,8 @@ fn missing_text(chosen: &Chosen) -> String {
     match chosen.resolved.needs {
         Some(AgentNeed::Node) => format!("{name} needs Node.js: npx was not found."),
         Some(AgentNeed::Uv) => format!("{name} needs uv: uvx was not found."),
-        Some(AgentNeed::Install) | None => {
+        // `snap`: worded above
+        Some(AgentNeed::Install | AgentNeed::Snap) | None => {
             let program = chosen
                 .resolved
                 .shown
