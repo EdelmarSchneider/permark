@@ -211,7 +211,7 @@
           <li class="question" aria-labelledby="{uid}-q{entry.id}">
             <p class="ask" id="{uid}-q{entry.id}">{t("acp.question")}</p>
             <p class="ask-title">{entry.title}</p>
-            {#if entry.detail !== ""}
+            {#if entry.detail !== "" && entry.detail !== entry.title}
               <pre class="detail">{entry.detail}</pre>
             {/if}
             {#if entry.answer.status === "open"}
@@ -545,6 +545,15 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--sp-1);
+  }
+  /* agents name their options freely ("Yes, and don't ask again for …"): long names wrap inside the panel */
+  .options .btn {
+    max-width: 100%;
+    height: auto;
+    min-height: 24px;
+    white-space: normal;
+    text-align: start;
+    overflow-wrap: anywhere;
   }
   .notice {
     padding: var(--sp-1) var(--sp-2);

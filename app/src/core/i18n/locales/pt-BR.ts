@@ -2927,7 +2927,7 @@ export default {
   "export.diagramFailed": "Não foi possível desenhar este diagrama.",
   "plugin.acp.name": "Assistente",
   "plugin.acp.about":
-    "Deixa um agente escolhido por você trabalhar numa cópia desta pasta. Você decide quais mudanças dele chegam aos seus arquivos. Experimental: desligado até você ligar.",
+    "Deixa um agente escolhido por você trabalhar numa cópia desta pasta. Você decide quais mudanças dele chegam aos seus arquivos. Precisa do agente instalado e com login feito (por padrão o Claude Code, iniciado pelo npx do Node). Experimental: desligado até você ligar.",
   "acp.label": "Assistente",
   "acp.close": "Fechar o Assistente",
   "acp.toggle": "Mostrar ou ocultar o Assistente",

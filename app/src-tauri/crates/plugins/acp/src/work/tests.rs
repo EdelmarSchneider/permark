@@ -95,6 +95,8 @@ fn agent_settings_and_machinery_are_kept_out() {
         ".git/config",
         ".git",
         "nested/.permark/config.toml",
+        ".aiignore",
+        "notes/.AIIGNORE",
     ] {
         assert!(kept_out(path), "{path}");
     }
@@ -135,15 +137,11 @@ fn the_copy_holds_only_what_an_agent_may_see() {
     let work = f.build();
     assert!(work.dir().starts_with(f.profile.path()));
     assert!(!work.dir().starts_with(f.project.path()));
-    for kept in [
-        "README.md",
-        "docs/a.md",
-        ".aiignore",
-        ".claude/commands/x.md",
-    ] {
+    for kept in ["README.md", "docs/a.md", ".claude/commands/x.md"] {
         assert_eq!(copied(&work, kept), Some(f.real(kept)), "{kept}");
     }
     for out in [
+        ".aiignore",
         "secret/key.md",
         "private/p.md",
         ".permark/config.toml",

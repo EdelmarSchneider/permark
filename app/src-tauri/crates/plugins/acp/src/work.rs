@@ -41,6 +41,8 @@ const RULES_WAIT: Duration = Duration::from_secs(5);
 
 /// The project's own machinery (any depth): never copied, never offered back (a hook planted in `.git` would run).
 const PRIVATE_FOLDERS: [&str; 2] = [".git", ".permark"];
+/// Files naming what agents may not see (any depth): their lines would tell the agent the hidden names.
+const PRIVATE_FILES: [&str; 1] = [".aiignore"];
 /// Folders agents read as their own settings (permissions, tools, servers), any depth.
 const AGENT_FOLDERS: [&str; 5] = [".codex", ".gemini", ".cursor", ".vscode", ".opencode"];
 /// Files agents read as their own settings, any depth.
@@ -67,6 +69,7 @@ pub fn kept_out(path: &str) -> bool {
     };
     folders.iter().any(|folder| kept_out_folder(folder))
         || named(name, &PRIVATE_FOLDERS)
+        || named(name, &PRIVATE_FILES)
         || named(name, &AGENT_FILES)
         || (named(name, &CLAUDE_SETTINGS) && folders.last().is_some_and(|f| named(f, &[".claude"])))
 }

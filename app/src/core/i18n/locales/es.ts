@@ -2937,7 +2937,7 @@ export default {
   "export.diagramFailed": "No se pudo dibujar este diagrama.",
   "plugin.acp.name": "Assistant",
   "plugin.acp.about":
-    "Lets an agent you choose work on a copy of this folder. You decide which of its changes reach your files. Experimental: off until you turn it on.",
+    "Lets an agent you choose work on a copy of this folder. You decide which of its changes reach your files. Needs the agent installed and signed in (by default Claude Code, started with Node's npx). Experimental: off until you turn it on.",
   "acp.label": "Assistant",
   "acp.close": "Close the Assistant",
   "acp.toggle": "Show or hide the Assistant",
