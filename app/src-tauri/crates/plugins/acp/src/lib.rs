@@ -8,7 +8,8 @@
 //! [`AgentEntry`]`[]`; `prompt` [`PromptArgs`] -> `null` (the reply comes as events); `login` [`LoginArgs`] -> `null`;
 //! `cancel {}` | `reset {}` -> `null`; `answer` [`AnswerArgs`] -> `null`; `changes` [`ChangesArgs`] -> the kept
 //! [`ChangeList`] (computed at each turn's end | when asked to refresh; empty while no copy exists); `accept | reject`
-//! [`DecideArgs`] (hunk keys; `null`: the whole file) | `undo` [`UndoArgs`] -> the updated [`ChangeList`]. Event
+//! [`DecideArgs`] (hunk keys; `null`: the whole file) | `undo` [`UndoArgs`] -> the updated [`ChangeList`]; `render`
+//! [`RenderArgs`] -> [`RenderedReply`] (an agent's finished message as document blocks, [`reply`]). Event
 //! `acp:update` -> [`AcpUpdate`].
 //!
 //! Off | project closed: the agent stops, then the copy is deleted (pending changes with it).
@@ -16,6 +17,7 @@
 pub mod agents;
 pub mod client;
 pub mod dto;
+pub mod reply;
 pub mod session;
 #[cfg(test)]
 mod testing;
@@ -28,7 +30,7 @@ use std::sync::{Arc, Mutex};
 use permark_core::conditions::Requirement;
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
-    PluginScope, RpcRegistration, Running,
+    PluginScope, ProjectServices, RpcRegistration, Running,
 };
 use permark_core::{ErrorKind, IpcError};
 
@@ -39,7 +41,8 @@ pub use dto::{
     AcpError, AcpErrorCode, AcpOptionKind, AcpState, AcpStatus, AcpStopReason, AcpToolKind,
     AcpToolStatus, AcpUpdate, AgentEntry, AgentHow, AgentNeed, AnswerArgs, ChangeList, ChangesArgs,
     ChooseArgs, DecideArgs, FileChange, FileChangeKind, HunkView, LoginArgs, LoginKind,
-    LoginMethod, PermissionChoice, PromptArgs, PromptSelection, UndoArgs,
+    LoginMethod, PermissionChoice, PromptArgs, PromptSelection, RenderArgs, RenderedReply,
+    UndoArgs,
 };
 pub use session::{Host, Session};
 pub use work::{copy_dir, Project, WorkCopy};
@@ -128,8 +131,25 @@ fn decide(copy: &SharedCopy, args: &DecideArgs, choose: Decision) -> Result<Chan
     })
 }
 
-fn register(cx: &PluginCx, copy: &SharedCopy, session: &Session) -> Vec<RpcRegistration> {
+fn register(
+    cx: &PluginCx,
+    copy: &SharedCopy,
+    session: &Session,
+    services: ProjectServices,
+    copy_names: Vec<PathBuf>,
+) -> Vec<RpcRegistration> {
     let mut rpc = Vec::new();
+    rpc.extend(cx.rpc(
+        "render",
+        typed(move |args: RenderArgs, _| {
+            reply::render(
+                &args.text,
+                &services.formats(),
+                services.documents.scope(),
+                &copy_names,
+            )
+        }),
+    ));
     let s = session.clone();
     rpc.extend(cx.rpc("status", typed(move |_: NoArgs, _| Ok(s.status()))));
     let s = session.clone();
@@ -201,6 +221,7 @@ impl Plugin for Acp {
         let own = cx.store().map(|store| store.profile_plugin_dir(&cx.id));
         let place = own.as_ref().map(|dir| dir.join(WORK));
         let run = own.map(|dir| dir.join(RUN));
+        let copy_names = reply::copy_spellings(place.as_deref(), vault.main());
         // the profile folder itself, whatever the project holds: read at every agent start
         let choice = cx
             .store()
@@ -215,7 +236,7 @@ impl Plugin for Acp {
             events: cx.events().clone(),
         });
         Ok(Box::new(Started {
-            _rpc: register(cx, &copy, &session),
+            _rpc: register(cx, &copy, &session, services.clone(), copy_names),
             session,
             place,
             run,

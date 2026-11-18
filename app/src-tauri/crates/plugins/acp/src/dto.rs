@@ -1,5 +1,6 @@
 //! What the window and the plugin exchange: the agent's state and news, prompts, answers, the copy's changes.
 
+use permark_core::format::Block;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -363,6 +364,24 @@ pub struct PromptArgs {
     #[serde(default)]
     #[ts(optional)]
     pub document: Option<String>,
+}
+
+/// Arguments of `acp.render`.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export)]
+pub struct RenderArgs {
+    /// The agent's whole message (Markdown); at most 256 KiB (longer: refused, `replyTooLarge`).
+    pub text: String,
+}
+
+/// An agent's message rendered as a document of the project is: sanitized blocks, paths into the copy written as
+/// project paths.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RenderedReply {
+    pub blocks: Vec<Block>,
 }
 
 /// Arguments of `acp.answer`.

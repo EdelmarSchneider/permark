@@ -66,6 +66,8 @@ function firstRun(): void {
 beforeEach(() => {
   vi.spyOn(acp, "refreshChanges").mockResolvedValue();
   vi.spyOn(acp, "loadAgents").mockResolvedValue();
+  // a whole message stays plain text unless a test renders it
+  vi.spyOn(acp, "render").mockResolvedValue(null);
   acp.clear();
   acp.status = {
     state: "ready",
@@ -97,12 +99,44 @@ describe("the Assistant panel", () => {
     expect(root.querySelector("[data-view-header]")).not.toBeNull();
   });
 
-  it("shows the agent's text as plain text", () => {
+  it("shows the agent's text as plain text while it comes", () => {
+    acp.take({ type: "status", state: "working", error: null });
     acp.take({ type: "text", text: "<b>bold</b> <img src=x onerror=alert(1)>" });
     open();
     const reply = root.querySelector(".agent-text .text");
     expect(reply?.textContent).toBe("<b>bold</b> <img src=x onerror=alert(1)>");
     expect(reply?.querySelector("b, img")).toBeNull();
+  });
+
+  it("renders a message once another line follows it or the turn ended", async () => {
+    const render = vi.spyOn(acp, "render").mockImplementation((text) =>
+      Promise.resolve([
+        {
+          id: "b0",
+          kind: "p",
+          lineStart: 1,
+          lineEnd: 1,
+          html: `<p data-b="b0"><em>${text}</em></p>`,
+        },
+      ]),
+    );
+    acp.take({ type: "status", state: "working", error: null });
+    acp.take({ type: "text", text: "first" });
+    open();
+    await settle();
+    expect(render).not.toHaveBeenCalled();
+    acp.take({ type: "tool", id: "t1", title: "Read a.md", kind: "read", status: "pending" });
+    acp.take({ type: "text", text: "second" });
+    await settle();
+    expect(render.mock.calls).toEqual([["first"]]);
+    expect(root.querySelector(".agent-text .md-body em")?.textContent).toBe("first");
+    acp.take({ type: "status", state: "ready", error: null });
+    await settle();
+    expect(render.mock.calls).toEqual([["first"], ["second"]]);
+    expect([...root.querySelectorAll(".agent-text em")].map((e) => e.textContent)).toEqual([
+      "first",
+      "second",
+    ]);
   });
 
   it("a question answers with the option the person picks, then says what was answered", () => {

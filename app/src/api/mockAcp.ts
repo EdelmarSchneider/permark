@@ -22,6 +22,7 @@ import type { LoginArgs } from "./generated/LoginArgs";
 import type { LoginMethod } from "./generated/LoginMethod";
 import type { PermissionChoice } from "./generated/PermissionChoice";
 import type { PromptArgs } from "./generated/PromptArgs";
+import { mockNoteView } from "./mockDocs";
 import { MockPluginError } from "./mockOrganizing";
 import type { PluginEventName, PluginEvents, PluginMethods } from "./types";
 
@@ -39,6 +40,7 @@ type AcpMethods = Pick<
   | "acp.accept"
   | "acp.reject"
   | "acp.undo"
+  | "acp.render"
 >;
 
 /** The person's choice: an agent of the list | an own command. */
@@ -223,6 +225,17 @@ function guideChanges(): FileChange[] {
   ];
 }
 
+/** The end of a reply in pieces: what a finished message renders (a heading, a list, code, a table, links, a code
+ *  reference, a picture on the web). */
+const SUMMARY: readonly string[] = [
+  "## What changed\n\n",
+  "- the first steps, now two sentences\n- a new row for `Ctrl+E`\n\n",
+  `See ${GUIDE}:3, the [guide](${GUIDE}) and [CommonMark](https://commonmark.org).\n\n`,
+  "```sh\nnpm run check-links -- --all-files-in-the-project-including-drafts\n```\n\n",
+  "| Shortcut | Action |\n|---|---|\n| Ctrl+E | Edit |\n\n",
+  "![Link map](https://example.com/link-map.png)\n",
+];
+
 const OPTIONS: PermissionChoice[] = [
   { id: "allow-once", name: "Yes", kind: "allow_once" },
   { id: "allow-always", name: "Yes, and don't ask again", kind: "allow_always" },
@@ -250,6 +263,11 @@ function projectFile(path: string): void {
 
 /** Longest passage a prompt attaches, in UTF-8 bytes (the plugin's `MAX_PASSAGE_BYTES`). */
 const MAX_PASSAGE_BYTES = 256 * 1024;
+
+/** Longest message the plugin renders, in UTF-8 bytes (its `MAX_REPLY_BYTES`). */
+const MAX_REPLY_BYTES = 256 * 1024;
+/** The document a message is rendered as (the plugin's `REPLY_DOC`). */
+const REPLY_DOC = "assistant.md";
 
 /** Refuses a prompt the plugin would refuse before anything starts. */
 function check(args: PromptArgs): void {
@@ -423,10 +441,11 @@ export function createMockAcp(
         update: {
           type: "text",
           text: allowed
-            ? "All links work. The changes wait for you below."
-            : "I did not run the check. The changes wait for you below.",
+            ? "All links work. The changes wait for you below.\n\n"
+            : "I did not run the check. The changes wait for you below.\n\n",
         },
       },
+      ...SUMMARY.map((chunk): Step => ({ kind: "news", update: { type: "text", text: chunk } })),
       { kind: "end" },
     ];
   }
@@ -681,6 +700,14 @@ export function createMockAcp(
       "acp.undo": ({ path }) => {
         probe.calls.push("undo");
         return undo(path);
+      },
+      "acp.render": ({ text }) => {
+        probe.calls.push("render");
+        if (new TextEncoder().encode(text).length > MAX_REPLY_BYTES)
+          throw new MockPluginError("tooLarge", null, "replyTooLarge");
+        // no renderer here: a heading | a paragraph per run of lines, inline code and links as elements
+        const body = mockNoteView(REPLY_DOC, text, { inline: true }).body;
+        return { blocks: body.kind === "markdown" ? body.blocks : [] };
       },
     },
   };

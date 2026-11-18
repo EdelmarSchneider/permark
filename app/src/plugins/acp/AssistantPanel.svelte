@@ -1,7 +1,8 @@
 <script lang="ts">
   // The view "Assistant": the conversation with the project's agent (the person's messages, the agent's reply as
-  // plain text while it comes, one "Thinking…" while it thinks, one line per tool, cards for what the agent asks to do
-  // outside its copy), then the files its copy changed, hunk by hunk, each one accepted into the real file or rejected
+  // plain text while it comes and rendered as a document once whole, one "Thinking…" while it thinks, one line per
+  // tool, cards for what the agent asks to do outside its copy), then the files its copy changed, hunk by hunk, each
+  // one accepted into the real file or rejected
   // (Open shows the real file at that line); a bar above the message box leads to them; and the message box with the
   // passage attached from the open document, whose Send turns into Stop while the agent works. The list follows the
   // conversation's end only while the person is there; changes arriving never move it. A question | a sign-in the
@@ -24,6 +25,7 @@
   import DiffBox from "./DiffBox.svelte";
   import HunkCard from "./HunkCard.svelte";
   import LoginCard from "./LoginCard.svelte";
+  import MarkdownReply from "./MarkdownReply.svelte";
   import Note from "./Note.svelte";
   import {
     acp,
@@ -425,7 +427,7 @@
           <Note>{t("acp.hiddenEntries")}</Note>
         {/if}
         <ol class="transcript">
-          {#each acp.transcript as entry (entry.id)}
+          {#each acp.transcript as entry, at (entry.id)}
             {#if entry.kind === "you"}
               <li class="you">
                 <span class="who">{t("acp.you")}</span>
@@ -439,7 +441,11 @@
               </li>
             {:else if entry.kind === "agent"}
               <li class="agent-text">
-                <p class="text">{entry.text}</p>
+                <!-- whole once another line follows it or the turn ended -->
+                <MarkdownReply
+                  text={entry.text}
+                  final={at < acp.transcript.length - 1 || !working}
+                />
               </li>
             {:else if entry.kind === "tool"}
               <li class="tool">

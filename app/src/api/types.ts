@@ -263,6 +263,8 @@ import type { PermissionChoice } from "./generated/PermissionChoice";
 import type { PermissionDiff } from "./generated/PermissionDiff";
 import type { PromptArgs } from "./generated/PromptArgs";
 import type { PromptSelection } from "./generated/PromptSelection";
+import type { RenderArgs } from "./generated/RenderArgs";
+import type { RenderedReply } from "./generated/RenderedReply";
 import type { UndoArgs } from "./generated/UndoArgs";
 
 export type {
@@ -901,6 +903,9 @@ export interface PluginMethods {
   /** Takes back the last accept | reject of `path` once (lost when the plugin stops); answers the updated list.
    *  Refused `notFound` `noUndo`, `conflict` `changed` (the file changed since) | `unsaved`. */
   "acp.undo": { args: UndoArgs; result: ChangeList };
+  /** An agent's whole message as sanitized document blocks (rendered as `assistant.md` at the project root; paths into
+   *  the work copy written as project paths). Refused `tooLarge` `replyTooLarge` (past 256 KiB). */
+  "acp.render": { args: RenderArgs; result: RenderedReply };
 }
 
 /** What the converter reads: a file of the workspace, or a text from the page. */
@@ -1047,6 +1052,8 @@ export type {
   PermissionDiff,
   PromptArgs,
   PromptSelection,
+  RenderArgs,
+  RenderedReply,
   UndoArgs,
 };
 export type {

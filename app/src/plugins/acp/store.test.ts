@@ -154,6 +154,18 @@ describe("a message and its reply", () => {
     expect(store.busy).toBe(false);
   });
 
+  it("a finished message renders through the plugin as document blocks; one past the cap stays plain", async () => {
+    const { store, acp } = await setup();
+    const blocks = await store.render(
+      "## Done\n\nSee `docs/guide.md:3` and [the guide](docs/guide.md).",
+    );
+    expect(acp.calls).toContain("render");
+    expect(blocks?.map((b) => b.kind)).toEqual(["h2", "p"]);
+    expect(blocks?.[1]?.html).toContain('<a href="docs/guide.md">the guide</a>');
+    expect(blocks?.[1]?.html).toContain("<code>docs/guide.md:3</code>");
+    expect(await store.render("x".repeat(256 * 1024 + 1))).toBeNull();
+  });
+
   it("a hunk accepted leaves the other, moved by the lines it added; a file rejected leaves nothing", async () => {
     const { store, acp } = await setup();
     acp.changes = [
@@ -998,6 +1010,16 @@ describe("another project shown meanwhile", () => {
     expect(store.catalog.status).not.toBe("ready");
   });
 
+  it("a message rendered for the project before is dropped", async () => {
+    const { store, root, client } = await setup();
+    const render = hold(client, "acp.render");
+    const rendering = store.render("# Late");
+    root.value = "F:/elsewhere";
+    flushSync();
+    render.answer({ ok: true, value: { blocks: [] } });
+    expect(await rendering).toBeNull();
+  });
+
   it("a list that cannot be read says why and reads again on Try again", async () => {
     const { store, client } = await setup(null);
     const agents = hold(client, "acp.agents");
@@ -1088,6 +1110,16 @@ describe("the mock follows the plugin's checks", () => {
     expect(await refused({ text: "x", document: "" })).toEqual(
       expect.objectContaining({ kind: "invalidPath" }),
     );
+  });
+
+  it("a message to render is capped in bytes as the plugin caps it", async () => {
+    const { api } = await setup();
+    const render = (text: string) => api.pluginCall("acp.render", { text });
+    const refused = await render("é".repeat(128 * 1024 + 1));
+    expect(!refused.ok && refused.error.kind === "backend" && refused.error.error).toEqual(
+      expect.objectContaining({ kind: "tooLarge", detail: "replyTooLarge" }),
+    );
+    expect((await render("x".repeat(256 * 1024))).ok).toBe(true);
   });
 
   it("a file taken only as a whole refuses part of its hunks; a link is never accepted", async () => {

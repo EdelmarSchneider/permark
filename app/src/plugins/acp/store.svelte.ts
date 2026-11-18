@@ -20,6 +20,7 @@ import type {
   AcpUpdate,
   AgentEntry,
   ApiError,
+  Block,
   ChangeList,
   ChooseArgs,
   FileChange,
@@ -542,6 +543,14 @@ export class AcpStore {
     } finally {
       if (this.#root() === root) this.signingIn = false;
     }
+  }
+
+  /** The blocks of an agent's whole message, sanitized as a document's (`null`: not rendered: too long, a failure,
+   *  another project shown meanwhile; the plain text stays). */
+  async render(text: string): Promise<readonly Block[] | null> {
+    const root = this.#root();
+    const result = await this.#client.call("acp.render", { text });
+    return result.ok && this.#root() === root ? result.value.blocks : null;
   }
 
   /** A website in the person's browser (how to install an agent | what it needs). */
