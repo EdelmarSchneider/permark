@@ -768,6 +768,34 @@ describe("the conversation as the person follows it", () => {
     );
   });
 
+  it("a card still open at the turn's end | a stop closes; an answer leaves an earlier card of the same id", async () => {
+    const store = new AcpStore(undefined, undefined, { say: () => {} });
+    const allow = { id: "yes", name: "Allow", kind: "allow_once" } as const;
+    const ask = (requestId: string): void =>
+      store.take({
+        type: "permission",
+        requestId,
+        title: "Run",
+        kind: "execute",
+        detail: "x",
+        options: [allow],
+      });
+    const answers = (): unknown[] =>
+      store.transcript.flatMap((e) => (e.kind === "question" ? [e.answer] : []));
+    // the backend answered it while its card was still on the way: no PermissionDone comes after
+    ask("0");
+    store.take({ type: "turnEnd", stopReason: "end_turn", changed: 0 });
+    expect(answers()).toEqual([{ status: "closed" }]);
+    // a restarted agent numbers its questions from the start again
+    ask("0");
+    const answering = store.answer("0", allow);
+    expect(answers()).toEqual([{ status: "closed" }, { status: "answered", option: "Allow" }]);
+    await answering;
+    ask("1");
+    store.take({ type: "status", state: "ready", error: null });
+    expect(answers().at(-1)).toEqual({ status: "closed" });
+  });
+
   it("an accept | reject leaves one notice per file whose Undo takes it back", async () => {
     const { store, acp, notifyKeyed } = await setup();
     acp.changes = [

@@ -5,7 +5,8 @@
   // (Open shows the real file at that line); a bar above the message box leads to them; and the message box with the
   // passage attached from the open document, whose Send turns into Stop while the agent works. The list follows the
   // conversation's end only while the person is there; changes arriving never move it. A question | a sign-in the
-  // agent waits for is brought into view and takes the keyboard (never from someone typing). No agent chosen yet | the
+  // agent waits for is brought into view and takes the keyboard (never from someone typing; a question's card, never
+  // one of its answers). No agent chosen yet | the
   // person changing it: the picker stands in for the conversation.
   import MessageSquarePlus from "@lucide/svelte/icons/message-square-plus";
   import Quote from "@lucide/svelte/icons/quote";
@@ -91,7 +92,9 @@
     if (follow) void tick().then(showEnd);
   });
 
-  // a question the agent waits at: into view, and its first answer takes the keyboard
+  // a question the agent waits at: into view, and its card takes the keyboard. Never an answer: Enter | Space meant
+  // for the message would allow a command that runs with the person's rights; Tab reaches the answers. The message
+  // box keeps the keyboard (the status line and the live region tell of the card).
   $effect(() => {
     const open = acp.transcript.findLast(
       (e) => e.kind === "question" && e.answer.status === "open",
@@ -103,7 +106,7 @@
       const card = scroller?.querySelector<HTMLElement>(`[data-question="${String(id)}"]`);
       if (!card) return;
       reveal(card);
-      if (mayTakeFocus()) card.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+      if (mayTakeFocus() && document.activeElement !== message) card.focus({ preventScroll: true });
     });
   });
 
@@ -200,16 +203,21 @@
     changesTitle?.focus({ preventScroll: true });
   }
 
-  /** A decision ran with its buttons waiting: the keyboard goes to the next change, else the message box. */
-  async function decided(running: Promise<void>): Promise<void> {
+  /** A decision ran with its buttons waiting: the keyboard goes to the same answer of the next change (Enter goes on
+   *  as the person went), else its first answer, else the message box. */
+  async function decided(running: Promise<void>, choice: "accept" | "reject"): Promise<void> {
     await running;
     await tick();
     if (!adrift()) return;
-    (changesBox?.querySelector<HTMLElement>(".btn:not(:disabled)") ?? message)?.focus();
+    const same = choice === "accept" ? ".btn--primary" : ".btn:not(.btn--primary)";
+    const next =
+      changesBox?.querySelector<HTMLElement>(`${same}:not(:disabled)`) ??
+      changesBox?.querySelector<HTMLElement>(".btn:not(:disabled)");
+    (next ?? message)?.focus();
   }
 
   function decide(choice: "accept" | "reject", path: string, hunks: string[] | null): void {
-    void decided(acp.decide(choice, path, hunks));
+    void decided(acp.decide(choice, path, hunks), choice);
   }
 
   /** The whole file: by the keys of the hunks shown (a list that changed meanwhile is refused, never applied). */
@@ -424,7 +432,12 @@
                 <span class={["tool-status", entry.status]}>{toolStatus(entry.status)}</span>
               </li>
             {:else if entry.kind === "question"}
-              <li class="question" aria-labelledby="{uid}-q{entry.id}" data-question={entry.id}>
+              <li
+                class="question"
+                tabindex="-1"
+                aria-labelledby="{uid}-q{entry.id}"
+                data-question={entry.id}
+              >
                 <p class="ask" id="{uid}-q{entry.id}">{t("acp.question")}</p>
                 <p class="ask-title">{entry.title}</p>
                 {#if entry.detail !== "" && entry.detail !== entry.title}
@@ -641,10 +654,12 @@
   .spacer {
     flex: 1 1 0;
   }
+  /* wraps in a narrow panel: the state and the agent's name are never cut */
   .line {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--sp-1);
+    gap: 0 var(--sp-1);
     min-width: 0;
     margin: 0;
     color: var(--muted);
@@ -671,14 +686,10 @@
   .dot.asking {
     background: var(--git-modified);
   }
-  .state {
-    flex: none;
-  }
+  .state,
   .agent {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   /* a word-sized button with a target of at least 24 px */
   .change {

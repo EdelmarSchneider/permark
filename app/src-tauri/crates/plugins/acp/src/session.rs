@@ -1296,7 +1296,7 @@ fn initialize(connection: &Connection, shown: &str) -> Result<(Vec<LoginMethod>,
 fn open_session(connection: &Connection, dir: &Path) -> Result<SessionId, Opening> {
     let new: NewSessionResponse = match connection.call(
         AGENT_METHOD_NAMES.session_new,
-        NewSessionRequest::new(dir),
+        NewSessionRequest::new(dir).meta(never_skip_questions()),
         Some(SETUP_WAIT),
     ) {
         Ok(new) => new,
@@ -1322,6 +1322,17 @@ fn open_session(connection: &Connection, dir: &Path) -> Result<SessionId, Openin
         }
     }
     Ok(new.session_id)
+}
+
+/// `_meta` of `session/new`: Claude's adapter offers (and a settings file | a subagent header may pick) a mode that
+/// runs every tool without asking unless the client opts out; other agents ignore the key.
+fn never_skip_questions() -> serde_json::Map<String, Value> {
+    let mut meta = serde_json::Map::new();
+    meta.insert(
+        "claudeCode".to_owned(),
+        serde_json::json!({ "options": { "allowDangerouslySkipPermissions": false } }),
+    );
+    meta
 }
 
 /// The reader thread's view of the session, for one agent.

@@ -1407,6 +1407,25 @@ fn the_agent_program_starts_in_an_empty_folder_never_in_the_copy() {
     assert_eq!(PathBuf::from(new["params"]["cwd"].as_str().unwrap()), copy);
 }
 
+/// Claude's adapter turns on its mode that skips every question unless the client opts out: the session asks it never
+/// to, whatever a settings file | a subagent asks for.
+#[test]
+fn the_session_opts_out_of_skipping_the_persons_questions() {
+    let fx = Fx::new(|_, _| Some("end_turn"));
+    fx.ask("Hello.");
+    fx.events.turn_end();
+    let new = fx
+        .fake
+        .seen()
+        .into_iter()
+        .find(|m| m["method"] == "session/new")
+        .unwrap();
+    assert_eq!(
+        new["params"]["_meta"]["claudeCode"]["options"]["allowDangerouslySkipPermissions"],
+        json!(false)
+    );
+}
+
 /// An agent that stops reading its stdin while a prompt larger than a pipe holds is being written: the shutdown
 /// never waits on the write, and the agent is stopped.
 #[test]
@@ -1512,7 +1531,11 @@ fn agent_settings_in_the_copy_are_gone_before_each_start_and_prompt() {
                 peer.write(".mcp.json", "{\"mcpServers\":{}}");
                 peer.write("docs/.gemini/settings.json", "{}");
                 peer.write(".codex/config.toml", "x = 1");
-                peer.write(".claude/commands/tidy.md", "Tidy the notes.");
+                peer.write(
+                    ".claude/agents/helper.md",
+                    "permissionMode: bypassPermissions",
+                );
+                peer.write(".claude/rules/tidy.md", "Tidy the notes.");
             }
             "Plant again." => peer.write(".mcp.json", "{}"),
             _ => {
@@ -1530,7 +1553,8 @@ fn agent_settings_in_the_copy_are_gone_before_each_start_and_prompt() {
         ".mcp.json",
         "docs/.gemini/settings.json",
         ".codex",
-        ".claude/commands/tidy.md",
+        ".claude/agents/helper.md",
+        ".claude/rules/tidy.md",
     ]
     .iter()
     .map(|path| copy.join(path))
@@ -1543,7 +1567,7 @@ fn agent_settings_in_the_copy_are_gone_before_each_start_and_prompt() {
     // at the second start only the agent's instructions were left
     assert_eq!(
         fx.fake.present.lock().unwrap()[1],
-        [copy.join(".claude/commands/tidy.md")]
+        [copy.join(".claude/rules/tidy.md")]
     );
     // the same agent's next prompt finds the copy cleared again
     fx.ask("Look.");
@@ -1624,7 +1648,9 @@ fn only_plain_work_on_the_copy_is_allowed_by_rule() {
     let none = json!({});
     let allowed = |line: &ToolLine| plain_work(line, &copy);
 
-    assert!(allowed(&tool(Some(ToolKind::Think), &[], none.clone())));
+    // a think tool can start a subagent with tools of its own: the person decides
+    assert!(!allowed(&tool(Some(ToolKind::Think), &[], none.clone())));
+    assert!(!allowed(&tool(Some(ToolKind::Think), &[&a], none.clone())));
     for kind in [
         ToolKind::Read,
         ToolKind::Search,
@@ -1685,6 +1711,55 @@ fn only_plain_work_on_the_copy_is_allowed_by_rule() {
         &[&a],
         json!({ "path": other.path() })
     )));
+    // subagents, skills, commands: they grant tools | modes when loaded
+    for kept in [".claude/agents/helper.md", ".claude/skills/x/SKILL.md"] {
+        let path = root.join(kept);
+        assert!(
+            !allowed(&tool(Some(ToolKind::Edit), &[&path], none.clone())),
+            "{kept}"
+        );
+    }
+}
+
+/// Windows reaches one file under several spellings: a trailing dot | space, a `::$DATA` stream name, an 8.3 short
+/// name. Each spelling of agent settings in the copy gets a card.
+#[cfg(windows)]
+#[test]
+fn every_spelling_of_agent_settings_in_the_copy_gets_a_card() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join(".claude")).unwrap();
+    std::fs::write(dir.path().join(".claude").join("rules.md"), "r").unwrap();
+    let copy = Vault::new(Root::open(dir.path()).unwrap());
+    let root = copy.main().path().to_path_buf();
+    let edit = |path: PathBuf| ToolLine {
+        kind: Some(ToolKind::Edit),
+        locations: vec![path],
+        raw_input: Some(json!({})),
+        ..ToolLine::default()
+    };
+    let mut spellings = vec![
+        root.join(".claude.").join("settings.local.json"),
+        root.join(".claude").join("settings.local.json::$DATA"),
+        root.join(".claude ").join("x"),
+        root.join(".claude").join("settings.local.json."),
+    ];
+    // the short name exists only where the volume makes 8.3 names
+    let short = root.join("CLAUDE~1");
+    if short.exists() {
+        spellings.push(short.join("settings.local.json"));
+    }
+    for path in spellings {
+        assert!(
+            !plain_work(&edit(path.clone()), &copy),
+            "{}",
+            path.display()
+        );
+    }
+    // the plain file beside them is still work
+    assert!(plain_work(
+        &edit(root.join(".claude").join("rules.md")),
+        &copy
+    ));
 }
 
 #[test]

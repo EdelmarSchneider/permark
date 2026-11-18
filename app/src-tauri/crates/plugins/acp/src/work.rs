@@ -66,14 +66,28 @@ const AGENT_FOLDERS: [&str; 10] = [
 /// Files agents read as their own settings, any depth.
 const AGENT_FILES: [&str; 3] = [".mcp.json", "opencode.json", "opencode.jsonc"];
 /// Agent folders that also hold instructions (documents, kept): the settings | servers | hooks inside them (files or
-/// folders, right under the agent folder) stay out.
+/// folders, right under the agent folder) stay out, and so do subagents | skills | commands: their headers grant
+/// tools, a permission mode or servers once loaded.
 const AGENT_SETTINGS: [(&str, &[&str]); 8] = [
-    (".claude", &["settings.json", "settings.local.json"]),
+    (
+        ".claude",
+        &[
+            "settings.json",
+            "settings.local.json",
+            "agents",
+            "skills",
+            "commands",
+            "hooks",
+        ],
+    ),
     (".kilocode", &["mcp.json"]),
     (".junie", &["mcp"]),
-    (".kiro", &["settings", "hooks"]),
+    (".kiro", &["settings", "hooks", "agents"]),
     (".clinerules", &["hooks"]),
-    (".factory", &["settings.json", "mcp.json", "hooks"]),
+    (
+        ".factory",
+        &["settings.json", "mcp.json", "hooks", "droids", "commands"],
+    ),
     (".augment", &["settings.json"]),
     (".vibe", &["config.toml"]),
 ];

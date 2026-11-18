@@ -245,7 +245,7 @@ export class AcpStore {
         };
         if (update.state !== "starting" && update.state !== "working") {
           this.thinking = false;
-          this.#stopTools();
+          this.#stopOpen();
         }
         if (update.error !== null)
           this.#push({
@@ -299,7 +299,7 @@ export class AcpStore {
       case "turnEnd": {
         this.thinking = false;
         // the protocol asks the client to mark what the turn left unfinished: the agent will not finish it
-        this.#stopTools();
+        this.#stopOpen();
         const said = endKey(update.stopReason, update.changed > 0);
         if (said !== null) this.#push({ kind: "notice", text: t(said), details: null });
         const done = endSaid(update.stopReason);
@@ -377,7 +377,8 @@ export class AcpStore {
 
   /** Answers the question `requestId` with `option`. */
   async answer(requestId: string, option: PermissionChoice): Promise<void> {
-    this.#answer(requestId, { status: "answered", option: option.name });
+    // a restarted agent numbers its questions afresh: an earlier card of the same id keeps its own answer
+    this.#answer(requestId, { status: "answered", option: option.name }, true);
     const root = this.#root();
     const result = await this.#client.call("acp.answer", { requestId, optionId: option.id });
     if (result.ok || this.#root() !== root) return;
@@ -629,14 +630,21 @@ export class AcpStore {
     }
   }
 
-  /** Tool lines the agent left pending | running: it will not finish them. */
-  #stopTools(): void {
+  /** Tool lines the agent left pending | running: it will not finish them. Questions still open: the backend answered
+   *  each one by now (the card of one answered while it was on its way would else stay open). */
+  #stopOpen(): void {
     const open = (e: Entry): boolean =>
-      e.kind === "tool" && (e.status === "pending" || e.status === "in_progress");
+      (e.kind === "tool" && (e.status === "pending" || e.status === "in_progress")) ||
+      (e.kind === "question" && e.answer.status === "open");
     if (!this.transcript.some(open)) return;
-    this.transcript = this.transcript.map((e) =>
-      e.kind === "tool" && open(e) ? { ...e, status: "stopped" } : e,
-    );
+    this.transcript = this.transcript.map((e) => {
+      if (!open(e)) return e;
+      return e.kind === "question"
+        ? { ...e, answer: { status: "closed" } }
+        : e.kind === "tool"
+          ? { ...e, status: "stopped" }
+          : e;
+    });
   }
 
   #notice(text: string): void {

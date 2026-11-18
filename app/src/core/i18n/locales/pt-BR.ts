@@ -824,7 +824,7 @@ export default {
   "outline.changedHint": "Alterada na última atualização",
   "panel.tabs": "Visões do painel direito",
   "panel.bottomTabs": "Visões do painel inferior",
-  "panel.viewMenu": "Opções de {name}",
+  "panel.viewMenu": "Opções: {name}",
   "panel.moveUp": "Mover para cima",
   "panel.moveDown": "Mover para baixo",
   "panel.showAsTab": "Mostrar como aba",

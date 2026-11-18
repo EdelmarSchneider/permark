@@ -167,7 +167,7 @@ describe("the Assistant panel", () => {
     expect(document.activeElement).toBe(box());
   });
 
-  it("a question waits: the status says so, its first answer takes the keyboard, then the message box does", async () => {
+  it("a question waits: the status says so, its card takes the keyboard (never an answer), then the message box does", async () => {
     vi.spyOn(acp, "answer").mockResolvedValue();
     open();
     acp.take({ type: "status", state: "working", error: null });
@@ -186,15 +186,17 @@ describe("the Assistant panel", () => {
     });
     await settle();
     expect(root.querySelector(".line .state")?.textContent).toBe(t("acp.state.waiting"));
-    expect(document.activeElement).toBe(buttonNamed("Reject"));
+    // a key pressed on the way never answers: the card is announced, Tab reaches its answers
+    const card = root.querySelector<HTMLElement>(".question");
+    expect(document.activeElement).toBe(card);
+    expect(card?.getAttribute("aria-labelledby")).toBe(card?.querySelector(".ask")?.id);
     buttonNamed("Allow").click();
     await settle();
     expect(document.activeElement).toBe(box());
   });
 
-  it("a question never takes the keyboard from words being written", async () => {
+  it("a question never takes the keyboard from the message box, even an empty one", async () => {
     open();
-    acp.draft = "half a sent";
     flushSync();
     box().focus();
     acp.take({
@@ -485,6 +487,44 @@ describe("the Assistant panel", () => {
     accept.click();
     await settle();
     expect(document.activeElement).toBe(box());
+  });
+
+  it("after a decision on a hunk the keyboard goes to the same answer of the next one", async () => {
+    const hunk = (key: string, oldStart: number) => ({
+      key,
+      oldStart,
+      oldLines: ["old"],
+      newLines: ["new"],
+      truncated: false,
+      contextBefore: null,
+      contextAfter: null,
+    });
+    vi.spyOn(acp, "decide").mockImplementation(async (_choice, _path, keys) => {
+      acp.changes = acp.changes.map((f) => ({
+        ...f,
+        hunks: f.hunks.filter((h) => !(keys ?? []).includes(h.key)),
+      }));
+    });
+    acp.changes = [
+      {
+        path: "docs/a.md",
+        kind: "modified",
+        hunks: [hunk("a3", 3), hunk("a9", 9), hunk("a20", 20)],
+      },
+    ];
+    open();
+    const accepts = () => [...root.querySelectorAll<HTMLButtonElement>(".hunk .btn--primary")];
+    const rejects = () => [
+      ...root.querySelectorAll<HTMLButtonElement>(".hunk .btn:not(.btn--primary)"),
+    ];
+    accepts()[0]?.focus();
+    accepts()[0]?.click();
+    await settle();
+    expect(document.activeElement).toBe(accepts()[0]);
+    rejects()[0]?.focus();
+    rejects()[0]?.click();
+    await settle();
+    expect(document.activeElement).toBe(rejects()[0]);
   });
 });
 

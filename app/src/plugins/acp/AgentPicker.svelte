@@ -348,12 +348,14 @@
   .spacer {
     flex: 1 1 0;
   }
+  /* long words (German, Russian) wrap inside a narrow panel rather than push the list sideways */
   .how {
     flex: none;
+    max-width: 100%;
     padding: 0 var(--sp-1);
     border-radius: var(--radius-sm);
     font-size: var(--fs-ui-sm);
-    white-space: nowrap;
+    overflow-wrap: anywhere;
   }
   .how.ready {
     background: var(--accent-soft);

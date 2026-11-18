@@ -119,12 +119,20 @@ fn agent_settings_and_machinery_are_kept_out() {
         ".factory/hooks/x.sh",
         ".augment/settings.json",
         ".vibe/config.toml",
+        // what grants tools | modes | servers or runs a program: subagents, skills, commands, hooks
+        ".claude/agents/helper.md",
+        "docs/.claude/skills/tidy/SKILL.md",
+        ".claude/commands/review.md",
+        ".claude/hooks/pre.sh",
+        ".factory/droids/reviewer.md",
+        ".factory/commands/x.md",
+        ".kiro/agents/a.json",
     ] {
         assert!(kept_out(path), "{path}");
     }
     for path in [
         "CLAUDE.md",
-        ".claude/commands/review.md",
+        ".claude/rules/style.md",
         "docs/settings.json",
         "vscode/notes.md",
         "settings.local.json",
@@ -134,7 +142,6 @@ fn agent_settings_and_machinery_are_kept_out() {
         ".junie/guidelines.md",
         ".kilocode/rules/style.md",
         ".clinerules/style.md",
-        ".factory/droids/reviewer.md",
         ".augment/rules/a.md",
         "QWEN.md",
         ".goosehints",
@@ -161,7 +168,15 @@ fn the_copy_holds_only_what_an_agent_may_see() {
         ),
         (".git/config", b"[core]\n"),
         (".claude/settings.json", b"{}"),
-        (".claude/commands/x.md", b"x\n"),
+        (".claude/rules/x.md", b"x\n"),
+        (
+            ".claude/agents/helper.md",
+            b"---\npermissionMode: bypassPermissions\n---\n",
+        ),
+        (
+            ".claude/skills/tidy/SKILL.md",
+            b"---\nallowed-tools: Bash\n---\n",
+        ),
         (".mcp.json", b"{}"),
         (".vscode/settings.json", b"{}"),
         (".kiro/settings/mcp.json", b"{}"),
@@ -179,7 +194,7 @@ fn the_copy_holds_only_what_an_agent_may_see() {
     for kept in [
         "README.md",
         "docs/a.md",
-        ".claude/commands/x.md",
+        ".claude/rules/x.md",
         ".kiro/steering/style.md",
     ] {
         assert_eq!(copied(&work, kept), Some(f.real(kept)), "{kept}");
@@ -191,6 +206,8 @@ fn the_copy_holds_only_what_an_agent_may_see() {
         ".permark/config.toml",
         ".git/config",
         ".claude/settings.json",
+        ".claude/agents/helper.md",
+        ".claude/skills/tidy/SKILL.md",
         ".mcp.json",
         ".vscode/settings.json",
         ".kiro/settings/mcp.json",
@@ -545,6 +562,8 @@ fn purge_removes_what_is_kept_out_and_nothing_else() {
         ".claude/settings.json",
         ".claude/settings.local.json",
         ".claude/commands/tidy.md",
+        ".claude/skills/tidy/SKILL.md",
+        ".claude/rules/tidy.md",
         ".mcp.json",
         "docs/opencode.json",
         "docs/.gemini/settings.json",
@@ -577,7 +596,7 @@ fn purge_removes_what_is_kept_out_and_nothing_else() {
     assert_eq!(
         left,
         [
-            ".claude/commands/tidy.md",
+            ".claude/rules/tidy.md",
             ".kiro/steering/style.md",
             "a.md",
             "new.md"

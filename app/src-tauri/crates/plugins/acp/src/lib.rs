@@ -95,8 +95,11 @@ impl Drop for Started {
             let _ = copy.remove();
         }
         for folder in [&self.place, &self.run].into_iter().flatten() {
-            // never follows a link: a link in its place is removed itself
-            let _ = std::fs::remove_dir_all(folder);
+            // never follows a link: a link in its place is removed itself. Windows refuses a folder that is still the
+            // working folder of an agent process the job just ended: a short retry while it exits
+            let _ = permark_core::fsx::retry(&permark_core::fsx::RETRY_DELAYS, || {
+                std::fs::remove_dir_all(folder)
+            });
         }
     }
 }

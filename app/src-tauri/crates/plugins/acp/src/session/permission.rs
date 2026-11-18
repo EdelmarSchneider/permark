@@ -11,7 +11,7 @@ use agent_client_protocol_schema::v1::{
     PermissionOptionId, PermissionOptionKind, RequestPermissionRequest, ToolCall, ToolCallStatus,
     ToolCallUpdateFields, ToolKind,
 };
-use permark_core::paths::Vault;
+use permark_core::paths::{Vault, VaultPath};
 use serde_json::Value;
 
 use super::{tool_kind, tool_status};
@@ -131,17 +131,36 @@ pub(super) fn inside(copy: &Vault, path: &Path) -> bool {
             .is_some_and(|relative| copy.resolve(&relative).is_ok())
 }
 
-/// Whether `path` is agent settings | project machinery inside the copy (what a next agent start would load).
+/// Whether `path` is agent settings | project machinery inside the copy (what a next agent start would load), or
+/// may be. Windows opens one file under several spellings (a trailing dot | space, a `::$DATA` stream, an 8.3 short
+/// name): a spelling the path grammar refuses counts as kept out, and so does the name the file system resolves it to.
 fn kept_out_in(copy: &Vault, path: &Path) -> bool {
-    copy.relativize(path)
-        .is_some_and(|relative| !relative.is_root() && kept_out(relative.as_str()))
+    let Some(relative) = copy.relativize(path) else {
+        return false;
+    };
+    if relative.is_root() {
+        return false;
+    }
+    let Ok(parsed) = VaultPath::parse(relative.as_str()) else {
+        return true;
+    };
+    let Some(real) = copy
+        .resolve(&parsed)
+        .ok()
+        .and_then(|abs| copy.relativize(&abs))
+    else {
+        return true;
+    };
+    [relative.as_str(), parsed.as_str(), real.as_str()]
+        .iter()
+        .any(|p| kept_out(p))
 }
 
 /// Whether the tool call is plainly work on the copy's files, so the question can be allowed once by rule: nothing
-/// it names is agent settings | project machinery (whatever its kind); and it only thinks, or it reads | searches |
-/// edits | deletes | moves, names at least one location, and every location and every file its input names (a
-/// move's destination among them) is inside the copy. Anything else (commands, fetches, mode switches, an unknown |
-/// missing kind, no locations) is the person's to answer.
+/// it names is agent settings | project machinery (whatever its kind); and it reads | searches | edits | deletes |
+/// moves, names at least one location, and every location and every file its input names (a move's destination
+/// among them) is inside the copy. Anything else (commands, fetches, mode switches, thinking (a subagent | task tool
+/// starts tools of its own), an unknown | missing kind, no locations) is the person's to answer.
 pub(super) fn plain_work(tool: &ToolLine, copy: &Vault) -> bool {
     let named = tool.input_paths(copy);
     let all = || tool.locations.iter().chain(named.iter());
@@ -149,7 +168,6 @@ pub(super) fn plain_work(tool: &ToolLine, copy: &Vault) -> bool {
         return false;
     }
     match tool.kind {
-        Some(ToolKind::Think) => true,
         Some(
             ToolKind::Read | ToolKind::Search | ToolKind::Edit | ToolKind::Delete | ToolKind::Move,
         ) => !tool.locations.is_empty() && all().all(|path| inside(copy, path)),
