@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import "../core/testing/media";
+import { flushSync } from "svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import type { PluginId } from "../api/generated/PluginId";
 import { conditions, neutralContext } from "../core/conditions/context.svelte";
@@ -10,6 +11,7 @@ import { defaultArrangement, FILES } from "../core/shell/arrangement";
 import { arrangement } from "../core/shell/arrangement.svelte";
 import { layout } from "../core/shell/layout.svelte";
 import { closeView, showView } from "../core/shell/sides";
+import { registerViewCommands } from "../core/shell/viewsMenu.svelte";
 import { silence } from "../core/silence/silence.svelte";
 
 const FOLLOWING: PluginId[] = ["git", "live-feed", "follow", "unread", "review"];
@@ -301,6 +303,60 @@ describe("the symbols plugin", () => {
       expect(window.disable("symbols")).toBe(0);
     } finally {
       arrangement.saved = defaultArrangement();
+    }
+  });
+});
+
+describe("the plugins' commands that show their panel", () => {
+  it("one that only shows it leaves the palette (the Panels menu and its Show entry cover it), keeps its id and key", async () => {
+    const registry = new ContributionRegistry();
+    const host = new PluginHost(registry, pluginLoaders());
+    const ids: PluginId[] = ["unread", "tags", "comments", "broken-links", "symbols", "live-feed"];
+    for (const id of ids) await host.enable(id);
+    const command = (id: string) => registry.of("command").find((c) => c.id === id);
+    const shows = ["unread.show", "tags.show", "comments.show", "brokenLinks.show"];
+    expect(shows.map((id) => command(id)?.inPalette)).toEqual([false, false, false, false]);
+    expect(registry.of("shortcut").find((s) => s.command === "brokenLinks.show")?.keys).toBe(
+      "Mod+Shift+b",
+    );
+    // one that does more stays: the panel is offered from then on (dormant before the person asks)
+    expect(["symbols.toggle", "feed.toggle"].map((id) => command(id)?.inPalette)).toEqual([
+      undefined,
+      undefined,
+    ]);
+    for (const id of ids) host.disable(id);
+  });
+
+  it("a plugin on: its panel's Show entry is in the palette; off, it is gone; a dormant panel has none", async () => {
+    conditions.set({ ...neutralContext(), workspace: "project" });
+    const registry = new ContributionRegistry();
+    const off = registerViewCommands(registry);
+    const showIds = (): string[] =>
+      registry.of("command").flatMap((c) => (c.id.startsWith("view.show.") ? [c.id] : []));
+    const window = new PluginHost(contributions, pluginLoaders());
+    try {
+      await window.enable("tags");
+      flushSync();
+      expect(showIds()).toContain("view.show.tags.panel");
+      window.disable("tags");
+      flushSync();
+      expect(showIds()).not.toContain("view.show.tags.panel");
+      await window.enable("symbols");
+      flushSync();
+      expect(showIds()).not.toContain("view.show.symbols.panel");
+      contributions
+        .of("command")
+        .find((c) => c.id === "symbols.toggle")
+        ?.run();
+      flushSync();
+      expect(showIds()).toContain("view.show.symbols.panel");
+      closeView("symbols.panel");
+      window.disable("symbols");
+      flushSync();
+      expect(showIds()).not.toContain("view.show.symbols.panel");
+    } finally {
+      off();
+      layout.setOpen("symbols.panel", false);
     }
   });
 });

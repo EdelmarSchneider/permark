@@ -1,11 +1,12 @@
 // Showing | hiding the regions of this window (Mod+B, Mod+Alt+B, Mod+J, the status bar toggles, the outline toggle)
 // and showing | selecting | moving | closing a view in whatever region it sits: the stores' state read, the pure step
 // of `layout.ts` applied to the view's own region, the frame animated, the focus let go of a region that hides (its
-// controls go inert: keys reach the page).
+// controls go inert: keys reach the page). A view closed, by whatever way, is said with one notice that can undo it.
 
 import { tick } from "svelte";
 import type { WindowView, WorkspaceView } from "../../api";
 import { reading } from "../doc/reading.svelte";
+import { t } from "../i18n";
 import { windowStore } from "../window.svelte";
 import {
   regionAvailable,
@@ -19,6 +20,9 @@ import { layout } from "./layout.svelte";
 import { moveTo, OUTLINE, SEARCH, select, type Arrangement, type Region } from "./arrangement";
 import { arrangement } from "./arrangement.svelte";
 import { ui } from "./ui.svelte";
+
+/** The one notice about a view closed (a newer close takes its place). */
+const CLOSED_NOTICE = "view-closed";
 
 /** The name the frame gives each region (`data-region`). */
 const REGION_NAME: Readonly<Record<Region, string>> = {
@@ -62,10 +66,10 @@ export function regionState(region: Region): RegionState {
     hasOutline: arrangement.hasOutline && here(OUTLINE),
     outlineOn: reading.outline,
     outlineSelected: arrangement.isSelected(OUTLINE),
-    // the panels the person opens | closes
+    // the panels the person opens | closes (a sidebar tab outside a project is never open)
     panels: arrangement.views.flatMap(({ id, closable, panel }) =>
       closable && panel !== null && here(id)
-        ? [{ id, open: arrangement.isOpen(panel), selected: arrangement.isSelected(id) }]
+        ? [{ id, open: arrangement.isPresent(id), selected: arrangement.isSelected(id) }]
         : [],
     ),
     // a bottom region the window is too short to draw is off like one the person hid
@@ -223,11 +227,27 @@ export function selectView(id: string): void {
   if (id === SEARCH) ui.searchFocus += 1;
 }
 
+/**
+ * The view `id` was closed: said, with the window's one notice about it, whose Undo shows it again (where it was:
+ * its place stays). Single views only: a change of the whole arrangement has its own notice.
+ */
+function closed(id: string): void {
+  const words = t("panel.closed", { name: arrangement.nameOf(id) });
+  arrangement.say(words);
+  windowStore.notifyKeyed(CLOSED_NOTICE, words, {
+    label: t("fileOps.undo"),
+    run: () => bringView(id),
+  });
+}
+
 function apply(region: Region, choice: RegionChoice): void {
   if (choice.hidden !== undefined) setHidden(region, choice.hidden);
   if (choice.outlineOn !== undefined) reading.setOutline(choice.outlineOn);
   if (choice.open !== undefined) layout.setOpen(choice.open.id, choice.open.open);
   if (choice.select !== undefined) selectView(choice.select);
+  // the steps close only what is on screen
+  if (choice.outlineOn === false) closed(OUTLINE);
+  if (choice.open?.open === false) closed(choice.open.id);
 }
 
 /** The toggle of `region` (its key, its status bar button), where the region has one: it hides | shows; the right
@@ -281,6 +301,12 @@ export function showView(id: string): void {
   selectView(id);
 }
 
+/** Shows the view on the person's own ask (a menu, the palette, an Undo) and says so on the status line. */
+export function bringView(id: string): void {
+  showView(id);
+  arrangement.say(t("panel.shown", { name: arrangement.nameOf(id) }));
+}
+
 /**
  * Puts a view where a move decided (`next`: the arrangement with the view at its new place): drawn at once, the view
  * shown by its group; a region the person hid shows again with it. A view nobody offers now stays where it is.
@@ -299,16 +325,21 @@ export function moveToRegion(id: string, region: Region): void {
 }
 
 /**
- * Closes a view (its place in the arrangement stays): a panel closed, the outline off. `held`: the keyboard was on
- * that view from outside its body (its options menu, opened from its tab strip).
+ * Closes a view (its place in the arrangement stays): a panel closed, the outline off; one that was there is said,
+ * with its Undo. `held`: the keyboard was on that view from outside its body (its options menu, opened from its tab
+ * strip).
  */
 export function closeView(id: string, held = false): void {
+  // a view that is always open (Files, Search) has nothing to close
+  if (arrangement.viewOf(id)?.closable === false) return;
   const active = typeof document === "undefined" ? null : document.activeElement;
   const inside =
     active instanceof HTMLElement && active.closest(`[data-view-slot="${id}"]`) !== null;
   const region = arrangement.regionOf(id);
+  const was = arrangement.isPresent(id);
   if (id === OUTLINE) reading.setOutline(false);
   else layout.setOpen(id, false);
+  if (was) closed(id);
   // the keyboard was on that view: once it is gone, the next control of its region takes it (else the page); never
   // the page body
   if (inside || held) void tick().then(() => keepFocus(region));

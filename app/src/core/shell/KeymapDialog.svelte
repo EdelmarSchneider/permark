@@ -2,7 +2,7 @@
   // Keyboard shortcuts: every command with its keys, change one by pressing the new keys, reset one or all.
   // A key that another command holds is said before it is saved; saving it anyway is allowed.
   import { comboFromEvent, comboLabel, isComposition } from "../commands/combo";
-  import { listCommands } from "../commands/commands";
+  import { commandLabel, listCommands } from "../commands/commands";
   import { buildKeymap, conflicts, heldBy } from "../commands/keymap";
   import { keys } from "../commands/state.svelte";
   import { conditions } from "../conditions/context.svelte";
@@ -31,7 +31,7 @@
   const shown = $derived(
     filter.trim() === ""
       ? entries
-      : entries.filter((e) => fuzzyMatch(filter, t(e.command.label)) !== null),
+      : entries.filter((e) => fuzzyMatch(filter, commandLabel(e.command)) !== null),
   );
   /** A command's requirement (two commands fight over a key only where both can run). */
   const requiresOf = $derived.by(() => {
@@ -43,7 +43,7 @@
 
   function name(command: string): string {
     const found = entries.find((e) => e.command.id === command);
-    return found ? t(found.command.label) : command;
+    return found ? commandLabel(found.command) : command;
   }
 
   function save(command: string, combo: string | null): void {
@@ -139,7 +139,7 @@
       {#each shown as entry (entry.command.id)}
         {@const id = entry.command.id}
         <li class="row" class:clash={clashes.has(id)}>
-          <span class="label">{t(entry.command.label)}</span>
+          <span class="label">{commandLabel(entry.command)}</span>
           <span class="keys">
             {#if capture.status === "listening" && capture.command === id}
               <span class="listening" role="status">{t("keymap.press")}</span>

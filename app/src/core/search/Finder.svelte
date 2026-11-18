@@ -4,7 +4,7 @@
   import { api } from "../../api";
   import { conditions } from "../conditions/context.svelte";
   import { reasonKey, remedyKey } from "../conditions/guidance";
-  import { listCommands } from "../commands/commands";
+  import { commandLabel, listCommands } from "../commands/commands";
   import { comboLabel } from "../commands/combo";
   import { remedyAction } from "../commands/remedy";
   import { keys } from "../commands/state.svelte";
@@ -57,7 +57,7 @@
     },
     commands: () =>
       listCommands(contributions.items, conditions.current, keys.map, { palette: true }),
-    label: (key) => t(key),
+    label: (key, params) => t(key, params),
     outline: () => {
       const view = documents.view;
       return view?.body.kind === "markdown" ? outlineRows(view.path, view.body.outline) : [];
@@ -179,7 +179,7 @@
       case "tag":
         return row.name;
       case "command":
-        return t(row.entry.command.label);
+        return commandLabel(row.entry.command);
       case "place":
         return row.anchor === null ? row.path : `${row.path}#${row.anchor}`;
       case "more":
@@ -347,7 +347,7 @@
               <Terminal size={15} aria-hidden="true" />
               <span class="text">
                 <span class="strong">
-                  <Marked runs={markRuns(t(row.entry.command.label), row.positions)} />
+                  <Marked runs={markRuns(commandLabel(row.entry.command), row.positions)} />
                 </span>
                 {#if row.entry.availability.status === "unavailable"}
                   <span class="reason">
