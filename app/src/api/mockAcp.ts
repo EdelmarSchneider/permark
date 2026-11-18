@@ -2,7 +2,7 @@
 // give: installed, started by npx | uvx, missing Node.js | uv | an install) and the person's choice (none at first, as
 // on a first run), the agent's status, a timed stand-in reply to a message (status, thinking, text in pieces, tool
 // lines, one question that waits for the person's answer, then the turn's end with one changed file) and the work
-// copy's changes, where accept | reject drop hunks. Gemini CLI asks for a sign-in at its first start: its own method
+// copy's changes, where accept | reject drop hunks (named by key) and undo puts the file's last list entry back. Gemini CLI asks for a sign-in at its first start: its own method
 // signs in, "Try again" alone stays signed out. Nothing is written: the real copy, agent, choice file and writes are
 // the plugin's (tested there); the mock only feeds the window's flow.
 
@@ -13,6 +13,7 @@ import type { AcpToolStatus } from "./generated/AcpToolStatus";
 import type { AcpUpdate } from "./generated/AcpUpdate";
 import type { AgentEntry } from "./generated/AgentEntry";
 import type { AnswerArgs } from "./generated/AnswerArgs";
+import type { ChangeList } from "./generated/ChangeList";
 import type { FileChange } from "./generated/FileChange";
 import type { LoginArgs } from "./generated/LoginArgs";
 import type { LoginMethod } from "./generated/LoginMethod";
@@ -34,6 +35,7 @@ type AcpMethods = Pick<
   | "acp.changes"
   | "acp.accept"
   | "acp.reject"
+  | "acp.undo"
 >;
 
 /** The person's choice: an agent of the list | an own command. */
@@ -185,7 +187,7 @@ function guideChanges(): FileChange[] {
       kind: "modified",
       hunks: [
         {
-          id: 0,
+          key: "guide-7",
           oldStart: 7,
           oldLines: [
             "Open a folder, pick a document in the tree, read it. Links between documents work like a wiki: use Alt+Left to go back.",
@@ -194,12 +196,14 @@ function guideChanges(): FileChange[] {
             "Open a folder, then pick a document in the tree to read it.",
             "Links between documents work like a wiki: press Alt+Left to go back.",
           ],
+          truncated: false,
         },
         {
-          id: 1,
+          key: "guide-17",
           oldStart: 17,
           oldLines: ["| Ctrl+= / Ctrl+- | Zoom         |"],
           newLines: ["| Ctrl+= / Ctrl+- | Zoom         |", "| Ctrl+E       | Edit            |"],
+          truncated: false,
         },
       ],
     },
@@ -413,35 +417,45 @@ export function createMockAcp(
     if (fail !== null) throw fail;
   };
 
-  function decide(path: string, hunks: number[] | null, accepted: boolean): FileChange[] {
+  /** Each file's list entry before its last accept | reject (what undo puts back). */
+  const undos = new Map<string, FileChange>();
+  const listed = (): ChangeList => ({ files: probe.changes, more: 0 });
+
+  function decide(path: string, hunks: string[] | null, accepted: boolean): ChangeList {
     refuse();
     const file = probe.changes.find((c) => c.path === path);
     if (file === undefined) throw new MockPluginError("notFound", path, "noChange");
+    if (hunks !== null && hunks.some((h) => !file.hunks.some((k) => k.key === h)))
+      throw new MockPluginError("conflict", path, "outdated");
+    undos.set(path, file);
     if (hunks === null) {
       probe.changes = probe.changes.filter((c) => c !== file);
-      return probe.changes;
+      return listed();
     }
-    if (file.kind === "binary" || file.kind === "conflict")
-      throw new MockPluginError("invalidData", path, "wholeFileOnly");
-    if (hunks.some((h) => !file.hunks.some((k) => k.id === h)))
-      throw new MockPluginError("invalidData", path, "unknownHunk");
     // an accepted hunk moves the real lines after it, as the plugin's fresh list says
     let shift = 0;
     const kept = file.hunks.flatMap((hunk) => {
-      if (hunks.includes(hunk.id)) {
+      if (hunks.includes(hunk.key)) {
         if (accepted) shift += hunk.newLines.length - hunk.oldLines.length;
         return [];
       }
       return [{ ...hunk, oldStart: hunk.oldStart + shift }];
     });
     probe.changes = probe.changes.flatMap((c) =>
-      c !== file
-        ? [c]
-        : kept.length === 0
-          ? []
-          : [{ ...c, hunks: kept.map((hunk, id) => ({ ...hunk, id })) }],
+      c !== file ? [c] : kept.length === 0 ? [] : [{ ...c, hunks: kept }],
     );
-    return probe.changes;
+    return listed();
+  }
+
+  function undo(path: string): ChangeList {
+    refuse();
+    const before = undos.get(path);
+    if (before === undefined) throw new MockPluginError("notFound", path, "noUndo");
+    undos.delete(path);
+    probe.changes = [...probe.changes.filter((c) => c.path !== path), before].sort((a, b) =>
+      a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+    );
+    return listed();
   }
 
   return {
@@ -458,6 +472,7 @@ export function createMockAcp(
           error,
           methods: state === "needsLogin" ? [...MOCK_LOGIN_METHODS] : [],
           ...(agent !== null && agent.needs !== null ? { needs: agent.needs } : {}),
+          skippedFiles: 0,
         };
       },
       "acp.agents": () => {
@@ -576,7 +591,7 @@ export function createMockAcp(
       },
       "acp.changes": () => {
         probe.calls.push("changes");
-        return probe.changes;
+        return listed();
       },
       "acp.accept": ({ path, hunks }) => {
         probe.calls.push("accept");
@@ -585,6 +600,10 @@ export function createMockAcp(
       "acp.reject": ({ path, hunks }) => {
         probe.calls.push("reject");
         return decide(path, hunks, false);
+      },
+      "acp.undo": ({ path }) => {
+        probe.calls.push("undo");
+        return undo(path);
       },
     },
   };

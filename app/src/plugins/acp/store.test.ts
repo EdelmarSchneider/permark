@@ -137,15 +137,15 @@ describe("a message and its reply", () => {
         path: "docs/guide.md",
         kind: "modified",
         hunks: [
-          { id: 0, oldStart: 7, oldLines: ["a"], newLines: ["b", "c"] },
-          { id: 1, oldStart: 17, oldLines: ["d"], newLines: ["e"] },
+          { key: "k7", oldStart: 7, oldLines: ["a"], newLines: ["b", "c"], truncated: false },
+          { key: "k17", oldStart: 17, oldLines: ["d"], newLines: ["e"], truncated: false },
         ],
       },
     ];
     await store.refreshChanges();
-    await store.decide("accept", "docs/guide.md", [0]);
+    await store.decide("accept", "docs/guide.md", ["k7"]);
     expect(store.changes[0]?.hunks).toEqual([
-      { id: 0, oldStart: 18, oldLines: ["d"], newLines: ["e"] },
+      { key: "k17", oldStart: 18, oldLines: ["d"], newLines: ["e"], truncated: false },
     ]);
     await store.decide("reject", "docs/guide.md", null);
     expect(store.changes).toEqual([]);
@@ -158,16 +158,16 @@ describe("a message and its reply", () => {
       {
         path: "docs/guide.md",
         kind: "modified",
-        hunks: [{ id: 0, oldStart: 7, oldLines: ["a"], newLines: ["b"] }],
+        hunks: [{ key: "k7", oldStart: 7, oldLines: ["a"], newLines: ["b"], truncated: false }],
       },
     ];
     await store.refreshChanges();
     acp.fail = new MockPluginError("conflict", "docs/guide.md", "unsaved");
-    await store.decide("accept", "docs/guide.md", [0]);
+    await store.decide("accept", "docs/guide.md", ["k7"]);
     expect(store.refusal).toEqual({ path: "docs/guide.md", text: t("acp.error.unsaved") });
     expect(store.changes).toHaveLength(1);
-    // an outdated hunk: said, and the list read again
-    await store.decide("accept", "docs/guide.md", [5]);
+    // a key of an older list: said, and the list read again
+    await store.decide("accept", "docs/guide.md", ["old"]);
     expect(store.refusal?.text).toBe(t("acp.error.outdated"));
     expect(acp.calls.filter((c) => c === "changes").length).toBeGreaterThanOrEqual(3);
   });
@@ -233,6 +233,7 @@ describe("a message and its reply", () => {
       agentName: null,
       chosen: false,
       methods: [],
+      skippedFiles: 0,
     });
   });
 });

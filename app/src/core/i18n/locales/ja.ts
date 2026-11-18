@@ -2993,11 +2993,14 @@ export default {
   "acp.kind.deleted": "Deleted",
   "acp.kind.binary": "Not text",
   "acp.kind.conflict": "Changed in both places",
+  "acp.kind.link": "Link",
   "acp.whole.added": "Accepting adds this file to your folder.",
   "acp.whole.deleted": "Accepting moves your file to the recycle bin.",
   "acp.whole.binary": "This file is not text, so it can only be accepted or rejected as a whole.",
   "acp.whole.conflict":
     "You changed this file too since the copy was made. Accepting puts the agent's version over yours.",
+  "acp.whole.link":
+    "The agent made a link or a special file here. PerMark never opens it: Reject removes it from the copy.",
   "acp.hunkBefore": "Before line {line}",
   "acp.hunkLine": "Line {line}",
   "acp.hunkLines": "Lines {from}-{to}",

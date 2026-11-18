@@ -2969,12 +2969,15 @@ export default {
   "acp.kind.deleted": "Excluído",
   "acp.kind.binary": "Não é texto",
   "acp.kind.conflict": "Alterado nos dois lados",
+  "acp.kind.link": "Link",
   "acp.whole.added": "Aceitar acrescenta este arquivo à sua pasta.",
   "acp.whole.deleted": "Aceitar move o seu arquivo para a Lixeira.",
   "acp.whole.binary":
     "Este arquivo não é texto, então só pode ser aceito ou rejeitado por inteiro.",
   "acp.whole.conflict":
     "Você também alterou este arquivo depois que a cópia foi feita. Aceitar põe a versão do agente no lugar da sua.",
+  "acp.whole.link":
+    "O agente criou aqui um link ou um arquivo especial. O PerMark nunca o abre: Rejeitar o remove da cópia.",
   "acp.hunkBefore": "Antes da linha {line}",
   "acp.hunkLine": "Linha {line}",
   "acp.hunkLines": "Linhas {from}-{to}",

@@ -5,10 +5,19 @@
  */
 export type HunkView = { 
 /**
- * Index in this list (what accept | reject name).
+ * Names this run by its file, place and lines (what accept | reject name): a key of an older list that no
+ * longer matches is refused (`outdated`), never applied to another run.
  */
-id: number, 
+key: string, 
 /**
  * 1-based line of the real file where the run starts (no old lines: the line the new ones go before).
  */
-oldStart: number, oldLines: Array<string>, newLines: Array<string>, };
+oldStart: number, 
+/**
+ * At most 400 lines per side (`truncated`).
+ */
+oldLines: Array<string>, newLines: Array<string>, 
+/**
+ * A side had more than 400 lines: only the first are shown; a choice still applies the whole run.
+ */
+truncated: boolean, };

@@ -32,4 +32,8 @@ methods: Array<LoginMethod>,
  * What the person must do before the chosen agent can start (absent: nothing); `snap` also when none is chosen
  * (no agent can start in this package).
  */
-needs?: AgentNeed, };
+needs?: AgentNeed, 
+/**
+ * Files the work copy left out for their size (over 4 MiB) at its last build | update; `0` before the first.
+ */
+skippedFiles: number, };

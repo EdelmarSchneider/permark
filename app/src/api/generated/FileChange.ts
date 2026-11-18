@@ -12,6 +12,6 @@ export type FileChange = {
 path: string, kind: FileChangeKind, 
 /**
  * Line runs that differ (`modified`); the whole text as one run (`added` | `deleted` text files); none for
- * `binary` | `conflict` (whole-file choices only).
+ * `binary` | `conflict` | `link` (whole-file choices only).
  */
 hunks: Array<HunkView>, };

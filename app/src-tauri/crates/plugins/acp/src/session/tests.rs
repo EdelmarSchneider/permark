@@ -547,6 +547,43 @@ fn edit_of(path: &str) -> Value {
     })
 }
 
+/// The turn's end computes the change list once and keeps it for the window; the status counts the files the copy
+/// left out for their size.
+#[test]
+fn the_turn_end_keeps_the_list_and_the_status_counts_skipped_files() {
+    let fx = Fx::new(|_, message| {
+        let blocks = message["params"]["prompt"].as_array().unwrap();
+        let link = blocks
+            .iter()
+            .find(|b| b["type"] == "resource_link")
+            .unwrap();
+        let file = url::Url::parse(link["uri"].as_str().unwrap())
+            .unwrap()
+            .to_file_path()
+            .unwrap();
+        std::fs::write(file, "Changed by the agent.\n").unwrap();
+        Some("end_turn")
+    });
+    let big = vec![b'x'; usize::try_from(crate::work::MAX_FILE_BYTES).unwrap() + 1];
+    std::fs::write(fx.project.path().join("big.txt"), big).unwrap();
+    assert_eq!(fx.session.status().skipped_files, 0);
+    fx.session
+        .prompt(PromptArgs {
+            text: "Edit.".to_owned(),
+            selection: None,
+            document: Some("notes.md".to_owned()),
+        })
+        .unwrap();
+    assert_eq!(fx.events.turn_end()["changed"], 1);
+    assert_eq!(fx.session.status().skipped_files, 1);
+    let mut held = fx.copy.lock().unwrap();
+    let copy = held.as_mut().unwrap();
+    // kept: a later edit of the copy shows only once the list is asked again
+    std::fs::write(copy.dir().join("other.md"), "new\n").unwrap();
+    assert_eq!(copy.changes().unwrap().files.len(), 1);
+    assert_eq!(copy.refresh().unwrap().files.len(), 2);
+}
+
 #[test]
 fn the_first_prompt_starts_the_agent_in_the_copy_and_streams_the_reply() {
     let fx = Fx::new(|peer, _| {

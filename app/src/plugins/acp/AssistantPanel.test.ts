@@ -56,6 +56,7 @@ function firstRun(): void {
     chosen: false,
     error: null,
     methods: [],
+    skippedFiles: 0,
   };
   acp.catalog = { status: "ready", agents: MOCK_AGENTS.map((a) => ({ ...a, chosen: false })) };
 }
@@ -71,6 +72,7 @@ beforeEach(() => {
     chosen: true,
     error: null,
     methods: [],
+    skippedFiles: 0,
   };
   root = document.createElement("div");
   document.body.append(root);
@@ -171,14 +173,14 @@ describe("the Assistant panel", () => {
         path: "docs/a.md",
         kind: "modified",
         hunks: [
-          { id: 0, oldStart: 3, oldLines: ["old"], newLines: ["new"] },
-          { id: 1, oldStart: 9, oldLines: [], newLines: ["added"] },
+          { key: "a3", oldStart: 3, oldLines: ["old"], newLines: ["new"], truncated: false },
+          { key: "a9", oldStart: 9, oldLines: [], newLines: ["added"], truncated: false },
         ],
       },
       {
         path: "docs/new.md",
         kind: "added",
-        hunks: [{ id: 0, oldStart: 1, oldLines: [], newLines: ["# New"] }],
+        hunks: [{ key: "n1", oldStart: 1, oldLines: [], newLines: ["# New"], truncated: false }],
       },
     ];
     open();
@@ -190,13 +192,14 @@ describe("the Assistant panel", () => {
     // two hunks of the first file + the second file's own button
     expect(accepts).toHaveLength(3);
     accepts[1]?.click();
-    expect(decide).toHaveBeenLastCalledWith("accept", "docs/a.md", [1]);
+    expect(decide).toHaveBeenLastCalledWith("accept", "docs/a.md", ["a9"]);
     root
       .querySelector<HTMLButtonElement>(
         `button[aria-label="${t("acp.rejectFile", { path: "docs/new.md" })}"]`,
       )
       ?.click();
-    expect(decide).toHaveBeenLastCalledWith("reject", "docs/new.md", null);
+    // the whole file by the keys shown: a list that changed meanwhile is refused
+    expect(decide).toHaveBeenLastCalledWith("reject", "docs/new.md", ["n1"]);
     // only added lines: no blank removed line drawn before them
     expect(root.querySelectorAll(".row.del")).toHaveLength(1);
   });
@@ -254,6 +257,7 @@ describe("the choice of the agent", () => {
       chosen: true,
       error: null,
       methods: [...MOCK_LOGIN_METHODS],
+      skippedFiles: 0,
     };
     open();
     expect(root.querySelector(".agent")?.textContent).toContain(t("acp.ownCommand"));
@@ -350,6 +354,7 @@ describe("the choice of the agent", () => {
         chosen: true,
         error: null,
         methods: [],
+        skippedFiles: 0,
       };
       acp.picking = false;
       return true;

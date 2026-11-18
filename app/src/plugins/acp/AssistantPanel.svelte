@@ -107,6 +107,8 @@
         return "acp.kind.binary";
       case "conflict":
         return "acp.kind.conflict";
+      case "link":
+        return "acp.kind.link";
       default:
         return kind satisfies never;
     }
@@ -125,6 +127,8 @@
         return "acp.whole.binary";
       case "conflict":
         return "acp.whole.conflict";
+      case "link":
+        return "acp.whole.link";
       default:
         return kind satisfies never;
     }
@@ -146,8 +150,10 @@
     }
   }
 
+  /** The whole file: by the keys of the hunks shown (a list that changed meanwhile is refused, never applied). */
   function decideFile(file: FileChange, choice: "accept" | "reject"): void {
-    void acp.decide(choice, file.path, null);
+    const keys = file.hunks.map((hunk) => hunk.key);
+    void acp.decide(choice, file.path, keys.length > 0 ? keys : null);
   }
 </script>
 
@@ -293,13 +299,13 @@
               {#if whole !== null}
                 <p class="quiet">{t(whole)}</p>
               {/if}
-              {#each file.hunks as hunk (hunk.id)}
+              {#each file.hunks as hunk (hunk.key)}
                 <HunkCard
                   {hunk}
                   whole={whole !== null}
                   disabled={acp.deciding !== null}
-                  onaccept={() => void acp.decide("accept", file.path, [hunk.id])}
-                  onreject={() => void acp.decide("reject", file.path, [hunk.id])}
+                  onaccept={() => void acp.decide("accept", file.path, [hunk.key])}
+                  onreject={() => void acp.decide("reject", file.path, [hunk.key])}
                 />
               {/each}
               <div class="file-actions">
@@ -311,14 +317,17 @@
                   onclick={() => decideFile(file, "reject")}
                   >{t(whole === null ? "acp.rejectAll" : "acp.reject")}</button
                 >
-                <button
-                  type="button"
-                  class="btn btn--sm btn--primary"
-                  aria-label={t("acp.acceptFile", { path: file.path })}
-                  disabled={acp.deciding !== null}
-                  onclick={() => decideFile(file, "accept")}
-                  >{t(whole === null ? "acp.acceptAll" : "acp.accept")}</button
-                >
+                <!-- a link is never offered as content: it can only be removed -->
+                {#if file.kind !== "link"}
+                  <button
+                    type="button"
+                    class="btn btn--sm btn--primary"
+                    aria-label={t("acp.acceptFile", { path: file.path })}
+                    disabled={acp.deciding !== null}
+                    onclick={() => decideFile(file, "accept")}
+                    >{t(whole === null ? "acp.acceptAll" : "acp.accept")}</button
+                  >
+                {/if}
               </div>
             </div>
           {/each}

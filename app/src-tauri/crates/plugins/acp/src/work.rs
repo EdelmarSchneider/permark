@@ -18,7 +18,7 @@ use std::time::Duration;
 use permark_core::document::Documents;
 use permark_core::edit::{lines, LineEdit};
 use permark_core::fsx::{self, ContentHash, Decoded, FsxError};
-use permark_core::paths::{fold, Root, Vault, VaultPath};
+use permark_core::paths::{Root, Vault, VaultPath};
 use permark_core::plugins::ProjectServices;
 use permark_core::projects::Projects;
 use permark_core::settings::ProjectConfig;
@@ -28,7 +28,7 @@ use permark_core::{ErrorKind, IpcError};
 use permark_plugin_agent::guard::Guard;
 use permark_plugin_review::{hunks, replace, Hunk};
 
-use crate::dto::{FileChange, FileChangeKind, HunkView};
+use crate::dto::{ChangeList, FileChange, FileChangeKind, HunkView};
 
 /// Largest file the copy takes (larger ones are skipped and counted) and the app splices.
 pub const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
@@ -36,6 +36,13 @@ pub const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
 pub const MAX_FILES: usize = 20_000;
 /// Most bytes a copy holds.
 pub const MAX_TOTAL_BYTES: u64 = 500 * 1024 * 1024;
+/// Most changed files one list names (the rest are counted): every file an agent deleted, listed with all its lines,
+/// would freeze the window.
+pub const MAX_LISTED: usize = 500;
+/// Most lines one side of a hunk carries to the window; a choice still applies the whole hunk.
+pub const MAX_HUNK_LINES: usize = 400;
+/// Most bytes the one-step undos keep in memory (oldest dropped first).
+const MAX_UNDO_BYTES: usize = 64 * 1024 * 1024;
 /// Longest wait for the projects inside the folder: their rules hide paths, so no copy is made without them.
 const RULES_WAIT: Duration = Duration::from_secs(5);
 
@@ -71,9 +78,11 @@ const AGENT_SETTINGS: [(&str, &[&str]); 8] = [
     (".vibe", &["config.toml"]),
 ];
 
+/// `segment` is one of `names` in any case, on every OS: the project | the copy can sit on a volume that ignores case
+/// (NTFS, APFS, exFAT, a share) whatever the OS, and leaving out a harmless file costs little.
 fn named(segment: &str, names: &[&str]) -> bool {
-    let folded = fold(segment);
-    names.iter().any(|name| folded == fold(name))
+    let lower = segment.to_lowercase();
+    names.iter().any(|name| lower == name.to_lowercase())
 }
 
 /// A folder whose whole content stays out of the copy.
@@ -128,6 +137,51 @@ fn remove_file(abs: &Path) -> io::Result<()> {
     }
 }
 
+/// Removes a link | special file itself, never what it leads to (Windows: a folder link goes with `remove_dir`).
+fn remove_link(abs: &Path) -> io::Result<()> {
+    std::fs::remove_file(abs).or_else(|_| std::fs::remove_dir(abs))
+}
+
+/// What stands at a path: the entry itself, a link never followed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Entry {
+    Missing,
+    Dir,
+    File,
+    /// A link (symlink, junction) | a special file (pipe, socket, device): reading it could lead outside | block.
+    Link,
+}
+
+fn entry(abs: &Path) -> io::Result<Entry> {
+    match std::fs::symlink_metadata(abs) {
+        Ok(meta) => {
+            let kind = meta.file_type();
+            Ok(if kind.is_symlink() {
+                Entry::Link
+            } else if kind.is_dir() {
+                Entry::Dir
+            } else if kind.is_file() {
+                Entry::File
+            } else {
+                Entry::Link
+            })
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Entry::Missing),
+        Err(e) => Err(e),
+    }
+}
+
+/// A path of the copy as reached without following links.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Reach {
+    /// Every folder on the way is a real folder (or missing from there on): what stands at the path.
+    Clear(Entry),
+    /// A link | special file stands on the way: what lies behind it is outside the copy.
+    Linked,
+    /// A file stands where a folder of the path should be: nothing is at the path.
+    Shadowed,
+}
+
 /// Removes what [`kept_out`] names anywhere under `dir`. A link is never followed: it is removed itself when kept out
 /// or named like an agent's settings folder.
 fn purge_kept_out(dir: &Path) -> io::Result<()> {
@@ -155,8 +209,7 @@ fn purge_kept_out(dir: &Path) -> io::Result<()> {
             let abs = entry.path();
             if kind.is_symlink() {
                 if kept_out(&path) || settings_folder(&name) {
-                    // Windows: a folder link goes with `remove_dir`
-                    gone(std::fs::remove_file(&abs).or_else(|_| std::fs::remove_dir(&abs)))?;
+                    gone(remove_link(&abs))?;
                 }
             } else if kind.is_dir() {
                 if kept_out(&path) || kept_out_folder(&name) {
@@ -315,9 +368,29 @@ impl Project {
     fn resolve(&self, path: &str) -> Result<PathBuf, IpcError> {
         Ok(self.vault.resolve(&VaultPath::parse(path)?)?)
     }
+
+    /// The real file an accept | an undo may write | remove: neither the path as sent nor the place the folder resolves
+    /// it to (an 8.3 short name such as `GIT~1`, another spelling, a link) may be kept out | hidden.
+    ///
+    /// # Errors
+    /// `InvalidPath` | `PathEscape`; `Denied` (`denied`); `Unavailable` (`projectsNotReady`).
+    fn destination(&self, path: &str) -> Result<PathBuf, IpcError> {
+        let parsed = VaultPath::parse(path)?;
+        let abs = self.vault.resolve(&parsed)?;
+        let denied = || refusal(ErrorKind::Denied, path, "denied");
+        let real = self.vault.relativize(&abs).ok_or_else(denied)?;
+        let guard = self.guard()?;
+        if [parsed.as_str(), real.as_str()]
+            .iter()
+            .any(|p| kept_out(p) || guard.hidden(p, false))
+        {
+            return Err(denied());
+        }
+        Ok(abs)
+    }
 }
 
-/// The real file as a listing showed it, for a whole-file choice.
+/// A file's state as last seen: what a whole-file choice | an undo replaces only while it is still there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Seen {
     Missing,
@@ -340,13 +413,20 @@ enum Side {
     /// Past [`MAX_FILE_BYTES`]: changed for sure (every copied file was smaller), never read.
     Big,
     Bytes(Vec<u8>),
+    /// A link | special file in the copy: never opened.
+    Link,
 }
 
 impl Side {
-    fn read(abs: &Path) -> Result<Self, IpcError> {
+    /// The real file (the project's own links are the person's: the vault resolved them inside the folder).
+    fn real(abs: &Path) -> Result<Self, IpcError> {
         if abs.is_dir() {
             return Ok(Self::Missing);
         }
+        Self::file(abs)
+    }
+
+    fn file(abs: &Path) -> Result<Self, IpcError> {
         match fsx::read_bytes(abs, MAX_FILE_BYTES) {
             Ok(bytes) => Ok(Self::Bytes(bytes)),
             Err(FsxError::TooLarge { .. }) => Ok(Self::Big),
@@ -360,7 +440,7 @@ impl Side {
     fn hash(&self) -> Option<ContentHash> {
         match self {
             Self::Bytes(bytes) => Some(fsx::hash(bytes)),
-            Self::Missing | Self::Big => None,
+            Self::Missing | Self::Big | Self::Link => None,
         }
     }
 
@@ -368,16 +448,25 @@ impl Side {
     fn text(&self) -> Option<Decoded> {
         match self {
             Self::Bytes(bytes) => fsx::decode(bytes).filter(|d| !d.lossy),
-            Self::Missing | Self::Big => None,
+            Self::Missing | Self::Big | Self::Link => None,
         }
     }
 
-    /// What a whole-file choice compares; `None` past the cap (cannot be compared).
+    /// What a whole-file choice | an undo compares; `None`: past the cap | a link (cannot be compared).
     fn seen(&self) -> Option<Seen> {
         match self {
             Self::Missing => Some(Seen::Missing),
             Self::Bytes(bytes) => Some(Seen::Bytes(fsx::hash(bytes))),
-            Self::Big => None,
+            Self::Big | Self::Link => None,
+        }
+    }
+
+    /// What an undo would put back (`None`: past the cap | a link, not kept).
+    fn kept(&self) -> Option<Held> {
+        match self {
+            Self::Missing => Some(Held::Nothing),
+            Self::Bytes(bytes) => Some(Held::Bytes(bytes.clone())),
+            Self::Big | Self::Link => None,
         }
     }
 
@@ -386,6 +475,7 @@ impl Side {
             Self::Bytes(bytes) => Ok(bytes),
             Self::Big => Err(IpcError::new(ErrorKind::TooLarge).subject(path)),
             Self::Missing => Err(IpcError::new(ErrorKind::NotFound).subject(path)),
+            Self::Link => Err(refusal(ErrorKind::InvalidData, path, "link")),
         }
     }
 }
@@ -393,6 +483,31 @@ impl Side {
 /// Lines of a normalized text (`None`: no file, no lines).
 fn lines_of(text: Option<&str>) -> Vec<&str> {
     text.map_or_else(Vec::new, |t| t.split('\n').collect())
+}
+
+/// The key of a hunk: its file, place and the lines of both sides, each part length-prefixed (two hunks of one list
+/// never share one; a hunk that moved | changed gets another).
+fn hunk_key(path: &str, hunk: &Hunk, old: &[&str], new: &[&str]) -> String {
+    let mut bytes = Vec::new();
+    let mut part = |data: &[u8]| {
+        let len = u64::try_from(data.len()).unwrap_or(u64::MAX);
+        bytes.extend_from_slice(&len.to_le_bytes());
+        bytes.extend_from_slice(data);
+    };
+    part(path.as_bytes());
+    part(
+        &u64::try_from(hunk.old.start)
+            .unwrap_or(u64::MAX)
+            .to_le_bytes(),
+    );
+    for (lines, range) in [(old, &hunk.old), (new, &hunk.new)] {
+        let run = lines.get(range.clone()).unwrap_or_default();
+        part(&u64::try_from(run.len()).unwrap_or(u64::MAX).to_le_bytes());
+        for line in run {
+            part(line.as_bytes());
+        }
+    }
+    fsx::hash(&bytes).hex()
 }
 
 /// One file's difference now, with what a choice needs.
@@ -410,16 +525,23 @@ struct Look {
 }
 
 impl Look {
+    fn keys(&self, path: &str) -> Vec<String> {
+        let old = lines_of(self.old.as_deref());
+        let new = lines_of(self.new.as_deref());
+        self.hunks
+            .iter()
+            .map(|hunk| hunk_key(path, hunk, &old, &new))
+            .collect()
+    }
+
     fn view(&self, path: &str) -> FileChange {
         let old = lines_of(self.old.as_deref());
         let new = lines_of(self.new.as_deref());
-        let owned = |lines: &[&str], range: &std::ops::Range<usize>| -> Vec<String> {
-            lines
-                .get(range.clone())
-                .unwrap_or_default()
-                .iter()
-                .map(|l| (*l).to_owned())
-                .collect()
+        // the first lines only: the window shows a long run cut, a choice applies all of it
+        let shown = |lines: &[&str], range: &std::ops::Range<usize>| -> (Vec<String>, bool) {
+            let run = lines.get(range.clone()).unwrap_or_default();
+            let first = run.iter().take(MAX_HUNK_LINES).map(|l| (*l).to_owned());
+            (first.collect(), run.len() > MAX_HUNK_LINES)
         };
         FileChange {
             path: path.to_owned(),
@@ -427,39 +549,53 @@ impl Look {
             hunks: self
                 .hunks
                 .iter()
-                .enumerate()
-                .map(|(id, hunk)| HunkView {
-                    id: u32::try_from(id).unwrap_or(u32::MAX),
-                    old_start: u32::try_from(hunk.old.start + 1).unwrap_or(u32::MAX),
-                    old_lines: owned(&old, &hunk.old),
-                    new_lines: owned(&new, &hunk.new),
+                .map(|hunk| {
+                    let (old_lines, old_cut) = shown(&old, &hunk.old);
+                    let (new_lines, new_cut) = shown(&new, &hunk.new);
+                    HunkView {
+                        key: hunk_key(path, hunk, &old, &new),
+                        old_start: u32::try_from(hunk.old.start + 1).unwrap_or(u32::MAX),
+                        old_lines,
+                        new_lines,
+                        truncated: old_cut || new_cut,
+                    }
                 })
                 .collect(),
         }
     }
 }
 
-/// The hunk ids of a choice, sorted (`None`: every hunk).
-fn pick(ids: Option<&[u32]>, count: usize, path: &str) -> Result<Vec<usize>, IpcError> {
-    let Some(ids) = ids else {
-        return Ok((0..count).collect());
+/// The hunks `keys` name, as sorted indexes (`None`: every hunk).
+///
+/// # Errors
+/// `InvalidData` (`unknownHunk`): no key; `Conflict` (`outdated`): a key of an older list.
+fn pick(keys: Option<&[String]>, look: &Look, path: &str) -> Result<Vec<usize>, IpcError> {
+    let Some(keys) = keys else {
+        return Ok((0..look.hunks.len()).collect());
     };
-    let picked: BTreeSet<usize> = ids
-        .iter()
-        .filter_map(|id| usize::try_from(*id).ok())
-        .collect();
-    if picked.is_empty() || picked.len() != ids.len() || picked.iter().any(|id| *id >= count) {
+    if keys.is_empty() {
         return Err(refusal(ErrorKind::InvalidData, path, "unknownHunk"));
     }
+    let fresh = look.keys(path);
+    let picked = keys
+        .iter()
+        .map(|key| {
+            fresh
+                .iter()
+                .position(|k| k == key)
+                .ok_or_else(|| refusal(ErrorKind::Conflict, path, "outdated"))
+        })
+        .collect::<Result<BTreeSet<usize>, IpcError>>()?;
     Ok(picked.into_iter().collect())
 }
 
-/// A file only chosen as a whole: hunk ids allowed only when they name every hunk.
-fn whole_only(ids: Option<&[u32]>, count: usize, path: &str) -> Result<(), IpcError> {
-    match ids {
-        None => Ok(()),
-        Some(ids) if count > 0 && pick(Some(ids), count, path)?.len() == count => Ok(()),
-        Some(_) => Err(refusal(ErrorKind::InvalidData, path, "wholeFileOnly")),
+/// A file only chosen as a whole: keys allowed only when they name every hunk.
+fn whole_only(keys: Option<&[String]>, look: &Look, path: &str) -> Result<(), IpcError> {
+    match keys {
+        Some(keys) if pick(Some(keys), look, path)?.len() != look.hunks.len() => {
+            Err(refusal(ErrorKind::InvalidData, path, "wholeFileOnly"))
+        }
+        _ => Ok(()),
     }
 }
 
@@ -467,10 +603,42 @@ fn write_copy(abs: &Path, bytes: &[u8], path: &str) -> Result<(), IpcError> {
     fsx::write_atomic(abs, bytes).map_err(|e| IpcError::io(path, &e))
 }
 
-fn remove_copy(abs: &Path, path: &str) -> Result<(), IpcError> {
-    match std::fs::remove_file(abs) {
-        Err(e) if e.kind() != io::ErrorKind::NotFound => Err(IpcError::io(path, &e)),
-        _ => Ok(()),
+fn link_in_path(path: &str) -> IpcError {
+    refusal(ErrorKind::Conflict, path, "linkInPath")
+}
+
+/// Where a choice wrote.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Place {
+    /// The real file (an accept).
+    Real,
+    /// The copy's file (a reject).
+    Copy,
+}
+
+/// What a file held before a choice.
+enum Held {
+    Nothing,
+    Bytes(Vec<u8>),
+}
+
+/// What one accept | reject replaced, to be put back once.
+struct Undo {
+    path: String,
+    place: Place,
+    before: Held,
+    /// What the choice left there: the undo applies only while it is still there.
+    after: Seen,
+    /// The file's baseline before the choice.
+    baseline: Option<ContentHash>,
+}
+
+impl Undo {
+    fn size(&self) -> usize {
+        match &self.before {
+            Held::Nothing => 0,
+            Held::Bytes(bytes) => bytes.len(),
+        }
     }
 }
 
@@ -484,6 +652,11 @@ pub struct WorkCopy {
     /// only what the person saw.
     reviewed: HashMap<String, Seen>,
     skipped: usize,
+    /// The change list as last computed (reading both sides of every file is costly), kept for the window; each
+    /// choice updates its own file in it.
+    listed: Option<ChangeList>,
+    /// One step back per file, oldest first: what its last accept | reject replaced.
+    undos: Vec<Undo>,
 }
 
 impl WorkCopy {
@@ -505,6 +678,8 @@ impl WorkCopy {
             files: BTreeMap::new(),
             reviewed: HashMap::new(),
             skipped: listing.skipped,
+            listed: None,
+            undos: Vec::new(),
         };
         let filled = copy.clear().and_then(|()| copy.fill(listing.files));
         if filled.is_err() {
@@ -533,6 +708,7 @@ impl WorkCopy {
                 self.skipped += 1;
                 continue;
             };
+            // a folder just made, before any agent ran in it: no link can stand on the way
             write_copy(&self.copy_path(&path)?, &bytes, &path)?;
             self.files.insert(path, fsx::hash(&bytes));
         }
@@ -561,7 +737,8 @@ impl WorkCopy {
         self.skipped
     }
 
-    /// The copy of a project path: always inside the copy (a path climbing out is refused).
+    /// The copy of a project path: always inside the copy (a path climbing out is refused). Names the place only:
+    /// reads | writes go through [`Self::reach`], which never follows a link.
     ///
     /// # Errors
     /// `InvalidPath` | `PathEscape`: not a file path of the project.
@@ -575,9 +752,63 @@ impl WorkCopy {
         Ok(abs)
     }
 
+    /// Where `path` is in the copy and what stands there, reached without following links: the copy's own folder and
+    /// each folder on the way must be real folders (the agent can put a link anywhere in the copy).
+    fn reach(&self, path: &str) -> Result<(PathBuf, Reach), IpcError> {
+        let abs = self.copy_path(path)?;
+        let io = |e: io::Error| IpcError::io(path, &e);
+        let mut at = self.dir.clone();
+        let mut found = entry(&at).map_err(io)?;
+        for segment in VaultPath::parse(path)?.segments() {
+            match found {
+                Entry::Dir => {}
+                Entry::Missing => return Ok((abs, Reach::Clear(Entry::Missing))),
+                Entry::File => return Ok((abs, Reach::Shadowed)),
+                Entry::Link => return Ok((abs, Reach::Linked)),
+            }
+            at.push(segment);
+            found = entry(&at).map_err(io)?;
+        }
+        Ok((abs, Reach::Clear(found)))
+    }
+
+    /// One file of the copy now: a link | special file there is never opened; a file behind a link on the way counts
+    /// as missing (it is outside the copy).
+    fn read_copy(&self, path: &str) -> Result<Side, IpcError> {
+        match self.reach(path)? {
+            (abs, Reach::Clear(Entry::File)) => Side::file(&abs),
+            (_, Reach::Clear(Entry::Link)) => Ok(Side::Link),
+            (_, Reach::Clear(Entry::Missing | Entry::Dir) | Reach::Linked | Reach::Shadowed) => {
+                Ok(Side::Missing)
+            }
+        }
+    }
+
+    /// Writes a file of the copy; refused where a link stands on the way | at the path (the write would land outside).
+    fn put_copy(&self, path: &str, bytes: &[u8]) -> Result<(), IpcError> {
+        match self.reach(path)? {
+            (_, Reach::Clear(Entry::Link) | Reach::Linked) => Err(link_in_path(path)),
+            (abs, Reach::Clear(_) | Reach::Shadowed) => write_copy(&abs, bytes, path),
+        }
+    }
+
+    /// Removes a file of the copy (a link | special file there goes itself); refused where a link stands on the way.
+    fn drop_copy(&self, path: &str) -> Result<(), IpcError> {
+        let gone = |result: io::Result<()>| match result {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(IpcError::io(path, &e)),
+            _ => Ok(()),
+        };
+        match self.reach(path)? {
+            (abs, Reach::Clear(Entry::File)) => gone(remove_file(&abs)),
+            (abs, Reach::Clear(Entry::Link)) => gone(remove_link(&abs)),
+            (_, Reach::Clear(Entry::Missing | Entry::Dir) | Reach::Shadowed) => Ok(()),
+            (_, Reach::Linked) => Err(link_in_path(path)),
+        }
+    }
+
     /// Brings the person's changes into the copy (before each prompt): a real file changed where the copy is
     /// unchanged replaces the copy; new real files join it; a real file gone (or now hidden) leaves an unchanged copy.
-    /// Where both changed, the agent's version stays (listed as a conflict).
+    /// Where both changed, the agent's version stays (listed as a conflict). Nothing goes behind a link of the copy.
     ///
     /// # Errors
     /// The listing's refusals; IO.
@@ -591,19 +822,18 @@ impl WorkCopy {
                 continue;
             };
             let real = fsx::hash(&bytes);
-            let copy_abs = self.copy_path(&path)?;
             match self.files.get(&path).copied() {
                 Some(base) if base == real => {}
                 Some(base) => {
-                    if Side::read(&copy_abs)?.hash() == Some(base) {
-                        write_copy(&copy_abs, &bytes, &path)?;
+                    if self.read_copy(&path)?.hash() == Some(base) {
+                        self.put_copy(&path, &bytes)?;
                         self.files.insert(path, real);
                     }
                 }
-                // a file the agent made at that path stays (listed as added)
+                // a file the agent made at that path stays (listed as added), and so does a link on the way
                 None => {
-                    if matches!(Side::read(&copy_abs)?, Side::Missing) {
-                        write_copy(&copy_abs, &bytes, &path)?;
+                    if self.reach(&path)?.1 == Reach::Clear(Entry::Missing) {
+                        self.put_copy(&path, &bytes)?;
                         self.files.insert(path, real);
                     }
                 }
@@ -616,23 +846,23 @@ impl WorkCopy {
             .map(|(path, base)| (path.clone(), *base))
             .collect();
         for (path, base) in gone {
-            let copy_abs = self.copy_path(&path)?;
-            match Side::read(&copy_abs)? {
+            match self.read_copy(&path)? {
                 Side::Bytes(bytes) if fsx::hash(&bytes) == base => {
-                    remove_copy(&copy_abs, &path)?;
+                    self.drop_copy(&path)?;
                     self.files.remove(&path);
                 }
                 Side::Missing => {
                     self.files.remove(&path);
                 }
-                // changed in the copy: listed as a conflict
-                Side::Bytes(_) | Side::Big => {}
+                // changed in the copy: listed as a conflict | a link
+                Side::Bytes(_) | Side::Big | Side::Link => {}
             }
         }
         Ok(())
     }
 
-    /// Files of the copy (the ignore files it holds apply; agent settings and machinery left out).
+    /// Files of the copy (the ignore files it holds apply; agent settings and machinery left out), links and special
+    /// files as themselves (never followed: listed so the person can remove them).
     fn copy_files(&self) -> Result<Vec<String>, IpcError> {
         let walk = ignore::WalkBuilder::new(&self.dir)
             .standard_filters(false)
@@ -650,7 +880,7 @@ impl WorkCopy {
             .build();
         let mut out = Vec::new();
         for entry in walk.flatten() {
-            if !entry.file_type().is_some_and(|t| t.is_file()) {
+            if entry.file_type().is_none_or(|t| t.is_dir()) {
                 continue;
             }
             let Ok(rel) = entry.path().strip_prefix(&self.dir) else {
@@ -675,10 +905,11 @@ impl WorkCopy {
 
     /// The difference of one file now (`None`: no change to offer).
     fn look(&self, path: &str) -> Result<Option<Look>, IpcError> {
-        let real = Side::read(&self.project.resolve(path)?)?;
-        let copy = Side::read(&self.copy_path(path)?)?;
+        let real = Side::real(&self.project.resolve(path)?)?;
+        let copy = self.read_copy(path)?;
         let baseline = self.files.get(path).copied();
         let kind = match (baseline, &copy) {
+            (_, Side::Link) => FileChangeKind::Link,
             (None, Side::Missing) => return Ok(None),
             (None, _) => FileChangeKind::Added,
             (Some(base), Side::Bytes(bytes)) if fsx::hash(bytes) == base => return Ok(None),
@@ -700,7 +931,9 @@ impl WorkCopy {
             FileChangeKind::Modified => (kind, normal(&real_text), normal(&copy_text)),
             FileChangeKind::Added => (kind, None, normal(&copy_text)),
             FileChangeKind::Deleted => (kind, normal(&real_text), None),
-            FileChangeKind::Binary | FileChangeKind::Conflict => (kind, None, None),
+            FileChangeKind::Binary | FileChangeKind::Conflict | FileChangeKind::Link => {
+                (kind, None, None)
+            }
         };
         let lined = old.is_some() || new.is_some();
         let found = if lined {
@@ -724,27 +957,118 @@ impl WorkCopy {
         }))
     }
 
-    /// Every file whose copy differs from the real file, by path.
+    /// Keeps the real state of a whole-file change as listed: its accept replaces only that.
+    fn review(&mut self, path: &str, look: Option<&Look>) {
+        let whole =
+            look.filter(|l| matches!(l.kind, FileChangeKind::Binary | FileChangeKind::Conflict));
+        match whole.and_then(|l| l.real.seen()) {
+            Some(state) => {
+                self.reviewed.insert(path.to_owned(), state);
+            }
+            None => {
+                self.reviewed.remove(path);
+            }
+        }
+    }
+
+    /// The kept change list (computed when none is kept yet).
+    ///
+    /// # Errors
+    /// See [`Self::refresh`].
+    pub fn changes(&mut self) -> Result<ChangeList, IpcError> {
+        match &self.listed {
+            Some(list) => Ok(list.clone()),
+            None => self.refresh(),
+        }
+    }
+
+    /// Computes the change list again (every file of both sides, by path; the first [`MAX_LISTED`] listed, the rest
+    /// counted) and keeps it.
     ///
     /// # Errors
     /// A file of either side cannot be read; the copy holds far too many files.
-    pub fn changes(&mut self) -> Result<Vec<FileChange>, IpcError> {
+    pub fn refresh(&mut self) -> Result<ChangeList, IpcError> {
         let mut paths: BTreeSet<String> = self.files.keys().cloned().collect();
         paths.extend(self.copy_files()?);
         self.reviewed.clear();
-        let mut out = Vec::new();
+        let mut list = ChangeList::default();
         for path in paths {
             let Some(look) = self.look(&path)? else {
                 continue;
             };
-            if matches!(look.kind, FileChangeKind::Binary | FileChangeKind::Conflict) {
-                if let Some(state) = look.real.seen() {
-                    self.reviewed.insert(path.clone(), state);
+            self.review(&path, Some(&look));
+            if list.files.len() < MAX_LISTED {
+                list.files.push(look.view(&path));
+            } else {
+                list.more = list.more.saturating_add(1);
+            }
+        }
+        self.listed = Some(list.clone());
+        Ok(list)
+    }
+
+    /// Looks at `path` again and updates it in the kept list (computed whole while none is kept | files are left
+    /// unlisted past the cap: one of them may move up).
+    fn patch(&mut self, path: &str) -> Result<ChangeList, IpcError> {
+        // a path named over IPC that the full list never offers (agent settings, machinery) stays out of it
+        let look = if kept_out(path) {
+            None
+        } else {
+            self.look(path)?
+        };
+        self.review(path, look.as_ref());
+        let view = look.map(|l| l.view(path));
+        let placed = match self.listed.as_mut() {
+            Some(list) if list.more == 0 => {
+                let at = list.files.binary_search_by(|f| f.path.as_str().cmp(path));
+                match (at, view) {
+                    (Ok(at), Some(view)) => {
+                        list.files.get_mut(at).map(|slot| *slot = view).is_some()
+                    }
+                    (Ok(at), None) => {
+                        list.files.remove(at);
+                        true
+                    }
+                    (Err(at), Some(view)) if list.files.len() < MAX_LISTED => {
+                        list.files.insert(at, view);
+                        true
+                    }
+                    (Err(_), Some(_)) => false,
+                    (Err(_), None) => true,
                 }
             }
-            out.push(look.view(&path));
+            _ => false,
+        };
+        match (&self.listed, placed) {
+            (Some(list), true) => Ok(list.clone()),
+            _ => self.refresh(),
         }
-        Ok(out)
+    }
+
+    /// After a choice (refused or not): the kept list with `path` looked at again; a refusal's list is read by the
+    /// window next (`acp.changes`), so it shows what the refusal was about.
+    fn answer(&mut self, path: &str, done: Result<(), IpcError>) -> Result<ChangeList, IpcError> {
+        match done {
+            Ok(()) => self.patch(path),
+            Err(error) => {
+                let _ = self.patch(path);
+                Err(error)
+            }
+        }
+    }
+
+    /// Keeps `undo` as the one step back of its file (the oldest go past [`MAX_UNDO_BYTES`]).
+    fn keep_undo(&mut self, undo: Undo) {
+        self.forget_undo(&undo.path);
+        self.undos.push(undo);
+        let mut kept: usize = self.undos.iter().map(Undo::size).sum();
+        while kept > MAX_UNDO_BYTES && !self.undos.is_empty() {
+            kept = kept.saturating_sub(self.undos.remove(0).size());
+        }
+    }
+
+    fn forget_undo(&mut self, path: &str) {
+        self.undos.retain(|u| u.path != path);
     }
 
     /// Writes `bytes` over the real file while it still holds `seen` (`None`: only where nothing is), announced as
@@ -798,29 +1122,32 @@ impl WorkCopy {
         Ok(())
     }
 
-    /// Applies the agent's change to the real file: the chosen hunks (`None`: all), or the whole file for the kinds
-    /// that have no hunks. Refused while a window holds unsaved edits of the file, and when the real file changed
-    /// since the copy was taken (whole file: since it was listed). Answers the fresh list.
+    /// Applies the agent's change to the real file: the hunks `keys` name (`None`: all), or the whole file for the
+    /// kinds that have no hunks. Refused for a path kept out | hidden (as sent | as the folder resolves it), while a
+    /// window holds unsaved edits of the file, and when the real file changed since the copy was taken (whole file:
+    /// since it was listed). What it replaced is kept for [`Self::undo`]. Answers the updated list.
     ///
     /// # Errors
-    /// `NotFound` (`noChange`), `Conflict` (`unsaved` | `changed`), `Exists` (a new file where one appeared),
-    /// `InvalidData` (`unknownHunk` | `wholeFileOnly`), `TooLarge`, `Trash`, IO.
-    pub fn accept(
-        &mut self,
-        path: &str,
-        hunk_ids: Option<&[u32]>,
-    ) -> Result<Vec<FileChange>, IpcError> {
+    /// `Denied` (`denied`), `NotFound` (`noChange`), `Conflict` (`unsaved` | `changed` | `outdated`), `Exists` (a new
+    /// file where one appeared), `InvalidData` (`unknownHunk` | `wholeFileOnly` | `link`), `TooLarge`, `Trash`, IO.
+    pub fn accept(&mut self, path: &str, keys: Option<&[String]>) -> Result<ChangeList, IpcError> {
+        let done = self.apply(path, keys);
+        self.answer(path, done)
+    }
+
+    fn apply(&mut self, path: &str, keys: Option<&[String]>) -> Result<(), IpcError> {
+        // first: nothing is read for a path that may never be written
+        let abs = self.project.destination(path)?;
         let look = self
             .look(path)?
             .ok_or_else(|| refusal(ErrorKind::NotFound, path, "noChange"))?;
         if self.project.unsaved(path) {
             return Err(refusal(ErrorKind::Conflict, path, "unsaved"));
         }
-        let abs = self.project.resolve(path)?;
         let baseline = self.files.get(path).copied();
-        match look.kind {
+        let after = match look.kind {
             FileChangeKind::Modified => {
-                let picked = pick(hunk_ids, look.hunks.len(), path)?;
+                let picked = pick(keys, &look, path)?;
                 let (Some(real), Some(new)) = (&look.real_text, &look.new) else {
                     return Err(refusal(ErrorKind::Internal, path, "noText"));
                 };
@@ -832,27 +1159,31 @@ impl WorkCopy {
                     .collect();
                 let text = lines::apply(&real.text, &edits)
                     .map_err(|_| refusal(ErrorKind::Internal, path, "edits"))?;
-                let hash =
-                    self.write_real(path, &abs, &lines::encode(&text, real.encoding), baseline)?;
+                let encoded = lines::encode(&text, real.encoding);
+                let hash = self.write_real(path, &abs, &encoded, baseline)?;
                 self.files.insert(path.to_owned(), hash);
+                Seen::Bytes(hash)
             }
             FileChangeKind::Added => {
-                whole_only(hunk_ids, look.hunks.len(), path)?;
+                whole_only(keys, &look, path)?;
                 let hash = self.write_real(path, &abs, look.copy.bytes(path)?, None)?;
                 self.files.insert(path.to_owned(), hash);
+                Seen::Bytes(hash)
             }
             FileChangeKind::Deleted => {
-                whole_only(hunk_ids, look.hunks.len(), path)?;
+                whole_only(keys, &look, path)?;
                 self.recycle_real(path, &abs)?;
                 self.files.remove(path);
+                Seen::Missing
             }
             FileChangeKind::Binary => {
-                whole_only(hunk_ids, 0, path)?;
+                whole_only(keys, &look, path)?;
                 let hash = self.write_real(path, &abs, look.copy.bytes(path)?, baseline)?;
                 self.files.insert(path.to_owned(), hash);
+                Seen::Bytes(hash)
             }
             FileChangeKind::Conflict => {
-                if hunk_ids.is_some() {
+                if keys.is_some() {
                     return Err(refusal(ErrorKind::Conflict, path, "changed"));
                 }
                 let now = look
@@ -862,39 +1193,52 @@ impl WorkCopy {
                 if self.reviewed.get(path) != Some(&now) {
                     return Err(refusal(ErrorKind::Conflict, path, "changed"));
                 }
-                match &look.copy {
-                    Side::Missing => {
-                        self.recycle_real(path, &abs)?;
-                        self.files.remove(path);
-                    }
-                    copy => {
-                        let hash = self.write_real(path, &abs, copy.bytes(path)?, now.hash())?;
-                        self.files.insert(path.to_owned(), hash);
-                    }
+                if let Side::Missing = look.copy {
+                    self.recycle_real(path, &abs)?;
+                    self.files.remove(path);
+                    Seen::Missing
+                } else {
+                    let hash = self.write_real(path, &abs, look.copy.bytes(path)?, now.hash())?;
+                    self.files.insert(path.to_owned(), hash);
+                    Seen::Bytes(hash)
                 }
             }
+            // what a link leads to is never offered as content
+            FileChangeKind::Link => return Err(refusal(ErrorKind::InvalidData, path, "link")),
+        };
+        if let Some(before) = look.real.kept() {
+            self.keep_undo(Undo {
+                path: path.to_owned(),
+                place: Place::Real,
+                before,
+                after,
+                baseline,
+            });
         }
-        self.settle(path)?;
-        self.changes()
+        self.settle(path)
     }
 
-    /// Drops the agent's change in the copy: the chosen hunks of a modified file get the real lines back; anything
-    /// else (`None`: the whole file) takes the real file as it is now. Answers the fresh list.
+    /// Drops the agent's change in the copy: the hunks `keys` name of a modified file get the real lines back; a link
+    /// goes (a file the copy had there gets the real one back); anything else (`None`: the whole file) takes the real
+    /// file as it is now. What it replaced is kept for [`Self::undo`] (a link: never put back). Answers the updated
+    /// list.
     ///
     /// # Errors
-    /// `NotFound` (`noChange`), `InvalidData` (`unknownHunk` | `wholeFileOnly`), IO.
-    pub fn reject(
-        &mut self,
-        path: &str,
-        hunk_ids: Option<&[u32]>,
-    ) -> Result<Vec<FileChange>, IpcError> {
+    /// `NotFound` (`noChange`), `Conflict` (`outdated` | `linkInPath`), `InvalidData` (`unknownHunk` |
+    /// `wholeFileOnly`), IO.
+    pub fn reject(&mut self, path: &str, keys: Option<&[String]>) -> Result<ChangeList, IpcError> {
+        let done = self.discard(path, keys);
+        self.answer(path, done)
+    }
+
+    fn discard(&mut self, path: &str, keys: Option<&[String]>) -> Result<(), IpcError> {
         let look = self
             .look(path)?
             .ok_or_else(|| refusal(ErrorKind::NotFound, path, "noChange"))?;
-        let copy_abs = self.copy_path(path)?;
+        let baseline = self.files.get(path).copied();
         match look.kind {
-            FileChangeKind::Modified if hunk_ids.is_some() => {
-                let picked = pick(hunk_ids, look.hunks.len(), path)?;
+            FileChangeKind::Modified if keys.is_some() => {
+                let picked = pick(keys, &look, path)?;
                 let (Some(copy), Some(old)) = (&look.copy_text, &look.old) else {
                     return Err(refusal(ErrorKind::Internal, path, "noText"));
                 };
@@ -906,34 +1250,129 @@ impl WorkCopy {
                     .collect();
                 let text = lines::apply(&copy.text, &edits)
                     .map_err(|_| refusal(ErrorKind::Internal, path, "edits"))?;
-                write_copy(&copy_abs, &lines::encode(&text, copy.encoding), path)?;
+                self.put_copy(path, &lines::encode(&text, copy.encoding))?;
             }
             FileChangeKind::Added => {
-                whole_only(hunk_ids, look.hunks.len(), path)?;
-                remove_copy(&copy_abs, path)?;
+                whole_only(keys, &look, path)?;
+                self.drop_copy(path)?;
             }
-            kind => {
-                let count = if kind == FileChangeKind::Deleted {
-                    look.hunks.len()
-                } else {
-                    0
-                };
-                whole_only(hunk_ids, count, path)?;
-                match &look.real {
-                    Side::Bytes(bytes) => {
-                        write_copy(&copy_abs, bytes, path)?;
-                        self.files.insert(path.to_owned(), fsx::hash(bytes));
-                    }
-                    // gone | past the cap: out of the copy
-                    Side::Missing | Side::Big => {
-                        remove_copy(&copy_abs, path)?;
-                        self.files.remove(path);
-                    }
+            FileChangeKind::Link => {
+                whole_only(keys, &look, path)?;
+                self.drop_copy(path)?;
+                // only a file the copy held: a real file never copied (hidden) stays out
+                if baseline.is_some() {
+                    self.take_real(path, &look.real)?;
                 }
+            }
+            _ => {
+                whole_only(keys, &look, path)?;
+                self.take_real(path, &look.real)?;
             }
         }
         self.settle(path)?;
-        self.changes()
+        let after = self.read_copy(path)?.seen();
+        match (look.copy.kept(), after) {
+            (Some(before), Some(after)) if look.kind != FileChangeKind::Link => {
+                self.keep_undo(Undo {
+                    path: path.to_owned(),
+                    place: Place::Copy,
+                    before,
+                    after,
+                    baseline,
+                });
+            }
+            _ => self.forget_undo(path),
+        }
+        Ok(())
+    }
+
+    /// The copy takes the real file as it is now (gone | past the cap: out of the copy, no baseline).
+    fn take_real(&mut self, path: &str, real: &Side) -> Result<(), IpcError> {
+        match real {
+            Side::Bytes(bytes) => {
+                self.put_copy(path, bytes)?;
+                self.files.insert(path.to_owned(), fsx::hash(bytes));
+            }
+            Side::Missing | Side::Big | Side::Link => {
+                self.drop_copy(path)?;
+                self.files.remove(path);
+            }
+        }
+        Ok(())
+    }
+
+    /// Takes back the last accept | reject of `path`, once: the real file (accept: its earlier bytes written back, a
+    /// deleted one made again, an added one recycled) | the copy's file (reject) gets back what it held, only while
+    /// it still holds what the choice left. Answers the updated list.
+    ///
+    /// # Errors
+    /// `NotFound` (`noUndo`), `Conflict` (`changed` | `unsaved` | `linkInPath`), `Denied` (`denied`), `Trash`, IO.
+    pub fn undo(&mut self, path: &str) -> Result<ChangeList, IpcError> {
+        let done = self.step_back(path);
+        self.answer(path, done)
+    }
+
+    fn step_back(&mut self, path: &str) -> Result<(), IpcError> {
+        let at = self
+            .undos
+            .iter()
+            .position(|u| u.path == path)
+            .ok_or_else(|| refusal(ErrorKind::NotFound, path, "noUndo"))?;
+        let undo = self.undos.remove(at);
+        let done = match undo.place {
+            Place::Real => self.undo_real(&undo),
+            Place::Copy => self.undo_copy(&undo),
+        };
+        if done.is_err() {
+            // still there for another try (the document saved, the file put back)
+            self.undos.insert(at, undo);
+            return done;
+        }
+        match undo.baseline {
+            Some(base) => self.files.insert(undo.path, base),
+            None => self.files.remove(&undo.path),
+        };
+        Ok(())
+    }
+
+    fn undo_real(&self, undo: &Undo) -> Result<(), IpcError> {
+        let path = undo.path.as_str();
+        if self.project.unsaved(path) {
+            return Err(refusal(ErrorKind::Conflict, path, "unsaved"));
+        }
+        let abs = self.project.destination(path)?;
+        let changed = || refusal(ErrorKind::Conflict, path, "changed");
+        if Side::real(&abs)?.seen() != Some(undo.after) {
+            return Err(changed());
+        }
+        match (&undo.before, undo.after) {
+            (Held::Bytes(bytes), Seen::Bytes(written)) => {
+                self.write_real(path, &abs, bytes, Some(written))?;
+            }
+            (Held::Bytes(bytes), Seen::Missing) => {
+                self.write_real(path, &abs, bytes, None).map_err(|e| {
+                    if e.kind == ErrorKind::Exists {
+                        changed()
+                    } else {
+                        e
+                    }
+                })?;
+            }
+            (Held::Nothing, Seen::Bytes(_)) => self.recycle_real(path, &abs)?,
+            (Held::Nothing, Seen::Missing) => {}
+        }
+        Ok(())
+    }
+
+    fn undo_copy(&self, undo: &Undo) -> Result<(), IpcError> {
+        let path = undo.path.as_str();
+        if self.read_copy(path)?.seen() != Some(undo.after) {
+            return Err(refusal(ErrorKind::Conflict, path, "changed"));
+        }
+        match &undo.before {
+            Held::Bytes(bytes) => self.put_copy(path, bytes),
+            Held::Nothing => self.drop_copy(path),
+        }
     }
 
     /// After a choice: a copy holding the real file's text with other line breaks | encoding takes the real bytes,
@@ -942,9 +1381,8 @@ impl WorkCopy {
         let Some(base) = self.files.get(path).copied() else {
             return Ok(());
         };
-        let copy_abs = self.copy_path(path)?;
-        let real = Side::read(&self.project.resolve(path)?)?;
-        let copy = Side::read(&copy_abs)?;
+        let real = Side::real(&self.project.resolve(path)?)?;
+        let copy = self.read_copy(path)?;
         let (Side::Bytes(real_bytes), Side::Bytes(copy_bytes)) = (&real, &copy) else {
             return Ok(());
         };
@@ -956,12 +1394,12 @@ impl WorkCopy {
             _ => false,
         };
         if same {
-            write_copy(&copy_abs, real_bytes, path)?;
+            self.put_copy(path, real_bytes)?;
         }
         Ok(())
     }
 
-    /// Deletes the copy (its own folder only; pending changes go with it).
+    /// Deletes the copy (its own folder only, never through a link; pending changes and undos go with it).
     ///
     /// # Errors
     /// IO.

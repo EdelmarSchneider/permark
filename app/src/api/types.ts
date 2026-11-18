@@ -248,7 +248,10 @@ import type { AgentEntry } from "./generated/AgentEntry";
 import type { AgentHow } from "./generated/AgentHow";
 import type { AgentNeed } from "./generated/AgentNeed";
 import type { AnswerArgs } from "./generated/AnswerArgs";
+import type { ChangeList } from "./generated/ChangeList";
+import type { ChangesArgs } from "./generated/ChangesArgs";
 import type { ChooseArgs } from "./generated/ChooseArgs";
+import type { DecideArgs } from "./generated/DecideArgs";
 import type { FileChange } from "./generated/FileChange";
 import type { FileChangeKind } from "./generated/FileChangeKind";
 import type { HunkView } from "./generated/HunkView";
@@ -258,6 +261,7 @@ import type { LoginMethod } from "./generated/LoginMethod";
 import type { PermissionChoice } from "./generated/PermissionChoice";
 import type { PromptArgs } from "./generated/PromptArgs";
 import type { PromptSelection } from "./generated/PromptSelection";
+import type { UndoArgs } from "./generated/UndoArgs";
 
 export type {
   DropOpened,
@@ -882,12 +886,19 @@ export interface PluginMethods {
   "acp.reset": { args: Record<string, never>; result: null };
   /** Answers one of the agent's questions (`optionId` null: dismissed). */
   "acp.answer": { args: AnswerArgs; result: null };
-  /** The files of the work copy that differ from the real ones (empty while there is no copy). */
-  "acp.changes": { args: Record<string, never>; result: FileChange[] };
-  /** Puts hunks `hunks` (null: the whole file) of the copy into the real file; answers the fresh list. */
-  "acp.accept": { args: { path: string; hunks: number[] | null }; result: FileChange[] };
-  /** Drops hunks `hunks` (null: the whole file) from the copy; answers the fresh list. */
-  "acp.reject": { args: { path: string; hunks: number[] | null }; result: FileChange[] };
+  /** The files of the work copy that differ from the real ones, as kept since the last turn's end (`refresh`:
+   *  computed again); at most 500 (`more`: the rest). Empty while there is no copy. */
+  "acp.changes": { args: ChangesArgs; result: ChangeList };
+  /** Puts the hunks named by `hunks` keys (null: the whole file) of the copy into the real file; answers the updated
+   *  list. Refused `conflict` `outdated` (a key of an older list: read `acp.changes` again) | `changed` | `unsaved`,
+   *  `denied` `denied`, `invalidData` `link` | `wholeFileOnly`. */
+  "acp.accept": { args: DecideArgs; result: ChangeList };
+  /** Drops the hunks named by `hunks` keys (null: the whole file) from the copy; answers the updated list. Refused
+   *  `conflict` `outdated` | `linkInPath`. */
+  "acp.reject": { args: DecideArgs; result: ChangeList };
+  /** Takes back the last accept | reject of `path` once (lost when the plugin stops); answers the updated list.
+   *  Refused `notFound` `noUndo`, `conflict` `changed` (the file changed since) | `unsaved`. */
+  "acp.undo": { args: UndoArgs; result: ChangeList };
 }
 
 /** What the converter reads: a file of the workspace, or a text from the page. */
@@ -1019,7 +1030,10 @@ export type {
   AgentHow,
   AgentNeed,
   AnswerArgs,
+  ChangeList,
+  ChangesArgs,
   ChooseArgs,
+  DecideArgs,
   FileChange,
   FileChangeKind,
   HunkView,
@@ -1029,6 +1043,7 @@ export type {
   PermissionChoice,
   PromptArgs,
   PromptSelection,
+  UndoArgs,
 };
 export type {
   AgentMode,

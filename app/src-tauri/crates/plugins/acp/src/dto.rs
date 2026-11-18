@@ -3,6 +3,27 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+/// The copy's changes as last computed (at each turn's end | on `refresh`; a choice updates its own file): at most
+/// 500 files, by path.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ChangeList {
+    pub files: Vec<FileChange>,
+    /// Changed files past the first 500, not listed.
+    pub more: u32,
+}
+
+impl ChangeList {
+    /// Every changed file, listed or not.
+    #[must_use]
+    pub fn count(&self) -> u32 {
+        u32::try_from(self.files.len())
+            .unwrap_or(u32::MAX)
+            .saturating_add(self.more)
+    }
+}
+
 /// One file whose copy differs from the real file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -12,7 +33,7 @@ pub struct FileChange {
     pub path: String,
     pub kind: FileChangeKind,
     /// Line runs that differ (`modified`); the whole text as one run (`added` | `deleted` text files); none for
-    /// `binary` | `conflict` (whole-file choices only).
+    /// `binary` | `conflict` | `link` (whole-file choices only).
     pub hunks: Vec<HunkView>,
 }
 
@@ -31,6 +52,9 @@ pub enum FileChangeKind {
     Binary,
     /// Changed in the copy and in the real folder since the copy was taken.
     Conflict,
+    /// A link | special file in the copy (never read through): only Reject, which removes it (a file the copy had
+    /// there gets the real one back).
+    Link,
 }
 
 /// One run of lines that differ.
@@ -38,23 +62,49 @@ pub enum FileChangeKind {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct HunkView {
-    /// Index in this list (what accept | reject name).
-    pub id: u32,
+    /// Names this run by its file, place and lines (what accept | reject name): a key of an older list that no
+    /// longer matches is refused (`outdated`), never applied to another run.
+    pub key: String,
     /// 1-based line of the real file where the run starts (no old lines: the line the new ones go before).
     pub old_start: u32,
+    /// At most 400 lines per side (`truncated`).
     pub old_lines: Vec<String>,
     pub new_lines: Vec<String>,
+    /// A side had more than 400 lines: only the first are shown; a choice still applies the whole run.
+    pub truncated: bool,
+}
+
+/// Arguments of `acp.changes`.
+#[derive(Debug, Clone, Default, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export)]
+pub struct ChangesArgs {
+    /// Computes the list again (else the kept one).
+    #[serde(default)]
+    #[ts(optional)]
+    pub refresh: Option<bool>,
 }
 
 /// Arguments of `acp.accept` | `acp.reject`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export)]
 pub struct DecideArgs {
     /// Project path.
     pub path: String,
-    /// Hunk ids of the last list; `null`: the whole file.
+    /// `HunkView.key`s; `null`: the whole file as it is now.
     #[serde(default)]
-    pub hunks: Option<Vec<u32>>,
+    pub hunks: Option<Vec<String>>,
+}
+
+/// Arguments of `acp.undo`: takes back the last accept | reject of the file, once. Kept in memory only: lost when
+/// the plugin stops (turned off, project closed, app quit); the oldest are dropped past 64 MiB of kept bytes.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(export)]
+pub struct UndoArgs {
+    /// Project path.
+    pub path: String,
 }
 
 /// Where the agent of the project stands.
@@ -167,6 +217,8 @@ pub struct AcpStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub needs: Option<AgentNeed>,
+    /// Files the work copy left out for their size (over 4 MiB) at its last build | update; `0` before the first.
+    pub skipped_files: u32,
 }
 
 /// How a sign-in works.

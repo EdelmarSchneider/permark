@@ -11,6 +11,7 @@ import type {
   AcpUpdate,
   AgentEntry,
   ApiError,
+  ChangeList,
   ChooseArgs,
   FileChange,
   IpcError,
@@ -73,6 +74,8 @@ export class AcpStore {
   status = $state.raw<AcpStatus | null>(null);
   transcript = $state.raw<readonly Entry[]>([]);
   changes = $state.raw<readonly FileChange[]>([]);
+  /** Changed files past the listed ones (the backend lists at most 500). */
+  moreChanges = $state(0);
   /** The passage the next message carries (`null`: none). */
   passage = $state.raw<PromptSelection | null>(null);
   /** The message being written (kept while the view moves between regions). */
@@ -171,6 +174,7 @@ export class AcpStore {
           error: update.error,
           methods: update.methods ?? [],
           needs: this.status?.needs,
+          skippedFiles: this.status?.skippedFiles ?? 0,
         };
         if (update.error !== null)
           this.#push({
@@ -281,11 +285,17 @@ export class AcpStore {
     const root = this.#root();
     const result = await this.#client.call("acp.changes", {});
     if (this.#root() !== root || !result.ok) return;
-    this.changes = result.value;
+    this.#list(result.value);
   }
 
-  /** Accepts (into the real file) | rejects (from the copy) hunks `hunks` of `path` (`null`: the whole file). */
-  async decide(choice: "accept" | "reject", path: string, hunks: number[] | null): Promise<void> {
+  #list(list: ChangeList): void {
+    this.changes = list.files;
+    this.moreChanges = list.more;
+  }
+
+  /** Accepts (into the real file) | rejects (from the copy) the hunks keyed `hunks` of `path` (`null`: the whole
+   *  file as it is now). */
+  async decide(choice: "accept" | "reject", path: string, hunks: string[] | null): Promise<void> {
     if (this.deciding !== null) return;
     this.deciding = path;
     this.refusal = null;
@@ -297,7 +307,7 @@ export class AcpStore {
       });
       if (this.#root() !== root) return;
       if (result.ok) {
-        this.changes = result.value;
+        this.#list(result.value);
         return;
       }
       this.refusal = { path, text: errorText(result.error) };
@@ -418,6 +428,7 @@ export class AcpStore {
     this.status = null;
     this.transcript = [];
     this.changes = [];
+    this.moreChanges = 0;
     this.passage = null;
     this.draft = "";
     this.refusal = null;
@@ -445,6 +456,7 @@ export class AcpStore {
             agentName: answer.agentName,
             chosen: answer.chosen,
             needs: answer.needs,
+            skippedFiles: answer.skippedFiles,
           };
   }
 
@@ -634,6 +646,7 @@ function refusalKey(error: IpcError): MessageKey | null {
     case "wholeFileOnly":
       return "acp.error.wholeFileOnly";
     case "unknownHunk":
+    case "outdated":
     case "noChange":
     case "noWorkCopy":
       return "acp.error.outdated";
@@ -658,7 +671,7 @@ function refusalKey(error: IpcError): MessageKey | null {
 
 /** The list the refusal was about is old: read it again. */
 function outdated(error: IpcError): boolean {
-  return ["unknownHunk", "noChange", "noWorkCopy", "wholeFileOnly", "changed"].includes(
+  return ["unknownHunk", "outdated", "noChange", "noWorkCopy", "wholeFileOnly", "changed"].includes(
     error.detail ?? "",
   );
 }

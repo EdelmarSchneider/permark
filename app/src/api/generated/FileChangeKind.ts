@@ -3,4 +3,4 @@
 /**
  * How a file differs.
  */
-export type FileChangeKind = "modified" | "added" | "deleted" | "binary" | "conflict";
+export type FileChangeKind = "modified" | "added" | "deleted" | "binary" | "conflict" | "link";

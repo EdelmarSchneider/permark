@@ -12,7 +12,8 @@
 //!   in outside the app) starts a fresh agent, which reads the new sign-in at its start.
 //! - each prompt: agent settings the agent wrote into the copy go ([`WorkCopy::purge`]: they would load at its next
 //!   start and could allow anything), the copy takes the person's latest changes ([`WorkCopy::sync`]), then
-//!   `session/prompt`; the turn ends with the agent's stop reason and the count of changed files. A passage of a file
+//!   `session/prompt`; the turn ends with the agent's stop reason and the count of changed files (the change list is
+//!   computed then, once, and kept for the windows: [`WorkCopy::refresh`]). A passage of a file
 //!   agents may not see is refused; such an open document is not named.
 //! - Stop: before the prompt is on its way it is never sent (the turn ends `cancelled`); after, `session/cancel`; a
 //!   question asked after Stop is answered `cancelled` at once. Stop during a start stops the agent.
@@ -32,6 +33,7 @@ mod permission;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -101,6 +103,9 @@ pub struct Session {
 struct Core {
     host: Host,
     inner: Mutex<Inner>,
+    /// Files the copy left out for their size at its last build | update (read by the status without the copy's lock,
+    /// which a build | an update holds for long).
+    skipped: AtomicU32,
 }
 
 #[derive(Default)]
@@ -354,6 +359,7 @@ impl Session {
             core: Arc::new(Core {
                 host,
                 inner: Mutex::new(Inner::default()),
+                skipped: AtomicU32::new(0),
             }),
         }
     }
@@ -376,6 +382,7 @@ impl Session {
             needs: chosen
                 .as_ref()
                 .map_or_else(|| self.core.host.agents.blocked(), |c| c.resolved.needs),
+            skipped_files: self.core.skipped.load(Ordering::Relaxed),
         }
     }
 
@@ -990,6 +997,7 @@ impl Core {
             let _ = built.remove();
             return Ok(None);
         }
+        self.count_skipped(&built);
         let dir = built.dir().to_path_buf();
         *copy = Some(built);
         Ok(Some(dir))
@@ -1153,15 +1161,21 @@ impl Core {
         copy.purge()
             .map_err(|_| AcpError::new(AcpErrorCode::CopyFailed))?;
         copy.sync().map_err(|e| copy_error(&e))?;
+        self.count_skipped(copy);
         blocks(args, copy, embedded).map_err(|_| AcpError::new(AcpErrorCode::SendFailed))
     }
 
-    /// Files whose copy differs now.
+    fn count_skipped(&self, copy: &WorkCopy) {
+        let skipped = u32::try_from(copy.skipped()).unwrap_or(u32::MAX);
+        self.skipped.store(skipped, Ordering::Relaxed);
+    }
+
+    /// Files whose copy differs now: the change list computed once for the turn, kept for the windows.
     fn changed(&self) -> u32 {
         lock(&self.host.copy)
             .as_mut()
-            .and_then(|copy| copy.changes().ok())
-            .map_or(0, |list| u32::try_from(list.len()).unwrap_or(u32::MAX))
+            .and_then(|copy| copy.refresh().ok())
+            .map_or(0, |list| list.count())
     }
 
     /// The turn of `generation` ended: `Ready` again (questions still open answered `cancelled`), `turnEnd` told.

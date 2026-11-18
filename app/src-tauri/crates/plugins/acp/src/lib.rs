@@ -6,9 +6,10 @@
 //!
 //! RPC (project scope): `status {}` -> [`AcpStatus`]; `agents {}` -> [`AgentEntry`]`[]`; `choose` [`ChooseArgs`] ->
 //! [`AgentEntry`]`[]`; `prompt` [`PromptArgs`] -> `null` (the reply comes as events); `login` [`LoginArgs`] -> `null`;
-//! `cancel {}` | `reset {}` -> `null`; `answer` [`AnswerArgs`] -> `null`; `changes {}` -> [`FileChange`]`[]` (empty
-//! while no copy exists); `accept | reject { path, hunks: number[] | null }` -> the fresh [`FileChange`]`[]`
-//! (`null`: the whole file). Event `acp:update` -> [`AcpUpdate`].
+//! `cancel {}` | `reset {}` -> `null`; `answer` [`AnswerArgs`] -> `null`; `changes` [`ChangesArgs`] -> the kept
+//! [`ChangeList`] (computed at each turn's end | when asked to refresh; empty while no copy exists); `accept | reject`
+//! [`DecideArgs`] (hunk keys; `null`: the whole file) | `undo` [`UndoArgs`] -> the updated [`ChangeList`]. Event
+//! `acp:update` -> [`AcpUpdate`].
 //!
 //! Off | project closed: the agent stops, then the copy is deleted (pending changes with it).
 
@@ -36,9 +37,9 @@ use crate::client::lock;
 pub use agents::{person_launch, Agents, Choice, Plan, CHOICE_FILE};
 pub use dto::{
     AcpError, AcpErrorCode, AcpOptionKind, AcpState, AcpStatus, AcpStopReason, AcpToolKind,
-    AcpToolStatus, AcpUpdate, AgentEntry, AgentHow, AgentNeed, AnswerArgs, ChooseArgs, DecideArgs,
-    FileChange, FileChangeKind, HunkView, LoginArgs, LoginKind, LoginMethod, PermissionChoice,
-    PromptArgs, PromptSelection,
+    AcpToolStatus, AcpUpdate, AgentEntry, AgentHow, AgentNeed, AnswerArgs, ChangeList, ChangesArgs,
+    ChooseArgs, DecideArgs, FileChange, FileChangeKind, HunkView, LoginArgs, LoginKind,
+    LoginMethod, PermissionChoice, PromptArgs, PromptSelection, UndoArgs,
 };
 pub use session::{Host, Session};
 pub use work::{copy_dir, Project, WorkCopy};
@@ -100,22 +101,28 @@ impl Drop for Started {
     }
 }
 
-/// Accept | reject of one file's hunks (`None`: the whole file), answering the fresh list.
-type Decision = fn(&mut WorkCopy, &str, Option<&[u32]>) -> Result<Vec<FileChange>, IpcError>;
+/// Accept | reject of one file's hunks by key (`None`: the whole file), answering the updated list.
+type Decision = fn(&mut WorkCopy, &str, Option<&[String]>) -> Result<ChangeList, IpcError>;
 
-/// Runs `choose` on the copy; refused while there is none.
-fn decide(
+/// Runs `choose` on the copy for `path`; refused while there is none.
+fn on_copy(
     copy: &SharedCopy,
-    args: &DecideArgs,
-    choose: Decision,
-) -> Result<Vec<FileChange>, IpcError> {
+    path: &str,
+    choose: impl FnOnce(&mut WorkCopy) -> Result<ChangeList, IpcError>,
+) -> Result<ChangeList, IpcError> {
     let mut guard = lock(copy);
     let copy = guard.as_mut().ok_or_else(|| {
         IpcError::new(ErrorKind::NotFound)
-            .subject(args.path.clone())
+            .subject(path)
             .detail("noWorkCopy")
     })?;
-    choose(copy, &args.path, args.hunks.as_deref())
+    choose(copy)
+}
+
+fn decide(copy: &SharedCopy, args: &DecideArgs, choose: Decision) -> Result<ChangeList, IpcError> {
+    on_copy(copy, &args.path, |copy| {
+        choose(copy, &args.path, args.hunks.as_deref())
+    })
 }
 
 fn register(cx: &PluginCx, copy: &SharedCopy, session: &Session) -> Vec<RpcRegistration> {
@@ -151,9 +158,10 @@ fn register(cx: &PluginCx, copy: &SharedCopy, session: &Session) -> Vec<RpcRegis
     let c = Arc::clone(copy);
     rpc.extend(cx.rpc(
         "changes",
-        typed(move |_: NoArgs, _| match lock(&c).as_mut() {
+        typed(move |args: ChangesArgs, _| match lock(&c).as_mut() {
+            Some(copy) if args.refresh == Some(true) => copy.refresh(),
             Some(copy) => copy.changes(),
-            None => Ok(Vec::new()),
+            None => Ok(ChangeList::default()),
         }),
     ));
     let c = Arc::clone(copy);
@@ -165,6 +173,11 @@ fn register(cx: &PluginCx, copy: &SharedCopy, session: &Session) -> Vec<RpcRegis
     rpc.extend(cx.rpc(
         "reject",
         typed(move |args: DecideArgs, _| decide(&c, &args, WorkCopy::reject)),
+    ));
+    let c = Arc::clone(copy);
+    rpc.extend(cx.rpc(
+        "undo",
+        typed(move |args: UndoArgs, _| on_copy(&c, &args.path, |copy| copy.undo(&args.path))),
     ));
     rpc
 }
