@@ -2,9 +2,12 @@
 // give: installed, started by npx | uvx, missing Node.js | uv | an install) and the person's choice (none at first, as
 // on a first run), the agent's status, a timed stand-in reply to a message (status, thinking, text in pieces, tool
 // lines, one question that waits for the person's answer, then the turn's end with one changed file) and the work
-// copy's changes, where accept | reject drop hunks (named by key) and undo puts the file's last list entry back. Gemini CLI asks for a sign-in at its first start: its own method
-// signs in, "Try again" alone stays signed out. Nothing is written: the real copy, agent, choice file and writes are
-// the plugin's (tested there); the mock only feeds the window's flow.
+// copy's changes, where accept | reject drop hunks (named by key) and undo puts the file's last list entry back.
+// Gemini CLI asks for a sign-in at its first start: its own method signs in, "Try again" alone stays signed out. The
+// plugin's checks of what it is sent are mirrored (a passage alone is a message, line range, project paths, files
+// taken only as a whole, links never accepted, relative program paths, inside a Snap nothing starts), so the window's
+// words for them are tested against the same refusals. Nothing is written: the real copy, agent, choice file and
+// writes are the plugin's (tested there); the mock only feeds the window's flow.
 
 import type { AcpError } from "./generated/AcpError";
 import type { AcpState } from "./generated/AcpState";
@@ -173,6 +176,12 @@ export type AcpProbe = {
   fail: MockPluginError | null;
   /** The work copy's changes now (set by the end of the first turn). */
   changes: FileChange[];
+  /** Files the copy left out for their size (`AcpStatus.skippedFiles`). */
+  skipped: number;
+  /** PerMark runs inside a Snap: nothing can start, no choice is kept. */
+  snap: boolean;
+  /** Project paths agents may not see: a passage of one is refused, such an open document is not named. */
+  hidden: Set<string>;
   /** Stops the reply timer (tests). */
   stopAll(): void;
 };
@@ -224,6 +233,39 @@ type Step =
   | { kind: "login"; then: Step[]; why: AcpError | null }
   | { kind: "end" };
 
+/** A project path of a file, as the plugin parses it: relative, `/` separated, no `.` | `..` step, not the folder. */
+function projectFile(path: string): void {
+  const steps = path.split(/[\\/]/);
+  if (
+    path === "" ||
+    /^([A-Za-z]:|[\\/])/.test(path) ||
+    steps.some((step) => step === "" || step === "." || step === "..")
+  )
+    throw new MockPluginError("invalidPath", path, null);
+}
+
+/** Refuses a prompt the plugin would refuse before anything starts. */
+function check(args: PromptArgs): void {
+  if (args.text.trim() === "" && args.selection === undefined)
+    throw new MockPluginError("invalidData", null, "emptyPrompt");
+  const selection = args.selection;
+  if (selection !== undefined) {
+    projectFile(selection.path);
+    if (selection.fromLine === 0 || selection.toLine < selection.fromLine)
+      throw new MockPluginError("invalidData", selection.path, "lineRange");
+  }
+  if (args.document !== undefined) projectFile(args.document);
+}
+
+/** The command's program (its first word; double quotes group) is a path with a folder that is not absolute. */
+function relativeProgram(command: string): boolean {
+  const program = command.startsWith('"')
+    ? command.slice(1, command.indexOf('"', 1))
+    : (command.split(/\s+/)[0] ?? "");
+  const absolute = /^([A-Za-z]:[\\/]|[\\/])/.test(program);
+  return /[\\/]/.test(program) && !absolute;
+}
+
 export function createMockAcp(
   emit: <E extends PluginEventName>(event: E, data: PluginEvents[E]) => void,
 ): {
@@ -256,6 +298,9 @@ export function createMockAcp(
     stepMs: 250,
     fail: null,
     changes: [],
+    skipped: 0,
+    snap: false,
+    hidden: new Set(),
     stopAll: stopTimer,
   };
   const news = (update: AcpUpdate): void => emit("acp:update", update);
@@ -425,10 +470,18 @@ export function createMockAcp(
     refuse();
     const file = probe.changes.find((c) => c.path === path);
     if (file === undefined) throw new MockPluginError("notFound", path, "noChange");
+    if (hunks !== null && hunks.length === 0)
+      throw new MockPluginError("invalidData", path, "unknownHunk");
+    if (file.kind === "conflict" && hunks !== null)
+      throw new MockPluginError("conflict", path, "changed");
     if (hunks !== null && hunks.some((h) => !file.hunks.some((k) => k.key === h)))
       throw new MockPluginError("conflict", path, "outdated");
+    // as the plugin: a link is only ever removed; a new | deleted | binary file only by every key of its list
+    if (accepted && file.kind === "link") throw new MockPluginError("invalidData", path, "link");
+    if (file.kind !== "modified" && hunks !== null && hunks.length !== file.hunks.length)
+      throw new MockPluginError("invalidData", path, "wholeFileOnly");
     undos.set(path, file);
-    if (hunks === null) {
+    if (hunks === null || file.kind !== "modified") {
       probe.changes = probe.changes.filter((c) => c !== file);
       return listed();
     }
@@ -471,8 +524,12 @@ export function createMockAcp(
           chosen: agent !== null,
           error,
           methods: state === "needsLogin" ? [...MOCK_LOGIN_METHODS] : [],
-          ...(agent !== null && agent.needs !== null ? { needs: agent.needs } : {}),
-          skippedFiles: 0,
+          ...(probe.snap
+            ? { needs: "snap" as const }
+            : agent !== null && agent.needs !== null
+              ? { needs: agent.needs }
+              : {}),
+          skippedFiles: probe.skipped,
         };
       },
       "acp.agents": () => {
@@ -481,6 +538,7 @@ export function createMockAcp(
       },
       "acp.choose": (args) => {
         probe.calls.push("choose");
+        if (probe.snap) throw new MockPluginError("unavailable", null, "snap");
         if (state === "starting" || state === "working")
           throw new MockPluginError("conflict", null, "busy");
         const command = args.command?.trim();
@@ -493,6 +551,8 @@ export function createMockAcp(
           // double quotes group a word: one left open is refused, as the plugin does
           if (command.split('"').length % 2 === 0)
             throw new MockPluginError("invalidData", null, "openQuote");
+          if (relativeProgram(command))
+            throw new MockPluginError("invalidData", null, "relativeProgram");
           probe.choice = { command };
         } else throw new MockPluginError("invalidData", null, "oneChoice");
         // as the plugin does: the agent stops, the next message starts the chosen one
@@ -501,9 +561,15 @@ export function createMockAcp(
         become("idle");
         return agents();
       },
-      "acp.prompt": (args) => {
+      "acp.prompt": (sent) => {
         probe.calls.push("prompt");
-        if (args.text.trim() === "") throw new MockPluginError("invalidData", null, "emptyPrompt");
+        check(sent);
+        if (sent.selection !== undefined && probe.hidden.has(sent.selection.path))
+          throw new MockPluginError("denied", sent.selection.path, "hiddenFromAgents");
+        // an open document agents may not see is not named
+        const { document, ...rest } = sent;
+        const args: PromptArgs =
+          document === undefined || probe.hidden.has(document) ? rest : { ...rest, document };
         const agent = chosen();
         if (agent === null) throw new MockPluginError("unavailable", null, "noAgent");
         if (state === "starting" || state === "working")

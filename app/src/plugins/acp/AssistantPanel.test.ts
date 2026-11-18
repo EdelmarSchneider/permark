@@ -3,12 +3,14 @@
 // with the agent's options, Enter | Shift+Enter | an IME's Enter in the message box, Send while the agent works, the
 // passage chip, and hunks accepted | rejected one by one (files taken only as a whole show no hunk buttons); the
 // picker (no agent chosen | Change): search, a chip per state, How to install, Choose only for an agent that can
-// start, an own command; the sign-in card (the agent's own way, a command to copy, variables, Try again).
+// start, an own command; the sign-in card (the agent's own way, a command to copy, variables, Try again); where the
+// keyboard goes (a question, a sign-in, Stop, a decision), the bar to the changes, Open, the caps, the Snap line.
 import "../../core/testing/media";
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MOCK_AGENTS, MOCK_LOGIN_METHODS } from "../../api/mockAcp";
-import { t } from "../../core/i18n";
+import { documents } from "../../core/doc/document.svelte";
+import { t, tn } from "../../core/i18n";
 import AssistantPanel from "./AssistantPanel.svelte";
 import { acp, PANEL_MARK } from "./store.svelte";
 
@@ -143,23 +145,133 @@ describe("the Assistant panel", () => {
     expect(enter.defaultPrevented).toBe(true);
   });
 
-  it("Send waits while the agent works; Stop shows then", () => {
+  it("Send turns into Stop in its place while the agent works; Stop gives the keyboard to the message box", async () => {
     const cancel = vi.spyOn(acp, "cancel").mockResolvedValue();
     open();
     acp.draft = "Hello";
     flushSync();
-    expect(buttonNamed(t("acp.send")).disabled).toBe(false);
+    const send = buttonNamed(t("acp.send"));
+    expect(send.disabled).toBe(false);
     acp.take({ type: "status", state: "working", error: null });
     flushSync();
-    expect(buttonNamed(t("acp.send")).disabled).toBe(true);
-    root.querySelector<HTMLButtonElement>(`button[aria-label="${t("acp.stop")}"]`)?.click();
+    // the same button, now Stop: nothing around it moves
+    expect(buttonNamed(t("acp.stop"))).toBe(send);
+    expect(root.querySelector("header")?.textContent).not.toContain(t("acp.stop"));
+    send.focus();
+    send.click();
     expect(cancel).toHaveBeenCalled();
+    await settle();
+    expect(document.activeElement).toBe(box());
   });
 
-  it("the passage chip names the document and lines and can be removed", () => {
-    acp.passage = { path: "docs/a.md", fromLine: 2, toLine: 5, text: "x" };
+  it("a question waits: the status says so, its first answer takes the keyboard, then the message box does", async () => {
+    vi.spyOn(acp, "answer").mockResolvedValue();
     open();
-    expect(root.textContent).toContain(t("acp.passage", { path: "docs/a.md", from: 2, to: 5 }));
+    acp.take({ type: "status", state: "working", error: null });
+    flushSync();
+    buttonNamed(t("acp.stop")).focus();
+    acp.take({
+      type: "permission",
+      requestId: "7",
+      title: "Run tests",
+      kind: "execute",
+      detail: "npm test",
+      options: [
+        { id: "no", name: "Reject", kind: "reject_once" },
+        { id: "yes", name: "Allow", kind: "allow_once" },
+      ],
+    });
+    await settle();
+    expect(root.querySelector(".line .state")?.textContent).toBe(t("acp.state.waiting"));
+    expect(document.activeElement).toBe(buttonNamed("Reject"));
+    buttonNamed("Allow").click();
+    await settle();
+    expect(document.activeElement).toBe(box());
+  });
+
+  it("a question never takes the keyboard from words being written", async () => {
+    open();
+    acp.draft = "half a sent";
+    flushSync();
+    box().focus();
+    acp.take({
+      type: "permission",
+      requestId: "8",
+      title: "Run",
+      kind: "execute",
+      detail: "x",
+      options: [{ id: "yes", name: "Allow", kind: "allow_once" }],
+    });
+    await settle();
+    expect(document.activeElement).toBe(box());
+  });
+
+  it("a sign-in needed: the card's title takes the keyboard", async () => {
+    open();
+    box().focus();
+    acp.take({
+      type: "status",
+      state: "needsLogin",
+      error: null,
+      methods: [...MOCK_LOGIN_METHODS],
+    });
+    await settle();
+    expect(document.activeElement?.textContent?.trim()).toBe(
+      t("acp.login.title", { name: "Claude Agent" }),
+    );
+  });
+
+  it("the conversation scrolls with the keyboard and is no live region; one Thinking at its end", () => {
+    open();
+    const scroller = root.querySelector(".scroll");
+    expect(scroller?.getAttribute("tabindex")).toBe("0");
+    expect(scroller?.getAttribute("aria-label")).toBe(t("acp.conversation"));
+    expect(root.querySelector("[aria-live]")).toBeNull();
+    acp.take({ type: "thinking" });
+    acp.take({ type: "thinking" });
+    flushSync();
+    expect(root.querySelectorAll(".thinking")).toHaveLength(1);
+    acp.take({ type: "text", text: "Done" });
+    flushSync();
+    expect(root.querySelector(".thinking")).toBeNull();
+  });
+
+  it("the empty conversation offers example requests that fill the message box", () => {
+    open();
+    buttonNamed(t("acp.example.summary")).click();
+    flushSync();
+    expect(box().value).toBe(t("acp.example.summary"));
+    expect(document.activeElement).toBe(box());
+  });
+
+  it("a failure's own output waits under Details; unfinished tools say Stopped; a new agent draws a line", () => {
+    acp.take({ type: "tool", id: "t", title: "Edit a.md", kind: "edit", status: "in_progress" });
+    acp.take({ type: "turnEnd", stopReason: "cancelled", changed: 0 });
+    acp.take({
+      type: "status",
+      state: "error",
+      error: { code: "exited", stderr: "Error: <b>boom</b>" },
+    });
+    acp.transcript = [...acp.transcript, { kind: "divider", id: 999, name: "Codex" }];
+    acp.status = acp.status === null ? null : { ...acp.status, skippedFiles: 2 };
+    open();
+    expect(root.querySelector(".tool-status")?.textContent).toBe(t("acp.tool.stopped"));
+    const output = root.querySelector(".notice details pre");
+    expect(output?.textContent).toBe("Error: <b>boom</b>");
+    expect(output?.querySelector("b")).toBeNull();
+    expect(root.querySelector(".notice details summary")?.textContent).toBe(t("acp.details"));
+    expect(root.querySelector(".divider")?.textContent).toBe(t("acp.switched", { name: "Codex" }));
+    expect(root.textContent).toContain(tn("acp.skipped", 2));
+  });
+
+  it("the passage chip names the document, lines and the passage's start, and can be removed", () => {
+    acp.passage = { path: "docs/a.md", fromLine: 2, toLine: 5, text: "  Open a\nfolder  " };
+    open();
+    const label = t("acp.passage", { path: "docs/a.md", from: 2, to: 5 });
+    expect(root.querySelector(".chip-text")?.textContent).toBe(t("acp.attached", { label }));
+    expect(root.querySelector(".chip")?.getAttribute("aria-label")).toBe(
+      t("acp.attachedName", { label, start: "Open a folder" }),
+    );
     root.querySelector<HTMLButtonElement>(`button[aria-label="${t("acp.dropPassage")}"]`)?.click();
     flushSync();
     expect(acp.passage).toBeNull();
@@ -202,6 +314,69 @@ describe("the Assistant panel", () => {
     expect(decide).toHaveBeenLastCalledWith("reject", "docs/new.md", ["n1"]);
     // only added lines: no blank removed line drawn before them
     expect(root.querySelectorAll(".row.del")).toHaveLength(1);
+  });
+
+  it("a bar above the message box leads to the changes; Open shows the real file at the line", () => {
+    const navigate = vi.spyOn(documents, "navigate").mockReturnValue();
+    acp.changes = [
+      {
+        path: "docs/a.md",
+        kind: "modified",
+        hunks: [{ key: "a3", oldStart: 3, oldLines: ["old"], newLines: ["new"], truncated: false }],
+      },
+      { path: "docs/new.md", kind: "added", hunks: [] },
+    ];
+    open();
+    buttonNamed(t("acp.changesBar", { n: 2 })).click();
+    expect(document.activeElement?.id).toBe(root.querySelector(".changes h3")?.id);
+    labelled(t("acp.openAt", { path: "docs/a.md", line: 3 })).click();
+    expect(navigate).toHaveBeenLastCalledWith("docs/a.md", null, 3);
+    labelled(t("acp.openFile", { path: "docs/a.md" })).click();
+    expect(navigate).toHaveBeenLastCalledWith("docs/a.md", null, 3);
+    // a new file has no real one to open yet
+    expect(
+      root.querySelector(`[aria-label="${t("acp.openFile", { path: "docs/new.md" })}"]`),
+    ).toBeNull();
+    // each run is named by its file and place
+    expect(root.querySelector(".hunk")?.getAttribute("aria-label")).toBe(
+      t("acp.hunkGroup", { path: "docs/a.md", where: t("acp.hunkLine", { line: 3 }) }),
+    );
+  });
+
+  it("a long run draws its first rows until Show all; a run the backend cut says so", () => {
+    const lines = Array.from({ length: 450 }, (_, i) => `line ${String(i)}`);
+    acp.changes = [
+      {
+        path: "big.md",
+        kind: "added",
+        hunks: [{ key: "b", oldStart: 1, oldLines: [], newLines: lines, truncated: true }],
+      },
+    ];
+    open();
+    expect(root.querySelectorAll(".row.add")).toHaveLength(200);
+    expect(root.textContent).toContain(t("acp.truncated"));
+    buttonNamed(t("acp.showAllLines", { n: 450 })).click();
+    flushSync();
+    expect(root.querySelectorAll(".row.add")).toHaveLength(450);
+  });
+
+  it("after a decision the keyboard goes to the next change, else the message box", async () => {
+    vi.spyOn(acp, "decide").mockImplementation(async () => {
+      acp.changes = [];
+    });
+    acp.changes = [
+      {
+        path: "docs/a.md",
+        kind: "modified",
+        hunks: [{ key: "a3", oldStart: 3, oldLines: ["old"], newLines: ["new"], truncated: false }],
+      },
+    ];
+    open();
+    const accept = labelled(t("acp.acceptFile", { path: "docs/a.md" }));
+    accept.focus();
+    accept.click();
+    await settle();
+    expect(document.activeElement).toBe(box());
   });
 });
 
@@ -290,25 +465,69 @@ describe("the choice of the agent", () => {
     expect(first?.querySelector(".how")).toBeNull();
   });
 
-  it("Choose works for an agent that can start; How to install opens the website of one that cannot", () => {
+  it("Choose for an agent that can start; one that cannot says why and where to get what it needs", () => {
     const choose = vi.spyOn(acp, "choose").mockResolvedValue(true);
     const website = vi.spyOn(acp, "openWebsite").mockReturnValue();
     firstRun();
     open();
     labelled(t("acp.pick.chooseNamed", { name: "Codex" })).click();
     expect(choose).toHaveBeenCalledWith({ agent: "codex-acp" });
-    expect(labelled(t("acp.pick.chooseNamed", { name: "Cline" })).disabled).toBe(true);
-    labelled(t("acp.pick.howToInstallNamed", { name: "Cline" })).click();
-    expect(website).toHaveBeenCalledWith("https://cline.bot/cli");
-    // ready agents need no install; one without a website has no button for it
+    // no Choose that does nothing: the reason and the next step instead
+    expect(
+      root.querySelector(`[aria-label="${t("acp.pick.chooseNamed", { name: "Cline" })}"]`),
+    ).toBeNull();
+    const cline = [...root.querySelectorAll(".agent")].find((a) =>
+      a.textContent?.includes("Cline"),
+    );
+    expect(cline?.textContent).toContain(t("acp.why.node"));
+    buttonNamed(t("acp.pick.installNode")).click();
+    expect(website).toHaveBeenLastCalledWith("https://nodejs.org/en/download");
+    buttonNamed(t("acp.pick.installUv")).click();
+    expect(website).toHaveBeenLastCalledWith(
+      "https://docs.astral.sh/uv/getting-started/installation/",
+    );
+    labelled(t("acp.pick.howToInstallNamed", { name: "Amp" })).click();
+    expect(website).toHaveBeenLastCalledWith("https://github.com/tao12345666333/amp-acp");
+    // ready agents need no install
     expect(
       root.querySelector(`[aria-label="${t("acp.pick.howToInstallNamed", { name: "Codex" })}"]`),
     ).toBeNull();
-    expect(
-      root.querySelector(
-        `[aria-label="${t("acp.pick.howToInstallNamed", { name: "Deep Agents" })}"]`,
-      ),
-    ).toBeNull();
+    // the command each runs waits under Details
+    const codex = [...root.querySelectorAll(".agent")].find((a) =>
+      a.textContent?.includes("Codex"),
+    );
+    expect(codex?.querySelector("details summary")?.textContent).toBe(t("acp.details"));
+    expect(codex?.querySelector("details .command")?.textContent).toContain("codex-acp");
+  });
+
+  it("the agent in use says so; Escape and the top row's Cancel go back to the conversation", async () => {
+    open();
+    labelled(t("acp.changeAgent")).click();
+    acp.catalog = {
+      status: "ready",
+      agents: MOCK_AGENTS.map((a) => ({ ...a, chosen: a.id === "claude-acp" })),
+    };
+    flushSync();
+    const inUse = labelled(t("acp.pick.inUseNamed", { name: "Claude Agent" }));
+    expect(inUse.textContent?.trim()).toBe(t("acp.pick.inUse"));
+    expect(inUse.disabled).toBe(true);
+    // Cancel sits in the row above the list
+    expect(root.querySelector(".title-row")?.textContent).toContain(t("common.cancel"));
+    root
+      .querySelector('input[type="search"]')
+      ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await settle();
+    expect(acp.showsPicker).toBe(false);
+    expect(document.activeElement).toBe(box());
+  });
+
+  it("inside a Snap one line says why nothing can start, instead of the list", () => {
+    firstRun();
+    acp.status = acp.status === null ? null : { ...acp.status, needs: "snap" };
+    open();
+    expect(root.textContent).toContain(t("acp.snap"));
+    expect(root.querySelector(".agents")).toBeNull();
+    expect(root.querySelector('input[type="search"]')).toBeNull();
   });
 
   it("the search keeps the agents with every word typed", () => {
@@ -435,8 +654,12 @@ describe("the sign-in card", () => {
     // the card goes once signed in: the keyboard moves on to the message box at once
     await settle();
     expect(document.activeElement).toBe(box());
-    // a terminal way: its command to copy, never run by the app
+    // a terminal way: its command to copy, never run by the app; folded under Advanced beside the agent's own way
     expect(root.querySelector(".login .command")?.textContent).toBe(terminal.hint);
+    expect(root.querySelector(".login details summary")?.textContent).toBe(
+      t("acp.login.terminalWay"),
+    );
+    expect(root.querySelector(".login .command")?.getAttribute("tabindex")).toBe("0");
     labelledTitle(t("acp.login.copyCommand")).click();
     expect(copy).toHaveBeenCalledWith(terminal.hint);
     expect(root.textContent).toContain(t("acp.login.env", { names: env.hint }));
@@ -446,6 +669,22 @@ describe("the sign-in card", () => {
     expect(login).toHaveBeenLastCalledWith(null);
     await settle();
     expect(document.activeElement).toBe(box());
+  });
+});
+
+describe("the sign-in card's copy", () => {
+  it("a copy the system refused is said, so the person copies by hand", async () => {
+    vi.spyOn(acp, "copy").mockResolvedValue(false);
+    acp.take({
+      type: "status",
+      state: "needsLogin",
+      error: null,
+      methods: [...MOCK_LOGIN_METHODS],
+    });
+    open();
+    labelledTitle(t("acp.login.copyCommand")).click();
+    await settle();
+    expect(root.textContent).toContain(t("acp.login.copyFailed"));
   });
 });
 

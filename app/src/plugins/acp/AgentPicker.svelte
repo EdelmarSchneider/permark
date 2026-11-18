@@ -1,13 +1,15 @@
 <script lang="ts">
-  // The choice of the agent: the person's own command first ("Other command…" at the top, never below a long list),
-  // then the popular agents, then all the others A-Z, found by a word of the name | description, each with how it
-  // would start or what it needs first ("How to install" opens its website in the browser). The list is read again
-  // each time the picker shows, so an install made meanwhile counts.
-  import Check from "@lucide/svelte/icons/check";
+  // The choice of the agent: a top row that stays in view (the title, Cancel once an agent is chosen), the person's
+  // own command ("Other command…" near the top, never below a long list), then the popular agents, then all the others
+  // A-Z, found by a word of the name | description. An agent that can start has Choose (the one in use says so); one
+  // that cannot says why and where to get what it needs, never a Choose that does nothing. The command each runs waits
+  // under Details. Escape goes back like Cancel. Inside a Snap nothing can start: one line says so instead of the list.
+  // The list is read again each time the picker shows, so an install made meanwhile counts.
   import { onMount, tick } from "svelte";
   import type { AgentEntry } from "../../api";
   import { t } from "../../core/i18n";
-  import { acp, canStart, entryName, howKey, pickerList } from "./store.svelte";
+  import Note from "./Note.svelte";
+  import { acp, canStart, entryName, howKey, pickerList, whyNot } from "./store.svelte";
 
   type Props = {
     /** The person opened the picker: the search field takes the keyboard. */
@@ -29,10 +31,14 @@
   const agents = $derived(acp.catalog.status === "ready" ? acp.catalog.agents : []);
   const shown = $derived(pickerList(agents, query));
   const locked = $derived(!acp.canChange || acp.choosing);
+  /** Inside a Snap no program can start: no list to choose from. */
+  const snap = $derived(acp.status?.needs === "snap");
+  /** An agent is chosen: the picker can be left without a new choice. */
+  const leavable = $derived(acp.status?.chosen === true && !snap);
 
   onMount(() => {
-    if (focus) search?.focus();
-    void acp.loadAgents();
+    if (focus) search?.focus({ preventScroll: true });
+    if (!snap) void acp.loadAgents();
   });
 
   /** The focused button was disabled while the call ran (the page itself took the keyboard). */
@@ -72,6 +78,15 @@
     acp.closePicker();
     onclose();
   }
+
+  function keydown(event: KeyboardEvent): void {
+    if (event.key !== "Escape" || event.isComposing) return;
+    if (other) void closeOther();
+    else if (leavable) cancel();
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
+  }
 </script>
 
 <!-- `heading` false: a group without a heading (the own command), named for assistive technology only -->
@@ -91,12 +106,6 @@
       <li class={["agent", entry.chosen && "chosen"]}>
         <div class="head">
           <span class="name">{name}</span>
-          {#if entry.chosen}
-            <span class="current">
-              <Check size={12} aria-hidden="true" />
-              {t("acp.pick.current")}
-            </span>
-          {/if}
           <span class="spacer"></span>
           <!-- an own command's name already says it is the person's command: only a problem earns a chip -->
           {#if how !== "acp.how.custom"}
@@ -106,117 +115,143 @@
         {#if entry.description !== ""}
           <p class="description" title={entry.description}>{entry.description}</p>
         {/if}
-        {#if entry.command !== ""}
-          <code class="command" title={entry.command}>{entry.command}</code>
+        {#if entry.how === "custom"}
+          <!-- the person's own words: what they typed is what identifies it -->
+          <code class="command own" title={entry.command}>{entry.command}</code>
+        {:else if entry.command !== ""}
+          <details class="details">
+            <summary>{t("acp.details")}</summary>
+            <code class="command">{entry.command}</code>
+          </details>
         {/if}
-        <div class="actions">
-          {#if !ready && entry.website !== null}
-            {@const website = entry.website}
-            <button
-              type="button"
-              class="btn btn--sm btn--ghost"
-              aria-label={t("acp.pick.howToInstallNamed", { name })}
-              onclick={() => acp.openWebsite(website)}>{t("acp.pick.howToInstall")}</button
-            >
+        {#if ready}
+          <div class="actions">
+            {#if entry.chosen}
+              <button
+                type="button"
+                class="btn btn--sm"
+                aria-label={t("acp.pick.inUseNamed", { name })}
+                disabled>{t("acp.pick.inUse")}</button
+              >
+            {:else}
+              <button
+                type="button"
+                class="btn btn--sm btn--primary"
+                aria-label={t("acp.pick.chooseNamed", { name })}
+                disabled={locked}
+                onclick={() => void choose(entry)}>{t("acp.pick.choose")}</button
+              >
+            {/if}
+          </div>
+        {:else}
+          {@const help = whyNot(entry)}
+          {@const url = help.url ?? entry.website}
+          <Note tone="muted">{t(help.why)}</Note>
+          {#if url !== null}
+            <div class="actions">
+              <button
+                type="button"
+                class="btn btn--sm"
+                aria-label={help.url === null
+                  ? t("acp.pick.howToInstallNamed", { name })
+                  : t(help.help)}
+                onclick={() => acp.openWebsite(url)}>{t(help.help)}</button
+              >
+            </div>
           {/if}
-          <button
-            type="button"
-            class={["btn", "btn--sm", ready && !entry.chosen && "btn--primary"]}
-            aria-label={t("acp.pick.chooseNamed", { name })}
-            disabled={!ready || locked}
-            onclick={() => void choose(entry)}>{t("acp.pick.choose")}</button
-          >
-        </div>
+        {/if}
       </li>
     {/each}
   </ul>
 {/snippet}
 
-<section class="picker" aria-labelledby="{uid}-title">
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+<section class="picker" aria-labelledby="{uid}-title" onkeydown={keydown}>
   <div class="title-row">
     <h3 id="{uid}-title">{t("acp.pick.title")}</h3>
     <span class="spacer"></span>
-    {#if !other}
+    {#if leavable && !other}
+      <button type="button" class="btn btn--sm" onclick={cancel}>{t("common.cancel")}</button>
+    {/if}
+  </div>
+
+  {#if snap}
+    <Note tone="muted">{t("acp.snap")}</Note>
+  {:else}
+    <Note tone="muted">{t("acp.pick.intro")}</Note>
+    <Note tone="muted">{t("acp.pick.signInHint")}</Note>
+
+    {#if other}
+      <form class="other" onsubmit={(event) => void useCommand(event)}>
+        <label for="{uid}-command">{t("acp.pick.command")}</label>
+        <input
+          bind:this={field}
+          bind:value={typed}
+          id="{uid}-command"
+          class="field mono"
+          spellcheck="false"
+          autocomplete="off"
+          placeholder={t("acp.pick.commandPlaceholder")}
+          aria-describedby="{uid}-warning"
+        />
+        <Note tone="warning" id="{uid}-warning">{t("acp.pick.commandWarning")}</Note>
+        <div class="actions">
+          <button type="button" class="btn btn--sm" onclick={() => void closeOther()}
+            >{t("common.cancel")}</button
+          >
+          <button
+            type="submit"
+            class="btn btn--sm btn--primary"
+            disabled={typed.trim() === "" || locked}>{t("acp.pick.useCommand")}</button
+          >
+        </div>
+      </form>
+    {:else}
       <button
         bind:this={otherButton}
         type="button"
-        class="btn btn--sm btn--ghost"
+        class="btn btn--sm btn--ghost other-button"
         onclick={() => void openOther()}>{t("acp.pick.other")}</button
       >
     {/if}
-  </div>
-  <p class="intro">{t("acp.pick.intro")}</p>
-  <p class="hint">{t("acp.pick.signInHint")}</p>
 
-  {#if other}
-    <form class="other" onsubmit={(event) => void useCommand(event)}>
-      <label for="{uid}-command">{t("acp.pick.command")}</label>
-      <input
-        bind:this={field}
-        bind:value={typed}
-        id="{uid}-command"
-        class="field mono"
-        spellcheck="false"
-        autocomplete="off"
-        placeholder={t("acp.pick.commandPlaceholder")}
-        aria-describedby="{uid}-warning"
-      />
-      <p class="warning" id="{uid}-warning">{t("acp.pick.commandWarning")}</p>
-      <div class="actions">
-        <button type="button" class="btn btn--sm" onclick={() => void closeOther()}
-          >{t("common.cancel")}</button
-        >
-        <button
-          type="submit"
-          class="btn btn--sm btn--primary"
-          disabled={typed.trim() === "" || locked}>{t("acp.pick.useCommand")}</button
-        >
-      </div>
-    </form>
-  {/if}
-
-  <input
-    bind:this={search}
-    bind:value={query}
-    class="field"
-    type="search"
-    spellcheck="false"
-    autocomplete="off"
-    placeholder={t("acp.pick.search")}
-    aria-label={t("acp.pick.search")}
-  />
-  {#if !acp.canChange}
-    <p class="quiet">{t("acp.error.busy")}</p>
-  {/if}
-  {#if acp.choiceRefusal !== null}
-    <p class="refusal" role="alert">{acp.choiceRefusal}</p>
-  {/if}
-
-  {#if acp.catalog.status === "failed"}
-    <p class="refusal">{acp.catalog.text}</p>
-    <button type="button" class="btn btn--sm" onclick={() => void acp.loadAgents()}
-      >{t("acp.retry")}</button
-    >
-  {:else if acp.catalog.status !== "ready"}
-    <p class="quiet">{t("acp.pick.loading")}</p>
-  {:else if shown.own.length + shown.popular.length + shown.all.length === 0}
-    <p class="quiet">{t("acp.pick.none")}</p>
-  {:else}
-    {#if shown.own.length > 0}
-      {@render group(shown.own, "own", t("acp.ownCommand"), false)}
+    <input
+      bind:this={search}
+      bind:value={query}
+      class="field"
+      type="search"
+      spellcheck="false"
+      autocomplete="off"
+      placeholder={t("acp.pick.search")}
+      aria-label={t("acp.pick.search")}
+    />
+    {#if !acp.canChange}
+      <Note>{t("acp.error.busy")}</Note>
     {/if}
-    {#if shown.popular.length > 0}
-      {@render group(shown.popular, "popular", t("acp.pick.popular"), true)}
+    {#if acp.choiceRefusal !== null}
+      <Note tone="refusal" alert>{acp.choiceRefusal}</Note>
     {/if}
-    {#if shown.all.length > 0}
-      {@render group(shown.all, "all", t("acp.pick.all"), true)}
-    {/if}
-  {/if}
 
-  {#if acp.status?.chosen === true && !other}
-    <div class="foot">
-      <button type="button" class="btn btn--sm" onclick={cancel}>{t("common.cancel")}</button>
-    </div>
+    {#if acp.catalog.status === "failed"}
+      <Note tone="refusal">{acp.catalog.text}</Note>
+      <button type="button" class="btn btn--sm retry" onclick={() => void acp.loadAgents()}
+        >{t("acp.retry")}</button
+      >
+    {:else if acp.catalog.status !== "ready"}
+      <Note>{t("acp.pick.loading")}</Note>
+    {:else if shown.own.length + shown.popular.length + shown.all.length === 0}
+      <Note>{t("acp.pick.none")}</Note>
+    {:else}
+      {#if shown.own.length > 0}
+        {@render group(shown.own, "own", t("acp.ownCommand"), false)}
+      {/if}
+      {#if shown.popular.length > 0}
+        {@render group(shown.popular, "popular", t("acp.pick.popular"), true)}
+      {/if}
+      {#if shown.all.length > 0}
+        {@render group(shown.all, "all", t("acp.pick.all"), true)}
+      {/if}
+    {/if}
   {/if}
 </section>
 
@@ -226,29 +261,34 @@
     flex-direction: column;
     gap: var(--sp-2);
   }
+  /* stays in view over the long list, so Cancel is always one step away; it covers the scroller's top padding */
   .title-row {
+    position: sticky;
+    top: calc(-1 * var(--sp-3));
+    z-index: 1;
     display: flex;
     align-items: center;
     gap: var(--sp-1);
     min-width: 0;
+    margin: calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3)) 0;
+    padding: var(--sp-2) var(--sp-3);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
   }
   h3 {
     margin: 0;
     font-size: var(--fs-ui-sm);
     font-weight: 600;
   }
-  .intro,
-  .hint {
-    margin: 0;
-    color: var(--muted);
-    font-size: var(--fs-ui-xs);
-    line-height: 1.5;
+  .other-button,
+  .retry {
+    align-self: flex-start;
   }
   /* same group title style as the panel's other section titles */
   .group {
     margin: var(--sp-1) 0 0;
     color: var(--muted);
-    font-size: var(--fs-ui-xs);
+    font-size: var(--fs-ui-sm);
     font-weight: 600;
     letter-spacing: 0.05em;
     text-transform: uppercase;
@@ -270,18 +310,6 @@
   }
   .mono {
     font-family: var(--font-code);
-    font-size: var(--fs-ui-xs);
-  }
-  .quiet {
-    margin: 0;
-    color: var(--faint);
-    font-size: var(--fs-ui-xs);
-  }
-  .refusal {
-    margin: 0;
-    color: var(--git-deleted-text);
-    font-size: var(--fs-ui-xs);
-    overflow-wrap: anywhere;
   }
   .agents {
     display: flex;
@@ -313,19 +341,9 @@
   }
   .name {
     min-width: 0;
-    overflow: hidden;
     font-size: var(--fs-ui-sm);
     font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .current {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    flex: none;
-    color: var(--accent-text);
-    font-size: var(--fs-ui-xs);
+    overflow-wrap: anywhere;
   }
   .spacer {
     flex: 1 1 0;
@@ -334,7 +352,7 @@
     flex: none;
     padding: 0 var(--sp-1);
     border-radius: var(--radius-sm);
-    font-size: var(--fs-ui-xs);
+    font-size: var(--fs-ui-sm);
     white-space: nowrap;
   }
   .how.ready {
@@ -351,19 +369,30 @@
     margin: 0;
     overflow: hidden;
     color: var(--muted);
-    font-size: var(--fs-ui-xs);
+    font-size: var(--fs-ui-sm);
     line-height: 1.4;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
     line-clamp: 2;
   }
-  .command {
-    overflow: hidden;
+  .details summary {
+    min-height: var(--icon-btn-sm);
     color: var(--faint);
+    font-size: var(--fs-ui-sm);
+    line-height: var(--icon-btn-sm);
+    cursor: pointer;
+  }
+  .command {
+    display: block;
+    overflow-x: auto;
+    color: var(--muted);
     font-family: var(--font-code);
-    font-size: var(--fs-ui-xs);
+    font-size: var(--fs-ui-sm);
+    white-space: pre;
+  }
+  .command.own {
+    overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .actions {
     display: flex;
@@ -379,16 +408,7 @@
   }
   label {
     color: var(--muted);
-    font-size: var(--fs-ui-xs);
+    font-size: var(--fs-ui-sm);
     font-weight: 600;
-  }
-  .warning {
-    margin: 0;
-    color: var(--git-modified-text);
-    font-size: var(--fs-ui-xs);
-  }
-  .foot {
-    display: flex;
-    justify-content: flex-end;
   }
 </style>
